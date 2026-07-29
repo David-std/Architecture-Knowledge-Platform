@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://akp.local/schemas/context-packet.json",
+  "type": "object",
+  "required": [
+    "packetId", "query", "intent", "corpusRevision", "generatedAt",
+    "budget", "mode", "sections", "citations", "packetHash"
+  ],
+  "properties": {
+    "packetId": {"type": "string", "format": "uuid"},
+    "query": {"type": "string"},
+    "intent": {"type": "string"},
+    "corpusRevision": {"type": "string"},
+    "generatedAt": {"type": "string", "format": "date-time"},
+    "budget": {
+      "type": "object",
+      "required": ["maxTokens", "usedTokens"],
+      "properties": {
+        "maxTokens": {"type": "integer", "minimum": 1},
+        "usedTokens": {"type": "integer", "minimum": 0}
+      }
+    },
+    "sections": {"type": "array"},
+    "citations": {"type": "array", "items": {"type": "string"}},
+    "gaps": {"type": "array", "items": {"type": "string"}},
+    "conflicts": {"type": "array", "items": {"type": "string"}},
+    "packetHash": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  }
+}

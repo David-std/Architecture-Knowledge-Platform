@@ -1,0 +1,16 @@
+{
+  "version": "0.1.0",
+  "tools": [
+    {"name": "akp_status", "permission": "knowledge:read", "mutates": false},
+    {"name": "akp_search", "permission": "knowledge:read", "mutates": false},
+    {"name": "akp_build_context", "permission": "knowledge:read", "mutates": false},
+    {"name": "akp_get_document", "permission": "knowledge:read", "mutates": false},
+    {"name": "akp_get_source_evidence", "permission": "source:read", "mutates": false},
+    {"name": "akp_analyze_impact", "permission": "knowledge:read", "mutates": false},
+    {"name": "akp_submit_source", "permission": "source:write", "mutates": true},
+    {"name": "akp_propose_knowledge_change", "permission": "knowledge:propose", "mutates": true},
+    {"name": "akp_validate_draft", "permission": "knowledge:propose", "mutates": false},
+    {"name": "akp_approve_review", "permission": "knowledge:review", "mutates": true},
+    {"name": "akp_run_eval", "permission": "eval:run", "mutates": true}
+  ]
+}

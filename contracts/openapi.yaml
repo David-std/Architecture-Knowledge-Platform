@@ -1,0 +1,57 @@
+openapi: 3.1.0
+info:
+  title: Architecture Knowledge Platform API
+  version: 0.1.0
+servers:
+  - url: http://127.0.0.1:8080
+paths:
+  /health/readiness:
+    get:
+      operationId: readiness
+      responses:
+        "200": {description: Ready}
+        "503": {description: Not ready}
+  /v1/search:
+    post:
+      operationId: searchKnowledge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query: {type: string}
+                limit: {type: integer, minimum: 1, maximum: 100}
+                mode:
+                  enum: [COMPILED_ONLY, SOURCE_BACKED, RAW_ONLY, PROJECT_CODE, DRAFT_INCLUDED]
+      responses:
+        "200": {description: Ranked results}
+        "400": {description: Invalid request}
+  /v1/context:
+    post:
+      operationId: buildContextPacket
+      responses:
+        "200": {description: Context packet}
+  /v1/ingest:
+    post:
+      operationId: submitIngest
+      responses:
+        "202": {description: Job accepted}
+  /v1/ingest/{id}:
+    get:
+      operationId: getIngestStatus
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200": {description: Job state}
+        "404": {description: Not found}
+  /v1/reviews:
+    get:
+      operationId: listReviews
+      responses:
+        "200": {description: Review queue}

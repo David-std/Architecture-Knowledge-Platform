@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.next/
+coverage/
+.env
+.cache/
+.data/
+*.log
+apps/extractor/.venv/
+apps/extractor/.pytest_cache/
+apps/extractor/__pycache__/

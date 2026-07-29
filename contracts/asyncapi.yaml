@@ -1,0 +1,35 @@
+asyncapi: 3.0.0
+info:
+  title: Architecture Knowledge Platform Events
+  version: 0.1.0
+channels:
+  ingestJobs:
+    address: ingest.jobs
+    messages:
+      ingestStateChanged:
+        $ref: "#/components/messages/IngestStateChanged"
+  corpus:
+    address: corpus.revisions
+    messages:
+      corpusPublished:
+        $ref: "#/components/messages/CorpusPublished"
+components:
+  messages:
+    IngestStateChanged:
+      payload:
+        type: object
+        required: [jobId, previousState, state, occurredAt]
+        properties:
+          jobId: {type: string, format: uuid}
+          previousState: {type: string}
+          state: {type: string}
+          occurredAt: {type: string, format: date-time}
+    CorpusPublished:
+      payload:
+        type: object
+        required: [spaceId, previousRevision, revision, reviewId]
+        properties:
+          spaceId: {type: string, format: uuid}
+          previousRevision: {type: string}
+          revision: {type: string}
+          reviewId: {type: string, format: uuid}

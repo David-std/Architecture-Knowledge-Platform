@@ -1,0 +1,30 @@
+{
+  "name": "architecture-knowledge-platform",
+  "private": true,
+  "packageManager": "pnpm@10",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:integration": "turbo run test:integration",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "check": "pnpm lint && pnpm typecheck && pnpm boundaries && pnpm test",
+    "format": "prettier --write .",
+    "boundaries": "depcruise --config dependency-cruiser.cjs apps packages"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "prettier": "^3.0.0",
+    "tsx": "^4.0.0",
+    "turbo": "^2.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0",
+    "dependency-cruiser": "^16.0.0",
+    "@types/pg": "^8.11.0"
+  }
+}

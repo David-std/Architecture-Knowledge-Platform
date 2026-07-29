@@ -1,0 +1,26 @@
+version: 1
+rules:
+  - id: RAW_IMMUTABLE
+    severity: error
+    applies_to: CANONICAL_RAW
+    assertion: raw bytes and hash cannot be replaced after registration
+  - id: PRECISE_CLAIM_LOCATOR
+    severity: error
+    applies_to: [CLAIM, RULE, ADR]
+    assertion: precise numbers, dates, quotes and code facts require evidence locators
+  - id: NORMATIVE_REVIEW
+    severity: error
+    applies_to: [CLAIM, RULE, POLICY, ADR]
+    assertion: human review is required before ACTIVE
+  - id: DRAFT_NOT_DEFAULT_RETRIEVAL
+    severity: error
+    applies_to: retrieval
+    assertion: normal queries exclude draft documents
+  - id: AI_EVIDENCE_CANNOT_SELF_UPGRADE
+    severity: error
+    applies_to: evidence
+    assertion: AI candidates cannot mint deterministic trust tiers
+  - id: INDEXES_REBUILDABLE
+    severity: error
+    applies_to: runtime-index
+    assertion: indexes must rebuild from canonical storage
