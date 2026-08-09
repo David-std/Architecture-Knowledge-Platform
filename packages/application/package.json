@@ -9,11 +9,11 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@akp/domain": "workspace:*",
-    "@akp/contracts": "workspace:*"
+    "@akp/domain": "*",
+    "@akp/contracts": "*"
   },
   "devDependencies": {}
 }

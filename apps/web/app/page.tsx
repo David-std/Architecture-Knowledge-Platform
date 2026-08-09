@@ -1,29 +1,63 @@
-async function health() {
-  const base = process.env.AKP_API_URL ?? "http://127.0.0.1:8080";
-  try {
-    const response = await fetch(`${base}/health/readiness`, { cache: "no-store" });
-    return await response.json();
-  } catch {
-    return { status: "UNAVAILABLE" };
-  }
+import { akp } from "../lib/api";
+
+interface Status {
+  status: string;
+  capabilities: Record<string, boolean>;
+  corpus: {
+    documents: number;
+    relations: number;
+    sources: number;
+    vault: Record<string, unknown> | null;
+  };
+  jobs: Array<{ state: string; count: number }>;
+  reviews: Array<{ status: string; count: number }>;
 }
 
 export default async function Home() {
-  const status = await health();
+  let status: Status | null = null;
+  let error = "";
+  try {
+    status = await akp<Status>("/v1/status");
+  } catch (caught) {
+    error = String(caught);
+  }
   return (
-    <main style={{ maxWidth: 960, margin: "40px auto", fontFamily: "system-ui" }}>
-      <h1>Architecture Knowledge Platform</h1>
-      <p>Corpus status: <strong>{String(status.status)}</strong></p>
-      <section>
-        <h2>Initial product surfaces</h2>
-        <ul>
-          <li>Search and Context Packets</li>
-          <li>Ingest jobs</li>
-          <li>Review inbox</li>
-          <li>Source/evidence preview</li>
-          <li>Evaluation scorecards</li>
-        </ul>
-      </section>
+    <main>
+      <p className="muted">Consola operativa</p>
+      <h1>Estado del conocimiento</h1>
+      {error ? <div className="card">API no disponible: {error}</div> : null}
+      {status ? (
+        <>
+          <div className="grid">
+            <div className="card">
+              <span className="muted">Documentos</span>
+              <p className="metric">{status.corpus.documents}</p>
+            </div>
+            <div className="card">
+              <span className="muted">Relaciones</span>
+              <p className="metric">{status.corpus.relations}</p>
+            </div>
+            <div className="card">
+              <span className="muted">Fuentes ingeridas</span>
+              <p className="metric">{status.corpus.sources}</p>
+            </div>
+            <div className="card">
+              <span className="muted">Servicio</span>
+              <p className="metric">{status.status}</p>
+            </div>
+          </div>
+          <h2>Capacidades</h2>
+          <div className="card">
+            {Object.entries(status.capabilities).map(([name, active]) => (
+              <span className="badge" key={name}>
+                {name}: {active ? "activa" : "degradada"}
+              </span>
+            ))}
+          </div>
+          <h2>Vault importado</h2>
+          <pre>{JSON.stringify(status.corpus.vault, null, 2)}</pre>
+        </>
+      ) : null}
     </main>
   );
 }

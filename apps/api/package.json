@@ -8,19 +8,28 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests --exclude \"**/*.integration.test.ts\"",
     "test:integration": "vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
-    "@akp/contracts": "workspace:*",
-    "@akp/postgres": "workspace:*",
-    "@akp/retrieval": "workspace:*",
+    "@akp/compiler": "*",
+    "@akp/contracts": "*",
+    "@akp/evaluation": "*",
+    "@akp/git-store": "*",
+    "@akp/observability": "*",
+    "@akp/postgres": "*",
+    "@akp/project-adapter": "*",
+    "@akp/retrieval": "*",
+    "@akp/validation": "*",
+    "@akp/vault-importer": "*",
+    "@fastify/cors": "^11.3.0",
+    "@fastify/rate-limit": "^11.2.0",
     "fastify": "^5.0.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {
     "tsx": "^4.0.0",
     "typescript": "^5.7.0",
-    "vitest": "^3.0.0"
+    "vitest": "^4.1.10"
   }
 }

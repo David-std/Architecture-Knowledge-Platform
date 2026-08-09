@@ -5,7 +5,14 @@ coverage/
 .env
 .cache/
 .data/
+.turbo/
+**/.turbo/
 *.log
+backups/
+reports-vault-stat-*.txt
 apps/extractor/.venv/
 apps/extractor/.pytest_cache/
 apps/extractor/__pycache__/
+**/__pycache__/
+*.py[cod]
+*.egg-info/

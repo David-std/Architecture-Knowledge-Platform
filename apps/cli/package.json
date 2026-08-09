@@ -1,0 +1,19 @@
+{
+  "name": "@akp/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/main.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@akp/postgres": "*",
+    "@akp/vault-importer": "*",
+    "commander": "^15.0.0",
+    "dotenv": "^17.4.2"
+  }
+}

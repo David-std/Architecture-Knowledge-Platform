@@ -19,13 +19,49 @@ export const Lifecycle = z.enum([
 export type Lifecycle = z.infer<typeof Lifecycle>;
 
 export const EvidenceLocator = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("markdown"), path: z.string(), startLine: z.number().int().positive(), endLine: z.number().int().positive(), contentHash: z.string() }),
-  z.object({ kind: z.literal("pdf"), page: z.number().int().positive(), figure: z.string().optional(), table: z.string().optional() }),
-  z.object({ kind: z.literal("media"), startMs: z.number().int().nonnegative(), endMs: z.number().int().positive(), speaker: z.string().optional() }),
-  z.object({ kind: z.literal("image"), region: z.tuple([z.number(), z.number(), z.number(), z.number()]) }),
-  z.object({ kind: z.literal("spreadsheet"), sheet: z.string(), range: z.string(), formulaCell: z.string().optional() }),
-  z.object({ kind: z.literal("code"), repository: z.string(), commit: z.string(), path: z.string(), startLine: z.number().int().positive(), endLine: z.number().int().positive() }),
-  z.object({ kind: z.literal("web"), url: z.string().url(), snapshotHash: z.string(), section: z.string().optional() })
+  z.object({
+    kind: z.literal("markdown"),
+    path: z.string(),
+    startLine: z.number().int().positive(),
+    endLine: z.number().int().positive(),
+    contentHash: z.string(),
+  }),
+  z.object({
+    kind: z.literal("pdf"),
+    page: z.number().int().positive(),
+    figure: z.string().optional(),
+    table: z.string().optional(),
+  }),
+  z.object({
+    kind: z.literal("media"),
+    startMs: z.number().int().nonnegative(),
+    endMs: z.number().int().positive(),
+    speaker: z.string().optional(),
+  }),
+  z.object({
+    kind: z.literal("image"),
+    region: z.tuple([z.number(), z.number(), z.number(), z.number()]),
+  }),
+  z.object({
+    kind: z.literal("spreadsheet"),
+    sheet: z.string(),
+    range: z.string(),
+    formulaCell: z.string().optional(),
+  }),
+  z.object({
+    kind: z.literal("code"),
+    repository: z.string(),
+    commit: z.string(),
+    path: z.string(),
+    startLine: z.number().int().positive(),
+    endLine: z.number().int().positive(),
+  }),
+  z.object({
+    kind: z.literal("web"),
+    url: z.string().url(),
+    snapshotHash: z.string(),
+    section: z.string().optional(),
+  }),
 ]);
 export type EvidenceLocator = z.infer<typeof EvidenceLocator>;
 
@@ -36,13 +72,23 @@ export const SearchRequest = z.object({
   projectId: z.string().uuid().optional(),
   types: z.array(z.string()).default([]),
   minimumTrust: TrustTier.default("MACHINE_SUPPORTED"),
-  mode: z.enum(["COMPILED_ONLY", "SOURCE_BACKED", "RAW_ONLY", "PROJECT_CODE", "DRAFT_INCLUDED"]).default("SOURCE_BACKED"),
-  limit: z.number().int().min(1).max(100).default(20)
+  mode: z
+    .enum([
+      "COMPILED_ONLY",
+      "SOURCE_BACKED",
+      "RAW_ONLY",
+      "PROJECT_CODE",
+      "DRAFT_INCLUDED",
+    ])
+    .default("SOURCE_BACKED"),
+  limit: z.number().int().min(1).max(100).default(20),
 });
 export type SearchRequest = z.infer<typeof SearchRequest>;
 
 export const SearchHit = z.object({
   documentId: z.string().uuid(),
+  unitId: z.string().uuid().optional(),
+  unitType: z.string().optional(),
   revision: z.string(),
   title: z.string(),
   type: z.string(),
@@ -51,18 +97,29 @@ export const SearchHit = z.object({
   score: z.number(),
   reasons: z.array(z.string()),
   excerpt: z.string(),
-  citations: z.array(z.string())
+  citations: z.array(z.string()),
+  warnings: z.array(z.string()).optional(),
 });
 export type SearchHit = z.infer<typeof SearchHit>;
 
 export const ContextSection = z.object({
-  kind: z.enum(["rule", "workflow", "concept", "profile", "example", "evidence", "source"]),
+  kind: z.enum([
+    "rule",
+    "workflow",
+    "concept",
+    "profile",
+    "example",
+    "evidence",
+    "source",
+  ]),
   title: z.string(),
   content: z.string(),
   documentId: z.string().uuid().optional(),
+  unitId: z.string().uuid().optional(),
+  retrievalChannels: z.array(z.string()).optional(),
   revision: z.string().optional(),
   score: z.number().optional(),
-  reason: z.string()
+  reason: z.string(),
 });
 
 export const ContextPacket = z.object({
@@ -70,24 +127,47 @@ export const ContextPacket = z.object({
   query: z.string(),
   intent: z.string(),
   corpusRevision: z.string(),
+  status: z
+    .enum(["SUPPORTED", "INSUFFICIENT_KNOWLEDGE", "DEGRADED"])
+    .optional(),
+  indexRevisions: z.record(z.string(), z.string().nullable()).optional(),
+  retrievalConfiguration: z.record(z.string(), z.unknown()).optional(),
   generatedAt: z.string().datetime(),
-  budget: z.object({ maxTokens: z.number().int().positive(), usedTokens: z.number().int().nonnegative() }),
+  budget: z.object({
+    maxTokens: z.number().int().positive(),
+    usedTokens: z.number().int().nonnegative(),
+  }),
   mode: SearchRequest.shape.mode,
   sections: z.array(ContextSection),
   citations: z.array(z.string()),
   gaps: z.array(z.string()),
   conflicts: z.array(z.string()),
   requiredActions: z.array(z.string()),
-  packetHash: z.string()
+  continuations: z
+    .array(
+      z.object({
+        handle: z.string(),
+        reason: z.string(),
+        remainingTokens: z.number().int().nonnegative(),
+      }),
+    )
+    .optional(),
+  packetHash: z.string(),
 });
 export type ContextPacket = z.infer<typeof ContextPacket>;
 
 export const IngestRequest = z.object({
   spaceId: z.string().uuid(),
   sourceUri: z.string(),
-  expectedSha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  expectedSha256: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
   title: z.string().optional(),
   mediaType: z.string().optional(),
-  policy: z.enum(["REVIEW_REQUIRED", "ALLOW_LOW_RISK_AUTO_APPROVAL"]).default("REVIEW_REQUIRED")
+  policy: z
+    .enum(["REVIEW_REQUIRED", "ALLOW_LOW_RISK_AUTO_APPROVAL"])
+    .default("REVIEW_REQUIRED"),
+  idempotencyKey: z.string().min(8).max(200).optional(),
 });
 export type IngestRequest = z.infer<typeof IngestRequest>;

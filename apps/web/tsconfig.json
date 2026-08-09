@@ -3,8 +3,8 @@
   "compilerOptions": {
     "jsx": "preserve",
     "noEmit": true,
-    "incremental": true,
-    "plugins": [{"name": "next"}]
+    "incremental": false,
+    "plugins": [{ "name": "next" }]
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"]
 }

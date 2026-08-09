@@ -1,35 +1,70 @@
 asyncapi: 3.0.0
 info:
-  title: Architecture Knowledge Platform Events
-  version: 0.1.0
+  title: Architecture Knowledge Platform Persisted Events
+  version: 0.2.0
+  description: >
+    Schemas for events persisted by the current runtime. The platform does not
+    expose an external asynchronous broker or subscription endpoint in this
+    version, so no AsyncAPI operations or servers are declared.
 channels:
-  ingestJobs:
-    address: ingest.jobs
+  ingestJobEvents:
+    address: internal.ingest_job_events
+    description: Rows persisted in the ingest_job_events PostgreSQL table.
     messages:
-      ingestStateChanged:
-        $ref: "#/components/messages/IngestStateChanged"
-  corpus:
-    address: corpus.revisions
+      ingestJobEvent:
+        $ref: "#/components/messages/IngestJobEvent"
+  auditEvents:
+    address: internal.audit_events
+    description: Rows persisted in the audit_events PostgreSQL table.
     messages:
-      corpusPublished:
-        $ref: "#/components/messages/CorpusPublished"
+      auditEvent:
+        $ref: "#/components/messages/AuditEvent"
+operations: {}
 components:
   messages:
-    IngestStateChanged:
+    IngestJobEvent:
+      name: IngestJobEvent
+      title: Persisted ingest job event
       payload:
-        type: object
-        required: [jobId, previousState, state, occurredAt]
-        properties:
-          jobId: {type: string, format: uuid}
-          previousState: {type: string}
-          state: {type: string}
-          occurredAt: {type: string, format: date-time}
-    CorpusPublished:
+        $ref: "#/components/schemas/IngestJobEventPayload"
+    AuditEvent:
+      name: AuditEvent
+      title: Persisted audit event
       payload:
-        type: object
-        required: [spaceId, previousRevision, revision, reviewId]
-        properties:
-          spaceId: {type: string, format: uuid}
-          previousRevision: {type: string}
-          revision: {type: string}
-          reviewId: {type: string, format: uuid}
+        $ref: "#/components/schemas/AuditEventPayload"
+  schemas:
+    IngestJobEventPayload:
+      type: object
+      required: [jobId, state, eventType, payload, createdAt]
+      properties:
+        jobId: { type: string, format: uuid }
+        state: { type: string }
+        eventType: { type: string }
+        payload:
+          type: object
+          additionalProperties: true
+        createdAt: { type: string, format: date-time }
+    AuditEventPayload:
+      type: object
+      required: [action, resourceType, metadata, createdAt]
+      properties:
+        id: { type: integer }
+        organizationId:
+          type: [string, "null"]
+          format: uuid
+        spaceId:
+          type: [string, "null"]
+          format: uuid
+        actorId:
+          type: [string, "null"]
+          format: uuid
+        action: { type: string }
+        resourceType: { type: string }
+        resourceId:
+          type: [string, "null"]
+        metadata:
+          type: object
+          additionalProperties: true
+        traceId:
+          type: [string, "null"]
+        createdAt: { type: string, format: date-time }

@@ -1,19 +1,685 @@
 openapi: 3.1.0
 info:
   title: Architecture Knowledge Platform API
-  version: 0.1.0
+  version: 0.2.0
+  x-akp-write-idempotency: >
+    Mutating POST operations accept Idempotency-Key and MCP write tools require
+    it. POST /v1/auth/session is intentionally exempt because it creates a
+    Set-Cookie response that cannot be safely replayed.
+  description: >
+    HTTP contract for the routes registered by the current Fastify runtime.
+    All /v1 operations require a scoped bearer API token or an unexpired
+    HttpOnly web session and enforce the permission recorded in
+    x-akp-permission. Session-authenticated writes also require X-CSRF-Token.
 servers:
-  - url: http://127.0.0.1:8080
+  - url: http://127.0.0.1:18080
+    description: Local development default
+security:
+  - bearerAuth: []
+  - cookieAuth: []
+tags:
+  - { name: Health }
+  - { name: Authentication }
+  - { name: Retrieval }
+  - { name: Knowledge }
+  - { name: Sources }
+  - { name: Ingestion }
+  - { name: Reviews }
+  - { name: Governance }
+  - { name: Evaluation }
+  - { name: Projects }
+  - { name: Sessions }
 paths:
+  /health/liveness:
+    get:
+      tags: [Health]
+      operationId: liveness
+      security: []
+      responses:
+        "200":
+          description: Process is running
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
   /health/readiness:
     get:
+      tags: [Health]
       operationId: readiness
+      security: []
       responses:
-        "200": {description: Ready}
-        "503": {description: Not ready}
+        "200":
+          description: Database, raw object store and extractor are reachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Readiness"
+        "503":
+          description: Database is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Readiness"
+
+  /v1/status:
+    get:
+      tags: [Knowledge]
+      operationId: getPlatformStatus
+      x-akp-permission: knowledge:read
+      responses:
+        "200":
+          description: Authorized corpus and capability status
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/auth/session:
+    get:
+      tags: [Authentication]
+      operationId: inspectWebSession
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [Authentication]
+      operationId: createWebSession
+      x-akp-idempotency-exempt: true
+      description: >
+        Exchanges an authorized bearer token for an opaque HttpOnly session and
+        CSRF token. This endpoint intentionally does not use Idempotency-Key:
+        each exchange creates fresh Set-Cookie credentials and cannot replay a
+        prior response safely. The session stores the effective token scopes
+        and intersects them with current memberships on each request.
+      security:
+        - bearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                durationMinutes:
+                  { type: integer, minimum: 5, maximum: 720, default: 480 }
+      responses:
+        "201": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/auth/session/revoke:
+    post:
+      tags: [Authentication]
+      operationId: revokeWebSession
+      security:
+        - cookieAuth: []
+      parameters:
+        - { $ref: "#/components/parameters/CsrfToken" }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
   /v1/search:
     post:
+      tags: [Retrieval]
       operationId: searchKnowledge
+      x-akp-permission: knowledge:read
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchRequest"
+      responses:
+        "200":
+          description: Retrieval plan, active channels, index revisions and ranked hits
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  [mode, intent, plan, degraded, channels, hits, noAnswer]
+                properties:
+                  mode: { $ref: "#/components/schemas/SearchMode" }
+                  intent: { type: string }
+                  plan: { type: object, additionalProperties: true }
+                  degraded: { type: boolean }
+                  channels:
+                    type: array
+                    items: { type: string }
+                  indexRevisions:
+                    type: [object, "null"]
+                    additionalProperties: true
+                  hits:
+                    type: array
+                    items: { $ref: "#/components/schemas/SearchHit" }
+                  noAnswer:
+                    oneOf:
+                      - type: "null"
+                      - type: object
+                        required: [reason, guidance]
+                        properties:
+                          reason: { type: string }
+                          guidance: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/context:
+    post:
+      tags: [Retrieval]
+      operationId: buildContextPacket
+      x-akp-permission: knowledge:read
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/SearchRequest" }
+                - type: object
+                  properties:
+                    intent: { type: string }
+                    maxTokens:
+                      {
+                        type: integer,
+                        minimum: 256,
+                        maximum: 32000,
+                        default: 6000,
+                      }
+      responses:
+        "200":
+          description: Persisted, revisioned and token-bounded ContextPacket
+          content:
+            application/json:
+              schema:
+                $ref: "./context-packet.schema.json"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/sessions:
+    get:
+      tags: [Sessions]
+      operationId: listAgentSessions
+      x-akp-permission: knowledge:read
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Sessions]
+      operationId: startAgentSession
+      x-akp-permission: knowledge:read
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [purpose]
+              properties:
+                purpose: { type: string, minLength: 1 }
+                contextBudget:
+                  { type: integer, minimum: 256, maximum: 32000, default: 6000 }
+                projectId: { type: string, format: uuid }
+                spaceId: { type: string, format: uuid }
+      responses:
+        "201": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/context-packs/{id}:
+    get:
+      tags: [Knowledge]
+      operationId: getContextPack
+      x-akp-permission: knowledge:read
+      parameters:
+        - { $ref: "#/components/parameters/StableId" }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/documents/{id}:
+    get:
+      tags: [Knowledge]
+      operationId: getDocument
+      x-akp-permission: knowledge:read
+      parameters:
+        - { $ref: "#/components/parameters/StableId" }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/documents/{id}/evidence:
+    get:
+      tags: [Knowledge]
+      operationId: getDocumentEvidence
+      x-akp-permission: source:read
+      parameters:
+        - { $ref: "#/components/parameters/StableId" }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/impact/{id}:
+    get:
+      tags: [Knowledge]
+      operationId: analyzeKnowledgeImpact
+      x-akp-permission: knowledge:read
+      parameters:
+        - { $ref: "#/components/parameters/StableId" }
+        - in: query
+          name: depth
+          schema: { type: integer, minimum: 1, maximum: 5, default: 2 }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/vaults:
+    get:
+      tags: [Knowledge]
+      operationId: listVaults
+      x-akp-permission: knowledge:read
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/graph/summary:
+    get:
+      tags: [Knowledge]
+      operationId: getGraphSummary
+      x-akp-permission: knowledge:read
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/sources:
+    get:
+      tags: [Sources]
+      operationId: listSources
+      x-akp-permission: source:read
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/sources/{id}:
+    get:
+      tags: [Sources]
+      operationId: getSource
+      x-akp-permission: source:read
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/sources/{id}/retire:
+    post:
+      tags: [Governance, Sources]
+      operationId: retireSource
+      x-akp-permission: source:write
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OptionalReason"
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/ingest:
+    get:
+      tags: [Ingestion]
+      operationId: listIngestJobs
+      x-akp-permission: source:read
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Ingestion]
+      operationId: submitIngest
+      x-akp-permission: source:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IngestRequest"
+      responses:
+        "202":
+          description: Job accepted or idempotent prior response returned
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [jobId, state]
+                properties:
+                  jobId: { type: string, format: uuid }
+                  state: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/ingest/{id}:
+    get:
+      tags: [Ingestion]
+      operationId: getIngestStatus
+      x-akp-permission: source:read
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/ingest/{id}/cancel:
+    post:
+      tags: [Ingestion]
+      operationId: cancelIngest
+      x-akp-permission: source:write
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/ingest/{id}/retry:
+    post:
+      tags: [Ingestion]
+      operationId: retryIngest
+      x-akp-permission: source:write
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/projects:
+    get:
+      tags: [Projects]
+      operationId: listProjects
+      x-akp-permission: knowledge:read
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/projects/scan:
+    post:
+      tags: [Projects]
+      operationId: scanProject
+      x-akp-permission: knowledge:propose
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [slug, rootPath]
+              properties:
+                slug: { type: string, minLength: 1 }
+                rootPath: { type: string, minLength: 1 }
+                spaceId: { type: string, format: uuid }
+                commit: { type: string, pattern: "^[a-fA-F0-9]{40}$" }
+                changedSince: { type: string, minLength: 1 }
+      responses:
+        "201": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/proposals:
+    post:
+      tags: [Reviews]
+      operationId: proposeKnowledgeChange
+      x-akp-permission: knowledge:propose
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProposalRequest"
+      responses:
+        "201": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422":
+          description: Draft validation failed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/reviews:
+    get:
+      tags: [Reviews]
+      operationId: listReviews
+      x-akp-permission: knowledge:read
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/reviews/{id}:
+    get:
+      tags: [Reviews]
+      operationId: getReview
+      x-akp-permission: knowledge:read
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/reviews/{id}/submit:
+    post:
+      tags: [Reviews]
+      operationId: submitReview
+      x-akp-permission: knowledge:propose
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/reviews/{id}/decision:
+    post:
+      tags: [Reviews]
+      operationId: decideReview
+      x-akp-permission: knowledge:review
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision, reason]
+              properties:
+                decision:
+                  type: string
+                  enum: [APPROVE, REJECT, REQUEST_CHANGES]
+                reason: { type: string, minLength: 1 }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "500": { $ref: "#/components/responses/ServerError" }
+  /v1/reviews/{id}/rollback:
+    post:
+      tags: [Reviews]
+      operationId: rollbackReview
+      x-akp-permission: admin
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequiredReason"
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/reviews/{id}/comments:
+    post:
+      tags: [Reviews]
+      operationId: addReviewComment
+      x-akp-permission: knowledge:review
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: { type: string, minLength: 1 }
+                path: { type: string }
+                line: { type: integer, minimum: 1 }
+      responses:
+        "201": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/knowledge/{id}/invalidate:
+    post:
+      tags: [Governance]
+      operationId: invalidateKnowledge
+      x-akp-permission: knowledge:review
+      parameters:
+        - { $ref: "#/components/parameters/StableId" }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                severity: { type: string }
+                reason: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/knowledge/{id}/verify:
+    post:
+      tags: [Governance]
+      operationId: verifyKnowledge
+      x-akp-permission: knowledge:review
+      parameters:
+        - { $ref: "#/components/parameters/StableId" }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OptionalReason"
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/contradictions:
+    get:
+      tags: [Governance]
+      operationId: listContradictions
+      x-akp-permission: knowledge:read
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Governance]
+      operationId: createContradiction
+      x-akp-permission: knowledge:review
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [topic, documentIds]
+              properties:
+                topic: { type: string, minLength: 1 }
+                documentIds:
+                  type: array
+                  minItems: 2
+                  items: { type: string, format: uuid }
+                authority: { type: string }
+                scope: { type: string }
+      responses:
+        "201": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/contradictions/{id}/resolve:
+    post:
+      tags: [Governance]
+      operationId: resolveContradiction
+      x-akp-permission: knowledge:review
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [resolution]
+              properties:
+                resolution: { type: string, minLength: 1 }
+                documentOutcomes:
+                  type: array
+                  items:
+                    type: object
+                    required: [documentId, lifecycle]
+                    properties:
+                      documentId: { type: string, format: uuid }
+                      lifecycle: { type: string, enum: [ACTIVE, SUPERSEDED] }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/identity/check:
+    post:
+      tags: [Governance]
+      operationId: checkKnowledgeIdentity
+      x-akp-permission: knowledge:read
       requestBody:
         required: true
         content:
@@ -22,36 +688,556 @@ paths:
               type: object
               required: [query]
               properties:
-                query: {type: string}
-                limit: {type: integer, minimum: 1, maximum: 100}
-                mode:
-                  enum: [COMPILED_ONLY, SOURCE_BACKED, RAW_ONLY, PROJECT_CODE, DRAFT_INCLUDED]
+                query: { type: string, minLength: 1 }
+                spaceId: { type: string, format: uuid }
       responses:
-        "200": {description: Ranked results}
-        "400": {description: Invalid request}
-  /v1/context:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/lint/run:
     post:
-      operationId: buildContextPacket
+      tags: [Governance]
+      operationId: runKnowledgeLint
+      x-akp-permission: eval:run
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                trigger:
+                  { type: string, enum: [MANUAL, SCHEDULED], default: MANUAL }
       responses:
-        "200": {description: Context packet}
-  /v1/ingest:
-    post:
-      operationId: submitIngest
-      responses:
-        "202": {description: Job accepted}
-  /v1/ingest/{id}:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/error-book:
     get:
-      operationId: getIngestStatus
+      tags: [Governance]
+      operationId: listErrorBook
+      x-akp-permission: knowledge:read
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Governance]
+      operationId: createErrorBookEntry
+      x-akp-permission: knowledge:propose
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [errorType]
+              properties:
+                spaceId: { type: string, format: uuid }
+                errorType:
+                  type: string
+                  enum:
+                    [
+                      SOURCE_MISSED,
+                      FACT_DROPPED,
+                      WRONG_IDENTITY,
+                      DUPLICATE_PAGE,
+                      STALE_CLAIM,
+                      BROKEN_PROVENANCE,
+                      BAD_CONTEXT_PACKET,
+                      RETRIEVAL_FAILURE,
+                      INDEX_REVISION_MISMATCH,
+                      PROMPT_INJECTION,
+                      REVIEW_ESCAPE,
+                      RESTORE_FAILURE,
+                    ]
+                rootCause: { type: string }
+                correction: { type: string }
+                metadata: { type: object, additionalProperties: true }
+      responses:
+        "201": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/error-book/{id}/regression:
+    post:
+      tags: [Governance, Evaluation]
+      operationId: createErrorBookRegression
+      x-akp-permission: eval:run
       parameters:
-        - in: path
-          name: id
-          required: true
-          schema: {type: string, format: uuid}
+        - { $ref: "#/components/parameters/UuidId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query, goldDocuments]
+              properties:
+                query: { type: string, minLength: 1 }
+                category: { type: string }
+                goldDocuments:
+                  { type: array, minItems: 1, items: { type: string } }
+                mustNotInclude: { type: array, items: { type: string } }
+                critical: { type: boolean, default: true }
       responses:
-        "200": {description: Job state}
-        "404": {description: Not found}
-  /v1/reviews:
+        "201": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/error-book/{id}/resolve:
+    post:
+      tags: [Governance]
+      operationId: resolveErrorBookEntry
+      x-akp-permission: knowledge:review
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [verificationResult]
+              properties:
+                verificationResult: { type: string, minLength: 1 }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/schema/dry-run:
+    post:
+      tags: [Governance]
+      operationId: dryRunKnowledgeSchema
+      x-akp-permission: admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [candidateVersion]
+              properties:
+                spaceId: { type: string, format: uuid }
+                candidateVersion: { type: string, minLength: 1 }
+                requiredFrontmatterFields:
+                  { type: array, items: { type: string } }
+                allowedTypes: { type: array, items: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/indexes:
     get:
-      operationId: listReviews
+      tags: [Governance]
+      operationId: listIndexRevisions
+      x-akp-permission: knowledge:read
       responses:
-        "200": {description: Review queue}
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/audit-events:
+    get:
+      tags: [Governance]
+      operationId: listAuditEvents
+      x-akp-permission: admin
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+        - in: query
+          name: before
+          schema: { type: integer, minimum: 1 }
+        - in: query
+          name: action
+          schema: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/reindex:
+    post:
+      tags: [Governance]
+      operationId: reindexCanonicalCorpus
+      x-akp-permission: admin
+      x-akp-requires-unrestricted-space: true
+      description: >
+        Rebuilds derived relations, projections and lint for one authorized
+        space. The caller must have admin permission with pathPrefix null
+        (whole-space access). Use REIMPORT_AND_REBUILD only when the latest
+        read-only vault import should run before rebuilding.
+      parameters:
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReindexRequest"
+      responses:
+        "200":
+          description: Derived relations, projections and lint rebuilt.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReindexResponse"
+        "400": { $ref: "#/components/responses/ReindexSpaceRequired" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/ReindexForbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/ReindexConfirmationRequired" }
+        "500": { $ref: "#/components/responses/ServerError" }
+
+  /v1/evals:
+    get:
+      tags: [Evaluation]
+      operationId: listEvaluationRuns
+      x-akp-permission: knowledge:read
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/evals/run:
+    post:
+      tags: [Evaluation]
+      operationId: runEvaluation
+      x-akp-permission: eval:run
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/evals/benchmark:
+    post:
+      tags: [Evaluation]
+      operationId: benchmarkRetrieval
+      x-akp-permission: eval:run
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API token
+      description: >
+        Provisioned out of band with an explicit TokenScopeSet. Token scopes
+        are intersected with the user's current memberships on every request.
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: akp_session
+      description: HttpOnly session carrying the effective TokenScopeSet snapshot.
+  parameters:
+    IdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      required: true
+      description: Actor- and operation-scoped key. Reuse with a different request returns 409.
+      schema: { type: string, minLength: 8, maxLength: 200 }
+    CsrfToken:
+      in: header
+      name: X-CSRF-Token
+      required: true
+      schema: { type: string, minLength: 16 }
+    UuidId:
+      in: path
+      name: id
+      required: true
+      schema: { type: string, format: uuid }
+    StableId:
+      in: path
+      name: id
+      required: true
+      description: Database UUID, stable external ID, alias or title where supported.
+      schema: { type: string, minLength: 1 }
+  responses:
+    ObjectResponse:
+      description: Runtime response object
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Missing, expired, revoked or invalid bearer token
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Permission, space or path scope denied
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Resource not found in the authorized scope
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: Resource state, publication lock or optimistic revision conflict
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ServerError:
+      description: Publication or internal runtime failure
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ReindexSpaceRequired:
+      description: A target space is required for the rebuild.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [code]
+            properties:
+              code:
+                type: string
+                enum: [REINDEX_SPACE_REQUIRED, INVALID_IDEMPOTENCY_KEY]
+            additionalProperties: true
+    ReindexForbidden:
+      description: Admin whole-space access is required for the target space.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [code]
+            properties:
+              code:
+                type: string
+                enum: [PERMISSION_DENIED, PATH_SCOPE_DENIED]
+            additionalProperties: true
+    ReindexConfirmationRequired:
+      description: Confirmation must match the requested rebuild mode.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [code, confirmation]
+            properties:
+              code: { type: string, const: REINDEX_CONFIRMATION_REQUIRED }
+              confirmation:
+                type: string
+                enum: [REBUILD_DERIVED_PROJECTIONS, REIMPORT_AND_REBUILD]
+  schemas:
+    Error:
+      type: object
+      required: [code]
+      properties:
+        code: { type: string }
+      additionalProperties: true
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, const: UP }
+    Readiness:
+      type: object
+      required: [status, database, rawObjectStore, extractor]
+      properties:
+        status: { type: string, enum: [UP, DOWN] }
+        database: { type: boolean }
+        rawObjectStore: { type: boolean }
+        extractor: { type: boolean }
+    SearchMode:
+      type: string
+      enum:
+        [COMPILED_ONLY, SOURCE_BACKED, RAW_ONLY, PROJECT_CODE, DRAFT_INCLUDED]
+    TrustTier:
+      type: string
+      enum: [UNVERIFIED, MACHINE_SUPPORTED, HUMAN_REVIEWED, ATTESTED]
+    Lifecycle:
+      type: string
+      enum: [DRAFT, ACTIVE, DISPUTED, SUPERSEDED, ARCHIVED, DELETED_TOMBSTONE]
+    SearchRequest:
+      type: object
+      required: [query]
+      properties:
+        query: { type: string, minLength: 1 }
+        organizationId: { type: string, format: uuid }
+        spaceId: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        types:
+          type: array
+          items: { type: string }
+          default: []
+        minimumTrust:
+          allOf:
+            - { $ref: "#/components/schemas/TrustTier" }
+          default: MACHINE_SUPPORTED
+        mode:
+          allOf:
+            - { $ref: "#/components/schemas/SearchMode" }
+          default: SOURCE_BACKED
+        limit: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    SearchHit:
+      type: object
+      required:
+        [
+          documentId,
+          revision,
+          title,
+          type,
+          trust,
+          lifecycle,
+          score,
+          reasons,
+          excerpt,
+          citations,
+        ]
+      properties:
+        documentId: { type: string, format: uuid }
+        unitId: { type: string, format: uuid }
+        unitType: { type: string }
+        revision: { type: string }
+        title: { type: string }
+        type: { type: string }
+        trust: { $ref: "#/components/schemas/TrustTier" }
+        lifecycle: { $ref: "#/components/schemas/Lifecycle" }
+        score: { type: number }
+        reasons:
+          type: array
+          items: { type: string }
+        excerpt: { type: string }
+        citations:
+          type: array
+          items: { type: string }
+        warnings:
+          type: array
+          items: { type: string }
+    IngestRequest:
+      type: object
+      required: [spaceId, sourceUri]
+      properties:
+        spaceId: { type: string, format: uuid }
+        sourceUri: { type: string, minLength: 1 }
+        expectedSha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        title: { type: string }
+        mediaType: { type: string }
+        policy:
+          type: string
+          enum: [REVIEW_REQUIRED, ALLOW_LOW_RISK_AUTO_APPROVAL]
+          default: REVIEW_REQUIRED
+        idempotencyKey: { type: string, minLength: 8, maxLength: 200 }
+    ProposalRequest:
+      type: object
+      required: [changes]
+      properties:
+        spaceId: { type: string, format: uuid }
+        summary: { type: string }
+        changes:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [path, content]
+            properties:
+              path: { type: string, minLength: 1 }
+              content: { type: string }
+              reason: { type: string }
+    OptionalReason:
+      type: object
+      properties:
+        reason: { type: string }
+    RequiredReason:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1 }
+    TokenScope:
+      type: object
+      additionalProperties: false
+      required: [spaceId, pathPrefix, permissions]
+      description: >
+        One least-privilege authorization tuple. pathPrefix null means the
+        whole space; a string is a non-empty relative path without dot
+        segments or empty path segments. Paths are canonicalized with forward
+        slashes before authorization.
+      properties:
+        spaceId: { type: string, format: uuid }
+        pathPrefix:
+          oneOf:
+            - type: "null"
+            - type: string
+              minLength: 1
+              pattern: "^(?!/)(?!.*//)(?!.*(?:^|/)(?:\\.{1,2})(?:/|$))[^/]+(?:/[^/]+)*$"
+        permissions:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              [
+                knowledge:read,
+                source:read,
+                source:write,
+                knowledge:propose,
+                knowledge:review,
+                eval:run,
+                admin,
+              ]
+    TokenScopeSet:
+      type: object
+      additionalProperties: false
+      required: [spaces]
+      properties:
+        spaces:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/TokenScope" }
+    ReindexRequest:
+      type: object
+      additionalProperties: false
+      required: [spaceId, confirm]
+      properties:
+        spaceId: { type: string, format: uuid }
+        confirm:
+          type: string
+          enum: [REBUILD_DERIVED_PROJECTIONS, REIMPORT_AND_REBUILD]
+        reimportVault:
+          type: boolean
+          default: false
+          description: Run the latest read-only vault import before rebuilding.
+      allOf:
+        - if:
+            properties:
+              reimportVault: { const: true }
+            required: [reimportVault]
+          then:
+            properties:
+              confirm: { const: REIMPORT_AND_REBUILD }
+        - if:
+            anyOf:
+              - not:
+                  required: [reimportVault]
+              - properties:
+                  reimportVault: { const: false }
+                required: [reimportVault]
+          then:
+            properties:
+              confirm: { const: REBUILD_DERIVED_PROJECTIONS }
+    ReindexResponse:
+      type: object
+      required: [status, imports, relationCount, projection, lint]
+      properties:
+        status:
+          type: string
+          const: REBUILT_FROM_CURRENT_CANONICAL_REVISION
+        imports:
+          { type: array, items: { type: object, additionalProperties: true } }
+        relationCount: { type: integer, minimum: 0 }
+        projection: { type: object, additionalProperties: true }
+        lint: { type: object, additionalProperties: true }

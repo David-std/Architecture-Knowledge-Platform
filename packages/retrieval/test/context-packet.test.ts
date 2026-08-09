@@ -11,7 +11,7 @@ const baseHit = {
   score: 1,
   reasons: ["gold"],
   excerpt: "CQRS",
-  citations: ["source:cqrs"]
+  citations: ["source:cqrs"],
 };
 
 describe("buildContextPacket", () => {
@@ -29,11 +29,49 @@ describe("buildContextPacket", () => {
       maxTokens: 30,
       candidates: [
         { hit: baseHit, content: "short content", kind: "rule" },
-        { hit: {...baseHit, documentId: "22222222-2222-4222-8222-222222222222"}, content: "x".repeat(1000), kind: "source" }
+        {
+          hit: {
+            ...baseHit,
+            documentId: "22222222-2222-4222-8222-222222222222",
+          },
+          content: "x".repeat(1000),
+          kind: "source",
+        },
       ],
     });
 
     expect(packet.sections).toHaveLength(1);
+    expect(packet.budget.usedTokens).toBeLessThanOrEqual(
+      packet.budget.maxTokens,
+    );
+    expect(packet.continuations).toHaveLength(1);
+    expect(packet.continuations[0]?.handle).toMatch(/^[a-f0-9]{64}$/);
     expect(packet.packetHash).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it("returns an explicit no-answer packet when no supported candidate exists", () => {
+    const packet = buildContextPacket({
+      request: {
+        query: "nonexistent architecture assertion",
+        types: [],
+        minimumTrust: "MACHINE_SUPPORTED",
+        mode: "SOURCE_BACKED",
+        limit: 20,
+      },
+      intent: "SOURCE_VERIFICATION",
+      corpusRevision: "deadbeef",
+      maxTokens: 500,
+      candidates: [],
+      gaps: ["No source-backed material matched the request."],
+    });
+
+    expect(packet.status).toBe("INSUFFICIENT_KNOWLEDGE");
+    expect(packet.sections).toEqual([]);
+    expect(packet.gaps).toEqual([
+      "No source-backed material matched the request.",
+    ]);
+    expect(packet.requiredActions).toContain(
+      "Do not claim vault authority without evidence.",
+    );
   });
 });

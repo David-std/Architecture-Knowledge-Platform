@@ -1,4 +1,9 @@
-import type { ContextPacket, IngestRequest, SearchRequest, SearchHit } from "@akp/contracts";
+import type {
+  ContextPacket,
+  IngestRequest,
+  SearchRequest,
+  SearchHit,
+} from "@akp/contracts";
 import type { JobId } from "@akp/domain";
 
 export interface SearchPort {
@@ -6,7 +11,9 @@ export interface SearchPort {
 }
 
 export interface ContextPacketPort {
-  build(request: SearchRequest & { maxTokens: number; intent: string }): Promise<ContextPacket>;
+  build(
+    request: SearchRequest & { maxTokens: number; intent: string },
+  ): Promise<ContextPacket>;
 }
 
 export interface IngestJobPort {

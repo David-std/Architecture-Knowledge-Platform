@@ -18,16 +18,20 @@ export const CompilationPlan = z.object({
   summary: z.string(),
   proposedChanges: z.array(ProposedFileChange),
   impactedDocumentIds: z.array(z.string()),
-  conflicts: z.array(z.object({
-    existingDocumentId: z.string(),
-    explanation: z.string(),
-    proposedStatus: z.enum(["DISPUTED", "SUPERSEDED", "UNCHANGED"])
-  })),
-  probes: z.array(z.object({
-    question: z.string(),
-    criticality: z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]),
-    evidenceIds: z.array(z.string()).min(1)
-  }))
+  conflicts: z.array(
+    z.object({
+      existingDocumentId: z.string(),
+      explanation: z.string(),
+      proposedStatus: z.enum(["DISPUTED", "SUPERSEDED", "UNCHANGED"]),
+    }),
+  ),
+  probes: z.array(
+    z.object({
+      question: z.string(),
+      criticality: z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]),
+      evidenceIds: z.array(z.string()).min(1),
+    }),
+  ),
 });
 export type CompilationPlan = z.infer<typeof CompilationPlan>;
 

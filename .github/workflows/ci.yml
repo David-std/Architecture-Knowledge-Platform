@@ -7,34 +7,58 @@ on:
 jobs:
   typescript:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_USER: akp
-          POSTGRES_PASSWORD: akp
-          POSTGRES_DB: akp
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U akp -d akp"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
     env:
-      DATABASE_URL: postgres://akp:akp@localhost:5432/akp
+      DATABASE_URL: postgres://akp:akp@localhost:55432/akp
+      AKP_API_TOKEN: akp-ci-integration-token-not-for-production
+      AKP_API_TOKEN_SCOPES: >-
+        {"spaces":[{"spaceId":"00000000-0000-0000-0000-000000000003","pathPrefix":null,"permissions":["knowledge:read","source:read","source:write","knowledge:propose","knowledge:review","eval:run","admin"]}]}
+      AKP_API_URL: http://127.0.0.1:8080
+      PORT: 8080
+      AKP_INGEST_ROOTS: ${{ github.workspace }}/test/fixtures
+      AKP_PROJECT_ROOTS: ${{ github.workspace }}
+      AKP_MANAGED_REPO: ${{ runner.temp }}/akp-managed-knowledge
+      AKP_EXTRACTOR_TOKEN: akp-ci-extractor-token-not-for-production
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-        with: {version: 10}
+        with: { version: 10.34.5 }
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: pnpm
-      - run: pnpm install --frozen-lockfile=false
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - run: pnpm audit --audit-level high
+      - run: pnpm exec prettier --check .
+      - run: docker compose config --quiet
+      - run: docker compose up -d --wait postgres minio extractor
+      - run: |
+          git init -b main "$AKP_MANAGED_REPO"
+          git -C "$AKP_MANAGED_REPO" config user.name "AKP CI"
+          git -C "$AKP_MANAGED_REPO" config user.email "akp-ci@localhost"
+          git -C "$AKP_MANAGED_REPO" commit --allow-empty -m "chore: initialize managed knowledge for CI"
       - run: pnpm db:migrate
+      - run: pnpm auth:provision
       - run: pnpm check
+      - run: pnpm contracts:validate
+      - run: pnpm docs:validate
       - run: pnpm build
+      - run: pnpm security:secrets
+      - run: pnpm test:integration
+      - run: pnpm akp vault import --vault-path test/fixtures/vault --read-only
+      - run: pnpm verify:runtime
+      - run: pnpm --filter @akp/api dev > api.log 2>&1 &
+      - run: |
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8080/health/readiness && exit 0
+            sleep 1
+          done
+          cat api.log
+          exit 1
+      - run: pnpm test:mcp
+      - shell: pwsh
+        run: ./scripts/backup.ps1 -OutputDirectory backups/ci
+      - shell: pwsh
+        run: ./scripts/restore-smoke.ps1 -BackupDirectory backups/ci
 
   python:
     runs-on: ubuntu-latest
@@ -44,7 +68,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: {python-version: "3.12"}
+        with: { python-version: "3.12" }
       - run: pip install -e ".[dev]"
       - run: ruff check .
       - run: pytest

@@ -1,29 +1,128 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://akp.local/schemas/context-packet.json",
+  "$id": "https://akp.local/schemas/context-packet-0.2.0.json",
+  "title": "Architecture Knowledge Platform ContextPacket",
   "type": "object",
+  "additionalProperties": false,
   "required": [
-    "packetId", "query", "intent", "corpusRevision", "generatedAt",
-    "budget", "mode", "sections", "citations", "packetHash"
+    "packetId",
+    "query",
+    "intent",
+    "corpusRevision",
+    "generatedAt",
+    "budget",
+    "mode",
+    "sections",
+    "citations",
+    "gaps",
+    "conflicts",
+    "requiredActions",
+    "packetHash"
   ],
   "properties": {
-    "packetId": {"type": "string", "format": "uuid"},
-    "query": {"type": "string"},
-    "intent": {"type": "string"},
-    "corpusRevision": {"type": "string"},
-    "generatedAt": {"type": "string", "format": "date-time"},
-    "budget": {
+    "packetId": { "type": "string", "format": "uuid" },
+    "query": { "type": "string", "minLength": 1 },
+    "intent": { "type": "string" },
+    "corpusRevision": { "type": "string", "minLength": 1 },
+    "status": {
+      "type": "string",
+      "enum": ["SUPPORTED", "INSUFFICIENT_KNOWLEDGE", "DEGRADED"]
+    },
+    "indexRevisions": {
       "type": "object",
-      "required": ["maxTokens", "usedTokens"],
-      "properties": {
-        "maxTokens": {"type": "integer", "minimum": 1},
-        "usedTokens": {"type": "integer", "minimum": 0}
+      "additionalProperties": {
+        "type": ["string", "null"]
       }
     },
-    "sections": {"type": "array"},
-    "citations": {"type": "array", "items": {"type": "string"}},
-    "gaps": {"type": "array", "items": {"type": "string"}},
-    "conflicts": {"type": "array", "items": {"type": "string"}},
-    "packetHash": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+    "retrievalConfiguration": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maxTokens", "usedTokens"],
+      "properties": {
+        "maxTokens": { "type": "integer", "minimum": 1 },
+        "usedTokens": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "COMPILED_ONLY",
+        "SOURCE_BACKED",
+        "RAW_ONLY",
+        "PROJECT_CODE",
+        "DRAFT_INCLUDED"
+      ]
+    },
+    "sections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "title", "content", "reason"],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "rule",
+              "workflow",
+              "concept",
+              "profile",
+              "example",
+              "evidence",
+              "source"
+            ]
+          },
+          "title": { "type": "string" },
+          "content": { "type": "string" },
+          "documentId": { "type": "string", "format": "uuid" },
+          "unitId": { "type": "string", "format": "uuid" },
+          "retrievalChannels": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "revision": { "type": "string" },
+          "score": { "type": "number" },
+          "reason": { "type": "string" }
+        }
+      }
+    },
+    "citations": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "gaps": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "conflicts": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "requiredActions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "continuations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["handle", "reason", "remainingTokens"],
+        "properties": {
+          "handle": { "type": "string", "minLength": 1 },
+          "reason": { "type": "string" },
+          "remainingTokens": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "packetHash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
   }
 }

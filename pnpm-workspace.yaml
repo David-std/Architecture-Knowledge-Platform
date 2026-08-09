@@ -1,3 +1,20 @@
 packages:
   - apps/*
   - packages/*
+
+verifyDepsBeforeRun: warn
+linkWorkspacePackages: true
+overrides:
+  postcss: 8.5.25
+  sharp: 0.35.3
+allowBuilds:
+  esbuild: true
+  sharp: true
+minimumReleaseAgeExclude:
+  - "@fastify/rate-limit@11.2.0"
+  - "postcss@8.5.25"
+
+peerDependencyRules:
+  allowedVersions:
+    "@emnapi/core": ">=1.0.0"
+    "@emnapi/runtime": ">=1.0.0"

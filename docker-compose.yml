@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: akp
       POSTGRES_DB: akp
     ports:
-      - "5432:5432"
+      - "127.0.0.1:${AKP_POSTGRES_PORT:-55432}:5432"
     volumes:
       - akp_postgres:/var/lib/postgresql/data
     healthcheck:
@@ -20,10 +20,10 @@ services:
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: akp
-      MINIO_ROOT_PASSWORD: change-me
+      MINIO_ROOT_PASSWORD: ${AKP_RAW_SECRET_KEY:-local-development-only-change-me}
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:${AKP_MINIO_API_PORT:-19000}:9000"
+      - "127.0.0.1:${AKP_MINIO_CONSOLE_PORT:-19001}:9001"
     volumes:
       - akp_minio:/data
 
@@ -31,8 +31,9 @@ services:
     build: ./apps/extractor
     environment:
       AKP_RAW_ENDPOINT: http://minio:9000
+      AKP_EXTRACTOR_TOKEN: ${AKP_EXTRACTOR_TOKEN:-local-extractor-development-token}
     ports:
-      - "8090:8090"
+      - "127.0.0.1:8090:8090"
 
 volumes:
   akp_postgres:

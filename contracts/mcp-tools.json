@@ -1,16 +1,174 @@
 {
-  "version": "0.1.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "name": "architecture-knowledge-platform",
+  "version": "0.2.0",
+  "transports": ["stdio", "streamable-http"],
   "tools": [
-    {"name": "akp_status", "permission": "knowledge:read", "mutates": false},
-    {"name": "akp_search", "permission": "knowledge:read", "mutates": false},
-    {"name": "akp_build_context", "permission": "knowledge:read", "mutates": false},
-    {"name": "akp_get_document", "permission": "knowledge:read", "mutates": false},
-    {"name": "akp_get_source_evidence", "permission": "source:read", "mutates": false},
-    {"name": "akp_analyze_impact", "permission": "knowledge:read", "mutates": false},
-    {"name": "akp_submit_source", "permission": "source:write", "mutates": true},
-    {"name": "akp_propose_knowledge_change", "permission": "knowledge:propose", "mutates": true},
-    {"name": "akp_validate_draft", "permission": "knowledge:propose", "mutates": false},
-    {"name": "akp_approve_review", "permission": "knowledge:review", "mutates": true},
-    {"name": "akp_run_eval", "permission": "eval:run", "mutates": true}
+    {
+      "name": "akp_status",
+      "permission": "knowledge:read",
+      "mutates": false,
+      "http": { "method": "GET", "path": "/v1/status" }
+    },
+    {
+      "name": "akp_start_session",
+      "permission": "knowledge:read",
+      "mutates": true,
+      "requiresIdempotencyKey": true,
+      "http": { "method": "POST", "path": "/v1/sessions" }
+    },
+    {
+      "name": "akp_search",
+      "permission": "knowledge:read",
+      "mutates": false,
+      "http": { "method": "POST", "path": "/v1/search" }
+    },
+    {
+      "name": "akp_build_context",
+      "permission": "knowledge:read",
+      "mutates": false,
+      "sideEffects": ["persists_context_packet"],
+      "http": { "method": "POST", "path": "/v1/context" }
+    },
+    {
+      "name": "akp_get_document",
+      "permission": "knowledge:read",
+      "mutates": false,
+      "http": { "method": "GET", "path": "/v1/documents/{id}" }
+    },
+    {
+      "name": "akp_get_source_evidence",
+      "permission": "source:read",
+      "mutates": false,
+      "http": { "method": "GET", "path": "/v1/documents/{id}/evidence" }
+    },
+    {
+      "name": "akp_get_context_pack",
+      "permission": "knowledge:read",
+      "mutates": false,
+      "http": { "method": "GET", "path": "/v1/context-packs/{id}" }
+    },
+    {
+      "name": "akp_analyze_impact",
+      "permission": "knowledge:read",
+      "mutates": false,
+      "http": { "method": "GET", "path": "/v1/impact/{id}" }
+    },
+    {
+      "name": "akp_submit_source",
+      "permission": "source:write",
+      "mutates": true,
+      "requiresIdempotencyKey": true,
+      "http": { "method": "POST", "path": "/v1/ingest" }
+    },
+    {
+      "name": "akp_ingest_status",
+      "permission": "source:read",
+      "mutates": false,
+      "http": { "method": "GET", "path": "/v1/ingest/{id}" }
+    },
+    {
+      "name": "akp_propose_knowledge_change",
+      "permission": "knowledge:propose",
+      "mutates": true,
+      "requiresIdempotencyKey": true,
+      "http": { "method": "POST", "path": "/v1/proposals" }
+    },
+    {
+      "name": "akp_validate_draft",
+      "permission": "knowledge:read",
+      "mutates": false,
+      "http": { "method": "GET", "path": "/v1/reviews/{id}" }
+    },
+    {
+      "name": "akp_submit_review",
+      "permission": "knowledge:propose",
+      "mutates": true,
+      "requiresIdempotencyKey": true,
+      "http": { "method": "POST", "path": "/v1/reviews/{id}/submit" }
+    },
+    {
+      "name": "akp_approve_review",
+      "permission": "knowledge:review",
+      "mutates": true,
+      "requiresIdempotencyKey": true,
+      "http": { "method": "POST", "path": "/v1/reviews/{id}/decision" }
+    },
+    {
+      "name": "akp_reject_review",
+      "permission": "knowledge:review",
+      "mutates": true,
+      "requiresIdempotencyKey": true,
+      "http": { "method": "POST", "path": "/v1/reviews/{id}/decision" }
+    },
+    {
+      "name": "akp_run_eval",
+      "permission": "eval:run",
+      "mutates": true,
+      "requiresIdempotencyKey": true,
+      "http": { "method": "POST", "path": "/v1/evals/run" }
+    },
+    {
+      "name": "akp_reindex",
+      "permission": "admin",
+      "mutates": true,
+      "requiresIdempotencyKey": true,
+      "description": "Rebuild one whole authorized space; admin pathPrefix must be null.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["spaceId", "confirm", "idempotencyKey"],
+        "properties": {
+          "spaceId": { "type": "string", "format": "uuid" },
+          "confirm": {
+            "type": "string",
+            "enum": ["REBUILD_DERIVED_PROJECTIONS", "REIMPORT_AND_REBUILD"]
+          },
+          "reimportVault": { "type": "boolean", "default": false },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 200
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": { "reimportVault": { "const": true } },
+              "required": ["reimportVault"]
+            },
+            "then": {
+              "properties": {
+                "confirm": { "const": "REIMPORT_AND_REBUILD" }
+              }
+            }
+          },
+          {
+            "if": {
+              "anyOf": [
+                { "not": { "required": ["reimportVault"] } },
+                {
+                  "properties": { "reimportVault": { "const": false } },
+                  "required": ["reimportVault"]
+                }
+              ]
+            },
+            "then": {
+              "properties": {
+                "confirm": { "const": "REBUILD_DERIVED_PROJECTIONS" }
+              }
+            }
+          }
+        ]
+      },
+      "http": { "method": "POST", "path": "/v1/reindex" }
+    },
+    {
+      "name": "akp_benchmark_retrieval",
+      "permission": "eval:run",
+      "mutates": true,
+      "requiresIdempotencyKey": true,
+      "http": { "method": "POST", "path": "/v1/evals/benchmark" }
+    }
   ]
 }

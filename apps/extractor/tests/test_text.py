@@ -1,5 +1,7 @@
 from pathlib import Path
+
 from app.extractors.text import extract_text
+
 
 def test_extract_text(tmp_path: Path) -> None:
     source = tmp_path / "source.md"

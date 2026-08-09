@@ -21,12 +21,18 @@ export function reciprocalRankFusion(
   for (const list of lists) {
     for (const item of list) {
       if (item.rank < 1) throw new Error("rank must start at 1");
-      const current = scores.get(item.id) ?? { id: item.id, score: 0, reasons: [] };
+      const current = scores.get(item.id) ?? {
+        id: item.id,
+        score: 0,
+        reasons: [],
+      };
       current.score += (item.weight ?? 1) / (k + item.rank);
       current.reasons.push(item.reason);
       scores.set(item.id, current);
     }
   }
 
-  return [...scores.values()].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+  return [...scores.values()].sort(
+    (a, b) => b.score - a.score || a.id.localeCompare(b.id),
+  );
 }

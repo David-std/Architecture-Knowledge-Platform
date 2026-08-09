@@ -15,6 +15,8 @@ describe("reciprocalRankFusion", () => {
     ]);
 
     expect(result[0]?.id).toBe("b");
-    expect(result[0]?.reasons).toEqual(expect.arrayContaining(["lexical", "graph"]));
+    expect(result[0]?.reasons).toEqual(
+      expect.arrayContaining(["lexical", "graph"]),
+    );
   });
 });

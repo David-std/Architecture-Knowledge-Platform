@@ -42,10 +42,13 @@ const transitions: Readonly<Record<IngestState, readonly IngestState[]>> = {
   FAILED: [],
   CANCELLED: [],
   NO_MATERIAL: [],
-  QUARANTINED: ["NORMALIZING", "CANCELLED"]
+  QUARANTINED: ["NORMALIZING", "CANCELLED"],
 };
 
-export function transitionIngest(current: IngestState, next: IngestState): IngestState {
+export function transitionIngest(
+  current: IngestState,
+  next: IngestState,
+): IngestState {
   if (!transitions[current].includes(next)) {
     throw new Error(`Invalid ingest transition: ${current} -> ${next}`);
   }

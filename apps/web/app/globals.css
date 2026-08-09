@@ -1,0 +1,146 @@
+:root {
+  color-scheme: dark;
+  --bg: #0b1020;
+  --panel: #121a2e;
+  --panel-2: #19233c;
+  --text: #edf2ff;
+  --muted: #9eacc9;
+  --accent: #70d6c1;
+  --line: #2b3858;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+}
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+.shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 250px 1fr;
+}
+nav {
+  padding: 28px 22px;
+  border-right: 1px solid var(--line);
+  background: #0d1426;
+}
+nav h1 {
+  font-size: 1rem;
+  letter-spacing: 0.04em;
+  margin: 0 0 24px;
+}
+nav a {
+  display: block;
+  padding: 9px 10px;
+  border-radius: 8px;
+  color: var(--muted);
+}
+nav a:hover {
+  background: var(--panel-2);
+  color: var(--text);
+  text-decoration: none;
+}
+main {
+  width: min(1180px, 100%);
+  padding: 38px;
+}
+h1,
+h2,
+h3 {
+  line-height: 1.2;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 18px;
+}
+.muted {
+  color: var(--muted);
+}
+.metric {
+  font-size: 2rem;
+  font-weight: 750;
+  margin: 4px 0;
+}
+.badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.78rem;
+  margin-right: 6px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--panel);
+}
+th,
+td {
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  padding: 11px;
+  vertical-align: top;
+}
+input,
+select,
+button {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--panel);
+  color: var(--text);
+}
+input {
+  min-width: 360px;
+}
+button {
+  background: var(--accent);
+  color: #07110f;
+  font-weight: 700;
+  cursor: pointer;
+}
+pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #070b15;
+  padding: 16px;
+  border-radius: 9px;
+  overflow: auto;
+}
+@media (max-width: 760px) {
+  .shell {
+    grid-template-columns: 1fr;
+  }
+  nav {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  nav a {
+    display: inline-block;
+  }
+  main {
+    padding: 22px;
+  }
+  input {
+    min-width: 0;
+    width: 100%;
+  }
+}

@@ -32,8 +32,12 @@ export function decideApproval(input: ApprovalInput): ApprovalDecision {
     return {
       decision: "REJECT",
       reasons: [
-        ...(input.validationErrors > 0 ? ["Validation errors are present."] : []),
-        ...(input.criticalProbeFailures > 0 ? ["Critical compilation probes failed."] : []),
+        ...(input.validationErrors > 0
+          ? ["Validation errors are present."]
+          : []),
+        ...(input.criticalProbeFailures > 0
+          ? ["Critical compilation probes failed."]
+          : []),
       ],
     };
   }

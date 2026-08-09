@@ -1,15 +1,17 @@
 import matter from "gray-matter";
 import { z } from "zod";
 
-const Frontmatter = z.object({
-  type: z.string().min(1),
-  title: z.string().min(1).optional(),
-  description: z.string().min(1).optional(),
-  status: z.string().min(1),
-  knowledge_layer: z.string().min(1),
-  id: z.string().min(1).optional(),
-  sources: z.array(z.unknown()).optional(),
-}).passthrough();
+const Frontmatter = z
+  .object({
+    type: z.string().min(1),
+    title: z.string().min(1).optional(),
+    description: z.string().min(1).optional(),
+    status: z.string().min(1),
+    knowledge_layer: z.string().min(1),
+    id: z.string().min(1).optional(),
+    sources: z.array(z.unknown()).optional(),
+  })
+  .passthrough();
 
 export interface ValidationIssue {
   code: string;
@@ -23,7 +25,9 @@ export function validateMarkdownDocument(markdown: string): ValidationIssue[] {
   try {
     parsed = matter(markdown);
   } catch (error) {
-    return [{ code: "FRONTMATTER_PARSE", severity: "ERROR", message: String(error) }];
+    return [
+      { code: "FRONTMATTER_PARSE", severity: "ERROR", message: String(error) },
+    ];
   }
 
   const result = Frontmatter.safeParse(parsed.data);

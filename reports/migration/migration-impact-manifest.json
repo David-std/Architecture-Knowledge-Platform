@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "1.0",
+  "sourceVault": "C:\\Users\\david\\Documents\\Architecture-Knowledge-System",
+  "readOnly": true,
+  "sourceRevision": "snapshot:0e65e61ea31f0c1b9d135ec9fc5a822fd13db7bd4b470b772c935f2007a1ac34",
+  "importRunId": "8e579e4c-e852-46cf-895f-dfebcf6372cf",
+  "sourceFilesModified": 0,
+  "markdownFiles": 548,
+  "operationalDocuments": 361,
+  "rawDocuments": 187,
+  "archivedDocuments": 142,
+  "curatedRecoveryDocuments": 10,
+  "stableOperationalIds": 354,
+  "relations": {
+    "related_to": 930,
+    "derives_from": 211,
+    "requires": 51
+  },
+  "warnings": {
+    "unresolvedLinks": 100,
+    "acquisitionBacklogsQuarantined": 6
+  },
+  "errors": 0
+}
