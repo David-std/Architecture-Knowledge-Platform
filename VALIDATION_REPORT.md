@@ -4,7 +4,8 @@
   container; PostgreSQL 16 + pgvector; MinIO.
 - Target baseline: `v0.1.17-knowledge-baseline`
 - Report date: 2026-08-08 (America/Bogota)
-- Functional baseline commit/tag: `7daa261c446100b50bc985d60f199299291dfe2e` / `v0.1.17-knowledge-baseline`.\n- Private vault snapshot SHA-256: `3f1c923e832ad31735b63c86d0c85938af733a55020ebce8564f6b0cdb22e146`.
+- Functional baseline commit/tag: `7daa261c446100b50bc985d60f199299291dfe2e` / `v0.1.17-knowledge-baseline`.
+- Private vault snapshot SHA-256: `3f1c923e832ad31735b63c86d0c85938af733a55020ebce8564f6b0cdb22e146`.
 
 `PASS` denotes an observed command or integration outcome. Historical evidence
 is retained only where it remains useful; this report does not promote earlier

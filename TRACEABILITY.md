@@ -16,4 +16,6 @@
 | Backup/restore                 | v3 PowerShell backup and isolated restore                | 552 documents, exact 12 migrations, 22 MinIO entries and Git bundle verified |
 | Documentation and contracts    | OpenAPI, AsyncAPI, MCP schema, ADR/runbooks              | validators: 46 paths, 2 channels, 18 tools, 30 Markdown                      |
 
-## Closure trace\n\nThe read-only vault validator/eval outputs, deterministic manifest, private ZIP, staged private-file audit, functional commit and annotated tag have been recorded at closure. `PROJECT_STATE.md` holds the exact vault ZIP, manifest and aggregate SHA-256 values. Remaining entries in `REMAINING_REAL_GAPS.md` are genuine limits rather than missing release evidence.
+## Closure trace
+
+The read-only vault validator/eval outputs, deterministic manifest, private ZIP, staged private-file audit, functional commit and annotated tag have been recorded at closure. `PROJECT_STATE.md` holds the exact vault ZIP, manifest and aggregate SHA-256 values. Remaining entries in `REMAINING_REAL_GAPS.md` are genuine limits rather than missing release evidence.

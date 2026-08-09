@@ -46,4 +46,6 @@ agents and reviewers.
    file. The clean Python 3.12 run is reproducible at the command level but not
    a fully pinned supply-chain guarantee.
 
-## Closure record\n\nThe 30 vault validators/evals, deterministic 872-file manifest, private ZIP, staged private-file audit, final functional commit and annotated `v0.1.17-knowledge-baseline` tag were completed at baseline closure. The items above remain deliberately visible because they are real product or assurance limits, not release placeholders.
+## Closure record
+
+The 30 vault validators/evals, deterministic 872-file manifest, private ZIP, staged private-file audit, final functional commit and annotated `v0.1.17-knowledge-baseline` tag were completed at baseline closure. The items above remain deliberately visible because they are real product or assurance limits, not release placeholders.

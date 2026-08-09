@@ -8,7 +8,12 @@
 - External vault: `C:\Users\david\Documents\Architecture-Knowledge-System`
   (read-only import; never mutated by the platform)
 - Managed corpus used for publication tests: `C:\tmp\akp-managed-knowledge-v2`
-- Functional baseline commit: `7daa261c446100b50bc985d60f199299291dfe2e`\n- Annotated tag: `v0.1.17-knowledge-baseline`\n- Private vault snapshot: `backups\\v0.1.17-knowledge-baseline-20260808\\architecture-knowledge-system-v0.1.17-knowledge-baseline-20260808.zip`\n- Vault snapshot SHA-256: `3f1c923e832ad31735b63c86d0c85938af733a55020ebce8564f6b0cdb22e146`\n- Vault manifest SHA-256: `a1c00872166cf652bfdd78a601013f6e6bee47807d74ecbb23402f167a398808`\n- Vault aggregate SHA-256: `204ba71e275ef877647b848d5f27c9c14b0d032a6b737dd2b9b8dbc0ec25b26f`
+- Functional baseline commit: `7daa261c446100b50bc985d60f199299291dfe2e`
+- Annotated tag: `v0.1.17-knowledge-baseline`
+- Private vault snapshot: `backups/v0.1.17-knowledge-baseline-20260808/architecture-knowledge-system-v0.1.17-knowledge-baseline-20260808.zip`
+- Vault snapshot SHA-256: `3f1c923e832ad31735b63c86d0c85938af733a55020ebce8564f6b0cdb22e146`
+- Vault manifest SHA-256: `a1c00872166cf652bfdd78a601013f6e6bee47807d74ecbb23402f167a398808`
+- Vault aggregate SHA-256: `204ba71e275ef877647b848d5f27c9c14b0d032a6b737dd2b9b8dbc0ec25b26f`
 
 ## Executed runtime baseline
 
