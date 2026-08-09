@@ -29,5 +29,4 @@ executed evidence; it does not erase acceptance criteria after completion.
 | 20 — State and reporting                                          | IMPLEMENTED_AND_EXECUTED | status, validation, security, gaps and traceability reconciled to 2026-08-08 evidence           |
 | 21 — Definition of Done / baseline release                        | PARTIALLY_IMPLEMENTED    | only immutable archive, private audit, commit/tag and final vault audit remain                  |
 
-`baseline-stable` may only be written after the remaining closure-only outputs
-are recorded. The present status is deliberately `release-candidate`.
+The closure outputs are recorded in `PROJECT_STATE.md` and `VALIDATION_REPORT.md`; the present status is `baseline-stable`.

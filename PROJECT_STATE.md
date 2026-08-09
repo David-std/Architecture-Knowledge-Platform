@@ -1,8 +1,6 @@
 # Project state
 
-- Status: `release-candidate` — all executable gates listed below have passed;
-  Git/tag/archive closure and the final read-only vault audit remain deliberately
-  pending at the time of this update.
+- Status: `baseline-stable` — functional evidence, read-only vault audit and private snapshot passed.
 - Target version/checkpoint: `v0.1.17-knowledge-baseline`
 - Updated: 2026-08-08 (America/Bogota)
 - Active goal: Unified Goal V2
@@ -10,7 +8,7 @@
 - External vault: `C:\Users\david\Documents\Architecture-Knowledge-System`
   (read-only import; never mutated by the platform)
 - Managed corpus used for publication tests: `C:\tmp\akp-managed-knowledge-v2`
-- Baseline Git commit/tag/archive hash: `PENDING_FINAL_CLOSURE`
+- Functional baseline commit: `7daa261c446100b50bc985d60f199299291dfe2e`\n- Annotated tag: `v0.1.17-knowledge-baseline`\n- Private vault snapshot: `backups\\v0.1.17-knowledge-baseline-20260808\\architecture-knowledge-system-v0.1.17-knowledge-baseline-20260808.zip`\n- Vault snapshot SHA-256: `3f1c923e832ad31735b63c86d0c85938af733a55020ebce8564f6b0cdb22e146`\n- Vault manifest SHA-256: `a1c00872166cf652bfdd78a601013f6e6bee47807d74ecbb23402f167a398808`\n- Vault aggregate SHA-256: `204ba71e275ef877647b848d5f27c9c14b0d032a6b737dd2b9b8dbc0ec25b26f`
 
 ## Executed runtime baseline
 
@@ -74,6 +72,4 @@ source corpus.
 
 This is a controlled local baseline, not an internet-ready multi-tenant
 service. The accepted limitations are listed in `REMAINING_REAL_GAPS.md`.
-Only the final read-only vault validators, private-file audit, commit, annotated
-tag and archive SHA-256 are outstanding release-closeout actions; no result for
-them is invented here.
+The read-only vault audit, deterministic manifest, private ZIP, staged private-file audit and annotated tag are complete. This file is a documentation-only follow-up to the tagged functional commit; product and assurance limits remain visible in `REMAINING_REAL_GAPS.md`.

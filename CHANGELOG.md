@@ -1,9 +1,8 @@
 # Changelog
 
-## v0.1.17-knowledge-baseline — release candidate, 2026-08-08
+## v0.1.17-knowledge-baseline — baseline stable, 2026-08-08
 
-Commit/tag/archive are deliberately `PENDING_FINAL_CLOSURE` until the staged
-private-file audit, immutable archive and read-only vault validation complete.
+Functional baseline commit `7daa261c446100b50bc985d60f199299291dfe2e` carries annotated tag `v0.1.17-knowledge-baseline`. The private vault ZIP is SHA-256 `3f1c923e832ad31735b63c86d0c85938af733a55020ebce8564f6b0cdb22e146`; its deterministic content manifest and aggregate hash are recorded in `PROJECT_STATE.md`.
 
 ### Closure hardening
 

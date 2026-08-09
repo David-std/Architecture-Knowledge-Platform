@@ -46,11 +46,4 @@ agents and reviewers.
    file. The clean Python 3.12 run is reproducible at the command level but not
    a fully pinned supply-chain guarantee.
 
-## Closure-only actions still pending
-
-- Run all read-only vault validators/evals against the final unchanged vault.
-- Generate a deterministic vault manifest and the private ZIP snapshot.
-- Perform staged private-file audit, commit, annotated
-  `v0.1.17-knowledge-baseline` tag and final archive SHA-256.
-
-No other unfinished work is concealed as a simple documentation placeholder.
+## Closure record\n\nThe 30 vault validators/evals, deterministic 872-file manifest, private ZIP, staged private-file audit, final functional commit and annotated `v0.1.17-knowledge-baseline` tag were completed at baseline closure. The items above remain deliberately visible because they are real product or assurance limits, not release placeholders.
