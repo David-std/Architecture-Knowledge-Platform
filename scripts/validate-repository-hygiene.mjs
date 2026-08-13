@@ -183,7 +183,10 @@ if (write) writeFileSync(path.join(root, classificationPath), payload, "utf8");
 else {
   try {
     const current = readFileSync(path.join(root, classificationPath), "utf8");
-    if (current !== payload)
+    // Git may materialize CRLF on Windows even though the canonical generated
+    // payload uses LF. Compare normalized text so a clean checkout remains
+    // reproducible across the CI/Linux and desktop/Windows environments.
+    if (current.replaceAll("\r\n", "\n") !== payload)
       failures.push(`${classificationPath} is stale; run with --write`);
   } catch {
     failures.push(`${classificationPath} is missing; run with --write`);
