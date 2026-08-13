@@ -1,5 +1,8 @@
 import pg from "pg";
 
+export * from "./vault-registry.js";
+export * from "./outbox.js";
+
 export class Postgres {
   readonly pool: pg.Pool;
 
@@ -64,6 +67,7 @@ export type KnowledgeLintTrigger =
 export interface KnowledgeLintResult {
   id: string;
   spaceId: string;
+  vaultId: string;
   trigger: KnowledgeLintTrigger;
   status: "PASSED" | "FINDINGS";
   corpusRevision: string;
@@ -73,8 +77,10 @@ export interface KnowledgeLintResult {
 export async function runKnowledgeLint(
   db: Postgres,
   spaceId: string,
+  vaultId: string,
   trigger: KnowledgeLintTrigger,
 ): Promise<KnowledgeLintResult> {
+  if (!vaultId.trim()) throw new Error("VAULT_SCOPE_REQUIRED");
   const findings = await db.pool.query<{
     code: string;
     resource_id: string;
@@ -83,61 +89,73 @@ export async function runKnowledgeLint(
     `
     select 'STALE_KNOWLEDGE'::text code,id::text resource_id,refresh_status::text detail
       from knowledge_documents
-     where space_id=$1
+     where space_id=$1 and vault_id=$2
        and lifecycle in ('ACTIVE','DISPUTED')
        and refresh_status<>'CURRENT'
     union all
     select 'OPEN_CONTRADICTION',id::text,status::text
       from contradiction_clusters
-     where space_id=$1 and status<>'RESOLVED'
+     where space_id=$1 and vault_id=$2 and status<>'RESOLVED'
     union all
     select 'DUPLICATE_EXTERNAL_ID',external_id,count(*)::text
       from knowledge_documents
-     where space_id=$1 and external_id is not null
-     group by external_id having count(*)>1
+     where space_id=$1 and vault_id=$2 and external_id is not null
+     group by vault_id,external_id having count(*)>1
     union all
     select 'UNUSED_SOURCE',s.id::text,s.status::text
       from sources s
-     where s.space_id=$1 and s.status='ACTIVE'
-       and not exists(select 1 from evidence e where e.source_id=s.id)
+     where s.space_id=$1 and s.vault_id=$2 and s.status='ACTIVE'
+       and not exists(
+         select 1 from evidence e where e.source_id=s.id and e.vault_id=$2
+       )
     union all
     select 'ORPHAN_ACTIVE_KNOWLEDGE',d.id::text,d.path::text
       from knowledge_documents d
-     where d.space_id=$1 and d.lifecycle='ACTIVE'
+     where d.space_id=$1 and d.vault_id=$2 and d.lifecycle='ACTIVE'
        and d.layer not in ('source','resource','root')
        and coalesce(d.external_id,'') not like 'RAW-%'
        and not exists(
          select 1 from knowledge_relations r
-          where r.from_document_id=d.id or r.to_document_id=d.id
+          where r.space_id=$1
+            and (r.from_document_id=d.id or r.to_document_id=d.id)
+            and exists(
+              select 1 from knowledge_documents f
+               where f.id=r.from_document_id and f.vault_id=$2
+            )
+            and exists(
+              select 1 from knowledge_documents t
+               where t.id=r.to_document_id and t.vault_id=$2
+            )
        )
     union all
     select 'REVIEW_AGE_EXCEEDED',d.id::text,d.stale_after::text
       from knowledge_documents d
-     where d.space_id=$1
+     where d.space_id=$1 and d.vault_id=$2
        and d.lifecycle in ('ACTIVE','DISPUTED')
        and d.stale_after is not null and d.stale_after < now()
     order by code,resource_id
     `,
-    [spaceId],
+    [spaceId, vaultId],
   );
   const revision = await db.pool.query(
     `
     select coalesce(
-      (select corpus_revision from index_revisions where space_id=$1),
-      (select current_revision from vaults where space_id=$1 order by last_imported_at desc limit 1),
+      (select corpus_revision from vault_index_revisions where space_id=$1 and vault_id=$2),
+      (select current_revision from vaults where space_id=$1 and id=$2),
       'unknown'
     ) revision
     `,
-    [spaceId],
+    [spaceId, vaultId],
   );
   const status = findings.rowCount ? "FINDINGS" : "PASSED";
   const inserted = await db.pool.query<{ id: string }>(
     `
-    insert into knowledge_lint_runs(space_id,trigger,corpus_revision,status,findings)
-    values($1,$2,$3,$4,$5::jsonb) returning id
+    insert into knowledge_lint_runs(space_id,vault_id,trigger,corpus_revision,status,findings)
+    values($1,$2,$3,$4,$5,$6::jsonb) returning id
     `,
     [
       spaceId,
+      vaultId,
       trigger,
       String(revision.rows[0]?.revision ?? "unknown"),
       status,
@@ -147,6 +165,7 @@ export async function runKnowledgeLint(
   return {
     id: String(inserted.rows[0]?.id),
     spaceId,
+    vaultId,
     trigger,
     status,
     corpusRevision: String(revision.rows[0]?.revision ?? "unknown"),

@@ -11,8 +11,6 @@ import {
   toPgVector,
 } from "@akp/retrieval";
 
-export const DEFAULT_SPACE_ID = "00000000-0000-0000-0000-000000000003";
-
 export type ImportSeverity = "error" | "warning";
 
 export interface ImportIssue {
@@ -697,22 +695,55 @@ export async function inspectVault(
 export async function importVaultReadOnly(
   db: Postgres,
   vaultPath: string,
-  options: { spaceId?: string; reportPath?: string } = {},
+  options: {
+    spaceId: string;
+    vaultKey?: string;
+    evalPack?: string;
+    reportPath?: string;
+  },
 ): Promise<ImportResult> {
   const inspection = await inspectVault(vaultPath);
-  const spaceId = options.spaceId ?? DEFAULT_SPACE_ID;
+  const spaceId = options.spaceId;
+  const baseKey = inspection.name
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 48);
+  const vaultKey =
+    options.vaultKey ??
+    `${baseKey || "vault"}-${sha256(inspection.canonicalPath).slice(0, 8)}`;
+  const evalPack = options.evalPack ?? "generic";
   const client = await db.pool.connect();
   try {
     await client.query("begin");
     const vaultResult = await client.query<{ id: string }>(
       `
-      insert into vaults(space_id, canonical_path, name, read_only, current_revision)
-      values ($1, $2, $3, true, $4)
-      on conflict (space_id, canonical_path)
-      do update set name = excluded.name, read_only = true, current_revision = excluded.current_revision
+      insert into vaults(
+        space_id,canonical_path,name,read_only,current_revision,vault_key,
+        local_path,eval_pack
+      )
+      values ($1,$2,$3,true,$4,$5,$2,$6::jsonb)
+      on conflict (vault_key)
+      do update set name=excluded.name,read_only=true,
+        current_revision=excluded.current_revision,local_path=excluded.local_path,
+        eval_pack=excluded.eval_pack
       returning id
       `,
-      [spaceId, inspection.canonicalPath, inspection.name, inspection.revision],
+      [
+        spaceId,
+        inspection.canonicalPath,
+        inspection.name,
+        inspection.revision,
+        vaultKey,
+        JSON.stringify({
+          name: evalPack,
+          version: "1",
+          enabled: true,
+          criticalCases: [],
+        }),
+      ],
     );
     const vaultId = vaultResult.rows[0]?.id;
     if (!vaultId) throw new Error("Could not create or resolve vault record.");
@@ -732,17 +763,7 @@ export async function importVaultReadOnly(
     );
     const runId = runResult.rows[0]?.id;
     if (!runId) throw new Error("Could not create import run.");
-    const managed = await client.query<{ current_revision: string }>(
-      `
-      select current_revision from knowledge_documents
-       where space_id=$1 and path like 'managed/%'
-       order by updated_at desc limit 1
-      `,
-      [spaceId],
-    );
-    const projectionRevision = managed.rows[0]?.current_revision
-      ? `composite:${inspection.revision}+managed:${managed.rows[0].current_revision}`
-      : inspection.revision;
+    const projectionRevision = `vault:${vaultId}:${inspection.revision}`;
 
     await client.query(
       `
@@ -760,17 +781,19 @@ export async function importVaultReadOnly(
     const embeddingGeneration = await client.query<{ id: string }>(
       `
       insert into embedding_generations(
-        space_id,provider,model,model_revision,dimensions,normalization,
+        space_id,vault_id,provider,model,model_revision,dimensions,normalization,
         configuration_version,corpus_revision,status,activated_at
       )
-      values($1,$2,$3,$4,$5,$6,$7,$8,$9,case when $9='ACTIVE' then now() else null end)
+      values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
+             case when $10='ACTIVE' then now() else null end)
       on conflict(
-        space_id,provider,model,model_revision,configuration_version,corpus_revision
+        vault_id,provider,model,model_revision,configuration_version,corpus_revision
       ) do update set status=excluded.status,activated_at=excluded.activated_at
       returning id
       `,
       [
         spaceId,
+        vaultId,
         embeddingAdapter.descriptor.provider,
         embeddingAdapter.descriptor.model,
         embeddingAdapter.descriptor.modelRevision,
@@ -795,7 +818,7 @@ export async function importVaultReadOnly(
           token_estimate, raw_links, updated_at
         )
         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,$13,$14,$15,$16::jsonb,now())
-        on conflict (space_id, path)
+        on conflict (vault_id, path) where vault_id is not null
         do update set
           vault_id = excluded.vault_id,
           external_id = excluded.external_id,
@@ -858,44 +881,66 @@ export async function importVaultReadOnly(
         databaseId,
       ]);
       const units = parseKnowledgeUnits(document.title, document.body);
+      const embeddable = units.filter((unit) => unit.embeddingEligible);
       const embeddings = await embeddingAdapter.embed(
-        units.map((unit) => unit.body),
+        embeddable.map((unit) => unit.body),
       );
-      for (let index = 0; index < units.length; index += 1) {
-        const unit = units[index];
-        const embedding = embeddings[index];
-        if (!unit || !embedding) continue;
+      const embeddingByKey = new Map(
+        embeddable.map((unit, index) => [unit.unitKey, embeddings[index]]),
+      );
+      const unitIdByKey = new Map<string, string>();
+      for (const unit of units) {
         const insertedUnit = await client.query<{ id: string }>(
           `
           insert into knowledge_units(
-            document_id,space_id,unit_key,unit_type,heading_path,body,content_hash,
-            corpus_revision,lifecycle,trust_tier,source_ids,token_estimate
+            document_id,space_id,vault_id,unit_key,unit_type,heading_path,body,content_hash,
+            corpus_revision,document_revision,lifecycle,trust_tier,source_ids,
+            token_estimate,parent_unit_id,permissions,locator,structural_order,
+            container_only,embedding_eligible
           )
-          values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+          values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,
+                 $16::jsonb,$17::jsonb,$18,$19,$20)
           returning id
           `,
           [
             databaseId,
             spaceId,
+            vaultId,
             unit.unitKey,
             unit.unitType,
             unit.headingPath,
             unit.body,
             unit.contentHash,
             projectionRevision,
+            inspection.revision,
             document.lifecycle,
             document.trustTier,
             [],
             unit.tokenEstimate,
+            unit.parentUnitKey
+              ? (unitIdByKey.get(unit.parentUnitKey) ?? null)
+              : null,
+            JSON.stringify(document.frontmatter.permissions ?? {}),
+            JSON.stringify({ ...unit.locator, path: document.relativePath }),
+            unit.structuralOrder,
+            unit.containerOnly,
+            unit.embeddingEligible,
           ],
         );
+        const insertedUnitId = insertedUnit.rows[0]?.id;
+        if (!insertedUnitId) {
+          throw new Error(`Could not insert knowledge unit ${unit.unitKey}.`);
+        }
+        unitIdByKey.set(unit.unitKey, insertedUnitId);
+        const embedding = embeddingByKey.get(unit.unitKey);
+        if (!embedding) continue;
         await client.query(
           `
           insert into unit_embeddings(unit_id,generation_id,content_hash,embedding)
           values($1,$2,$3,$4::vector)
           `,
           [
-            insertedUnit.rows[0]?.id,
+            insertedUnitId,
             generationId,
             unit.contentHash,
             toPgVector(embedding),
@@ -985,6 +1030,33 @@ export async function importVaultReadOnly(
       `,
       [
         spaceId,
+        projectionRevision,
+        process.env.AKP_VECTOR_ENABLED === "true" ? projectionRevision : null,
+        process.env.AKP_VECTOR_ENABLED === "true" ? "CONSISTENT" : "DEGRADED",
+        JSON.stringify(
+          process.env.AKP_VECTOR_ENABLED === "true"
+            ? []
+            : ["VECTOR_DISABLED_PENDING_BENCHMARK"],
+        ),
+      ],
+    );
+    await client.query(
+      `
+      insert into vault_index_revisions(
+        space_id,vault_id,corpus_revision,lexical_revision,vector_revision,
+        graph_revision,context_pack_revision,status,warnings
+      ) values($1,$2,$3,$3,$4,$3,$3,$5,$6::jsonb)
+      on conflict(space_id,vault_id) do update set
+        corpus_revision=excluded.corpus_revision,
+        lexical_revision=excluded.lexical_revision,
+        vector_revision=excluded.vector_revision,
+        graph_revision=excluded.graph_revision,
+        context_pack_revision=excluded.context_pack_revision,
+        status=excluded.status,warnings=excluded.warnings,updated_at=now()
+      `,
+      [
+        spaceId,
+        vaultId,
         projectionRevision,
         process.env.AKP_VECTOR_ENABLED === "true" ? projectionRevision : null,
         process.env.AKP_VECTOR_ENABLED === "true" ? "CONSISTENT" : "DEGRADED",

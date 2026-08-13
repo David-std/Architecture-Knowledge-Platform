@@ -1,4 +1,2 @@
-{"id":"cqrs-same-db","category":"architecture","query":"¿Puede CQRS usar la misma base de datos?","gold_documents":["cqrs-capability-model"],"must_not_include":["event-sourcing-required"],"critical":true}
 {"id":"resources-layer","category":"profile","query":"¿Resources es una quinta capa en SI730?","gold_documents":["si730-methodology-audit-detailed"],"must_not_include":["resources-is-layer"],"critical":true}
-{"id":"eventstorming-flow","category":"workflow","query":"¿Qué sigue después de descubrir domain events?","gold_documents":["WF-DDD-END-TO-END"],"critical":true}
 {"id":"vertical-slice-evidence","category":"evidence","query":"¿SI730 enseñó explícitamente Vertical Slice?","gold_documents":["claim-vertical-slice-not-course-evidence"],"must_not_include":["explicitly-taught"],"critical":true}

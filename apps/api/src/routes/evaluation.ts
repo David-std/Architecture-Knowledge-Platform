@@ -1,10 +1,16 @@
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
-import type { Postgres } from "@akp/postgres";
-import { scoreRetrieval } from "@akp/evaluation";
+import { resolveAuthorizedVaultScope, type Postgres } from "@akp/postgres";
+import { z } from "zod";
+import {
+  loadEvaluationPack,
+  RETRIEVAL_BENCHMARK_MATRIX,
+  REQUIRED_GENERIC_SLICES,
+  scoreRetrieval,
+  type GoldCase,
+} from "@akp/evaluation";
 import {
   actorOf,
   audit,
@@ -14,13 +20,56 @@ import {
 import { queryKnowledge } from "./search.js";
 import type { RetrievalExecutionOptions } from "./search.js";
 
-interface GoldCase {
-  id: string;
-  category: string;
-  query: string;
-  gold_documents: string[];
-  must_not_include?: string[];
-  critical?: boolean;
+interface EvaluatedCase {
+  slice: string;
+  expectNoAnswer: boolean;
+  noAnswerCorrect: boolean;
+  metrics: { recallAt10: number };
+}
+
+function intersectionSize(
+  left: readonly string[],
+  right: readonly string[],
+): number {
+  const rightSet = new Set(right);
+  return new Set(left.filter((value) => rightSet.has(value))).size;
+}
+
+const EvaluationTarget = z.object({
+  spaceId: z.string().uuid(),
+  vaultId: z.string().uuid(),
+  evalPack: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9-]{1,62}$/)
+    .default("generic"),
+});
+
+async function validateEvaluationTarget(
+  db: Postgres,
+  target: z.infer<typeof EvaluationTarget>,
+): Promise<boolean> {
+  const result = await db.pool.query(
+    `select eval_pack from vaults
+      where id=$1 and space_id=$2 and enabled=true`,
+    [target.vaultId, target.spaceId],
+  );
+  if (result.rows.length !== 1) return false;
+  const registered = (result.rows[0]?.eval_pack ?? {}) as Record<
+    string,
+    unknown
+  >;
+  return (
+    target.evalPack === "generic" ||
+    String(registered.name ?? "") === target.evalPack
+  );
+}
+
+function averageSlice(results: EvaluatedCase[], slice: string): number {
+  const matching = results.filter((result) => result.slice === slice);
+  return matching.length === 0
+    ? 0
+    : matching.reduce((sum, result) => sum + result.metrics.recallAt10, 0) /
+        matching.length;
 }
 
 export async function runEvaluation(
@@ -30,20 +79,22 @@ export async function runEvaluation(
     channels?: RetrievalExecutionOptions["channels"];
     allowVectorForBenchmark?: boolean;
     deterministicRerank?: boolean;
-  } = {},
-  spaceId = "00000000-0000-0000-0000-000000000003",
+  },
+  spaceId: string,
+  packName: string,
+  vaultId: string,
 ): Promise<Record<string, unknown>> {
   const root = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
     "../../../..",
   );
-  const lines = (await readFile(path.join(root, "evals/gold.jsonl"), "utf8"))
-    .split(/\r?\n/)
-    .filter(Boolean);
-  const checkedInCases = lines.map((line) => JSON.parse(line) as GoldCase);
+  const checkedInCases = await loadEvaluationPack(root, packName);
   const persisted = await db.pool.query(
-    "select id,category,query,expected,critical from eval_cases where active=true and (space_id is null or space_id=$1) order by id",
-    [spaceId],
+    `select id,category,query,expected,critical from eval_cases
+      where active=true and (space_id is null or space_id=$1)
+        and ($2::uuid is null or vault_id is null or vault_id=$2)
+      order by id`,
+    [spaceId, vaultId],
   );
   const persistedCases = persisted.rows.map((row) => {
     const expected = (row.expected ?? {}) as Record<string, unknown>;
@@ -57,6 +108,14 @@ export async function runEvaluation(
       must_not_include: Array.isArray(expected.must_not_include)
         ? expected.must_not_include.map(String)
         : [],
+      expect_no_answer: Boolean(expected.expect_no_answer),
+      ...(Array.isArray(expected.gold_evidence)
+        ? { gold_evidence: expected.gold_evidence.map(String) }
+        : {}),
+      ...(Array.isArray(expected.gold_citations)
+        ? { gold_citations: expected.gold_citations.map(String) }
+        : {}),
+      ...(typeof expected.slice === "string" ? { slice: expected.slice } : {}),
       critical: Boolean(row.critical),
     } satisfies GoldCase;
   });
@@ -76,8 +135,12 @@ export async function runEvaluation(
         mode: "SOURCE_BACKED",
         limit: 10,
         spaceId,
+        vaultId,
+        vaultIds: [vaultId],
+        federated: false,
       },
       {
+        vaultIds: [vaultId],
         ...(configuration.channels ? { channels: configuration.channels } : {}),
         ...(configuration.allowVectorForBenchmark === undefined
           ? {}
@@ -108,6 +171,14 @@ export async function runEvaluation(
     const ranked = hits.map(
       (hit) => identityById.get(hit.documentId) ?? hit.documentId,
     );
+    const metricsAt5 = scoreRetrieval(
+      {
+        caseId: testCase.id,
+        rankedDocumentIds: ranked,
+        goldDocumentIds: testCase.gold_documents,
+      },
+      5,
+    );
     const metrics = scoreRetrieval(
       {
         caseId: testCase.id,
@@ -119,22 +190,81 @@ export async function runEvaluation(
     const forbidden = (testCase.must_not_include ?? []).filter((id) =>
       ranked.includes(id),
     );
+    const expectNoAnswer = Boolean(testCase.expect_no_answer);
+    const noAnswerCorrect = expectNoAnswer
+      ? hits.length === 0
+      : hits.length > 0;
+    const relevantHitIndices = ranked
+      .map((id, index) => (testCase.gold_documents.includes(id) ? index : -1))
+      .filter((index) => index >= 0);
+    const citedHitIndices = hits
+      .map((hit, index) => (hit.citations.length > 0 ? index : -1))
+      .filter((index) => index >= 0);
+    const citedRelevantIndices = citedHitIndices.filter((index) =>
+      relevantHitIndices.includes(index),
+    );
+    const retrievedEvidenceIds = citedRelevantIndices.map(
+      (index) => ranked[index]!,
+    );
+    const evidenceLabelled = testCase.gold_evidence !== undefined;
+    const evidenceRecall = evidenceLabelled
+      ? testCase.gold_evidence!.length === 0
+        ? 1
+        : intersectionSize(retrievedEvidenceIds, testCase.gold_evidence!) /
+          testCase.gold_evidence!.length
+      : testCase.gold_documents.length === 0
+        ? expectNoAnswer
+          ? 1
+          : 0
+        : citedRelevantIndices.length / testCase.gold_documents.length;
+    const retrievedCitationIds = hits.flatMap((hit) => hit.citations);
+    const citationLabelled = testCase.gold_citations !== undefined;
+    const citationPrecision = citationLabelled
+      ? retrievedCitationIds.length === 0
+        ? testCase.gold_citations!.length === 0
+          ? 1
+          : 0
+        : intersectionSize(retrievedCitationIds, testCase.gold_citations!) /
+          retrievedCitationIds.length
+      : citedHitIndices.length === 0
+        ? expectNoAnswer
+          ? 1
+          : 0
+        : citedRelevantIndices.length / citedHitIndices.length;
+    const unsupportedAnswer =
+      !expectNoAnswer && hits.length > 0 && citedRelevantIndices.length === 0;
+    const estimatedTokens = hits.reduce(
+      (sum, hit) => sum + Math.ceil(hit.excerpt.length / 4),
+      0,
+    );
     results.push({
       id: testCase.id,
       category: testCase.category,
       query: testCase.query,
       ranked,
-      metrics,
+      metrics: {
+        recallAt5: metricsAt5.recallAtK,
+        recallAt10: metrics.recallAtK,
+        precisionAt10: metrics.precisionAtK,
+        reciprocalRank: metrics.reciprocalRank,
+        ndcgAt10: metrics.ndcgAtK,
+      },
       forbidden,
-      passed: metrics.hit && forbidden.length === 0,
+      passed:
+        (expectNoAnswer ? noAnswerCorrect : metrics.hit) &&
+        forbidden.length === 0 &&
+        !unsupportedAnswer,
       critical: Boolean(testCase.critical),
+      slice: testCase.slice ?? testCase.category,
+      expectNoAnswer,
+      noAnswerCorrect,
       latencyMs,
-      citationPrecision:
-        hits.length === 0
-          ? 1
-          : hits.filter((hit) => hit.citations.length > 0).length / hits.length,
-      unsupportedAnswer:
-        hits.length > 0 && hits.every((hit) => hit.citations.length === 0),
+      estimatedTokens,
+      evidenceRecall,
+      evidenceLabelled,
+      citationPrecision,
+      citationLabelled,
+      unsupportedAnswer,
     });
   }
   const metrics = {
@@ -144,37 +274,72 @@ export async function runEvaluation(
       (result) => result.critical && !result.passed,
     ).length,
     meanRecallAt10:
-      results.reduce((sum, result) => sum + result.metrics.recallAtK, 0) /
+      results.reduce((sum, result) => sum + result.metrics.recallAt10, 0) /
+      Math.max(results.length, 1),
+    meanRecallAt5:
+      results.reduce((sum, result) => sum + result.metrics.recallAt5, 0) /
       Math.max(results.length, 1),
     meanReciprocalRank:
       results.reduce((sum, result) => sum + result.metrics.reciprocalRank, 0) /
       Math.max(results.length, 1),
     meanNdcgAt10:
-      results.reduce((sum, result) => sum + result.metrics.ndcgAtK, 0) /
+      results.reduce((sum, result) => sum + result.metrics.ndcgAt10, 0) /
+      Math.max(results.length, 1),
+    meanEvidenceRecall:
+      results.reduce((sum, result) => sum + result.evidenceRecall, 0) /
+      Math.max(results.length, 1),
+    evidenceRecallCoverage:
+      results.filter((result) => result.evidenceLabelled).length /
       Math.max(results.length, 1),
     meanCitationPrecision:
       results.reduce((sum, result) => sum + result.citationPrecision, 0) /
       Math.max(results.length, 1),
+    citationPrecisionCoverage:
+      results.filter((result) => result.citationLabelled).length /
+      Math.max(results.length, 1),
     unsupportedAnswerRate:
+      results.filter((result) => result.unsupportedAnswer).length /
+      Math.max(results.length, 1),
+    unsupportedClaimRate:
       results.filter((result) => result.unsupportedAnswer).length /
       Math.max(results.length, 1),
     meanLatencyMs:
       results.reduce((sum, result) => sum + result.latencyMs, 0) /
       Math.max(results.length, 1),
+    meanEstimatedTokens:
+      results.reduce((sum, result) => sum + result.estimatedTokens, 0) /
+      Math.max(results.length, 1),
+    meanTokenCost:
+      results.reduce((sum, result) => sum + result.estimatedTokens, 0) /
+      Math.max(results.length, 1),
+    noAnswerAccuracy: (() => {
+      const cases = results.filter((result) => result.expectNoAnswer);
+      return cases.length === 0
+        ? 1
+        : cases.filter((result) => result.noAnswerCorrect).length /
+            cases.length;
+    })(),
+    noAnswerCases: results.filter((result) => result.expectNoAnswer).length,
+    exactIdentifierRecall: averageSlice(results, "exact-identifiers"),
+    crossLanguageRecall: averageSlice(results, "cross-language"),
   };
   const revision = await db.pool.query(
-    "select current_revision from vaults where space_id=$1 order by last_imported_at desc nulls last limit 1",
-    [spaceId],
+    `select current_revision from vaults where space_id=$1
+      and ($2::uuid is null or id=$2)
+      order by last_imported_at desc nulls last limit 1`,
+    [spaceId, vaultId],
   );
   const runId = randomUUID();
   await db.pool.query(
     `
-    insert into eval_runs(id,space_id,corpus_revision,retrieval_config,metrics,status)
-    values($1,$2,$3,$4::jsonb,$5::jsonb,$6)
+    insert into eval_runs(id,space_id,vault_id,eval_pack,corpus_revision,retrieval_config,metrics,status)
+    values($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8)
     `,
     [
       runId,
       spaceId,
+      vaultId,
+      packName,
       String(revision.rows[0]?.current_revision ?? "unknown"),
       JSON.stringify({
         name: configuration.name ?? "default",
@@ -194,6 +359,8 @@ export async function runEvaluation(
   );
   return {
     runId,
+    evalPack: packName,
+    vaultId,
     configurationName: configuration.name ?? "default",
     status: metrics.criticalFailures === 0 ? "PASSED" : "FAILED",
     ...metrics,
@@ -203,59 +370,35 @@ export async function runEvaluation(
 
 export async function runRetrievalBenchmark(
   db: Postgres,
-  spaceId = "00000000-0000-0000-0000-000000000003",
+  spaceId: string,
+  packName: string,
+  vaultId: string,
 ): Promise<Record<string, unknown>> {
+  // Keep the API benchmark in lockstep with the package-level matrix.  A
+  // spread creates mutable channel arrays for the execution adapter while the
+  // canonical matrix remains immutable and testable offline.
   const configurations: Array<{
     name: string;
     channels: NonNullable<RetrievalExecutionOptions["channels"]>;
     allowVectorForBenchmark?: boolean;
     deterministicRerank?: boolean;
-  }> = [
-    { name: "context-pack-only", channels: ["context-pack"] },
-    { name: "exact+lexical", channels: ["exact", "lexical"] },
-    {
-      name: "vector-only",
-      channels: ["vector"],
-      allowVectorForBenchmark: true,
-    },
-    {
-      name: "lexical-seeded-graph",
-      channels: ["graph"],
-    },
-    {
-      name: "lexical+vector",
-      channels: ["lexical", "vector"],
-      allowVectorForBenchmark: true,
-    },
-    { name: "lexical+graph", channels: ["lexical", "graph"] },
-    {
-      name: "vector+graph",
-      channels: ["vector", "graph"],
-      allowVectorForBenchmark: true,
-    },
-    {
-      name: "context-pack+lexical+graph",
-      channels: ["context-pack", "lexical", "graph"],
-    },
-    {
-      name: "exact+lexical+graph",
-      channels: ["exact", "lexical", "graph"],
-    },
-    {
-      name: "full-hybrid-rrf",
-      channels: ["context-pack", "exact", "lexical", "vector", "graph"],
-      allowVectorForBenchmark: true,
-    },
-    {
-      name: "full-hybrid+deterministic-lexical-rerank",
-      channels: ["context-pack", "exact", "lexical", "vector", "graph"],
-      allowVectorForBenchmark: true,
-      deterministicRerank: true,
-    },
-  ];
+  }> = RETRIEVAL_BENCHMARK_MATRIX.map((configuration) => ({
+    name: configuration.name,
+    channels: [...configuration.channels] as NonNullable<
+      RetrievalExecutionOptions["channels"]
+    >,
+    ...(configuration.allowVectorForBenchmark === undefined
+      ? {}
+      : { allowVectorForBenchmark: configuration.allowVectorForBenchmark }),
+    ...(configuration.deterministicRerank === undefined
+      ? {}
+      : { deterministicRerank: configuration.deterministicRerank }),
+  }));
   const runs = [];
   for (const configuration of configurations) {
-    runs.push(await runEvaluation(db, configuration, spaceId));
+    runs.push(
+      await runEvaluation(db, configuration, spaceId, packName, vaultId),
+    );
   }
   const ranked = [...runs]
     .filter(
@@ -266,17 +409,83 @@ export async function runRetrievalBenchmark(
     .sort(
       (left, right) =>
         Number(right.meanReciprocalRank) - Number(left.meanReciprocalRank) ||
-        Number(right.meanRecallAt10) - Number(left.meanRecallAt10),
+        Number(right.meanNdcgAt10) - Number(left.meanNdcgAt10) ||
+        Number(right.meanRecallAt10) - Number(left.meanRecallAt10) ||
+        Number(right.meanCitationPrecision) -
+          Number(left.meanCitationPrecision) ||
+        Number(left.meanLatencyMs) - Number(right.meanLatencyMs),
     );
-  const winner = ranked[0];
+  const nonVector = ranked.filter(
+    (run) =>
+      !String(run.configurationName).includes("vector") &&
+      !String(run.configurationName).includes("full-hybrid"),
+  );
+  const vectorCandidates = ranked.filter(
+    (run) =>
+      String(run.configurationName).includes("vector") ||
+      String(run.configurationName).includes("full-hybrid"),
+  );
+  const baseline = nonVector[0];
+  const bestVector = vectorCandidates[0];
+  const vectorEligible = Boolean(
+    baseline &&
+    bestVector &&
+    Number(bestVector.meanReciprocalRank) >=
+      Number(baseline.meanReciprocalRank) + 0.02 &&
+    Number(bestVector.meanRecallAt10) >= Number(baseline.meanRecallAt10) &&
+    Number(bestVector.meanCitationPrecision) >=
+      Number(baseline.meanCitationPrecision) &&
+    Number(bestVector.exactIdentifierRecall) >=
+      Number(baseline.exactIdentifierRecall) &&
+    Number(bestVector.meanLatencyMs) <=
+      Math.max(Number(baseline.meanLatencyMs) * 2, 25),
+  );
+  const winner = vectorEligible ? bestVector : (baseline ?? ranked[0]);
+  const datasetSlices = [
+    ...new Set(
+      runs.flatMap((run) =>
+        Array.isArray(run.results)
+          ? run.results.map((result) => String(result.slice ?? ""))
+          : [],
+      ),
+    ),
+  ].sort();
   return {
     status: "COMPLETED",
     datasetCases: Number(runs[0]?.cases ?? 0),
+    evalPack: packName,
+    vaultId,
+    matrixSize: RETRIEVAL_BENCHMARK_MATRIX.length,
+    benchmarkMatrix: RETRIEVAL_BENCHMARK_MATRIX.map((configuration) => ({
+      name: configuration.name,
+      channels: [...configuration.channels],
+      vectorBenchmarkOnly: Boolean(configuration.allowVectorForBenchmark),
+      rerank: Boolean(configuration.deterministicRerank),
+    })),
+    datasetSlices,
+    requiredGenericSlices:
+      packName === "generic" ? [...REQUIRED_GENERIC_SLICES] : [],
+    metricDefinitions: {
+      evidenceRecall:
+        "gold_evidence labels when present; otherwise cited relevant-document provenance proxy",
+      citationPrecision:
+        "gold_citations labels when present; otherwise cited relevant-hit precision proxy",
+      unsupportedClaimRate:
+        "returned non-no-answer result with no cited relevant hit",
+      tokenCost: "estimated excerpt tokens (characters / 4)",
+    },
     runs,
     selectedDefault: String(winner?.configurationName ?? "exact+lexical"),
-    vectorActivatedByDefault: false,
-    decision:
-      "Only configurations with zero critical failures and zero unsupported-answer rate are eligible. Vector remains benchmark-only because this smoke dataset is too small to justify a default semantic channel.",
+    vectorActivatedByDefault: vectorEligible,
+    decision: {
+      eligibility:
+        "Critical failures and unsupported-answer rate must both be zero.",
+      vectorRule:
+        "Vector requires >=0.02 MRR gain, no Recall@10/citation/exact-ID regression, and <=2x baseline latency.",
+      baseline: baseline?.configurationName ?? null,
+      bestVector: bestVector?.configurationName ?? null,
+      vectorEligible,
+    },
     bestEligibleRunId: String(winner?.runId ?? ""),
   };
 }
@@ -296,9 +505,39 @@ export function registerEvaluationRoutes(
       if (!spaces.length) {
         return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
       }
+      const query = z
+        .object({ vaultId: z.string().uuid().optional() })
+        .safeParse(request.query);
+      if (!query.success) {
+        return reply.code(400).send({ code: "INVALID_EVAL_QUERY" });
+      }
+      const actor = actorOf(request);
+      if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
+      const authorizedVaultIds: string[] = [];
+      for (const spaceId of spaces) {
+        try {
+          const scope = await resolveAuthorizedVaultScope(db, {
+            userId: actor.id,
+            spaceId,
+            permission: "knowledge:read",
+            ...(query.data.vaultId ? { vaultId: query.data.vaultId } : {}),
+            ...(query.data.vaultId ? { vaultIds: [query.data.vaultId] } : {}),
+            federated: !query.data.vaultId,
+          });
+          authorizedVaultIds.push(...scope.vaultIds);
+        } catch {
+          // A user can belong to a space without being authorized for each
+          // private vault in it; inaccessible vaults remain indistinguishable.
+        }
+      }
+      if (authorizedVaultIds.length === 0) return { runs: [] };
       const result = await db.pool.query(
-        "select id,space_id,corpus_revision,metrics,status,created_at from eval_runs where space_id=any($1::uuid[]) order by created_at desc limit 50",
-        [spaces],
+        `select id,space_id,vault_id,eval_pack,corpus_revision,metrics,status,created_at
+           from eval_runs
+          where space_id=any($1::uuid[])
+            and vault_id=any($2::uuid[])
+          order by created_at desc limit 50`,
+        [spaces, [...new Set(authorizedVaultIds)]],
       );
       return { runs: result.rows };
     },
@@ -307,12 +546,46 @@ export function registerEvaluationRoutes(
     "/v1/evals/run",
     { preHandler: requirePermission("eval:run") },
     async (request, reply) => {
-      const spaceId = unrestrictedSpaceIdsForPermission(
+      const parsed = EvaluationTarget.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          code: "INVALID_EVAL_TARGET",
+          issues: parsed.error.issues,
+        });
+      }
+      const spaces = unrestrictedSpaceIdsForPermission(
         actorOf(request),
         "eval:run",
-      )[0];
-      if (!spaceId) return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
-      const result = await runEvaluation(db, {}, spaceId);
+      );
+      if (!spaces.includes(parsed.data.spaceId)) {
+        return reply.code(403).send({ code: "SPACE_ACCESS_DENIED" });
+      }
+      const actor = actorOf(request);
+      if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
+      try {
+        await resolveAuthorizedVaultScope(db, {
+          userId: actor.id,
+          spaceId: parsed.data.spaceId,
+          permission: "eval:run",
+          vaultId: parsed.data.vaultId,
+          vaultIds: [parsed.data.vaultId],
+          federated: false,
+        });
+      } catch (error) {
+        return reply.code(403).send({
+          code: error instanceof Error ? error.message : "VAULT_ACCESS_DENIED",
+        });
+      }
+      if (!(await validateEvaluationTarget(db, parsed.data))) {
+        return reply.code(404).send({ code: "EVAL_TARGET_NOT_FOUND" });
+      }
+      const result = await runEvaluation(
+        db,
+        {},
+        parsed.data.spaceId,
+        parsed.data.evalPack,
+        parsed.data.vaultId,
+      );
       await audit(
         db,
         request,
@@ -320,7 +593,7 @@ export function registerEvaluationRoutes(
         "eval_run",
         String(result.runId),
         {},
-        spaceId,
+        parsed.data.spaceId,
       );
       return result;
     },
@@ -329,12 +602,45 @@ export function registerEvaluationRoutes(
     "/v1/evals/benchmark",
     { preHandler: requirePermission("eval:run") },
     async (request, reply) => {
-      const spaceId = unrestrictedSpaceIdsForPermission(
+      const parsed = EvaluationTarget.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          code: "INVALID_EVAL_TARGET",
+          issues: parsed.error.issues,
+        });
+      }
+      const spaces = unrestrictedSpaceIdsForPermission(
         actorOf(request),
         "eval:run",
-      )[0];
-      if (!spaceId) return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
-      const result = await runRetrievalBenchmark(db, spaceId);
+      );
+      if (!spaces.includes(parsed.data.spaceId)) {
+        return reply.code(403).send({ code: "SPACE_ACCESS_DENIED" });
+      }
+      const actor = actorOf(request);
+      if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
+      try {
+        await resolveAuthorizedVaultScope(db, {
+          userId: actor.id,
+          spaceId: parsed.data.spaceId,
+          permission: "eval:run",
+          vaultId: parsed.data.vaultId,
+          vaultIds: [parsed.data.vaultId],
+          federated: false,
+        });
+      } catch (error) {
+        return reply.code(403).send({
+          code: error instanceof Error ? error.message : "VAULT_ACCESS_DENIED",
+        });
+      }
+      if (!(await validateEvaluationTarget(db, parsed.data))) {
+        return reply.code(404).send({ code: "EVAL_TARGET_NOT_FOUND" });
+      }
+      const result = await runRetrievalBenchmark(
+        db,
+        parsed.data.spaceId,
+        parsed.data.evalPack,
+        parsed.data.vaultId,
+      );
       await audit(
         db,
         request,
@@ -342,7 +648,7 @@ export function registerEvaluationRoutes(
         "retrieval_benchmark",
         undefined,
         {},
-        spaceId,
+        parsed.data.spaceId,
       );
       return result;
     },

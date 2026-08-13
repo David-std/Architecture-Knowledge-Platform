@@ -1,0 +1,1605 @@
+{
+  "schemaVersion": 1,
+  "files": [
+    {
+      "path": ".env.example",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "configuration or policy contract"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "configuration or policy contract"
+    },
+    {
+      "path": ".gitignore",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "configuration or policy contract"
+    },
+    {
+      "path": ".prettierignore",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "configuration or policy contract"
+    },
+    {
+      "path": "AGENTS.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "canonical product documentation"
+    },
+    {
+      "path": "apps/api/package.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/api/src/auth.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/api/src/idempotency.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/api/src/projections.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/api/src/routes/audit-export.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/api/src/routes/audit.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/api/src/routes/error-book.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/api/src/routes/evaluation.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/api/src/routes/governance.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/api/src/routes/ingest.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/api/src/routes/knowledge.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/api/src/routes/projects.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/api/src/routes/reviews.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/api/src/routes/schema-governance.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/api/src/routes/search.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/api/src/routes/sessions.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/api/src/routes/web-auth.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/api/src/server.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/api/test/auth-space.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/api/test/health.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/api/test/projections.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/api/test/raw-evidence-export.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/api/test/review-publication.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/api/test/search-revision-policy.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/api/test/security.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/api/tsconfig.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/api/vitest.integration.config.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/cli/package.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/cli/src/audit-export.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/cli/src/main.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/cli/src/metrics.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/cli/test/audit-export.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/cli/test/metrics.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/cli/tsconfig.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/extractor/.dockerignore",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/extractor/app/__init__.py",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/extractor/app/adapters/__init__.py",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/extractor/app/adapters/base.py",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/extractor/app/adapters/deterministic.py",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/extractor/app/adapters/optional.py",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/extractor/app/document_intelligence.py",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/extractor/app/extractors/__init__.py",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/extractor/app/extractors/docx.py",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/extractor/app/extractors/html.py",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/extractor/app/extractors/image.py",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/extractor/app/extractors/pdf.py",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/extractor/app/extractors/pptx.py",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/extractor/app/extractors/text.py",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/extractor/app/main.py",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/extractor/app/models.py",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/extractor/app/ports.py",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/extractor/app/registry.py",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/extractor/Dockerfile",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/extractor/pyproject.toml",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/extractor/tests/test_auth.py",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/extractor/tests/test_capabilities.py",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/extractor/tests/test_document_intelligence.py",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/extractor/tests/test_text.py",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/extractor/tests/test_upload.py",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/mcp/package.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/mcp/src/http.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/mcp/src/server.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/mcp/tsconfig.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/web/app/admin/audit/page.tsx",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/web/app/admin/health/page.tsx",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/web/app/admin/spaces/page.tsx",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/web/app/documents/[id]/page.tsx",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/web/app/evals/page.tsx",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/web/app/globals.css",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/web/app/graph/page.tsx",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/web/app/ingest/page.tsx",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/web/app/jobs/[id]/page.tsx",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/web/app/jobs/page.tsx",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/web/app/knowledge/[id]/page.tsx",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/web/app/layout.tsx",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/web/app/login/page.tsx",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/web/app/page.tsx",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/web/app/reviews/[id]/page.tsx",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/web/app/reviews/page.tsx",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/web/app/search/page.tsx",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/web/app/sources/[id]/page.tsx",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/web/app/sources/page.tsx",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/web/lib/api.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/web/next-env.d.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/web/next.config.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/web/package.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/web/ROUTES.md",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/web/tsconfig.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/worker/package.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/worker/src/document-artifact.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/worker/src/event-handlers.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/worker/src/event-worker.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/worker/src/lifecycle.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/worker/src/worker.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/worker/test/document-artifact.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/worker/test/event-handlers.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/worker/test/lifecycle.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/worker/tsconfig.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "ARCHITECTURE.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "canonical product documentation"
+    },
+    {
+      "path": "CHANGELOG.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "canonical product documentation"
+    },
+    {
+      "path": "COMPETITIVE_AUDIT.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "canonical product documentation"
+    },
+    {
+      "path": "contracts/asyncapi.yaml",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "versioned interface or dependency contract"
+    },
+    {
+      "path": "contracts/context-packet.schema.json",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "versioned interface or dependency contract"
+    },
+    {
+      "path": "contracts/knowledge-document.schema.json",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "versioned interface or dependency contract"
+    },
+    {
+      "path": "contracts/mcp-tools.json",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "versioned interface or dependency contract"
+    },
+    {
+      "path": "contracts/openapi.yaml",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "versioned interface or dependency contract"
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "canonical product documentation"
+    },
+    {
+      "path": "db/migrations/001_init.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
+      "path": "db/migrations/002_platform_runtime.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
+      "path": "db/migrations/003_allow_audited_duplicate_external_ids.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
+      "path": "db/migrations/004_hybrid_freshness_governance.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
+      "path": "db/migrations/005_provenance_and_job_fencing.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
+      "path": "db/migrations/006_revoke_bootstrap_credential.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
+      "path": "db/migrations/007_generic_write_idempotency.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
+      "path": "db/migrations/008_web_sessions_schema_governance.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
+      "path": "db/migrations/009_eval_space_isolation.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
+      "path": "db/migrations/010_token_scopes_and_idempotency_claims.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
+      "path": "db/migrations/011_repository_publication_locks.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
+      "path": "db/migrations/012_session_scopes_and_idempotency_scope.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
+      "path": "db/migrations/013_generic_vault_registry.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
+      "path": "db/migrations/014_event_outbox.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
+      "path": "db/migrations/015_structural_units_and_incremental_indexes.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
+      "path": "db/migrations/016_document_artifact_contract.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
+      "path": "dependency-cruiser.cjs",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "docker-compose.yml",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "docs/adr/0001-canonical-corpus-and-derived-projections.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "canonical product documentation"
+    },
+    {
+      "path": "docs/adr/0002-review-and-publication-isolation.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "canonical product documentation"
+    },
+    {
+      "path": "docs/adr/0003-web-session-and-schema-governance.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "canonical product documentation"
+    },
+    {
+      "path": "docs/architecture/audit-export.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "canonical product documentation"
+    },
+    {
+      "path": "docs/architecture/c4.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "canonical product documentation"
+    },
+    {
+      "path": "docs/architecture/database-erd.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "canonical product documentation"
+    },
+    {
+      "path": "docs/architecture/modules.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "canonical product documentation"
+    },
+    {
+      "path": "docs/architecture/runtime-flows.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "canonical product documentation"
+    },
+    {
+      "path": "docs/contributing.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "canonical product documentation"
+    },
+    {
+      "path": "docs/error-book.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "canonical product documentation"
+    },
+    {
+      "path": "docs/runbooks/local-operations.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "canonical product documentation"
+    },
+    {
+      "path": "docs/security/threat-model.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "canonical product documentation"
+    },
+    {
+      "path": "DOCUMENT_INTELLIGENCE_BENCHMARK.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "canonical product documentation"
+    },
+    {
+      "path": "evals/fixtures/architecture-knowledge-system/architecture.jsonl",
+      "category": "FIXTURE_VAULT_SPECIFIC",
+      "reason": "Architecture Knowledge System eval pack"
+    },
+    {
+      "path": "evals/fixtures/architecture-knowledge-system/cqrs.jsonl",
+      "category": "FIXTURE_VAULT_SPECIFIC",
+      "reason": "Architecture Knowledge System eval pack"
+    },
+    {
+      "path": "evals/fixtures/architecture-knowledge-system/eventstorming.jsonl",
+      "category": "FIXTURE_VAULT_SPECIFIC",
+      "reason": "Architecture Knowledge System eval pack"
+    },
+    {
+      "path": "evals/fixtures/architecture-knowledge-system/j-slices.jsonl",
+      "category": "FIXTURE_VAULT_SPECIFIC",
+      "reason": "Architecture Knowledge System eval pack"
+    },
+    {
+      "path": "evals/fixtures/architecture-knowledge-system/si729.jsonl",
+      "category": "FIXTURE_VAULT_SPECIFIC",
+      "reason": "Architecture Knowledge System eval pack"
+    },
+    {
+      "path": "evals/fixtures/architecture-knowledge-system/si730.jsonl",
+      "category": "FIXTURE_VAULT_SPECIFIC",
+      "reason": "Architecture Knowledge System eval pack"
+    },
+    {
+      "path": "evals/generic/code-evidence/basic.jsonl",
+      "category": "PRODUCT_EVAL",
+      "reason": "generic product evaluation"
+    },
+    {
+      "path": "evals/generic/comparisons/basic.jsonl",
+      "category": "PRODUCT_EVAL",
+      "reason": "generic product evaluation"
+    },
+    {
+      "path": "evals/generic/contradictions/basic.jsonl",
+      "category": "PRODUCT_EVAL",
+      "reason": "generic product evaluation"
+    },
+    {
+      "path": "evals/generic/global-synthesis/basic.jsonl",
+      "category": "PRODUCT_EVAL",
+      "reason": "generic product evaluation"
+    },
+    {
+      "path": "evals/generic/grounding/basic.jsonl",
+      "category": "PRODUCT_EVAL",
+      "reason": "generic product evaluation"
+    },
+    {
+      "path": "evals/generic/multi-vault-isolation/basic.jsonl",
+      "category": "PRODUCT_EVAL",
+      "reason": "generic product evaluation"
+    },
+    {
+      "path": "evals/generic/no-answer/basic.jsonl",
+      "category": "PRODUCT_EVAL",
+      "reason": "generic product evaluation"
+    },
+    {
+      "path": "evals/generic/paraphrases/basic.jsonl",
+      "category": "PRODUCT_EVAL",
+      "reason": "generic product evaluation"
+    },
+    {
+      "path": "evals/generic/permissions/basic.jsonl",
+      "category": "PRODUCT_EVAL",
+      "reason": "generic product evaluation"
+    },
+    {
+      "path": "evals/generic/regression/basic.jsonl",
+      "category": "PRODUCT_EVAL",
+      "reason": "generic product evaluation"
+    },
+    {
+      "path": "evals/generic/retrieval/basic.jsonl",
+      "category": "PRODUCT_EVAL",
+      "reason": "generic product evaluation"
+    },
+    {
+      "path": "evals/generic/security/basic.jsonl",
+      "category": "PRODUCT_EVAL",
+      "reason": "generic product evaluation"
+    },
+    {
+      "path": "evals/generic/source-verification/basic.jsonl",
+      "category": "PRODUCT_EVAL",
+      "reason": "generic product evaluation"
+    },
+    {
+      "path": "evals/generic/stale-data/basic.jsonl",
+      "category": "PRODUCT_EVAL",
+      "reason": "generic product evaluation"
+    },
+    {
+      "path": "evals/generic/synonyms/basic.jsonl",
+      "category": "PRODUCT_EVAL",
+      "reason": "generic product evaluation"
+    },
+    {
+      "path": "evals/schemas/retrieval-case.schema.json",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "evaluation case schema contract"
+    },
+    {
+      "path": "EVENT_DRIVEN_VALIDATION_REPORT.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "canonical product documentation"
+    },
+    {
+      "path": "GENERICITY_AUDIT.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "canonical hygiene or genericity report"
+    },
+    {
+      "path": "IMPLEMENTATION_REPORT.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "canonical product documentation"
+    },
+    {
+      "path": "MIGRATION_REPORT.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "canonical product documentation"
+    },
+    {
+      "path": "package.json",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "configuration or policy contract"
+    },
+    {
+      "path": "packages/application/package.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/application/src/index.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/application/tsconfig.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/audit-export/package.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/audit-export/src/index.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/audit-export/test/audit-export.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/audit-export/tsconfig.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/compiler/package.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/compiler/src/index.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/compiler/test/path-safety.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/compiler/tsconfig.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/contracts/package.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/contracts/src/index.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/contracts/test/document-artifact.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/contracts/tsconfig.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/domain/package.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/domain/src/index.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/domain/test/state-machine.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/domain/tsconfig.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/evaluation/package.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/evaluation/src/benchmark.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/evaluation/src/dataset.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/evaluation/src/index.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/evaluation/src/offline.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/evaluation/test/benchmark.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/evaluation/test/dataset.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/evaluation/test/metrics.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/evaluation/test/offline.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/evaluation/tsconfig.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/git-store/package.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/git-store/src/index.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/git-store/test/isolated-drafts.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/git-store/tsconfig.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/graph/package.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/graph/src/index.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/graph/tsconfig.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/indexing/package.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/indexing/src/index.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/indexing/test/incremental-index.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/indexing/test/index.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/indexing/test/multivault-isolation.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/indexing/tsconfig.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/object-store/package.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/object-store/src/index.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/object-store/test/hash-file.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/object-store/tsconfig.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/observability/package.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/observability/src/index.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/observability/test/bridge.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/observability/tsconfig.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/policy/package.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/policy/src/index.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/policy/test/approval.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/policy/tsconfig.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/postgres/package.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/postgres/src/index.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/postgres/src/outbox.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/postgres/src/vault-registry.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/postgres/test/lint.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/postgres/test/outbox.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/postgres/test/outbox.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/postgres/test/vault-registry.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/postgres/tsconfig.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/project-adapter/package.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/project-adapter/src/index.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/project-adapter/src/snapshot.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/project-adapter/test/evidence-tier.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/project-adapter/tsconfig.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/retrieval/package.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/retrieval/src/chunking.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/retrieval/src/context-packet.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/retrieval/src/embeddings.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/retrieval/src/index.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/retrieval/src/query-planner.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/retrieval/src/rrf.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/retrieval/src/structural-context.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/retrieval/test/chunking.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/context-packet.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/embeddings.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/query-planner.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/rrf.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/structural-context.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/tsconfig.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/validation/package.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/validation/src/index.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/validation/tsconfig.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/vault-importer/package.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/vault-importer/src/index.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/vault-importer/test/parser.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/vault-importer/tsconfig.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "versioned interface or dependency contract"
+    },
+    {
+      "path": "pnpm-workspace.yaml",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "configuration or policy contract"
+    },
+    {
+      "path": "policies/knowledge-rules.yaml",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "configuration or policy contract"
+    },
+    {
+      "path": "PROJECT_STATE.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "canonical product documentation"
+    },
+    {
+      "path": "README.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "canonical product documentation"
+    },
+    {
+      "path": "REMAINING_REAL_GAPS.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "canonical product documentation"
+    },
+    {
+      "path": "reports/document-intelligence/benchmark.json",
+      "category": "GENERATED_CANONICAL",
+      "reason": "canonical reproducible report"
+    },
+    {
+      "path": "reports/document-intelligence/README.md",
+      "category": "GENERATED_CANONICAL",
+      "reason": "canonical reproducible report"
+    },
+    {
+      "path": "reports/migration/migration-impact-manifest.json",
+      "category": "GENERATED_CANONICAL",
+      "reason": "canonical reproducible report"
+    },
+    {
+      "path": "reports/migration/raw-derived-audit.md",
+      "category": "GENERATED_CANONICAL",
+      "reason": "canonical reproducible report"
+    },
+    {
+      "path": "reports/migration/vault-import-latest.md",
+      "category": "GENERATED_CANONICAL",
+      "reason": "canonical reproducible report"
+    },
+    {
+      "path": "reports/migration/vault-import-report.md",
+      "category": "GENERATED_CANONICAL",
+      "reason": "canonical reproducible report"
+    },
+    {
+      "path": "reports/migration/vault-retrieval-baseline.md",
+      "category": "GENERATED_CANONICAL",
+      "reason": "canonical reproducible report"
+    },
+    {
+      "path": "reports/migration/vault-schema-gap-report.md",
+      "category": "GENERATED_CANONICAL",
+      "reason": "canonical reproducible report"
+    },
+    {
+      "path": "reports/retrieval/offline-benchmark.json",
+      "category": "GENERATED_CANONICAL",
+      "reason": "canonical reproducible report"
+    },
+    {
+      "path": "reports/retrieval/README.md",
+      "category": "GENERATED_CANONICAL",
+      "reason": "canonical reproducible report"
+    },
+    {
+      "path": "REPOSITORY_FILE_CLASSIFICATION.json",
+      "category": "GENERATED_CANONICAL",
+      "reason": "deterministic repository inventory"
+    },
+    {
+      "path": "REPOSITORY_HYGIENE_REPORT.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "canonical hygiene or genericity report"
+    },
+    {
+      "path": "RESEARCH_ADOPTION_MATRIX.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "canonical product documentation"
+    },
+    {
+      "path": "RESEARCH_LOG.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "canonical product documentation"
+    },
+    {
+      "path": "RESIDUAL_ARTIFACTS_REPORT.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "canonical hygiene or genericity report"
+    },
+    {
+      "path": "RETRIEVAL_BENCHMARK.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "canonical product documentation"
+    },
+    {
+      "path": "scripts/backup.ps1",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/bootstrap.ps1",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/bootstrap.sh",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/document_intelligence_benchmark.py",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/mcp-smoke.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/migrate.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/provision-local-token.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/restore-smoke.ps1",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/retrieval_benchmark_offline.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/scan-secrets.mjs",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/validate-contracts.mjs",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/validate-docs.mjs",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/validate-repository-hygiene.mjs",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/verify-runtime.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "SECURITY_REPORT.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "canonical product documentation"
+    },
+    {
+      "path": "test/fixtures/document-intelligence/complex-layout.html",
+      "category": "FIXTURE_GENERIC",
+      "reason": "generic integration fixture"
+    },
+    {
+      "path": "test/fixtures/document-intelligence/diagram-image.json",
+      "category": "FIXTURE_GENERIC",
+      "reason": "generic integration fixture"
+    },
+    {
+      "path": "test/fixtures/document-intelligence/digital-pdf.json",
+      "category": "FIXTURE_GENERIC",
+      "reason": "generic integration fixture"
+    },
+    {
+      "path": "test/fixtures/document-intelligence/manifest.json",
+      "category": "FIXTURE_GENERIC",
+      "reason": "generic integration fixture"
+    },
+    {
+      "path": "test/fixtures/document-intelligence/README.md",
+      "category": "FIXTURE_GENERIC",
+      "reason": "generic integration fixture"
+    },
+    {
+      "path": "test/fixtures/document-intelligence/scanned-pdf.json",
+      "category": "FIXTURE_GENERIC",
+      "reason": "generic integration fixture"
+    },
+    {
+      "path": "test/fixtures/document-intelligence/scientific-formula-pdf.json",
+      "category": "FIXTURE_GENERIC",
+      "reason": "generic integration fixture"
+    },
+    {
+      "path": "test/fixtures/document-intelligence/simple-structured.md",
+      "category": "FIXTURE_GENERIC",
+      "reason": "generic integration fixture"
+    },
+    {
+      "path": "test/fixtures/document-intelligence/slide-deck-pptx.json",
+      "category": "FIXTURE_GENERIC",
+      "reason": "generic integration fixture"
+    },
+    {
+      "path": "test/fixtures/document-intelligence/structured-docx.json",
+      "category": "FIXTURE_GENERIC",
+      "reason": "generic integration fixture"
+    },
+    {
+      "path": "test/fixtures/document-intelligence/table-workbook.json",
+      "category": "FIXTURE_GENERIC",
+      "reason": "generic integration fixture"
+    },
+    {
+      "path": "test/fixtures/synthetic-basic/10-sources/nimbus-source.md",
+      "category": "FIXTURE_GENERIC",
+      "reason": "portable synthetic fixture"
+    },
+    {
+      "path": "test/fixtures/synthetic-basic/20-claims/cache-refresh-rule.md",
+      "category": "FIXTURE_GENERIC",
+      "reason": "portable synthetic fixture"
+    },
+    {
+      "path": "test/fixtures/synthetic-basic/30-workflows/recovery-workflow.md",
+      "category": "FIXTURE_GENERIC",
+      "reason": "portable synthetic fixture"
+    },
+    {
+      "path": "test/fixtures/synthetic-basic/40-concepts/bilingual-routing.md",
+      "category": "FIXTURE_GENERIC",
+      "reason": "portable synthetic fixture"
+    },
+    {
+      "path": "test/fixtures/synthetic-basic/README.md",
+      "category": "FIXTURE_GENERIC",
+      "reason": "portable synthetic fixture"
+    },
+    {
+      "path": "test/fixtures/vault/20-claims/bounded-context-claim.md",
+      "category": "FIXTURE_GENERIC",
+      "reason": "generic integration fixture"
+    },
+    {
+      "path": "test/fixtures/vault/30-concepts/bounded-context.md",
+      "category": "FIXTURE_GENERIC",
+      "reason": "generic integration fixture"
+    },
+    {
+      "path": "test/fixtures/vault/README.md",
+      "category": "FIXTURE_GENERIC",
+      "reason": "generic integration fixture"
+    },
+    {
+      "path": "TRACEABILITY.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "canonical product documentation"
+    },
+    {
+      "path": "tsconfig.base.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "turbo.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "VALIDATION_REPORT.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "canonical product documentation"
+    }
+  ]
+}

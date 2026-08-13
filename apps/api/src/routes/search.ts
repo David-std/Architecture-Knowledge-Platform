@@ -1,5 +1,6 @@
+import { createHash } from "node:crypto";
 import type { FastifyInstance } from "fastify";
-import type { Postgres } from "@akp/postgres";
+import { resolveAuthorizedVaultScope, type Postgres } from "@akp/postgres";
 import {
   SearchRequest,
   type SearchHit,
@@ -7,8 +8,10 @@ import {
 } from "@akp/contracts";
 import {
   buildContextPacket,
+  contextBudgetForIntent,
   deterministicEmbedding,
   planQuery,
+  rehydrateStructuralContext,
   reciprocalRankFusion,
   toPgVector,
 } from "@akp/retrieval";
@@ -34,13 +37,18 @@ function kindOf(
   | "workflow"
   | "concept"
   | "profile"
+  | "decision"
   | "example"
+  | "counterexample"
   | "evidence"
   | "source" {
   const value = `${layer} ${type}`.toLowerCase();
   if (value.includes("rule") || value.includes("policy")) return "rule";
   if (value.includes("workflow")) return "workflow";
   if (value.includes("profile")) return "profile";
+  if (value.includes("decision") || value.includes("adr")) return "decision";
+  if (value.includes("counterexample") || value.includes("contraejemplo"))
+    return "counterexample";
   if (value.includes("example")) return "example";
   if (value.includes("evidence")) return "evidence";
   if (value.includes("source") || value.includes("resource")) return "source";
@@ -53,6 +61,7 @@ export interface RetrievalExecutionOptions {
   >;
   allowVectorForBenchmark?: boolean;
   deterministicRerank?: boolean;
+  vaultIds?: string[];
   /** Applied after policy/trust filtering so a scoped caller never receives a
    * path it is not allowed to read. */
   pathAuthorizer?: (path: string) => boolean;
@@ -61,6 +70,50 @@ export interface RetrievalExecutionOptions {
 type RetrievalChannel = NonNullable<
   RetrievalExecutionOptions["channels"]
 >[number];
+
+type IndexRevisionRow = Record<string, unknown> & {
+  vault_id?: string;
+  corpus_revision?: string;
+};
+
+function combineVaultIndexRows(rows: IndexRevisionRow[]): IndexRevisionRow {
+  if (rows.length === 0) return {};
+  if (rows.length === 1) return rows[0] ?? {};
+  const stable = rows
+    .map((row) => ({
+      vaultId: String(row.vault_id ?? ""),
+      corpusRevision: String(row.corpus_revision ?? ""),
+    }))
+    .sort((left, right) => left.vaultId.localeCompare(right.vaultId));
+  const corpusRevision = `federated:${createHash("sha256")
+    .update(JSON.stringify(stable))
+    .digest("hex")}`;
+  const result: IndexRevisionRow = {
+    corpus_revision: corpusRevision,
+    status: rows.every((row) => String(row.status) === "CONSISTENT")
+      ? "CONSISTENT"
+      : "DEGRADED",
+    warnings: rows.flatMap((row) =>
+      Array.isArray(row.warnings) ? row.warnings : [],
+    ),
+    retrieval_configuration_version: "federated-rrf-v1",
+  };
+  for (const field of [
+    "lexical_revision",
+    "vector_revision",
+    "graph_revision",
+    "context_pack_revision",
+  ]) {
+    result[field] = rows.every(
+      (row) =>
+        String(row[field] ?? "") === String(row.corpus_revision ?? "") &&
+        String(row[field] ?? "") !== "",
+    )
+      ? corpusRevision
+      : null;
+  }
+  return result;
+}
 
 export function channelsConsistentWithIndex(
   requested: Iterable<RetrievalChannel>,
@@ -130,16 +183,52 @@ export async function queryKnowledge(
   input: SearchInput,
   options: RetrievalExecutionOptions = {},
 ): Promise<SearchHit[]> {
-  const spaceId = input.spaceId ?? "00000000-0000-0000-0000-000000000003";
+  if (!input.spaceId) throw new Error("SPACE_ID_REQUIRED");
+  const spaceId = input.spaceId;
+  const vaultIds = [
+    ...new Set([
+      ...(options.vaultIds ?? []),
+      ...(input.vaultId ? [input.vaultId] : []),
+      ...(input.vaultIds ?? []),
+    ]),
+  ];
+  if (vaultIds.length === 0) {
+    throw new Error("VAULT_SCOPE_REQUIRED");
+  }
+  if (vaultIds.length > 1 && !input.federated) {
+    throw new Error("FEDERATED_QUERY_REQUIRES_EXPLICIT_OPT_IN");
+  }
+  if (
+    vaultIds.some(
+      (id) =>
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          id,
+        ),
+    )
+  ) {
+    throw new Error("INVALID_VAULT_ID");
+  }
+  const vaultFilter = (alias = "") =>
+    vaultIds.length === 0
+      ? ""
+      : `and ${alias}vault_id=any(array[${vaultIds
+          .map((id) => `'${id}'::uuid`)
+          .join(",")}])`;
   const plan = planQuery(input.query);
   const requestedChannels = options.channels ?? plan.channels;
-  const index = await db.pool.query(
-    "select corpus_revision,lexical_revision,vector_revision,graph_revision,context_pack_revision,status,warnings from index_revisions where space_id=$1",
-    [spaceId],
+  const indexRows = await db.pool.query(
+    `select vault_id,corpus_revision,lexical_revision,vector_revision,
+            graph_revision,context_pack_revision,status,warnings,
+            retrieval_configuration_version
+       from vault_index_revisions
+      where space_id=$1 and vault_id=any($2::uuid[])
+      order by vault_id`,
+    [spaceId, vaultIds],
   );
+  const index = combineVaultIndexRows(indexRows.rows);
   const consistency = channelsConsistentWithIndex(
     requestedChannels,
-    index.rows[0],
+    index,
     process.env.AKP_VECTOR_ENABLED === "true" ||
       Boolean(options.allowVectorForBenchmark),
   );
@@ -159,6 +248,7 @@ export async function queryKnowledge(
     select id
       from knowledge_documents
      where space_id = $1
+       ${vaultFilter()}
        and lifecycle in ('ACTIVE','DISPUTED')
        and refresh_status not in ('STALE_BLOCKED','INVALID')
        and (
@@ -183,7 +273,9 @@ export async function queryKnowledge(
       from knowledge_units u
       join knowledge_documents d on d.id=u.document_id
      where u.space_id = $1
+       ${vaultFilter("u.")}
        and u.lifecycle in ('ACTIVE','DISPUTED')
+       and u.embedding_eligible
        and d.refresh_status not in ('STALE_BLOCKED','INVALID')
        and u.search_vector @@ websearch_to_tsquery('simple', $2)
        ${modeClause}
@@ -229,21 +321,7 @@ export async function queryKnowledge(
     .split(/[^\p{Letter}\p{Number}]+/u)
     .filter((term) => term.length >= 4 && !stopWords.has(term))
     .slice(0, 8);
-  const synonymMap: Record<string, string[]> = {
-    domain: ["dominio"],
-    events: ["eventos", "eventstorming"],
-    event: ["evento", "eventstorming"],
-    explicitly: ["explicitamente", "evidencia"],
-    explicita: ["evidence", "evidencia"],
-    enseno: ["curso", "evidencia"],
-    taught: ["curso", "evidencia"],
-    despues: ["fases", "secuencia", "workflow", "flujo"],
-  };
-  const terms = [
-    ...new Set(
-      baseTerms.flatMap((term) => [term, ...(synonymMap[term] ?? [])]),
-    ),
-  ].slice(0, 12);
+  const terms = [...new Set(baseTerms)].slice(0, 12);
   const fallback =
     terms.length === 0 || !channels.has("lexical")
       ? { rows: [] as Array<{ id: string }> }
@@ -251,7 +329,9 @@ export async function queryKnowledge(
           `
           select id
             from knowledge_documents
-           where space_id=$1 and lifecycle in ('ACTIVE','DISPUTED')
+           where space_id=$1
+             ${vaultFilter()}
+             and lifecycle in ('ACTIVE','DISPUTED')
              and refresh_status not in ('STALE_BLOCKED','INVALID')
              and exists (
                select 1 from unnest($2::text[]) pattern
@@ -284,6 +364,9 @@ export async function queryKnowledge(
             join knowledge_units u on u.id=e.unit_id
             join knowledge_documents d on d.id=u.document_id
            where u.space_id=$1 and g.status in ('READY','ACTIVE')
+             and u.embedding_eligible
+             ${vaultFilter("u.")}
+             and g.vault_id=u.vault_id
              and g.corpus_revision=u.corpus_revision
              and d.lifecycle in ('ACTIVE','DISPUTED')
              and d.refresh_status not in ('STALE_BLOCKED','INVALID')
@@ -318,9 +401,10 @@ export async function queryKnowledge(
           `
           select id from knowledge_documents
            where space_id=$1
+             ${vaultFilter()}
              and lifecycle in ('ACTIVE','DISPUTED')
              and refresh_status not in ('STALE_BLOCKED','INVALID')
-             and path like '90-agent-layer/context-packs/%'
+             and (layer='context-pack' or type='context-pack')
              and exists (
                select 1 from unnest($2::text[]) pattern
                 where lower(title || ' ' || body_cache) like pattern
@@ -340,7 +424,9 @@ export async function queryKnowledge(
       ? await db.pool.query(
           `
           select id from knowledge_documents
-           where space_id=$1 and lifecycle in ('ACTIVE','DISPUTED')
+           where space_id=$1
+             ${vaultFilter()}
+             and lifecycle in ('ACTIVE','DISPUTED')
              and refresh_status not in ('STALE_BLOCKED','INVALID')
              and (layer in ('source','resource') or type='raw-resource')
              and exists (
@@ -362,7 +448,9 @@ export async function queryKnowledge(
       ? await db.pool.query(
           `
           select id from knowledge_documents
-           where space_id=$1 and lifecycle in ('ACTIVE','DISPUTED')
+           where space_id=$1
+             ${vaultFilter()}
+             and lifecycle in ('ACTIVE','DISPUTED')
              and refresh_status not in ('STALE_BLOCKED','INVALID')
              and layer='project'
              and exists (
@@ -392,6 +480,7 @@ export async function queryKnowledge(
                 else r.from_document_id
               end
            where r.space_id = $1
+             ${vaultFilter("candidate.")}
              and (r.from_document_id = any($2::uuid[]) or r.to_document_id = any($2::uuid[]))
              and candidate.lifecycle in ('ACTIVE','DISPUTED')
              and candidate.refresh_status not in ('STALE_BLOCKED','INVALID')
@@ -463,7 +552,7 @@ export async function queryKnowledge(
 
   const details = await db.pool.query(
     `
-    select d.id, d.space_id, d.external_id, d.current_revision, d.path, d.title, d.type, d.layer,
+    select d.id, d.space_id, d.vault_id, d.external_id, d.current_revision, d.path, d.title, d.type, d.layer,
            d.trust_tier, d.lifecycle, d.body_cache,
            d.refresh_status,
            coalesce(
@@ -483,7 +572,9 @@ export async function queryKnowledge(
        and (cited.layer in ('source', 'resource', 'evidence') or cited.type like '%evidence%')
       left join document_evidence de on de.document_id=d.id
       left join evidence e on e.id=de.evidence_id
+       and e.vault_id is not distinct from d.vault_id
      where d.id = any($1::uuid[])
+       ${vaultFilter("d.")}
      group by d.id
     `,
     [fused.map((item) => item.id)],
@@ -502,6 +593,48 @@ export async function queryKnowledge(
       });
     }
   }
+  const selectedUnits =
+    bestUnitByDocument.size === 0
+      ? { rows: [] }
+      : await db.pool.query(
+          `
+          select u.id, u.document_id, u.unit_type, u.body, u.parent_unit_id,
+                 p.unit_type parent_unit_type, p.body parent_body
+            from knowledge_units u
+            left join knowledge_units p
+              on p.id=u.parent_unit_id
+             and p.document_id=u.document_id
+             and p.space_id=u.space_id
+             and p.vault_id=u.vault_id
+           where u.id=any($1::uuid[])
+             and u.space_id=$2
+             and u.vault_id=any($3::uuid[])
+          `,
+          [
+            [...bestUnitByDocument.values()].map((unit) => unit.unitId),
+            spaceId,
+            vaultIds,
+          ],
+        );
+  const structuralContextByUnit = new Map(
+    selectedUnits.rows.map((row) => [
+      String(row.id),
+      {
+        body: String(row.body),
+        ...(row.parent_unit_id
+          ? { parentUnitId: String(row.parent_unit_id) }
+          : {}),
+        context: rehydrateStructuralContext({
+          body: String(row.body),
+          unitType: String(row.unit_type),
+          parentBody: row.parent_body ? String(row.parent_body) : null,
+          parentUnitType: row.parent_unit_type
+            ? String(row.parent_unit_type)
+            : null,
+        }),
+      },
+    ]),
+  );
   const minimumTrust = TRUST_RANK[input.minimumTrust] ?? 1;
 
   const results = fused
@@ -533,9 +666,20 @@ export async function queryKnowledge(
           (row.evidence_locators ?? []) as Array<Record<string, unknown>>
         ).map((locator) => `evidence:${JSON.stringify(locator)}`),
       ];
+      const matchedUnit = bestUnitByDocument.get(item.id);
+      const structuralContext = matchedUnit
+        ? structuralContextByUnit.get(matchedUnit.unitId)
+        : undefined;
       return {
         documentId: String(row.id),
-        ...bestUnitByDocument.get(item.id),
+        vaultId: String(row.vault_id),
+        ...matchedUnit,
+        ...(structuralContext?.parentUnitId
+          ? { parentUnitId: structuralContext.parentUnitId }
+          : {}),
+        ...(structuralContext?.context
+          ? { parentContext: structuralContext.context }
+          : {}),
         revision: String(row.current_revision),
         title: String(row.title),
         type: String(row.type),
@@ -543,7 +687,10 @@ export async function queryKnowledge(
         lifecycle: String(row.lifecycle) as SearchHit["lifecycle"],
         score: item.score,
         reasons: item.reasons,
-        excerpt: String(row.body_cache).slice(0, 1200),
+        excerpt: (structuralContext?.body ?? String(row.body_cache)).slice(
+          0,
+          1200,
+        ),
         citations,
         warnings:
           String(row.refresh_status ?? "CURRENT") === "STALE_PENDING_REVIEW"
@@ -572,38 +719,74 @@ export function registerSearchRoutes(app: FastifyInstance, db: Postgres): void {
         });
       }
       const actor = actorOf(request);
-      const requestedSpace =
-        parsed.data.spaceId ?? "00000000-0000-0000-0000-000000000003";
+      const requestedSpace = parsed.data.spaceId;
+      if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
       if (!hasSpaceAccess(actor, requestedSpace, "knowledge:read")) {
         return reply.code(403).send({ code: "SPACE_ACCESS_DENIED" });
       }
-      const hits = await queryKnowledge(db, parsed.data, {
+      let vaultIds: string[];
+      try {
+        const scope = await resolveAuthorizedVaultScope(db, {
+          userId: actor.id,
+          spaceId: requestedSpace,
+          permission: "knowledge:read",
+          ...(parsed.data.vaultId ? { vaultId: parsed.data.vaultId } : {}),
+          vaultIds: parsed.data.vaultIds,
+          federated: parsed.data.federated,
+        });
+        vaultIds = scope.vaultIds;
+      } catch (error) {
+        const code =
+          error instanceof Error ? error.message : "INVALID_VAULT_SCOPE";
+        return reply
+          .code(
+            code === "VAULT_SCOPE_NOT_FOUND"
+              ? 404
+              : code === "VAULT_ACCESS_DENIED"
+                ? 403
+                : 400,
+          )
+          .send({ code });
+      }
+      const scopedRequest: SearchInput = {
+        ...parsed.data,
+        vaultIds,
+        ...(vaultIds.length === 1 ? { vaultId: vaultIds[0] } : {}),
+      };
+      const hits = await queryKnowledge(db, scopedRequest, {
+        vaultIds,
         pathAuthorizer: (documentPath) =>
           hasPathAccess(actor, requestedSpace, "knowledge:read", documentPath),
       });
       const plan = planQuery(parsed.data.query);
-      const index = await db.pool.query(
-        "select * from index_revisions where space_id=$1",
-        [requestedSpace],
+      const indexRows = await db.pool.query(
+        "select * from vault_index_revisions where space_id=$1 and vault_id=any($2::uuid[]) order by vault_id",
+        [requestedSpace, vaultIds],
       );
+      const index = combineVaultIndexRows(indexRows.rows);
       return {
         mode: parsed.data.mode,
+        scope: {
+          spaceId: requestedSpace,
+          vaultIds,
+          federated: parsed.data.federated,
+        },
         intent: plan.intent,
         plan,
         degraded:
           process.env.AKP_VECTOR_ENABLED !== "true" ||
-          String(index.rows[0]?.status ?? "DEGRADED") !== "CONSISTENT",
+          String(index.status ?? "DEGRADED") !== "CONSISTENT",
         channels: channelsConsistentWithIndex(
           plan.channels,
-          index.rows[0],
+          index,
           process.env.AKP_VECTOR_ENABLED === "true",
         ).channels,
         warnings: channelsConsistentWithIndex(
           plan.channels,
-          index.rows[0],
+          index,
           process.env.AKP_VECTOR_ENABLED === "true",
         ).warnings,
-        indexRevisions: index.rows[0] ?? null,
+        indexRevisions: index,
         hits,
         noAnswer:
           hits.length === 0
@@ -629,19 +812,49 @@ export function registerSearchRoutes(app: FastifyInstance, db: Postgres): void {
           issues: parsed.error.issues,
         });
       }
-      const maxTokens = Math.max(
-        256,
-        Math.min(Number(body.maxTokens ?? 6000), 32000),
-      );
       const plan = planQuery(parsed.data.query, String(body.intent ?? ""));
       const intent = plan.intent;
-      const requestedSpace =
-        parsed.data.spaceId ?? "00000000-0000-0000-0000-000000000003";
+      const maxTokens = contextBudgetForIntent(
+        intent,
+        body.maxTokens === undefined ? undefined : Number(body.maxTokens),
+      );
+      const requestedSpace = parsed.data.spaceId;
       if (!hasSpaceAccess(actorOf(request), requestedSpace, "knowledge:read")) {
         return reply.code(403).send({ code: "SPACE_ACCESS_DENIED" });
       }
       const actor = actorOf(request);
-      const hits = await queryKnowledge(db, parsed.data, {
+      if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
+      let vaultIds: string[];
+      try {
+        const scope = await resolveAuthorizedVaultScope(db, {
+          userId: actor.id,
+          spaceId: requestedSpace,
+          permission: "knowledge:read",
+          ...(parsed.data.vaultId ? { vaultId: parsed.data.vaultId } : {}),
+          vaultIds: parsed.data.vaultIds,
+          federated: parsed.data.federated,
+        });
+        vaultIds = scope.vaultIds;
+      } catch (error) {
+        const code =
+          error instanceof Error ? error.message : "INVALID_VAULT_SCOPE";
+        return reply
+          .code(
+            code === "VAULT_SCOPE_NOT_FOUND"
+              ? 404
+              : code === "VAULT_ACCESS_DENIED"
+                ? 403
+                : 400,
+          )
+          .send({ code });
+      }
+      const scopedRequest: SearchInput = {
+        ...parsed.data,
+        vaultIds,
+        ...(vaultIds.length === 1 ? { vaultId: vaultIds[0] } : {}),
+      };
+      const hits = await queryKnowledge(db, scopedRequest, {
+        vaultIds,
         pathAuthorizer: (documentPath) =>
           hasPathAccess(actor, requestedSpace, "knowledge:read", documentPath),
       });
@@ -649,25 +862,24 @@ export function registerSearchRoutes(app: FastifyInstance, db: Postgres): void {
         hits.length === 0
           ? { rows: [] }
           : await db.pool.query(
-              `select id, layer, type, body_cache from knowledge_documents where id = any($1::uuid[])`,
+              `select id, layer, type from knowledge_documents where id = any($1::uuid[])`,
               [hits.map((hit) => hit.documentId)],
             );
       const detailById = new Map(
         details.rows.map((row) => [String(row.id), row]),
       );
-      const revision = await db.pool.query(
-        `select current_revision from vaults where space_id = $1 order by last_imported_at desc limit 1`,
-        [parsed.data.spaceId ?? "00000000-0000-0000-0000-000000000003"],
-      );
-      const index = await db.pool.query(
+      const indexRows = await db.pool.query(
         `
-        select corpus_revision,lexical_revision,vector_revision,graph_revision,
-               context_pack_revision,status,warnings,retrieval_configuration_version
-          from index_revisions where space_id=$1
+        select vault_id,corpus_revision,lexical_revision,vector_revision,
+               graph_revision,context_pack_revision,status,warnings,
+               retrieval_configuration_version
+          from vault_index_revisions
+         where space_id=$1 and vault_id=any($2::uuid[])
+         order by vault_id
         `,
-        [requestedSpace],
+        [requestedSpace, vaultIds],
       );
-      const indexRow = index.rows[0] ?? {};
+      const indexRow = combineVaultIndexRows(indexRows.rows);
       const conflicts =
         hits.length === 0
           ? { rows: [] }
@@ -681,20 +893,12 @@ export function registerSearchRoutes(app: FastifyInstance, db: Postgres): void {
               [hits.map((hit) => hit.documentId)],
             );
       const packet = buildContextPacket({
-        request: parsed.data,
+        request: scopedRequest,
         intent,
-        corpusRevision: String(
-          indexRow.corpus_revision ??
-            revision.rows[0]?.current_revision ??
-            "unknown",
-        ),
+        corpusRevision: String(indexRow.corpus_revision ?? "unknown"),
         maxTokens,
         indexRevisions: {
-          corpus: String(
-            indexRow.corpus_revision ??
-              revision.rows[0]?.current_revision ??
-              "unknown",
-          ),
+          corpus: String(indexRow.corpus_revision ?? "unknown"),
           lexical: indexRow.lexical_revision
             ? String(indexRow.lexical_revision)
             : null,
@@ -717,7 +921,7 @@ export function registerSearchRoutes(app: FastifyInstance, db: Postgres): void {
           const detail = detailById.get(hit.documentId);
           return {
             hit,
-            content: String(detail?.body_cache ?? hit.excerpt),
+            content: hit.parentContext ?? hit.excerpt,
             kind: kindOf(
               String(detail?.layer ?? ""),
               String(detail?.type ?? hit.type),
@@ -732,19 +936,25 @@ export function registerSearchRoutes(app: FastifyInstance, db: Postgres): void {
       });
       await db.pool.query(
         `
-        insert into context_packets(id, space_id, actor_id, corpus_revision, query_hash,
-                                    packet_hash, request, packet)
-        values ($1,$2,$3,$4,encode(digest($5,'sha256'),'hex'),$6,$7::jsonb,$8::jsonb)
+        insert into context_packets(id, space_id, vault_id, actor_id, corpus_revision,
+                                    query_hash, packet_hash, request, packet, scope)
+        values ($1,$2,$3,$4,$5,encode(digest($6,'sha256'),'hex'),$7,$8::jsonb,$9::jsonb,$10::jsonb)
         `,
         [
           packet.packetId,
-          parsed.data.spaceId ?? "00000000-0000-0000-0000-000000000003",
+          requestedSpace,
+          vaultIds.length === 1 ? vaultIds[0] : null,
           actorOf(request)?.id ?? null,
           packet.corpusRevision,
           parsed.data.query,
           packet.packetHash,
-          JSON.stringify(parsed.data),
+          JSON.stringify(scopedRequest),
           JSON.stringify(packet),
+          JSON.stringify({
+            spaceId: requestedSpace,
+            vaultIds,
+            federated: parsed.data.federated,
+          }),
         ],
       );
       return packet;

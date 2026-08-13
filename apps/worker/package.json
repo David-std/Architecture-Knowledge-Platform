@@ -12,8 +12,10 @@
   },
   "dependencies": {
     "@akp/compiler": "*",
+    "@akp/contracts": "*",
     "@akp/domain": "*",
     "@akp/git-store": "*",
+    "@akp/indexing": "*",
     "@akp/object-store": "*",
     "@akp/postgres": "*",
     "@akp/validation": "*",

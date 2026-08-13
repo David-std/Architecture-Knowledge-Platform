@@ -20,6 +20,7 @@ const headers = { authorization: `Bearer ${token}` };
 let app: FastifyInstance;
 let db: Postgres;
 let fixtureRoot: string;
+let defaultVault: string;
 const createdReviewIds = new Set<string>();
 const previousManagedRepository = process.env.AKP_MANAGED_REPO;
 
@@ -71,6 +72,7 @@ async function propose(repository: string, label: string) {
     headers,
     payload: {
       spaceId: defaultSpace,
+      vaultId: defaultVault,
       summary: `integration review ${label}`,
       changes: [{ path: relativePath, content: documentContent() }],
     },
@@ -122,6 +124,27 @@ beforeAll(async () => {
   process.env.NODE_ENV = "test";
   fixtureRoot = await mkdtemp(path.join(tmpdir(), "akp-review-publication-"));
   db = new Postgres(process.env.DATABASE_URL);
+  const vault = await db.pool.query<{ id: string }>(
+    "select id from vaults where space_id=$1 and enabled=true order by created_at limit 1",
+    [defaultSpace],
+  );
+  defaultVault = vault.rows[0]?.id ?? randomUUID();
+  if (!vault.rows[0]) {
+    await db.pool.query(
+      `insert into vaults(
+         id,space_id,canonical_path,name,read_only,current_revision,
+         vault_key,local_path,visibility,enabled
+       ) values($1,$2,$3,$4,true,$5,$6,$3,'PRIVATE',true)`,
+      [
+        defaultVault,
+        defaultSpace,
+        path.join(fixtureRoot, "canonical-vault"),
+        "Review publication integration vault",
+        "fixture:initial",
+        `review-fixture-${defaultVault.slice(0, 8)}`,
+      ],
+    );
+  }
   await db.pool.query(
     `
     insert into api_tokens(user_id,token_hash,label,scopes)
@@ -195,6 +218,7 @@ describe("review publication integration", () => {
       headers,
       payload: {
         spaceId: defaultSpace,
+        vaultId: defaultVault,
         summary: "invalid review fixture",
         changes: [
           {
@@ -235,6 +259,77 @@ describe("review publication integration", () => {
     });
     expect(await pathExists(repository)).toBe(false);
     expect(await pathExists(`${repository}-drafts`)).toBe(false);
+  });
+
+  it("commits approval and outbox events without synchronously indexing the vault", async () => {
+    const repository = repositoryFor("approval-outbox");
+    const proposal = await propose(repository, "approval-outbox");
+    const response = await decide(
+      proposal.reviewId,
+      "APPROVE",
+      "publish and queue durable indexing",
+    );
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      id: proposal.reviewId,
+      status: "APPROVED",
+      indexing: "PENDING",
+    });
+
+    const persisted = await db.pool.query<{
+      status: string;
+      merged_commit: string | null;
+    }>("select status,merged_commit from reviews where id=$1", [
+      proposal.reviewId,
+    ]);
+    expect(persisted.rows[0]).toMatchObject({
+      status: "APPROVED",
+      merged_commit: expect.any(String),
+    });
+
+    const events = await db.pool.query<{
+      event_id: string;
+      event_type: string;
+      vault_id: string;
+      causation_id: string | null;
+    }>(
+      "select event_id,event_type,vault_id,causation_id from event_outbox where resource_id=$1",
+      [proposal.reviewId],
+    );
+    const eventTypes = events.rows.map((row) => row.event_type).sort();
+    expect(eventTypes).toEqual(
+      [
+        "KnowledgePublished",
+        "CorpusRevisionPublished",
+        "LexicalIndexUpdateRequested",
+        "VectorIndexUpdateRequested",
+        "GraphIndexUpdateRequested",
+        "ContextPackInvalidationRequested",
+        "ImpactedEvalRunRequested",
+      ].sort(),
+    );
+    expect(events.rows.every((row) => row.vault_id === defaultVault)).toBe(
+      true,
+    );
+    const published = events.rows.find(
+      (row) => row.event_type === "KnowledgePublished",
+    );
+    const corpus = events.rows.find(
+      (row) => row.event_type === "CorpusRevisionPublished",
+    );
+    expect(published?.causation_id).toBeNull();
+    expect(corpus?.causation_id).toBe(published?.event_id);
+    expect(
+      events.rows
+        .filter((row) => row.event_type.endsWith("Requested"))
+        .every((row) => row.causation_id === corpus?.event_id),
+    ).toBe(true);
+
+    const indexed = await db.pool.query<{ count: number }>(
+      "select count(*)::int count from knowledge_documents where vault_id=$1 and path=$2",
+      [defaultVault, `managed/${proposal.relativePath}`],
+    );
+    expect(indexed.rows[0]?.count).toBe(0);
   });
 
   it("does not let a second reject or approve overwrite the first decision", async () => {

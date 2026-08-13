@@ -36,7 +36,7 @@ readiness. Exact validation state is recorded in
 - Produces an isolated Git draft, deterministic validation and a human review.
   Approved changes are squash-merged under a publication lock and reindexed;
   rejected changes remain isolated and published changes can be rolled back.
-- Exposes the same use cases through Fastify HTTP, 18 MCP tools over stdio or
+- Exposes the same use cases through Fastify HTTP, 20 MCP tools over stdio or
   Streamable HTTP, a CLI and a Next.js operational UI.
 - Tracks staleness, contradiction clusters, schema dry runs, deterministic
   knowledge lint, audit events and an Error Book that can create regression

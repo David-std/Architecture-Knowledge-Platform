@@ -5,11 +5,9 @@ import {
   audit,
   hasUnrestrictedPathAccess,
   requirePermission,
-  spaceIdsForPermission,
   unrestrictedSpaceIdsForPermission,
 } from "../auth.js";
 
-const DEFAULT_SPACE = "00000000-0000-0000-0000-000000000003";
 const ERROR_TYPES = new Set([
   "SOURCE_MISSED",
   "FACT_DROPPED",
@@ -22,7 +20,11 @@ const ERROR_TYPES = new Set([
   "INDEX_REVISION_MISMATCH",
   "PROMPT_INJECTION",
   "REVIEW_ESCAPE",
+  "EXTRACTOR_FAILURE",
+  "TABLE_PARSE_FAILURE",
   "RESTORE_FAILURE",
+  "GENERICITY_LEAK",
+  "REPOSITORY_HYGIENE_FAILURE",
 ]);
 
 export function registerErrorBookRoutes(
@@ -31,7 +33,8 @@ export function registerErrorBookRoutes(
 ): void {
   app.post<{
     Body: {
-      spaceId?: string;
+      spaceId: string;
+      vaultId: string;
       errorType?: string;
       rootCause?: string;
       correction?: string;
@@ -42,10 +45,11 @@ export function registerErrorBookRoutes(
     { preHandler: requirePermission("knowledge:propose") },
     async (request, reply) => {
       const actor = actorOf(request);
-      const spaceId =
-        request.body?.spaceId ??
-        spaceIdsForPermission(actor, "knowledge:propose")[0] ??
-        DEFAULT_SPACE;
+      const spaceId = request.body?.spaceId;
+      const vaultId = request.body?.vaultId;
+      if (!spaceId || !vaultId) {
+        return reply.code(400).send({ code: "VAULT_SCOPE_REQUIRED" });
+      }
       const errorType = String(request.body?.errorType ?? "").toUpperCase();
       if (!hasUnrestrictedPathAccess(actor, spaceId, "knowledge:propose")) {
         return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
@@ -55,17 +59,23 @@ export function registerErrorBookRoutes(
       }
       const result = await db.pool.query(
         `
-        insert into error_book(space_id,error_type,root_cause,correction,metadata)
-        values($1,$2,$3,$4,$5::jsonb) returning *
+        insert into error_book(space_id,vault_id,error_type,root_cause,correction,metadata)
+        select $1,$2,$3,$4,$5,$6::jsonb
+          from vaults where id=$2 and space_id=$1 and enabled=true
+        returning *
         `,
         [
           spaceId,
+          vaultId,
           errorType,
           request.body?.rootCause?.trim() || null,
           request.body?.correction?.trim() || null,
           JSON.stringify(request.body?.metadata ?? {}),
         ],
       );
+      if (!result.rowCount) {
+        return reply.code(404).send({ code: "VAULT_SCOPE_NOT_FOUND" });
+      }
       await audit(
         db,
         request,
@@ -120,8 +130,8 @@ export function registerErrorBookRoutes(
       };
       await db.pool.query(
         `
-        insert into eval_cases(id,space_id,category,query,expected,critical,active)
-        values($1,$2,$3,$4,$5::jsonb,$6,true)
+        insert into eval_cases(id,space_id,vault_id,category,query,expected,critical,active)
+        values($1,$2,$3,$4,$5,$6::jsonb,$7,true)
         on conflict(id) do update set
           category=excluded.category,query=excluded.query,expected=excluded.expected,
           critical=excluded.critical,active=true
@@ -129,6 +139,7 @@ export function registerErrorBookRoutes(
         [
           caseId,
           error.rows[0]?.space_id,
+          error.rows[0]?.vault_id,
           request.body?.category?.trim() || "error-book-regression",
           query,
           JSON.stringify(expected),

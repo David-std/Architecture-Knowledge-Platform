@@ -1,80 +1,83 @@
 # Project state
 
-- Status: `baseline-stable` — functional evidence, read-only vault audit and private snapshot passed.
-- Target version/checkpoint: `v0.1.17-knowledge-baseline`
-- Updated: 2026-08-08 (America/Bogota)
-- Active goal: Unified Goal V2
+- Status: `release-candidate-validated`
+- Target checkpoint: `v0.2.0-platform-megagoal`
+- Updated: 2026-08-12 (America/Bogota)
 - Platform repository: `C:\Users\david\Documents\Architecture-Knowledge-Platform`
+- Validation worktree: `C:\Users\david\AppData\Local\Temp\akp-final-megagoal`
 - External vault: `C:\Users\david\Documents\Architecture-Knowledge-System`
-  (read-only import; never mutated by the platform)
-- Managed corpus used for publication tests: `C:\tmp\akp-managed-knowledge-v2`
-- Functional baseline commit: `7daa261c446100b50bc985d60f199299291dfe2e`
-- Annotated tag: `v0.1.17-knowledge-baseline`
-- Private vault snapshot: `backups/v0.1.17-knowledge-baseline-20260808/architecture-knowledge-system-v0.1.17-knowledge-baseline-20260808.zip`
-- Vault snapshot SHA-256: `3f1c923e832ad31735b63c86d0c85938af733a55020ebce8564f6b0cdb22e146`
-- Vault manifest SHA-256: `a1c00872166cf652bfdd78a601013f6e6bee47807d74ecbb23402f167a398808`
-- Vault aggregate SHA-256: `204ba71e275ef877647b848d5f27c9c14b0d032a6b737dd2b9b8dbc0ec25b26f`
+  (read-only; the platform never publishes into it)
+- Managed publication repository: `C:\tmp\akp-managed-knowledge-v2`
+- Private recovery ZIP:
+  `C:\Users\david\AppData\Local\Temp\akp-final-megagoal-backup-c015d9a5cfe74d819f576d5cabcf36c7.zip`
+- Recovery ZIP SHA-256:
+  `06af22ada90f8e924facfd72065bffa7b1169d268f0a563fc7efdf3df7d8c5fd`
+- Commit/tag: pending the final repository merge after this report-only closure.
 
-## Executed runtime baseline
+## Executed baseline
 
-| Measure                               | Observed value |
-| ------------------------------------- | -------------: |
-| Applied append-only migrations        |             12 |
-| Vault-backed documents                |            552 |
-| Hierarchical units / embeddings       |  2,071 / 2,071 |
-| Typed relations                       |          1,192 |
-| Immutable sources / artifacts         |         3 / 79 |
-| Persisted ContextPackets              |              1 |
-| API integration tests                 |      26 passed |
-| Benchmark configurations / gold cases |         11 / 4 |
-| MCP tools                             |        18 / 18 |
+| Measure                           | Observed value |
+| --------------------------------- | -------------: |
+| Append-only migrations            |             16 |
+| Registered read-only vaults       |              4 |
+| Knowledge documents               |            555 |
+| Hierarchical units / embeddings   |  6,138 / 4,078 |
+| Typed relations                   |          1,192 |
+| Immutable sources / artifacts     |         3 / 79 |
+| Persisted ContextPackets          |              1 |
+| API integration tests             |      28 passed |
+| MCP tools                         |        20 / 20 |
+| OpenAPI paths / AsyncAPI channels |         50 / 3 |
+| Classified repository files       |            320 |
 
-The import revision remains
+The imported vault revision remains
 `snapshot:0e65e61ea31f0c1b9d135ec9fc5a822fd13db7bd4b470b772c935f2007a1ac34`.
-The imported vault has 100 unresolved wikilinks and 106 explicit import
-warnings; neither condition is silently repaired or presented as an error-free
-source corpus.
+Its unresolved links and import warnings remain explicit; the platform does not
+fabricate repairs.
 
-## Canonical decisions
+## Current architecture decisions
 
-1. Markdown/Git is canonical; PostgreSQL, vector/index, graph and ContextPacket
-   records are rebuildable projections.
-2. The original vault is only imported read-only. Reviewed generated knowledge
-   is published to a separate managed Git repository.
-3. The four-case benchmark currently recommends `lexical+graph`, but that
-   recommendation is not silently treated as a universal runtime default. The
-   intent planner remains explicit and the small benchmark is only regression
-   evidence.
-4. Source-recovery maps are agent-facing. Acquisition/download manifests stay
-   archived provenance and are excluded from normal retrieval.
-5. Evidence, claims, rules and context packs are typed dependency edges;
-   ordinary wikilinks remain low-authority `related_to` links.
-6. Direct publication is forbidden. Drafts use isolated worktrees, optimistic
-   base/head checks, cleanup and a repository publication lock.
+1. `VaultRegistry` is the explicit tenancy boundary. Queries, ingestion,
+   publication, indexes, evidence and eval packs carry a vault identity;
+   multi-vault synthesis requires explicit opt-in.
+2. Markdown/Git remains canonical. PostgreSQL, lexical/vector indexes, graph,
+   ContextPackets and eval results are derived projections.
+3. Publication commits review state plus seven vault-scoped outbox events.
+   Normal indexing is asynchronous and incremental; full rebuild is an
+   administrator-confirmed repair operation.
+4. `DocumentArtifact` is the canonical extraction contract. Deterministic
+   adapters are available locally; Docling, Marker and Chunkr remain optional
+   and no default is selected without a real benchmark.
+5. Retrieval uses hierarchical/structural units. Container units are retained
+   for parent rehydration and are not embedded as dossier-wide vectors.
+6. Sanitized audit bundles are explicit exports. Raw evidence bytes require a
+   separate confirmation, object hash/size verification, safe output roots and
+   a deployment-disabled feature flag.
 
-## Closure evidence recorded on 2026-08-08
+## Executed closure evidence
 
-- Fresh empty-database migration applied migrations `001`–`012` with zero
-  checksum mismatches.
-- A clean Node 20 / pnpm 10.34.5 container passed frozen strict-peer install,
-  high-severity audit (0 high findings), Prettier, `pnpm check` and production
-  build.
-- API integration passed 26 tests (21 security/governance and 5 publication
-  lifecycle cases). Unit tests, dependency boundaries and production build
-  passed separately.
-- Python 3.12 container passed `ruff check .` and 6 extractor tests.
-- Runtime verification passed after persisting ContextPacket
-  `03e8658c-2f2d-40a8-86bf-e93934ed199f`.
-- A real API smoke returned `UP`; MCP enumerated and exercised all 18 tools;
-  `/`, `/login` and `/reviews` returned HTTP 200 without hidden fetch errors.
-- Eval run `8477b608-a9d6-41d1-b216-91488c0da6e1` passed all 4 cases; benchmark
-  run `c8ec9350-9c11-4945-aac7-d201579cf0ab` evaluated 11 configurations and
-  recommended `lexical+graph`.
-- Backup v3 and isolated restore completed with 552 documents, 12 exact
-  migrations, 22 MinIO archive entries and a verified Git bundle.
+- Frozen pnpm install, high-severity dependency audit, global Prettier, lint,
+  typecheck, dependency boundaries, all unit tests and production build passed.
+- Fresh PostgreSQL applied migrations `001`–`016`; active database migration
+  rerun was idempotent and runtime verification passed.
+- API integration passed 28/28 cases, including scoped sessions,
+  idempotency, publication/outbox, reindex, source retirement and audit export.
+- PostgreSQL tests passed 12/12 and indexing tests passed 4/4 against a real
+  database; a fresh multivault fixture proved identical paths remain isolated.
+- Python Ruff and 12 extractor tests passed locally under Python 3.14.0.
+- Live liveness/readiness returned `UP`; a real ContextPacket was persisted;
+  MCP enumerated/exercised 20 tools against an authorized vault.
+- Document intelligence benchmark executed nine deterministic fixtures and
+  skipped 27 unavailable optional candidates honestly.
+- Offline retrieval benchmark executed 19 generic cases/slices over the exact
+  ten-configuration matrix. It is logic-only evidence; production default is
+  deliberately `null` and vector invocation is disabled.
+- Backup v3 restored 555 documents, the exact 16 migration names/checksums,
+  22 MinIO files and a verified managed-Git bundle.
 
 ## Honest boundary
 
-This is a controlled local baseline, not an internet-ready multi-tenant
-service. The accepted limitations are listed in `REMAINING_REAL_GAPS.md`.
-The read-only vault audit, deterministic manifest, private ZIP, staged private-file audit and annotated tag are complete. This file is a documentation-only follow-up to the tagged functional commit; product and assurance limits remain visible in `REMAINING_REAL_GAPS.md`.
+This is a validated local release candidate, not an internet-ready hosted
+service. The tag is intentionally not claimed until the worktree is merged and
+the final commit is tagged. Real residual limits are listed in
+`REMAINING_REAL_GAPS.md`.

@@ -1,0 +1,5 @@
+{"id":"generic-exact-identifier","category":"exact-identifier","query":"ERR-NMB-042","gold_documents":["cache-refresh-rule"],"critical":true,"slice":"exact-identifiers"}
+{"id":"generic-lexical-rule","category":"retrieval","query":"cache refresh after a configuration change","gold_documents":["cache-refresh-rule"],"critical":true,"slice":"lexical"}
+{"id":"generic-workflow","category":"workflow","query":"Which step verifies recovery after restoring a snapshot?","gold_documents":["recovery-workflow"],"critical":true,"slice":"workflow-selection"}
+{"id":"generic-cross-language","category":"cross-language","query":"¿Cómo funciona el enrutamiento resiliente?","gold_documents":["bilingual-routing"],"critical":true,"slice":"cross-language"}
+{"id":"generic-vector-disabled","category":"vector-disabled","query":"cache refresh after a configuration change","gold_documents":["cache-refresh-rule"],"critical":true,"slice":"vector-disabled"}

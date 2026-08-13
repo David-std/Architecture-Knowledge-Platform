@@ -41,6 +41,7 @@ jobs:
       - run: pnpm check
       - run: pnpm contracts:validate
       - run: pnpm docs:validate
+      - run: pnpm hygiene:validate
       - run: pnpm build
       - run: pnpm security:secrets
       - run: pnpm test:integration

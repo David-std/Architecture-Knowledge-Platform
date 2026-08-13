@@ -5,6 +5,7 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import { Postgres } from "@akp/postgres";
+import { MinioObjectStore } from "@akp/object-store";
 import { OpenTelemetryBridge, type ActiveTrace } from "@akp/observability";
 import { registerSearchRoutes } from "./routes/search.js";
 import { registerIngestRoutes } from "./routes/ingest.js";
@@ -20,6 +21,7 @@ import { registerWebAuthRoutes } from "./routes/web-auth.js";
 import { registerSchemaGovernanceRoutes } from "./routes/schema-governance.js";
 import { registerErrorBookRoutes } from "./routes/error-book.js";
 import { registerAuditRoutes } from "./routes/audit.js";
+import { registerAuditExportRoutes } from "./routes/audit-export.js";
 
 config({
   path: path.resolve(
@@ -37,6 +39,22 @@ export function buildServer() {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) throw new Error("DATABASE_URL is required");
   const db = new Postgres(databaseUrl);
+  const rawStoreConfig = [
+    process.env.AKP_RAW_ENDPOINT,
+    process.env.AKP_RAW_ACCESS_KEY,
+    process.env.AKP_RAW_SECRET_KEY,
+    process.env.AKP_RAW_BUCKET,
+  ];
+  const rawObjectStore = rawStoreConfig.every((value): value is string =>
+    Boolean(value?.trim()),
+  )
+    ? new MinioObjectStore({
+        endpoint: process.env.AKP_RAW_ENDPOINT as string,
+        accessKey: process.env.AKP_RAW_ACCESS_KEY as string,
+        secretKey: process.env.AKP_RAW_SECRET_KEY as string,
+        bucket: process.env.AKP_RAW_BUCKET as string,
+      })
+    : undefined;
   const telemetry = new OpenTelemetryBridge();
   const requestTraces = new Map<
     string,
@@ -132,6 +150,7 @@ export function buildServer() {
   registerSchemaGovernanceRoutes(app, db);
   registerErrorBookRoutes(app, db);
   registerAuditRoutes(app, db);
+  registerAuditExportRoutes(app, db, rawObjectStore);
   registerSearchRoutes(app, db);
   registerIngestRoutes(app, db);
   registerKnowledgeRoutes(app, db);

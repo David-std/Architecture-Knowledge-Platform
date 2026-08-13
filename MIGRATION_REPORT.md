@@ -33,3 +33,12 @@ Run `8e579e4c-e852-46cf-895f-dfebcf6372cf` imported 548 Markdown files: 361 oper
 - Controlled write enablement for the original vault is not performed. New reviewed material is published to a separate managed repository.
 
 Detailed artifacts live under `reports/migration/`.
+
+## Platform schema extension — 2026-08-12
+
+The source-vault preservation result above is unchanged. The executable
+platform added append-only migrations `013`–`016` for VaultRegistry,
+event/outbox delivery, structural incremental indexes and the canonical
+DocumentArtifact contract. A fresh database applied all 16 migrations and the
+v3 recovery smoke restored the exact 16 names/checksums. This extension changes
+derived platform state only; it does not mutate the external vault.

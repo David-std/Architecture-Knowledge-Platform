@@ -1,0 +1,12 @@
+{
+  "paragraphs": [
+    { "text": "Document heading", "style": "Heading 1" },
+    { "text": "A structured paragraph." }
+  ],
+  "tables": [
+    [
+      ["signal", "value"],
+      ["layout", "docx"]
+    ]
+  ]
+}

@@ -3,10 +3,18 @@ info:
   title: Architecture Knowledge Platform Persisted Events
   version: 0.2.0
   description: >
-    Schemas for events persisted by the current runtime. The platform does not
-    expose an external asynchronous broker or subscription endpoint in this
-    version, so no AsyncAPI operations or servers are declared.
+    Schemas for events persisted by the current runtime. The platform uses
+    PostgreSQL as its durable event source; LISTEN / NOTIFY is only a local
+    wake-up optimization and is not an external broker.
 channels:
+  outboxEvents:
+    address: internal.akp_outbox
+    description: >
+      Durable integration events stored in PostgreSQL event_outbox. LISTEN /
+      NOTIFY is only a wake-up hint; consumers claim rows with a lease.
+    messages:
+      integrationEvent:
+        $ref: "#/components/messages/IntegrationEvent"
   ingestJobEvents:
     address: internal.ingest_job_events
     description: Rows persisted in the ingest_job_events PostgreSQL table.
@@ -19,9 +27,21 @@ channels:
     messages:
       auditEvent:
         $ref: "#/components/messages/AuditEvent"
-operations: {}
+operations:
+  consumeOutboxEvents:
+    action: receive
+    channel:
+      $ref: "#/channels/outboxEvents"
+    summary: Claim and process durable integration events
+    messages:
+      - $ref: "#/channels/outboxEvents/messages/integrationEvent"
 components:
   messages:
+    IntegrationEvent:
+      name: IntegrationEvent
+      title: Versioned transactional outbox event
+      payload:
+        $ref: "#/components/schemas/IntegrationEventEnvelope"
     IngestJobEvent:
       name: IngestJobEvent
       title: Persisted ingest job event
@@ -33,6 +53,45 @@ components:
       payload:
         $ref: "#/components/schemas/AuditEventPayload"
   schemas:
+    IntegrationEventEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+        - eventId
+        - eventType
+        - eventVersion
+        - resourceId
+        - occurredAt
+        - payload
+      properties:
+        eventId: { type: string, format: uuid }
+        eventType:
+          type: string
+          enum:
+            - SourceRegistered
+            - ExtractionRequested
+            - ExtractionCompleted
+            - CompilationRequested
+            - KnowledgeDraftCreated
+            - ValidationRequested
+            - KnowledgePublished
+            - CorpusRevisionPublished
+            - LexicalIndexUpdateRequested
+            - VectorIndexUpdateRequested
+            - GraphIndexUpdateRequested
+            - ContextPackInvalidationRequested
+            - ImpactedEvalRunRequested
+        eventVersion: { type: integer, minimum: 1 }
+        resourceId: { type: string, minLength: 1 }
+        organizationId: { type: [string, "null"], format: uuid }
+        spaceId: { type: [string, "null"], format: uuid }
+        vaultId: { type: [string, "null"], format: uuid }
+        correlationId: { type: [string, "null"] }
+        causationId: { type: [string, "null"] }
+        occurredAt: { type: string, format: date-time }
+        payload:
+          type: object
+          additionalProperties: true
     IngestJobEventPayload:
       type: object
       required: [jobId, state, eventType, payload, createdAt]

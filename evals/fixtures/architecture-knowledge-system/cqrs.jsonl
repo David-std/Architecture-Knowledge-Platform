@@ -1,0 +1,1 @@
+{"id":"cqrs-same-db","category":"architecture","query":"¿Puede CQRS usar la misma base de datos?","gold_documents":["cqrs-capability-model"],"must_not_include":["event-sourcing-required"],"critical":true}

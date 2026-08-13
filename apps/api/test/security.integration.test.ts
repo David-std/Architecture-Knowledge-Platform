@@ -16,6 +16,8 @@ const headers = { authorization: `Bearer ${integrationToken}` };
 let app: FastifyInstance;
 let db: Postgres;
 let allowedRoot: string;
+let defaultVaultId: string;
+let secondVaultId: string;
 
 beforeAll(async () => {
   if (!process.env.DATABASE_URL)
@@ -40,6 +42,95 @@ beforeAll(async () => {
     on conflict do nothing
     `,
     [admin, secondSpace],
+  );
+  const defaultVault = await db.pool.query<{ id: string }>(
+    "select id from vaults where space_id=$1 and enabled=true order by created_at limit 1",
+    [defaultSpace],
+  );
+  if (!defaultVault.rows[0]) {
+    const vaultId = randomUUID();
+    await db.pool.query(
+      `insert into vaults(
+         id,space_id,canonical_path,name,read_only,current_revision,
+         vault_key,local_path,visibility,enabled
+       ) values($1,$2,$3,$4,true,$5,$6,$3,'PRIVATE',true)`,
+      [
+        vaultId,
+        defaultSpace,
+        path.join(allowedRoot, "canonical-vault"),
+        "Security integration vault",
+        "fixture:initial",
+        `security-fixture-${vaultId.slice(0, 8)}`,
+      ],
+    );
+    defaultVaultId = vaultId;
+  } else {
+    defaultVaultId = defaultVault.rows[0].id;
+  }
+  const secondVault = await db.pool.query<{ id: string }>(
+    "select id from vaults where space_id=$1 and enabled=true order by created_at limit 1",
+    [secondSpace],
+  );
+  if (secondVault.rows[0]) {
+    secondVaultId = secondVault.rows[0].id;
+  } else {
+    secondVaultId = randomUUID();
+    await db.pool.query(
+      `insert into vaults(
+         id,space_id,canonical_path,name,read_only,current_revision,
+         vault_key,local_path,visibility,enabled
+       ) values($1,$2,$3,$4,true,$5,$6,$3,'PRIVATE',true)`,
+      [
+        secondVaultId,
+        secondSpace,
+        path.join(allowedRoot, "second-canonical-vault"),
+        "Second security integration vault",
+        "fixture:initial",
+        `security-second-${secondVaultId.slice(0, 8)}`,
+      ],
+    );
+  }
+  // Fresh migration 013 has no vault rows to inherit space memberships from.
+  // Register explicit fixture grants so reindex reaches its confirmation
+  // contract instead of failing at the vault authorization boundary.
+  await db.pool.query(
+    `
+    insert into vault_memberships(user_id,vault_id,role,path_prefix,permissions)
+    values($1,$2,'ADMIN',null,
+           '["knowledge:read","source:read","source:write",
+             "knowledge:propose","knowledge:review","eval:run","admin"]'::jsonb)
+    on conflict(user_id,vault_id,role,path_prefix) do update
+      set permissions=excluded.permissions,enabled=true
+    `,
+    [admin, defaultVaultId],
+  );
+  await db.pool.query(
+    `
+    insert into vault_memberships(user_id,vault_id,role,path_prefix,permissions)
+    values($1,$2,'VIEWER','shared','["knowledge:read","source:read"]'::jsonb)
+    on conflict(user_id,vault_id,role,path_prefix) do update
+      set permissions=excluded.permissions,enabled=true
+    `,
+    [admin, secondVaultId],
+  );
+  // Keep the fresh-DB projection assertion meaningful: one canonical
+  // managed document must produce at least one structural unit.
+  await db.pool.query(
+    `
+    insert into knowledge_documents(
+      space_id,vault_id,path,external_id,title,type,lifecycle,trust_tier,
+      current_revision,body_cache,frontmatter,aliases,raw_links
+    ) values($1,$2,'managed/security-fixture.md','SECURITY-FIXTURE',
+             'Security fixture','note','ACTIVE','CURATED','fixture:initial',
+             '# Security fixture\n\nA projection fixture.',
+             '{"id":"SECURITY-FIXTURE","title":"Security fixture"}'::jsonb,
+             '{}','[]')
+    on conflict(vault_id,path) where vault_id is not null do update set
+      lifecycle='ACTIVE',current_revision=excluded.current_revision,
+      body_cache=excluded.body_cache,frontmatter=excluded.frontmatter,
+      raw_links=excluded.raw_links
+    `,
+    [defaultSpace, defaultVaultId],
   );
   const module = await import("../src/server.js");
   app = module.buildServer();
@@ -83,6 +174,7 @@ describe("API security boundaries", () => {
       headers,
       payload: {
         spaceId: secondSpace,
+        vaultId: secondVaultId,
         summary: "must be denied",
         changes: [
           {
@@ -124,12 +216,12 @@ describe("API security boundaries", () => {
     await db.pool.query(
       `
       insert into knowledge_documents(
-        id,space_id,path,external_id,title,type,lifecycle,trust_tier,current_revision,
+        id,space_id,vault_id,path,external_id,title,type,lifecycle,trust_tier,current_revision,
         body_cache,frontmatter,aliases,layer,content_hash,token_estimate,raw_links
       ) values
-        ($1,$3,$4,$5,'Permitted document','note','ACTIVE','HUMAN_REVIEWED','scope-test',
+        ($1,$3,$10,$4,$5,'Permitted document','note','ACTIVE','HUMAN_REVIEWED','scope-test',
          'Permitted content.','{}'::jsonb,'{}','concept',$6,10,'[]'::jsonb),
-        ($2,$3,$7,$8,'Private document','note','ACTIVE','HUMAN_REVIEWED','scope-test',
+        ($2,$3,$10,$7,$8,'Private document','note','ACTIVE','HUMAN_REVIEWED','scope-test',
          'Private content.','{}'::jsonb,'{}','concept',$9,10,'[]'::jsonb)
       `,
       [
@@ -142,6 +234,7 @@ describe("API security boundaries", () => {
         `private/denied-${suffix}.md`,
         deniedId,
         suffix.replaceAll("-", "").padEnd(64, "b").slice(0, 64),
+        defaultVaultId,
       ],
     );
     const limitedHeaders = { authorization: `Bearer ${token}` };
@@ -171,6 +264,7 @@ describe("API security boundaries", () => {
         payload: {
           query: deniedId,
           spaceId: defaultSpace,
+          vaultId: defaultVaultId,
           types: [],
           minimumTrust: "UNVERIFIED",
           mode: "COMPILED_ONLY",
@@ -226,12 +320,12 @@ describe("API security boundaries", () => {
     await db.pool.query(
       `
       insert into knowledge_documents(
-        id,space_id,path,external_id,title,type,lifecycle,trust_tier,current_revision,
+        id,space_id,vault_id,path,external_id,title,type,lifecycle,trust_tier,current_revision,
         body_cache,frontmatter,aliases,layer,content_hash,token_estimate,raw_links
       ) values
-        ($1,$3,$4,$5,'Session allowed document','note','ACTIVE','HUMAN_REVIEWED','scope-test',
+        ($1,$3,$10,$4,$5,'Session allowed document','note','ACTIVE','HUMAN_REVIEWED','scope-test',
          'Allowed through session.','{}'::jsonb,'{}','concept',$6,10,'[]'::jsonb),
-        ($2,$3,$7,$8,'Session private document','note','ACTIVE','HUMAN_REVIEWED','scope-test',
+        ($2,$3,$10,$7,$8,'Session private document','note','ACTIVE','HUMAN_REVIEWED','scope-test',
          'Denied through session.','{}'::jsonb,'{}','concept',$9,10,'[]'::jsonb)
       `,
       [
@@ -244,6 +338,7 @@ describe("API security boundaries", () => {
         `private/session-denied-${suffix}.md`,
         deniedId,
         suffix.replaceAll("-", "").padEnd(64, "d").slice(0, 64),
+        defaultVaultId,
       ],
     );
     let sessionId: string | undefined;
@@ -300,7 +395,11 @@ describe("API security boundaries", () => {
             method: "POST",
             url: "/v1/sessions",
             headers: sessionHeaders,
-            payload: { purpose: "must not create whole-space session" },
+            payload: {
+              purpose: "must not create whole-space session",
+              spaceId: defaultSpace,
+              vaultId: defaultVaultId,
+            },
           })
         ).statusCode,
       ).toBe(403);
@@ -373,6 +472,8 @@ describe("API security boundaries", () => {
     const payload = {
       purpose: `credential partition ${suffix}`,
       contextBudget: 512,
+      spaceId: defaultSpace,
+      vaultId: defaultVaultId,
     };
     try {
       const broad = await app.inject({
@@ -399,8 +500,8 @@ describe("API security boundaries", () => {
 
       const errors = [randomUUID(), randomUUID()];
       await db.pool.query(
-        "insert into error_book(id,space_id,error_type,root_cause) values($1,$3,'RETRIEVAL_FAILURE','first'),($2,$3,'RETRIEVAL_FAILURE','second')",
-        [errors[0], errors[1], defaultSpace],
+        "insert into error_book(id,space_id,vault_id,error_type,root_cause) values($1,$3,$4,'RETRIEVAL_FAILURE','first'),($2,$3,$4,'RETRIEVAL_FAILURE','second')",
+        [errors[0], errors[1], defaultSpace, defaultVaultId],
       );
       const routeKey = `concrete-url-${suffix}`;
       const resolution = {
@@ -448,7 +549,11 @@ describe("API security boundaries", () => {
 
   it("marks an expired idempotency lease abandoned rather than replaying an uncertain write", async () => {
     const key = `expired-lease-${randomUUID()}`;
-    const payload = { purpose: `expired idempotency fixture ${randomUUID()}` };
+    const payload = {
+      purpose: `expired idempotency fixture ${randomUUID()}`,
+      spaceId: defaultSpace,
+      vaultId: defaultVaultId,
+    };
     try {
       const initial = await app.inject({
         method: "POST",
@@ -502,6 +607,7 @@ describe("API security boundaries", () => {
       headers,
       payload: {
         spaceId: defaultSpace,
+        vaultId: defaultVaultId,
         summary: "traversal fixture",
         changes: [{ path: "../secret.md", content: "unsafe" }],
       },
@@ -514,6 +620,7 @@ describe("API security boundaries", () => {
       headers,
       payload: {
         spaceId: defaultSpace,
+        vaultId: defaultVaultId,
         sourceUri: path.resolve("README.md"),
         policy: "REVIEW_REQUIRED",
       },
@@ -527,6 +634,7 @@ describe("API security boundaries", () => {
     await writeFile(source, "# Fixture", "utf8");
     const payload = {
       spaceId: defaultSpace,
+      vaultId: defaultVaultId,
       sourceUri: source,
       policy: "REVIEW_REQUIRED",
       idempotencyKey,
@@ -561,6 +669,8 @@ describe("API security boundaries", () => {
     const payload = {
       purpose: "generic idempotency integration fixture",
       contextBudget: 512,
+      spaceId: defaultSpace,
+      vaultId: defaultVaultId,
     };
     const first = await app.inject({
       method: "POST",
@@ -594,7 +704,12 @@ describe("API security boundaries", () => {
     const key = `concurrent-${randomUUID()}`;
     const purpose = `concurrent idempotency fixture ${randomUUID()}`;
     const requestHeaders = { ...headers, "idempotency-key": key };
-    const payload = { purpose, contextBudget: 512 };
+    const payload = {
+      purpose,
+      contextBudget: 512,
+      spaceId: defaultSpace,
+      vaultId: defaultVaultId,
+    };
     const responses = await Promise.all(
       Array.from({ length: 8 }, () =>
         app.inject({
@@ -637,12 +752,12 @@ describe("API security boundaries", () => {
     await db.pool.query(
       `
       insert into knowledge_documents(
-        id,space_id,path,external_id,title,type,lifecycle,trust_tier,current_revision,
+        id,space_id,vault_id,path,external_id,title,type,lifecycle,trust_tier,current_revision,
         body_cache,frontmatter,aliases,layer,content_hash,token_estimate,raw_links
       ) values
-        ($1,$3,$4,$5,'Governance source fixture','claim','ACTIVE','HUMAN_REVIEWED',
+        ($1,$3,$10,$4,$5,'Governance source fixture','claim','ACTIVE','HUMAN_REVIEWED',
          'integration-fixture','A controlled source statement.','{}'::jsonb,'{}','claim',$6,10,'[]'::jsonb),
-        ($2,$3,$7,$8,'Governance dependent fixture','rule','ACTIVE','HUMAN_REVIEWED',
+        ($2,$3,$10,$7,$8,'Governance dependent fixture','rule','ACTIVE','HUMAN_REVIEWED',
          'integration-fixture','A controlled downstream rule.','{}'::jsonb,'{}','rule',$9,10,'[]'::jsonb)
       `,
       [
@@ -655,6 +770,7 @@ describe("API security boundaries", () => {
         `managed/test/governance-dependent-${suffix}.md`,
         `E2E-GOVERNANCE-DEPENDENT-${suffix}`,
         suffix.replaceAll("-", "").padEnd(64, "1").slice(0, 64),
+        defaultVaultId,
       ],
     );
     await db.pool.query(
@@ -770,11 +886,29 @@ describe("API security boundaries", () => {
   });
 
   it("requires explicit confirmation and rebuilds derived projections", async () => {
-    const missingConfirmation = await app.inject({
+    const vault = await db.pool.query<{ id: string }>(
+      "select id from vaults where space_id=$1 and enabled=true order by created_at limit 1",
+      [defaultSpace],
+    );
+    const vaultId = vault.rows[0]?.id;
+    if (!vaultId) throw new Error("Reindex integration vault is missing");
+
+    const missingVault = await app.inject({
       method: "POST",
       url: "/v1/reindex",
       headers,
       payload: { spaceId: defaultSpace },
+    });
+    expect(missingVault.statusCode).toBe(400);
+    expect(missingVault.json()).toMatchObject({
+      code: "REINDEX_VAULT_REQUIRED",
+    });
+
+    const missingConfirmation = await app.inject({
+      method: "POST",
+      url: "/v1/reindex",
+      headers,
+      payload: { spaceId: defaultSpace, vaultId },
     });
     expect(missingConfirmation.statusCode).toBe(409);
     expect(missingConfirmation.json()).toMatchObject({
@@ -787,10 +921,11 @@ describe("API security boundaries", () => {
       headers,
       payload: {
         spaceId: defaultSpace,
+        vaultId,
         confirm: "REBUILD_DERIVED_PROJECTIONS",
       },
     });
-    expect(rebuilt.statusCode).toBe(200);
+    expect(rebuilt.statusCode, rebuilt.body).toBe(200);
     expect(rebuilt.json()).toMatchObject({
       status: "REBUILT_FROM_CURRENT_CANONICAL_REVISION",
     });
@@ -805,12 +940,13 @@ describe("API security boundaries", () => {
     const sourceHash = suffix.replaceAll("-", "").padEnd(64, "a").slice(0, 64);
     await db.pool.query(
       `
-      insert into sources(id,space_id,title,source_uri,media_type,sha256,byte_size,object_key)
-      values($1,$2,'Retirement fixture',$3,'text/markdown',$4,1,$5)
+      insert into sources(id,space_id,vault_id,title,source_uri,media_type,sha256,byte_size,object_key)
+      values($1,$2,$3,'Retirement fixture',$4,'text/markdown',$5,1,$6)
       `,
       [
         sourceRecordId,
         defaultSpace,
+        defaultVaultId,
         `fixture://${suffix}`,
         sourceHash,
         `sha256/test/${sourceHash}`,
@@ -819,18 +955,19 @@ describe("API security boundaries", () => {
     await db.pool.query(
       `
       insert into knowledge_documents(
-        id,space_id,path,external_id,title,type,lifecycle,trust_tier,current_revision,
+        id,space_id,vault_id,path,external_id,title,type,lifecycle,trust_tier,current_revision,
         body_cache,frontmatter,aliases,layer,content_hash,token_estimate,raw_links
       ) values
-        ($1,$3,$4,$5,'Compiled source fixture','source','ACTIVE','HUMAN_REVIEWED',
-         'integration-fixture','Compiled source.',$6::jsonb,'{}','source',$7,10,'[]'::jsonb),
-        ($2,$3,$8,$9,'Dependent rule fixture','rule','ACTIVE','HUMAN_REVIEWED',
-         'integration-fixture','Dependent rule.','{}'::jsonb,'{}','rule',$10,10,'[]'::jsonb)
+        ($1,$3,$4,$5,$6,'Compiled source fixture','source','ACTIVE','HUMAN_REVIEWED',
+         'integration-fixture','Compiled source.',$7::jsonb,'{}','source',$8,10,'[]'::jsonb),
+        ($2,$3,$4,$9,$10,'Dependent rule fixture','rule','ACTIVE','HUMAN_REVIEWED',
+         'integration-fixture','Dependent rule.','{}'::jsonb,'{}','rule',$11,10,'[]'::jsonb)
       `,
       [
         compiledId,
         dependentId,
         defaultSpace,
+        defaultVaultId,
         `managed/test/retirement-source-${suffix}.md`,
         `SRC-INGEST-${sourceHash.slice(0, 12).toUpperCase()}`,
         JSON.stringify({ source_sha256: sourceHash }),
@@ -910,7 +1047,11 @@ describe("API security boundaries", () => {
       method: "POST",
       url: "/v1/sessions",
       headers: { cookie: String(sessionPair) },
-      payload: { purpose: "csrf must fail" },
+      payload: {
+        purpose: "csrf must fail",
+        spaceId: defaultSpace,
+        vaultId: defaultVaultId,
+      },
     });
     expect(missingCsrf.statusCode).toBe(403);
     expect(missingCsrf.json().code).toBe("CSRF_TOKEN_REQUIRED");
@@ -919,7 +1060,12 @@ describe("API security boundaries", () => {
       method: "POST",
       url: "/v1/sessions",
       headers: { cookie: String(sessionPair), "x-csrf-token": csrfToken },
-      payload: { purpose: "web session integration", contextBudget: 512 },
+      payload: {
+        purpose: "web session integration",
+        contextBudget: 512,
+        spaceId: defaultSpace,
+        vaultId: defaultVaultId,
+      },
     });
     expect(withCsrf.statusCode).toBe(201);
     await db.pool.query("delete from agent_sessions where id=$1", [
@@ -948,6 +1094,8 @@ describe("API security boundaries", () => {
       url: "/v1/schema/dry-run",
       headers,
       payload: {
+        spaceId: defaultSpace,
+        vaultId: defaultVaultId,
         candidateVersion: `integration-${randomUUID()}`,
         requiredFrontmatterFields: ["id", "integration_required_field"],
       },
@@ -970,6 +1118,8 @@ describe("API security boundaries", () => {
       url: "/v1/error-book",
       headers,
       payload: {
+        spaceId: defaultSpace,
+        vaultId: defaultVaultId,
         errorType: "RETRIEVAL_FAILURE",
         rootCause: "Synthetic regression fixture",
         correction: "Require the expected CQRS dossier",
@@ -1053,6 +1203,79 @@ describe("API security boundaries", () => {
       expect(response.json().events[0].space_id).toBe(defaultSpace);
     } finally {
       await db.pool.query("delete from audit_events where action=$1", [action]);
+    }
+  });
+
+  it("exports only sanitized audit metadata and denies path-scoped admin tokens", async () => {
+    const vault = await db.pool.query<{ id: string }>(
+      "select id from vaults where space_id=$1 and enabled=true order by created_at limit 1",
+      [defaultSpace],
+    );
+    const vaultId = vault.rows[0]?.id;
+    if (!vaultId) throw new Error("Audit export integration vault is missing");
+    const token = `akp-audit-path-scoped-${randomUUID()}`;
+    const tokenHash = createHash("sha256").update(token).digest("hex");
+    await db.pool.query(
+      `insert into api_tokens(user_id,token_hash,label,scopes)
+       values($1,$2,'audit export path-scope fixture',$3::jsonb)`,
+      [
+        admin,
+        tokenHash,
+        JSON.stringify({
+          spaces: [
+            {
+              spaceId: defaultSpace,
+              pathPrefix: "shared",
+              permissions: ["admin"],
+            },
+          ],
+        }),
+      ],
+    );
+    const confirm = "EXPORT_SANITIZED_AUDIT_BUNDLE";
+    try {
+      const denied = await app.inject({
+        method: "GET",
+        url: `/v1/audit/export/${vaultId}/metadata?confirm=${confirm}`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(denied.statusCode).toBe(403);
+
+      const metadata = await app.inject({
+        method: "GET",
+        url: `/v1/audit/export/${vaultId}/metadata?confirm=${confirm}`,
+        headers,
+      });
+      expect(metadata.statusCode).toBe(200);
+      expect(metadata.json()).toMatchObject({
+        status: "READY",
+        schemaVersion: "1.0",
+        vaultId,
+        continuation: null,
+      });
+      expect(metadata.json().manifestHash).toMatch(/^[a-f0-9]{64}$/);
+
+      const bundle = await app.inject({
+        method: "GET",
+        url: `/v1/audit/export/${vaultId}?confirm=${confirm}&maxPackets=1`,
+        headers,
+      });
+      expect(bundle.statusCode).toBe(200);
+      expect(bundle.headers["content-type"]).toContain("application/zip");
+      expect(bundle.headers["x-akp-bundle-hash"]).toMatch(/^[a-f0-9]{64}$/);
+      const payload = bundle.rawPayload.toString("utf8");
+      expect(payload).toContain("BUNDLE_METADATA.json");
+      expect(payload).not.toContain("body_cache");
+      expect(payload).not.toContain("source_uri");
+      expect(payload).not.toContain('"excerpt"');
+    } finally {
+      await db.pool.query("delete from api_tokens where token_hash=$1", [
+        tokenHash,
+      ]);
+      await db.pool.query(
+        "delete from audit_events where resource_id=$1 and action like 'audit.export%'",
+        [vaultId],
+      );
     }
   });
 });

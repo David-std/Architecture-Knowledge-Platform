@@ -3,85 +3,212 @@
   "name": "architecture-knowledge-platform",
   "version": "0.2.0",
   "transports": ["stdio", "streamable-http"],
+  "definitions": {
+    "ScopedSearch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["query", "spaceId", "vaultIds"],
+      "properties": {
+        "query": { "type": "string", "minLength": 1 },
+        "spaceId": { "type": "string", "format": "uuid" },
+        "vaultIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "uniqueItems": true,
+          "items": { "type": "string", "format": "uuid" }
+        },
+        "federated": { "type": "boolean", "default": false },
+        "limit": { "type": "integer", "minimum": 1, "maximum": 50 },
+        "minimumTrust": {
+          "type": "string",
+          "enum": [
+            "UNVERIFIED",
+            "MACHINE_SUPPORTED",
+            "HUMAN_REVIEWED",
+            "ATTESTED"
+          ]
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["COMPILED_ONLY", "SOURCE_BACKED", "RAW_ONLY", "PROJECT_CODE"]
+        },
+        "intent": { "type": "string" },
+        "maxTokens": { "type": "integer", "minimum": 256, "maximum": 32000 }
+      }
+    }
+  },
   "tools": [
     {
       "name": "akp_status",
+      "version": "1.0.0",
       "permission": "knowledge:read",
       "mutates": false,
       "http": { "method": "GET", "path": "/v1/status" }
     },
     {
+      "name": "akp_list_vaults",
+      "version": "1.0.0",
+      "permission": "knowledge:read",
+      "mutates": false,
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "http": { "method": "GET", "path": "/v1/vaults" }
+    },
+    {
       "name": "akp_start_session",
+      "version": "1.0.0",
       "permission": "knowledge:read",
       "mutates": true,
       "requiresIdempotencyKey": true,
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["spaceId", "vaultId", "purpose", "idempotencyKey"],
+        "properties": {
+          "spaceId": { "type": "string", "format": "uuid" },
+          "vaultId": { "type": "string", "format": "uuid" },
+          "purpose": { "type": "string", "minLength": 1 },
+          "contextBudget": {
+            "type": "integer",
+            "minimum": 256,
+            "maximum": 32000
+          },
+          "projectId": { "type": "string", "format": "uuid" },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 200
+          }
+        }
+      },
       "http": { "method": "POST", "path": "/v1/sessions" }
     },
     {
       "name": "akp_search",
+      "version": "1.0.0",
       "permission": "knowledge:read",
       "mutates": false,
+      "inputSchema": { "$ref": "#/definitions/ScopedSearch" },
       "http": { "method": "POST", "path": "/v1/search" }
     },
     {
       "name": "akp_build_context",
+      "version": "1.0.0",
       "permission": "knowledge:read",
       "mutates": false,
       "sideEffects": ["persists_context_packet"],
+      "inputSchema": { "$ref": "#/definitions/ScopedSearch" },
       "http": { "method": "POST", "path": "/v1/context" }
     },
     {
       "name": "akp_get_document",
+      "version": "1.0.0",
       "permission": "knowledge:read",
       "mutates": false,
       "http": { "method": "GET", "path": "/v1/documents/{id}" }
     },
     {
       "name": "akp_get_source_evidence",
+      "version": "1.0.0",
       "permission": "source:read",
       "mutates": false,
       "http": { "method": "GET", "path": "/v1/documents/{id}/evidence" }
     },
     {
       "name": "akp_get_context_pack",
+      "version": "1.0.0",
       "permission": "knowledge:read",
       "mutates": false,
       "http": { "method": "GET", "path": "/v1/context-packs/{id}" }
     },
     {
       "name": "akp_analyze_impact",
+      "version": "1.0.0",
       "permission": "knowledge:read",
       "mutates": false,
       "http": { "method": "GET", "path": "/v1/impact/{id}" }
     },
     {
       "name": "akp_submit_source",
+      "version": "1.0.0",
       "permission": "source:write",
       "mutates": true,
       "requiresIdempotencyKey": true,
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["spaceId", "vaultId", "sourceUri", "idempotencyKey"],
+        "properties": {
+          "spaceId": { "type": "string", "format": "uuid" },
+          "vaultId": { "type": "string", "format": "uuid" },
+          "sourceUri": { "type": "string", "minLength": 1 },
+          "title": { "type": "string" },
+          "mediaType": { "type": "string" },
+          "expectedSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 200
+          }
+        }
+      },
       "http": { "method": "POST", "path": "/v1/ingest" }
     },
     {
       "name": "akp_ingest_status",
+      "version": "1.0.0",
       "permission": "source:read",
       "mutates": false,
       "http": { "method": "GET", "path": "/v1/ingest/{id}" }
     },
     {
       "name": "akp_propose_knowledge_change",
+      "version": "1.0.0",
       "permission": "knowledge:propose",
       "mutates": true,
       "requiresIdempotencyKey": true,
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "spaceId",
+          "vaultId",
+          "summary",
+          "path",
+          "content",
+          "reason",
+          "idempotencyKey"
+        ],
+        "properties": {
+          "spaceId": { "type": "string", "format": "uuid" },
+          "vaultId": { "type": "string", "format": "uuid" },
+          "summary": { "type": "string", "minLength": 1 },
+          "path": { "type": "string", "minLength": 1 },
+          "content": { "type": "string", "minLength": 1 },
+          "reason": { "type": "string", "minLength": 1 },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 200
+          }
+        }
+      },
       "http": { "method": "POST", "path": "/v1/proposals" }
     },
     {
       "name": "akp_validate_draft",
+      "version": "1.0.0",
       "permission": "knowledge:read",
       "mutates": false,
       "http": { "method": "GET", "path": "/v1/reviews/{id}" }
     },
     {
       "name": "akp_submit_review",
+      "version": "1.0.0",
       "permission": "knowledge:propose",
       "mutates": true,
       "requiresIdempotencyKey": true,
@@ -89,6 +216,7 @@
     },
     {
       "name": "akp_approve_review",
+      "version": "1.0.0",
       "permission": "knowledge:review",
       "mutates": true,
       "requiresIdempotencyKey": true,
@@ -96,6 +224,7 @@
     },
     {
       "name": "akp_reject_review",
+      "version": "1.0.0",
       "permission": "knowledge:review",
       "mutates": true,
       "requiresIdempotencyKey": true,
@@ -103,23 +232,41 @@
     },
     {
       "name": "akp_run_eval",
+      "version": "1.0.0",
       "permission": "eval:run",
       "mutates": true,
       "requiresIdempotencyKey": true,
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["spaceId", "vaultId", "idempotencyKey"],
+        "properties": {
+          "spaceId": { "type": "string", "format": "uuid" },
+          "vaultId": { "type": "string", "format": "uuid" },
+          "evalPack": { "type": "string", "default": "generic" },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 200
+          }
+        }
+      },
       "http": { "method": "POST", "path": "/v1/evals/run" }
     },
     {
       "name": "akp_reindex",
+      "version": "1.0.0",
       "permission": "admin",
       "mutates": true,
       "requiresIdempotencyKey": true,
-      "description": "Rebuild one whole authorized space; admin pathPrefix must be null.",
+      "description": "Rebuild one explicitly selected authorized vault; admin pathPrefix must be null.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["spaceId", "confirm", "idempotencyKey"],
+        "required": ["spaceId", "vaultId", "confirm", "idempotencyKey"],
         "properties": {
           "spaceId": { "type": "string", "format": "uuid" },
+          "vaultId": { "type": "string", "format": "uuid" },
           "confirm": {
             "type": "string",
             "enum": ["REBUILD_DERIVED_PROJECTIONS", "REIMPORT_AND_REBUILD"]
@@ -165,10 +312,49 @@
     },
     {
       "name": "akp_benchmark_retrieval",
+      "version": "1.0.0",
       "permission": "eval:run",
       "mutates": true,
       "requiresIdempotencyKey": true,
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["spaceId", "vaultId", "idempotencyKey"],
+        "properties": {
+          "spaceId": { "type": "string", "format": "uuid" },
+          "vaultId": { "type": "string", "format": "uuid" },
+          "evalPack": { "type": "string", "default": "generic" },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 200
+          }
+        }
+      },
       "http": { "method": "POST", "path": "/v1/evals/benchmark" }
+    },
+    {
+      "name": "akp_export_audit_bundle",
+      "version": "1.0.0",
+      "permission": "admin",
+      "mutates": false,
+      "description": "Return bounded audit-bundle revision/count/hash metadata; ZIP content is delivered only through authenticated HTTP or explicit-root CLI export.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["vaultId", "confirm"],
+        "properties": {
+          "vaultId": { "type": "string", "format": "uuid" },
+          "confirm": {
+            "type": "string",
+            "const": "EXPORT_SANITIZED_AUDIT_BUNDLE"
+          }
+        }
+      },
+      "http": {
+        "method": "GET",
+        "path": "/v1/audit/export/{vaultId}/metadata"
+      }
     }
   ]
 }

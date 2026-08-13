@@ -164,12 +164,13 @@ bundle when configured and non-secret configuration metadata. Each file is
 SHA-256 listed in `manifest.json`. Restore smoke uses isolated resources and
 never overwrites the active environment.
 
-The executed v3 recovery restored 552 documents, 12 exact migrations, the Git bundle and 22 MinIO archive entries. The entry count is archive metadata, not a claim of user source-object count.
+The 2026-08-12 v3 recovery restored 555 documents, 16 exact migrations, the
+Git bundle and 22 MinIO archive entries. The entry count is archive metadata,
+not a claim of user source-object count.
 
 ## Final release gate
 
 ```powershell
-pnpm install --frozen-lockfile --strict-peer-dependencies
 pnpm install --frozen-lockfile --strict-peer-dependencies
 pnpm audit --audit-level high
 pnpm security:secrets
@@ -186,11 +187,13 @@ python -m ruff check --no-cache .
 python -m pytest -p no:cacheprovider
 Pop-Location
 
-docker compose config
+docker compose config --quiet
 git diff --check
 ```
 
-The current integration suite contains 26 cases (21 security/governance and 5 publication lifecycle cases). Record the exact result before committing/tagging the baseline.
+The current integration suite contains 28 cases across security/governance and
+review-publication. Record the exact result before committing/tagging the
+baseline.
 
 ## Open the vault in Obsidian
 

@@ -7,32 +7,55 @@ from urllib.parse import urlparse
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 
-from .extractors.docx import extract_docx
-from .extractors.html import extract_html
-from .extractors.image import extract_image
-from .extractors.pdf import extract_pdf
-from .extractors.pptx import extract_pptx
-from .extractors.text import extract_text
+from .adapters.base import flatten_document_artifact
 from .models import ExtractRequest, ExtractResponse
+from .ports import DocumentExtractionRequest, DocumentIntelligenceError, UnsupportedMediaType
+from .registry import default_registry
 
-app = FastAPI(title="AKP Extractor", version="0.2.0")
+app = FastAPI(title="AKP Extractor", version="0.3.0")
 
 
 @app.get("/v1/capabilities")
 def capabilities() -> dict[str, object]:
-    return {
-        "extractor_version": "0.2.0",
-        "capabilities": [
-            {"media": "markdown-text", "status": "CONFIGURED", "locators": True},
-            {"media": "pdf", "status": "CONFIGURED", "locators": True},
-            {"media": "html-snapshot", "status": "CONFIGURED", "locators": True},
-            {"media": "image-metadata", "status": "CONFIGURED", "locators": True},
-            {"media": "docx", "status": "CONFIGURED", "locators": True},
-            {"media": "pptx", "status": "CONFIGURED", "locators": True},
+    adapters = default_registry.capabilities()
+    deterministic = next(
+        (item for item in adapters if item["adapter"] == "deterministic-baseline"),
+        None,
+    )
+    aliases = {
+        "text/markdown": "markdown-text",
+        "text/plain": "markdown-text",
+        "text/html": "html-snapshot",
+        "application/pdf": "pdf",
+        "image/png": "image-metadata",
+        "image/jpeg": "image-metadata",
+        "image/webp": "image-metadata",
+        "image/gif": "image-metadata",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+    }
+    media_entries = [
+        {
+            "media": aliases.get(media, media),
+            "status": "CONFIGURED",
+            "locators": True,
+            "structured_artifact": True,
+            "adapter": "deterministic-baseline",
+        }
+        for media in dict.fromkeys((deterministic or {}).get("media", []))
+    ]
+    media_entries.extend(
+        [
             {
                 "media": "authenticated-multipart-upload",
                 "status": "CONFIGURED",
                 "sha256_verification": True,
+            },
+            {
+                "media": "document-intelligence-routing",
+                "status": "CONFIGURED",
+                "benchmark_required_for_optional_default": True,
             },
             {
                 "media": "image-ocr-vision",
@@ -43,13 +66,26 @@ def capabilities() -> dict[str, object]:
                 "media": "audio-transcript",
                 "status": "CAPABILITY_NOT_CONFIGURED",
                 "timestamps": False,
+                "locators": False,
             },
             {
                 "media": "video-transcript-visual",
                 "status": "CAPABILITY_NOT_CONFIGURED",
                 "timestamps": False,
+                "locators": False,
             },
-        ],
+        ]
+    )
+    return {
+        "extractor_version": "0.3.0",
+        "capabilities": media_entries,
+        "adapters": adapters,
+        "routing": {
+            "benchmark_selection_configured": bool(
+                os.getenv("AKP_DOCUMENT_INTELLIGENCE_SELECTION", "").strip()
+            ),
+            "optional_defaults_disabled_until_benchmark": True,
+        },
     }
 
 
@@ -64,36 +100,16 @@ def _authorize(token: str | None) -> None:
         raise HTTPException(status_code=401, detail="Extractor authentication required")
 
 
-def _extract_path(path: Path, media_type: str, source_uri: str) -> ExtractResponse:
-    if path.suffix.lower() == ".pdf" or media_type == "application/pdf":
-        artifacts = extract_pdf(path)
-        name = "pypdf"
-    elif path.suffix.lower() in {".html", ".htm"} or media_type == "text/html":
-        artifacts = extract_html(path)
-        name = "beautifulsoup"
-    elif path.suffix.lower() in {".md", ".txt"} or media_type.startswith("text/"):
-        artifacts = extract_text(path)
-        name = "python-text"
-    elif path.suffix.lower() in {
-        ".png",
-        ".jpg",
-        ".jpeg",
-        ".webp",
-        ".gif",
-    } or media_type.startswith("image/"):
-        artifacts = extract_image(path)
-        name = "pillow"
-    elif path.suffix.lower() == ".docx" or media_type == (
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    ):
-        artifacts = extract_docx(path)
-        name = "python-docx"
-    elif path.suffix.lower() == ".pptx" or media_type == (
-        "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-    ):
-        artifacts = extract_pptx(path)
-        name = "python-pptx"
-    elif media_type.startswith(("audio/", "video/")) or path.suffix.lower() in {
+def _extract_path(
+    path: Path,
+    media_type: str,
+    source_uri: str,
+    *,
+    source_id: str | None = None,
+    complexity: str | None = None,
+    configuration: dict[str, object] | None = None,
+) -> ExtractResponse:
+    if media_type.startswith(("audio/", "video/")) or path.suffix.lower() in {
         ".mp3",
         ".wav",
         ".m4a",
@@ -112,17 +128,35 @@ def _extract_path(path: Path, media_type: str, source_uri: str) -> ExtractRespon
                 ),
             },
         )
-    else:
+    request = DocumentExtractionRequest(
+        source_path=path,
+        source_id=source_id or source_uri or str(path),
+        source_uri=source_uri,
+        media_type=media_type or "application/octet-stream",
+        complexity=complexity,
+        configuration=configuration or {},
+    )
+    try:
+        routed = default_registry.extract(request)
+    except UnsupportedMediaType as error:
         raise HTTPException(
             status_code=415,
-            detail={"code": "UNSUPPORTED_MEDIA_TYPE", "media_type": media_type},
-        )
-
+            detail={"code": "UNSUPPORTED_MEDIA_TYPE", "media_type": media_type, "message": str(error)},
+        ) from error
+    except DocumentIntelligenceError as error:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": getattr(error, "code", "EXTRACTOR_FAILURE"), "message": str(error)},
+        ) from error
+    artifact = routed.artifact
     return ExtractResponse(
-        extractor=name,
-        extractor_version="0.2.0",
+        extractor=artifact.extractor,
+        extractor_version=artifact.extractor_version,
         source_uri=source_uri,
-        artifacts=artifacts,
+        artifacts=flatten_document_artifact(artifact),
+        document_artifact=artifact,
+        routing=routed.decision.model_dump(mode="json"),
+        warnings=[*artifact.warnings, *routed.decision.warnings],
     )
 
 
@@ -164,7 +198,14 @@ def extract(
     if path.stat().st_size > maximum_bytes:
         raise HTTPException(status_code=413, detail="Source exceeds configured size limit")
 
-    return _extract_path(path, request.media_type or "", request.source_uri)
+    return _extract_path(
+        path,
+        request.media_type or "",
+        request.source_uri,
+        source_id=request.source_id,
+        complexity=request.complexity,
+        configuration=request.configuration,
+    )
 
 
 @app.post("/v1/extract-upload", response_model=ExtractResponse)
@@ -173,6 +214,7 @@ async def extract_upload(
     source_uri: Annotated[str, Form(...)],
     expected_sha256: Annotated[str, Form(min_length=64, max_length=64)],
     media_type: Annotated[str, Form()] = "",
+    source_id: Annotated[str | None, Form()] = None,
     x_akp_extractor_token: Annotated[str | None, Header()] = None,
 ) -> ExtractResponse:
     _authorize(x_akp_extractor_token)
@@ -197,7 +239,12 @@ async def extract_upload(
                 status_code=409,
                 detail={"code": "IMMUTABLE_OBJECT_HASH_MISMATCH"},
             )
-        return _extract_path(temporary_path, media_type, source_uri)
+        return _extract_path(
+            temporary_path,
+            media_type,
+            source_uri,
+            source_id=source_id or source_uri,
+        )
     finally:
         if temporary_path is not None:
             temporary_path.unlink(missing_ok=True)

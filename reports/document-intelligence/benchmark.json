@@ -1,0 +1,1431 @@
+{
+  "fixtures": [
+    {
+      "adapter": "deterministic-baseline",
+      "availability": {
+        "adapter": "deterministic-baseline",
+        "benchmark_required": false,
+        "complexities": [
+          "simple",
+          "digital",
+          "complex",
+          "scanned",
+          "formula",
+          "table-heavy"
+        ],
+        "local": true,
+        "locators": true,
+        "media": [
+          "markdown-text",
+          "code",
+          "html-snapshot",
+          "pdf",
+          "docx",
+          "pptx",
+          "xlsx",
+          "image-metadata"
+        ],
+        "provider": null,
+        "reason": "stdlib-and-declared-local-parsers",
+        "status": "CONFIGURED",
+        "structured_output": true,
+        "version": "0.3.0"
+      },
+      "complexity": "simple",
+      "fixture": "simple-structured-markdown",
+      "media_type": "text/markdown",
+      "metrics": {
+        "chunk_boundary_quality": 1.0,
+        "cpu_gpu_requirement": "CPU",
+        "figure_detection": 1.0,
+        "formula_preservation": 1.0,
+        "heading_count": 2,
+        "heading_hierarchy": 1.0,
+        "locator_accuracy": 1.0,
+        "memory_peak_mb": null,
+        "page_count": 1,
+        "processing_time_ms": 0.973,
+        "processing_time_ms_max": 1.25,
+        "processing_time_ms_min": 0.696,
+        "provider_cost": 0,
+        "structured_units": 9,
+        "table_count": 1,
+        "table_rows": 1,
+        "table_structure_accuracy": 1.0,
+        "text_recall": 1.0
+      },
+      "source_hash": "3cf2c312b926a87545eec7ce780d5ce5f5653719e9d1a53536f6ef21bc230c7f",
+      "status": "EXECUTED"
+    },
+    {
+      "adapter": "docling",
+      "availability": {
+        "adapter": "docling",
+        "benchmark_required": true,
+        "complexities": [
+          "digital",
+          "complex",
+          "scanned",
+          "formula",
+          "table-heavy"
+        ],
+        "local": true,
+        "locators": false,
+        "media": [
+          "pdf",
+          "docx",
+          "pptx",
+          "xlsx",
+          "html",
+          "image"
+        ],
+        "provider": null,
+        "reason": "DEPENDENCY_NOT_INSTALLED:docling",
+        "status": "CAPABILITY_NOT_CONFIGURED",
+        "structured_output": false,
+        "version": "optional"
+      },
+      "complexity": "simple",
+      "fixture": "simple-structured-markdown",
+      "media_type": "text/markdown",
+      "metrics": {},
+      "reason": "DEPENDENCY_NOT_INSTALLED:docling",
+      "source_hash": "3cf2c312b926a87545eec7ce780d5ce5f5653719e9d1a53536f6ef21bc230c7f",
+      "status": "SKIPPED"
+    },
+    {
+      "adapter": "marker",
+      "availability": {
+        "adapter": "marker",
+        "benchmark_required": true,
+        "complexities": [
+          "complex",
+          "scanned",
+          "formula",
+          "table-heavy"
+        ],
+        "local": true,
+        "locators": false,
+        "media": [
+          "pdf"
+        ],
+        "provider": null,
+        "reason": "DEPENDENCY_OR_COMMAND_NOT_CONFIGURED",
+        "status": "CAPABILITY_NOT_CONFIGURED",
+        "structured_output": false,
+        "version": "optional"
+      },
+      "complexity": "simple",
+      "fixture": "simple-structured-markdown",
+      "media_type": "text/markdown",
+      "metrics": {},
+      "reason": "DEPENDENCY_OR_COMMAND_NOT_CONFIGURED",
+      "source_hash": "3cf2c312b926a87545eec7ce780d5ce5f5653719e9d1a53536f6ef21bc230c7f",
+      "status": "SKIPPED"
+    },
+    {
+      "adapter": "chunkr",
+      "availability": {
+        "adapter": "chunkr",
+        "benchmark_required": true,
+        "complexities": [
+          "complex",
+          "scanned",
+          "formula",
+          "table-heavy"
+        ],
+        "local": true,
+        "locators": false,
+        "media": [
+          "pdf",
+          "docx",
+          "pptx",
+          "image"
+        ],
+        "provider": "chunkr-oss",
+        "reason": "OSS_OR_CLOUD_SERVICE_NOT_CONFIGURED",
+        "status": "CAPABILITY_NOT_CONFIGURED",
+        "structured_output": false,
+        "version": "optional"
+      },
+      "complexity": "simple",
+      "fixture": "simple-structured-markdown",
+      "media_type": "text/markdown",
+      "metrics": {},
+      "reason": "OSS_OR_CLOUD_SERVICE_NOT_CONFIGURED",
+      "source_hash": "3cf2c312b926a87545eec7ce780d5ce5f5653719e9d1a53536f6ef21bc230c7f",
+      "status": "SKIPPED"
+    },
+    {
+      "adapter": "deterministic-baseline",
+      "availability": {
+        "adapter": "deterministic-baseline",
+        "benchmark_required": false,
+        "complexities": [
+          "simple",
+          "digital",
+          "complex",
+          "scanned",
+          "formula",
+          "table-heavy"
+        ],
+        "local": true,
+        "locators": true,
+        "media": [
+          "markdown-text",
+          "code",
+          "html-snapshot",
+          "pdf",
+          "docx",
+          "pptx",
+          "xlsx",
+          "image-metadata"
+        ],
+        "provider": null,
+        "reason": "stdlib-and-declared-local-parsers",
+        "status": "CONFIGURED",
+        "structured_output": true,
+        "version": "0.3.0"
+      },
+      "complexity": "complex",
+      "fixture": "complex-layout-html",
+      "media_type": "text/html",
+      "metrics": {
+        "chunk_boundary_quality": 1.0,
+        "cpu_gpu_requirement": "CPU",
+        "figure_detection": null,
+        "formula_preservation": null,
+        "heading_count": 2,
+        "heading_hierarchy": 1.0,
+        "locator_accuracy": 1.0,
+        "memory_peak_mb": null,
+        "page_count": 1,
+        "processing_time_ms": 1.892,
+        "processing_time_ms_max": 2.702,
+        "processing_time_ms_min": 1.083,
+        "provider_cost": 0,
+        "structured_units": 4,
+        "table_count": 0,
+        "table_rows": 0,
+        "table_structure_accuracy": 1.0,
+        "text_recall": 1.0
+      },
+      "source_hash": "6fd23ee7105f6cfbf5cbc594c90be003e9b492704990d6318dbe39427dee47ac",
+      "status": "EXECUTED"
+    },
+    {
+      "adapter": "docling",
+      "availability": {
+        "adapter": "docling",
+        "benchmark_required": true,
+        "complexities": [
+          "digital",
+          "complex",
+          "scanned",
+          "formula",
+          "table-heavy"
+        ],
+        "local": true,
+        "locators": false,
+        "media": [
+          "pdf",
+          "docx",
+          "pptx",
+          "xlsx",
+          "html",
+          "image"
+        ],
+        "provider": null,
+        "reason": "DEPENDENCY_NOT_INSTALLED:docling",
+        "status": "CAPABILITY_NOT_CONFIGURED",
+        "structured_output": false,
+        "version": "optional"
+      },
+      "complexity": "complex",
+      "fixture": "complex-layout-html",
+      "media_type": "text/html",
+      "metrics": {},
+      "reason": "DEPENDENCY_NOT_INSTALLED:docling",
+      "source_hash": "6fd23ee7105f6cfbf5cbc594c90be003e9b492704990d6318dbe39427dee47ac",
+      "status": "SKIPPED"
+    },
+    {
+      "adapter": "marker",
+      "availability": {
+        "adapter": "marker",
+        "benchmark_required": true,
+        "complexities": [
+          "complex",
+          "scanned",
+          "formula",
+          "table-heavy"
+        ],
+        "local": true,
+        "locators": false,
+        "media": [
+          "pdf"
+        ],
+        "provider": null,
+        "reason": "DEPENDENCY_OR_COMMAND_NOT_CONFIGURED",
+        "status": "CAPABILITY_NOT_CONFIGURED",
+        "structured_output": false,
+        "version": "optional"
+      },
+      "complexity": "complex",
+      "fixture": "complex-layout-html",
+      "media_type": "text/html",
+      "metrics": {},
+      "reason": "DEPENDENCY_OR_COMMAND_NOT_CONFIGURED",
+      "source_hash": "6fd23ee7105f6cfbf5cbc594c90be003e9b492704990d6318dbe39427dee47ac",
+      "status": "SKIPPED"
+    },
+    {
+      "adapter": "chunkr",
+      "availability": {
+        "adapter": "chunkr",
+        "benchmark_required": true,
+        "complexities": [
+          "complex",
+          "scanned",
+          "formula",
+          "table-heavy"
+        ],
+        "local": true,
+        "locators": false,
+        "media": [
+          "pdf",
+          "docx",
+          "pptx",
+          "image"
+        ],
+        "provider": "chunkr-oss",
+        "reason": "OSS_OR_CLOUD_SERVICE_NOT_CONFIGURED",
+        "status": "CAPABILITY_NOT_CONFIGURED",
+        "structured_output": false,
+        "version": "optional"
+      },
+      "complexity": "complex",
+      "fixture": "complex-layout-html",
+      "media_type": "text/html",
+      "metrics": {},
+      "reason": "OSS_OR_CLOUD_SERVICE_NOT_CONFIGURED",
+      "source_hash": "6fd23ee7105f6cfbf5cbc594c90be003e9b492704990d6318dbe39427dee47ac",
+      "status": "SKIPPED"
+    },
+    {
+      "adapter": "deterministic-baseline",
+      "availability": {
+        "adapter": "deterministic-baseline",
+        "benchmark_required": false,
+        "complexities": [
+          "simple",
+          "digital",
+          "complex",
+          "scanned",
+          "formula",
+          "table-heavy"
+        ],
+        "local": true,
+        "locators": true,
+        "media": [
+          "markdown-text",
+          "code",
+          "html-snapshot",
+          "pdf",
+          "docx",
+          "pptx",
+          "xlsx",
+          "image-metadata"
+        ],
+        "provider": null,
+        "reason": "stdlib-and-declared-local-parsers",
+        "status": "CONFIGURED",
+        "structured_output": true,
+        "version": "0.3.0"
+      },
+      "complexity": "table-heavy",
+      "fixture": "table-workbook-xlsx",
+      "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "metrics": {
+        "chunk_boundary_quality": 1.0,
+        "cpu_gpu_requirement": "CPU",
+        "figure_detection": null,
+        "formula_preservation": null,
+        "heading_count": 0,
+        "heading_hierarchy": null,
+        "locator_accuracy": 1.0,
+        "memory_peak_mb": null,
+        "page_count": 0,
+        "processing_time_ms": 2.138,
+        "processing_time_ms_max": 2.425,
+        "processing_time_ms_min": 1.851,
+        "provider_cost": 0,
+        "structured_units": 1,
+        "table_count": 1,
+        "table_rows": 2,
+        "table_structure_accuracy": 1.0,
+        "text_recall": 1.0
+      },
+      "source_hash": "485d126e7a343a968986fab82160a03310ffaad9f27a96f441d194354cbfa618",
+      "status": "EXECUTED"
+    },
+    {
+      "adapter": "docling",
+      "availability": {
+        "adapter": "docling",
+        "benchmark_required": true,
+        "complexities": [
+          "digital",
+          "complex",
+          "scanned",
+          "formula",
+          "table-heavy"
+        ],
+        "local": true,
+        "locators": false,
+        "media": [
+          "pdf",
+          "docx",
+          "pptx",
+          "xlsx",
+          "html",
+          "image"
+        ],
+        "provider": null,
+        "reason": "DEPENDENCY_NOT_INSTALLED:docling",
+        "status": "CAPABILITY_NOT_CONFIGURED",
+        "structured_output": false,
+        "version": "optional"
+      },
+      "complexity": "table-heavy",
+      "fixture": "table-workbook-xlsx",
+      "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "metrics": {},
+      "reason": "DEPENDENCY_NOT_INSTALLED:docling",
+      "source_hash": "485d126e7a343a968986fab82160a03310ffaad9f27a96f441d194354cbfa618",
+      "status": "SKIPPED"
+    },
+    {
+      "adapter": "marker",
+      "availability": {
+        "adapter": "marker",
+        "benchmark_required": true,
+        "complexities": [
+          "complex",
+          "scanned",
+          "formula",
+          "table-heavy"
+        ],
+        "local": true,
+        "locators": false,
+        "media": [
+          "pdf"
+        ],
+        "provider": null,
+        "reason": "DEPENDENCY_OR_COMMAND_NOT_CONFIGURED",
+        "status": "CAPABILITY_NOT_CONFIGURED",
+        "structured_output": false,
+        "version": "optional"
+      },
+      "complexity": "table-heavy",
+      "fixture": "table-workbook-xlsx",
+      "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "metrics": {},
+      "reason": "DEPENDENCY_OR_COMMAND_NOT_CONFIGURED",
+      "source_hash": "485d126e7a343a968986fab82160a03310ffaad9f27a96f441d194354cbfa618",
+      "status": "SKIPPED"
+    },
+    {
+      "adapter": "chunkr",
+      "availability": {
+        "adapter": "chunkr",
+        "benchmark_required": true,
+        "complexities": [
+          "complex",
+          "scanned",
+          "formula",
+          "table-heavy"
+        ],
+        "local": true,
+        "locators": false,
+        "media": [
+          "pdf",
+          "docx",
+          "pptx",
+          "image"
+        ],
+        "provider": "chunkr-oss",
+        "reason": "OSS_OR_CLOUD_SERVICE_NOT_CONFIGURED",
+        "status": "CAPABILITY_NOT_CONFIGURED",
+        "structured_output": false,
+        "version": "optional"
+      },
+      "complexity": "table-heavy",
+      "fixture": "table-workbook-xlsx",
+      "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "metrics": {},
+      "reason": "OSS_OR_CLOUD_SERVICE_NOT_CONFIGURED",
+      "source_hash": "485d126e7a343a968986fab82160a03310ffaad9f27a96f441d194354cbfa618",
+      "status": "SKIPPED"
+    },
+    {
+      "adapter": "deterministic-baseline",
+      "availability": {
+        "adapter": "deterministic-baseline",
+        "benchmark_required": false,
+        "complexities": [
+          "simple",
+          "digital",
+          "complex",
+          "scanned",
+          "formula",
+          "table-heavy"
+        ],
+        "local": true,
+        "locators": true,
+        "media": [
+          "markdown-text",
+          "code",
+          "html-snapshot",
+          "pdf",
+          "docx",
+          "pptx",
+          "xlsx",
+          "image-metadata"
+        ],
+        "provider": null,
+        "reason": "stdlib-and-declared-local-parsers",
+        "status": "CONFIGURED",
+        "structured_output": true,
+        "version": "0.3.0"
+      },
+      "complexity": "simple",
+      "fixture": "structured-docx",
+      "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "metrics": {
+        "chunk_boundary_quality": 1.0,
+        "cpu_gpu_requirement": "CPU",
+        "figure_detection": null,
+        "formula_preservation": null,
+        "heading_count": 1,
+        "heading_hierarchy": 1.0,
+        "locator_accuracy": 1.0,
+        "memory_peak_mb": null,
+        "page_count": 0,
+        "processing_time_ms": 13.666,
+        "processing_time_ms_max": 15.673,
+        "processing_time_ms_min": 11.659,
+        "provider_cost": 0,
+        "structured_units": 3,
+        "table_count": 1,
+        "table_rows": 1,
+        "table_structure_accuracy": 1.0,
+        "text_recall": 1.0
+      },
+      "source_hash": "e081b89044b1d109900c9542cb4bda7b053fa96833bae672bd4139bba783af11",
+      "status": "EXECUTED"
+    },
+    {
+      "adapter": "docling",
+      "availability": {
+        "adapter": "docling",
+        "benchmark_required": true,
+        "complexities": [
+          "digital",
+          "complex",
+          "scanned",
+          "formula",
+          "table-heavy"
+        ],
+        "local": true,
+        "locators": false,
+        "media": [
+          "pdf",
+          "docx",
+          "pptx",
+          "xlsx",
+          "html",
+          "image"
+        ],
+        "provider": null,
+        "reason": "DEPENDENCY_NOT_INSTALLED:docling",
+        "status": "CAPABILITY_NOT_CONFIGURED",
+        "structured_output": false,
+        "version": "optional"
+      },
+      "complexity": "simple",
+      "fixture": "structured-docx",
+      "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "metrics": {},
+      "reason": "DEPENDENCY_NOT_INSTALLED:docling",
+      "source_hash": "e081b89044b1d109900c9542cb4bda7b053fa96833bae672bd4139bba783af11",
+      "status": "SKIPPED"
+    },
+    {
+      "adapter": "marker",
+      "availability": {
+        "adapter": "marker",
+        "benchmark_required": true,
+        "complexities": [
+          "complex",
+          "scanned",
+          "formula",
+          "table-heavy"
+        ],
+        "local": true,
+        "locators": false,
+        "media": [
+          "pdf"
+        ],
+        "provider": null,
+        "reason": "DEPENDENCY_OR_COMMAND_NOT_CONFIGURED",
+        "status": "CAPABILITY_NOT_CONFIGURED",
+        "structured_output": false,
+        "version": "optional"
+      },
+      "complexity": "simple",
+      "fixture": "structured-docx",
+      "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "metrics": {},
+      "reason": "DEPENDENCY_OR_COMMAND_NOT_CONFIGURED",
+      "source_hash": "e081b89044b1d109900c9542cb4bda7b053fa96833bae672bd4139bba783af11",
+      "status": "SKIPPED"
+    },
+    {
+      "adapter": "chunkr",
+      "availability": {
+        "adapter": "chunkr",
+        "benchmark_required": true,
+        "complexities": [
+          "complex",
+          "scanned",
+          "formula",
+          "table-heavy"
+        ],
+        "local": true,
+        "locators": false,
+        "media": [
+          "pdf",
+          "docx",
+          "pptx",
+          "image"
+        ],
+        "provider": "chunkr-oss",
+        "reason": "OSS_OR_CLOUD_SERVICE_NOT_CONFIGURED",
+        "status": "CAPABILITY_NOT_CONFIGURED",
+        "structured_output": false,
+        "version": "optional"
+      },
+      "complexity": "simple",
+      "fixture": "structured-docx",
+      "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "metrics": {},
+      "reason": "OSS_OR_CLOUD_SERVICE_NOT_CONFIGURED",
+      "source_hash": "e081b89044b1d109900c9542cb4bda7b053fa96833bae672bd4139bba783af11",
+      "status": "SKIPPED"
+    },
+    {
+      "adapter": "deterministic-baseline",
+      "availability": {
+        "adapter": "deterministic-baseline",
+        "benchmark_required": false,
+        "complexities": [
+          "simple",
+          "digital",
+          "complex",
+          "scanned",
+          "formula",
+          "table-heavy"
+        ],
+        "local": true,
+        "locators": true,
+        "media": [
+          "markdown-text",
+          "code",
+          "html-snapshot",
+          "pdf",
+          "docx",
+          "pptx",
+          "xlsx",
+          "image-metadata"
+        ],
+        "provider": null,
+        "reason": "stdlib-and-declared-local-parsers",
+        "status": "CONFIGURED",
+        "structured_output": true,
+        "version": "0.3.0"
+      },
+      "complexity": "complex",
+      "fixture": "slide-deck-pptx",
+      "media_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "metrics": {
+        "chunk_boundary_quality": 1.0,
+        "cpu_gpu_requirement": "CPU",
+        "figure_detection": null,
+        "formula_preservation": null,
+        "heading_count": 0,
+        "heading_hierarchy": null,
+        "locator_accuracy": 1.0,
+        "memory_peak_mb": null,
+        "page_count": 1,
+        "processing_time_ms": 9.203,
+        "processing_time_ms_max": 9.395,
+        "processing_time_ms_min": 9.011,
+        "provider_cost": 0,
+        "structured_units": 1,
+        "table_count": 0,
+        "table_rows": 0,
+        "table_structure_accuracy": 1.0,
+        "text_recall": 1.0
+      },
+      "source_hash": "a149b55e65b8635e2dd9a73b1fb8e05cd16a0dde0598f51fded15e523bde616c",
+      "status": "EXECUTED"
+    },
+    {
+      "adapter": "docling",
+      "availability": {
+        "adapter": "docling",
+        "benchmark_required": true,
+        "complexities": [
+          "digital",
+          "complex",
+          "scanned",
+          "formula",
+          "table-heavy"
+        ],
+        "local": true,
+        "locators": false,
+        "media": [
+          "pdf",
+          "docx",
+          "pptx",
+          "xlsx",
+          "html",
+          "image"
+        ],
+        "provider": null,
+        "reason": "DEPENDENCY_NOT_INSTALLED:docling",
+        "status": "CAPABILITY_NOT_CONFIGURED",
+        "structured_output": false,
+        "version": "optional"
+      },
+      "complexity": "complex",
+      "fixture": "slide-deck-pptx",
+      "media_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "metrics": {},
+      "reason": "DEPENDENCY_NOT_INSTALLED:docling",
+      "source_hash": "a149b55e65b8635e2dd9a73b1fb8e05cd16a0dde0598f51fded15e523bde616c",
+      "status": "SKIPPED"
+    },
+    {
+      "adapter": "marker",
+      "availability": {
+        "adapter": "marker",
+        "benchmark_required": true,
+        "complexities": [
+          "complex",
+          "scanned",
+          "formula",
+          "table-heavy"
+        ],
+        "local": true,
+        "locators": false,
+        "media": [
+          "pdf"
+        ],
+        "provider": null,
+        "reason": "DEPENDENCY_OR_COMMAND_NOT_CONFIGURED",
+        "status": "CAPABILITY_NOT_CONFIGURED",
+        "structured_output": false,
+        "version": "optional"
+      },
+      "complexity": "complex",
+      "fixture": "slide-deck-pptx",
+      "media_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "metrics": {},
+      "reason": "DEPENDENCY_OR_COMMAND_NOT_CONFIGURED",
+      "source_hash": "a149b55e65b8635e2dd9a73b1fb8e05cd16a0dde0598f51fded15e523bde616c",
+      "status": "SKIPPED"
+    },
+    {
+      "adapter": "chunkr",
+      "availability": {
+        "adapter": "chunkr",
+        "benchmark_required": true,
+        "complexities": [
+          "complex",
+          "scanned",
+          "formula",
+          "table-heavy"
+        ],
+        "local": true,
+        "locators": false,
+        "media": [
+          "pdf",
+          "docx",
+          "pptx",
+          "image"
+        ],
+        "provider": "chunkr-oss",
+        "reason": "OSS_OR_CLOUD_SERVICE_NOT_CONFIGURED",
+        "status": "CAPABILITY_NOT_CONFIGURED",
+        "structured_output": false,
+        "version": "optional"
+      },
+      "complexity": "complex",
+      "fixture": "slide-deck-pptx",
+      "media_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "metrics": {},
+      "reason": "OSS_OR_CLOUD_SERVICE_NOT_CONFIGURED",
+      "source_hash": "a149b55e65b8635e2dd9a73b1fb8e05cd16a0dde0598f51fded15e523bde616c",
+      "status": "SKIPPED"
+    },
+    {
+      "adapter": "deterministic-baseline",
+      "availability": {
+        "adapter": "deterministic-baseline",
+        "benchmark_required": false,
+        "complexities": [
+          "simple",
+          "digital",
+          "complex",
+          "scanned",
+          "formula",
+          "table-heavy"
+        ],
+        "local": true,
+        "locators": true,
+        "media": [
+          "markdown-text",
+          "code",
+          "html-snapshot",
+          "pdf",
+          "docx",
+          "pptx",
+          "xlsx",
+          "image-metadata"
+        ],
+        "provider": null,
+        "reason": "stdlib-and-declared-local-parsers",
+        "status": "CONFIGURED",
+        "structured_output": true,
+        "version": "0.3.0"
+      },
+      "complexity": "complex",
+      "fixture": "diagram-image",
+      "media_type": "image/png",
+      "metrics": {
+        "chunk_boundary_quality": 0.0,
+        "cpu_gpu_requirement": "CPU",
+        "figure_detection": 1.0,
+        "formula_preservation": null,
+        "heading_count": 0,
+        "heading_hierarchy": null,
+        "locator_accuracy": 0.0,
+        "memory_peak_mb": null,
+        "page_count": 0,
+        "processing_time_ms": 1.345,
+        "processing_time_ms_max": 1.452,
+        "processing_time_ms_min": 1.239,
+        "provider_cost": 0,
+        "structured_units": 0,
+        "table_count": 0,
+        "table_rows": 0,
+        "table_structure_accuracy": 1.0,
+        "text_recall": null
+      },
+      "source_hash": "f79ecee57db2c47663f973e047928cc7edfb36955caac57e62d9e3a72f805048",
+      "status": "EXECUTED"
+    },
+    {
+      "adapter": "docling",
+      "availability": {
+        "adapter": "docling",
+        "benchmark_required": true,
+        "complexities": [
+          "digital",
+          "complex",
+          "scanned",
+          "formula",
+          "table-heavy"
+        ],
+        "local": true,
+        "locators": false,
+        "media": [
+          "pdf",
+          "docx",
+          "pptx",
+          "xlsx",
+          "html",
+          "image"
+        ],
+        "provider": null,
+        "reason": "DEPENDENCY_NOT_INSTALLED:docling",
+        "status": "CAPABILITY_NOT_CONFIGURED",
+        "structured_output": false,
+        "version": "optional"
+      },
+      "complexity": "complex",
+      "fixture": "diagram-image",
+      "media_type": "image/png",
+      "metrics": {},
+      "reason": "DEPENDENCY_NOT_INSTALLED:docling",
+      "source_hash": "f79ecee57db2c47663f973e047928cc7edfb36955caac57e62d9e3a72f805048",
+      "status": "SKIPPED"
+    },
+    {
+      "adapter": "marker",
+      "availability": {
+        "adapter": "marker",
+        "benchmark_required": true,
+        "complexities": [
+          "complex",
+          "scanned",
+          "formula",
+          "table-heavy"
+        ],
+        "local": true,
+        "locators": false,
+        "media": [
+          "pdf"
+        ],
+        "provider": null,
+        "reason": "DEPENDENCY_OR_COMMAND_NOT_CONFIGURED",
+        "status": "CAPABILITY_NOT_CONFIGURED",
+        "structured_output": false,
+        "version": "optional"
+      },
+      "complexity": "complex",
+      "fixture": "diagram-image",
+      "media_type": "image/png",
+      "metrics": {},
+      "reason": "DEPENDENCY_OR_COMMAND_NOT_CONFIGURED",
+      "source_hash": "f79ecee57db2c47663f973e047928cc7edfb36955caac57e62d9e3a72f805048",
+      "status": "SKIPPED"
+    },
+    {
+      "adapter": "chunkr",
+      "availability": {
+        "adapter": "chunkr",
+        "benchmark_required": true,
+        "complexities": [
+          "complex",
+          "scanned",
+          "formula",
+          "table-heavy"
+        ],
+        "local": true,
+        "locators": false,
+        "media": [
+          "pdf",
+          "docx",
+          "pptx",
+          "image"
+        ],
+        "provider": "chunkr-oss",
+        "reason": "OSS_OR_CLOUD_SERVICE_NOT_CONFIGURED",
+        "status": "CAPABILITY_NOT_CONFIGURED",
+        "structured_output": false,
+        "version": "optional"
+      },
+      "complexity": "complex",
+      "fixture": "diagram-image",
+      "media_type": "image/png",
+      "metrics": {},
+      "reason": "OSS_OR_CLOUD_SERVICE_NOT_CONFIGURED",
+      "source_hash": "f79ecee57db2c47663f973e047928cc7edfb36955caac57e62d9e3a72f805048",
+      "status": "SKIPPED"
+    },
+    {
+      "adapter": "deterministic-baseline",
+      "availability": {
+        "adapter": "deterministic-baseline",
+        "benchmark_required": false,
+        "complexities": [
+          "simple",
+          "digital",
+          "complex",
+          "scanned",
+          "formula",
+          "table-heavy"
+        ],
+        "local": true,
+        "locators": true,
+        "media": [
+          "markdown-text",
+          "code",
+          "html-snapshot",
+          "pdf",
+          "docx",
+          "pptx",
+          "xlsx",
+          "image-metadata"
+        ],
+        "provider": null,
+        "reason": "stdlib-and-declared-local-parsers",
+        "status": "CONFIGURED",
+        "structured_output": true,
+        "version": "0.3.0"
+      },
+      "complexity": "formula",
+      "fixture": "scientific-formula-pdf",
+      "media_type": "application/pdf",
+      "metrics": {
+        "chunk_boundary_quality": 1.0,
+        "cpu_gpu_requirement": "CPU",
+        "figure_detection": null,
+        "formula_preservation": null,
+        "heading_count": 0,
+        "heading_hierarchy": null,
+        "locator_accuracy": 1.0,
+        "memory_peak_mb": null,
+        "page_count": 1,
+        "processing_time_ms": 2.11,
+        "processing_time_ms_max": 3.226,
+        "processing_time_ms_min": 0.994,
+        "provider_cost": 0,
+        "structured_units": 1,
+        "table_count": 0,
+        "table_rows": 0,
+        "table_structure_accuracy": 1.0,
+        "text_recall": 1.0
+      },
+      "source_hash": "cd4b4449afbeb52386faebcd1e972ac65248a2b4769c71516331c67b6117b1fd",
+      "status": "EXECUTED"
+    },
+    {
+      "adapter": "docling",
+      "availability": {
+        "adapter": "docling",
+        "benchmark_required": true,
+        "complexities": [
+          "digital",
+          "complex",
+          "scanned",
+          "formula",
+          "table-heavy"
+        ],
+        "local": true,
+        "locators": false,
+        "media": [
+          "pdf",
+          "docx",
+          "pptx",
+          "xlsx",
+          "html",
+          "image"
+        ],
+        "provider": null,
+        "reason": "DEPENDENCY_NOT_INSTALLED:docling",
+        "status": "CAPABILITY_NOT_CONFIGURED",
+        "structured_output": false,
+        "version": "optional"
+      },
+      "complexity": "formula",
+      "fixture": "scientific-formula-pdf",
+      "media_type": "application/pdf",
+      "metrics": {},
+      "reason": "DEPENDENCY_NOT_INSTALLED:docling",
+      "source_hash": "cd4b4449afbeb52386faebcd1e972ac65248a2b4769c71516331c67b6117b1fd",
+      "status": "SKIPPED"
+    },
+    {
+      "adapter": "marker",
+      "availability": {
+        "adapter": "marker",
+        "benchmark_required": true,
+        "complexities": [
+          "complex",
+          "scanned",
+          "formula",
+          "table-heavy"
+        ],
+        "local": true,
+        "locators": false,
+        "media": [
+          "pdf"
+        ],
+        "provider": null,
+        "reason": "DEPENDENCY_OR_COMMAND_NOT_CONFIGURED",
+        "status": "CAPABILITY_NOT_CONFIGURED",
+        "structured_output": false,
+        "version": "optional"
+      },
+      "complexity": "formula",
+      "fixture": "scientific-formula-pdf",
+      "media_type": "application/pdf",
+      "metrics": {},
+      "reason": "DEPENDENCY_OR_COMMAND_NOT_CONFIGURED",
+      "source_hash": "cd4b4449afbeb52386faebcd1e972ac65248a2b4769c71516331c67b6117b1fd",
+      "status": "SKIPPED"
+    },
+    {
+      "adapter": "chunkr",
+      "availability": {
+        "adapter": "chunkr",
+        "benchmark_required": true,
+        "complexities": [
+          "complex",
+          "scanned",
+          "formula",
+          "table-heavy"
+        ],
+        "local": true,
+        "locators": false,
+        "media": [
+          "pdf",
+          "docx",
+          "pptx",
+          "image"
+        ],
+        "provider": "chunkr-oss",
+        "reason": "OSS_OR_CLOUD_SERVICE_NOT_CONFIGURED",
+        "status": "CAPABILITY_NOT_CONFIGURED",
+        "structured_output": false,
+        "version": "optional"
+      },
+      "complexity": "formula",
+      "fixture": "scientific-formula-pdf",
+      "media_type": "application/pdf",
+      "metrics": {},
+      "reason": "OSS_OR_CLOUD_SERVICE_NOT_CONFIGURED",
+      "source_hash": "cd4b4449afbeb52386faebcd1e972ac65248a2b4769c71516331c67b6117b1fd",
+      "status": "SKIPPED"
+    },
+    {
+      "adapter": "deterministic-baseline",
+      "availability": {
+        "adapter": "deterministic-baseline",
+        "benchmark_required": false,
+        "complexities": [
+          "simple",
+          "digital",
+          "complex",
+          "scanned",
+          "formula",
+          "table-heavy"
+        ],
+        "local": true,
+        "locators": true,
+        "media": [
+          "markdown-text",
+          "code",
+          "html-snapshot",
+          "pdf",
+          "docx",
+          "pptx",
+          "xlsx",
+          "image-metadata"
+        ],
+        "provider": null,
+        "reason": "stdlib-and-declared-local-parsers",
+        "status": "CONFIGURED",
+        "structured_output": true,
+        "version": "0.3.0"
+      },
+      "complexity": "scanned",
+      "fixture": "scanned-pdf",
+      "media_type": "application/pdf",
+      "metrics": {
+        "chunk_boundary_quality": 0.0,
+        "cpu_gpu_requirement": "CPU",
+        "figure_detection": null,
+        "formula_preservation": null,
+        "heading_count": 0,
+        "heading_hierarchy": null,
+        "locator_accuracy": 1.0,
+        "memory_peak_mb": null,
+        "page_count": 1,
+        "processing_time_ms": 0.915,
+        "processing_time_ms_max": 0.956,
+        "processing_time_ms_min": 0.874,
+        "provider_cost": 0,
+        "structured_units": 0,
+        "table_count": 0,
+        "table_rows": 0,
+        "table_structure_accuracy": 1.0,
+        "text_recall": null
+      },
+      "source_hash": "b74cc0686db2128dc3136213f9a575ae143e297835bf60e24872044863dcec1a",
+      "status": "EXECUTED"
+    },
+    {
+      "adapter": "docling",
+      "availability": {
+        "adapter": "docling",
+        "benchmark_required": true,
+        "complexities": [
+          "digital",
+          "complex",
+          "scanned",
+          "formula",
+          "table-heavy"
+        ],
+        "local": true,
+        "locators": false,
+        "media": [
+          "pdf",
+          "docx",
+          "pptx",
+          "xlsx",
+          "html",
+          "image"
+        ],
+        "provider": null,
+        "reason": "DEPENDENCY_NOT_INSTALLED:docling",
+        "status": "CAPABILITY_NOT_CONFIGURED",
+        "structured_output": false,
+        "version": "optional"
+      },
+      "complexity": "scanned",
+      "fixture": "scanned-pdf",
+      "media_type": "application/pdf",
+      "metrics": {},
+      "reason": "DEPENDENCY_NOT_INSTALLED:docling",
+      "source_hash": "b74cc0686db2128dc3136213f9a575ae143e297835bf60e24872044863dcec1a",
+      "status": "SKIPPED"
+    },
+    {
+      "adapter": "marker",
+      "availability": {
+        "adapter": "marker",
+        "benchmark_required": true,
+        "complexities": [
+          "complex",
+          "scanned",
+          "formula",
+          "table-heavy"
+        ],
+        "local": true,
+        "locators": false,
+        "media": [
+          "pdf"
+        ],
+        "provider": null,
+        "reason": "DEPENDENCY_OR_COMMAND_NOT_CONFIGURED",
+        "status": "CAPABILITY_NOT_CONFIGURED",
+        "structured_output": false,
+        "version": "optional"
+      },
+      "complexity": "scanned",
+      "fixture": "scanned-pdf",
+      "media_type": "application/pdf",
+      "metrics": {},
+      "reason": "DEPENDENCY_OR_COMMAND_NOT_CONFIGURED",
+      "source_hash": "b74cc0686db2128dc3136213f9a575ae143e297835bf60e24872044863dcec1a",
+      "status": "SKIPPED"
+    },
+    {
+      "adapter": "chunkr",
+      "availability": {
+        "adapter": "chunkr",
+        "benchmark_required": true,
+        "complexities": [
+          "complex",
+          "scanned",
+          "formula",
+          "table-heavy"
+        ],
+        "local": true,
+        "locators": false,
+        "media": [
+          "pdf",
+          "docx",
+          "pptx",
+          "image"
+        ],
+        "provider": "chunkr-oss",
+        "reason": "OSS_OR_CLOUD_SERVICE_NOT_CONFIGURED",
+        "status": "CAPABILITY_NOT_CONFIGURED",
+        "structured_output": false,
+        "version": "optional"
+      },
+      "complexity": "scanned",
+      "fixture": "scanned-pdf",
+      "media_type": "application/pdf",
+      "metrics": {},
+      "reason": "OSS_OR_CLOUD_SERVICE_NOT_CONFIGURED",
+      "source_hash": "b74cc0686db2128dc3136213f9a575ae143e297835bf60e24872044863dcec1a",
+      "status": "SKIPPED"
+    },
+    {
+      "adapter": "deterministic-baseline",
+      "availability": {
+        "adapter": "deterministic-baseline",
+        "benchmark_required": false,
+        "complexities": [
+          "simple",
+          "digital",
+          "complex",
+          "scanned",
+          "formula",
+          "table-heavy"
+        ],
+        "local": true,
+        "locators": true,
+        "media": [
+          "markdown-text",
+          "code",
+          "html-snapshot",
+          "pdf",
+          "docx",
+          "pptx",
+          "xlsx",
+          "image-metadata"
+        ],
+        "provider": null,
+        "reason": "stdlib-and-declared-local-parsers",
+        "status": "CONFIGURED",
+        "structured_output": true,
+        "version": "0.3.0"
+      },
+      "complexity": "digital",
+      "fixture": "digital-pdf",
+      "media_type": "application/pdf",
+      "metrics": {
+        "chunk_boundary_quality": 1.0,
+        "cpu_gpu_requirement": "CPU",
+        "figure_detection": null,
+        "formula_preservation": null,
+        "heading_count": 0,
+        "heading_hierarchy": null,
+        "locator_accuracy": 1.0,
+        "memory_peak_mb": null,
+        "page_count": 1,
+        "processing_time_ms": 0.848,
+        "processing_time_ms_max": 0.858,
+        "processing_time_ms_min": 0.838,
+        "provider_cost": 0,
+        "structured_units": 1,
+        "table_count": 0,
+        "table_rows": 0,
+        "table_structure_accuracy": 1.0,
+        "text_recall": 1.0
+      },
+      "source_hash": "35eb6a0c677cb415d4b80459a1b82524914444a9ca92d1bc0b0b7e66cdbdd7ad",
+      "status": "EXECUTED"
+    },
+    {
+      "adapter": "docling",
+      "availability": {
+        "adapter": "docling",
+        "benchmark_required": true,
+        "complexities": [
+          "digital",
+          "complex",
+          "scanned",
+          "formula",
+          "table-heavy"
+        ],
+        "local": true,
+        "locators": false,
+        "media": [
+          "pdf",
+          "docx",
+          "pptx",
+          "xlsx",
+          "html",
+          "image"
+        ],
+        "provider": null,
+        "reason": "DEPENDENCY_NOT_INSTALLED:docling",
+        "status": "CAPABILITY_NOT_CONFIGURED",
+        "structured_output": false,
+        "version": "optional"
+      },
+      "complexity": "digital",
+      "fixture": "digital-pdf",
+      "media_type": "application/pdf",
+      "metrics": {},
+      "reason": "DEPENDENCY_NOT_INSTALLED:docling",
+      "source_hash": "35eb6a0c677cb415d4b80459a1b82524914444a9ca92d1bc0b0b7e66cdbdd7ad",
+      "status": "SKIPPED"
+    },
+    {
+      "adapter": "marker",
+      "availability": {
+        "adapter": "marker",
+        "benchmark_required": true,
+        "complexities": [
+          "complex",
+          "scanned",
+          "formula",
+          "table-heavy"
+        ],
+        "local": true,
+        "locators": false,
+        "media": [
+          "pdf"
+        ],
+        "provider": null,
+        "reason": "DEPENDENCY_OR_COMMAND_NOT_CONFIGURED",
+        "status": "CAPABILITY_NOT_CONFIGURED",
+        "structured_output": false,
+        "version": "optional"
+      },
+      "complexity": "digital",
+      "fixture": "digital-pdf",
+      "media_type": "application/pdf",
+      "metrics": {},
+      "reason": "DEPENDENCY_OR_COMMAND_NOT_CONFIGURED",
+      "source_hash": "35eb6a0c677cb415d4b80459a1b82524914444a9ca92d1bc0b0b7e66cdbdd7ad",
+      "status": "SKIPPED"
+    },
+    {
+      "adapter": "chunkr",
+      "availability": {
+        "adapter": "chunkr",
+        "benchmark_required": true,
+        "complexities": [
+          "complex",
+          "scanned",
+          "formula",
+          "table-heavy"
+        ],
+        "local": true,
+        "locators": false,
+        "media": [
+          "pdf",
+          "docx",
+          "pptx",
+          "image"
+        ],
+        "provider": "chunkr-oss",
+        "reason": "OSS_OR_CLOUD_SERVICE_NOT_CONFIGURED",
+        "status": "CAPABILITY_NOT_CONFIGURED",
+        "structured_output": false,
+        "version": "optional"
+      },
+      "complexity": "digital",
+      "fixture": "digital-pdf",
+      "media_type": "application/pdf",
+      "metrics": {},
+      "reason": "OSS_OR_CLOUD_SERVICE_NOT_CONFIGURED",
+      "source_hash": "35eb6a0c677cb415d4b80459a1b82524914444a9ca92d1bc0b0b7e66cdbdd7ad",
+      "status": "SKIPPED"
+    }
+  ],
+  "metadata": {
+    "command": "scripts/document_intelligence_benchmark.py --report reports/document-intelligence/benchmark.json --repeats 2",
+    "fixture_root": "C:\\Users\\david\\AppData\\Local\\Temp\\akp-final-megagoal\\test\\fixtures\\document-intelligence",
+    "generated_at": "2026-08-13T04:29:42.444771+00:00",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.14.0",
+    "repeats": 2,
+    "schema_version": "1.0",
+    "versions": {
+      "docling": "NOT_INSTALLED",
+      "fastapi": "0.121.3",
+      "httpx": "0.28.1",
+      "marker-pdf": "NOT_INSTALLED",
+      "pydantic": "2.12.4",
+      "pypdf": "6.15.0"
+    }
+  },
+  "selection": {
+    "configured_selection": false,
+    "reason": "benchmark evidence is recorded; no adapter is promoted automatically",
+    "status": "NOT_SELECTED"
+  },
+  "status": "EXECUTED"
+}

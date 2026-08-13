@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>Layout fixture</title>
+    <style>
+      .hidden {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Reading order</h1>
+    <p>A heading before a table should remain visible in canonical order.</p>
+    <aside class="hidden">This should not be extracted.</aside>
+    <h2>Evidence block</h2>
+    <p>A heading before a table.</p>
+    <table>
+      <tr>
+        <th>Signal</th>
+        <th>Value</th>
+      </tr>
+      <tr>
+        <td>layout</td>
+        <td>html</td>
+      </tr>
+    </table>
+  </body>
+</html>

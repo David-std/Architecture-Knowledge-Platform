@@ -1,0 +1,1 @@
+{"id":"generic-j-multi-vault","category":"multi-vault-isolation","query":"Which vault-local policy applies to the shared path in vault A?","gold_documents":["vault-a-policy"],"must_not_include":["vault-b-policy"],"critical":true,"slice":"multi-vault-isolation"}

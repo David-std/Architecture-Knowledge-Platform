@@ -1,18 +1,15 @@
 import { createHash, randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
-import matter from "gray-matter";
-import { runKnowledgeLint, type Postgres } from "@akp/postgres";
+import {
+  runKnowledgeLint,
+  type AppendOutboxEventInput,
+  type Postgres,
+} from "@akp/postgres";
 import { GitKnowledgeStore } from "@akp/git-store";
 import { assertSafeKnowledgePath } from "@akp/compiler";
 import { validateMarkdownDocument } from "@akp/validation";
-import {
-  DeterministicEmbeddingAdapter,
-  parseKnowledgeUnits,
-  toPgVector,
-} from "@akp/retrieval";
 import {
   rebuildSpaceProjections,
   assertManagedRepositoryBoundary,
@@ -30,6 +27,20 @@ import {
   requirePermission,
   spaceIdsForPermission,
 } from "../auth.js";
+
+// Keep review routes importable by lightweight API tests that mock only the
+// Postgres constructor. The helper is resolved lazily when a review is
+// published, while still receiving the caller's transaction client.
+type AppendHelper = (typeof import("@akp/postgres"))["appendOutboxEvent"];
+type AppendTarget = Parameters<AppendHelper>[0];
+let reviewOutboxModule: Promise<typeof import("@akp/postgres")> | undefined;
+async function appendReviewEvent(
+  client: AppendTarget,
+  input: AppendOutboxEventInput,
+): Promise<Awaited<ReturnType<AppendHelper>>> {
+  const module = await (reviewOutboxModule ??= import("@akp/postgres"));
+  return module.appendOutboxEvent(client, input);
+}
 
 function repositoryPath(): string {
   const managed =
@@ -73,211 +84,27 @@ async function recordPublicationFailure(
   );
 }
 
-async function indexMergedChangesLegacy(
+async function evaluationTargetForReview(
   db: Postgres,
   review: Record<string, unknown>,
-  revision: string,
-): Promise<void> {
-  const vault = await db.pool.query<{ current_revision: string }>(
-    `
-    select current_revision from vaults where space_id=$1
-     order by last_imported_at desc nulls last limit 1
-    `,
-    [review.space_id],
+): Promise<{ vaultId: string; evalPack: string }> {
+  const vaultId = String(review.vault_id ?? "");
+  if (!vaultId) throw new Error("REVIEW_VAULT_SCOPE_REQUIRED");
+  const result = await db.pool.query(
+    "select eval_pack from vaults where id=$1 and space_id=$2 and enabled=true",
+    [vaultId, review.space_id],
   );
-  const vaultRevision = vault.rows[0]?.current_revision ?? "no-vault";
-  const projectionRevision = `composite:${vaultRevision}+managed:${revision}`;
-  const manifest = review.impact_manifest as {
-    proposedChanges?: Array<{ path: string; operation?: string }>;
-  };
-  for (const change of manifest.proposedChanges ?? []) {
-    const absolutePath = path.join(
-      repositoryPath(),
-      ...change.path.replaceAll("\\", "/").split("/"),
-    );
-    const raw = await readFile(absolutePath, "utf8");
-    const parsed = matter(raw);
-    const data = parsed.data as Record<string, unknown>;
-    const externalId = String(
-      data.id ??
-        `GEN-${createHash("sha256").update(change.path).digest("hex").slice(0, 12)}`,
-    );
-    const indexed = await db.pool.query<{ id: string }>(
-      `
-      insert into knowledge_documents(
-        space_id,path,external_id,title,type,lifecycle,trust_tier,current_revision,
-        body_cache,frontmatter,aliases,layer,content_hash,token_estimate,raw_links
-      )
-      values ($1,$2,$3,$4,$5,'ACTIVE','HUMAN_REVIEWED',$6,$7,$8::jsonb,$9,$10,$11,$12,'[]'::jsonb)
-      on conflict(space_id,path) do update set
-        external_id=excluded.external_id,title=excluded.title,type=excluded.type,
-        lifecycle=excluded.lifecycle,trust_tier=excluded.trust_tier,
-        current_revision=excluded.current_revision,body_cache=excluded.body_cache,
-        frontmatter=excluded.frontmatter,aliases=excluded.aliases,layer=excluded.layer,
-        content_hash=excluded.content_hash,token_estimate=excluded.token_estimate,
-        refresh_status='CURRENT',updated_at=now()
-      returning id
-      `,
-      [
-        review.space_id,
-        `managed/${change.path}`,
-        externalId,
-        String(data.title ?? path.basename(change.path, ".md")),
-        String(data.type ?? "source-summary"),
-        revision,
-        parsed.content,
-        JSON.stringify(data),
-        Array.isArray(data.aliases) ? data.aliases.map(String) : [],
-        String(data.knowledge_layer ?? "source"),
-        createHash("sha256").update(raw).digest("hex"),
-        Math.ceil(raw.length / 4),
-      ],
-    );
-    const documentId = indexed.rows[0]?.id;
-    if (!documentId)
-      throw new Error(`Could not index merged document ${change.path}.`);
-    if (change.operation === "UPDATE") {
-      await db.pool.query(
-        `
-        with recursive downstream(id,trail) as (
-          select r.from_document_id,array[$1::uuid,r.from_document_id]
-            from knowledge_relations r where r.to_document_id=$1
-          union all
-          select r.from_document_id,d.trail||r.from_document_id
-            from downstream d join knowledge_relations r on r.to_document_id=d.id
-           where not r.from_document_id=any(d.trail)
-        )
-        update knowledge_documents k
-           set refresh_status='STALE_PENDING_REVIEW',invalidated_by=$1,
-               stale_reason='Dependency changed in approved review',updated_at=now()
-          from downstream d where k.id=d.id
-        `,
-        [documentId],
-      );
-    }
-    const contentHash = createHash("sha256").update(raw).digest("hex");
-    await db.pool.query(
-      `
-      insert into knowledge_versions(document_id,git_commit,content_hash,body,frontmatter)
-      values($1,$2,$3,$4,$5::jsonb)
-      on conflict(document_id,git_commit) do nothing
-      `,
-      [documentId, revision, contentHash, parsed.content, JSON.stringify(data)],
-    );
-    const sourceId = (review.impact_manifest as Record<string, unknown>)
-      .sourceId;
-    if (typeof sourceId === "string") {
-      await db.pool.query(
-        `
-        insert into document_evidence(document_id,evidence_id)
-        select $1,e.id from evidence e where e.source_id=$2
-        on conflict do nothing
-        `,
-        [documentId, sourceId],
-      );
-    }
-    await db.pool.query("delete from knowledge_units where document_id=$1", [
-      documentId,
-    ]);
-    const units = parseKnowledgeUnits(
-      String(data.title ?? path.basename(change.path, ".md")),
-      parsed.content,
-    );
-    const adapter = new DeterministicEmbeddingAdapter();
-    const generation = await db.pool.query<{ id: string }>(
-      `
-      insert into embedding_generations(
-        space_id,provider,model,model_revision,dimensions,normalization,
-        configuration_version,corpus_revision,status
-      )
-      values($1,$2,$3,$4,$5,$6,$7,$8,'READY')
-      on conflict(
-        space_id,provider,model,model_revision,configuration_version,corpus_revision
-      ) do update set status=embedding_generations.status
-      returning id
-      `,
-      [
-        review.space_id,
-        adapter.descriptor.provider,
-        adapter.descriptor.model,
-        adapter.descriptor.modelRevision,
-        adapter.descriptor.dimensions,
-        adapter.descriptor.normalization,
-        adapter.descriptor.configurationVersion,
-        projectionRevision,
-      ],
-    );
-    const vectors = await adapter.embed(units.map((unit) => unit.body));
-    for (let index = 0; index < units.length; index += 1) {
-      const unit = units[index];
-      const vector = vectors[index];
-      if (!unit || !vector) continue;
-      const inserted = await db.pool.query<{ id: string }>(
-        `
-        insert into knowledge_units(
-          document_id,space_id,unit_key,unit_type,heading_path,body,content_hash,
-          corpus_revision,lifecycle,trust_tier,token_estimate
-        )
-        values($1,$2,$3,$4,$5,$6,$7,$8,'ACTIVE','HUMAN_REVIEWED',$9)
-        returning id
-        `,
-        [
-          documentId,
-          review.space_id,
-          unit.unitKey,
-          unit.unitType,
-          unit.headingPath,
-          unit.body,
-          unit.contentHash,
-          projectionRevision,
-          unit.tokenEstimate,
-        ],
-      );
-      await db.pool.query(
-        `
-        insert into unit_embeddings(unit_id,generation_id,content_hash,embedding)
-        values($1,$2,$3,$4::vector)
-        `,
-        [
-          inserted.rows[0]?.id,
-          generation.rows[0]?.id,
-          unit.contentHash,
-          toPgVector(vector),
-        ],
-      );
-    }
-  }
-  await db.pool.query(
-    `
-    insert into index_revisions(
-      space_id,corpus_revision,lexical_revision,graph_revision,context_pack_revision,
-      status,warnings
-    )
-    values($1,$2,$2,$2,$2,'DEGRADED','["VECTOR_DISABLED_PENDING_BENCHMARK"]'::jsonb)
-    on conflict(space_id) do update set
-      corpus_revision=excluded.corpus_revision,
-      lexical_revision=excluded.lexical_revision,
-      graph_revision=excluded.graph_revision,
-      context_pack_revision=excluded.context_pack_revision,
-      vector_revision=null,
-      status=excluded.status,
-      warnings=excluded.warnings,
-      updated_at=now()
-    `,
-    [review.space_id, projectionRevision],
-  );
+  if (!result.rowCount) throw new Error("REVIEW_VAULT_SCOPE_NOT_FOUND");
+  const evalPack = (result.rows[0]?.eval_pack ?? {}) as Record<string, unknown>;
+  return { vaultId, evalPack: String(evalPack.name ?? "generic") };
 }
 
-/** Reconcile Git content first, then rebuild every derived retrieval index. */
+/** Reconcile changed Git paths through the shared incremental index port. */
 async function indexMergedChanges(
   db: Postgres,
   review: Record<string, unknown>,
   revision: string,
-): Promise<{
-  corpusRevision: string;
-  unitCount: number;
-  documentCount: number;
-}> {
+): Promise<void> {
   const manifest = review.impact_manifest as {
     sourceId?: string;
     proposedChanges?: Array<{ path: string; operation?: "CREATE" | "UPDATE" }>;
@@ -288,16 +115,112 @@ async function indexMergedChanges(
       ...(change.operation ? { operation: change.operation } : {}),
     }),
   );
+  const vaultId = String(review.vault_id ?? "");
+  if (!vaultId) throw new Error("REVIEW_VAULT_SCOPE_REQUIRED");
   const store = new GitKnowledgeStore(repositoryPath());
   await synchronizeManagedPaths(db, store, {
     spaceId: String(review.space_id),
+    vaultId,
     revision,
     changes,
     ...(typeof manifest.sourceId === "string"
       ? { sourceId: manifest.sourceId }
       : {}),
   });
-  return rebuildSpaceProjections(db, String(review.space_id), revision);
+}
+
+interface PublicationLifecycle {
+  reviewId: string;
+  jobId?: string;
+  spaceId: string;
+  vaultId: string;
+  revision: string;
+  manifest: Record<string, unknown>;
+}
+
+/**
+ * Persist the publication state and its downstream work requests together.
+ * The review status is the business commit point; the outbox rows share that
+ * transaction so a retry cannot publish without a durable event (or emit an
+ * event for a publication that rolled back).
+ */
+async function appendPublicationLifecycle(
+  client: AppendTarget,
+  input: PublicationLifecycle,
+): Promise<void> {
+  const proposed = Array.isArray(input.manifest.proposedChanges)
+    ? input.manifest.proposedChanges
+    : [];
+  const changedPaths = proposed
+    .map((entry) =>
+      entry && typeof entry === "object" && "path" in entry
+        ? String((entry as Record<string, unknown>).path ?? "")
+        : "",
+    )
+    .filter(Boolean);
+  const tombstones = proposed
+    .filter(
+      (entry) =>
+        entry &&
+        typeof entry === "object" &&
+        String(
+          (entry as Record<string, unknown>).operation ?? "",
+        ).toUpperCase() === "DELETE",
+    )
+    .map((entry) => String((entry as Record<string, unknown>).path ?? ""))
+    .filter(Boolean);
+  const payload = {
+    reviewId: input.reviewId,
+    ...(input.jobId ? { jobId: input.jobId } : {}),
+    revision: input.revision,
+    changedPaths,
+    tombstones,
+    ...(typeof input.manifest.sourceId === "string"
+      ? { sourceId: input.manifest.sourceId }
+      : {}),
+  };
+  const published = await appendReviewEvent(client, {
+    eventType: "KnowledgePublished",
+    resourceId: input.reviewId,
+    spaceId: input.spaceId,
+    vaultId: input.vaultId,
+    correlationId: input.jobId ?? input.reviewId,
+    payload,
+  });
+  const corpus = await appendReviewEvent(client, {
+    eventType: "CorpusRevisionPublished",
+    resourceId: input.reviewId,
+    spaceId: input.spaceId,
+    vaultId: input.vaultId,
+    correlationId: input.jobId ?? input.reviewId,
+    causationId: published.eventId,
+    payload,
+  });
+  const requested: Array<{
+    eventType:
+      | "LexicalIndexUpdateRequested"
+      | "VectorIndexUpdateRequested"
+      | "GraphIndexUpdateRequested"
+      | "ContextPackInvalidationRequested"
+      | "ImpactedEvalRunRequested";
+  }> = [
+    { eventType: "LexicalIndexUpdateRequested" },
+    { eventType: "VectorIndexUpdateRequested" },
+    { eventType: "GraphIndexUpdateRequested" },
+    { eventType: "ContextPackInvalidationRequested" },
+    { eventType: "ImpactedEvalRunRequested" },
+  ];
+  for (const request of requested) {
+    await appendReviewEvent(client, {
+      eventType: request.eventType,
+      resourceId: input.reviewId,
+      spaceId: input.spaceId,
+      vaultId: input.vaultId,
+      correlationId: input.jobId ?? input.reviewId,
+      causationId: corpus.eventId,
+      payload,
+    });
+  }
 }
 
 function reviewPaths(review: Record<string, unknown>): string[] {
@@ -335,7 +258,8 @@ function canAccessReview(
 export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
   app.post<{
     Body: {
-      spaceId?: string;
+      spaceId: string;
+      vaultId: string;
       summary?: string;
       changes?: Array<{ path: string; content: string; reason?: string }>;
     };
@@ -369,10 +293,20 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
             .send({ code: "MARKDOWN_ONLY", path: change.path });
         }
       }
-      const spaceId =
-        request.body.spaceId ?? "00000000-0000-0000-0000-000000000003";
+      const spaceId = request.body?.spaceId;
+      const vaultId = request.body?.vaultId;
+      if (!spaceId || !vaultId) {
+        return reply.code(400).send({ code: "VAULT_SCOPE_REQUIRED" });
+      }
       if (!hasSpaceAccess(actorOf(request), spaceId, "knowledge:propose")) {
         return reply.code(403).send({ code: "SPACE_ACCESS_DENIED" });
+      }
+      const vault = await db.pool.query(
+        "select id from vaults where id=$1 and space_id=$2 and enabled=true",
+        [vaultId, spaceId],
+      );
+      if (!vault.rowCount) {
+        return reply.code(404).send({ code: "VAULT_SCOPE_NOT_FOUND" });
       }
       const deniedPath = changes.find(
         (change) =>
@@ -426,13 +360,14 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
       try {
         await db.pool.query(
           `
-          insert into reviews(id,space_id,branch_name,base_commit,head_commit,status,author_id,
+          insert into reviews(id,space_id,vault_id,branch_name,base_commit,head_commit,status,author_id,
                               impact_manifest,validation_report)
-          values($1,$2,$3,$4,$5,'PENDING',$6,$7::jsonb,$8::jsonb)
+          values($1,$2,$3,$4,$5,$6,'PENDING',$7,$8::jsonb,$9::jsonb)
           `,
           [
             reviewId,
             spaceId,
+            vaultId,
             branchName,
             baseRevision,
             headCommit,
@@ -661,43 +596,53 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
             process.env.AKP_GIT_AUTHOR_EMAIL ?? "akp@localhost",
           );
           await renewPublicationLock(db, publicationKey, lockOwner);
-          await indexMergedChanges(db, review, revision);
-          await renewPublicationLock(db, publicationKey, lockOwner);
-          const lint = await runKnowledgeLint(
-            db,
-            String(review.space_id),
-            "MERGE",
-          );
-          const evals = await runEvaluation(
-            db,
-            { name: "post-merge-impacted-regression" },
-            String(review.space_id),
-          );
-          await renewPublicationLock(db, publicationKey, lockOwner);
-          await db.pool.query(
-            `
-            update reviews set status='APPROVED',decision_by=$2,decision_at=now(),
-                   decision_reason=$3,merged_commit=$4,updated_at=now()
-             where id=$1 and status='PUBLISHING'
-            `,
-            [
-              request.params.id,
-              actor?.id ?? null,
-              request.body.reason ?? null,
-              revision,
-            ],
-          );
           const jobId = (review.impact_manifest as Record<string, unknown>)
             ?.jobId;
-          if (typeof jobId === "string") {
-            await db.pool.query(
+          const publicationClient = await db.pool.connect();
+          try {
+            await publicationClient.query("begin");
+            const approved = await publicationClient.query(
               `
-              update ingest_jobs set state='COMPLETED',updated_at=now(),
-                     result=coalesce(result,'{}'::jsonb)||$2::jsonb
-               where id=$1
+              update reviews set status='APPROVED',decision_by=$2,decision_at=now(),
+                     decision_reason=$3,merged_commit=$4,updated_at=now()
+               where id=$1 and status='PUBLISHING'
+               returning id
               `,
-              [jobId, JSON.stringify({ mergedCommit: revision })],
+              [
+                request.params.id,
+                actor?.id ?? null,
+                request.body.reason ?? null,
+                revision,
+              ],
             );
+            if (!approved.rowCount) throw new Error("PUBLICATION_STATE_LOST");
+            if (typeof jobId === "string") {
+              await publicationClient.query(
+                `
+                update ingest_jobs set state='COMPLETED',updated_at=now(),
+                       result=coalesce(result,'{}'::jsonb)||$2::jsonb
+                 where id=$1
+                `,
+                [jobId, JSON.stringify({ mergedCommit: revision })],
+              );
+            }
+            await appendPublicationLifecycle(publicationClient, {
+              reviewId: request.params.id,
+              ...(typeof jobId === "string" ? { jobId } : {}),
+              spaceId: String(review.space_id),
+              vaultId: String(review.vault_id ?? ""),
+              revision,
+              manifest: (review.impact_manifest ?? {}) as Record<
+                string,
+                unknown
+              >,
+            });
+            await publicationClient.query("commit");
+          } catch (error) {
+            await publicationClient.query("rollback");
+            throw error;
+          } finally {
+            publicationClient.release();
           }
           await audit(
             db,
@@ -728,8 +673,16 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
             id: request.params.id,
             status: "APPROVED",
             mergedCommit: revision,
-            lint,
-            evals,
+            indexing: "PENDING",
+            queuedEvents: [
+              "KnowledgePublished",
+              "CorpusRevisionPublished",
+              "LexicalIndexUpdateRequested",
+              "VectorIndexUpdateRequested",
+              "GraphIndexUpdateRequested",
+              "ContextPackInvalidationRequested",
+              "ImpactedEvalRunRequested",
+            ],
           };
         } catch (error) {
           let compensatingRevision: string | null = null;
@@ -935,6 +888,7 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
         };
         await synchronizeManagedPaths(db, store, {
           spaceId: String(review.space_id),
+          vaultId: String(review.vault_id ?? ""),
           revision,
           changes: (manifest.proposedChanges ?? []).map((change) => ({
             path: change.path,
@@ -947,17 +901,22 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
         const projection = await rebuildSpaceProjections(
           db,
           String(review.space_id),
+          String(review.vault_id ?? ""),
           revision,
         );
         const lint = await runKnowledgeLint(
           db,
           String(review.space_id),
+          String(review.vault_id ?? ""),
           "INDEX_REBUILD",
         );
+        const evaluationTarget = await evaluationTargetForReview(db, review);
         const evals = await runEvaluation(
           db,
           { name: "post-rollback-impacted-regression" },
           String(review.space_id),
+          evaluationTarget.evalPack,
+          evaluationTarget.vaultId,
         );
         await renewPublicationLock(db, publicationKey, lockOwner);
         const completed = await db.pool.query(

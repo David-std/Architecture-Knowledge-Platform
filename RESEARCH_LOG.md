@@ -22,12 +22,23 @@
 - Clean, versioned environments exposed a cross-shell test-exclusion error and
   four high-severity transitive dependency findings; both were corrected and
   rerun.
-- Benchmark selection remains an evidence-backed recommendation, not a
-  universal theory or a hidden runtime switch.
+- Vault identity must be explicit and permission-intersected; a space alone is
+  not a safe multi-vault retrieval boundary.
+- Normal publication must commit durable events and leave indexing to an
+  idempotent consumer; full rebuild belongs to explicit repair.
+- Canonical extraction must preserve structured locators, content hashes,
+  warnings and adapter configuration instead of flattening every medium.
+- Structural containers support rehydration but must not be embedded as one
+  dossier-wide vector.
+- Benchmark selection remains unverified for production. The deterministic
+  offline harness validates scoring/coverage only and leaves the default null.
 
 ## Uncertainty retained
 
-- Four gold cases cannot establish broad retrieval quality.
+- Nineteen synthetic generic cases/slices cannot establish production
+  retrieval quality.
+- Docling, Marker and Chunkr were unavailable and remain unbenchmarked optional
+  candidates; no comparative ranking was invented.
 - Reference capabilities not reproduced locally remain conservative
   `UNKNOWN_NOT_REPRODUCED` assessments.
 - Private/paid materials are not redistributed; their evidence status comes

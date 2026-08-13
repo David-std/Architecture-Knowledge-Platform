@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.2.0-platform-megagoal — release candidate validated, 2026-08-12
+
+- Added generic `VaultRegistry`, per-vault memberships, visibility, eval packs
+  and strict multi-vault query/index/export isolation.
+- Added durable event outbox, delivery leases/fencing, quarantine/requeue,
+  reconciliation and asynchronous publication lifecycle events.
+- Added incremental structural indexing, parent rehydration and vault-scoped
+  index revisions; retained full rebuild only as an explicit repair operation.
+- Added canonical `DocumentArtifact`, deterministic structured adapters,
+  document-intelligence benchmark and honest optional adapter routing.
+- Added generic eval packs, exact ten-configuration scoring and deterministic
+  offline retrieval harness without selecting a production default.
+- Added sanitized audit ZIPs and separately confirmed, deployment-disabled raw
+  evidence export with safe CLI roots.
+- Expanded contracts to 50 OpenAPI paths, 3 AsyncAPI channels and 20 MCP tools.
+- Fresh migrations `001`–`016`, API integration 28/28, Python 12/12, real
+  Postgres/indexing tests, runtime/API/MCP smoke and v3 recovery all passed.
+- Private recovery ZIP SHA-256:
+  `06af22ada90f8e924facfd72065bffa7b1169d268f0a563fc7efdf3df7d8c5fd`.
+
+This section records a validated release candidate. The final merge commit and
+annotated tag remain pending and are not falsely claimed.
+
 ## v0.1.17-knowledge-baseline — baseline stable, 2026-08-08
 
 Functional baseline commit `7daa261c446100b50bc985d60f199299291dfe2e` carries annotated tag `v0.1.17-knowledge-baseline`. The private vault ZIP is SHA-256 `3f1c923e832ad31735b63c86d0c85938af733a55020ebce8564f6b0cdb22e146`; its deterministic content manifest and aggregate hash are recorded in `PROJECT_STATE.md`.

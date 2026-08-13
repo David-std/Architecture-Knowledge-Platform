@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { buildContextPacket } from "../src/context-packet.js";
+import {
+  buildContextPacket,
+  contextBudgetForIntent,
+} from "../src/context-packet.js";
 
 const baseHit = {
   documentId: "11111111-1111-4111-8111-111111111111",
+  vaultId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   revision: "abc",
   title: "CQRS",
   type: "architecture",
@@ -19,6 +23,10 @@ describe("buildContextPacket", () => {
     const packet = buildContextPacket({
       request: {
         query: "cqrs",
+        spaceId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        vaultId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        vaultIds: [],
+        federated: false,
         types: [],
         minimumTrust: "MACHINE_SUPPORTED",
         mode: "SOURCE_BACKED",
@@ -41,6 +49,11 @@ describe("buildContextPacket", () => {
     });
 
     expect(packet.sections).toHaveLength(1);
+    expect(packet.sections[0]).toMatchObject({
+      documentRevision: "abc",
+      sourceOrEvidenceIds: ["source:cqrs"],
+      selectionReason: "gold",
+    });
     expect(packet.budget.usedTokens).toBeLessThanOrEqual(
       packet.budget.maxTokens,
     );
@@ -53,6 +66,10 @@ describe("buildContextPacket", () => {
     const packet = buildContextPacket({
       request: {
         query: "nonexistent architecture assertion",
+        spaceId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        vaultId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        vaultIds: [],
+        federated: false,
         types: [],
         minimumTrust: "MACHINE_SUPPORTED",
         mode: "SOURCE_BACKED",
@@ -73,5 +90,12 @@ describe("buildContextPacket", () => {
     expect(packet.requiredActions).toContain(
       "Do not claim vault authority without evidence.",
     );
+  });
+
+  it("uses bounded task-specific budgets", () => {
+    expect(contextBudgetForIntent("EXACT_LOOKUP")).toBe(3000);
+    expect(contextBudgetForIntent("GLOBAL_SYNTHESIS")).toBe(12000);
+    expect(contextBudgetForIntent("CONCEPTUAL", 100_000)).toBe(32000);
+    expect(contextBudgetForIntent("CONCEPTUAL", 1)).toBe(256);
   });
 });

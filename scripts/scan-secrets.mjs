@@ -13,7 +13,8 @@ const files = existsSync(".git")
           },
         )
           .split(/\r?\n/)
-          .filter(Boolean),
+          .map((file) => file.replaceAll("\\", "/"))
+          .filter((file) => file && existsSync(file)),
       ),
     ]
   : await fg(["**/*"], {

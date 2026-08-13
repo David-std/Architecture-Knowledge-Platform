@@ -1,0 +1,1 @@
+{"id":"generic-j-synonyms","category":"synonyms","query":"Which policy governs cache invalidation after settings mutate?","gold_documents":["cache-refresh-rule"],"critical":true,"slice":"synonyms"}

@@ -3,7 +3,7 @@ import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
-import type { Postgres } from "@akp/postgres";
+import type { Postgres, AppendOutboxEventInput } from "@akp/postgres";
 import { IngestRequest } from "@akp/contracts";
 import {
   actorOf,
@@ -40,6 +40,28 @@ async function allowedLocalSource(sourceUri: string): Promise<string | null> {
   return inside ? canonical : null;
 }
 
+// Keep the route importable by lightweight health-test mocks that only expose
+// the Postgres class. Production and integration paths resolve the real append
+// helper on first use, still inside the caller's SQL transaction.
+type AppendHelper = (typeof import("@akp/postgres"))["appendOutboxEvent"];
+type AppendTarget = Parameters<AppendHelper>[0];
+type ResolveVaultScope =
+  (typeof import("@akp/postgres"))["resolveAuthorizedVaultScope"];
+let outboxModule: Promise<typeof import("@akp/postgres")> | undefined;
+async function appendEvent(
+  client: AppendTarget,
+  input: AppendOutboxEventInput,
+): Promise<Awaited<ReturnType<AppendHelper>>> {
+  const module = await (outboxModule ??= import("@akp/postgres"));
+  return module.appendOutboxEvent(client, input);
+}
+async function resolveVaultScope(
+  ...args: Parameters<ResolveVaultScope>
+): Promise<Awaited<ReturnType<ResolveVaultScope>>> {
+  const module = await (outboxModule ??= import("@akp/postgres"));
+  return module.resolveAuthorizedVaultScope(...args);
+}
+
 export function registerIngestRoutes(app: FastifyInstance, db: Postgres): void {
   app.post(
     "/v1/ingest",
@@ -66,6 +88,22 @@ export function registerIngestRoutes(app: FastifyInstance, db: Postgres): void {
       ) {
         return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
       }
+      const actor = actorOf(request);
+      if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
+      try {
+        await resolveVaultScope(db, {
+          userId: actor.id,
+          spaceId: parsed.data.spaceId,
+          permission: "source:write",
+          vaultId: parsed.data.vaultId,
+          vaultIds: [parsed.data.vaultId],
+          federated: false,
+        });
+      } catch (error) {
+        return reply.code(403).send({
+          code: error instanceof Error ? error.message : "VAULT_ACCESS_DENIED",
+        });
+      }
       const canonicalSource = await allowedLocalSource(parsed.data.sourceUri);
       if (!canonicalSource) {
         return reply.code(403).send({
@@ -83,12 +121,13 @@ export function registerIngestRoutes(app: FastifyInstance, db: Postgres): void {
         await client.query("begin");
         await client.query(
           `
-        insert into ingest_jobs(id, space_id, source_uri, state, payload, created_by)
-        values ($1, $2, $3, 'RECEIVED', $4::jsonb, $5)
+        insert into ingest_jobs(id, space_id, vault_id, source_uri, state, payload, created_by)
+        values ($1, $2, $3, $4, 'RECEIVED', $5::jsonb, $6)
         `,
           [
             id,
             parsed.data.spaceId,
+            parsed.data.vaultId,
             canonicalSource,
             JSON.stringify(payload),
             actorId ?? null,
@@ -98,6 +137,32 @@ export function registerIngestRoutes(app: FastifyInstance, db: Postgres): void {
           "insert into ingest_job_events(job_id,state,event_type,payload) values ($1,'RECEIVED','SUBMITTED',$2::jsonb)",
           [id, JSON.stringify({ sourceUri: canonicalSource })],
         );
+        const registered = await appendEvent(client, {
+          eventType: "SourceRegistered",
+          resourceId: id,
+          spaceId: parsed.data.spaceId,
+          vaultId: parsed.data.vaultId,
+          correlationId: id,
+          payload: {
+            jobId: id,
+            sourceUri: canonicalSource,
+            title: parsed.data.title ?? null,
+            mediaType: parsed.data.mediaType ?? null,
+          },
+        });
+        await appendEvent(client, {
+          eventType: "ExtractionRequested",
+          resourceId: id,
+          spaceId: parsed.data.spaceId,
+          vaultId: parsed.data.vaultId,
+          correlationId: id,
+          causationId: registered.eventId,
+          payload: {
+            jobId: id,
+            sourceUri: canonicalSource,
+            expectedSha256: parsed.data.expectedSha256 ?? null,
+          },
+        });
         await client.query("commit");
       } catch (error) {
         await client.query("rollback");

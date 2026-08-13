@@ -45,6 +45,7 @@ try {
   const tools = await client.listTools();
   const required = [
     "akp_status",
+    "akp_list_vaults",
     "akp_start_session",
     "akp_search",
     "akp_build_context",
@@ -62,6 +63,7 @@ try {
     "akp_run_eval",
     "akp_reindex",
     "akp_benchmark_retrieval",
+    "akp_export_audit_bundle",
   ];
   const names = new Set(tools.tools.map((tool) => tool.name));
   const missing = required.filter((name) => !names.has(name));
@@ -74,9 +76,34 @@ try {
       `Unexpected platform status: ${JSON.stringify(statusPayload)}`,
     );
   }
+  const listed = await client.callTool({
+    name: "akp_list_vaults",
+    arguments: {},
+  });
+  const listedPayload = structuredToolResult(listed);
+  const vaults = Array.isArray(listedPayload.vaults)
+    ? listedPayload.vaults
+    : [];
+  const firstVault = vaults.find(
+    (candidate): candidate is Record<string, unknown> =>
+      Boolean(candidate) && typeof candidate === "object",
+  );
+  const vaultId = firstVault?.id;
+  const spaceId = firstVault?.space_id ?? firstVault?.spaceId;
+  if (typeof vaultId !== "string" || typeof spaceId !== "string") {
+    throw new Error(
+      `MCP smoke requires one authorized VaultRegistry entry: ${JSON.stringify(listedPayload)}`,
+    );
+  }
   const search = await client.callTool({
     name: "akp_search",
-    arguments: { query: "CQRS misma base de datos", limit: 3 },
+    arguments: {
+      query: "dependency inversion architecture",
+      spaceId,
+      vaultIds: [vaultId],
+      federated: false,
+      limit: 3,
+    },
   });
   const searchPayload = structuredToolResult(search);
   if (!Array.isArray(searchPayload.hits)) {
@@ -87,10 +114,12 @@ try {
   console.log(
     JSON.stringify(
       {
-        status: "PASSED",
+        result: "PASSED",
         toolCount: tools.tools.length,
         requiredTools: required.length,
-        status: statusPayload.status,
+        platformStatus: statusPayload.status,
+        visibleVaultCount: vaults.length,
+        scopedVaultId: vaultId,
         searchHitCount: searchPayload.hits.length,
       },
       null,

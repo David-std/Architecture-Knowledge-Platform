@@ -1,0 +1,1 @@
+{"id":"generic-j-comparison","category":"comparisons","query":"Compare the snapshot recovery workflow with the cache refresh rule.","gold_documents":["recovery-workflow","cache-refresh-rule"],"must_not_include":["unrelated-note"],"critical":true,"slice":"comparisons"}

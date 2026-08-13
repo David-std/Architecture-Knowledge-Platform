@@ -1,62 +1,73 @@
 # Validation report
 
-- Environment: Windows + Docker Desktop; clean Node 20 container; Python 3.12
-  container; PostgreSQL 16 + pgvector; MinIO.
-- Target baseline: `v0.1.17-knowledge-baseline`
-- Report date: 2026-08-08 (America/Bogota)
-- Functional baseline commit/tag: `7daa261c446100b50bc985d60f199299291dfe2e` / `v0.1.17-knowledge-baseline`.
-- Private vault snapshot SHA-256: `3f1c923e832ad31735b63c86d0c85938af733a55020ebce8564f6b0cdb22e146`.
+- Date: 2026-08-12 (America/Bogota)
+- Environment: Windows, Node 25.2.0, pnpm 10.34.5, Python 3.14.0,
+  PostgreSQL/pgvector and MinIO through Docker Desktop.
+- CI target remains Node 20 and Python 3.12; the full final suite below was not
+  rerun inside those exact runtimes in this iteration.
+- Target checkpoint: `v0.2.0-platform-megagoal` (commit/tag pending merge).
 
-`PASS` denotes an observed command or integration outcome. Historical evidence
-is retained only where it remains useful; this report does not promote earlier
-9-migration or 14-test counts as current facts.
+`PASS` below means the command or integration outcome was observed. A
+benchmark marked `LIMITED` is intentionally not promoted into a quality claim.
 
-## Current executed gates
+## Executed gates
 
-| Gate                   | Result          | Exact observed evidence                                                                                                  |
-| ---------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Fresh schema migration | PASS            | `001`–`012`; 12 applied; zero SQL checksum mismatches in a newly created database                                        |
-| Runtime verifier       | PASS            | 12 migrations; 552 docs; 2,071 units/embeddings; 1,192 relations; 3 sources; 79 artifacts; 1 ContextPacket               |
-| Node 20 frozen install | PASS            | `pnpm install --frozen-lockfile --strict-peer-dependencies` in isolated container                                        |
-| Dependency audit       | PASS            | `pnpm audit --audit-level high`: 0 high findings (1 low, 3 moderate remain below this gate)                              |
-| Format                 | PASS            | `pnpm exec prettier --check .`                                                                                           |
-| Node quality suite     | PASS            | `pnpm check`: typechecks, dependency-cruiser and all non-integration unit tests                                          |
-| Production build       | PASS            | `pnpm build`, including Next production build                                                                            |
-| API integration        | PASS            | 2 files, 26 tests: 21 security/governance plus 5 review-publication cases                                                |
-| Python extractor       | PASS            | clean Python 3.12: `ruff check .`; 6 pytest cases passed                                                                 |
-| Contracts/docs/secrets | PASS            | 46 OpenAPI paths, 2 AsyncAPI channels, 18 MCP tools; 30 Markdown; 221 repository files scanned                           |
-| Runtime/API smoke      | PASS            | authenticated health `UP`, ContextPacket persisted, status/search succeeded                                              |
-| MCP smoke              | PASS            | 18/18 required tools; real status `UP`; search returned 3 hits                                                           |
-| Web smoke              | PASS            | `/`, `/login`, `/reviews` HTTP 200; review page had no `fetch failed` or server error marker                             |
-| Eval                   | PASS            | run `8477b608-a9d6-41d1-b216-91488c0da6e1`; 4/4; zero critical failures                                                  |
-| Retrieval benchmark    | PASS WITH LIMIT | 11 configurations over 4 cases; best eligible run `c8ec9350-9c11-4945-aac7-d201579cf0ab`; recommendation `lexical+graph` |
-| Backup/restore         | PASS            | v3 manifest; 552 docs; 12 exact migrations; 22 MinIO entries; Git bundle verified                                        |
+| Gate                     | Result          | Observed evidence                                                                                   |
+| ------------------------ | --------------- | --------------------------------------------------------------------------------------------------- |
+| Frozen install           | PASS            | `pnpm install --offline --frozen-lockfile --strict-peer-dependencies`; 23 workspaces                |
+| Dependency audit         | PASS            | `pnpm audit --audit-level high`; 0 high, 0 critical; 1 low and 3 moderate remain                    |
+| Format                   | PASS            | `pnpm exec prettier --check .`                                                                      |
+| Contracts                | PASS            | 50 OpenAPI paths, 3 AsyncAPI channels, 20 MCP tools                                                 |
+| Docs                     | PASS            | 40 Markdown documents                                                                               |
+| Hygiene/secrets          | PASS            | 320/320 files classified; 320 files scanned; no forbidden tracked secret/private artifact           |
+| Node quality suite       | PASS            | lint, typecheck, 558-module/823-dependency boundary graph and all unit tests                        |
+| Production build         | PASS            | all TypeScript packages plus Next production build and 18 dynamic routes                            |
+| API integration          | PASS            | 2 files, 28/28 tests                                                                                |
+| Real PostgreSQL packages | PASS            | `@akp/postgres` 12/12; `@akp/indexing` 4/4                                                          |
+| Fresh migrations         | PASS            | isolated pgvector database applied `001`–`016`                                                      |
+| Runtime verifier         | PASS            | 16 migrations; 555 docs; 6,138 units; 4,078 embeddings; 1,192 relations; ContextPacket present      |
+| Python extractor         | PASS            | Ruff; 12/12 pytest under local Python 3.14.0                                                        |
+| Runtime/API smoke        | PASS            | liveness/readiness `UP`; PostgreSQL, raw store and extractor ready; ContextPacket persisted         |
+| MCP smoke                | PASS            | 20/20 tools; status `UP`; explicit VaultRegistry scope; search returned a valid empty hit set       |
+| Document intelligence    | PASS WITH LIMIT | 9 deterministic executions; 27 optional candidates explicitly skipped; no optional default selected |
+| Retrieval benchmark      | PASS WITH LIMIT | 19 generic cases/slices; exact 10 configurations; logic-only synthetic; production default `null`   |
+| Backup/restore           | PASS            | v3 manifest; 555 docs; exact 16 migrations; 22 MinIO files; verified Git bundle                     |
+| Recovery ZIP             | PASS            | 4,495,017 bytes; SHA-256 `06af22ada90f8e924facfd72065bffa7b1169d268f0a563fc7efdf3df7d8c5fd`         |
 
-## Security and recovery corrections verified
+## Benchmark provenance
 
-- Scoped API tokens are intersected with current membership and persisted as an
-  effective scope snapshot for web sessions.
-- Path-scoped actors are denied whole-space/pathless metadata endpoints rather
-  than receiving global status, audit, source, graph, schema, session or eval
-  metadata.
-- Idempotency identity includes concrete request URL and credential scope;
-  expired uncertain leases become `ABANDONED`; the session exchange is excluded
-  because replaying it cannot safely replay cookies.
-- Publication tests exercise invalid frontmatter cleanup, duplicate path
-  rejection, decision concurrency, changed draft head rejection and rejected
-  draft cleanup.
-- Backup/restore validates a fixed artifact list, sizes/hashes, exact migration
-  inventory and configured managed-repository bundle rather than self-hashing a
-  directory manifest.
+- Retrieval dataset SHA-256:
+  `e8d9d5959aab4773b46210ad01b9ac6bfffc110dfc7f95d9bfb5cdd79991fdca`.
+- Retrieval report SHA-256:
+  `AA000CE2339B5F89C0351AFADFC40A4B0994E90552DA22209923D6BCE6A1C9F3`.
+- The offline runner validates matrix/scoring/guardrails only. It does not read
+  private vault content or a production database and makes no retrieval-quality
+  claim.
+- Document intelligence used local Python 3.14.0. CI declares Python 3.12, but
+  this exact benchmark was not rerun under 3.12.
 
-## Explicit limitations of this evidence
+## Security/recovery assertions actually exercised
 
-- Four gold cases are a regression smoke, not a general retrieval-quality or
-  multilingual semantic-recall claim.
-- The selected benchmark configuration is a recommendation returned by the
-  benchmark. It is not proof that every query intent should use that channel
-  set.
-- The Node 20 clean gate has no external database, so its unit suite excludes
-  integrations correctly; the 26 integration tests were separately run against
-  the local PostgreSQL service.
-- The read-only vault audit, deterministic manifest, private ZIP, staged private-file audit, final functional commit and annotated tag are complete. The remaining entries in `REMAINING_REAL_GAPS.md` are product/assurance limits, not hidden release tasks.
+- API-token scopes survive web-session exchange and are re-intersected with
+  current memberships; malformed prefixes fail closed.
+- Idempotency is partitioned by concrete credential scope and resource URL;
+  expired uncertain leases are abandoned rather than replayed.
+- Vault and path scope protect metadata, source, graph, schema, eval, session,
+  audit and export operations.
+- Publication validates immutable reviewed head/base, serializes decisions,
+  cleans rejected drafts and emits vault-scoped outbox events without a
+  synchronous normal-path reindex.
+- Backup recovery validates artifact names, sizes, hashes, exact migration
+  inventory, MinIO contents and Git bundle integrity.
+
+## Remaining evidence limits
+
+- Local Node/Python versions differ from CI targets; the committed CI workflow
+  is the reproducibility gate for Node 20/Python 3.12.
+- Optional Docling/Marker/Chunkr adapters were unavailable and therefore
+  skipped, not simulated.
+- The retrieval benchmark is synthetic and logic-only; no production channel
+  default or semantic-quality claim is justified.
+- Raw evidence export is disabled by default and was tested with a mock object
+  store; enabling it is a deployment decision.
+- Commit/tag and permanent-repository merge are pending after this report.

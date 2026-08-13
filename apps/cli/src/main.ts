@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { Command } from "commander";
-import { Postgres } from "@akp/postgres";
+import { Postgres, listVaults, registerVault } from "@akp/postgres";
 import {
   importVaultReadOnly,
   inspectVault,
@@ -19,6 +19,13 @@ import {
   type JsonRecord,
   type PacketObservation,
 } from "./metrics.js";
+import {
+  AUDIT_EXPORT_CONFIRMATION,
+  AuditExportClientError,
+  RAW_EVIDENCE_EXPORT_CONFIRMATION,
+  requestRawEvidenceExport,
+  requestAuditExport,
+} from "./audit-export.js";
 
 function database(): Postgres {
   const databaseUrl = process.env.DATABASE_URL;
@@ -116,14 +123,191 @@ function positiveInteger(value: string): number {
   return parsed;
 }
 
-async function runDefaultEvaluation(): Promise<void> {
-  printJson(await api("/v1/evals/run", { method: "POST", body: "{}" }));
+async function runEvaluationTarget(options: {
+  spaceId: string;
+  vaultId: string;
+  evalPack: string;
+}): Promise<void> {
+  printJson(
+    await api("/v1/evals/run", {
+      method: "POST",
+      body: JSON.stringify(options),
+    }),
+  );
+}
+
+interface AuditCommandOptions {
+  vaultId: string;
+  confirm: string;
+  output?: string;
+  locator?: string;
+  maxPackets?: number;
+}
+
+async function runAuditExportCommand(
+  options: AuditCommandOptions,
+): Promise<void> {
+  try {
+    printJson(
+      await requestAuditExport({
+        apiBase: process.env.AKP_API_URL ?? "http://127.0.0.1:8080",
+        token: process.env.AKP_API_TOKEN ?? "",
+        vaultId: options.vaultId,
+        confirmation: options.confirm,
+        ...(options.output ? { outputPath: options.output } : {}),
+        ...(options.locator ? { locator: options.locator } : {}),
+        ...(options.maxPackets ? { maxPackets: options.maxPackets } : {}),
+      }),
+    );
+  } catch (error) {
+    if (error instanceof AuditExportClientError) {
+      printJson({
+        status: "FAILED",
+        error: {
+          code: error.code,
+          status: error.status,
+          details: error.details,
+        },
+      });
+      process.exitCode = 1;
+      return;
+    }
+    throw error;
+  }
+}
+
+interface RawEvidenceCommandOptions {
+  vaultId: string;
+  evidenceId?: string;
+  locator?: string;
+  confirm: string;
+  output?: string;
+  maxBytes?: number;
+}
+
+async function runRawEvidenceExportCommand(
+  options: RawEvidenceCommandOptions,
+): Promise<void> {
+  try {
+    printJson(
+      await requestRawEvidenceExport({
+        apiBase: process.env.AKP_API_URL ?? "http://127.0.0.1:8080",
+        token: process.env.AKP_API_TOKEN ?? "",
+        vaultId: options.vaultId,
+        ...(options.evidenceId ? { evidenceId: options.evidenceId } : {}),
+        ...(options.locator ? { locator: options.locator } : {}),
+        confirmation: options.confirm,
+        ...(options.output ? { outputPath: options.output } : {}),
+        ...(options.maxBytes ? { maxBytes: options.maxBytes } : {}),
+      }),
+    );
+  } catch (error) {
+    if (error instanceof AuditExportClientError) {
+      printJson({
+        status: "FAILED",
+        error: {
+          code: error.code,
+          status: error.status,
+          details: error.details,
+        },
+      });
+      process.exitCode = 1;
+      return;
+    }
+    throw error;
+  }
+}
+
+function configureAuditExport(
+  command: Command,
+  options: { locatorRequired?: boolean; allowOutput?: boolean } = {},
+): Command {
+  command
+    .requiredOption("--vault-id <uuid>", "Authorized vault UUID")
+    .requiredOption(
+      "--confirm <literal>",
+      `Required literal: ${AUDIT_EXPORT_CONFIRMATION}`,
+    )
+    .option(
+      "--max-packets <count>",
+      "Maximum redacted packet manifests",
+      positiveInteger,
+    );
+  if (options.locatorRequired) {
+    command.requiredOption(
+      "--locator <json>",
+      "Evidence locator filter JSON (object or array)",
+    );
+  } else {
+    command.option("--locator <json>", "Optional evidence locator filter JSON");
+  }
+  if (options.allowOutput !== false) {
+    command.option(
+      "--output <path>",
+      "Explicit ZIP destination inside AKP_EXPORT_ROOTS",
+    );
+  }
+  return command.action(runAuditExportCommand);
 }
 
 const program = new Command()
   .name("akp")
   .description("Architecture Knowledge Platform command-line interface")
   .version("0.1.0");
+
+const auditExport = program
+  .command("audit")
+  .description("Sanitized external-review export commands");
+configureAuditExport(
+  auditExport.command("export").description("Export a sanitized audit ZIP"),
+);
+configureAuditExport(
+  auditExport
+    .command("export-vault")
+    .description("Alias for a single-vault sanitized audit export"),
+);
+
+const evidenceExport = program
+  .command("evidence")
+  .description("Authorized evidence manifest operations");
+configureAuditExport(
+  evidenceExport
+    .command("export")
+    .description("Export metadata for matching evidence locators"),
+  { locatorRequired: true },
+);
+const rawEvidenceExport = evidenceExport
+  .command("export-raw")
+  .description("Export one explicitly selected raw evidence object");
+rawEvidenceExport
+  .requiredOption("--vault-id <uuid>", "Authorized vault UUID")
+  .option("--evidence-id <uuid>", "Evidence UUID selector")
+  .option("--locator <json>", "Evidence locator selector JSON")
+  .requiredOption(
+    "--confirm <literal>",
+    `Required literal: ${RAW_EVIDENCE_EXPORT_CONFIRMATION}`,
+  )
+  .option("--max-bytes <count>", "Maximum raw bytes", positiveInteger)
+  .option(
+    "--output <path>",
+    "Explicit binary destination inside AKP_EXPORT_ROOTS",
+  )
+  .action(async (options: RawEvidenceCommandOptions) => {
+    if (!options.evidenceId && !options.locator) {
+      throw new Error("Provide --evidence-id or --locator.");
+    }
+    await runRawEvidenceExportCommand(options);
+  });
+
+const manifestExport = program
+  .command("export")
+  .description("External-review manifest operations");
+configureAuditExport(
+  manifestExport
+    .command("manifest")
+    .description("Inspect audit bundle metadata without writing a ZIP"),
+  { allowOutput: false },
+);
 
 const vault = program
   .command("vault")
@@ -132,6 +316,9 @@ const vault = program
 vault
   .command("import")
   .requiredOption("--vault-path <path>", "Path to the existing knowledge vault")
+  .requiredOption("--space-id <uuid>", "Authorized space UUID")
+  .option("--vault-key <key>", "Stable VaultRegistry key")
+  .option("--eval-pack <name>", "Evaluation pack", "generic")
   .option(
     "--read-only",
     "Acknowledge that the source vault must remain read-only",
@@ -142,6 +329,9 @@ vault
       vaultPath: string;
       readOnly?: boolean;
       reportDir: string;
+      spaceId: string;
+      vaultKey?: string;
+      evalPack: string;
     }) => {
       if (!options.readOnly) {
         throw new Error(
@@ -152,7 +342,12 @@ vault
       await mkdir(reportDir, { recursive: true });
       const reportPath = path.join(reportDir, "vault-import-latest.md");
       const result = await withDatabase((db) =>
-        importVaultReadOnly(db, options.vaultPath, { reportPath }),
+        importVaultReadOnly(db, options.vaultPath, {
+          spaceId: options.spaceId,
+          reportPath,
+          ...(options.vaultKey ? { vaultKey: options.vaultKey } : {}),
+          evalPack: options.evalPack,
+        }),
       );
       const reportPersisted = writeReport(
         reportPath,
@@ -176,6 +371,65 @@ vault
       );
     },
   );
+
+vault
+  .command("register")
+  .requiredOption("--vault-key <key>", "Stable registry key")
+  .requiredOption("--name <name>", "Human-readable vault name")
+  .requiredOption("--space-id <uuid>", "Owning space UUID")
+  .requiredOption("--local-path <path>", "Canonical local path")
+  .option("--git-repository <uri>", "Git repository URI")
+  .option("--visibility <visibility>", "PRIVATE, TEAM or CENTRAL", "PRIVATE")
+  .option("--default-branch <branch>", "Default branch", "main")
+  .option("--content-root <paths...>", "Content roots", ["."])
+  .option("--source-root <paths...>", "Source roots", [])
+  .option("--eval-pack <name>", "Evaluation pack", "generic")
+  .action(
+    async (options: {
+      vaultKey: string;
+      name: string;
+      spaceId: string;
+      localPath: string;
+      gitRepository?: string;
+      visibility: "PRIVATE" | "TEAM" | "CENTRAL";
+      defaultBranch: string;
+      contentRoot: string[];
+      sourceRoot: string[];
+      evalPack: string;
+    }) => {
+      const result = await withDatabase((db) =>
+        registerVault(db, {
+          vaultKey: options.vaultKey,
+          name: options.name,
+          spaceId: options.spaceId,
+          visibility: options.visibility,
+          gitRepository: options.gitRepository ?? null,
+          defaultBranch: options.defaultBranch,
+          localPath: path.resolve(options.localPath),
+          contentRoots: options.contentRoot,
+          sourceRoots: options.sourceRoot,
+          schemaProfile: {},
+          evalPack: {
+            name: options.evalPack,
+            version: "1",
+            enabled: true,
+            criticalCases: [],
+          },
+          retrievalConfig: {},
+          permissions: {},
+          enabled: true,
+        }),
+      );
+      printJson(result);
+    },
+  );
+
+vault
+  .command("list")
+  .requiredOption("--space-id <uuid...>", "Authorized space UUID(s)")
+  .action(async (options: { spaceId: string[] }) => {
+    printJson(await withDatabase((db) => listVaults(db, options.spaceId)));
+  });
 
 vault
   .command("status")
@@ -232,38 +486,76 @@ program.command("status").action(async () => {
 program
   .command("search")
   .argument("<query>")
+  .requiredOption("--space-id <uuid>", "Authorized space UUID")
+  .requiredOption("--vault-id <uuid...>", "Target vault UUID(s)")
+  .option("--federated", "Explicitly allow multiple-vault synthesis", false)
   .option("--limit <number>", "Maximum hits", "10")
   .option("--mode <mode>", "Retrieval mode", "SOURCE_BACKED")
-  .action(async (query: string, options: { limit: string; mode: string }) => {
-    console.log(
-      JSON.stringify(
-        await api("/v1/search", {
-          method: "POST",
-          body: JSON.stringify({
-            query,
-            limit: Number(options.limit),
-            mode: options.mode,
+  .action(
+    async (
+      query: string,
+      options: {
+        spaceId: string;
+        vaultId: string[];
+        federated: boolean;
+        limit: string;
+        mode: string;
+      },
+    ) => {
+      console.log(
+        JSON.stringify(
+          await api("/v1/search", {
+            method: "POST",
+            body: JSON.stringify({
+              query,
+              spaceId: options.spaceId,
+              vaultIds: options.vaultId,
+              ...(options.vaultId.length === 1
+                ? { vaultId: options.vaultId[0] }
+                : {}),
+              federated: options.federated,
+              limit: Number(options.limit),
+              mode: options.mode,
+            }),
           }),
-        }),
-        null,
-        2,
-      ),
-    );
-  });
+          null,
+          2,
+        ),
+      );
+    },
+  );
 
 program
   .command("context")
   .argument("<query>")
+  .requiredOption("--space-id <uuid>", "Authorized space UUID")
+  .requiredOption("--vault-id <uuid...>", "Target vault UUID(s)")
+  .option("--federated", "Explicitly allow multiple-vault synthesis", false)
   .option("--intent <intent>", "Agent intent", "architecture guidance")
   .option("--max-tokens <number>", "Context budget", "6000")
   .action(
-    async (query: string, options: { intent: string; maxTokens: string }) => {
+    async (
+      query: string,
+      options: {
+        spaceId: string;
+        vaultId: string[];
+        federated: boolean;
+        intent: string;
+        maxTokens: string;
+      },
+    ) => {
       console.log(
         JSON.stringify(
           await api("/v1/context", {
             method: "POST",
             body: JSON.stringify({
               query,
+              spaceId: options.spaceId,
+              vaultIds: options.vaultId,
+              ...(options.vaultId.length === 1
+                ? { vaultId: options.vaultId[0] }
+                : {}),
+              federated: options.federated,
               intent: options.intent,
               maxTokens: Number(options.maxTokens),
             }),
@@ -278,16 +570,27 @@ program
 program
   .command("ingest")
   .argument("<source>")
+  .requiredOption("--space-id <uuid>", "Authorized space UUID")
+  .requiredOption("--vault-id <uuid>", "Target vault UUID")
   .option("--title <title>")
   .option("--media-type <mediaType>")
   .action(
-    async (source: string, options: { title?: string; mediaType?: string }) => {
+    async (
+      source: string,
+      options: {
+        spaceId: string;
+        vaultId: string;
+        title?: string;
+        mediaType?: string;
+      },
+    ) => {
       console.log(
         JSON.stringify(
           await api("/v1/ingest", {
             method: "POST",
             body: JSON.stringify({
-              spaceId: "00000000-0000-0000-0000-000000000003",
+              spaceId: options.spaceId,
+              vaultId: options.vaultId,
               sourceUri: path.resolve(source),
               policy: "REVIEW_REQUIRED",
               ...(options.title ? { title: options.title } : {}),
@@ -325,13 +628,19 @@ program
 
 const evaluation = program
   .command("eval")
-  .description("Run and compare persisted evaluation results")
-  .action(runDefaultEvaluation);
+  .description("Run and compare persisted evaluation results");
 
 evaluation
   .command("run")
   .description("Run the checked-in critical evaluation suite")
-  .action(runDefaultEvaluation);
+  .requiredOption("--space-id <uuid>", "Authorized space UUID")
+  .requiredOption("--vault-id <uuid>", "Target vault UUID")
+  .option(
+    "--eval-pack <name>",
+    "Generic or registered vault eval pack",
+    "generic",
+  )
+  .action(runEvaluationTarget);
 
 evaluation
   .command("compare [baseline] [candidate]")
@@ -390,9 +699,23 @@ const benchmark = program
 benchmark
   .command("retrieval")
   .description("Execute the server retrieval configuration comparison matrix")
-  .action(async () => {
-    printJson(await api("/v1/evals/benchmark", { method: "POST", body: "{}" }));
-  });
+  .requiredOption("--space-id <uuid>", "Authorized space UUID")
+  .requiredOption("--vault-id <uuid>", "Target vault UUID")
+  .option(
+    "--eval-pack <name>",
+    "Generic or registered vault eval pack",
+    "generic",
+  )
+  .action(
+    async (options: { spaceId: string; vaultId: string; evalPack: string }) => {
+      printJson(
+        await api("/v1/evals/benchmark", {
+          method: "POST",
+          body: JSON.stringify(options),
+        }),
+      );
+    },
+  );
 
 benchmark
   .command("packet")
@@ -413,7 +736,9 @@ benchmark
   )
   .option("--intent <intent>", "Packet intent", "architecture guidance")
   .option("--mode <mode>", "Retrieval mode", "SOURCE_BACKED")
-  .option("--space-id <space-id>", "Explicit target space UUID")
+  .requiredOption("--space-id <uuid>", "Authorized space UUID")
+  .requiredOption("--vault-id <uuid...>", "Target vault UUID(s)")
+  .option("--federated", "Explicitly allow multiple-vault synthesis", false)
   .action(
     async (
       query: string,
@@ -423,7 +748,9 @@ benchmark
         limit: number;
         intent: string;
         mode: string;
-        spaceId?: string;
+        spaceId: string;
+        vaultId: string[];
+        federated: boolean;
       },
     ) => {
       const observations: PacketObservation[] = [];
@@ -437,7 +764,12 @@ benchmark
             limit: options.limit,
             intent: options.intent,
             mode: options.mode,
-            ...(options.spaceId ? { spaceId: options.spaceId } : {}),
+            spaceId: options.spaceId,
+            vaultIds: options.vaultId,
+            ...(options.vaultId.length === 1
+              ? { vaultId: options.vaultId[0] }
+              : {}),
+            federated: options.federated,
           }),
         });
         observations.push({ latencyMs: performance.now() - started, packet });
@@ -455,13 +787,15 @@ schema
   .requiredOption("--version <version>", "Candidate schema version")
   .option("--require <fields...>", "Required frontmatter fields")
   .option("--allow-type <types...>", "Allowed knowledge document types")
-  .option("--space-id <space-id>", "Explicit target space UUID")
+  .requiredOption("--space-id <uuid>", "Authorized space UUID")
+  .requiredOption("--vault-id <uuid>", "Target vault UUID")
   .action(
     async (options: {
       version: string;
       require?: string[];
       allowType?: string[];
-      spaceId?: string;
+      spaceId: string;
+      vaultId: string;
     }) => {
       printJson(
         await api("/v1/schema/dry-run", {
@@ -470,7 +804,8 @@ schema
             candidateVersion: options.version,
             requiredFrontmatterFields: options.require ?? [],
             allowedTypes: options.allowType ?? [],
-            ...(options.spaceId ? { spaceId: options.spaceId } : {}),
+            spaceId: options.spaceId,
+            vaultId: options.vaultId,
           }),
         }),
       );

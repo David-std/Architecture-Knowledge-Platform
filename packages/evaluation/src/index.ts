@@ -4,6 +4,10 @@ export interface RetrievalCaseResult {
   goldDocumentIds: string[];
 }
 
+export * from "./dataset.js";
+export * from "./benchmark.js";
+export * from "./offline.js";
+
 export interface RetrievalMetrics {
   recallAtK: number;
   precisionAtK: number;

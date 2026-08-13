@@ -1,0 +1,1 @@
+{"id":"generic-j-paraphrase","category":"paraphrases","query":"What rule renews a cache when configuration changes?","gold_documents":["cache-refresh-rule"],"critical":true,"slice":"paraphrases"}

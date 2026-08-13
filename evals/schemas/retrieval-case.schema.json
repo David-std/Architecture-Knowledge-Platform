@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://akp.local/schemas/retrieval-case.schema.json",
+  "type": "object",
+  "required": ["id", "category", "query", "gold_documents"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "category": { "type": "string", "minLength": 1 },
+    "query": { "type": "string", "minLength": 1 },
+    "gold_documents": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "gold_evidence": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "gold_citations": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "must_not_include": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "expect_no_answer": { "type": "boolean", "default": false },
+    "critical": { "type": "boolean", "default": false },
+    "slice": { "type": "string" }
+  },
+  "additionalProperties": false
+}

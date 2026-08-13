@@ -9,7 +9,9 @@ export interface PacketCandidate {
     | "workflow"
     | "concept"
     | "profile"
+    | "decision"
     | "example"
+    | "counterexample"
     | "evidence"
     | "source";
 }
@@ -20,11 +22,33 @@ const priority: Record<PacketCandidate["kind"], number> = {
   rule: 0,
   workflow: 1,
   profile: 2,
-  example: 3,
+  decision: 3,
   concept: 4,
-  evidence: 5,
-  source: 6,
+  example: 5,
+  counterexample: 6,
+  evidence: 7,
+  source: 8,
 };
+
+const taskBudgets: Record<string, number> = {
+  EXACT_LOOKUP: 3000,
+  CONCEPTUAL: 6000,
+  COMPARISON: 8000,
+  WORKFLOW_EXECUTION: 7000,
+  SOURCE_VERIFICATION: 8000,
+  PROJECT_CODE: 9000,
+  GLOBAL_SYNTHESIS: 12000,
+  IMPACT_ANALYSIS: 8000,
+  NO_RETRIEVAL_REQUIRED: 1000,
+};
+
+export function contextBudgetForIntent(
+  intent: string,
+  requested?: number,
+): number {
+  const value = requested ?? taskBudgets[intent] ?? 6000;
+  return Math.max(256, Math.min(Math.trunc(value), 32000));
+}
 
 export function buildContextPacket(input: {
   request: SearchRequest;
@@ -37,6 +61,18 @@ export function buildContextPacket(input: {
   indexRevisions?: Record<string, string | null>;
   retrievalConfiguration?: Record<string, unknown>;
 }): ContextPacket {
+  const indexRevisions = input.indexRevisions ?? {
+    corpus: input.corpusRevision,
+    lexical: null,
+    vector: null,
+    graph: null,
+    contextPack: null,
+  };
+  const retrievalConfiguration = input.retrievalConfiguration ?? {
+    version: "unspecified",
+    channels: [],
+    vectorEnabled: false,
+  };
   const selected = [...input.candidates].sort(
     (a, b) => priority[a.kind] - priority[b.kind] || b.hit.score - a.hit.score,
   );
@@ -59,11 +95,15 @@ export function buildContextPacket(input: {
       title: candidate.hit.title,
       content: candidate.content,
       documentId: candidate.hit.documentId,
+      vaultId: candidate.hit.vaultId,
       unitId: candidate.hit.unitId,
+      parentUnitId: candidate.hit.parentUnitId,
+      unitType: candidate.hit.unitType,
       retrievalChannels: candidate.hit.reasons,
-      revision: candidate.hit.revision,
+      documentRevision: candidate.hit.revision,
       score: candidate.hit.score,
-      reason: candidate.hit.reasons.join("; "),
+      selectionReason: candidate.hit.reasons.join("; "),
+      sourceOrEvidenceIds: candidate.hit.citations,
     });
   }
 
@@ -71,8 +111,8 @@ export function buildContextPacket(input: {
     request: input.request,
     intent: input.intent,
     corpusRevision: input.corpusRevision,
-    indexRevisions: input.indexRevisions,
-    retrievalConfiguration: input.retrievalConfiguration,
+    indexRevisions,
+    retrievalConfiguration,
     maxTokens: input.maxTokens,
     usedTokens,
     sections,
@@ -88,20 +128,34 @@ export function buildContextPacket(input: {
 
   return {
     packetId: randomUUID(),
+    ...(input.request.vaultId ? { vaultId: input.request.vaultId } : {}),
+    scope: {
+      ...(input.request.organizationId
+        ? { organizationId: input.request.organizationId }
+        : {}),
+      spaceId: input.request.spaceId,
+      vaultIds: [
+        ...new Set([
+          ...(input.request.vaultId ? [input.request.vaultId] : []),
+          ...(input.request.vaultIds ?? []),
+        ]),
+      ],
+      federated: input.request.federated ?? false,
+    },
     query: input.request.query,
     intent: input.intent,
     corpusRevision: input.corpusRevision,
     status:
       sections.length === 0
         ? "INSUFFICIENT_KNOWLEDGE"
-        : Object.values(input.indexRevisions ?? {}).some(
+        : Object.values(indexRevisions).some(
               (revision) =>
                 revision !== null && revision !== input.corpusRevision,
             )
           ? "DEGRADED"
           : "SUPPORTED",
-    indexRevisions: input.indexRevisions,
-    retrievalConfiguration: input.retrievalConfiguration,
+    indexRevisions,
+    retrievalConfiguration,
     generatedAt: new Date().toISOString(),
     budget: { maxTokens: input.maxTokens, usedTokens },
     mode: input.request.mode,

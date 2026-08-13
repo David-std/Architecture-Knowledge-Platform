@@ -12,10 +12,13 @@
     "test:integration": "vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
+    "@akp/audit-export": "*",
     "@akp/compiler": "*",
     "@akp/contracts": "*",
     "@akp/evaluation": "*",
     "@akp/git-store": "*",
+    "@akp/indexing": "*",
+    "@akp/object-store": "*",
     "@akp/observability": "*",
     "@akp/postgres": "*",
     "@akp/project-adapter": "*",

@@ -1,16 +1,29 @@
 import { redirect } from "next/navigation";
 import { akp } from "../../lib/api";
 
-export default function IngestPage() {
+interface VaultOption {
+  id: string;
+  space_id: string;
+  name: string;
+  vault_key: string;
+}
+
+export default async function IngestPage() {
+  const response = await akp<{ vaults: VaultOption[] }>("/v1/vaults");
+  const vaults = response.vaults ?? [];
   async function submit(formData: FormData) {
     "use server";
     const sourceUri = String(formData.get("sourceUri") ?? "").trim();
     const title = String(formData.get("title") ?? "").trim();
     const mediaType = String(formData.get("mediaType") ?? "").trim();
+    const scope = String(formData.get("scope") ?? "").trim();
+    const [spaceId, vaultId] = scope.split(":", 2);
+    if (!spaceId || !vaultId) throw new Error("VAULT_SCOPE_REQUIRED");
     const result = await akp<{ jobId: string }>("/v1/ingest", {
       method: "POST",
       body: JSON.stringify({
-        spaceId: "00000000-0000-0000-0000-000000000003",
+        spaceId,
+        vaultId,
         sourceUri,
         title: title || undefined,
         mediaType: mediaType || undefined,
@@ -27,6 +40,19 @@ export default function IngestPage() {
       </p>
       <h1>Nueva ingesta</h1>
       <form action={submit} className="card">
+        <p>
+          <label>
+            Vault
+            <select name="scope" required>
+              <option value="">Selecciona un vault autorizado</option>
+              {vaults.map((vault) => (
+                <option key={vault.id} value={`${vault.space_id}:${vault.id}`}>
+                  {vault.name} ({vault.vault_key})
+                </option>
+              ))}
+            </select>
+          </label>
+        </p>
         <p>
           <label>
             Ruta capturada <input name="sourceUri" required />

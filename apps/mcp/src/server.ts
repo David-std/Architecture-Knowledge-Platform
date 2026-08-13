@@ -63,13 +63,24 @@ export function createMcpServer(): McpServer {
   );
 
   server.registerTool(
+    "akp_list_vaults",
+    {
+      description:
+        "List VaultRegistry entries visible to the authenticated actor.",
+      inputSchema: {},
+    },
+    async () => textResult(await api("/v1/vaults")),
+  );
+
+  server.registerTool(
     "akp_start_session",
     {
       description: "Start a bounded agent session in an authorized space.",
       inputSchema: {
         purpose: z.string().min(1),
         contextBudget: z.number().int().min(256).max(32000).default(6000),
-        spaceId: z.string().uuid().optional(),
+        spaceId: z.string().uuid(),
+        vaultId: z.string().uuid(),
         projectId: z.string().uuid().optional(),
         idempotencyKey: z.string().min(8).max(200),
       },
@@ -85,6 +96,9 @@ export function createMcpServer(): McpServer {
         "Search approved knowledge using exact, lexical and graph channels.",
       inputSchema: {
         query: z.string().min(1),
+        spaceId: z.string().uuid(),
+        vaultIds: z.array(z.string().uuid()).min(1).max(20),
+        federated: z.boolean().default(false),
         limit: z.number().int().min(1).max(50).default(10),
         minimumTrust: z
           .enum([
@@ -115,6 +129,9 @@ export function createMcpServer(): McpServer {
         "Build a token-budgeted, revisioned context packet with citations and gaps.",
       inputSchema: {
         query: z.string().min(1),
+        spaceId: z.string().uuid(),
+        vaultIds: z.array(z.string().uuid()).min(1).max(20),
+        federated: z.boolean().default(false),
         intent: z.string().default("architecture guidance"),
         maxTokens: z.number().int().min(256).max(32000).default(6000),
         limit: z.number().int().min(1).max(50).default(20),
@@ -185,10 +202,8 @@ export function createMcpServer(): McpServer {
       description:
         "Submit a local captured source for durable, immutable ingestion.",
       inputSchema: {
-        spaceId: z
-          .string()
-          .uuid()
-          .default("00000000-0000-0000-0000-000000000003"),
+        spaceId: z.string().uuid(),
+        vaultId: z.string().uuid(),
         sourceUri: z.string().min(1),
         mediaType: z.string().optional(),
         title: z.string().optional(),
@@ -223,6 +238,8 @@ export function createMcpServer(): McpServer {
       description:
         "Create a Git-backed review proposal. This never bypasses validation or review.",
       inputSchema: {
+        spaceId: z.string().uuid(),
+        vaultId: z.string().uuid(),
         summary: z.string().min(1),
         path: z.string().min(1),
         content: z.string().min(1),
@@ -230,9 +247,19 @@ export function createMcpServer(): McpServer {
         idempotencyKey: z.string().min(8).max(200),
       },
     },
-    async ({ summary, path, content, reason, idempotencyKey }) =>
+    async ({
+      spaceId,
+      vaultId,
+      summary,
+      path,
+      content,
+      reason,
+      idempotencyKey,
+    }) =>
       textResult(
         await writeApi("/v1/proposals", idempotencyKey, {
+          spaceId,
+          vaultId,
           summary,
           changes: [{ path, content, reason }],
         }),
@@ -307,19 +334,25 @@ export function createMcpServer(): McpServer {
     "akp_run_eval",
     {
       description: "Run the checked-in critical retrieval evaluation suite.",
-      inputSchema: { idempotencyKey: z.string().min(8).max(200) },
+      inputSchema: {
+        spaceId: z.string().uuid(),
+        vaultId: z.string().uuid(),
+        evalPack: z.string().default("generic"),
+        idempotencyKey: z.string().min(8).max(200),
+      },
     },
-    async ({ idempotencyKey }) =>
-      textResult(await writeApi("/v1/evals/run", idempotencyKey, {})),
+    async ({ idempotencyKey, ...target }) =>
+      textResult(await writeApi("/v1/evals/run", idempotencyKey, target)),
   );
 
   server.registerTool(
     "akp_reindex",
     {
       description:
-        "Rebuild one whole authorized space from the canonical corpus. Requires admin permission with pathPrefix null. Use REBUILD_DERIVED_PROJECTIONS for projections only or REIMPORT_AND_REBUILD to import the vault first.",
+        "Rebuild one explicitly selected authorized vault from the canonical corpus. Requires admin permission with pathPrefix null. Use REBUILD_DERIVED_PROJECTIONS for projections only or REIMPORT_AND_REBUILD to import that vault first.",
       inputSchema: {
         spaceId: z.string().uuid(),
+        vaultId: z.string().uuid(),
         confirm: z.enum([
           "REBUILD_DERIVED_PROJECTIONS",
           "REIMPORT_AND_REBUILD",
@@ -328,7 +361,7 @@ export function createMcpServer(): McpServer {
         idempotencyKey: z.string().min(8).max(200),
       },
     },
-    async ({ spaceId, confirm, reimportVault, idempotencyKey }) => {
+    async ({ spaceId, vaultId, confirm, reimportVault, idempotencyKey }) => {
       const expectedConfirmation = reimportVault
         ? "REIMPORT_AND_REBUILD"
         : "REBUILD_DERIVED_PROJECTIONS";
@@ -340,6 +373,7 @@ export function createMcpServer(): McpServer {
       return textResult(
         await writeApi("/v1/reindex", idempotencyKey, {
           spaceId,
+          vaultId,
           confirm,
           reimportVault,
         }),
@@ -351,10 +385,33 @@ export function createMcpServer(): McpServer {
     "akp_benchmark_retrieval",
     {
       description: "Execute the retrieval configuration comparison matrix.",
-      inputSchema: { idempotencyKey: z.string().min(8).max(200) },
+      inputSchema: {
+        spaceId: z.string().uuid(),
+        vaultId: z.string().uuid(),
+        evalPack: z.string().default("generic"),
+        idempotencyKey: z.string().min(8).max(200),
+      },
     },
-    async ({ idempotencyKey }) =>
-      textResult(await writeApi("/v1/evals/benchmark", idempotencyKey, {})),
+    async ({ idempotencyKey, ...target }) =>
+      textResult(await writeApi("/v1/evals/benchmark", idempotencyKey, target)),
+  );
+
+  server.registerTool(
+    "akp_export_audit_bundle",
+    {
+      description:
+        "Inspect bounded audit-bundle revision/count/hash metadata. ZIP data and private record content never enter MCP context; use the authenticated HTTP/CLI export for delivery.",
+      inputSchema: {
+        vaultId: z.string().uuid(),
+        confirm: z.literal("EXPORT_SANITIZED_AUDIT_BUNDLE"),
+      },
+    },
+    async ({ vaultId, confirm }) =>
+      textResult(
+        await api(
+          `/v1/audit/export/${encodeURIComponent(vaultId)}/metadata?confirm=${encodeURIComponent(confirm)}`,
+        ),
+      ),
   );
 
   return server;

@@ -12,7 +12,7 @@ info:
     HttpOnly web session and enforce the permission recorded in
     x-akp-permission. Session-authenticated writes also require X-CSRF-Token.
 servers:
-  - url: http://127.0.0.1:18080
+  - url: http://127.0.0.1:8080
     description: Local development default
 security:
   - bearerAuth: []
@@ -293,6 +293,24 @@ paths:
         "200": { $ref: "#/components/responses/ObjectResponse" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Knowledge, Governance]
+      operationId: registerVault
+      x-akp-permission: admin
+      x-akp-requires-unrestricted-space: true
+      parameters:
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VaultRegistration" }
+      responses:
+        "201": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
   /v1/graph/summary:
     get:
       tags: [Knowledge]
@@ -859,6 +877,186 @@ paths:
         "200": { $ref: "#/components/responses/ObjectResponse" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/audit/export/{vaultId}:
+    get:
+      tags: [Governance]
+      operationId: exportSanitizedAuditBundle
+      x-akp-permission: admin
+      x-akp-requires-unrestricted-space: true
+      description: >
+        Exports a bounded, metadata-only audit ZIP. Requires whole-space admin,
+        explicit confirmation and an authorized private/team/central vault.
+        Raw binaries, evidence excerpts, document bodies, secrets, host paths,
+        source URIs and full ContextPacket content are never included.
+      parameters:
+        - in: path
+          name: vaultId
+          required: true
+          schema: { type: string, format: uuid }
+        - in: query
+          name: confirm
+          required: true
+          schema: { type: string, const: EXPORT_SANITIZED_AUDIT_BUNDLE }
+        - in: query
+          name: locator
+          schema:
+            type: string
+            maxLength: 8192
+          description: JSON object or array of at most 16 evidence-locator filters.
+        - in: query
+          name: maxPackets
+          schema: { type: integer, minimum: 1, maximum: 20 }
+      responses:
+        "200":
+          description: Deterministic sanitized audit bundle.
+          headers:
+            X-AKP-Bundle-Hash:
+              schema: { type: string, pattern: "^[a-f0-9]{64}$" }
+            X-AKP-Bundle-Schema-Version:
+              schema: { type: string, const: "1.0" }
+          content:
+            application/zip:
+              schema: { type: string, format: binary }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "413":
+          description: Configured audit bundle limit exceeded.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/audit/export/{vaultId}/metadata:
+    get:
+      tags: [Governance]
+      operationId: inspectSanitizedAuditBundle
+      x-akp-permission: admin
+      x-akp-requires-unrestricted-space: true
+      description: >
+        Returns only bounded revision, count and manifest-hash metadata. No ZIP,
+        document path, locator, evidence, source title or ContextPacket content
+        crosses this endpoint; use it for MCP preflight.
+      parameters:
+        - in: path
+          name: vaultId
+          required: true
+          schema: { type: string, format: uuid }
+        - in: query
+          name: confirm
+          required: true
+          schema: { type: string, const: EXPORT_SANITIZED_AUDIT_BUNDLE }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/evidence/export/{vaultId}/{evidenceId}:
+    get:
+      tags: [Governance]
+      operationId: exportRawEvidenceById
+      x-akp-permission: source:read
+      x-akp-requires-vault-scope: true
+      x-akp-raw-egress: true
+      description: >
+        Returns one raw immutable source object selected by evidence ID inside
+        the explicit vault. Requires source:read (or admin), the literal
+        EXPORT_RAW_EVIDENCE confirmation, an authorized path scope and a
+        bounded maxBytes value. Object SHA-256 and byte size are verified
+        before the response. Raw bytes may contain the original source's own
+        content; object-store keys, credentials and host paths are never sent
+        as response metadata. Disabled unless AKP_ENABLE_RAW_EVIDENCE_EXPORT=true.
+      parameters:
+        - in: path
+          name: vaultId
+          required: true
+          schema: { type: string, format: uuid }
+        - in: path
+          name: evidenceId
+          required: true
+          schema: { type: string, format: uuid }
+        - in: query
+          name: confirm
+          required: true
+          schema: { type: string, const: EXPORT_RAW_EVIDENCE }
+        - in: query
+          name: locator
+          schema: { type: string, maxLength: 8192 }
+          description: Optional JSON object that must match the evidence locator.
+        - in: query
+          name: maxBytes
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 52428800
+            default: 52428800
+      responses:
+        "200":
+          description: Verified raw source bytes for the selected evidence row.
+          headers:
+            X-AKP-Evidence-SHA256:
+              schema: { type: string, pattern: "^[a-f0-9]{64}$" }
+            X-AKP-Evidence-Bytes:
+              schema: { type: integer, minimum: 0 }
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+  /v1/evidence/export/{vaultId}:
+    get:
+      tags: [Governance]
+      operationId: exportRawEvidenceByLocator
+      x-akp-permission: source:read
+      x-akp-requires-vault-scope: true
+      x-akp-raw-egress: true
+      description: >
+        Returns one raw immutable source object selected by an exact JSON
+        evidence locator (or evidenceId query parameter). The selector must
+        resolve to exactly one row; all raw-egress controls of the ID endpoint
+        apply. Disabled unless AKP_ENABLE_RAW_EVIDENCE_EXPORT=true.
+      parameters:
+        - in: path
+          name: vaultId
+          required: true
+          schema: { type: string, format: uuid }
+        - in: query
+          name: confirm
+          required: true
+          schema: { type: string, const: EXPORT_RAW_EVIDENCE }
+        - in: query
+          name: evidenceId
+          schema: { type: string, format: uuid }
+        - in: query
+          name: locator
+          schema: { type: string, maxLength: 8192 }
+        - in: query
+          name: maxBytes
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 52428800
+            default: 52428800
+      responses:
+        "200":
+          description: Verified raw source bytes for exactly one evidence row.
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
   /v1/reindex:
     post:
       tags: [Governance]
@@ -866,10 +1064,11 @@ paths:
       x-akp-permission: admin
       x-akp-requires-unrestricted-space: true
       description: >
-        Rebuilds derived relations, projections and lint for one authorized
-        space. The caller must have admin permission with pathPrefix null
-        (whole-space access). Use REIMPORT_AND_REBUILD only when the latest
-        read-only vault import should run before rebuilding.
+        Rebuilds derived relations, projections and lint for one explicitly
+        selected authorized vault. The caller must have admin permission with
+        pathPrefix null (whole-space access). Use REIMPORT_AND_REBUILD only
+        when the latest read-only import for that vault should run before
+        rebuilding.
       parameters:
         - { $ref: "#/components/parameters/IdempotencyKey" }
       requestBody:
@@ -906,6 +1105,11 @@ paths:
       tags: [Evaluation]
       operationId: runEvaluation
       x-akp-permission: eval:run
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EvaluationTarget" }
       responses:
         "200": { $ref: "#/components/responses/ObjectResponse" }
         "401": { $ref: "#/components/responses/Unauthorized" }
@@ -915,6 +1119,11 @@ paths:
       tags: [Evaluation]
       operationId: benchmarkRetrieval
       x-akp-permission: eval:run
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EvaluationTarget" }
       responses:
         "200": { $ref: "#/components/responses/ObjectResponse" }
         "401": { $ref: "#/components/responses/Unauthorized" }
@@ -990,13 +1199,23 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
+    TooLarge:
+      description: Requested raw evidence exceeds the bounded byte limit
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ServiceUnavailable:
+      description: The raw object-store export capability is disabled or unavailable
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
     ServerError:
       description: Publication or internal runtime failure
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     ReindexSpaceRequired:
-      description: A target space is required for the rebuild.
+      description: A target space and vault are required for the rebuild.
       content:
         application/json:
           schema:
@@ -1005,7 +1224,12 @@ components:
             properties:
               code:
                 type: string
-                enum: [REINDEX_SPACE_REQUIRED, INVALID_IDEMPOTENCY_KEY]
+                enum:
+                  [
+                    REINDEX_SPACE_REQUIRED,
+                    REINDEX_VAULT_REQUIRED,
+                    INVALID_IDEMPOTENCY_KEY,
+                  ]
             additionalProperties: true
     ReindexForbidden:
       description: Admin whole-space access is required for the target space.
@@ -1063,11 +1287,21 @@ components:
       enum: [DRAFT, ACTIVE, DISPUTED, SUPERSEDED, ARCHIVED, DELETED_TOMBSTONE]
     SearchRequest:
       type: object
-      required: [query]
+      required: [query, spaceId]
       properties:
         query: { type: string, minLength: 1 }
         organizationId: { type: string, format: uuid }
         spaceId: { type: string, format: uuid }
+        vaultId: { type: string, format: uuid }
+        vaultIds:
+          type: array
+          maxItems: 20
+          default: []
+          items: { type: string, format: uuid }
+        federated:
+          type: boolean
+          default: false
+          description: Must be true when more than one vaultId is requested.
         projectId: { type: string, format: uuid }
         types:
           type: array
@@ -1082,11 +1316,17 @@ components:
             - { $ref: "#/components/schemas/SearchMode" }
           default: SOURCE_BACKED
         limit: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      anyOf:
+        - required: [vaultId]
+        - properties:
+            vaultIds: { type: array, minItems: 1 }
+          required: [vaultIds]
     SearchHit:
       type: object
       required:
         [
           documentId,
+          vaultId,
           revision,
           title,
           type,
@@ -1099,8 +1339,13 @@ components:
         ]
       properties:
         documentId: { type: string, format: uuid }
+        vaultId: { type: string, format: uuid }
         unitId: { type: string, format: uuid }
         unitType: { type: string }
+        parentUnitId: { type: string, format: uuid }
+        parentContext:
+          type: string
+          description: Bounded structural parent context; never the full dossier container.
         revision: { type: string }
         title: { type: string }
         type: { type: string }
@@ -1119,9 +1364,10 @@ components:
           items: { type: string }
     IngestRequest:
       type: object
-      required: [spaceId, sourceUri]
+      required: [spaceId, vaultId, sourceUri]
       properties:
         spaceId: { type: string, format: uuid }
+        vaultId: { type: string, format: uuid }
         sourceUri: { type: string, minLength: 1 }
         expectedSha256: { type: string, pattern: "^[a-f0-9]{64}$" }
         title: { type: string }
@@ -1133,9 +1379,10 @@ components:
         idempotencyKey: { type: string, minLength: 8, maxLength: 200 }
     ProposalRequest:
       type: object
-      required: [changes]
+      required: [spaceId, vaultId, changes]
       properties:
         spaceId: { type: string, format: uuid }
+        vaultId: { type: string, format: uuid }
         summary: { type: string }
         changes:
           type: array
@@ -1147,6 +1394,63 @@ components:
               path: { type: string, minLength: 1 }
               content: { type: string }
               reason: { type: string }
+    EvaluationTarget:
+      type: object
+      additionalProperties: false
+      required: [spaceId, vaultId]
+      properties:
+        spaceId: { type: string, format: uuid }
+        vaultId: { type: string, format: uuid }
+        evalPack:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9-]{1,62}$"
+          default: generic
+    VaultEvalPack:
+      type: object
+      additionalProperties: false
+      required: [name, version]
+      properties:
+        name:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9-]{1,62}$"
+        version: { type: string, minLength: 1 }
+        enabled: { type: boolean, default: true }
+        criticalCases:
+          type: array
+          default: []
+          items: { type: string }
+    VaultRegistration:
+      type: object
+      additionalProperties: false
+      required: [vaultKey, name, spaceId, localPath]
+      properties:
+        vaultKey:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9-]{1,62}$"
+        name: { type: string, minLength: 1, maxLength: 200 }
+        spaceId: { type: string, format: uuid }
+        visibility:
+          type: string
+          enum: [PRIVATE, TEAM, CENTRAL]
+          default: PRIVATE
+        gitRepository: { type: [string, "null"] }
+        defaultBranch: { type: string, minLength: 1, default: main }
+        localPath: { type: string, minLength: 1 }
+        contentRoots:
+          type: array
+          minItems: 1
+          default: ["."]
+          items: { type: string, minLength: 1 }
+        sourceRoots:
+          type: array
+          default: []
+          items: { type: string, minLength: 1 }
+        schemaProfile: { type: object, additionalProperties: true, default: {} }
+        evalPack: { $ref: "#/components/schemas/VaultEvalPack" }
+        retrievalConfig:
+          { type: object, additionalProperties: true, default: {} }
+        permissions: { type: object, additionalProperties: true, default: {} }
+        enabled: { type: boolean, default: true }
     OptionalReason:
       type: object
       properties:
@@ -1201,9 +1505,13 @@ components:
     ReindexRequest:
       type: object
       additionalProperties: false
-      required: [spaceId, confirm]
+      required: [spaceId, vaultId, confirm]
       properties:
         spaceId: { type: string, format: uuid }
+        vaultId:
+          type: string
+          format: uuid
+          description: Explicit vault registry identity to rebuild; never inferred from the space.
         confirm:
           type: string
           enum: [REBUILD_DERIVED_PROJECTIONS, REIMPORT_AND_REBUILD]

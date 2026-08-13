@@ -1,0 +1,1 @@
+{"id":"generic-j-stale-data","category":"stale-data","query":"Which record is marked stale after its dependency changes?","gold_documents":["stale-dependency-record"],"critical":true,"slice":"stale-data"}

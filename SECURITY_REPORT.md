@@ -24,23 +24,25 @@
 
 ## Executed evidence
 
-- 21 security/governance integration tests: invalid credentials/identifiers,
+- 28 API integration tests across security/governance and publication:
+  invalid credentials/identifiers,
   cross-space projection, narrow session scope, malformed prefix failure,
   idempotency partition/lease, traversal, CSRF, staleness, reindex, schema,
   Error Book, lint and audit isolation.
-- 5 publication integration tests: invalid frontmatter cleanup, duplicate
-  paths, competing decisions, changed draft tip rejection and rejected draft
+  invalid frontmatter cleanup, duplicate paths, competing decisions, changed
+  draft tip rejection, vault-scoped outbox publication and rejected draft
   cleanup.
-- Clean Node 20 high-severity audit has no high finding (1 low and 3 moderate
-  remain); secrets scan covered 221 tracked/untracked repository files under
-  its documented policy.
+- The local high-severity audit has no high/critical finding (1 low and 3
+  moderate remain); secrets scan covered 320 repository files under its
+  documented policy.
 
 ## Residual risks
 
 - No PostgreSQL RLS or external WORM audit ledger; isolation remains application
   enforced.
-- Git and database projection use compensation rather than atomic distributed
-  commit; publication lock lacks a durable cross-node fencing protocol.
+- Git publication and the database/outbox transaction still span different
+  resource managers; compensation and reconciliation replace an atomic
+  distributed commit.
 - Local identity has no OIDC/MFA/device assurance. Backups are integrity-hashed
   but not encrypted or remotely replicated; MinIO Object Lock is disabled.
 - Secret scanning is heuristic and excludes ignored material by design. Python

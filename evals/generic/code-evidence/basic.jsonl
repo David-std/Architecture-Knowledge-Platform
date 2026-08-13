@@ -1,0 +1,1 @@
+{"id":"generic-j-code-evidence","category":"code-evidence","query":"Which code evidence demonstrates the snapshot restore boundary?","gold_documents":["snapshot-restore-code"],"critical":true,"slice":"code-evidence"}

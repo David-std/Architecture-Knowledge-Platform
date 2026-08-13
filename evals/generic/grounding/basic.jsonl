@@ -1,0 +1,1 @@
+{"id":"generic-grounding-evidence","category":"grounding","query":"What evidence supports the cache refresh rule?","gold_documents":["cache-refresh-rule"],"critical":true,"slice":"grounding"}

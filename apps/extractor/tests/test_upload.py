@@ -16,6 +16,7 @@ def test_authenticated_upload_verifies_hash_and_extracts(monkeypatch) -> None:
         files={"file": ("evidence.md", content, "text/markdown")},
         data={
             "source_uri": "file:///captured/evidence.md",
+            "source_id": "source-upload-123",
             "media_type": "text/markdown",
             "expected_sha256": digest,
         },
@@ -28,6 +29,7 @@ def test_authenticated_upload_verifies_hash_and_extracts(monkeypatch) -> None:
         files={"file": ("evidence.md", content, "text/markdown")},
         data={
             "source_uri": "file:///captured/evidence.md",
+            "source_id": "source-upload-123",
             "media_type": "text/markdown",
             "expected_sha256": "0" * 64,
         },
@@ -40,6 +42,7 @@ def test_authenticated_upload_verifies_hash_and_extracts(monkeypatch) -> None:
         files={"file": ("evidence.md", content, "text/markdown")},
         data={
             "source_uri": "file:///captured/evidence.md",
+            "source_id": "source-upload-123",
             "media_type": "text/markdown",
             "expected_sha256": digest,
         },
@@ -48,3 +51,4 @@ def test_authenticated_upload_verifies_hash_and_extracts(monkeypatch) -> None:
     assert response.status_code == 200
     assert response.json()["source_uri"] == "file:///captured/evidence.md"
     assert response.json()["artifacts"][0]["content"] == content.decode()
+    assert response.json()["document_artifact"]["source_id"] == "source-upload-123"

@@ -32,7 +32,11 @@ try {
 
   for (const file of files) {
     const sql = await readFile(path.join(dir, file), "utf8");
-    const checksum = createHash("sha256").update(sql).digest("hex");
+    // Git may materialize the same migration as CRLF on Windows and LF in CI.
+    // Hash the canonical LF representation so checksums protect SQL content,
+    // not the checkout's platform-specific line endings.
+    const canonicalSql = sql.replaceAll("\r\n", "\n");
+    const checksum = createHash("sha256").update(canonicalSql).digest("hex");
     const exists = await client.query<{ checksum: string | null }>(
       "select checksum from schema_migrations where name = $1",
       [file],

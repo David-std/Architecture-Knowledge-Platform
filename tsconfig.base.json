@@ -6,6 +6,7 @@
     "baseUrl": ".",
     "paths": {
       "@akp/application": ["packages/application/src/index.ts"],
+      "@akp/audit-export": ["packages/audit-export/src/index.ts"],
       "@akp/compiler": ["packages/compiler/src/index.ts"],
       "@akp/contracts": ["packages/contracts/src/index.ts"],
       "@akp/domain": ["packages/domain/src/index.ts"],

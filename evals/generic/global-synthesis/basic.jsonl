@@ -1,0 +1,1 @@
+{"id":"generic-j-global-synthesis","category":"global-synthesis","query":"Synthesize the verified rule, source, code evidence, and recovery workflow.","gold_documents":["cache-refresh-rule","cache-refresh-source","snapshot-restore-code","recovery-workflow"],"critical":true,"slice":"global-synthesis"}

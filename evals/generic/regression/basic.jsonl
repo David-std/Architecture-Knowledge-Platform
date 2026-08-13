@@ -1,0 +1,1 @@
+{"id":"generic-regression-recovery","category":"regression","query":"Which workflow verifies recovery after restoring a snapshot?","gold_documents":["recovery-workflow"],"critical":true,"slice":"regression"}

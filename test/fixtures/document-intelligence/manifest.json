@@ -1,0 +1,106 @@
+{
+  "schema_version": "1.0",
+  "fixtures": [
+    {
+      "id": "simple-structured-markdown",
+      "path": "simple-structured.md",
+      "media_type": "text/markdown",
+      "complexity": "simple",
+      "expected": {
+        "text": ["Invariant rule", "same database", "SELECT 1"],
+        "heading_count": 2,
+        "table_count": 1,
+        "equation_count": 1,
+        "figure_count": 1
+      }
+    },
+    {
+      "id": "complex-layout-html",
+      "path": "complex-layout.html",
+      "media_type": "text/html",
+      "complexity": "complex",
+      "expected": {
+        "text": ["Reading order", "A heading before a table"],
+        "heading_count": 2,
+        "table_count": 0
+      }
+    },
+    {
+      "id": "table-workbook-xlsx",
+      "path": "table-workbook.json",
+      "generated_format": "xlsx",
+      "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "complexity": "table-heavy",
+      "expected": {
+        "text": ["architecture", "deterministic"],
+        "table_count": 1,
+        "table_rows": 2
+      }
+    },
+    {
+      "id": "structured-docx",
+      "path": "structured-docx.json",
+      "generated_format": "docx",
+      "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "complexity": "simple",
+      "expected": {
+        "text": ["Document heading", "structured paragraph"],
+        "heading_count": 1,
+        "table_count": 1
+      }
+    },
+    {
+      "id": "slide-deck-pptx",
+      "path": "slide-deck-pptx.json",
+      "generated_format": "pptx",
+      "media_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "complexity": "complex",
+      "expected": {
+        "text": ["Architecture slide", "speaker note"],
+        "page_count": 1
+      }
+    },
+    {
+      "id": "diagram-image",
+      "path": "diagram-image.json",
+      "generated_format": "png",
+      "media_type": "image/png",
+      "complexity": "complex",
+      "expected": {
+        "figure_count": 1
+      }
+    },
+    {
+      "id": "scientific-formula-pdf",
+      "path": "scientific-formula-pdf.json",
+      "generated_format": "pdf",
+      "media_type": "application/pdf",
+      "complexity": "formula",
+      "expected": {
+        "text": ["Scientific formula", "E = mc^2"],
+        "page_count": 1
+      }
+    },
+    {
+      "id": "scanned-pdf",
+      "path": "scanned-pdf.json",
+      "generated_format": "pdf",
+      "media_type": "application/pdf",
+      "complexity": "scanned",
+      "expected": {
+        "page_count": 1
+      }
+    },
+    {
+      "id": "digital-pdf",
+      "path": "digital-pdf.json",
+      "generated_format": "pdf",
+      "media_type": "application/pdf",
+      "complexity": "digital",
+      "expected": {
+        "text": ["Digital PDF evidence"],
+        "page_count": 1
+      }
+    }
+  ]
+}

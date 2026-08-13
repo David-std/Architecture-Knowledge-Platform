@@ -32,8 +32,11 @@ const permissions = new Set([
   "eval:run",
   "admin",
 ]);
-const uuid =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+// PostgreSQL's uuid type accepts the complete 128-bit UUID space. Disposable
+// bootstrap identities are deterministic non-versioned values; production
+// registrations may use versioned UUIDs. Validate the canonical shape here and
+// let membership lookup decide whether the identifier exists.
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function canonicalPathPrefix(value: unknown): string | null {
   if (value === null) return null;

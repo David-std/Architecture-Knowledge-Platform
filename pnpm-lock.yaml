@@ -90,6 +90,9 @@ importers:
 
   apps/api:
     dependencies:
+      "@akp/audit-export":
+        specifier: "*"
+        version: link:../../packages/audit-export
       "@akp/compiler":
         specifier: "*"
         version: link:../../packages/compiler
@@ -102,6 +105,12 @@ importers:
       "@akp/git-store":
         specifier: "*"
         version: link:../../packages/git-store
+      "@akp/indexing":
+        specifier: "*"
+        version: link:../../packages/indexing
+      "@akp/object-store":
+        specifier: "*"
+        version: link:../../packages/object-store
       "@akp/observability":
         specifier: "*"
         version: link:../../packages/observability
@@ -216,12 +225,18 @@ importers:
       "@akp/compiler":
         specifier: "*"
         version: link:../../packages/compiler
+      "@akp/contracts":
+        specifier: "*"
+        version: link:../../packages/contracts
       "@akp/domain":
         specifier: "*"
         version: link:../../packages/domain
       "@akp/git-store":
         specifier: "*"
         version: link:../../packages/git-store
+      "@akp/indexing":
+        specifier: "*"
+        version: link:../../packages/indexing
       "@akp/object-store":
         specifier: "*"
         version: link:../../packages/object-store
@@ -257,6 +272,8 @@ importers:
         specifier: "*"
         version: link:../domain
 
+  packages/audit-export: {}
+
   packages/compiler:
     dependencies:
       "@akp/contracts":
@@ -288,6 +305,34 @@ importers:
         specifier: "*"
         version: link:../domain
 
+  packages/indexing:
+    dependencies:
+      "@akp/git-store":
+        specifier: "*"
+        version: link:../git-store
+      "@akp/postgres":
+        specifier: "*"
+        version: link:../postgres
+      "@akp/retrieval":
+        specifier: "*"
+        version: link:../retrieval
+      "@akp/vault-importer":
+        specifier: "*"
+        version: link:../vault-importer
+      gray-matter:
+        specifier: ^4.0.3
+        version: 4.0.3
+    devDependencies:
+      "@types/node":
+        specifier: ^22.0.0
+        version: 22.20.1
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@22.20.1)(vite@8.1.5(@types/node@22.20.1)(esbuild@0.28.1)(tsx@4.23.1)(yaml@2.9.0))
+
   packages/object-store:
     dependencies:
       minio:
@@ -308,6 +353,9 @@ importers:
 
   packages/postgres:
     dependencies:
+      "@akp/contracts":
+        specifier: "*"
+        version: link:../contracts
       "@akp/domain":
         specifier: "*"
         version: link:../domain

@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
-import type { Postgres } from "@akp/postgres";
+import { resolveAuthorizedVaultScope, type Postgres } from "@akp/postgres";
 import { buildProjectSnapshot } from "@akp/project-adapter";
 import {
   actorOf,
@@ -81,9 +81,26 @@ export function registerProjectRoutes(
     { preHandler: requirePermission("knowledge:read") },
     async (request) => {
       const actor = actorOf(request);
+      if (!actor) return { projects: [] };
+      const spaces = spaceIdsForPermission(actor, "knowledge:read");
+      const vaultIds: string[] = [];
+      for (const spaceId of spaces) {
+        try {
+          const scope = await resolveAuthorizedVaultScope(db, {
+            userId: actor.id,
+            spaceId,
+            permission: "knowledge:read",
+            federated: true,
+          });
+          vaultIds.push(...scope.vaultIds);
+        } catch {
+          // Keep private vaults hidden rather than signaling their existence.
+        }
+      }
+      if (!vaultIds.length) return { projects: [] };
       const result = await db.pool.query(
-        "select * from projects where space_id=any($1::uuid[]) order by created_at desc",
-        [spaceIdsForPermission(actor, "knowledge:read")],
+        "select * from projects where space_id=any($1::uuid[]) and vault_id=any($2::uuid[]) order by created_at desc",
+        [spaces, [...new Set(vaultIds)]],
       );
       return {
         projects: result.rows.filter((project) =>
@@ -102,7 +119,8 @@ export function registerProjectRoutes(
     Body: {
       slug: string;
       rootPath: string;
-      spaceId?: string;
+      spaceId: string;
+      vaultId: string;
       commit?: string;
       changedSince?: string;
     };
@@ -156,10 +174,11 @@ export function registerProjectRoutes(
           ? { changedSince: request.body.changedSince }
           : {}),
       });
-      const spaceId =
-        request.body.spaceId ??
-        spaceIdsForPermission(actorOf(request), "knowledge:propose")[0] ??
-        "00000000-0000-0000-0000-000000000003";
+      const spaceId = request.body.spaceId;
+      const vaultId = request.body.vaultId;
+      if (!spaceId || !vaultId) {
+        return reply.code(400).send({ code: "VAULT_SCOPE_REQUIRED" });
+      }
       if (!hasSpaceAccess(actorOf(request), spaceId, "knowledge:propose")) {
         return reply.code(403).send({ code: "SPACE_ACCESS_DENIED" });
       }
@@ -173,16 +192,33 @@ export function registerProjectRoutes(
       ) {
         return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
       }
+      const actor = actorOf(request);
+      if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
+      try {
+        await resolveAuthorizedVaultScope(db, {
+          userId: actor.id,
+          spaceId,
+          permission: "knowledge:propose",
+          vaultId,
+          vaultIds: [vaultId],
+          federated: false,
+        });
+      } catch (error) {
+        return reply.code(403).send({
+          code: error instanceof Error ? error.message : "VAULT_ACCESS_DENIED",
+        });
+      }
       const body = projectKnowledgeBody(slug, snapshot);
       const result = await db.pool.query(
         `
-        insert into projects(space_id,slug,root_path,metadata)
-        values($1,$2,$3,$4::jsonb)
-        on conflict(space_id,slug) do update set root_path=excluded.root_path,metadata=excluded.metadata
+        insert into projects(space_id,vault_id,slug,root_path,metadata)
+        values($1,$2,$3,$4,$5::jsonb)
+        on conflict(vault_id,slug) do update set root_path=excluded.root_path,metadata=excluded.metadata
         returning *
         `,
         [
           spaceId,
+          vaultId,
           slug,
           rootPath,
           JSON.stringify({
@@ -197,11 +233,11 @@ export function registerProjectRoutes(
       await db.pool.query(
         `
         insert into knowledge_documents(
-          space_id,path,external_id,title,type,lifecycle,trust_tier,current_revision,
+          space_id,vault_id,path,external_id,title,type,lifecycle,trust_tier,current_revision,
           body_cache,frontmatter,aliases,layer,content_hash,token_estimate,raw_links
-        ) values($1,$2,$3,$4,'project-evidence','ACTIVE','MACHINE_SUPPORTED',$5,
-                 $6,$7::jsonb,$8,'project',$9,$10,'[]'::jsonb)
-        on conflict(space_id,path) do update set
+        ) values($1,$2,$3,$4,$5,'project-evidence','ACTIVE','MACHINE_SUPPORTED',$6,
+                 $7,$8::jsonb,$9,'project',$10,$11,'[]'::jsonb)
+        on conflict(vault_id,path) where vault_id is not null do update set
           external_id=excluded.external_id,title=excluded.title,current_revision=excluded.current_revision,
           body_cache=excluded.body_cache,frontmatter=excluded.frontmatter,aliases=excluded.aliases,
           content_hash=excluded.content_hash,token_estimate=excluded.token_estimate,
@@ -209,6 +245,7 @@ export function registerProjectRoutes(
         `,
         [
           spaceId,
+          vaultId,
           `projects/${slug}/snapshot.md`,
           `PROJECT-${slug.toUpperCase()}`,
           `Project evidence: ${slug}`,
@@ -225,7 +262,7 @@ export function registerProjectRoutes(
           Math.ceil(body.length / 4),
         ],
       );
-      const projection = await rebuildSpaceProjections(db, spaceId);
+      const projection = await rebuildSpaceProjections(db, spaceId, vaultId);
       await audit(
         db,
         request,

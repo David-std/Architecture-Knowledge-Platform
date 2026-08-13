@@ -148,5 +148,5 @@ flowchart LR
   Config["Non-secret configuration"] --> Set
   Set --> Hash["Per-file SHA-256"]
   Hash --> Isolated["Isolated restore smoke"]
-  Isolated --> Checks["552 documents + 12 migrations + Git + MinIO archive"]
+  Isolated --> Checks["555 documents + 16 migrations + Git + MinIO archive"]
 ```

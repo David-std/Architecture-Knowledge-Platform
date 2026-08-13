@@ -6,10 +6,7 @@ import {
   audit,
   hasUnrestrictedPathAccess,
   requirePermission,
-  spaceIdsForPermission,
 } from "../auth.js";
-
-const DEFAULT_SPACE = "00000000-0000-0000-0000-000000000003";
 
 function normalized(values: unknown): string[] {
   if (!Array.isArray(values)) return [];
@@ -29,6 +26,7 @@ async function corpusFingerprint(
     values?: unknown[],
   ) => Promise<{ rows: Array<Record<string, unknown>> }>,
   spaceId: string,
+  vaultId: string,
 ): Promise<string> {
   const result = await query(
     `
@@ -36,9 +34,9 @@ async function corpusFingerprint(
       id::text||':'||coalesce(content_hash,'')||':'||current_revision,
       '|' order by id
     ),''),'sha256'),'hex') fingerprint
-      from knowledge_documents where space_id=$1
+      from knowledge_documents where space_id=$1 and vault_id=$2
     `,
-    [spaceId],
+    [spaceId, vaultId],
   );
   return String(result.rows[0]?.fingerprint ?? "");
 }
@@ -49,7 +47,8 @@ export function registerSchemaGovernanceRoutes(
 ): void {
   app.post<{
     Body: {
-      spaceId?: string;
+      spaceId: string;
+      vaultId: string;
       candidateVersion?: string;
       requiredFrontmatterFields?: string[];
       allowedTypes?: string[];
@@ -59,10 +58,11 @@ export function registerSchemaGovernanceRoutes(
     { preHandler: requirePermission("admin") },
     async (request, reply) => {
       const actor = actorOf(request);
-      const spaceId =
-        request.body?.spaceId ??
-        spaceIdsForPermission(actor, "admin")[0] ??
-        DEFAULT_SPACE;
+      const spaceId = request.body?.spaceId;
+      const vaultId = request.body?.vaultId;
+      if (!spaceId || !vaultId) {
+        return reply.code(400).send({ code: "VAULT_SCOPE_REQUIRED" });
+      }
       if (!hasUnrestrictedPathAccess(actor, spaceId, "admin")) {
         return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
       }
@@ -88,16 +88,24 @@ export function registerSchemaGovernanceRoutes(
       let documents: Array<Record<string, unknown>> = [];
       try {
         await client.query("begin isolation level repeatable read read only");
-        before = await corpusFingerprint(client.query.bind(client), spaceId);
+        before = await corpusFingerprint(
+          client.query.bind(client),
+          spaceId,
+          vaultId,
+        );
         const result = await client.query(
           `
           select id,external_id,path,type,frontmatter,current_revision
-            from knowledge_documents where space_id=$1 order by path
+            from knowledge_documents where space_id=$1 and vault_id=$2 order by path
           `,
-          [spaceId],
+          [spaceId, vaultId],
         );
         documents = result.rows;
-        after = await corpusFingerprint(client.query.bind(client), spaceId);
+        after = await corpusFingerprint(
+          client.query.bind(client),
+          spaceId,
+          vaultId,
+        );
         await client.query("rollback");
       } catch (error) {
         await client.query("rollback").catch(() => undefined);
@@ -130,8 +138,8 @@ export function registerSchemaGovernanceRoutes(
           : [];
       });
       const revision = await db.pool.query(
-        "select coalesce(corpus_revision,'unknown') revision from index_revisions where space_id=$1",
-        [spaceId],
+        "select coalesce(corpus_revision,'unknown') revision from vault_index_revisions where space_id=$1 and vault_id=$2",
+        [spaceId, vaultId],
       );
       const compatibilityStatus = affected.length
         ? "MIGRATION_REQUIRED"
@@ -158,13 +166,14 @@ export function registerSchemaGovernanceRoutes(
       const inserted = await db.pool.query(
         `
         insert into schema_dry_runs(
-          space_id,actor_id,candidate_version,candidate_hash,corpus_revision,
+          space_id,vault_id,actor_id,candidate_version,candidate_hash,corpus_revision,
           affected_document_count,compatibility_status,report,
           corpus_fingerprint_before,corpus_fingerprint_after
-        ) values($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10) returning id,created_at
+        ) values($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11) returning id,created_at
         `,
         [
           spaceId,
+          vaultId,
           actor?.id ?? null,
           candidateVersion,
           candidateHash,

@@ -532,14 +532,32 @@ export async function audit(
       ? requestedSpace
       : undefined) ??
     (actor?.spaceIds.length === 1 ? actor.spaceIds[0] : null);
-  await db.pool.query(
-    `
-    insert into audit_events(organization_id, space_id, actor_id, action, resource_type,
-                             resource_id, metadata, trace_id)
-    values (
-      '00000000-0000-0000-0000-000000000001',
-      $1, $2, $3, $4, $5, $6::jsonb, $7
+  const candidateVaultId =
+    typeof metadata.vaultId === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      metadata.vaultId,
     )
+      ? metadata.vaultId
+      : null;
+  const inserted = await db.pool.query(
+    `
+    with resolved_organization as (
+      select s.organization_id,0 priority
+        from spaces s where s.id=$1
+      union all
+      select s.organization_id,1 priority
+        from memberships m join spaces s on s.id=m.space_id
+       where m.user_id=$2
+      order by priority limit 1
+    )
+    insert into audit_events(organization_id, space_id, actor_id, action, resource_type,
+                             resource_id, metadata, trace_id, vault_id)
+    select organization_id,$1,$2,$3,$4,$5,$6::jsonb,$7,
+           case when exists(
+             select 1 from vaults where id=$8::uuid and space_id=$1
+           ) then $8::uuid else null end
+      from resolved_organization
+    returning id
     `,
     [
       resolvedSpace,
@@ -549,6 +567,8 @@ export async function audit(
       resourceId ?? null,
       JSON.stringify(metadata),
       request.id,
+      candidateVaultId,
     ],
   );
+  if (!inserted.rowCount) throw new Error("AUDIT_ORGANIZATION_UNRESOLVED");
 }

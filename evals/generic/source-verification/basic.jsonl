@@ -1,0 +1,1 @@
+{"id":"generic-j-source-verification","category":"source-verification","query":"Which source note verifies the cache refresh rule and its locator?","gold_documents":["cache-refresh-source"],"critical":true,"slice":"source-verification"}

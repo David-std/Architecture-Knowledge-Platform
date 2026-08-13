@@ -1,0 +1,1 @@
+{"id":"generic-permissions-unknown","category":"permissions","query":"Which private vault can an unauthorised reader open?","gold_documents":[],"expect_no_answer":true,"critical":true,"slice":"permissions"}
