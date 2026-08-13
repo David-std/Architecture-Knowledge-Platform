@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.2.0-platform-megagoal — release candidate validated, 2026-08-12
+## v0.2.0-platform-megagoal — baseline stable, 2026-08-12
 
 - Added generic `VaultRegistry`, per-vault memberships, visibility, eval packs
   and strict multi-vault query/index/export isolation.
@@ -20,8 +20,9 @@
 - Private recovery ZIP SHA-256:
   `06af22ada90f8e924facfd72065bffa7b1169d268f0a563fc7efdf3df7d8c5fd`.
 
-This section records a validated release candidate. The final merge commit and
-annotated tag remain pending and are not falsely claimed.
+Functional implementation commit
+`bdd70c92b9430c43c620ed5e53dd5af8748d85e4` plus the final metadata commit are
+recorded by annotated tag `v0.2.0-platform-megagoal`.
 
 ## v0.1.17-knowledge-baseline — baseline stable, 2026-08-08
 

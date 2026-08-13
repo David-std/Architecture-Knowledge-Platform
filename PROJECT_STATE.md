@@ -1,6 +1,6 @@
 # Project state
 
-- Status: `release-candidate-validated`
+- Status: `baseline-stable`
 - Target checkpoint: `v0.2.0-platform-megagoal`
 - Updated: 2026-08-12 (America/Bogota)
 - Platform repository: `C:\Users\david\Documents\Architecture-Knowledge-Platform`
@@ -12,7 +12,9 @@
   `C:\Users\david\AppData\Local\Temp\akp-final-megagoal-backup-c015d9a5cfe74d819f576d5cabcf36c7.zip`
 - Recovery ZIP SHA-256:
   `06af22ada90f8e924facfd72065bffa7b1169d268f0a563fc7efdf3df7d8c5fd`
-- Commit/tag: pending the final repository merge after this report-only closure.
+- Functional implementation commit:
+  `bdd70c92b9430c43c620ed5e53dd5af8748d85e4`
+- Annotated tag: `v0.2.0-platform-megagoal`
 
 ## Executed baseline
 
@@ -77,7 +79,7 @@ fabricate repairs.
 
 ## Honest boundary
 
-This is a validated local release candidate, not an internet-ready hosted
-service. The tag is intentionally not claimed until the worktree is merged and
-the final commit is tagged. Real residual limits are listed in
+This is a stable local baseline, not an internet-ready hosted service. The
+validated branch is integrated into the permanent repository and carries the
+annotated tag above. Real residual limits remain explicit in
 `REMAINING_REAL_GAPS.md`.

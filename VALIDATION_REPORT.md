@@ -5,7 +5,9 @@
   PostgreSQL/pgvector and MinIO through Docker Desktop.
 - CI target remains Node 20 and Python 3.12; the full final suite below was not
   rerun inside those exact runtimes in this iteration.
-- Target checkpoint: `v0.2.0-platform-megagoal` (commit/tag pending merge).
+- Target checkpoint: `v0.2.0-platform-megagoal`.
+- Functional implementation commit:
+  `bdd70c92b9430c43c620ed5e53dd5af8748d85e4`.
 
 `PASS` below means the command or integration outcome was observed. A
 benchmark marked `LIMITED` is intentionally not promoted into a quality claim.
@@ -70,4 +72,5 @@ benchmark marked `LIMITED` is intentionally not promoted into a quality claim.
   default or semantic-quality claim is justified.
 - Raw evidence export is disabled by default and was tested with a mock object
   store; enabling it is a deployment decision.
-- Commit/tag and permanent-repository merge are pending after this report.
+- The final metadata commit and annotated tag close the validated branch in the
+  permanent repository.

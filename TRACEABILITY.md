@@ -21,5 +21,5 @@ The authoritative command record is `VALIDATION_REPORT.md`; architectural and
 operational state is in `PROJECT_STATE.md`; event evidence is in
 `EVENT_DRIVEN_VALIDATION_REPORT.md`; benchmark evidence is in
 `DOCUMENT_INTELLIGENCE_BENCHMARK.md`, `RETRIEVAL_BENCHMARK.md` and their
-machine-readable reports. The release tag remains pending until the validated
-worktree is merged into the permanent repository.
+machine-readable reports. The permanent repository carries the annotated
+checkpoint `v0.2.0-platform-megagoal`.

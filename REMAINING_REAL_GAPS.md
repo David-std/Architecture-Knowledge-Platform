@@ -38,11 +38,8 @@ These are explicit product or assurance limits, not hidden placeholders.
 8. The private recovery ZIP contains database/object-store/managed-Git data and
    must not be committed or shared publicly.
 
-## Release closure still pending
+## Release closure
 
-- Merge the validated worktree into the permanent platform repository.
-- Perform the final staged private-file audit.
-- Create the release commit and annotated tag `v0.2.0-platform-megagoal`.
-
-Until those steps occur, `PROJECT_STATE.md` intentionally says
-`release-candidate-validated`, not `baseline-stable`.
+The validated worktree was merged into the permanent repository after a staged
+private-file audit, and the annotated tag `v0.2.0-platform-megagoal` records the
+checkpoint. The limits above remain intentionally open.
