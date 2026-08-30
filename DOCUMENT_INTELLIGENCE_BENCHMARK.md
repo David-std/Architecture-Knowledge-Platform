@@ -11,12 +11,14 @@ The reproducible harness at `scripts/document_intelligence_benchmark.py` writes
 its machine-readable result to
 `reports/document-intelligence/benchmark.json`. The latest checked-in execution
 used two repetitions per fixture and produced the counts above. It ran locally
-on Python 3.14.0; CI declares Python 3.12, and this checkpoint did not rerun the
-benchmark under the CI interpreter.
+on Python 3.12.13, matching the CI major/minor target. The report SHA-256 is
+`043A0ED69BD80141BC02B7EA735D6D57E62556E7C10B5AD1AB596CC92D4E7AE6`.
 
 ## Default decision
 
-- Default adapter: `deterministic-baseline` version `0.3.0`.
+- Benchmark promotion decision: `NOT_SELECTED`; no candidate is promoted from
+  this small fixture set.
+- Conservative runtime fallback: `deterministic-baseline` version `0.3.0`.
 - Execution profile: local CPU, provider cost zero.
 - Supported structured routes in the executed corpus: Markdown, HTML, XLSX and
   PDF fixtures, with provider-neutral `DocumentArtifact` output and locators.
@@ -24,7 +26,7 @@ benchmark under the CI interpreter.
   installed; Marker because its dependency/command was not configured; Chunkr
   because neither the OSS service nor a cloud endpoint was configured.
 
-This is a conservative availability decision, not evidence that the baseline
+The deterministic fallback is an availability decision, not evidence that it
 outperforms those candidates. The platform reports optional adapters as
 `CAPABILITY_NOT_CONFIGURED` and does not silently route documents to them.
 

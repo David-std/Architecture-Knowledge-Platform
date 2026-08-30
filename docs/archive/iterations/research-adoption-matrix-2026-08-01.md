@@ -6,7 +6,8 @@ This report compares the Architecture Knowledge Platform (AKP) with the nine
 repositories required by GOAL V2. It is an engineering decision record, not a
 marketing scorecard.
 
-- Audit date: **2026-08-01** (`America/Bogota`).
+- Audit date: **2026-08-26** (`America/Bogota`); reference snapshots remain
+  pinned to their recorded commits.
 - AKP repository base commit: `2130594b405ba9891da411d3b72ef5f620f5a430`.
 - AKP evidence also includes uncommitted working-tree changes. Until those
   changes are committed, the base commit alone cannot reproduce the current
@@ -34,9 +35,9 @@ an exception is stated explicitly.
 
 | Evidence                   | Reproduced result                                                                                                                                                                                                                                                              | Local implementation                                                                                                                                                            |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Generic stdio MCP client   | `PASSED`; 18/18 required tools listed; `akp_status` and `akp_search` returned structured results                                                                                                                                                                               | [`scripts/mcp-smoke.ts`](scripts/mcp-smoke.ts), [`apps/mcp/src/server.ts`](apps/mcp/src/server.ts)                                                                              |
+| Generic stdio MCP client   | `PASSED`; 21/21 required tools listed; `akp_status` and `akp_search` returned structured results                                                                                                                                                                               | [`scripts/mcp-smoke.ts`](scripts/mcp-smoke.ts), [`apps/mcp/src/server.ts`](apps/mcp/src/server.ts)                                                                              |
 | Streamable HTTP MCP        | Implementation binds to `127.0.0.1`, requires a bearer token, and exposes `POST /mcp`; a generic-client handshake was recorded on 2026-07-29, but this transport was not relaunched during this report-only audit                                                              | [`apps/mcp/src/http.ts`](apps/mcp/src/http.ts)                                                                                                                                  |
-| Imported corpus            | 555 documents, 6,138 hierarchical units, 4,078 embeddings and 1,192 relations reported by the runtime verifier                                                                                                                                                                 | [`packages/vault-importer/src/index.ts`](packages/vault-importer/src/index.ts)                                                                                                  |
+| Imported corpus            | 557 documents, 6,144 hierarchical units, 4,080 embeddings and 1,192 relations reported by the runtime verifier (run-specific projection counts)                                                                                                                                | [`packages/vault-importer/src/index.ts`](packages/vault-importer/src/index.ts)                                                                                                  |
 | Read-only vault import     | Latest run `COMPLETED_WITH_WARNINGS`: 548 Markdown files, 361 operational documents, 187 raw documents, 1,030 wikilinks and 100 unresolved wikilinks                                                                                                                           | [`packages/vault-importer/src/index.ts`](packages/vault-importer/src/index.ts)                                                                                                  |
 | Typed graph                | 262 of 1,192 stored relations have a type other than `related_to`; frontmatter mappings include `supports`, `contradicts`, `requires`, `implements`, `validated_by`, `supersedes` and `derives_from`                                                                           | [`packages/vault-importer/src/index.ts`](packages/vault-importer/src/index.ts), [`packages/domain/src/index.ts`](packages/domain/src/index.ts)                                  |
 | Retrieval index state      | `DEGRADED` by design because vector retrieval is disabled with `VECTOR_DISABLED_PENDING_BENCHMARK`; exact, lexical and graph revisions match the composite corpus revision                                                                                                     | [`packages/retrieval/src/index.ts`](packages/retrieval/src/index.ts), [`packages/retrieval/src/query-planner.ts`](packages/retrieval/src/query-planner.ts)                      |
@@ -48,13 +49,14 @@ an exception is stated explicitly.
 Important limitations of this baseline:
 
 1. The historical vault-specific gold set had **4 cases**. The current generic
-   offline harness has 19 cases/slices, but remains logic-only and is not broad
-   retrieval-quality proof.
+   offline harness has 19 cases/slices and the curated fixture harness has 13
+   Level-B cases, but both remain logic-only and are not broad retrieval-quality
+   proof.
 2. Vector retrieval is intentionally not a default channel; the stored index
    says so explicitly.
 3. The current expanded security integration file has more cases than the
-   four-case clean-mirror run recorded on 2026-07-29. This report does not
-   claim that every newly added case has passed until the final validation run.
+   four-case clean-mirror run recorded on 2026-07-29. The 2026-08-26 validation
+   run passed the current 30 API integration cases.
 4. Two attempts to rerun only the isolated-worktree Vitest on 2026-08-01
    produced no test output and timed out. A prior clean-mirror run passed the
    test, and runtime review records prove exercised flows, but the current
@@ -234,9 +236,9 @@ neither catalog was handshaken by this audit.
 
 ### 9. MCP interoperability
 
-- **our_capability:** 20 tools over stdio; Streamable HTTP implementation with
+- **our_capability:** 21 tools over stdio; Streamable HTTP implementation with
   bearer authentication.
-- **our_evidence:** Current stdio generic-client smoke passed 18/18; HTTP code is
+- **our_evidence:** Current stdio generic-client smoke passed 21/21; HTTP code is
   in [`apps/mcp/src/http.ts`](apps/mcp/src/http.ts).
 - **reference:** `frankchu91/mindbase`, `ZeroDot1/LLMWikiNG`.
 - **reference_evidence:** Pinned code statically registers 50 MindBase tool
@@ -448,7 +450,7 @@ neither catalog was handshaken by this audit.
 
 ### 20. Agent UX
 
-- **our_capability:** Agents receive bounded structured results through 20 MCP
+- **our_capability:** Agents receive bounded structured results through 21 MCP
   tools and shared API use cases.
 - **our_evidence:** Current generic-client smoke passed all 18 registrations.
 - **reference:** `frankchu91/mindbase`, `ZeroDot1/LLMWikiNG`.

@@ -34,11 +34,32 @@ Run `8e579e4c-e852-46cf-895f-dfebcf6372cf` imported 548 Markdown files: 361 oper
 
 Detailed artifacts live under `reports/migration/`.
 
-## Platform schema extension — 2026-08-12
+## Platform schema extension — reconciled 2026-08-28
 
 The source-vault preservation result above is unchanged. The executable
-platform added append-only migrations `013`–`016` for VaultRegistry,
-event/outbox delivery, structural incremental indexes and the canonical
-DocumentArtifact contract. A fresh database applied all 16 migrations and the
-v3 recovery smoke restored the exact 16 names/checksums. This extension changes
-derived platform state only; it does not mutate the external vault.
+platform added append-only migrations `013`–`018` for VaultRegistry,
+event/outbox delivery, structural incremental indexes, the canonical
+DocumentArtifact contract, legacy metadata guarding and outbox attempt
+outcomes. A fresh database applied all 18 migrations. The latest v3 backup
+manifest records the exact 18 names/checksums. On 2026-08-28 an isolated
+restore reproduced all 18 migrations, one fixture document and 15 MinIO files;
+a second backup/restore proved that a newly migrated database with zero
+documents is also valid. Migration rerun was idempotent, a deliberately changed
+checksum failed closed, and the restored checksum passed again. This extension
+changes derived platform state only; it does not mutate the external vault.
+
+## Runtime projection verification — historical populated run and current bootstrap
+
+The populated 2026-08-19 run observed seven registered read-only vaults, 557
+knowledge documents, 6,144 hierarchical units, 4,080 unit embeddings, 1,192
+relations, three immutable sources, 79 source artifacts and one persisted
+ContextPacket. These are dated database-wide fixture/projection counts, not
+universal vault counts or current requirements.
+
+On 2026-08-30, `scripts/verify-runtime.ts` passed 47 bootstrap invariants over
+the exact 18 migrations, 53 required runtime relations, constraints,
+extensions, credentials, outbox triggers, outcome-aware attempt uniqueness,
+scope isolation and lineage. The verifier also proves that no legacy outbox
+attempt `UNIQUE` constraint survives migration 018. Corpus thresholds are now
+explicit opt-in checks, so an empty or sparse freshly migrated platform remains
+a valid bootstrap.

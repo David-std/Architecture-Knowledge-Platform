@@ -2,16 +2,19 @@
 
 ## Scope and evidence policy
 
-This report executes the competitive audit required by section 19A of Unified
-Goal V2. It compares the current Architecture Knowledge Platform (AKP) with the
+This report executes the competitive re-audit required by section 44 of the
+Final Validation & Hardening Goal. It compares the current Architecture Knowledge Platform (AKP) with the
 nine mandatory reference repositories capability by capability.
 
-- Audit date: **2026-08-10** (`America/Bogota`); AKP execution evidence was
-  refreshed on **2026-08-12**.
-- AKP revision inspected: `530a0192e2ca4c39b890118c77d1ffe897e5089a`.
-- Functional AKP baseline: commit
-  `7daa261c446100b50bc985d60f199299291dfe2e`, tag
-  `v0.1.17-knowledge-baseline`.
+- Audit date: **2026-08-30** (`America/Bogota`); reference snapshots remain
+  pinned to the commits listed below and AKP evidence was reconciled against
+  the current candidate.
+- AKP revision inspected: validated implementation commit
+  `aad98770e2e44fcb31f3c1943d3588a8c6f50fb2`, closed by annotated tag
+  `v0.2.1-platform-validation`.
+- Prior baseline under attack: commit
+  `e829ea6f65b617bbb6d4b5e5e3f97f984df2dda4`, tag
+  `v0.2.0-platform-megagoal`.
 - AKP execution evidence comes from [`VALIDATION_REPORT.md`](VALIDATION_REPORT.md),
   [`PROJECT_STATE.md`](PROJECT_STATE.md), checked-in tests and implementation.
 - Reference evidence comes from shallow, no-checkout clones under the ignored
@@ -38,20 +41,20 @@ mechanism at its pinned revision. It is never an overall product ranking.
 
 ## AKP executed baseline used by this audit
 
-| Evidence            | Executed result                                                                                                               | Local evidence                                                                                                                                                                                                       |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Clean quality gates | Node 20 frozen install, high-severity audit, format, typecheck, dependency boundaries, unit tests and production build passed | [`VALIDATION_REPORT.md`](VALIDATION_REPORT.md)                                                                                                                                                                       |
-| API integration     | 28 tests passed across security/governance and review-publication suites                                                      | [`apps/api/test/security.integration.test.ts`](apps/api/test/security.integration.test.ts), [`apps/api/test/review-publication.integration.test.ts`](apps/api/test/review-publication.integration.test.ts)           |
-| Python extraction   | Ruff passed and 12 pytest cases passed locally under Python 3.14.0                                                            | [`apps/extractor`](apps/extractor)                                                                                                                                                                                   |
-| Corpus projections  | 555 documents, 6,138 hierarchical units, 4,078 embeddings and 1,192 relations                                                 | [`PROJECT_STATE.md`](PROJECT_STATE.md)                                                                                                                                                                               |
-| MCP                 | Generic client enumerated and exercised 20/20 tools with an explicit VaultRegistry scope                                      | [`scripts/mcp-smoke.ts`](scripts/mcp-smoke.ts), [`apps/mcp/src/server.ts`](apps/mcp/src/server.ts)                                                                                                                   |
-| Retrieval           | Logic-only offline harness executed 19 generic cases/slices over the exact ten-run matrix; no production default was selected | [`RETRIEVAL_BENCHMARK.md`](RETRIEVAL_BENCHMARK.md), [`reports/retrieval/offline-benchmark.json`](reports/retrieval/offline-benchmark.json)                                                                           |
-| Recovery            | Backup v3 restored PostgreSQL, MinIO, Git bundle and the exact 16-migration inventory                                         | [`scripts/backup.ps1`](scripts/backup.ps1), [`scripts/restore-smoke.ps1`](scripts/restore-smoke.ps1)                                                                                                                 |
-| Publication         | Isolated Git worktrees, optimistic checks, approve/reject/rollback and cleanup were exercised                                 | [`packages/git-store/test/isolated-drafts.test.ts`](packages/git-store/test/isolated-drafts.test.ts), [`apps/api/test/review-publication.integration.test.ts`](apps/api/test/review-publication.integration.test.ts) |
+| Evidence            | Executed result                                                                                                                                              | Local evidence                                                                                                                                                                                                                                                                                                           |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Clean quality gates | Frozen pnpm install, dependency audit, formatting, typecheck, 113 unit tests, production build and the stable 158-module/390-dependency boundary scan passed | [`VALIDATION_REPORT.md`](VALIDATION_REPORT.md)                                                                                                                                                                                                                                                                           |
+| API integration     | 34 tests passed across security/governance, review-publication and the full product lifecycle                                                                | [`apps/api/test/security.integration.test.ts`](apps/api/test/security.integration.test.ts), [`apps/api/test/review-publication.integration.test.ts`](apps/api/test/review-publication.integration.test.ts), [`apps/api/test/product-lifecycle.integration.test.ts`](apps/api/test/product-lifecycle.integration.test.ts) |
+| Python extraction   | Ruff, mypy and 13 pytest cases passed locally under Python 3.12.13                                                                                           | [`apps/extractor`](apps/extractor)                                                                                                                                                                                                                                                                                       |
+| Runtime integrity   | 47 bootstrap invariants passed independently of one vault's corpus size                                                                                      | [`scripts/verify-runtime.ts`](scripts/verify-runtime.ts), [`PROJECT_STATE.md`](PROJECT_STATE.md)                                                                                                                                                                                                                         |
+| MCP                 | Generic client enumerated and exercised 21/21 tools with an explicit VaultRegistry scope                                                                     | [`scripts/mcp-smoke.ts`](scripts/mcp-smoke.ts), [`apps/mcp/src/server.ts`](apps/mcp/src/server.ts)                                                                                                                                                                                                                       |
+| Retrieval           | Level A ran 19 synthetic cases and Level B ran 13 curated cases over ten configurations/three fixture vaults; production default remains null                | [`RETRIEVAL_BENCHMARK.md`](RETRIEVAL_BENCHMARK.md), [`reports/retrieval/offline-benchmark.json`](reports/retrieval/offline-benchmark.json), [`reports/retrieval/curated-benchmark.json`](reports/retrieval/curated-benchmark.json)                                                                                       |
+| Recovery            | Populated and empty v3 backups restored all 18 migrations in isolation; hashes/counts and checksum-failure behavior were verified                            | [`scripts/backup.ps1`](scripts/backup.ps1), [`scripts/restore-smoke.ps1`](scripts/restore-smoke.ps1)                                                                                                                                                                                                                     |
+| Publication         | Isolated Git worktrees, optimistic checks, approve/reject/rollback and cleanup were exercised                                                                | [`packages/git-store/test/isolated-drafts.test.ts`](packages/git-store/test/isolated-drafts.test.ts), [`apps/api/test/review-publication.integration.test.ts`](apps/api/test/review-publication.integration.test.ts)                                                                                                     |
 
 These results establish a controlled local baseline. They do not establish
 internet-facing, multinode or long-duration behavior. The current retrieval
-report is logic-only synthetic evidence, not broad quality proof.
+reports remain synthetic/curated-fixture evidence, not broad quality proof.
 
 ## Pinned primary-source inventory
 
@@ -243,8 +246,8 @@ reference_evidence:
 
 assessment: `WORSE_THAN_REFERENCE`.
 
-gap: AKP's four cases are insufficient beside the reference's 1,176-case
-offline benchmark and documented failed ablations.
+gap: AKP's 19 Level-A and 13 Level-B cases remain insufficient beside the
+reference's 1,176-case offline benchmark and documented failed ablations.
 
 implementation: Preserve exact-first routing; adopt a larger versioned dataset,
 held-out slices and negative experiment ledger.
@@ -252,8 +255,8 @@ held-out slices and negative experiment ledger.
 test_or_benchmark: Expand AKP's dataset across framework identifiers,
 cross-language queries, no-answer cases and disputed evidence before tuning.
 
-remaining_risk: The current `lexical+graph` recommendation may be overfit to four
-cases.
+remaining_risk: No production default is selected; repeated tuning against the
+same 32 fixture cases could still overfit the benchmark.
 
 ### 6. Vector retrieval
 
@@ -313,8 +316,8 @@ reference_evidence:
 
 assessment: `WORSE_THAN_REFERENCE`.
 
-gap: AKP lacks evaluated PPR/multihop ranking and has only four local benchmark
-queries. Typed edges improve explainability but do not prove ranking quality.
+gap: AKP lacks evaluated PPR/multihop ranking and has only 32 synthetic/curated
+benchmark cases. Typed edges improve explainability but do not prove ranking quality.
 
 implementation: Evaluate PPR as an optional rank stream. Preserve relation type,
 provenance and permission filters instead of moving authoritative retrieval into
@@ -366,7 +369,7 @@ evidence; packet correctness depends on retrieval and provenance quality.
 
 ### 9. MCP interoperability
 
-our_capability: AKP exposes 18 schema-described tools over stdio and
+our_capability: AKP exposes 21 schema-described tools over stdio and
 authenticated Streamable HTTP, with a CLI using the same API use cases. A
 generic stdio client exercised the full catalog's status/search path.
 
@@ -394,7 +397,7 @@ generic-client matrix across multiple clients.
 implementation: Keep tools thin and client-neutral. Prefer bounded domain tools
 over copying reference tool count as a quality target.
 
-test_or_benchmark: Maintain 18/18 catalog smoke, add authenticated Streamable
+test_or_benchmark: Maintain 21/21 catalog smoke, add authenticated Streamable
 HTTP handshake/cancellation/continuation tests and a negative permission matrix.
 
 remaining_risk: Tool enumeration does not prove every write tool is safe under
@@ -605,7 +608,7 @@ reference_evidence:
 
 assessment: `WORSE_THAN_REFERENCE`.
 
-gap: AKP has broad metric code but only four gold cases. Link includes 1,176
+gap: AKP has broad metric code but only 19 Level-A and 13 Level-B cases. Link includes 1,176
 recall cases plus poisoning/hygiene evaluations; Cortexes has adapter-oriented
 evaluation and long-source tooling.
 
@@ -615,7 +618,7 @@ metrics. Preserve losing configurations and caveats in versioned reports.
 test_or_benchmark: Add source-grounding judgments, no-answer accuracy, exact
 identifier and bilingual slices; separate development and test sets.
 
-remaining_risk: Repeated tuning against the same four cases can make every
+remaining_risk: Repeated tuning against the same small fixture set can make every
 metric look stable while generalization degrades.
 
 ### 16. Security
@@ -642,7 +645,7 @@ reference_evidence:
 
 assessment: `UNKNOWN_NOT_REPRODUCED`.
 
-gap: AKP's 21 local security/governance cases passed, but references were not
+gap: AKP's 25 local security/governance cases passed, but references were not
 run under the same adversarial suite. AKP also lacks RLS, enterprise identity,
 encrypted backups and an external penetration review.
 
@@ -770,7 +773,7 @@ nontechnical reviewers, weakening the human-review control.
 
 ### 20. Agent UX
 
-our_capability: AKP provides 18 bounded MCP tools, CLI commands, ContextPackets,
+our_capability: AKP provides 21 bounded MCP tools, CLI commands, ContextPackets,
 structured errors, continuation handles and a thin repository router.
 
 our_evidence:
@@ -795,7 +798,7 @@ gap: AKP has a smaller proven interaction repertoire and lacks the references'
 packaged client distribution, capture hooks, memory lifecycle ergonomics and
 longer-running agent workflows.
 
-implementation: Keep the 18-tool surface cohesive; add workflow resources,
+implementation: Keep the 21-tool surface cohesive; add workflow resources,
 client fixtures and session continuity based on observed user tasks rather than
 tool-count competition.
 
@@ -838,8 +841,8 @@ human/agent ergonomics.
 
 ## Priority gaps
 
-1. Grow the four-case gold set into versioned development and held-out suites
-   covering every GOAL V2 slice, no-answer, poisoning and grounding.
+1. Grow the 19-case Level-A and 13-case Level-B sets into versioned development
+   and held-out suites covering every required slice, no-answer, poisoning and grounding.
 2. Add bounded raw-map/span navigation and resumable distillation for long
    sources before expanding LLM compilation autonomy.
 3. Implement a real semantic embedding generation only behind benchmarked
@@ -895,5 +898,6 @@ reference projects, install their dependencies or claim their test suites pass.
   reuse or network distribution.
 - No common corpus or threat harness means five categories correctly remain
   `UNKNOWN_NOT_REPRODUCED`.
-- AKP's current offline retrieval benchmark is logic-only synthetic; treating
-  it as production-quality evidence would be the largest remaining overclaim.
+- AKP's current retrieval evidence is synthetic or curated-fixture only;
+  treating it as production-quality evidence would be the largest remaining
+  overclaim.

@@ -15,6 +15,7 @@ or iteration-like artifact explicit without deleting unique information.
 | `reports/`                   | Reproducible machine-readable benchmark and migration evidence | Yes when referenced by a canonical report | Yes                                          | benchmark/migration reports | `KEEP_CANONICAL`                             |
 
 No additional root-level `GOAL_*`, `*_PROGRESS`, iteration, scratch, temporary
-handoff or draft-plan documents are authorized. On 2026-08-12 the hygiene gate
-classified 320 tracked and unignored files, reported zero `UNKNOWN` entries and
-passed both write and verification modes.
+handoff or draft-plan documents are authorized. On 2026-08-26 the hygiene gate
+classified 333 repository files, reported zero `UNKNOWN` entries and passed
+verification mode. The current report remains an on-demand evidence document,
+not startup context for an agent.

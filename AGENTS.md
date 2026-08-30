@@ -12,6 +12,10 @@ This repository is the executable platform. The external vault at `C:\Users\davi
 4. Treat `Resources/transfer-packs/**` as archived provenance, not current guidance. Curated recovery maps are explicitly typed and promoted by the importer.
 5. Preserve `Source → Evidence → Claim → Rule → Workflow/Profile/Context pack → Eval` dependency direction. Unknown evidence stays unknown.
 
+Root-level audit, benchmark and validation reports are on-demand evidence, not
+startup context. Load the specific report only when a task cites its claim or
+needs to reproduce its command; do not traverse every report by default.
+
 ## Invariants
 
 - Markdown/Git is canonical for approved compiled knowledge; derived indexes are rebuildable.
@@ -29,14 +33,22 @@ This repository is the executable platform. The external vault at `C:\Users\davi
 pnpm install --frozen-lockfile --strict-peer-dependencies
 pnpm audit --audit-level high
 pnpm security:secrets
+pnpm contracts:validate
+pnpm docs:validate
+pnpm format:check
+pnpm hygiene:validate
 pnpm check
 pnpm build
 pnpm test:integration
 pnpm verify:runtime
 pnpm test:mcp
+pnpm benchmark:retrieval:offline
+pnpm benchmark:retrieval:curated
+pnpm benchmark:scale -- --targets 1000,10000,50000,100000 --iterations 3
 
 Push-Location apps/extractor
 python -m ruff check --no-cache .
+python -m mypy app
 python -m pytest -p no:cacheprovider
 Pop-Location
 
@@ -45,7 +57,10 @@ docker compose config
 & .\scripts\restore-smoke.ps1 -BackupDirectory backups\release-candidate
 ```
 
-Also rerun the external vault validators listed in its own `AGENTS.md` without changing the vault. Record exact commands and failures in `VALIDATION_REPORT.md`.
+Do not crawl or revalidate the external vault during ordinary platform work.
+Run its own validators read-only only when a task explicitly changes the import
+profile, importer compatibility, or a claim derived from that vault. Platform
+bootstrap, fixtures and release gates must remain valid without it.
 
 ## Change discipline
 

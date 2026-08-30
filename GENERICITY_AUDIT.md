@@ -21,9 +21,10 @@ vitest run packages/evaluation/test packages/postgres/test
 node scripts/validate-repository-hygiene.mjs --write
 ```
 
-Observed results refreshed on 2026-08-12: evaluation tests passed 7/7,
-PostgreSQL tests passed 12/12 against a real database, the multivault indexing
-suite passed 4/4, and the hygiene command passed with 320 classified files.
-The gate scans production UUID literals and excludes tests/fixtures, so this
-result is evidence that no fixed development-space UUID remains in the scanned
-core.
+Observed results reconciled on 2026-08-30: the current evaluation, PostgreSQL
+and multivault suites are included in the passing Node validation run, and the
+hygiene gate scans production UUID literals while excluding tests/fixtures, so
+it can detect fixed development-space coupling in the core. The dependency
+boundary scanner passed over 158 source modules and 390 dependencies in the
+tagged clean checkout. The Level-B retrieval fixture uses three explicitly separate
+generic vaults and never reads Architecture-Knowledge-System.

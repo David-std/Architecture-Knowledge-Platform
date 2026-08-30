@@ -1,85 +1,134 @@
 # Project state
 
-- Status: `baseline-stable`
-- Target checkpoint: `v0.2.0-platform-megagoal`
-- Updated: 2026-08-12 (America/Bogota)
-- Platform repository: `C:\Users\david\Documents\Architecture-Knowledge-Platform`
-- Validation worktree: `C:\Users\david\AppData\Local\Temp\akp-final-megagoal`
-- External vault: `C:\Users\david\Documents\Architecture-Knowledge-System`
-  (read-only; the platform never publishes into it)
-- Managed publication repository: `C:\tmp\akp-managed-knowledge-v2`
-- Private recovery ZIP:
-  `C:\Users\david\AppData\Local\Temp\akp-final-megagoal-backup-c015d9a5cfe74d819f576d5cabcf36c7.zip`
-- Recovery ZIP SHA-256:
-  `06af22ada90f8e924facfd72065bffa7b1169d268f0a563fc7efdf3df7d8c5fd`
-- Functional implementation commit:
-  `bdd70c92b9430c43c620ed5e53dd5af8748d85e4`
-- Annotated tag: `v0.2.0-platform-megagoal`
+- Status: `validation-baseline-stable`
+- Updated: 2026-08-30 (America/Bogota)
+- Release tag: `v0.2.1-platform-validation`
+- Validated implementation commit:
+  `aad98770e2e44fcb31f3c1943d3588a8c6f50fb2`
+- Prior baseline tag: `v0.2.0-platform-megagoal`
+- Prior baseline commit:
+  `e829ea6f65b617bbb6d4b5e5e3f97f984df2dda4`
+- Platform repository:
+  `C:\Users\david\Documents\Architecture-Knowledge-Platform`
+- Isolated validation copy:
+  `C:\Users\david\AppData\Local\Temp\akp-platform-validation-final-20260827`
+- External vault: not used by the final hardening suite. It remains a
+  read-only optional integration source and is not a platform bootstrap
+  dependency.
+- The annotated release tag records the documentation closure above the
+  validated implementation commit. Its target is the authoritative release
+  commit and can be resolved with
+  `git rev-list -n 1 v0.2.1-platform-validation`.
 
-## Executed baseline
+## Validation environment
 
-| Measure                           | Observed value |
-| --------------------------------- | -------------: |
-| Append-only migrations            |             16 |
-| Registered read-only vaults       |              4 |
-| Knowledge documents               |            555 |
-| Hierarchical units / embeddings   |  6,138 / 4,078 |
-| Typed relations                   |          1,192 |
-| Immutable sources / artifacts     |         3 / 79 |
-| Persisted ContextPackets          |              1 |
-| API integration tests             |      28 passed |
-| MCP tools                         |        20 / 20 |
-| OpenAPI paths / AsyncAPI channels |         50 / 3 |
-| Classified repository files       |            320 |
+| Component  | Observed version |
+| ---------- | ---------------- |
+| Windows    | NT 10.0.26200.0  |
+| Node.js    | 25.2.0           |
+| pnpm       | 10.34.5          |
+| Python     | 3.12.13          |
+| PostgreSQL | 16.14            |
+| pgvector   | 0.8.5            |
+| Docker     | 29.6.2           |
+| Git        | 2.49.0.windows.1 |
 
-The imported vault revision remains
-`snapshot:0e65e61ea31f0c1b9d135ec9fc5a822fd13db7bd4b470b772c935f2007a1ac34`.
-Its unresolved links and import warnings remain explicit; the platform does not
-fabricate repairs.
+CI remains the authoritative compatibility gate for Node 20 and Python 3.12.
+
+## Proven candidate evidence
+
+| Measure                     | Observed result                                                                                     |
+| --------------------------- | --------------------------------------------------------------------------------------------------- |
+| Append-only migrations      | 18 exact files; fresh apply, idempotent rerun and checksum guard passed                             |
+| Runtime verifier            | 47/47 schema, isolation, lineage, credential and durable-outbox checks passed                       |
+| Required runtime relations  | 53/53 present                                                                                       |
+| TypeScript unit tests       | 113 passed; 3 database-only cases skipped by the unit command                                       |
+| API integration             | 34/34 passed across security, review/publication and product lifecycle                              |
+| Real database package tests | 3/3 passed for crash/reclaim outbox plus incremental and multivault indexing                        |
+| Python extractor            | Ruff PASS, mypy 17 source files PASS, pytest 13/13                                                  |
+| Architecture boundaries     | 158 source modules / 390 dependencies; zero violations                                              |
+| Contracts                   | 51 OpenAPI paths / 3 AsyncAPI channels / 21 MCP tools                                               |
+| Web build                   | 18 dynamic routes                                                                                   |
+| Active documentation        | 38 Markdown files; validator PASS                                                                   |
+| Dependency audit            | 443 dependencies; zero known vulnerabilities at every severity                                      |
+| Live API / MCP / CLI        | readiness `UP`; MCP 21/21; CLI status PASS                                                          |
+| Agent usability smoke       | MCP session and ContextPacket PASS; 300/512-token section with two citations; deterministic only    |
+| Live Web                    | unauthenticated protected routes `307` to `/login`; authenticated workflows returned `200`          |
+| Retrieval Level A / Level B | 19 × 10 generic cases; 13 × 10 curated cases over three isolated fixture vaults                     |
+| Document intelligence       | 9 deterministic executions; 27 optional candidates explicitly skipped                               |
+| Synthetic scale             | 1K, 10K, 50K and 100K documents/units; exact counts and cleanup passed                              |
+| Backup / restore            | populated and empty restores passed with all 18 migrations; checksum tampering failed closed        |
+| Failure injection           | PostgreSQL, MinIO, extractor, vector channel and API/MCP failures degraded or recovered as designed |
+| Repository hygiene          | 340 files classified; tracked-file secret scan and `git diff --check` passed                        |
+
+The bootstrap verifier intentionally treats corpus sizes as observations, not
+release requirements. Its latest release-gate run observed four registered
+read-only fixtures, two documents, three units, one embedding and 22 audit
+events, with zero relations, sources, artifacts or ContextPackets and zero
+isolation or lineage violations.
+
+## Product workflow proof
+
+The product-lifecycle integration performs real ingestion, deterministic
+extraction, review creation, `REQUEST_CHANGES`, draft revision 2, approval,
+Git publication, durable outbox delivery, worker drain, incremental indexing,
+search and persisted ContextPacket generation. It then proves rejection and
+rollback, including tombstoning and removal from search. PostgreSQL, MinIO,
+Git and filesystem fixtures are isolated; the external vault is never read.
+
+A separate MCP usability smoke created an ephemeral vault, started a scoped
+512-token agent session, retrieved one supported section through lexical search
+and built a 300-token packet with two source/revision citations and no gaps.
+The packet carried provenance and untrusted-content controls, but it was larger
+than the raw fixture and no LLM judged task quality; this is `PARTIALLY_PROVEN`,
+not evidence that packets always reduce tokens or improve completion quality.
 
 ## Current architecture decisions
 
-1. `VaultRegistry` is the explicit tenancy boundary. Queries, ingestion,
-   publication, indexes, evidence and eval packs carry a vault identity;
-   multi-vault synthesis requires explicit opt-in.
-2. Markdown/Git remains canonical. PostgreSQL, lexical/vector indexes, graph,
-   ContextPackets and eval results are derived projections.
-3. Publication commits review state plus seven vault-scoped outbox events.
-   Normal indexing is asynchronous and incremental; full rebuild is an
-   administrator-confirmed repair operation.
-4. `DocumentArtifact` is the canonical extraction contract. Deterministic
-   adapters are available locally; Docling, Marker and Chunkr remain optional
-   and no default is selected without a real benchmark.
-5. Retrieval uses hierarchical/structural units. Container units are retained
-   for parent rehydration and are not embedded as dossier-wide vectors.
-6. Sanitized audit bundles are explicit exports. Raw evidence bytes require a
-   separate confirmation, object hash/size verification, safe output roots and
-   a deployment-disabled feature flag.
+1. `VaultRegistry` is the explicit tenancy boundary. Every operational and
+   knowledge resource carries vault and space identity; federation is opt-in.
+2. Reviewed Markdown/Git remains canonical. PostgreSQL, FTS, vectors, graph,
+   packets and eval results are rebuildable projections.
+3. Publication records vault-scoped lifecycle events. Normal indexing is
+   asynchronous and incremental; full rebuild is an administrator-confirmed
+   repair path.
+4. `DocumentArtifact` is the provider-neutral extraction contract. The
+   deterministic adapter is the availability fallback; no optional provider
+   is promoted without an executed comparative benchmark.
+5. Production retrieval default remains `null`. Vectors and reranking are not
+   enabled from synthetic fixture scores.
+6. Raw evidence export remains disabled by default and requires explicit
+   authorization, hash verification, safe roots and confirmation.
 
-## Executed closure evidence
+## Important defects corrected during validation
 
-- Frozen pnpm install, high-severity dependency audit, global Prettier, lint,
-  typecheck, dependency boundaries, all unit tests and production build passed.
-- Fresh PostgreSQL applied migrations `001`–`016`; active database migration
-  rerun was idempotent and runtime verification passed.
-- API integration passed 28/28 cases, including scoped sessions,
-  idempotency, publication/outbox, reindex, source retirement and audit export.
-- PostgreSQL tests passed 12/12 and indexing tests passed 4/4 against a real
-  database; a fresh multivault fixture proved identical paths remain isolated.
-- Python Ruff and 12 extractor tests passed locally under Python 3.14.0.
-- Live liveness/readiness returned `UP`; a real ContextPacket was persisted;
-  MCP enumerated/exercised 20 tools against an authorized vault.
-- Document intelligence benchmark executed nine deterministic fixtures and
-  skipped 27 unavailable optional candidates honestly.
-- Offline retrieval benchmark executed 19 generic cases/slices over the exact
-  ten-configuration matrix. It is logic-only evidence; production default is
-  deliberately `null` and vector invocation is disabled.
-- Backup v3 restored 555 documents, the exact 16 migration names/checksums,
-  22 MinIO files and a verified managed-Git bundle.
+- whole-space/pathless operations now reject path-scoped credentials;
+- audit and Error Book metadata recursively remove secrets and host paths;
+- automatic worker reviews carry the required `vault_id`;
+- the indexer accepts reviewed proposals stored at repository root or under
+  `managed/` without weakening containment;
+- prompt-injection source text remains untrusted evidence and malicious HTML
+  active content is removed;
+- unauthenticated Web pages redirect to login instead of rendering HTTP 500;
+- outbox crash-recovery integration isolates its consumer fixture instead of
+  timing out while draining unrelated historical deliveries;
+- idempotent replay now incorporates current vault enabled/visibility state and
+  inherited grants, so a disabled or newly private vault fails authorization
+  before a stored success can be replayed;
+- the runtime verifier rejects the legacy outbox-attempt uniqueness shape and
+  requires terminal outcomes to be unique by event, consumer, generation,
+  attempt and outcome;
+- clean unit bootstrap builds internal workspace dependencies and excludes
+  compiled `dist` tests, removing duplicate test execution;
+- Hono was pinned to a non-vulnerable release and four unused dependencies
+  were removed.
 
 ## Honest boundary
 
-This is a stable local baseline, not an internet-ready hosted service. The
-validated branch is integrated into the permanent repository and carries the
-annotated tag above. Real residual limits remain explicit in
-`REMAINING_REAL_GAPS.md`.
+This baseline is a reusable local platform, not an internet-ready hosted
+service. Optional Docling, Marker and Chunkr execution, production semantic
+quality, enterprise identity, high availability, RLS, remote encrypted/WORM
+backup and effective telemetry export remain explicitly classified in
+`REMAINING_REAL_GAPS.md`. The current OpenTelemetry API bridge has no configured
+provider/exporter, so persisted lifecycle state is operational evidence but
+not distributed tracing.

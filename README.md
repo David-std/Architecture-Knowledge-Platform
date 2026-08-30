@@ -6,8 +6,9 @@ graph and ContextPackets are derived projections. Obsidian is the human reader
 for the external vault. Agents use bounded API, MCP or CLI operations instead
 of traversing every file.
 
-This repository is an executed local baseline, not a claim of production
-readiness. Exact validation state is recorded in
+This repository is the validated local baseline identified by
+`v0.2.1-platform-validation`, not a claim of production readiness. Exact
+validation state is recorded in
 [PROJECT_STATE.md](PROJECT_STATE.md),
 [VALIDATION_REPORT.md](VALIDATION_REPORT.md) and
 [REMAINING_REAL_GAPS.md](REMAINING_REAL_GAPS.md).
@@ -19,9 +20,10 @@ readiness. Exact validation state is recorded in
 - Separates useful agent knowledge from copied transfer logistics. Curated
   `LINK.md` recovery maps remain searchable; acquisition/download backlogs are
   archived and excluded from normal retrieval.
-- Compiles 548 vault Markdown files into 552 current documents, 2,071
-  hierarchical retrieval units and 1,192 typed or related graph edges. The
-  additional four documents belong to the separately managed E2E corpus.
+- Compiles each imported snapshot into current documents, hierarchical
+  retrieval units and typed relations. Runtime verification treats corpus
+  sizes as observations; it never turns one vault's historical counts into a
+  product invariant.
 - Plans each query, retrieves through exact, lexical, graph, context-pack,
   raw-source and code-evidence channels, then applies RBAC, lifecycle, trust,
   freshness and contradiction policy.
@@ -36,7 +38,7 @@ readiness. Exact validation state is recorded in
 - Produces an isolated Git draft, deterministic validation and a human review.
   Approved changes are squash-merged under a publication lock and reindexed;
   rejected changes remain isolated and published changes can be rolled back.
-- Exposes the same use cases through Fastify HTTP, 20 MCP tools over stdio or
+- Exposes the same use cases through Fastify HTTP, 21 MCP tools over stdio or
   Streamable HTTP, a CLI and a Next.js operational UI.
 - Tracks staleness, contradiction clusters, schema dry runs, deterministic
   knowledge lint, audit events and an Error Book that can create regression
@@ -126,7 +128,10 @@ pnpm --filter @akp/mcp start
 pnpm --filter @akp/mcp start:http
 ```
 
-The four-case benchmark currently recommends `lexical+graph`; vectors remain benchmark-only. The recommendation is not a hidden global runtime override: query planning remains intent-specific until a wider held-out evaluation and explicit policy change exist.
+The 19-case synthetic runner and 13-case curated fixture runner both leave
+`productionDefault` as `null`. Vectors remain benchmark-only; query planning is
+intent-specific until a held-out production-like evaluation and explicit
+policy change justify a default.
 
 ## Use the Web UI
 
@@ -154,11 +159,15 @@ pnpm audit --audit-level high
 pnpm security:secrets
 pnpm contracts:validate
 pnpm docs:validate
+pnpm format:check
 pnpm check
 pnpm build
 pnpm test:integration
 pnpm verify:runtime
 pnpm test:mcp
+pnpm benchmark:retrieval:offline
+pnpm benchmark:retrieval:curated
+pnpm benchmark:scale -- --targets 1000,10000,50000,100000 --iterations 3
 ```
 
 See [the local operations runbook](docs/runbooks/local-operations.md),

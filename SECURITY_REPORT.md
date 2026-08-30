@@ -15,7 +15,9 @@
 - Idempotency is keyed by actor, credential scope fingerprint, concrete URL and
   canonical request. Uncertain expired claims become `ABANDONED`; session
   exchange is intentionally excluded because a replay cannot safely reproduce
-  `Set-Cookie` headers.
+  `Set-Cookie` headers. Vault enabled/visibility state plus explicit and
+  inherited grants are included in the current authorization fingerprint, so a
+  replay after revocation fails closed.
 - Ingestion, extractor and publication paths validate roots/hash/content; Git
   drafts use isolated worktrees, duplicate-path rejection, immutable reviewed
   head checks, cleanup and scoped authorization.
@@ -24,17 +26,31 @@
 
 ## Executed evidence
 
-- 28 API integration tests across security/governance and publication:
+- 34 API integration tests (26 security/governance, 7 publication and 1
+  product-lifecycle E2E):
   invalid credentials/identifiers,
   cross-space projection, narrow session scope, malformed prefix failure,
   idempotency partition/lease, traversal, CSRF, staleness, reindex, schema,
   Error Book, lint and audit isolation.
   invalid frontmatter cleanup, duplicate paths, competing decisions, changed
   draft tip rejection, vault-scoped outbox publication and rejected draft
-  cleanup.
-- The local high-severity audit has no high/critical finding (1 low and 3
-  moderate remain); secrets scan covered 320 repository files under its
-  documented policy.
+  cleanup. The current source also asserts that status and vault metadata omit
+  local paths, canonical host paths and raw-source object keys.
+- The product-lifecycle suite additionally proves that unapproved and rejected
+  content cannot enter search, while rollback removes the approved content
+  through a tombstone and incremental index update.
+- Unauthenticated Web server renders now redirect to `/login` instead of
+  turning the missing-session boundary into HTTP 500. Two unit regressions and
+  live unauthenticated/authenticated page smokes cover the behavior.
+- ContextPacket regression coverage keeps an explicit indirect prompt-injection
+  payload inside the untrusted evidence section and does not create permission,
+  tool-policy or publication-policy fields. The Python extractor regression
+  removes script/style/noscript content and active HTML attributes while
+  preserving visible text.
+- The dependency audit initially found vulnerable transitive Hono 4.12.32.
+  The workspace now pins 4.13.5; the repeated audit reports zero known
+  vulnerabilities. The final tracked-file secret scan passed across 340
+  classified files.
 
 ## Residual risks
 

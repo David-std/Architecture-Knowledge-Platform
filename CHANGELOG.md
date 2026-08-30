@@ -1,5 +1,54 @@
 # Changelog
 
+## v0.2.1-platform-validation — baseline stable, 2026-08-30
+
+- Extended the documented executable schema from migrations `001`–`016` to
+  `001`–`018`, including the legacy metadata guard and outbox attempt outcomes.
+- Reconciled contracts and reports with 51 OpenAPI paths, 3 AsyncAPI channels,
+  21 MCP tools and 34 passing API integration cases.
+- Replaced historical corpus-size assumptions in `verify:runtime` with 47
+  bootstrap invariants covering schema, migration hashes, credentials,
+  isolation, lineage and durable outbox triggers; populated thresholds are now
+  an explicit opt-in.
+- Hardened path/vault authorization and audit metadata across governance,
+  projects, reviews, ingestion, evaluation, Error Book and schema routes.
+- Added prompt-injection and malicious-HTML boundary regressions; removed four
+  unused sanitize-html/Fastify runtime or type dependencies.
+- Pinned Hono 4.13.5 after the dependency audit exposed vulnerable transitive
+  4.12.32; the repeated audit reports zero known vulnerabilities.
+- Executed Level-B retrieval over 13 cases, ten configurations and three
+  isolated fixture vaults without selecting a production default.
+- Added a real product-lifecycle E2E covering ingest, extraction,
+  `REQUEST_CHANGES`, revision, approval, publication, outbox, worker, indexing,
+  search, ContextPacket, rejection and rollback.
+- Exercised a real scoped MCP agent session and bounded ContextPacket with two
+  citations; retained `PARTIALLY_PROVEN` because no LLM quality comparison was
+  executed and packet overhead exceeded the tiny raw fixture.
+- Corrected missing `vault_id` on worker-created reviews and allowed the
+  indexer to resolve reviewed proposals stored at repository root or under
+  `managed/`.
+- Added a reproducible 1K/10K/50K/100K PostgreSQL scale harness with FTS,
+  fixed-vector, graph and ContextPacket measurements plus exact cleanup.
+- Corrected protected Web routes to redirect unauthenticated renders to
+  `/login`; added two regressions and live authenticated/unauthenticated page
+  smokes.
+- Isolated the durable-outbox integration consumer so crash/reclaim evidence
+  does not time out while draining unrelated historical deliveries.
+- Bound idempotent replay to current vault enabled/visibility state and both
+  explicit and inherited grants; revocation now fails before replay.
+- Added outcome-aware outbox attempt verification and rejected the legacy
+  uniqueness shape that could suppress terminal delivery outcomes.
+- Made clean unit bootstrap build internal workspaces and exclude compiled
+  `dist` tests; the stable source boundary scan now covers 158 modules and 390
+  dependencies.
+- Executed populated and empty backup/restore smokes with all 18 migrations;
+  migration rerun was idempotent and checksum tampering failed closed.
+- Archived two superseded iteration reports under `docs/archive/iterations/`
+  and excluded them from active documentation validation.
+- Validated implementation commit
+  `aad98770e2e44fcb31f3c1943d3588a8c6f50fb2` plus the metadata closure are
+  recorded by annotated tag `v0.2.1-platform-validation`.
+
 ## v0.2.0-platform-megagoal — baseline stable, 2026-08-12
 
 - Added generic `VaultRegistry`, per-vault memberships, visibility, eval packs

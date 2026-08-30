@@ -7,6 +7,11 @@
       "reason": "configuration or policy contract"
     },
     {
+      "path": ".gitattributes",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "configuration or policy contract"
+    },
+    {
       "path": ".github/workflows/ci.yml",
       "category": "PRODUCT_CONTRACT",
       "reason": "configuration or policy contract"
@@ -18,6 +23,11 @@
     },
     {
       "path": ".prettierignore",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "configuration or policy contract"
+    },
+    {
+      "path": ".prettierrc.json",
       "category": "PRODUCT_CONTRACT",
       "reason": "configuration or policy contract"
     },
@@ -123,6 +133,11 @@
     },
     {
       "path": "apps/api/test/health.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/api/test/product-lifecycle.integration.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -437,7 +452,22 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/web/lib/api.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "apps/web/lib/api.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/web/lib/vault-scope.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/web/lib/vault-scope.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
@@ -492,6 +522,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/worker/src/source-boundary.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/worker/src/worker.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -508,6 +543,11 @@
     },
     {
       "path": "apps/worker/test/lifecycle.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/worker/test/source-boundary.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -642,6 +682,16 @@
       "reason": "append-only database migration"
     },
     {
+      "path": "db/migrations/017_legacy_vault_metadata_guard.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
+      "path": "db/migrations/018_outbox_attempt_outcomes.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
       "path": "dependency-cruiser.cjs",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -690,6 +740,16 @@
       "path": "docs/architecture/runtime-flows.md",
       "category": "PRODUCT_DOCUMENTATION",
       "reason": "canonical product documentation"
+    },
+    {
+      "path": "docs/archive/iterations/research-adoption-matrix-2026-08-01.md",
+      "category": "OBSOLETE",
+      "reason": "archived iteration record excluded from normal retrieval"
+    },
+    {
+      "path": "docs/archive/iterations/residual-artifacts-report-2026-08-26.md",
+      "category": "OBSOLETE",
+      "reason": "archived iteration record excluded from normal retrieval"
     },
     {
       "path": "docs/contributing.md",
@@ -745,6 +805,26 @@
       "path": "evals/fixtures/architecture-knowledge-system/si730.jsonl",
       "category": "FIXTURE_VAULT_SPECIFIC",
       "reason": "Architecture Knowledge System eval pack"
+    },
+    {
+      "path": "evals/fixtures/curated-level-b-manifest.json",
+      "category": "FIXTURE_GENERIC",
+      "reason": "portable synthetic fixture"
+    },
+    {
+      "path": "evals/fixtures/curated-level-b-vault-a-software.jsonl",
+      "category": "FIXTURE_GENERIC",
+      "reason": "portable synthetic fixture"
+    },
+    {
+      "path": "evals/fixtures/curated-level-b-vault-b-handbook.jsonl",
+      "category": "FIXTURE_GENERIC",
+      "reason": "portable synthetic fixture"
+    },
+    {
+      "path": "evals/fixtures/curated-level-b-vault-c-neutral.jsonl",
+      "category": "FIXTURE_GENERIC",
+      "reason": "portable synthetic fixture"
     },
     {
       "path": "evals/generic/code-evidence/basic.jsonl",
@@ -957,6 +1037,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/evaluation/src/curated.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/evaluation/src/dataset.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -973,6 +1058,11 @@
     },
     {
       "path": "packages/evaluation/test/benchmark.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/evaluation/test/curated.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -1372,12 +1462,22 @@
       "reason": "canonical reproducible report"
     },
     {
+      "path": "reports/retrieval/curated-benchmark.json",
+      "category": "GENERATED_CANONICAL",
+      "reason": "canonical reproducible report"
+    },
+    {
       "path": "reports/retrieval/offline-benchmark.json",
       "category": "GENERATED_CANONICAL",
       "reason": "canonical reproducible report"
     },
     {
       "path": "reports/retrieval/README.md",
+      "category": "GENERATED_CANONICAL",
+      "reason": "canonical reproducible report"
+    },
+    {
+      "path": "reports/scale/load-scale-benchmark.json",
       "category": "GENERATED_CANONICAL",
       "reason": "canonical reproducible report"
     },
@@ -1392,19 +1492,9 @@
       "reason": "canonical hygiene or genericity report"
     },
     {
-      "path": "RESEARCH_ADOPTION_MATRIX.md",
-      "category": "PRODUCT_DOCUMENTATION",
-      "reason": "canonical product documentation"
-    },
-    {
       "path": "RESEARCH_LOG.md",
       "category": "PRODUCT_DOCUMENTATION",
       "reason": "canonical product documentation"
-    },
-    {
-      "path": "RESIDUAL_ARTIFACTS_REPORT.md",
-      "category": "PRODUCT_DOCUMENTATION",
-      "reason": "canonical hygiene or genericity report"
     },
     {
       "path": "RETRIEVAL_BENCHMARK.md",
@@ -1432,6 +1522,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "scripts/load-scale-benchmark.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "scripts/mcp-smoke.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -1448,6 +1543,11 @@
     },
     {
       "path": "scripts/restore-smoke.ps1",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/retrieval_benchmark_curated.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
