@@ -9,8 +9,10 @@ import type { FastifyInstance } from "fastify";
 const defaultSpace = "00000000-0000-0000-0000-000000000003";
 const secondSpace = "00000000-0000-0000-0000-000000000099";
 const admin = "00000000-0000-0000-0000-000000000002";
-const integrationToken =
-  process.env.AKP_API_TOKEN ?? "akp-integration-test-token-not-for-production";
+const integrationToken = `akp-security-integration-${randomUUID()}`;
+const integrationTokenHash = createHash("sha256")
+  .update(integrationToken)
+  .digest("hex");
 const headers = { authorization: `Bearer ${integrationToken}` };
 
 let app: FastifyInstance;
@@ -113,6 +115,33 @@ beforeAll(async () => {
     `,
     [admin, secondVaultId],
   );
+  await db.pool.query(
+    `
+    insert into api_tokens(user_id,token_hash,label,scopes)
+    values($1,$2,'security integration',$3::jsonb)
+    `,
+    [
+      admin,
+      integrationTokenHash,
+      JSON.stringify({
+        spaces: [
+          {
+            spaceId: defaultSpace,
+            pathPrefix: null,
+            permissions: [
+              "knowledge:read",
+              "source:read",
+              "source:write",
+              "knowledge:propose",
+              "knowledge:review",
+              "eval:run",
+              "admin",
+            ],
+          },
+        ],
+      }),
+    ],
+  );
   // Keep the fresh-DB projection assertion meaningful: one canonical
   // managed document must produce at least one structural unit.
   await db.pool.query(
@@ -138,7 +167,12 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (app) await app.close();
-  if (db) await db.close();
+  if (db) {
+    await db.pool.query("delete from api_tokens where token_hash=$1", [
+      integrationTokenHash,
+    ]);
+    await db.close();
+  }
 });
 
 describe("API security boundaries", () => {
@@ -185,6 +219,126 @@ describe("API security boundaries", () => {
       },
     });
     expect(response.statusCode).toBe(403);
+  });
+
+  it("enforces private-vault grants and their effective path prefix for proposals and reviews", async () => {
+    const suffix = randomUUID();
+    const vaultId = randomUUID();
+    const vaultKey = `scope-boundary-${vaultId.slice(0, 8)}`;
+    const reviewId = randomUUID();
+    await db.pool.query(
+      `
+      insert into vaults(
+        id,space_id,canonical_path,name,read_only,current_revision,
+        vault_key,local_path,visibility,enabled
+      ) values($1,$2,$3,'Private scope boundary fixture',true,'fixture:scope',$4,$3,'PRIVATE',true)
+      `,
+      [
+        vaultId,
+        defaultSpace,
+        path.join(allowedRoot, `scope-${suffix}`),
+        vaultKey,
+      ],
+    );
+    try {
+      const withoutGrant = await app.inject({
+        method: "POST",
+        url: "/v1/proposals",
+        headers,
+        payload: {
+          spaceId: defaultSpace,
+          vaultId,
+          changes: [
+            {
+              path: "public/no-grant.md",
+              content: "---\nid: NO-GRANT\ntype: note\n---\nDenied",
+            },
+          ],
+        },
+      });
+      expect(withoutGrant.statusCode).toBe(403);
+      expect(withoutGrant.json().code).toBe("VAULT_ACCESS_DENIED");
+
+      await db.pool.query(
+        `
+        insert into vault_memberships(user_id,vault_id,role,path_prefix,permissions)
+        values($1,$2,'ADMIN','public',
+          '["knowledge:read","source:read","source:write",
+            "knowledge:propose","knowledge:review","eval:run","admin"]'::jsonb)
+        `,
+        [admin, vaultId],
+      );
+      const outsidePrefix = await app.inject({
+        method: "POST",
+        url: "/v1/proposals",
+        headers,
+        payload: {
+          spaceId: defaultSpace,
+          vaultId,
+          changes: [
+            {
+              path: "private/outside-prefix.md",
+              content: "---\nid: OUTSIDE-PREFIX\ntype: note\n---\nDenied",
+            },
+          ],
+        },
+      });
+      expect(outsidePrefix.statusCode).toBe(403);
+      expect(outsidePrefix.json().code).toBe("PATH_SCOPE_DENIED");
+
+      const pathScopedReindex = await app.inject({
+        method: "POST",
+        url: "/v1/reindex",
+        headers,
+        payload: {
+          spaceId: defaultSpace,
+          vaultId,
+          confirm: "REBUILD_DERIVED_PROJECTIONS",
+        },
+      });
+      expect(pathScopedReindex.statusCode).toBe(403);
+      expect(pathScopedReindex.json().code).toBe("PATH_SCOPE_DENIED");
+
+      await db.pool.query(
+        `
+        insert into reviews(
+          id,space_id,vault_id,branch_name,base_commit,head_commit,status,
+          author_id,impact_manifest,validation_report
+        ) values($1,$2,$3,'scope-review-branch','base','head','PENDING',$4,$5::jsonb,$6::jsonb)
+        `,
+        [
+          reviewId,
+          defaultSpace,
+          vaultId,
+          admin,
+          JSON.stringify({
+            proposedChanges: [{ path: "public/review.md" }],
+          }),
+          JSON.stringify({}),
+        ],
+      );
+      await db.pool.query(
+        "update vault_memberships set enabled=false where user_id=$1 and vault_id=$2",
+        [admin, vaultId],
+      );
+      const reviewerWithoutGrant = await app.inject({
+        method: "POST",
+        url: `/v1/reviews/${reviewId}/decision`,
+        headers,
+        payload: { decision: "APPROVE", reason: "must be denied" },
+      });
+      expect(reviewerWithoutGrant.statusCode).toBe(403);
+      expect(reviewerWithoutGrant.json().code).toBe("PATH_SCOPE_DENIED");
+    } finally {
+      await db.pool.query("delete from review_comments where review_id=$1", [
+        reviewId,
+      ]);
+      await db.pool.query("delete from reviews where id=$1", [reviewId]);
+      await db.pool.query("delete from vault_memberships where vault_id=$1", [
+        vaultId,
+      ]);
+      await db.pool.query("delete from vaults where id=$1", [vaultId]);
+    }
   });
 
   it("intersects explicit API-token scopes with current memberships and path prefixes", async () => {
@@ -600,7 +754,7 @@ describe("API security boundaries", () => {
     }
   });
 
-  it("rejects traversal and local files outside configured ingest roots", async () => {
+  it("rejects traversal, remote URLs, and local files outside configured ingest roots", async () => {
     const traversal = await app.inject({
       method: "POST",
       url: "/v1/proposals",
@@ -626,6 +780,20 @@ describe("API security boundaries", () => {
       },
     });
     expect(outside.statusCode).toBe(403);
+
+    const remote = await app.inject({
+      method: "POST",
+      url: "/v1/ingest",
+      headers,
+      payload: {
+        spaceId: defaultSpace,
+        vaultId: defaultVaultId,
+        sourceUri: "http://127.0.0.1:19000/minio/health/live",
+        policy: "REVIEW_REQUIRED",
+      },
+    });
+    expect(remote.statusCode).toBe(403);
+    expect(remote.json()).toMatchObject({ code: "SOURCE_PATH_NOT_ALLOWED" });
   });
 
   it("deduplicates write retries by idempotency key", async () => {
@@ -663,6 +831,136 @@ describe("API security boundaries", () => {
     ]);
   });
 
+  it("redacts raw source paths and object keys from job/source reads", async () => {
+    const suffix = randomUUID();
+    const sourceId = randomUUID();
+    const jobId = randomUUID();
+    const sourcePath = path.join(allowedRoot, `raw-${suffix}.pdf`);
+    const objectKey = `sha256/${suffix}/raw.pdf`;
+    const sourceHash = suffix.replaceAll("-", "").padEnd(64, "a").slice(0, 64);
+    await db.pool.query(
+      `
+      insert into sources(
+        id,space_id,vault_id,title,source_uri,media_type,sha256,byte_size,
+        object_key,status,metadata
+      ) values($1,$2,$3,$4,$5,'application/pdf',$6,11,$7,'ACTIVE',$8::jsonb)
+      `,
+      [
+        sourceId,
+        defaultSpace,
+        defaultVaultId,
+        `Raw boundary fixture ${suffix}`,
+        sourcePath,
+        sourceHash,
+        objectKey,
+        JSON.stringify({ sourceUri: sourcePath, objectKey }),
+      ],
+    );
+    await db.pool.query(
+      `
+      insert into ingest_jobs(
+        id,space_id,vault_id,source_uri,state,payload,stage_outputs,created_by
+      ) values($1,$2,$3,$4,'RECEIVED',$5::jsonb,$6::jsonb,$7)
+      `,
+      [
+        jobId,
+        defaultSpace,
+        defaultVaultId,
+        sourcePath,
+        JSON.stringify({
+          sourceUri: sourcePath,
+          nested: { source_path: sourcePath },
+        }),
+        JSON.stringify({ raw: { key: objectKey, sourceUri: sourcePath } }),
+        admin,
+      ],
+    );
+    await db.pool.query(
+      `insert into ingest_job_events(job_id,state,event_type,payload)
+       values($1,'RECEIVED','SUBMITTED',$2::jsonb)`,
+      [jobId, JSON.stringify({ sourceUri: sourcePath, object_key: objectKey })],
+    );
+    try {
+      const jobs = await app.inject({
+        method: "GET",
+        url: "/v1/ingest",
+        headers,
+      });
+      expect(jobs.statusCode).toBe(200);
+      const listedJob = (
+        jobs.json().jobs as Array<Record<string, unknown>>
+      ).find((row) => row.id === jobId);
+      expect(listedJob).toBeTruthy();
+      expect(listedJob).not.toHaveProperty("source_uri");
+      expect(JSON.stringify(listedJob)).not.toContain(sourcePath);
+
+      const detail = await app.inject({
+        method: "GET",
+        url: `/v1/ingest/${jobId}`,
+        headers,
+      });
+      expect(detail.statusCode).toBe(200);
+      expect(JSON.stringify(detail.json())).not.toContain(sourcePath);
+      expect(JSON.stringify(detail.json())).not.toContain(objectKey);
+      expect(detail.json().events[0].payload).not.toHaveProperty("sourceUri");
+
+      const sources = await app.inject({
+        method: "GET",
+        url: "/v1/sources",
+        headers,
+      });
+      expect(sources.statusCode).toBe(200);
+      const listedSource = (
+        sources.json().sources as Array<Record<string, unknown>>
+      ).find((row) => row.id === sourceId);
+      expect(listedSource).toBeTruthy();
+      expect(listedSource).not.toHaveProperty("source_uri");
+      expect(JSON.stringify(listedSource)).not.toContain(sourcePath);
+      expect(JSON.stringify(listedSource)).not.toContain(objectKey);
+
+      const source = await app.inject({
+        method: "GET",
+        url: `/v1/sources/${sourceId}`,
+        headers,
+      });
+      expect(source.statusCode).toBe(200);
+      expect(source.json()).not.toHaveProperty("source_uri");
+      expect(source.json()).not.toHaveProperty("object_key");
+      expect(JSON.stringify(source.json())).not.toContain(sourcePath);
+      expect(JSON.stringify(source.json())).not.toContain(objectKey);
+
+      const vaultPath = (
+        await db.pool.query<{ local_path: string }>(
+          "select local_path from vaults where id=$1",
+          [defaultVaultId],
+        )
+      ).rows[0]?.local_path;
+      expect(vaultPath).toBeTruthy();
+
+      const status = await app.inject({
+        method: "GET",
+        url: "/v1/status",
+        headers,
+      });
+      expect(status.statusCode).toBe(200);
+      expect(JSON.stringify(status.json())).not.toContain(vaultPath!);
+
+      const vaults = await app.inject({
+        method: "GET",
+        url: "/v1/vaults",
+        headers,
+      });
+      expect(vaults.statusCode).toBe(200);
+      expect(JSON.stringify(vaults.json())).not.toContain(vaultPath!);
+    } finally {
+      await db.pool.query("delete from ingest_job_events where job_id=$1", [
+        jobId,
+      ]);
+      await db.pool.query("delete from ingest_jobs where id=$1", [jobId]);
+      await db.pool.query("delete from sources where id=$1", [sourceId]);
+    }
+  });
+
   it("replays generic POST operations only for an identical request", async () => {
     const key = `session-${randomUUID()}`;
     const requestHeaders = { ...headers, "idempotency-key": key };
@@ -698,6 +996,124 @@ describe("API security boundaries", () => {
     await db.pool.query("delete from agent_sessions where id=$1", [
       first.json().id,
     ]);
+  });
+
+  it("does not replay a write after the vault grant used by the original request is revoked", async () => {
+    const key = `vault-revocation-${randomUUID()}`;
+    const purpose = `vault revocation fixture ${randomUUID()}`;
+    const payload = {
+      purpose,
+      contextBudget: 512,
+      spaceId: defaultSpace,
+      vaultId: defaultVaultId,
+    };
+    try {
+      const first = await app.inject({
+        method: "POST",
+        url: "/v1/sessions",
+        headers: { ...headers, "idempotency-key": key },
+        payload,
+      });
+      expect(first.statusCode).toBe(201);
+      const revoked = await db.pool.query(
+        `update vault_memberships
+            set enabled=false
+          where user_id=$1 and vault_id=$2
+          returning id`,
+        [admin, defaultVaultId],
+      );
+      expect(revoked.rowCount).toBeGreaterThan(0);
+      const replay = await app.inject({
+        method: "POST",
+        url: "/v1/sessions",
+        headers: { ...headers, "idempotency-key": key },
+        payload,
+      });
+      expect(replay.statusCode).toBe(403);
+      expect(replay.json().code).not.toBeUndefined();
+      await db.pool.query("delete from agent_sessions where id=$1", [
+        first.json().id,
+      ]);
+    } finally {
+      await db.pool.query(
+        "update vault_memberships set enabled=true where user_id=$1 and vault_id=$2",
+        [admin, defaultVaultId],
+      );
+      await db.pool.query("delete from agent_sessions where purpose=$1", [
+        purpose,
+      ]);
+      await db.pool.query(
+        "delete from idempotency_records where idempotency_key=$1",
+        [key],
+      );
+    }
+  });
+
+  it("rechecks inherited vault visibility and enabled state before idempotent replay", async () => {
+    const vaultId = randomUUID();
+    const key = `vault-state-${randomUUID()}`;
+    const purpose = `vault state fixture ${randomUUID()}`;
+    const vaultKey = `state-fixture-${vaultId.slice(0, 8)}`;
+    const vaultPath = path.join(allowedRoot, vaultKey);
+    const payload = {
+      purpose,
+      contextBudget: 512,
+      spaceId: defaultSpace,
+      vaultId,
+    };
+    await db.pool.query(
+      `insert into vaults(
+         id,space_id,canonical_path,name,read_only,current_revision,
+         vault_key,local_path,visibility,enabled
+       ) values($1,$2,$3,'Idempotency state fixture',true,'fixture:state',
+                $4,$3,'TEAM',true)`,
+      [vaultId, defaultSpace, vaultPath, vaultKey],
+    );
+    try {
+      const first = await app.inject({
+        method: "POST",
+        url: "/v1/sessions",
+        headers: { ...headers, "idempotency-key": key },
+        payload,
+      });
+      expect(first.statusCode).toBe(201);
+
+      await db.pool.query(
+        "update vaults set visibility='PRIVATE' where id=$1",
+        [vaultId],
+      );
+      const privateReplay = await app.inject({
+        method: "POST",
+        url: "/v1/sessions",
+        headers: { ...headers, "idempotency-key": key },
+        payload,
+      });
+      expect(privateReplay.statusCode).toBe(403);
+
+      await db.pool.query(
+        "update vaults set visibility='TEAM',enabled=false where id=$1",
+        [vaultId],
+      );
+      const disabledReplay = await app.inject({
+        method: "POST",
+        url: "/v1/sessions",
+        headers: { ...headers, "idempotency-key": key },
+        payload,
+      });
+      expect(disabledReplay.statusCode).toBe(403);
+    } finally {
+      await db.pool.query("delete from agent_sessions where purpose=$1", [
+        purpose,
+      ]);
+      await db.pool.query("delete from audit_events where vault_id=$1", [
+        vaultId,
+      ]);
+      await db.pool.query(
+        "delete from idempotency_records where idempotency_key=$1",
+        [key],
+      );
+      await db.pool.query("delete from vaults where id=$1", [vaultId]);
+    }
   });
 
   it("claims a generic idempotency key before concurrent handlers can mutate twice", async () => {
@@ -885,51 +1301,130 @@ describe("API security boundaries", () => {
     }
   });
 
-  it("requires explicit confirmation and rebuilds derived projections", async () => {
-    const vault = await db.pool.query<{ id: string }>(
-      "select id from vaults where space_id=$1 and enabled=true order by created_at limit 1",
-      [defaultSpace],
-    );
-    const vaultId = vault.rows[0]?.id;
-    if (!vaultId) throw new Error("Reindex integration vault is missing");
+  it("requires explicit confirmation and rebuilds only a scoped fixture vault", async () => {
+    const vaultId = randomUUID();
+    const documentId = randomUUID();
+    const vaultKey = `reindex-fixture-${vaultId.slice(0, 8)}`;
 
-    const missingVault = await app.inject({
-      method: "POST",
-      url: "/v1/reindex",
-      headers,
-      payload: { spaceId: defaultSpace },
-    });
-    expect(missingVault.statusCode).toBe(400);
-    expect(missingVault.json()).toMatchObject({
-      code: "REINDEX_VAULT_REQUIRED",
-    });
-
-    const missingConfirmation = await app.inject({
-      method: "POST",
-      url: "/v1/reindex",
-      headers,
-      payload: { spaceId: defaultSpace, vaultId },
-    });
-    expect(missingConfirmation.statusCode).toBe(409);
-    expect(missingConfirmation.json()).toMatchObject({
-      code: "REINDEX_CONFIRMATION_REQUIRED",
-    });
-
-    const rebuilt = await app.inject({
-      method: "POST",
-      url: "/v1/reindex",
-      headers,
-      payload: {
-        spaceId: defaultSpace,
+    await db.pool.query(
+      `
+      insert into vaults(
+        id,space_id,canonical_path,name,read_only,current_revision,
+        vault_key,local_path,visibility,enabled
+      ) values($1,$2,$3,'Reindex fixture vault',true,'fixture:reindex',$4,$3,'PRIVATE',true)
+      `,
+      [
         vaultId,
-        confirm: "REBUILD_DERIVED_PROJECTIONS",
-      },
-    });
-    expect(rebuilt.statusCode, rebuilt.body).toBe(200);
-    expect(rebuilt.json()).toMatchObject({
-      status: "REBUILT_FROM_CURRENT_CANONICAL_REVISION",
-    });
-    expect(rebuilt.json().projection.unitCount).toBeGreaterThan(0);
+        defaultSpace,
+        path.join(allowedRoot, `reindex-${vaultId}`),
+        vaultKey,
+      ],
+    );
+    await db.pool.query(
+      `
+      insert into vault_memberships(user_id,vault_id,role,path_prefix,permissions)
+      values($1,$2,'ADMIN',null,
+             '["knowledge:read","source:read","source:write",
+               "knowledge:propose","knowledge:review","eval:run","admin"]'::jsonb)
+      `,
+      [admin, vaultId],
+    );
+    await db.pool.query(
+      `
+      insert into knowledge_documents(
+        id,space_id,vault_id,path,external_id,title,type,lifecycle,trust_tier,
+        current_revision,body_cache,frontmatter,aliases,raw_links
+      ) values($1,$2,$3,'managed/reindex-fixture.md','REINDEX-FIXTURE',
+               'Reindex fixture','note','ACTIVE','CURATED','fixture:reindex',
+               '# Reindex fixture\n\nA deliberately small projection fixture.',
+               '{"id":"REINDEX-FIXTURE","title":"Reindex fixture"}'::jsonb,
+               '{}'::text[],'[]'::jsonb)
+      `,
+      [documentId, defaultSpace, vaultId],
+    );
+
+    try {
+      const missingVault = await app.inject({
+        method: "POST",
+        url: "/v1/reindex",
+        headers,
+        payload: { spaceId: defaultSpace },
+      });
+      expect(missingVault.statusCode).toBe(400);
+      expect(missingVault.json()).toMatchObject({
+        code: "REINDEX_VAULT_REQUIRED",
+      });
+
+      const missingConfirmation = await app.inject({
+        method: "POST",
+        url: "/v1/reindex",
+        headers,
+        payload: { spaceId: defaultSpace, vaultId },
+      });
+      expect(missingConfirmation.statusCode).toBe(409);
+      expect(missingConfirmation.json()).toMatchObject({
+        code: "REINDEX_CONFIRMATION_REQUIRED",
+      });
+
+      const rebuilt = await app.inject({
+        method: "POST",
+        url: "/v1/reindex",
+        headers,
+        payload: {
+          spaceId: defaultSpace,
+          vaultId,
+          confirm: "REBUILD_DERIVED_PROJECTIONS",
+        },
+      });
+      expect(rebuilt.statusCode, rebuilt.body).toBe(200);
+      expect(rebuilt.json()).toMatchObject({
+        status: "REBUILT_FROM_CURRENT_CANONICAL_REVISION",
+      });
+      expect(rebuilt.json().projection.unitCount).toBeGreaterThan(0);
+    } finally {
+      await db.pool.query(
+        "delete from knowledge_relations where from_document_id=$1 or to_document_id=$1",
+        [documentId],
+      );
+      await db.pool.query("delete from context_packets where vault_id=$1", [
+        vaultId,
+      ]);
+      await db.pool.query("delete from knowledge_lint_runs where vault_id=$1", [
+        vaultId,
+      ]);
+      await db.pool.query(
+        "delete from incremental_index_runs where vault_id=$1",
+        [vaultId],
+      );
+      await db.pool.query(
+        "delete from vault_index_revisions where vault_id=$1",
+        [vaultId],
+      );
+      await db.pool.query("delete from knowledge_units where vault_id=$1", [
+        vaultId,
+      ]);
+      await db.pool.query(
+        "delete from embedding_generations where vault_id=$1",
+        [vaultId],
+      );
+      await db.pool.query(
+        "delete from knowledge_versions where document_id=$1",
+        [documentId],
+      );
+      await db.pool.query("delete from embeddings where document_id=$1", [
+        documentId,
+      ]);
+      await db.pool.query("delete from knowledge_documents where id=$1", [
+        documentId,
+      ]);
+      await db.pool.query("delete from audit_events where vault_id=$1", [
+        vaultId,
+      ]);
+      await db.pool.query("delete from vault_memberships where vault_id=$1", [
+        vaultId,
+      ]);
+      await db.pool.query("delete from vaults where id=$1", [vaultId]);
+    }
   });
 
   it("retires a source and blocks every dependent document", async () => {
@@ -1123,9 +1618,22 @@ describe("API security boundaries", () => {
         errorType: "RETRIEVAL_FAILURE",
         rootCause: "Synthetic regression fixture",
         correction: "Require the expected CQRS dossier",
+        metadata: {
+          sourcePath: "C:\\Users\\fixture\\private.pdf",
+          nested: {
+            note: "/tmp/private-evidence.pdf",
+            retainedId: "diagnostic-1",
+          },
+        },
       },
     });
     expect(created.statusCode).toBe(201);
+    expect(created.json().metadata).toEqual({
+      nested: {
+        note: "[REDACTED_PATH]",
+        retainedId: "diagnostic-1",
+      },
+    });
     const errorId = created.json().id as string;
     const regression = await app.inject({
       method: "POST",
@@ -1181,16 +1689,20 @@ describe("API security boundaries", () => {
     );
   });
 
-  it("shows audit events only for spaces where the actor is ADMIN", async () => {
+  it("shows audit events only for whole vaults where the actor is ADMIN", async () => {
     const action = `audit-isolation-${randomUUID()}`;
     await db.pool.query(
       `
-      insert into audit_events(organization_id,space_id,actor_id,action,resource_type)
+      insert into audit_events(
+        organization_id,space_id,vault_id,actor_id,action,resource_type,metadata
+      )
       values
-        ('00000000-0000-0000-0000-000000000001',$1,$3,$4,'fixture'),
-        ('00000000-0000-0000-0000-000000000001',$2,$3,$4,'fixture')
+        ('00000000-0000-0000-0000-000000000001',$1,$3::uuid,$5,$6,'fixture',
+         jsonb_build_object('vaultId',($3::uuid)::text)),
+        ('00000000-0000-0000-0000-000000000001',$2,$4::uuid,$5,$6,'fixture',
+         jsonb_build_object('vaultId',($4::uuid)::text))
       `,
-      [defaultSpace, secondSpace, admin, action],
+      [defaultSpace, secondSpace, defaultVaultId, secondVaultId, admin, action],
     );
     try {
       const response = await app.inject({

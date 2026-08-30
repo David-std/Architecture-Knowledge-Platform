@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { FastifyInstance } from "fastify";
-import type { Postgres } from "@akp/postgres";
+import { resolveAuthorizedVaultScope, type Postgres } from "@akp/postgres";
 import {
   actorOf,
   audit,
@@ -64,6 +64,27 @@ export function registerSchemaGovernanceRoutes(
         return reply.code(400).send({ code: "VAULT_SCOPE_REQUIRED" });
       }
       if (!hasUnrestrictedPathAccess(actor, spaceId, "admin")) {
+        return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
+      }
+      if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
+      let vaultAccess:
+        { pathPrefix: string | null; permissions: string[] } | undefined;
+      try {
+        const scope = await resolveAuthorizedVaultScope(db, {
+          userId: actor.id,
+          spaceId,
+          vaultId,
+          vaultIds: [vaultId],
+          permission: "admin",
+          federated: false,
+        });
+        vaultAccess = scope.accessByVault[vaultId];
+      } catch (error) {
+        return reply.code(403).send({
+          code: error instanceof Error ? error.message : "VAULT_ACCESS_DENIED",
+        });
+      }
+      if (!vaultAccess || vaultAccess.pathPrefix !== null) {
         return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
       }
       const candidateVersion = request.body?.candidateVersion?.trim();
@@ -191,7 +212,11 @@ export function registerSchemaGovernanceRoutes(
         "schema.dry_run",
         "schema_dry_run",
         String(inserted.rows[0]?.id),
-        { candidateHash, affectedDocumentCount: affected.length },
+        {
+          vaultId,
+          candidateHash,
+          affectedDocumentCount: affected.length,
+        },
         spaceId,
       );
       return {

@@ -6,15 +6,25 @@ export interface StructuralContextUnit {
 }
 
 function boundedWindow(text: string, needle: string, maxChars: number): string {
-  if (text.length <= maxChars) return text;
+  const limit = Math.max(1, Math.trunc(maxChars));
+  if (text.length <= limit) return text;
   const index = needle ? text.indexOf(needle) : -1;
-  if (index < 0)
-    return `${text.slice(0, Math.max(maxChars - 1, 0)).trimEnd()}…`;
-  const start = Math.max(0, index - Math.floor((maxChars - needle.length) / 2));
-  const end = Math.min(text.length, start + maxChars);
-  return `${start > 0 ? "…" : ""}${text.slice(start, end).trim()}${
-    end < text.length ? "…" : ""
-  }`;
+  if (index < 0) {
+    const suffix = limit > 1 ? "…" : "";
+    return `${text.slice(0, limit - suffix.length).trimEnd()}${suffix}`;
+  }
+  const prefix = index > 0 ? "…" : "";
+  const suffix = index + needle.length < text.length ? "…" : "";
+  const available = Math.max(1, limit - prefix.length - suffix.length);
+  const start = Math.max(
+    0,
+    Math.min(
+      index - Math.floor(available / 2),
+      Math.max(0, text.length - available),
+    ),
+  );
+  const end = Math.min(text.length, start + available);
+  return `${prefix}${text.slice(start, end).trim()}${suffix}`.slice(0, limit);
 }
 
 /**

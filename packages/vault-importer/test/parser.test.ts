@@ -2,9 +2,35 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { inspectVault, parseWikiLinks } from "../src/index.js";
+import {
+  inspectVault,
+  parseWikiLinks,
+  type VaultImportProfile,
+} from "../src/index.js";
 
 const temporaryRoots: string[] = [];
+
+const legacyCurationProfile: VaultImportProfile = {
+  rawPrefixes: ["Resources/transfer-packs", "00-system/governance"],
+  sourceCollectionPrefix: "Resources/source-collection",
+  transferPackPrefix: "Resources/transfer-packs",
+  curatedRecoveryTypes: [
+    "source-collection-guide",
+    "source-collection-index",
+    "source-recovery-map",
+  ],
+  rootRouterDocuments: [
+    "README.md",
+    "AGENTS.md",
+    "PROJECT_STATE.md",
+    "RESEARCH_LOG.md",
+    "TRACEABILITY.md",
+    "VALIDATION_REPORT.md",
+    "CHANGELOG.md",
+  ],
+  layerMap: { Resources: "resource" },
+  quarantineAcquisitionBacklogs: true,
+};
 
 afterEach(async () => {
   await Promise.all(
@@ -99,7 +125,9 @@ describe("agent-facing curation boundary", () => {
       ].join("\n"),
     );
 
-    const inspection = await inspectVault(root);
+    const inspection = await inspectVault(root, {
+      profile: legacyCurationProfile,
+    });
     const curated = inspection.documents.find(
       (document) => document.externalId === "SRC-RECOVERY-LAYERED",
     );
@@ -136,5 +164,37 @@ describe("agent-facing curation boundary", () => {
         expect.objectContaining({ code: "ACQUISITION_BACKLOG_QUARANTINED" }),
       ]),
     );
+  });
+
+  it("does not apply one vault's folder names to a generic import", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "akp-generic-vault-"));
+    temporaryRoots.push(root);
+    const resourceDirectory = path.join(root, "Resources", "notes");
+    await mkdir(resourceDirectory, { recursive: true });
+    await writeFile(
+      path.join(resourceDirectory, "operational.md"),
+      [
+        "---",
+        "id: GEN-RESOURCE-001",
+        "type: handbook-note",
+        "status: ready-for-acquisition",
+        "---",
+        "# Operational resource",
+        "Comprar una copia oficial is merely quoted source text here.",
+      ].join("\n"),
+    );
+
+    const inspection = await inspectVault(root);
+    const document = inspection.documents.find(
+      (entry) => entry.externalId === "GEN-RESOURCE-001",
+    );
+
+    expect(document).toMatchObject({
+      operational: true,
+      lifecycle: "ACTIVE",
+      layer: "content",
+      trustTier: "MACHINE_SUPPORTED",
+    });
+    expect(inspection.metrics.acquisitionBacklogsQuarantined).toBe(0);
   });
 });

@@ -2,3 +2,5 @@
 # Formatting it after generation changes the declared artifact hash.
 reports/document-intelligence/benchmark.json
 reports/retrieval/offline-benchmark.json
+reports/retrieval/curated-benchmark.json
+reports/scale/*.json

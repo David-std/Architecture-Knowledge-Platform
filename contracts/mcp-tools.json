@@ -215,6 +215,39 @@
       "http": { "method": "POST", "path": "/v1/reviews/{id}/submit" }
     },
     {
+      "name": "akp_revise_review",
+      "version": "1.0.0",
+      "permission": "knowledge:propose",
+      "mutates": true,
+      "requiresIdempotencyKey": true,
+      "description": "Create a new validated Git draft revision after review feedback.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "reviewId",
+          "summary",
+          "path",
+          "content",
+          "reason",
+          "idempotencyKey"
+        ],
+        "properties": {
+          "reviewId": { "type": "string", "format": "uuid" },
+          "summary": { "type": "string", "minLength": 1 },
+          "path": { "type": "string", "minLength": 1 },
+          "content": { "type": "string", "minLength": 1 },
+          "reason": { "type": "string", "minLength": 1 },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 200
+          }
+        }
+      },
+      "http": { "method": "POST", "path": "/v1/reviews/{id}/revise" }
+    },
+    {
       "name": "akp_approve_review",
       "version": "1.0.0",
       "permission": "knowledge:review",

@@ -129,4 +129,38 @@ describe("vault-scoped incremental indexing", () => {
       calls.some((call) => /insert into vault_index_revisions/i.test(call.sql)),
     ).toBe(true);
   });
+
+  it("rejects traversal and non-Markdown paths before reading Git", async () => {
+    const { db } = fakeDatabase();
+    const store = fakeStore();
+    await expect(
+      synchronizeManagedPaths(db, store, {
+        spaceId: "space-a",
+        vaultId: "vault-a",
+        revision: "revision-safe-path",
+        changes: [{ path: "managed/../README.md" }],
+      }),
+    ).rejects.toThrow("UNSAFE_MANAGED_PATH");
+    expect(store.showFile).not.toHaveBeenCalled();
+
+    await expect(
+      synchronizeManagedPaths(db, store, {
+        spaceId: "space-a",
+        vaultId: "vault-a",
+        revision: "revision-safe-path",
+        changes: [{ path: "managed/notes.txt" }],
+      }),
+    ).rejects.toThrow("UNSAFE_MANAGED_PATH");
+    expect(store.showFile).not.toHaveBeenCalled();
+
+    await expect(
+      synchronizeManagedPaths(db, store, {
+        spaceId: "space-a",
+        vaultId: "vault-a",
+        revision: "revision-safe-path",
+        changes: [{ path: "C:/outside/secret.md" }],
+      }),
+    ).rejects.toThrow("UNSAFE_MANAGED_PATH");
+    expect(store.showFile).not.toHaveBeenCalled();
+  });
 });

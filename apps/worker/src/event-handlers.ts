@@ -1,5 +1,9 @@
 import type { GitKnowledgeStore } from "@akp/git-store";
-import { incrementalIndex, type ManagedChange } from "@akp/indexing";
+import {
+  incrementalIndex,
+  normalizeManagedPath,
+  type ManagedChange,
+} from "@akp/indexing";
 import type { Postgres } from "@akp/postgres";
 import type { EventHandlers } from "./event-worker.js";
 
@@ -95,13 +99,14 @@ async function enqueueImpactedEvaluation(
 export function changesFromEvent(event: IndexEvent): ManagedChange[] {
   const changes: ManagedChange[] = [];
   const seen = new Map<string, number>();
+  const relativeManagedPath = (value: string): string =>
+    normalizeManagedPath(value).slice("managed/".length);
   const addChange = (
     value: unknown,
     fallbackOperation?: "CREATE" | "UPDATE",
   ): void => {
     if (typeof value === "string") {
-      const normalized = value.replaceAll("\\", "/").replace(/^managed\//, "");
-      if (!normalized) return;
+      const normalized = relativeManagedPath(value);
       const existing = seen.get(normalized);
       if (existing !== undefined) {
         // Publication payloads carry changedPaths and tombstones separately.
@@ -126,10 +131,7 @@ export function changesFromEvent(event: IndexEvent): ManagedChange[] {
     if (!value || typeof value !== "object") return;
     const candidate = value as Record<string, unknown>;
     if (typeof candidate.path !== "string") return;
-    const normalized = candidate.path
-      .replaceAll("\\", "/")
-      .replace(/^managed\//, "");
-    if (!normalized) return;
+    const normalized = relativeManagedPath(candidate.path);
     const operation =
       candidate.operation === "CREATE" || candidate.operation === "UPDATE"
         ? candidate.operation
@@ -174,6 +176,15 @@ export function createIndexEventHandlers(
       const revision = String(event.payload.revision ?? "");
       if (!spaceId || !vaultId || !revision) {
         throw new Error("INCREMENTAL_INDEX_SCOPE_REQUIRED");
+      }
+      // A publication event carries the managed-Git commit that was merged
+      // for that review. If another publication has already advanced main,
+      // this is a stale redelivery: indexing it would regress the projection
+      // after the newer event has completed. The newer commit has its own
+      // durable event, so acknowledge this event without replaying old bytes.
+      if (typeof git.revision === "function") {
+        const currentRevision = await git.revision();
+        if (currentRevision !== revision) return;
       }
       await incrementalIndex(db, git, {
         spaceId,

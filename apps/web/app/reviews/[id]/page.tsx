@@ -1,5 +1,6 @@
 import { akp } from "../../../lib/api";
 import { revalidatePath } from "next/cache";
+import { randomUUID } from "node:crypto";
 
 export default async function ReviewPage({
   params,
@@ -12,8 +13,10 @@ export default async function ReviewPage({
     "use server";
     const decision = String(formData.get("decision") ?? "");
     const reason = String(formData.get("reason") ?? "").trim();
+    const idempotencyKey = String(formData.get("idempotencyKey") ?? "");
     await akp(`/v1/reviews/${id}/decision`, {
       method: "POST",
+      headers: { "idempotency-key": idempotencyKey },
       body: JSON.stringify({ decision, reason }),
     });
     revalidatePath(`/reviews/${id}`);
@@ -27,6 +30,11 @@ export default async function ReviewPage({
       </p>
       {["PENDING", "CHANGES_REQUESTED"].includes(String(review.status)) ? (
         <form action={decide} className="card">
+          <input
+            type="hidden"
+            name="idempotencyKey"
+            value={`web-review-${id}-${randomUUID()}`}
+          />
           <label>
             Razón de la decisión <input name="reason" required minLength={3} />
           </label>

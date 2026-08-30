@@ -292,6 +292,29 @@ export function createMcpServer(): McpServer {
   );
 
   server.registerTool(
+    "akp_revise_review",
+    {
+      description:
+        "Create a new validated Git draft revision after a reviewer requested changes.",
+      inputSchema: {
+        reviewId: z.string().uuid(),
+        summary: z.string().min(1),
+        path: z.string().min(1),
+        content: z.string().min(1),
+        reason: z.string().min(1),
+        idempotencyKey: z.string().min(8).max(200),
+      },
+    },
+    async ({ reviewId, summary, path, content, reason, idempotencyKey }) =>
+      textResult(
+        await writeApi(`/v1/reviews/${reviewId}/revise`, idempotencyKey, {
+          summary,
+          changes: [{ path, content, reason }],
+        }),
+      ),
+  );
+
+  server.registerTool(
     "akp_approve_review",
     {
       description:

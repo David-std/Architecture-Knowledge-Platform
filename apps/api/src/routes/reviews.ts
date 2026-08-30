@@ -1,8 +1,10 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
 import {
+  pathMatchesVaultPrefix,
+  resolveAuthorizedVaultScope,
   runKnowledgeLint,
   type AppendOutboxEventInput,
   type Postgres,
@@ -239,19 +241,59 @@ function hasValidReviewManifest(review: Record<string, unknown>): boolean {
   return paths.length > 0 && new Set(paths).size === paths.length;
 }
 
-function canAccessReview(
+const REVIEW_VAULT_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+type ReviewVaultAccess = {
+  pathPrefix: string | null;
+  permissions: string[];
+};
+
+async function reviewVaultAccess(
+  db: Postgres,
   actor: ReturnType<typeof actorOf>,
   review: Record<string, unknown>,
   permission:
     "knowledge:read" | "knowledge:propose" | "knowledge:review" | "admin",
-): boolean {
+): Promise<ReviewVaultAccess | null> {
+  if (!actor) return null;
   const spaceId = String(review.space_id);
-  return (
-    hasValidReviewManifest(review) &&
-    hasSpaceAccess(actor, spaceId, permission) &&
-    reviewPaths(review).every((reviewPath) =>
-      hasPathAccess(actor, spaceId, permission, reviewPath),
-    )
+  const vaultId = String(review.vault_id ?? "");
+  if (
+    !hasValidReviewManifest(review) ||
+    !hasSpaceAccess(actor, spaceId, permission) ||
+    !REVIEW_VAULT_ID.test(vaultId)
+  ) {
+    return null;
+  }
+  try {
+    const scope = await resolveAuthorizedVaultScope(db, {
+      userId: actor.id,
+      spaceId,
+      vaultId,
+      permission,
+      federated: false,
+    });
+    return scope.accessByVault[vaultId] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function canAccessReview(
+  db: Postgres,
+  actor: ReturnType<typeof actorOf>,
+  review: Record<string, unknown>,
+  permission:
+    "knowledge:read" | "knowledge:propose" | "knowledge:review" | "admin",
+): Promise<boolean> {
+  const access = await reviewVaultAccess(db, actor, review, permission);
+  if (!access) return false;
+  const spaceId = String(review.space_id);
+  return reviewPaths(review).every(
+    (reviewPath) =>
+      hasPathAccess(actor, spaceId, permission, reviewPath) &&
+      pathMatchesVaultPrefix(reviewPath, access.pathPrefix),
   );
 }
 
@@ -301,21 +343,31 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
       if (!hasSpaceAccess(actorOf(request), spaceId, "knowledge:propose")) {
         return reply.code(403).send({ code: "SPACE_ACCESS_DENIED" });
       }
-      const vault = await db.pool.query(
-        "select id from vaults where id=$1 and space_id=$2 and enabled=true",
-        [vaultId, spaceId],
-      );
-      if (!vault.rowCount) {
-        return reply.code(404).send({ code: "VAULT_SCOPE_NOT_FOUND" });
+      const actor = actorOf(request);
+      let vaultAccess: ReviewVaultAccess | null = null;
+      try {
+        const scope = await resolveAuthorizedVaultScope(db, {
+          userId: actor?.id ?? "",
+          spaceId,
+          vaultId,
+          permission: "knowledge:propose",
+          federated: false,
+        });
+        vaultAccess = scope.accessByVault[vaultId] ?? null;
+      } catch (error) {
+        const code =
+          error instanceof Error ? error.message : "VAULT_ACCESS_DENIED";
+        return reply
+          .code(code === "VAULT_SCOPE_NOT_FOUND" ? 404 : 403)
+          .send({ code });
+      }
+      if (!vaultAccess) {
+        return reply.code(403).send({ code: "VAULT_ACCESS_DENIED" });
       }
       const deniedPath = changes.find(
         (change) =>
-          !hasPathAccess(
-            actorOf(request),
-            spaceId,
-            "knowledge:propose",
-            change.path,
-          ),
+          !hasPathAccess(actor, spaceId, "knowledge:propose", change.path) ||
+          !pathMatchesVaultPrefix(change.path, vaultAccess?.pathPrefix),
       );
       if (deniedPath) {
         return reply
@@ -389,7 +441,7 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
         "knowledge.propose",
         "review",
         reviewId,
-        {},
+        { vaultId },
         spaceId,
       );
       return reply
@@ -415,9 +467,16 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
         `,
         [status, spaceIdsForPermission(actor, "knowledge:read")],
       );
+      const visibleReviews = await Promise.all(
+        result.rows.map(async (review) =>
+          (await canAccessReview(db, actor, review, "knowledge:read"))
+            ? review
+            : null,
+        ),
+      );
       return {
-        reviews: result.rows.filter((review) =>
-          canAccessReview(actor, review, "knowledge:read"),
+        reviews: visibleReviews.filter(
+          (review): review is (typeof result.rows)[number] => review !== null,
         ),
       };
     },
@@ -443,7 +502,9 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
       if (!review.rowCount) {
         return reply.code(409).send({ code: "REVIEW_NOT_SUBMITTABLE" });
       }
-      if (!canAccessReview(actor, review.rows[0], "knowledge:propose")) {
+      if (
+        !(await canAccessReview(db, actor, review.rows[0], "knowledge:propose"))
+      ) {
         return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
       }
       const result = await db.pool.query(
@@ -451,7 +512,7 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
         update reviews set status='PENDING',updated_at=now()
          where id=$1 and author_id=$2 and space_id=any($3::uuid[])
            and status in ('PENDING','CHANGES_REQUESTED')
-         returning id,status,space_id
+         returning id,status,space_id,vault_id
         `,
         [
           request.params.id,
@@ -468,10 +529,212 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
         "review.submit",
         "review",
         request.params.id,
-        {},
+        { vaultId: String(result.rows[0]?.vault_id) },
         String(result.rows[0]?.space_id),
       );
       return result.rows[0];
+    },
+  );
+
+  app.post<{
+    Params: { id: string };
+    Body: {
+      summary?: string;
+      changes?: Array<{ path: string; content: string; reason?: string }>;
+    };
+  }>(
+    "/v1/reviews/:id/revise",
+    { preHandler: requirePermission("knowledge:propose") },
+    async (request, reply) => {
+      const actor = actorOf(request);
+      const changes = request.body?.changes ?? [];
+      if (!changes.length) {
+        return reply.code(400).send({ code: "REVISION_CHANGES_REQUIRED" });
+      }
+      const duplicatePaths = changes
+        .map((change) => change.path)
+        .filter(
+          (candidate, index, paths) => paths.indexOf(candidate) !== index,
+        );
+      if (duplicatePaths.length) {
+        return reply.code(400).send({
+          code: "DUPLICATE_PROPOSAL_PATH",
+          paths: [...new Set(duplicatePaths)],
+        });
+      }
+      for (const change of changes) {
+        try {
+          assertSafeKnowledgePath(change.path);
+        } catch {
+          return reply
+            .code(400)
+            .send({ code: "UNSAFE_KNOWLEDGE_PATH", path: change.path });
+        }
+        if (!change.path.endsWith(".md")) {
+          return reply
+            .code(400)
+            .send({ code: "MARKDOWN_ONLY", path: change.path });
+        }
+      }
+      const found = await db.pool.query(
+        `select * from reviews
+          where id=$1 and author_id=$2 and space_id=any($3::uuid[])
+            and status='CHANGES_REQUESTED'`,
+        [
+          request.params.id,
+          actor?.id ?? null,
+          spaceIdsForPermission(actor, "knowledge:propose"),
+        ],
+      );
+      if (!found.rowCount) {
+        return reply.code(409).send({ code: "REVIEW_NOT_REVISABLE" });
+      }
+      const review = found.rows[0] as Record<string, unknown>;
+      const reviewAccess = await reviewVaultAccess(
+        db,
+        actor,
+        review,
+        "knowledge:propose",
+      );
+      if (
+        !reviewAccess ||
+        !(await canAccessReview(db, actor, review, "knowledge:propose"))
+      ) {
+        return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
+      }
+      const previousPaths = [...new Set(reviewPaths(review))].sort();
+      const revisedPaths = [
+        ...new Set(changes.map((change) => change.path)),
+      ].sort();
+      if (
+        previousPaths.length !== revisedPaths.length ||
+        previousPaths.some((path, index) => path !== revisedPaths[index])
+      ) {
+        return reply.code(400).send({
+          code: "REVISION_PATH_SET_CHANGED",
+          expectedPaths: previousPaths,
+          receivedPaths: revisedPaths,
+        });
+      }
+      const deniedPath = changes.find(
+        (change) =>
+          !hasPathAccess(
+            actor,
+            String(review.space_id),
+            "knowledge:propose",
+            change.path,
+          ) || !pathMatchesVaultPrefix(change.path, reviewAccess.pathPrefix),
+      );
+      if (deniedPath) {
+        return reply
+          .code(403)
+          .send({ code: "PATH_SCOPE_DENIED", path: deniedPath.path });
+      }
+      const issues = changes.flatMap((change) =>
+        validateMarkdownDocument(change.content).map((issue) => ({
+          ...issue,
+          path: change.path,
+        })),
+      );
+      if (issues.some((issue) => issue.severity === "ERROR")) {
+        return reply
+          .code(422)
+          .send({ code: "DRAFT_VALIDATION_FAILED", issues });
+      }
+
+      const previousManifest = (review.impact_manifest ?? {}) as Record<
+        string,
+        unknown
+      >;
+      const previousDraftRevision = Number(previousManifest.draftRevision ?? 1);
+      const draftRevision = Number.isSafeInteger(previousDraftRevision)
+        ? previousDraftRevision + 1
+        : 2;
+      const store = new GitKnowledgeStore(repositoryPath());
+      const baseRevision = String(review.base_commit);
+      const branchName = await store.createDraftBranch(
+        `${request.params.id}-r${draftRevision}`,
+        baseRevision,
+      );
+      const proposedChanges = await Promise.all(
+        changes.map(async (change) => ({
+          path: change.path,
+          operation: (await store.hasFileAtRevision(baseRevision, change.path))
+            ? ("UPDATE" as const)
+            : ("CREATE" as const),
+          reasons: [change.reason ?? "Requested review correction"],
+        })),
+      );
+      try {
+        for (const change of changes) {
+          await store.writeDraftFile(change.path, change.content);
+        }
+        const headCommit = await store.commitAll(
+          request.body.summary ??
+            `review: revise ${request.params.id} (${draftRevision})`,
+          process.env.AKP_GIT_AUTHOR_NAME ?? "Architecture Knowledge Platform",
+          process.env.AKP_GIT_AUTHOR_EMAIL ?? "akp@localhost",
+        );
+        const updated = await db.pool.query(
+          `update reviews
+              set branch_name=$2,head_commit=$3,
+                  impact_manifest=$4::jsonb,validation_report=$5::jsonb,
+                  decision_by=null,decision_at=null,decision_reason=null,
+                  updated_at=now()
+            where id=$1 and author_id=$6 and status='CHANGES_REQUESTED'
+              and head_commit=$7 and branch_name=$8
+            returning id,status,branch_name,head_commit`,
+          [
+            request.params.id,
+            branchName,
+            headCommit,
+            JSON.stringify({
+              ...previousManifest,
+              summary: request.body.summary ?? previousManifest.summary ?? "",
+              draftRevision,
+              proposedChanges,
+            }),
+            JSON.stringify({ issues, errors: 0 }),
+            actor?.id ?? null,
+            review.head_commit,
+            review.branch_name,
+          ],
+        );
+        if (!updated.rowCount) {
+          await store.cleanupDraft(branchName).catch(() => undefined);
+          return reply.code(409).send({ code: "REVIEW_REVISION_CONFLICT" });
+        }
+        await audit(
+          db,
+          request,
+          "review.revise",
+          "review",
+          request.params.id,
+          { vaultId: String(review.vault_id), draftRevision },
+          String(review.space_id),
+        );
+        await new GitKnowledgeStore(repositoryPath())
+          .cleanupDraft(String(review.branch_name))
+          .catch(async (cleanupError) =>
+            recordPublicationFailure(
+              db,
+              String(review.space_id),
+              "Superseded review draft cleanup failed",
+              {
+                reviewId: request.params.id,
+                branchName: review.branch_name,
+                error:
+                  cleanupError instanceof Error
+                    ? cleanupError.message
+                    : String(cleanupError),
+              },
+            ),
+          );
+        return { ...updated.rows[0], draftRevision };
+      } catch (error) {
+        await store.cleanupDraft(branchName).catch(() => undefined);
+        throw error;
+      }
     },
   );
 
@@ -491,7 +754,7 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
       const review = result.rows[0];
       if (
         !review ||
-        !canAccessReview(actorOf(request), review, "knowledge:read")
+        !(await canAccessReview(db, actorOf(request), review, "knowledge:read"))
       ) {
         return reply.code(404).send({ code: "REVIEW_NOT_FOUND" });
       }
@@ -533,7 +796,12 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
       const review = found.rows[0];
       if (
         !review ||
-        !canAccessReview(actorOf(request), review, "knowledge:review")
+        !(await canAccessReview(
+          db,
+          actorOf(request),
+          review,
+          "knowledge:review",
+        ))
       ) {
         return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
       }
@@ -621,9 +889,14 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
                 `
                 update ingest_jobs set state='COMPLETED',updated_at=now(),
                        result=coalesce(result,'{}'::jsonb)||$2::jsonb
-                 where id=$1
+                 where id=$1 and space_id=$3 and vault_id=$4
                 `,
-                [jobId, JSON.stringify({ mergedCommit: revision })],
+                [
+                  jobId,
+                  JSON.stringify({ mergedCommit: revision }),
+                  review.space_id,
+                  review.vault_id,
+                ],
               );
             }
             await appendPublicationLifecycle(publicationClient, {
@@ -650,7 +923,7 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
             "review.approve",
             "review",
             request.params.id,
-            { revision },
+            { vaultId: String(review.vault_id), revision },
             String(review.space_id),
           );
           await store
@@ -776,7 +1049,7 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
           update ingest_jobs
              set state=$2,updated_at=now(),
                  result=coalesce(result,'{}'::jsonb)||$3::jsonb
-           where id=$1
+           where id=$1 and space_id=$4 and vault_id=$5
           `,
           [
             relatedJobId,
@@ -785,6 +1058,8 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
               reviewDecision: decision,
               reason: request.body.reason ?? null,
             }),
+            review.space_id,
+            review.vault_id,
           ],
         );
       }
@@ -794,25 +1069,27 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
         `review.${decision.toLowerCase()}`,
         "review",
         request.params.id,
-        {},
+        { vaultId: String(review.vault_id) },
         String(review.space_id),
       );
-      await new GitKnowledgeStore(repositoryPath())
-        .cleanupDraft(String(review.branch_name))
-        .catch(async (cleanupError) => {
-          await recordPublicationFailure(
-            db,
-            String(review.space_id),
-            "Closed review draft cleanup failed",
-            {
-              reviewId: request.params.id,
-              error:
-                cleanupError instanceof Error
-                  ? cleanupError.message
-                  : String(cleanupError),
-            },
-          );
-        });
+      if (decision === "REJECT") {
+        await new GitKnowledgeStore(repositoryPath())
+          .cleanupDraft(String(review.branch_name))
+          .catch(async (cleanupError) => {
+            await recordPublicationFailure(
+              db,
+              String(review.space_id),
+              "Rejected review draft cleanup failed",
+              {
+                reviewId: request.params.id,
+                error:
+                  cleanupError instanceof Error
+                    ? cleanupError.message
+                    : String(cleanupError),
+              },
+            );
+          });
+      }
       return { id: request.params.id, status: reviewStatus };
     },
   );
@@ -837,7 +1114,7 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
       const review = found.rows[0];
       if (
         !review ||
-        !canAccessReview(actorOf(request), review, "admin") ||
+        !(await canAccessReview(db, actorOf(request), review, "admin")) ||
         !hasUnrestrictedPathAccess(
           actorOf(request),
           String(review.space_id),
@@ -936,7 +1213,7 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
           "review.rollback",
           "review",
           request.params.id,
-          { revision, projection },
+          { vaultId: String(review.vault_id), revision, projection },
           String(review.space_id),
         );
         return {
@@ -1027,7 +1304,25 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
       }
       if (
         !review.rows[0] ||
-        !canAccessReview(actorOf(request), review.rows[0], "knowledge:review")
+        !(await canAccessReview(
+          db,
+          actorOf(request),
+          review.rows[0],
+          "knowledge:review",
+        ))
+      ) {
+        return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
+      }
+      const commentPath = request.body.path?.trim();
+      if (
+        commentPath &&
+        (!reviewPaths(review.rows[0]).includes(commentPath) ||
+          !hasPathAccess(
+            actorOf(request),
+            String(review.rows[0].space_id),
+            "knowledge:review",
+            commentPath,
+          ))
       ) {
         return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
       }
@@ -1055,7 +1350,11 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
         "review.comment.create",
         "review_comment",
         String(result.rows[0]?.id ?? ""),
-        { path: request.body.path ?? null, line: request.body.line ?? null },
+        {
+          vaultId: String(review.rows[0]?.vault_id),
+          path: request.body.path ?? null,
+          line: request.body.line ?? null,
+        },
         String(review.rows[0]?.space_id),
       );
       return reply.code(201).send(result.rows[0]);

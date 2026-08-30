@@ -33,6 +33,7 @@ import {
   renderDocumentArtifactDraft,
   renderDocumentArtifactPreview,
 } from "./document-artifact.js";
+import { resolveAuthorizedLocalSource } from "./source-boundary.js";
 
 config({
   path: path.resolve(
@@ -113,16 +114,6 @@ async function runScheduledLintIfDue(force = false): Promise<void> {
       );
     }
   }
-}
-
-function localPath(sourceUri: string): string {
-  if (sourceUri.startsWith("file:")) return fileURLToPath(sourceUri);
-  if (/^https?:/i.test(sourceUri)) {
-    throw new Error(
-      "Remote URLs require a captured local snapshot before ingestion.",
-    );
-  }
-  return path.resolve(sourceUri);
 }
 
 async function updateState(
@@ -241,7 +232,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
       : null;
 
   if (state === "RECEIVED") {
-    const sourcePath = localPath(sourceUri);
+    const sourcePath = await resolveAuthorizedLocalSource(sourceUri);
     const mediaType = String(
       payload.mediaType ||
         mime.lookup(sourcePath) ||
@@ -254,25 +245,49 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
         ? { expectedSha256: payload.expectedSha256 }
         : {}),
     });
-    const source = await db.pool.query<{ id: string }>(
-      `
-      insert into sources(space_id,title,source_uri,media_type,sha256,byte_size,object_key,created_by,metadata)
-      values($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb)
-      on conflict(space_id,sha256) do update set source_uri=excluded.source_uri
-      returning id
-      `,
-      [
-        spaceId,
-        String(payload.title ?? basename(sourcePath)),
-        sourceUri,
-        mediaType,
-        raw.sha256,
-        raw.bytes,
-        raw.key,
-        job.created_by ?? null,
-        JSON.stringify({ bucket: raw.bucket, immutable: true }),
-      ],
-    );
+    // Migration 013 replaces the bootstrap `(space_id, sha256)` key with
+    // vault-aware partial unique indexes.  Infer the correct index explicitly
+    // so a source with the same bytes can exist in two isolated vaults while
+    // legacy managed rows (vault_id IS NULL) remain deduplicated per space.
+    const sourceValues = [
+      spaceId,
+      vaultId,
+      String(payload.title ?? basename(sourcePath)),
+      sourceUri,
+      mediaType,
+      raw.sha256,
+      raw.bytes,
+      raw.key,
+      job.created_by ?? null,
+      JSON.stringify({ bucket: raw.bucket, immutable: true }),
+    ];
+    const source = vaultId
+      ? await db.pool.query<{ id: string }>(
+          `
+          insert into sources(
+            space_id,vault_id,title,source_uri,media_type,sha256,byte_size,
+            object_key,created_by,metadata
+          )
+          values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)
+          on conflict (vault_id,sha256) where vault_id is not null
+            do update set source_uri=excluded.source_uri
+          returning id
+          `,
+          sourceValues,
+        )
+      : await db.pool.query<{ id: string }>(
+          `
+          insert into sources(
+            space_id,vault_id,title,source_uri,media_type,sha256,byte_size,
+            object_key,created_by,metadata
+          )
+          values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)
+          on conflict (space_id,sha256) where vault_id is null
+            do update set source_uri=excluded.source_uri
+          returning id
+          `,
+          sourceValues,
+        );
     await updateState(id, state, "HASHED", {
       raw,
       sourceId: source.rows[0]?.id,
@@ -646,13 +661,14 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
     const reviewId = randomUUID();
     await db.pool.query(
       `
-      insert into reviews(id,space_id,branch_name,base_commit,head_commit,status,author_id,
+      insert into reviews(id,space_id,vault_id,branch_name,base_commit,head_commit,status,author_id,
                           impact_manifest,validation_report)
-      values($1,$2,$3,$4,$5,'PENDING',$6,$7::jsonb,$8::jsonb)
+      values($1,$2,$3,$4,$5,$6,'PENDING',$7,$8::jsonb,$9::jsonb)
       `,
       [
         reviewId,
         spaceId,
+        vaultId,
         draft.branchName,
         draft.baseRevision,
         draft.headCommit,

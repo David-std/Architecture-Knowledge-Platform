@@ -1,5 +1,10 @@
 import Link from "next/link";
 import { akp } from "../../lib/api";
+import {
+  scopedSearchRequest,
+  selectVault,
+  type VaultOption,
+} from "../../lib/vault-scope";
 
 interface SearchResponse {
   channels: string[];
@@ -20,30 +25,53 @@ interface SearchResponse {
 export default async function SearchPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; vaultId?: string }>;
 }) {
-  const query = (await searchParams).q?.trim() ?? "";
-  const result = query
-    ? await akp<SearchResponse>("/v1/search", {
-        method: "POST",
-        body: JSON.stringify({ query, limit: 20, mode: "SOURCE_BACKED" }),
-      })
-    : null;
-  const packet = query
-    ? await akp<Record<string, unknown>>("/v1/context", {
-        method: "POST",
-        body: JSON.stringify({
-          query,
-          maxTokens: 1600,
-          mode: "SOURCE_BACKED",
-        }),
-      })
-    : null;
+  const params = await searchParams;
+  const query = params.q?.trim() ?? "";
+  const registry = await akp<{ vaults: VaultOption[] }>("/v1/vaults");
+  const selection = selectVault(registry.vaults ?? [], params.vaultId);
+  const selected = selection.vault;
+  const result =
+    query && selected
+      ? await akp<SearchResponse>("/v1/search", {
+          method: "POST",
+          body: JSON.stringify(
+            scopedSearchRequest(query, selected, {
+              limit: 20,
+              mode: "SOURCE_BACKED",
+            }),
+          ),
+        })
+      : null;
+  const packet =
+    query && selected
+      ? await akp<Record<string, unknown>>("/v1/context", {
+          method: "POST",
+          body: JSON.stringify(
+            scopedSearchRequest(query, selected, {
+              maxTokens: 1600,
+              mode: "SOURCE_BACKED",
+            }),
+          ),
+        })
+      : null;
   return (
     <main>
       <p className="muted">Exacta + lexical + expansión del grafo</p>
       <h1>Búsqueda híbrida</h1>
       <form>
+        <label>
+          Vault
+          <select name="vaultId" defaultValue={selected?.id ?? ""} required>
+            <option value="">Selecciona un vault autorizado</option>
+            {(registry.vaults ?? []).map((vault) => (
+              <option key={vault.id} value={vault.id}>
+                {vault.name} ({vault.vault_key})
+              </option>
+            ))}
+          </select>
+        </label>
         <input
           name="q"
           defaultValue={query}
@@ -52,6 +80,11 @@ export default async function SearchPage({
         />
         <button type="submit">Buscar</button>
       </form>
+      {query && !selected ? (
+        <div className="card" role="alert">
+          La consulta no se ejecutó: {selection.status}.
+        </div>
+      ) : null}
       {result?.degraded ? (
         <p className="muted">
           Canal vectorial desactivado; resultados reproducibles con tres canales

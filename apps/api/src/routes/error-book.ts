@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import type { Postgres } from "@akp/postgres";
+import { resolveAuthorizedVaultScope, type Postgres } from "@akp/postgres";
 import {
   actorOf,
   audit,
@@ -7,6 +7,63 @@ import {
   requirePermission,
   unrestrictedSpaceIdsForPermission,
 } from "../auth.js";
+
+const UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SENSITIVE_METADATA_KEY =
+  /^(?:source(?:uri|_uri|path|_path)|local(?:path|_path)|absolute(?:path|_path)|repository(?:path|_path)|root(?:path|_path)|canonical(?:path|_path)|object(?:key|_key)|endpoint|host|password|secret|token|credential|api[_-]?key|access[_-]?token|refresh[_-]?token)$/i;
+const ABSOLUTE_PATH_TOKEN =
+  /(?:[A-Za-z]:[\\/]|\\\\|file:\/\/|\/(?:Users|home|tmp|var)\/)[^\s"']+/g;
+
+/** Error-book metadata is diagnostic, not a host-routing or secret store. */
+function sanitizeErrorMetadata(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sanitizeErrorMetadata);
+  if (typeof value === "string") {
+    return value.replaceAll(ABSOLUTE_PATH_TOKEN, "[REDACTED_PATH]");
+  }
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => !SENSITIVE_METADATA_KEY.test(key))
+      .map(([key, entry]) => [key, sanitizeErrorMetadata(entry)]),
+  );
+}
+
+function sanitizedErrorRow(
+  row: Record<string, unknown>,
+): Record<string, unknown> {
+  return { ...row, metadata: sanitizeErrorMetadata(row.metadata) };
+}
+
+/**
+ * Error-book entries are pathless operational records.  A space role alone
+ * must never expose a private vault, so every operation resolves the explicit
+ * vault grant as well as the enclosing space permission.
+ */
+async function authorizedVault(
+  db: Postgres,
+  actor: ReturnType<typeof actorOf>,
+  spaceId: string,
+  vaultId: string,
+  permission:
+    "knowledge:propose" | "knowledge:review" | "eval:run" | "knowledge:read",
+): Promise<boolean> {
+  if (!actor || !UUID.test(vaultId)) return false;
+  if (!hasUnrestrictedPathAccess(actor, spaceId, permission)) return false;
+  try {
+    const scope = await resolveAuthorizedVaultScope(db, {
+      userId: actor.id,
+      spaceId,
+      vaultId,
+      vaultIds: [vaultId],
+      permission,
+      federated: false,
+    });
+    return scope.accessByVault[vaultId]?.pathPrefix === null;
+  } catch {
+    return false;
+  }
+}
 
 const ERROR_TYPES = new Set([
   "SOURCE_MISSED",
@@ -51,7 +108,15 @@ export function registerErrorBookRoutes(
         return reply.code(400).send({ code: "VAULT_SCOPE_REQUIRED" });
       }
       const errorType = String(request.body?.errorType ?? "").toUpperCase();
-      if (!hasUnrestrictedPathAccess(actor, spaceId, "knowledge:propose")) {
+      if (
+        !(await authorizedVault(
+          db,
+          actor,
+          spaceId,
+          vaultId,
+          "knowledge:propose",
+        ))
+      ) {
         return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
       }
       if (!ERROR_TYPES.has(errorType)) {
@@ -70,7 +135,7 @@ export function registerErrorBookRoutes(
           errorType,
           request.body?.rootCause?.trim() || null,
           request.body?.correction?.trim() || null,
-          JSON.stringify(request.body?.metadata ?? {}),
+          JSON.stringify(sanitizeErrorMetadata(request.body?.metadata ?? {})),
         ],
       );
       if (!result.rowCount) {
@@ -82,10 +147,12 @@ export function registerErrorBookRoutes(
         "error_book.create",
         "error_book",
         String(result.rows[0]?.id),
-        {},
+        { vaultId },
         spaceId,
       );
-      return reply.code(201).send(result.rows[0]);
+      return reply
+        .code(201)
+        .send(sanitizedErrorRow(result.rows[0] as Record<string, unknown>));
     },
   );
 
@@ -111,6 +178,18 @@ export function registerErrorBookRoutes(
       );
       if (!error.rowCount)
         return reply.code(404).send({ code: "ERROR_BOOK_ENTRY_NOT_FOUND" });
+      const errorRow = error.rows[0] as Record<string, unknown>;
+      if (
+        !(await authorizedVault(
+          db,
+          actorOf(request),
+          String(errorRow.space_id),
+          String(errorRow.vault_id ?? ""),
+          "eval:run",
+        ))
+      ) {
+        return reply.code(404).send({ code: "ERROR_BOOK_ENTRY_NOT_FOUND" });
+      }
       const query = request.body?.query?.trim();
       const goldDocuments = (request.body?.goldDocuments ?? [])
         .map(String)
@@ -138,8 +217,8 @@ export function registerErrorBookRoutes(
         `,
         [
           caseId,
-          error.rows[0]?.space_id,
-          error.rows[0]?.vault_id,
+          errorRow.space_id,
+          errorRow.vault_id,
           request.body?.category?.trim() || "error-book-regression",
           query,
           JSON.stringify(expected),
@@ -156,8 +235,11 @@ export function registerErrorBookRoutes(
         "error_book.regression_create",
         "eval_case",
         caseId,
-        { errorBookId: request.params.id },
-        String(error.rows[0]?.space_id),
+        {
+          vaultId: String(errorRow.vault_id),
+          errorBookId: request.params.id,
+        },
+        String(errorRow.space_id),
       );
       return reply.code(201).send({
         caseId,
@@ -175,18 +257,39 @@ export function registerErrorBookRoutes(
       if (!verificationResult) {
         return reply.code(400).send({ code: "VERIFICATION_RESULT_REQUIRED" });
       }
-      const result = await db.pool.query(
-        `
-        update error_book set status='RESOLVED',verification_result=$3,resolved_at=now()
-         where id=$1 and space_id=any($2::uuid[]) returning *
-        `,
+      const current = await db.pool.query<Record<string, unknown>>(
+        "select * from error_book where id=$1 and space_id=any($2::uuid[])",
         [
           request.params.id,
           unrestrictedSpaceIdsForPermission(
             actorOf(request),
             "knowledge:review",
           ),
+        ],
+      );
+      const currentRow = current.rows[0];
+      if (
+        !currentRow ||
+        !(await authorizedVault(
+          db,
+          actorOf(request),
+          String(currentRow.space_id),
+          String(currentRow.vault_id ?? ""),
+          "knowledge:review",
+        ))
+      ) {
+        return reply.code(404).send({ code: "ERROR_BOOK_ENTRY_NOT_FOUND" });
+      }
+      const result = await db.pool.query(
+        `
+        update error_book set status='RESOLVED',verification_result=$3,resolved_at=now()
+         where id=$1 and space_id=$2 and vault_id=$4 returning *
+        `,
+        [
+          request.params.id,
+          currentRow.space_id,
           verificationResult,
+          currentRow.vault_id,
         ],
       );
       if (!result.rowCount)
@@ -197,10 +300,10 @@ export function registerErrorBookRoutes(
         "error_book.resolve",
         "error_book",
         request.params.id,
-        {},
+        { vaultId: String(result.rows[0]?.vault_id) },
         String(result.rows[0]?.space_id),
       );
-      return result.rows[0];
+      return sanitizedErrorRow(result.rows[0] as Record<string, unknown>);
     },
   );
 }

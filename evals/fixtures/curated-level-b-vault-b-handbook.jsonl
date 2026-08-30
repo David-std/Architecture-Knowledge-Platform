@@ -1,0 +1,4 @@
+{"id":"level-b-b-exact","category":"exact","query":"handbook-release-gate","gold_documents":["handbook-release-gate"],"vault":"vault-b-handbook","critical":true,"slice":"exact-identifiers"}
+{"id":"level-b-b-cross-vault","category":"cross-vault-isolation","query":"Which publication gate requires reviewer signoff?","gold_documents":["handbook-release-gate"],"must_not_include":["software-api-boundary","neutral-archive-policy"],"vault":"vault-b-handbook","critical":true,"slice":"cross-vault-isolation"}
+{"id":"level-b-b-paraphrase","category":"paraphrases","query":"What must happen before a release is published?","gold_documents":["handbook-release-gate"],"vault":"vault-b-handbook","critical":true,"slice":"paraphrases"}
+{"id":"level-b-b-no-answer","category":"no-answer","query":"What is the lunar orchard telemetry protocol?","gold_documents":[],"expect_no_answer":true,"vault":"vault-b-handbook","critical":true,"slice":"no-answer"}

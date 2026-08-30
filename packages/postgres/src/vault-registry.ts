@@ -73,6 +73,11 @@ export interface AuthorizedVaultScopeRequest {
 export interface AuthorizedVaultScope {
   vaults: VaultRecord[];
   vaultIds: string[];
+  /** Effective access after intersecting the space and vault memberships. */
+  accessByVault: Record<
+    string,
+    { pathPrefix: string | null; permissions: string[] }
+  >;
   federated: boolean;
 }
 
@@ -85,6 +90,7 @@ interface AuthorizedVaultRow extends VaultRecord {
   membership_role: string | null;
   membership_path_prefix: string | null;
   membership_permissions: unknown;
+  membership_enabled: boolean | null;
   space_role: string | null;
   space_path_prefix: string | null;
 }
@@ -150,23 +156,37 @@ function parsePermissions(value: unknown): string[] {
   return value.filter((entry): entry is string => typeof entry === "string");
 }
 
-function permissionsForMembership(role: string, configured: unknown): string[] {
-  const explicit = parsePermissions(configured);
-  return explicit.length > 0 ? explicit : [...permissionsForRole(role)];
-}
-
 /** Normalize a relative path prefix before it is persisted or compared. */
 export function normalizeVaultPathPrefix(
   value: string | null | undefined,
 ): string | null | undefined {
   if (value === null || value === undefined || value === "") return null;
-  const normalized = value.replaceAll("\\", "/").replace(/^\/+|\/+$/g, "");
+  const candidate = value.replaceAll("\\", "/");
+  // A membership prefix is a repository-relative path, never a host path.
+  // Validate the leading component before trimming a trailing slash; doing it
+  // after trimming would turn `/private` or `C:/private` into an apparently
+  // safe relative prefix and could widen access across vault roots.
+  if (
+    candidate.startsWith("/") ||
+    /^[A-Za-z]:/.test(candidate) ||
+    candidate.includes("\u0000")
+  ) {
+    return undefined;
+  }
+  const normalized = candidate.replace(/\/+$/g, "");
   if (
     !normalized ||
-    normalized.startsWith("/") ||
+    normalized.includes("//") ||
     normalized
       .split("/")
-      .some((segment) => !segment || segment === "." || segment === "..")
+      .some(
+        (segment) =>
+          !segment ||
+          segment === "." ||
+          segment === ".." ||
+          segment.includes(":") ||
+          /[\u0000-\u001f]/.test(segment),
+      )
   ) {
     return undefined;
   }
@@ -222,6 +242,7 @@ export function canAccessVault(
     role: string;
     pathPrefix: string | null;
     permissions?: readonly string[];
+    enabled?: boolean;
   } | null,
   permission?: string,
 ): { allowed: boolean; pathPrefix: string | null; permissions: string[] } {
@@ -230,6 +251,11 @@ export function canAccessVault(
   }
   const inherited = vaultMembership === null && visibility !== "PRIVATE";
   if (vaultMembership === null && !inherited) {
+    return { allowed: false, pathPrefix: null, permissions: [] };
+  }
+  // A disabled explicit grant is different from an absent grant. In
+  // particular, it must not fall through to TEAM/CENTRAL inheritance.
+  if (vaultMembership?.enabled === false) {
     return { allowed: false, pathPrefix: null, permissions: [] };
   }
   const vaultPermissions = vaultMembership
@@ -424,10 +450,11 @@ export async function resolveAuthorizedVaultScope(
            v.current_revision,v.last_imported_at,
            vm.role membership_role,vm.path_prefix membership_path_prefix,
            vm.permissions membership_permissions,
+           vm.enabled membership_enabled,
            sm.role space_role,sm.path_prefix space_path_prefix
       from vaults v
       left join vault_memberships vm
-        on vm.vault_id=v.id and vm.user_id=$1 and vm.enabled=true
+        on vm.vault_id=v.id and vm.user_id=$1
       left join memberships sm
         on sm.user_id=$1 and sm.space_id=v.space_id
      where v.space_id=$2 and v.enabled=true
@@ -439,6 +466,10 @@ export async function resolveAuthorizedVaultScope(
   if (candidates.rowCount === 0) throw new Error("VAULT_SCOPE_NOT_FOUND");
 
   const selected = new Map<string, VaultRecord>();
+  const selectedAccess = new Map<
+    string,
+    { pathPrefix: string | null; permissions: string[] }
+  >();
   const denied = new Set<string>();
   for (const row of candidates.rows) {
     const access = canAccessVault(
@@ -451,6 +482,10 @@ export async function resolveAuthorizedVaultScope(
             role: row.membership_role,
             pathPrefix: row.membership_path_prefix,
             permissions: parsePermissions(row.membership_permissions),
+            // Older test doubles may omit the projected flag; an existing
+            // membership row is enabled unless the database explicitly says
+            // otherwise.
+            enabled: row.membership_enabled !== false,
           }
         : null,
       request.permission,
@@ -464,11 +499,16 @@ export async function resolveAuthorizedVaultScope(
         membership_role: _membershipRole,
         membership_path_prefix: _membershipPath,
         membership_permissions: _membershipPermissions,
+        membership_enabled: _membershipEnabled,
         space_role: _spaceRole,
         space_path_prefix: _spacePath,
         ...vault
       } = row;
       selected.set(String(row.id), vault);
+      selectedAccess.set(String(row.id), {
+        pathPrefix: access.pathPrefix,
+        permissions: access.permissions,
+      });
     }
   }
 
@@ -496,5 +536,15 @@ export async function resolveAuthorizedVaultScope(
   const vaults = [...selected.values()].sort((left, right) =>
     left.vault_key.localeCompare(right.vault_key),
   );
-  return { vaults, vaultIds: vaults.map((vault) => vault.id), federated };
+  return {
+    vaults,
+    vaultIds: vaults.map((vault) => vault.id),
+    accessByVault: Object.fromEntries(
+      vaults.flatMap((vault) => {
+        const access = selectedAccess.get(vault.id);
+        return access ? [[vault.id, access]] : [];
+      }),
+    ),
+    federated,
+  };
 }

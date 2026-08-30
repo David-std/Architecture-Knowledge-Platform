@@ -21,4 +21,23 @@ describe("query planner", () => {
       planQuery("¿qué clase implementa este repositorio?").channels,
     ).toContain("code");
   });
+
+  it("recognizes stable identifiers without a vault-specific prefix list", () => {
+    expect(planQuery("ERR-NMB-042").intent).toBe("EXACT_LOOKUP");
+    expect(planQuery("POLICY_17").intent).toBe("EXACT_LOOKUP");
+    expect(planQuery("/src/cache/refresh.py").intent).toBe("EXACT_LOOKUP");
+  });
+
+  it("honors an explicit supported intent and can disable retrieval", () => {
+    expect(planQuery("compare these two notes", "EXACT_LOOKUP").intent).toBe(
+      "EXACT_LOOKUP",
+    );
+    expect(
+      planQuery("the answer is already in the caller", "NO_RETRIEVAL_REQUIRED"),
+    ).toMatchObject({
+      intent: "NO_RETRIEVAL_REQUIRED",
+      channels: [],
+      maxGraphHops: 1,
+    });
+  });
 });

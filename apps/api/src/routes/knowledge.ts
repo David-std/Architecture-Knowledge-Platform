@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import path from "node:path";
 import { VaultRegistration } from "@akp/contracts";
 import {
+  pathMatchesVaultPrefix,
   registerVault,
   resolveAuthorizedVaultScope,
   type Postgres,
@@ -16,16 +17,103 @@ import {
   unrestrictedSpaceIdsForPermission,
 } from "../auth.js";
 
+/** Keep raw source routing details out of ordinary source projections. */
+const RAW_SOURCE_KEY =
+  /^(?:source(?:uri|_uri|path|_path)|local(?:path|_path)|absolute(?:path|_path)|repository(?:path|_path)|canonical(?:path|_path)|content(?:roots|_roots)|source(?:roots|_roots)|git(?:repository|_repository)|object(?:key|_key)|key)$/i;
+const ABSOLUTE_SOURCE_PATH =
+  /(?:[A-Za-z]:[\\/]|\\\\|file:\/\/|\/(?:Users|home|tmp|var)\/)[^\s"']+/g;
+
+function sanitizeRawSourceFields(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sanitizeRawSourceFields);
+  if (typeof value === "string") {
+    return value.replaceAll(ABSOLUTE_SOURCE_PATH, "[REDACTED_PATH]");
+  }
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => !RAW_SOURCE_KEY.test(key))
+      .map(([key, entry]) => [key, sanitizeRawSourceFields(entry)]),
+  );
+}
+
+function sanitizeSourceRows(
+  rows: Array<Record<string, unknown>>,
+): Array<Record<string, unknown>> {
+  return sanitizeRawSourceFields(rows) as Array<Record<string, unknown>>;
+}
+
+const SOURCE_LOCATOR_ID =
+  /^source:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function readableLocator(
+  locator: unknown,
+  actor: ReturnType<typeof actorOf>,
+  spaceId: string,
+  permission: "knowledge:read" | "source:read",
+  pathPrefix: string | null | undefined,
+): boolean {
+  if (!locator || typeof locator !== "object" || Array.isArray(locator)) {
+    return false;
+  }
+  for (const key of ["path", "source_path", "document_path"]) {
+    const value = (locator as Record<string, unknown>)[key];
+    if (typeof value !== "string") continue;
+    if (value.startsWith("source:")) {
+      if (!SOURCE_LOCATOR_ID.test(value)) return false;
+      continue;
+    }
+    if (
+      !hasPathAccess(actor, spaceId, permission, value) ||
+      !pathMatchesVaultPrefix(value, pathPrefix)
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** Preserve structural locator fields without exposing host-specific paths. */
+function sanitizeLocatorForResponse(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sanitizeLocatorForResponse);
+  if (typeof value === "string") {
+    return value.replace(
+      /(?:[A-Za-z]:[\\/]|\\\\|file:\/\/|\/(?:Users|home|tmp|var)\/)[^\s"']+/g,
+      "[REDACTED_PATH]",
+    );
+  }
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(
+        ([key]) =>
+          !/^(?:source(?:uri|_uri|path|_path)|local(?:path|_path)|absolute(?:path|_path)|repository(?:path|_path)|canonical(?:path|_path)|object(?:key|_key)|key)$/i.test(
+            key,
+          ),
+      )
+      .map(([key, entry]) => [key, sanitizeLocatorForResponse(entry)]),
+  );
+}
+
 function readableDocument(
   actor: ReturnType<typeof actorOf>,
   row: Record<string, unknown>,
   permission: "knowledge:read" | "source:read",
+  accessByVault: Record<
+    string,
+    { pathPrefix: string | null; permissions: string[] }
+  >,
 ): boolean {
-  return hasPathAccess(
-    actor,
-    String(row.space_id ?? row.spaceId ?? ""),
-    permission,
-    String(row.path ?? ""),
+  const vaultId = String(row.vault_id ?? row.vaultId ?? "");
+  const access = accessByVault[vaultId];
+  if (!access) return false;
+  const documentPath = String(row.path ?? "");
+  return (
+    hasPathAccess(
+      actor,
+      String(row.space_id ?? row.spaceId ?? ""),
+      permission,
+      documentPath,
+    ) && pathMatchesVaultPrefix(documentPath, access.pathPrefix)
   );
 }
 
@@ -34,12 +122,23 @@ async function authorizedVaultIds(
   actor: ReturnType<typeof actorOf>,
   permission: "knowledge:read" | "source:read",
   unrestricted: boolean,
-): Promise<{ spaces: string[]; vaultIds: string[] }> {
-  if (!actor) return { spaces: [], vaultIds: [] };
+): Promise<{
+  spaces: string[];
+  vaultIds: string[];
+  accessByVault: Record<
+    string,
+    { pathPrefix: string | null; permissions: string[] }
+  >;
+}> {
+  if (!actor) return { spaces: [], vaultIds: [], accessByVault: {} };
   const spaces = unrestricted
     ? unrestrictedSpaceIdsForPermission(actor, permission)
     : spaceIdsForPermission(actor, permission);
   const vaultIds: string[] = [];
+  const accessByVault: Record<
+    string,
+    { pathPrefix: string | null; permissions: string[] }
+  > = {};
   for (const spaceId of spaces) {
     try {
       const scope = await resolveAuthorizedVaultScope(db, {
@@ -48,12 +147,25 @@ async function authorizedVaultIds(
         permission,
         federated: true,
       });
-      vaultIds.push(...scope.vaultIds);
+      scope.vaultIds.forEach((vaultId) => {
+        const access = scope.accessByVault[vaultId];
+        if (!access) return;
+        // Pathless projections (status, vault and source listings) must not
+        // expose a prefix-scoped vault. Callers that carry a document path
+        // use unrestricted=false and retain those entries.
+        if (unrestricted && access.pathPrefix !== null) return;
+        vaultIds.push(vaultId);
+        accessByVault[vaultId] = access;
+      });
     } catch {
       // A private vault remains invisible without an explicit membership.
     }
   }
-  return { spaces, vaultIds: [...new Set(vaultIds)] };
+  return {
+    spaces,
+    vaultIds: [...new Set(vaultIds)],
+    accessByVault,
+  };
 }
 
 export function registerKnowledgeRoutes(
@@ -94,7 +206,7 @@ export function registerKnowledgeRoutes(
           [scope.spaces, scope.vaultIds],
         ),
         db.pool.query(
-          "select count(*)::int count from knowledge_relations r where space_id=any($1::uuid[]) and exists(select 1 from knowledge_documents d where d.id=r.from_document_id and d.vault_id=any($2::uuid[]))",
+          "select count(*)::int count from knowledge_relations r join knowledge_documents f on f.id=r.from_document_id and f.space_id=r.space_id join knowledge_documents t on t.id=r.to_document_id and t.space_id=r.space_id and t.vault_id=f.vault_id where r.space_id=any($1::uuid[]) and f.vault_id=any($2::uuid[])",
           [scope.spaces, scope.vaultIds],
         ),
         db.pool.query(
@@ -110,7 +222,7 @@ export function registerKnowledgeRoutes(
           [scope.spaces, scope.vaultIds],
         ),
         db.pool.query(
-          "select id,vault_key,name,local_path,read_only,current_revision,last_imported_at from vaults where id=any($1::uuid[]) order by vault_key",
+          "select id,vault_key,name,read_only,current_revision,last_imported_at from vaults where id=any($1::uuid[]) order by vault_key",
           [scope.vaultIds],
         ),
         db.pool.query(
@@ -143,7 +255,7 @@ export function registerKnowledgeRoutes(
           units: units.rows[0]?.count ?? 0,
           relations: relations.rows[0]?.count ?? 0,
           sources: sources.rows[0]?.count ?? 0,
-          vaults: vault.rows,
+          vaults: sanitizeSourceRows(vault.rows),
         },
         jobs: jobs.rows,
         reviews: reviews.rows,
@@ -180,7 +292,7 @@ export function registerKnowledgeRoutes(
         [request.params.id, scope.spaces, scope.vaultIds],
       );
       const accessible = result.rows.filter((row) =>
-        readableDocument(actor, row, "knowledge:read"),
+        readableDocument(actor, row, "knowledge:read", scope.accessByVault),
       );
       if (!accessible.length)
         return reply.code(404).send({ code: "CONTEXT_PACK_NOT_FOUND" });
@@ -213,7 +325,7 @@ export function registerKnowledgeRoutes(
         [request.params.id, scope.spaces, scope.vaultIds],
       );
       const accessible = result.rows.filter((row) =>
-        readableDocument(actor, row, "knowledge:read"),
+        readableDocument(actor, row, "knowledge:read", scope.accessByVault),
       );
       if (!accessible.length)
         return reply.code(404).send({ code: "DOCUMENT_NOT_FOUND" });
@@ -244,13 +356,18 @@ export function registerKnowledgeRoutes(
       );
       return {
         ...document,
-        relations: relations.rows.filter((row) =>
-          hasPathAccess(
-            actor,
-            String(document.space_id),
-            "knowledge:read",
-            String(row.path),
-          ),
+        relations: relations.rows.filter(
+          (row) =>
+            hasPathAccess(
+              actor,
+              String(document.space_id),
+              "knowledge:read",
+              String(row.path),
+            ) &&
+            pathMatchesVaultPrefix(
+              String(row.path),
+              scope.accessByVault[String(document.vault_id)]?.pathPrefix,
+            ),
         ),
       };
     },
@@ -267,7 +384,7 @@ export function registerKnowledgeRoutes(
         [request.params.id, scope.spaces, scope.vaultIds],
       );
       const accessible = document.rows.filter((row) =>
-        readableDocument(actor, row, "source:read"),
+        readableDocument(actor, row, "source:read", scope.accessByVault),
       );
       if (!accessible.length)
         return reply.code(404).send({ code: "DOCUMENT_NOT_FOUND" });
@@ -301,22 +418,41 @@ export function registerKnowledgeRoutes(
           join evidence e on e.id=de.evidence_id
           join sources s on s.id=e.source_id
          where de.document_id=$1
-           and e.vault_id=$2 and s.vault_id=$2
+           and e.space_id=$3 and e.vault_id=$2
+           and s.space_id=$3 and s.vault_id=$2
          order by e.created_at
         `,
-        [accessible[0].id, accessible[0].vault_id],
+        [accessible[0].id, accessible[0].vault_id, accessible[0].space_id],
       );
       return {
         document: accessible[0],
-        evidence: result.rows.filter((row) =>
-          hasPathAccess(
-            actor,
-            String(accessible[0].space_id),
-            "source:read",
-            String(row.path),
-          ),
+        evidence: result.rows.filter(
+          (row) =>
+            hasPathAccess(
+              actor,
+              String(accessible[0].space_id),
+              "source:read",
+              String(row.path),
+            ) &&
+            pathMatchesVaultPrefix(
+              String(row.path),
+              scope.accessByVault[String(accessible[0].vault_id)]?.pathPrefix,
+            ),
         ),
-        locators: locators.rows,
+        locators: locators.rows
+          .filter((locator) =>
+            readableLocator(
+              locator.locator,
+              actor,
+              String(accessible[0].space_id),
+              "source:read",
+              scope.accessByVault[String(accessible[0].vault_id)]?.pathPrefix,
+            ),
+          )
+          .map((locator) => ({
+            ...locator,
+            locator: sanitizeLocatorForResponse(locator.locator),
+          })),
         gaps:
           result.rowCount === 0 && locators.rowCount === 0
             ? [
@@ -344,7 +480,7 @@ export function registerKnowledgeRoutes(
         [request.params.id, scope.spaces, scope.vaultIds],
       );
       const accessibleSeeds = seed.rows.filter((row) =>
-        readableDocument(actor, row, "knowledge:read"),
+        readableDocument(actor, row, "knowledge:read", scope.accessByVault),
       );
       if (!accessibleSeeds.length)
         return reply.code(404).send({ code: "DOCUMENT_NOT_FOUND" });
@@ -356,12 +492,33 @@ export function registerKnowledgeRoutes(
             from knowledge_relations r
            where (r.from_document_id = $1 or r.to_document_id = $1)
              and r.space_id=$3
+             and exists (
+               select 1 from knowledge_documents edge_from
+                where edge_from.id=r.from_document_id
+                  and edge_from.space_id=$3 and edge_from.vault_id=$4
+             )
+             and exists (
+               select 1 from knowledge_documents edge_to
+                where edge_to.id=r.to_document_id
+                  and edge_to.space_id=$3 and edge_to.vault_id=$4
+             )
           union all
           select i.depth + 1, r.from_document_id, r.to_document_id, r.relation_type,
                  i.trail || r.to_document_id
             from impact i
             join knowledge_relations r on r.from_document_id = i.to_id
-           where r.space_id=$3 and i.depth < $2 and not r.to_document_id = any(i.trail)
+           where r.space_id=$3 and i.depth < $2
+             and not r.to_document_id = any(i.trail)
+             and exists (
+               select 1 from knowledge_documents edge_from
+                where edge_from.id=r.from_document_id
+                  and edge_from.space_id=$3 and edge_from.vault_id=$4
+             )
+             and exists (
+               select 1 from knowledge_documents edge_to
+                where edge_to.id=r.to_document_id
+                  and edge_to.space_id=$3 and edge_to.vault_id=$4
+             )
         )
         select distinct i.depth, i.relation_type, d.id, d.external_id, d.path, d.title, d.type
           from impact i
@@ -379,13 +536,19 @@ export function registerKnowledgeRoutes(
       return {
         seed: accessibleSeeds[0],
         depth,
-        impacted: result.rows.filter((row) =>
-          hasPathAccess(
-            actor,
-            String(accessibleSeeds[0].space_id),
-            "knowledge:read",
-            String(row.path),
-          ),
+        impacted: result.rows.filter(
+          (row) =>
+            hasPathAccess(
+              actor,
+              String(accessibleSeeds[0].space_id),
+              "knowledge:read",
+              String(row.path),
+            ) &&
+            pathMatchesVaultPrefix(
+              String(row.path),
+              scope.accessByVault[String(accessibleSeeds[0].vault_id)]
+                ?.pathPrefix,
+            ),
         ),
       };
     },
@@ -401,7 +564,7 @@ export function registerKnowledgeRoutes(
         "knowledge:read",
         true,
       );
-      if (!scope.spaces.length)
+      if (!scope.vaultIds.length)
         return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
       const result = await db.pool.query(
         `
@@ -421,7 +584,7 @@ export function registerKnowledgeRoutes(
         `,
         [scope.spaces, scope.vaultIds],
       );
-      return { vaults: result.rows };
+      return { vaults: sanitizeSourceRows(result.rows) };
     },
   );
 
@@ -455,10 +618,10 @@ export function registerKnowledgeRoutes(
           "vault.register",
           "vault",
           vault.id,
-          { vaultKey: vault.vault_key },
+          { vaultId: vault.id, vaultKey: vault.vault_key },
           vault.space_id,
         );
-        return reply.code(201).send({ vault });
+        return reply.code(201).send({ vault: sanitizeRawSourceFields(vault) });
       } catch (error) {
         if ((error as Error).message === "VAULT_KEY_OWNED_BY_DIFFERENT_SPACE") {
           return reply.code(409).send({ code: "VAULT_KEY_CONFLICT" });
@@ -478,7 +641,7 @@ export function registerKnowledgeRoutes(
         "knowledge:read",
         true,
       );
-      if (!scope.spaces.length) {
+      if (!scope.vaultIds.length) {
         return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
       }
       const result = await db.pool.query(
@@ -486,7 +649,15 @@ export function registerKnowledgeRoutes(
         select r.relation_type, count(*)::int edges
           from knowledge_relations r
           join knowledge_documents d on d.id=r.from_document_id
-         where r.space_id=any($1::uuid[]) and d.vault_id=any($2::uuid[])
+         where r.space_id=any($1::uuid[])
+           and d.space_id=any($1::uuid[])
+           and d.vault_id=any($2::uuid[])
+           and exists (
+             select 1 from knowledge_documents target
+              where target.id=r.to_document_id
+                and target.space_id=r.space_id
+                and target.vault_id=d.vault_id
+           )
          group by r.relation_type order by edges desc
         `,
         [scope.spaces, scope.vaultIds],
@@ -497,7 +668,20 @@ export function registerKnowledgeRoutes(
          where d.space_id=any($1::uuid[]) and d.vault_id=any($2::uuid[])
            and not exists (
            select 1 from knowledge_relations r
-            where r.from_document_id = d.id or r.to_document_id = d.id
+            where r.space_id=d.space_id
+              and exists (
+                select 1 from knowledge_documents from_doc
+                 where from_doc.id=r.from_document_id
+                   and from_doc.space_id=d.space_id
+                   and from_doc.vault_id=d.vault_id
+              )
+              and exists (
+                select 1 from knowledge_documents to_doc
+                 where to_doc.id=r.to_document_id
+                   and to_doc.space_id=d.space_id
+                   and to_doc.vault_id=d.vault_id
+              )
+              and (r.from_document_id = d.id or r.to_document_id = d.id)
          )
         `,
         [scope.spaces, scope.vaultIds],
@@ -519,18 +703,18 @@ export function registerKnowledgeRoutes(
         "source:read",
         true,
       );
-      if (!scope.spaces.length) {
+      if (!scope.vaultIds.length) {
         return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
       }
       const result = await db.pool.query(
         `
-        select id,space_id,vault_id,title,source_uri,media_type,sha256,byte_size,status,metadata,created_at
+        select id,space_id,vault_id,title,media_type,sha256,byte_size,status,metadata,created_at
           from sources where space_id=any($1::uuid[]) and vault_id=any($2::uuid[])
          order by created_at desc limit 100
         `,
         [scope.spaces, scope.vaultIds],
       );
-      return { sources: result.rows };
+      return { sources: sanitizeSourceRows(result.rows) };
     },
   );
 
@@ -544,27 +728,39 @@ export function registerKnowledgeRoutes(
         "source:read",
         true,
       );
-      if (!scope.spaces.length) {
+      if (!scope.vaultIds.length) {
         return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
       }
       const source = await db.pool.query(
-        "select * from sources where id=$1 and space_id=any($2::uuid[]) and vault_id=any($3::uuid[])",
+        `
+        select id,space_id,vault_id,title,media_type,sha256,byte_size,status,
+               metadata,created_at
+          from sources
+         where id=$1 and space_id=any($2::uuid[]) and vault_id=any($3::uuid[])
+        `,
         [request.params.id, scope.spaces, scope.vaultIds],
       );
       if (!source.rowCount)
         return reply.code(404).send({ code: "SOURCE_NOT_FOUND" });
       const artifacts = await db.pool.query(
-        "select id,kind,source_hash,extractor,extractor_version,quality,metadata,created_at from source_artifacts where source_id=$1",
-        [request.params.id],
+        "select a.id,a.kind,a.source_hash,a.extractor,a.extractor_version,a.quality,a.metadata,a.created_at from source_artifacts a join sources s on s.id=a.source_id and s.space_id=$2 and s.vault_id=$3 where a.source_id=$1",
+        [request.params.id, source.rows[0].space_id, source.rows[0].vault_id],
       );
       const evidence = await db.pool.query(
-        "select id,locator,content_hash,excerpt,review_status,created_at from evidence where source_id=$1",
-        [request.params.id],
+        "select e.id,e.locator,e.content_hash,e.excerpt,e.review_status,e.created_at from evidence e join sources s on s.id=e.source_id and s.space_id=$2 and s.vault_id=$3 where e.source_id=$1 and e.space_id=$2 and e.vault_id=$3",
+        [request.params.id, source.rows[0].space_id, source.rows[0].vault_id],
       );
+      const sourceRow = sanitizeRawSourceFields(source.rows[0]) as Record<
+        string,
+        unknown
+      >;
       return {
-        ...source.rows[0],
-        artifacts: artifacts.rows,
-        evidence: evidence.rows,
+        ...sourceRow,
+        artifacts: sanitizeSourceRows(artifacts.rows),
+        evidence: evidence.rows.map((row) => ({
+          ...(sanitizeRawSourceFields(row) as Record<string, unknown>),
+          locator: sanitizeLocatorForResponse(row.locator),
+        })),
       };
     },
   );

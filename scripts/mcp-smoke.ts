@@ -58,6 +58,7 @@ try {
     "akp_propose_knowledge_change",
     "akp_validate_draft",
     "akp_submit_review",
+    "akp_revise_review",
     "akp_approve_review",
     "akp_reject_review",
     "akp_run_eval",

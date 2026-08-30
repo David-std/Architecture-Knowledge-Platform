@@ -1,6 +1,7 @@
 param(
   [string]$OutputDirectory = "backups/latest",
   [string]$PostgresContainer = "",
+  [string]$PostgresDatabase = "akp",
   [string]$MinioContainer = "",
   [string]$ManagedRepository = ""
 )
@@ -46,6 +47,9 @@ $MinioContainer = if ($MinioContainer) { $MinioContainer } else { Resolve-Compos
 if (-not $PostgresContainer -or -not $MinioContainer) {
   throw "PostgreSQL and MinIO Compose services must be running"
 }
+if ($PostgresDatabase -notmatch '^[A-Za-z_][A-Za-z0-9_]{0,62}$') {
+  throw "PostgreSQL database name must be a simple identifier."
+}
 $target = Resolve-InputPath $OutputDirectory
 if (Test-Path -LiteralPath $target) {
   $existing = Get-ChildItem -LiteralPath $target -Force | Select-Object -First 1
@@ -79,7 +83,7 @@ if ($configuredManagedRepository) {
 }
 
 $migrationRows = @(Invoke-ExternalChecked "read applied migration inventory" {
-  docker exec $PostgresContainer psql -U akp -d akp -At -F '|' -v ON_ERROR_STOP=1 -c "select name || '|' || coalesce(checksum,'') from schema_migrations order by name;"
+  docker exec $PostgresContainer psql -U akp -d $PostgresDatabase -At -F '|' -v ON_ERROR_STOP=1 -c "select name || '|' || coalesce(checksum,'') from schema_migrations order by name;"
 })
 $migrations = @(
   $migrationRows |
@@ -98,15 +102,29 @@ if ($migrations.Count -lt 1) {
 }
 $artifactNames = @("postgres.dump", "minio-data.tar", "configuration-metadata.json")
 
-docker exec $PostgresContainer pg_dump -U akp -d akp -Fc -f /tmp/akp-backup.dump
+docker exec $PostgresContainer pg_dump -U akp -d $PostgresDatabase -Fc -f /tmp/akp-backup.dump
 if ($LASTEXITCODE -ne 0) { throw "pg_dump failed" }
 docker cp "${PostgresContainer}:/tmp/akp-backup.dump" (Join-Path $target "postgres.dump")
 if ($LASTEXITCODE -ne 0) { throw "docker cp for PostgreSQL backup failed" }
 docker exec $PostgresContainer rm -f /tmp/akp-backup.dump
 
 $minioData = Join-Path $target "minio-data.tar"
-$minioVolume = docker inspect $MinioContainer --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Name}}{{end}}{{end}}'
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($minioVolume)) {
+$inspectJson = @(docker inspect $MinioContainer 2>&1)
+if ($LASTEXITCODE -ne 0) {
+  $detail = ($inspectJson | Out-String).Trim()
+  throw "Could not inspect MinIO container.$(if ($detail) { " Detail: $detail" })"
+}
+try {
+  $inspect = $inspectJson | ConvertFrom-Json
+  $minioVolume = @(
+    $inspect[0].Mounts |
+      Where-Object { $_.Destination -eq "/data" -and $_.Type -eq "volume" } |
+      Select-Object -ExpandProperty Name
+  ) | Select-Object -First 1
+} catch {
+  throw "Could not parse MinIO container mounts: $($_.Exception.Message)"
+}
+if ([string]::IsNullOrWhiteSpace($minioVolume)) {
   throw "Could not resolve MinIO data volume"
 }
 $helper = "akp-backup-$([guid]::NewGuid().ToString('N'))"

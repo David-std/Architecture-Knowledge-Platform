@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { randomUUID } from "node:crypto";
-import { unlinkSync, writeFileSync } from "node:fs";
+import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { mkdir } from "node:fs/promises";
@@ -12,6 +12,7 @@ import {
   inspectVault,
   latestImportStatus,
   renderImportReport,
+  type VaultImportProfile,
 } from "@akp/vault-importer";
 import {
   compareEvaluationRuns,
@@ -77,6 +78,16 @@ function writeReport(reportPath: string, contents: string): boolean {
     return false;
   }
   return true;
+}
+
+function readImportProfile(profilePath: string): VaultImportProfile {
+  const parsed: unknown = JSON.parse(
+    readFileSync(path.resolve(profilePath), "utf8"),
+  );
+  if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
+    throw new Error("Import profile must be a JSON object.");
+  }
+  return parsed as VaultImportProfile;
 }
 
 async function withDatabase<T>(
@@ -320,6 +331,10 @@ vault
   .option("--vault-key <key>", "Stable VaultRegistry key")
   .option("--eval-pack <name>", "Evaluation pack", "generic")
   .option(
+    "--import-profile <path>",
+    "Optional JSON profile containing vault-specific curation conventions",
+  )
+  .option(
     "--read-only",
     "Acknowledge that the source vault must remain read-only",
   )
@@ -332,6 +347,7 @@ vault
       spaceId: string;
       vaultKey?: string;
       evalPack: string;
+      importProfile?: string;
     }) => {
       if (!options.readOnly) {
         throw new Error(
@@ -347,6 +363,9 @@ vault
           reportPath,
           ...(options.vaultKey ? { vaultKey: options.vaultKey } : {}),
           evalPack: options.evalPack,
+          ...(options.importProfile
+            ? { profile: readImportProfile(options.importProfile) }
+            : {}),
         }),
       );
       const reportPersisted = writeReport(

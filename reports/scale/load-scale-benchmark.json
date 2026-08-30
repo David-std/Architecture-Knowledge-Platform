@@ -1,0 +1,999 @@
+{
+  "schemaVersion": "akp.scale-benchmark.v1",
+  "generatedAt": "2026-08-29T05:11:54.093Z",
+  "status": "PASSED",
+  "evidenceLevel": "SYNTHETIC_ISOLATED_POSTGRES",
+  "coverageStatus": "PARTIAL",
+  "execution": {
+    "nodeVersion": "v25.2.0",
+    "platform": "win32",
+    "postgresVersion": "16.14 (Debian 16.14-1.pgdg12+1)",
+    "databaseName": "akp",
+    "seed": "akp-scale-v1",
+    "targets": [
+      1000,
+      10000,
+      50000,
+      100000
+    ],
+    "iterations": 3,
+    "queryLatencyClock": "Node performance.now around client.query; includes client/network/PostgreSQL time",
+    "fixtureGeneration": "PostgreSQL generate_series with deterministic seed/content; no real vault data"
+  },
+  "acceptance": {
+    "targetRowsExact": true,
+    "relationRowsExact": true,
+    "fixtureScoped": true,
+    "cleanupSucceeded": true
+  },
+  "results": [
+    {
+      "targetDocuments": 1000,
+      "appendedDocuments": 1000,
+      "appendedRelations": 999,
+      "appendedEmbeddings": 1000,
+      "rows": {
+        "documents": 1000,
+        "units": 1000,
+        "relations": 999,
+        "embeddings": 1000
+      },
+      "loadLatencyMs": {
+        "documentsInsert": 72.35,
+        "unitsInsert": 411.403,
+        "embeddingsInsert": 439.056,
+        "relationsInsert": 235.087,
+        "commit": 3.322,
+        "analyze": 226.887,
+        "total": 1389.524
+      },
+      "queryLatency": [
+        {
+          "name": "point-document-by-vault-path",
+          "description": "Indexed point lookup by vault and path.",
+          "stats": {
+            "samples": 3,
+            "minMs": 0.779,
+            "p50Ms": 0.829,
+            "p95Ms": 0.834,
+            "maxMs": 0.834,
+            "meanMs": 0.814
+          },
+          "observedRowCounts": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "name": "lexical-document-search",
+          "description": "GIN-backed full-text search over the synthetic vault.",
+          "stats": {
+            "samples": 3,
+            "minMs": 1.141,
+            "p50Ms": 1.176,
+            "p95Ms": 1.523,
+            "maxMs": 1.523,
+            "meanMs": 1.28
+          },
+          "observedRowCounts": [
+            20,
+            20,
+            20
+          ]
+        },
+        {
+          "name": "graph-neighbor-lookup",
+          "description": "Indexed outgoing relation lookup for a document in the synthetic chain.",
+          "stats": {
+            "samples": 3,
+            "minMs": 0.674,
+            "p50Ms": 1.06,
+            "p95Ms": 1.098,
+            "maxMs": 1.098,
+            "meanMs": 0.944
+          },
+          "observedRowCounts": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "name": "unit-by-document-lookup",
+          "description": "Structural unit lookup joined through an indexed document identity.",
+          "stats": {
+            "samples": 3,
+            "minMs": 0.972,
+            "p50Ms": 2.377,
+            "p95Ms": 2.791,
+            "maxMs": 2.791,
+            "meanMs": 2.047
+          },
+          "observedRowCounts": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "name": "synthetic-vector-unit-search",
+          "description": "pgvector nearest-neighbor query over fixed 64-dimensional synthetic vectors; not semantic quality evidence.",
+          "stats": {
+            "samples": 3,
+            "minMs": 2.388,
+            "p50Ms": 4.024,
+            "p95Ms": 4.84,
+            "maxMs": 4.84,
+            "meanMs": 3.751
+          },
+          "observedRowCounts": [
+            20,
+            20,
+            20
+          ]
+        },
+        {
+          "name": "vault-document-count",
+          "description": "Count over the vault scope to expose aggregate growth.",
+          "stats": {
+            "samples": 3,
+            "minMs": 0.862,
+            "p50Ms": 0.924,
+            "p95Ms": 0.936,
+            "maxMs": 0.936,
+            "meanMs": 0.907
+          },
+          "observedRowCounts": [
+            1000,
+            1000,
+            1000
+          ]
+        }
+      ],
+      "memory": {
+        "gcAvailable": false,
+        "beforeLoad": {
+          "rssBytes": 76177408,
+          "heapUsedBytes": 12480256,
+          "heapTotalBytes": 15077376,
+          "externalBytes": 4830570
+        },
+        "afterLoad": {
+          "rssBytes": 76406784,
+          "heapUsedBytes": 12085016,
+          "heapTotalBytes": 15339520,
+          "externalBytes": 4839301
+        },
+        "afterQueries": {
+          "rssBytes": 77148160,
+          "heapUsedBytes": 12581488,
+          "heapTotalBytes": 15863808,
+          "externalBytes": 4893711
+        },
+        "afterContextPacket": {
+          "rssBytes": 84729856,
+          "heapUsedBytes": 12887528,
+          "heapTotalBytes": 21000192,
+          "externalBytes": 4763708
+        },
+        "loadRssDeltaBytes": 229376,
+        "queryRssDeltaBytes": 741376,
+        "loadHeapDeltaBytes": -395240,
+        "queryHeapDeltaBytes": 496472,
+        "contextPacketRssDeltaBytes": 7569408,
+        "contextPacketHeapDeltaBytes": 300216
+      },
+      "storage": {
+        "beforeLoad": {
+          "databaseBytes": 301251607,
+          "documentsTableBytes": 76693504,
+          "unitsTableBytes": 133136384,
+          "relationsTableBytes": 37363712,
+          "embeddingsTableBytes": 41263104
+        },
+        "afterLoad": {
+          "databaseBytes": 303053847,
+          "documentsTableBytes": 77717504,
+          "unitsTableBytes": 133136384,
+          "relationsTableBytes": 37593088,
+          "embeddingsTableBytes": 41803776
+        },
+        "deltaFromBaseline": {
+          "databaseBytes": 1802240,
+          "documentsTableBytes": 1024000,
+          "unitsTableBytes": 0,
+          "relationsTableBytes": 229376,
+          "embeddingsTableBytes": 540672
+        },
+        "deltaFromPreviousTarget": {
+          "databaseBytes": 1802240,
+          "documentsTableBytes": 1024000,
+          "unitsTableBytes": 0,
+          "relationsTableBytes": 229376,
+          "embeddingsTableBytes": 540672
+        }
+      },
+      "contextPacket": {
+        "candidateCount": 1000,
+        "candidateGenerationMs": 3.833,
+        "latency": {
+          "samples": 3,
+          "minMs": 0.991,
+          "p50Ms": 1.604,
+          "p95Ms": 1.712,
+          "maxMs": 1.712,
+          "meanMs": 1.436
+        },
+        "selectedSections": 636,
+        "omittedCandidates": 364,
+        "usedTokens": 11985,
+        "status": "SUPPORTED",
+        "memoryBefore": {
+          "rssBytes": 77160448,
+          "heapUsedBytes": 12587312,
+          "heapTotalBytes": 15863808,
+          "externalBytes": 4893711
+        },
+        "memoryAfter": {
+          "rssBytes": 84729856,
+          "heapUsedBytes": 12887528,
+          "heapTotalBytes": 21000192,
+          "externalBytes": 4763708
+        },
+        "rssDeltaBytes": 7569408,
+        "heapDeltaBytes": 300216
+      }
+    },
+    {
+      "targetDocuments": 10000,
+      "appendedDocuments": 9000,
+      "appendedRelations": 9000,
+      "appendedEmbeddings": 9000,
+      "rows": {
+        "documents": 10000,
+        "units": 10000,
+        "relations": 9999,
+        "embeddings": 10000
+      },
+      "loadLatencyMs": {
+        "documentsInsert": 563.349,
+        "unitsInsert": 446.57,
+        "embeddingsInsert": 1828.242,
+        "relationsInsert": 153.951,
+        "commit": 10.805,
+        "analyze": 372.008,
+        "total": 3375.831
+      },
+      "queryLatency": [
+        {
+          "name": "point-document-by-vault-path",
+          "description": "Indexed point lookup by vault and path.",
+          "stats": {
+            "samples": 3,
+            "minMs": 0.823,
+            "p50Ms": 0.923,
+            "p95Ms": 1.127,
+            "maxMs": 1.127,
+            "meanMs": 0.958
+          },
+          "observedRowCounts": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "name": "lexical-document-search",
+          "description": "GIN-backed full-text search over the synthetic vault.",
+          "stats": {
+            "samples": 3,
+            "minMs": 4.758,
+            "p50Ms": 4.94,
+            "p95Ms": 5.327,
+            "maxMs": 5.327,
+            "meanMs": 5.008
+          },
+          "observedRowCounts": [
+            20,
+            20,
+            20
+          ]
+        },
+        {
+          "name": "graph-neighbor-lookup",
+          "description": "Indexed outgoing relation lookup for a document in the synthetic chain.",
+          "stats": {
+            "samples": 3,
+            "minMs": 0.736,
+            "p50Ms": 1.417,
+            "p95Ms": 2.787,
+            "maxMs": 2.787,
+            "meanMs": 1.647
+          },
+          "observedRowCounts": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "name": "unit-by-document-lookup",
+          "description": "Structural unit lookup joined through an indexed document identity.",
+          "stats": {
+            "samples": 3,
+            "minMs": 1.545,
+            "p50Ms": 1.669,
+            "p95Ms": 2.135,
+            "maxMs": 2.135,
+            "meanMs": 1.783
+          },
+          "observedRowCounts": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "name": "synthetic-vector-unit-search",
+          "description": "pgvector nearest-neighbor query over fixed 64-dimensional synthetic vectors; not semantic quality evidence.",
+          "stats": {
+            "samples": 3,
+            "minMs": 12.914,
+            "p50Ms": 13.412,
+            "p95Ms": 13.68,
+            "maxMs": 13.68,
+            "meanMs": 13.335
+          },
+          "observedRowCounts": [
+            20,
+            20,
+            20
+          ]
+        },
+        {
+          "name": "vault-document-count",
+          "description": "Count over the vault scope to expose aggregate growth.",
+          "stats": {
+            "samples": 3,
+            "minMs": 2.674,
+            "p50Ms": 3.362,
+            "p95Ms": 3.4,
+            "maxMs": 3.4,
+            "meanMs": 3.146
+          },
+          "observedRowCounts": [
+            10000,
+            10000,
+            10000
+          ]
+        }
+      ],
+      "memory": {
+        "gcAvailable": false,
+        "beforeLoad": {
+          "rssBytes": 84729856,
+          "heapUsedBytes": 12906976,
+          "heapTotalBytes": 21000192,
+          "externalBytes": 4763708
+        },
+        "afterLoad": {
+          "rssBytes": 82886656,
+          "heapUsedBytes": 12970984,
+          "heapTotalBytes": 21000192,
+          "externalBytes": 4772400
+        },
+        "afterQueries": {
+          "rssBytes": 83259392,
+          "heapUsedBytes": 13448720,
+          "heapTotalBytes": 21000192,
+          "externalBytes": 4817958
+        },
+        "afterContextPacket": {
+          "rssBytes": 112922624,
+          "heapUsedBytes": 26633784,
+          "heapTotalBytes": 46366720,
+          "externalBytes": 4763622
+        },
+        "loadRssDeltaBytes": -1843200,
+        "queryRssDeltaBytes": 372736,
+        "loadHeapDeltaBytes": 64008,
+        "queryHeapDeltaBytes": 477736,
+        "contextPacketRssDeltaBytes": 29663232,
+        "contextPacketHeapDeltaBytes": 13184608
+      },
+      "storage": {
+        "beforeLoad": {
+          "databaseBytes": 303053847,
+          "documentsTableBytes": 77717504,
+          "unitsTableBytes": 133136384,
+          "relationsTableBytes": 37593088,
+          "embeddingsTableBytes": 41803776
+        },
+        "afterLoad": {
+          "databaseBytes": 323927063,
+          "documentsTableBytes": 86933504,
+          "unitsTableBytes": 138067968,
+          "relationsTableBytes": 39534592,
+          "embeddingsTableBytes": 46579712
+        },
+        "deltaFromBaseline": {
+          "databaseBytes": 22675456,
+          "documentsTableBytes": 10240000,
+          "unitsTableBytes": 4931584,
+          "relationsTableBytes": 2170880,
+          "embeddingsTableBytes": 5316608
+        },
+        "deltaFromPreviousTarget": {
+          "databaseBytes": 20873216,
+          "documentsTableBytes": 9216000,
+          "unitsTableBytes": 4931584,
+          "relationsTableBytes": 1941504,
+          "embeddingsTableBytes": 4775936
+        }
+      },
+      "contextPacket": {
+        "candidateCount": 10000,
+        "candidateGenerationMs": 32.879,
+        "latency": {
+          "samples": 3,
+          "minMs": 7.533,
+          "p50Ms": 8.762,
+          "p95Ms": 8.962,
+          "maxMs": 8.962,
+          "meanMs": 8.419
+        },
+        "selectedSections": 636,
+        "omittedCandidates": 9364,
+        "usedTokens": 11985,
+        "status": "SUPPORTED",
+        "memoryBefore": {
+          "rssBytes": 83259392,
+          "heapUsedBytes": 13449176,
+          "heapTotalBytes": 21000192,
+          "externalBytes": 4817958
+        },
+        "memoryAfter": {
+          "rssBytes": 112922624,
+          "heapUsedBytes": 26633784,
+          "heapTotalBytes": 46366720,
+          "externalBytes": 4763622
+        },
+        "rssDeltaBytes": 29663232,
+        "heapDeltaBytes": 13184608
+      }
+    },
+    {
+      "targetDocuments": 50000,
+      "appendedDocuments": 40000,
+      "appendedRelations": 40000,
+      "appendedEmbeddings": 40000,
+      "rows": {
+        "documents": 50000,
+        "units": 50000,
+        "relations": 49999,
+        "embeddings": 50000
+      },
+      "loadLatencyMs": {
+        "documentsInsert": 2095.161,
+        "unitsInsert": 1918.094,
+        "embeddingsInsert": 10390.774,
+        "relationsInsert": 768.482,
+        "commit": 3.258,
+        "analyze": 1175.888,
+        "total": 16352.819
+      },
+      "queryLatency": [
+        {
+          "name": "point-document-by-vault-path",
+          "description": "Indexed point lookup by vault and path.",
+          "stats": {
+            "samples": 3,
+            "minMs": 0.887,
+            "p50Ms": 0.949,
+            "p95Ms": 0.97,
+            "maxMs": 0.97,
+            "meanMs": 0.935
+          },
+          "observedRowCounts": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "name": "lexical-document-search",
+          "description": "GIN-backed full-text search over the synthetic vault.",
+          "stats": {
+            "samples": 3,
+            "minMs": 14.922,
+            "p50Ms": 16.011,
+            "p95Ms": 19.042,
+            "maxMs": 19.042,
+            "meanMs": 16.658
+          },
+          "observedRowCounts": [
+            20,
+            20,
+            20
+          ]
+        },
+        {
+          "name": "graph-neighbor-lookup",
+          "description": "Indexed outgoing relation lookup for a document in the synthetic chain.",
+          "stats": {
+            "samples": 3,
+            "minMs": 0.996,
+            "p50Ms": 1.313,
+            "p95Ms": 1.593,
+            "maxMs": 1.593,
+            "meanMs": 1.301
+          },
+          "observedRowCounts": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "name": "unit-by-document-lookup",
+          "description": "Structural unit lookup joined through an indexed document identity.",
+          "stats": {
+            "samples": 3,
+            "minMs": 0.946,
+            "p50Ms": 1.236,
+            "p95Ms": 1.342,
+            "maxMs": 1.342,
+            "meanMs": 1.175
+          },
+          "observedRowCounts": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "name": "synthetic-vector-unit-search",
+          "description": "pgvector nearest-neighbor query over fixed 64-dimensional synthetic vectors; not semantic quality evidence.",
+          "stats": {
+            "samples": 3,
+            "minMs": 54.915,
+            "p50Ms": 56.73,
+            "p95Ms": 57.086,
+            "maxMs": 57.086,
+            "meanMs": 56.244
+          },
+          "observedRowCounts": [
+            20,
+            20,
+            20
+          ]
+        },
+        {
+          "name": "vault-document-count",
+          "description": "Count over the vault scope to expose aggregate growth.",
+          "stats": {
+            "samples": 3,
+            "minMs": 11.361,
+            "p50Ms": 11.783,
+            "p95Ms": 12.713,
+            "maxMs": 12.713,
+            "meanMs": 11.952
+          },
+          "observedRowCounts": [
+            50000,
+            50000,
+            50000
+          ]
+        }
+      ],
+      "memory": {
+        "gcAvailable": false,
+        "beforeLoad": {
+          "rssBytes": 112922624,
+          "heapUsedBytes": 26638528,
+          "heapTotalBytes": 46366720,
+          "externalBytes": 4763622
+        },
+        "afterLoad": {
+          "rssBytes": 72400896,
+          "heapUsedBytes": 9096376,
+          "heapTotalBytes": 10358784,
+          "externalBytes": 4771856
+        },
+        "afterQueries": {
+          "rssBytes": 73113600,
+          "heapUsedBytes": 9552496,
+          "heapTotalBytes": 10620928,
+          "externalBytes": 4816616
+        },
+        "afterContextPacket": {
+          "rssBytes": 293928960,
+          "heapUsedBytes": 182458848,
+          "heapTotalBytes": 216948736,
+          "externalBytes": 4763622
+        },
+        "loadRssDeltaBytes": -40521728,
+        "queryRssDeltaBytes": 712704,
+        "loadHeapDeltaBytes": -17542152,
+        "queryHeapDeltaBytes": 456120,
+        "contextPacketRssDeltaBytes": 220815360,
+        "contextPacketHeapDeltaBytes": 172905728
+      },
+      "storage": {
+        "beforeLoad": {
+          "databaseBytes": 323927063,
+          "documentsTableBytes": 86933504,
+          "unitsTableBytes": 138067968,
+          "relationsTableBytes": 39534592,
+          "embeddingsTableBytes": 46579712
+        },
+        "afterLoad": {
+          "databaseBytes": 426114071,
+          "documentsTableBytes": 133750784,
+          "unitsTableBytes": 163274752,
+          "relationsTableBytes": 48152576,
+          "embeddingsTableBytes": 68124672
+        },
+        "deltaFromBaseline": {
+          "databaseBytes": 124862464,
+          "documentsTableBytes": 57057280,
+          "unitsTableBytes": 30138368,
+          "relationsTableBytes": 10788864,
+          "embeddingsTableBytes": 26861568
+        },
+        "deltaFromPreviousTarget": {
+          "databaseBytes": 102187008,
+          "documentsTableBytes": 46817280,
+          "unitsTableBytes": 25206784,
+          "relationsTableBytes": 8617984,
+          "embeddingsTableBytes": 21544960
+        }
+      },
+      "contextPacket": {
+        "candidateCount": 50000,
+        "candidateGenerationMs": 157.201,
+        "latency": {
+          "samples": 3,
+          "minMs": 35.564,
+          "p50Ms": 36.104,
+          "p95Ms": 38.744,
+          "maxMs": 38.744,
+          "meanMs": 36.804
+        },
+        "selectedSections": 636,
+        "omittedCandidates": 49364,
+        "usedTokens": 11985,
+        "status": "SUPPORTED",
+        "memoryBefore": {
+          "rssBytes": 73113600,
+          "heapUsedBytes": 9553120,
+          "heapTotalBytes": 10620928,
+          "externalBytes": 4816616
+        },
+        "memoryAfter": {
+          "rssBytes": 293928960,
+          "heapUsedBytes": 182458848,
+          "heapTotalBytes": 216948736,
+          "externalBytes": 4763622
+        },
+        "rssDeltaBytes": 220815360,
+        "heapDeltaBytes": 172905728
+      }
+    },
+    {
+      "targetDocuments": 100000,
+      "appendedDocuments": 50000,
+      "appendedRelations": 50000,
+      "appendedEmbeddings": 50000,
+      "rows": {
+        "documents": 100000,
+        "units": 100000,
+        "relations": 99999,
+        "embeddings": 100000
+      },
+      "loadLatencyMs": {
+        "documentsInsert": 2413.081,
+        "unitsInsert": 2024.266,
+        "embeddingsInsert": 13578.041,
+        "relationsInsert": 1089.832,
+        "commit": 14.459,
+        "analyze": 2305.501,
+        "total": 21426.912
+      },
+      "queryLatency": [
+        {
+          "name": "point-document-by-vault-path",
+          "description": "Indexed point lookup by vault and path.",
+          "stats": {
+            "samples": 3,
+            "minMs": 0.96,
+            "p50Ms": 1.047,
+            "p95Ms": 1.693,
+            "maxMs": 1.693,
+            "meanMs": 1.233
+          },
+          "observedRowCounts": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "name": "lexical-document-search",
+          "description": "GIN-backed full-text search over the synthetic vault.",
+          "stats": {
+            "samples": 3,
+            "minMs": 21.674,
+            "p50Ms": 22.081,
+            "p95Ms": 24.293,
+            "maxMs": 24.293,
+            "meanMs": 22.683
+          },
+          "observedRowCounts": [
+            20,
+            20,
+            20
+          ]
+        },
+        {
+          "name": "graph-neighbor-lookup",
+          "description": "Indexed outgoing relation lookup for a document in the synthetic chain.",
+          "stats": {
+            "samples": 3,
+            "minMs": 0.723,
+            "p50Ms": 0.928,
+            "p95Ms": 1.126,
+            "maxMs": 1.126,
+            "meanMs": 0.926
+          },
+          "observedRowCounts": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "name": "unit-by-document-lookup",
+          "description": "Structural unit lookup joined through an indexed document identity.",
+          "stats": {
+            "samples": 3,
+            "minMs": 1.071,
+            "p50Ms": 1.105,
+            "p95Ms": 1.262,
+            "maxMs": 1.262,
+            "meanMs": 1.146
+          },
+          "observedRowCounts": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "name": "synthetic-vector-unit-search",
+          "description": "pgvector nearest-neighbor query over fixed 64-dimensional synthetic vectors; not semantic quality evidence.",
+          "stats": {
+            "samples": 3,
+            "minMs": 2.812,
+            "p50Ms": 4.149,
+            "p95Ms": 12.067,
+            "maxMs": 12.067,
+            "meanMs": 6.343
+          },
+          "observedRowCounts": [
+            20,
+            20,
+            20
+          ]
+        },
+        {
+          "name": "vault-document-count",
+          "description": "Count over the vault scope to expose aggregate growth.",
+          "stats": {
+            "samples": 3,
+            "minMs": 21.999,
+            "p50Ms": 22.835,
+            "p95Ms": 23.822,
+            "maxMs": 23.822,
+            "meanMs": 22.885
+          },
+          "observedRowCounts": [
+            100000,
+            100000,
+            100000
+          ]
+        }
+      ],
+      "memory": {
+        "gcAvailable": false,
+        "beforeLoad": {
+          "rssBytes": 293928960,
+          "heapUsedBytes": 182462608,
+          "heapTotalBytes": 216948736,
+          "externalBytes": 4763622
+        },
+        "afterLoad": {
+          "rssBytes": 75485184,
+          "heapUsedBytes": 7991672,
+          "heapTotalBytes": 10358784,
+          "externalBytes": 4763664
+        },
+        "afterQueries": {
+          "rssBytes": 75538432,
+          "heapUsedBytes": 8457976,
+          "heapTotalBytes": 10620928,
+          "externalBytes": 4816627
+        },
+        "afterContextPacket": {
+          "rssBytes": 377597952,
+          "heapUsedBytes": 164573080,
+          "heapTotalBytes": 291827712,
+          "externalBytes": 4758705
+        },
+        "loadRssDeltaBytes": -218443776,
+        "queryRssDeltaBytes": 53248,
+        "loadHeapDeltaBytes": -174470936,
+        "queryHeapDeltaBytes": 466304,
+        "contextPacketRssDeltaBytes": 302059520,
+        "contextPacketHeapDeltaBytes": 156114616
+      },
+      "storage": {
+        "beforeLoad": {
+          "databaseBytes": 426114071,
+          "documentsTableBytes": 133750784,
+          "unitsTableBytes": 163274752,
+          "relationsTableBytes": 48152576,
+          "embeddingsTableBytes": 68124672
+        },
+        "afterLoad": {
+          "databaseBytes": 553409559,
+          "documentsTableBytes": 192487424,
+          "unitsTableBytes": 196714496,
+          "relationsTableBytes": 58941440,
+          "embeddingsTableBytes": 92422144
+        },
+        "deltaFromBaseline": {
+          "databaseBytes": 252157952,
+          "documentsTableBytes": 115793920,
+          "unitsTableBytes": 63578112,
+          "relationsTableBytes": 21577728,
+          "embeddingsTableBytes": 51159040
+        },
+        "deltaFromPreviousTarget": {
+          "databaseBytes": 127295488,
+          "documentsTableBytes": 58736640,
+          "unitsTableBytes": 33439744,
+          "relationsTableBytes": 10788864,
+          "embeddingsTableBytes": 24297472
+        }
+      },
+      "contextPacket": {
+        "candidateCount": 100000,
+        "candidateGenerationMs": 274.937,
+        "latency": {
+          "samples": 3,
+          "minMs": 70.65,
+          "p50Ms": 76.602,
+          "p95Ms": 81.776,
+          "maxMs": 81.776,
+          "meanMs": 76.343
+        },
+        "selectedSections": 636,
+        "omittedCandidates": 99364,
+        "usedTokens": 11985,
+        "status": "SUPPORTED",
+        "memoryBefore": {
+          "rssBytes": 75538432,
+          "heapUsedBytes": 8458464,
+          "heapTotalBytes": 10620928,
+          "externalBytes": 4816627
+        },
+        "memoryAfter": {
+          "rssBytes": 377597952,
+          "heapUsedBytes": 164573080,
+          "heapTotalBytes": 291827712,
+          "externalBytes": 4758705
+        },
+        "rssDeltaBytes": 302059520,
+        "heapDeltaBytes": 156114616
+      }
+    }
+  ],
+  "growth": {
+    "firstTarget": 1000,
+    "lastTarget": 100000,
+    "documentGrowthFactor": 100,
+    "storageGrowthBytes": 252157952,
+    "queryP95ByTarget": {
+      "1000": {
+        "point-document-by-vault-path": 0.834,
+        "lexical-document-search": 1.523,
+        "graph-neighbor-lookup": 1.098,
+        "unit-by-document-lookup": 2.791,
+        "synthetic-vector-unit-search": 4.84,
+        "vault-document-count": 0.936
+      },
+      "10000": {
+        "point-document-by-vault-path": 1.127,
+        "lexical-document-search": 5.327,
+        "graph-neighbor-lookup": 2.787,
+        "unit-by-document-lookup": 2.135,
+        "synthetic-vector-unit-search": 13.68,
+        "vault-document-count": 3.4
+      },
+      "50000": {
+        "point-document-by-vault-path": 0.97,
+        "lexical-document-search": 19.042,
+        "graph-neighbor-lookup": 1.593,
+        "unit-by-document-lookup": 1.342,
+        "synthetic-vector-unit-search": 57.086,
+        "vault-document-count": 12.713
+      },
+      "100000": {
+        "point-document-by-vault-path": 1.693,
+        "lexical-document-search": 24.293,
+        "graph-neighbor-lookup": 1.126,
+        "unit-by-document-lookup": 1.262,
+        "synthetic-vector-unit-search": 12.067,
+        "vault-document-count": 23.822
+      }
+    }
+  },
+  "measured": [
+    "PostgreSQL synthetic document/unit/relation materialisation latency",
+    "Client-observed point, lexical, synthetic pgvector, graph, unit and count query latency",
+    "Deterministic context-packet assembly latency for candidate sets sized to each target",
+    "Node process RSS and heap deltas around load and query phases",
+    "PostgreSQL database and table relation storage growth",
+    "Exact row-count and fixture cleanup acceptance checks"
+  ],
+  "notMeasured": [
+    {
+      "dimension": "real vault corpus",
+      "reason": "The fixture is generated and isolated; no private or external vault was read."
+    },
+    {
+      "dimension": "semantic vector quality or real embedding generation",
+      "reason": "The vector path uses deterministic fixed 64-dimensional fixture values; no provider, model quality or relevance ground truth was evaluated."
+    },
+    {
+      "dimension": "HTTP/API and worker throughput",
+      "reason": "The harness calls PostgreSQL and the packet builder directly; it does not claim service-level throughput or concurrency results."
+    },
+    {
+      "dimension": "context packet retrieval/persistence path",
+      "reason": "Only the deterministic in-process packet builder is measured; candidate retrieval, API serialization and context_packets persistence are not measured."
+    },
+    {
+      "dimension": "incremental indexing and event delivery",
+      "reason": "No outbox event, worker, or incremental-index run was created; rebuild/reuse behavior remains unmeasured."
+    },
+    {
+      "dimension": "PostgreSQL server RAM",
+      "reason": "Only the benchmark Node process memory is observable without a server-side memory extension or host telemetry."
+    },
+    {
+      "dimension": "multi-tenant concurrent isolation under load",
+      "reason": "The fixture uses one isolated vault and sequential operations; concurrency and cross-tenant contention were not exercised."
+    }
+  ],
+  "limitations": [
+    "Storage snapshots use whole-database and whole-table relation sizes, so they include pre-existing isolated-database overhead and index pages.",
+    "The cumulative targets append rows to one fixture; they are not independent cold-start trials and cache state may affect latency.",
+    "Vector timings exercise pgvector operators/indexes over deterministic coordinates, not embedding-model quality or semantic recall.",
+    "Context-packet timings exercise the in-process deterministic builder over synthetic candidates, not retrieval, persistence or API latency.",
+    "The reported memory is Node RSS/heap, not PostgreSQL backend or container memory.",
+    "A passing result is evidence for this synthetic PostgreSQL path only; it is not a production capacity SLO or a vector-quality claim."
+  ],
+  "cleanup": {
+    "attempted": true,
+    "succeeded": true,
+    "remainingRows": {
+      "documents": 0,
+      "units": 0,
+      "relations": 0,
+      "embeddings": 0
+    }
+  }
+}

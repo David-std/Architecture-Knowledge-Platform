@@ -97,11 +97,10 @@ flowchart LR
   Policy --> Packet["Budgeted ContextPacket"]
 ```
 
-The executed four-case benchmark selected `lexical+graph`, tied in MRR with
-`exact+lexical+graph`; stable configuration order broke the tie. This is only a
-small regression-set choice. Vector remains disabled until a larger evaluation
-justifies it. Packets retain retrieval channels/reasons, corpus and index
-revisions, citations, conflicts, gaps and continuation handles.
+The 19-case synthetic and 13-case curated-fixture runners leave the production
+default unset. Vector remains disabled until a held-out production-like
+evaluation justifies it. Packets retain retrieval channels/reasons, corpus and
+index revisions, citations, conflicts, gaps and continuation handles.
 
 ## Browser authentication
 
@@ -148,5 +147,5 @@ flowchart LR
   Config["Non-secret configuration"] --> Set
   Set --> Hash["Per-file SHA-256"]
   Hash --> Isolated["Isolated restore smoke"]
-  Isolated --> Checks["555 documents + 16 migrations + Git + MinIO archive"]
+  Isolated --> Checks["18-migration manifest + Git/MinIO archive (if configured)"]
 ```

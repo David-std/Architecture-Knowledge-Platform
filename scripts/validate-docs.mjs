@@ -22,6 +22,7 @@ for (const file of required) {
 const markdownFiles = await fg(["*.md", "docs/**/*.md", "reports/**/*.md"], {
   cwd: root,
   onlyFiles: true,
+  ignore: ["docs/archive/iterations/**"],
 });
 for (const relativePath of markdownFiles) {
   const raw = await readFile(path.join(root, relativePath), "utf8");

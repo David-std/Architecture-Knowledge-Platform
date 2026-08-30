@@ -24,7 +24,7 @@ export default async function JobsPage() {
               <td>
                 <Link href={`/jobs/${job.id}`}>{String(job.id)}</Link>
               </td>
-              <td>{String(job.source_uri)}</td>
+              <td>Ruta local omitida por seguridad</td>
               <td>{String(job.state)}</td>
               <td>{String(job.attempts)}</td>
             </tr>

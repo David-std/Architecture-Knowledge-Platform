@@ -95,13 +95,28 @@ function normalizePath(
   value: string | null | undefined,
 ): string | null | undefined {
   if (value === null || value === undefined) return null;
-  const normalized = value.replaceAll("\\", "/").replace(/\/+$/, "");
+  const candidate = value.replaceAll("\\", "/");
+  if (
+    candidate.startsWith("/") ||
+    /^[A-Za-z]:/.test(candidate) ||
+    candidate.includes("\u0000")
+  ) {
+    return undefined;
+  }
+  const normalized = candidate.replace(/\/+$/, "");
   if (
     !normalized ||
-    normalized.startsWith("/") ||
+    normalized.includes("//") ||
     normalized
       .split("/")
-      .some((segment) => !segment || segment === "." || segment === "..")
+      .some(
+        (segment) =>
+          !segment ||
+          segment === "." ||
+          segment === ".." ||
+          segment.includes(":") ||
+          /[\u0000-\u001f]/.test(segment),
+      )
   ) {
     return undefined;
   }
@@ -236,6 +251,8 @@ function idempotencyScopeFingerprint(
   authenticationKind: Actor["authenticationKind"],
   credentialId: string,
   memberships: Actor["memberships"],
+  tokenScopes: unknown,
+  vaultAuthorizationState: readonly Record<string, unknown>[],
 ): string {
   const canonicalMemberships = memberships
     .map((membership) => ({
@@ -252,6 +269,43 @@ function idempotencyScopeFingerprint(
         authenticationKind,
         credentialId,
         memberships: canonicalMemberships,
+        // A vault grant is an independent authorization boundary. Include the
+        // complete current grant set (including disabled rows) and the
+        // credential's persisted token/session scope so an idempotency replay
+        // cannot survive a vault revocation or scope narrowing.
+        tokenScopes,
+        vaultAuthorizationState: vaultAuthorizationState
+          .map((membership) => ({
+            vaultId: String(membership.vault_id ?? ""),
+            spaceId: String(membership.space_id ?? ""),
+            visibility: String(membership.vault_visibility ?? ""),
+            vaultEnabled: membership.vault_enabled !== false,
+            role:
+              membership.role === null || membership.role === undefined
+                ? null
+                : String(membership.role),
+            pathPrefix:
+              membership.path_prefix === null ||
+              membership.path_prefix === undefined
+                ? null
+                : String(membership.path_prefix),
+            permissions: Array.isArray(membership.permissions)
+              ? membership.permissions
+                  .filter(
+                    (permission): permission is string =>
+                      typeof permission === "string",
+                  )
+                  .sort()
+              : (membership.permissions ?? []),
+            membershipEnabled:
+              membership.membership_enabled === null ||
+              membership.membership_enabled === undefined
+                ? null
+                : membership.membership_enabled !== false,
+          }))
+          .sort((left, right) =>
+            JSON.stringify(left).localeCompare(JSON.stringify(right)),
+          ),
       }),
     )
     .digest("hex");
@@ -483,6 +537,26 @@ export function registerAuthentication(
     // re-intersected with current memberships on every request. This prevents
     // a narrow token from being exchanged for the user's broader web role.
     const memberships = scopeMemberships(databaseMemberships, row.token_scopes);
+    // Include every vault in the actor's effective spaces, not only explicit
+    // grants. TEAM/CENTRAL access can be inherited from a space membership,
+    // and a disabled vault or TEAM -> PRIVATE transition must invalidate a
+    // completed idempotency replay before route-specific authorization runs.
+    const vaultAuthorizationState = await db.pool.query(
+      `
+      select v.id::text vault_id, v.space_id::text, v.visibility vault_visibility,
+             v.enabled vault_enabled, vm.role, vm.path_prefix, vm.permissions,
+             vm.enabled membership_enabled
+        from vaults v
+        left join vault_memberships vm
+          on vm.vault_id=v.id and vm.user_id=$1
+       where v.space_id=any($2::uuid[])
+       order by v.id,vm.id
+      `,
+      [
+        row.id,
+        [...new Set(memberships.map((membership) => membership.spaceId))],
+      ],
+    );
     const credentialId = String(row.token_id ?? row.session_id ?? "unknown");
     const actor: Actor = {
       id: String(row.id),
@@ -497,6 +571,8 @@ export function registerAuthentication(
         authenticationKind,
         credentialId,
         memberships,
+        row.token_scopes,
+        vaultAuthorizationState.rows as Array<Record<string, unknown>>,
       ),
       ...(row.session_id ? { sessionId: String(row.session_id) } : {}),
     };
@@ -519,6 +595,7 @@ export async function audit(
   metadata: Record<string, unknown> = {},
   spaceId?: string,
 ): Promise<void> {
+  const sanitizedMetadata = sanitizeAuditMetadata(metadata);
   const actor = actorOf(request);
   const body =
     request.body && typeof request.body === "object"
@@ -565,10 +642,29 @@ export async function audit(
       action,
       resourceType,
       resourceId ?? null,
-      JSON.stringify(metadata),
+      JSON.stringify(sanitizedMetadata),
       request.id,
       candidateVaultId,
     ],
   );
   if (!inserted.rowCount) throw new Error("AUDIT_ORGANIZATION_UNRESOLVED");
+}
+
+const AUDIT_SENSITIVE_KEY =
+  /^(?:source(?:uri|_uri|path|_path)|local(?:path|_path)|absolute(?:path|_path)|repository(?:path|_path)|root(?:path|_path)|canonical(?:path|_path)|object(?:key|_key)|endpoint|host)$/i;
+const ABSOLUTE_PATH_TOKEN =
+  /(?:[A-Za-z]:[\\/]|\\\\|file:\/\/|\/(?:Users|home|tmp|var)\/)[^\s"']+/g;
+
+/** Remove host routing details before audit metadata becomes durable. */
+function sanitizeAuditMetadata(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sanitizeAuditMetadata);
+  if (typeof value === "string") {
+    return value.replaceAll(ABSOLUTE_PATH_TOKEN, "[REDACTED_PATH]");
+  }
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => !AUDIT_SENSITIVE_KEY.test(key))
+      .map(([key, entry]) => [key, sanitizeAuditMetadata(entry)]),
+  );
 }

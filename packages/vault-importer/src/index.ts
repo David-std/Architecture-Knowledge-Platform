@@ -70,23 +70,62 @@ export interface ImportResult extends VaultInspection {
   reportPath?: string;
 }
 
-const RAW_PREFIXES = ["Resources/transfer-packs/", "00-system/governance/"];
-const SOURCE_COLLECTION_PREFIX = "Resources/source-collection/";
-const TRANSFER_PACK_PREFIX = "Resources/transfer-packs/";
-const CURATED_RECOVERY_TYPES = new Set([
-  "source-collection-guide",
-  "source-collection-index",
-  "source-recovery-map",
-]);
-const ROOT_ROUTER_DOCUMENTS = new Set([
-  "README.md",
-  "AGENTS.md",
-  "PROJECT_STATE.md",
-  "RESEARCH_LOG.md",
-  "TRACEABILITY.md",
-  "VALIDATION_REPORT.md",
-  "CHANGELOG.md",
-]);
+/**
+ * A vault import profile carries local curation conventions without making
+ * them platform behaviour.  In particular, names of folders used by one
+ * knowledge vault must never decide whether a different vault's content is
+ * operational, archival or agent-facing.
+ *
+ * The default profile is deliberately empty and generic.  Consumers that
+ * need a legacy curation policy can pass a JSON-compatible profile explicitly
+ * when they import or register that vault.
+ */
+export interface VaultImportProfile {
+  rawPrefixes?: string[];
+  sourceCollectionPrefix?: string;
+  transferPackPrefix?: string;
+  curatedRecoveryTypes?: string[];
+  rootRouterDocuments?: string[];
+  layerMap?: Record<string, string>;
+  quarantineAcquisitionBacklogs?: boolean;
+}
+
+const DEFAULT_IMPORT_PROFILE: Required<VaultImportProfile> = {
+  rawPrefixes: [],
+  sourceCollectionPrefix: "",
+  transferPackPrefix: "",
+  curatedRecoveryTypes: [],
+  rootRouterDocuments: ["README.md", "AGENTS.md"],
+  layerMap: {},
+  quarantineAcquisitionBacklogs: false,
+};
+
+function normalizeProfile(
+  profile: VaultImportProfile | undefined,
+): Required<VaultImportProfile> {
+  const normalizedPrefix = (value: string): string =>
+    normalizePath(value).replace(/^\/+|\/+$/g, "");
+  return {
+    rawPrefixes: (profile?.rawPrefixes ?? DEFAULT_IMPORT_PROFILE.rawPrefixes)
+      .map(normalizedPrefix)
+      .filter(Boolean)
+      .map((prefix) => `${prefix}/`),
+    sourceCollectionPrefix: profile?.sourceCollectionPrefix
+      ? `${normalizedPrefix(profile.sourceCollectionPrefix)}/`
+      : "",
+    transferPackPrefix: profile?.transferPackPrefix
+      ? `${normalizedPrefix(profile.transferPackPrefix)}/`
+      : "",
+    curatedRecoveryTypes: profile?.curatedRecoveryTypes ?? [],
+    rootRouterDocuments:
+      profile?.rootRouterDocuments ??
+      DEFAULT_IMPORT_PROFILE.rootRouterDocuments,
+    layerMap: profile?.layerMap ?? DEFAULT_IMPORT_PROFILE.layerMap,
+    quarantineAcquisitionBacklogs:
+      profile?.quarantineAcquisitionBacklogs ??
+      DEFAULT_IMPORT_PROFILE.quarantineAcquisitionBacklogs,
+  };
+}
 
 const sha256 = (input: string | Buffer): string =>
   createHash("sha256").update(input).digest("hex");
@@ -126,56 +165,55 @@ export function parseWikiLinks(body: string): string[] {
 function isCuratedRecoveryDocument(
   relativePath: string,
   frontmatter: Record<string, unknown>,
+  profile: Required<VaultImportProfile>,
 ): boolean {
-  if (!relativePath.startsWith(SOURCE_COLLECTION_PREFIX)) return false;
+  if (
+    !profile.sourceCollectionPrefix ||
+    !relativePath.startsWith(profile.sourceCollectionPrefix)
+  )
+    return false;
   const status = String(frontmatter.status ?? "").toLowerCase();
   const type = String(frontmatter.type ?? "").toLowerCase();
   const id = String(frontmatter.id ?? "").trim();
   return (
-    status === "curated" && id.length > 0 && CURATED_RECOVERY_TYPES.has(type)
+    status === "curated" &&
+    id.length > 0 &&
+    profile.curatedRecoveryTypes.includes(type)
   );
 }
 
 function isOperational(
   relativePath: string,
   frontmatter: Record<string, unknown>,
+  profile: Required<VaultImportProfile>,
 ): boolean {
-  if (relativePath.startsWith(SOURCE_COLLECTION_PREFIX)) {
-    return isCuratedRecoveryDocument(relativePath, frontmatter);
+  if (
+    profile.sourceCollectionPrefix &&
+    relativePath.startsWith(profile.sourceCollectionPrefix)
+  ) {
+    return isCuratedRecoveryDocument(relativePath, frontmatter, profile);
   }
-  return !RAW_PREFIXES.some((prefix) => relativePath.startsWith(prefix));
+  return !profile.rawPrefixes.some((prefix) => relativePath.startsWith(prefix));
 }
 
 function deriveLayer(
   relativePath: string,
   frontmatter: Record<string, unknown>,
+  profile: Required<VaultImportProfile>,
 ): string {
   if (typeof frontmatter.layer === "string") return frontmatter.layer;
-  if (isCuratedRecoveryDocument(relativePath, frontmatter)) return "source";
+  if (isCuratedRecoveryDocument(relativePath, frontmatter, profile))
+    return "source";
   const first = relativePath.split("/")[0] ?? "root";
-  const mapping: Record<string, string> = {
-    "00-system": "system",
-    "10-sources": "source",
-    "20-claims": "claim",
-    "30-concepts": "concept",
-    "40-architecture": "architecture",
-    "50-domain-design": "domain-design",
-    "60-requirements": "requirements",
-    "70-documentation": "documentation",
-    "80-workflows": "workflow",
-    "85-implementation-profiles": "profile",
-    "90-agent-layer": "agent",
-    examples: "example",
-    Projects: "project",
-    Resources: "resource",
-  };
-  return mapping[first] ?? "root";
+  return profile.layerMap[first] ?? "content";
 }
 
 function isAcquisitionBacklog(
   raw: string,
   frontmatter: Record<string, unknown>,
+  profile: Required<VaultImportProfile>,
 ): boolean {
+  if (!profile.quarantineAcquisitionBacklogs) return false;
   const status = String(frontmatter.status ?? "").toLowerCase();
   const type = String(frontmatter.type ?? "").toLowerCase();
   if (
@@ -313,7 +351,9 @@ function componentCount(
 
 export async function inspectVault(
   vaultPath: string,
+  options: { profile?: VaultImportProfile } = {},
 ): Promise<VaultInspection> {
+  const profile = normalizeProfile(options.profile);
   const canonicalPath = await realpath(path.resolve(vaultPath));
   const rootStats = await stat(canonicalPath);
   if (!rootStats.isDirectory())
@@ -357,13 +397,15 @@ export async function inspectVault(
       parsed.data = {};
     }
     const frontmatter = parsed.data as Record<string, unknown>;
-    const transferArtifact = relativePath.startsWith(TRANSFER_PACK_PREFIX);
-    const acquisitionBacklog = isAcquisitionBacklog(raw, frontmatter);
+    const transferArtifact =
+      Boolean(profile.transferPackPrefix) &&
+      relativePath.startsWith(profile.transferPackPrefix);
+    const acquisitionBacklog = isAcquisitionBacklog(raw, frontmatter, profile);
     const operational =
-      isOperational(relativePath, frontmatter) && !acquisitionBacklog;
+      isOperational(relativePath, frontmatter, profile) && !acquisitionBacklog;
     const archival = transferArtifact || acquisitionBacklog;
     const requiresStableMetadata =
-      operational && !ROOT_ROUTER_DOCUMENTS.has(relativePath);
+      operational && !profile.rootRouterDocuments.includes(relativePath);
     const declaredId =
       typeof frontmatter.id === "string" ? frontmatter.id.trim() : "";
     const externalId =
@@ -430,7 +472,7 @@ export async function inspectVault(
       type,
       lifecycle: normalizeLifecycle(frontmatter, { archival }),
       trustTier: normalizeTrust(frontmatter, operational),
-      layer: deriveLayer(relativePath, frontmatter),
+      layer: deriveLayer(relativePath, frontmatter, profile),
       aliases: asStrings(frontmatter.aliases),
       body,
       frontmatter,
@@ -664,7 +706,7 @@ export async function inspectVault(
       curatedRecoveryDocuments: documents.filter(
         (document) =>
           document.operational &&
-          CURATED_RECOVERY_TYPES.has(document.type.toLowerCase()),
+          profile.curatedRecoveryTypes.includes(document.type.toLowerCase()),
       ).length,
       acquisitionBacklogsQuarantined: issues.filter(
         (issue) => issue.code === "ACQUISITION_BACKLOG_QUARANTINED",
@@ -672,7 +714,7 @@ export async function inspectVault(
       stableIds: documents.filter(
         (document) =>
           document.operational &&
-          !ROOT_ROUTER_DOCUMENTS.has(document.relativePath) &&
+          !profile.rootRouterDocuments.includes(document.relativePath) &&
           !document.externalId.startsWith("RAW-"),
       ).length,
       links: documents.reduce(
@@ -700,9 +742,11 @@ export async function importVaultReadOnly(
     vaultKey?: string;
     evalPack?: string;
     reportPath?: string;
+    profile?: VaultImportProfile;
   },
 ): Promise<ImportResult> {
-  const inspection = await inspectVault(vaultPath);
+  const profile = normalizeProfile(options.profile);
+  const inspection = await inspectVault(vaultPath, { profile });
   const spaceId = options.spaceId;
   const baseKey = inspection.name
     .normalize("NFD")
@@ -722,13 +766,14 @@ export async function importVaultReadOnly(
       `
       insert into vaults(
         space_id,canonical_path,name,read_only,current_revision,vault_key,
-        local_path,eval_pack
+        local_path,eval_pack,schema_profile
       )
-      values ($1,$2,$3,true,$4,$5,$2,$6::jsonb)
+      values ($1,$2,$3,true,$4,$5,$2,$6::jsonb,$7::jsonb)
       on conflict (vault_key)
       do update set name=excluded.name,read_only=true,
         current_revision=excluded.current_revision,local_path=excluded.local_path,
-        eval_pack=excluded.eval_pack
+        eval_pack=excluded.eval_pack,
+        schema_profile=coalesce(vaults.schema_profile,'{}'::jsonb) || excluded.schema_profile
       returning id
       `,
       [
@@ -743,6 +788,7 @@ export async function importVaultReadOnly(
           enabled: true,
           criticalCases: [],
         }),
+        JSON.stringify({ importProfile: profile }),
       ],
     );
     const vaultId = vaultResult.rows[0]?.id;

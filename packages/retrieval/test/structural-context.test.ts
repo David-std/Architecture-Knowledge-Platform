@@ -15,7 +15,7 @@ describe("rehydrateStructuralContext", () => {
     );
 
     expect(result).toContain(child);
-    expect(result.length).toBeLessThanOrEqual(602);
+    expect(result.length).toBeLessThanOrEqual(600);
   });
 
   it("never expands a DOCUMENT container into the packet", () => {

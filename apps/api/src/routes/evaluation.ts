@@ -155,8 +155,8 @@ export async function runEvaluation(
       hits.length === 0
         ? { rows: [] }
         : await db.pool.query(
-            "select id,external_id,path from knowledge_documents where id=any($1::uuid[])",
-            [hits.map((hit) => hit.documentId)],
+            "select id,external_id,path from knowledge_documents where id=any($1::uuid[]) and space_id=$2 and vault_id=$3",
+            [hits.map((hit) => hit.documentId), spaceId, vaultId],
           );
     const identityById = new Map(
       rows.rows.map((row) => {
@@ -524,7 +524,11 @@ export function registerEvaluationRoutes(
             ...(query.data.vaultId ? { vaultIds: [query.data.vaultId] } : {}),
             federated: !query.data.vaultId,
           });
-          authorizedVaultIds.push(...scope.vaultIds);
+          for (const vaultId of scope.vaultIds) {
+            if (scope.accessByVault[vaultId]?.pathPrefix === null) {
+              authorizedVaultIds.push(vaultId);
+            }
+          }
         } catch {
           // A user can belong to a space without being authorized for each
           // private vault in it; inaccessible vaults remain indistinguishable.
@@ -563,7 +567,7 @@ export function registerEvaluationRoutes(
       const actor = actorOf(request);
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
       try {
-        await resolveAuthorizedVaultScope(db, {
+        const scope = await resolveAuthorizedVaultScope(db, {
           userId: actor.id,
           spaceId: parsed.data.spaceId,
           permission: "eval:run",
@@ -571,6 +575,9 @@ export function registerEvaluationRoutes(
           vaultIds: [parsed.data.vaultId],
           federated: false,
         });
+        if (scope.accessByVault[parsed.data.vaultId]?.pathPrefix !== null) {
+          return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
+        }
       } catch (error) {
         return reply.code(403).send({
           code: error instanceof Error ? error.message : "VAULT_ACCESS_DENIED",
@@ -592,7 +599,7 @@ export function registerEvaluationRoutes(
         "eval.run",
         "eval_run",
         String(result.runId),
-        {},
+        { vaultId: parsed.data.vaultId },
         parsed.data.spaceId,
       );
       return result;
@@ -619,7 +626,7 @@ export function registerEvaluationRoutes(
       const actor = actorOf(request);
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
       try {
-        await resolveAuthorizedVaultScope(db, {
+        const scope = await resolveAuthorizedVaultScope(db, {
           userId: actor.id,
           spaceId: parsed.data.spaceId,
           permission: "eval:run",
@@ -627,6 +634,9 @@ export function registerEvaluationRoutes(
           vaultIds: [parsed.data.vaultId],
           federated: false,
         });
+        if (scope.accessByVault[parsed.data.vaultId]?.pathPrefix !== null) {
+          return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
+        }
       } catch (error) {
         return reply.code(403).send({
           code: error instanceof Error ? error.message : "VAULT_ACCESS_DENIED",
@@ -647,7 +657,7 @@ export function registerEvaluationRoutes(
         "eval.benchmark",
         "retrieval_benchmark",
         undefined,
-        {},
+        { vaultId: parsed.data.vaultId },
         parsed.data.spaceId,
       );
       return result;

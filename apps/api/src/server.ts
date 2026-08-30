@@ -89,14 +89,37 @@ export function buildServer() {
   });
 
   app.setErrorHandler((error, request, reply) => {
-    if ((error as { code?: string }).code === "22P02") {
+    const errorCode = (error as { code?: unknown }).code;
+    if (errorCode === "22P02") {
       return reply.code(400).send({
         code: "INVALID_IDENTIFIER",
         message: "The requested identifier has an invalid format.",
       });
     }
     request.log.error(error);
-    return reply.send(error);
+    // Fastify's default error serializer includes `message`, `stack` and
+    // arbitrary properties from filesystem/Git/SQL errors. Those values can
+    // disclose host paths, connection details or source material. Routes may
+    // still return their deliberate domain payloads; this handler is only the
+    // last-resort boundary for errors that escaped a route handler.
+    const statusCode = Number((error as { statusCode?: unknown }).statusCode);
+    const status =
+      Number.isInteger(statusCode) && statusCode >= 400 && statusCode < 500
+        ? statusCode
+        : 500;
+    const candidateCode =
+      typeof errorCode === "string" &&
+      /^[A-Z][A-Z0-9_:-]{1,80}$/.test(errorCode)
+        ? errorCode
+        : null;
+    const code =
+      status < 500 && candidateCode ? candidateCode : "INTERNAL_ERROR";
+    return reply.code(status).send({
+      code,
+      ...(status < 500
+        ? { message: "The request could not be completed." }
+        : { message: "The request could not be completed safely." }),
+    });
   });
 
   void app.register(cors, {

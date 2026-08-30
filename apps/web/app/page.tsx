@@ -1,4 +1,5 @@
 import { akp } from "../lib/api";
+import { unstable_rethrow } from "next/navigation";
 
 interface Status {
   status: string;
@@ -19,6 +20,7 @@ export default async function Home() {
   try {
     status = await akp<Status>("/v1/status");
   } catch (caught) {
+    unstable_rethrow(caught);
     error = String(caught);
   }
   return (

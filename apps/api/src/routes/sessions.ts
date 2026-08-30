@@ -30,7 +30,13 @@ export function registerSessionRoutes(
             permission: "knowledge:read",
             federated: true,
           });
-          vaultIds.push(...scope.vaultIds);
+          for (const vaultId of scope.vaultIds) {
+            // Sessions are pathless context containers. A prefix grant cannot
+            // safely authorize the whole session record.
+            if (scope.accessByVault[vaultId]?.pathPrefix === null) {
+              vaultIds.push(vaultId);
+            }
+          }
         } catch {
           // No visible vault in this otherwise authorized space.
         }
@@ -78,7 +84,7 @@ export function registerSessionRoutes(
       }
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
       try {
-        await resolveAuthorizedVaultScope(db, {
+        const scope = await resolveAuthorizedVaultScope(db, {
           userId: actor.id,
           spaceId,
           permission: "knowledge:read",
@@ -86,10 +92,23 @@ export function registerSessionRoutes(
           vaultIds: [vaultId],
           federated: false,
         });
+        if (scope.accessByVault[vaultId]?.pathPrefix !== null) {
+          return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
+        }
       } catch (error) {
         return reply.code(403).send({
           code: error instanceof Error ? error.message : "VAULT_ACCESS_DENIED",
         });
+      }
+      if (request.body.projectId) {
+        const project = await db.pool.query(
+          `select id from projects
+             where id=$1 and space_id=$2 and vault_id=$3`,
+          [request.body.projectId, spaceId, vaultId],
+        );
+        if (!project.rowCount) {
+          return reply.code(404).send({ code: "PROJECT_NOT_FOUND" });
+        }
       }
       const result = await db.pool.query(
         `
@@ -112,6 +131,8 @@ export function registerSessionRoutes(
         "agent_session.create",
         "agent_session",
         String(result.rows[0]?.id),
+        { vaultId },
+        spaceId,
       );
       return reply.code(201).send(result.rows[0]);
     },

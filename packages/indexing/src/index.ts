@@ -86,6 +86,60 @@ function assertVaultScope(vaultId: string): void {
   if (!vaultId.trim()) throw new Error("VAULT_SCOPE_REQUIRED");
 }
 
+/**
+ * Publication paths are untrusted event data.  GitKnowledgeStore normalizes
+ * paths for Git itself, so validating only after handing it a path would let
+ * `managed/../README.md` resolve to a repository-root file.  Reject traversal
+ * segments before the managed prefix is constructed and require the same
+ * Markdown-only contract used by the proposal API.
+ */
+export function normalizeManagedPath(input: string): string {
+  if (typeof input !== "string") throw new Error("UNSAFE_MANAGED_PATH");
+  const normalized = input.replaceAll("\\", "/");
+  const relative = normalized.replace(/^managed\//i, "");
+  const segments = relative.split("/");
+  if (
+    !relative ||
+    relative.startsWith("/") ||
+    /^[A-Za-z]:/.test(relative) ||
+    relative.includes("\0") ||
+    segments.some(
+      (segment) => !segment || segment === "." || segment === "..",
+    ) ||
+    !relative.toLowerCase().endsWith(".md")
+  ) {
+    throw new Error("UNSAFE_MANAGED_PATH");
+  }
+  return `managed/${relative}`;
+}
+
+/**
+ * Managed repositories created by the proposal routes historically stored
+ * portable proposal paths at repository root, while imported vaults and
+ * newer callers use the explicit `managed/` directory. Keep the database
+ * projection canonical (`managed/...`) but read either physical layout so an
+ * approved revision remains indexable during that migration.
+ */
+async function readManagedFile(
+  store: GitKnowledgeStore,
+  revision: string,
+  managedPath: string,
+): Promise<string | null> {
+  try {
+    return await store.showFile(revision, managedPath);
+  } catch (error) {
+    if (!(error instanceof GitKnowledgeFileNotFoundError)) throw error;
+    const rootPath = managedPath.slice("managed/".length);
+    try {
+      return await store.showFile(revision, rootPath);
+    } catch (fallbackError) {
+      if (!(fallbackError instanceof GitKnowledgeFileNotFoundError))
+        throw fallbackError;
+      return null;
+    }
+  }
+}
+
 function stableManagedId(relativePath: string): string {
   return `GEN-${createHash("sha256")
     .update(relativePath)
@@ -167,15 +221,9 @@ async function synchronizeManagedPathsCore(
   try {
     await client.query("begin");
     for (const change of options.changes) {
-      const relativePath = change.path.replaceAll("\\", "/");
-      const managedPath = relativePath.startsWith("managed/")
-        ? relativePath
-        : `managed/${relativePath}`;
-      let raw: string;
-      try {
-        raw = await store.showFile(options.revision, managedPath);
-      } catch (error) {
-        if (!(error instanceof GitKnowledgeFileNotFoundError)) throw error;
+      const managedPath = normalizeManagedPath(change.path);
+      const raw = await readManagedFile(store, options.revision, managedPath);
+      if (raw === null) {
         const tombstoned = await client.query<{ id: string }>(
           `
         update knowledge_documents

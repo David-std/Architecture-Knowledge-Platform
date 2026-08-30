@@ -20,13 +20,32 @@ export interface QueryPlan {
   diversityLimitPerDocument: number;
 }
 
+// Stable identifiers are intentionally recognized by shape rather than by a
+// vault's current prefixes.  A planner must continue to work for a software
+// vault, a handbook and a neutral domain fixture without importing any of
+// their naming conventions.
 const exactPattern =
-  /(?:\b(?:ADR|SRC|CLM|RULE|WF|CTX)-[A-Z0-9-]+\b|[/\\][\w.-]+\.(?:md|ts|java|cs)|\b[A-Z][A-Za-z0-9]+(?:Service|Controller|Repository)\b)/;
+  /(?:\b[A-Z][A-Z0-9]{1,15}(?:[-_][A-Z0-9]+)+\b|[/\\][\w.-]+\.(?:md|ts|tsx|java|cs|py)|\b[A-Z][A-Za-z0-9]+(?:Service|Controller|Repository)\b)/;
+
+const QUERY_INTENTS: ReadonlySet<QueryIntent> = new Set([
+  "EXACT_LOOKUP",
+  "CONCEPTUAL",
+  "COMPARISON",
+  "WORKFLOW_EXECUTION",
+  "SOURCE_VERIFICATION",
+  "PROJECT_CODE",
+  "GLOBAL_SYNTHESIS",
+  "IMPACT_ANALYSIS",
+  "NO_RETRIEVAL_REQUIRED",
+]);
 
 export function planQuery(query: string, requestedIntent?: string): QueryPlan {
   const normalized = `${requestedIntent ?? ""} ${query}`.toLowerCase();
+  const explicitIntent = requestedIntent?.trim().toUpperCase();
   let intent: QueryIntent;
-  if (/\b(impact|impacto|afecta|dependenc)/.test(normalized))
+  if (explicitIntent && QUERY_INTENTS.has(explicitIntent as QueryIntent)) {
+    intent = explicitIntent as QueryIntent;
+  } else if (/\b(impact|impacto|afecta|dependenc)/.test(normalized))
     intent = "IMPACT_ANALYSIS";
   else if (
     /\b(source|fuente|evidencia|verify|verifica|citation|cita)\b/.test(

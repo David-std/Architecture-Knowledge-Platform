@@ -24,12 +24,6 @@ describe("durable outbox integration", () => {
       const consumerName = `test-${randomUUID()}`;
       const eventId = randomUUID();
       try {
-        // The migration's seed trigger fans out to this consumer. Registering
-        // before append also exercises the backfill path used by restarts.
-        await registerEventConsumer(db, consumerName, {
-          maxAttempts: 1,
-          leaseSeconds: 20,
-        });
         const first = await appendOutboxEvent(db, {
           eventId,
           eventType: "ExtractionRequested",
@@ -46,25 +40,37 @@ describe("durable outbox integration", () => {
         });
         expect(duplicate.eventId).toBe(first.eventId);
 
-        let workerA = await claimNextEventDelivery(
+        // Register after append so the target is created by the restart/backfill
+        // path. A shared development database may contain unrelated historical
+        // events, so remove only this disposable consumer's non-target
+        // deliveries instead of spending the test timeout draining them.
+        await registerEventConsumer(db, consumerName, {
+          maxAttempts: 1,
+          leaseSeconds: 20,
+        });
+        await db.pool.query(
+          "delete from event_deliveries where consumer_name=$1 and event_id<>$2",
+          [consumerName, eventId],
+        );
+
+        const workerA = await claimNextEventDelivery(
           db,
           consumerName,
           "worker-a",
         );
-        // A durable consumer backfills all historical events at registration.
-        // Drain older rows so this test remains repeatable against a shared
-        // development database while still exercising the backfill contract.
-        for (
-          let attempt = 0;
-          workerA && workerA.event.eventId !== eventId;
-          attempt += 1
-        ) {
-          if (attempt >= 500) throw new Error("target event was not claimable");
-          await acknowledgeEventDelivery(db, workerA);
-          workerA = await claimNextEventDelivery(db, consumerName, "worker-a");
-        }
         expect(workerA?.event.eventId).toBe(eventId);
         if (!workerA) throw new Error("expected worker-a claim");
+        const claimedAttempt = await db.pool.query(
+          `select outcome,worker_id,fencing_version
+             from event_delivery_attempts
+            where event_id=$1 and consumer_name=$2
+            order by id desc limit 1`,
+          [eventId, consumerName],
+        );
+        expect(claimedAttempt.rows[0]).toMatchObject({
+          outcome: "CLAIMED",
+          worker_id: "worker-a",
+        });
         expect(await heartbeatEventDelivery(db, workerA)).toBe(true);
 
         // A crashed worker's lease can be reclaimed.  Make the lease expired
@@ -95,6 +101,17 @@ describe("durable outbox integration", () => {
           { baseDelayMs: 1, maxDelayMs: 1, jitterRatio: 0 },
         );
         expect(failed.status).toBe("QUARANTINED");
+        const quarantinedAttempt = await db.pool.query(
+          `select outcome,worker_id,fencing_version
+             from event_delivery_attempts
+            where event_id=$1 and consumer_name=$2
+            order by id desc limit 1`,
+          [eventId, consumerName],
+        );
+        expect(quarantinedAttempt.rows[0]).toMatchObject({
+          outcome: "QUARANTINED",
+          worker_id: "worker-b",
+        });
         expect((await reconcileOutbox(db, consumerName)).quarantined).toBe(1);
         expect((await listQuarantinedEvents(db, consumerName)).length).toBe(1);
         expect(
@@ -116,6 +133,17 @@ describe("durable outbox integration", () => {
         );
         if (!workerC) throw new Error("expected worker-c claim after requeue");
         await acknowledgeEventDelivery(db, workerC);
+        const succeededAttempt = await db.pool.query(
+          `select outcome,worker_id
+             from event_delivery_attempts
+            where event_id=$1 and consumer_name=$2
+            order by id desc limit 1`,
+          [eventId, consumerName],
+        );
+        expect(succeededAttempt.rows[0]).toMatchObject({
+          outcome: "SUCCEEDED",
+          worker_id: "worker-c",
+        });
         const finalReport = await reconcileOutbox(db, consumerName);
         expect(finalReport.unconsumed).toBe(0);
         expect(finalReport.staleClaims).toBe(0);

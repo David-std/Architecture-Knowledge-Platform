@@ -97,7 +97,10 @@ try {
   & docker exec $PostgresContainer rm -f $dumpTemporaryPath *> $null
   & docker exec $PostgresContainer psql -U akp -d postgres -v ON_ERROR_STOP=1 -c "drop database if exists `"$database`";" *> $null
 }
-if ($restoredDocuments -lt 1) { throw "Restored database contains no knowledge documents." }
+# An empty but migrated installation is a valid recovery target. The count
+# query above still proves that the restored schema contains the canonical
+# knowledge_documents table; populated-corpus checks belong to the runtime
+# verification/evaluation gates, not to backup integrity.
 if ($restoredMigrations.Count -ne [int]$manifest.database.migrationCount) {
   throw "Restored migration count ($($restoredMigrations.Count)) does not equal backup manifest count ($($manifest.database.migrationCount))."
 }

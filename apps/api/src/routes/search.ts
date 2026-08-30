@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import type { FastifyInstance } from "fastify";
-import { resolveAuthorizedVaultScope, type Postgres } from "@akp/postgres";
+import {
+  pathMatchesVaultPrefix,
+  resolveAuthorizedVaultScope,
+  type Postgres,
+} from "@akp/postgres";
 import {
   SearchRequest,
   type SearchHit,
@@ -28,6 +32,11 @@ const TRUST_RANK: Record<string, number> = {
   HUMAN_REVIEWED: 2,
   ATTESTED: 3,
 };
+
+const UNSAFE_LOCATOR_KEY =
+  /^(?:source(?:uri|_uri)|local(?:path|_path)|absolute(?:path|_path)|repository(?:path|_path)|canonical(?:path|_path)|object(?:key|_key)|endpoint|host|file|url|uri)$/i;
+const ABSOLUTE_LOCATOR_TOKEN =
+  /(?:[A-Za-z]:[\\/]|\\\\|file:\/\/|\/(?:Users|home|tmp|var)\/)[^\s"']+/;
 
 function kindOf(
   layer: string,
@@ -64,7 +73,7 @@ export interface RetrievalExecutionOptions {
   vaultIds?: string[];
   /** Applied after policy/trust filtering so a scoped caller never receives a
    * path it is not allowed to read. */
-  pathAuthorizer?: (path: string) => boolean;
+  pathAuthorizer?: (path: string, vaultId?: string) => boolean;
 }
 
 type RetrievalChannel = NonNullable<
@@ -176,6 +185,77 @@ function deterministicLexicalRerank(
         right.score - left.score ||
         left.documentId.localeCompare(right.documentId),
     );
+}
+
+/**
+ * Evidence locators are corpus data and can contain local paths.  A
+ * path-scoped caller must not receive a locator for a path outside its
+ * membership prefix, even when the matched document itself is readable.
+ * Synthetic `source:<uuid>` locators identify an already scoped source and
+ * are not filesystem paths.
+ */
+export function evidenceLocatorAllowed(
+  locator: unknown,
+  pathAuthorizer?: (path: string) => boolean,
+): boolean {
+  if (!locator || typeof locator !== "object" || Array.isArray(locator)) {
+    return false;
+  }
+  const candidate = locator as Record<string, unknown>;
+  for (const [key, value] of Object.entries(candidate)) {
+    if (UNSAFE_LOCATOR_KEY.test(key)) return false;
+    if (typeof value === "string" && ABSOLUTE_LOCATOR_TOKEN.test(value)) {
+      return false;
+    }
+    if (Array.isArray(value)) {
+      if (
+        value.some(
+          (entry) =>
+            (typeof entry === "string" && ABSOLUTE_LOCATOR_TOKEN.test(entry)) ||
+            (entry !== null &&
+              typeof entry === "object" &&
+              !evidenceLocatorAllowed(entry, pathAuthorizer)),
+        )
+      ) {
+        return false;
+      }
+    } else if (value && typeof value === "object") {
+      if (!evidenceLocatorAllowed(value, pathAuthorizer)) return false;
+    }
+  }
+  for (const key of ["path", "source_path", "document_path"]) {
+    const value = candidate[key];
+    if (typeof value !== "string") continue;
+    if (value.startsWith("source:")) {
+      if (
+        !/^source:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          value,
+        )
+      ) {
+        return false;
+      }
+      continue;
+    }
+    if (pathAuthorizer && !pathAuthorizer(value)) return false;
+  }
+  return true;
+}
+
+/** Keep only portable locator data in a retrieval response. */
+function sanitizeEvidenceLocator(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sanitizeEvidenceLocator);
+  if (typeof value === "string") {
+    return value.replace(
+      /(?:[A-Za-z]:[\\/]|\\\\|file:\/\/|\/(?:Users|home|tmp|var)\/)[^\s"']+/g,
+      "[REDACTED_PATH]",
+    );
+  }
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => !UNSAFE_LOCATOR_KEY.test(key))
+      .map(([key, entry]) => [key, sanitizeEvidenceLocator(entry)]),
+  );
 }
 
 export async function queryKnowledge(
@@ -474,14 +554,33 @@ export async function queryKnowledge(
           `
           select candidate.id, max(r.weight) weight
             from knowledge_relations r
-            join knowledge_documents candidate
+           join knowledge_documents candidate
               on candidate.id = case
                 when r.from_document_id = any($2::uuid[]) then r.to_document_id
                 else r.from_document_id
               end
+             and candidate.space_id = $1
            where r.space_id = $1
              ${vaultFilter("candidate.")}
              and (r.from_document_id = any($2::uuid[]) or r.to_document_id = any($2::uuid[]))
+             and exists (
+               select 1 from knowledge_documents edge_from
+                where edge_from.id=r.from_document_id
+                  and edge_from.space_id=$1
+                  and edge_from.vault_id=candidate.vault_id
+             )
+             and exists (
+               select 1 from knowledge_documents edge_to
+                where edge_to.id=r.to_document_id
+                  and edge_to.space_id=$1
+                  and edge_to.vault_id=candidate.vault_id
+             )
+             and exists (
+               select 1 from knowledge_documents seed
+                where seed.id=any($2::uuid[])
+                  and seed.space_id=$1
+                  and seed.vault_id=candidate.vault_id
+             )
              and candidate.lifecycle in ('ACTIVE','DISPUTED')
              and candidate.refresh_status not in ('STALE_BLOCKED','INVALID')
            group by candidate.id
@@ -557,7 +656,8 @@ export async function queryKnowledge(
            d.refresh_status,
            coalesce(
              jsonb_agg(distinct jsonb_build_object(
-               'id',cited.id,'path',cited.path,'revision',cited.current_revision
+               'id',cited.id,'spaceId',cited.space_id,'vaultId',cited.vault_id,
+               'path',cited.path,'revision',cited.current_revision
              ))
                filter (where cited.id is not null),
              '[]'::jsonb
@@ -566,18 +666,26 @@ export async function queryKnowledge(
              evidence_locators
       from knowledge_documents d
       left join knowledge_relations r
-        on r.from_document_id = d.id and r.relation_type in ('supports', 'derives_from', 'related_to')
+        on r.from_document_id = d.id
+       and r.space_id = d.space_id
+       and r.relation_type in ('supports', 'derives_from', 'related_to')
       left join knowledge_documents cited
         on cited.id = r.to_document_id
        and (cited.layer in ('source', 'resource', 'evidence') or cited.type like '%evidence%')
+       and cited.space_id = d.space_id
+       and cited.vault_id is not distinct from d.vault_id
+       and cited.lifecycle in ('ACTIVE','DISPUTED')
+       and cited.refresh_status not in ('STALE_BLOCKED','INVALID')
       left join document_evidence de on de.document_id=d.id
       left join evidence e on e.id=de.evidence_id
+       and e.space_id = d.space_id
        and e.vault_id is not distinct from d.vault_id
      where d.id = any($1::uuid[])
+       and d.space_id = $2
        ${vaultFilter("d.")}
      group by d.id
     `,
-    [fused.map((item) => item.id)],
+    [fused.map((item) => item.id), spaceId],
   );
   const byId = new Map(details.rows.map((row) => [String(row.id), row]));
   const bestUnitByDocument = new Map<
@@ -643,7 +751,8 @@ export async function queryKnowledge(
       if (
         !row ||
         (TRUST_RANK[String(row.trust_tier)] ?? 0) < minimumTrust ||
-        (options.pathAuthorizer && !options.pathAuthorizer(String(row.path)))
+        (options.pathAuthorizer &&
+          !options.pathAuthorizer(String(row.path), String(row.vault_id)))
       )
         return null;
       const documentCitations = ["source", "resource"].includes(
@@ -653,18 +762,36 @@ export async function queryKnowledge(
         : ((row.citations ?? []) as Array<Record<string, unknown>>)
             .filter(
               (citation) =>
-                !options.pathAuthorizer ||
-                options.pathAuthorizer(String(citation.path ?? "")),
+                String(citation.spaceId ?? citation.space_id ?? "") ===
+                  String(row.space_id) &&
+                String(citation.vaultId ?? citation.vault_id ?? "") ===
+                  String(row.vault_id) &&
+                (!options.pathAuthorizer ||
+                  options.pathAuthorizer(
+                    String(citation.path ?? ""),
+                    String(
+                      citation.vaultId ?? citation.vault_id ?? row.vault_id,
+                    ),
+                  )),
             )
             .map(
               (citation) =>
                 `${String(citation.path)}@${String(citation.revision ?? row.current_revision)}`,
             );
+      const rowPathAuthorizer = options.pathAuthorizer
+        ? (value: string) =>
+            options.pathAuthorizer!(value, String(row.vault_id))
+        : undefined;
       const citations = [
         ...documentCitations,
-        ...(
-          (row.evidence_locators ?? []) as Array<Record<string, unknown>>
-        ).map((locator) => `evidence:${JSON.stringify(locator)}`),
+        ...((row.evidence_locators ?? []) as Array<Record<string, unknown>>)
+          .filter((locator) =>
+            evidenceLocatorAllowed(locator, rowPathAuthorizer),
+          )
+          .map(
+            (locator) =>
+              `evidence:${JSON.stringify(sanitizeEvidenceLocator(locator))}`,
+          ),
       ];
       const matchedUnit = bestUnitByDocument.get(item.id);
       const structuralContext = matchedUnit
@@ -692,10 +819,12 @@ export async function queryKnowledge(
           1200,
         ),
         citations,
-        warnings:
-          String(row.refresh_status ?? "CURRENT") === "STALE_PENDING_REVIEW"
+        warnings: [
+          "UNTRUSTED_RETRIEVED_CONTENT",
+          ...(String(row.refresh_status ?? "CURRENT") === "STALE_PENDING_REVIEW"
             ? ["STALE_PENDING_REVIEW"]
-            : [],
+            : []),
+        ],
       };
     })
     .filter((hit): hit is SearchHit => hit !== null);
@@ -725,6 +854,9 @@ export function registerSearchRoutes(app: FastifyInstance, db: Postgres): void {
         return reply.code(403).send({ code: "SPACE_ACCESS_DENIED" });
       }
       let vaultIds: string[];
+      let accessByVault: Awaited<
+        ReturnType<typeof resolveAuthorizedVaultScope>
+      >["accessByVault"] = {};
       try {
         const scope = await resolveAuthorizedVaultScope(db, {
           userId: actor.id,
@@ -735,6 +867,7 @@ export function registerSearchRoutes(app: FastifyInstance, db: Postgres): void {
           federated: parsed.data.federated,
         });
         vaultIds = scope.vaultIds;
+        accessByVault = scope.accessByVault;
       } catch (error) {
         const code =
           error instanceof Error ? error.message : "INVALID_VAULT_SCOPE";
@@ -755,8 +888,14 @@ export function registerSearchRoutes(app: FastifyInstance, db: Postgres): void {
       };
       const hits = await queryKnowledge(db, scopedRequest, {
         vaultIds,
-        pathAuthorizer: (documentPath) =>
-          hasPathAccess(actor, requestedSpace, "knowledge:read", documentPath),
+        pathAuthorizer: (documentPath, vaultId) => {
+          const access = accessByVault[String(vaultId ?? "")];
+          if (!access) return false;
+          return (
+            pathMatchesVaultPrefix(documentPath, access.pathPrefix) &&
+            hasPathAccess(actor, requestedSpace, "knowledge:read", documentPath)
+          );
+        },
       });
       const plan = planQuery(parsed.data.query);
       const indexRows = await db.pool.query(
@@ -825,6 +964,9 @@ export function registerSearchRoutes(app: FastifyInstance, db: Postgres): void {
       const actor = actorOf(request);
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
       let vaultIds: string[];
+      let accessByVault: Awaited<
+        ReturnType<typeof resolveAuthorizedVaultScope>
+      >["accessByVault"] = {};
       try {
         const scope = await resolveAuthorizedVaultScope(db, {
           userId: actor.id,
@@ -835,6 +977,7 @@ export function registerSearchRoutes(app: FastifyInstance, db: Postgres): void {
           federated: parsed.data.federated,
         });
         vaultIds = scope.vaultIds;
+        accessByVault = scope.accessByVault;
       } catch (error) {
         const code =
           error instanceof Error ? error.message : "INVALID_VAULT_SCOPE";
@@ -855,15 +998,21 @@ export function registerSearchRoutes(app: FastifyInstance, db: Postgres): void {
       };
       const hits = await queryKnowledge(db, scopedRequest, {
         vaultIds,
-        pathAuthorizer: (documentPath) =>
-          hasPathAccess(actor, requestedSpace, "knowledge:read", documentPath),
+        pathAuthorizer: (documentPath, vaultId) => {
+          const access = accessByVault[String(vaultId ?? "")];
+          if (!access) return false;
+          return (
+            pathMatchesVaultPrefix(documentPath, access.pathPrefix) &&
+            hasPathAccess(actor, requestedSpace, "knowledge:read", documentPath)
+          );
+        },
       });
       const details =
         hits.length === 0
           ? { rows: [] }
           : await db.pool.query(
-              `select id, layer, type from knowledge_documents where id = any($1::uuid[])`,
-              [hits.map((hit) => hit.documentId)],
+              `select id, layer, type from knowledge_documents where id = any($1::uuid[]) and space_id=$2 and vault_id=any($3::uuid[])`,
+              [hits.map((hit) => hit.documentId), requestedSpace, vaultIds],
             );
       const detailById = new Map(
         details.rows.map((row) => [String(row.id), row]),
@@ -886,11 +1035,14 @@ export function registerSearchRoutes(app: FastifyInstance, db: Postgres): void {
           : await db.pool.query(
               `
               select distinct c.id,c.topic,c.status,c.resolution
-                from contradiction_clusters c
-                join contradiction_members m on m.cluster_id=c.id
-               where m.document_id=any($1::uuid[]) and c.status <> 'RESOLVED'
+               from contradiction_clusters c
+               join contradiction_members m on m.cluster_id=c.id
+               where m.document_id=any($1::uuid[])
+                 and c.space_id=$2
+                 and c.vault_id=any($3::uuid[])
+                 and c.status <> 'RESOLVED'
               `,
-              [hits.map((hit) => hit.documentId)],
+              [hits.map((hit) => hit.documentId), requestedSpace, vaultIds],
             );
       const packet = buildContextPacket({
         request: scopedRequest,

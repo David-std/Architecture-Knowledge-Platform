@@ -1,0 +1,3 @@
+{"id":"level-b-c-alias","category":"alias","query":"Which retention rule preserves the original locator?","gold_documents":["neutral-archive-policy"],"vault":"vault-c-neutral","critical":true,"slice":"aliases"}
+{"id":"level-b-c-graph","category":"graph","query":"What workflow follows the archive policy review?","gold_documents":["neutral-review-workflow"],"vault":"vault-c-neutral","critical":true,"slice":"graph"}
+{"id":"level-b-c-neutral-no-answer","category":"no-answer","query":"Which obsidian comet registry is unlisted?","gold_documents":[],"expect_no_answer":true,"vault":"vault-c-neutral","critical":true,"slice":"no-answer"}

@@ -370,7 +370,12 @@ async function selectRawEvidence(
   selector: { evidenceId?: string; locator?: RawEvidenceLocatorSelector },
 ): Promise<RawEvidenceRow[]> {
   const values: unknown[] = [vault.id, vault.space_id];
-  const predicates = ["e.vault_id=$1", "e.space_id=$2", "s.vault_id=$1"];
+  const predicates = [
+    "e.vault_id=$1",
+    "e.space_id=$2",
+    "s.vault_id=$1",
+    "s.space_id=$2",
+  ];
   if (selector.evidenceId) {
     values.push(selector.evidenceId);
     predicates.push(`e.id=$${values.length}::uuid`);
@@ -389,7 +394,8 @@ async function selectRawEvidence(
       join sources s on s.id=e.source_id
       left join source_artifacts sa on sa.id=e.artifact_id
       left join document_evidence de on de.evidence_id=e.id
-      left join knowledge_documents d on d.id=de.document_id
+      left join knowledge_documents d
+        on d.id=de.document_id and d.space_id=e.space_id and d.vault_id=e.vault_id
      where ${predicates.join(" and ")}
      group by e.id,e.vault_id,e.space_id,e.source_id,e.artifact_id,e.locator,
               s.sha256,s.object_key,s.byte_size,s.media_type,sa.source_hash

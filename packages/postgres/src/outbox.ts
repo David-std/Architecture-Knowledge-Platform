@@ -120,6 +120,7 @@ export function retryDelayMs(
   if (
     !Number.isFinite(policy.baseDelayMs) ||
     !Number.isFinite(policy.maxDelayMs) ||
+    !Number.isFinite(policy.jitterRatio) ||
     policy.baseDelayMs < 0 ||
     policy.maxDelayMs < policy.baseDelayMs ||
     policy.jitterRatio < 0 ||
@@ -451,6 +452,16 @@ export async function claimNextEventDelivery(
        where d.event_id=candidate.event_id and c.consumer_name=$1
          and d.consumer_name=c.consumer_name
        returning d.*
+    ), attempted as (
+      insert into event_delivery_attempts(
+        event_id,consumer_name,attempt,delivery_generation,worker_id,
+        fencing_version,outcome,started_at
+      )
+      select event_id,consumer_name,attempts,delivery_generation,$2,
+             fencing_version,'CLAIMED',now()
+        from claimed
+      on conflict do nothing
+      returning event_id
     )
     select d.event_id,d.consumer_name,d.status,d.attempts,d.next_attempt_at,
            d.lease_owner,d.lease_token,d.fencing_version,d.lease_expires_at,
@@ -463,6 +474,7 @@ export async function claimNextEventDelivery(
       from claimed d
       join event_consumers c on c.consumer_name=d.consumer_name
       join event_outbox e on e.event_id=d.event_id
+      left join attempted a on a.event_id=d.event_id
     `,
     [consumerName, workerId],
   );
@@ -548,7 +560,7 @@ export async function acknowledgeEventDelivery(
         event_id,consumer_name,attempt,delivery_generation,worker_id,
         fencing_version,outcome,finished_at
       ) values($1,$2,$3,$4,$5,$6,'SUCCEEDED',now())
-      on conflict(event_id,consumer_name,delivery_generation,attempt) do nothing
+      on conflict do nothing
       `,
       [
         claim.event.eventId,
@@ -607,7 +619,7 @@ export async function failEventDelivery(
         event_id,consumer_name,attempt,delivery_generation,worker_id,
         fencing_version,outcome,error,finished_at
       ) values($1,$2,$3,$4,$5,$6,$7,$8::jsonb,now())
-      on conflict(event_id,consumer_name,delivery_generation,attempt) do nothing
+      on conflict do nothing
       `,
       [
         claim.event.eventId,

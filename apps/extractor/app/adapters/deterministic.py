@@ -31,6 +31,7 @@ from ..models import (
 )
 from ..ports import (
     AdapterAvailability,
+    CapabilityStatus,
     DocumentExtractionRequest,
     DocumentIntelligencePort,
     UnsupportedMediaType,
@@ -489,7 +490,7 @@ class DeterministicTextAdapter(DocumentIntelligencePort):
         return AdapterAvailability(
             adapter=self.name,
             version=self.version,
-            status="CONFIGURED",
+            status=CapabilityStatus.CONFIGURED,
             reason="stdlib-and-declared-local-parsers",
             media=[
                 "markdown-text",
@@ -614,7 +615,7 @@ class DeterministicTextAdapter(DocumentIntelligencePort):
                     page=page_number,
                 )
             )
-        if any(not page.text.strip() for page in pages):
+        if any(not (page.text or "").strip() for page in pages):
             warnings.append("LAYOUT_AND_OCR_LIMITED_TO_DETERMINISTIC_BASELINE")
         return _artifact_from_units(
             request,
@@ -813,8 +814,11 @@ class DeterministicTextAdapter(DocumentIntelligencePort):
                     values: dict[int, str] = {}
                     for cell in row.findall("x:c", namespace):
                         reference = cell.attrib.get("r", "A1")
+                        column_match = re.match(r"[A-Za-z]+", reference)
+                        if column_match is None:
+                            continue
                         column = 0
-                        for character in re.match(r"[A-Za-z]+", reference).group(0):
+                        for character in column_match.group(0):
                             column = column * 26 + ord(character.upper()) - 64
                         value = cell.find("x:v", namespace)
                         inline = cell.find("x:is", namespace)
@@ -827,7 +831,8 @@ class DeterministicTextAdapter(DocumentIntelligencePort):
                         if formula is not None and formula.text:
                             text = f"={formula.text}" + (f" ({text})" if text else "")
                         values[column] = text
-                    rows[row_number] = values
+                    if values:
+                        rows[row_number] = values
                 if not rows:
                     continue
                 max_column = max(max(values) for values in rows.values())

@@ -29,7 +29,11 @@
     },
     "expect_no_answer": { "type": "boolean", "default": false },
     "critical": { "type": "boolean", "default": false },
-    "slice": { "type": "string" }
+    "slice": { "type": "string" },
+    "vault": {
+      "type": "string",
+      "description": "Optional local curated-fixture vault scope."
+    }
   },
   "additionalProperties": false
 }

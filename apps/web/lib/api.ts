@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 
 const base = process.env.AKP_API_URL ?? "http://127.0.0.1:8080";
 const token = process.env.AKP_API_TOKEN;
@@ -11,7 +12,7 @@ export async function akp<T = Record<string, unknown>>(
   const session = cookieStore.get("akp_session")?.value;
   const csrf = cookieStore.get("akp_csrf")?.value;
   if (!session && !token) {
-    throw new Error("An AKP web session or server-side API token is required.");
+    redirect("/login");
   }
   const method = String(init?.method ?? "GET").toUpperCase();
   const response = await fetch(`${base}${route}`, {
@@ -30,6 +31,7 @@ export async function akp<T = Record<string, unknown>>(
     },
   });
   const body = (await response.json()) as T;
+  if (response.status === 401) redirect("/login");
   if (!response.ok)
     throw new Error(`AKP ${response.status}: ${JSON.stringify(body)}`);
   return body;

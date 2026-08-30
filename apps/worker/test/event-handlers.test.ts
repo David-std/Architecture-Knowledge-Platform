@@ -62,6 +62,19 @@ describe("index event consumers", () => {
     ).toEqual([{ path: "removed.md", operation: "UPDATE" }]);
   });
 
+  it("fails closed for traversal paths in publication payloads", () => {
+    const published = event("CorpusRevisionPublished");
+    expect(() =>
+      changesFromEvent({
+        ...published,
+        payload: {
+          ...published.payload,
+          changedPaths: ["managed/../README.md"],
+        },
+      }),
+    ).toThrow("UNSAFE_MANAGED_PATH");
+  });
+
   it("invalidates stale context packets and enqueues impacted evaluation idempotently", async () => {
     const { db, calls } = fakeDb();
     const handlers = createIndexEventHandlers(db, {} as never);

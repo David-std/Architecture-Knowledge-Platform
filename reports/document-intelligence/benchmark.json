@@ -44,9 +44,9 @@
         "locator_accuracy": 1.0,
         "memory_peak_mb": null,
         "page_count": 1,
-        "processing_time_ms": 0.973,
-        "processing_time_ms_max": 1.25,
-        "processing_time_ms_min": 0.696,
+        "processing_time_ms": 1.16,
+        "processing_time_ms_max": 1.345,
+        "processing_time_ms_min": 0.976,
         "provider_cost": 0,
         "structured_units": 9,
         "table_count": 1,
@@ -54,7 +54,7 @@
         "table_structure_accuracy": 1.0,
         "text_recall": 1.0
       },
-      "source_hash": "3cf2c312b926a87545eec7ce780d5ce5f5653719e9d1a53536f6ef21bc230c7f",
+      "source_hash": "fa26a9e0a4eaad37212050a70df65304c3a46e3a0e6f5e0b4743b8f22ae650a1",
       "status": "EXECUTED"
     },
     {
@@ -90,7 +90,7 @@
       "media_type": "text/markdown",
       "metrics": {},
       "reason": "DEPENDENCY_NOT_INSTALLED:docling",
-      "source_hash": "3cf2c312b926a87545eec7ce780d5ce5f5653719e9d1a53536f6ef21bc230c7f",
+      "source_hash": "fa26a9e0a4eaad37212050a70df65304c3a46e3a0e6f5e0b4743b8f22ae650a1",
       "status": "SKIPPED"
     },
     {
@@ -120,7 +120,7 @@
       "media_type": "text/markdown",
       "metrics": {},
       "reason": "DEPENDENCY_OR_COMMAND_NOT_CONFIGURED",
-      "source_hash": "3cf2c312b926a87545eec7ce780d5ce5f5653719e9d1a53536f6ef21bc230c7f",
+      "source_hash": "fa26a9e0a4eaad37212050a70df65304c3a46e3a0e6f5e0b4743b8f22ae650a1",
       "status": "SKIPPED"
     },
     {
@@ -153,7 +153,7 @@
       "media_type": "text/markdown",
       "metrics": {},
       "reason": "OSS_OR_CLOUD_SERVICE_NOT_CONFIGURED",
-      "source_hash": "3cf2c312b926a87545eec7ce780d5ce5f5653719e9d1a53536f6ef21bc230c7f",
+      "source_hash": "fa26a9e0a4eaad37212050a70df65304c3a46e3a0e6f5e0b4743b8f22ae650a1",
       "status": "SKIPPED"
     },
     {
@@ -200,9 +200,9 @@
         "locator_accuracy": 1.0,
         "memory_peak_mb": null,
         "page_count": 1,
-        "processing_time_ms": 1.892,
-        "processing_time_ms_max": 2.702,
-        "processing_time_ms_min": 1.083,
+        "processing_time_ms": 1.345,
+        "processing_time_ms_max": 1.559,
+        "processing_time_ms_min": 1.131,
         "provider_cost": 0,
         "structured_units": 4,
         "table_count": 0,
@@ -210,7 +210,7 @@
         "table_structure_accuracy": 1.0,
         "text_recall": 1.0
       },
-      "source_hash": "6fd23ee7105f6cfbf5cbc594c90be003e9b492704990d6318dbe39427dee47ac",
+      "source_hash": "2688a70a072002a91819db3c5a70ca7b136e3251da5ff9a679e00cc92c33b6d9",
       "status": "EXECUTED"
     },
     {
@@ -246,7 +246,7 @@
       "media_type": "text/html",
       "metrics": {},
       "reason": "DEPENDENCY_NOT_INSTALLED:docling",
-      "source_hash": "6fd23ee7105f6cfbf5cbc594c90be003e9b492704990d6318dbe39427dee47ac",
+      "source_hash": "2688a70a072002a91819db3c5a70ca7b136e3251da5ff9a679e00cc92c33b6d9",
       "status": "SKIPPED"
     },
     {
@@ -276,7 +276,7 @@
       "media_type": "text/html",
       "metrics": {},
       "reason": "DEPENDENCY_OR_COMMAND_NOT_CONFIGURED",
-      "source_hash": "6fd23ee7105f6cfbf5cbc594c90be003e9b492704990d6318dbe39427dee47ac",
+      "source_hash": "2688a70a072002a91819db3c5a70ca7b136e3251da5ff9a679e00cc92c33b6d9",
       "status": "SKIPPED"
     },
     {
@@ -309,7 +309,7 @@
       "media_type": "text/html",
       "metrics": {},
       "reason": "OSS_OR_CLOUD_SERVICE_NOT_CONFIGURED",
-      "source_hash": "6fd23ee7105f6cfbf5cbc594c90be003e9b492704990d6318dbe39427dee47ac",
+      "source_hash": "2688a70a072002a91819db3c5a70ca7b136e3251da5ff9a679e00cc92c33b6d9",
       "status": "SKIPPED"
     },
     {
@@ -356,9 +356,9 @@
         "locator_accuracy": 1.0,
         "memory_peak_mb": null,
         "page_count": 0,
-        "processing_time_ms": 2.138,
-        "processing_time_ms_max": 2.425,
-        "processing_time_ms_min": 1.851,
+        "processing_time_ms": 1.901,
+        "processing_time_ms_max": 2.956,
+        "processing_time_ms_min": 0.846,
         "provider_cost": 0,
         "structured_units": 1,
         "table_count": 1,
@@ -366,7 +366,7 @@
         "table_structure_accuracy": 1.0,
         "text_recall": 1.0
       },
-      "source_hash": "485d126e7a343a968986fab82160a03310ffaad9f27a96f441d194354cbfa618",
+      "source_hash": "bceb14698fecb77c4d1fbe12aa7857e3a1754eb7f6d0fc990aa7af1a35e732e4",
       "status": "EXECUTED"
     },
     {
@@ -402,7 +402,7 @@
       "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "metrics": {},
       "reason": "DEPENDENCY_NOT_INSTALLED:docling",
-      "source_hash": "485d126e7a343a968986fab82160a03310ffaad9f27a96f441d194354cbfa618",
+      "source_hash": "bceb14698fecb77c4d1fbe12aa7857e3a1754eb7f6d0fc990aa7af1a35e732e4",
       "status": "SKIPPED"
     },
     {
@@ -432,7 +432,7 @@
       "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "metrics": {},
       "reason": "DEPENDENCY_OR_COMMAND_NOT_CONFIGURED",
-      "source_hash": "485d126e7a343a968986fab82160a03310ffaad9f27a96f441d194354cbfa618",
+      "source_hash": "bceb14698fecb77c4d1fbe12aa7857e3a1754eb7f6d0fc990aa7af1a35e732e4",
       "status": "SKIPPED"
     },
     {
@@ -465,7 +465,7 @@
       "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "metrics": {},
       "reason": "OSS_OR_CLOUD_SERVICE_NOT_CONFIGURED",
-      "source_hash": "485d126e7a343a968986fab82160a03310ffaad9f27a96f441d194354cbfa618",
+      "source_hash": "bceb14698fecb77c4d1fbe12aa7857e3a1754eb7f6d0fc990aa7af1a35e732e4",
       "status": "SKIPPED"
     },
     {
@@ -512,9 +512,9 @@
         "locator_accuracy": 1.0,
         "memory_peak_mb": null,
         "page_count": 0,
-        "processing_time_ms": 13.666,
-        "processing_time_ms_max": 15.673,
-        "processing_time_ms_min": 11.659,
+        "processing_time_ms": 7.87,
+        "processing_time_ms_max": 8.284,
+        "processing_time_ms_min": 7.455,
         "provider_cost": 0,
         "structured_units": 3,
         "table_count": 1,
@@ -522,7 +522,7 @@
         "table_structure_accuracy": 1.0,
         "text_recall": 1.0
       },
-      "source_hash": "e081b89044b1d109900c9542cb4bda7b053fa96833bae672bd4139bba783af11",
+      "source_hash": "f774da9361664e260469fcbf626eb65e3b3176eb1e7442b86d0583df49b36a67",
       "status": "EXECUTED"
     },
     {
@@ -558,7 +558,7 @@
       "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       "metrics": {},
       "reason": "DEPENDENCY_NOT_INSTALLED:docling",
-      "source_hash": "e081b89044b1d109900c9542cb4bda7b053fa96833bae672bd4139bba783af11",
+      "source_hash": "f774da9361664e260469fcbf626eb65e3b3176eb1e7442b86d0583df49b36a67",
       "status": "SKIPPED"
     },
     {
@@ -588,7 +588,7 @@
       "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       "metrics": {},
       "reason": "DEPENDENCY_OR_COMMAND_NOT_CONFIGURED",
-      "source_hash": "e081b89044b1d109900c9542cb4bda7b053fa96833bae672bd4139bba783af11",
+      "source_hash": "f774da9361664e260469fcbf626eb65e3b3176eb1e7442b86d0583df49b36a67",
       "status": "SKIPPED"
     },
     {
@@ -621,7 +621,7 @@
       "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       "metrics": {},
       "reason": "OSS_OR_CLOUD_SERVICE_NOT_CONFIGURED",
-      "source_hash": "e081b89044b1d109900c9542cb4bda7b053fa96833bae672bd4139bba783af11",
+      "source_hash": "f774da9361664e260469fcbf626eb65e3b3176eb1e7442b86d0583df49b36a67",
       "status": "SKIPPED"
     },
     {
@@ -668,9 +668,9 @@
         "locator_accuracy": 1.0,
         "memory_peak_mb": null,
         "page_count": 1,
-        "processing_time_ms": 9.203,
-        "processing_time_ms_max": 9.395,
-        "processing_time_ms_min": 9.011,
+        "processing_time_ms": 6.56,
+        "processing_time_ms_max": 6.702,
+        "processing_time_ms_min": 6.419,
         "provider_cost": 0,
         "structured_units": 1,
         "table_count": 0,
@@ -678,7 +678,7 @@
         "table_structure_accuracy": 1.0,
         "text_recall": 1.0
       },
-      "source_hash": "a149b55e65b8635e2dd9a73b1fb8e05cd16a0dde0598f51fded15e523bde616c",
+      "source_hash": "ca08c241a7b8b01dc235025f26432fd34d9747f62f852b14475f470e6c2431d0",
       "status": "EXECUTED"
     },
     {
@@ -714,7 +714,7 @@
       "media_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
       "metrics": {},
       "reason": "DEPENDENCY_NOT_INSTALLED:docling",
-      "source_hash": "a149b55e65b8635e2dd9a73b1fb8e05cd16a0dde0598f51fded15e523bde616c",
+      "source_hash": "ca08c241a7b8b01dc235025f26432fd34d9747f62f852b14475f470e6c2431d0",
       "status": "SKIPPED"
     },
     {
@@ -744,7 +744,7 @@
       "media_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
       "metrics": {},
       "reason": "DEPENDENCY_OR_COMMAND_NOT_CONFIGURED",
-      "source_hash": "a149b55e65b8635e2dd9a73b1fb8e05cd16a0dde0598f51fded15e523bde616c",
+      "source_hash": "ca08c241a7b8b01dc235025f26432fd34d9747f62f852b14475f470e6c2431d0",
       "status": "SKIPPED"
     },
     {
@@ -777,7 +777,7 @@
       "media_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
       "metrics": {},
       "reason": "OSS_OR_CLOUD_SERVICE_NOT_CONFIGURED",
-      "source_hash": "a149b55e65b8635e2dd9a73b1fb8e05cd16a0dde0598f51fded15e523bde616c",
+      "source_hash": "ca08c241a7b8b01dc235025f26432fd34d9747f62f852b14475f470e6c2431d0",
       "status": "SKIPPED"
     },
     {
@@ -824,9 +824,9 @@
         "locator_accuracy": 0.0,
         "memory_peak_mb": null,
         "page_count": 0,
-        "processing_time_ms": 1.345,
-        "processing_time_ms_max": 1.452,
-        "processing_time_ms_min": 1.239,
+        "processing_time_ms": 0.737,
+        "processing_time_ms_max": 0.774,
+        "processing_time_ms_min": 0.7,
         "provider_cost": 0,
         "structured_units": 0,
         "table_count": 0,
@@ -980,9 +980,9 @@
         "locator_accuracy": 1.0,
         "memory_peak_mb": null,
         "page_count": 1,
-        "processing_time_ms": 2.11,
-        "processing_time_ms_max": 3.226,
-        "processing_time_ms_min": 0.994,
+        "processing_time_ms": 1.444,
+        "processing_time_ms_max": 1.559,
+        "processing_time_ms_min": 1.328,
         "provider_cost": 0,
         "structured_units": 1,
         "table_count": 0,
@@ -1136,9 +1136,9 @@
         "locator_accuracy": 1.0,
         "memory_peak_mb": null,
         "page_count": 1,
-        "processing_time_ms": 0.915,
-        "processing_time_ms_max": 0.956,
-        "processing_time_ms_min": 0.874,
+        "processing_time_ms": 1.371,
+        "processing_time_ms_max": 1.444,
+        "processing_time_ms_min": 1.299,
         "provider_cost": 0,
         "structured_units": 0,
         "table_count": 0,
@@ -1292,9 +1292,9 @@
         "locator_accuracy": 1.0,
         "memory_peak_mb": null,
         "page_count": 1,
-        "processing_time_ms": 0.848,
-        "processing_time_ms_max": 0.858,
-        "processing_time_ms_min": 0.838,
+        "processing_time_ms": 1.312,
+        "processing_time_ms_max": 1.336,
+        "processing_time_ms_min": 1.288,
         "provider_cost": 0,
         "structured_units": 1,
         "table_count": 0,
@@ -1406,20 +1406,20 @@
     }
   ],
   "metadata": {
-    "command": "scripts/document_intelligence_benchmark.py --report reports/document-intelligence/benchmark.json --repeats 2",
-    "fixture_root": "C:\\Users\\david\\AppData\\Local\\Temp\\akp-final-megagoal\\test\\fixtures\\document-intelligence",
-    "generated_at": "2026-08-13T04:29:42.444771+00:00",
+    "command": "scripts/document_intelligence_benchmark.py --fixtures test/fixtures/document-intelligence --report reports/document-intelligence/benchmark.json --repeats 2",
+    "fixture_root": "C:\\Users\\david\\AppData\\Local\\Temp\\akp-authoritative-source-gates-20260830\\test\\fixtures\\document-intelligence",
+    "generated_at": "2026-08-30T17:47:22.512688+00:00",
     "platform": "Windows-11-10.0.26200-SP0",
-    "python": "3.14.0",
+    "python": "3.12.13",
     "repeats": 2,
     "schema_version": "1.0",
     "versions": {
       "docling": "NOT_INSTALLED",
-      "fastapi": "0.121.3",
+      "fastapi": "0.141.1",
       "httpx": "0.28.1",
       "marker-pdf": "NOT_INSTALLED",
-      "pydantic": "2.12.4",
-      "pypdf": "6.15.0"
+      "pydantic": "2.13.4",
+      "pypdf": "6.16.2"
     }
   },
   "selection": {

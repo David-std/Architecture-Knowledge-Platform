@@ -11,7 +11,7 @@ import {
   hasSpaceAccess,
   hasUnrestrictedPathAccess,
   requirePermission,
-  spaceIdsForPermission,
+  unrestrictedSpaceIdsForPermission,
 } from "../auth.js";
 
 async function allowedLocalSource(sourceUri: string): Promise<string | null> {
@@ -25,11 +25,20 @@ async function allowedLocalSource(sourceUri: string): Promise<string | null> {
     return null;
   }
   const canonical = await realpath(path.resolve(candidate)).catch(() => null);
-  if (!canonical || !(await stat(canonical)).isFile()) return null;
-  const roots = (process.env.AKP_INGEST_ROOTS ?? process.cwd())
+  if (!canonical) return null;
+  const sourceStat = await stat(canonical).catch(() => null);
+  if (!sourceStat?.isFile()) return null;
+  const configuredRoots = process.env.AKP_INGEST_ROOTS;
+  // Ingestion is deliberately fail-closed. An unset variable or an empty
+  // path component must never expand to process.cwd() (or the cwd itself).
+  if (!configuredRoots?.trim()) return null;
+  const rootValues = configuredRoots
     .split(path.delimiter)
-    .map((root) => path.resolve(root.trim()))
-    .filter(Boolean);
+    .map((root) => root.trim());
+  if (rootValues.length === 0 || rootValues.some((root) => root.length === 0)) {
+    return null;
+  }
+  const roots = rootValues.map((root) => path.resolve(root));
   const inside = roots.some((root) => {
     const relative = path.relative(root, canonical);
     return (
@@ -38,6 +47,35 @@ async function allowedLocalSource(sourceUri: string): Promise<string | null> {
     );
   });
   return inside ? canonical : null;
+}
+
+/**
+ * Operational job rows are pathless resources.  Never echo the canonical
+ * local source path or object-store key back to a caller, even when the
+ * caller has whole-vault source:read access.  The worker still receives the
+ * immutable values from PostgreSQL; this boundary only shapes HTTP output.
+ *
+ * Keep this recursive because stage outputs and persisted job events contain
+ * nested payloads written by several lifecycle stages.  Unknown fields stay
+ * intact so clients can inspect deterministic state without receiving raw
+ * source routing details.
+ */
+function sanitizeOperationalPayload(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sanitizeOperationalPayload);
+  if (typeof value === "string") {
+    return value.replace(
+      /(?:[A-Za-z]:[\\/]|\\\\|file:\/\/|\/(?:Users|home|tmp|var)\/)[^\s"']+/g,
+      "[REDACTED_PATH]",
+    );
+  }
+  if (!value || typeof value !== "object") return value;
+  const sensitiveKeys =
+    /^(?:source(?:uri|_uri|path|_path)|local(?:path|_path)|absolute(?:path|_path)|repository(?:path|_path)|object(?:key|_key)|key)$/i;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => !sensitiveKeys.test(key))
+      .map(([key, entry]) => [key, sanitizeOperationalPayload(entry)]),
+  );
 }
 
 // Keep the route importable by lightweight health-test mocks that only expose
@@ -60,6 +98,56 @@ async function resolveVaultScope(
 ): Promise<Awaited<ReturnType<ResolveVaultScope>>> {
   const module = await (outboxModule ??= import("@akp/postgres"));
   return module.resolveAuthorizedVaultScope(...args);
+}
+
+type IngestPermission = "source:read" | "source:write";
+
+/**
+ * Jobs have no canonical knowledge path of their own.  Resolve their vault
+ * scope before reading or mutating them so an unrestricted membership in a
+ * space cannot reach a private vault that was never granted to that actor.
+ */
+async function authorizedOperationalVaults(
+  db: Postgres,
+  actor: ReturnType<typeof actorOf>,
+  permission: IngestPermission,
+): Promise<{
+  spaces: string[];
+  vaultIds: string[];
+  accessByVault: Awaited<ReturnType<ResolveVaultScope>>["accessByVault"];
+}> {
+  const spaces = unrestrictedSpaceIdsForPermission(actor, permission);
+  const accessByVault: Awaited<ReturnType<ResolveVaultScope>>["accessByVault"] =
+    {};
+  if (!actor || spaces.length === 0) {
+    return { spaces, vaultIds: [], accessByVault };
+  }
+  const vaultIds = new Set<string>();
+  await Promise.all(
+    spaces.map(async (spaceId) => {
+      try {
+        const scope = await resolveVaultScope(db, {
+          userId: actor.id,
+          spaceId,
+          permission,
+          federated: true,
+        });
+        scope.vaultIds.forEach((vaultId) => {
+          const access = scope.accessByVault[vaultId];
+          // Job endpoints do not carry a knowledge path. Only a whole-vault
+          // grant can safely authorize them; prefix-scoped grants remain
+          // usable for path-bearing APIs.
+          if (access?.pathPrefix === null) {
+            vaultIds.add(vaultId);
+            accessByVault[vaultId] = access;
+          }
+        });
+      } catch {
+        // A private vault without an explicit grant remains invisible.
+      }
+    }),
+  );
+  return { spaces, vaultIds: [...vaultIds], accessByVault };
 }
 
 export function registerIngestRoutes(app: FastifyInstance, db: Postgres): void {
@@ -91,7 +179,7 @@ export function registerIngestRoutes(app: FastifyInstance, db: Postgres): void {
       const actor = actorOf(request);
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
       try {
-        await resolveVaultScope(db, {
+        const scope = await resolveVaultScope(db, {
           userId: actor.id,
           spaceId: parsed.data.spaceId,
           permission: "source:write",
@@ -99,6 +187,9 @@ export function registerIngestRoutes(app: FastifyInstance, db: Postgres): void {
           vaultIds: [parsed.data.vaultId],
           federated: false,
         });
+        const access = scope.accessByVault[parsed.data.vaultId];
+        if (!access) throw new Error("VAULT_ACCESS_DENIED");
+        if (access.pathPrefix !== null) throw new Error("PATH_SCOPE_DENIED");
       } catch (error) {
         return reply.code(403).send({
           code: error instanceof Error ? error.message : "VAULT_ACCESS_DENIED",
@@ -177,6 +268,7 @@ export function registerIngestRoutes(app: FastifyInstance, db: Postgres): void {
         "ingest_job",
         id,
         {
+          vaultId: parsed.data.vaultId,
           sourceUri: canonicalSource,
         },
         parsed.data.spaceId,
@@ -190,33 +282,34 @@ export function registerIngestRoutes(app: FastifyInstance, db: Postgres): void {
     "/v1/ingest/:id",
     { preHandler: requirePermission("source:read") },
     async (request, reply) => {
+      const scope = await authorizedOperationalVaults(
+        db,
+        actorOf(request),
+        "source:read",
+      );
       const result = await db.pool.query(
         `
       select id, space_id, state, result, error, attempts, max_attempts, stage_outputs,
              lease_owner, lease_expires_at, heartbeat_at, cancelled_at, created_at, updated_at
-        from ingest_jobs where id = $1 and space_id=any($2::uuid[])
+        from ingest_jobs
+       where id = $1 and space_id=any($2::uuid[]) and vault_id=any($3::uuid[])
       `,
-        [
-          request.params.id,
-          spaceIdsForPermission(actorOf(request), "source:read"),
-        ],
+        [request.params.id, scope.spaces, scope.vaultIds],
       );
       if (!result.rowCount)
         return reply.code(404).send({ code: "JOB_NOT_FOUND" });
-      if (
-        !hasUnrestrictedPathAccess(
-          actorOf(request),
-          String(result.rows[0]?.space_id),
-          "source:read",
-        )
-      ) {
-        return reply.code(404).send({ code: "JOB_NOT_FOUND" });
-      }
       const events = await db.pool.query(
         "select state,event_type,payload,created_at from ingest_job_events where job_id=$1 order by id",
         [request.params.id],
       );
-      return { ...result.rows[0], events: events.rows };
+      const job = sanitizeOperationalPayload(result.rows[0]) as Record<
+        string,
+        unknown
+      >;
+      return {
+        ...job,
+        events: sanitizeOperationalPayload(events.rows),
+      };
     },
   );
 
@@ -224,18 +317,21 @@ export function registerIngestRoutes(app: FastifyInstance, db: Postgres): void {
     "/v1/ingest",
     { preHandler: requirePermission("source:read") },
     async (request) => {
-      const actor = actorOf(request);
-      const spaces = spaceIdsForPermission(actor, "source:read").filter(
-        (spaceId) => hasUnrestrictedPathAccess(actor, spaceId, "source:read"),
+      const scope = await authorizedOperationalVaults(
+        db,
+        actorOf(request),
+        "source:read",
       );
       const result = await db.pool.query(
         `
-        select id, source_uri, state, attempts, max_attempts, created_at, updated_at
-          from ingest_jobs where space_id=any($1::uuid[]) order by created_at desc limit 100
+        select id, state, attempts, max_attempts, created_at, updated_at
+          from ingest_jobs
+         where space_id=any($1::uuid[]) and vault_id=any($2::uuid[])
+         order by created_at desc limit 100
         `,
-        [spaces],
+        [scope.spaces, scope.vaultIds],
       );
-      return { jobs: result.rows };
+      return { jobs: sanitizeOperationalPayload(result.rows) };
     },
   );
 
@@ -243,19 +339,21 @@ export function registerIngestRoutes(app: FastifyInstance, db: Postgres): void {
     "/v1/ingest/:id/cancel",
     { preHandler: requirePermission("source:write") },
     async (request, reply) => {
-      const actor = actorOf(request);
-      const spaces = spaceIdsForPermission(actor, "source:write").filter(
-        (spaceId) => hasUnrestrictedPathAccess(actor, spaceId, "source:write"),
+      const scope = await authorizedOperationalVaults(
+        db,
+        actorOf(request),
+        "source:write",
       );
       const result = await db.pool.query(
         `
         update ingest_jobs set state='CANCELLED', cancelled_at=now(), lease_owner=null,
                lease_expires_at=null, updated_at=now()
          where id=$1 and space_id=any($2::uuid[])
+           and vault_id=any($3::uuid[])
            and state not in ('COMPLETED','CANCELLED','MERGED')
-         returning id,state,space_id
+         returning id,state,space_id,vault_id
         `,
-        [request.params.id, spaces],
+        [request.params.id, scope.spaces, scope.vaultIds],
       );
       if (!result.rowCount)
         return reply.code(409).send({ code: "JOB_NOT_CANCELLABLE" });
@@ -265,7 +363,7 @@ export function registerIngestRoutes(app: FastifyInstance, db: Postgres): void {
         "ingest.cancel",
         "ingest_job",
         request.params.id,
-        {},
+        { vaultId: String(result.rows[0]?.vault_id) },
         String(result.rows[0]?.space_id),
       );
       return result.rows[0];
@@ -276,19 +374,21 @@ export function registerIngestRoutes(app: FastifyInstance, db: Postgres): void {
     "/v1/ingest/:id/retry",
     { preHandler: requirePermission("source:write") },
     async (request, reply) => {
-      const actor = actorOf(request);
-      const spaces = spaceIdsForPermission(actor, "source:write").filter(
-        (spaceId) => hasUnrestrictedPathAccess(actor, spaceId, "source:write"),
+      const scope = await authorizedOperationalVaults(
+        db,
+        actorOf(request),
+        "source:write",
       );
       const result = await db.pool.query(
         `
         update ingest_jobs set state='RECEIVED', error=null, next_attempt_at=now(),
                cancelled_at=null, lease_owner=null, lease_expires_at=null, updated_at=now()
          where id=$1 and space_id=any($2::uuid[])
+           and vault_id=any($3::uuid[])
            and state in ('FAILED','QUARANTINED','CANCELLED')
-         returning id,state,space_id
+         returning id,state,space_id,vault_id
         `,
-        [request.params.id, spaces],
+        [request.params.id, scope.spaces, scope.vaultIds],
       );
       if (!result.rowCount)
         return reply.code(409).send({ code: "JOB_NOT_RETRYABLE" });
@@ -298,7 +398,7 @@ export function registerIngestRoutes(app: FastifyInstance, db: Postgres): void {
         "ingest.retry",
         "ingest_job",
         request.params.id,
-        {},
+        { vaultId: String(result.rows[0]?.vault_id) },
         String(result.rows[0]?.space_id),
       );
       return result.rows[0];

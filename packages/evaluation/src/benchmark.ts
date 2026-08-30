@@ -149,6 +149,10 @@ function intersectionSize(
     : new Set(left.filter((value) => rightSet.has(value))).size;
 }
 
+function unique(values: readonly string[]): string[] {
+  return [...new Set(values)];
+}
+
 function safeDuration(value: number | undefined): number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0
     ? value
@@ -164,13 +168,15 @@ export function scoreBenchmarkObservation(
   observation: BenchmarkObservation,
   options: { rankedAt5?: string[]; rankedAt10?: string[] } = {},
 ): BenchmarkCaseMetrics {
-  const rankedAt5 =
-    options.rankedAt5 ?? observation.rankedDocumentIds.slice(0, 5);
-  const rankedAt10 =
-    options.rankedAt10 ?? observation.rankedDocumentIds.slice(0, 10);
+  const ranked = unique(observation.rankedDocumentIds);
+  const rankedAt5 = unique(options.rankedAt5 ?? ranked.slice(0, 5)).slice(0, 5);
+  const rankedAt10 = unique(options.rankedAt10 ?? ranked.slice(0, 10)).slice(
+    0,
+    10,
+  );
   const gold = new Set(observation.goldDocumentIds);
   const relevantAt10 = rankedAt10.filter((id) => gold.has(id));
-  const first = observation.rankedDocumentIds.findIndex((id) => gold.has(id));
+  const first = ranked.findIndex((id) => gold.has(id));
   const dcg = rankedAt10.reduce(
     (sum, id, index) => sum + (gold.has(id) ? 1 / Math.log2(index + 2) : 0),
     0,
@@ -189,7 +195,7 @@ export function scoreBenchmarkObservation(
   );
 
   const evidenceScored = observation.goldEvidenceIds !== undefined;
-  const retrievedEvidence = observation.retrievedEvidenceIds ?? [];
+  const retrievedEvidence = unique(observation.retrievedEvidenceIds ?? []);
   const evidenceRecall = evidenceScored
     ? observation.goldEvidenceIds!.length === 0
       ? 1
@@ -197,7 +203,7 @@ export function scoreBenchmarkObservation(
         observation.goldEvidenceIds!.length
     : 0;
   const citationScored = observation.goldCitationIds !== undefined;
-  const retrievedCitations = observation.retrievedCitationIds ?? [];
+  const retrievedCitations = unique(observation.retrievedCitationIds ?? []);
   const citationPrecision = citationScored
     ? retrievedCitations.length === 0
       ? observation.goldCitationIds!.length === 0
@@ -341,6 +347,7 @@ export function selectBenchmarkDefault(
 ): BenchmarkDefaultDecision {
   const eligible = runs.filter(
     (run) =>
+      run.cases > 0 &&
       run.criticalFailures === 0 &&
       run.unsupportedClaimRate === 0 &&
       run.noAnswerAccuracy === 1,
@@ -365,9 +372,10 @@ export function selectBenchmarkDefault(
     bestVector.exactIdentifierRecall >= baseline.exactIdentifierRecall &&
     bestVector.meanLatencyMs <= Math.max(baseline.meanLatencyMs * 2, 25),
   );
-  const winner = vectorEligible
-    ? bestVector
-    : (baseline ?? eligible.sort(compare)[0]);
+  // A vector-only experiment is never a safe implicit runtime default.  If
+  // no measured non-vector baseline exists, leave selection empty instead of
+  // returning a vector name while reporting `vectorActivatedByDefault=false`.
+  const winner = vectorEligible ? bestVector : baseline;
   return {
     selectedDefault: winner?.configurationName ?? null,
     vectorActivatedByDefault: vectorEligible,
@@ -394,6 +402,12 @@ export function observationsFromGoldCases(
       : {}),
     ...(testCase.expect_no_answer !== undefined
       ? { expectNoAnswer: testCase.expect_no_answer }
+      : {}),
+    ...(testCase.gold_evidence
+      ? { goldEvidenceIds: [...testCase.gold_evidence] }
+      : {}),
+    ...(testCase.gold_citations
+      ? { goldCitationIds: [...testCase.gold_citations] }
       : {}),
     ...(testCase.critical === undefined ? {} : { critical: testCase.critical }),
   }));

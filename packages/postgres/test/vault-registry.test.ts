@@ -60,6 +60,22 @@ describe("vault membership isolation", () => {
     ).toMatchObject({ allowed: true, pathPrefix: "shared" });
   });
 
+  it("does not inherit a team vault when an explicit grant is disabled", () => {
+    expect(
+      canAccessVault(
+        "TEAM",
+        { role: "VIEWER", pathPrefix: null },
+        {
+          role: "VIEWER",
+          pathPrefix: null,
+          permissions: ["knowledge:read"],
+          enabled: false,
+        },
+        "knowledge:read",
+      ).allowed,
+    ).toBe(false);
+  });
+
   it("normalizes and intersects relative path prefixes", () => {
     expect(intersectVaultPathPrefixes("docs/", "docs/architecture")).toBe(
       "docs/architecture",
@@ -69,6 +85,12 @@ describe("vault membership isolation", () => {
       pathMatchesVaultPrefix("docs/architecture/hexagonal.md", "docs"),
     ).toBe(true);
     expect(pathMatchesVaultPrefix("docs-other/file.md", "docs")).toBe(false);
+    expect(intersectVaultPathPrefixes("/docs", null)).toBeUndefined();
+    expect(intersectVaultPathPrefixes("C:/docs", null)).toBeUndefined();
+    expect(
+      intersectVaultPathPrefixes("\\\\server\\share", null),
+    ).toBeUndefined();
+    expect(intersectVaultPathPrefixes("docs//private", null)).toBeUndefined();
   });
 
   it("keeps same paths and IDs isolated to explicitly authorized vaults", async () => {
@@ -142,5 +164,9 @@ describe("vault membership isolation", () => {
       permission: "knowledge:read",
     });
     expect(result.vaultIds).toEqual([rows[0]!.id]);
+    expect(result.accessByVault[rows[0]!.id]).toEqual({
+      pathPrefix: null,
+      permissions: ["knowledge:read"],
+    });
   });
 });

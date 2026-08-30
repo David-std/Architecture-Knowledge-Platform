@@ -1,0 +1,4816 @@
+{
+  "schemaVersion": "akp.retrieval.curated-benchmark.v1",
+  "status": "IMPLEMENTED_AND_EXECUTED",
+  "evidenceLevel": "CURATED_FIXTURE",
+  "qualityClaim": "NONE",
+  "provider": {
+    "mode": "curated-local",
+    "readsPrivateVault": false,
+    "readsDatabase": false
+  },
+  "generatedAt": "2026-08-29T05:15:56.032Z",
+  "pack": "curated-level-b",
+  "vaults": [
+    "vault-a-software",
+    "vault-b-handbook",
+    "vault-c-neutral"
+  ],
+  "caseCount": 13,
+  "matrixSize": 10,
+  "vectorDisabled": {
+    "requestedChannels": [
+      "exact",
+      "lexical",
+      "vector"
+    ],
+    "effectiveChannels": [
+      "exact",
+      "lexical"
+    ],
+    "vectorInvoked": false
+  },
+  "runs": [
+    {
+      "configurationName": "context-pack-only",
+      "cases": 13,
+      "passed": 13,
+      "criticalFailures": 0,
+      "meanRecallAt5": 1,
+      "meanRecallAt10": 1,
+      "meanReciprocalRank": 0.8076923076923077,
+      "meanNdcgAt10": 0.9716099810439582,
+      "meanEvidenceRecall": 1,
+      "evidenceRecallCoverage": 0.07692307692307693,
+      "meanCitationPrecision": 0.3333333333333333,
+      "citationPrecisionCoverage": 0.07692307692307693,
+      "unsupportedClaimRate": 0,
+      "noAnswerAccuracy": 1,
+      "noAnswerCases": 2,
+      "meanEstimatedTokens": 55.84615384615385,
+      "meanLatencyMs": 2,
+      "exactIdentifierRecall": 1,
+      "crossLanguageRecall": 0,
+      "vectorEnabled": false,
+      "rerankEnabled": false,
+      "results": [
+        {
+          "configurationName": "context-pack-only",
+          "caseId": "level-b-a-exact",
+          "slice": "exact-identifiers",
+          "rankedDocumentIds": [
+            "software-api-boundary",
+            "software-cache-policy",
+            "software-cache-runbook",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-api-boundary"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 115,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.25,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 115,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "context-pack-only",
+          "caseId": "level-b-a-alias",
+          "slice": "aliases",
+          "rankedDocumentIds": [
+            "software-api-boundary"
+          ],
+          "goldDocumentIds": [
+            "software-api-boundary"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 28,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 1,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 28,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "context-pack-only",
+          "caseId": "level-b-a-lexical",
+          "slice": "lexical",
+          "rankedDocumentIds": [
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-retry-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 29,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 1,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 29,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "context-pack-only",
+          "caseId": "level-b-a-graph",
+          "slice": "graph",
+          "rankedDocumentIds": [
+            "software-cache-policy",
+            "software-cache-runbook",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-cache-runbook"
+          ],
+          "mustNotInclude": [
+            "handbook-release-gate"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 87,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.3333333333333333,
+            "reciprocalRank": 0.5,
+            "ndcgAt10": 0.6309297535714575,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 87,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "context-pack-only",
+          "caseId": "level-b-a-vector-disabled",
+          "slice": "vector-disabled",
+          "rankedDocumentIds": [
+            "software-cache-policy",
+            "software-cache-runbook"
+          ],
+          "goldDocumentIds": [
+            "software-cache-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 58,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 58,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "context-pack-only",
+          "caseId": "level-b-a-source",
+          "slice": "source-verification",
+          "rankedDocumentIds": [
+            "software-cache-policy",
+            "software-cache-runbook",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-cache-policy"
+          ],
+          "goldEvidenceIds": [
+            "ev-software-cache"
+          ],
+          "retrievedEvidenceIds": [
+            "ev-software-cache",
+            "ev-software-cache-runbook",
+            "ev-software-retry"
+          ],
+          "goldCitationIds": [
+            "fixture://vault-a/software-cache-policy#L1"
+          ],
+          "retrievedCitationIds": [
+            "fixture://vault-a/software-cache-policy#L1",
+            "fixture://vault-a/software-cache-runbook#L1",
+            "fixture://vault-a/software-retry-policy#L1"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 87,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.3333333333333333,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 1,
+            "citationPrecision": 0.3333333333333333,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 87,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": true,
+            "citationScored": true
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "context-pack-only",
+          "caseId": "level-b-b-exact",
+          "slice": "exact-identifiers",
+          "rankedDocumentIds": [
+            "handbook-release-gate",
+            "handbook-rollback",
+            "handbook-support-matrix"
+          ],
+          "goldDocumentIds": [
+            "handbook-release-gate"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 78,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.3333333333333333,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 78,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "context-pack-only",
+          "caseId": "level-b-b-cross-vault",
+          "slice": "cross-vault-isolation",
+          "rankedDocumentIds": [
+            "handbook-release-gate",
+            "handbook-rollback"
+          ],
+          "goldDocumentIds": [
+            "handbook-release-gate"
+          ],
+          "mustNotInclude": [
+            "software-api-boundary",
+            "neutral-archive-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 53,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 53,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "context-pack-only",
+          "caseId": "level-b-b-paraphrase",
+          "slice": "paraphrases",
+          "rankedDocumentIds": [
+            "handbook-release-gate",
+            "handbook-rollback"
+          ],
+          "goldDocumentIds": [
+            "handbook-release-gate"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 53,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 53,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "context-pack-only",
+          "caseId": "level-b-b-no-answer",
+          "slice": "no-answer",
+          "rankedDocumentIds": [],
+          "goldDocumentIds": [],
+          "expectNoAnswer": true,
+          "returnedAnswer": false,
+          "estimatedTokens": 0,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0,
+            "reciprocalRank": 0,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 0,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "context-pack-only",
+          "caseId": "level-b-c-alias",
+          "slice": "aliases",
+          "rankedDocumentIds": [
+            "neutral-archive-policy",
+            "neutral-review-workflow"
+          ],
+          "goldDocumentIds": [
+            "neutral-archive-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 56,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 56,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "context-pack-only",
+          "caseId": "level-b-c-graph",
+          "slice": "graph",
+          "rankedDocumentIds": [
+            "neutral-review-workflow",
+            "neutral-archive-policy",
+            "neutral-snapshot-note"
+          ],
+          "goldDocumentIds": [
+            "neutral-review-workflow"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 82,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.3333333333333333,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 82,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "context-pack-only",
+          "caseId": "level-b-c-neutral-no-answer",
+          "slice": "no-answer",
+          "rankedDocumentIds": [],
+          "goldDocumentIds": [],
+          "expectNoAnswer": true,
+          "returnedAnswer": false,
+          "estimatedTokens": 0,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0,
+            "reciprocalRank": 0,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 0,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        }
+      ]
+    },
+    {
+      "configurationName": "exact+lexical",
+      "cases": 13,
+      "passed": 13,
+      "criticalFailures": 0,
+      "meanRecallAt5": 1,
+      "meanRecallAt10": 1,
+      "meanReciprocalRank": 0.7692307692307693,
+      "meanNdcgAt10": 0.9432199620879166,
+      "meanEvidenceRecall": 1,
+      "evidenceRecallCoverage": 0.07692307692307693,
+      "meanCitationPrecision": 0.3333333333333333,
+      "citationPrecisionCoverage": 0.07692307692307693,
+      "unsupportedClaimRate": 0,
+      "noAnswerAccuracy": 1,
+      "noAnswerCases": 2,
+      "meanEstimatedTokens": 55.84615384615385,
+      "meanLatencyMs": 3,
+      "exactIdentifierRecall": 1,
+      "crossLanguageRecall": 0,
+      "vectorEnabled": false,
+      "rerankEnabled": false,
+      "results": [
+        {
+          "configurationName": "exact+lexical",
+          "caseId": "level-b-a-exact",
+          "slice": "exact-identifiers",
+          "rankedDocumentIds": [
+            "software-api-boundary",
+            "software-cache-policy",
+            "software-cache-runbook",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-api-boundary"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 115,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.25,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 115,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "exact+lexical",
+          "caseId": "level-b-a-alias",
+          "slice": "aliases",
+          "rankedDocumentIds": [
+            "software-api-boundary"
+          ],
+          "goldDocumentIds": [
+            "software-api-boundary"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 28,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 1,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 28,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "exact+lexical",
+          "caseId": "level-b-a-lexical",
+          "slice": "lexical",
+          "rankedDocumentIds": [
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-retry-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 29,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 1,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 29,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "exact+lexical",
+          "caseId": "level-b-a-graph",
+          "slice": "graph",
+          "rankedDocumentIds": [
+            "software-cache-policy",
+            "software-cache-runbook",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-cache-runbook"
+          ],
+          "mustNotInclude": [
+            "handbook-release-gate"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 87,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.3333333333333333,
+            "reciprocalRank": 0.5,
+            "ndcgAt10": 0.6309297535714575,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 87,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "exact+lexical",
+          "caseId": "level-b-a-vector-disabled",
+          "slice": "vector-disabled",
+          "rankedDocumentIds": [
+            "software-cache-policy",
+            "software-cache-runbook"
+          ],
+          "goldDocumentIds": [
+            "software-cache-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 58,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 58,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "exact+lexical",
+          "caseId": "level-b-a-source",
+          "slice": "source-verification",
+          "rankedDocumentIds": [
+            "software-cache-policy",
+            "software-cache-runbook",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-cache-policy"
+          ],
+          "goldEvidenceIds": [
+            "ev-software-cache"
+          ],
+          "retrievedEvidenceIds": [
+            "ev-software-cache",
+            "ev-software-cache-runbook",
+            "ev-software-retry"
+          ],
+          "goldCitationIds": [
+            "fixture://vault-a/software-cache-policy#L1"
+          ],
+          "retrievedCitationIds": [
+            "fixture://vault-a/software-cache-policy#L1",
+            "fixture://vault-a/software-cache-runbook#L1",
+            "fixture://vault-a/software-retry-policy#L1"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 87,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.3333333333333333,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 1,
+            "citationPrecision": 0.3333333333333333,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 87,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": true,
+            "citationScored": true
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "exact+lexical",
+          "caseId": "level-b-b-exact",
+          "slice": "exact-identifiers",
+          "rankedDocumentIds": [
+            "handbook-release-gate",
+            "handbook-rollback",
+            "handbook-support-matrix"
+          ],
+          "goldDocumentIds": [
+            "handbook-release-gate"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 78,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.3333333333333333,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 78,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "exact+lexical",
+          "caseId": "level-b-b-cross-vault",
+          "slice": "cross-vault-isolation",
+          "rankedDocumentIds": [
+            "handbook-release-gate",
+            "handbook-rollback"
+          ],
+          "goldDocumentIds": [
+            "handbook-release-gate"
+          ],
+          "mustNotInclude": [
+            "software-api-boundary",
+            "neutral-archive-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 53,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 53,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "exact+lexical",
+          "caseId": "level-b-b-paraphrase",
+          "slice": "paraphrases",
+          "rankedDocumentIds": [
+            "handbook-release-gate",
+            "handbook-rollback"
+          ],
+          "goldDocumentIds": [
+            "handbook-release-gate"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 53,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 53,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "exact+lexical",
+          "caseId": "level-b-b-no-answer",
+          "slice": "no-answer",
+          "rankedDocumentIds": [],
+          "goldDocumentIds": [],
+          "expectNoAnswer": true,
+          "returnedAnswer": false,
+          "estimatedTokens": 0,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0,
+            "reciprocalRank": 0,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 0,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "exact+lexical",
+          "caseId": "level-b-c-alias",
+          "slice": "aliases",
+          "rankedDocumentIds": [
+            "neutral-archive-policy",
+            "neutral-review-workflow"
+          ],
+          "goldDocumentIds": [
+            "neutral-archive-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 56,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 56,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "exact+lexical",
+          "caseId": "level-b-c-graph",
+          "slice": "graph",
+          "rankedDocumentIds": [
+            "neutral-archive-policy",
+            "neutral-review-workflow",
+            "neutral-snapshot-note"
+          ],
+          "goldDocumentIds": [
+            "neutral-review-workflow"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 82,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.3333333333333333,
+            "reciprocalRank": 0.5,
+            "ndcgAt10": 0.6309297535714575,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 82,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "exact+lexical",
+          "caseId": "level-b-c-neutral-no-answer",
+          "slice": "no-answer",
+          "rankedDocumentIds": [],
+          "goldDocumentIds": [],
+          "expectNoAnswer": true,
+          "returnedAnswer": false,
+          "estimatedTokens": 0,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0,
+            "reciprocalRank": 0,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 0,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        }
+      ]
+    },
+    {
+      "configurationName": "vector-only",
+      "cases": 13,
+      "passed": 13,
+      "criticalFailures": 0,
+      "meanRecallAt5": 1,
+      "meanRecallAt10": 1,
+      "meanReciprocalRank": 0.8076923076923077,
+      "meanNdcgAt10": 0.9716099810439582,
+      "meanEvidenceRecall": 1,
+      "evidenceRecallCoverage": 0.07692307692307693,
+      "meanCitationPrecision": 0.3333333333333333,
+      "citationPrecisionCoverage": 0.07692307692307693,
+      "unsupportedClaimRate": 0,
+      "noAnswerAccuracy": 1,
+      "noAnswerCases": 2,
+      "meanEstimatedTokens": 55.84615384615385,
+      "meanLatencyMs": 2,
+      "exactIdentifierRecall": 1,
+      "crossLanguageRecall": 0,
+      "vectorEnabled": true,
+      "rerankEnabled": false,
+      "results": [
+        {
+          "configurationName": "vector-only",
+          "caseId": "level-b-a-exact",
+          "slice": "exact-identifiers",
+          "rankedDocumentIds": [
+            "software-api-boundary",
+            "software-cache-policy",
+            "software-cache-runbook",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-api-boundary"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 115,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.25,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 115,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "vector-only",
+          "caseId": "level-b-a-alias",
+          "slice": "aliases",
+          "rankedDocumentIds": [
+            "software-api-boundary"
+          ],
+          "goldDocumentIds": [
+            "software-api-boundary"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 28,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 1,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 28,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "vector-only",
+          "caseId": "level-b-a-lexical",
+          "slice": "lexical",
+          "rankedDocumentIds": [
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-retry-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 29,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 1,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 29,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "vector-only",
+          "caseId": "level-b-a-graph",
+          "slice": "graph",
+          "rankedDocumentIds": [
+            "software-cache-policy",
+            "software-cache-runbook",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-cache-runbook"
+          ],
+          "mustNotInclude": [
+            "handbook-release-gate"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 87,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.3333333333333333,
+            "reciprocalRank": 0.5,
+            "ndcgAt10": 0.6309297535714575,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 87,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "vector-only",
+          "caseId": "level-b-a-vector-disabled",
+          "slice": "vector-disabled",
+          "rankedDocumentIds": [
+            "software-cache-policy",
+            "software-cache-runbook"
+          ],
+          "goldDocumentIds": [
+            "software-cache-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 58,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 58,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "vector-only",
+          "caseId": "level-b-a-source",
+          "slice": "source-verification",
+          "rankedDocumentIds": [
+            "software-cache-policy",
+            "software-cache-runbook",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-cache-policy"
+          ],
+          "goldEvidenceIds": [
+            "ev-software-cache"
+          ],
+          "retrievedEvidenceIds": [
+            "ev-software-cache",
+            "ev-software-cache-runbook",
+            "ev-software-retry"
+          ],
+          "goldCitationIds": [
+            "fixture://vault-a/software-cache-policy#L1"
+          ],
+          "retrievedCitationIds": [
+            "fixture://vault-a/software-cache-policy#L1",
+            "fixture://vault-a/software-cache-runbook#L1",
+            "fixture://vault-a/software-retry-policy#L1"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 87,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.3333333333333333,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 1,
+            "citationPrecision": 0.3333333333333333,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 87,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": true,
+            "citationScored": true
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "vector-only",
+          "caseId": "level-b-b-exact",
+          "slice": "exact-identifiers",
+          "rankedDocumentIds": [
+            "handbook-release-gate",
+            "handbook-rollback",
+            "handbook-support-matrix"
+          ],
+          "goldDocumentIds": [
+            "handbook-release-gate"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 78,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.3333333333333333,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 78,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "vector-only",
+          "caseId": "level-b-b-cross-vault",
+          "slice": "cross-vault-isolation",
+          "rankedDocumentIds": [
+            "handbook-release-gate",
+            "handbook-rollback"
+          ],
+          "goldDocumentIds": [
+            "handbook-release-gate"
+          ],
+          "mustNotInclude": [
+            "software-api-boundary",
+            "neutral-archive-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 53,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 53,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "vector-only",
+          "caseId": "level-b-b-paraphrase",
+          "slice": "paraphrases",
+          "rankedDocumentIds": [
+            "handbook-release-gate",
+            "handbook-rollback"
+          ],
+          "goldDocumentIds": [
+            "handbook-release-gate"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 53,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 53,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "vector-only",
+          "caseId": "level-b-b-no-answer",
+          "slice": "no-answer",
+          "rankedDocumentIds": [],
+          "goldDocumentIds": [],
+          "expectNoAnswer": true,
+          "returnedAnswer": false,
+          "estimatedTokens": 0,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0,
+            "reciprocalRank": 0,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 0,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "vector-only",
+          "caseId": "level-b-c-alias",
+          "slice": "aliases",
+          "rankedDocumentIds": [
+            "neutral-archive-policy",
+            "neutral-review-workflow"
+          ],
+          "goldDocumentIds": [
+            "neutral-archive-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 56,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 56,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "vector-only",
+          "caseId": "level-b-c-graph",
+          "slice": "graph",
+          "rankedDocumentIds": [
+            "neutral-review-workflow",
+            "neutral-archive-policy",
+            "neutral-snapshot-note"
+          ],
+          "goldDocumentIds": [
+            "neutral-review-workflow"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 82,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.3333333333333333,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 82,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "vector-only",
+          "caseId": "level-b-c-neutral-no-answer",
+          "slice": "no-answer",
+          "rankedDocumentIds": [],
+          "goldDocumentIds": [],
+          "expectNoAnswer": true,
+          "returnedAnswer": false,
+          "estimatedTokens": 0,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0,
+            "reciprocalRank": 0,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 0,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        }
+      ]
+    },
+    {
+      "configurationName": "graph-only",
+      "cases": 13,
+      "passed": 13,
+      "criticalFailures": 0,
+      "meanRecallAt5": 1,
+      "meanRecallAt10": 1,
+      "meanReciprocalRank": 0.6794871794871795,
+      "meanNdcgAt10": 0.8763684046703364,
+      "meanEvidenceRecall": 1,
+      "evidenceRecallCoverage": 0.07692307692307693,
+      "meanCitationPrecision": 0.25,
+      "citationPrecisionCoverage": 0.07692307692307693,
+      "unsupportedClaimRate": 0,
+      "noAnswerAccuracy": 1,
+      "noAnswerCases": 2,
+      "meanEstimatedTokens": 64.53846153846153,
+      "meanLatencyMs": 2,
+      "exactIdentifierRecall": 1,
+      "crossLanguageRecall": 0,
+      "vectorEnabled": false,
+      "rerankEnabled": false,
+      "results": [
+        {
+          "configurationName": "graph-only",
+          "caseId": "level-b-a-exact",
+          "slice": "exact-identifiers",
+          "rankedDocumentIds": [
+            "software-api-boundary",
+            "software-cache-policy",
+            "software-cache-runbook",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-api-boundary"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 115,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.25,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 115,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "graph-only",
+          "caseId": "level-b-a-alias",
+          "slice": "aliases",
+          "rankedDocumentIds": [
+            "software-api-boundary"
+          ],
+          "goldDocumentIds": [
+            "software-api-boundary"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 28,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 1,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 28,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "graph-only",
+          "caseId": "level-b-a-lexical",
+          "slice": "lexical",
+          "rankedDocumentIds": [
+            "software-api-boundary",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-retry-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 57,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 0.5,
+            "ndcgAt10": 0.6309297535714575,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 57,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "graph-only",
+          "caseId": "level-b-a-graph",
+          "slice": "graph",
+          "rankedDocumentIds": [
+            "software-api-boundary",
+            "software-cache-policy",
+            "software-cache-runbook",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-cache-runbook"
+          ],
+          "mustNotInclude": [
+            "handbook-release-gate"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 115,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.25,
+            "reciprocalRank": 0.3333333333333333,
+            "ndcgAt10": 0.5,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 115,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "graph-only",
+          "caseId": "level-b-a-vector-disabled",
+          "slice": "vector-disabled",
+          "rankedDocumentIds": [
+            "software-cache-policy",
+            "software-cache-runbook",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-cache-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 87,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.3333333333333333,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 87,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "graph-only",
+          "caseId": "level-b-a-source",
+          "slice": "source-verification",
+          "rankedDocumentIds": [
+            "software-api-boundary",
+            "software-cache-policy",
+            "software-cache-runbook",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-cache-policy"
+          ],
+          "goldEvidenceIds": [
+            "ev-software-cache"
+          ],
+          "retrievedEvidenceIds": [
+            "ev-software-boundary",
+            "ev-software-cache",
+            "ev-software-cache-runbook",
+            "ev-software-retry"
+          ],
+          "goldCitationIds": [
+            "fixture://vault-a/software-cache-policy#L1"
+          ],
+          "retrievedCitationIds": [
+            "fixture://vault-a/software-api-boundary#L1",
+            "fixture://vault-a/software-cache-policy#L1",
+            "fixture://vault-a/software-cache-runbook#L1",
+            "fixture://vault-a/software-retry-policy#L1"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 115,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.25,
+            "reciprocalRank": 0.5,
+            "ndcgAt10": 0.6309297535714575,
+            "evidenceRecall": 1,
+            "citationPrecision": 0.25,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 115,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": true,
+            "citationScored": true
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "graph-only",
+          "caseId": "level-b-b-exact",
+          "slice": "exact-identifiers",
+          "rankedDocumentIds": [
+            "handbook-release-gate",
+            "handbook-rollback",
+            "handbook-support-matrix"
+          ],
+          "goldDocumentIds": [
+            "handbook-release-gate"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 78,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.3333333333333333,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 78,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "graph-only",
+          "caseId": "level-b-b-cross-vault",
+          "slice": "cross-vault-isolation",
+          "rankedDocumentIds": [
+            "handbook-release-gate",
+            "handbook-rollback"
+          ],
+          "goldDocumentIds": [
+            "handbook-release-gate"
+          ],
+          "mustNotInclude": [
+            "software-api-boundary",
+            "neutral-archive-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 53,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 53,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "graph-only",
+          "caseId": "level-b-b-paraphrase",
+          "slice": "paraphrases",
+          "rankedDocumentIds": [
+            "handbook-release-gate",
+            "handbook-rollback"
+          ],
+          "goldDocumentIds": [
+            "handbook-release-gate"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 53,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 53,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "graph-only",
+          "caseId": "level-b-b-no-answer",
+          "slice": "no-answer",
+          "rankedDocumentIds": [],
+          "goldDocumentIds": [],
+          "expectNoAnswer": true,
+          "returnedAnswer": false,
+          "estimatedTokens": 0,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0,
+            "reciprocalRank": 0,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 0,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "graph-only",
+          "caseId": "level-b-c-alias",
+          "slice": "aliases",
+          "rankedDocumentIds": [
+            "neutral-archive-policy",
+            "neutral-review-workflow"
+          ],
+          "goldDocumentIds": [
+            "neutral-archive-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 56,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 56,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "graph-only",
+          "caseId": "level-b-c-graph",
+          "slice": "graph",
+          "rankedDocumentIds": [
+            "neutral-archive-policy",
+            "neutral-review-workflow",
+            "neutral-snapshot-note"
+          ],
+          "goldDocumentIds": [
+            "neutral-review-workflow"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 82,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.3333333333333333,
+            "reciprocalRank": 0.5,
+            "ndcgAt10": 0.6309297535714575,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 82,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "graph-only",
+          "caseId": "level-b-c-neutral-no-answer",
+          "slice": "no-answer",
+          "rankedDocumentIds": [],
+          "goldDocumentIds": [],
+          "expectNoAnswer": true,
+          "returnedAnswer": false,
+          "estimatedTokens": 0,
+          "latencyMs": 2,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0,
+            "reciprocalRank": 0,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 0,
+            "latencyMs": 2,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        }
+      ]
+    },
+    {
+      "configurationName": "lexical+vector",
+      "cases": 13,
+      "passed": 13,
+      "criticalFailures": 0,
+      "meanRecallAt5": 1,
+      "meanRecallAt10": 1,
+      "meanReciprocalRank": 0.8076923076923077,
+      "meanNdcgAt10": 0.9716099810439582,
+      "meanEvidenceRecall": 1,
+      "evidenceRecallCoverage": 0.07692307692307693,
+      "meanCitationPrecision": 0.3333333333333333,
+      "citationPrecisionCoverage": 0.07692307692307693,
+      "unsupportedClaimRate": 0,
+      "noAnswerAccuracy": 1,
+      "noAnswerCases": 2,
+      "meanEstimatedTokens": 55.84615384615385,
+      "meanLatencyMs": 3,
+      "exactIdentifierRecall": 1,
+      "crossLanguageRecall": 0,
+      "vectorEnabled": true,
+      "rerankEnabled": false,
+      "results": [
+        {
+          "configurationName": "lexical+vector",
+          "caseId": "level-b-a-exact",
+          "slice": "exact-identifiers",
+          "rankedDocumentIds": [
+            "software-api-boundary",
+            "software-cache-policy",
+            "software-cache-runbook",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-api-boundary"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 115,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.25,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 115,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "lexical+vector",
+          "caseId": "level-b-a-alias",
+          "slice": "aliases",
+          "rankedDocumentIds": [
+            "software-api-boundary"
+          ],
+          "goldDocumentIds": [
+            "software-api-boundary"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 28,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 1,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 28,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "lexical+vector",
+          "caseId": "level-b-a-lexical",
+          "slice": "lexical",
+          "rankedDocumentIds": [
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-retry-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 29,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 1,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 29,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "lexical+vector",
+          "caseId": "level-b-a-graph",
+          "slice": "graph",
+          "rankedDocumentIds": [
+            "software-cache-policy",
+            "software-cache-runbook",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-cache-runbook"
+          ],
+          "mustNotInclude": [
+            "handbook-release-gate"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 87,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.3333333333333333,
+            "reciprocalRank": 0.5,
+            "ndcgAt10": 0.6309297535714575,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 87,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "lexical+vector",
+          "caseId": "level-b-a-vector-disabled",
+          "slice": "vector-disabled",
+          "rankedDocumentIds": [
+            "software-cache-policy",
+            "software-cache-runbook"
+          ],
+          "goldDocumentIds": [
+            "software-cache-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 58,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 58,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "lexical+vector",
+          "caseId": "level-b-a-source",
+          "slice": "source-verification",
+          "rankedDocumentIds": [
+            "software-cache-policy",
+            "software-cache-runbook",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-cache-policy"
+          ],
+          "goldEvidenceIds": [
+            "ev-software-cache"
+          ],
+          "retrievedEvidenceIds": [
+            "ev-software-cache",
+            "ev-software-cache-runbook",
+            "ev-software-retry"
+          ],
+          "goldCitationIds": [
+            "fixture://vault-a/software-cache-policy#L1"
+          ],
+          "retrievedCitationIds": [
+            "fixture://vault-a/software-cache-policy#L1",
+            "fixture://vault-a/software-cache-runbook#L1",
+            "fixture://vault-a/software-retry-policy#L1"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 87,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.3333333333333333,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 1,
+            "citationPrecision": 0.3333333333333333,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 87,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": true,
+            "citationScored": true
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "lexical+vector",
+          "caseId": "level-b-b-exact",
+          "slice": "exact-identifiers",
+          "rankedDocumentIds": [
+            "handbook-release-gate",
+            "handbook-rollback",
+            "handbook-support-matrix"
+          ],
+          "goldDocumentIds": [
+            "handbook-release-gate"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 78,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.3333333333333333,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 78,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "lexical+vector",
+          "caseId": "level-b-b-cross-vault",
+          "slice": "cross-vault-isolation",
+          "rankedDocumentIds": [
+            "handbook-release-gate",
+            "handbook-rollback"
+          ],
+          "goldDocumentIds": [
+            "handbook-release-gate"
+          ],
+          "mustNotInclude": [
+            "software-api-boundary",
+            "neutral-archive-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 53,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 53,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "lexical+vector",
+          "caseId": "level-b-b-paraphrase",
+          "slice": "paraphrases",
+          "rankedDocumentIds": [
+            "handbook-release-gate",
+            "handbook-rollback"
+          ],
+          "goldDocumentIds": [
+            "handbook-release-gate"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 53,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 53,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "lexical+vector",
+          "caseId": "level-b-b-no-answer",
+          "slice": "no-answer",
+          "rankedDocumentIds": [],
+          "goldDocumentIds": [],
+          "expectNoAnswer": true,
+          "returnedAnswer": false,
+          "estimatedTokens": 0,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0,
+            "reciprocalRank": 0,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 0,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "lexical+vector",
+          "caseId": "level-b-c-alias",
+          "slice": "aliases",
+          "rankedDocumentIds": [
+            "neutral-archive-policy",
+            "neutral-review-workflow"
+          ],
+          "goldDocumentIds": [
+            "neutral-archive-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 56,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 56,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "lexical+vector",
+          "caseId": "level-b-c-graph",
+          "slice": "graph",
+          "rankedDocumentIds": [
+            "neutral-review-workflow",
+            "neutral-archive-policy",
+            "neutral-snapshot-note"
+          ],
+          "goldDocumentIds": [
+            "neutral-review-workflow"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 82,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.3333333333333333,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 82,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "lexical+vector",
+          "caseId": "level-b-c-neutral-no-answer",
+          "slice": "no-answer",
+          "rankedDocumentIds": [],
+          "goldDocumentIds": [],
+          "expectNoAnswer": true,
+          "returnedAnswer": false,
+          "estimatedTokens": 0,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0,
+            "reciprocalRank": 0,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 0,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        }
+      ]
+    },
+    {
+      "configurationName": "lexical+graph",
+      "cases": 13,
+      "passed": 13,
+      "criticalFailures": 0,
+      "meanRecallAt5": 1,
+      "meanRecallAt10": 1,
+      "meanReciprocalRank": 0.7948717948717949,
+      "meanNdcgAt10": 0.9615384615384616,
+      "meanEvidenceRecall": 1,
+      "evidenceRecallCoverage": 0.07692307692307693,
+      "meanCitationPrecision": 0.25,
+      "citationPrecisionCoverage": 0.07692307692307693,
+      "unsupportedClaimRate": 0,
+      "noAnswerAccuracy": 1,
+      "noAnswerCases": 2,
+      "meanEstimatedTokens": 64.53846153846153,
+      "meanLatencyMs": 3,
+      "exactIdentifierRecall": 1,
+      "crossLanguageRecall": 0,
+      "vectorEnabled": false,
+      "rerankEnabled": false,
+      "results": [
+        {
+          "configurationName": "lexical+graph",
+          "caseId": "level-b-a-exact",
+          "slice": "exact-identifiers",
+          "rankedDocumentIds": [
+            "software-api-boundary",
+            "software-cache-policy",
+            "software-cache-runbook",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-api-boundary"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 115,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.25,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 115,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "lexical+graph",
+          "caseId": "level-b-a-alias",
+          "slice": "aliases",
+          "rankedDocumentIds": [
+            "software-api-boundary"
+          ],
+          "goldDocumentIds": [
+            "software-api-boundary"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 28,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 1,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 28,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "lexical+graph",
+          "caseId": "level-b-a-lexical",
+          "slice": "lexical",
+          "rankedDocumentIds": [
+            "software-retry-policy",
+            "software-api-boundary"
+          ],
+          "goldDocumentIds": [
+            "software-retry-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 57,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 57,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "lexical+graph",
+          "caseId": "level-b-a-graph",
+          "slice": "graph",
+          "rankedDocumentIds": [
+            "software-cache-policy",
+            "software-api-boundary",
+            "software-cache-runbook",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-cache-runbook"
+          ],
+          "mustNotInclude": [
+            "handbook-release-gate"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 115,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.25,
+            "reciprocalRank": 0.3333333333333333,
+            "ndcgAt10": 0.5,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 115,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "lexical+graph",
+          "caseId": "level-b-a-vector-disabled",
+          "slice": "vector-disabled",
+          "rankedDocumentIds": [
+            "software-cache-policy",
+            "software-cache-runbook",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-cache-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 87,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.3333333333333333,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 87,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "lexical+graph",
+          "caseId": "level-b-a-source",
+          "slice": "source-verification",
+          "rankedDocumentIds": [
+            "software-cache-policy",
+            "software-api-boundary",
+            "software-cache-runbook",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-cache-policy"
+          ],
+          "goldEvidenceIds": [
+            "ev-software-cache"
+          ],
+          "retrievedEvidenceIds": [
+            "ev-software-cache",
+            "ev-software-boundary",
+            "ev-software-cache-runbook",
+            "ev-software-retry"
+          ],
+          "goldCitationIds": [
+            "fixture://vault-a/software-cache-policy#L1"
+          ],
+          "retrievedCitationIds": [
+            "fixture://vault-a/software-cache-policy#L1",
+            "fixture://vault-a/software-api-boundary#L1",
+            "fixture://vault-a/software-cache-runbook#L1",
+            "fixture://vault-a/software-retry-policy#L1"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 115,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.25,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 1,
+            "citationPrecision": 0.25,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 115,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": true,
+            "citationScored": true
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "lexical+graph",
+          "caseId": "level-b-b-exact",
+          "slice": "exact-identifiers",
+          "rankedDocumentIds": [
+            "handbook-release-gate",
+            "handbook-rollback",
+            "handbook-support-matrix"
+          ],
+          "goldDocumentIds": [
+            "handbook-release-gate"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 78,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.3333333333333333,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 78,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "lexical+graph",
+          "caseId": "level-b-b-cross-vault",
+          "slice": "cross-vault-isolation",
+          "rankedDocumentIds": [
+            "handbook-release-gate",
+            "handbook-rollback"
+          ],
+          "goldDocumentIds": [
+            "handbook-release-gate"
+          ],
+          "mustNotInclude": [
+            "software-api-boundary",
+            "neutral-archive-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 53,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 53,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "lexical+graph",
+          "caseId": "level-b-b-paraphrase",
+          "slice": "paraphrases",
+          "rankedDocumentIds": [
+            "handbook-release-gate",
+            "handbook-rollback"
+          ],
+          "goldDocumentIds": [
+            "handbook-release-gate"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 53,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 53,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "lexical+graph",
+          "caseId": "level-b-b-no-answer",
+          "slice": "no-answer",
+          "rankedDocumentIds": [],
+          "goldDocumentIds": [],
+          "expectNoAnswer": true,
+          "returnedAnswer": false,
+          "estimatedTokens": 0,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0,
+            "reciprocalRank": 0,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 0,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "lexical+graph",
+          "caseId": "level-b-c-alias",
+          "slice": "aliases",
+          "rankedDocumentIds": [
+            "neutral-archive-policy",
+            "neutral-review-workflow"
+          ],
+          "goldDocumentIds": [
+            "neutral-archive-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 56,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 56,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "lexical+graph",
+          "caseId": "level-b-c-graph",
+          "slice": "graph",
+          "rankedDocumentIds": [
+            "neutral-review-workflow",
+            "neutral-archive-policy",
+            "neutral-snapshot-note"
+          ],
+          "goldDocumentIds": [
+            "neutral-review-workflow"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 82,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.3333333333333333,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 82,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "lexical+graph",
+          "caseId": "level-b-c-neutral-no-answer",
+          "slice": "no-answer",
+          "rankedDocumentIds": [],
+          "goldDocumentIds": [],
+          "expectNoAnswer": true,
+          "returnedAnswer": false,
+          "estimatedTokens": 0,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0,
+            "reciprocalRank": 0,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 0,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        }
+      ]
+    },
+    {
+      "configurationName": "vector+graph",
+      "cases": 13,
+      "passed": 13,
+      "criticalFailures": 0,
+      "meanRecallAt5": 1,
+      "meanRecallAt10": 1,
+      "meanReciprocalRank": 0.6794871794871795,
+      "meanNdcgAt10": 0.8763684046703364,
+      "meanEvidenceRecall": 1,
+      "evidenceRecallCoverage": 0.07692307692307693,
+      "meanCitationPrecision": 0.25,
+      "citationPrecisionCoverage": 0.07692307692307693,
+      "unsupportedClaimRate": 0,
+      "noAnswerAccuracy": 1,
+      "noAnswerCases": 2,
+      "meanEstimatedTokens": 64.53846153846153,
+      "meanLatencyMs": 3,
+      "exactIdentifierRecall": 1,
+      "crossLanguageRecall": 0,
+      "vectorEnabled": true,
+      "rerankEnabled": false,
+      "results": [
+        {
+          "configurationName": "vector+graph",
+          "caseId": "level-b-a-exact",
+          "slice": "exact-identifiers",
+          "rankedDocumentIds": [
+            "software-api-boundary",
+            "software-cache-policy",
+            "software-cache-runbook",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-api-boundary"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 115,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.25,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 115,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "vector+graph",
+          "caseId": "level-b-a-alias",
+          "slice": "aliases",
+          "rankedDocumentIds": [
+            "software-api-boundary"
+          ],
+          "goldDocumentIds": [
+            "software-api-boundary"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 28,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 1,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 28,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "vector+graph",
+          "caseId": "level-b-a-lexical",
+          "slice": "lexical",
+          "rankedDocumentIds": [
+            "software-api-boundary",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-retry-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 57,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 0.5,
+            "ndcgAt10": 0.6309297535714575,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 57,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "vector+graph",
+          "caseId": "level-b-a-graph",
+          "slice": "graph",
+          "rankedDocumentIds": [
+            "software-api-boundary",
+            "software-cache-policy",
+            "software-cache-runbook",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-cache-runbook"
+          ],
+          "mustNotInclude": [
+            "handbook-release-gate"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 115,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.25,
+            "reciprocalRank": 0.3333333333333333,
+            "ndcgAt10": 0.5,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 115,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "vector+graph",
+          "caseId": "level-b-a-vector-disabled",
+          "slice": "vector-disabled",
+          "rankedDocumentIds": [
+            "software-cache-policy",
+            "software-cache-runbook",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-cache-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 87,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.3333333333333333,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 87,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "vector+graph",
+          "caseId": "level-b-a-source",
+          "slice": "source-verification",
+          "rankedDocumentIds": [
+            "software-api-boundary",
+            "software-cache-policy",
+            "software-cache-runbook",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-cache-policy"
+          ],
+          "goldEvidenceIds": [
+            "ev-software-cache"
+          ],
+          "retrievedEvidenceIds": [
+            "ev-software-boundary",
+            "ev-software-cache",
+            "ev-software-cache-runbook",
+            "ev-software-retry"
+          ],
+          "goldCitationIds": [
+            "fixture://vault-a/software-cache-policy#L1"
+          ],
+          "retrievedCitationIds": [
+            "fixture://vault-a/software-api-boundary#L1",
+            "fixture://vault-a/software-cache-policy#L1",
+            "fixture://vault-a/software-cache-runbook#L1",
+            "fixture://vault-a/software-retry-policy#L1"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 115,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.25,
+            "reciprocalRank": 0.5,
+            "ndcgAt10": 0.6309297535714575,
+            "evidenceRecall": 1,
+            "citationPrecision": 0.25,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 115,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": true,
+            "citationScored": true
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "vector+graph",
+          "caseId": "level-b-b-exact",
+          "slice": "exact-identifiers",
+          "rankedDocumentIds": [
+            "handbook-release-gate",
+            "handbook-rollback",
+            "handbook-support-matrix"
+          ],
+          "goldDocumentIds": [
+            "handbook-release-gate"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 78,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.3333333333333333,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 78,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "vector+graph",
+          "caseId": "level-b-b-cross-vault",
+          "slice": "cross-vault-isolation",
+          "rankedDocumentIds": [
+            "handbook-release-gate",
+            "handbook-rollback"
+          ],
+          "goldDocumentIds": [
+            "handbook-release-gate"
+          ],
+          "mustNotInclude": [
+            "software-api-boundary",
+            "neutral-archive-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 53,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 53,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "vector+graph",
+          "caseId": "level-b-b-paraphrase",
+          "slice": "paraphrases",
+          "rankedDocumentIds": [
+            "handbook-release-gate",
+            "handbook-rollback"
+          ],
+          "goldDocumentIds": [
+            "handbook-release-gate"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 53,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 53,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "vector+graph",
+          "caseId": "level-b-b-no-answer",
+          "slice": "no-answer",
+          "rankedDocumentIds": [],
+          "goldDocumentIds": [],
+          "expectNoAnswer": true,
+          "returnedAnswer": false,
+          "estimatedTokens": 0,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0,
+            "reciprocalRank": 0,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 0,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "vector+graph",
+          "caseId": "level-b-c-alias",
+          "slice": "aliases",
+          "rankedDocumentIds": [
+            "neutral-archive-policy",
+            "neutral-review-workflow"
+          ],
+          "goldDocumentIds": [
+            "neutral-archive-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 56,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 56,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "vector+graph",
+          "caseId": "level-b-c-graph",
+          "slice": "graph",
+          "rankedDocumentIds": [
+            "neutral-archive-policy",
+            "neutral-review-workflow",
+            "neutral-snapshot-note"
+          ],
+          "goldDocumentIds": [
+            "neutral-review-workflow"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 82,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.3333333333333333,
+            "reciprocalRank": 0.5,
+            "ndcgAt10": 0.6309297535714575,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 82,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "vector+graph",
+          "caseId": "level-b-c-neutral-no-answer",
+          "slice": "no-answer",
+          "rankedDocumentIds": [],
+          "goldDocumentIds": [],
+          "expectNoAnswer": true,
+          "returnedAnswer": false,
+          "estimatedTokens": 0,
+          "latencyMs": 3,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0,
+            "reciprocalRank": 0,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 0,
+            "latencyMs": 3,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        }
+      ]
+    },
+    {
+      "configurationName": "context-pack+lexical+graph",
+      "cases": 13,
+      "passed": 13,
+      "criticalFailures": 0,
+      "meanRecallAt5": 1,
+      "meanRecallAt10": 1,
+      "meanReciprocalRank": 0.7948717948717949,
+      "meanNdcgAt10": 0.9615384615384616,
+      "meanEvidenceRecall": 1,
+      "evidenceRecallCoverage": 0.07692307692307693,
+      "meanCitationPrecision": 0.25,
+      "citationPrecisionCoverage": 0.07692307692307693,
+      "unsupportedClaimRate": 0,
+      "noAnswerAccuracy": 1,
+      "noAnswerCases": 2,
+      "meanEstimatedTokens": 64.53846153846153,
+      "meanLatencyMs": 4,
+      "exactIdentifierRecall": 1,
+      "crossLanguageRecall": 0,
+      "vectorEnabled": false,
+      "rerankEnabled": false,
+      "results": [
+        {
+          "configurationName": "context-pack+lexical+graph",
+          "caseId": "level-b-a-exact",
+          "slice": "exact-identifiers",
+          "rankedDocumentIds": [
+            "software-api-boundary",
+            "software-cache-policy",
+            "software-cache-runbook",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-api-boundary"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 115,
+          "latencyMs": 4,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.25,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 115,
+            "latencyMs": 4,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "context-pack+lexical+graph",
+          "caseId": "level-b-a-alias",
+          "slice": "aliases",
+          "rankedDocumentIds": [
+            "software-api-boundary"
+          ],
+          "goldDocumentIds": [
+            "software-api-boundary"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 28,
+          "latencyMs": 4,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 1,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 28,
+            "latencyMs": 4,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "context-pack+lexical+graph",
+          "caseId": "level-b-a-lexical",
+          "slice": "lexical",
+          "rankedDocumentIds": [
+            "software-retry-policy",
+            "software-api-boundary"
+          ],
+          "goldDocumentIds": [
+            "software-retry-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 57,
+          "latencyMs": 4,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 57,
+            "latencyMs": 4,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "context-pack+lexical+graph",
+          "caseId": "level-b-a-graph",
+          "slice": "graph",
+          "rankedDocumentIds": [
+            "software-cache-policy",
+            "software-api-boundary",
+            "software-cache-runbook",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-cache-runbook"
+          ],
+          "mustNotInclude": [
+            "handbook-release-gate"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 115,
+          "latencyMs": 4,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.25,
+            "reciprocalRank": 0.3333333333333333,
+            "ndcgAt10": 0.5,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 115,
+            "latencyMs": 4,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "context-pack+lexical+graph",
+          "caseId": "level-b-a-vector-disabled",
+          "slice": "vector-disabled",
+          "rankedDocumentIds": [
+            "software-cache-policy",
+            "software-cache-runbook",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-cache-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 87,
+          "latencyMs": 4,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.3333333333333333,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 87,
+            "latencyMs": 4,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "context-pack+lexical+graph",
+          "caseId": "level-b-a-source",
+          "slice": "source-verification",
+          "rankedDocumentIds": [
+            "software-cache-policy",
+            "software-api-boundary",
+            "software-cache-runbook",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-cache-policy"
+          ],
+          "goldEvidenceIds": [
+            "ev-software-cache"
+          ],
+          "retrievedEvidenceIds": [
+            "ev-software-cache",
+            "ev-software-boundary",
+            "ev-software-cache-runbook",
+            "ev-software-retry"
+          ],
+          "goldCitationIds": [
+            "fixture://vault-a/software-cache-policy#L1"
+          ],
+          "retrievedCitationIds": [
+            "fixture://vault-a/software-cache-policy#L1",
+            "fixture://vault-a/software-api-boundary#L1",
+            "fixture://vault-a/software-cache-runbook#L1",
+            "fixture://vault-a/software-retry-policy#L1"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 115,
+          "latencyMs": 4,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.25,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 1,
+            "citationPrecision": 0.25,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 115,
+            "latencyMs": 4,
+            "forbidden": [],
+            "evidenceScored": true,
+            "citationScored": true
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "context-pack+lexical+graph",
+          "caseId": "level-b-b-exact",
+          "slice": "exact-identifiers",
+          "rankedDocumentIds": [
+            "handbook-release-gate",
+            "handbook-rollback",
+            "handbook-support-matrix"
+          ],
+          "goldDocumentIds": [
+            "handbook-release-gate"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 78,
+          "latencyMs": 4,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.3333333333333333,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 78,
+            "latencyMs": 4,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "context-pack+lexical+graph",
+          "caseId": "level-b-b-cross-vault",
+          "slice": "cross-vault-isolation",
+          "rankedDocumentIds": [
+            "handbook-release-gate",
+            "handbook-rollback"
+          ],
+          "goldDocumentIds": [
+            "handbook-release-gate"
+          ],
+          "mustNotInclude": [
+            "software-api-boundary",
+            "neutral-archive-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 53,
+          "latencyMs": 4,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 53,
+            "latencyMs": 4,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "context-pack+lexical+graph",
+          "caseId": "level-b-b-paraphrase",
+          "slice": "paraphrases",
+          "rankedDocumentIds": [
+            "handbook-release-gate",
+            "handbook-rollback"
+          ],
+          "goldDocumentIds": [
+            "handbook-release-gate"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 53,
+          "latencyMs": 4,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 53,
+            "latencyMs": 4,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "context-pack+lexical+graph",
+          "caseId": "level-b-b-no-answer",
+          "slice": "no-answer",
+          "rankedDocumentIds": [],
+          "goldDocumentIds": [],
+          "expectNoAnswer": true,
+          "returnedAnswer": false,
+          "estimatedTokens": 0,
+          "latencyMs": 4,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0,
+            "reciprocalRank": 0,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 0,
+            "latencyMs": 4,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "context-pack+lexical+graph",
+          "caseId": "level-b-c-alias",
+          "slice": "aliases",
+          "rankedDocumentIds": [
+            "neutral-archive-policy",
+            "neutral-review-workflow"
+          ],
+          "goldDocumentIds": [
+            "neutral-archive-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 56,
+          "latencyMs": 4,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 56,
+            "latencyMs": 4,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "context-pack+lexical+graph",
+          "caseId": "level-b-c-graph",
+          "slice": "graph",
+          "rankedDocumentIds": [
+            "neutral-review-workflow",
+            "neutral-archive-policy",
+            "neutral-snapshot-note"
+          ],
+          "goldDocumentIds": [
+            "neutral-review-workflow"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 82,
+          "latencyMs": 4,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.3333333333333333,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 82,
+            "latencyMs": 4,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "context-pack+lexical+graph",
+          "caseId": "level-b-c-neutral-no-answer",
+          "slice": "no-answer",
+          "rankedDocumentIds": [],
+          "goldDocumentIds": [],
+          "expectNoAnswer": true,
+          "returnedAnswer": false,
+          "estimatedTokens": 0,
+          "latencyMs": 4,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0,
+            "reciprocalRank": 0,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 0,
+            "latencyMs": 4,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        }
+      ]
+    },
+    {
+      "configurationName": "full-hybrid-rrf",
+      "cases": 13,
+      "passed": 13,
+      "criticalFailures": 0,
+      "meanRecallAt5": 1,
+      "meanRecallAt10": 1,
+      "meanReciprocalRank": 0.7692307692307693,
+      "meanNdcgAt10": 0.9432199620879166,
+      "meanEvidenceRecall": 1,
+      "evidenceRecallCoverage": 0.07692307692307693,
+      "meanCitationPrecision": 0.25,
+      "citationPrecisionCoverage": 0.07692307692307693,
+      "unsupportedClaimRate": 0,
+      "noAnswerAccuracy": 1,
+      "noAnswerCases": 2,
+      "meanEstimatedTokens": 64.53846153846153,
+      "meanLatencyMs": 6,
+      "exactIdentifierRecall": 1,
+      "crossLanguageRecall": 0,
+      "vectorEnabled": true,
+      "rerankEnabled": false,
+      "results": [
+        {
+          "configurationName": "full-hybrid-rrf",
+          "caseId": "level-b-a-exact",
+          "slice": "exact-identifiers",
+          "rankedDocumentIds": [
+            "software-api-boundary",
+            "software-cache-policy",
+            "software-cache-runbook",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-api-boundary"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 115,
+          "latencyMs": 6,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.25,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 115,
+            "latencyMs": 6,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "full-hybrid-rrf",
+          "caseId": "level-b-a-alias",
+          "slice": "aliases",
+          "rankedDocumentIds": [
+            "software-api-boundary"
+          ],
+          "goldDocumentIds": [
+            "software-api-boundary"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 28,
+          "latencyMs": 6,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 1,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 28,
+            "latencyMs": 6,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "full-hybrid-rrf",
+          "caseId": "level-b-a-lexical",
+          "slice": "lexical",
+          "rankedDocumentIds": [
+            "software-retry-policy",
+            "software-api-boundary"
+          ],
+          "goldDocumentIds": [
+            "software-retry-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 57,
+          "latencyMs": 6,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 57,
+            "latencyMs": 6,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "full-hybrid-rrf",
+          "caseId": "level-b-a-graph",
+          "slice": "graph",
+          "rankedDocumentIds": [
+            "software-cache-policy",
+            "software-cache-runbook",
+            "software-api-boundary",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-cache-runbook"
+          ],
+          "mustNotInclude": [
+            "handbook-release-gate"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 115,
+          "latencyMs": 6,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.25,
+            "reciprocalRank": 0.5,
+            "ndcgAt10": 0.6309297535714575,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 115,
+            "latencyMs": 6,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "full-hybrid-rrf",
+          "caseId": "level-b-a-vector-disabled",
+          "slice": "vector-disabled",
+          "rankedDocumentIds": [
+            "software-cache-policy",
+            "software-cache-runbook",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-cache-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 87,
+          "latencyMs": 6,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.3333333333333333,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 87,
+            "latencyMs": 6,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "full-hybrid-rrf",
+          "caseId": "level-b-a-source",
+          "slice": "source-verification",
+          "rankedDocumentIds": [
+            "software-cache-policy",
+            "software-api-boundary",
+            "software-cache-runbook",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-cache-policy"
+          ],
+          "goldEvidenceIds": [
+            "ev-software-cache"
+          ],
+          "retrievedEvidenceIds": [
+            "ev-software-cache",
+            "ev-software-boundary",
+            "ev-software-cache-runbook",
+            "ev-software-retry"
+          ],
+          "goldCitationIds": [
+            "fixture://vault-a/software-cache-policy#L1"
+          ],
+          "retrievedCitationIds": [
+            "fixture://vault-a/software-cache-policy#L1",
+            "fixture://vault-a/software-api-boundary#L1",
+            "fixture://vault-a/software-cache-runbook#L1",
+            "fixture://vault-a/software-retry-policy#L1"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 115,
+          "latencyMs": 6,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.25,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 1,
+            "citationPrecision": 0.25,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 115,
+            "latencyMs": 6,
+            "forbidden": [],
+            "evidenceScored": true,
+            "citationScored": true
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "full-hybrid-rrf",
+          "caseId": "level-b-b-exact",
+          "slice": "exact-identifiers",
+          "rankedDocumentIds": [
+            "handbook-release-gate",
+            "handbook-rollback",
+            "handbook-support-matrix"
+          ],
+          "goldDocumentIds": [
+            "handbook-release-gate"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 78,
+          "latencyMs": 6,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.3333333333333333,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 78,
+            "latencyMs": 6,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "full-hybrid-rrf",
+          "caseId": "level-b-b-cross-vault",
+          "slice": "cross-vault-isolation",
+          "rankedDocumentIds": [
+            "handbook-release-gate",
+            "handbook-rollback"
+          ],
+          "goldDocumentIds": [
+            "handbook-release-gate"
+          ],
+          "mustNotInclude": [
+            "software-api-boundary",
+            "neutral-archive-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 53,
+          "latencyMs": 6,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 53,
+            "latencyMs": 6,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "full-hybrid-rrf",
+          "caseId": "level-b-b-paraphrase",
+          "slice": "paraphrases",
+          "rankedDocumentIds": [
+            "handbook-release-gate",
+            "handbook-rollback"
+          ],
+          "goldDocumentIds": [
+            "handbook-release-gate"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 53,
+          "latencyMs": 6,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 53,
+            "latencyMs": 6,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "full-hybrid-rrf",
+          "caseId": "level-b-b-no-answer",
+          "slice": "no-answer",
+          "rankedDocumentIds": [],
+          "goldDocumentIds": [],
+          "expectNoAnswer": true,
+          "returnedAnswer": false,
+          "estimatedTokens": 0,
+          "latencyMs": 6,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0,
+            "reciprocalRank": 0,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 0,
+            "latencyMs": 6,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "full-hybrid-rrf",
+          "caseId": "level-b-c-alias",
+          "slice": "aliases",
+          "rankedDocumentIds": [
+            "neutral-archive-policy",
+            "neutral-review-workflow"
+          ],
+          "goldDocumentIds": [
+            "neutral-archive-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 56,
+          "latencyMs": 6,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 56,
+            "latencyMs": 6,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "full-hybrid-rrf",
+          "caseId": "level-b-c-graph",
+          "slice": "graph",
+          "rankedDocumentIds": [
+            "neutral-archive-policy",
+            "neutral-review-workflow",
+            "neutral-snapshot-note"
+          ],
+          "goldDocumentIds": [
+            "neutral-review-workflow"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 82,
+          "latencyMs": 6,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.3333333333333333,
+            "reciprocalRank": 0.5,
+            "ndcgAt10": 0.6309297535714575,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 82,
+            "latencyMs": 6,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "full-hybrid-rrf",
+          "caseId": "level-b-c-neutral-no-answer",
+          "slice": "no-answer",
+          "rankedDocumentIds": [],
+          "goldDocumentIds": [],
+          "expectNoAnswer": true,
+          "returnedAnswer": false,
+          "estimatedTokens": 0,
+          "latencyMs": 6,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0,
+            "reciprocalRank": 0,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 0,
+            "latencyMs": 6,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        }
+      ]
+    },
+    {
+      "configurationName": "full-hybrid+rerank",
+      "cases": 13,
+      "passed": 13,
+      "criticalFailures": 0,
+      "meanRecallAt5": 1,
+      "meanRecallAt10": 1,
+      "meanReciprocalRank": 0.7692307692307693,
+      "meanNdcgAt10": 0.9432199620879166,
+      "meanEvidenceRecall": 1,
+      "evidenceRecallCoverage": 0.07692307692307693,
+      "meanCitationPrecision": 0.25,
+      "citationPrecisionCoverage": 0.07692307692307693,
+      "unsupportedClaimRate": 0,
+      "noAnswerAccuracy": 1,
+      "noAnswerCases": 2,
+      "meanEstimatedTokens": 64.53846153846153,
+      "meanLatencyMs": 6,
+      "exactIdentifierRecall": 1,
+      "crossLanguageRecall": 0,
+      "vectorEnabled": true,
+      "rerankEnabled": true,
+      "results": [
+        {
+          "configurationName": "full-hybrid+rerank",
+          "caseId": "level-b-a-exact",
+          "slice": "exact-identifiers",
+          "rankedDocumentIds": [
+            "software-api-boundary",
+            "software-cache-policy",
+            "software-cache-runbook",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-api-boundary"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 115,
+          "latencyMs": 6,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.25,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 115,
+            "latencyMs": 6,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "full-hybrid+rerank",
+          "caseId": "level-b-a-alias",
+          "slice": "aliases",
+          "rankedDocumentIds": [
+            "software-api-boundary"
+          ],
+          "goldDocumentIds": [
+            "software-api-boundary"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 28,
+          "latencyMs": 6,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 1,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 28,
+            "latencyMs": 6,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "full-hybrid+rerank",
+          "caseId": "level-b-a-lexical",
+          "slice": "lexical",
+          "rankedDocumentIds": [
+            "software-retry-policy",
+            "software-api-boundary"
+          ],
+          "goldDocumentIds": [
+            "software-retry-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 57,
+          "latencyMs": 6,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 57,
+            "latencyMs": 6,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "full-hybrid+rerank",
+          "caseId": "level-b-a-graph",
+          "slice": "graph",
+          "rankedDocumentIds": [
+            "software-cache-policy",
+            "software-cache-runbook",
+            "software-api-boundary",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-cache-runbook"
+          ],
+          "mustNotInclude": [
+            "handbook-release-gate"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 115,
+          "latencyMs": 6,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.25,
+            "reciprocalRank": 0.5,
+            "ndcgAt10": 0.6309297535714575,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 115,
+            "latencyMs": 6,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "full-hybrid+rerank",
+          "caseId": "level-b-a-vector-disabled",
+          "slice": "vector-disabled",
+          "rankedDocumentIds": [
+            "software-cache-policy",
+            "software-cache-runbook",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-cache-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 87,
+          "latencyMs": 6,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.3333333333333333,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 87,
+            "latencyMs": 6,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "full-hybrid+rerank",
+          "caseId": "level-b-a-source",
+          "slice": "source-verification",
+          "rankedDocumentIds": [
+            "software-cache-policy",
+            "software-api-boundary",
+            "software-cache-runbook",
+            "software-retry-policy"
+          ],
+          "goldDocumentIds": [
+            "software-cache-policy"
+          ],
+          "goldEvidenceIds": [
+            "ev-software-cache"
+          ],
+          "retrievedEvidenceIds": [
+            "ev-software-cache",
+            "ev-software-boundary",
+            "ev-software-cache-runbook",
+            "ev-software-retry"
+          ],
+          "goldCitationIds": [
+            "fixture://vault-a/software-cache-policy#L1"
+          ],
+          "retrievedCitationIds": [
+            "fixture://vault-a/software-cache-policy#L1",
+            "fixture://vault-a/software-api-boundary#L1",
+            "fixture://vault-a/software-cache-runbook#L1",
+            "fixture://vault-a/software-retry-policy#L1"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 115,
+          "latencyMs": 6,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.25,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 1,
+            "citationPrecision": 0.25,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 115,
+            "latencyMs": 6,
+            "forbidden": [],
+            "evidenceScored": true,
+            "citationScored": true
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "full-hybrid+rerank",
+          "caseId": "level-b-b-exact",
+          "slice": "exact-identifiers",
+          "rankedDocumentIds": [
+            "handbook-release-gate",
+            "handbook-rollback",
+            "handbook-support-matrix"
+          ],
+          "goldDocumentIds": [
+            "handbook-release-gate"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 78,
+          "latencyMs": 6,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.3333333333333333,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 78,
+            "latencyMs": 6,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "full-hybrid+rerank",
+          "caseId": "level-b-b-cross-vault",
+          "slice": "cross-vault-isolation",
+          "rankedDocumentIds": [
+            "handbook-release-gate",
+            "handbook-rollback"
+          ],
+          "goldDocumentIds": [
+            "handbook-release-gate"
+          ],
+          "mustNotInclude": [
+            "software-api-boundary",
+            "neutral-archive-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 53,
+          "latencyMs": 6,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 53,
+            "latencyMs": 6,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "full-hybrid+rerank",
+          "caseId": "level-b-b-paraphrase",
+          "slice": "paraphrases",
+          "rankedDocumentIds": [
+            "handbook-release-gate",
+            "handbook-rollback"
+          ],
+          "goldDocumentIds": [
+            "handbook-release-gate"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 53,
+          "latencyMs": 6,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 53,
+            "latencyMs": 6,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "full-hybrid+rerank",
+          "caseId": "level-b-b-no-answer",
+          "slice": "no-answer",
+          "rankedDocumentIds": [],
+          "goldDocumentIds": [],
+          "expectNoAnswer": true,
+          "returnedAnswer": false,
+          "estimatedTokens": 0,
+          "latencyMs": 6,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0,
+            "reciprocalRank": 0,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 0,
+            "latencyMs": 6,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "full-hybrid+rerank",
+          "caseId": "level-b-c-alias",
+          "slice": "aliases",
+          "rankedDocumentIds": [
+            "neutral-archive-policy",
+            "neutral-review-workflow"
+          ],
+          "goldDocumentIds": [
+            "neutral-archive-policy"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 56,
+          "latencyMs": 6,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.5,
+            "reciprocalRank": 1,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 56,
+            "latencyMs": 6,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "full-hybrid+rerank",
+          "caseId": "level-b-c-graph",
+          "slice": "graph",
+          "rankedDocumentIds": [
+            "neutral-archive-policy",
+            "neutral-review-workflow",
+            "neutral-snapshot-note"
+          ],
+          "goldDocumentIds": [
+            "neutral-review-workflow"
+          ],
+          "returnedAnswer": true,
+          "estimatedTokens": 82,
+          "latencyMs": 6,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0.3333333333333333,
+            "reciprocalRank": 0.5,
+            "ndcgAt10": 0.6309297535714575,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 82,
+            "latencyMs": 6,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        },
+        {
+          "configurationName": "full-hybrid+rerank",
+          "caseId": "level-b-c-neutral-no-answer",
+          "slice": "no-answer",
+          "rankedDocumentIds": [],
+          "goldDocumentIds": [],
+          "expectNoAnswer": true,
+          "returnedAnswer": false,
+          "estimatedTokens": 0,
+          "latencyMs": 6,
+          "critical": true,
+          "metrics": {
+            "recallAt5": 1,
+            "recallAt10": 1,
+            "precisionAt10": 0,
+            "reciprocalRank": 0,
+            "ndcgAt10": 1,
+            "evidenceRecall": 0,
+            "citationPrecision": 0,
+            "noAnswerCorrect": true,
+            "unsupportedClaim": false,
+            "estimatedTokens": 0,
+            "latencyMs": 6,
+            "forbidden": [],
+            "evidenceScored": false,
+            "citationScored": false
+          },
+          "passed": true
+        }
+      ]
+    }
+  ],
+  "measuredSelection": {
+    "selectedDefault": "context-pack-only",
+    "vectorActivatedByDefault": false,
+    "baseline": "context-pack-only",
+    "bestVector": "vector-only",
+    "eligibility": "criticalFailures=0, unsupportedClaimRate=0, noAnswerAccuracy=1; vector requires +0.02 MRR, no exact/citation/Recall@10 regression and <=2x latency"
+  },
+  "productionDefault": {
+    "selected": null,
+    "reason": "Curated local fixtures exercise retrieval behavior but do not justify a production default; require a captured or real indexed benchmark."
+  },
+  "limitations": [
+    "This is a small checked-in Level B fixture and makes no production retrieval-quality claim.",
+    "No private vault, PostgreSQL index or external embedding provider was read.",
+    "Vector-enabled rows use a deterministic lexical proxy only; vector-disabled behavior is separately asserted."
+  ]
+}

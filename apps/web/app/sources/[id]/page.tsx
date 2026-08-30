@@ -20,7 +20,6 @@ export default async function SourcePage({
           {
             sha256: source.sha256,
             byteSize: source.byte_size,
-            sourceUri: source.source_uri,
             metadata: source.metadata,
           },
           null,

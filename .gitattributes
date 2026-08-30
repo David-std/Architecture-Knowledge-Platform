@@ -1,0 +1,4 @@
+# Keep repository text deterministic across Windows and CI/Linux checkouts.
+# Runtime scripts that require a Windows-specific line ending should opt in
+# explicitly; source, contracts and Markdown use LF so Prettier is stable.
+* text=auto eol=lf

@@ -3,11 +3,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
 import {
+  pathMatchesVaultPrefix,
   resolveAuthorizedVaultScope,
   runKnowledgeLint,
   type Postgres,
 } from "@akp/postgres";
 import { importVaultReadOnly } from "@akp/vault-importer";
+import type { VaultImportProfile } from "@akp/vault-importer";
 import { GitKnowledgeStore } from "@akp/git-store";
 import {
   actorOf,
@@ -48,6 +50,87 @@ async function resolveDocument(
   return result.rows[0] ?? null;
 }
 
+type GovernancePermission =
+  | "knowledge:read"
+  | "source:read"
+  | "source:write"
+  | "knowledge:propose"
+  | "knowledge:review"
+  | "eval:run"
+  | "admin";
+
+const SENSITIVE_OPERATIONAL_METADATA_KEY =
+  /^(?:source(?:uri|_uri|path|_path)|local(?:path|_path)|absolute(?:path|_path)|repository(?:path|_path)|root(?:path|_path)|canonical(?:path|_path)|object(?:key|_key)|endpoint|host|password|secret|token|credential|api[_-]?key|access[_-]?token|refresh[_-]?token)$/i;
+const ABSOLUTE_OPERATIONAL_PATH_TOKEN =
+  /(?:[A-Za-z]:[\\/]|\\\\|file:\/\/|\/(?:Users|home|tmp|var)\/)[^\s"']+/g;
+
+function sanitizeOperationalMetadata(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sanitizeOperationalMetadata);
+  if (typeof value === "string") {
+    return value.replaceAll(ABSOLUTE_OPERATIONAL_PATH_TOKEN, "[REDACTED_PATH]");
+  }
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => !SENSITIVE_OPERATIONAL_METADATA_KEY.test(key))
+      .map(([key, entry]) => [key, sanitizeOperationalMetadata(entry)]),
+  );
+}
+
+/** Resolve the effective vault grant before touching a vault-owned record. */
+async function governanceVaultAccess(
+  db: Postgres,
+  actor: ReturnType<typeof actorOf>,
+  spaceId: string,
+  vaultId: string,
+  permission: GovernancePermission,
+): Promise<{ pathPrefix: string | null; permissions: string[] } | null> {
+  if (!actor || !vaultId) return null;
+  try {
+    const scope = await resolveAuthorizedVaultScope(db, {
+      userId: actor.id,
+      spaceId,
+      vaultId,
+      vaultIds: [vaultId],
+      permission,
+      federated: false,
+    });
+    return scope.accessByVault[vaultId] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Enumerate only vaults the actor may actually operate on. */
+async function governanceAuthorizedVaultIds(
+  db: Postgres,
+  actor: ReturnType<typeof actorOf>,
+  spaces: readonly string[],
+  permission: GovernancePermission,
+  unrestrictedOnly = false,
+): Promise<string[]> {
+  if (!actor) return [];
+  const ids = new Set<string>();
+  for (const spaceId of spaces) {
+    try {
+      const scope = await resolveAuthorizedVaultScope(db, {
+        userId: actor.id,
+        spaceId,
+        permission,
+        federated: true,
+      });
+      scope.vaultIds.forEach((vaultId) => {
+        const access = scope.accessByVault[vaultId];
+        if (unrestrictedOnly && access?.pathPrefix !== null) return;
+        ids.add(vaultId);
+      });
+    } catch {
+      // Keep inaccessible private vaults indistinguishable from absent ones.
+    }
+  }
+  return [...ids];
+}
+
 export function registerGovernanceRoutes(
   app: FastifyInstance,
   db: Postgres,
@@ -69,7 +152,16 @@ export function registerGovernanceRoutes(
       if (!candidateSource) {
         return reply.code(404).send({ code: "SOURCE_NOT_FOUND" });
       }
+      const sourceAccess = await governanceVaultAccess(
+        db,
+        actor,
+        candidateSource.space_id,
+        candidateSource.vault_id,
+        "source:write",
+      );
       if (
+        !sourceAccess ||
+        sourceAccess.pathPrefix !== null ||
         !hasUnrestrictedPathAccess(
           actor,
           candidateSource.space_id,
@@ -81,13 +173,15 @@ export function registerGovernanceRoutes(
       const source = await db.pool.query(
         `
         update sources set status='RETIRED',
-               metadata=metadata||$3::jsonb
+               metadata=metadata||$4::jsonb
          where id=$1 and space_id=any($2::uuid[])
+           and vault_id=$3
          returning id,space_id,vault_id,sha256,status
         `,
         [
           request.params.id,
           spaceIdsForPermission(actor, "source:write"),
+          candidateSource.vault_id,
           JSON.stringify({
             retiredAt: new Date().toISOString(),
             reason: request.body?.reason ?? "Source retired",
@@ -138,6 +232,7 @@ export function registerGovernanceRoutes(
         "source",
         request.params.id,
         {
+          vaultId: String(row.vault_id),
           impacted: impacted.rowCount ?? 0,
         },
         String(row.space_id),
@@ -167,9 +262,19 @@ export function registerGovernanceRoutes(
       );
       if (!seed) return reply.code(404).send({ code: "DOCUMENT_NOT_FOUND" });
       const spaceId = String(seed.space_id);
+      const vaultId = String(seed.vault_id ?? "");
+      const seedAccess = await governanceVaultAccess(
+        db,
+        actor,
+        spaceId,
+        vaultId,
+        "knowledge:review",
+      );
       if (
         !hasSpaceAccess(actor, spaceId, "knowledge:review") ||
         !hasPathAccess(actor, spaceId, "knowledge:review", String(seed.path)) ||
+        !seedAccess ||
+        !pathMatchesVaultPrefix(String(seed.path), seedAccess.pathPrefix) ||
         !hasUnrestrictedPathAccess(actor, spaceId, "knowledge:review")
       ) {
         return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
@@ -206,7 +311,7 @@ export function registerGovernanceRoutes(
           blocked ? "STALE_BLOCKED" : "STALE_PENDING_REVIEW",
           reason,
           spaceId,
-          seed.vault_id,
+          vaultId,
         ],
       );
       await db.pool.query(
@@ -232,6 +337,7 @@ export function registerGovernanceRoutes(
         "knowledge_document",
         String(seed.id),
         {
+          vaultId,
           severity: blocked ? "BLOCK" : "WARN",
           impacted: impacted.rowCount ?? 0,
         },
@@ -256,13 +362,22 @@ export function registerGovernanceRoutes(
         spaceIdsForPermission(actor, "knowledge:review"),
       );
       if (!seed) return reply.code(404).send({ code: "DOCUMENT_NOT_FOUND" });
+      const seedAccess = await governanceVaultAccess(
+        db,
+        actor,
+        String(seed.space_id),
+        String(seed.vault_id ?? ""),
+        "knowledge:review",
+      );
       if (
         !hasPathAccess(
           actor,
           String(seed.space_id),
           "knowledge:review",
           String(seed.path),
-        )
+        ) ||
+        !seedAccess ||
+        !pathMatchesVaultPrefix(String(seed.path), seedAccess.pathPrefix)
       ) {
         return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
       }
@@ -271,9 +386,10 @@ export function registerGovernanceRoutes(
         update knowledge_documents
            set refresh_status='CURRENT',invalidated_by=null,stale_reason=null,
                last_verified_at=now(),verified_against_revision=current_revision,updated_at=now()
-         where id=$1 returning id,external_id,refresh_status,last_verified_at
+         where id=$1 and space_id=$2 and vault_id=$3
+         returning id,external_id,refresh_status,last_verified_at
         `,
-        [seed.id],
+        [seed.id, seed.space_id, seed.vault_id],
       );
       await audit(
         db,
@@ -282,6 +398,7 @@ export function registerGovernanceRoutes(
         "knowledge_document",
         String(seed.id),
         {
+          vaultId: String(seed.vault_id),
           reason: request.body?.reason ?? null,
         },
         String(seed.space_id),
@@ -345,6 +462,27 @@ export function registerGovernanceRoutes(
       }
       const spaceId = [...spaces][0]!;
       const vaultId = [...vaults][0]!;
+      const vaultAccess = await governanceVaultAccess(
+        db,
+        actor,
+        spaceId,
+        vaultId,
+        "knowledge:review",
+      );
+      if (!vaultAccess) {
+        return reply.code(403).send({ code: "VAULT_ACCESS_DENIED" });
+      }
+      if (
+        documents.rows.some(
+          (document) =>
+            !pathMatchesVaultPrefix(
+              String(document.path),
+              vaultAccess.pathPrefix,
+            ),
+        )
+      ) {
+        return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
+      }
       const id = randomUUID();
       const client = await db.pool.connect();
       try {
@@ -367,8 +505,8 @@ export function registerGovernanceRoutes(
             ],
           );
           await client.query(
-            "update knowledge_documents set lifecycle='DISPUTED' where id=$1",
-            [documentId],
+            "update knowledge_documents set lifecycle='DISPUTED' where id=$1 and space_id=$2 and vault_id=$3",
+            [documentId, spaceId, vaultId],
           );
         }
         await client.query("commit");
@@ -384,7 +522,7 @@ export function registerGovernanceRoutes(
         "contradiction.create",
         "contradiction_cluster",
         id,
-        {},
+        { vaultId },
         spaceId,
       );
       return reply.code(201).send({ id, status: "OPEN" });
@@ -403,6 +541,14 @@ export function registerGovernanceRoutes(
       if (!spaceIds.length) {
         return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
       }
+      const authorizedVaultIds = await governanceAuthorizedVaultIds(
+        db,
+        actor,
+        spaceIds,
+        "knowledge:read",
+        true,
+      );
+      if (!authorizedVaultIds.length) return { contradictions: [] };
       const result = await db.pool.query(
         `
         select c.*,coalesce(jsonb_agg(jsonb_build_object(
@@ -411,11 +557,15 @@ export function registerGovernanceRoutes(
         )) filter(where d.id is not null),'[]'::jsonb) members
           from contradiction_clusters c
           left join contradiction_members m on m.cluster_id=c.id
-          left join knowledge_documents d on d.id=m.document_id
+          left join knowledge_documents d
+            on d.id=m.document_id
+           and d.space_id=c.space_id
+           and d.vault_id=c.vault_id
          where c.space_id=any($1::uuid[])
+           and c.vault_id=any($2::uuid[])
          group by c.id order by c.created_at desc
         `,
-        [spaceIds],
+        [spaceIds, authorizedVaultIds],
       );
       return { contradictions: result.rows };
     },
@@ -443,7 +593,7 @@ export function registerGovernanceRoutes(
       const actor = actorOf(request);
       const cluster = await db.pool.query(
         `
-        select id,space_id,status from contradiction_clusters
+        select id,space_id,vault_id,status from contradiction_clusters
          where id=$1 and space_id=any($2::uuid[])
         `,
         [request.params.id, spaceIdsForPermission(actor, "knowledge:review")],
@@ -451,16 +601,26 @@ export function registerGovernanceRoutes(
       if (!cluster.rowCount) {
         return reply.code(404).send({ code: "CONTRADICTION_NOT_FOUND" });
       }
+      const clusterRow = cluster.rows[0] as Record<string, unknown>;
+      const clusterAccess = await governanceVaultAccess(
+        db,
+        actor,
+        String(clusterRow.space_id),
+        String(clusterRow.vault_id ?? ""),
+        "knowledge:review",
+      );
       if (
         !hasUnrestrictedPathAccess(
           actor,
-          String(cluster.rows[0]?.space_id),
+          String(clusterRow.space_id),
           "knowledge:review",
-        )
+        ) ||
+        !clusterAccess ||
+        clusterAccess.pathPrefix !== null
       ) {
         return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
       }
-      if (String(cluster.rows[0]?.status) === "RESOLVED") {
+      if (String(clusterRow.status) === "RESOLVED") {
         return reply.code(409).send({ code: "CONTRADICTION_ALREADY_RESOLVED" });
       }
       const outcomes = request.body.documentOutcomes ?? [];
@@ -475,8 +635,14 @@ export function registerGovernanceRoutes(
             from contradiction_members m
             join knowledge_documents d on d.id=m.document_id
            where m.cluster_id=$1 and m.document_id=any($2::uuid[])
+             and d.space_id=$3 and d.vault_id=$4
           `,
-          [request.params.id, memberIds],
+          [
+            request.params.id,
+            memberIds,
+            clusterRow.space_id,
+            clusterRow.vault_id,
+          ],
         );
         if (membership.rowCount !== memberIds.length) {
           return reply
@@ -491,6 +657,10 @@ export function registerGovernanceRoutes(
                 String(member.space_id),
                 "knowledge:review",
                 String(member.path),
+              ) ||
+              !pathMatchesVaultPrefix(
+                String(member.path),
+                clusterAccess.pathPrefix,
               ),
           )
         ) {
@@ -509,17 +679,30 @@ export function registerGovernanceRoutes(
                    stale_reason=case when $2='ACTIVE' then null else $3 end,
                    updated_at=now()
              where id=$1
-            `,
-            [outcome.documentId, outcome.lifecycle, resolution],
+               and space_id=$4 and vault_id=$5
+          `,
+            [
+              outcome.documentId,
+              outcome.lifecycle,
+              resolution,
+              clusterRow.space_id,
+              clusterRow.vault_id,
+            ],
           );
         }
         await client.query(
           `
           update contradiction_clusters
-             set status='RESOLVED',resolution=$2,reviewer_id=$3,updated_at=now()
-           where id=$1
+           set status='RESOLVED',resolution=$2,reviewer_id=$3,updated_at=now()
+           where id=$1 and space_id=$4 and vault_id=$5
           `,
-          [request.params.id, resolution, actor?.id ?? null],
+          [
+            request.params.id,
+            resolution,
+            actor?.id ?? null,
+            clusterRow.space_id,
+            clusterRow.vault_id,
+          ],
         );
         await client.query("commit");
       } catch (error) {
@@ -535,9 +718,10 @@ export function registerGovernanceRoutes(
         "contradiction_cluster",
         request.params.id,
         {
+          vaultId: String(clusterRow.vault_id),
           outcomeCount: outcomes.length,
         },
-        String(cluster.rows[0]?.space_id),
+        String(clusterRow.space_id),
       );
       return {
         id: request.params.id,
@@ -570,12 +754,30 @@ export function registerGovernanceRoutes(
       if (!hasSpaceAccess(actorOf(request), spaceId, "knowledge:read")) {
         return reply.code(403).send({ code: "SPACE_ACCESS_DENIED" });
       }
+      const actor = actorOf(request);
+      if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
+      let scope;
+      try {
+        scope = await resolveAuthorizedVaultScope(db, {
+          userId: actor.id,
+          spaceId,
+          vaultIds,
+          permission: "knowledge:read",
+          federated: Boolean(request.body.federated),
+        });
+      } catch (error) {
+        const code =
+          error instanceof Error ? error.message : "VAULT_ACCESS_DENIED";
+        return reply
+          .code(code === "VAULT_SCOPE_NOT_FOUND" ? 404 : 403)
+          .send({ code });
+      }
       const hits = await queryKnowledge(
         db,
         {
           query,
           spaceId,
-          vaultIds,
+          vaultIds: scope.vaultIds,
           federated: Boolean(request.body.federated),
           types: [],
           minimumTrust: "UNVERIFIED",
@@ -583,14 +785,15 @@ export function registerGovernanceRoutes(
           limit: 10,
         },
         {
-          vaultIds,
-          pathAuthorizer: (knowledgePath) =>
-            hasPathAccess(
-              actorOf(request),
-              spaceId,
-              "knowledge:read",
-              knowledgePath,
-            ),
+          vaultIds: scope.vaultIds,
+          pathAuthorizer: (knowledgePath, vaultId) => {
+            const access = scope.accessByVault[String(vaultId ?? "")];
+            return Boolean(
+              access &&
+              pathMatchesVaultPrefix(knowledgePath, access.pathPrefix) &&
+              hasPathAccess(actor, spaceId, "knowledge:read", knowledgePath),
+            );
+          },
         },
       );
       const exact = hits.filter((hit) =>
@@ -629,9 +832,19 @@ export function registerGovernanceRoutes(
       if (!spaceIds.length) {
         return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
       }
+      const authorizedVaultIds = await governanceAuthorizedVaultIds(
+        db,
+        actor,
+        spaceIds,
+        "eval:run",
+        true,
+      );
+      if (!authorizedVaultIds.length) {
+        return reply.code(403).send({ code: "VAULT_ACCESS_DENIED" });
+      }
       const vaults = await db.pool.query<{ id: string; space_id: string }>(
-        "select id,space_id from vaults where space_id=any($1::uuid[]) and enabled=true order by space_id,id",
-        [spaceIds],
+        "select id,space_id from vaults where space_id=any($1::uuid[]) and id=any($2::uuid[]) and enabled=true order by space_id,id",
+        [spaceIds, authorizedVaultIds],
       );
       for (const vault of vaults.rows) {
         results.push(
@@ -643,13 +856,17 @@ export function registerGovernanceRoutes(
           ),
         );
       }
-      await audit(
-        db,
-        request,
-        "knowledge.lint",
-        "knowledge_lint_run",
-        results.map((result) => result.id).join(","),
-      );
+      for (const [index, vault] of vaults.rows.entries()) {
+        await audit(
+          db,
+          request,
+          "knowledge.lint",
+          "knowledge_lint_run",
+          String(results[index]?.id ?? ""),
+          { vaultId: vault.id, trigger },
+          vault.space_id,
+        );
+      }
       return { status: "COMPLETED", results };
     },
   );
@@ -667,32 +884,24 @@ export function registerGovernanceRoutes(
         return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
       }
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
-      const vaults = await db.pool.query<{ id: string; space_id: string }>(
-        "select id,space_id from vaults where space_id=any($1::uuid[]) and enabled=true",
-        [spaceIds],
+      const authorizedVaultIds = await governanceAuthorizedVaultIds(
+        db,
+        actor,
+        spaceIds,
+        "knowledge:read",
+        true,
       );
-      const authorizedVaultIds: string[] = [];
-      for (const vault of vaults.rows) {
-        try {
-          await resolveAuthorizedVaultScope(db, {
-            userId: actor.id,
-            spaceId: vault.space_id,
-            permission: "knowledge:read",
-            vaultId: vault.id,
-            vaultIds: [vault.id],
-            federated: false,
-          });
-          authorizedVaultIds.push(vault.id);
-        } catch {
-          // A private vault remains undiscoverable without explicit membership.
-        }
-      }
       if (!authorizedVaultIds.length) return { errors: [] };
       const result = await db.pool.query(
-        "select * from error_book where vault_id=any($1::uuid[]) order by created_at desc",
-        [authorizedVaultIds],
+        "select * from error_book where space_id=any($1::uuid[]) and vault_id=any($2::uuid[]) order by created_at desc",
+        [spaceIds, authorizedVaultIds],
       );
-      return { errors: result.rows };
+      return {
+        errors: result.rows.map((row) => ({
+          ...row,
+          metadata: sanitizeOperationalMetadata(row.metadata),
+        })),
+      };
     },
   );
 
@@ -709,31 +918,18 @@ export function registerGovernanceRoutes(
         return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
       }
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
-      const vaults = await db.pool.query<{ id: string; space_id: string }>(
-        "select id,space_id from vaults where space_id=any($1::uuid[]) and enabled=true order by space_id,id",
-        [spaceIds],
+      const authorizedVaultIds = await governanceAuthorizedVaultIds(
+        db,
+        actor,
+        spaceIds,
+        "knowledge:read",
+        true,
       );
-      const authorizedVaultIds: string[] = [];
-      for (const vault of vaults.rows) {
-        try {
-          await resolveAuthorizedVaultScope(db, {
-            userId: actor.id,
-            spaceId: vault.space_id,
-            permission: "knowledge:read",
-            vaultId: vault.id,
-            vaultIds: [vault.id],
-            federated: false,
-          });
-          authorizedVaultIds.push(vault.id);
-        } catch {
-          // PRIVATE vaults remain undiscoverable without membership.
-        }
-      }
       if (!authorizedVaultIds.length) return { indexes: [] };
       const result = await db.pool.query(
         `select * from vault_index_revisions
-          where vault_id=any($1::uuid[]) order by updated_at desc`,
-        [authorizedVaultIds],
+          where space_id=any($1::uuid[]) and vault_id=any($2::uuid[]) order by updated_at desc`,
+        [spaceIds, authorizedVaultIds],
       );
       return { indexes: result.rows };
     },
@@ -764,7 +960,7 @@ export function registerGovernanceRoutes(
       }
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
       try {
-        await resolveAuthorizedVaultScope(db, {
+        const scope = await resolveAuthorizedVaultScope(db, {
           userId: actor.id,
           spaceId,
           permission: "admin",
@@ -772,6 +968,9 @@ export function registerGovernanceRoutes(
           vaultIds: [vaultId],
           federated: false,
         });
+        if (scope.accessByVault[vaultId]?.pathPrefix !== null) {
+          return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
+        }
       } catch (error) {
         return reply.code(403).send({
           code: error instanceof Error ? error.message : "VAULT_ACCESS_DENIED",
@@ -793,8 +992,9 @@ export function registerGovernanceRoutes(
           vault_key: string;
           canonical_path: string;
           space_id: string;
+          schema_profile: Record<string, unknown>;
         }>(
-          "select id,vault_key,canonical_path,space_id from vaults where id=$1 and space_id=$2 and enabled=true",
+          "select id,vault_key,canonical_path,space_id,schema_profile from vaults where id=$1 and space_id=$2 and enabled=true",
           [vaultId, spaceId],
         );
         const canonical = vault.rows[0];
@@ -810,6 +1010,14 @@ export function registerGovernanceRoutes(
             // not substitute the UUID here: doing so creates a second logical
             // registration or rebinds the import to a different vault key.
             vaultKey: canonical.vault_key,
+            ...(canonical.schema_profile?.importProfile &&
+            typeof canonical.schema_profile.importProfile === "object" &&
+            !Array.isArray(canonical.schema_profile.importProfile)
+              ? {
+                  profile: canonical.schema_profile
+                    .importProfile as VaultImportProfile,
+                }
+              : {}),
           },
         );
         imports.push(imported);
@@ -836,6 +1044,7 @@ export function registerGovernanceRoutes(
         "index_revision",
         spaceId,
         {
+          vaultId,
           relationCount,
           reimportVault: Boolean(request.body.reimportVault),
           projection,

@@ -192,6 +192,11 @@ afterAll(async () => {
         "delete from review_comments where review_id=any($1::uuid[])",
         [ids],
       );
+      // Publication events are append-only evidence.  Tests must never
+      // delete them: the database trigger deliberately rejects mutations of
+      // event_outbox and its delivery history.  The test resources are
+      // uniquely identified, so those durable records remain traceable
+      // without affecting later fixtures.
       await db.pool.query("delete from reviews where id=any($1::uuid[])", [
         ids,
       ]);
@@ -330,6 +335,132 @@ describe("review publication integration", () => {
       [defaultVault, `managed/${proposal.relativePath}`],
     );
     expect(indexed.rows[0]?.count).toBe(0);
+  });
+
+  it("preserves review feedback, creates a new validated draft revision, resubmits, and approves it", async () => {
+    const repository = repositoryFor("requested-changes");
+    const proposal = await propose(repository, "requested-changes");
+    const originalWorktree = path.resolve(
+      `${repository}-drafts`,
+      proposal.reviewId,
+    );
+
+    const comment = await app.inject({
+      method: "POST",
+      url: `/v1/reviews/${proposal.reviewId}/comments`,
+      headers,
+      payload: {
+        body: "Clarify the operational invariant before publication.",
+        path: proposal.relativePath,
+        line: 12,
+      },
+    });
+    expect(comment.statusCode).toBe(201);
+
+    const requested = await decide(
+      proposal.reviewId,
+      "REQUEST_CHANGES",
+      "Apply the reviewer feedback",
+    );
+    expect(requested.statusCode).toBe(200);
+    expect(requested.json()).toMatchObject({
+      id: proposal.reviewId,
+      status: "CHANGES_REQUESTED",
+    });
+    expect(await pathExists(originalWorktree)).toBe(true);
+
+    const expandedPath = `integration/reviews/unreviewed-${randomUUID()}.md`;
+    const expanded = await app.inject({
+      method: "POST",
+      url: `/v1/reviews/${proposal.reviewId}/revise`,
+      headers,
+      payload: {
+        changes: [
+          { path: proposal.relativePath, content: documentContent() },
+          { path: expandedPath, content: documentContent() },
+        ],
+      },
+    });
+    expect(expanded.statusCode).toBe(400);
+    expect(expanded.json()).toMatchObject({
+      code: "REVISION_PATH_SET_CHANGED",
+    });
+    expect(await pathExists(originalWorktree)).toBe(true);
+
+    const corrected = `${documentContent("TEST-REVISED-DRAFT")}
+## Corrected invariant
+
+The corrected draft explicitly preserves review feedback and cannot bypass
+validation, resubmission, or human approval.
+`;
+    const revised = await app.inject({
+      method: "POST",
+      url: `/v1/reviews/${proposal.reviewId}/revise`,
+      headers,
+      payload: {
+        summary: "Apply requested review correction",
+        changes: [
+          {
+            path: proposal.relativePath,
+            content: corrected,
+            reason: "Reviewer requested an explicit invariant",
+          },
+        ],
+      },
+    });
+    expect(revised.statusCode).toBe(200);
+    const revisedBody = revised.json() as {
+      status: string;
+      branch_name: string;
+      head_commit: string;
+      draftRevision: number;
+    };
+    expect(revisedBody).toMatchObject({
+      status: "CHANGES_REQUESTED",
+      draftRevision: 2,
+    });
+    expect(revisedBody.branch_name).not.toBe(proposal.branchName);
+    expect(revisedBody.head_commit).not.toBe(proposal.headCommit);
+    expect(await pathExists(originalWorktree)).toBe(false);
+
+    const resubmitted = await app.inject({
+      method: "POST",
+      url: `/v1/reviews/${proposal.reviewId}/submit`,
+      headers,
+      payload: {},
+    });
+    expect(resubmitted.statusCode).toBe(200);
+    expect(resubmitted.json()).toMatchObject({ status: "PENDING" });
+
+    const approved = await decide(
+      proposal.reviewId,
+      "APPROVE",
+      "Correction verified against the feedback",
+    );
+    expect(approved.statusCode).toBe(200);
+    expect(approved.json()).toMatchObject({ status: "APPROVED" });
+    expect(
+      await new GitKnowledgeStore(repository).showFile(
+        await new GitKnowledgeStore(repository).revision(),
+        proposal.relativePath,
+      ),
+    ).toContain("Corrected invariant");
+
+    const stored = await db.pool.query<{
+      status: string;
+      impact_manifest: { draftRevision?: number };
+      comment_count: number;
+    }>(
+      `select r.status,r.impact_manifest,
+              (select count(*)::int from review_comments c where c.review_id=r.id) comment_count
+         from reviews r where r.id=$1`,
+      [proposal.reviewId],
+    );
+    expect(stored.rows[0]).toMatchObject({
+      status: "APPROVED",
+      impact_manifest: { draftRevision: 2 },
+      comment_count: 1,
+    });
   });
 
   it("does not let a second reject or approve overwrite the first decision", async () => {

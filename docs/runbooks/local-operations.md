@@ -69,10 +69,11 @@ pnpm akp vault status `
   --vault-path C:\Users\david\Documents\Architecture-Knowledge-System
 ```
 
-Expected baseline: 548 imported Markdown files, 552 composite documents, 2,071
-units and 1,192 relations. Warnings include 100 unresolved wikilinks and six
-archived acquisition backlogs. Do not convert these warnings into invented
-targets or agent instructions.
+The migration report records one historical import and its warnings. Treat its
+file, document and relation counts as dated provenance, not as current product
+requirements. The bootstrap verifier checks schema, isolation and lineage
+regardless of corpus size; populated thresholds are opt-in. Do not convert
+vault warnings into invented targets or agent instructions.
 
 ## Submit and monitor a source
 
@@ -102,10 +103,10 @@ pnpm akp search 'hexagonal architecture boundary'
 pnpm akp context 'choose architecture for volatile integrations'
 ```
 
-The four-case benchmark recommends `lexical+graph`; it is not a global runtime override. Inspect the
-packet revision, channels, selection reasons, citations, conflicts and gaps
-before using it as authority. Follow continuation handles rather than loading
-the whole vault.
+The 19-case synthetic and 13-case curated-fixture runners do not select a
+production default. Inspect the packet revision, channels, selection reasons,
+citations, conflicts and gaps before using it as authority. Follow continuation
+handles rather than loading the whole vault.
 
 ## Rebuild derived indexes
 
@@ -164,9 +165,10 @@ bundle when configured and non-secret configuration metadata. Each file is
 SHA-256 listed in `manifest.json`. Restore smoke uses isolated resources and
 never overwrites the active environment.
 
-The 2026-08-12 v3 recovery restored 555 documents, 16 exact migrations, the
-Git bundle and 22 MinIO archive entries. The entry count is archive metadata,
-not a claim of user source-object count.
+The 2026-08-28 v3 smoke restored all 18 migrations, one fixture document and 15
+MinIO files into isolated resources. A second backup/restore of a newly
+migrated empty database restored zero documents successfully. These are
+fixture-run counts, not claims about an external vault.
 
 ## Final release gate
 
@@ -176,14 +178,19 @@ pnpm audit --audit-level high
 pnpm security:secrets
 pnpm contracts:validate
 pnpm docs:validate
+pnpm format:check
 pnpm check
 pnpm build
 pnpm test:integration
 pnpm verify:runtime
 pnpm test:mcp
+pnpm benchmark:retrieval:offline
+pnpm benchmark:retrieval:curated
+pnpm benchmark:scale -- --targets 1000,10000,50000,100000 --iterations 3
 
 Push-Location apps/extractor
 python -m ruff check --no-cache .
+python -m mypy app
 python -m pytest -p no:cacheprovider
 Pop-Location
 
@@ -191,9 +198,9 @@ docker compose config --quiet
 git diff --check
 ```
 
-The current integration suite contains 28 cases across security/governance and
-review-publication. Record the exact result before committing/tagging the
-baseline.
+The current integration suite covers security/governance and
+review-publication; record its exact final count together with the clean
+formatting gate before committing or tagging a new baseline.
 
 ## Open the vault in Obsidian
 

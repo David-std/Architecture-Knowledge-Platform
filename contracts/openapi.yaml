@@ -521,6 +521,44 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "409": { $ref: "#/components/responses/Conflict" }
+  /v1/reviews/{id}/revise:
+    post:
+      tags: [Reviews]
+      operationId: reviseReview
+      x-akp-permission: knowledge:propose
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [changes]
+              properties:
+                summary: { type: string }
+                changes:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [path, content]
+                    properties:
+                      path: { type: string, pattern: "^[^\\\\/](?:.*\\.md)$" }
+                      content: { type: string, minLength: 1 }
+                      reason: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422":
+          description: Revised draft validation failed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /v1/reviews/{id}/decision:
     post:
       tags: [Reviews]

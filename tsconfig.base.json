@@ -13,6 +13,7 @@
       "@akp/evaluation": ["packages/evaluation/src/index.ts"],
       "@akp/git-store": ["packages/git-store/src/index.ts"],
       "@akp/graph": ["packages/graph/src/index.ts"],
+      "@akp/indexing": ["packages/indexing/src/index.ts"],
       "@akp/object-store": ["packages/object-store/src/index.ts"],
       "@akp/observability": ["packages/observability/src/index.ts"],
       "@akp/policy": ["packages/policy/src/index.ts"],

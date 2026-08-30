@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "evidenceLevel": "CURATED_FIXTURE",
+  "name": "curated-level-b",
+  "vaults": [
+    {
+      "id": "vault-a-software",
+      "kind": "software",
+      "documents": [
+        {
+          "id": "software-api-boundary",
+          "title": "API boundary policy",
+          "aliases": ["ingress adapter", "edge boundary"],
+          "body": "The ingress adapter validates requests before application services and records a boundary decision for audit.",
+          "related": ["software-retry-policy"],
+          "evidence": ["ev-software-boundary"],
+          "citations": ["fixture://vault-a/software-api-boundary#L1"]
+        },
+        {
+          "id": "software-retry-policy",
+          "title": "Retry policy",
+          "aliases": ["backoff rule", "transient call policy"],
+          "body": "Transient calls use capped exponential backoff and a retry budget so a failing dependency cannot exhaust the worker.",
+          "related": ["software-cache-policy"],
+          "evidence": ["ev-software-retry"],
+          "citations": ["fixture://vault-a/software-retry-policy#L1"]
+        },
+        {
+          "id": "software-cache-policy",
+          "title": "Cache invalidation rule",
+          "aliases": ["cache refresh rule", "stale entry policy"],
+          "body": "Invalidate entries after configuration changes, record the reason, and publish a cache refresh event for observers.",
+          "related": ["software-cache-runbook"],
+          "evidence": ["ev-software-cache"],
+          "citations": ["fixture://vault-a/software-cache-policy#L1"]
+        },
+        {
+          "id": "software-cache-runbook",
+          "title": "Cache incident runbook",
+          "aliases": ["cache recovery steps", "stale cache procedure"],
+          "body": "Inspect stale entries, restore the previous configuration, verify service health, and document the recovery result.",
+          "related": ["software-cache-policy"],
+          "evidence": ["ev-software-cache-runbook"],
+          "citations": ["fixture://vault-a/software-cache-runbook#L1"]
+        }
+      ]
+    },
+    {
+      "id": "vault-b-handbook",
+      "kind": "handbook",
+      "documents": [
+        {
+          "id": "handbook-release-gate",
+          "title": "Release gate",
+          "aliases": ["ship checklist", "publication gate"],
+          "body": "A release requires reviewer signoff, a rollback note, and a verification step before publication.",
+          "related": ["handbook-rollback"],
+          "evidence": ["ev-handbook-release"],
+          "citations": ["fixture://vault-b/handbook-release-gate#L1"]
+        },
+        {
+          "id": "handbook-rollback",
+          "title": "Rollback note",
+          "aliases": ["revert procedure", "release recovery"],
+          "body": "When a verification step fails, stop publication, restore the last approved revision, and notify the reviewer.",
+          "related": ["handbook-release-gate"],
+          "evidence": ["ev-handbook-rollback"],
+          "citations": ["fixture://vault-b/handbook-rollback#L1"]
+        },
+        {
+          "id": "handbook-support-matrix",
+          "title": "Support ownership matrix",
+          "aliases": ["escalation matrix"],
+          "body": "The support matrix assigns an owner, an escalation window, and a customer-facing communication path.",
+          "related": [],
+          "evidence": ["ev-handbook-support"],
+          "citations": ["fixture://vault-b/handbook-support-matrix#L1"]
+        }
+      ]
+    },
+    {
+      "id": "vault-c-neutral",
+      "kind": "neutral-domain",
+      "documents": [
+        {
+          "id": "neutral-archive-policy",
+          "title": "Archive policy",
+          "aliases": ["retention rule", "record lifecycle"],
+          "body": "Archive records after the approved retention period and preserve the original locator with the archive decision.",
+          "related": ["neutral-review-workflow"],
+          "evidence": ["ev-neutral-archive"],
+          "citations": ["fixture://vault-c/neutral-archive-policy#L1"]
+        },
+        {
+          "id": "neutral-review-workflow",
+          "title": "Archive review workflow",
+          "aliases": ["retention review steps"],
+          "body": "Review the retention decision, confirm the owner, record an exception when needed, and then archive the item.",
+          "related": ["neutral-archive-policy"],
+          "evidence": ["ev-neutral-review"],
+          "citations": ["fixture://vault-c/neutral-review-workflow#L1"]
+        },
+        {
+          "id": "neutral-snapshot-note",
+          "title": "Snapshot note",
+          "aliases": ["checkpoint record"],
+          "body": "A snapshot records a timestamp and a content digest so a later review can compare the approved state.",
+          "related": [],
+          "evidence": ["ev-neutral-snapshot"],
+          "citations": ["fixture://vault-c/neutral-snapshot-note#L1"]
+        }
+      ]
+    }
+  ]
+}

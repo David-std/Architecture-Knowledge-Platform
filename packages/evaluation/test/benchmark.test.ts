@@ -78,6 +78,20 @@ describe("benchmark metrics", () => {
     expect(unsupported.unsupportedClaim).toBe(true);
   });
 
+  it("deduplicates repeated document rows before rank metrics", () => {
+    const scored = scoreBenchmarkObservation({
+      configurationName: "exact+lexical",
+      caseId: "duplicate-units",
+      slice: "lexical",
+      rankedDocumentIds: ["doc-a", "doc-a", "noise"],
+      goldDocumentIds: ["doc-a"],
+      returnedAnswer: true,
+    });
+    expect(scored.recallAt10).toBe(1);
+    expect(scored.precisionAt10).toBe(0.5);
+    expect(scored.reciprocalRank).toBe(1);
+  });
+
   it("aggregates required slices and selects a default only from results", () => {
     const observations = [
       {
@@ -131,5 +145,34 @@ describe("benchmark metrics", () => {
     expect(decision.selectedDefault).toBe("exact+lexical");
     expect(decision.vectorActivatedByDefault).toBe(false);
     expect(decision.baseline).toBe("exact+lexical");
+  });
+
+  it("does not select a vector-only or empty benchmark as a runtime default", () => {
+    const vectorOnly = aggregateBenchmarkRun(RETRIEVAL_BENCHMARK_MATRIX[2]!, [
+      {
+        configurationName: "vector-only",
+        caseId: "vector-case",
+        slice: "conceptual",
+        rankedDocumentIds: ["doc-a"],
+        goldDocumentIds: ["doc-a"],
+        returnedAnswer: true,
+      },
+    ]);
+    expect(selectBenchmarkDefault([vectorOnly])).toMatchObject({
+      selectedDefault: null,
+      vectorActivatedByDefault: false,
+      baseline: null,
+      bestVector: "vector-only",
+    });
+
+    const emptyBaseline = aggregateBenchmarkRun(
+      RETRIEVAL_BENCHMARK_MATRIX[1]!,
+      [],
+    );
+    expect(selectBenchmarkDefault([emptyBaseline])).toMatchObject({
+      selectedDefault: null,
+      baseline: null,
+      bestVector: null,
+    });
   });
 });

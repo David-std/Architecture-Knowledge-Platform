@@ -45,8 +45,7 @@ function classify(file) {
   }
   if (
     file === "REPOSITORY_HYGIENE_REPORT.md" ||
-    file === "GENERICITY_AUDIT.md" ||
-    file === "RESIDUAL_ARTIFACTS_REPORT.md"
+    file === "GENERICITY_AUDIT.md"
   ) {
     return ["PRODUCT_DOCUMENTATION", "canonical hygiene or genericity report"];
   }
@@ -112,7 +111,7 @@ function classify(file) {
     return ["PRODUCT_CODE", "runtime, build or operational code"];
   }
   if (
-    /^(?:policies\/|\.github\/|\.env\.example$|\.gitignore$|\.prettierignore$|package\.json$|pnpm-workspace\.yaml$)/.test(
+    /^(?:policies\/|\.github\/|\.env\.example$|\.gitattributes$|\.gitignore$|\.prettierignore$|\.prettierrc\.json$|package\.json$|pnpm-workspace\.yaml$)/.test(
       file,
     )
   ) {
@@ -139,6 +138,11 @@ const iterationResidue = [
   /^IMPLEMENTATION_NOTES_.*\.md$/i,
 ];
 
+const retiredRootReports = new Set([
+  "RESEARCH_ADOPTION_MATRIX.md",
+  "RESIDUAL_ARTIFACTS_REPORT.md",
+]);
+
 const files = repositoryFiles();
 const entries = files.map((file) => {
   const [category, reason] = classify(file);
@@ -154,12 +158,16 @@ for (const entry of entries) {
   if (!archived && iterationResidue.some((pattern) => pattern.test(name))) {
     failures.push(`ITERATION_RESIDUE ${entry.path}`);
   }
+  if (!archived && retiredRootReports.has(entry.path)) {
+    failures.push(`RETIRED_ROOT_REPORT ${entry.path}`);
+  }
 }
 
 const genericCore = files.filter(
   (file) =>
     /^(?:apps|packages|contracts|policies|evals\/generic)\//.test(file) &&
-    !/(^|\/)(?:test|tests|fixtures)\//.test(file),
+    !/(^|\/)(?:test|tests|fixtures)\//.test(file) &&
+    !/\.(?:test|spec)\.[cm]?[jt]sx?$/.test(file),
 );
 const leakagePattern =
   /\b(?:SI729|SI730|UPC|WF-DDD-END-TO-END|cqrs-capability-model|resources-is-layer)\b/i;

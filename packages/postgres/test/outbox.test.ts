@@ -22,6 +22,13 @@ describe("outbox retry policy", () => {
     expect(() =>
       retryDelayMs(1, { baseDelayMs: 2, maxDelayMs: 1, jitterRatio: 0 }),
     ).toThrow("INVALID_RETRY_POLICY");
+    expect(() =>
+      retryDelayMs(1, {
+        baseDelayMs: 1,
+        maxDelayMs: 2,
+        jitterRatio: Number.NaN,
+      }),
+    ).toThrow("INVALID_RETRY_POLICY");
   });
 });
 

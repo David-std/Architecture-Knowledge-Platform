@@ -7,6 +7,7 @@ export interface RetrievalCaseResult {
 export * from "./dataset.js";
 export * from "./benchmark.js";
 export * from "./offline.js";
+export * from "./curated.js";
 
 export interface RetrievalMetrics {
   recallAtK: number;

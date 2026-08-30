@@ -199,7 +199,7 @@ export async function rebuildSpaceProjections(
       const embeddings = await adapter.embed(
         eligibleUnits.map((unit) => unit.body),
       );
-      for (const [index, unit] of units.entries()) {
+      for (const unit of units) {
         if (!unit) continue;
         const inserted = await client.query<{ id: string }>(
           `

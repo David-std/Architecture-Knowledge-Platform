@@ -3,7 +3,11 @@ import { createHash } from "node:crypto";
 import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
-import { resolveAuthorizedVaultScope, type Postgres } from "@akp/postgres";
+import {
+  pathMatchesVaultPrefix,
+  resolveAuthorizedVaultScope,
+  type Postgres,
+} from "@akp/postgres";
 import { buildProjectSnapshot } from "@akp/project-adapter";
 import {
   actorOf,
@@ -33,10 +37,45 @@ function safeProjectSlug(slug: string): string | null {
   return /^[a-z0-9][a-z0-9-]{0,79}$/i.test(slug) ? slug : null;
 }
 
+function configuredProjectRoots(): string[] | null {
+  const configured = process.env.AKP_PROJECT_ROOTS;
+  if (!configured?.trim()) return null;
+  const values = configured.split(path.delimiter).map((root) => root.trim());
+  if (values.length === 0 || values.some((root) => root.length === 0)) {
+    return null;
+  }
+  return values.map((root) => path.resolve(root));
+}
+
+function sanitizeProjectPayload(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sanitizeProjectPayload);
+  if (typeof value === "string") {
+    return value.replace(
+      /(?:[A-Za-z]:[\\/]|\\\\|file:\/\/|\/(?:Users|home|tmp|var)\/)[^\s"']+/g,
+      "[REDACTED_PATH]",
+    );
+  }
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(
+        ([key]) =>
+          !/^(?:root(?:path|_path)|repository(?:path|_path)|local(?:path|_path)|absolute(?:path|_path)|canonical(?:path|_path))$/i.test(
+            key,
+          ),
+      )
+      .map(([key, entry]) => [key, sanitizeProjectPayload(entry)]),
+  );
+}
+
 function projectKnowledgeBody(
   slug: string,
   snapshot: Awaited<ReturnType<typeof buildProjectSnapshot>>,
 ): string {
+  const repositoryFingerprint = createHash("sha256")
+    .update(snapshot.repository)
+    .digest("hex")
+    .slice(0, 16);
   const evidence = snapshot.evidence.slice(0, 200).map((item) => {
     const locator = item.locator;
     return `- [${item.tier}] ${item.behavior} — ${locator.path}:${locator.startLine}-${locator.endLine}`;
@@ -49,7 +88,7 @@ function projectKnowledgeBody(
     "",
     "## Immutable snapshot",
     "",
-    `- Repository: ${snapshot.repository}`,
+    `- Repository fingerprint: ${repositoryFingerprint}`,
     `- Commit: ${snapshot.commit}`,
     `- Snapshot mode: ${snapshot.snapshotMode}`,
     `- Files: ${snapshot.files.length}`,
@@ -84,6 +123,10 @@ export function registerProjectRoutes(
       if (!actor) return { projects: [] };
       const spaces = spaceIdsForPermission(actor, "knowledge:read");
       const vaultIds: string[] = [];
+      const accessByVault: Record<
+        string,
+        { pathPrefix: string | null; permissions: string[] }
+      > = {};
       for (const spaceId of spaces) {
         try {
           const scope = await resolveAuthorizedVaultScope(db, {
@@ -93,6 +136,7 @@ export function registerProjectRoutes(
             federated: true,
           });
           vaultIds.push(...scope.vaultIds);
+          Object.assign(accessByVault, scope.accessByVault);
         } catch {
           // Keep private vaults hidden rather than signaling their existence.
         }
@@ -103,13 +147,18 @@ export function registerProjectRoutes(
         [spaces, [...new Set(vaultIds)]],
       );
       return {
-        projects: result.rows.filter((project) =>
-          hasPathAccess(
-            actor,
-            String(project.space_id),
-            "knowledge:read",
-            `projects/${String(project.slug)}`,
-          ),
+        projects: result.rows.filter(
+          (project) =>
+            hasPathAccess(
+              actor,
+              String(project.space_id),
+              "knowledge:read",
+              `projects/${String(project.slug)}`,
+            ) &&
+            pathMatchesVaultPrefix(
+              `projects/${String(project.slug)}`,
+              accessByVault[String(project.vault_id)]?.pathPrefix,
+            ),
         ),
       };
     },
@@ -133,16 +182,66 @@ export function registerProjectRoutes(
       }
       const slug = safeProjectSlug(request.body.slug);
       if (!slug) return reply.code(400).send({ code: "INVALID_PROJECT_SLUG" });
+      const spaceId = request.body.spaceId;
+      const vaultId = request.body.vaultId;
+      if (!spaceId || !vaultId) {
+        return reply.code(400).send({ code: "VAULT_SCOPE_REQUIRED" });
+      }
+      const actor = actorOf(request);
+      if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
+      if (!hasSpaceAccess(actor, spaceId, "knowledge:propose")) {
+        return reply.code(403).send({ code: "SPACE_ACCESS_DENIED" });
+      }
+      const projectPath = `projects/${slug}`;
+      if (!hasPathAccess(actor, spaceId, "knowledge:propose", projectPath)) {
+        return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
+      }
+      let vaultScope: Awaited<ReturnType<typeof resolveAuthorizedVaultScope>>;
+      try {
+        vaultScope = await resolveAuthorizedVaultScope(db, {
+          userId: actor.id,
+          spaceId,
+          permission: "knowledge:propose",
+          vaultId,
+          vaultIds: [vaultId],
+          federated: false,
+        });
+      } catch (error) {
+        return reply.code(403).send({
+          code: error instanceof Error ? error.message : "VAULT_ACCESS_DENIED",
+        });
+      }
+      const vaultAccess = vaultScope.accessByVault[vaultId];
+      if (
+        !vaultAccess ||
+        !pathMatchesVaultPrefix(projectPath, vaultAccess.pathPrefix)
+      ) {
+        return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
+      }
+      const configuredRoots = configuredProjectRoots();
+      if (!configuredRoots) {
+        return reply.code(503).send({ code: "PROJECT_ROOTS_NOT_CONFIGURED" });
+      }
       const rootPath = await realpath(
         path.resolve(request.body.rootPath),
       ).catch(() => null);
-      if (!rootPath || !(await stat(rootPath)).isDirectory()) {
+      const rootStat = rootPath ? await stat(rootPath).catch(() => null) : null;
+      if (!rootPath || !rootStat?.isDirectory()) {
         return reply.code(400).send({ code: "PROJECT_ROOT_NOT_FOUND" });
       }
-      const allowedRoots = (process.env.AKP_PROJECT_ROOTS ?? process.cwd())
-        .split(path.delimiter)
-        .map((root) => path.resolve(root.trim()))
-        .filter(Boolean);
+      const allowedRoots = (
+        await Promise.all(
+          configuredRoots.map(async (root) => {
+            const canonicalRoot = await realpath(root).catch(() => null);
+            const rootInfo = canonicalRoot
+              ? await stat(canonicalRoot).catch(() => null)
+              : null;
+            return canonicalRoot && rootInfo?.isDirectory()
+              ? canonicalRoot
+              : null;
+          }),
+        )
+      ).filter((root): root is string => Boolean(root));
       if (
         !allowedRoots.some((root) => {
           const relative = path.relative(root, rootPath);
@@ -174,40 +273,7 @@ export function registerProjectRoutes(
           ? { changedSince: request.body.changedSince }
           : {}),
       });
-      const spaceId = request.body.spaceId;
-      const vaultId = request.body.vaultId;
-      if (!spaceId || !vaultId) {
-        return reply.code(400).send({ code: "VAULT_SCOPE_REQUIRED" });
-      }
-      if (!hasSpaceAccess(actorOf(request), spaceId, "knowledge:propose")) {
-        return reply.code(403).send({ code: "SPACE_ACCESS_DENIED" });
-      }
-      if (
-        !hasPathAccess(
-          actorOf(request),
-          spaceId,
-          "knowledge:propose",
-          `projects/${slug}`,
-        )
-      ) {
-        return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
-      }
-      const actor = actorOf(request);
-      if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
-      try {
-        await resolveAuthorizedVaultScope(db, {
-          userId: actor.id,
-          spaceId,
-          permission: "knowledge:propose",
-          vaultId,
-          vaultIds: [vaultId],
-          federated: false,
-        });
-      } catch (error) {
-        return reply.code(403).send({
-          code: error instanceof Error ? error.message : "VAULT_ACCESS_DENIED",
-        });
-      }
+      const safeSnapshot = sanitizeProjectPayload(snapshot) as typeof snapshot;
       const body = projectKnowledgeBody(slug, snapshot);
       const result = await db.pool.query(
         `
@@ -223,7 +289,7 @@ export function registerProjectRoutes(
           rootPath,
           JSON.stringify({
             commit,
-            snapshot,
+            snapshot: safeSnapshot,
             scannedAt: new Date().toISOString(),
             limitation:
               "Static inventories and explicit imports are evidence signals; runtime behavior and architectural intent still require stronger proof.",
@@ -252,7 +318,10 @@ export function registerProjectRoutes(
           snapshot.commit,
           body,
           JSON.stringify({
-            repository: snapshot.repository,
+            repository_fingerprint: createHash("sha256")
+              .update(snapshot.repository)
+              .digest("hex")
+              .slice(0, 16),
             commit: snapshot.commit,
             snapshot_mode: snapshot.snapshotMode,
             code_evidence_tier: "NO_SIGNAL",
@@ -270,7 +339,11 @@ export function registerProjectRoutes(
         "project",
         String(result.rows[0]?.id),
         {
-          rootPath,
+          vaultId,
+          repositoryFingerprint: createHash("sha256")
+            .update(rootPath)
+            .digest("hex")
+            .slice(0, 16),
           commit,
           evidenceCount: snapshot.evidence.length,
           fileCount: snapshot.files.length,
@@ -278,8 +351,13 @@ export function registerProjectRoutes(
           dependencyCount: snapshot.dependencies.length,
           projection,
         },
+        spaceId,
       );
-      return reply.code(201).send({ ...result.rows[0], projection });
+      const project = sanitizeProjectPayload(result.rows[0]) as Record<
+        string,
+        unknown
+      >;
+      return reply.code(201).send({ ...project, projection });
     },
   );
 }
