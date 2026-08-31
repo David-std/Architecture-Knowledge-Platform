@@ -2,6 +2,7 @@ name: ci
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 jobs:
@@ -20,12 +21,12 @@ jobs:
       AKP_EXTRACTOR_TOKEN: akp-ci-extractor-token-not-for-production
       AKP_RAW_SECRET_KEY: akp-ci-minio-secret-not-for-production
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with: { version: 10.34.5 }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24.20.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
       - run: pnpm audit --audit-level high
@@ -45,7 +46,13 @@ jobs:
       - run: pnpm hygiene:validate
       - run: pnpm build
       - run: pnpm security:secrets
-      - run: pnpm test:integration
+      - name: Run API integration with a persisted report
+        run: |
+          mkdir -p reports/ci
+          pnpm --filter @akp/api exec vitest run \
+            --config vitest.integration.config.ts \
+            --reporter=default --reporter=junit \
+            --outputFile.junit=../../reports/ci/api-integration-junit.xml
       - run: pnpm akp vault import --vault-path test/fixtures/vault --read-only
       - run: pnpm verify:runtime
       - run: pnpm --filter @akp/api dev > api.log 2>&1 &
@@ -61,6 +68,40 @@ jobs:
         run: ./scripts/backup.ps1 -OutputDirectory backups/ci
       - shell: pwsh
         run: ./scripts/restore-smoke.ps1 -BackupDirectory backups/ci
+      - name: Capture service and durable-work diagnostics
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          mkdir -p reports/ci
+          docker compose ps --all > reports/ci/docker-compose-ps.txt 2>&1
+          docker compose logs --no-color --timestamps > reports/ci/docker-compose.log 2>&1
+          docker compose exec -T postgres psql -X -U akp -d akp \
+            -c "\copy (select d.consumer_name,e.event_type,d.status,count(*) as deliveries from event_deliveries d join event_outbox e on e.event_id=d.event_id group by d.consumer_name,e.event_type,d.status order by d.consumer_name,e.event_type,d.status) to stdout with csv header" \
+            > reports/ci/outbox-delivery-summary.csv 2>&1
+          docker compose exec -T postgres psql -X -U akp -d akp \
+            -c "\copy (select state,count(*) as jobs from ingest_jobs group by state order by state) to stdout with csv header" \
+            > reports/ci/ingest-job-summary.csv 2>&1
+          for log in api.log worker.log; do
+            if [ -f "$log" ]; then
+              sed \
+                -e "s|$AKP_API_TOKEN|<redacted>|g" \
+                -e "s|$AKP_EXTRACTOR_TOKEN|<redacted>|g" \
+                -e "s|$AKP_RAW_SECRET_KEY|<redacted>|g" \
+                "$log" > "reports/ci/$log"
+            fi
+          done
+      - name: Upload CI diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-diagnostics-${{ github.run_id }}-${{ github.job }}
+          path: reports/ci
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Stop disposable services
+        if: always()
+        run: docker compose down -v --remove-orphans
 
   python:
     runs-on: ubuntu-latest
@@ -68,8 +109,8 @@ jobs:
       run:
         working-directory: apps/extractor
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with: { python-version: "3.12" }
       - run: pip install -e ".[dev]"
       - run: ruff check .

@@ -1,5 +1,9 @@
 # Contributing
 
+Use Node.js 24 LTS (`>=24 <25`), pnpm 10.34.5 and Python 3.12. The
+same supported runtime lines are enforced by package metadata and CI; do not
+validate a change only on an EOL Node release.
+
 1. Create or update an executable specification before changing deterministic behavior.
 2. Add a migration instead of editing an applied migration.
 3. Keep domain/application/adapters dependency direction passing.
