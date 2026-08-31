@@ -18,6 +18,7 @@ jobs:
       AKP_PROJECT_ROOTS: ${{ github.workspace }}
       AKP_MANAGED_REPO: /tmp/akp-managed-knowledge
       AKP_EXTRACTOR_TOKEN: akp-ci-extractor-token-not-for-production
+      AKP_RAW_SECRET_KEY: akp-ci-minio-secret-not-for-production
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
