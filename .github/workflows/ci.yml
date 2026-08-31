@@ -16,7 +16,7 @@ jobs:
       PORT: 8080
       AKP_INGEST_ROOTS: ${{ github.workspace }}/test/fixtures
       AKP_PROJECT_ROOTS: ${{ github.workspace }}
-      AKP_MANAGED_REPO: ${{ runner.temp }}/akp-managed-knowledge
+      AKP_MANAGED_REPO: /tmp/akp-managed-knowledge
       AKP_EXTRACTOR_TOKEN: akp-ci-extractor-token-not-for-production
     steps:
       - uses: actions/checkout@v4
