@@ -17,6 +17,67 @@ const databaseUrl = process.env.DATABASE_URL;
 
 describe("durable outbox integration", () => {
   it.skipIf(!databaseUrl)(
+    "delivers an internal causal predecessor before its dependent event",
+    async () => {
+      if (!databaseUrl) return;
+      const db = new Postgres(databaseUrl);
+      const consumerName = `causal-test-${randomUUID()}`;
+      const parentId = randomUUID();
+      const childId = randomUUID();
+      try {
+        // Persist the child first to prove claim ordering does not depend on
+        // timestamps or random event identifiers when the parent exists.
+        await appendOutboxEvent(db, {
+          eventId: childId,
+          eventType: "ExtractionCompleted",
+          resourceId: randomUUID(),
+          causationId: parentId,
+          payload: { integrationTest: true },
+        });
+        await appendOutboxEvent(db, {
+          eventId: parentId,
+          eventType: "ExtractionRequested",
+          resourceId: randomUUID(),
+          payload: { integrationTest: true },
+        });
+        await registerEventConsumer(db, consumerName);
+        await db.pool.query(
+          "delete from event_deliveries where consumer_name=$1 and event_id<>all($2::uuid[])",
+          [consumerName, [parentId, childId]],
+        );
+
+        const parent = await claimNextEventDelivery(
+          db,
+          consumerName,
+          "causal-worker",
+        );
+        expect(parent?.event.eventId).toBe(parentId);
+        if (!parent) throw new Error("expected causal parent claim");
+        await acknowledgeEventDelivery(db, parent);
+
+        const child = await claimNextEventDelivery(
+          db,
+          consumerName,
+          "causal-worker",
+        );
+        expect(child?.event.eventId).toBe(childId);
+        if (!child) throw new Error("expected dependent child claim");
+        await acknowledgeEventDelivery(db, child);
+      } finally {
+        await db.pool.query(
+          "delete from event_deliveries where consumer_name=$1",
+          [consumerName],
+        );
+        await db.pool.query(
+          "delete from event_consumers where consumer_name=$1",
+          [consumerName],
+        );
+        await db.pool.end();
+      }
+    },
+  );
+
+  it.skipIf(!databaseUrl)(
     "recovers a leased event after restart, fences the old worker, and requeues poison work",
     async () => {
       if (!databaseUrl) return;

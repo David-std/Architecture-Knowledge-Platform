@@ -428,11 +428,25 @@ export async function claimNextEventDelivery(
     with candidate as (
       select d.event_id
         from event_deliveries d
+        join event_outbox e on e.event_id=d.event_id
         join event_consumers c on c.consumer_name=d.consumer_name
        where d.consumer_name=$1 and c.enabled
          and (
            (d.status in ('PENDING','RETRY') and d.next_attempt_at <= now())
            or (d.status='CLAIMED' and d.lease_expires_at < now())
+         )
+         and (
+           e.causation_id is null
+           or not exists (
+             select 1 from event_outbox parent_event
+              where parent_event.event_id::text=e.causation_id
+           )
+           or exists (
+             select 1 from event_deliveries parent_delivery
+              where parent_delivery.event_id::text=e.causation_id
+                and parent_delivery.consumer_name=d.consumer_name
+                and parent_delivery.status='SUCCEEDED'
+           )
          )
        order by d.next_attempt_at, d.created_at, d.event_id
        for update skip locked
