@@ -53,7 +53,11 @@ jobs:
             --config vitest.integration.config.ts \
             --reporter=default --reporter=junit \
             --outputFile.junit=../../reports/ci/api-integration-junit.xml
-      - run: pnpm akp vault import --vault-path test/fixtures/vault --read-only
+      - run: >-
+          pnpm akp vault import
+          --vault-path test/fixtures/vault
+          --space-id 00000000-0000-0000-0000-000000000003
+          --read-only
       - run: pnpm verify:runtime
       - run: pnpm --filter @akp/api dev > api.log 2>&1 &
       - run: |
@@ -112,7 +116,12 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with: { python-version: "3.12" }
-      - run: pip install -e ".[dev]"
-      - run: ruff check .
-      - run: mypy app
-      - run: pytest
+      - uses: astral-sh/setup-uv@v10
+        with:
+          version: 0.12.7
+          enable-cache: true
+          cache-dependency-glob: apps/extractor/uv.lock
+      - run: uv sync --locked
+      - run: uv run --locked ruff check --no-cache .
+      - run: uv run --locked mypy app
+      - run: uv run --locked pytest -p no:cacheprovider
