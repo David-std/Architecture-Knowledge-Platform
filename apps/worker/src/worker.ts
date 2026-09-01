@@ -28,6 +28,12 @@ import { DurableEventWorker } from "./event-worker.js";
 import { createIndexEventHandlers } from "./event-handlers.js";
 import { lifecycleEventForState } from "./lifecycle.js";
 import {
+  DEFAULT_WORKER_DRAIN_DEADLINE_MS,
+  drainToQuiescence,
+  WorkerDrainError,
+  type WorkerDrainSummary,
+} from "./drain.js";
+import {
   DOCUMENT_ARTIFACT_SCHEMA_VERSION,
   parseCanonicalExtractionResponse,
   renderDocumentArtifactDraft,
@@ -760,28 +766,45 @@ function startLeaseHeartbeat(jobId: string, leaseSeconds = 60): () => void {
   return () => clearInterval(timer);
 }
 
-async function loop(): Promise<void> {
+async function runClaimedJob(job: Record<string, unknown>): Promise<void> {
+  const stopHeartbeat = startLeaseHeartbeat(String(job.id));
+  try {
+    await processJob(job);
+  } catch (error) {
+    await handleFailure(job, error);
+  } finally {
+    stopHeartbeat();
+  }
+}
+
+async function loop(): Promise<WorkerDrainSummary | undefined> {
   const drain = process.env.AKP_WORKER_DRAIN === "true";
   await eventWorker.register();
   await runScheduledLintIfDue(process.env.AKP_LINT_RUN_ONCE === "true");
+  if (drain) {
+    return drainToQuiescence({
+      db,
+      consumerName: eventWorker.consumerName,
+      workerId,
+      leaseSeconds: 60,
+      deadlineMs: Number(
+        process.env.AKP_WORKER_DRAIN_DEADLINE_MS ??
+          DEFAULT_WORKER_DRAIN_DEADLINE_MS,
+      ),
+      runEventOnce: () => eventWorker.runOnce(),
+      runIngestJob: runClaimedJob,
+    });
+  }
   for (;;) {
     const eventHandled = await eventWorker.runOnce();
     const job = await claimNextIngestJob(db, workerId, 60);
     if (!job) {
-      if (drain && !eventHandled) return;
       await runScheduledLintIfDue();
       if (eventHandled) continue;
       await new Promise((resolve) => setTimeout(resolve, 1000));
       continue;
     }
-    const stopHeartbeat = startLeaseHeartbeat(String(job.id));
-    try {
-      await processJob(job);
-    } catch (error) {
-      await handleFailure(job, error);
-    } finally {
-      stopHeartbeat();
-    }
+    await runClaimedJob(job);
   }
 }
 
@@ -792,7 +815,15 @@ process.on("SIGTERM", async () => {
 });
 
 try {
-  await loop();
+  const summary = await loop();
+  if (summary) process.stdout.write(`${JSON.stringify(summary)}\n`);
+} catch (error) {
+  if (error instanceof WorkerDrainError) {
+    process.stderr.write(`${JSON.stringify(error.summary)}\n`);
+    process.exitCode = 1;
+  } else {
+    throw error;
+  }
 } finally {
   await db.close();
 }

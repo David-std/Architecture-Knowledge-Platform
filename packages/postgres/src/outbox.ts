@@ -709,6 +709,128 @@ export interface ReconciliationReport {
 }
 
 /**
+ * A point-in-time view of one consumer's durable queue.  The buckets are
+ * mutually exclusive for every delivery row, which makes the result safe to
+ * serialize as a worker drain contract instead of relying on log text.
+ *
+ * `causallyBlocked` includes a non-terminal delivery whose known causating
+ * event has not succeeded for this consumer.  A causation id that does not
+ * resolve to an event is intentionally treated as an unblocked legacy/root
+ * event, matching claimNextEventDelivery's fail-open compatibility rule.
+ */
+export interface OutboxDrainSummary {
+  consumerName: string;
+  total: number;
+  immediatelyClaimable: number;
+  causallyBlocked: number;
+  scheduledRetry: number;
+  leased: number;
+  quarantined: number;
+  succeeded: number;
+  nonTerminal: number;
+  nextWakeAt: string | null;
+}
+
+/**
+ * Inspect durable delivery state without changing it.  `nextWakeAt` is the
+ * earliest database-owned retry or lease timestamp still in the queue.  A
+ * caller can therefore wait on a durable deadline rather than guessing with
+ * a polling sleep; a null value means the queue is blocked without a future
+ * timestamp (for example a malformed causal cycle) and must be bounded by
+ * the caller's own drain deadline.
+ */
+export async function summarizeOutbox(
+  target: OutboxTarget,
+  consumerName: string,
+): Promise<OutboxDrainSummary> {
+  if (!consumerName.trim()) throw new Error("CONSUMER_NAME_REQUIRED");
+  const result = await executorFor(target).query(
+    `
+    with delivery_state as (
+      select d.status,d.next_attempt_at,d.lease_expires_at,
+             case
+               when e.causation_id is null then false
+               when not exists (
+                 select 1 from event_outbox parent_event
+                  where parent_event.event_id::text=e.causation_id
+               ) then false
+               when exists (
+                 select 1 from event_deliveries parent_delivery
+                  where parent_delivery.event_id::text=e.causation_id
+                    and parent_delivery.consumer_name=d.consumer_name
+                    and parent_delivery.status='SUCCEEDED'
+               ) then false
+               else true
+             end causally_blocked
+        from event_deliveries d
+        join event_outbox e on e.event_id=d.event_id
+       where d.consumer_name=$1
+    ), rollup as (
+      select
+        count(*)::int total,
+        count(*) filter (
+          where status not in ('SUCCEEDED','QUARANTINED')
+            and not causally_blocked
+            and (
+              (status in ('PENDING','RETRY') and next_attempt_at <= now())
+              or (status='CLAIMED' and lease_expires_at <= now())
+            )
+        )::int immediately_claimable,
+        count(*) filter (
+          where status not in ('SUCCEEDED','QUARANTINED')
+            and causally_blocked
+        )::int causally_blocked,
+        count(*) filter (
+          where status in ('PENDING','RETRY')
+            and not causally_blocked and next_attempt_at > now()
+        )::int scheduled_retry,
+        count(*) filter (
+          where status='CLAIMED'
+            and not causally_blocked
+            and (lease_expires_at is null or lease_expires_at > now())
+        )::int leased,
+        count(*) filter (where status='QUARANTINED')::int quarantined,
+        count(*) filter (where status='SUCCEEDED')::int succeeded,
+        min(
+          case
+            when status in ('PENDING','RETRY') and next_attempt_at > now()
+              then next_attempt_at
+            when status='CLAIMED' and lease_expires_at > now()
+              then lease_expires_at
+            else null
+          end
+        ) next_wake_at
+      from delivery_state
+    )
+    select total,immediately_claimable,causally_blocked,scheduled_retry,
+           leased,quarantined,succeeded,next_wake_at
+      from rollup
+    `,
+    [consumerName],
+  );
+  const row = result.rows[0] as Record<string, unknown> | undefined;
+  const total = Number(row?.total ?? 0);
+  const immediatelyClaimable = Number(row?.immediately_claimable ?? 0);
+  const causallyBlocked = Number(row?.causally_blocked ?? 0);
+  const scheduledRetry = Number(row?.scheduled_retry ?? 0);
+  const leased = Number(row?.leased ?? 0);
+  const quarantined = Number(row?.quarantined ?? 0);
+  const succeeded = Number(row?.succeeded ?? 0);
+  return {
+    consumerName,
+    total,
+    immediatelyClaimable,
+    causallyBlocked,
+    scheduledRetry,
+    leased,
+    quarantined,
+    succeeded,
+    nonTerminal: total - quarantined - succeeded,
+    nextWakeAt: row?.next_wake_at ? iso(row.next_wake_at) : null,
+  };
+}
+
+/**
  * Reconciliation is intentionally read-only.  It reports drift for a
  * scheduled safety net while normal delivery remains event-driven.
  */
