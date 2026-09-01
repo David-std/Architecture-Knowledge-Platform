@@ -337,6 +337,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "apps/extractor/uv.lock",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/mcp/package.json",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -507,6 +512,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/worker/src/drain.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/worker/src/event-handlers.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -537,6 +547,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "apps/worker/test/drain.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "apps/worker/test/event-handlers.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
@@ -553,6 +568,11 @@
     },
     {
       "path": "apps/worker/tsconfig.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/worker/vitest.config.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
