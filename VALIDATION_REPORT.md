@@ -1,5 +1,30 @@
 # Validation report
 
+## v0.3 P0 validation evidence
+
+- Date: 2026-08-31 (America/Bogota).
+- Draft PR:
+  `https://github.com/David-std/Architecture-Knowledge-Platform/pull/1`.
+- Validated head: `10fbea61afe66342dd519ebdcf01e982364a76a3`.
+- Clean-checkout workflow:
+  `https://github.com/David-std/Architecture-Knowledge-Platform/actions/runs/33463026103`.
+- Remote result: TypeScript PASS and Python PASS under Node 24.20.0 and Python
+  3.12.
+- Database-focused result: PostgreSQL package 18/18 and worker drain 5/5.
+- Unchanged API integration result: 34/34, including the product lifecycle
+  final assertion that every selected delivery is `SUCCEEDED`.
+- Python result: `uv sync --locked`, Ruff, mypy over 17 source files and pytest
+  13/13; the extractor Docker image built and installed with the same lock.
+- Workflow result: frozen strict pnpm install, audit, formatting, compose,
+  migrations, unit/type gates, contracts, docs, hygiene, build, secret scan,
+  API integration, CLI import, runtime verifier, MCP, backup/restore,
+  diagnostics upload and disposable-service cleanup all passed.
+
+This evidence closes only P0. The v0.3 PR remains in progress and draft while
+P1–P10 are incomplete.
+
+## v0.2.1 validation baseline
+
 - Date: 2026-08-30 (America/Bogota)
 - Release tag: `v0.2.1-platform-validation`
 - Validated implementation commit:
@@ -11,7 +36,8 @@
 - Validation environment: Windows NT 10.0.26200.0; Node 25.2.0; pnpm
   10.34.5; Python 3.12.13; PostgreSQL 16.14; pgvector 0.8.5; Docker
   client/server 29.6.2.
-- CI compatibility targets remain Node 20 and Python 3.12.
+- The historical v0.2.1 CI target was Node 20 and Python 3.12; active v0.3
+  compatibility supersedes it with Node 24.20.0 and locked Python 3.12.
 
 `PASS` means the command or behavior was observed in an isolated validation
 workspace and reproduced from the tagged clean checkout where the gate is
@@ -238,7 +264,8 @@ repository_hygiene: 340_FILES_PASS_NO_TRACKED_SECRETS
 
 ## Remaining evidence limits
 
-- Local Node is newer than CI Node 20; Python matches the CI 3.12 line.
+- The v0.2.1 local run used Node 25 while its historical CI target used Node 20. Active compatibility is superseded by the clean v0.3 P0 Node 24 run
+  recorded above.
 - Optional extraction candidates and semantic embedding providers were not
   installed or simulated.
 - Retrieval Level A/B and the scale fixture do not replace a curator-reviewed,

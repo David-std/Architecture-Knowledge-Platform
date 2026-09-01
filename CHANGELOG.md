@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased — v0.3 product completion (draft)
+
+- Closed P0 event correctness with per-consumer causal eligibility and a
+  machine-readable drain-to-quiescence that distinguishes claimable, blocked,
+  scheduled, leased, quarantined and succeeded deliveries.
+- Added focused PostgreSQL regressions for parent success/retry/quarantine,
+  unrelated roots, expired leases and the claim-versus-summary race; retained
+  the unchanged 34-case API integration suite and product-lifecycle assertion.
+- Moved the supported runtime to Node 24.20.0 (`>=24 <25`) and verified frozen
+  strict installation, unit/type gates, build, MCP and backup/restore remotely.
+- Added the authoritative Python `uv.lock`, locked CI and Docker consumption,
+  and kept Docling, Marker and Chunkr provider dependencies opt-in.
+- Made CI diagnostic and self-cleaning, corrected the CLI import smoke's
+  required space identifier and refreshed repository file classification.
+- P0 clean-checkout proof: GitHub Actions run `33463026103`, both jobs PASS on
+  head `10fbea61afe66342dd519ebdcf01e982364a76a3`.
+
 ## v0.2.1-platform-validation — baseline stable, 2026-08-30
 
 - Extended the documented executable schema from migrations `001`–`016` to
