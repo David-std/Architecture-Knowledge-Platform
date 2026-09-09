@@ -352,10 +352,13 @@ async function submitIngest(
 async function reviewIdForJob(jobId: string): Promise<string> {
   const row = await waitFor(
     async () =>
-      db.pool.query<{ state: string; stage_outputs: Record<string, unknown> }>(
-        "select state,stage_outputs from ingest_jobs where id=$1",
-        [jobId],
-      ),
+      db.pool.query<{
+        state: string;
+        stage_outputs: Record<string, unknown>;
+        error: unknown;
+      }>("select state,stage_outputs,error from ingest_jobs where id=$1", [
+        jobId,
+      ]),
     (result) => result.rows[0]?.state === "REVIEW_REQUIRED",
     `ingest job ${jobId} to reach REVIEW_REQUIRED`,
   );
@@ -761,9 +764,18 @@ describe("product lifecycle E2E", () => {
       lifecycle: string;
       index_status: string;
       active_units: number;
+      total_units: number;
+      inactive_units: number;
     }>(
       `select r.status review_status,d.lifecycle,i.status index_status,
-                (select count(*)::int from knowledge_units u where u.document_id=d.id) active_units
+                (select count(*)::int from knowledge_units u
+                  where u.document_id=d.id
+                    and u.lifecycle in ('ACTIVE','DISPUTED')) active_units,
+                (select count(*)::int from knowledge_units u
+                  where u.document_id=d.id) total_units,
+                (select count(*)::int from knowledge_units u
+                  where u.document_id=d.id
+                    and u.lifecycle not in ('ACTIVE','DISPUTED')) inactive_units
            from reviews r
            join knowledge_documents d on d.vault_id=r.vault_id
              and d.frontmatter->>'source_sha256'=$2
@@ -771,12 +783,16 @@ describe("product lifecycle E2E", () => {
           where r.id=$1`,
       [firstReviewId, firstSourceHash],
     );
-    expect(rolledBack.rows[0]).toEqual({
+    expect(rolledBack.rows[0]).toMatchObject({
       review_status: "ROLLED_BACK",
       lifecycle: "DELETED_TOMBSTONE",
       index_status: "DEGRADED",
       active_units: 0,
     });
+    expect(rolledBack.rows[0]?.total_units).toBeGreaterThan(0);
+    expect(rolledBack.rows[0]?.inactive_units).toBe(
+      rolledBack.rows[0]?.total_units,
+    );
 
     const afterRollbackSearch = await app.inject({
       method: "POST",

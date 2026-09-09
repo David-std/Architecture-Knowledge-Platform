@@ -7,10 +7,10 @@ import type {
   SynchronizeManagedPathsOptions,
 } from "@akp/indexing";
 import {
-  DeterministicEmbeddingAdapter,
+  createConfiguredEmbeddingProvider,
   parseKnowledgeUnits,
-  toPgVector,
 } from "@akp/retrieval";
+import { buildEmbeddingIndex } from "@akp/indexing";
 import type { GitKnowledgeStore } from "@akp/git-store";
 
 export type ManagedChange = IncrementalManagedChange;
@@ -152,53 +152,18 @@ export async function rebuildSpaceProjections(
     `,
     [spaceId, vaultId],
   );
-  const adapter = new DeterministicEmbeddingAdapter();
   const client = await db.pool.connect();
   let unitCount = 0;
   try {
     await client.query("begin");
-    const generation = await client.query<{ id: string }>(
-      `
-      insert into embedding_generations(
-        space_id,vault_id,provider,model,model_revision,dimensions,normalization,
-        configuration_version,corpus_revision,status,activated_at
-      ) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
-               case when $10='ACTIVE' then now() else null end)
-      on conflict(
-        vault_id,provider,model,model_revision,configuration_version,corpus_revision
-      ) do update set status=excluded.status,activated_at=excluded.activated_at
-      returning id
-      `,
-      [
-        spaceId,
-        vaultId,
-        adapter.descriptor.provider,
-        adapter.descriptor.model,
-        adapter.descriptor.modelRevision,
-        adapter.descriptor.dimensions,
-        adapter.descriptor.normalization,
-        adapter.descriptor.configurationVersion,
-        corpusRevision,
-        process.env.AKP_VECTOR_ENABLED === "true" ? "ACTIVE" : "READY",
-      ],
-    );
-    const generationId = generation.rows[0]?.id;
-    if (!generationId)
-      throw new Error("Could not create embedding generation.");
-
-    await client.query(
-      `delete from knowledge_units u
-         using knowledge_documents d
-         where u.document_id=d.id and d.space_id=$1 and d.vault_id=$2`,
-      [spaceId, vaultId],
-    );
+    // Knowledge units are revisioned projection snapshots. Keep the previous
+    // snapshot in place while the next embedding generation is built: its
+    // unit rows are the FK targets for the currently ACTIVE vectors. Search
+    // selects only the lexical revision advertised by vault_index_revisions,
+    // so retaining older snapshots does not mix them into current results.
     for (const document of documents.rows) {
       const units = parseKnowledgeUnits(document.title, document.body_cache);
       const unitIds = new Map<string, string>();
-      const eligibleUnits = units.filter((unit) => unit.embeddingEligible);
-      const embeddings = await adapter.embed(
-        eligibleUnits.map((unit) => unit.body),
-      );
       for (const unit of units) {
         if (!unit) continue;
         const inserted = await client.query<{ id: string }>(
@@ -209,6 +174,18 @@ export async function rebuildSpaceProjections(
             token_estimate,parent_unit_id,document_revision,permissions,locator,
             structural_order,container_only,embedding_eligible
           ) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'{}',$12,$13,$14,$15::jsonb,$16::jsonb,$17,$18,$19)
+          on conflict(document_id,unit_key,corpus_revision) do update set
+            space_id=excluded.space_id,vault_id=excluded.vault_id,
+            unit_type=excluded.unit_type,heading_path=excluded.heading_path,
+            body=excluded.body,content_hash=excluded.content_hash,
+            lifecycle=excluded.lifecycle,trust_tier=excluded.trust_tier,
+            source_ids=excluded.source_ids,token_estimate=excluded.token_estimate,
+            parent_unit_id=excluded.parent_unit_id,
+            document_revision=excluded.document_revision,
+            permissions=excluded.permissions,locator=excluded.locator,
+            structural_order=excluded.structural_order,
+            container_only=excluded.container_only,
+            embedding_eligible=excluded.embedding_eligible,updated_at=now()
           returning id
           `,
           [
@@ -238,27 +215,43 @@ export async function rebuildSpaceProjections(
         const unitId = inserted.rows[0]?.id;
         if (!unitId) throw new Error(`Could not index unit ${unit.unitKey}.`);
         unitIds.set(unit.unitKey, unitId);
-        if (unit.embeddingEligible) {
-          const eligibleIndex = eligibleUnits.findIndex(
-            (candidate) => candidate.unitKey === unit.unitKey,
-          );
-          const embedding = embeddings[eligibleIndex];
-          if (!embedding) continue;
-          await client.query(
-            `
-            insert into unit_embeddings(unit_id,generation_id,content_hash,embedding)
-            values($1,$2,$3,$4::vector)
-            `,
-            [unitId, generationId, unit.contentHash, toPgVector(embedding)],
-          );
-        }
         unitCount += 1;
       }
     }
     await client.query(
+      `update knowledge_units u
+          set lifecycle=d.lifecycle,updated_at=now()
+         from knowledge_documents d
+        where u.document_id=d.id and d.space_id=$1 and d.vault_id=$2
+          and d.lifecycle in ('ARCHIVED','DELETED_TOMBSTONE','SUPERSEDED','INVALID')`,
+      [spaceId, vaultId],
+    );
+    await client.query(
       "delete from context_packets where space_id=$1 and vault_id=$2",
       [spaceId, vaultId],
     );
+    // Serialize marker replacement with vector activation. Once this row is
+    // locked, read the actually ACTIVE generation so a rebuild can advertise
+    // the previous vectors as stale-but-queryable until its replacement is
+    // complete. This also closes the window where a just-finished older build
+    // could be lost from the new marker.
+    await client.query(
+      `select corpus_revision
+         from vault_index_revisions
+        where space_id=$1 and vault_id=$2
+        for update`,
+      [spaceId, vaultId],
+    );
+    const activeGeneration = await client.query<{ corpus_revision: string }>(
+      `select corpus_revision
+         from embedding_generations
+        where space_id=$1 and vault_id=$2 and status='ACTIVE'
+        order by activated_at desc nulls last,created_at desc,id desc
+        limit 1`,
+      [spaceId, vaultId],
+    );
+    const previousVectorRevision =
+      activeGeneration.rows[0]?.corpus_revision ?? null;
     await client.query(
       `
       insert into vault_index_revisions(
@@ -279,13 +272,13 @@ export async function rebuildSpaceProjections(
         spaceId,
         vaultId,
         corpusRevision,
-        process.env.AKP_VECTOR_ENABLED === "true" ? corpusRevision : null,
-        process.env.AKP_VECTOR_ENABLED === "true" ? "CONSISTENT" : "DEGRADED",
-        JSON.stringify(
+        previousVectorRevision,
+        "DEGRADED",
+        JSON.stringify([
           process.env.AKP_VECTOR_ENABLED === "true"
-            ? []
-            : ["VECTOR_DISABLED_PENDING_BENCHMARK"],
-        ),
+            ? "VECTOR_BUILD_PENDING"
+            : "VECTOR_DISABLED_PENDING_BENCHMARK",
+        ]),
       ],
     );
     await client.query("commit");
@@ -294,6 +287,46 @@ export async function rebuildSpaceProjections(
     throw error;
   } finally {
     client.release();
+  }
+  let provider: ReturnType<typeof createConfiguredEmbeddingProvider> = null;
+  try {
+    provider = createConfiguredEmbeddingProvider();
+  } catch {
+    await db.pool.query(
+      `update vault_index_revisions
+          set warnings='["VECTOR_PROVIDER_CONFIGURATION_INVALID"]'::jsonb,
+              status='DEGRADED',updated_at=now()
+        where space_id=$1 and vault_id=$2 and corpus_revision=$3`,
+      [spaceId, vaultId, corpusRevision],
+    );
+  }
+  if (provider) {
+    try {
+      await buildEmbeddingIndex(db, {
+        spaceId,
+        vaultId,
+        corpusRevision,
+        provider,
+        activate: process.env.AKP_VECTOR_ENABLED === "true",
+      });
+    } catch {
+      await db.pool.query(
+        `update vault_index_revisions
+            set warnings='["VECTOR_BUILD_FAILED"]'::jsonb,status='DEGRADED',
+                updated_at=now()
+          where space_id=$1 and vault_id=$2 and corpus_revision=$3`,
+        [spaceId, vaultId, corpusRevision],
+      );
+    }
+  } else if (process.env.AKP_VECTOR_ENABLED === "true") {
+    await db.pool.query(
+      `update vault_index_revisions
+          set warnings='["VECTOR_PROVIDER_NOT_CONFIGURED"]'::jsonb,
+              status='DEGRADED',updated_at=now()
+        where space_id=$1 and vault_id=$2 and corpus_revision=$3
+          and warnings <> '["VECTOR_PROVIDER_CONFIGURATION_INVALID"]'::jsonb`,
+      [spaceId, vaultId, corpusRevision],
+    );
   }
   return {
     corpusRevision,

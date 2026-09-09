@@ -142,12 +142,22 @@
       "reason": "executable product test"
     },
     {
+      "path": "apps/api/test/projection-vector-preservation.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "apps/api/test/projections.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
     {
       "path": "apps/api/test/raw-evidence-export.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/api/test/real-semantic-retrieval.integration.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -163,6 +173,16 @@
     },
     {
       "path": "apps/api/test/security.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/api/test/semantic-retrieval.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/api/test/semantic-vector-query.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -712,6 +732,26 @@
       "reason": "append-only database migration"
     },
     {
+      "path": "db/migrations/019_semantic_embedding_generations.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
+      "path": "db/migrations/020_validate_embedding_activation_completeness.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
+      "path": "db/migrations/021_scope_incremental_index_runs.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
+      "path": "db/migrations/022_enforce_l2_embedding_normalization.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
       "path": "dependency-cruiser.cjs",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -1147,12 +1187,42 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/indexing/src/embedding-generation.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/indexing/src/embedding-index.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/indexing/src/index.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/indexing/test/embedding-configuration-hash.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/indexing/test/embedding-generation.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/indexing/test/embedding-index.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "packages/indexing/test/incremental-index.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/indexing/test/incremental-vector-retry.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -1317,12 +1387,27 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/retrieval/src/embedding-provider-registry.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/retrieval/src/embeddings.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
     {
       "path": "packages/retrieval/src/index.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/retrieval/src/local-semantic-embedding.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/retrieval/src/openai-compatible-embedding.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
@@ -1352,7 +1437,27 @@
       "reason": "executable product test"
     },
     {
+      "path": "packages/retrieval/test/embedding-configuration-hash.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/embedding-provider-registry.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "packages/retrieval/test/embeddings.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/local-semantic-embedding.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/openai-compatible-embedding.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -1403,6 +1508,11 @@
     },
     {
       "path": "packages/vault-importer/test/parser.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/vault-importer/test/semantic-generation.integration.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },

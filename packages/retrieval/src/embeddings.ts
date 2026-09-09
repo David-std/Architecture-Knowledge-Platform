@@ -6,13 +6,33 @@ export interface EmbeddingDescriptor {
   modelRevision: string;
   dimensions: number;
   normalization: string;
+  /** Stable preprocessing convention shared by indexing and querying. */
+  inputStrategy: string;
   configurationVersion: string;
+  /** Reproducible inference runtime metadata; never include credentials. */
+  runtime: string | object;
+  /** Optional SHA-256 of canonical, non-secret provider configuration. */
+  configurationHash?: string;
 }
 
-export interface EmbeddingPort {
-  readonly descriptor: EmbeddingDescriptor;
-  embed(texts: readonly string[]): Promise<number[][]>;
+export type EmbeddingInputRole = "query" | "passage";
+
+export interface EmbeddingRequestOptions {
+  role?: EmbeddingInputRole;
+  signal?: AbortSignal;
 }
+
+/** Provider-neutral semantic/deterministic embedding boundary. */
+export interface EmbeddingProvider {
+  readonly descriptor: EmbeddingDescriptor;
+  embed(
+    texts: readonly string[],
+    request?: EmbeddingInputRole | EmbeddingRequestOptions,
+  ): Promise<number[][]>;
+}
+
+/** Backwards-compatible name retained for existing package consumers. */
+export interface EmbeddingPort extends EmbeddingProvider {}
 
 export const HASH_EMBEDDING_DESCRIPTOR: EmbeddingDescriptor = {
   provider: "local-deterministic",
@@ -20,7 +40,9 @@ export const HASH_EMBEDDING_DESCRIPTOR: EmbeddingDescriptor = {
   modelRevision: "1",
   dimensions: 64,
   normalization: "l2",
+  inputStrategy: "deterministic-token-hash-v1",
   configurationVersion: "hash-projection-v1",
+  runtime: "node:crypto/sha256",
 };
 
 export function deterministicEmbedding(
@@ -47,7 +69,10 @@ export function deterministicEmbedding(
 export class DeterministicEmbeddingAdapter implements EmbeddingPort {
   readonly descriptor = HASH_EMBEDDING_DESCRIPTOR;
 
-  async embed(texts: readonly string[]): Promise<number[][]> {
+  async embed(
+    texts: readonly string[],
+    _request?: EmbeddingInputRole | EmbeddingRequestOptions,
+  ): Promise<number[][]> {
     return texts.map((text) =>
       deterministicEmbedding(text, this.descriptor.dimensions),
     );

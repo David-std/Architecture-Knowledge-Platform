@@ -13,11 +13,12 @@ import {
 import {
   buildContextPacket,
   contextBudgetForIntent,
-  deterministicEmbedding,
   planQuery,
+  QueryEmbeddingService,
   rehydrateStructuralContext,
   reciprocalRankFusion,
   toPgVector,
+  type ActiveEmbeddingGenerationDescriptor,
 } from "@akp/retrieval";
 import {
   actorOf,
@@ -70,10 +71,59 @@ export interface RetrievalExecutionOptions {
   >;
   allowVectorForBenchmark?: boolean;
   deterministicRerank?: boolean;
+  /** Test/provider injection seam; production resolves the active descriptor. */
+  queryEmbeddingService?: QueryEmbeddingService;
+  /** Safe capability warnings accumulated without changing the legacy hit return type. */
+  warningSink?: string[];
+  /** Channels that reached their provider/index successfully for this request. */
+  availableChannelSink?: Set<RetrievalChannel>;
   vaultIds?: string[];
   /** Applied after policy/trust filtering so a scoped caller never receives a
    * path it is not allowed to read. */
   pathAuthorizer?: (path: string, vaultId?: string) => boolean;
+}
+
+interface ActiveEmbeddingGenerationRow {
+  id: string;
+  space_id: string;
+  vault_id: string;
+  corpus_revision: string;
+  provider: string;
+  model: string;
+  model_revision: string;
+  dimensions: number;
+  normalization: string;
+  input_strategy: string;
+  configuration_version: string;
+  runtime: string;
+  configuration_hash: string;
+}
+
+interface VectorSearchRow {
+  id: string;
+  unit_id: string;
+  unit_type: string;
+  score: number;
+}
+
+function activeDescriptor(
+  row: ActiveEmbeddingGenerationRow,
+): ActiveEmbeddingGenerationDescriptor {
+  return {
+    generationId: row.id,
+    spaceId: row.space_id,
+    vaultId: row.vault_id,
+    corpusRevision: row.corpus_revision,
+    provider: row.provider,
+    model: row.model,
+    modelRevision: row.model_revision,
+    dimensions: Number(row.dimensions),
+    normalization: row.normalization,
+    inputStrategy: row.input_strategy,
+    configurationVersion: row.configuration_version,
+    runtime: row.runtime,
+    configurationHash: row.configuration_hash,
+  };
 }
 
 type RetrievalChannel = NonNullable<
@@ -113,13 +163,31 @@ function combineVaultIndexRows(rows: IndexRevisionRow[]): IndexRevisionRow {
     "graph_revision",
     "context_pack_revision",
   ]) {
-    result[field] = rows.every(
+    const everyCurrent = rows.every(
       (row) =>
         String(row[field] ?? "") === String(row.corpus_revision ?? "") &&
         String(row[field] ?? "") !== "",
-    )
-      ? corpusRevision
-      : null;
+    );
+    if (everyCurrent) {
+      result[field] = corpusRevision;
+      continue;
+    }
+    if (
+      field === "vector_revision" &&
+      rows.some((row) => String(row[field] ?? "") !== "")
+    ) {
+      const vectorRevisions = rows
+        .map((row) => ({
+          vaultId: String(row.vault_id ?? ""),
+          revision: row[field] ? String(row[field]) : null,
+        }))
+        .sort((left, right) => left.vaultId.localeCompare(right.vaultId));
+      result[field] = `federated-vector:${createHash("sha256")
+        .update(JSON.stringify(vectorRevisions))
+        .digest("hex")}`;
+      continue;
+    }
+    result[field] = null;
   }
   return result;
 }
@@ -141,6 +209,10 @@ export function channelsConsistentWithIndex(
   for (const [channel, field] of derived) {
     if (!channels.has(channel)) continue;
     const revision = index?.[field] ? String(index[field]) : null;
+    if (channel === "vector" && corpus && revision && revision !== corpus) {
+      warnings.push("INDEX_REVISION_STALE:vector");
+      continue;
+    }
     if (!corpus || !revision || revision !== corpus) {
       channels.delete(channel);
       warnings.push(`INDEX_REVISION_MISMATCH:${channel}`);
@@ -151,6 +223,28 @@ export function channelsConsistentWithIndex(
     warnings.push("VECTOR_DISABLED");
   }
   return { channels: [...channels], warnings };
+}
+
+/**
+ * Reconcile planned channels with the channels that actually executed.
+ *
+ * A federated vector request may have a usable generation in only a subset of
+ * its vaults. Vector remains effective when at least one vault completed the
+ * query; it is removed only when no vault completed it.
+ */
+export function effectiveRetrievalChannels(
+  channelState: ReturnType<typeof channelsConsistentWithIndex>,
+  retrievalWarnings: readonly string[],
+  availableChannels: ReadonlySet<RetrievalChannel>,
+): { channels: RetrievalChannel[]; warnings: string[] } {
+  const channels = new Set(channelState.channels);
+  if (channels.has("vector") && !availableChannels.has("vector")) {
+    channels.delete("vector");
+  }
+  return {
+    channels: [...channels],
+    warnings: [...new Set([...channelState.warnings, ...retrievalWarnings])],
+  };
 }
 
 function deterministicLexicalRerank(
@@ -312,6 +406,9 @@ export async function queryKnowledge(
     process.env.AKP_VECTOR_ENABLED === "true" ||
       Boolean(options.allowVectorForBenchmark),
   );
+  for (const warning of consistency.warnings) {
+    options.warningSink?.push(warning);
+  }
   const channels = new Set(consistency.channels);
   const modeClause =
     input.mode === "RAW_ONLY"
@@ -352,6 +449,9 @@ export async function queryKnowledge(
            ts_rank_cd(u.search_vector, websearch_to_tsquery('simple', $2)) score
       from knowledge_units u
       join knowledge_documents d on d.id=u.document_id
+      join vault_index_revisions i
+        on i.space_id=u.space_id and i.vault_id=u.vault_id
+       and i.lexical_revision=u.corpus_revision
      where u.space_id = $1
        ${vaultFilter("u.")}
        and u.lifecycle in ('ACTIVE','DISPUTED')
@@ -431,42 +531,102 @@ export async function queryKnowledge(
           ],
         );
 
-  const vector =
+  const vector = { rows: [] as VectorSearchRow[] };
+  if (
     (process.env.AKP_VECTOR_ENABLED === "true" ||
       options.allowVectorForBenchmark) &&
     channels.has("vector")
-      ? await db.pool.query(
+  ) {
+    const generationStatus = options.allowVectorForBenchmark
+      ? "in ('ACTIVE','READY')"
+      : "='ACTIVE'";
+    const generations = await db.pool.query<ActiveEmbeddingGenerationRow>(
+      `
+      select distinct on (g.vault_id)
+             g.id,g.space_id,g.vault_id,g.corpus_revision,g.provider,g.model,
+             g.model_revision,g.dimensions,g.normalization,g.input_strategy,
+             g.configuration_version,g.runtime,g.configuration_hash
+        from embedding_generations g
+        join vault_index_revisions i
+          on i.space_id=g.space_id and i.vault_id=g.vault_id
+         and i.vector_revision=g.corpus_revision
+       where g.space_id=$1 and g.vault_id=any($2::uuid[])
+         and g.status ${generationStatus}
+       order by g.vault_id,(g.status='ACTIVE') desc,
+                g.activated_at desc nulls last,g.created_at desc
+      `,
+      [spaceId, vaultIds],
+    );
+    const generationVaults = new Set(
+      generations.rows.map((row) => String(row.vault_id)),
+    );
+    for (const vaultId of vaultIds) {
+      if (!generationVaults.has(vaultId)) {
+        options.warningSink?.push(`VECTOR_GENERATION_UNAVAILABLE:${vaultId}`);
+      }
+    }
+    const embeddingService =
+      options.queryEmbeddingService ?? new QueryEmbeddingService();
+    for (const generationRow of generations.rows) {
+      const generation = activeDescriptor(generationRow);
+      if (
+        !Number.isSafeInteger(generation.dimensions) ||
+        generation.dimensions < 1 ||
+        generation.dimensions > 2000
+      ) {
+        throw new Error("EMBEDDING_GENERATION_DIMENSIONS_INVALID");
+      }
+      let queryVector: number[];
+      try {
+        queryVector = await embeddingService.embedQuery(
+          input.query,
+          generation,
+        );
+      } catch {
+        options.warningSink?.push(
+          `VECTOR_PROVIDER_UNAVAILABLE:${generation.vaultId}`,
+        );
+        continue;
+      }
+      const dimensions = generation.dimensions;
+      try {
+        const result = await db.pool.query<VectorSearchRow>(
           `
-          select u.document_id id, u.id unit_id, u.unit_type,
-                 1 - (e.embedding <=> $2::vector) score
+          select u.document_id id,u.id unit_id,u.unit_type,
+                 1 - (e.embedding::vector(${dimensions}) <=> $3::vector(${dimensions})) score
             from unit_embeddings e
-            join embedding_generations g on g.id=e.generation_id
             join knowledge_units u on u.id=e.unit_id
             join knowledge_documents d on d.id=u.document_id
-           where u.space_id=$1 and g.status in ('READY','ACTIVE')
+           where e.generation_id=$1 and u.space_id=$2 and u.vault_id=$4
+             and e.embedding_dimensions=${dimensions}
+             and e.content_hash=u.content_hash
              and u.embedding_eligible
-             ${vaultFilter("u.")}
-             and g.vault_id=u.vault_id
-             and g.corpus_revision=u.corpus_revision
+             and u.lifecycle in ('ACTIVE','DISPUTED')
              and d.lifecycle in ('ACTIVE','DISPUTED')
              and d.refresh_status not in ('STALE_BLOCKED','INVALID')
-           order by e.embedding <=> $2::vector
-           limit $3
+             ${modeClause}
+           order by e.embedding::vector(${dimensions}) <=> $3::vector(${dimensions})
+           limit $5
           `,
           [
+            generation.generationId,
             spaceId,
-            toPgVector(deterministicEmbedding(input.query)),
+            toPgVector(queryVector),
+            generation.vaultId,
             Math.max(input.limit * 3, 30),
           ],
-        )
-      : {
-          rows: [] as Array<{
-            id: string;
-            unit_id: string;
-            unit_type: string;
-            score: number;
-          }>,
-        };
+        );
+        options.availableChannelSink?.add("vector");
+        vector.rows.push(...result.rows);
+      } catch {
+        options.warningSink?.push(
+          `VECTOR_QUERY_UNAVAILABLE:${generation.vaultId}`,
+        );
+      }
+    }
+    vector.rows.sort((left, right) => Number(right.score) - Number(left.score));
+    vector.rows.splice(Math.max(input.limit * 3, 30));
+  }
 
   const seedIds = [
     ...new Set(
@@ -886,8 +1046,12 @@ export function registerSearchRoutes(app: FastifyInstance, db: Postgres): void {
         vaultIds,
         ...(vaultIds.length === 1 ? { vaultId: vaultIds[0] } : {}),
       };
+      const retrievalWarnings: string[] = [];
+      const availableChannels = new Set<RetrievalChannel>();
       const hits = await queryKnowledge(db, scopedRequest, {
         vaultIds,
+        warningSink: retrievalWarnings,
+        availableChannelSink: availableChannels,
         pathAuthorizer: (documentPath, vaultId) => {
           const access = accessByVault[String(vaultId ?? "")];
           if (!access) return false;
@@ -903,6 +1067,16 @@ export function registerSearchRoutes(app: FastifyInstance, db: Postgres): void {
         [requestedSpace, vaultIds],
       );
       const index = combineVaultIndexRows(indexRows.rows);
+      const channelState = channelsConsistentWithIndex(
+        plan.channels,
+        index,
+        process.env.AKP_VECTOR_ENABLED === "true",
+      );
+      const effectiveChannelState = effectiveRetrievalChannels(
+        channelState,
+        retrievalWarnings,
+        availableChannels,
+      );
       return {
         mode: parsed.data.mode,
         scope: {
@@ -914,17 +1088,10 @@ export function registerSearchRoutes(app: FastifyInstance, db: Postgres): void {
         plan,
         degraded:
           process.env.AKP_VECTOR_ENABLED !== "true" ||
-          String(index.status ?? "DEGRADED") !== "CONSISTENT",
-        channels: channelsConsistentWithIndex(
-          plan.channels,
-          index,
-          process.env.AKP_VECTOR_ENABLED === "true",
-        ).channels,
-        warnings: channelsConsistentWithIndex(
-          plan.channels,
-          index,
-          process.env.AKP_VECTOR_ENABLED === "true",
-        ).warnings,
+          String(index.status ?? "DEGRADED") !== "CONSISTENT" ||
+          effectiveChannelState.warnings.length > 0,
+        channels: effectiveChannelState.channels,
+        warnings: effectiveChannelState.warnings,
         indexRevisions: index,
         hits,
         noAnswer:
@@ -996,8 +1163,12 @@ export function registerSearchRoutes(app: FastifyInstance, db: Postgres): void {
         vaultIds,
         ...(vaultIds.length === 1 ? { vaultId: vaultIds[0] } : {}),
       };
+      const retrievalWarnings: string[] = [];
+      const availableChannels = new Set<RetrievalChannel>();
       const hits = await queryKnowledge(db, scopedRequest, {
         vaultIds,
+        warningSink: retrievalWarnings,
+        availableChannelSink: availableChannels,
         pathAuthorizer: (documentPath, vaultId) => {
           const access = accessByVault[String(vaultId ?? "")];
           if (!access) return false;
@@ -1029,6 +1200,16 @@ export function registerSearchRoutes(app: FastifyInstance, db: Postgres): void {
         [requestedSpace, vaultIds],
       );
       const indexRow = combineVaultIndexRows(indexRows.rows);
+      const channelState = channelsConsistentWithIndex(
+        plan.channels,
+        indexRow,
+        process.env.AKP_VECTOR_ENABLED === "true",
+      );
+      const effectiveChannelState = effectiveRetrievalChannels(
+        channelState,
+        retrievalWarnings,
+        availableChannels,
+      );
       const conflicts =
         hits.length === 0
           ? { rows: [] }
@@ -1066,8 +1247,9 @@ export function registerSearchRoutes(app: FastifyInstance, db: Postgres): void {
         },
         retrievalConfiguration: {
           version: String(indexRow.retrieval_configuration_version ?? "rrf-v1"),
-          channels: plan.channels,
+          channels: effectiveChannelState.channels,
           vectorEnabled: process.env.AKP_VECTOR_ENABLED === "true",
+          warnings: effectiveChannelState.warnings,
         },
         candidates: hits.map((hit) => {
           const detail = detailById.get(hit.documentId);

@@ -202,7 +202,12 @@ export function registerKnowledgeRoutes(
           [scope.spaces, scope.vaultIds],
         ),
         db.pool.query(
-          "select count(*)::int count from knowledge_units where space_id=any($1::uuid[]) and vault_id=any($2::uuid[])",
+          `select count(*)::int count
+             from knowledge_units u
+             join vault_index_revisions i
+               on i.space_id=u.space_id and i.vault_id=u.vault_id
+              and i.lexical_revision=u.corpus_revision
+            where u.space_id=any($1::uuid[]) and u.vault_id=any($2::uuid[])`,
           [scope.spaces, scope.vaultIds],
         ),
         db.pool.query(

@@ -19,11 +19,11 @@ describe("retrieval revision policy", () => {
       true,
     );
 
-    expect(result.channels).toEqual(["exact", "graph"]);
+    expect(result.channels).toEqual(["exact", "graph", "vector"]);
     expect(result.warnings).toEqual([
       "INDEX_REVISION_MISMATCH:lexical",
       "INDEX_REVISION_MISMATCH:context-pack",
-      "INDEX_REVISION_MISMATCH:vector",
+      "INDEX_REVISION_STALE:vector",
     ]);
   });
 

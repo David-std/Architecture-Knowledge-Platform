@@ -3,7 +3,7 @@ import type { Postgres } from "@akp/postgres";
 import { rebuildSpaceProjections } from "../src/projections.js";
 
 describe("vault-scoped structural projections", () => {
-  it("persists containers and atomic units without embedding DOCUMENT/SECTION", async () => {
+  it("persists containers and atomic units without selecting an implicit vector provider", async () => {
     const calls: Array<{ sql: string; args: unknown[] | undefined }> = [];
     let unitNumber = 0;
     const client = {
@@ -72,7 +72,14 @@ describe("vault-scoped structural projections", () => {
     const embeddings = calls.filter((call) =>
       /insert into unit_embeddings/i.test(call.sql),
     );
-    expect(embeddings).toHaveLength(1);
+    expect(embeddings).toHaveLength(0);
+    const revisionInsert = calls.find((call) =>
+      /insert into vault_index_revisions/i.test(call.sql),
+    );
+    expect(revisionInsert?.args).toContain(null);
+    expect(JSON.stringify(revisionInsert?.args)).toContain(
+      "VECTOR_DISABLED_PENDING_BENCHMARK",
+    );
     expect(
       calls.some((call) => /insert into vault_index_revisions/i.test(call.sql)),
     ).toBe(true);

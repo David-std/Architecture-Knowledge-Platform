@@ -8,10 +8,13 @@ import {
 } from "@akp/git-store";
 import { parseWikiLinks } from "@akp/vault-importer";
 import {
-  DeterministicEmbeddingAdapter,
+  createConfiguredEmbeddingProvider,
   parseKnowledgeUnits,
-  toPgVector,
 } from "@akp/retrieval";
+import { buildEmbeddingIndex } from "./embedding-index.js";
+
+export * from "./embedding-generation.js";
+export * from "./embedding-index.js";
 
 export interface ManagedChange {
   path: string;
@@ -379,30 +382,27 @@ interface ChangedDocument {
   frontmatter?: Record<string, unknown>;
 }
 
-interface CachedEmbedding {
-  content_hash: string;
-  embedding: string;
-}
-
 /**
  * Rebuild only the structural units owned by documents touched by an
- * incremental event.  A document's old units are removed by document id and
- * recreated from the same parser used by the repair-only full rebuild.  Vector
- * rows are reused by content hash whenever a prior generation contains the
- * same atomic unit, so an unchanged paragraph in an edited document does not
- * get a second embedding request.  All reads/deletes/inserts are constrained
- * by both space and vault to prevent same-path cross-vault leakage.
+ * incremental event. Unit snapshots are versioned by corpus revision so the
+ * currently ACTIVE generation keeps valid FK targets until its replacement is
+ * READY and atomically activated. Vector rows are reused by content hash
+ * whenever a prior generation contains the same atomic unit, so an unchanged
+ * paragraph in an edited document does not get a second embedding request.
+ * All reads/inserts are constrained by both space and vault to prevent
+ * same-path cross-vault leakage.
  */
 async function rebuildChangedUnits(
   db: Postgres,
   options: SynchronizeManagedPathsOptions,
   result: SynchronizeManagedPathsResult,
   corpusRevision: string,
+  fullSnapshot = false,
 ): Promise<IncrementalProjectionStats> {
   const changedPaths = [
     ...new Set([...result.indexedPaths, ...result.tombstonedPaths]),
   ];
-  if (changedPaths.length === 0) {
+  if (!fullSnapshot && changedPaths.length === 0) {
     return {
       documentsRebuilt: 0,
       unitsRebuilt: 0,
@@ -412,13 +412,22 @@ async function rebuildChangedUnits(
   }
 
   const documents = await db.pool.query<ChangedDocument>(
+    fullSnapshot
+      ? `
+    select id,title,body_cache,lifecycle,trust_tier,frontmatter,
+           coalesce(frontmatter->'permissions','{}'::jsonb) permissions
+      from knowledge_documents
+     where space_id=$1 and vault_id=$2
     `
+      : `
     select id,title,body_cache,lifecycle,trust_tier,frontmatter,
            coalesce(frontmatter->'permissions','{}'::jsonb) permissions
       from knowledge_documents
      where space_id=$1 and vault_id=$2 and path = any($3::text[])
     `,
-    [options.spaceId, options.vaultId, changedPaths],
+    fullSnapshot
+      ? [options.spaceId, options.vaultId]
+      : [options.spaceId, options.vaultId, changedPaths],
   );
   const activeDocuments = documents.rows.filter(
     (document) =>
@@ -427,89 +436,10 @@ async function rebuildChangedUnits(
       ),
   );
 
-  // A delete/tombstone can be the only change in an event.  There is no
-  // document left to parse or embed in that case, so creating an embedding
-  // generation would leave an empty vector generation behind (and make a
-  // tombstone look like a successful vector rebuild).  Context packets still
-  // need invalidation; the dedicated ContextPackInvalidationRequested event
-  // performs the same operation for normal publication fan-out, while this
-  // local invalidation also covers repair/compensation callers that do not
-  // emit the fan-out event.
-  if (activeDocuments.length === 0) {
-    await db.pool.query(
-      `delete from context_packets where space_id=$1 and vault_id=$2`,
-      [options.spaceId, options.vaultId],
-    );
-    return {
-      documentsRebuilt: documents.rows.length,
-      unitsRebuilt: 0,
-      embeddingsReused: 0,
-      embeddingsCreated: 0,
-    };
-  }
-
   const parsed = activeDocuments.map((document) => ({
     document,
     units: parseKnowledgeUnits(document.title, document.body_cache),
   }));
-  const contentHashes = [
-    ...new Set(
-      parsed.flatMap(({ units }) =>
-        units
-          .filter((unit) => unit.embeddingEligible)
-          .map((unit) => unit.contentHash),
-      ),
-    ),
-  ];
-
-  const cached = new Map<string, string>();
-  if (contentHashes.length > 0) {
-    const existing = await db.pool.query<CachedEmbedding>(
-      `
-      select distinct on (ku.content_hash)
-             ku.content_hash,ue.embedding::text embedding
-        from knowledge_units ku
-        join unit_embeddings ue on ue.unit_id=ku.id
-        join embedding_generations eg on eg.id=ue.generation_id
-       where ku.space_id=$1 and ku.vault_id=$2
-         and ku.embedding_eligible=true and ku.content_hash=any($3::text[])
-       order by ku.content_hash,eg.created_at desc
-      `,
-      [options.spaceId, options.vaultId, contentHashes],
-    );
-    for (const row of existing.rows) {
-      if (row.embedding) cached.set(row.content_hash, row.embedding);
-    }
-  }
-
-  const adapter = new DeterministicEmbeddingAdapter();
-  const generation = await db.pool.query<{ id: string }>(
-    `
-    insert into embedding_generations(
-      space_id,vault_id,provider,model,model_revision,dimensions,normalization,
-      configuration_version,corpus_revision,status,activated_at
-    ) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
-             case when $10='ACTIVE' then now() else null end)
-    on conflict(vault_id,provider,model,model_revision,configuration_version,corpus_revision)
-      do update set status=excluded.status,activated_at=excluded.activated_at
-    returning id
-    `,
-    [
-      options.spaceId,
-      options.vaultId,
-      adapter.descriptor.provider,
-      adapter.descriptor.model,
-      adapter.descriptor.modelRevision,
-      adapter.descriptor.dimensions,
-      adapter.descriptor.normalization,
-      adapter.descriptor.configurationVersion,
-      corpusRevision,
-      process.env.AKP_VECTOR_ENABLED === "true" ? "ACTIVE" : "READY",
-    ],
-  );
-  const generationId = generation.rows[0]?.id;
-  if (!generationId)
-    throw new Error("Could not create incremental embedding generation.");
 
   const artifactIdsByDocument = new Map<string, string>();
   const frontmatterArtifactIds = [
@@ -564,25 +494,90 @@ async function rebuildChangedUnits(
   let embeddingsCreated = 0;
   try {
     await client.query("begin");
-    for (const document of documents.rows) {
-      // `document_id` is globally unique and the documents were selected
-      // through the explicit space/vault scope above. Deleting by identity
-      // also removes legacy pre-registry units whose `vault_id` is NULL,
-      // preventing duplicate unit keys during an incremental rebuild.
-      await client.query("delete from knowledge_units where document_id=$1", [
-        document.id,
-      ]);
+    const previousRevision = await client.query<{
+      lexical_revision: string | null;
+    }>(
+      `select lexical_revision from vault_index_revisions
+        where space_id=$1 and vault_id=$2 for update`,
+      [options.spaceId, options.vaultId],
+    );
+    const priorCorpusRevision = previousRevision.rows[0]?.lexical_revision;
+    const changedDocumentIds = documents.rows.map((document) => document.id);
+    if (
+      !fullSnapshot &&
+      priorCorpusRevision &&
+      priorCorpusRevision !== corpusRevision
+    ) {
+      // A generation represents the whole vault snapshot. Copy unchanged
+      // units into the new revision while the previous rows remain valid FK
+      // targets for the currently ACTIVE vector generation.
+      await client.query(
+        `
+        insert into knowledge_units(
+          document_id,space_id,vault_id,unit_key,unit_type,heading_path,body,
+          content_hash,corpus_revision,lifecycle,trust_tier,source_ids,
+          token_estimate,parent_unit_id,document_revision,permissions,locator,
+          structural_order,container_only,embedding_eligible,artifact_id
+        )
+        select u.document_id,u.space_id,u.vault_id,u.unit_key,u.unit_type,
+               u.heading_path,u.body,u.content_hash,$4,u.lifecycle,u.trust_tier,
+               u.source_ids,u.token_estimate,null,$4,u.permissions,u.locator,
+               u.structural_order,u.container_only,u.embedding_eligible,u.artifact_id
+          from knowledge_units u
+          join knowledge_documents d on d.id=u.document_id
+         where u.space_id=$1 and u.vault_id=$2 and u.corpus_revision=$3
+           and d.space_id=$1 and d.vault_id=$2
+           and d.lifecycle not in ('ARCHIVED','DELETED_TOMBSTONE','SUPERSEDED','INVALID')
+           and not (u.document_id=any($5::uuid[]))
+        on conflict(document_id,unit_key,corpus_revision) do update set
+          space_id=excluded.space_id,vault_id=excluded.vault_id,
+          unit_type=excluded.unit_type,heading_path=excluded.heading_path,
+          body=excluded.body,content_hash=excluded.content_hash,
+          lifecycle=excluded.lifecycle,trust_tier=excluded.trust_tier,
+          source_ids=excluded.source_ids,token_estimate=excluded.token_estimate,
+          parent_unit_id=null,document_revision=excluded.document_revision,
+          permissions=excluded.permissions,locator=excluded.locator,
+          structural_order=excluded.structural_order,
+          container_only=excluded.container_only,
+          embedding_eligible=excluded.embedding_eligible,
+          artifact_id=excluded.artifact_id,updated_at=now()
+        `,
+        [
+          options.spaceId,
+          options.vaultId,
+          priorCorpusRevision,
+          corpusRevision,
+          changedDocumentIds,
+        ],
+      );
+      await client.query(
+        `
+        update knowledge_units cloned
+           set parent_unit_id=cloned_parent.id,updated_at=now()
+          from knowledge_units prior
+          join knowledge_units prior_parent on prior_parent.id=prior.parent_unit_id
+          join knowledge_units cloned_parent
+            on cloned_parent.document_id=prior_parent.document_id
+           and cloned_parent.unit_key=prior_parent.unit_key
+           and cloned_parent.corpus_revision=$4
+         where cloned.document_id=prior.document_id
+           and cloned.unit_key=prior.unit_key
+           and cloned.corpus_revision=$4
+           and prior.space_id=$1 and prior.vault_id=$2
+           and prior.corpus_revision=$3
+           and not (prior.document_id=any($5::uuid[]))
+        `,
+        [
+          options.spaceId,
+          options.vaultId,
+          priorCorpusRevision,
+          corpusRevision,
+          changedDocumentIds,
+        ],
+      );
     }
     for (const { document, units } of parsed) {
       const unitIds = new Map<string, string>();
-      const embeddings = await adapter.embed(
-        units
-          .filter(
-            (unit) => unit.embeddingEligible && !cached.has(unit.contentHash),
-          )
-          .map((unit) => unit.body),
-      );
-      let generatedIndex = 0;
       for (const unit of units) {
         const inserted = await client.query<{ id: string }>(
           `
@@ -593,6 +588,19 @@ async function rebuildChangedUnits(
             structural_order,container_only,embedding_eligible,artifact_id
           ) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,
                    $17::jsonb,$18,$19,$20,$21)
+          on conflict(document_id,unit_key,corpus_revision) do update set
+            space_id=excluded.space_id,vault_id=excluded.vault_id,
+            unit_type=excluded.unit_type,heading_path=excluded.heading_path,
+            body=excluded.body,content_hash=excluded.content_hash,
+            lifecycle=excluded.lifecycle,trust_tier=excluded.trust_tier,
+            source_ids=excluded.source_ids,token_estimate=excluded.token_estimate,
+            parent_unit_id=excluded.parent_unit_id,
+            document_revision=excluded.document_revision,
+            permissions=excluded.permissions,locator=excluded.locator,
+            structural_order=excluded.structural_order,
+            container_only=excluded.container_only,
+            embedding_eligible=excluded.embedding_eligible,
+            artifact_id=excluded.artifact_id,updated_at=now()
           returning id
           `,
           [
@@ -625,30 +633,17 @@ async function rebuildChangedUnits(
         if (!unitId) throw new Error(`Could not index unit ${unit.unitKey}.`);
         unitIds.set(unit.unitKey, unitId);
         unitsRebuilt += 1;
-        if (!unit.embeddingEligible) continue;
-        const reused = cached.get(unit.contentHash);
-        if (reused) {
-          await client.query(
-            `insert into unit_embeddings(unit_id,generation_id,content_hash,embedding)
-             values($1,$2,$3,$4::vector)
-             on conflict(unit_id,generation_id) do update set
-               content_hash=excluded.content_hash,embedding=excluded.embedding`,
-            [unitId, generationId, unit.contentHash, reused],
-          );
-          embeddingsReused += 1;
-          continue;
-        }
-        const embedding = embeddings[generatedIndex++];
-        if (!embedding) continue;
-        await client.query(
-          `insert into unit_embeddings(unit_id,generation_id,content_hash,embedding)
-           values($1,$2,$3,$4::vector)
-           on conflict(unit_id,generation_id) do update set
-             content_hash=excluded.content_hash,embedding=excluded.embedding`,
-          [unitId, generationId, unit.contentHash, toPgVector(embedding)],
-        );
-        embeddingsCreated += 1;
       }
+    }
+    for (const document of documents.rows.filter(
+      (candidate) => !["ACTIVE", "DISPUTED"].includes(candidate.lifecycle),
+    )) {
+      await client.query(
+        `update knowledge_units
+            set lifecycle=$4,updated_at=now()
+          where document_id=$1 and space_id=$2 and vault_id=$3`,
+        [document.id, options.spaceId, options.vaultId, document.lifecycle],
+      );
     }
     await client.query(
       `delete from context_packets
@@ -683,12 +678,54 @@ async function currentCompositeRevision(
   return `composite:${vaultRevision}+managed:${options.revision}`;
 }
 
+interface VaultIndexRevisionRow {
+  corpus_revision: string;
+  lexical_revision: string | null;
+  vector_revision: string | null;
+  graph_revision: string | null;
+  context_pack_revision: string | null;
+}
+
+async function currentVaultIndexRevision(
+  db: Postgres,
+  options: SynchronizeManagedPathsOptions,
+): Promise<VaultIndexRevisionRow | null> {
+  const result = await db.pool.query<VaultIndexRevisionRow>(
+    `
+    select corpus_revision,lexical_revision,vector_revision,
+           graph_revision,context_pack_revision
+      from vault_index_revisions
+     where space_id=$1 and vault_id=$2
+    `,
+    [options.spaceId, options.vaultId],
+  );
+  return result.rows[0] ?? null;
+}
+
+async function currentActiveVectorRevision(
+  db: Postgres,
+  options: SynchronizeManagedPathsOptions,
+): Promise<string | null> {
+  const result = await db.pool.query<{ corpus_revision: string }>(
+    `
+    select corpus_revision
+      from embedding_generations
+     where space_id=$1 and vault_id=$2 and status='ACTIVE'
+     order by activated_at desc nulls last,created_at desc
+     limit 1
+    `,
+    [options.spaceId, options.vaultId],
+  );
+  return result.rows[0]?.corpus_revision ?? null;
+}
+
 async function markVaultIndexRevision(
   db: Postgres,
   options: SynchronizeManagedPathsOptions,
   corpusRevision: string,
+  vectorRevision: string | null,
+  warnings: readonly string[],
 ): Promise<void> {
-  const vectorEnabled = process.env.AKP_VECTOR_ENABLED === "true";
   await db.pool.query(
     `
     insert into vault_index_revisions(
@@ -709,11 +746,11 @@ async function markVaultIndexRevision(
       options.spaceId,
       options.vaultId,
       corpusRevision,
-      vectorEnabled ? corpusRevision : null,
-      vectorEnabled ? "CONSISTENT" : "DEGRADED",
-      JSON.stringify(
-        vectorEnabled ? [] : ["VECTOR_DISABLED_PENDING_BENCHMARK"],
-      ),
+      vectorRevision,
+      vectorRevision === corpusRevision && warnings.length === 0
+        ? "CONSISTENT"
+        : "DEGRADED",
+      JSON.stringify([...new Set(warnings)]),
     ],
   );
 }
@@ -736,8 +773,9 @@ async function startIncrementalRun(
   const existing = await db.pool.query<IncrementalRunRow>(
     `select id,status,corpus_revision,documents_rebuilt,units_rebuilt,
             embeddings_reused,embeddings_created
-       from incremental_index_runs where event_id=$1`,
-    [options.eventId],
+       from incremental_index_runs
+      where event_id=$1 and space_id=$2 and vault_id=$3`,
+    [options.eventId, options.spaceId, options.vaultId],
   );
   const current = existing.rows[0];
   if (current?.status === "COMPLETED") return current;
@@ -745,8 +783,8 @@ async function startIncrementalRun(
     await db.pool.query(
       `update incremental_index_runs
           set status='RUNNING',error=null,started_at=now(),completed_at=null
-        where id=$1`,
-      [current.id],
+        where id=$1 and space_id=$2 and vault_id=$3`,
+      [current.id, options.spaceId, options.vaultId],
     );
     return { ...current, status: "RUNNING" };
   }
@@ -754,7 +792,7 @@ async function startIncrementalRun(
     `insert into incremental_index_runs(
        event_id,space_id,vault_id,corpus_revision,changed_paths,status
      ) values($1,$2,$3,$4,$5,'RUNNING')
-     on conflict(event_id) where event_id is not null do nothing
+     on conflict(space_id,vault_id,event_id) where event_id is not null do nothing
      returning id,status,corpus_revision,documents_rebuilt,units_rebuilt,
                embeddings_reused,embeddings_created`,
     [
@@ -769,8 +807,9 @@ async function startIncrementalRun(
   const raced = await db.pool.query<IncrementalRunRow>(
     `select id,status,corpus_revision,documents_rebuilt,units_rebuilt,
             embeddings_reused,embeddings_created
-       from incremental_index_runs where event_id=$1`,
-    [options.eventId],
+       from incremental_index_runs
+      where event_id=$1 and space_id=$2 and vault_id=$3`,
+    [options.eventId, options.spaceId, options.vaultId],
   );
   return raced.rows[0] ?? null;
 }
@@ -789,7 +828,7 @@ async function completeIncrementalRun(
             tombstoned_paths=$3,documents_rebuilt=$4,units_rebuilt=$5,
             embeddings_reused=$6,embeddings_created=$7,error=null,
             completed_at=now()
-      where event_id=$1`,
+      where event_id=$1 and space_id=$8 and vault_id=$9`,
     [
       options.eventId,
       corpusRevision,
@@ -798,6 +837,8 @@ async function completeIncrementalRun(
       stats.unitsRebuilt,
       stats.embeddingsReused,
       stats.embeddingsCreated,
+      options.spaceId,
+      options.vaultId,
     ],
   );
 }
@@ -811,21 +852,14 @@ async function failIncrementalRun(
   await db.pool.query(
     `update incremental_index_runs
         set status='FAILED',error=$2,completed_at=now()
-      where event_id=$1`,
-    [options.eventId, error instanceof Error ? error.message : String(error)],
+      where event_id=$1 and space_id=$3 and vault_id=$4`,
+    [
+      options.eventId,
+      error instanceof Error ? error.message : String(error),
+      options.spaceId,
+      options.vaultId,
+    ],
   );
-}
-
-async function alreadyProjected(
-  db: Postgres,
-  options: SynchronizeManagedPathsOptions,
-  corpusRevision: string,
-): Promise<boolean> {
-  const result = await db.pool.query<{ corpus_revision: string }>(
-    "select corpus_revision from vault_index_revisions where space_id=$1 and vault_id=$2",
-    [options.spaceId, options.vaultId],
-  );
-  return result.rows[0]?.corpus_revision === corpusRevision;
 }
 
 /** Apply managed changes and update the vault-scoped index revision. */
@@ -852,59 +886,119 @@ export async function incrementalIndex(
   options: SynchronizeManagedPathsOptions,
 ): Promise<IncrementalIndexResult> {
   assertVaultScope(options.vaultId);
-  const prior = await startIncrementalRun(db, options);
-  if (prior?.status === "COMPLETED") {
-    return {
-      indexedPaths: [],
-      tombstonedPaths: [],
-      relationCount: 0,
-      corpusRevision: prior.corpus_revision,
-      documentsRebuilt: prior.documents_rebuilt,
-      unitsRebuilt: prior.units_rebuilt,
-      embeddingsReused: prior.embeddings_reused,
-      embeddingsCreated: prior.embeddings_created,
-    };
-  }
+  // A completed event is structurally idempotent, but it must not suppress a
+  // later vector retry. Provider availability/configuration can change after
+  // the event was acknowledged, so the marker below decides whether to skip
+  // structure while the vector reconciliation still runs.
+  await startIncrementalRun(db, options);
   const corpusRevision = await currentCompositeRevision(db, options);
-  if (await alreadyProjected(db, options, corpusRevision)) {
-    const empty = {
-      documentsRebuilt: 0,
-      unitsRebuilt: 0,
-      embeddingsReused: 0,
-      embeddingsCreated: 0,
-    };
-    await completeIncrementalRun(
-      db,
-      options,
-      { indexedPaths: [], tombstonedPaths: [] },
-      corpusRevision,
-      empty,
-    );
-    return {
+  try {
+    const marker = await currentVaultIndexRevision(db, options);
+    const structuralProjectionComplete =
+      marker?.corpus_revision === corpusRevision &&
+      marker.lexical_revision === corpusRevision &&
+      marker.graph_revision === corpusRevision &&
+      marker.context_pack_revision === corpusRevision;
+    const fullSnapshot = marker === null || marker.lexical_revision === null;
+    // Keep the revision advertised by the existing marker while a replacement
+    // generation is being built. If the marker was lost, recover the same
+    // value from the still-active generation when possible.
+    const preservedVectorRevision =
+      marker?.vector_revision ??
+      (await currentActiveVectorRevision(db, options));
+
+    let result: SynchronizeManagedPathsResult = {
       indexedPaths: [],
       tombstonedPaths: [],
-      relationCount: 0,
-      corpusRevision,
+    };
+    let structuralStats: IncrementalProjectionStats = {
       documentsRebuilt: 0,
       unitsRebuilt: 0,
       embeddingsReused: 0,
       embeddingsCreated: 0,
     };
-  }
-  try {
-    const result = await synchronizeManagedPathsCore(db, store, options);
-    const stats = await rebuildChangedUnits(
+    let relationCount = 0;
+    if (!structuralProjectionComplete) {
+      result = await synchronizeManagedPathsCore(db, store, options);
+      structuralStats = await rebuildChangedUnits(
+        db,
+        options,
+        result,
+        corpusRevision,
+        fullSnapshot,
+      );
+      relationCount = await rebuildManagedRelations(
+        db,
+        options.spaceId,
+        options.vaultId,
+      );
+    }
+
+    const vectorEnabled = process.env.AKP_VECTOR_ENABLED === "true";
+    let provider: ReturnType<typeof createConfiguredEmbeddingProvider> = null;
+    let vectorWarning = vectorEnabled
+      ? "VECTOR_PROVIDER_NOT_CONFIGURED"
+      : "VECTOR_DISABLED_PENDING_BENCHMARK";
+    try {
+      provider = createConfiguredEmbeddingProvider();
+      if (provider) {
+        vectorWarning = vectorEnabled
+          ? "VECTOR_BUILD_PENDING"
+          : "VECTOR_DISABLED_PENDING_BENCHMARK";
+      }
+    } catch {
+      vectorWarning = "VECTOR_PROVIDER_CONFIGURATION_INVALID";
+    }
+    await markVaultIndexRevision(
       db,
       options,
-      result,
       corpusRevision,
+      preservedVectorRevision,
+      [vectorWarning],
     );
-    const relationCount = await rebuildManagedRelations(
-      db,
-      options.spaceId,
-      options.vaultId,
-    );
-    await markVaultIndexRevision(db, options, corpusRevision);
+    let embeddingStats = {
+      embeddingsReused: 0,
+      embeddingsCreated: 0,
+    };
+    if (provider) {
+      try {
+        const built = await buildEmbeddingIndex(db, {
+          spaceId: options.spaceId,
+          vaultId: options.vaultId,
+          corpusRevision,
+          provider,
+          activate: vectorEnabled,
+        });
+        embeddingStats = {
+          embeddingsReused: built.embeddingsReused,
+          embeddingsCreated: built.embeddingsCreated,
+        };
+        if (vectorEnabled && built.activated) {
+          // buildEmbeddingIndex updates the marker when activation succeeds;
+          // clear the transient warning so a successful retry is observable
+          // as a consistent index.
+          await markVaultIndexRevision(
+            db,
+            options,
+            corpusRevision,
+            corpusRevision,
+            [],
+          );
+        }
+      } catch {
+        // The new generation is failed/quarantined by buildEmbeddingIndex;
+        // keep the prior ACTIVE generation advertised for rollback/query
+        // recovery instead of erasing its vector revision.
+        await markVaultIndexRevision(
+          db,
+          options,
+          corpusRevision,
+          preservedVectorRevision,
+          ["VECTOR_BUILD_FAILED"],
+        );
+      }
+    }
+    const stats = { ...structuralStats, ...embeddingStats };
     await completeIncrementalRun(db, options, result, corpusRevision, stats);
     return {
       ...result,
