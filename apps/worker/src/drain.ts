@@ -29,6 +29,8 @@ export interface IngestDrainSummary {
   /** Claimable pipeline states; REVIEW_REQUIRED is a human gate and is
    * reported separately rather than preventing worker quiescence. */
   work: number;
+  /** Work visible after an empty claim; forces an immediate claim retry. */
+  immediatelyClaimable: number;
   reviewRequired: number;
   quarantined: number;
   nextWakeAt: string | null;
@@ -94,6 +96,11 @@ export async function summarizeIngestJobs(
     `
     select
       count(*) filter (where state=any($1::text[]))::int work,
+      count(*) filter (
+        where state=any($1::text[])
+          and next_attempt_at<=now()
+          and (lease_expires_at is null or lease_expires_at<=now())
+      )::int immediately_claimable,
       count(*) filter (where state='REVIEW_REQUIRED')::int review_required,
       count(*) filter (where state='QUARANTINED')::int quarantined,
       min(
@@ -113,6 +120,7 @@ export async function summarizeIngestJobs(
   const row = result.rows[0] as Record<string, unknown> | undefined;
   return {
     work: Number(row?.work ?? 0),
+    immediatelyClaimable: Number(row?.immediately_claimable ?? 0),
     reviewRequired: Number(row?.review_required ?? 0),
     quarantined: Number(row?.quarantined ?? 0),
     nextWakeAt: row?.next_wake_at
@@ -250,7 +258,8 @@ export async function drainToQuiescence(
     // durable summary (for example when a preceding transaction commits).
     // Re-enter the claim loop immediately instead of sleeping until the
     // overall deadline while executable work is already visible.
-    if (deliveries.immediatelyClaimable > 0) continue;
+    if (deliveries.immediatelyClaimable > 0 || ingest.immediatelyClaimable > 0)
+      continue;
 
     await waitUntil(
       earlierTimestamp(deliveries.nextWakeAt, ingest.nextWakeAt),

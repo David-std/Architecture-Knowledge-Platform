@@ -71,6 +71,29 @@ async function seedCausalPair(
   );
 }
 
+async function seedIngestJob(db: Postgres): Promise<string> {
+  const jobId = randomUUID();
+  const space = await db.pool.query<{ id: string }>(
+    "select id from spaces order by created_at limit 1",
+  );
+  const spaceId = space.rows[0]?.id;
+  if (!spaceId) throw new Error("expected an integration-test space");
+  await db.pool.query(
+    `
+    insert into ingest_jobs(
+      id,space_id,source_uri,state,payload,next_attempt_at
+    ) values($1,$2,$3,'RECEIVED',$4::jsonb,now())
+    `,
+    [
+      jobId,
+      spaceId,
+      `worker-drain://${jobId}`,
+      JSON.stringify({ integrationTest: true }),
+    ],
+  );
+  return jobId;
+}
+
 function noIngestJobs(): (job: Record<string, unknown>) => Promise<void> {
   return async () => {
     throw new Error("UNEXPECTED_INGEST_JOB");
@@ -117,6 +140,98 @@ describe("worker drain integration", () => {
         expect(attempts).toBeGreaterThanOrEqual(2);
       } finally {
         await removeConsumer(db, consumerName);
+      }
+    },
+  );
+
+  it.skipIf(!databaseUrl)(
+    "rechecks when an immediately claimable ingest job follows an empty claim",
+    async () => {
+      if (!databaseUrl) return;
+      const db = new Postgres(databaseUrl);
+      const consumerName = `drain-ingest-claim-race-${randomUUID()}`;
+      const jobId = await seedIngestJob(db);
+      let claimAttempts = 0;
+      let firstClaimSawClaimable = false;
+      let processedJobId: string | null = null;
+      const lockClient = await db.pool.connect();
+      const originalPoolQuery = db.pool.query;
+      const originalQuery = db.pool.query.bind(db.pool);
+      let lockReleased = false;
+      await lockClient.query("begin");
+      await lockClient.query(
+        "select id from ingest_jobs where id=$1 for update",
+        [jobId],
+      );
+      db.pool.query = (async (text: string, values?: unknown[]) => {
+        const result = await originalQuery(text, values);
+        if (!lockReleased && text.includes("for update skip locked")) {
+          claimAttempts += 1;
+          expect(result.rows).toHaveLength(0);
+          const visible = await originalQuery(
+            `
+            select count(*)::int count
+              from ingest_jobs
+             where id=$1
+               and state in (
+                 'RECEIVED', 'HASHED', 'STORED', 'NORMALIZING',
+                 'ANALYZING', 'PLANNED', 'DRAFTED', 'VALIDATING',
+                 'AUTO_APPROVED', 'MERGED', 'INDEXED', 'EVALUATED'
+               )
+               and cancelled_at is null
+               and next_attempt_at<=now()
+               and (lease_expires_at is null or lease_expires_at<=now())
+            `,
+            [jobId],
+          );
+          firstClaimSawClaimable = Number(visible.rows[0]?.count ?? 0) === 1;
+          await lockClient.query("commit");
+          lockClient.release();
+          lockReleased = true;
+        } else if (text.includes("for update skip locked")) {
+          claimAttempts += 1;
+        }
+        return result;
+      }) as typeof db.pool.query;
+      try {
+        const summary = await drainToQuiescence({
+          db,
+          consumerName,
+          workerId: `drain-ingest-claim-race-worker-${randomUUID()}`,
+          deadlineMs: 2_000,
+          runEventOnce: async () => false,
+          runIngestJob: async (job) => {
+            processedJobId = String(job.id);
+            await db.pool.query(
+              `
+              update ingest_jobs
+                 set state='COMPLETED',lease_owner=null,
+                     lease_expires_at=null,updated_at=now()
+               where id=$1
+              `,
+              [job.id],
+            );
+          },
+        });
+        expect(summary).toMatchObject({
+          status: "SUCCEEDED",
+          success: true,
+          reason: "QUIESCENT",
+          eventsProcessed: 0,
+          ingestJobsProcessed: 1,
+          ingest: { work: 0, immediatelyClaimable: 0 },
+        });
+        expect(firstClaimSawClaimable).toBe(true);
+        expect(processedJobId).toBe(jobId);
+        expect(claimAttempts).toBeGreaterThanOrEqual(2);
+      } finally {
+        db.pool.query = originalPoolQuery;
+        if (!lockReleased) {
+          await lockClient.query("rollback").catch(() => undefined);
+          lockClient.release();
+        }
+        await db.pool.query("delete from ingest_jobs where id=$1", [jobId]);
+        await db.pool.end();
       }
     },
   );
