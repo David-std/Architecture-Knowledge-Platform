@@ -132,6 +132,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "apps/api/test/graph-retrieval.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "apps/api/test/health.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
@@ -1058,6 +1063,11 @@
     },
     {
       "path": "packages/contracts/test/document-artifact.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/contracts/test/graph-provenance.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
