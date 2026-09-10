@@ -1,5 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { ContextPacket, SearchHit, SearchRequest } from "@akp/contracts";
+import type {
+  ContextPacket,
+  GraphPathProvenance,
+  SearchHit,
+  SearchRequest,
+} from "@akp/contracts";
 
 export interface PacketCandidate {
   hit: SearchHit;
@@ -17,6 +22,48 @@ export interface PacketCandidate {
 }
 
 const roughTokens = (text: string): number => Math.ceil(text.length / 4);
+
+function renderGraphPath(
+  path: GraphPathProvenance["path"],
+): string | undefined {
+  let rendered: string | undefined;
+  let previousDocument: string | undefined;
+
+  for (let index = 0; index < path.length - 1; index += 1) {
+    const current = path[index];
+    const next = path[index + 1];
+    if (!current || !next || !current.relation || !current.direction) {
+      continue;
+    }
+
+    const edge =
+      current.direction === "outgoing"
+        ? `${current.document} ${current.relation} -> ${next.document}`
+        : `${current.document} <- ${current.relation} ${next.document}`;
+    if (!rendered) {
+      rendered = edge;
+    } else if (previousDocument === current.document) {
+      rendered +=
+        current.direction === "outgoing"
+          ? ` ${current.relation} -> ${next.document}`
+          : ` <- ${current.relation} ${next.document}`;
+    } else {
+      rendered += ` | ${edge}`;
+    }
+    previousDocument = next.document;
+  }
+
+  return rendered;
+}
+
+function selectionReasons(hit: SearchHit): string[] {
+  const reasons = [...hit.reasons];
+  for (const provenance of hit.graphProvenance ?? []) {
+    const route = renderGraphPath(provenance.path);
+    if (route) reasons.push(route);
+  }
+  return [...new Set(reasons)];
+}
 
 /**
  * Retrieved text is data supplied by a corpus, not an instruction channel.
@@ -134,6 +181,7 @@ export function buildContextPacket(input: {
     usedTokens += cost;
     sectionsByDocument.set(candidate.hit.documentId, documentSections + 1);
     candidate.hit.citations.forEach((c) => citations.add(c));
+    const reasons = selectionReasons(candidate.hit);
     sections.push({
       kind: candidate.kind,
       title: candidate.hit.title,
@@ -146,8 +194,11 @@ export function buildContextPacket(input: {
       retrievalChannels: candidate.hit.reasons,
       documentRevision: candidate.hit.revision,
       score: candidate.hit.score,
-      selectionReason: candidate.hit.reasons.join("; "),
+      selectionReason: reasons.join("; "),
       sourceOrEvidenceIds: candidate.hit.citations,
+      ...(candidate.hit.graphProvenance !== undefined
+        ? { graphProvenance: candidate.hit.graphProvenance }
+        : {}),
     });
   }
 

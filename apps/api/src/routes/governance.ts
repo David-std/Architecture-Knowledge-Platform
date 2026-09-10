@@ -786,6 +786,12 @@ export function registerGovernanceRoutes(
         },
         {
           vaultIds: scope.vaultIds,
+          graphScopes: Object.entries(scope.accessByVault).map(
+            ([vaultId, access]) => ({
+              vaultId,
+              pathPrefix: access.pathPrefix,
+            }),
+          ),
           pathAuthorizer: (knowledgePath, vaultId) => {
             const access = scope.accessByVault[String(vaultId ?? "")];
             return Boolean(

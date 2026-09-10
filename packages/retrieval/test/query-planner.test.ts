@@ -40,4 +40,16 @@ describe("query planner", () => {
       maxGraphHops: 1,
     });
   });
+
+  it("reserves deeper graph traversal for impact analysis", () => {
+    expect(
+      planQuery("trace the dependency impact", "IMPACT_ANALYSIS"),
+    ).toMatchObject({
+      intent: "IMPACT_ANALYSIS",
+      maxGraphHops: 3,
+    });
+    expect(
+      planQuery("trace the dependency impact", "CONCEPTUAL").maxGraphHops,
+    ).toBe(1);
+  });
 });

@@ -1323,6 +1323,51 @@ components:
     Lifecycle:
       type: string
       enum: [DRAFT, ACTIVE, DISPUTED, SUPERSEDED, ARCHIVED, DELETED_TOMBSTONE]
+    GraphRelationType:
+      type: string
+      enum:
+        [
+          derives_from,
+          supports,
+          contradicts,
+          supersedes,
+          implements,
+          applies_to,
+          example_of,
+          counterexample_of,
+          uses,
+          requires,
+          validated_by,
+          produces,
+          consumed_by,
+          related_to,
+        ]
+    GraphPathNode:
+      type: object
+      additionalProperties: false
+      required: [documentId, document]
+      properties:
+        documentId: { type: string, format: uuid }
+        document: { type: string, minLength: 1 }
+        relation: { $ref: "#/components/schemas/GraphRelationType" }
+        direction:
+          type: string
+          enum: [outgoing, incoming]
+    GraphPathProvenance:
+      type: object
+      additionalProperties: false
+      required:
+        [channel, seedDocumentId, targetDocumentId, path, hops, graphScore]
+      properties:
+        channel: { type: string, const: graph }
+        seedDocumentId: { type: string, format: uuid }
+        targetDocumentId: { type: string, format: uuid }
+        path:
+          type: array
+          minItems: 2
+          items: { $ref: "#/components/schemas/GraphPathNode" }
+        hops: { type: integer, minimum: 1 }
+        graphScore: { type: number, minimum: 0 }
     SearchRequest:
       type: object
       required: [query, spaceId]
@@ -1400,6 +1445,9 @@ components:
         warnings:
           type: array
           items: { type: string }
+        graphProvenance:
+          type: array
+          items: { $ref: "#/components/schemas/GraphPathProvenance" }
     IngestRequest:
       type: object
       required: [spaceId, vaultId, sourceUri]

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { GraphPathProvenance } from "@akp/contracts";
 import {
   buildContextPacket,
   contextBudgetForIntent,
@@ -19,6 +20,81 @@ const baseHit = {
 };
 
 describe("buildContextPacket", () => {
+  it("copies graph provenance and renders compact, de-duplicated paths", () => {
+    const graphProvenance: GraphPathProvenance[] = [
+      {
+        channel: "graph",
+        seedDocumentId: baseHit.documentId,
+        targetDocumentId: "22222222-2222-4222-8222-222222222222",
+        path: [
+          {
+            documentId: baseHit.documentId,
+            document: "A",
+            relation: "requires",
+            direction: "outgoing",
+          },
+          {
+            documentId: "22222222-2222-4222-8222-222222222222",
+            document: "B",
+          },
+        ],
+        hops: 1,
+        graphScore: 0.9,
+      },
+      {
+        channel: "graph",
+        seedDocumentId: baseHit.documentId,
+        targetDocumentId: "33333333-3333-4333-8333-333333333333",
+        path: [
+          {
+            documentId: baseHit.documentId,
+            document: "A",
+            relation: "requires",
+            direction: "incoming",
+          },
+          {
+            documentId: "33333333-3333-4333-8333-333333333333",
+            document: "B",
+          },
+        ],
+        hops: 1,
+        graphScore: 0.8,
+      },
+    ];
+    const packet = buildContextPacket({
+      request: {
+        query: "impact",
+        spaceId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        vaultId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        vaultIds: [],
+        federated: false,
+        types: [],
+        minimumTrust: "MACHINE_SUPPORTED",
+        mode: "SOURCE_BACKED",
+        limit: 20,
+      },
+      intent: "IMPACT_ANALYSIS",
+      corpusRevision: "deadbeef",
+      maxTokens: 500,
+      candidates: [
+        {
+          hit: {
+            ...baseHit,
+            reasons: ["graph", "A requires -> B"],
+            graphProvenance,
+          },
+          content: "Graph-backed impact context.",
+          kind: "concept",
+        },
+      ],
+    });
+
+    expect(packet.sections[0]).toMatchObject({
+      graphProvenance,
+      selectionReason: "graph; A requires -> B; A <- requires B",
+    });
+  });
+
   it("respects the token budget and hashes the result", () => {
     const packet = buildContextPacket({
       request: {

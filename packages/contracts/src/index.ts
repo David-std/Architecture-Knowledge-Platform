@@ -88,6 +88,42 @@ export const SearchRequest = z.object({
 });
 export type SearchRequest = z.infer<typeof SearchRequest>;
 
+export const GraphRelationType = z.enum([
+  "derives_from",
+  "supports",
+  "contradicts",
+  "supersedes",
+  "implements",
+  "applies_to",
+  "example_of",
+  "counterexample_of",
+  "uses",
+  "requires",
+  "validated_by",
+  "produces",
+  "consumed_by",
+  "related_to",
+]);
+export type GraphRelationType = z.infer<typeof GraphRelationType>;
+
+export const GraphPathNode = z.object({
+  documentId: z.string().uuid(),
+  document: z.string().min(1),
+  relation: GraphRelationType.optional(),
+  direction: z.enum(["outgoing", "incoming"]).optional(),
+});
+export type GraphPathNode = z.infer<typeof GraphPathNode>;
+
+export const GraphPathProvenance = z.object({
+  channel: z.literal("graph"),
+  seedDocumentId: z.string().uuid(),
+  targetDocumentId: z.string().uuid(),
+  path: z.array(GraphPathNode).min(2),
+  hops: z.number().int().min(1),
+  graphScore: z.number().min(0),
+});
+export type GraphPathProvenance = z.infer<typeof GraphPathProvenance>;
+
 export const SearchHit = z.object({
   documentId: z.string().uuid(),
   vaultId: z.string().uuid(),
@@ -105,6 +141,7 @@ export const SearchHit = z.object({
   excerpt: z.string(),
   citations: z.array(z.string()),
   warnings: z.array(z.string()).optional(),
+  graphProvenance: z.array(GraphPathProvenance).optional(),
 });
 export type SearchHit = z.infer<typeof SearchHit>;
 
@@ -132,6 +169,7 @@ export const ContextSection = z.object({
   score: z.number().optional(),
   selectionReason: z.string(),
   sourceOrEvidenceIds: z.array(z.string()),
+  graphProvenance: z.array(GraphPathProvenance).optional(),
 });
 
 export const ContextPacket = z.object({

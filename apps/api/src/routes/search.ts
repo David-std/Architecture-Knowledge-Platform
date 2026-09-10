@@ -1,12 +1,17 @@
 import { createHash } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import {
+  intersectVaultPathPrefixes,
+  normalizeVaultPathPrefix,
   pathMatchesVaultPrefix,
   resolveAuthorizedVaultScope,
   type Postgres,
 } from "@akp/postgres";
 import {
+  GraphRelationType,
   SearchRequest,
+  type GraphPathNode,
+  type GraphPathProvenance,
   type SearchHit,
   type SearchRequest as SearchInput,
 } from "@akp/contracts";
@@ -19,6 +24,7 @@ import {
   reciprocalRankFusion,
   toPgVector,
   type ActiveEmbeddingGenerationDescriptor,
+  type QueryPlan,
 } from "@akp/retrieval";
 import {
   actorOf,
@@ -38,6 +44,180 @@ const UNSAFE_LOCATOR_KEY =
   /^(?:source(?:uri|_uri)|local(?:path|_path)|absolute(?:path|_path)|repository(?:path|_path)|canonical(?:path|_path)|object(?:key|_key)|endpoint|host|file|url|uri)$/i;
 const ABSOLUTE_LOCATOR_TOKEN =
   /(?:[A-Za-z]:[\\/]|\\\\|file:\/\/|\/(?:Users|home|tmp|var)\/)[^\s"']+/;
+
+export type GraphDirectionPolicy = "outgoing" | "incoming" | "both";
+
+/** Bounded policy for recursive graph expansion at the API query boundary. */
+export interface GraphTraversalPolicy {
+  maxHops: number;
+  allowedRelationTypes: readonly GraphRelationType[];
+  relationWeights: Partial<Record<GraphRelationType, number>>;
+  decay: number;
+  directionPolicy: GraphDirectionPolicy;
+  maxPathsPerCandidate: number;
+  maxCandidates: number;
+}
+
+interface GraphScope {
+  vaultId: string;
+  pathPrefix: string | null;
+}
+
+interface GraphTraversalRow {
+  seed_document_id: string;
+  seed_vault_id: string;
+  target_document_id: string;
+  hops: number;
+  graph_score: number;
+  path_document_ids: string[];
+  path_relation_types: string[];
+  path_directions: string[];
+}
+
+interface GraphCandidateRow {
+  id: string;
+  weight: number;
+  provenance: GraphPathProvenance[];
+}
+
+interface GraphDocumentRow {
+  id: string;
+  space_id: string;
+  vault_id: string;
+  external_id: string | null;
+  path: string;
+  lifecycle: string;
+  refresh_status: string;
+}
+
+const ALL_GRAPH_RELATION_TYPES: readonly GraphRelationType[] =
+  GraphRelationType.options;
+
+const GRAPH_HARD_MAX_HOPS = 3;
+const GRAPH_HARD_MAX_PATHS = 10;
+const GRAPH_HARD_MAX_CANDIDATES = 100;
+const GRAPH_HARD_MAX_FANOUT = 10;
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function boundedNumber(
+  value: unknown,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  return Math.max(minimum, Math.min(maximum, Math.trunc(value)));
+}
+
+function boundedNonNegativeNumber(value: unknown, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  return Math.max(0, Math.min(100, value));
+}
+
+function normalizeGraphScopes(
+  vaultIds: readonly string[],
+  graphScopes:
+    readonly { vaultId: string; pathPrefix: string | null }[] | undefined,
+): GraphScope[] {
+  const allowedVaults = new Set(vaultIds);
+  const source =
+    graphScopes ?? vaultIds.map((vaultId) => ({ vaultId, pathPrefix: null }));
+  const scopesByVault = new Map<string, GraphScope>();
+  const conflictingVaults = new Set<string>();
+  for (const scope of source) {
+    if (
+      typeof scope?.vaultId !== "string" ||
+      !allowedVaults.has(scope.vaultId) ||
+      (scope.pathPrefix !== null && typeof scope.pathPrefix !== "string")
+    ) {
+      continue;
+    }
+    const pathPrefix = normalizeVaultPathPrefix(scope.pathPrefix);
+    if (pathPrefix === undefined) {
+      scopesByVault.delete(scope.vaultId);
+      conflictingVaults.add(scope.vaultId);
+      continue;
+    }
+    const existing = scopesByVault.get(scope.vaultId);
+    if (!existing) {
+      scopesByVault.set(scope.vaultId, { vaultId: scope.vaultId, pathPrefix });
+      continue;
+    }
+    const intersection = intersectVaultPathPrefixes(
+      existing.pathPrefix,
+      pathPrefix,
+    );
+    if (intersection === undefined) {
+      scopesByVault.delete(scope.vaultId);
+      conflictingVaults.add(scope.vaultId);
+      continue;
+    }
+    scopesByVault.set(scope.vaultId, {
+      vaultId: scope.vaultId,
+      pathPrefix: intersection,
+    });
+  }
+  for (const vaultId of conflictingVaults) scopesByVault.delete(vaultId);
+  return [...scopesByVault.values()];
+}
+
+function normalizeGraphPolicy(
+  input: Partial<GraphTraversalPolicy> | undefined,
+  plan: QueryPlan,
+  limit: number,
+): GraphTraversalPolicy {
+  const maxHops = boundedNumber(
+    input?.maxHops,
+    boundedNumber(plan.maxGraphHops, 1, 0, GRAPH_HARD_MAX_HOPS),
+    0,
+    GRAPH_HARD_MAX_HOPS,
+  );
+  const maxPathsPerCandidate = boundedNumber(
+    input?.maxPathsPerCandidate,
+    3,
+    1,
+    GRAPH_HARD_MAX_PATHS,
+  );
+  const maxCandidates = boundedNumber(
+    input?.maxCandidates,
+    Math.max(Number.isFinite(limit) ? Math.trunc(limit) * 2 : 20, 20),
+    1,
+    GRAPH_HARD_MAX_CANDIDATES,
+  );
+  const allowedRelationTypes =
+    input?.allowedRelationTypes === undefined
+      ? [...ALL_GRAPH_RELATION_TYPES]
+      : ALL_GRAPH_RELATION_TYPES.filter((relationType) =>
+          input.allowedRelationTypes?.includes(relationType),
+        );
+  const relationWeights: Partial<Record<GraphRelationType, number>> = {};
+  for (const relationType of ALL_GRAPH_RELATION_TYPES) {
+    relationWeights[relationType] = boundedNonNegativeNumber(
+      input?.relationWeights?.[relationType],
+      1,
+    );
+  }
+  const directionPolicy =
+    input?.directionPolicy === "outgoing" ||
+    input?.directionPolicy === "incoming" ||
+    input?.directionPolicy === "both"
+      ? input.directionPolicy
+      : "both";
+  const decay =
+    typeof input?.decay === "number" && Number.isFinite(input.decay)
+      ? Math.max(0, Math.min(1, input.decay))
+      : 0.5;
+  return {
+    maxHops,
+    allowedRelationTypes,
+    relationWeights,
+    decay,
+    directionPolicy,
+    maxPathsPerCandidate,
+    maxCandidates,
+  };
+}
 
 function kindOf(
   layer: string,
@@ -69,6 +249,9 @@ export interface RetrievalExecutionOptions {
   channels?: Array<
     "context-pack" | "exact" | "lexical" | "vector" | "graph" | "raw" | "code"
   >;
+  plan?: QueryPlan;
+  graphPolicy?: Partial<GraphTraversalPolicy>;
+  graphScopes?: Array<{ vaultId: string; pathPrefix: string | null }>;
   allowVectorForBenchmark?: boolean;
   deterministicRerank?: boolean;
   /** Test/provider injection seam; production resolves the active descriptor. */
@@ -388,7 +571,21 @@ export async function queryKnowledge(
       : `and ${alias}vault_id=any(array[${vaultIds
           .map((id) => `'${id}'::uuid`)
           .join(",")}])`;
-  const plan = planQuery(input.query);
+  const plan = options.plan ?? planQuery(input.query);
+  const graphPolicy = normalizeGraphPolicy(
+    options.graphPolicy,
+    plan,
+    input.limit,
+  );
+  // A JavaScript path callback cannot safely participate in SQL ranking.  If a
+  // caller supplies one, require equivalent SQL scopes so unauthorized seeds
+  // or paths cannot consume bounded graph slots before the callback runs.
+  const graphScopes = normalizeGraphScopes(
+    vaultIds,
+    options.pathAuthorizer !== undefined && options.graphScopes === undefined
+      ? []
+      : options.graphScopes,
+  );
   const requestedChannels = options.channels ?? plan.channels;
   const indexRows = await db.pool.query(
     `select vault_id,corpus_revision,lexical_revision,vector_revision,
@@ -435,6 +632,7 @@ export async function queryKnowledge(
          or exists (select 1 from unnest(aliases) alias where lower(alias) = lower($2))
        )
        ${modeClause}
+     order by id
      limit $3
     `,
         [spaceId, input.query, input.limit],
@@ -605,7 +803,8 @@ export async function queryKnowledge(
              and d.lifecycle in ('ACTIVE','DISPUTED')
              and d.refresh_status not in ('STALE_BLOCKED','INVALID')
              ${modeClause}
-           order by e.embedding::vector(${dimensions}) <=> $3::vector(${dimensions})
+           order by e.embedding::vector(${dimensions}) <=> $3::vector(${dimensions}),
+                    u.document_id,u.id
            limit $5
           `,
           [
@@ -624,7 +823,12 @@ export async function queryKnowledge(
         );
       }
     }
-    vector.rows.sort((left, right) => Number(right.score) - Number(left.score));
+    vector.rows.sort(
+      (left, right) =>
+        Number(right.score) - Number(left.score) ||
+        String(left.id).localeCompare(String(right.id)) ||
+        String(left.unit_id).localeCompare(String(right.unit_id)),
+    );
     vector.rows.splice(Math.max(input.limit * 3, 30));
   }
 
@@ -707,51 +911,379 @@ export async function queryKnowledge(
         )
       : { rows: [] as Array<{ id: string }> };
 
-  const graph =
-    seedIds.length === 0 || !channels.has("graph")
-      ? { rows: [] as Array<{ id: string; weight: number }> }
-      : await db.pool.query(
+  const candidateSeedIds = seedIds.filter((id) => UUID_PATTERN.test(id));
+  const graphRows =
+    candidateSeedIds.length === 0 ||
+    !channels.has("graph") ||
+    graphPolicy.maxHops === 0 ||
+    graphScopes.length === 0
+      ? []
+      : (
+          await db.pool.query<GraphTraversalRow>(
+            `
+            with recursive
+            graph_scopes as (
+              select scope.vault_id,scope.path_prefix
+                from jsonb_to_recordset($8::jsonb)
+                  as scope(vault_id uuid,path_prefix text)
+            ),
+            scoped_documents as (
+              select d.id,d.space_id,d.vault_id,d.external_id,d.path,
+                     d.lifecycle,d.refresh_status
+                from knowledge_documents d
+                join graph_scopes scope on scope.vault_id=d.vault_id
+               where d.id=any($2::uuid[])
+                 and d.space_id=$1
+                 and d.lifecycle in ('ACTIVE','DISPUTED')
+                 and d.refresh_status not in ('STALE_BLOCKED','INVALID')
+                 and (
+                   scope.path_prefix is null
+                   or d.path=scope.path_prefix
+                   or starts_with(d.path,scope.path_prefix || '/')
+                 )
+               order by array_position($2::uuid[],d.id)
+               limit $10::integer
+            ),
+            oriented_edges as (
+              select distinct r.id,r.relation_type,
+                     r.from_document_id current_document_id,
+                     r.to_document_id next_document_id,
+                     'outgoing' direction,
+                     r.weight::double precision weight,
+                     edge_from.vault_id
+                from knowledge_relations r
+                join knowledge_documents edge_from
+                  on edge_from.id=r.from_document_id
+                 and edge_from.space_id=$1
+                join knowledge_documents edge_to
+                  on edge_to.id=r.to_document_id
+                 and edge_to.space_id=$1
+                 and edge_to.vault_id=edge_from.vault_id
+                join graph_scopes scope on scope.vault_id=edge_from.vault_id
+               where r.space_id=$1
+                 and r.relation_type=any($4::text[])
+                 and r.weight is not null
+                 and r.weight >= 0
+                 and r.weight <= 1000000
+                 and edge_from.lifecycle in ('ACTIVE','DISPUTED')
+                 and edge_to.lifecycle in ('ACTIVE','DISPUTED')
+                 and edge_from.refresh_status not in ('STALE_BLOCKED','INVALID')
+                 and edge_to.refresh_status not in ('STALE_BLOCKED','INVALID')
+                 and $7::text in ('outgoing','both')
+                 and (
+                   scope.path_prefix is null
+                   or (
+                     (
+                       edge_from.path=scope.path_prefix
+                       or starts_with(edge_from.path,scope.path_prefix || '/')
+                     )
+                     and (
+                       edge_to.path=scope.path_prefix
+                       or starts_with(edge_to.path,scope.path_prefix || '/')
+                     )
+                   )
+                 )
+              union all
+              select distinct r.id,r.relation_type,
+                     r.to_document_id current_document_id,
+                     r.from_document_id next_document_id,
+                     'incoming' direction,
+                     r.weight::double precision weight,
+                     edge_to.vault_id
+                from knowledge_relations r
+                join knowledge_documents edge_from
+                  on edge_from.id=r.from_document_id
+                 and edge_from.space_id=$1
+                join knowledge_documents edge_to
+                  on edge_to.id=r.to_document_id
+                 and edge_to.space_id=$1
+                 and edge_to.vault_id=edge_from.vault_id
+                join graph_scopes scope on scope.vault_id=edge_to.vault_id
+               where r.space_id=$1
+                 and r.relation_type=any($4::text[])
+                 and r.weight is not null
+                 and r.weight >= 0
+                 and r.weight <= 1000000
+                 and edge_from.lifecycle in ('ACTIVE','DISPUTED')
+                 and edge_to.lifecycle in ('ACTIVE','DISPUTED')
+                 and edge_from.refresh_status not in ('STALE_BLOCKED','INVALID')
+                 and edge_to.refresh_status not in ('STALE_BLOCKED','INVALID')
+                 and $7::text in ('incoming','both')
+                 and (
+                   scope.path_prefix is null
+                   or (
+                     (
+                       edge_from.path=scope.path_prefix
+                       or starts_with(edge_from.path,scope.path_prefix || '/')
+                     )
+                     and (
+                       edge_to.path=scope.path_prefix
+                       or starts_with(edge_to.path,scope.path_prefix || '/')
+                     )
+                   )
+                 )
+            ),
+            graph_paths(
+              seed_document_id,seed_vault_id,current_document_id,hops,
+              graph_score,visited_document_ids,path_document_ids,
+              path_relation_types,path_directions
+            ) as (
+              select d.id,d.vault_id,d.id,0,1::double precision,
+                     array[d.id]::uuid[],array[d.id]::uuid[],
+                     array[]::text[],array[]::text[]
+                from scoped_documents d
+              union all
+              select gp.seed_document_id,gp.seed_vault_id,next_doc.id,
+                     gp.hops+1,
+                     gp.graph_score
+                       * coalesce(
+                           ($5::jsonb ->> edge.relation_type)::double precision,
+                           1::double precision
+                         )
+                       * edge.weight
+                       * power($6::double precision,gp.hops+1),
+                     array_append(gp.visited_document_ids,next_doc.id),
+                     array_append(gp.path_document_ids,next_doc.id),
+                     array_append(gp.path_relation_types,edge.relation_type),
+                     array_append(gp.path_directions,edge.direction)
+                from graph_paths gp
+                join lateral (
+                  select candidate_edge.*
+                   from oriented_edges candidate_edge
+                   where candidate_edge.current_document_id=gp.current_document_id
+                     and candidate_edge.vault_id=gp.seed_vault_id
+                   order by candidate_edge.weight
+                              * coalesce(
+                                  ($5::jsonb ->> candidate_edge.relation_type)::double precision,
+                                  1::double precision
+                                ) desc,
+                            candidate_edge.relation_type,candidate_edge.id
+                   limit $11::integer
+                ) edge on true
+                join knowledge_documents next_doc
+                  on next_doc.id=edge.next_document_id
+                 and next_doc.space_id=$1
+                 and next_doc.vault_id=gp.seed_vault_id
+                 and next_doc.lifecycle in ('ACTIVE','DISPUTED')
+                 and next_doc.refresh_status not in ('STALE_BLOCKED','INVALID')
+               where gp.hops < $3::integer
+                 and not (next_doc.id=any(gp.visited_document_ids))
+            ),
+            unique_paths as (
+              select distinct on (
+                       gp.seed_document_id,gp.current_document_id,
+                       gp.path_document_ids,gp.path_relation_types,
+                       gp.path_directions
+                     ) gp.*
+                from graph_paths gp
+               where gp.hops>0
+               order by gp.seed_document_id,gp.current_document_id,
+                        gp.path_document_ids,gp.path_relation_types,
+                        gp.path_directions,gp.graph_score desc
+            ),
+            ranked_paths as (
+              select path.*,
+                     row_number() over (
+                       partition by path.current_document_id
+                       order by path.graph_score desc,path.hops,
+                                path.seed_document_id,path.path_document_ids,
+                                path.path_relation_types,path.path_directions
+                     ) as path_rank
+                from unique_paths path
+            ),
+            candidate_scores as (
+              select current_document_id target_document_id,
+                     sum(graph_score) graph_score
+                from ranked_paths
+               where path_rank <= $9::integer
+               group by current_document_id
+            ),
+            ranked_candidates as (
+              select target_document_id,
+                     row_number() over (
+                       order by graph_score desc,target_document_id
+                     ) as candidate_rank
+                from candidate_scores
+            )
+            select rp.seed_document_id,rp.seed_vault_id,
+                   rp.current_document_id target_document_id,
+                   rp.hops,rp.graph_score,rp.path_document_ids,
+                   rp.path_relation_types,rp.path_directions
+              from ranked_paths rp
+              join ranked_candidates rc
+                on rc.target_document_id=rp.current_document_id
+             where rp.path_rank <= $9::integer
+               and rc.candidate_rank <= $10::integer
+             order by rc.candidate_rank,rp.path_rank
+            `,
+            [
+              spaceId,
+              candidateSeedIds,
+              graphPolicy.maxHops,
+              graphPolicy.allowedRelationTypes,
+              JSON.stringify(graphPolicy.relationWeights),
+              graphPolicy.decay,
+              graphPolicy.directionPolicy,
+              JSON.stringify(
+                graphScopes.map((scope) => ({
+                  vault_id: scope.vaultId,
+                  path_prefix: scope.pathPrefix,
+                })),
+              ),
+              graphPolicy.maxPathsPerCandidate,
+              graphPolicy.maxCandidates,
+              GRAPH_HARD_MAX_FANOUT,
+            ],
+          )
+        ).rows;
+
+  const graphNodeIds = [
+    ...new Set(
+      graphRows.flatMap((row) =>
+        Array.isArray(row.path_document_ids)
+          ? row.path_document_ids.map((id) => String(id))
+          : [],
+      ),
+    ),
+  ].filter((id) => UUID_PATTERN.test(id));
+  const graphNodeDetails =
+    graphNodeIds.length === 0
+      ? { rows: [] as GraphDocumentRow[] }
+      : await db.pool.query<GraphDocumentRow>(
           `
-          select candidate.id, max(r.weight) weight
-            from knowledge_relations r
-           join knowledge_documents candidate
-              on candidate.id = case
-                when r.from_document_id = any($2::uuid[]) then r.to_document_id
-                else r.from_document_id
-              end
-             and candidate.space_id = $1
-           where r.space_id = $1
-             ${vaultFilter("candidate.")}
-             and (r.from_document_id = any($2::uuid[]) or r.to_document_id = any($2::uuid[]))
-             and exists (
-               select 1 from knowledge_documents edge_from
-                where edge_from.id=r.from_document_id
-                  and edge_from.space_id=$1
-                  and edge_from.vault_id=candidate.vault_id
-             )
-             and exists (
-               select 1 from knowledge_documents edge_to
-                where edge_to.id=r.to_document_id
-                  and edge_to.space_id=$1
-                  and edge_to.vault_id=candidate.vault_id
-             )
-             and exists (
-               select 1 from knowledge_documents seed
-                where seed.id=any($2::uuid[])
-                  and seed.space_id=$1
-                  and seed.vault_id=candidate.vault_id
-             )
-             and candidate.lifecycle in ('ACTIVE','DISPUTED')
-             and candidate.refresh_status not in ('STALE_BLOCKED','INVALID')
-           group by candidate.id
-           order by
-             case candidate.layer when 'workflow' then 0 when 'claim' then 1
-               when 'evidence' then 2 else 3 end,
-             weight desc
-           limit $3
+          select id,space_id,vault_id,external_id,path,lifecycle,refresh_status
+            from knowledge_documents
+           where id=any($1::uuid[])
+             and space_id=$2
+             and vault_id=any($3::uuid[])
           `,
-          [spaceId, seedIds, Math.max(input.limit * 2, 20)],
+          [graphNodeIds, spaceId, vaultIds],
         );
+  const graphNodeById = new Map(
+    graphNodeDetails.rows.map((row) => [String(row.id), row]),
+  );
+  const graphPathsByCandidate = new Map<string, GraphPathProvenance[]>();
+  for (const row of graphRows) {
+    const nodeIds = Array.isArray(row.path_document_ids)
+      ? row.path_document_ids.map((id) => String(id))
+      : [];
+    const relations = Array.isArray(row.path_relation_types)
+      ? row.path_relation_types.map((relation) => String(relation))
+      : [];
+    const directions = Array.isArray(row.path_directions)
+      ? row.path_directions.map((direction) => String(direction))
+      : [];
+    if (
+      !UUID_PATTERN.test(String(row.seed_document_id)) ||
+      !UUID_PATTERN.test(String(row.seed_vault_id)) ||
+      !UUID_PATTERN.test(String(row.target_document_id)) ||
+      nodeIds.length < 2 ||
+      nodeIds.length !== Number(row.hops) + 1 ||
+      relations.length !== Number(row.hops) ||
+      directions.length !== Number(row.hops) ||
+      new Set(nodeIds).size !== nodeIds.length ||
+      nodeIds[0] !== String(row.seed_document_id) ||
+      nodeIds.at(-1) !== String(row.target_document_id)
+    ) {
+      continue;
+    }
+    const scope = graphScopes.find(
+      (candidate) => candidate.vaultId === String(row.seed_vault_id),
+    );
+    if (!scope) continue;
+    const nodes = nodeIds.map((id) => graphNodeById.get(id));
+    if (
+      nodes.some(
+        (node) =>
+          !node ||
+          String(node.space_id) !== spaceId ||
+          String(node.vault_id) !== String(row.seed_vault_id) ||
+          !["ACTIVE", "DISPUTED"].includes(String(node.lifecycle)) ||
+          ["STALE_BLOCKED", "INVALID"].includes(String(node.refresh_status)) ||
+          !pathMatchesVaultPrefix(String(node.path), scope.pathPrefix) ||
+          (options.pathAuthorizer !== undefined &&
+            !options.pathAuthorizer(String(node.path), String(node.vault_id))),
+      )
+    ) {
+      continue;
+    }
+    if (
+      relations.some(
+        (relation) =>
+          !ALL_GRAPH_RELATION_TYPES.includes(relation as GraphRelationType) ||
+          !graphPolicy.allowedRelationTypes.includes(
+            relation as GraphRelationType,
+          ),
+      ) ||
+      directions.some(
+        (direction) => direction !== "outgoing" && direction !== "incoming",
+      ) ||
+      (graphPolicy.directionPolicy === "outgoing" &&
+        directions.some((direction) => direction !== "outgoing")) ||
+      (graphPolicy.directionPolicy === "incoming" &&
+        directions.some((direction) => direction !== "incoming"))
+    ) {
+      continue;
+    }
+    const graphScore = Number(row.graph_score);
+    if (!Number.isFinite(graphScore) || graphScore < 0) continue;
+    const path: GraphPathNode[] = nodes.map((node, index) => {
+      const document = String(node?.external_id ?? "").trim();
+      const graphNode: GraphPathNode = {
+        documentId: String(node?.id),
+        document: document || String(node?.id),
+      };
+      if (index < relations.length) {
+        graphNode.relation = relations[index] as GraphRelationType;
+        graphNode.direction = directions[index] as "outgoing" | "incoming";
+      }
+      return graphNode;
+    });
+    const provenance: GraphPathProvenance = {
+      channel: "graph",
+      seedDocumentId: String(row.seed_document_id),
+      targetDocumentId: String(row.target_document_id),
+      path,
+      hops: Number(row.hops),
+      graphScore,
+    };
+    const candidatePaths =
+      graphPathsByCandidate.get(provenance.targetDocumentId) ?? [];
+    candidatePaths.push(provenance);
+    graphPathsByCandidate.set(provenance.targetDocumentId, candidatePaths);
+  }
+  const graphCandidates: GraphCandidateRow[] = [...graphPathsByCandidate]
+    .map(([id, paths]) => {
+      const provenance = paths
+        .sort(
+          (left, right) =>
+            right.graphScore - left.graphScore ||
+            left.hops - right.hops ||
+            left.seedDocumentId.localeCompare(right.seedDocumentId) ||
+            JSON.stringify(left.path).localeCompare(JSON.stringify(right.path)),
+        )
+        .slice(0, graphPolicy.maxPathsPerCandidate);
+      return {
+        id,
+        weight: provenance.reduce((sum, path) => sum + path.graphScore, 0),
+        provenance,
+      };
+    })
+    .filter(
+      (candidate) =>
+        candidate.provenance.length > 0 &&
+        Number.isFinite(candidate.weight) &&
+        candidate.weight > 0,
+    )
+    .sort(
+      (left, right) =>
+        right.weight - left.weight || left.id.localeCompare(right.id),
+    )
+    .slice(0, graphPolicy.maxCandidates);
+  const graphProvenanceByCandidate = new Map(
+    graphCandidates.map((candidate) => [candidate.id, candidate.provenance]),
+  );
+  const graph = { rows: graphCandidates };
 
   const fused = reciprocalRankFusion([
     exact.rows.map((row, index) => ({
@@ -804,7 +1336,7 @@ export async function queryKnowledge(
       id: String(row.id),
       rank: index + 1,
       weight: 1.4 * Number(row.weight ?? 1),
-      reason: "graph-neighbor",
+      reason: "graph",
     })),
   ]).slice(0, input.limit * 2);
   if (fused.length === 0) return [];
@@ -974,6 +1506,9 @@ export async function queryKnowledge(
         lifecycle: String(row.lifecycle) as SearchHit["lifecycle"],
         score: item.score,
         reasons: item.reasons,
+        ...(graphProvenanceByCandidate.has(item.id)
+          ? { graphProvenance: graphProvenanceByCandidate.get(item.id) }
+          : {}),
         excerpt: (structuralContext?.body ?? String(row.body_cache)).slice(
           0,
           1200,
@@ -1046,10 +1581,16 @@ export function registerSearchRoutes(app: FastifyInstance, db: Postgres): void {
         vaultIds,
         ...(vaultIds.length === 1 ? { vaultId: vaultIds[0] } : {}),
       };
+      const plan = planQuery(parsed.data.query);
       const retrievalWarnings: string[] = [];
       const availableChannels = new Set<RetrievalChannel>();
       const hits = await queryKnowledge(db, scopedRequest, {
+        plan,
         vaultIds,
+        graphScopes: Object.entries(accessByVault).map(([vaultId, access]) => ({
+          vaultId,
+          pathPrefix: access.pathPrefix,
+        })),
         warningSink: retrievalWarnings,
         availableChannelSink: availableChannels,
         pathAuthorizer: (documentPath, vaultId) => {
@@ -1061,7 +1602,6 @@ export function registerSearchRoutes(app: FastifyInstance, db: Postgres): void {
           );
         },
       });
-      const plan = planQuery(parsed.data.query);
       const indexRows = await db.pool.query(
         "select * from vault_index_revisions where space_id=$1 and vault_id=any($2::uuid[]) order by vault_id",
         [requestedSpace, vaultIds],
@@ -1166,7 +1706,12 @@ export function registerSearchRoutes(app: FastifyInstance, db: Postgres): void {
       const retrievalWarnings: string[] = [];
       const availableChannels = new Set<RetrievalChannel>();
       const hits = await queryKnowledge(db, scopedRequest, {
+        plan,
         vaultIds,
+        graphScopes: Object.entries(accessByVault).map(([vaultId, access]) => ({
+          vaultId,
+          pathPrefix: access.pathPrefix,
+        })),
         warningSink: retrievalWarnings,
         availableChannelSink: availableChannels,
         pathAuthorizer: (documentPath, vaultId) => {
