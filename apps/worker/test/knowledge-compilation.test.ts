@@ -10,12 +10,7 @@ const DOCUMENT_A = "33333333-3333-4333-8333-333333333333";
 const DOCUMENT_B = "44444444-4444-4444-8444-444444444444";
 const DOCUMENT_C = "55555555-5555-4555-8555-555555555555";
 
-function candidate(
-  id: string,
-  title: string,
-  score: number,
-  reason: string,
-) {
+function candidate(id: string, title: string, score: number, reason: string) {
   return {
     document_id: id,
     external_id: `EXT-${id.slice(0, 4)}`,
@@ -37,7 +32,12 @@ describe("compiler existing-knowledge retrieval", () => {
       .fn()
       .mockResolvedValueOnce({
         rows: [
-          candidate(DOCUMENT_A, "Previous source title", 120, "exact:source-id"),
+          candidate(
+            DOCUMENT_A,
+            "Previous source title",
+            120,
+            "exact:source-id",
+          ),
         ],
       })
       .mockResolvedValueOnce({
