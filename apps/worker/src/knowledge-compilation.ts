@@ -48,7 +48,11 @@ export interface ExistingKnowledgeRetrievalResult {
 
 function boundedLimit(value: number | undefined): number {
   if (value === undefined) return DEFAULT_CANDIDATE_LIMIT;
-  if (!Number.isSafeInteger(value) || value < 1 || value > MAX_CANDIDATE_LIMIT) {
+  if (
+    !Number.isSafeInteger(value) ||
+    value < 1 ||
+    value > MAX_CANDIDATE_LIMIT
+  ) {
     throw new Error("COMPILER_CANDIDATE_LIMIT_INVALID");
   }
   return value;
