@@ -415,8 +415,12 @@ export async function compileGroundedKnowledgeProposal(
     sourceId: request.source.sourceId,
     sourceSha256: request.source.sha256,
     evidenceExcerpt: primaryEvidence.excerpt,
-    limit: request.candidateLimit,
-    vectorEnabled: request.vectorEnabled,
+    ...(request.candidateLimit === undefined
+      ? {}
+      : { limit: request.candidateLimit }),
+    ...(request.vectorEnabled === undefined
+      ? {}
+      : { vectorEnabled: request.vectorEnabled }),
   });
   const input = KnowledgeCompilerInput.parse({
     source: request.source,
