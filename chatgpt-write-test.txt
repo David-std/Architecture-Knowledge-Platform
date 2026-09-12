@@ -1,0 +1,3 @@
+Prueba de escritura realizada desde ChatGPT mediante la integración de GitHub.
+
+Si puedes leer este archivo en la rama chatgpt-write-test-20260912, la escritura está habilitada correctamente.
