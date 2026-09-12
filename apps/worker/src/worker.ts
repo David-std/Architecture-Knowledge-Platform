@@ -42,6 +42,7 @@ import {
   renderDocumentArtifactPreview,
 } from "./document-artifact.js";
 import { buildCompilationStage } from "./compilation-stage.js";
+import { evaluateCompilationProbes } from "./compilation-probes.js";
 import { selectEvidenceFragment } from "./evidence-fragment.js";
 import { resolveAuthorizedLocalSource } from "./source-boundary.js";
 
@@ -617,36 +618,34 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
     );
     const errors = issues.filter((issue) => issue.severity === "ERROR");
     const compilation = outputs.compilation as { mode?: string } | undefined;
-    const probeResults = plan.probes.map((probe) => {
-      if (compilation?.mode === "GENERATIVE") {
-        const linkedChanges = plan.proposedChanges.filter((change) =>
-          probe.evidenceIds.some((evidenceId) =>
-            change.evidenceIds.includes(evidenceId),
-          ),
-        );
-        const passed =
-          linkedChanges.length > 0 &&
-          probe.evidenceIds.every((evidenceId) =>
-            linkedChanges.some((change) =>
-              change.evidenceIds.includes(evidenceId),
-            ),
-          );
-        return {
-          ...probe,
-          passed,
-          method: "GROUNDED_EVIDENCE_REFERENCE",
-        };
-      }
-      const proposedText = plan.proposedChanges
-        .map((change) => change.content)
-        .join("\n");
-      const passed =
-        proposedText.includes(
-          String((outputs.raw as { sha256?: string })?.sha256 ?? ""),
-        ) &&
-        /uncertainty|incertidumbre|human review required/i.test(proposedText);
-      return { ...probe, passed, method: "DETERMINISTIC_DRAFT_INVARIANT" };
-    });
+    const probeResults =
+      compilation?.mode === "GENERATIVE"
+        ? await (async () => {
+            if (!vaultId) throw new Error("KNOWLEDGE_COMPILER_VAULT_REQUIRED");
+            return evaluateCompilationProbes(db, {
+              plan,
+              spaceId,
+              vaultId,
+              sourceId: String(outputs.sourceId),
+            });
+          })()
+        : plan.probes.map((probe) => {
+            const proposedText = plan.proposedChanges
+              .map((change) => change.content)
+              .join("\n");
+            const passed =
+              proposedText.includes(
+                String((outputs.raw as { sha256?: string })?.sha256 ?? ""),
+              ) &&
+              /uncertainty|incertidumbre|human review required/i.test(
+                proposedText,
+              );
+            return {
+              ...probe,
+              passed,
+              method: "DETERMINISTIC_DRAFT_INVARIANT",
+            };
+          });
     const failedCritical = probeResults.filter(
       (probe) => probe.criticality === "CRITICAL" && !probe.passed,
     );
