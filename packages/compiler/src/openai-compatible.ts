@@ -10,7 +10,7 @@ import { normalizeKnowledgeCompilerResult } from "./grounding.js";
 const OpenAICompatibleCompilerOptions = z
   .object({
     baseUrl: z.string().url(),
-    apiKey: z.string().min(1),
+    apiKey: z.string().min(1).optional(),
     model: z.string().min(1).max(300),
     timeoutMs: z.number().int().min(1_000).max(120_000).default(30_000),
     maxRetries: z.number().int().min(0).max(3).default(1),
@@ -116,8 +116,10 @@ export class OpenAICompatibleKnowledgeCompiler implements KnowledgeCompilerPort 
           {
             method: "POST",
             headers: {
-              authorization: `Bearer ${this.#options.apiKey}`,
               "content-type": "application/json",
+              ...(this.#options.apiKey
+                ? { authorization: `Bearer ${this.#options.apiKey}` }
+                : {}),
             },
             body: requestBody,
             signal: controller.signal,
