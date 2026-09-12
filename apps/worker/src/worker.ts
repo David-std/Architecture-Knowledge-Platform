@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { hostname } from "node:os";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { pipeline } from "node:stream/promises";
 import {
   Postgres,
@@ -20,7 +20,10 @@ import {
   MinioObjectStore,
   type RawObjectRef,
 } from "@akp/object-store";
-import { CompilationPlan } from "@akp/compiler";
+import {
+  CompilationPlan,
+  createConfiguredKnowledgeCompiler,
+} from "@akp/compiler";
 import { GitKnowledgeStore } from "@akp/git-store";
 import { validateMarkdownDocument } from "@akp/validation";
 import mime from "mime-types";
@@ -36,9 +39,10 @@ import {
 import {
   DOCUMENT_ARTIFACT_SCHEMA_VERSION,
   parseCanonicalExtractionResponse,
-  renderDocumentArtifactDraft,
   renderDocumentArtifactPreview,
 } from "./document-artifact.js";
+import { buildCompilationStage } from "./compilation-stage.js";
+import { selectEvidenceFragment } from "./evidence-fragment.js";
 import { resolveAuthorizedLocalSource } from "./source-boundary.js";
 
 config({
@@ -433,12 +437,10 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
         ).rows[0]?.id;
       if (!artifactId) throw new Error("Could not persist document artifact.");
       const preview = renderDocumentArtifactPreview(canonical.artifact, 4_000);
-      const evidenceLocator = canonical.artifact.locators[0] ?? {
-        kind: "source",
-        source_hash: raw.sha256,
-        path: `source:${String(outputs.sourceId)}`,
-        heading_path: [],
-      };
+      const evidenceFragment = selectEvidenceFragment(
+        canonical.artifact,
+        preview.markdown,
+      );
       const storedEvidence = await db.pool.query<{ id: string }>(
         `
         insert into evidence(
@@ -456,9 +458,9 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
           vaultId,
           outputs.sourceId,
           artifactId,
-          JSON.stringify(evidenceLocator),
-          createHash("sha256").update(preview.markdown).digest("hex"),
-          preview.markdown.slice(0, 2000) || null,
+          JSON.stringify(evidenceFragment.locator),
+          evidenceFragment.excerptHash,
+          evidenceFragment.excerpt,
         ],
       );
       const evidenceId = storedEvidence.rows[0]?.id;
@@ -474,6 +476,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
         warnings: canonical.warnings,
         source_artifact_id: artifactId,
         evidence_id: evidenceId,
+        evidence_precision: evidenceFragment.precision,
       };
       await updateState(id, state, "ANALYZING", { extracted });
     } finally {
@@ -542,76 +545,49 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
       );
       return;
     }
-    const externalId = `SRC-INGEST-${raw.sha256.slice(0, 12).toUpperCase()}`;
+
     const title = String(
       payload.title ?? outputs.originalName ?? basename(sourceUri),
     );
-    const priorSource = await db.pool.query(
-      `
-      select id,path,external_id,current_revision from knowledge_documents
-       where space_id=$1
-         and (($2::uuid is null and vault_id is null) or vault_id=$2::uuid)
-         and (frontmatter->>'source_id'=$3 or frontmatter->>'source_sha256'=$4)
-         and lifecycle in ('ACTIVE','DISPUTED')
-       order by updated_at desc limit 1
-      `,
-      [spaceId, vaultId, String(outputs.sourceId), raw.sha256],
+    const compilationStage = await buildCompilationStage(
+      db,
+      {
+        spaceId,
+        vaultId,
+        sourceId: String(outputs.sourceId),
+        sourceArtifactId: extracted.source_artifact_id,
+        evidenceId: extracted.evidence_id,
+        sha256: raw.sha256,
+        title,
+        mediaType: String(
+          outputs.mediaType ?? payload.mediaType ?? "application/octet-stream",
+        ),
+        extractor: artifactResult.extractor,
+        extractorVersion: artifactResult.extractorVersion,
+        artifact: artifactResult.artifact,
+        vectorEnabled: process.env.AKP_VECTOR_ENABLED === "true",
+      },
+      createConfiguredKnowledgeCompiler(process.env),
     );
-    const prior = priorSource.rows[0];
-    const relativePath = prior?.path
-      ? String(prior.path).replace(/^managed\//, "")
-      : `10-sources/ingested/source-${raw.sha256.slice(0, 16)}.md`;
-    const content = renderDocumentArtifactDraft({
-      externalId,
-      title,
-      sourceId: String(outputs.sourceId),
-      sourceArtifactId: extracted.source_artifact_id,
-      sha256: raw.sha256,
-      mediaType: String(outputs.mediaType ?? "application/octet-stream"),
-      extractor: artifactResult.extractor,
-      extractorVersion: artifactResult.extractorVersion,
-      artifact: artifactResult.artifact,
-    });
-    const plan = CompilationPlan.parse({
-      sourceId: String(outputs.sourceId),
-      corpusRevision: String(
-        (
-          await db.pool.query(
-            "select current_revision from vaults where space_id=$1 order by last_imported_at desc limit 1",
-            [spaceId],
-          )
-        ).rows[0]?.current_revision ?? "managed:initial",
-      ),
-      disposition: prior ? "UPDATE" : "NEW",
-      summary:
-        "Create a provenance-preserving machine draft; no claim is activated.",
-      proposedChanges: [
-        {
-          path: relativePath,
-          operation: prior ? "UPDATE" : "CREATE",
-          content,
-          reasons: [
-            "New immutable source requires an inspectable summary draft.",
-          ],
-          evidenceIds: [extracted.evidence_id],
-        },
-      ],
-      impactedDocumentIds: prior ? [String(prior.id)] : [],
-      conflicts: [],
-      probes: [
-        {
-          question:
-            "Does the draft retain the immutable source hash and uncertainty?",
-          criticality: "CRITICAL",
-          evidenceIds: [extracted.evidence_id],
-        },
-      ],
-    });
+    const plan = CompilationPlan.parse(compilationStage.plan);
+    if (plan.disposition === "NO_MATERIAL" || !plan.proposedChanges.length) {
+      await updateState(
+        id,
+        state,
+        "NO_MATERIAL",
+        { plan, compilation: compilationStage.metadata },
+        { disposition: "NO_MATERIAL", reason: plan.summary },
+      );
+      return;
+    }
     await db.pool.query(
       "insert into compilation_plans(job_id,source_id,plan) values($1,$2,$3::jsonb)",
       [id, outputs.sourceId, JSON.stringify(plan)],
     );
-    await updateState(id, state, "PLANNED", { plan });
+    await updateState(id, state, "PLANNED", {
+      plan,
+      compilation: compilationStage.metadata,
+    });
     return;
   }
   if (state === "PLANNED") {
@@ -640,7 +616,27 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
       })),
     );
     const errors = issues.filter((issue) => issue.severity === "ERROR");
+    const compilation = outputs.compilation as { mode?: string } | undefined;
     const probeResults = plan.probes.map((probe) => {
+      if (compilation?.mode === "GENERATIVE") {
+        const linkedChanges = plan.proposedChanges.filter((change) =>
+          probe.evidenceIds.some((evidenceId) =>
+            change.evidenceIds.includes(evidenceId),
+          ),
+        );
+        const passed =
+          linkedChanges.length > 0 &&
+          probe.evidenceIds.every((evidenceId) =>
+            linkedChanges.some((change) =>
+              change.evidenceIds.includes(evidenceId),
+            ),
+          );
+        return {
+          ...probe,
+          passed,
+          method: "GROUNDED_EVIDENCE_REFERENCE",
+        };
+      }
       const proposedText = plan.proposedChanges
         .map((change) => change.content)
         .join("\n");
