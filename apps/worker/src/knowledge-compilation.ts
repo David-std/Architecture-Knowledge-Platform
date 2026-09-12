@@ -33,6 +33,8 @@ export interface ExistingKnowledgeRetrievalInput {
   spaceId: string;
   vaultId: string;
   title: string;
+  sourceId?: string;
+  sourceSha256?: string;
   evidenceExcerpt: string;
   limit?: number;
   vectorEnabled?: boolean;
@@ -130,6 +132,8 @@ async function exactAndLexicalCandidates(
            left(coalesce(nullif(d.body_cache,''),d.title),$6) content_excerpt,
            greatest(
              case
+               when nullif($7,'') is not null and d.frontmatter->>'source_id'=$7 then 120
+               when nullif($8,'') is not null and d.frontmatter->>'source_sha256'=$8 then 110
                when lower(coalesce(d.external_id,''))=lower($3) then 100
                when exists(select 1 from unnest(d.aliases) a where lower(a)=lower($3)) then 90
                when lower(d.title)=lower($3) then 80
@@ -142,6 +146,8 @@ async function exactAndLexicalCandidates(
               2 * ts_rank_cd(d.lexical_body_vector,q.terms)
            ) score,
            case
+             when nullif($7,'') is not null and d.frontmatter->>'source_id'=$7 then 'exact:source-id'
+             when nullif($8,'') is not null and d.frontmatter->>'source_sha256'=$8 then 'exact:source-sha256'
              when lower(coalesce(d.external_id,''))=lower($3) then 'exact:external-id'
              when exists(select 1 from unnest(d.aliases) a where lower(a)=lower($3)) then 'exact:alias'
              when lower(d.title)=lower($3) then 'exact:title'
@@ -154,7 +160,9 @@ async function exactAndLexicalCandidates(
        and d.lifecycle in ('ACTIVE','DISPUTED')
        and d.refresh_status not in ('STALE_BLOCKED','INVALID')
        and (
-         lower(coalesce(d.external_id,''))=lower($3)
+         (nullif($7,'') is not null and d.frontmatter->>'source_id'=$7)
+         or (nullif($8,'') is not null and d.frontmatter->>'source_sha256'=$8)
+         or lower(coalesce(d.external_id,''))=lower($3)
          or exists(select 1 from unnest(d.aliases) a where lower(a)=lower($3))
          or lower(d.title)=lower($3)
          or lower(d.path)=lower($3)
@@ -170,6 +178,8 @@ async function exactAndLexicalCandidates(
       query,
       Math.max(limit * 2, 10),
       CANDIDATE_EXCERPT_CHARACTERS,
+      input.sourceId ?? "",
+      input.sourceSha256 ?? "",
     ],
   );
   return result.rows;
@@ -398,6 +408,8 @@ export async function compileGroundedKnowledgeProposal(
     spaceId: request.spaceId,
     vaultId: request.vaultId,
     title: request.source.title,
+    sourceId: request.source.sourceId,
+    sourceSha256: request.source.sha256,
     evidenceExcerpt: primaryEvidence.excerpt,
     limit: request.candidateLimit,
     vectorEnabled: request.vectorEnabled,
