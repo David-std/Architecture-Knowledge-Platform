@@ -53,7 +53,12 @@ export type ExistingKnowledgeCandidate = z.infer<
 
 export const CompilerBudget = z
   .object({
-    maxInputCharacters: z.number().int().min(4_000).max(200_000).default(48_000),
+    maxInputCharacters: z
+      .number()
+      .int()
+      .min(4_000)
+      .max(200_000)
+      .default(48_000),
     maxEvidence: z.number().int().min(1).max(50).default(20),
     maxExistingCandidates: z.number().int().min(0).max(50).default(20),
     maxProposedChanges: z.number().int().min(1).max(20).default(8),
@@ -66,16 +71,19 @@ export const CompilerPolicy = z
   .object({
     reviewRequired: z.literal(true).default(true),
     allowDirectPublication: z.literal(false).default(false),
-    allowedKnowledgeKinds: z.array(KnowledgeKind).min(1).default([
-      "claim",
-      "decision",
-      "rule",
-      "workflow",
-      "concept",
-      "example",
-      "counterexample",
-      "artifact",
-    ]),
+    allowedKnowledgeKinds: z
+      .array(KnowledgeKind)
+      .min(1)
+      .default([
+        "claim",
+        "decision",
+        "rule",
+        "workflow",
+        "concept",
+        "example",
+        "counterexample",
+        "artifact",
+      ]),
   })
   .strict();
 export type CompilerPolicy = z.infer<typeof CompilerPolicy>;
@@ -181,9 +189,7 @@ export type ProposedKnowledgeAction = z.infer<typeof ProposedKnowledgeAction>;
 
 export const KnowledgeCandidate = z
   .object({
-    candidateId: z
-      .string()
-      .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/),
+    candidateId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/),
     kind: KnowledgeKind,
     statement: BoundedText,
     scope: z.string().min(1).max(2_000),
