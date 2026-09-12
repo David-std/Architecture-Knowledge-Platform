@@ -30,7 +30,22 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
       - run: pnpm audit --audit-level high
-      - run: pnpm exec prettier --check .
+      - name: Diagnose compiler formatting
+        run: |
+          set +e
+          pnpm exec prettier --check .
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            pnpm exec prettier --write \
+              packages/compiler/src/contracts.ts \
+              packages/compiler/src/openai-compatible.ts \
+              packages/compiler/test/compiler-contract.test.ts
+            git --no-pager diff -- \
+              packages/compiler/src/contracts.ts \
+              packages/compiler/src/openai-compatible.ts \
+              packages/compiler/test/compiler-contract.test.ts
+            exit "$status"
+          fi
       - run: docker compose config --quiet
       - run: docker compose up -d --wait postgres minio extractor
       - run: |
