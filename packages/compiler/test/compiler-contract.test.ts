@@ -43,7 +43,8 @@ function compilerInput() {
           paragraph: 1,
           heading_path: ["Guidance"],
         },
-        excerpt: "Invalidate cached material when its authoritative revision changes.",
+        excerpt:
+          "Invalidate cached material when its authoritative revision changes.",
         excerptHash: EXCERPT_HASH,
       },
     ],
@@ -145,9 +146,9 @@ describe("Knowledge Compiler contracts", () => {
     invalid.knowledgeCandidates[0]!.evidenceIds = [
       "77777777-7777-4777-8777-777777777777",
     ];
-    expect(() => normalizeKnowledgeCompilerResult(compilerInput(), invalid)).toThrow(
-      /UNKNOWN_EVIDENCE/,
-    );
+    expect(() =>
+      normalizeKnowledgeCompilerResult(compilerInput(), invalid),
+    ).toThrow(/UNKNOWN_EVIDENCE/);
   });
 
   it("rejects traversal in configured or generated knowledge paths", () => {
@@ -161,9 +162,9 @@ describe("Knowledge Compiler contracts", () => {
 
     const invalid = groundedResult();
     invalid.proposedFileChanges[0]!.path = "../outside.md";
-    expect(() => normalizeKnowledgeCompilerResult(compilerInput(), invalid)).toThrow(
-      /Unsafe knowledge path/,
-    );
+    expect(() =>
+      normalizeKnowledgeCompilerResult(compilerInput(), invalid),
+    ).toThrow(/Unsafe knowledge path/);
   });
 
   it("converts a grounded result into the existing review plan without publication", () => {
