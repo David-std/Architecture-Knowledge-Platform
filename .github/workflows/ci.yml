@@ -30,9 +30,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
       - run: pnpm audit --audit-level high
-      - name: Expose exact Prettier diff
+      - name: Expose exact formatting and hygiene diff
         run: |
           pnpm exec prettier --write .
+          pnpm hygiene:write
           git diff --exit-code
       - run: docker compose config --quiet
       - run: docker compose up -d --wait postgres minio extractor
