@@ -84,7 +84,9 @@ describe("compilation probes", () => {
     const db = { pool: { query } } as unknown as Postgres;
 
     const [result] = await evaluateCompilationProbes(db, {
-      plan: plan("# Unrelated\n\nA completely different statement about ocean tides."),
+      plan: plan(
+        "# Unrelated\n\nA completely different statement about ocean tides.",
+      ),
       spaceId: SPACE_ID,
       vaultId: VAULT_ID,
       sourceId: SOURCE_ID,
