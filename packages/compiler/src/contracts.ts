@@ -71,16 +71,19 @@ export const CompilerPolicy = z
   .object({
     reviewRequired: z.literal(true).default(true),
     allowDirectPublication: z.literal(false).default(false),
-    allowedKnowledgeKinds: z.array(KnowledgeKind).min(1).default([
-      "claim",
-      "decision",
-      "rule",
-      "workflow",
-      "concept",
-      "example",
-      "counterexample",
-      "artifact",
-    ]),
+    allowedKnowledgeKinds: z
+      .array(KnowledgeKind)
+      .min(1)
+      .default([
+        "claim",
+        "decision",
+        "rule",
+        "workflow",
+        "concept",
+        "example",
+        "counterexample",
+        "artifact",
+      ]),
   })
   .strict();
 export type CompilerPolicy = z.infer<typeof CompilerPolicy>;
