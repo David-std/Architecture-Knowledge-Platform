@@ -1,9 +1,7 @@
 import { createHash } from "node:crypto";
-import type {
-  DocumentArtifact,
-  DocumentArtifactItem,
-  StructuralLocator,
-} from "@akp/contracts";
+import type { DocumentArtifact, StructuralLocator } from "@akp/contracts";
+
+type DocumentArtifactItem = DocumentArtifact["paragraphs"][number];
 
 export interface EvidenceFragment {
   locator: StructuralLocator;
