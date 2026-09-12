@@ -4,6 +4,8 @@ import { retrieveExistingKnowledgeCandidates } from "../src/knowledge-compilatio
 
 const SPACE_ID = "11111111-1111-4111-8111-111111111111";
 const VAULT_ID = "22222222-2222-4222-8222-222222222222";
+const SOURCE_ID = "66666666-6666-4666-8666-666666666666";
+const SOURCE_SHA256 = "a".repeat(64);
 const DOCUMENT_A = "33333333-3333-4333-8333-333333333333";
 const DOCUMENT_B = "44444444-4444-4444-8444-444444444444";
 const DOCUMENT_C = "55555555-5555-4555-8555-555555555555";
@@ -30,11 +32,13 @@ function candidate(
 }
 
 describe("compiler existing-knowledge retrieval", () => {
-  it("fuses exact/lexical, semantic-neighbor and graph candidates inside one vault", async () => {
+  it("fuses source identity, lexical, semantic-neighbor and graph candidates inside one vault", async () => {
     const query = vi
       .fn()
       .mockResolvedValueOnce({
-        rows: [candidate(DOCUMENT_A, "Cache policy", 100, "exact:title")],
+        rows: [
+          candidate(DOCUMENT_A, "Previous source title", 120, "exact:source-id"),
+        ],
       })
       .mockResolvedValueOnce({
         rows: [
@@ -54,7 +58,9 @@ describe("compiler existing-knowledge retrieval", () => {
     const result = await retrieveExistingKnowledgeCandidates(db, {
       spaceId: SPACE_ID,
       vaultId: VAULT_ID,
-      title: "Cache policy",
+      sourceId: SOURCE_ID,
+      sourceSha256: SOURCE_SHA256,
+      title: "Renamed cache policy",
       evidenceExcerpt: "Invalidate cached knowledge when revision changes.",
       vectorEnabled: true,
       limit: 8,
@@ -73,6 +79,12 @@ describe("compiler existing-knowledge retrieval", () => {
       expect(parameters[0]).toBe(SPACE_ID);
       expect(parameters[1]).toBe(VAULT_ID);
     }
+    const lexicalSql = String(query.mock.calls[0]?.[0]);
+    const lexicalParameters = query.mock.calls[0]?.[1] as unknown[];
+    expect(lexicalSql).toContain("frontmatter->>'source_id'=$7");
+    expect(lexicalSql).toContain("frontmatter->>'source_sha256'=$8");
+    expect(lexicalParameters[6]).toBe(SOURCE_ID);
+    expect(lexicalParameters[7]).toBe(SOURCE_SHA256);
   });
 
   it("reports semantic degradation explicitly instead of pretending it ran", async () => {
