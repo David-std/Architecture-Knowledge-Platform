@@ -71,12 +71,17 @@ export class OpenAICompatibleKnowledgeCompiler implements KnowledgeCompilerPort 
   readonly #options: z.output<typeof OpenAICompatibleCompilerOptions>;
   readonly #fetch: FetchLike;
 
-  constructor(options: OpenAICompatibleCompilerOptions, fetchImpl: FetchLike = fetch) {
+  constructor(
+    options: OpenAICompatibleCompilerOptions,
+    fetchImpl: FetchLike = fetch,
+  ) {
     this.#options = OpenAICompatibleCompilerOptions.parse(options);
     this.#fetch = fetchImpl;
   }
 
-  async compile(inputValue: KnowledgeCompilerInputType): Promise<KnowledgeCompilerResult> {
+  async compile(
+    inputValue: KnowledgeCompilerInputType,
+  ): Promise<KnowledgeCompilerResult> {
     const input = KnowledgeCompilerInput.parse(inputValue);
     const serializedInput = JSON.stringify(input);
     if (serializedInput.length > input.budget.maxInputCharacters) {
@@ -101,7 +106,10 @@ export class OpenAICompatibleKnowledgeCompiler implements KnowledgeCompilerPort 
     let lastError: unknown;
     for (let attempt = 0; attempt <= this.#options.maxRetries; attempt += 1) {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), this.#options.timeoutMs);
+      const timeout = setTimeout(
+        () => controller.abort(),
+        this.#options.timeoutMs,
+      );
       try {
         const response = await this.#fetch(joinEndpoint(this.#options.baseUrl), {
           method: "POST",
