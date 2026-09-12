@@ -99,7 +99,9 @@ export function normalizeKnowledgeCompilerResult(
     throw new Error("COMPILER_RESULT_PROBE_BUDGET_EXCEEDED");
   }
 
-  const evidenceById = new Map(input.evidence.map((entry) => [entry.id, entry]));
+  const evidenceById = new Map(
+    input.evidence.map((entry) => [entry.id, entry]),
+  );
   const allowedEvidenceIds = new Set(evidenceById.keys());
   const allowedDocumentIds = new Set(
     input.existingCandidates.map((entry) => entry.documentId),
@@ -118,13 +120,17 @@ export function normalizeKnowledgeCompilerResult(
   for (const candidate of result.evidenceCandidates) {
     const original = evidenceById.get(candidate.evidenceId);
     if (!original) {
-      throw new Error(`COMPILER_EVIDENCE_CANDIDATE_UNKNOWN:${candidate.evidenceId}`);
+      throw new Error(
+        `COMPILER_EVIDENCE_CANDIDATE_UNKNOWN:${candidate.evidenceId}`,
+      );
     }
     if (
       candidate.sourceArtifactId !== original.sourceArtifactId ||
       candidate.excerptHash !== original.excerptHash
     ) {
-      throw new Error(`COMPILER_EVIDENCE_CANDIDATE_MUTATED:${candidate.evidenceId}`);
+      throw new Error(
+        `COMPILER_EVIDENCE_CANDIDATE_MUTATED:${candidate.evidenceId}`,
+      );
     }
   }
 
@@ -202,7 +208,9 @@ export function resultToCompilationPlan(
       ? "NO_MATERIAL"
       : result.contradictions.length > 0
         ? "DISPUTED"
-        : result.proposedFileChanges.some((change) => change.operation !== "CREATE")
+        : result.proposedFileChanges.some(
+              (change) => change.operation !== "CREATE",
+            )
           ? "UPDATE"
           : "NEW";
 
