@@ -439,7 +439,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
         path: `source:${String(outputs.sourceId)}`,
         heading_path: [],
       };
-      await db.pool.query(
+      const storedEvidence = await db.pool.query<{ id: string }>(
         `
         insert into evidence(
           space_id,vault_id,source_id,artifact_id,locator,content_hash,excerpt,review_status
@@ -449,6 +449,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
           vault_id=excluded.vault_id,locator=excluded.locator,
           content_hash=excluded.content_hash,excerpt=excluded.excerpt,
           review_status=excluded.review_status
+        returning id
         `,
         [
           spaceId,
@@ -460,6 +461,8 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
           preview.markdown.slice(0, 2000) || null,
         ],
       );
+      const evidenceId = storedEvidence.rows[0]?.id;
+      if (!evidenceId) throw new Error("Could not persist evidence.");
       const extracted = {
         extractor: canonical.extractor,
         extractor_version: canonical.extractorVersion,
@@ -470,6 +473,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
         routing: canonical.routing,
         warnings: canonical.warnings,
         source_artifact_id: artifactId,
+        evidence_id: evidenceId,
       };
       await updateState(id, state, "ANALYZING", { extracted });
     } finally {
@@ -481,10 +485,15 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
     const extracted = outputs.extracted as {
       document_artifact?: unknown;
       source_artifact_id?: string;
+      evidence_id?: string;
       extractor?: string;
       extractor_version?: string;
     };
-    if (!extracted?.document_artifact || !extracted.source_artifact_id) {
+    if (
+      !extracted?.document_artifact ||
+      !extracted.source_artifact_id ||
+      !extracted.evidence_id
+    ) {
       throw new Error("DOCUMENT_ARTIFACT_STAGE_OUTPUT_REQUIRED");
     }
     const expectedIdentity = {
@@ -584,7 +593,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
           reasons: [
             "New immutable source requires an inspectable summary draft.",
           ],
-          evidenceIds: [],
+          evidenceIds: [extracted.evidence_id],
         },
       ],
       impactedDocumentIds: prior ? [String(prior.id)] : [],
@@ -594,7 +603,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
           question:
             "Does the draft retain the immutable source hash and uncertainty?",
           criticality: "CRITICAL",
-          evidenceIds: [String(extracted.source_artifact_id)],
+          evidenceIds: [extracted.evidence_id],
         },
       ],
     });
