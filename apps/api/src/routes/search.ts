@@ -9,6 +9,7 @@ import {
 } from "@akp/postgres";
 import {
   GraphRelationType,
+  ContextRequest,
   SearchRequest,
   type GraphPathNode,
   type GraphPathProvenance,
@@ -17,7 +18,10 @@ import {
 } from "@akp/contracts";
 import {
   buildContextPacket,
+  buildContextPacketPair,
+  ContextPacketBudgetError,
   contextBudgetForIntent,
+  createEmbeddingProviderForGeneration,
   planQuery,
   QueryEmbeddingService,
   rehydrateStructuralContext,
@@ -25,6 +29,9 @@ import {
   toPgVector,
   type ActiveEmbeddingGenerationDescriptor,
   type QueryPlan,
+  type QueryPlannerCapabilities,
+  type RankedChannel,
+  type Tokenizer,
 } from "@akp/retrieval";
 import {
   actorOf,
@@ -77,6 +84,7 @@ interface GraphTraversalRow {
 interface GraphCandidateRow {
   id: string;
   weight: number;
+  candidateRevision: string;
   provenance: GraphPathProvenance[];
 }
 
@@ -86,8 +94,29 @@ interface GraphDocumentRow {
   vault_id: string;
   external_id: string | null;
   path: string;
+  current_revision: string;
   lifecycle: string;
   refresh_status: string;
+}
+
+interface ExactSearchRow {
+  id: string;
+  document_revision: string;
+  match_reason: string;
+}
+
+interface LexicalSearchRow {
+  id: string;
+  unit_id: string | null;
+  unit_type: string | null;
+  document_revision: string;
+  score: number;
+  match_reason: string;
+}
+
+interface DocumentChannelRow {
+  id: string;
+  document_revision: string;
 }
 
 const ALL_GRAPH_RELATION_TYPES: readonly GraphRelationType[] =
@@ -99,6 +128,16 @@ const GRAPH_HARD_MAX_CANDIDATES = 100;
 const GRAPH_HARD_MAX_FANOUT = 10;
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const RRF_CHANNEL_WEIGHTS = {
+  exact: 3,
+  lexical: 1.5,
+  vector: 1,
+  "context-pack": 2.5,
+  raw: 1.2,
+  code: 1.2,
+  graph: 1.4,
+} as const;
 
 function boundedNumber(
   value: unknown,
@@ -250,6 +289,8 @@ export interface RetrievalExecutionOptions {
     "context-pack" | "exact" | "lexical" | "vector" | "graph" | "raw" | "code"
   >;
   plan?: QueryPlan;
+  /** Runtime capability snapshot. Production callers must provide all fields. */
+  plannerCapabilities?: Partial<QueryPlannerCapabilities>;
   graphPolicy?: Partial<GraphTraversalPolicy>;
   graphScopes?: Array<{ vaultId: string; pathPrefix: string | null }>;
   allowVectorForBenchmark?: boolean;
@@ -264,6 +305,11 @@ export interface RetrievalExecutionOptions {
   /** Applied after policy/trust filtering so a scoped caller never receives a
    * path it is not allowed to read. */
   pathAuthorizer?: (path: string, vaultId?: string) => boolean;
+}
+
+export interface SearchRouteDependencies {
+  /** Active model/agent tokenizer when the runtime provides one. */
+  contextTokenizer?: Tokenizer;
 }
 
 interface ActiveEmbeddingGenerationRow {
@@ -286,6 +332,7 @@ interface VectorSearchRow {
   id: string;
   unit_id: string;
   unit_type: string;
+  document_revision: string;
   score: number;
 }
 
@@ -375,6 +422,93 @@ function combineVaultIndexRows(rows: IndexRevisionRow[]): IndexRevisionRow {
   return result;
 }
 
+function revisionIsCurrent(
+  index: Record<string, unknown> | undefined,
+  field: string,
+): boolean {
+  const corpus = index?.corpus_revision
+    ? String(index.corpus_revision)
+    : undefined;
+  const revision = index?.[field] ? String(index[field]) : undefined;
+  return Boolean(corpus && revision && corpus === revision);
+}
+
+export function plannerCapabilitiesForIndex(
+  index: Record<string, unknown> | undefined,
+  policy: {
+    vectorProviderAvailable: boolean;
+    rawAllowed: boolean;
+    codeAdapterAvailable: boolean;
+  },
+): QueryPlannerCapabilities {
+  return {
+    vectorAvailable:
+      policy.vectorProviderAvailable &&
+      revisionIsCurrent(index, "vector_revision"),
+    graphConsistent: revisionIsCurrent(index, "graph_revision"),
+    rawAllowed: policy.rawAllowed,
+    codeAdapterAvailable: policy.codeAdapterAvailable,
+    contextPackAvailable: revisionIsCurrent(index, "context_pack_revision"),
+  };
+}
+
+function channelAllowedByCapabilities(
+  channel: RetrievalChannel,
+  capabilities: QueryPlannerCapabilities,
+): boolean {
+  switch (channel) {
+    case "exact":
+    case "lexical":
+      return true;
+    case "vector":
+      return capabilities.vectorAvailable;
+    case "graph":
+      return capabilities.graphConsistent;
+    case "raw":
+      return capabilities.rawAllowed;
+    case "code":
+      return capabilities.codeAdapterAvailable;
+    case "context-pack":
+      return capabilities.contextPackAvailable;
+  }
+}
+
+async function activeVectorProviderAvailable(
+  db: Postgres,
+  spaceId: string,
+  vaultIds: readonly string[],
+): Promise<boolean> {
+  if (process.env.AKP_VECTOR_ENABLED !== "true") return false;
+  try {
+    const generations = await db.pool.query<ActiveEmbeddingGenerationRow>(
+      `
+      select distinct on (g.vault_id)
+             g.id,g.space_id,g.vault_id,g.corpus_revision,g.provider,g.model,
+             g.model_revision,g.dimensions,g.normalization,g.input_strategy,
+             g.configuration_version,g.runtime,g.configuration_hash
+        from embedding_generations g
+        join vault_index_revisions i
+          on i.space_id=g.space_id and i.vault_id=g.vault_id
+         and i.vector_revision=g.corpus_revision
+       where g.space_id=$1 and g.vault_id=any($2::uuid[])
+         and g.status='ACTIVE'
+       order by g.vault_id,g.activated_at desc nulls last,g.created_at desc
+      `,
+      [spaceId, vaultIds],
+    );
+    return generations.rows.some((row) => {
+      try {
+        createEmbeddingProviderForGeneration(activeDescriptor(row));
+        return true;
+      } catch {
+        return false;
+      }
+    });
+  } catch {
+    return false;
+  }
+}
+
 export function channelsConsistentWithIndex(
   requested: Iterable<RetrievalChannel>,
   index: Record<string, unknown> | undefined,
@@ -421,8 +555,10 @@ export function effectiveRetrievalChannels(
   availableChannels: ReadonlySet<RetrievalChannel>,
 ): { channels: RetrievalChannel[]; warnings: string[] } {
   const channels = new Set(channelState.channels);
-  if (channels.has("vector") && !availableChannels.has("vector")) {
-    channels.delete("vector");
+  for (const channel of ["vector", "graph"] as const) {
+    if (channels.has(channel) && !availableChannels.has(channel)) {
+      channels.delete(channel);
+    }
   }
   return {
     channels: [...channels],
@@ -438,7 +574,7 @@ function deterministicLexicalRerank(
     query
       .normalize("NFD")
       .replace(/\p{Diacritic}/gu, "")
-      .toLocaleLowerCase()
+      .toLowerCase()
       .split(/[^\p{Letter}\p{Number}]+/u)
       .filter((term) => term.length >= 3),
   );
@@ -447,7 +583,7 @@ function deterministicLexicalRerank(
       const haystack = `${hit.title} ${hit.excerpt}`
         .normalize("NFD")
         .replace(/\p{Diacritic}/gu, "")
-        .toLocaleLowerCase();
+        .toLowerCase();
       const overlap = [...terms].filter((term) =>
         haystack.includes(term),
       ).length;
@@ -571,7 +707,41 @@ export async function queryKnowledge(
       : `and ${alias}vault_id=any(array[${vaultIds
           .map((id) => `'${id}'::uuid`)
           .join(",")}])`;
-  const plan = options.plan ?? planQuery(input.query);
+  const indexRows = await db.pool.query(
+    `select vault_id,corpus_revision,lexical_revision,vector_revision,
+            graph_revision,context_pack_revision,status,warnings,
+            retrieval_configuration_version
+       from vault_index_revisions
+      where space_id=$1 and vault_id=any($2::uuid[])
+      order by vault_id`,
+    [spaceId, vaultIds],
+  );
+  const index = combineVaultIndexRows(indexRows.rows);
+  const inferredCapabilities = plannerCapabilitiesForIndex(index, {
+    vectorProviderAvailable:
+      process.env.AKP_VECTOR_ENABLED === "true" ||
+      Boolean(options.allowVectorForBenchmark),
+    // Direct library callers do not carry an actor. Raw retrieval therefore
+    // fails closed unless they explicitly request RAW_ONLY or inject policy.
+    rawAllowed: input.mode === "RAW_ONLY",
+    // A project-layer SQL filter is not an external code adapter capability.
+    codeAdapterAvailable: false,
+  });
+  const capabilities: QueryPlannerCapabilities = {
+    ...inferredCapabilities,
+    // Low-level benchmark/evaluation callers can deliberately exercise the
+    // last usable vector generation during a rebuild. HTTP production routes
+    // pass a strict capability-aware plan and never take this compatibility
+    // path.
+    vectorAvailable:
+      (process.env.AKP_VECTOR_ENABLED === "true" ||
+        Boolean(options.allowVectorForBenchmark)) &&
+      Boolean(index.vector_revision),
+    ...(options.plannerCapabilities ?? {}),
+  };
+  const plan =
+    options.plan ?? planQuery(input.query, input.intent, capabilities);
+  const effectiveCapabilities = options.plan?.capabilities ?? capabilities;
   const graphPolicy = normalizeGraphPolicy(
     options.graphPolicy,
     plan,
@@ -586,17 +756,15 @@ export async function queryKnowledge(
       ? []
       : options.graphScopes,
   );
-  const requestedChannels = options.channels ?? plan.channels;
-  const indexRows = await db.pool.query(
-    `select vault_id,corpus_revision,lexical_revision,vector_revision,
-            graph_revision,context_pack_revision,status,warnings,
-            retrieval_configuration_version
-       from vault_index_revisions
-      where space_id=$1 and vault_id=any($2::uuid[])
-      order by vault_id`,
-    [spaceId, vaultIds],
+  const requestedByPolicy = options.channels ?? plan.channels;
+  const requestedChannels = requestedByPolicy.filter((channel) =>
+    channelAllowedByCapabilities(channel, effectiveCapabilities),
   );
-  const index = combineVaultIndexRows(indexRows.rows);
+  for (const channel of requestedByPolicy) {
+    if (!requestedChannels.includes(channel)) {
+      options.warningSink?.push(`CHANNEL_CAPABILITY_UNAVAILABLE:${channel}`);
+    }
+  }
   const consistency = channelsConsistentWithIndex(
     requestedChannels,
     index,
@@ -617,117 +785,138 @@ export async function queryKnowledge(
           : "";
 
   const exact = channels.has("exact")
-    ? await db.pool.query(
+    ? await db.pool.query<ExactSearchRow>(
         `
-    select id
-      from knowledge_documents
-     where space_id = $1
-       ${vaultFilter()}
-       and lifecycle in ('ACTIVE','DISPUTED')
-       and refresh_status not in ('STALE_BLOCKED','INVALID')
-       and (
-         lower(external_id) = lower($2)
-         or lower(path) = lower($2)
-         or lower(title) = lower($2)
-         or exists (select 1 from unnest(aliases) alias where lower(alias) = lower($2))
-       )
-       ${modeClause}
-     order by id
-     limit $3
-    `,
-        [spaceId, input.query, input.limit],
+        select d.id,d.current_revision document_revision,
+               case
+                 when lower(d.external_id)=lower($2) then 'exact:external-id'
+                 when exists (
+                   select 1 from unnest(d.aliases) alias
+                    where lower(alias)=lower($2)
+                 ) then 'exact:alias'
+                 when lower(d.title)=lower($2) then 'exact:title'
+                 else 'exact:path'
+               end match_reason
+          from knowledge_documents d
+         where d.space_id=$1
+           ${vaultFilter("d.")}
+           and d.lifecycle in ('ACTIVE','DISPUTED')
+           and d.refresh_status not in ('STALE_BLOCKED','INVALID')
+           and (
+             lower(d.external_id)=lower($2)
+             or exists (
+               select 1 from unnest(d.aliases) alias
+                where lower(alias)=lower($2)
+             )
+             or lower(d.title)=lower($2)
+             or lower(d.path)=lower($2)
+           )
+           ${modeClause}
+         order by
+           case
+             when lower(d.external_id)=lower($2) then 0
+             when exists (
+               select 1 from unnest(d.aliases) alias
+                where lower(alias)=lower($2)
+             ) then 1
+             when lower(d.title)=lower($2) then 2
+             else 3
+           end,
+           d.id
+         limit $3
+        `,
+        [spaceId, input.query, Math.max(input.limit * 2, 20)],
       )
-    : { rows: [] as Array<{ id: string }> };
+    : { rows: [] as ExactSearchRow[] };
+  if (channels.has("exact")) options.availableChannelSink?.add("exact");
 
   const lexical =
     channels.has("lexical") || channels.has("graph")
-      ? await db.pool.query(
+      ? await db.pool.query<LexicalSearchRow>(
           `
-    select u.document_id id, u.id unit_id, u.unit_type,
-           ts_rank_cd(u.search_vector, websearch_to_tsquery('simple', $2)) score
-      from knowledge_units u
-      join knowledge_documents d on d.id=u.document_id
-      join vault_index_revisions i
-        on i.space_id=u.space_id and i.vault_id=u.vault_id
-       and i.lexical_revision=u.corpus_revision
-     where u.space_id = $1
-       ${vaultFilter("u.")}
-       and u.lifecycle in ('ACTIVE','DISPUTED')
-       and u.embedding_eligible
-       and d.refresh_status not in ('STALE_BLOCKED','INVALID')
-       and u.search_vector @@ websearch_to_tsquery('simple', $2)
-       ${modeClause}
-     order by score desc, u.id
-     limit $3
-    `,
-          [spaceId, input.query, Math.max(input.limit * 3, 30)],
-        )
-      : {
-          rows: [] as Array<{
-            id: string;
-            unit_id: string;
-            unit_type: string;
-            score: number;
-          }>,
-        };
-
-  const stopWords = new Set([
-    "para",
-    "como",
-    "esta",
-    "este",
-    "esto",
-    "puede",
-    "usar",
-    "misma",
-    "base",
-    "datos",
-    "sigue",
-    "quinta",
-    "capa",
-    "the",
-    "and",
-    "with",
-    "from",
-    "what",
-    "does",
-  ]);
-  const baseTerms = input.query
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .toLowerCase()
-    .split(/[^\p{Letter}\p{Number}]+/u)
-    .filter((term) => term.length >= 4 && !stopWords.has(term))
-    .slice(0, 8);
-  const terms = [...new Set(baseTerms)].slice(0, 12);
-  const fallback =
-    terms.length === 0 || !channels.has("lexical")
-      ? { rows: [] as Array<{ id: string }> }
-      : await db.pool.query(
-          `
-          select id
-            from knowledge_documents
-           where space_id=$1
-             ${vaultFilter()}
-             and lifecycle in ('ACTIVE','DISPUTED')
-             and refresh_status not in ('STALE_BLOCKED','INVALID')
-             and exists (
-               select 1 from unnest($2::text[]) pattern
-                where lower(title || ' ' || body_cache) like pattern
-             )
-             ${modeClause}
-           order by
-             (select count(*) from unnest($2::text[]) pattern
-               where lower(title || ' ' || body_cache) like pattern) desc,
-             path
+          with query as (
+            select plainto_tsquery('simple', $2) terms
+          ), eligible_documents as (
+            select d.id,d.current_revision,d.lexical_external_id_vector,
+                   d.lexical_alias_vector,d.lexical_title_vector,
+                   d.lexical_path_vector,d.lexical_body_vector,
+                   i.lexical_revision index_revision,query.terms
+              from knowledge_documents d
+              join vault_index_revisions i
+                on i.space_id=d.space_id and i.vault_id=d.vault_id
+               and i.lexical_revision=i.corpus_revision
+              cross join query
+             where d.space_id=$1
+               ${vaultFilter("d.")}
+               and d.lifecycle in ('ACTIVE','DISPUTED')
+               and d.refresh_status not in ('STALE_BLOCKED','INVALID')
+               ${modeClause}
+               and (
+                 d.lexical_search_vector @@ query.terms
+                 or exists (
+                   select 1
+                     from knowledge_units matching_unit
+                    where matching_unit.document_id=d.id
+                      and matching_unit.space_id=d.space_id
+                      and matching_unit.vault_id=d.vault_id
+                      and matching_unit.corpus_revision=i.lexical_revision
+                      and matching_unit.lifecycle in ('ACTIVE','DISPUTED')
+                      and matching_unit.embedding_eligible
+                      and matching_unit.lexical_search_vector @@ query.terms
+                 )
+               )
+          ), scored as (
+            select d.id,best_unit.unit_id,best_unit.unit_type,
+                   d.current_revision document_revision,
+                   32 * ts_rank_cd(d.lexical_external_id_vector,d.terms) +
+                   28 * ts_rank_cd(d.lexical_alias_vector,d.terms) +
+                   20 * ts_rank_cd(d.lexical_title_vector,d.terms) +
+                   24 * ts_rank_cd(d.lexical_path_vector,d.terms) +
+                    2 * ts_rank_cd(d.lexical_body_vector,d.terms) +
+                   coalesce(best_unit.unit_score,0) score,
+                   case
+                     when d.lexical_external_id_vector @@ d.terms
+                       then 'lexical:external-id-terms'
+                     when d.lexical_alias_vector @@ d.terms
+                       then 'lexical:alias-terms'
+                     when d.lexical_path_vector @@ d.terms
+                       then 'lexical:path-terms'
+                     when d.lexical_title_vector @@ d.terms
+                       then 'lexical:title-terms'
+                     when best_unit.heading_match
+                       then 'lexical:heading-terms'
+                     when best_unit.unit_match
+                       then 'lexical:unit-terms'
+                     else 'lexical:body-terms'
+                   end match_reason
+              from eligible_documents d
+              left join lateral (
+                select u.id unit_id,u.unit_type,
+                       12 * ts_rank_cd(u.lexical_heading_vector,d.terms) +
+                        8 * ts_rank_cd(u.lexical_unit_vector,d.terms) +
+                            ts_rank_cd(u.lexical_body_vector,d.terms) unit_score,
+                       u.lexical_heading_vector @@ d.terms heading_match,
+                       u.lexical_unit_vector @@ d.terms unit_match
+                  from knowledge_units u
+                 where u.document_id=d.id
+                   and u.corpus_revision=d.index_revision
+                   and u.lifecycle in ('ACTIVE','DISPUTED')
+                   and u.embedding_eligible
+                 order by unit_score desc,u.structural_order,u.id
+                 limit 1
+              ) best_unit on true
+          )
+          select id,unit_id,unit_type,document_revision,score,match_reason
+            from scored
+           order by score desc,id,unit_id nulls last
            limit $3
           `,
-          [
-            spaceId,
-            terms.map((term) => `%${term}%`),
-            Math.max(input.limit * 3, 30),
-          ],
-        );
+          [spaceId, input.query, Math.max(input.limit * 3, 30)],
+        )
+      : { rows: [] as LexicalSearchRow[] };
+  if (channels.has("lexical")) {
+    options.availableChannelSink?.add("lexical");
+  }
 
   const vector = { rows: [] as VectorSearchRow[] };
   if (
@@ -791,6 +980,7 @@ export async function queryKnowledge(
         const result = await db.pool.query<VectorSearchRow>(
           `
           select u.document_id id,u.id unit_id,u.unit_type,
+                 u.document_revision,
                  1 - (e.embedding::vector(${dimensions}) <=> $3::vector(${dimensions})) score
             from unit_embeddings e
             join knowledge_units u on u.id=e.unit_id
@@ -834,82 +1024,80 @@ export async function queryKnowledge(
 
   const seedIds = [
     ...new Set(
-      [...exact.rows, ...lexical.rows, ...vector.rows, ...fallback.rows].map(
-        (row) => String(row.id),
+      [...exact.rows, ...lexical.rows, ...vector.rows].map((row) =>
+        String(row.id),
       ),
     ),
   ];
-  const contextPack =
-    channels.has("context-pack") && terms.length > 0
-      ? await db.pool.query(
-          `
-          select id from knowledge_documents
-           where space_id=$1
-             ${vaultFilter()}
-             and lifecycle in ('ACTIVE','DISPUTED')
-             and refresh_status not in ('STALE_BLOCKED','INVALID')
-             and (layer='context-pack' or type='context-pack')
-             and exists (
-               select 1 from unnest($2::text[]) pattern
-                where lower(title || ' ' || body_cache) like pattern
-             )
-           order by path limit $3
+  const contextPack = channels.has("context-pack")
+    ? await db.pool.query<DocumentChannelRow>(
+        `
+          with query as (select plainto_tsquery('simple',$2) terms)
+          select d.id,d.current_revision document_revision
+            from knowledge_documents d
+            cross join query
+           where d.space_id=$1
+             ${vaultFilter("d.")}
+             and d.lifecycle in ('ACTIVE','DISPUTED')
+             and d.refresh_status not in ('STALE_BLOCKED','INVALID')
+             and (d.layer='context-pack' or d.type='context-pack')
+             and d.lexical_search_vector @@ query.terms
+           order by ts_rank_cd(d.lexical_search_vector,query.terms) desc,
+                    d.path,d.id
+           limit $3
           `,
-          [
-            spaceId,
-            terms.map((term) => `%${term}%`),
-            Math.max(input.limit, 10),
-          ],
-        )
-      : { rows: [] as Array<{ id: string }> };
+        [spaceId, input.query, Math.max(input.limit, 10)],
+      )
+    : { rows: [] as DocumentChannelRow[] };
+  if (channels.has("context-pack")) {
+    options.availableChannelSink?.add("context-pack");
+  }
 
-  const rawFallback =
-    channels.has("raw") && terms.length > 0
-      ? await db.pool.query(
-          `
-          select id from knowledge_documents
-           where space_id=$1
-             ${vaultFilter()}
-             and lifecycle in ('ACTIVE','DISPUTED')
-             and refresh_status not in ('STALE_BLOCKED','INVALID')
-             and (layer in ('source','resource') or type='raw-resource')
-             and exists (
-               select 1 from unnest($2::text[]) pattern
-                where lower(title || ' ' || body_cache) like pattern
-             )
-           order by trust_tier desc,path limit $3
+  const rawFallback = channels.has("raw")
+    ? await db.pool.query<DocumentChannelRow>(
+        `
+          with query as (select plainto_tsquery('simple',$2) terms)
+          select d.id,d.current_revision document_revision
+            from knowledge_documents d
+            cross join query
+           where d.space_id=$1
+             ${vaultFilter("d.")}
+             and d.lifecycle in ('ACTIVE','DISPUTED')
+             and d.refresh_status not in ('STALE_BLOCKED','INVALID')
+             and (d.layer in ('source','resource') or d.type='raw-resource')
+             and d.lexical_search_vector @@ query.terms
+           order by d.trust_tier desc,
+                    ts_rank_cd(d.lexical_search_vector,query.terms) desc,
+                    d.path,d.id
+           limit $3
           `,
-          [
-            spaceId,
-            terms.map((term) => `%${term}%`),
-            Math.max(input.limit, 10),
-          ],
-        )
-      : { rows: [] as Array<{ id: string }> };
+        [spaceId, input.query, Math.max(input.limit, 10)],
+      )
+    : { rows: [] as DocumentChannelRow[] };
+  if (channels.has("raw")) options.availableChannelSink?.add("raw");
 
-  const codeFallback =
-    channels.has("code") && terms.length > 0
-      ? await db.pool.query(
-          `
-          select id from knowledge_documents
-           where space_id=$1
-             ${vaultFilter()}
-             and lifecycle in ('ACTIVE','DISPUTED')
-             and refresh_status not in ('STALE_BLOCKED','INVALID')
-             and layer='project'
-             and exists (
-               select 1 from unnest($2::text[]) pattern
-                where lower(title || ' ' || body_cache) like pattern
-             )
-           order by updated_at desc limit $3
+  const codeFallback = channels.has("code")
+    ? await db.pool.query<DocumentChannelRow>(
+        `
+          with query as (select plainto_tsquery('simple',$2) terms)
+          select d.id,d.current_revision document_revision
+            from knowledge_documents d
+            cross join query
+           where d.space_id=$1
+             ${vaultFilter("d.")}
+             and d.lifecycle in ('ACTIVE','DISPUTED')
+             and d.refresh_status not in ('STALE_BLOCKED','INVALID')
+             and d.layer='project'
+             and d.lexical_search_vector @@ query.terms
+           order by d.updated_at desc,
+                    ts_rank_cd(d.lexical_search_vector,query.terms) desc,
+                    d.id
+           limit $3
           `,
-          [
-            spaceId,
-            terms.map((term) => `%${term}%`),
-            Math.max(input.limit, 10),
-          ],
-        )
-      : { rows: [] as Array<{ id: string }> };
+        [spaceId, input.query, Math.max(input.limit, 10)],
+      )
+    : { rows: [] as DocumentChannelRow[] };
+  if (channels.has("code")) options.availableChannelSink?.add("code");
 
   const candidateSeedIds = seedIds.filter((id) => UUID_PATTERN.test(id));
   const graphRows =
@@ -1151,7 +1339,8 @@ export async function queryKnowledge(
       ? { rows: [] as GraphDocumentRow[] }
       : await db.pool.query<GraphDocumentRow>(
           `
-          select id,space_id,vault_id,external_id,path,lifecycle,refresh_status
+          select id,space_id,vault_id,external_id,path,current_revision,
+                 lifecycle,refresh_status
             from knowledge_documents
            where id=any($1::uuid[])
              and space_id=$2
@@ -1266,12 +1455,16 @@ export async function queryKnowledge(
       return {
         id,
         weight: provenance.reduce((sum, path) => sum + path.graphScore, 0),
+        candidateRevision: String(
+          graphNodeById.get(id)?.current_revision ?? "",
+        ),
         provenance,
       };
     })
     .filter(
       (candidate) =>
         candidate.provenance.length > 0 &&
+        candidate.candidateRevision.length > 0 &&
         Number.isFinite(candidate.weight) &&
         candidate.weight > 0,
     )
@@ -1284,61 +1477,92 @@ export async function queryKnowledge(
     graphCandidates.map((candidate) => [candidate.id, candidate.provenance]),
   );
   const graph = { rows: graphCandidates };
+  if (
+    channels.has("graph") &&
+    candidateSeedIds.length > 0 &&
+    graphPolicy.maxHops > 0 &&
+    graphScopes.length > 0
+  ) {
+    options.availableChannelSink?.add("graph");
+  }
 
-  const fused = reciprocalRankFusion([
-    exact.rows.map((row, index) => ({
-      id: String(row.id),
-      rank: index + 1,
-      weight: 3,
-      reason: "exact-or-alias",
-    })),
+  const rankedChannels: RankedChannel[] = [
+    {
+      channel: "exact",
+      channelWeight: RRF_CHANNEL_WEIGHTS.exact,
+      items: exact.rows.map((row, index) => ({
+        id: String(row.id),
+        rank: index + 1,
+        reason: row.match_reason ? String(row.match_reason) : "exact",
+        candidateRevision: String(row.document_revision),
+      })),
+    },
     ...(channels.has("lexical")
       ? [
-          lexical.rows.map((row, index) => ({
-            id: String(row.id),
-            rank: index + 1,
-            weight: 1.5,
-            reason: "lexical",
-          })),
+          {
+            channel: "lexical",
+            channelWeight: RRF_CHANNEL_WEIGHTS.lexical,
+            items: lexical.rows.map((row, index) => ({
+              id: String(row.id),
+              rank: index + 1,
+              reason: row.match_reason ? String(row.match_reason) : "lexical",
+              candidateRevision: String(row.document_revision),
+            })),
+          },
         ]
       : []),
-    vector.rows.map((row, index) => ({
-      id: String(row.id),
-      rank: index + 1,
-      weight: 1,
-      reason: "vector",
-    })),
-    contextPack.rows.map((row, index) => ({
-      id: String(row.id),
-      rank: index + 1,
-      weight: 2.5,
-      reason: "context-pack",
-    })),
-    rawFallback.rows.map((row, index) => ({
-      id: String(row.id),
-      rank: index + 1,
-      weight: 1.2,
-      reason: "raw-source-fallback",
-    })),
-    codeFallback.rows.map((row, index) => ({
-      id: String(row.id),
-      rank: index + 1,
-      weight: 1.2,
-      reason: "project-code-fallback",
-    })),
-    fallback.rows.map((row, index) => ({
-      id: String(row.id),
-      rank: index + 1,
-      weight: 0.8,
-      reason: "lexical-fallback",
-    })),
-    graph.rows.map((row, index) => ({
-      id: String(row.id),
-      rank: index + 1,
-      weight: 1.4 * Number(row.weight ?? 1),
-      reason: "graph",
-    })),
-  ]).slice(0, input.limit * 2);
+    {
+      channel: "vector",
+      channelWeight: RRF_CHANNEL_WEIGHTS.vector,
+      items: vector.rows.map((row, index) => ({
+        id: String(row.id),
+        rank: index + 1,
+        reason: "vector",
+        candidateRevision: String(row.document_revision),
+      })),
+    },
+    {
+      channel: "context-pack",
+      channelWeight: RRF_CHANNEL_WEIGHTS["context-pack"],
+      items: contextPack.rows.map((row, index) => ({
+        id: String(row.id),
+        rank: index + 1,
+        reason: "context-pack:lexical-match",
+        candidateRevision: String(row.document_revision),
+      })),
+    },
+    {
+      channel: "raw",
+      channelWeight: RRF_CHANNEL_WEIGHTS.raw,
+      items: rawFallback.rows.map((row, index) => ({
+        id: String(row.id),
+        rank: index + 1,
+        reason: "raw:source-match",
+        candidateRevision: String(row.document_revision),
+      })),
+    },
+    {
+      channel: "code",
+      channelWeight: RRF_CHANNEL_WEIGHTS.code,
+      items: codeFallback.rows.map((row, index) => ({
+        id: String(row.id),
+        rank: index + 1,
+        reason: "code:project-match",
+        candidateRevision: String(row.document_revision),
+      })),
+    },
+    {
+      channel: "graph",
+      channelWeight: RRF_CHANNEL_WEIGHTS.graph,
+      items: graph.rows.map((row, index) => ({
+        id: String(row.id),
+        rank: index + 1,
+        reason: "graph:bounded-path",
+        candidateRevision: row.candidateRevision,
+      })),
+    },
+  ];
+  const fused = reciprocalRankFusion(rankedChannels).slice(0, input.limit * 2);
   if (fused.length === 0) return [];
 
   const details = await db.pool.query(
@@ -1398,7 +1622,8 @@ export async function queryKnowledge(
       ? { rows: [] }
       : await db.pool.query(
           `
-          select u.id, u.document_id, u.unit_type, u.body, u.parent_unit_id,
+          select u.id, u.document_id, u.unit_type, u.heading_path, u.body,
+                 u.parent_unit_id,
                  p.unit_type parent_unit_type, p.body parent_body
             from knowledge_units u
             left join knowledge_units p
@@ -1421,8 +1646,14 @@ export async function queryKnowledge(
       String(row.id),
       {
         body: String(row.body),
+        headingPath: Array.isArray(row.heading_path)
+          ? row.heading_path.map(String)
+          : [],
         ...(row.parent_unit_id
           ? { parentUnitId: String(row.parent_unit_id) }
+          : {}),
+        ...(row.parent_unit_type
+          ? { parentUnitType: String(row.parent_unit_type) }
           : {}),
         context: rehydrateStructuralContext({
           body: String(row.body),
@@ -1496,9 +1727,20 @@ export async function queryKnowledge(
         ...(structuralContext?.parentUnitId
           ? { parentUnitId: structuralContext.parentUnitId }
           : {}),
+        ...(structuralContext?.parentUnitType
+          ? { parentUnitType: structuralContext.parentUnitType }
+          : {}),
+        ...(structuralContext?.headingPath
+          ? { headingPath: structuralContext.headingPath }
+          : {}),
         ...(structuralContext?.context
           ? { parentContext: structuralContext.context }
           : {}),
+        document: {
+          externalId: row.external_id ? String(row.external_id) : null,
+          path: String(row.path),
+          title: String(row.title),
+        },
         revision: String(row.current_revision),
         title: String(row.title),
         type: String(row.type),
@@ -1506,6 +1748,7 @@ export async function queryKnowledge(
         lifecycle: String(row.lifecycle) as SearchHit["lifecycle"],
         score: item.score,
         reasons: item.reasons,
+        fusionContributions: item.contributions,
         ...(graphProvenanceByCandidate.has(item.id)
           ? { graphProvenance: graphProvenanceByCandidate.get(item.id) }
           : {}),
@@ -1530,7 +1773,11 @@ export async function queryKnowledge(
   ).slice(0, input.limit);
 }
 
-export function registerSearchRoutes(app: FastifyInstance, db: Postgres): void {
+export function registerSearchRoutes(
+  app: FastifyInstance,
+  db: Postgres,
+  dependencies: SearchRouteDependencies = {},
+): void {
   app.post(
     "/v1/search",
     { preHandler: requirePermission("knowledge:read") },
@@ -1581,8 +1828,36 @@ export function registerSearchRoutes(app: FastifyInstance, db: Postgres): void {
         vaultIds,
         ...(vaultIds.length === 1 ? { vaultId: vaultIds[0] } : {}),
       };
-      const plan = planQuery(parsed.data.query);
-      const retrievalWarnings: string[] = [];
+      const indexRows = await db.pool.query(
+        `select vault_id,corpus_revision,lexical_revision,vector_revision,
+                graph_revision,context_pack_revision,status,warnings,
+                retrieval_configuration_version
+           from vault_index_revisions
+          where space_id=$1 and vault_id=any($2::uuid[])
+          order by vault_id`,
+        [requestedSpace, vaultIds],
+      );
+      const index = combineVaultIndexRows(indexRows.rows);
+      const capabilities = plannerCapabilitiesForIndex(index, {
+        vectorProviderAvailable: await activeVectorProviderAvailable(
+          db,
+          requestedSpace,
+          vaultIds,
+        ),
+        rawAllowed:
+          parsed.data.mode !== "COMPILED_ONLY" &&
+          hasSpaceAccess(actor, requestedSpace, "source:read"),
+        // No project code adapter is registered in the current runtime.
+        codeAdapterAvailable: false,
+      });
+      const plan = planQuery(
+        parsed.data.query,
+        parsed.data.intent,
+        capabilities,
+      );
+      const retrievalWarnings: string[] = plan.omittedChannels.map(
+        (channel) => `PLAN_CHANNEL_OMITTED:${channel}`,
+      );
       const availableChannels = new Set<RetrievalChannel>();
       const hits = await queryKnowledge(db, scopedRequest, {
         plan,
@@ -1602,15 +1877,10 @@ export function registerSearchRoutes(app: FastifyInstance, db: Postgres): void {
           );
         },
       });
-      const indexRows = await db.pool.query(
-        "select * from vault_index_revisions where space_id=$1 and vault_id=any($2::uuid[]) order by vault_id",
-        [requestedSpace, vaultIds],
-      );
-      const index = combineVaultIndexRows(indexRows.rows);
       const channelState = channelsConsistentWithIndex(
         plan.channels,
         index,
-        process.env.AKP_VECTOR_ENABLED === "true",
+        capabilities.vectorAvailable,
       );
       const effectiveChannelState = effectiveRetrievalChannels(
         channelState,
@@ -1627,7 +1897,6 @@ export function registerSearchRoutes(app: FastifyInstance, db: Postgres): void {
         intent: plan.intent,
         plan,
         degraded:
-          process.env.AKP_VECTOR_ENABLED !== "true" ||
           String(index.status ?? "DEGRADED") !== "CONSISTENT" ||
           effectiveChannelState.warnings.length > 0,
         channels: effectiveChannelState.channels,
@@ -1637,7 +1906,14 @@ export function registerSearchRoutes(app: FastifyInstance, db: Postgres): void {
         noAnswer:
           hits.length === 0
             ? {
+                status: "INSUFFICIENT_KNOWLEDGE",
                 reason: "NO_SUPPORTED_MATCH",
+                searchedChannels: effectiveChannelState.channels,
+                gaps: ["No supported source-backed match was retrieved."],
+                conflicts: [],
+                recommendedActions: [
+                  "Broaden the query or lower the minimum trust explicitly.",
+                ],
                 guidance:
                   "Broaden the query or lower the minimum trust explicitly.",
               }
@@ -1651,19 +1927,14 @@ export function registerSearchRoutes(app: FastifyInstance, db: Postgres): void {
     { preHandler: requirePermission("knowledge:read") },
     async (request, reply) => {
       const body = request.body as Record<string, unknown>;
-      const parsed = SearchRequest.safeParse(body);
+      const parsed = ContextRequest.safeParse(body);
       if (!parsed.success) {
         return reply.code(400).send({
           code: "INVALID_CONTEXT_REQUEST",
           issues: parsed.error.issues,
         });
       }
-      const plan = planQuery(parsed.data.query, String(body.intent ?? ""));
-      const intent = plan.intent;
-      const maxTokens = contextBudgetForIntent(
-        intent,
-        body.maxTokens === undefined ? undefined : Number(body.maxTokens),
-      );
+      const packetMode = parsed.data.packetMode;
       const requestedSpace = parsed.data.spaceId;
       if (!hasSpaceAccess(actorOf(request), requestedSpace, "knowledge:read")) {
         return reply.code(403).send({ code: "SPACE_ACCESS_DENIED" });
@@ -1698,12 +1969,49 @@ export function registerSearchRoutes(app: FastifyInstance, db: Postgres): void {
           )
           .send({ code });
       }
+      const {
+        packetMode: _packetMode,
+        maxTokens: requestedMaxTokens,
+        ...contextSearchRequest
+      } = parsed.data;
       const scopedRequest: SearchInput = {
-        ...parsed.data,
+        ...contextSearchRequest,
         vaultIds,
         ...(vaultIds.length === 1 ? { vaultId: vaultIds[0] } : {}),
       };
-      const retrievalWarnings: string[] = [];
+      const indexRows = await db.pool.query(
+        `
+        select vault_id,corpus_revision,lexical_revision,vector_revision,
+               graph_revision,context_pack_revision,status,warnings,
+               retrieval_configuration_version
+          from vault_index_revisions
+         where space_id=$1 and vault_id=any($2::uuid[])
+         order by vault_id
+        `,
+        [requestedSpace, vaultIds],
+      );
+      const indexRow = combineVaultIndexRows(indexRows.rows);
+      const capabilities = plannerCapabilitiesForIndex(indexRow, {
+        vectorProviderAvailable: await activeVectorProviderAvailable(
+          db,
+          requestedSpace,
+          vaultIds,
+        ),
+        rawAllowed:
+          parsed.data.mode !== "COMPILED_ONLY" &&
+          hasSpaceAccess(actor, requestedSpace, "source:read"),
+        codeAdapterAvailable: false,
+      });
+      const plan = planQuery(
+        parsed.data.query,
+        parsed.data.intent,
+        capabilities,
+      );
+      const intent = plan.intent;
+      const maxTokens = contextBudgetForIntent(intent, requestedMaxTokens);
+      const retrievalWarnings: string[] = plan.omittedChannels.map(
+        (channel) => `PLAN_CHANNEL_OMITTED:${channel}`,
+      );
       const availableChannels = new Set<RetrievalChannel>();
       const hits = await queryKnowledge(db, scopedRequest, {
         plan,
@@ -1733,22 +2041,10 @@ export function registerSearchRoutes(app: FastifyInstance, db: Postgres): void {
       const detailById = new Map(
         details.rows.map((row) => [String(row.id), row]),
       );
-      const indexRows = await db.pool.query(
-        `
-        select vault_id,corpus_revision,lexical_revision,vector_revision,
-               graph_revision,context_pack_revision,status,warnings,
-               retrieval_configuration_version
-          from vault_index_revisions
-         where space_id=$1 and vault_id=any($2::uuid[])
-         order by vault_id
-        `,
-        [requestedSpace, vaultIds],
-      );
-      const indexRow = combineVaultIndexRows(indexRows.rows);
       const channelState = channelsConsistentWithIndex(
         plan.channels,
         indexRow,
-        process.env.AKP_VECTOR_ENABLED === "true",
+        capabilities.vectorAvailable,
       );
       const effectiveChannelState = effectiveRetrievalChannels(
         channelState,
@@ -1770,49 +2066,78 @@ export function registerSearchRoutes(app: FastifyInstance, db: Postgres): void {
               `,
               [hits.map((hit) => hit.documentId), requestedSpace, vaultIds],
             );
-      const packet = buildContextPacket({
-        request: scopedRequest,
-        intent,
-        corpusRevision: String(indexRow.corpus_revision ?? "unknown"),
-        maxTokens,
-        indexRevisions: {
-          corpus: String(indexRow.corpus_revision ?? "unknown"),
-          lexical: indexRow.lexical_revision
-            ? String(indexRow.lexical_revision)
-            : null,
-          vector: indexRow.vector_revision
-            ? String(indexRow.vector_revision)
-            : null,
-          graph: indexRow.graph_revision
-            ? String(indexRow.graph_revision)
-            : null,
-          contextPack: indexRow.context_pack_revision
-            ? String(indexRow.context_pack_revision)
-            : null,
-        },
-        retrievalConfiguration: {
-          version: String(indexRow.retrieval_configuration_version ?? "rrf-v1"),
-          channels: effectiveChannelState.channels,
-          vectorEnabled: process.env.AKP_VECTOR_ENABLED === "true",
-          warnings: effectiveChannelState.warnings,
-        },
-        candidates: hits.map((hit) => {
-          const detail = detailById.get(hit.documentId);
-          return {
-            hit,
-            content: hit.parentContext ?? hit.excerpt,
-            kind: kindOf(
-              String(detail?.layer ?? ""),
-              String(detail?.type ?? hit.type),
+      let packet;
+      let responsePacket;
+      try {
+        const packetInput = {
+          request: scopedRequest,
+          intent,
+          corpusRevision: String(indexRow.corpus_revision ?? "unknown"),
+          maxTokens,
+          searchedChannels: effectiveChannelState.channels,
+          ...(dependencies.contextTokenizer
+            ? { tokenizer: dependencies.contextTokenizer }
+            : {}),
+          indexRevisions: {
+            corpus: String(indexRow.corpus_revision ?? "unknown"),
+            lexical: indexRow.lexical_revision
+              ? String(indexRow.lexical_revision)
+              : null,
+            vector: indexRow.vector_revision
+              ? String(indexRow.vector_revision)
+              : null,
+            graph: indexRow.graph_revision
+              ? String(indexRow.graph_revision)
+              : null,
+            contextPack: indexRow.context_pack_revision
+              ? String(indexRow.context_pack_revision)
+              : null,
+          },
+          retrievalConfiguration: {
+            version: String(
+              indexRow.retrieval_configuration_version ?? "rrf-v1",
             ),
-          };
-        }),
-        gaps:
-          hits.length === 0
-            ? ["No source-backed material matched the request."]
-            : [],
-        conflicts: conflicts.rows.map((row) => `${row.topic} (${row.status})`),
-      });
+            channels: effectiveChannelState.channels,
+            vectorEnabled: capabilities.vectorAvailable,
+            warnings: effectiveChannelState.warnings,
+          },
+          candidates: hits.map((hit) => {
+            const detail = detailById.get(hit.documentId);
+            return {
+              hit,
+              content: hit.parentContext ?? hit.excerpt,
+              kind: kindOf(
+                String(detail?.layer ?? ""),
+                String(detail?.type ?? hit.type),
+              ),
+            };
+          }),
+          gaps:
+            hits.length === 0
+              ? ["No source-backed material matched the request."]
+              : [],
+          conflicts: conflicts.rows.map(
+            (row) => `${row.topic} (${row.status})`,
+          ),
+        } satisfies Parameters<typeof buildContextPacket>[0];
+        if (packetMode === "COMPACT_AGENT_PACKET") {
+          const pair = buildContextPacketPair(packetInput);
+          packet = pair.full;
+          responsePacket = pair.compact;
+        } else {
+          packet = buildContextPacket(packetInput);
+          responsePacket = packet;
+        }
+      } catch (error) {
+        if (error instanceof ContextPacketBudgetError) {
+          return reply.code(422).send({
+            code: error.code,
+            maxTokens: error.maxTokens,
+            requiredTokens: error.requiredTokens,
+          });
+        }
+        throw error;
+      }
       await db.pool.query(
         `
         insert into context_packets(id, space_id, vault_id, actor_id, corpus_revision,
@@ -1836,7 +2161,7 @@ export function registerSearchRoutes(app: FastifyInstance, db: Postgres): void {
           }),
         ],
       );
-      return packet;
+      return responsePacket;
     },
   );
 }

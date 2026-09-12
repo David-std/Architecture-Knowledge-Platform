@@ -65,8 +65,22 @@ export const EvidenceLocator = z.discriminatedUnion("kind", [
 ]);
 export type EvidenceLocator = z.infer<typeof EvidenceLocator>;
 
+export const QueryIntent = z.enum([
+  "EXACT_LOOKUP",
+  "CONCEPTUAL",
+  "COMPARISON",
+  "WORKFLOW_EXECUTION",
+  "SOURCE_VERIFICATION",
+  "PROJECT_CODE",
+  "GLOBAL_SYNTHESIS",
+  "IMPACT_ANALYSIS",
+  "NO_RETRIEVAL_REQUIRED",
+]);
+export type QueryIntent = z.infer<typeof QueryIntent>;
+
 export const SearchRequest = z.object({
   query: z.string().min(1),
+  intent: QueryIntent.optional(),
   organizationId: z.string().uuid().optional(),
   spaceId: z.string().uuid(),
   vaultId: z.string().uuid().optional(),
@@ -130,7 +144,14 @@ export const SearchHit = z.object({
   unitId: z.string().uuid().optional(),
   unitType: z.string().optional(),
   parentUnitId: z.string().uuid().optional(),
+  parentUnitType: z.string().optional(),
+  headingPath: z.array(z.string()).optional(),
   parentContext: z.string().optional(),
+  document: z.object({
+    externalId: z.string().nullable(),
+    path: z.string(),
+    title: z.string(),
+  }),
   revision: z.string(),
   title: z.string(),
   type: z.string(),
@@ -138,6 +159,17 @@ export const SearchHit = z.object({
   lifecycle: Lifecycle,
   score: z.number(),
   reasons: z.array(z.string()),
+  fusionContributions: z
+    .array(
+      z.object({
+        channel: z.string().min(1),
+        rank: z.number().int().positive(),
+        channelWeight: z.number().nonnegative(),
+        reason: z.string().min(1),
+        candidateRevision: z.string().nullable().optional(),
+      }),
+    )
+    .optional(),
   excerpt: z.string(),
   citations: z.array(z.string()),
   warnings: z.array(z.string()).optional(),
@@ -164,6 +196,9 @@ export const ContextSection = z.object({
   unitId: z.string().uuid().optional(),
   parentUnitId: z.string().uuid().optional(),
   unitType: z.string().optional(),
+  parentUnitType: z.string().optional(),
+  headingPath: z.array(z.string()).optional(),
+  document: SearchHit.shape.document,
   retrievalChannels: z.array(z.string()).optional(),
   documentRevision: z.string(),
   score: z.number().optional(),
@@ -172,7 +207,38 @@ export const ContextSection = z.object({
   graphProvenance: z.array(GraphPathProvenance).optional(),
 });
 
+export const ContextPacketMode = z.enum([
+  "FULL_CONTEXT_PACKET",
+  "COMPACT_AGENT_PACKET",
+]);
+export type ContextPacketMode = z.infer<typeof ContextPacketMode>;
+
+export const ContextRequest = SearchRequest.extend({
+  maxTokens: z.number().int().min(256).max(32000).optional(),
+  packetMode: ContextPacketMode.default("FULL_CONTEXT_PACKET"),
+});
+export type ContextRequest = z.infer<typeof ContextRequest>;
+
+export const TokenizerMetadata = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  approximate: z.boolean(),
+  source: z.enum(["injected", "fallback"]),
+});
+export type TokenizerMetadata = z.infer<typeof TokenizerMetadata>;
+
+export const ContextPacketBudget = z.object({
+  maxTokens: z.number().int().positive(),
+  usedTokens: z.number().int().nonnegative(),
+  contentTokens: z.number().int().nonnegative(),
+  metadataTokens: z.number().int().nonnegative(),
+  serializedTokens: z.number().int().nonnegative(),
+  tokenizer: TokenizerMetadata,
+});
+export type ContextPacketBudget = z.infer<typeof ContextPacketBudget>;
+
 export const ContextPacket = z.object({
+  packetMode: z.literal("FULL_CONTEXT_PACKET"),
   packetId: z.string().uuid(),
   vaultId: z.string().uuid().optional(),
   query: z.string(),
@@ -188,16 +254,15 @@ export const ContextPacket = z.object({
     federated: z.boolean().default(false),
   }),
   generatedAt: z.string().datetime(),
-  budget: z.object({
-    maxTokens: z.number().int().positive(),
-    usedTokens: z.number().int().nonnegative(),
-  }),
+  budget: ContextPacketBudget,
   mode: SearchRequest.shape.mode,
+  searchedChannels: z.array(z.string()),
   sections: z.array(ContextSection),
   citations: z.array(z.string()),
   gaps: z.array(z.string()),
   conflicts: z.array(z.string()),
   requiredActions: z.array(z.string()),
+  recommendedActions: z.array(z.string()),
   continuations: z.array(
     z.object({
       handle: z.string(),
@@ -208,6 +273,62 @@ export const ContextPacket = z.object({
   packetHash: z.string(),
 });
 export type ContextPacket = z.infer<typeof ContextPacket>;
+
+export const CompactContextSection = z.object({
+  kind: ContextSection.shape.kind,
+  identity: z.object({
+    documentId: z.string().uuid(),
+    vaultId: z.string().uuid(),
+    title: z.string(),
+    revision: z.string(),
+    unitId: z.string().uuid().optional(),
+    parentUnitId: z.string().uuid().optional(),
+    unitType: z.string().optional(),
+    parentUnitType: z.string().optional(),
+    headingPath: z.array(z.string()).optional(),
+    document: SearchHit.shape.document,
+  }),
+  content: z.string(),
+  references: z.array(z.string()),
+  citations: z.array(z.string()),
+  retrievalChannels: z.array(z.string()),
+  selectionReason: z.string(),
+  score: z.number().optional(),
+  graphProvenance: z.array(GraphPathProvenance).optional(),
+});
+export type CompactContextSection = z.infer<typeof CompactContextSection>;
+
+export const CompactAgentPacket = z.object({
+  packetMode: z.literal("COMPACT_AGENT_PACKET"),
+  identity: z.object({
+    packetId: z.string().uuid(),
+    query: z.string(),
+    intent: z.string(),
+    corpusRevision: z.string(),
+    status: ContextPacket.shape.status,
+    mode: SearchRequest.shape.mode,
+    scope: ContextPacket.shape.scope,
+    indexRevisions: ContextPacket.shape.indexRevisions,
+  }),
+  content: z.array(CompactContextSection),
+  references: z.array(z.string()),
+  citations: z.array(z.string()),
+  searchedChannels: z.array(z.string()),
+  conflicts: z.array(z.string()),
+  gaps: z.array(z.string()),
+  requiredActions: z.array(z.string()),
+  recommendedActions: z.array(z.string()),
+  continuations: ContextPacket.shape.continuations,
+  budget: ContextPacketBudget,
+  packetHash: z.string(),
+});
+export type CompactAgentPacket = z.infer<typeof CompactAgentPacket>;
+
+export const ContextPacketResponse = z.discriminatedUnion("packetMode", [
+  ContextPacket,
+  CompactAgentPacket,
+]);
+export type ContextPacketResponse = z.infer<typeof ContextPacketResponse>;
 
 export const IngestRequest = z.object({
   spaceId: z.string().uuid(),

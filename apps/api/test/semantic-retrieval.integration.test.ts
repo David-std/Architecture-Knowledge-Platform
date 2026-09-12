@@ -460,8 +460,8 @@ describe("semantic retrieval PostgreSQL integration", () => {
         );
         expect(degradedHits).toHaveLength(1);
         expect(degradedHits[0]?.documentId).toBe(fixture.primary.documentId);
-        expect(degradedHits[0]?.reasons).toContain("exact-or-alias");
-        expect(degradedHits[0]?.reasons).toContain("lexical");
+        expect(degradedHits[0]?.reasons).toContain("exact:title");
+        expect(degradedHits[0]?.reasons).toContain("lexical:path-terms");
         expect(degradedHits[0]?.reasons).not.toContain("vector");
         expect(unavailableWarnings).toEqual([
           `VECTOR_PROVIDER_UNAVAILABLE:${fixture.primary.vaultId}`,

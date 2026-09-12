@@ -108,7 +108,7 @@ describe("semantic vector query", () => {
               ],
             };
           }
-          if (sql.includes("select d.id,")) {
+          if (sql.includes("left join knowledge_relations")) {
             return {
               rows: [
                 {
@@ -191,7 +191,7 @@ describe("semantic vector query", () => {
       pool: {
         query: async (sql: string) => {
           calls.push(sql);
-          if (sql.includes("websearch_to_tsquery")) {
+          if (sql.includes("plainto_tsquery")) {
             return {
               rows: [
                 {
@@ -239,7 +239,7 @@ describe("semantic vector query", () => {
               ],
             };
           }
-          if (sql.includes("select d.id,")) {
+          if (sql.includes("left join knowledge_relations")) {
             return {
               rows: [
                 {
@@ -295,9 +295,7 @@ describe("semantic vector query", () => {
         documentId,
         reasons: ["lexical"],
       });
-      expect(calls.some((sql) => sql.includes("websearch_to_tsquery"))).toBe(
-        true,
-      );
+      expect(calls.some((sql) => sql.includes("plainto_tsquery"))).toBe(true);
       expect(warnings).toEqual([`VECTOR_PROVIDER_UNAVAILABLE:${vaultId}`]);
       expect(warnings.join(" ")).not.toContain("secret detail");
     } finally {
@@ -336,6 +334,26 @@ describe("semantic vector query", () => {
     expect(none.channels).toEqual(["lexical"]);
   });
 
+  it("does not report graph as searched when traversal could not execute", () => {
+    const channelState = channelsConsistentWithIndex(
+      ["exact", "lexical", "graph"],
+      {
+        corpus_revision: "corpus-1",
+        lexical_revision: "corpus-1",
+        graph_revision: "corpus-1",
+      },
+      false,
+    );
+
+    const effective = effectiveRetrievalChannels(
+      channelState,
+      [],
+      new Set(["exact", "lexical"]),
+    );
+
+    expect(effective.channels).toEqual(["exact", "lexical"]);
+  });
+
   it("continues lexical retrieval when the pgvector query fails", async () => {
     const previous = process.env.AKP_VECTOR_ENABLED;
     process.env.AKP_VECTOR_ENABLED = "true";
@@ -344,7 +362,7 @@ describe("semantic vector query", () => {
       pool: {
         query: async (sql: string) => {
           calls.push(sql);
-          if (sql.includes("websearch_to_tsquery")) {
+          if (sql.includes("plainto_tsquery")) {
             return {
               rows: [
                 {
@@ -394,7 +412,7 @@ describe("semantic vector query", () => {
           if (sql.includes("e.generation_id=$1")) {
             throw new Error("pgvector operator unavailable");
           }
-          if (sql.includes("select d.id,")) {
+          if (sql.includes("left join knowledge_relations")) {
             return {
               rows: [
                 {
@@ -458,9 +476,7 @@ describe("semantic vector query", () => {
       });
       expect(availableChannels.has("vector")).toBe(false);
       expect(warnings).toContain(`VECTOR_QUERY_UNAVAILABLE:${vaultId}`);
-      expect(calls.some((sql) => sql.includes("websearch_to_tsquery"))).toBe(
-        true,
-      );
+      expect(calls.some((sql) => sql.includes("plainto_tsquery"))).toBe(true);
       const effective = effectiveRetrievalChannels(
         channelsConsistentWithIndex(
           ["vector", "lexical"],

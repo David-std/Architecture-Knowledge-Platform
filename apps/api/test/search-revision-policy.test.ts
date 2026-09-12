@@ -180,7 +180,9 @@ describe("retrieval revision policy", () => {
       'evidence:{"kind":"markdown","path":"shared/local.md"}',
     ]);
     expect(hits[0]?.warnings).toContain("UNTRUSTED_RETRIEVED_CONTENT");
-    const detailsSql = calls.find((sql) => sql.includes("select d.id,"));
+    const detailsSql = calls.find((sql) =>
+      sql.includes("left join knowledge_relations"),
+    );
     expect(detailsSql).toContain("cited.space_id = d.space_id");
     expect(detailsSql).toContain(
       "cited.vault_id is not distinct from d.vault_id",

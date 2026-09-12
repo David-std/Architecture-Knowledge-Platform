@@ -142,6 +142,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "apps/api/test/lexical-ranking.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "apps/api/test/product-lifecycle.integration.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
@@ -757,6 +762,11 @@
       "reason": "append-only database migration"
     },
     {
+      "path": "db/migrations/023_lexical_field_projections.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
       "path": "dependency-cruiser.cjs",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -1060,6 +1070,11 @@
       "path": "packages/contracts/src/index.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/contracts/test/context-request.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
     },
     {
       "path": "packages/contracts/test/document-artifact.test.ts",

@@ -206,7 +206,9 @@ describe("recursive graph retrieval PostgreSQL integration", () => {
         const threeHop = await queryKnowledge(db, searchRequest(fixture), {
           vaultIds: [fixture.vaultId],
           channels: ["exact", "graph"],
-          plan: planQuery("GRAPH-A", "IMPACT_ANALYSIS"),
+          plan: planQuery("GRAPH-A", "IMPACT_ANALYSIS", {
+            graphConsistent: true,
+          }),
           graphPolicy: { directionPolicy: "outgoing" },
           graphScopes: [{ vaultId: fixture.vaultId, pathPrefix: null }],
         });
@@ -214,7 +216,7 @@ describe("recursive graph retrieval PostgreSQL integration", () => {
           (hit) => hit.documentId === fixture.documents.D,
         );
         expect(threeHopD).toBeDefined();
-        expect(threeHopD?.reasons).toContain("graph");
+        expect(threeHopD?.reasons).toContain("graph:bounded-path");
         expect(threeHopD?.graphProvenance?.[0]).toMatchObject({
           channel: "graph",
           seedDocumentId: fixture.documents.A,

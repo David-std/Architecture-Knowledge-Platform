@@ -36,6 +36,7 @@ describe("graph provenance contracts", () => {
         vaultId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         revision: "revision-1",
         title: "C",
+        document: { externalId: "C", path: "concepts/c.md", title: "C" },
         type: "concept",
         trust: "HUMAN_REVIEWED",
         lifecycle: "ACTIVE",

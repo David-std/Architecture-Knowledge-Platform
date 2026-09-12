@@ -802,8 +802,11 @@ export function registerGovernanceRoutes(
           },
         },
       );
-      const exact = hits.filter((hit) =>
-        hit.reasons.includes("exact-or-alias"),
+      const exact = hits.filter(
+        (hit) =>
+          hit.fusionContributions?.some(
+            (contribution) => contribution.channel === "exact",
+          ) ?? hit.reasons.some((reason) => reason.startsWith("exact:")),
       );
       return {
         classification:
