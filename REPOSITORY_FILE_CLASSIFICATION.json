@@ -537,6 +537,16 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/worker/src/compilation-probes.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/worker/src/compilation-stage.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/worker/src/document-artifact.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -557,6 +567,16 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/worker/src/evidence-fragment.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/worker/src/knowledge-compilation.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/worker/src/lifecycle.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -572,6 +592,16 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/worker/test/compilation-probes.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/worker/test/compilation-stage.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "apps/worker/test/document-artifact.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
@@ -583,6 +613,16 @@
     },
     {
       "path": "apps/worker/test/event-handlers.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/worker/test/evidence-fragment.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/worker/test/knowledge-compilation.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -1047,12 +1087,47 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/compiler/src/contracts.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/compiler/src/grounding.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/compiler/src/index.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/compiler/src/openai-compatible.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/compiler/src/provider-registry.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/compiler/test/compiler-contract.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/compiler/test/openai-compatible.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "packages/compiler/test/path-safety.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/compiler/test/provider-registry.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
