@@ -114,10 +114,14 @@ describe("OpenAI-compatible compiler HTTP integration", () => {
       };
       expect(body.model).toBe("deterministic-compiler");
       expect(body.response_format).toEqual({ type: "json_object" });
-      const userPrompt = body.messages.find((message) => message.role === "user")?.content;
+      const userPrompt = body.messages.find(
+        (message) => message.role === "user",
+      )?.content;
       if (!userPrompt) throw new Error("Missing compiler user prompt");
       const serializedInput = userPrompt.slice(userPrompt.indexOf("\n") + 1);
-      const boundedInput = KnowledgeCompilerInput.parse(JSON.parse(serializedInput));
+      const boundedInput = KnowledgeCompilerInput.parse(
+        JSON.parse(serializedInput),
+      );
       const evidence = boundedInput.evidence[0];
       if (!evidence) throw new Error("Missing bounded evidence");
 
@@ -190,7 +194,8 @@ describe("OpenAI-compatible compiler HTTP integration", () => {
       AKP_LLM_TIMEOUT_MS: "5000",
       AKP_LLM_MAX_RETRIES: "0",
     });
-    if (!configured) throw new Error("Compiler configuration unexpectedly disabled");
+    if (!configured)
+      throw new Error("Compiler configuration unexpectedly disabled");
 
     const result = await configured.compiler.compile(input());
 
