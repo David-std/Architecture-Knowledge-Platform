@@ -167,25 +167,21 @@ describe("Knowledge Compiler contracts", () => {
     ).toThrow(/Unsafe knowledge path/);
   });
 
-  it(
-    "converts a grounded result into the existing review plan without publication",
-    () => {
-      const plan = resultToCompilationPlan(compilerInput(), groundedResult());
-      expect(plan).toMatchObject({
-        sourceId: SOURCE_ID,
-        corpusRevision: "corpus-7",
-        disposition: "NEW",
-        impactedDocumentIds: [DOCUMENT_ID],
-      });
-      expect(plan.proposedChanges[0]?.evidenceIds).toEqual([EVIDENCE_ID]);
-      expect(plan.probes[0]?.evidenceIds).toEqual([EVIDENCE_ID]);
-    },
-  );
+  it("converts a grounded result into the existing review plan without publication", () => {
+    const plan = resultToCompilationPlan(compilerInput(), groundedResult());
+    expect(plan).toMatchObject({
+      sourceId: SOURCE_ID,
+      corpusRevision: "corpus-7",
+      disposition: "NEW",
+      impactedDocumentIds: [DOCUMENT_ID],
+    });
+    expect(plan.proposedChanges[0]?.evidenceIds).toEqual([EVIDENCE_ID]);
+    expect(plan.probes[0]?.evidenceIds).toEqual([EVIDENCE_ID]);
+  });
 
-  it(
-    "executes a bounded OpenAI-compatible structured generation request",
-    async () => {
-      const fetchMock = vi.fn<typeof fetch>(async () =>
+  it("executes a bounded OpenAI-compatible structured generation request", async () => {
+    const fetchMock = vi.fn<typeof fetch>(
+      async () =>
         new Response(
           JSON.stringify({
             choices: [
@@ -194,23 +190,22 @@ describe("Knowledge Compiler contracts", () => {
           }),
           { status: 200, headers: { "content-type": "application/json" } },
         ),
-      );
-      const compiler = new OpenAICompatibleKnowledgeCompiler(
-        {
-          baseUrl: "https://compiler.example.test/v1",
-          apiKey: "test-secret",
-          model: "bounded-compiler",
-          maxRetries: 0,
-        },
-        fetchMock,
-      );
+    );
+    const compiler = new OpenAICompatibleKnowledgeCompiler(
+      {
+        baseUrl: "https://compiler.example.test/v1",
+        apiKey: "test-secret",
+        model: "bounded-compiler",
+        maxRetries: 0,
+      },
+      fetchMock,
+    );
 
-      const result = await compiler.compile(compilerInput());
-      expect(result.knowledgeCandidates[0]?.candidateId).toBe("candidate-1");
-      expect(fetchMock).toHaveBeenCalledOnce();
-      const init = fetchMock.mock.calls[0]?.[1];
-      expect(String(init?.body)).toContain("allowDirectPublication");
-      expect(String(init?.body)).not.toContain("test-secret");
-    },
-  );
+    const result = await compiler.compile(compilerInput());
+    expect(result.knowledgeCandidates[0]?.candidateId).toBe("candidate-1");
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const init = fetchMock.mock.calls[0]?.[1];
+    expect(String(init?.body)).toContain("allowDirectPublication");
+    expect(String(init?.body)).not.toContain("test-secret");
+  });
 });
