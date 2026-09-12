@@ -111,15 +111,18 @@ export class OpenAICompatibleKnowledgeCompiler implements KnowledgeCompilerPort 
         this.#options.timeoutMs,
       );
       try {
-        const response = await this.#fetch(joinEndpoint(this.#options.baseUrl), {
-          method: "POST",
-          headers: {
-            authorization: `Bearer ${this.#options.apiKey}`,
-            "content-type": "application/json",
+        const response = await this.#fetch(
+          joinEndpoint(this.#options.baseUrl),
+          {
+            method: "POST",
+            headers: {
+              authorization: `Bearer ${this.#options.apiKey}`,
+              "content-type": "application/json",
+            },
+            body: requestBody,
+            signal: controller.signal,
           },
-          body: requestBody,
-          signal: controller.signal,
-        });
+        );
         if (!response.ok) {
           const retryable = isRetryableStatus(response.status);
           lastError = new Error(
