@@ -125,7 +125,8 @@ export class OpenAICompatibleKnowledgeCompiler implements KnowledgeCompilerPort 
           lastError = new Error(
             `COMPILER_PROVIDER_HTTP_${response.status}${retryable ? "_RETRYABLE" : ""}`,
           );
-          if (!retryable || attempt === this.#options.maxRetries) throw lastError;
+          if (!retryable || attempt === this.#options.maxRetries)
+            throw lastError;
         } else {
           const responseJson = (await response.json()) as unknown;
           let parsed: unknown;
