@@ -111,7 +111,8 @@ async function loadEvidence(
   );
   const row = result.rows[0];
   if (!row) throw new Error("COMPILER_EVIDENCE_NOT_FOUND");
-  if (!row.excerpt?.trim()) throw new Error("COMPILER_EVIDENCE_EXCERPT_REQUIRED");
+  if (!row.excerpt?.trim())
+    throw new Error("COMPILER_EVIDENCE_EXCERPT_REQUIRED");
   if (!/^[a-f0-9]{64}$/.test(row.content_hash)) {
     throw new Error("COMPILER_EVIDENCE_HASH_INVALID");
   }
