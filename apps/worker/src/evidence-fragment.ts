@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
-import type { DocumentArtifact, StructuralLocator } from "@akp/contracts";
+import type { DocumentArtifact } from "@akp/contracts";
 
 type DocumentArtifactItem = DocumentArtifact["paragraphs"][number];
+type StructuralLocatorType = DocumentArtifact["locators"][number];
 
 export interface EvidenceFragment {
-  locator: StructuralLocator;
+  locator: StructuralLocatorType;
   excerpt: string;
   excerptHash: string;
   precision: "STRUCTURAL" | "SOURCE";
@@ -70,7 +71,7 @@ export function selectEvidenceFragment(
 
   const excerpt = normalizedExcerpt(fallbackText, maxCharacters);
   if (!excerpt) throw new Error("EVIDENCE_FRAGMENT_TEXT_REQUIRED");
-  const locator: StructuralLocator = {
+  const locator: StructuralLocatorType = {
     kind: "source",
     source_hash: artifact.source_hash,
     path: `source:${artifact.source_id}`,
