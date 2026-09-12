@@ -179,7 +179,7 @@ describe("Knowledge Compiler contracts", () => {
   });
 
   it("executes a bounded OpenAI-compatible structured generation request", async () => {
-    const fetchMock = vi.fn(async () =>
+    const fetchMock = vi.fn<typeof fetch>(async () =>
       new Response(
         JSON.stringify({
           choices: [
@@ -196,13 +196,13 @@ describe("Knowledge Compiler contracts", () => {
         model: "bounded-compiler",
         maxRetries: 0,
       },
-      fetchMock as typeof fetch,
+      fetchMock,
     );
 
     const result = await compiler.compile(compilerInput());
     expect(result.knowledgeCandidates[0]?.candidateId).toBe("candidate-1");
     expect(fetchMock).toHaveBeenCalledOnce();
-    const [, init] = fetchMock.mock.calls[0] ?? [];
+    const init = fetchMock.mock.calls[0]?.[1];
     expect(String(init?.body)).toContain("allowDirectPublication");
     expect(String(init?.body)).not.toContain("test-secret");
   });
