@@ -71,19 +71,16 @@ export const CompilerPolicy = z
   .object({
     reviewRequired: z.literal(true).default(true),
     allowDirectPublication: z.literal(false).default(false),
-    allowedKnowledgeKinds: z
-      .array(KnowledgeKind)
-      .min(1)
-      .default([
-        "claim",
-        "decision",
-        "rule",
-        "workflow",
-        "concept",
-        "example",
-        "counterexample",
-        "artifact",
-      ]),
+    allowedKnowledgeKinds: z.array(KnowledgeKind).min(1).default([
+      "claim",
+      "decision",
+      "rule",
+      "workflow",
+      "concept",
+      "example",
+      "counterexample",
+      "artifact",
+    ]),
   })
   .strict();
 export type CompilerPolicy = z.infer<typeof CompilerPolicy>;
@@ -115,7 +112,8 @@ export const KnowledgeCompilerInput = z
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["documentArtifact", "source_id"],
-        message: "document artifact source identity does not match compiler source",
+        message:
+          "document artifact source identity does not match compiler source",
       });
     }
     if (input.documentArtifact.source_hash !== input.source.sha256) {
