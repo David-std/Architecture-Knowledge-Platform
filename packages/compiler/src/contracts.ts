@@ -205,9 +205,7 @@ export const KnowledgeContradiction = z
     candidateId: z.string().min(1).max(128),
     existingDocumentId: z.string().uuid(),
     explanation: z.string().min(1).max(8_000),
-    severity: z
-      .enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"])
-      .default("HIGH"),
+    severity: z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]).default("HIGH"),
     evidenceIds: z.array(z.string().uuid()).min(1).max(20),
   })
   .strict();
