@@ -16,6 +16,16 @@ const VAULT_ID = "66666666-6666-4666-8666-666666666666";
 const SOURCE_HASH = "a".repeat(64);
 const EXCERPT_HASH = "b".repeat(64);
 
+function evidenceLocator() {
+  return {
+    kind: "paragraph",
+    source_hash: SOURCE_HASH,
+    path: `source:${SOURCE_ID}`,
+    paragraph: 1,
+    heading_path: ["Guidance"],
+  };
+}
+
 function compilerInput() {
   return KnowledgeCompilerInput.parse({
     source: {
@@ -31,18 +41,13 @@ function compilerInput() {
       media_type: "text/markdown",
       extractor: "fixture",
       extractor_version: "1",
+      locators: [evidenceLocator()],
     },
     evidence: [
       {
         id: EVIDENCE_ID,
         sourceArtifactId: ARTIFACT_ID,
-        locator: {
-          kind: "paragraph",
-          source_hash: SOURCE_HASH,
-          path: `source:${SOURCE_ID}`,
-          paragraph: 1,
-          heading_path: ["Guidance"],
-        },
+        locator: evidenceLocator(),
         excerpt:
           "Invalidate cached material when its authoritative revision changes.",
         excerptHash: EXCERPT_HASH,
@@ -82,19 +87,13 @@ function groundedResult() {
   return {
     identity: {
       classification: "DISTINCT" as const,
+      candidates: [DOCUMENT_ID],
       reason: "The source adds a bounded operational rule.",
     },
     evidenceCandidates: [
       {
-        evidenceId: EVIDENCE_ID,
         sourceArtifactId: ARTIFACT_ID,
-        locator: {
-          kind: "paragraph",
-          source_hash: SOURCE_HASH,
-          path: `source:${SOURCE_ID}`,
-          paragraph: 1,
-          heading_path: ["Guidance"],
-        },
+        locator: evidenceLocator(),
         excerptHash: EXCERPT_HASH,
       },
     ],
@@ -149,6 +148,14 @@ describe("Knowledge Compiler contracts", () => {
     expect(() =>
       normalizeKnowledgeCompilerResult(compilerInput(), invalid),
     ).toThrow(/UNKNOWN_EVIDENCE/);
+  });
+
+  it("rejects an evidence candidate that mutates the supplied locator/hash", () => {
+    const invalid = groundedResult();
+    invalid.evidenceCandidates[0]!.excerptHash = "c".repeat(64);
+    expect(() =>
+      normalizeKnowledgeCompilerResult(compilerInput(), invalid),
+    ).toThrow(/EVIDENCE_CANDIDATE_NOT_GROUNDED/);
   });
 
   it("rejects traversal in configured or generated knowledge paths", () => {

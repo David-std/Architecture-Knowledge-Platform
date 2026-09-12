@@ -1,6 +1,7 @@
 import {
   KnowledgeCompilerInput,
   KnowledgeCompilerResult,
+  type CompilerEvidence,
   type KnowledgeCompilerInput as KnowledgeCompilerInputType,
   type KnowledgeCompilerResult as KnowledgeCompilerResultType,
   type KnowledgeKind,
@@ -85,6 +86,42 @@ function assertEvidenceReferences(
   }
 }
 
+function locatorFingerprint(locator: CompilerEvidence["locator"]): string {
+  return JSON.stringify(locator);
+}
+
+function evidenceForResultCandidate(
+  inputEvidence: CompilerEvidence[],
+  candidate: {
+    sourceArtifactId: string;
+    locator: CompilerEvidence["locator"];
+    excerptHash: string;
+  },
+): CompilerEvidence | undefined {
+  const candidateLocator = locatorFingerprint(candidate.locator);
+  return inputEvidence.find(
+    (evidence) =>
+      evidence.sourceArtifactId === candidate.sourceArtifactId &&
+      evidence.excerptHash === candidate.excerptHash &&
+      locatorFingerprint(evidence.locator) === candidateLocator,
+  );
+}
+
+function artifactSupportsPreciseLocators(
+  input: KnowledgeCompilerInputType,
+): boolean {
+  return input.documentArtifact.locators.some(
+    (locator) =>
+      locator.kind !== "source" ||
+      locator.page != null ||
+      locator.slide != null ||
+      locator.paragraph != null ||
+      locator.table != null ||
+      locator.start_line != null ||
+      locator.start_char != null,
+  );
+}
+
 export function normalizeKnowledgeCompilerResult(
   inputValue: KnowledgeCompilerInputType,
   resultValue: unknown,
@@ -110,6 +147,11 @@ export function normalizeKnowledgeCompilerResult(
     result.knowledgeCandidates.map((entry) => entry.candidateId),
   );
 
+  for (const documentId of result.identity.candidates) {
+    if (!allowedDocumentIds.has(documentId)) {
+      throw new Error(`COMPILER_IDENTITY_UNKNOWN_CANDIDATE:${documentId}`);
+    }
+  }
   if (
     result.identity.existingDocumentId &&
     !allowedDocumentIds.has(result.identity.existingDocumentId)
@@ -118,22 +160,12 @@ export function normalizeKnowledgeCompilerResult(
   }
 
   for (const candidate of result.evidenceCandidates) {
-    const original = evidenceById.get(candidate.evidenceId);
-    if (!original) {
-      throw new Error(
-        `COMPILER_EVIDENCE_CANDIDATE_UNKNOWN:${candidate.evidenceId}`,
-      );
-    }
-    if (
-      candidate.sourceArtifactId !== original.sourceArtifactId ||
-      candidate.excerptHash !== original.excerptHash
-    ) {
-      throw new Error(
-        `COMPILER_EVIDENCE_CANDIDATE_MUTATED:${candidate.evidenceId}`,
-      );
+    if (!evidenceForResultCandidate(input.evidence, candidate)) {
+      throw new Error("COMPILER_EVIDENCE_CANDIDATE_NOT_GROUNDED");
     }
   }
 
+  const requiresPreciseLocator = artifactSupportsPreciseLocators(input);
   for (const candidate of result.knowledgeCandidates) {
     if (!input.policy.allowedKnowledgeKinds.includes(candidate.kind)) {
       throw new Error(`COMPILER_KIND_NOT_ALLOWED:${candidate.kind}`);
@@ -149,6 +181,17 @@ export function normalizeKnowledgeCompilerResult(
     ) {
       throw new Error(
         `COMPILER_KNOWLEDGE_CANDIDATE_UNKNOWN_DOCUMENT:${candidate.existingDocumentId}`,
+      );
+    }
+    if (
+      requiresPreciseLocator &&
+      candidate.proposedAction !== "NO_MATERIAL" &&
+      candidate.evidenceIds.every(
+        (evidenceId) => evidenceById.get(evidenceId)?.locator.kind === "source",
+      )
+    ) {
+      throw new Error(
+        `COMPILER_PRECISE_LOCATOR_REQUIRED:${candidate.candidateId}`,
       );
     }
   }

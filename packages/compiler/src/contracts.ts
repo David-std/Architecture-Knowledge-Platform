@@ -17,7 +17,6 @@ export const KnowledgeKind = z.enum([
   "concept",
   "example",
   "counterexample",
-  "artifact",
 ]);
 export type KnowledgeKind = z.infer<typeof KnowledgeKind>;
 
@@ -82,7 +81,6 @@ export const CompilerPolicy = z
         "concept",
         "example",
         "counterexample",
-        "artifact",
       ]),
   })
   .strict();
@@ -164,6 +162,7 @@ export type IdentityClassification = z.infer<typeof IdentityClassification>;
 export const IdentityAssessment = z
   .object({
     classification: IdentityClassification,
+    candidates: z.array(z.string().uuid()).max(20).default([]),
     existingDocumentId: z.string().uuid().optional(),
     reason: z.string().min(1).max(4_000),
   })
@@ -172,7 +171,6 @@ export type IdentityAssessment = z.infer<typeof IdentityAssessment>;
 
 export const EvidenceCandidate = z
   .object({
-    evidenceId: z.string().uuid(),
     sourceArtifactId: z.string().uuid(),
     locator: StructuralLocator,
     excerptHash: Sha256,
@@ -207,7 +205,9 @@ export const KnowledgeContradiction = z
     candidateId: z.string().min(1).max(128),
     existingDocumentId: z.string().uuid(),
     explanation: z.string().min(1).max(8_000),
-    severity: z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]),
+    severity: z
+      .enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"])
+      .default("HIGH"),
     evidenceIds: z.array(z.string().uuid()).min(1).max(20),
   })
   .strict();
