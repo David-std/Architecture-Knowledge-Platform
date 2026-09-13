@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { akp } from "../../../lib/api";
+import {
+  asRecord,
+  asStrings,
+  normalizeReviewManifest,
+} from "../../../lib/review-manifest";
 
 interface ReviewResponse {
   id: string;
@@ -26,28 +31,7 @@ interface OperatorMe {
   } | null;
 }
 
-function records(value: unknown): Array<Record<string, unknown>> {
-  return Array.isArray(value)
-    ? value.filter(
-        (entry): entry is Record<string, unknown> =>
-          Boolean(entry) && typeof entry === "object" && !Array.isArray(entry),
-      )
-    : [];
-}
-
-function strings(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((entry): entry is string => typeof entry === "string")
-    : [];
-}
-
 function summary(value: unknown): string {
-  if (typeof value === "string") return value;
-  if (value === null || value === undefined) return "—";
-  return JSON.stringify(value);
-}
-
-function structuredLabel(value: unknown): string {
   if (
     typeof value === "string" ||
     typeof value === "number" ||
@@ -55,35 +39,28 @@ function structuredLabel(value: unknown): string {
   ) {
     return String(value);
   }
-  if (!value || typeof value !== "object" || Array.isArray(value)) return "—";
-  const record = value as Record<string, unknown>;
-  for (const key of [
-    "statement",
-    "title",
-    "external_id",
-    "externalId",
-    "document_id",
-    "documentId",
-    "id",
-    "path",
-    "kind",
-  ]) {
-    const candidate = record[key];
-    if (
-      typeof candidate === "string" ||
-      typeof candidate === "number" ||
-      typeof candidate === "boolean"
-    ) {
-      return String(candidate);
-    }
-  }
-  return "Estructura registrada; usa la inspección JSON para el detalle completo.";
+  if (value === null || value === undefined) return "—";
+  return JSON.stringify(value);
 }
 
-function conflictEvidence(conflict: Record<string, unknown>): string[] {
-  return strings(
-    conflict.evidence_ids ?? conflict.evidenceIds ?? conflict.evidence,
-  );
+function locatorSummary(value: unknown): string {
+  const locator = asRecord(value);
+  const parts = [
+    ["kind", locator.kind],
+    ["path", locator.path],
+    ["page", locator.page],
+    ["slide", locator.slide],
+    ["paragraph", locator.paragraph],
+    ["table", locator.table],
+    ["start_line", locator.start_line],
+    ["start_char", locator.start_char],
+  ]
+    .filter(
+      (entry): entry is [string, string | number] =>
+        typeof entry[1] === "string" || typeof entry[1] === "number",
+    )
+    .map(([key, item]) => `${key}=${item}`);
+  return parts.length ? parts.join(" · ") : "Locator estructurado disponible";
 }
 
 export default async function ReviewPage({
@@ -98,6 +75,20 @@ export default async function ReviewPage({
   ]);
   const impact = review.impact_manifest ?? {};
   const validation = review.validation_report ?? {};
+  const normalized = normalizeReviewManifest(impact, validation);
+  const {
+    reviewContext,
+    identity,
+    evidence,
+    existingCandidates,
+    candidates,
+    contradictions,
+    proposedChanges,
+    probes,
+    evidenceIds,
+    impactedIds,
+    warnings,
+  } = normalized;
   const memberships = me.actor?.memberships ?? [];
   const reviewMembership = memberships.find(
     (membership) =>
@@ -113,21 +104,14 @@ export default async function ReviewPage({
   const canApprove = reviewMembership?.pathPrefix === null;
   const canRollback = adminMembership?.pathPrefix === null;
   const pending = ["PENDING", "CHANGES_REQUESTED"].includes(review.status);
-  const candidates = records(
-    impact.knowledgeCandidates ??
-      impact.knowledge_candidates ??
-      impact.candidates,
-  );
-  const contradictions = records(impact.contradictions ?? impact.conflicts);
-  const proposedChanges = records(
-    impact.proposedChanges ?? impact.proposed_changes,
-  );
-  const probes = records(validation.probeResults ?? impact.probes);
-  const issues = records(validation.issues);
-  const evidenceIds = strings(impact.evidenceIds ?? impact.evidence_ids);
-  const impactedIds = strings(
-    impact.impactedDocumentIds ?? impact.impacted_document_ids,
-  );
+  const issues = Array.isArray(validation.issues)
+    ? validation.issues.filter(
+        (entry): entry is Record<string, unknown> =>
+          Boolean(entry) && typeof entry === "object" && !Array.isArray(entry),
+      )
+    : [];
+  const identityCandidates = asStrings(identity.candidates);
+  const hasCompilerContext = Object.keys(reviewContext).length > 0;
 
   async function decide(formData: FormData) {
     "use server";
@@ -251,14 +235,54 @@ export default async function ReviewPage({
       ) : null}
 
       <h2>Propuesta de compilación</h2>
+      {!hasCompilerContext ? (
+        <p className="card muted">
+          Esta revisión no conserva el contexto estructurado del compiler. Se
+          muestran los campos históricos disponibles sin reconstruir ni inferir
+          información ausente.
+        </p>
+      ) : null}
       <div className="grid">
         <section className="card">
           <h3>Identidad</h3>
-          <p>{summary(impact.identity)}</p>
+          <p>
+            <span className="badge">
+              {summary(identity.classification ?? "NO_REPORTADA")}
+            </span>
+          </p>
+          <p>{summary(identity.reason)}</p>
+          {typeof identity.existingDocumentId === "string" ? (
+            <p>
+              Documento existente: <code>{identity.existingDocumentId}</code>
+            </p>
+          ) : null}
+          {identityCandidates.length ? (
+            <ul>
+              {identityCandidates.map((documentId) => (
+                <li key={documentId}>
+                  <code>{documentId}</code>
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </section>
         <section className="card">
           <h3>Evidencia</h3>
-          {evidenceIds.length ? (
+          {evidence.length ? (
+            evidence.map((item, index) => (
+              <article key={String(item.id ?? index)}>
+                <p>
+                  <code>{summary(item.id)}</code>
+                </p>
+                <p>{locatorSummary(item.locator)}</p>
+                {typeof item.excerptHash === "string" ? (
+                  <small>
+                    hash <code>{item.excerptHash}</code>
+                  </small>
+                ) : null}
+              </article>
+            ))
+          ) : evidenceIds.length ? (
             <ul>
               {evidenceIds.map((evidenceId) => (
                 <li key={evidenceId}>
@@ -267,9 +291,7 @@ export default async function ReviewPage({
               ))}
             </ul>
           ) : (
-            <p className="muted">
-              La evidencia detallada se conserva en el manifest.
-            </p>
+            <p className="muted">Sin evidencia estructurada persistida.</p>
           )}
         </section>
         <section className="card">
@@ -287,27 +309,90 @@ export default async function ReviewPage({
         </section>
       </div>
 
-      {candidates.length ? (
+      {warnings.length ? (
+        <section className="card" style={{ marginTop: 16 }}>
+          <h3>Warnings del compiler</h3>
+          <ul>
+            {warnings.map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {existingCandidates.length ? (
         <section>
-          <h2>Candidatos de conocimiento</h2>
-          {candidates.map((candidate, index) => (
+          <h2>Conocimiento existente considerado</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Documento</th>
+                <th>Tipo</th>
+                <th>Trust</th>
+                <th>Score</th>
+                <th>Razones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {existingCandidates.map((candidate, index) => (
+                <tr key={String(candidate.documentId ?? index)}>
+                  <td>
+                    <strong>{summary(candidate.title)}</strong>
+                    <br />
+                    <code>{summary(candidate.path)}</code>
+                  </td>
+                  <td>{summary(candidate.type)}</td>
+                  <td>{summary(candidate.trust)}</td>
+                  <td>{summary(candidate.score)}</td>
+                  <td>{asStrings(candidate.reasons).join(" · ") || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      ) : null}
+
+      <h2>Candidatos de conocimiento</h2>
+      {candidates.length ? (
+        candidates.map((candidate, index) => {
+          const candidateEvidence = asStrings(
+            candidate.evidenceIds ?? candidate.evidence_ids,
+          );
+          return (
             <article
               className="card"
-              key={String(candidate.candidate_id ?? index)}
+              key={String(candidate.candidateId ?? candidate.candidate_id ?? index)}
               style={{ marginTop: 12 }}
             >
               <p>
                 <span className="badge">{summary(candidate.kind)}</span>
                 <span className="badge">
-                  {summary(candidate.proposed_action)}
+                  {summary(candidate.proposedAction ?? candidate.proposed_action)}
                 </span>
               </p>
               <p>{summary(candidate.statement)}</p>
+              {candidate.scope ? <p className="muted">{summary(candidate.scope)}</p> : null}
               <small>confidence {summary(candidate.confidence)}</small>
+              {typeof candidate.existingDocumentId === "string" ? (
+                <p>
+                  Documento existente: <code>{candidate.existingDocumentId}</code>
+                </p>
+              ) : null}
+              {candidateEvidence.length ? (
+                <p>
+                  Evidencia: {candidateEvidence.map((item) => (
+                    <code key={item} style={{ marginRight: 8 }}>
+                      {item}
+                    </code>
+                  ))}
+                </p>
+              ) : null}
             </article>
-          ))}
-        </section>
-      ) : null}
+          );
+        })
+      ) : (
+        <p className="muted">Sin candidatos de conocimiento persistidos.</p>
+      )}
 
       <h2>Cambios de archivo</h2>
       {proposedChanges.length ? (
@@ -317,6 +402,7 @@ export default async function ReviewPage({
               <th>Operación</th>
               <th>Path</th>
               <th>Razones</th>
+              <th>Evidencia</th>
             </tr>
           </thead>
           <tbody>
@@ -326,7 +412,12 @@ export default async function ReviewPage({
                 <td>
                   <code>{summary(change.path)}</code>
                 </td>
-                <td>{summary(change.reasons)}</td>
+                <td>{asStrings(change.reasons).join(" · ") || "—"}</td>
+                <td>
+                  {asStrings(change.evidenceIds ?? change.evidence_ids).join(
+                    " · ",
+                  ) || "—"}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -340,30 +431,49 @@ export default async function ReviewPage({
           <h2>Contradicciones</h2>
           {contradictions.length ? (
             contradictions.map((conflict, index) => {
-              const supportingEvidence = conflictEvidence(conflict);
+              const supportingEvidence = asStrings(
+                conflict.evidenceIds ??
+                  conflict.evidence_ids ??
+                  conflict.evidence,
+              );
               return (
                 <article
-                  key={String(conflict.id ?? conflict.candidate_id ?? index)}
+                  key={String(conflict.candidateId ?? conflict.candidate_id ?? index)}
                   style={{ marginBottom: 16 }}
                 >
                   <p>
-                    <strong>
-                      {structuredLabel(
-                        conflict.explanation ??
-                          conflict.reason ??
-                          conflict.status,
-                      )}
-                    </strong>
+                    <span className="badge">
+                      {summary(conflict.severity ?? conflict.proposedStatus)}
+                    </span>
+                  </p>
+                  <p>
+                    <strong>{summary(conflict.explanation ?? conflict.reason)}</strong>
                   </p>
                   <table>
                     <tbody>
                       <tr>
                         <th>Candidato</th>
-                        <td>{structuredLabel(conflict.candidate)}</td>
+                        <td>
+                          <code>
+                            {summary(
+                              conflict.candidateId ??
+                                conflict.candidate_id ??
+                                conflict.candidate,
+                            )}
+                          </code>
+                        </td>
                       </tr>
                       <tr>
                         <th>Existente</th>
-                        <td>{structuredLabel(conflict.existing)}</td>
+                        <td>
+                          <code>
+                            {summary(
+                              conflict.existingDocumentId ??
+                                conflict.existing_document_id ??
+                                conflict.existing,
+                            )}
+                          </code>
+                        </td>
                       </tr>
                       <tr>
                         <th>Evidencia</th>
@@ -389,10 +499,19 @@ export default async function ReviewPage({
               {probes.map((probe, index) => (
                 <li key={String(probe.id ?? index)}>
                   <strong>
-                    {summary(probe.passed) === "true" ? "PASS" : "FAIL"}
+                    {typeof probe.passed === "boolean"
+                      ? probe.passed
+                        ? "PASS"
+                        : "FAIL"
+                      : "PENDIENTE"}
                   </strong>{" "}
                   {summary(probe.question ?? probe.description ?? probe.method)}
                   {probe.criticality ? ` · ${summary(probe.criticality)}` : ""}
+                  {asStrings(probe.evidenceIds ?? probe.evidence_ids).length
+                    ? ` · evidencia ${asStrings(
+                        probe.evidenceIds ?? probe.evidence_ids,
+                      ).join(", ")}`
+                    : ""}
                 </li>
               ))}
             </ul>
