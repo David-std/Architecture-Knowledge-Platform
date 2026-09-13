@@ -204,6 +204,17 @@ class ExtractorRegistry:
             return "COST_POLICY_NO_PAID"
         if name == "chunkr" and not self._chunkr_opt_in(request, preferred):
             return "CHUNKR_REQUIRES_EXPLICIT_OPT_IN"
+        # Docling and Marker are serious but heavyweight structured providers.
+        # Merely installing the extra must not silently change the default
+        # extraction semantics. A benchmark selection or explicit per-request
+        # provider choice is required. Chunkr has its own explicit opt-in gate;
+        # transcription is allowed when it is the requested media capability.
+        if (
+            name in {"docling", "marker"}
+            and availability.benchmark_required
+            and preferred != name
+        ):
+            return "BENCHMARK_SELECTION_REQUIRED"
         return None
 
     @staticmethod
@@ -235,7 +246,10 @@ class ExtractorRegistry:
         name = rule.adapter
         if preferred == name:
             return (-10_000, rule.priority, "explicit-or-benchmark-selection")
-        if media_type.startswith(("audio/", "video/")) and name == "openai-compatible-transcription":
+        if (
+            media_type.startswith(("audio/", "video/"))
+            and name == "openai-compatible-transcription"
+        ):
             return (-9_000, rule.priority, "media-transcription")
 
         needs_ocr = ExtractorRegistry._needs_ocr(request, media_type, complexity)
@@ -340,11 +354,18 @@ class ExtractorRegistry:
 
         if not semantic_candidates:
             requirement = (
-                "OCR" if needs_ocr else "TRANSCRIPTION" if media_type.startswith(("audio/", "video/")) else "EXTRACTION"
+                "OCR"
+                if needs_ocr
+                else "TRANSCRIPTION"
+                if media_type.startswith(("audio/", "video/"))
+                else "EXTRACTION"
             )
-            detail = ", ".join(f"{name}={reason}" for name, reason in rejected.items())
+            detail = ", ".join(
+                f"{name}={reason}" for name, reason in rejected.items()
+            )
             raise CapabilityNotConfigured(
-                f"{requirement}_CAPABILITY_NOT_CONFIGURED for {media_type}; {detail or 'no configured candidates'}"
+                f"{requirement}_CAPABILITY_NOT_CONFIGURED for {media_type}; "
+                f"{detail or 'no configured candidates'}"
             )
 
         ranked = [
@@ -365,15 +386,31 @@ class ExtractorRegistry:
         rank, selected = ranked[0]
         reason = rank[2]
         warnings = [f"{name}:{rejection}" for name, rejection in rejected.items()]
+        optional_structured_candidates = {
+            name for name in candidates if name in {"docling", "marker", "chunkr"}
+        }
+        if (
+            optional_structured_candidates
+            and not requested
+            and not benchmark_candidate
+            and selected == "deterministic-baseline"
+        ):
+            reason = "deterministic-baseline-until-benchmark"
+            warnings.append("OPTIONAL_DEFAULT_NOT_SELECTED_WITHOUT_BENCHMARK")
         if benchmark_candidate and benchmark_candidate in rejected and not requested:
             warnings.append(
-                f"BENCHMARK_SELECTION_UNAVAILABLE:{benchmark_candidate}:{rejected[benchmark_candidate]}"
+                f"BENCHMARK_SELECTION_UNAVAILABLE:{benchmark_candidate}:"
+                f"{rejected[benchmark_candidate]}"
             )
         if request.privacy_policy == PrivacyPolicy.LOCAL_PREFERRED:
             local_ranked = [
                 entry for entry in ranked if availabilities[entry[1]].local
             ]
-            if local_ranked and not availabilities[selected].local and preferred != selected:
+            if (
+                local_ranked
+                and not availabilities[selected].local
+                and preferred != selected
+            ):
                 rank, selected = local_ranked[0]
                 reason = f"local-preferred:{rank[2]}"
 
@@ -402,7 +439,9 @@ class ExtractorRegistry:
         except CapabilityNotConfigured as error:
             # Availability may change between route() and extract(). Never turn
             # required OCR/transcription into a false-success deterministic artifact.
-            if decision.ocr_required or decision.media_type.startswith(("audio/", "video/")):
+            if decision.ocr_required or decision.media_type.startswith(
+                ("audio/", "video/")
+            ):
                 raise
             if request.configuration.get("extractor"):
                 raise
@@ -517,7 +556,14 @@ def build_default_registry() -> ExtractorRegistry:
             "image/png",
             "image/jpeg",
         },
-        complexities={"simple", "digital", "complex", "scanned", "formula", "table-heavy"},
+        complexities={
+            "simple",
+            "digital",
+            "complex",
+            "scanned",
+            "formula",
+            "table-heavy",
+        },
         priority=70,
     )
     registry.register(
