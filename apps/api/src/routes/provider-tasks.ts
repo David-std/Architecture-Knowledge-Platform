@@ -4,7 +4,7 @@ import type { Postgres } from "@akp/postgres";
 import { z } from "zod";
 
 const ProviderTaskUpdate = z.object({
-  jobId: z.string().uuid(),
+  jobId: z.string().uuid().optional(),
   provider: z
     .string()
     .min(1)
@@ -38,7 +38,9 @@ function boundedTaskRecord(input: ProviderTaskUpdate): Record<string, unknown> {
   const metadata = input.metadata ?? {};
   const encodedMetadata = JSON.stringify(metadata);
   if (Buffer.byteLength(encodedMetadata, "utf8") > 16 * 1024) {
-    const error = new Error("Provider task metadata exceeds the durable journal limit.") as Error & {
+    const error = new Error(
+      "Provider task metadata exceeds the durable journal limit.",
+    ) as Error & {
       statusCode?: number;
       code?: string;
     };
@@ -60,11 +62,11 @@ function boundedTaskRecord(input: ProviderTaskUpdate): Record<string, unknown> {
 /**
  * Internal, token-authenticated journal for provider task lifecycles.
  *
- * External document-intelligence services can create an asynchronous provider
- * task before the synchronous extractor call returns.  Persisting the task ID
- * here immediately makes the association survive extractor/worker crashes and
- * worker lease reclamation.  The storage shape is intentionally provider
- * neutral: adding a provider never requires a schema change.
+ * The initial task-created update carries ``jobId`` and makes the external task
+ * durable immediately. A subsequently verified provider webhook can omit the
+ * job ID: the API resolves it from that pre-existing durable provider/task
+ * mapping. This keeps provider IDs out of the relational schema while still
+ * surviving extractor/worker crashes and lease reclamation.
  */
 export function registerProviderTaskRoutes(app: FastifyInstance, db: Postgres) {
   app.post("/internal/provider-tasks", async (request, reply) => {
@@ -94,6 +96,39 @@ export function registerProviderTaskRoutes(app: FastifyInstance, db: Postgres) {
     const client = await db.pool.connect();
     try {
       await client.query("begin");
+      let jobId = parsed.data.jobId;
+      if (!jobId) {
+        const matches = await client.query<{ id: string }>(
+          `
+          select id
+            from ingest_jobs
+           where cancelled_at is null
+             and stage_outputs #>> array['providerTasks',$1,'taskId'] = $2
+           order by updated_at desc,id
+           limit 2
+          `,
+          [parsed.data.provider, parsed.data.taskId],
+        );
+        if (matches.rowCount !== 1) {
+          await client.query("rollback");
+          return reply.code(409).send({
+            code:
+              matches.rowCount === 0
+                ? "PROVIDER_TASK_MAPPING_NOT_FOUND"
+                : "PROVIDER_TASK_MAPPING_AMBIGUOUS",
+            message: "The provider task could not be resolved safely.",
+          });
+        }
+        jobId = matches.rows[0]?.id;
+      }
+      if (!jobId) {
+        await client.query("rollback");
+        return reply.code(409).send({
+          code: "PROVIDER_TASK_MAPPING_NOT_FOUND",
+          message: "The provider task could not be resolved safely.",
+        });
+      }
+
       const updated = await client.query<{
         id: string;
         state: string;
@@ -113,7 +148,7 @@ export function registerProviderTaskRoutes(app: FastifyInstance, db: Postgres) {
          where id = $1 and cancelled_at is null
          returning id,state,space_id,vault_id
         `,
-        [parsed.data.jobId, parsed.data.provider, JSON.stringify(record)],
+        [jobId, parsed.data.provider, JSON.stringify(record)],
       );
       const job = updated.rows[0];
       if (!job) {
@@ -129,7 +164,7 @@ export function registerProviderTaskRoutes(app: FastifyInstance, db: Postgres) {
         values($1,$2,'PROVIDER_TASK_STATE',$3::jsonb)
         `,
         [
-          parsed.data.jobId,
+          jobId,
           job.state,
           JSON.stringify({
             provider: parsed.data.provider,
