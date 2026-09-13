@@ -4,6 +4,7 @@ import {
   normalizeManagedPath,
   type ManagedChange,
 } from "@akp/indexing";
+import { withSpan } from "@akp/observability";
 import type { Postgres } from "@akp/postgres";
 import type { EventHandlers } from "./event-worker.js";
 
@@ -186,26 +187,39 @@ export function createIndexEventHandlers(
         const currentRevision = await git.revision();
         if (currentRevision !== revision) return;
       }
-      await incrementalIndex(db, git, {
-        spaceId,
-        vaultId,
-        revision,
-        changes: changesFromEvent(event),
-        eventId: event.eventId,
-        ...(typeof event.payload.sourceId === "string"
-          ? { sourceId: event.payload.sourceId }
-          : {}),
-      });
+      await withSpan(
+        "index.incremental",
+        { "akp.event.type": event.eventType },
+        () =>
+          incrementalIndex(db, git, {
+            spaceId,
+            vaultId,
+            revision,
+            changes: changesFromEvent(event),
+            eventId: event.eventId,
+            ...(typeof event.payload.sourceId === "string"
+              ? { sourceId: event.payload.sourceId }
+              : {}),
+          }),
+      );
     },
     LexicalIndexUpdateRequested: (event) =>
       markIndexRequestComplete(db, event, "lexical_revision"),
-    VectorIndexUpdateRequested: async (event) => {
-      if (process.env.AKP_VECTOR_ENABLED === "true") {
-        await markIndexRequestComplete(db, event, "vector_revision");
-      } else {
-        await currentVaultCorpusRevision(db, event);
-      }
-    },
+    VectorIndexUpdateRequested: (event) =>
+      withSpan(
+        "index.embedding",
+        {
+          "akp.event.type": event.eventType,
+          "akp.vector.enabled": process.env.AKP_VECTOR_ENABLED === "true",
+        },
+        async () => {
+          if (process.env.AKP_VECTOR_ENABLED === "true") {
+            await markIndexRequestComplete(db, event, "vector_revision");
+          } else {
+            await currentVaultCorpusRevision(db, event);
+          }
+        },
+      ),
     GraphIndexUpdateRequested: (event) =>
       markIndexRequestComplete(db, event, "graph_revision"),
     ContextPackInvalidationRequested: (event) =>
