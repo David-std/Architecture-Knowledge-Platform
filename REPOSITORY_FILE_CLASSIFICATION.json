@@ -92,6 +92,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/api/src/routes/operator.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/api/src/routes/projects.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -153,6 +158,11 @@
     },
     {
       "path": "apps/api/test/lexical-ranking.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/api/test/operator.integration.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -492,6 +502,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/web/app/graph/graph-explorer.tsx",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/web/app/graph/page.tsx",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -563,6 +578,16 @@
     },
     {
       "path": "apps/web/lib/api.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/web/lib/review-manifest.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/web/lib/review-manifest.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
@@ -1730,26 +1755,6 @@
       "path": "REMAINING_REAL_GAPS.md",
       "category": "PRODUCT_DOCUMENTATION",
       "reason": "canonical product documentation"
-    },
-    {
-      "path": "reports/ci/formatted/document-intelligence-request.ts",
-      "category": "GENERATED_CANONICAL",
-      "reason": "canonical reproducible report"
-    },
-    {
-      "path": "reports/ci/formatted/provider-tasks.ts",
-      "category": "GENERATED_CANONICAL",
-      "reason": "canonical reproducible report"
-    },
-    {
-      "path": "reports/ci/formatted/worker.ts",
-      "category": "GENERATED_CANONICAL",
-      "reason": "canonical reproducible report"
-    },
-    {
-      "path": "reports/ci/prettier-check.txt",
-      "category": "GENERATED_CANONICAL",
-      "reason": "canonical reproducible report"
     },
     {
       "path": "reports/document-intelligence/benchmark.json",
