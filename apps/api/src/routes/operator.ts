@@ -33,7 +33,7 @@ interface OperatorScope {
 
 async function operatorScope(
   db: Postgres,
-  actor: Actor | undefined,
+  actor: Actor | null | undefined,
   permission: Permission,
 ): Promise<OperatorScope> {
   if (!actor) return { spaces: [], vaultIds: [] };
