@@ -33,6 +33,9 @@ dev = ["pytest>=8.3,<9", "ruff>=0.8,<1", "mypy>=1.13,<2"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+  "provider_runtime: executes an opt-in heavyweight provider against a real local fixture"
+]
 
 [tool.ruff]
 line-length = 100
