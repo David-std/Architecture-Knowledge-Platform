@@ -1,9 +1,9 @@
 """Durable provider-task journal client.
 
 The endpoint and credential are administrator-owned environment configuration;
-source/request content can never select an arbitrary callback target.  When an
-ingest job is supplied, failure to persist the external task association is a
-hard failure rather than an untracked asynchronous task.
+source/request content can never select an arbitrary callback target. When an
+external asynchronous task belongs to an ingest job, failure to persist the
+association is a hard failure rather than an untracked provider task.
 """
 
 from __future__ import annotations
@@ -36,30 +36,38 @@ def provider_task_journal_configured() -> bool:
 
 def record_provider_task_state(
     *,
-    ingest_job_id: str | None,
+    ingest_job_id: str | None = None,
+    source_id: str | None = None,
     provider: str,
     task_id: str,
     status: str,
     task_type: str | None = None,
     mode: str | None = None,
+    event_time: str | None = None,
     metadata: dict[str, Any] | None = None,
     allow_lookup_by_task: bool = False,
 ) -> None:
-    """Persist a provider-task transition in the platform's durable ingest job.
+    """Persist one provider-task transition in the durable ingest journal.
 
-    ``allow_lookup_by_task`` is used only for already-authenticated provider
-    webhooks, where the durable mapping created at task creation time is the
-    source of truth for resolving the owning ingest job.
+    The normal creation path should identify its owner by ``ingest_job_id`` or
+    ``source_id``. A verified provider webhook may set ``allow_lookup_by_task``
+    and omit both owner fields because the earlier creation transition already
+    established the durable ``provider + task_id`` mapping.
     """
 
-    if ingest_job_id is None and not allow_lookup_by_task:
+    if ingest_job_id is None and source_id is None and not allow_lookup_by_task:
         return
     configured = _callback_configuration()
     if configured is None:
-        raise CapabilityNotConfigured(
-            "Provider task journaling requires AKP_PROVIDER_TASK_CALLBACK_URL "
-            "and AKP_PROVIDER_TASK_CALLBACK_TOKEN"
-        )
+        # Standalone extractor calls do not have to configure the AKP API
+        # journal. Ingest-owned asynchronous tasks do: silently proceeding
+        # would leave a live external task untracked across a crash.
+        if ingest_job_id is not None or source_id is not None or allow_lookup_by_task:
+            raise CapabilityNotConfigured(
+                "Provider task journaling requires AKP_PROVIDER_TASK_CALLBACK_URL "
+                "and AKP_PROVIDER_TASK_CALLBACK_TOKEN"
+            )
+        return
     endpoint, token = configured
     body: dict[str, Any] = {
         "provider": provider,
@@ -69,10 +77,14 @@ def record_provider_task_state(
     }
     if ingest_job_id is not None:
         body["jobId"] = ingest_job_id
+    if source_id is not None:
+        body["sourceId"] = source_id
     if task_type:
         body["taskType"] = task_type
     if mode:
         body["mode"] = mode
+    if event_time:
+        body["eventTime"] = event_time
     try:
         response = httpx.post(
             endpoint,
