@@ -207,7 +207,7 @@ export function createIndexEventHandlers(
       markIndexRequestComplete(db, event, "lexical_revision"),
     VectorIndexUpdateRequested: (event) =>
       withSpan(
-        "index.embedding",
+        "index.embedding.reconcile",
         {
           "akp.event.type": event.eventType,
           "akp.vector.enabled": process.env.AKP_VECTOR_ENABLED === "true",
