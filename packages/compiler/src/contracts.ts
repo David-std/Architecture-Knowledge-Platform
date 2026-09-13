@@ -257,9 +257,11 @@ export const ReviewEvidence = CompilerEvidence.pick({
 });
 export type ReviewEvidence = z.infer<typeof ReviewEvidence>;
 
-export const ReviewExistingKnowledgeCandidate = ExistingKnowledgeCandidate.omit({
-  contentExcerpt: true,
-});
+export const ReviewExistingKnowledgeCandidate = ExistingKnowledgeCandidate.omit(
+  {
+    contentExcerpt: true,
+  },
+);
 export type ReviewExistingKnowledgeCandidate = z.infer<
   typeof ReviewExistingKnowledgeCandidate
 >;
@@ -276,9 +278,7 @@ export const ReviewCompilationContext = z
     summary: z.string().min(1).max(8_000),
   })
   .strict();
-export type ReviewCompilationContext = z.infer<
-  typeof ReviewCompilationContext
->;
+export type ReviewCompilationContext = z.infer<typeof ReviewCompilationContext>;
 
 export interface KnowledgeCompilerPort {
   compile(input: KnowledgeCompilerInput): Promise<KnowledgeCompilerResult>;
