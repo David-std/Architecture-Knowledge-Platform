@@ -20,7 +20,7 @@ source = replaceOnce(
 source = replaceOnce(
   source,
   `type AppendTarget = Parameters<AppendHelper>[0];\n`,
-  `type AppendTarget = Parameters<AppendHelper>[0];\ntype PublicationClient = AppendTarget;\n`,
+  `type AppendTarget = Parameters<AppendHelper>[0];\ntype PublicationClient = Exclude<AppendTarget, Postgres>;\n`,
   "transaction client type",
 );
 source = replaceOnce(
