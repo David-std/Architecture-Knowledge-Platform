@@ -111,7 +111,7 @@ function classify(file) {
     return ["PRODUCT_CODE", "runtime, build or operational code"];
   }
   if (
-    /^(?:policies\/|\.github\/|\.env\.example$|\.gitattributes$|\.gitignore$|\.prettierignore$|\.prettierrc\.json$|package\.json$|pnpm-workspace\.yaml$)/.test(
+    /^(?:ops\/|policies\/|\.github\/|\.env\.example$|\.gitattributes$|\.gitignore$|\.prettierignore$|\.prettierrc\.json$|package\.json$|pnpm-workspace\.yaml$)/.test(
       file,
     )
   ) {
