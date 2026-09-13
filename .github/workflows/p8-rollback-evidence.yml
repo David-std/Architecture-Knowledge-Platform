@@ -3,6 +3,9 @@ name: p8-rollback-evidence
 on:
   pull_request:
 
+permissions:
+  contents: write
+
 jobs:
   evidence:
     runs-on: ubuntu-latest
@@ -87,5 +90,26 @@ jobs:
           name: p8-rollback-materialized-${{ github.run_id }}
           path: reports/p8-materialized
           retention-days: 2
+      - name: Promote validated P8.2 materialization
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm \
+            scripts/p8-rollback-materialize.mjs \
+            scripts/p8-rollback-test-fix.mjs \
+            scripts/p8-delete-materialize.mjs \
+            scripts/p8-delivery-order-fix.mjs
+          git add \
+            apps/api/src/routes/reviews.ts \
+            apps/api/test/review-publication.integration.test.ts \
+            apps/api/test/product-lifecycle.integration.test.ts \
+            apps/worker/src/event-handlers.ts \
+            apps/worker/test/event-handlers.test.ts \
+            packages/indexing/src/index.ts
+          git diff --cached --check
+          git commit -m "feat(p8): make rollback a durable publication"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
       - if: always()
         run: docker compose down -v --remove-orphans
