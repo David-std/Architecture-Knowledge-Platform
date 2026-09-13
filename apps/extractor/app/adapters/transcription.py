@@ -1,9 +1,9 @@
 """Provider-neutral audio/video transcription adapter.
 
 The runtime endpoint is administrator-controlled through environment variables;
-request content can never select an arbitrary network destination.  Video is
+request content can never select an arbitrary network destination. Video is
 reduced to an audio track with local ffmpeg, then sent to an OpenAI-compatible
-transcription endpoint.  Returned time segments are normalized to canonical
+transcription endpoint. Returned time segments are normalized to canonical
 paragraph items with timestamp locators.
 """
 
@@ -145,6 +145,8 @@ class OpenAICompatibleTranscriptionAdapter(DocumentIntelligencePort):
 
     def availability(self) -> AdapterAvailability:
         configured = _configured_endpoint()
+        mode = configured[1] if configured else None
+        video_demux_available = shutil.which("ffmpeg") is not None
         return AdapterAvailability(
             adapter=self.name,
             version=self.version,
@@ -153,15 +155,23 @@ class OpenAICompatibleTranscriptionAdapter(DocumentIntelligencePort):
                 if configured
                 else CapabilityStatus.CAPABILITY_NOT_CONFIGURED
             ),
-            reason=("TRANSCRIPTION_ENDPOINT_CONFIGURED" if configured else "TRANSCRIPTION_ENDPOINT_NOT_CONFIGURED"),
+            reason=(
+                "TRANSCRIPTION_ENDPOINT_CONFIGURED"
+                if configured
+                else "TRANSCRIPTION_ENDPOINT_NOT_CONFIGURED"
+            ),
             media=["audio/*", "video/*"],
             complexities=["simple", "media", "unknown"],
             locators=bool(configured),
             structured_output=bool(configured),
-            local=bool(configured and configured[1] == "local"),
+            local=bool(configured and mode == "local"),
             provider="openai-compatible",
             benchmark_required=True,
-            timestamps=True,
+            transcription=bool(configured),
+            external_network=bool(configured and mode == "remote"),
+            timestamps=bool(configured),
+            video_demux_available=video_demux_available,
+            visual_captioning=False,
         )
 
     def extract(self, request: DocumentExtractionRequest) -> DocumentArtifact:
@@ -175,9 +185,13 @@ class OpenAICompatibleTranscriptionAdapter(DocumentIntelligencePort):
         try:
             timeout = float(timeout_raw)
         except (TypeError, ValueError) as error:
-            raise DocumentIntelligenceError("transcription_timeout_seconds must be numeric") from error
+            raise DocumentIntelligenceError(
+                "transcription_timeout_seconds must be numeric"
+            ) from error
         if timeout <= 0 or timeout > 1800:
-            raise DocumentIntelligenceError("transcription_timeout_seconds must be in (0, 1800]")
+            raise DocumentIntelligenceError(
+                "transcription_timeout_seconds must be in (0, 1800]"
+            )
 
         media_type = infer_media_type(request.source_path, request.media_type)
         suffix = request.source_path.suffix.lower()
@@ -218,7 +232,13 @@ class OpenAICompatibleTranscriptionAdapter(DocumentIntelligencePort):
                     endpoint,
                     headers=headers,
                     data=data,
-                    files={"file": (upload_path.name, stream, "audio/wav" if is_video else media_type)},
+                    files={
+                        "file": (
+                            upload_path.name,
+                            stream,
+                            "audio/wav" if is_video else media_type,
+                        )
+                    },
                     timeout=timeout,
                     follow_redirects=False,
                 )
@@ -229,16 +249,22 @@ class OpenAICompatibleTranscriptionAdapter(DocumentIntelligencePort):
         except DocumentIntelligenceError:
             raise
         except (httpx.HTTPError, OSError, ValueError, json.JSONDecodeError) as error:
-            raise DocumentIntelligenceError(f"Transcription provider failed: {error}") from error
+            raise DocumentIntelligenceError(
+                f"Transcription provider failed: {error}"
+            ) from error
         finally:
             if temporary_audio is not None:
                 temporary_audio.unlink(missing_ok=True)
 
         if not isinstance(payload, dict):
-            raise DocumentIntelligenceError("Transcription provider response is not an object")
+            raise DocumentIntelligenceError(
+                "Transcription provider response is not an object"
+            )
         segments = _segments(payload)
         if not segments:
-            raise DocumentIntelligenceError("Transcription provider returned no usable transcript")
+            raise DocumentIntelligenceError(
+                "Transcription provider returned no usable transcript"
+            )
 
         items: list[ArtifactItem] = []
         locators: list[StructuralLocator] = [
@@ -264,7 +290,8 @@ class OpenAICompatibleTranscriptionAdapter(DocumentIntelligencePort):
                 metadata={
                     "provider": "openai-compatible-transcription",
                     "model": model,
-                    "language": payload.get("language") or request.configuration.get("language"),
+                    "language": payload.get("language")
+                    or request.configuration.get("language"),
                     "confidence": confidence,
                     "avg_logprob": segment.get("avg_logprob"),
                     "no_speech_prob": segment.get("no_speech_prob"),
@@ -290,10 +317,12 @@ class OpenAICompatibleTranscriptionAdapter(DocumentIntelligencePort):
                 "provider": "openai-compatible-transcription",
                 "provider_mode": mode,
                 "model": model,
-                "language": payload.get("language") or request.configuration.get("language"),
+                "language": payload.get("language")
+                or request.configuration.get("language"),
                 "transcription_executed": True,
                 "timestamp_granularity": "segment",
                 "video_audio_extracted_with_ffmpeg": is_video,
+                "visual_captioning": False,
                 **request.configuration,
             },
             blocks=list(items),
