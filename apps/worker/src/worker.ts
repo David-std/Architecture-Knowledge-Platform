@@ -232,9 +232,7 @@ async function updateState(
 }
 
 type ProviderTaskEvent =
-  | "PROVIDER_TASK_STARTED"
-  | "PROVIDER_TASK_SUCCEEDED"
-  | "PROVIDER_TASK_FAILED";
+  "PROVIDER_TASK_STARTED" | "PROVIDER_TASK_SUCCEEDED" | "PROVIDER_TASK_FAILED";
 
 async function recordProviderTaskEvent(
   jobId: string,
