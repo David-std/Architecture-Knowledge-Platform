@@ -37,16 +37,24 @@ patchFile("apps/mcp/tsconfig.json", [
   ],
 ]);
 
-patchFile("apps/worker/src/compilation-stage.ts", [
+patchFile("packages/indexing/src/index.ts", [
   [
-    "vault-narrowing",
-    `  if (!input.vaultId) throw new Error("KNOWLEDGE_COMPILER_VAULT_REQUIRED");\n\n  const evidence = await loadEvidence(db, {\n    ...input,\n    vaultId: input.vaultId,\n  });`,
-    `  const vaultId = input.vaultId;\n  if (!vaultId) throw new Error("KNOWLEDGE_COMPILER_VAULT_REQUIRED");\n\n  const evidence = await loadEvidence(db, {\n    ...input,\n    vaultId,\n  });`,
+    "observability-import",
+    'import { buildEmbeddingIndex } from "./embedding-index.js";\n',
+    'import { withSpan } from "@akp/observability";\nimport { buildEmbeddingIndex } from "./embedding-index.js";\n',
   ],
   [
-    "vault-narrowing-callback",
-    `        spaceId: input.spaceId,\n        vaultId: input.vaultId,\n        vectorEnabled: input.vectorEnabled,`,
-    `        spaceId: input.spaceId,\n        vaultId,\n        vectorEnabled: input.vectorEnabled,`,
+    "real-embedding-span",
+    `        const built = await buildEmbeddingIndex(db, {\n          spaceId: options.spaceId,\n          vaultId: options.vaultId,\n          corpusRevision,\n          provider,\n          activate: vectorEnabled,\n        });`,
+    `        const built = await withSpan(\n          "index.embedding",\n          {\n            "akp.vector.enabled": vectorEnabled,\n            "akp.embedding.provider": provider.descriptor.provider,\n          },\n          () =>\n            buildEmbeddingIndex(db, {\n              spaceId: options.spaceId,\n              vaultId: options.vaultId,\n              corpusRevision,\n              provider,\n              activate: vectorEnabled,\n            }),\n        );`,
+  ],
+]);
+
+patchFile("packages/indexing/package.json", [
+  [
+    "observability-dependency",
+    '    "@akp/git-store": "*",\n',
+    '    "@akp/git-store": "*",\n    "@akp/observability": "*",\n',
   ],
 ]);
 
