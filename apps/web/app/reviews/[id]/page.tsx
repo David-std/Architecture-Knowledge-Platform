@@ -81,7 +81,9 @@ function structuredLabel(value: unknown): string {
 }
 
 function conflictEvidence(conflict: Record<string, unknown>): string[] {
-  return strings(conflict.evidence_ids ?? conflict.evidenceIds ?? conflict.evidence);
+  return strings(
+    conflict.evidence_ids ?? conflict.evidenceIds ?? conflict.evidence,
+  );
 }
 
 export default async function ReviewPage({
@@ -347,7 +349,9 @@ export default async function ReviewPage({
                   <p>
                     <strong>
                       {structuredLabel(
-                        conflict.explanation ?? conflict.reason ?? conflict.status,
+                        conflict.explanation ??
+                          conflict.reason ??
+                          conflict.status,
                       )}
                     </strong>
                   </p>
