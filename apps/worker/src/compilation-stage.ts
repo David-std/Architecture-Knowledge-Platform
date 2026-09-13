@@ -197,19 +197,27 @@ export async function buildCompilationStage(
 ): Promise<CompilationStageOutput> {
   const vault = await loadVaultContext(db, input.spaceId, input.vaultId);
   if (!configured) {
-    return {
-      plan: await sourceSummaryFallback(db, input, vault.corpusRevision),
-      metadata: {
-        mode: "SOURCE_SUMMARY_FALLBACK",
-        reason: "GENERIC_COMPILER_DISABLED_OR_UNCONFIGURED",
+    return withSpan(
+      "compile.plan",
+      {
+        "akp.compiler.mode": "SOURCE_SUMMARY_FALLBACK",
+        "akp.vector.enabled": input.vectorEnabled,
       },
-    };
+      async () => ({
+        plan: await sourceSummaryFallback(db, input, vault.corpusRevision),
+        metadata: {
+          mode: "SOURCE_SUMMARY_FALLBACK",
+          reason: "GENERIC_COMPILER_DISABLED_OR_UNCONFIGURED",
+        },
+      }),
+    );
   }
-  if (!input.vaultId) throw new Error("KNOWLEDGE_COMPILER_VAULT_REQUIRED");
+  const vaultId = input.vaultId;
+  if (!vaultId) throw new Error("KNOWLEDGE_COMPILER_VAULT_REQUIRED");
 
   const evidence = await loadEvidence(db, {
     ...input,
-    vaultId: input.vaultId,
+    vaultId,
   });
   const compiled = await withSpan(
     "compile.plan",
@@ -231,7 +239,7 @@ export async function buildCompilationStage(
         schemaProfile: vault.schemaProfile,
         corpusRevision: vault.corpusRevision,
         spaceId: input.spaceId,
-        vaultId: input.vaultId,
+        vaultId,
         vectorEnabled: input.vectorEnabled,
       }),
   );
