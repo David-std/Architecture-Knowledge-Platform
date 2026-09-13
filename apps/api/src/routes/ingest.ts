@@ -5,7 +5,6 @@ import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import type { Postgres, AppendOutboxEventInput } from "@akp/postgres";
 import { IngestRequest } from "@akp/contracts";
-import { z } from "zod";
 import {
   actorOf,
   audit,
@@ -14,34 +13,6 @@ import {
   requirePermission,
   unrestrictedSpaceIdsForPermission,
 } from "../auth.js";
-
-const DocumentIntelligenceIngestOptions = z
-  .object({
-    complexity: z
-      .enum([
-        "simple",
-        "digital",
-        "complex",
-        "scanned",
-        "formula",
-        "table-heavy",
-        "unknown",
-      ])
-      .optional(),
-    ocrRequired: z.boolean().default(false),
-    tables: z.boolean().default(false),
-    formula: z.boolean().default(false),
-    costPolicy: z.enum(["NO_PAID", "STANDARD", "QUALITY"]).default("STANDARD"),
-    privacyPolicy: z
-      .enum(["LOCAL_ONLY", "LOCAL_PREFERRED", "REMOTE_ALLOWED"])
-      .default("LOCAL_PREFERRED"),
-    language: z.string().trim().min(2).max(32).optional(),
-  })
-  .strict();
-
-const DocumentIntelligenceIngestRequest = IngestRequest.extend({
-  documentIntelligence: DocumentIntelligenceIngestOptions.optional(),
-});
 
 async function allowedLocalSource(sourceUri: string): Promise<string | null> {
   if (/^https?:/i.test(sourceUri)) return null;
@@ -184,7 +155,7 @@ export function registerIngestRoutes(app: FastifyInstance, db: Postgres): void {
     "/v1/ingest",
     { preHandler: requirePermission("source:write") },
     async (request, reply) => {
-      const parsed = DocumentIntelligenceIngestRequest.safeParse(request.body);
+      const parsed = IngestRequest.safeParse(request.body);
       if (!parsed.success) {
         return reply.code(400).send({
           code: "INVALID_INGEST_REQUEST",

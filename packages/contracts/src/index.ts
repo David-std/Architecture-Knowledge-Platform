@@ -330,6 +330,37 @@ export const ContextPacketResponse = z.discriminatedUnion("packetMode", [
 ]);
 export type ContextPacketResponse = z.infer<typeof ContextPacketResponse>;
 
+export const DocumentIntelligenceIngestOptions = z
+  .object({
+    complexity: z
+      .enum([
+        "simple",
+        "digital",
+        "complex",
+        "scanned",
+        "formula",
+        "table-heavy",
+        "unknown",
+      ])
+      .optional(),
+    ocrRequired: z.boolean().default(false),
+    tables: z.boolean().default(false),
+    formula: z.boolean().default(false),
+    costPolicy: z.enum(["NO_PAID", "STANDARD", "QUALITY"]).default("STANDARD"),
+    privacyPolicy: z
+      .enum(["LOCAL_ONLY", "LOCAL_PREFERRED", "REMOTE_ALLOWED"])
+      .default("LOCAL_PREFERRED"),
+    language: z
+      .string()
+      .trim()
+      .regex(/^[A-Za-z][A-Za-z0-9_-]{1,31}$/)
+      .optional(),
+  })
+  .strict();
+export type DocumentIntelligenceIngestOptions = z.infer<
+  typeof DocumentIntelligenceIngestOptions
+>;
+
 export const IngestRequest = z.object({
   spaceId: z.string().uuid(),
   vaultId: z.string().uuid(),
@@ -340,6 +371,7 @@ export const IngestRequest = z.object({
     .optional(),
   title: z.string().optional(),
   mediaType: z.string().optional(),
+  documentIntelligence: DocumentIntelligenceIngestOptions.optional(),
   policy: z
     .enum(["REVIEW_REQUIRED", "ALLOW_LOW_RISK_AUTO_APPROVAL"])
     .default("REVIEW_REQUIRED"),

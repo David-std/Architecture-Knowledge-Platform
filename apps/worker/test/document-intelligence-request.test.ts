@@ -1,21 +1,27 @@
 import { describe, expect, it } from "vitest";
+import { IngestRequest } from "@akp/contracts";
 import { documentIntelligenceFormFields } from "../src/document-intelligence-request.js";
 
 describe("document intelligence ingest controls", () => {
-  it("maps provider-neutral policy into the extractor multipart contract", () => {
+  it("uses the shared ingest contract for provider-neutral policy", () => {
+    const parsed = IngestRequest.parse({
+      spaceId: "00000000-0000-0000-0000-000000000003",
+      vaultId: "00000000-0000-0000-0000-000000000004",
+      sourceUri: "/allowed/source.pdf",
+      documentIntelligence: {
+        complexity: "scanned",
+        ocrRequired: true,
+        tables: true,
+        formula: false,
+        costPolicy: "NO_PAID",
+        privacyPolicy: "LOCAL_ONLY",
+        language: "es",
+      },
+    });
+
     expect(
       documentIntelligenceFormFields(
-        {
-          documentIntelligence: {
-            complexity: "scanned",
-            ocrRequired: true,
-            tables: true,
-            formula: false,
-            costPolicy: "NO_PAID",
-            privacyPolicy: "LOCAL_ONLY",
-            language: "es",
-          },
-        },
+        parsed as unknown as Record<string, unknown>,
         "11111111-1111-1111-1111-111111111111",
       ),
     ).toEqual({
@@ -42,34 +48,31 @@ describe("document intelligence ingest controls", () => {
     });
   });
 
-  it("does not forward arbitrary provider names, URLs, or malformed policy", () => {
-    const fields = documentIntelligenceFormFields(
-      {
+  it("rejects provider-specific or malformed durable policy instead of forwarding it", () => {
+    expect(() =>
+      documentIntelligenceFormFields(
+        {
+          documentIntelligence: {
+            complexity: "remote-magic",
+            ocrRequired: "yes",
+            extractor: "chunkr",
+            providerUrl: "https://attacker.invalid",
+          },
+        },
+        "job-tampered",
+      ),
+    ).toThrowError("INVALID_DOCUMENT_INTELLIGENCE_PAYLOAD");
+
+    expect(() =>
+      IngestRequest.parse({
+        spaceId: "00000000-0000-0000-0000-000000000003",
+        vaultId: "00000000-0000-0000-0000-000000000004",
+        sourceUri: "/allowed/source.pdf",
         documentIntelligence: {
-          complexity: "remote-magic",
-          ocrRequired: "yes",
-          tables: 1,
-          formula: null,
-          costPolicy: "FREE_FOREVER",
-          privacyPolicy: "SEND_ANYWHERE",
-          language: "https://attacker.invalid/provider",
           extractor: "chunkr",
           providerUrl: "https://attacker.invalid",
         },
-      },
-      "job-tampered",
-    );
-
-    expect(fields).toEqual({
-      ocr_required: "false",
-      tables: "false",
-      formula: "false",
-      cost_policy: "STANDARD",
-      privacy_policy: "LOCAL_PREFERRED",
-      ingest_job_id: "job-tampered",
-      configuration_json: "{}",
-    });
-    expect(JSON.stringify(fields)).not.toContain("chunkr");
-    expect(JSON.stringify(fields)).not.toContain("attacker.invalid");
+      }),
+    ).toThrow();
   });
 });
