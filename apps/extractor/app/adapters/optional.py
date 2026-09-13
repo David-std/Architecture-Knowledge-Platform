@@ -110,12 +110,22 @@ def _docling_bbox(provenance: Any) -> BoundingBox | None:
     top = getattr(bbox, "t", None)
     right = getattr(bbox, "r", None)
     bottom = getattr(bbox, "b", None)
-    if not all(isinstance(value, (int, float)) for value in (left, top, right, bottom)):
+    if not isinstance(left, (int, float)):
         return None
-    x = max(0.0, float(min(left, right)))
-    y = max(0.0, float(min(top, bottom)))
-    width = abs(float(right) - float(left))
-    height = abs(float(bottom) - float(top))
+    if not isinstance(top, (int, float)):
+        return None
+    if not isinstance(right, (int, float)):
+        return None
+    if not isinstance(bottom, (int, float)):
+        return None
+    left_value = float(left)
+    top_value = float(top)
+    right_value = float(right)
+    bottom_value = float(bottom)
+    x = max(0.0, min(left_value, right_value))
+    y = max(0.0, min(top_value, bottom_value))
+    width = abs(right_value - left_value)
+    height = abs(bottom_value - top_value)
     if width <= 0 or height <= 0:
         return None
     return BoundingBox(x=x, y=y, width=width, height=height, unit="point")
