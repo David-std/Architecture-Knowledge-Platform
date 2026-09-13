@@ -97,6 +97,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/api/src/routes/provider-tasks.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/api/src/routes/reviews.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -128,6 +133,11 @@
     },
     {
       "path": "apps/api/test/auth-space.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/api/test/document-intelligence.integration.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -262,12 +272,42 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/extractor/app/adapters/chunkr_async.py",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/extractor/app/adapters/chunkr_runtime.py",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/extractor/app/adapters/deterministic.py",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/extractor/app/adapters/docling_native.py",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/extractor/app/adapters/marker_native.py",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/extractor/app/adapters/ocr_local.py",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/extractor/app/adapters/optional.py",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/extractor/app/adapters/transcription.py",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
@@ -327,6 +367,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/extractor/app/provider_task_journal.py",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/extractor/app/registry.py",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -353,6 +398,31 @@
     },
     {
       "path": "apps/extractor/tests/test_document_intelligence.py",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/extractor/tests/test_p5_chunkr_durability.py",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/extractor/tests/test_p5_docling_runtime.py",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/extractor/tests/test_p5_native_providers.py",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/extractor/tests/test_p5_ocr_transcription.py",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/extractor/tests/test_p5_routing_policies.py",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -552,6 +622,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/worker/src/document-intelligence-request.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/worker/src/drain.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -603,6 +678,11 @@
     },
     {
       "path": "apps/worker/test/document-artifact.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/worker/test/document-intelligence-request.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -1650,6 +1730,26 @@
       "path": "REMAINING_REAL_GAPS.md",
       "category": "PRODUCT_DOCUMENTATION",
       "reason": "canonical product documentation"
+    },
+    {
+      "path": "reports/ci/formatted/document-intelligence-request.ts",
+      "category": "GENERATED_CANONICAL",
+      "reason": "canonical reproducible report"
+    },
+    {
+      "path": "reports/ci/formatted/provider-tasks.ts",
+      "category": "GENERATED_CANONICAL",
+      "reason": "canonical reproducible report"
+    },
+    {
+      "path": "reports/ci/formatted/worker.ts",
+      "category": "GENERATED_CANONICAL",
+      "reason": "canonical reproducible report"
+    },
+    {
+      "path": "reports/ci/prettier-check.txt",
+      "category": "GENERATED_CANONICAL",
+      "reason": "canonical reproducible report"
     },
     {
       "path": "reports/document-intelligence/benchmark.json",
