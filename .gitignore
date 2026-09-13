@@ -11,6 +11,7 @@ coverage/
 **/.turbo/
 *.log
 backups/
+reports/ci/
 reports-vault-stat-*.txt
 apps/extractor/.venv/
 apps/extractor/.pytest_cache/
