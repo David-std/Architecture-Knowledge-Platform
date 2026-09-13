@@ -1,0 +1,34 @@
+name: p6-search-links-apply
+
+on:
+  push:
+    branches:
+      - work/p5-document-intelligence
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: work/p5-document-intelligence
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - run: python3 scripts/p6-search-links-patch.py
+      - run: pnpm exec prettier --write packages/contracts/src/index.ts apps/api/src/routes/search.ts apps/web/app/search/page.tsx apps/api/test/lexical-ranking.integration.test.ts
+      - run: pnpm check
+      - run: git rm .github/workflows/p6-search-links-apply.yml scripts/p6-search-links-patch.py
+      - run: git config user.name "github-actions[bot]"
+      - run: git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - run: git add packages/contracts/src/index.ts apps/api/src/routes/search.ts apps/web/app/search/page.tsx apps/api/test/lexical-ranking.integration.test.ts
+      - run: git commit -m "feat(p6): expose real citation and evidence links"
+      - run: git push origin HEAD:work/p5-document-intelligence
