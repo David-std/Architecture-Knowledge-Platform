@@ -47,6 +47,43 @@ function summary(value: unknown): string {
   return JSON.stringify(value);
 }
 
+function structuredLabel(value: unknown): string {
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return String(value);
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "—";
+  const record = value as Record<string, unknown>;
+  for (const key of [
+    "statement",
+    "title",
+    "external_id",
+    "externalId",
+    "document_id",
+    "documentId",
+    "id",
+    "path",
+    "kind",
+  ]) {
+    const candidate = record[key];
+    if (
+      typeof candidate === "string" ||
+      typeof candidate === "number" ||
+      typeof candidate === "boolean"
+    ) {
+      return String(candidate);
+    }
+  }
+  return "Estructura registrada; usa la inspección JSON para el detalle completo.";
+}
+
+function conflictEvidence(conflict: Record<string, unknown>): string[] {
+  return strings(conflict.evidence_ids ?? conflict.evidenceIds ?? conflict.evidence);
+}
+
 export default async function ReviewPage({
   params,
 }: {
@@ -300,14 +337,43 @@ export default async function ReviewPage({
         <section className="card">
           <h2>Contradicciones</h2>
           {contradictions.length ? (
-            contradictions.map((conflict, index) => (
-              <div key={index}>
-                <strong>
-                  {summary(conflict.explanation ?? conflict.status)}
-                </strong>
-                <p>{summary(conflict)}</p>
-              </div>
-            ))
+            contradictions.map((conflict, index) => {
+              const supportingEvidence = conflictEvidence(conflict);
+              return (
+                <article
+                  key={String(conflict.id ?? conflict.candidate_id ?? index)}
+                  style={{ marginBottom: 16 }}
+                >
+                  <p>
+                    <strong>
+                      {structuredLabel(
+                        conflict.explanation ?? conflict.reason ?? conflict.status,
+                      )}
+                    </strong>
+                  </p>
+                  <table>
+                    <tbody>
+                      <tr>
+                        <th>Candidato</th>
+                        <td>{structuredLabel(conflict.candidate)}</td>
+                      </tr>
+                      <tr>
+                        <th>Existente</th>
+                        <td>{structuredLabel(conflict.existing)}</td>
+                      </tr>
+                      <tr>
+                        <th>Evidencia</th>
+                        <td>
+                          {supportingEvidence.length
+                            ? supportingEvidence.join(" · ")
+                            : "No reportada"}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </article>
+              );
+            })
           ) : (
             <p className="muted">Sin contradicciones reportadas.</p>
           )}
