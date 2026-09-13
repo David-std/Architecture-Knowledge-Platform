@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  CompilationPlan,
   KnowledgeCompilerInput,
   OpenAICompatibleKnowledgeCompiler,
   deriveKnowledgePath,
@@ -174,8 +175,10 @@ describe("Knowledge Compiler contracts", () => {
     ).toThrow(/Unsafe knowledge path/);
   });
 
-  it("converts a grounded result into the existing review plan without publication", () => {
-    const plan = resultToCompilationPlan(compilerInput(), groundedResult());
+  it("converts a grounded result into a durable review plan without publication", () => {
+    const plan = CompilationPlan.parse(
+      resultToCompilationPlan(compilerInput(), groundedResult()),
+    );
     expect(plan).toMatchObject({
       sourceId: SOURCE_ID,
       corpusRevision: "corpus-7",
@@ -184,6 +187,25 @@ describe("Knowledge Compiler contracts", () => {
     });
     expect(plan.proposedChanges[0]?.evidenceIds).toEqual([EVIDENCE_ID]);
     expect(plan.probes[0]?.evidenceIds).toEqual([EVIDENCE_ID]);
+    expect(plan.reviewContext).toMatchObject({
+      identity: {
+        classification: "DISTINCT",
+        candidates: [DOCUMENT_ID],
+      },
+      knowledgeCandidates: [
+        {
+          candidateId: "candidate-1",
+          proposedAction: "CREATE",
+          evidenceIds: [EVIDENCE_ID],
+        },
+      ],
+      evidence: [{ id: EVIDENCE_ID, excerptHash: EXCERPT_HASH }],
+      existingCandidates: [{ documentId: DOCUMENT_ID, path: "20-knowledge/concept/cache.md" }],
+    });
+    expect(plan.reviewContext?.evidence[0]).not.toHaveProperty("excerpt");
+    expect(plan.reviewContext?.existingCandidates[0]).not.toHaveProperty(
+      "contentExcerpt",
+    );
   });
 
   it("executes a bounded OpenAI-compatible structured generation request", async () => {
