@@ -14,6 +14,7 @@ import {
   claimNextIngestJob,
   runKnowledgeLint,
 } from "@akp/postgres";
+import { DocumentIntelligenceRequest } from "@akp/contracts";
 import { transitionIngest, type IngestState } from "@akp/domain";
 import {
   hashFile,
@@ -230,6 +231,66 @@ async function updateState(
   }
 }
 
+type ProviderTaskEvent =
+  | "PROVIDER_TASK_STARTED"
+  | "PROVIDER_TASK_SUCCEEDED"
+  | "PROVIDER_TASK_FAILED";
+
+async function recordProviderTaskEvent(
+  jobId: string,
+  state: IngestState,
+  eventType: ProviderTaskEvent,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  const inserted = await db.pool.query(
+    `
+    insert into ingest_job_events(job_id,state,event_type,payload)
+    select $1,$2,$3,$4::jsonb
+     where exists (
+       select 1 from ingest_jobs
+        where id=$1 and lease_owner=$5 and cancelled_at is null
+     )
+    returning id
+    `,
+    [jobId, state, eventType, JSON.stringify(payload), workerId],
+  );
+  if (!inserted.rowCount) {
+    throw new Error("JOB_LEASE_LOST_OR_CANCELLED");
+  }
+}
+
+function providerTaskErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message
+    .replace(
+      /(?:[A-Za-z]:[\\/]|\\\\|file:\/\/|\/(?:Users|home|tmp|var)\/)[^\s"']+/g,
+      "[REDACTED_PATH]",
+    )
+    .slice(0, 2_000);
+}
+
+function extractorConfiguration(
+  documentIntelligence: ReturnType<typeof DocumentIntelligenceRequest.parse>,
+): Record<string, unknown> {
+  return {
+    ...(documentIntelligence.extractor
+      ? { extractor: documentIntelligence.extractor }
+      : {}),
+    ...(documentIntelligence.ocr === undefined
+      ? {}
+      : { ocr: documentIntelligence.ocr }),
+    ...(documentIntelligence.ocrEngine
+      ? { ocr_engine: documentIntelligence.ocrEngine }
+      : {}),
+    ...(documentIntelligence.forceFullPageOcr === undefined
+      ? {}
+      : { force_full_page_ocr: documentIntelligence.forceFullPageOcr }),
+    ...(documentIntelligence.timeoutSeconds === undefined
+      ? {}
+      : { timeout_seconds: documentIntelligence.timeoutSeconds }),
+  };
+}
+
 async function processJob(job: Record<string, unknown>): Promise<void> {
   const id = String(job.id);
   const state = String(job.state) as IngestState;
@@ -339,46 +400,92 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
       if (materialized.sha256 !== raw.sha256) {
         throw new Error("IMMUTABLE_OBJECT_HASH_MISMATCH");
       }
+      const documentIntelligence = DocumentIntelligenceRequest.parse(
+        payload.documentIntelligence ?? {},
+      );
+      const configuration = extractorConfiguration(documentIntelligence);
+      const mediaType = String(outputs.mediaType ?? payload.mediaType ?? "");
+      const attempt = Number(job.attempts ?? 0) + 1;
       const upload = new FormData();
       upload.set(
         "file",
-        await openAsBlob(immutablePath, {
-          type: String(outputs.mediaType ?? payload.mediaType ?? ""),
-        }),
+        await openAsBlob(immutablePath, { type: mediaType }),
         String(outputs.originalName ?? basename(sourceUri)),
       );
       upload.set("source_uri", sourceUri);
       upload.set("source_id", String(outputs.sourceId));
-      upload.set(
-        "media_type",
-        String(outputs.mediaType ?? payload.mediaType ?? ""),
-      );
+      upload.set("media_type", mediaType);
       upload.set("expected_sha256", raw.sha256);
-      const response = await fetch(`${extractorUrl}/v1/extract-upload`, {
-        method: "POST",
-        headers: {
-          "x-akp-extractor-token":
-            process.env.AKP_EXTRACTOR_TOKEN ??
-            "local-extractor-development-token",
-        },
-        body: upload,
+      if (documentIntelligence.complexity) {
+        upload.set("complexity", documentIntelligence.complexity);
+      }
+      if (Object.keys(configuration).length) {
+        upload.set("configuration", JSON.stringify(configuration));
+      }
+      await recordProviderTaskEvent(id, state, "PROVIDER_TASK_STARTED", {
+        attempt,
+        mediaType,
+        complexity: documentIntelligence.complexity ?? null,
+        requestedExtractor: documentIntelligence.extractor ?? null,
+        ocrRequested: documentIntelligence.ocr ?? false,
       });
-      if (!response.ok)
-        throw new Error(
-          `Extractor failed: ${response.status} ${await response.text()}`,
+
+      let canonical: ReturnType<typeof parseCanonicalExtractionResponse>;
+      try {
+        const response = await fetch(`${extractorUrl}/v1/extract-upload`, {
+          method: "POST",
+          headers: {
+            "x-akp-extractor-token":
+              process.env.AKP_EXTRACTOR_TOKEN ??
+              "local-extractor-development-token",
+          },
+          body: upload,
+        });
+        if (!response.ok) {
+          throw new Error(
+            `Extractor failed: ${response.status} ${await response.text()}`,
+          );
+        }
+        const extractedResponse = (await response.json()) as unknown;
+        const expectedIdentity = {
+          sourceId: String(outputs.sourceId),
+          sourceHash: raw.sha256,
+          ...(mediaType ? { mediaType } : {}),
+        };
+        canonical = parseCanonicalExtractionResponse(
+          extractedResponse,
+          expectedIdentity,
         );
-      const extractedResponse = (await response.json()) as unknown;
-      const expectedIdentity = {
-        sourceId: String(outputs.sourceId),
-        sourceHash: raw.sha256,
-        ...(String(outputs.mediaType ?? payload.mediaType ?? "")
-          ? { mediaType: String(outputs.mediaType ?? payload.mediaType) }
-          : {}),
-      };
-      const canonical = parseCanonicalExtractionResponse(
-        extractedResponse,
-        expectedIdentity,
-      );
+      } catch (error) {
+        await recordProviderTaskEvent(id, state, "PROVIDER_TASK_FAILED", {
+          attempt,
+          mediaType,
+          complexity: documentIntelligence.complexity ?? null,
+          requestedExtractor: documentIntelligence.extractor ?? null,
+          ocrRequested: documentIntelligence.ocr ?? false,
+          message: providerTaskErrorMessage(error),
+        });
+        throw error;
+      }
+
+      await recordProviderTaskEvent(id, state, "PROVIDER_TASK_SUCCEEDED", {
+        attempt,
+        extractor: canonical.extractor,
+        extractorVersion: canonical.extractorVersion,
+        selectedAdapter:
+          typeof canonical.routing.selected_adapter === "string"
+            ? canonical.routing.selected_adapter
+            : canonical.extractor,
+        selectionReason:
+          typeof canonical.routing.selection_reason === "string"
+            ? canonical.routing.selection_reason
+            : null,
+        fallback: canonical.routing.fallback === true,
+        configurationHash: canonical.configurationHash,
+        structuredContentHash: canonical.contentHash,
+        warnings: canonical.warnings,
+      });
+
       const storedArtifact = await db.pool.query<{ id: string }>(
         `
         insert into source_artifacts(
