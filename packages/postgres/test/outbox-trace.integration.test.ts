@@ -35,10 +35,11 @@ describe("durable outbox trace context", () => {
         });
         expect(appended.telemetry).toEqual(telemetry);
 
-        const persisted = await db.pool.query<{ telemetry_metadata: unknown }>(
-          "select telemetry_metadata from event_outbox where event_id=$1",
-          [eventId],
-        );
+        const persisted = await db.pool.query<{
+          telemetry_metadata: unknown;
+        }>("select telemetry_metadata from event_outbox where event_id=$1", [
+          eventId,
+        ]);
         expect(persisted.rows[0]?.telemetry_metadata).toEqual(telemetry);
 
         await registerEventConsumer(db, consumerName);
