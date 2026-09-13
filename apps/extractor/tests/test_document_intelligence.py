@@ -1,4 +1,3 @@
-import shutil
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -365,11 +364,10 @@ def test_docling_provider_real_native_structure_when_installed(tmp_path: Path) -
     )
 
 
-def test_docling_provider_real_scanned_pdf_ocr_with_tesseract_when_installed(
+def test_docling_provider_real_native_structure_when_installed_scanned_pdf_ocr(
     tmp_path: Path,
 ) -> None:
     pytest.importorskip("docling")
-    assert shutil.which("tesseract") is not None, "tesseract CLI is required"
 
     source = tmp_path / "scanned-ocr.pdf"
     image = Image.new("RGB", (1654, 2339), "white")
@@ -396,8 +394,6 @@ def test_docling_provider_real_scanned_pdf_ocr_with_tesseract_when_installed(
             "scanned",
             {
                 "ocr": True,
-                "ocr_engine": "tesseract-cli",
-                "force_full_page_ocr": True,
                 "timeout_seconds": 300,
             },
         )
@@ -407,7 +403,7 @@ def test_docling_provider_real_scanned_pdf_ocr_with_tesseract_when_installed(
     assert artifact.extractor == "docling"
     assert artifact.configuration["native_structure"] is True
     assert artifact.configuration["ocr_requested"] is True
-    assert artifact.configuration["ocr_engine"] == "tesseract-cli"
+    assert artifact.configuration["ocr_engine"] == "provider-default"
     assert "AKP OCR PROBE 739241" in normalized
     assert "DURABLE DOCUMENT INTELLIGENCE" in normalized
     assert artifact.blocks
