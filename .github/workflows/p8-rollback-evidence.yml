@@ -31,11 +31,15 @@ jobs:
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
       - run: node scripts/p8-rollback-materialize.mjs
       - run: node scripts/p8-rollback-test-fix.mjs
+      - run: node scripts/p8-delete-materialize.mjs
       - run: >-
           pnpm exec prettier --write
           apps/api/src/routes/reviews.ts
           apps/api/test/review-publication.integration.test.ts
           apps/api/test/product-lifecycle.integration.test.ts
+          apps/worker/src/event-handlers.ts
+          apps/worker/test/event-handlers.test.ts
+          packages/indexing/src/index.ts
       - run: pnpm check
       - run: docker compose up -d --wait postgres minio extractor
       - run: |
@@ -68,9 +72,15 @@ jobs:
       - run: |
           mkdir -p reports/p8-materialized/apps/api/src/routes
           mkdir -p reports/p8-materialized/apps/api/test
+          mkdir -p reports/p8-materialized/apps/worker/src
+          mkdir -p reports/p8-materialized/apps/worker/test
+          mkdir -p reports/p8-materialized/packages/indexing/src
           cp apps/api/src/routes/reviews.ts reports/p8-materialized/apps/api/src/routes/reviews.ts
           cp apps/api/test/review-publication.integration.test.ts reports/p8-materialized/apps/api/test/review-publication.integration.test.ts
           cp apps/api/test/product-lifecycle.integration.test.ts reports/p8-materialized/apps/api/test/product-lifecycle.integration.test.ts
+          cp apps/worker/src/event-handlers.ts reports/p8-materialized/apps/worker/src/event-handlers.ts
+          cp apps/worker/test/event-handlers.test.ts reports/p8-materialized/apps/worker/test/event-handlers.test.ts
+          cp packages/indexing/src/index.ts reports/p8-materialized/packages/indexing/src/index.ts
       - uses: actions/upload-artifact@v7
         with:
           name: p8-rollback-materialized-${{ github.run_id }}
