@@ -31,6 +31,7 @@ interface SearchHit {
   type: string;
   trust: string;
   lifecycle: string;
+  refreshStatus: string;
   score: number;
   excerpt: string;
   reasons: string[];
@@ -264,6 +265,7 @@ export default async function SearchPage({
             <span className="badge">{hit.type}</span>
             <span className="badge">{hit.trust}</span>
             <span className="badge">{hit.lifecycle}</span>
+            <span className="badge">freshness {hit.refreshStatus}</span>
           </p>
           <p>{hit.excerpt}</p>
           <p className="muted">{hit.reasons.join(" · ")}</p>
