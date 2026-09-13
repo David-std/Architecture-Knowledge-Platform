@@ -1,3 +1,4 @@
+import "./instrumentation.js";
 import { config } from "dotenv";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,7 +7,11 @@ import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import { Postgres } from "@akp/postgres";
 import { MinioObjectStore } from "@akp/object-store";
-import { OpenTelemetryBridge, type ActiveTrace } from "@akp/observability";
+import {
+  OpenTelemetryBridge,
+  shutdownOpenTelemetry,
+  type ActiveTrace,
+} from "@akp/observability";
 import type { Tokenizer } from "@akp/retrieval";
 import { registerSearchRoutes } from "./routes/search.js";
 import { registerIngestRoutes } from "./routes/ingest.js";
@@ -200,5 +205,11 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
 if (process.env.NODE_ENV !== "test") {
   const app = buildServer();
   const port = Number(process.env.PORT ?? 8080);
+  const close = async () => {
+    await app.close();
+    await shutdownOpenTelemetry();
+  };
+  process.once("SIGTERM", () => void close());
+  process.once("SIGINT", () => void close());
   await app.listen({ port, host: "127.0.0.1" });
 }
