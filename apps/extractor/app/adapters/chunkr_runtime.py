@@ -81,21 +81,16 @@ def _preserve_chunk_hierarchy(artifact: DocumentArtifact) -> DocumentArtifact:
 
     ``DocumentArtifact`` intentionally stays provider-neutral. Chunks are
     represented as canonical parent blocks, while provider-native chunk fields
-    remain metadata. Segment items point to their parent chunk. This avoids
-    relying on a Python-only extra field that would be stripped by a strict
-    downstream parser.
+    remain metadata. Segment items point to their parent chunk.
     """
 
-    extras = artifact.model_extra or {}
-    chunks = extras.get("chunks")
-    if not isinstance(chunks, list):
+    chunks = artifact.chunks
+    if not chunks:
         return artifact
 
     existing = {item.id for item in artifact.blocks if item.id}
     chunk_parents: list[ArtifactItem] = []
     for index, raw_chunk in enumerate(chunks, start=1):
-        if not isinstance(raw_chunk, dict):
-            continue
         chunk_id = str(raw_chunk.get("chunk_id") or f"chunk-{index}")
         if chunk_id in existing:
             continue
@@ -145,9 +140,8 @@ def _preserve_chunk_hierarchy(artifact: DocumentArtifact) -> DocumentArtifact:
         "native_chunk_count": len(chunks),
         "chunk_hierarchy_preserved": True,
     }
-    provider_meta = extras.get("provider_output_metadata")
-    if isinstance(provider_meta, dict):
-        artifact.configuration["provider_output_metadata"] = provider_meta
+    if artifact.provider_output_metadata:
+        artifact.configuration["provider_output_metadata"] = artifact.provider_output_metadata
     return artifact
 
 
