@@ -25,6 +25,20 @@ interface FusionContribution {
   reason: string;
 }
 
+type SearchCitationLink =
+  | {
+      kind: "document";
+      documentId: string;
+      path: string;
+      revision: string;
+    }
+  | {
+      kind: "source-evidence";
+      evidenceId: string;
+      sourceId: string;
+      locator: Record<string, unknown>;
+    };
+
 interface SearchHit {
   documentId: string;
   title: string;
@@ -36,6 +50,7 @@ interface SearchHit {
   excerpt: string;
   reasons: string[];
   citations: string[];
+  citationLinks?: SearchCitationLink[];
   warnings?: string[];
   fusionContributions?: FusionContribution[];
 }
@@ -95,6 +110,21 @@ interface ContextPacket {
     remainingTokens?: number;
   }>;
   [key: string]: unknown;
+}
+
+function evidenceLocatorLabel(locator: Record<string, unknown>): string {
+  const parts = [
+    locator.kind ? String(locator.kind) : "evidence",
+    typeof locator.page === "number" ? `p.${locator.page}` : null,
+    typeof locator.sheet === "string" ? `sheet ${locator.sheet}` : null,
+    typeof locator.startLine === "number"
+      ? `lines ${locator.startLine}-${String(locator.endLine ?? "?")}`
+      : null,
+    typeof locator.startMs === "number"
+      ? `${locator.startMs}-${String(locator.endMs ?? "?")} ms`
+      : null,
+  ].filter(Boolean);
+  return parts.join(" · ");
 }
 
 function tokenSummary(packet: ContextPacket): string {
@@ -291,12 +321,39 @@ export default async function SearchPage({
               </tbody>
             </table>
           ) : null}
-          <p>
-            <strong>Citaciones/evidencia:</strong>{" "}
-            {hit.citations.length
-              ? hit.citations.join(" · ")
-              : "Sin referencias"}
-          </p>
+          <div>
+            <strong>Citaciones/evidencia:</strong>
+            {hit.citationLinks?.length ? (
+              <ul>
+                {hit.citationLinks.map((citation) =>
+                  citation.kind === "document" ? (
+                    <li
+                      key={`document-${citation.documentId}-${citation.revision}`}
+                    >
+                      <Link href={`/documents/${citation.documentId}`}>
+                        {citation.path}@{citation.revision}
+                      </Link>
+                    </li>
+                  ) : (
+                    <li key={`evidence-${citation.evidenceId}`}>
+                      <Link href={`/sources/${citation.sourceId}`}>
+                        evidencia {citation.evidenceId.slice(0, 8)}
+                      </Link>{" "}
+                      <small className="muted">
+                        {evidenceLocatorLabel(citation.locator)}
+                      </small>
+                    </li>
+                  ),
+                )}
+              </ul>
+            ) : (
+              <p className="muted">
+                {hit.citations.length
+                  ? hit.citations.join(" · ")
+                  : "Sin referencias"}
+              </p>
+            )}
+          </div>
           {hit.warnings?.length ? (
             <p className="muted">Warnings: {hit.warnings.join(" · ")}</p>
           ) : null}
