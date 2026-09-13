@@ -30,6 +30,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
       - run: node scripts/p8-rollback-materialize.mjs
+      - run: node scripts/p8-rollback-test-fix.mjs
       - run: >-
           pnpm exec prettier --write
           apps/api/src/routes/reviews.ts
