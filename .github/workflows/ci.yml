@@ -34,12 +34,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          pnpm exec prettier --write packages/postgres/test/outbox-trace.integration.test.ts
-          node scripts/validate-repository-hygiene.mjs --write
           mkdir -p reports/ci/formatted
-          cp REPOSITORY_FILE_CLASSIFICATION.json reports/ci/formatted/REPOSITORY_FILE_CLASSIFICATION.json
-          pnpm exec prettier packages/postgres/test/outbox-trace.integration.test.ts \
-            > reports/ci/formatted/outbox-trace.integration.test.ts
           pnpm exec prettier apps/api/src/routes/provider-tasks.ts \
             > reports/ci/formatted/provider-tasks.ts
           pnpm exec prettier apps/worker/src/document-intelligence-request.ts \
