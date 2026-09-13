@@ -152,6 +152,8 @@ class DocumentArtifact(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     quality: str = "UNREVIEWED"
     quality_metrics: dict[str, float | int | str | bool] = Field(default_factory=dict)
+    chunks: list[dict[str, Any]] = Field(default_factory=list)
+    provider_output_metadata: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("source_hash")
     @classmethod
