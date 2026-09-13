@@ -46,11 +46,25 @@ jobs:
       - run: pnpm db:migrate
       - run: pnpm auth:provision
       - name: Execute rollback integration evidence
-        run: >-
-          pnpm --filter @akp/api exec vitest run
-          --config vitest.integration.config.ts
-          test/review-publication.integration.test.ts
-          test/product-lifecycle.integration.test.ts
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p reports/p8-test
+          pnpm --filter @akp/api exec vitest run \
+            --config vitest.integration.config.ts \
+            test/review-publication.integration.test.ts \
+            test/product-lifecycle.integration.test.ts \
+            --reporter=default --reporter=junit \
+            --outputFile.junit=../../reports/p8-test/junit.xml \
+            2>&1 | tee reports/p8-test/vitest.txt
+      - name: Upload rollback test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: p8-rollback-test-${{ github.run_id }}
+          path: reports/p8-test
+          if-no-files-found: ignore
+          retention-days: 2
       - run: |
           mkdir -p reports/p8-materialized/apps/api/src/routes
           mkdir -p reports/p8-materialized/apps/api/test
