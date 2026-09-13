@@ -52,42 +52,42 @@ class _FakeDoclingDocument:
             charspan=(41, 80),
         )
         cells = [
-            SimpleNamespace(
-                start_row_offset=0,
-                end_row_offset=1,
-                start_col_offset=0,
-                end_col_offset=1,
-                text="Key",
-                column_header=True,
-                row_header=False,
-            ),
-            SimpleNamespace(
-                start_row_offset=0,
-                end_row_offset=1,
-                start_col_offset=1,
-                end_col_offset=2,
-                text="Value",
-                column_header=True,
-                row_header=False,
-            ),
-            SimpleNamespace(
-                start_row_offset=1,
-                end_row_offset=2,
-                start_col_offset=0,
-                end_col_offset=1,
-                text="mode",
-                column_header=False,
-                row_header=False,
-            ),
-            SimpleNamespace(
-                start_row_offset=1,
-                end_row_offset=2,
-                start_col_offset=1,
-                end_col_offset=2,
-                text="native",
-                column_header=False,
-                row_header=False,
-            ),
+            {
+                "start_row_offset": 0,
+                "end_row_offset": 1,
+                "start_col_offset": 0,
+                "end_col_offset": 1,
+                "text": "Key",
+                "column_header": True,
+                "row_header": False,
+            },
+            {
+                "start_row_offset": 0,
+                "end_row_offset": 1,
+                "start_col_offset": 1,
+                "end_col_offset": 2,
+                "text": "Value",
+                "column_header": True,
+                "row_header": False,
+            },
+            {
+                "start_row_offset": 1,
+                "end_row_offset": 2,
+                "start_col_offset": 0,
+                "end_col_offset": 1,
+                "text": "mode",
+                "column_header": False,
+                "row_header": False,
+            },
+            {
+                "start_row_offset": 1,
+                "end_row_offset": 2,
+                "start_col_offset": 1,
+                "end_col_offset": 2,
+                "text": "native",
+                "column_header": False,
+                "row_header": False,
+            },
         ]
         self.heading = SimpleNamespace(
             self_ref="#/texts/0",
@@ -381,8 +381,7 @@ def test_chunkr_adapter_executes_async_task_lifecycle_and_maps_segments(
     assert artifact.headings[0].metadata["ocr"]
     assert artifact.tables[0].locator.sheet == "Sheet1"
     assert artifact.tables[0].metadata["ss_cells"][0]["text"] == "A"
-    assert artifact.model_extra is not None
-    assert artifact.model_extra["chunks"][0]["segment_ids"] == ["seg-title", "seg-table"]
+    assert artifact.chunks[0]["segment_ids"] == ["seg-title", "seg-table"]
 
 
 def _svix_signature(payload: bytes, *, secret: str, msg_id: str, timestamp: int) -> str:
