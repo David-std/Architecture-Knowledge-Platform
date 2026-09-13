@@ -44,11 +44,18 @@ const requiredMetrics = [
 
 const roots = ["apps", "packages"];
 const extensions = new Set([".ts", ".tsx", ".js", ".mjs"]);
+const ignoredDirectories = new Set([
+  "node_modules",
+  "dist",
+  ".next",
+  ".turbo",
+  "coverage",
+]);
 const files = [];
 
 function walk(directory) {
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-    if (entry.name === "node_modules" || entry.name === "dist") continue;
+    if (ignoredDirectories.has(entry.name)) continue;
     const candidate = path.join(directory, entry.name);
     if (entry.isDirectory()) walk(candidate);
     else if (extensions.has(path.extname(entry.name))) files.push(candidate);
@@ -105,11 +112,14 @@ if (missingSpans.length || missingMetrics.length) {
 const collectorLog = process.env.AKP_OTEL_COLLECTOR_LOG;
 if (collectorLog) {
   const log = fs.readFileSync(collectorLog, "utf8");
+  // The Collector debug exporter aligns labels with padding, e.g.
+  // `Name           : backup`. Match semantic label/value boundaries instead
+  // of depending on a particular amount of formatting whitespace.
   const runtimeChecks = {
     resourceSpans: /ResourceSpans|ScopeSpans|Span #/i.test(log),
     resourceMetrics: /ResourceMetrics|ScopeMetrics|Metric #/i.test(log),
-    backupSpan: /Name:\s*backup\b|name[:=]\s*backup\b/i.test(log),
-    restoreSpan: /Name:\s*restore\b|name[:=]\s*restore\b/i.test(log),
+    backupSpan: /\bName\s*:\s*backup\b/i.test(log),
+    restoreSpan: /\bName\s*:\s*restore\b/i.test(log),
   };
   if (Object.values(runtimeChecks).some((passed) => !passed)) {
     process.stderr.write(`${JSON.stringify({ runtimeChecks }, null, 2)}\n`);
