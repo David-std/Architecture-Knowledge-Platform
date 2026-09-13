@@ -201,7 +201,9 @@ describe("compilation stage", () => {
         },
       ],
     });
-    expect(output.plan.reviewContext?.evidence[0]).not.toHaveProperty("excerpt");
+    expect(output.plan.reviewContext?.evidence[0]).not.toHaveProperty(
+      "excerpt",
+    );
     expect(compile).toHaveBeenCalledOnce();
     expect(compile.mock.calls[0]?.[0]).toMatchObject({
       spaceId: SPACE_ID,
