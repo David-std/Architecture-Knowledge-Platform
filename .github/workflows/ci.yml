@@ -30,7 +30,12 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
       - run: pnpm audit --audit-level high
-      - run: pnpm exec prettier --check .
+      - name: Check repository formatting
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p reports/ci
+          pnpm exec prettier --check . 2>&1 | tee reports/ci/prettier-check.txt
       - run: docker compose config --quiet
       - run: docker compose up -d --wait postgres minio extractor
       - run: |
@@ -129,10 +134,28 @@ jobs:
           enable-cache: true
           cache-dependency-glob: apps/extractor/uv.lock
       - run: uv sync --locked
-      - run: uv run --locked ruff check --no-cache .
+      - name: Run Ruff with persisted diagnostics
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p ../../reports/ci
+          uv run --locked ruff check --no-cache . 2>&1 | tee ../../reports/ci/python-ruff.txt
       - run: uv run --locked mypy app
       - name: Run extractor suite with real local OCR tools
-        run: uv run --locked pytest -p no:cacheprovider -m "not provider_runtime"
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p ../../reports/ci
+          uv run --locked pytest -p no:cacheprovider -m "not provider_runtime" 2>&1 \
+            | tee ../../reports/ci/python-pytest.txt
+      - name: Upload Python diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-diagnostics-${{ github.run_id }}-${{ github.job }}
+          path: reports/ci
+          if-no-files-found: ignore
+          retention-days: 14
 
   python-docling:
     runs-on: ubuntu-latest
@@ -151,4 +174,18 @@ jobs:
       - name: Sync the locked opt-in Docling profile
         run: uv sync --locked --extra docling
       - name: Execute the real Docling provider against a structured fixture
-        run: uv run --locked --extra docling pytest -p no:cacheprovider tests/test_p5_docling_runtime.py -q
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p ../../reports/ci
+          uv run --locked --extra docling pytest -p no:cacheprovider \
+            tests/test_p5_docling_runtime.py -q 2>&1 \
+            | tee ../../reports/ci/python-docling.txt
+      - name: Upload Docling diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-diagnostics-${{ github.run_id }}-${{ github.job }}
+          path: reports/ci
+          if-no-files-found: ignore
+          retention-days: 14
