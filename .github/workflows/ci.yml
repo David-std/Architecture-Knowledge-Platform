@@ -29,6 +29,136 @@ jobs:
           node-version: 24.20.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Materialize P6 navigable citation candidate
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one anchor, found {count}")
+              file.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          contracts = "packages/contracts/src/index.ts"
+          replace_once(
+              contracts,
+              'export type GraphPathProvenance = z.infer<typeof GraphPathProvenance>;\n\nexport const SearchHit = z.object({',
+              '''export type GraphPathProvenance = z.infer<typeof GraphPathProvenance>;\n\nexport const SearchCitationLink = z.discriminatedUnion("kind", [\n  z.object({\n    kind: z.literal("document"),\n    documentId: z.string().uuid(),\n    path: z.string().min(1),\n    revision: z.string().min(1),\n  }),\n  z.object({\n    kind: z.literal("source-evidence"),\n    evidenceId: z.string().uuid(),\n    sourceId: z.string().uuid(),\n    locator: z.record(z.string(), z.unknown()),\n  }),\n]);\nexport type SearchCitationLink = z.infer<typeof SearchCitationLink>;\n\nexport const SearchHit = z.object({''',
+          )
+          replace_once(
+              contracts,
+              '  citations: z.array(z.string()),\n  warnings: z.array(z.string()).optional(),',
+              '  citations: z.array(z.string()),\n  citationLinks: z.array(SearchCitationLink).optional(),\n  warnings: z.array(z.string()).optional(),',
+          )
+
+          search = "apps/api/src/routes/search.ts"
+          replace_once(
+              search,
+              '  requirePermission,\n} from "../auth.js";',
+              '  requirePermission,\n  unrestrictedSpaceIdsForPermission,\n} from "../auth.js";',
+          )
+          replace_once(
+              search,
+              '  vaultIds?: string[];\n  /** Applied after policy/trust filtering so a scoped caller never receives a',
+              '  vaultIds?: string[];\n  /** Vaults whose unrestricted source operator surface is authorized. */\n  sourceLinkVaultIds?: readonly string[];\n  /** Applied after policy/trust filtering so a scoped caller never receives a',
+          )
+          replace_once(
+              search,
+              '\nexport function channelsConsistentWithIndex(',
+              '''\nasync function sourceLinkVaultIdsForActor(\n  db: Postgres,\n  userId: string,\n  spaceId: string,\n  searchedVaultIds: readonly string[],\n): Promise<string[]> {\n  try {\n    const scope = await resolveAuthorizedVaultScope(db, {\n      userId,\n      spaceId,\n      permission: "source:read",\n      federated: true,\n    });\n    const allowedVaults = new Set(scope.vaultIds);\n    return searchedVaultIds.filter(\n      (vaultId) =>\n        allowedVaults.has(vaultId) &&\n        scope.accessByVault[vaultId]?.pathPrefix === null,\n    );\n  } catch {\n    return [];\n  }\n}\n\nexport function channelsConsistentWithIndex(''',
+          )
+          replace_once(
+              search,
+              '''           ) citations,\n           coalesce(jsonb_agg(distinct e.locator) filter (where e.id is not null),'[]'::jsonb)\n             evidence_locators\n      from knowledge_documents d''',
+              '''           ) citations,\n           coalesce(\n             jsonb_agg(distinct jsonb_build_object(\n               'evidenceId',e.id,'sourceId',evidence_source.id,'locator',e.locator\n             ))\n               filter (where e.id is not null and evidence_source.id is not null),\n             '[]'::jsonb\n           ) evidence_references\n      from knowledge_documents d''',
+          )
+          replace_once(
+              search,
+              '''      left join evidence e on e.id=de.evidence_id\n       and e.space_id = d.space_id\n       and e.vault_id is not distinct from d.vault_id\n     where d.id = any($1::uuid[])''',
+              '''      left join evidence e on e.id=de.evidence_id\n       and e.space_id = d.space_id\n       and e.vault_id is not distinct from d.vault_id\n      left join sources evidence_source on evidence_source.id=e.source_id\n       and evidence_source.space_id=d.space_id\n       and evidence_source.vault_id is not distinct from d.vault_id\n     where d.id = any($1::uuid[])''',
+          )
+          replace_once(
+              search,
+              '  const minimumTrust = TRUST_RANK[input.minimumTrust] ?? 1;\n\n  const results = fused',
+              '  const minimumTrust = TRUST_RANK[input.minimumTrust] ?? 1;\n  const sourceLinkVaultIds = new Set(options.sourceLinkVaultIds ?? []);\n\n  const results = fused',
+          )
+          replace_once(
+              search,
+              '''      const documentCitations = ["source", "resource"].includes(\n        String(row.layer),\n      )\n        ? [`${row.path}@${row.current_revision}`]\n        : ((row.citations ?? []) as Array<Record<string, unknown>>)\n            .filter(\n              (citation) =>\n                String(citation.spaceId ?? citation.space_id ?? "") ===\n                  String(row.space_id) &&\n                String(citation.vaultId ?? citation.vault_id ?? "") ===\n                  String(row.vault_id) &&\n                (!options.pathAuthorizer ||\n                  options.pathAuthorizer(\n                    String(citation.path ?? ""),\n                    String(\n                      citation.vaultId ?? citation.vault_id ?? row.vault_id,\n                    ),\n                  )),\n            )\n            .map(\n              (citation) =>\n                `${String(citation.path)}@${String(citation.revision ?? row.current_revision)}`,\n            );\n      const rowPathAuthorizer = options.pathAuthorizer\n        ? (value: string) =>\n            options.pathAuthorizer!(value, String(row.vault_id))\n        : undefined;\n      const citations = [\n        ...documentCitations,\n        ...((row.evidence_locators ?? []) as Array<Record<string, unknown>>)\n          .filter((locator) =>\n            evidenceLocatorAllowed(locator, rowPathAuthorizer),\n          )\n          .map(\n            (locator) =>\n              `evidence:${JSON.stringify(sanitizeEvidenceLocator(locator))}`,\n          ),\n      ];''',
+              '''      const documentReferences = ["source", "resource"].includes(\n        String(row.layer),\n      )\n        ? [\n            {\n              kind: "document" as const,\n              documentId: String(row.id),\n              path: String(row.path),\n              revision: String(row.current_revision),\n            },\n          ]\n        : ((row.citations ?? []) as Array<Record<string, unknown>>)\n            .filter(\n              (citation) =>\n                UUID_PATTERN.test(String(citation.id ?? "")) &&\n                String(citation.path ?? "").length > 0 &&\n                String(citation.spaceId ?? citation.space_id ?? "") ===\n                  String(row.space_id) &&\n                String(citation.vaultId ?? citation.vault_id ?? "") ===\n                  String(row.vault_id) &&\n                (!options.pathAuthorizer ||\n                  options.pathAuthorizer(\n                    String(citation.path ?? ""),\n                    String(\n                      citation.vaultId ?? citation.vault_id ?? row.vault_id,\n                    ),\n                  )),\n            )\n            .map((citation) => ({\n              kind: "document" as const,\n              documentId: String(citation.id),\n              path: String(citation.path),\n              revision: String(citation.revision ?? row.current_revision),\n            }));\n      const documentCitations = documentReferences.map(\n        (citation) => `${citation.path}@${citation.revision}`,\n      );\n      const rowPathAuthorizer = options.pathAuthorizer\n        ? (value: string) =>\n            options.pathAuthorizer!(value, String(row.vault_id))\n        : undefined;\n      const evidenceReferences = (\n        (row.evidence_references ?? []) as Array<Record<string, unknown>>\n      )\n        .filter(\n          (reference) =>\n            UUID_PATTERN.test(String(reference.evidenceId ?? "")) &&\n            UUID_PATTERN.test(String(reference.sourceId ?? "")) &&\n            evidenceLocatorAllowed(reference.locator, rowPathAuthorizer),\n        )\n        .map((reference) => ({\n          evidenceId: String(reference.evidenceId),\n          sourceId: String(reference.sourceId),\n          locator: sanitizeEvidenceLocator(reference.locator) as Record<\n            string,\n            unknown\n          >,\n        }));\n      const citations = [\n        ...documentCitations,\n        ...evidenceReferences.map(\n          (reference) => `evidence:${JSON.stringify(reference.locator)}`,\n        ),\n      ];''',
+          )
+          replace_once(
+              search,
+              '''        citations,\n        warnings: [''',
+              '''        citations,\n        citationLinks: [\n          ...documentReferences,\n          ...(sourceLinkVaultIds.has(String(row.vault_id))\n            ? evidenceReferences.map((reference) => ({\n                kind: "source-evidence" as const,\n                ...reference,\n              }))\n            : []),\n        ],\n        warnings: [''',
+          )
+          replace_once(
+              search,
+              '''      const scopedRequest: SearchInput = {\n        ...parsed.data,\n        vaultIds,\n        ...(vaultIds.length === 1 ? { vaultId: vaultIds[0] } : {}),\n      };\n      const indexRows = await db.pool.query(''',
+              '''      const scopedRequest: SearchInput = {\n        ...parsed.data,\n        vaultIds,\n        ...(vaultIds.length === 1 ? { vaultId: vaultIds[0] } : {}),\n      };\n      const sourceLinkVaultIds = unrestrictedSpaceIdsForPermission(\n        actor,\n        "source:read",\n      ).includes(requestedSpace)\n        ? await sourceLinkVaultIdsForActor(\n            db,\n            actor.id,\n            requestedSpace,\n            vaultIds,\n          )\n        : [];\n      const indexRows = await db.pool.query(''',
+          )
+          replace_once(
+              search,
+              '''      const hits = await queryKnowledge(db, scopedRequest, {\n        plan,\n        vaultIds,\n        graphScopes:''',
+              '''      const hits = await queryKnowledge(db, scopedRequest, {\n        plan,\n        vaultIds,\n        sourceLinkVaultIds,\n        graphScopes:''',
+          )
+
+          web = "apps/web/app/search/page.tsx"
+          replace_once(
+              web,
+              '''interface SearchHit {\n  documentId: string;''',
+              '''type SearchCitationLink =\n  | {\n      kind: "document";\n      documentId: string;\n      path: string;\n      revision: string;\n    }\n  | {\n      kind: "source-evidence";\n      evidenceId: string;\n      sourceId: string;\n      locator: Record<string, unknown>;\n    };\n\ninterface SearchHit {\n  documentId: string;''',
+          )
+          replace_once(
+              web,
+              '  citations: string[];\n  warnings?: string[];',
+              '  citations: string[];\n  citationLinks?: SearchCitationLink[];\n  warnings?: string[];',
+          )
+          replace_once(
+              web,
+              '''function tokenSummary(packet: ContextPacket): string {''',
+              '''function evidenceLocatorLabel(locator: Record<string, unknown>): string {\n  const parts = [\n    locator.kind ? String(locator.kind) : "evidence",\n    typeof locator.page === "number" ? `p.${locator.page}` : null,\n    typeof locator.sheet === "string" ? `sheet ${locator.sheet}` : null,\n    typeof locator.startLine === "number"\n      ? `lines ${locator.startLine}-${String(locator.endLine ?? "?")}`\n      : null,\n    typeof locator.startMs === "number"\n      ? `${locator.startMs}-${String(locator.endMs ?? "?")} ms`\n      : null,\n  ].filter(Boolean);\n  return parts.join(" · ");\n}\n\nfunction tokenSummary(packet: ContextPacket): string {''',
+          )
+          replace_once(
+              web,
+              '''          <p>\n            <strong>Citaciones/evidencia:</strong>{" "}\n            {hit.citations.length\n              ? hit.citations.join(" · ")\n              : "Sin referencias"}\n          </p>''',
+              '''          <div>\n            <strong>Citaciones/evidencia:</strong>\n            {hit.citationLinks?.length ? (\n              <ul>\n                {hit.citationLinks.map((citation) =>\n                  citation.kind === "document" ? (\n                    <li key={`document-${citation.documentId}-${citation.revision}`}>\n                      <Link href={`/documents/${citation.documentId}`}>\n                        {citation.path}@{citation.revision}\n                      </Link>\n                    </li>\n                  ) : (\n                    <li key={`evidence-${citation.evidenceId}`}>\n                      <Link href={`/sources/${citation.sourceId}`}>\n                        evidencia {citation.evidenceId.slice(0, 8)}\n                      </Link>{" "}\n                      <small className="muted">\n                        {evidenceLocatorLabel(citation.locator)}\n                      </small>\n                    </li>\n                  ),\n                )}\n              </ul>\n            ) : (\n              <p className="muted">\n                {hit.citations.length\n                  ? hit.citations.join(" · ")\n                  : "Sin referencias"}\n              </p>\n            )}\n          </div>''',
+          )
+
+          lifecycle = "apps/api/test/product-lifecycle.integration.test.ts"
+          replace_once(
+              lifecycle,
+              '''    const sourceRow = await db.pool.query<{ object_key: string }>(\n      "select object_key from sources where vault_id=$1 and sha256=$2",''',
+              '''    const sourceRow = await db.pool.query<{ id: string; object_key: string }>(\n      "select id,object_key from sources where vault_id=$1 and sha256=$2",''',
+          )
+          replace_once(
+              lifecycle,
+              '''        citations: string[];\n      }>;''',
+              '''        citations: string[];\n        citationLinks: Array<\n          | { kind: "document"; documentId: string; path: string; revision: string }\n          | {\n              kind: "source-evidence";\n              evidenceId: string;\n              sourceId: string;\n              locator: Record<string, unknown>;\n            }\n        >;\n      }>;''',
+          )
+          replace_once(
+              lifecycle,
+              '''    expect(\n      searchBody.hits.some(\n        (hit) =>\n          hit.vaultId === vaultId &&\n          Boolean(hit.unitId) &&\n          hit.excerpt.includes(firstMarker) &&\n          hit.citations.some((citation) => citation.includes("managed/")),\n      ),\n    ).toBe(true);\n\n    const context = await app.inject({''',
+              '''    const groundedHit = searchBody.hits.find(\n      (hit) =>\n        hit.vaultId === vaultId &&\n        Boolean(hit.unitId) &&\n        hit.excerpt.includes(firstMarker) &&\n        hit.citations.some((citation) => citation.includes("managed/")),\n    );\n    expect(groundedHit).toBeDefined();\n    expect(\n      groundedHit?.citationLinks.some(\n        (citation) =>\n          citation.kind === "document" && citation.path.includes("managed/"),\n      ),\n    ).toBe(true);\n    expect(\n      groundedHit?.citationLinks.some(\n        (citation) =>\n          citation.kind === "source-evidence" &&\n          citation.sourceId === sourceRow.rows[0]?.id,\n      ),\n    ).toBe(true);\n\n    const knowledgeOnlyToken = `e2e-search-knowledge-only-${randomUUID()}`;\n    const knowledgeOnlyTokenHash = createHash("sha256")\n      .update(knowledgeOnlyToken)\n      .digest("hex");\n    await db.pool.query(\n      `insert into api_tokens(user_id,token_hash,label,scopes)\n       values($1,$2,'knowledge-only search link test',$3::jsonb)`,\n      [\n        admin,\n        knowledgeOnlyTokenHash,\n        JSON.stringify({\n          spaces: [\n            {\n              spaceId: defaultSpace,\n              pathPrefix: null,\n              permissions: ["knowledge:read"],\n            },\n          ],\n        }),\n      ],\n    );\n    try {\n      const knowledgeOnlySearch = await app.inject({\n        method: "POST",\n        url: "/v1/search",\n        headers: { authorization: `Bearer ${knowledgeOnlyToken}` },\n        payload: {\n          query: firstMarker,\n          spaceId: defaultSpace,\n          vaultId,\n          vaultIds: [],\n          federated: false,\n          types: [],\n          minimumTrust: "MACHINE_SUPPORTED",\n          mode: "SOURCE_BACKED",\n          limit: 10,\n        },\n      });\n      expect(knowledgeOnlySearch.statusCode).toBe(200);\n      const knowledgeOnlyBody = knowledgeOnlySearch.json() as typeof searchBody;\n      const knowledgeOnlyHit = knowledgeOnlyBody.hits.find((hit) =>\n        hit.excerpt.includes(firstMarker),\n      );\n      expect(knowledgeOnlyHit).toBeDefined();\n      expect(\n        knowledgeOnlyHit?.citations.some((citation) =>\n          citation.startsWith("evidence:"),\n        ),\n      ).toBe(true);\n      expect(\n        knowledgeOnlyHit?.citationLinks.some(\n          (citation) => citation.kind === "source-evidence",\n        ),\n      ).toBe(false);\n    } finally {\n      await db.pool.query("delete from api_tokens where token_hash=$1", [\n        knowledgeOnlyTokenHash,\n      ]);\n    }\n\n    const context = await app.inject({''',
+          )
+          PY
+          pnpm exec prettier --write \
+            packages/contracts/src/index.ts \
+            apps/api/src/routes/search.ts \
+            apps/web/app/search/page.tsx \
+            apps/api/test/product-lifecycle.integration.test.ts
+          mkdir -p reports/ci/p6-search-links/packages/contracts/src
+          mkdir -p reports/ci/p6-search-links/apps/api/src/routes
+          mkdir -p reports/ci/p6-search-links/apps/web/app/search
+          mkdir -p reports/ci/p6-search-links/apps/api/test
+          cp packages/contracts/src/index.ts reports/ci/p6-search-links/packages/contracts/src/index.ts
+          cp apps/api/src/routes/search.ts reports/ci/p6-search-links/apps/api/src/routes/search.ts
+          cp apps/web/app/search/page.tsx reports/ci/p6-search-links/apps/web/app/search/page.tsx
+          cp apps/api/test/product-lifecycle.integration.test.ts reports/ci/p6-search-links/apps/api/test/product-lifecycle.integration.test.ts
       - run: pnpm audit --audit-level high
       - name: Check repository formatting
         shell: bash
