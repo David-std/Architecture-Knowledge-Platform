@@ -1,0 +1,30 @@
+name: p6-hygiene-diff
+
+on:
+  pull_request:
+
+jobs:
+  hygiene-diff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+      - name: Diff tracked and canonical inventory on PR merge tree
+        shell: bash
+        run: |
+          mkdir -p reports/p6-hygiene-diff
+          rm .github/workflows/p6-hygiene-diff.yml
+          cp REPOSITORY_FILE_CLASSIFICATION.json reports/p6-hygiene-diff/tracked.json
+          node scripts/validate-repository-hygiene.mjs --write > reports/p6-hygiene-diff/generator.txt 2>&1
+          cp REPOSITORY_FILE_CLASSIFICATION.json reports/p6-hygiene-diff/generated.json
+          diff -u reports/p6-hygiene-diff/tracked.json reports/p6-hygiene-diff/generated.json > reports/p6-hygiene-diff/diff.txt || true
+          git status --short > reports/p6-hygiene-diff/git-status.txt
+          node scripts/validate-repository-hygiene.mjs > reports/p6-hygiene-diff/validation.txt 2>&1
+      - uses: actions/upload-artifact@v7
+        with:
+          name: p6-hygiene-diff-${{ github.run_id }}
+          path: reports/p6-hygiene-diff
+          if-no-files-found: error
+          retention-days: 1
