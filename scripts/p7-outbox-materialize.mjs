@@ -86,7 +86,7 @@ replaceOnce(
 
 replaceOnce(
   '    return persisted;\n  });\n}\n\nexport interface RegisterConsumerOptions',
-  '    return persisted;\n  })),\n  );\n}\n\nexport interface RegisterConsumerOptions',
+  '    return persisted;\n  }),\n  );\n}\n\nexport interface RegisterConsumerOptions',
   "append-span-close",
 );
 
