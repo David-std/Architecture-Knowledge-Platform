@@ -41,6 +41,10 @@ jobs:
             > reports/ci/formatted/document-intelligence-request.ts
           pnpm exec prettier apps/worker/src/worker.ts \
             > reports/ci/formatted/worker.ts
+          pnpm exec prettier 'apps/web/app/jobs/[id]/page.tsx' \
+            > reports/ci/formatted/p6-job-page.tsx
+          pnpm exec prettier 'apps/web/app/reviews/[id]/page.tsx' \
+            > reports/ci/formatted/p6-review-page.tsx
           pnpm exec prettier --check . 2>&1 | tee reports/ci/prettier-check.txt
       - run: docker compose config --quiet
       - run: docker compose up -d --wait postgres minio extractor
