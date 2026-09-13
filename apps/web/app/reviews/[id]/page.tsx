@@ -361,26 +361,34 @@ export default async function ReviewPage({
           return (
             <article
               className="card"
-              key={String(candidate.candidateId ?? candidate.candidate_id ?? index)}
+              key={String(
+                candidate.candidateId ?? candidate.candidate_id ?? index,
+              )}
               style={{ marginTop: 12 }}
             >
               <p>
                 <span className="badge">{summary(candidate.kind)}</span>
                 <span className="badge">
-                  {summary(candidate.proposedAction ?? candidate.proposed_action)}
+                  {summary(
+                    candidate.proposedAction ?? candidate.proposed_action,
+                  )}
                 </span>
               </p>
               <p>{summary(candidate.statement)}</p>
-              {candidate.scope ? <p className="muted">{summary(candidate.scope)}</p> : null}
+              {candidate.scope ? (
+                <p className="muted">{summary(candidate.scope)}</p>
+              ) : null}
               <small>confidence {summary(candidate.confidence)}</small>
               {typeof candidate.existingDocumentId === "string" ? (
                 <p>
-                  Documento existente: <code>{candidate.existingDocumentId}</code>
+                  Documento existente:{" "}
+                  <code>{candidate.existingDocumentId}</code>
                 </p>
               ) : null}
               {candidateEvidence.length ? (
                 <p>
-                  Evidencia: {candidateEvidence.map((item) => (
+                  Evidencia:{" "}
+                  {candidateEvidence.map((item) => (
                     <code key={item} style={{ marginRight: 8 }}>
                       {item}
                     </code>
@@ -438,7 +446,9 @@ export default async function ReviewPage({
               );
               return (
                 <article
-                  key={String(conflict.candidateId ?? conflict.candidate_id ?? index)}
+                  key={String(
+                    conflict.candidateId ?? conflict.candidate_id ?? index,
+                  )}
                   style={{ marginBottom: 16 }}
                 >
                   <p>
@@ -447,7 +457,9 @@ export default async function ReviewPage({
                     </span>
                   </p>
                   <p>
-                    <strong>{summary(conflict.explanation ?? conflict.reason)}</strong>
+                    <strong>
+                      {summary(conflict.explanation ?? conflict.reason)}
+                    </strong>
                   </p>
                   <table>
                     <tbody>
