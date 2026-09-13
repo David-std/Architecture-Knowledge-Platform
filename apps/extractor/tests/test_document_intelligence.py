@@ -1,7 +1,9 @@
+import shutil
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import pytest
+from PIL import Image, ImageDraw, ImageFont
 from pydantic import ValidationError
 
 from app.adapters.deterministic import DeterministicTextAdapter
@@ -10,7 +12,12 @@ from app.adapters.optional import (
     _artifact_from_docling_document,
 )
 from app.models import DocumentArtifact, StructuralLocator
-from app.ports import DocumentExtractionRequest
+from app.ports import (
+    AdapterAvailability,
+    CapabilityNotConfigured,
+    CapabilityStatus,
+    DocumentExtractionRequest,
+)
 from app.registry import build_default_registry
 
 
@@ -113,6 +120,39 @@ def test_routing_keeps_optional_defaults_disabled_without_benchmark(
     assert "chunkr" in decision.candidates
 
 
+def test_explicit_provider_selection_fails_closed_when_unavailable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "scanned.pdf"
+    source.write_bytes(b"not-a-pdf")
+    registry = build_default_registry()
+    docling = registry.adapter("docling")
+    monkeypatch.setattr(
+        docling,
+        "availability",
+        lambda: AdapterAvailability(
+            adapter="docling",
+            version="test",
+            status=CapabilityStatus.CAPABILITY_NOT_CONFIGURED,
+            reason="TEST_PROVIDER_UNAVAILABLE",
+            media=["pdf"],
+            complexities=["scanned"],
+            benchmark_required=True,
+        ),
+    )
+
+    with pytest.raises(CapabilityNotConfigured, match="explicit-configuration"):
+        registry.extract(
+            _request(
+                source,
+                "application/pdf",
+                "scanned",
+                {"extractor": "docling", "ocr": True},
+            )
+        )
+
+
 def test_xlsx_baseline_extracts_rows_and_sheet_locator(tmp_path: Path) -> None:
     source = tmp_path / "evidence.xlsx"
     workbook = """<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheets><sheet name="Evidence" sheetId="1" r:id="rId1" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/></sheets></workbook>"""
@@ -189,7 +229,9 @@ class _FakeItem:
         self.label = _FakeLabel(label)
         self.text = text
         self.self_ref = reference
-        self.prov = [_FakeProvenance(page, _FakeBBox(10, 20, 210, 60), (0, len(text)))]
+        self.prov = [
+            _FakeProvenance(page, _FakeBBox(10, 20, 210, 60), (0, len(text)))
+        ]
 
 
 class _FakeFrame:
@@ -214,7 +256,14 @@ class _FakeTable(_FakeItem):
 class _FakeDoclingDocument:
     def __init__(self) -> None:
         self.items = [
-            (_FakeItem("section_header", "Native structure", reference="#/texts/0"), 1),
+            (
+                _FakeItem(
+                    "section_header",
+                    "Native structure",
+                    reference="#/texts/0",
+                ),
+                1,
+            ),
             (_FakeItem("text", "Grounded paragraph", reference="#/texts/1"), 2),
             (
                 _FakeTable(
@@ -224,7 +273,14 @@ class _FakeDoclingDocument:
                 ),
                 2,
             ),
-            (_FakeItem("picture", "System diagram", reference="#/pictures/0"), 2),
+            (
+                _FakeItem(
+                    "picture",
+                    "System diagram",
+                    reference="#/pictures/0",
+                ),
+                2,
+            ),
             (_FakeItem("formula", "x = 1", reference="#/texts/2"), 2),
             (_FakeItem("code", "print(1)", reference="#/texts/3"), 2),
         ]
@@ -307,3 +363,54 @@ def test_docling_provider_real_native_structure_when_installed(tmp_path: Path) -
         "REDUCED_TO_CANONICAL_MARKDOWN" not in warning
         for warning in artifact.warnings
     )
+
+
+def test_docling_provider_real_scanned_pdf_ocr_with_tesseract_when_installed(
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("docling")
+    assert shutil.which("tesseract") is not None, "tesseract CLI is required"
+
+    source = tmp_path / "scanned-ocr.pdf"
+    image = Image.new("RGB", (1654, 2339), "white")
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.truetype(
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        64,
+    )
+    draw.multiline_text(
+        (120, 260),
+        "AKP OCR PROBE 739241\n"
+        "Durable document intelligence\n"
+        "Native provenance must survive extraction.",
+        fill="black",
+        font=font,
+        spacing=36,
+    )
+    image.save(source, "PDF", resolution=150.0)
+
+    artifact = DoclingAdapter().extract(
+        _request(
+            source,
+            "application/pdf",
+            "scanned",
+            {
+                "ocr": True,
+                "ocr_engine": "tesseract-cli",
+                "force_full_page_ocr": True,
+                "timeout_seconds": 300,
+            },
+        )
+    )
+
+    normalized = " ".join(artifact.text_content().upper().split())
+    assert artifact.extractor == "docling"
+    assert artifact.configuration["native_structure"] is True
+    assert artifact.configuration["ocr_requested"] is True
+    assert artifact.configuration["ocr_engine"] == "tesseract-cli"
+    assert "AKP OCR PROBE 739241" in normalized
+    assert "DURABLE DOCUMENT INTELLIGENCE" in normalized
+    assert artifact.blocks
+    assert artifact.pages
+    assert any(item.locator.page == 1 for item in artifact.blocks)
+    assert any(item.locator.region is not None for item in artifact.blocks)
