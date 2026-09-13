@@ -71,9 +71,7 @@ function escapeRegExp(value) {
 }
 
 function evidenceFor(name) {
-  const quotedLiteral = new RegExp(
-    `["'\\x60]${escapeRegExp(name)}["'\\x60]`,
-  );
+  const quotedLiteral = new RegExp(`["'\\x60]${escapeRegExp(name)}["'\\x60]`);
   return sources
     .filter(({ content }) => quotedLiteral.test(content))
     .map(({ file }) => file)

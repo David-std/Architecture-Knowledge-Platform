@@ -11,6 +11,7 @@ import {
   createConfiguredEmbeddingProvider,
   parseKnowledgeUnits,
 } from "@akp/retrieval";
+import { withSpan } from "@akp/observability";
 import { buildEmbeddingIndex } from "./embedding-index.js";
 
 export * from "./embedding-generation.js";
@@ -962,13 +963,21 @@ export async function incrementalIndex(
     };
     if (provider) {
       try {
-        const built = await buildEmbeddingIndex(db, {
-          spaceId: options.spaceId,
-          vaultId: options.vaultId,
-          corpusRevision,
-          provider,
-          activate: vectorEnabled,
-        });
+        const built = await withSpan(
+          "index.embedding",
+          {
+            "akp.vector.enabled": vectorEnabled,
+            "akp.embedding.provider": provider.descriptor.provider,
+          },
+          () =>
+            buildEmbeddingIndex(db, {
+              spaceId: options.spaceId,
+              vaultId: options.vaultId,
+              corpusRevision,
+              provider,
+              activate: vectorEnabled,
+            }),
+        );
         embeddingStats = {
           embeddingsReused: built.embeddingsReused,
           embeddingsCreated: built.embeddingsCreated,

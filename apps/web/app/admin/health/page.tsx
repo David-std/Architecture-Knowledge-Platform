@@ -19,6 +19,18 @@ interface HealthResponse {
     }>;
     routing?: Record<string, unknown>;
   } | null;
+  observability?: {
+    enabled?: boolean;
+    started?: boolean;
+    serviceName?: string | null;
+    tracesExporter?: string;
+    metricsExporter?: string;
+    endpointConfigured?: boolean;
+    protocol?: string;
+    w3cTraceContext?: boolean;
+    logs?: string;
+    lastError?: string | null;
+  };
   indexes: Array<{
     vault_id: string;
     corpus_revision?: string | null;
@@ -263,12 +275,27 @@ export default async function HealthPage() {
         <section className="card">
           <h2>OpenTelemetry</h2>
           <p>
-            <span className="badge">P7_PENDING</span>
+            <span className="badge">
+              {health.observability?.enabled
+                ? health.observability.started
+                  ? "SDK_ACTIVE"
+                  : "START_FAILED"
+                : "DISABLED"}
+            </span>
           </p>
           <p className="muted">
-            P6 no infiere export saludable a partir de variables o APIs. El
-            estado de exportación real se mostrará cuando P7 conecte
-            SDK/exporter/Collector.
+            traces {health.observability?.tracesExporter ?? "none"} · metrics{" "}
+            {health.observability?.metricsExporter ?? "none"} · protocol{" "}
+            {health.observability?.protocol ?? "—"}
+            <br />
+            W3C trace context:{" "}
+            {health.observability?.w3cTraceContext ? "sí" : "no"}
+            {health.observability?.lastError ? (
+              <>
+                <br />
+                error: {health.observability.lastError}
+              </>
+            ) : null}
           </p>
         </section>
         <section className="card">

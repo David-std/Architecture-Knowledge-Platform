@@ -32,11 +32,7 @@ export interface Telemetry {
     value?: number,
     attributes?: Record<string, string>,
   ): void;
-  gauge(
-    name: string,
-    value: number,
-    attributes?: Record<string, string>,
-  ): void;
+  gauge(name: string, value: number, attributes?: Record<string, string>): void;
   histogram(
     name: string,
     value: number,
@@ -197,6 +193,9 @@ export async function shutdownOpenTelemetry(): Promise<void> {
   try {
     await current.shutdown();
   } finally {
+    counters.clear();
+    gauges.clear();
+    histograms.clear();
     runtimeStatus = { ...runtimeStatus, started: false };
   }
 }
@@ -244,7 +243,7 @@ export function contextFromTraceMetadata(metadata: TraceMetadata): Context {
   if (!validTraceId(traceId) || !validSpanId(spanId)) return ROOT_CONTEXT;
   const parsedFlags = Number.parseInt(flagHex, 16);
   const traceFlags = Number.isFinite(parsedFlags)
-    ? (parsedFlags & TraceFlags.SAMPLED)
+    ? parsedFlags & TraceFlags.SAMPLED
     : TraceFlags.NONE;
   return trace.setSpanContext(ROOT_CONTEXT, {
     traceId: traceId.toLowerCase(),
@@ -295,10 +294,20 @@ export interface ActiveTrace {
 }
 
 const tracer = trace.getTracer("architecture-knowledge-platform", "0.3.0");
-const meter = metrics.getMeter("architecture-knowledge-platform", "0.3.0");
-const counters = new Map<string, ReturnType<typeof meter.createCounter>>();
-const gauges = new Map<string, ReturnType<typeof meter.createGauge>>();
-const histograms = new Map<string, ReturnType<typeof meter.createHistogram>>();
+type Meter = ReturnType<typeof metrics.getMeter>;
+type CounterInstrument = ReturnType<Meter["createCounter"]>;
+type GaugeInstrument = ReturnType<Meter["createGauge"]>;
+type HistogramInstrument = ReturnType<Meter["createHistogram"]>;
+const counters = new Map<string, CounterInstrument>();
+const gauges = new Map<string, GaugeInstrument>();
+const histograms = new Map<string, HistogramInstrument>();
+
+function currentMeter(): Meter {
+  // Unlike Tracer, the JS Metrics API can hand out a no-op Meter before a
+  // provider is registered. Resolve it lazily so application modules imported
+  // before bootstrap do not permanently bind their instruments to no-op.
+  return metrics.getMeter("architecture-knowledge-platform", "0.3.0");
+}
 
 function metricAttributes(
   attributes: Record<string, string> | undefined,
@@ -314,8 +323,10 @@ export class OpenTelemetryBridge implements Telemetry {
   ): void {
     let counter = counters.get(name);
     if (!counter) {
-      counter = meter.createCounter(name);
-      counters.set(name, counter);
+      counter = currentMeter().createCounter(name);
+      // Do not cache a no-op instrument created before SDK startup. A later
+      // call after bootstrap must be able to bind to the real MeterProvider.
+      if (runtimeStatus.started) counters.set(name, counter);
     }
     counter.add(value, metricAttributes(attributes));
   }
@@ -327,8 +338,8 @@ export class OpenTelemetryBridge implements Telemetry {
   ): void {
     let gauge = gauges.get(name);
     if (!gauge) {
-      gauge = meter.createGauge(name);
-      gauges.set(name, gauge);
+      gauge = currentMeter().createGauge(name);
+      if (runtimeStatus.started) gauges.set(name, gauge);
     }
     gauge.record(value, metricAttributes(attributes));
   }
@@ -340,8 +351,8 @@ export class OpenTelemetryBridge implements Telemetry {
   ): void {
     let histogram = histograms.get(name);
     if (!histogram) {
-      histogram = meter.createHistogram(name);
-      histograms.set(name, histogram);
+      histogram = currentMeter().createHistogram(name);
+      if (runtimeStatus.started) histograms.set(name, histogram);
     }
     histogram.record(value, metricAttributes(attributes));
   }

@@ -42,7 +42,9 @@ async function run(): Promise<void> {
         child.once("error", reject);
         child.once("exit", (code, signal) => {
           if (signal) {
-            reject(new Error(`${operation.toUpperCase()}_TERMINATED:${signal}`));
+            reject(
+              new Error(`${operation.toUpperCase()}_TERMINATED:${signal}`),
+            );
             return;
           }
           resolve(code ?? 1);

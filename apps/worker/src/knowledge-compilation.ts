@@ -10,6 +10,9 @@ import {
 } from "@akp/compiler";
 import type { DocumentArtifact } from "@akp/contracts";
 import type { Postgres } from "@akp/postgres";
+import { OpenTelemetryBridge, withSpan } from "@akp/observability";
+
+const telemetry = new OpenTelemetryBridge();
 
 const DEFAULT_CANDIDATE_LIMIT = 12;
 const MAX_CANDIDATE_LIMIT = 20;
@@ -408,20 +411,25 @@ export async function compileGroundedKnowledgeProposal(
 ): Promise<GroundedCompilationResult> {
   const primaryEvidence = request.evidence[0];
   if (!primaryEvidence) throw new Error("COMPILER_EVIDENCE_REQUIRED");
-  const retrieval = await retrieveExistingKnowledgeCandidates(db, {
-    spaceId: request.spaceId,
-    vaultId: request.vaultId,
-    title: request.source.title,
-    sourceId: request.source.sourceId,
-    sourceSha256: request.source.sha256,
-    evidenceExcerpt: primaryEvidence.excerpt,
-    ...(request.candidateLimit === undefined
-      ? {}
-      : { limit: request.candidateLimit }),
-    ...(request.vectorEnabled === undefined
-      ? {}
-      : { vectorEnabled: request.vectorEnabled }),
-  });
+  const retrieval = await withSpan(
+    "compile.retrieve_existing",
+    { "akp.vector.enabled": request.vectorEnabled ?? false },
+    () =>
+      retrieveExistingKnowledgeCandidates(db, {
+        spaceId: request.spaceId,
+        vaultId: request.vaultId,
+        title: request.source.title,
+        sourceId: request.source.sourceId,
+        sourceSha256: request.source.sha256,
+        evidenceExcerpt: primaryEvidence.excerpt,
+        ...(request.candidateLimit === undefined
+          ? {}
+          : { limit: request.candidateLimit }),
+        ...(request.vectorEnabled === undefined
+          ? {}
+          : { vectorEnabled: request.vectorEnabled }),
+      }),
+  );
   const input = KnowledgeCompilerInput.parse({
     source: request.source,
     documentArtifact: request.documentArtifact,
@@ -443,7 +451,15 @@ export async function compileGroundedKnowledgeProposal(
     spaceId: request.spaceId,
     vaultId: request.vaultId,
   });
-  const result = await configured.compiler.compile(input);
+  let result: KnowledgeCompilerResult;
+  try {
+    result = await configured.compiler.compile(input);
+  } catch (error) {
+    telemetry.counter("provider_failures", 1, {
+      provider: "knowledge-compiler",
+    });
+    throw error;
+  }
   return {
     input,
     result,

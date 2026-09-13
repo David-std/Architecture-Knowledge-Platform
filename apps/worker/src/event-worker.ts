@@ -1,9 +1,6 @@
 import { hostname } from "node:os";
 import { randomUUID } from "node:crypto";
-import {
-  OpenTelemetryBridge,
-  withRemoteParentSpan,
-} from "@akp/observability";
+import { OpenTelemetryBridge, withRemoteParentSpan } from "@akp/observability";
 import {
   acknowledgeEventDelivery,
   claimNextEventDelivery,
@@ -115,7 +112,9 @@ export class DurableEventWorker {
           "akp.delivery.attempt": claim.attempts,
         },
         async () => {
-          const supported = this.supportedVersions[claim.event.eventType] ?? [1];
+          const supported = this.supportedVersions[claim.event.eventType] ?? [
+            1,
+          ];
           if (!supported.includes(claim.event.eventVersion)) {
             throw new Error(
               `UNSUPPORTED_EVENT_VERSION:${claim.event.eventType}:${claim.event.eventVersion}`,

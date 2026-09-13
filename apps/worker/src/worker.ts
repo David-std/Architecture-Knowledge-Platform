@@ -1,3 +1,4 @@
+import "./instrumentation.js";
 import { config } from "dotenv";
 import { createReadStream, createWriteStream, openAsBlob } from "node:fs";
 import { rm } from "node:fs/promises";
@@ -46,6 +47,11 @@ import { evaluateCompilationProbes } from "./compilation-probes.js";
 import { selectEvidenceFragment } from "./evidence-fragment.js";
 import { resolveAuthorizedLocalSource } from "./source-boundary.js";
 import { appendDocumentIntelligenceFormFields } from "./document-intelligence-request.js";
+import {
+  OpenTelemetryBridge,
+  shutdownOpenTelemetry,
+  withSpan,
+} from "@akp/observability";
 
 config({
   path: path.resolve(
@@ -62,6 +68,7 @@ const db = new Postgres(databaseUrl);
 const managedRepository =
   process.env.AKP_MANAGED_REPO || path.join(tmpdir(), "akp-managed-knowledge");
 const git = new GitKnowledgeStore(managedRepository);
+const telemetry = new OpenTelemetryBridge();
 
 const eventWorker = new DurableEventWorker(db, {
   consumerName: process.env.AKP_EVENT_CONSUMER ?? "ingest-and-indexing",
@@ -772,11 +779,53 @@ function startLeaseHeartbeat(jobId: string, leaseSeconds = 60): () => void {
   return () => clearInterval(timer);
 }
 
+async function tracedProcessJob(job: Record<string, unknown>): Promise<void> {
+  const state = String(job.state);
+  const attributes = { "akp.ingest.state": state };
+  if (state === "RECEIVED") {
+    return withSpan("ingest.receive", attributes, () =>
+      withSpan("raw.store", attributes, () => processJob(job)),
+    );
+  }
+  if (state === "NORMALIZING") {
+    return withSpan("extract.request", attributes, () =>
+      withSpan("extract.process", attributes, () => processJob(job)),
+    );
+  }
+  if (state === "DRAFTED") {
+    return withSpan("compile.validate", attributes, () => processJob(job));
+  }
+  return processJob(job);
+}
+
 async function runClaimedJob(job: Record<string, unknown>): Promise<void> {
   const stopHeartbeat = startLeaseHeartbeat(String(job.id));
+  const state = String(job.state);
+  const started = performance.now();
+  const createdAt = new Date(String(job.created_at ?? ""));
   try {
-    await processJob(job);
+    await tracedProcessJob(job);
+    telemetry.counter("ingest_jobs_total", 1, { state });
+    if (!Number.isNaN(createdAt.getTime())) {
+      telemetry.histogram(
+        "ingest_job_age",
+        Math.max(0, (Date.now() - createdAt.getTime()) / 1000),
+        { state },
+      );
+    }
+    if (state === "NORMALIZING") {
+      telemetry.histogram(
+        "extract_latency",
+        (performance.now() - started) / 1000,
+        { provider: "extractor-service" },
+      );
+    }
   } catch (error) {
+    if (state === "NORMALIZING") {
+      telemetry.counter("provider_failures", 1, {
+        provider: "extractor-service",
+      });
+    }
     await handleFailure(job, error);
   } finally {
     stopHeartbeat();
@@ -817,6 +866,7 @@ async function loop(): Promise<WorkerDrainSummary | undefined> {
 process.on("SIGTERM", async () => {
   eventWorker.stop();
   await db.close();
+  await shutdownOpenTelemetry();
   process.exit(0);
 });
 
@@ -832,4 +882,5 @@ try {
   }
 } finally {
   await db.close();
+  await shutdownOpenTelemetry();
 }

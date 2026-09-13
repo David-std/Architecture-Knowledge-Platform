@@ -49,8 +49,7 @@ describe("OpenTelemetry runtime", () => {
 
   it("round-trips persisted W3C trace metadata", () => {
     const metadata = {
-      traceparent:
-        "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+      traceparent: "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
       tracestate: "vendor=value",
     };
     const parent = contextFromTraceMetadata(metadata);
@@ -73,7 +72,9 @@ describe("OpenTelemetry runtime", () => {
         traceFlags: TraceFlags.SAMPLED,
         traceState: remote?.traceState,
       });
-      expect(context.with(local, () => currentTraceMetadata())).toEqual(metadata);
+      expect(context.with(local, () => currentTraceMetadata())).toEqual(
+        metadata,
+      );
     } finally {
       context.disable();
       contextManager.disable();

@@ -44,6 +44,18 @@ jobs:
           pnpm exec prettier --check . 2>&1 | tee reports/ci/prettier-check.txt
       - run: docker compose config --quiet
       - run: docker compose up -d --wait postgres minio extractor
+      - run: docker compose --profile observability up -d otel-collector
+      - name: Wait for optional OpenTelemetry Collector
+        shell: bash
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:13133/ >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker compose --profile observability logs --no-color otel-collector
+          exit 1
       - run: |
           git init -b main "$AKP_MANAGED_REPO"
           git -C "$AKP_MANAGED_REPO" config user.name "AKP CI"
@@ -70,7 +82,7 @@ jobs:
           --space-id 00000000-0000-0000-0000-000000000003
           --read-only
       - run: pnpm verify:runtime
-      - run: pnpm --filter @akp/api dev > api.log 2>&1 &
+      - run: OTEL_TRACES_EXPORTER=otlp OTEL_METRICS_EXPORTER=otlp OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=ci,service.namespace=akp OTEL_METRIC_EXPORT_INTERVAL=1000 pnpm --filter @akp/api dev > api.log 2>&1 &
       - run: |
           for i in $(seq 1 30); do
             curl -fsS http://127.0.0.1:8080/health/readiness && exit 0
@@ -78,11 +90,29 @@ jobs:
           done
           cat api.log
           exit 1
-      - run: pnpm test:mcp
-      - shell: pwsh
-        run: ./scripts/backup.ps1 -OutputDirectory backups/ci
-      - shell: pwsh
-        run: ./scripts/restore-smoke.ps1 -BackupDirectory backups/ci
+      - run: OTEL_TRACES_EXPORTER=otlp OTEL_METRICS_EXPORTER=otlp OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=ci,service.namespace=akp OTEL_METRIC_EXPORT_INTERVAL=1000 pnpm test:mcp
+      - name: Run traced backup
+        shell: bash
+        run: >-
+          OTEL_TRACES_EXPORTER=otlp OTEL_METRICS_EXPORTER=otlp OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=ci,service.namespace=akp OTEL_METRIC_EXPORT_INTERVAL=1000
+          pnpm exec tsx scripts/telemetry-command.ts backup
+          pwsh -NoProfile -File scripts/backup.ps1
+          -OutputDirectory backups/ci
+      - name: Run traced restore smoke
+        shell: bash
+        run: >-
+          OTEL_TRACES_EXPORTER=otlp OTEL_METRICS_EXPORTER=otlp OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=ci,service.namespace=akp OTEL_METRIC_EXPORT_INTERVAL=1000
+          pnpm exec tsx scripts/telemetry-command.ts restore
+          pwsh -NoProfile -File scripts/restore-smoke.ps1
+          -BackupDirectory backups/ci
+      - name: Verify P7 OpenTelemetry runtime evidence
+        shell: bash
+        run: |
+          sleep 5
+          mkdir -p reports/ci
+          docker compose --profile observability logs --no-color otel-collector > reports/ci/otel-collector.log 2>&1
+          AKP_OTEL_COLLECTOR_LOG=reports/ci/otel-collector.log node scripts/verify-observability.mjs \
+            | tee reports/ci/p7-observability-verification.json
       - name: Capture service and durable-work diagnostics
         if: always()
         shell: bash

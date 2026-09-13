@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { getOpenTelemetryStatus } from "@akp/observability";
 import { resolveAuthorizedVaultScope, type Postgres } from "@akp/postgres";
 import {
   actorOf,
@@ -418,6 +419,7 @@ export function registerOperatorRoutes(
           [scope.spaces, scope.vaultIds],
         ),
       ]);
+      const telemetry = getOpenTelemetryStatus();
       const status =
         database && rawStore.ok && extractor.ok ? "UP" : "DEGRADED";
       return sanitizeOperationalValue({
@@ -428,6 +430,18 @@ export function registerOperatorRoutes(
           extractor: { ok: extractor.ok, status: extractor.status },
         },
         providers: providerCapabilities.ok ? providerCapabilities.body : null,
+        observability: {
+          enabled: telemetry.enabled,
+          started: telemetry.started,
+          serviceName: telemetry.serviceName,
+          tracesExporter: telemetry.tracesExporter,
+          metricsExporter: telemetry.metricsExporter,
+          endpointConfigured: Boolean(telemetry.endpoint),
+          protocol: telemetry.protocol,
+          w3cTraceContext: telemetry.w3cTraceContext,
+          logs: telemetry.logs,
+          lastError: telemetry.lastError,
+        },
         indexes: indexes.rows,
         outbox: outbox.rows,
         stuckJobs: stuck.rows,

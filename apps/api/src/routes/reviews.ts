@@ -12,6 +12,7 @@ import {
 import { GitKnowledgeStore } from "@akp/git-store";
 import { assertSafeKnowledgePath } from "@akp/compiler";
 import { validateMarkdownDocument } from "@akp/validation";
+import { withSpan } from "@akp/observability";
 import {
   rebuildSpaceProjections,
   assertManagedRepositoryBoundary,
@@ -855,13 +856,18 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
             });
           }
           await renewPublicationLock(db, publicationKey, lockOwner);
-          revision = await store.mergeDraft(
-            String(review.branch_name),
-            String(review.base_commit),
-            String(review.head_commit),
-            process.env.AKP_GIT_AUTHOR_NAME ??
-              "Architecture Knowledge Platform",
-            process.env.AKP_GIT_AUTHOR_EMAIL ?? "akp@localhost",
+          revision = await withSpan(
+            "review.publish",
+            { "akp.review.operation": "approve" },
+            () =>
+              store.mergeDraft(
+                String(review.branch_name),
+                String(review.base_commit),
+                String(review.head_commit),
+                process.env.AKP_GIT_AUTHOR_NAME ??
+                  "Architecture Knowledge Platform",
+                process.env.AKP_GIT_AUTHOR_EMAIL ?? "akp@localhost",
+              ),
           );
           await renewPublicationLock(db, publicationKey, lockOwner);
           const jobId = (review.impact_manifest as Record<string, unknown>)
@@ -1154,7 +1160,11 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
           return reply.code(409).send({ code: "REVIEW_NOT_ROLLBACKABLE" });
         }
         await renewPublicationLock(db, publicationKey, lockOwner);
-        revision = await store.rollbackMain(String(review.merged_commit));
+        revision = await withSpan(
+          "review.rollback",
+          { "akp.review.operation": "rollback" },
+          () => store.rollbackMain(String(review.merged_commit)),
+        );
         await renewPublicationLock(db, publicationKey, lockOwner);
         const manifest = review.impact_manifest as {
           sourceId?: string;

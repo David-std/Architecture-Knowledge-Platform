@@ -15,7 +15,7 @@
     "pg": "^8.13.0",
     "@akp/domain": "*",
     "@akp/contracts": "*",
-    "@akp/observability": "*"
+    "@opentelemetry/api": "^1.9.0"
   },
   "devDependencies": {}
 }

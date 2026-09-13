@@ -1,4 +1,57 @@
 import { randomUUID } from "node:crypto";
+import { context, SpanStatusCode, trace, TraceFlags } from "@opentelemetry/api";
+
+export interface TraceMetadata {
+  traceparent?: string;
+  tracestate?: string;
+}
+
+const outboxTracer = trace.getTracer("akp-postgres-outbox", "0.3.0");
+
+function validTraceId(value: string): boolean {
+  return /^[0-9a-f]{32}$/i.test(value) && !/^0{32}$/i.test(value);
+}
+
+function validSpanId(value: string): boolean {
+  return /^[0-9a-f]{16}$/i.test(value) && !/^0{16}$/i.test(value);
+}
+
+function currentTraceMetadata(): TraceMetadata {
+  const active = trace.getSpanContext(context.active());
+  if (!active || !validTraceId(active.traceId) || !validSpanId(active.spanId)) {
+    return {};
+  }
+  const flags = (active.traceFlags & TraceFlags.SAMPLED)
+    .toString(16)
+    .padStart(2, "0");
+  return {
+    traceparent: `00-${active.traceId}-${active.spanId}-${flags}`,
+    ...(active.traceState ? { tracestate: active.traceState.serialize() } : {}),
+  };
+}
+
+async function withSpan<T>(
+  name: string,
+  attributes: Record<string, string | number | boolean>,
+  operation: () => Promise<T>,
+): Promise<T> {
+  return outboxTracer.startActiveSpan(name, { attributes }, async (span) => {
+    try {
+      return await operation();
+    } catch (error) {
+      const normalized =
+        error instanceof Error ? error : new Error(String(error));
+      span.recordException(normalized);
+      span.setStatus({
+        code: SpanStatusCode.ERROR,
+        message: normalized.message,
+      });
+      throw error;
+    } finally {
+      span.end();
+    }
+  });
+}
 import type { PoolClient, QueryResult } from "pg";
 import type { Postgres } from "./index.js";
 
@@ -47,6 +100,7 @@ export interface EventEnvelope {
   causationId: string | null;
   occurredAt: string;
   payload: Record<string, unknown>;
+  telemetry?: TraceMetadata;
 }
 
 export interface AppendOutboxEventInput {
@@ -61,6 +115,7 @@ export interface AppendOutboxEventInput {
   causationId?: string | null;
   occurredAt?: Date | string;
   payload?: Record<string, unknown>;
+  telemetry?: TraceMetadata;
 }
 
 export interface OutboxEventRecord extends EventEnvelope {
@@ -186,6 +241,27 @@ function isUuid(value: string): boolean {
   );
 }
 
+function normalizeTelemetry(value: unknown): TraceMetadata {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const candidate = value as Record<string, unknown>;
+  const traceparent =
+    typeof candidate.traceparent === "string" &&
+    /^[\da-f]{2}-[\da-f]{32}-[\da-f]{16}-[\da-f]{2}$/i.test(
+      candidate.traceparent,
+    )
+      ? candidate.traceparent.toLowerCase()
+      : undefined;
+  const tracestate =
+    typeof candidate.tracestate === "string" &&
+    candidate.tracestate.length <= 512
+      ? candidate.tracestate
+      : undefined;
+  return {
+    ...(traceparent ? { traceparent } : {}),
+    ...(tracestate ? { tracestate } : {}),
+  };
+}
+
 function parseEnvelope(input: Record<string, unknown>): EventEnvelope {
   const eventId = String(input.eventId);
   const eventType = String(input.eventType);
@@ -237,6 +313,7 @@ function parseEnvelope(input: Record<string, unknown>): EventEnvelope {
         : String(input.causationId),
     occurredAt,
     payload,
+    telemetry: normalizeTelemetry(input.telemetry),
   };
 }
 
@@ -256,6 +333,7 @@ function mapEvent(row: Record<string, unknown>): OutboxEventRecord {
       row.payload && typeof row.payload === "object"
         ? (row.payload as Record<string, unknown>)
         : {},
+    telemetry: row.telemetry_metadata,
   });
   return {
     ...parsed,
@@ -306,6 +384,7 @@ function normalizeEvent(input: AppendOutboxEventInput): EventEnvelope {
     causationId: input.causationId ?? null,
     occurredAt: iso(input.occurredAt),
     payload: input.payload ?? {},
+    telemetry: input.telemetry ?? currentTraceMetadata(),
   });
 }
 
@@ -319,61 +398,67 @@ export async function appendOutboxEvent(
   input: AppendOutboxEventInput,
 ): Promise<OutboxEventRecord> {
   const event = normalizeEvent(input);
-  return inTransaction(target, async (client) => {
-    const inserted = await client.query(
-      `
+  return withSpan("outbox.append", { "akp.event.type": event.eventType }, () =>
+    inTransaction(target, async (client) => {
+      const inserted = await client.query(
+        `
       insert into event_outbox(
         event_id,event_type,event_version,resource_id,organization_id,space_id,
-        vault_id,correlation_id,causation_id,occurred_at,payload
-      ) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb)
+        vault_id,correlation_id,causation_id,occurred_at,payload,telemetry_metadata
+      ) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb)
       on conflict(event_id) do nothing
       returning event_id,event_type,event_version,resource_id,organization_id,
                 space_id,vault_id,correlation_id,causation_id,occurred_at,payload,
-                created_at
+                telemetry_metadata,created_at
       `,
-      [
-        event.eventId,
-        event.eventType,
-        event.eventVersion,
-        event.resourceId,
-        event.organizationId,
-        event.spaceId,
-        event.vaultId,
-        event.correlationId,
-        event.causationId,
-        event.occurredAt,
-        JSON.stringify(event.payload),
-      ],
-    );
-    const row = inserted.rows[0] as Record<string, unknown> | undefined;
-    if (row) return mapEvent(row);
-    const existing = await client.query(
-      `
+        [
+          event.eventId,
+          event.eventType,
+          event.eventVersion,
+          event.resourceId,
+          event.organizationId,
+          event.spaceId,
+          event.vaultId,
+          event.correlationId,
+          event.causationId,
+          event.occurredAt,
+          JSON.stringify(event.payload),
+          JSON.stringify(event.telemetry ?? {}),
+        ],
+      );
+      const row = inserted.rows[0] as Record<string, unknown> | undefined;
+      if (row) return mapEvent(row);
+      const existing = await client.query(
+        `
       select event_id,event_type,event_version,resource_id,organization_id,
              space_id,vault_id,correlation_id,causation_id,occurred_at,payload,
-             created_at
+             telemetry_metadata,created_at
         from event_outbox where event_id=$1
       `,
-      [event.eventId],
-    );
-    const existingRow = existing.rows[0] as Record<string, unknown> | undefined;
-    if (!existingRow) throw new Error("OUTBOX_EVENT_INSERT_FAILED");
-    const persisted = mapEvent(existingRow);
-    if (
-      persisted.eventType !== event.eventType ||
-      persisted.eventVersion !== event.eventVersion ||
-      persisted.resourceId !== event.resourceId ||
-      persisted.organizationId !== event.organizationId ||
-      persisted.spaceId !== event.spaceId ||
-      persisted.vaultId !== event.vaultId ||
-      persisted.correlationId !== event.correlationId ||
-      persisted.causationId !== event.causationId ||
-      JSON.stringify(persisted.payload) !== JSON.stringify(event.payload)
-    ) {
-      throw new Error("OUTBOX_EVENT_ID_CONFLICT");
-    }
-    return persisted;
-  });
+        [event.eventId],
+      );
+      const existingRow = existing.rows[0] as
+        Record<string, unknown> | undefined;
+      if (!existingRow) throw new Error("OUTBOX_EVENT_INSERT_FAILED");
+      const persisted = mapEvent(existingRow);
+      if (
+        persisted.eventType !== event.eventType ||
+        persisted.eventVersion !== event.eventVersion ||
+        persisted.resourceId !== event.resourceId ||
+        persisted.organizationId !== event.organizationId ||
+        persisted.spaceId !== event.spaceId ||
+        persisted.vaultId !== event.vaultId ||
+        persisted.correlationId !== event.correlationId ||
+        persisted.causationId !== event.causationId ||
+        JSON.stringify(persisted.payload) !== JSON.stringify(event.payload) ||
+        JSON.stringify(persisted.telemetry ?? {}) !==
+          JSON.stringify(event.telemetry ?? {})
+      ) {
+        throw new Error("OUTBOX_EVENT_ID_CONFLICT");
+      }
+      return persisted;
+    }),
+  );
 }
 
 export interface RegisterConsumerOptions {
@@ -484,7 +569,7 @@ export async function claimNextEventDelivery(
            c.max_attempts,c.lease_seconds,
            e.event_type,e.event_version,e.resource_id,e.organization_id,e.space_id,
            e.vault_id,e.correlation_id,e.causation_id,e.occurred_at,e.payload,
-           e.created_at event_created_at
+           e.telemetry_metadata,e.created_at event_created_at
       from claimed d
       join event_consumers c on c.consumer_name=d.consumer_name
       join event_outbox e on e.event_id=d.event_id

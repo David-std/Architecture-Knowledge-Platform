@@ -52,6 +52,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/api/src/instrumentation.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/api/src/projections.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -462,6 +467,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/mcp/src/instrumentation.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/mcp/src/server.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -668,6 +678,11 @@
     },
     {
       "path": "apps/worker/src/evidence-fragment.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/worker/src/instrumentation.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
@@ -912,6 +927,11 @@
       "reason": "append-only database migration"
     },
     {
+      "path": "db/migrations/024_outbox_trace_context.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
       "path": "dependency-cruiser.cjs",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -1145,6 +1165,11 @@
       "path": "MIGRATION_REPORT.md",
       "category": "PRODUCT_DOCUMENTATION",
       "reason": "canonical product documentation"
+    },
+    {
+      "path": "ops/otel-collector.yaml",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "configuration or policy contract"
     },
     {
       "path": "package.json",
@@ -1897,6 +1922,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "scripts/telemetry-command.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "scripts/validate-contracts.mjs",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -1908,6 +1938,11 @@
     },
     {
       "path": "scripts/validate-repository-hygiene.mjs",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/verify-observability.mjs",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
