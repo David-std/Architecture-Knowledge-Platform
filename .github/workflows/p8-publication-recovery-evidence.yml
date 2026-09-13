@@ -30,6 +30,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
       - run: node scripts/p8-publication-recovery-materialize.mjs
+      - run: node scripts/p8-publication-recovery-fix.mjs
       - run: >-
           pnpm exec prettier --write
           packages/git-store/src/index.ts
