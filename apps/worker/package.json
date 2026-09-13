@@ -17,6 +17,7 @@
     "@akp/git-store": "*",
     "@akp/indexing": "*",
     "@akp/object-store": "*",
+    "@akp/observability": "*",
     "@akp/postgres": "*",
     "@akp/validation": "*",
     "dotenv": "^17.4.2",
