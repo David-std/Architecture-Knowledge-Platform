@@ -39,7 +39,8 @@ export function documentIntelligenceFormFields(
 ): Record<string, string> {
   const options = asRecord(payload.documentIntelligence) ?? {};
   const complexity =
-    typeof options.complexity === "string" && COMPLEXITIES.has(options.complexity)
+    typeof options.complexity === "string" &&
+    COMPLEXITIES.has(options.complexity)
       ? options.complexity
       : null;
   const language =
@@ -54,11 +55,7 @@ export function documentIntelligenceFormFields(
     ocr_required: String(options.ocrRequired === true),
     tables: String(options.tables === true),
     formula: String(options.formula === true),
-    cost_policy: allowedString(
-      options.costPolicy,
-      COST_POLICIES,
-      "STANDARD",
-    ),
+    cost_policy: allowedString(options.costPolicy, COST_POLICIES, "STANDARD"),
     privacy_policy: allowedString(
       options.privacyPolicy,
       PRIVACY_POLICIES,
