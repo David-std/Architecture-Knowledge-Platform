@@ -193,7 +193,7 @@ class _FakeItem:
 
 
 class _FakeFrame:
-    columns = ["criterion", "result"]
+    columns = ("criterion", "result")
 
     def itertuples(self, *, index: bool, name: object) -> list[tuple[str, str]]:
         assert index is False
