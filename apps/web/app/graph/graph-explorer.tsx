@@ -98,7 +98,11 @@ function shortestPath(
   return { nodes: new Set(), edges: new Set() };
 }
 
-function impactTraversal(seed: string, depth: number, edges: GraphEdge[]): Set<string> {
+function impactTraversal(
+  seed: string,
+  depth: number,
+  edges: GraphEdge[],
+): Set<string> {
   if (!seed) return new Set();
   const result = new Set<string>([seed]);
   let frontier = new Set<string>([seed]);
@@ -143,7 +147,12 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
   const [impactDepth, setImpactDepth] = useState(1);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
-  const dragging = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
+  const dragging = useRef<{
+    x: number;
+    y: number;
+    panX: number;
+    panY: number;
+  } | null>(null);
 
   const filteredNodes = useMemo(
     () =>
@@ -195,7 +204,10 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
           <h3>Filtros de nodos</h3>
           <label>
             Trust
-            <select value={trust} onChange={(event) => setTrust(event.target.value)}>
+            <select
+              value={trust}
+              onChange={(event) => setTrust(event.target.value)}
+            >
               <option value="ALL">Todos</option>
               {trustTiers.map((tier) => (
                 <option key={tier} value={tier}>
@@ -223,7 +235,10 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
           <h3>Camino / impacto</h3>
           <label>
             Target
-            <select value={targetId} onChange={(event) => setTargetId(event.target.value)}>
+            <select
+              value={targetId}
+              onChange={(event) => setTargetId(event.target.value)}
+            >
               <option value="">Sin target</option>
               {filteredNodes
                 .filter((node) => node.id !== selectedId)
@@ -260,7 +275,10 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
       <section className="card" style={{ marginTop: 16 }}>
         <h3>Relaciones</h3>
         {relationTypes.map((type) => (
-          <label key={type} style={{ marginRight: 12, display: "inline-block" }}>
+          <label
+            key={type}
+            style={{ marginRight: 12, display: "inline-block" }}
+          >
             <input
               type="checkbox"
               checked={enabledRelations.has(type)}
@@ -282,10 +300,16 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
       >
         <section className="card" style={{ padding: 8, overflow: "hidden" }}>
           <div style={{ display: "flex", gap: 8, padding: 8 }}>
-            <button type="button" onClick={() => setZoom((value) => clamp(value * 1.2, 0.4, 2.5))}>
+            <button
+              type="button"
+              onClick={() => setZoom((value) => clamp(value * 1.2, 0.4, 2.5))}
+            >
               +
             </button>
-            <button type="button" onClick={() => setZoom((value) => clamp(value / 1.2, 0.4, 2.5))}>
+            <button
+              type="button"
+              onClick={() => setZoom((value) => clamp(value / 1.2, 0.4, 2.5))}
+            >
               −
             </button>
             <button
@@ -303,10 +327,16 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
             viewBox="0 0 960 680"
             role="img"
             aria-label="Grafo de conocimiento interactivo"
-            style={{ width: "100%", minHeight: 560, cursor: dragging.current ? "grabbing" : "grab" }}
+            style={{
+              width: "100%",
+              minHeight: 560,
+              cursor: dragging.current ? "grabbing" : "grab",
+            }}
             onWheel={(event) => {
               event.preventDefault();
-              setZoom((value) => clamp(value * (event.deltaY < 0 ? 1.08 : 0.92), 0.4, 2.5));
+              setZoom((value) =>
+                clamp(value * (event.deltaY < 0 ? 1.08 : 0.92), 0.4, 2.5),
+              );
             }}
             onPointerDown={(event) => {
               dragging.current = {
@@ -344,7 +374,13 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
                       y1={from.y}
                       x2={to.x}
                       y2={to.y}
-                      stroke={highlighted ? "var(--accent)" : impacted ? "#7f8fb3" : "#394768"}
+                      stroke={
+                        highlighted
+                          ? "var(--accent)"
+                          : impacted
+                            ? "#7f8fb3"
+                            : "#394768"
+                      }
                       strokeWidth={highlighted ? 4 : impacted ? 2 : 1}
                       opacity={highlighted || impacted ? 1 : 0.62}
                     />
@@ -375,7 +411,8 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={() => setSelectedId(node.id)}
                     onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") setSelectedId(node.id);
+                      if (event.key === "Enter" || event.key === " ")
+                        setSelectedId(node.id);
                     }}
                     style={{ cursor: "pointer" }}
                   >
@@ -383,7 +420,13 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
                       cx={position.x}
                       cy={position.y}
                       r={selectedNode ? 15 : 11}
-                      fill={onPath ? "var(--accent)" : impacted ? "#7f8fb3" : "#19233c"}
+                      fill={
+                        onPath
+                          ? "var(--accent)"
+                          : impacted
+                            ? "#7f8fb3"
+                            : "#19233c"
+                      }
                       stroke={selectedNode ? "#edf2ff" : "#70d6c1"}
                       strokeWidth={selectedNode ? 3 : 1.5}
                     />
@@ -394,7 +437,9 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
                       fontSize="11"
                       textAnchor="middle"
                     >
-                      {node.title.length > 24 ? `${node.title.slice(0, 22)}…` : node.title}
+                      {node.title.length > 24
+                        ? `${node.title.slice(0, 22)}…`
+                        : node.title}
                     </text>
                   </g>
                 );
@@ -426,11 +471,16 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
                   <code>{selected.current_revision ?? "—"}</code>
                 </dd>
                 <dt className="muted">Actualizado</dt>
-                <dd>{selected.updated_at ? new Date(selected.updated_at).toLocaleString() : "—"}</dd>
+                <dd>
+                  {selected.updated_at
+                    ? new Date(selected.updated_at).toLocaleString()
+                    : "—"}
+                </dd>
               </dl>
               <a href={`/documents/${selected.id}`}>Abrir documento</a>
               <p className="muted">
-                Click en otro nodo cambia el seed. El resaltado de impacto sigue relaciones salientes hasta la profundidad seleccionada.
+                Click en otro nodo cambia el seed. El resaltado de impacto sigue
+                relaciones salientes hasta la profundidad seleccionada.
               </p>
             </>
           ) : (

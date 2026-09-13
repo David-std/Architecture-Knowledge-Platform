@@ -67,12 +67,18 @@ function parity(index: HealthResponse["indexes"][number]): {
     .filter(([, revision]) => !revision)
     .map(([name]) => name);
   if (mismatches.length) {
-    return { status: "MISMATCH", detail: `Distintos: ${mismatches.join(", ")}` };
+    return {
+      status: "MISMATCH",
+      detail: `Distintos: ${mismatches.join(", ")}`,
+    };
   }
   if (missing.length) {
     return { status: "PARTIAL", detail: `Sin revisión: ${missing.join(", ")}` };
   }
-  return { status: "ALIGNED", detail: "Corpus e índices reportan la misma revisión." };
+  return {
+    status: "ALIGNED",
+    detail: "Corpus e índices reportan la misma revisión.",
+  };
 }
 
 export default async function HealthPage() {
@@ -80,15 +86,19 @@ export default async function HealthPage() {
     akp<HealthResponse>("/v1/operator/health"),
     akp<Record<string, unknown>>("/v1/error-book"),
   ]);
-  const pending = health.outbox.find((entry) => entry.status === "PENDING")?.count ?? 0;
-  const retry = health.outbox.find((entry) => entry.status === "RETRY")?.count ?? 0;
+  const pending =
+    health.outbox.find((entry) => entry.status === "PENDING")?.count ?? 0;
+  const retry =
+    health.outbox.find((entry) => entry.status === "RETRY")?.count ?? 0;
   const quarantined =
     health.outbox.find((entry) => entry.status === "QUARANTINED")?.count ?? 0;
   const adapters = health.providers?.adapters ?? [];
 
   return (
     <main>
-      <p className="muted">Servicios, providers, paridad de índices y trabajo durable</p>
+      <p className="muted">
+        Servicios, providers, paridad de índices y trabajo durable
+      </p>
       <h1>Salud operativa</h1>
       <p>
         <span className="badge">{health.status}</span>
@@ -106,7 +116,9 @@ export default async function HealthPage() {
         </section>
         <section className="card">
           <span className="muted">Extractor</span>
-          <p className="metric">{serviceBadge(health.services.extractor?.ok)}</p>
+          <p className="metric">
+            {serviceBadge(health.services.extractor?.ok)}
+          </p>
           <small>HTTP {health.services.extractor?.status ?? "—"}</small>
         </section>
         <section className="card">
@@ -145,7 +157,9 @@ export default async function HealthPage() {
           </tbody>
         </table>
       ) : (
-        <p className="card">El extractor no reportó capacidades de proveedor.</p>
+        <p className="card">
+          El extractor no reportó capacidades de proveedor.
+        </p>
       )}
 
       <h2>Paridad corpus / índices</h2>
@@ -240,7 +254,9 @@ export default async function HealthPage() {
           </tbody>
         </table>
       ) : (
-        <p className="card">No se detectaron jobs atascados en el scope autorizado.</p>
+        <p className="card">
+          No se detectaron jobs atascados en el scope autorizado.
+        </p>
       )}
 
       <div className="grid" style={{ marginTop: 20 }}>
@@ -250,7 +266,9 @@ export default async function HealthPage() {
             <span className="badge">P7_PENDING</span>
           </p>
           <p className="muted">
-            P6 no infiere export saludable a partir de variables o APIs. El estado de exportación real se mostrará cuando P7 conecte SDK/exporter/Collector.
+            P6 no infiere export saludable a partir de variables o APIs. El
+            estado de exportación real se mostrará cuando P7 conecte
+            SDK/exporter/Collector.
           </p>
         </section>
         <section className="card">
@@ -259,7 +277,8 @@ export default async function HealthPage() {
             <span className="badge">NOT_REPORTED</span>
           </p>
           <p className="muted">
-            El runtime actual ejecuta backup/restore gates, pero no persiste una marca canónica de último backup para esta vista.
+            El runtime actual ejecuta backup/restore gates, pero no persiste una
+            marca canónica de último backup para esta vista.
           </p>
         </section>
       </div>

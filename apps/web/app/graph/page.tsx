@@ -19,7 +19,9 @@ export default async function GraphPage({
 
   return (
     <main style={{ width: "min(1500px, 100%)" }}>
-      <p className="muted">Grafo tipado, caminos e impacto bajo scope autorizado</p>
+      <p className="muted">
+        Grafo tipado, caminos e impacto bajo scope autorizado
+      </p>
       <h1>Grafo de conocimiento</h1>
       <form className="card">
         <label>
@@ -38,7 +40,8 @@ export default async function GraphPage({
 
       {!selected ? (
         <div className="card" style={{ marginTop: 16 }}>
-          No se cargó el grafo: {selection.status}. Selecciona un vault visible para mantener la exploración dentro de un scope explícito.
+          No se cargó el grafo: {selection.status}. Selecciona un vault visible
+          para mantener la exploración dentro de un scope explícito.
         </div>
       ) : null}
 
@@ -59,7 +62,9 @@ export default async function GraphPage({
             </div>
             <div className="card">
               <span className="muted">Cobertura</span>
-              <p className="metric">{graph.truncated ? "TRUNCATED" : "BOUNDED"}</p>
+              <p className="metric">
+                {graph.truncated ? "TRUNCATED" : "BOUNDED"}
+              </p>
             </div>
           </div>
 

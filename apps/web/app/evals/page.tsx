@@ -75,13 +75,18 @@ export default async function EvalsPage() {
 
   return (
     <main>
-      <p className="muted">Comparación de recuperación, grounding y no-answer</p>
+      <p className="muted">
+        Comparación de recuperación, grounding y no-answer
+      </p>
       <h1>Evaluaciones</h1>
 
       <div className="card" role="note">
         <strong>Límite de evidencia</strong>
         <p>
-          Estos resultados describen el pack de evaluación registrado y la revisión de corpus indicada. Un run con estado PASSED no demuestra por sí solo calidad de producción ni sustituye un benchmark real-corpus/held-out.
+          Estos resultados describen el pack de evaluación registrado y la
+          revisión de corpus indicada. Un run con estado PASSED no demuestra por
+          sí solo calidad de producción ni sustituye un benchmark
+          real-corpus/held-out.
         </p>
       </div>
 
@@ -93,15 +98,21 @@ export default async function EvalsPage() {
           </div>
           <div className="card">
             <span className="muted">Recall@10</span>
-            <p className="metric">{percentage(latest.metrics.meanRecallAt10)}</p>
+            <p className="metric">
+              {percentage(latest.metrics.meanRecallAt10)}
+            </p>
           </div>
           <div className="card">
             <span className="muted">MRR</span>
-            <p className="metric">{number(latest.metrics.meanReciprocalRank, 3)}</p>
+            <p className="metric">
+              {number(latest.metrics.meanReciprocalRank, 3)}
+            </p>
           </div>
           <div className="card">
             <span className="muted">Unsupported answer rate</span>
-            <p className="metric">{percentage(latest.metrics.unsupportedAnswerRate)}</p>
+            <p className="metric">
+              {percentage(latest.metrics.unsupportedAnswerRate)}
+            </p>
           </div>
         </div>
       ) : null}
@@ -144,7 +155,8 @@ export default async function EvalsPage() {
                     <span className="badge">{run.status}</span>
                     <br />
                     <small>
-                      {run.metrics.passed ?? 0}/{run.metrics.cases ?? 0} casos · {run.metrics.criticalFailures ?? 0} críticos
+                      {run.metrics.passed ?? 0}/{run.metrics.cases ?? 0} casos ·{" "}
+                      {run.metrics.criticalFailures ?? 0} críticos
                     </small>
                   </td>
                   <td>
@@ -167,7 +179,9 @@ export default async function EvalsPage() {
           </table>
         </div>
       ) : (
-        <div className="card">No hay runs de evaluación visibles para los vaults autorizados.</div>
+        <div className="card">
+          No hay runs de evaluación visibles para los vaults autorizados.
+        </div>
       )}
 
       {runs.length ? (

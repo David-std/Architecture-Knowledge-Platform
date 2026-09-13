@@ -99,7 +99,9 @@ export default async function SourcePage({
 
   return (
     <main>
-      <p className="muted">Fuente inmutable, extracción, evidencia y descendientes</p>
+      <p className="muted">
+        Fuente inmutable, extracción, evidencia y descendientes
+      </p>
       <h1>{source.title || id}</h1>
       <p>
         <span className="badge">{source.media_type}</span>
@@ -139,7 +141,11 @@ export default async function SourcePage({
             .filter((item) => item.text)
             .slice(0, 8);
           return (
-            <article className="card" key={artifact.id} style={{ marginTop: 16 }}>
+            <article
+              className="card"
+              key={artifact.id}
+              style={{ marginTop: 16 }}
+            >
               <h3>
                 {artifact.extractor} <small>{artifact.extractor_version}</small>
               </h3>
@@ -148,7 +154,9 @@ export default async function SourcePage({
                 <span className="badge">{artifact.kind}</span>
               </p>
               {document.warnings?.length ? (
-                <p className="muted">Warnings: {document.warnings.join(" · ")}</p>
+                <p className="muted">
+                  Warnings: {document.warnings.join(" · ")}
+                </p>
               ) : null}
 
               {preview.length ? (
@@ -165,39 +173,50 @@ export default async function SourcePage({
                   ))}
                 </>
               ) : (
-                <p className="muted">El artefacto no contiene preview textual.</p>
+                <p className="muted">
+                  El artefacto no contiene preview textual.
+                </p>
               )}
 
               {(document.tables ?? []).length ? (
                 <>
                   <h3>Tablas</h3>
-                  {(document.tables ?? []).slice(0, 4).map((table, tableIndex) => (
-                    <div key={table.id ?? tableIndex} style={{ overflowX: "auto" }}>
-                      <p className="muted">
-                        {table.locator ? locatorLabel(table.locator) : "table"}
-                      </p>
-                      <table>
-                        {table.headers?.length ? (
-                          <thead>
-                            <tr>
-                              {table.headers.map((header, index) => (
-                                <th key={`${header}-${index}`}>{header}</th>
+                  {(document.tables ?? [])
+                    .slice(0, 4)
+                    .map((table, tableIndex) => (
+                      <div
+                        key={table.id ?? tableIndex}
+                        style={{ overflowX: "auto" }}
+                      >
+                        <p className="muted">
+                          {table.locator
+                            ? locatorLabel(table.locator)
+                            : "table"}
+                        </p>
+                        <table>
+                          {table.headers?.length ? (
+                            <thead>
+                              <tr>
+                                {table.headers.map((header, index) => (
+                                  <th key={`${header}-${index}`}>{header}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                          ) : null}
+                          <tbody>
+                            {(table.rows ?? [])
+                              .slice(0, 10)
+                              .map((row, rowIndex) => (
+                                <tr key={rowIndex}>
+                                  {row.map((cell, cellIndex) => (
+                                    <td key={cellIndex}>{cell}</td>
+                                  ))}
+                                </tr>
                               ))}
-                            </tr>
-                          </thead>
-                        ) : null}
-                        <tbody>
-                          {(table.rows ?? []).slice(0, 10).map((row, rowIndex) => (
-                            <tr key={rowIndex}>
-                              {row.map((cell, cellIndex) => (
-                                <td key={cellIndex}>{cell}</td>
-                              ))}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ))}
                 </>
               ) : null}
 
@@ -257,7 +276,9 @@ export default async function SourcePage({
             <ul>
               {result.descendants.map((document) => (
                 <li key={document.id}>
-                  <Link href={`/documents/${document.id}`}>{document.title}</Link>{" "}
+                  <Link href={`/documents/${document.id}`}>
+                    {document.title}
+                  </Link>{" "}
                   <span className="badge">{document.type}</span>
                   <span className="badge">{document.lifecycle}</span>
                   <span className="badge">{document.trust_tier}</span>
@@ -274,7 +295,9 @@ export default async function SourcePage({
             <ul>
               {result.reviews.map((review) => (
                 <li key={review.id}>
-                  <Link href={`/reviews/${review.id}`}>Revisión {review.id.slice(0, 8)}</Link>{" "}
+                  <Link href={`/reviews/${review.id}`}>
+                    Revisión {review.id.slice(0, 8)}
+                  </Link>{" "}
                   <span className="badge">{review.status}</span>
                 </li>
               ))}

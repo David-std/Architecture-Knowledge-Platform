@@ -3,11 +3,7 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import {
-  Postgres,
-  grantVaultMembership,
-  registerVault,
-} from "@akp/postgres";
+import { Postgres, grantVaultMembership, registerVault } from "@akp/postgres";
 
 const spaceId = "00000000-0000-0000-0000-000000000003";
 const adminId = "00000000-0000-0000-0000-000000000002";
@@ -167,7 +163,10 @@ beforeAll(async () => {
     [
       spaceId,
       allowedVaultId,
-      JSON.stringify({ sourceUri: "/tmp/p6/private/job.pdf", password: "payload-secret" }),
+      JSON.stringify({
+        sourceUri: "/tmp/p6/private/job.pdf",
+        password: "payload-secret",
+      }),
       JSON.stringify({
         providerTasks: {
           chunkr: {
@@ -215,7 +214,14 @@ beforeAll(async () => {
        ($1,$4,$5,'p6/a.md','P6-A','Allowed A','concept','ACTIVE','HUMAN_REVIEWED','p6-r1','A','{}','{}','compiled','[]'),
        ($2,$4,$5,'p6/b.md','P6-B','Allowed B','decision','ACTIVE','MACHINE_SUPPORTED','p6-r1','B','{}','{}','compiled','[]'),
        ($3,$4,$6,'p6/denied.md','P6-DENIED','Denied node','concept','ACTIVE','ATTESTED','p6-r1','D','{}','{}','compiled','[]')`,
-    [allowedNodeA, allowedNodeB, deniedNode, spaceId, allowedVaultId, deniedVaultId],
+    [
+      allowedNodeA,
+      allowedNodeB,
+      deniedNode,
+      spaceId,
+      allowedVaultId,
+      deniedVaultId,
+    ],
   );
   await db.pool.query(
     `insert into knowledge_relations(
@@ -236,23 +242,30 @@ afterAll(async () => {
   await db.pool.query(
     "delete from knowledge_relations where provenance in ('p6-test','p6-cross-vault-test')",
   );
-  await db.pool.query("delete from knowledge_documents where id=any($1::uuid[])", [
-    [allowedNodeA, allowedNodeB, deniedNode],
-  ]);
-  await db.pool.query("delete from ingest_job_events where job_id=any($1::uuid[])", [
-    [allowedJobId, deniedJobId],
-  ]);
+  await db.pool.query(
+    "delete from knowledge_documents where id=any($1::uuid[])",
+    [[allowedNodeA, allowedNodeB, deniedNode]],
+  );
+  await db.pool.query(
+    "delete from ingest_job_events where job_id=any($1::uuid[])",
+    [[allowedJobId, deniedJobId]],
+  );
   await db.pool.query("delete from ingest_jobs where id=any($1::uuid[])", [
     [allowedJobId, deniedJobId],
   ]);
   await db.pool.query("delete from sources where id=any($1::uuid[])", [
     [allowedSourceId, deniedSourceId],
   ]);
-  await db.pool.query("delete from api_tokens where token_hash=$1", [tokenHash]);
-  await db.pool.query("delete from vault_memberships where user_id=$1", [viewerId]);
-  await db.pool.query("delete from vault_memberships where vault_id=any($1::uuid[])", [
-    [allowedVaultId, deniedVaultId],
+  await db.pool.query("delete from api_tokens where token_hash=$1", [
+    tokenHash,
   ]);
+  await db.pool.query("delete from vault_memberships where user_id=$1", [
+    viewerId,
+  ]);
+  await db.pool.query(
+    "delete from vault_memberships where vault_id=any($1::uuid[])",
+    [[allowedVaultId, deniedVaultId]],
+  );
   await db.pool.query("delete from vaults where id=any($1::uuid[])", [
     [allowedVaultId, deniedVaultId],
   ]);
@@ -277,7 +290,9 @@ describe("P6 operator projections", () => {
     expect(ids.has(allowedNodeA)).toBe(true);
     expect(ids.has(allowedNodeB)).toBe(true);
     expect(ids.has(deniedNode)).toBe(false);
-    expect(body.nodes.every((node) => node.vault_id === allowedVaultId)).toBe(true);
+    expect(body.nodes.every((node) => node.vault_id === allowedVaultId)).toBe(
+      true,
+    );
     expect(body.edges).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ from: allowedNodeA, to: allowedNodeB }),
@@ -288,9 +303,21 @@ describe("P6 operator projections", () => {
 
   it("makes an unauthorized private vault indistinguishable from missing", async () => {
     const [source, job, graph] = await Promise.all([
-      app.inject({ method: "GET", url: `/v1/operator/sources/${deniedSourceId}`, headers }),
-      app.inject({ method: "GET", url: `/v1/operator/jobs/${deniedJobId}`, headers }),
-      app.inject({ method: "GET", url: `/v1/operator/graph?vaultId=${deniedVaultId}`, headers }),
+      app.inject({
+        method: "GET",
+        url: `/v1/operator/sources/${deniedSourceId}`,
+        headers,
+      }),
+      app.inject({
+        method: "GET",
+        url: `/v1/operator/jobs/${deniedJobId}`,
+        headers,
+      }),
+      app.inject({
+        method: "GET",
+        url: `/v1/operator/graph?vaultId=${deniedVaultId}`,
+        headers,
+      }),
     ]);
     expect(source.statusCode).toBe(404);
     expect(job.statusCode).toBe(404);

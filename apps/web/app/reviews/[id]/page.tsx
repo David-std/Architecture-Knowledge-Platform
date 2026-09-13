@@ -75,10 +75,14 @@ export default async function ReviewPage({
   const canRollback = adminMembership?.pathPrefix === null;
   const pending = ["PENDING", "CHANGES_REQUESTED"].includes(review.status);
   const candidates = records(
-    impact.knowledgeCandidates ?? impact.knowledge_candidates ?? impact.candidates,
+    impact.knowledgeCandidates ??
+      impact.knowledge_candidates ??
+      impact.candidates,
   );
   const contradictions = records(impact.contradictions ?? impact.conflicts);
-  const proposedChanges = records(impact.proposedChanges ?? impact.proposed_changes);
+  const proposedChanges = records(
+    impact.proposedChanges ?? impact.proposed_changes,
+  );
   const probes = records(validation.probeResults ?? impact.probes);
   const issues = records(validation.issues);
   const evidenceIds = strings(impact.evidenceIds ?? impact.evidence_ids);
@@ -113,7 +117,9 @@ export default async function ReviewPage({
 
   return (
     <main>
-      <p className="muted">Evidencia, diff, impacto, probes y decisión humana</p>
+      <p className="muted">
+        Evidencia, diff, impacto, probes y decisión humana
+      </p>
       <h1>Revisión {id}</h1>
       <p>
         <span className="badge">{review.status}</span>
@@ -143,7 +149,11 @@ export default async function ReviewPage({
         </div>
         <div className="card">
           <span className="muted">Validación</span>
-          <p>{issues.length ? `${issues.length} issues` : "Sin issues reportados"}</p>
+          <p>
+            {issues.length
+              ? `${issues.length} issues`
+              : "Sin issues reportados"}
+          </p>
         </div>
       </div>
 
@@ -174,7 +184,8 @@ export default async function ReviewPage({
           </p>
           {!canApprove ? (
             <p className="muted">
-              La aprobación requiere acceso de revisión sin restricción de path; el servidor vuelve a validar el scope.
+              La aprobación requiere acceso de revisión sin restricción de path;
+              el servidor vuelve a validar el scope.
             </p>
           ) : null}
         </form>
@@ -217,7 +228,9 @@ export default async function ReviewPage({
               ))}
             </ul>
           ) : (
-            <p className="muted">La evidencia detallada se conserva en el manifest.</p>
+            <p className="muted">
+              La evidencia detallada se conserva en el manifest.
+            </p>
           )}
         </section>
         <section className="card">
@@ -239,10 +252,16 @@ export default async function ReviewPage({
         <section>
           <h2>Candidatos de conocimiento</h2>
           {candidates.map((candidate, index) => (
-            <article className="card" key={String(candidate.candidate_id ?? index)} style={{ marginTop: 12 }}>
+            <article
+              className="card"
+              key={String(candidate.candidate_id ?? index)}
+              style={{ marginTop: 12 }}
+            >
               <p>
                 <span className="badge">{summary(candidate.kind)}</span>
-                <span className="badge">{summary(candidate.proposed_action)}</span>
+                <span className="badge">
+                  {summary(candidate.proposed_action)}
+                </span>
               </p>
               <p>{summary(candidate.statement)}</p>
               <small>confidence {summary(candidate.confidence)}</small>
@@ -283,7 +302,9 @@ export default async function ReviewPage({
           {contradictions.length ? (
             contradictions.map((conflict, index) => (
               <div key={index}>
-                <strong>{summary(conflict.explanation ?? conflict.status)}</strong>
+                <strong>
+                  {summary(conflict.explanation ?? conflict.status)}
+                </strong>
                 <p>{summary(conflict)}</p>
               </div>
             ))
@@ -297,7 +318,9 @@ export default async function ReviewPage({
             <ul>
               {probes.map((probe, index) => (
                 <li key={String(probe.id ?? index)}>
-                  <strong>{summary(probe.passed) === "true" ? "PASS" : "FAIL"}</strong>{" "}
+                  <strong>
+                    {summary(probe.passed) === "true" ? "PASS" : "FAIL"}
+                  </strong>{" "}
                   {summary(probe.question ?? probe.description ?? probe.method)}
                   {probe.criticality ? ` · ${summary(probe.criticality)}` : ""}
                 </li>

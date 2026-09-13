@@ -111,7 +111,9 @@ export default async function SearchPage({
 }) {
   const params = await searchParams;
   const query = params.q?.trim() ?? "";
-  const requestedIntent = intents.includes(params.intent as (typeof intents)[number])
+  const requestedIntent = intents.includes(
+    params.intent as (typeof intents)[number],
+  )
     ? params.intent
     : undefined;
   const registry = await akp<{ vaults: VaultOption[] }>("/v1/vaults");
@@ -221,7 +223,9 @@ export default async function SearchPage({
                   {result.degraded ? "DEGRADED" : "SUPPORTED"}
                 </span>
               </p>
-              <small>{result.warnings.join(" · ") || "Sin degradaciones"}</small>
+              <small>
+                {result.warnings.join(" · ") || "Sin degradaciones"}
+              </small>
             </div>
           </div>
         </section>
@@ -245,8 +249,14 @@ export default async function SearchPage({
 
       {result?.hits.length ? <h2>Resultados rankeados</h2> : null}
       {result?.hits.map((hit, index) => (
-        <article className="card" key={hit.documentId} style={{ marginTop: 16 }}>
-          <p className="muted">#{index + 1} · score {hit.score.toFixed(4)}</p>
+        <article
+          className="card"
+          key={hit.documentId}
+          style={{ marginTop: 16 }}
+        >
+          <p className="muted">
+            #{index + 1} · score {hit.score.toFixed(4)}
+          </p>
           <h3>
             <Link href={`/documents/${hit.documentId}`}>{hit.title}</Link>
           </h3>
@@ -281,7 +291,9 @@ export default async function SearchPage({
           ) : null}
           <p>
             <strong>Citaciones/evidencia:</strong>{" "}
-            {hit.citations.length ? hit.citations.join(" · ") : "Sin referencias"}
+            {hit.citations.length
+              ? hit.citations.join(" · ")
+              : "Sin referencias"}
           </p>
           {hit.warnings?.length ? (
             <p className="muted">Warnings: {hit.warnings.join(" · ")}</p>
@@ -312,7 +324,11 @@ export default async function SearchPage({
           </div>
 
           {(packet.sections ?? []).map((section, index) => (
-            <article className="card" key={`${section.kind}-${index}`} style={{ marginTop: 16 }}>
+            <article
+              className="card"
+              key={`${section.kind}-${index}`}
+              style={{ marginTop: 16 }}
+            >
               <p>
                 <span className="badge">{section.kind}</span>
                 {(section.retrievalChannels ?? []).map((channel) => (
@@ -327,7 +343,7 @@ export default async function SearchPage({
                     {section.title ?? section.documentId}
                   </Link>
                 ) : (
-                  section.title ?? `Sección ${index + 1}`
+                  (section.title ?? `Sección ${index + 1}`)
                 )}
               </h3>
               <p>{section.content}</p>
@@ -339,7 +355,11 @@ export default async function SearchPage({
             <div className="card">
               <h3>Gaps</h3>
               {(packet.gaps ?? []).length ? (
-                <ul>{packet.gaps?.map((gap) => <li key={gap}>{gap}</li>)}</ul>
+                <ul>
+                  {packet.gaps?.map((gap) => (
+                    <li key={gap}>{gap}</li>
+                  ))}
+                </ul>
               ) : (
                 <p className="muted">Sin gaps reportados.</p>
               )}
@@ -364,7 +384,8 @@ export default async function SearchPage({
               <ul>
                 {packet.continuations?.map((continuation, index) => (
                   <li key={continuation.handle ?? index}>
-                    <code>{continuation.handle ?? "continuation"}</code> — {continuation.reason ?? "más contexto disponible"}
+                    <code>{continuation.handle ?? "continuation"}</code> —{" "}
+                    {continuation.reason ?? "más contexto disponible"}
                     {continuation.remainingTokens !== undefined
                       ? ` · ${continuation.remainingTokens} tokens restantes`
                       : ""}

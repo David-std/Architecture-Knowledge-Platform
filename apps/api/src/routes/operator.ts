@@ -1,8 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import {
-  resolveAuthorizedVaultScope,
-  type Postgres,
-} from "@akp/postgres";
+import { resolveAuthorizedVaultScope, type Postgres } from "@akp/postgres";
 import {
   actorOf,
   requirePermission,
@@ -62,7 +59,11 @@ async function operatorScope(
   return { spaces, vaultIds: [...vaultIds] };
 }
 
-function boundedLimit(value: unknown, fallback: number, maximum: number): number {
+function boundedLimit(
+  value: unknown,
+  fallback: number,
+  maximum: number,
+): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(1, Math.min(maximum, Math.trunc(parsed)));
@@ -122,11 +123,7 @@ export function registerOperatorRoutes(
     "/v1/operator/graph",
     { preHandler: requirePermission("knowledge:read") },
     async (request, reply) => {
-      const scope = await operatorScope(
-        db,
-        actorOf(request),
-        "knowledge:read",
-      );
+      const scope = await operatorScope(db, actorOf(request), "knowledge:read");
       if (!scope.vaultIds.length) {
         return reply.code(403).send({ code: "VAULT_ACCESS_DENIED" });
       }
@@ -343,8 +340,8 @@ export function registerOperatorRoutes(
       return sanitizeOperationalValue({
         job: row,
         providerTasks:
-          (row.stage_outputs as Record<string, unknown> | null)?.providerTasks ??
-          {},
+          (row.stage_outputs as Record<string, unknown> | null)
+            ?.providerTasks ?? {},
         events: events.rows,
         outbox: outbox.rows,
       });
@@ -363,20 +360,27 @@ export function registerOperatorRoutes(
         process.env.AKP_RAW_ENDPOINT ?? "http://127.0.0.1:19000";
       const extractorEndpoint =
         process.env.AKP_EXTRACTOR_URL ?? "http://127.0.0.1:8090";
-      const [database, rawStore, extractor, providerCapabilities, indexes, outbox, stuck] =
-        await Promise.all([
-          db.health().catch(() => false),
-          probeJson(`${rawEndpoint}/minio/health/live`),
-          probeJson(`${extractorEndpoint}/health`),
-          probeJson(`${extractorEndpoint}/v1/capabilities`, {
-            headers: {
-              "x-akp-extractor-token":
-                process.env.AKP_EXTRACTOR_TOKEN ??
-                "local-extractor-development-token",
-            },
-          }),
-          db.pool.query(
-            `
+      const [
+        database,
+        rawStore,
+        extractor,
+        providerCapabilities,
+        indexes,
+        outbox,
+        stuck,
+      ] = await Promise.all([
+        db.health().catch(() => false),
+        probeJson(`${rawEndpoint}/minio/health/live`),
+        probeJson(`${extractorEndpoint}/health`),
+        probeJson(`${extractorEndpoint}/v1/capabilities`, {
+          headers: {
+            "x-akp-extractor-token":
+              process.env.AKP_EXTRACTOR_TOKEN ??
+              "local-extractor-development-token",
+          },
+        }),
+        db.pool.query(
+          `
             select vault_id,corpus_revision,lexical_revision,vector_revision,
                    graph_revision,context_pack_revision,status,warnings,
                    retrieval_configuration_version
@@ -384,10 +388,10 @@ export function registerOperatorRoutes(
              where space_id=any($1::uuid[]) and vault_id=any($2::uuid[])
              order by vault_id
             `,
-            [scope.spaces, scope.vaultIds],
-          ),
-          db.pool.query(
-            `
+          [scope.spaces, scope.vaultIds],
+        ),
+        db.pool.query(
+          `
             select d.status,count(*)::int count
               from event_deliveries d
               join event_outbox e on e.event_id=d.event_id
@@ -395,10 +399,10 @@ export function registerOperatorRoutes(
              group by d.status
              order by d.status
             `,
-            [scope.spaces, scope.vaultIds],
-          ),
-          db.pool.query(
-            `
+          [scope.spaces, scope.vaultIds],
+        ),
+        db.pool.query(
+          `
             select id,vault_id,state,attempts,max_attempts,lease_owner,
                    lease_expires_at,heartbeat_at,next_attempt_at,updated_at,error
               from ingest_jobs
@@ -411,9 +415,9 @@ export function registerOperatorRoutes(
              order by updated_at
              limit 50
             `,
-            [scope.spaces, scope.vaultIds],
-          ),
-        ]);
+          [scope.spaces, scope.vaultIds],
+        ),
+      ]);
       const status =
         database && rawStore.ok && extractor.ok ? "UP" : "DEGRADED";
       return sanitizeOperationalValue({

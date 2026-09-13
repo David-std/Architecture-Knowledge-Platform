@@ -171,10 +171,17 @@ export default async function JobPage({
       <h2>Correlación de outbox</h2>
       {result.outbox.length ? (
         result.outbox.map((event) => (
-          <article className="card" key={event.event_id} style={{ marginTop: 12 }}>
+          <article
+            className="card"
+            key={event.event_id}
+            style={{ marginTop: 12 }}
+          >
             <h3>{event.event_type}</h3>
             <p className="muted">
-              {event.causation_id ? `Causado por ${event.causation_id}` : "Evento raíz"} · {time(event.occurred_at)}
+              {event.causation_id
+                ? `Causado por ${event.causation_id}`
+                : "Evento raíz"}{" "}
+              · {time(event.occurred_at)}
             </p>
             {(event.deliveries ?? []).length ? (
               <table>
@@ -193,7 +200,8 @@ export default async function JobPage({
                       <td>{delivery.status ?? "—"}</td>
                       <td>{delivery.attempts ?? 0}</td>
                       <td>
-                        retry {time(delivery.nextAttemptAt)} · lease {time(delivery.leaseExpiresAt)}
+                        retry {time(delivery.nextAttemptAt)} · lease{" "}
+                        {time(delivery.leaseExpiresAt)}
                       </td>
                     </tr>
                   ))}
