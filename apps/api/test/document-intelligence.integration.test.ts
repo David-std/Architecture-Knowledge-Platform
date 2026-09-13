@@ -33,7 +33,10 @@ const previousEnvironment = {
 };
 
 function pdfWithVisibleText(text: string): Buffer {
-  const escaped = text.replaceAll("\\", "\\\\").replaceAll("(", "\\(").replaceAll(")", "\\)");
+  const escaped = text
+    .replaceAll("\\", "\\\\")
+    .replaceAll("(", "\\(")
+    .replaceAll(")", "\\)");
   const stream = `BT\n/F1 48 Tf\n72 500 Td\n(${escaped}) Tj\nET\n`;
   const objects = [
     "<< /Type /Catalog /Pages 2 0 R >>",
@@ -78,7 +81,8 @@ async function seedEventConsumerForJob(jobId: string): Promise<void> {
     [jobId],
   );
   const eventId = extraction.rows[0]?.event_id;
-  if (!eventId) throw new Error(`Missing ExtractionRequested event for ${jobId}`);
+  if (!eventId)
+    throw new Error(`Missing ExtractionRequested event for ${jobId}`);
   await db.pool.query(
     `update event_deliveries
         set status='PENDING',completed_at=null,next_attempt_at=now()
@@ -88,7 +92,10 @@ async function seedEventConsumerForJob(jobId: string): Promise<void> {
 }
 
 async function runWorkerDrain(): Promise<void> {
-  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+  const root = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../../..",
+  );
   const tsx = path.join(root, "node_modules", "tsx", "dist", "cli.mjs");
   const worker = path.join(root, "apps", "worker", "src", "worker.ts");
   await execFileAsync(process.execPath, [tsx, worker], {
@@ -103,8 +110,10 @@ async function runWorkerDrain(): Promise<void> {
       AKP_EVENT_CONSUMER: eventConsumer,
       AKP_MANAGED_REPO: managedRepository,
       AKP_INGEST_ROOTS: sourceRoot,
-      AKP_EXTRACTOR_URL: process.env.AKP_EXTRACTOR_URL ?? "http://127.0.0.1:8090",
-      AKP_RAW_ENDPOINT: process.env.AKP_RAW_ENDPOINT ?? "http://127.0.0.1:19000",
+      AKP_EXTRACTOR_URL:
+        process.env.AKP_EXTRACTOR_URL ?? "http://127.0.0.1:8090",
+      AKP_RAW_ENDPOINT:
+        process.env.AKP_RAW_ENDPOINT ?? "http://127.0.0.1:19000",
       AKP_RAW_BUCKET: process.env.AKP_RAW_BUCKET ?? "akp-raw",
       AKP_RAW_ACCESS_KEY: process.env.AKP_RAW_ACCESS_KEY ?? "akp",
       AKP_RAW_SECRET_KEY: process.env.AKP_RAW_SECRET_KEY ?? "change-me",
@@ -205,11 +214,14 @@ afterAll(async () => {
   if (fixtureRoot) await rm(fixtureRoot, { recursive: true, force: true });
   if (previousEnvironment.nodeEnv === undefined) delete process.env.NODE_ENV;
   else process.env.NODE_ENV = previousEnvironment.nodeEnv;
-  if (previousEnvironment.managedRepository === undefined) delete process.env.AKP_MANAGED_REPO;
+  if (previousEnvironment.managedRepository === undefined)
+    delete process.env.AKP_MANAGED_REPO;
   else process.env.AKP_MANAGED_REPO = previousEnvironment.managedRepository;
-  if (previousEnvironment.ingestRoots === undefined) delete process.env.AKP_INGEST_ROOTS;
+  if (previousEnvironment.ingestRoots === undefined)
+    delete process.env.AKP_INGEST_ROOTS;
   else process.env.AKP_INGEST_ROOTS = previousEnvironment.ingestRoots;
-  if (previousEnvironment.eventConsumer === undefined) delete process.env.AKP_EVENT_CONSUMER;
+  if (previousEnvironment.eventConsumer === undefined)
+    delete process.env.AKP_EVENT_CONSUMER;
   else process.env.AKP_EVENT_CONSUMER = previousEnvironment.eventConsumer;
 });
 
@@ -298,7 +310,8 @@ describe("P5 document intelligence E2E", () => {
     expect(
       artifact.paragraphs?.some(
         (paragraph) =>
-          paragraph.locator?.page === 1 && paragraph.locator?.region !== undefined,
+          paragraph.locator?.page === 1 &&
+          paragraph.locator?.region !== undefined,
       ),
     ).toBe(true);
     expect(
