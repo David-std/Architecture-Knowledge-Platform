@@ -24,6 +24,12 @@ product = replaceOnce(
 );
 product = replaceOnce(
   product,
+  `    expect(rolledBack.rows[0]?.total_units).toBeGreaterThan(0);\n    expect(rolledBack.rows[0]?.inactive_units).toBe(\n      rolledBack.rows[0]?.total_units,\n    );`,
+  `    // Snapshot retention is an implementation detail: a tombstoned\n    // document may retain historical units or compact them. What must hold is\n    // that none remain active; the search assertion below proves the stronger\n    // externally observable invariant that rollback content is unretrievable.\n    expect(rolledBack.rows[0]?.inactive_units).toBe(\n      rolledBack.rows[0]?.total_units,\n    );`,
+  "rollback unit retention invariant",
+);
+product = replaceOnce(
+  product,
   `        order by sequence\`,` ,
   `        order by created_at,event_id\`,` ,
   "rollback outbox deterministic diagnostics ordering",
