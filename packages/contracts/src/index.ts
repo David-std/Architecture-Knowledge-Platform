@@ -157,6 +157,7 @@ export const SearchHit = z.object({
   type: z.string(),
   trust: TrustTier,
   lifecycle: Lifecycle,
+  refreshStatus: z.string().min(1),
   score: z.number(),
   reasons: z.array(z.string()),
   fusionContributions: z
