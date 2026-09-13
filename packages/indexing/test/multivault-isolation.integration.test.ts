@@ -96,9 +96,9 @@ describe("multivault managed relation isolation", () => {
             (row) => row.sha256 === duplicateSourceSha,
           ),
         ).toBe(true);
-        expect(new Set(duplicateSources.rows.map((row) => row.vault_id))).toEqual(
-          new Set([vaultA, vaultB]),
-        );
+        expect(
+          new Set(duplicateSources.rows.map((row) => row.vault_id)),
+        ).toEqual(new Set([vaultA, vaultB]));
 
         const documents = [
           {
@@ -183,7 +183,9 @@ describe("multivault managed relation isolation", () => {
           [[vaultA, vaultB]],
         );
         expect(collisions.rows).toHaveLength(2);
-        expect(collisions.rows.every((row) => row.vault_count === 2)).toBe(true);
+        expect(collisions.rows.every((row) => row.vault_count === 2)).toBe(
+          true,
+        );
         expect(collisions.rows.map((row) => row.external_id).sort()).toEqual([
           "shared-source",
           "shared-target",
