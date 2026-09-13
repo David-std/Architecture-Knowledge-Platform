@@ -1,0 +1,30 @@
+name: p6-format-diagnostic
+
+on:
+  pull_request:
+
+jobs:
+  prettier:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Capture canonical P6 formatting
+        shell: bash
+        run: |
+          mkdir -p reports/p6-format
+          pnpm exec prettier 'apps/web/app/reviews/[id]/page.tsx' > reports/p6-format/review-page.tsx
+          pnpm exec prettier packages/compiler/src/contracts.ts > reports/p6-format/compiler-contracts.ts
+          pnpm exec prettier packages/compiler/test/compiler-contract.test.ts > reports/p6-format/compiler-contract.test.ts
+      - uses: actions/upload-artifact@v7
+        with:
+          name: p6-format-${{ github.run_id }}
+          path: reports/p6-format
+          if-no-files-found: error
+          retention-days: 1
