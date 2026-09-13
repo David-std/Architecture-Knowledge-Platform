@@ -17,6 +17,7 @@ import { registerProjectRoutes } from "./routes/projects.js";
 import { registerSessionRoutes } from "./routes/sessions.js";
 import { registerGovernanceRoutes } from "./routes/governance.js";
 import { registerProviderTaskRoutes } from "./routes/provider-tasks.js";
+import { registerOperatorRoutes } from "./routes/operator.js";
 import { registerAuthentication } from "./auth.js";
 import { registerWriteIdempotency } from "./idempotency.js";
 import { registerWebAuthRoutes } from "./routes/web-auth.js";
@@ -176,6 +177,7 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
   registerAuditRoutes(app, db);
   registerAuditExportRoutes(app, db, rawObjectStore);
   registerProviderTaskRoutes(app, db);
+  registerOperatorRoutes(app, db);
   registerSearchRoutes(
     app,
     db,
