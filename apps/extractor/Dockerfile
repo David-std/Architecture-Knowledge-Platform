@@ -9,6 +9,16 @@ ENV UV_COMPILE_BYTECODE=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
+# These are bounded local runtime tools, not heavyweight VLM/provider models.
+# They make the default container capable of real OCR, scanned-PDF
+# rasterization and video audio demux while Docling/Marker remain opt-in extras.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       ffmpeg \
+       poppler-utils \
+       tesseract-ocr \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY pyproject.toml uv.lock ./
 COPY app ./app
 
