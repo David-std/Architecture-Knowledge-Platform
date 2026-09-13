@@ -7,6 +7,7 @@ import rateLimit from "@fastify/rate-limit";
 import { Postgres } from "@akp/postgres";
 import { MinioObjectStore } from "@akp/object-store";
 import { OpenTelemetryBridge, type ActiveTrace } from "@akp/observability";
+import type { Tokenizer } from "@akp/retrieval";
 import { registerSearchRoutes } from "./routes/search.js";
 import { registerIngestRoutes } from "./routes/ingest.js";
 import { registerKnowledgeRoutes } from "./routes/knowledge.js";
@@ -30,7 +31,11 @@ config({
   ),
 });
 
-export function buildServer() {
+export interface ApiServerDependencies {
+  contextTokenizer?: Tokenizer;
+}
+
+export function buildServer(dependencies: ApiServerDependencies = {}) {
   const app = Fastify({
     logger: process.env.NODE_ENV !== "test",
     bodyLimit: 10 * 1024 * 1024,
@@ -174,7 +179,13 @@ export function buildServer() {
   registerErrorBookRoutes(app, db);
   registerAuditRoutes(app, db);
   registerAuditExportRoutes(app, db, rawObjectStore);
-  registerSearchRoutes(app, db);
+  registerSearchRoutes(
+    app,
+    db,
+    dependencies.contextTokenizer
+      ? { contextTokenizer: dependencies.contextTokenizer }
+      : {},
+  );
   registerIngestRoutes(app, db);
   registerKnowledgeRoutes(app, db);
   registerReviewRoutes(app, db);

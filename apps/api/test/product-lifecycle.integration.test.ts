@@ -352,10 +352,13 @@ async function submitIngest(
 async function reviewIdForJob(jobId: string): Promise<string> {
   const row = await waitFor(
     async () =>
-      db.pool.query<{ state: string; stage_outputs: Record<string, unknown> }>(
-        "select state,stage_outputs from ingest_jobs where id=$1",
-        [jobId],
-      ),
+      db.pool.query<{
+        state: string;
+        stage_outputs: Record<string, unknown>;
+        error: unknown;
+      }>("select state,stage_outputs,error from ingest_jobs where id=$1", [
+        jobId,
+      ]),
     (result) => result.rows[0]?.state === "REVIEW_REQUIRED",
     `ingest job ${jobId} to reach REVIEW_REQUIRED`,
   );
@@ -465,7 +468,13 @@ beforeAll(async () => {
     ],
   );
   const module = await import("../src/server.js");
-  app = module.buildServer();
+  app = module.buildServer({
+    contextTokenizer: {
+      id: "e2e-char4",
+      label: "E2E deterministic char/4 tokenizer",
+      count: (text: string) => Math.ceil(text.length / 4),
+    },
+  });
 });
 
 afterAll(async () => {
@@ -648,6 +657,7 @@ describe("product lifecycle E2E", () => {
     const searchBody = search.json() as {
       hits: Array<{
         vaultId: string;
+        unitId?: string;
         title: string;
         excerpt: string;
         citations: string[];
@@ -659,6 +669,7 @@ describe("product lifecycle E2E", () => {
       searchBody.hits.some(
         (hit) =>
           hit.vaultId === vaultId &&
+          Boolean(hit.unitId) &&
           hit.excerpt.includes(firstMarker) &&
           hit.citations.some((citation) => citation.includes("managed/")),
       ),
@@ -687,10 +698,20 @@ describe("product lifecycle E2E", () => {
       status: string;
       sections: Array<{ content: string; vaultId: string }>;
       citations: string[];
+      budget: {
+        tokenizer: { id: string; approximate: boolean; source: string };
+      };
     };
     expect(contextBody).toMatchObject({
       vaultId,
       status: "SUPPORTED",
+      budget: {
+        tokenizer: {
+          id: "e2e-char4",
+          approximate: false,
+          source: "injected",
+        },
+      },
     });
     expect(
       contextBody.sections.some(
@@ -710,6 +731,83 @@ describe("product lifecycle E2E", () => {
     );
     expect(contextRow.rows[0]).toMatchObject({ vault_id: vaultId });
     expect(contextRow.rows[0]?.corpus_revision).toContain("managed:");
+
+    const compactContext = await app.inject({
+      method: "POST",
+      url: "/v1/context",
+      headers,
+      payload: {
+        query: revisionMarker,
+        spaceId: defaultSpace,
+        vaultId,
+        packetMode: "COMPACT_AGENT_PACKET",
+        maxTokens: 1000,
+      },
+    });
+    expect(compactContext.statusCode, compactContext.body).toBe(200);
+    const compactBody = compactContext.json() as {
+      packetMode: string;
+      identity: { packetId: string; status: string };
+      content: Array<{ content: string }>;
+      packetHash: string;
+      budget: { maxTokens: number; serializedTokens: number };
+    };
+    expect(compactBody).toMatchObject({
+      packetMode: "COMPACT_AGENT_PACKET",
+      identity: { status: "SUPPORTED" },
+      budget: { maxTokens: 1000 },
+    });
+    expect(compactBody.budget.serializedTokens).toBeLessThanOrEqual(1000);
+    expect(
+      compactBody.content.some((section) =>
+        section.content.includes(revisionMarker),
+      ),
+    ).toBe(true);
+    const persistedCompactSource = await db.pool.query<{
+      packet_mode: string;
+      packet_hash: string;
+    }>(
+      `select packet->>'packetMode' packet_mode,packet_hash
+         from context_packets where id=$1`,
+      [compactBody.identity.packetId],
+    );
+    expect(persistedCompactSource.rows[0]).toEqual({
+      packet_mode: "FULL_CONTEXT_PACKET",
+      packet_hash: compactBody.packetHash,
+    });
+
+    const invalidContextBudget = await app.inject({
+      method: "POST",
+      url: "/v1/context",
+      headers,
+      payload: {
+        query: revisionMarker,
+        spaceId: defaultSpace,
+        vaultId,
+        maxTokens: "512",
+      },
+    });
+    expect(invalidContextBudget.statusCode).toBe(400);
+    expect(invalidContextBudget.json()).toMatchObject({
+      code: "INVALID_CONTEXT_REQUEST",
+    });
+
+    const undersizedContext = await app.inject({
+      method: "POST",
+      url: "/v1/context",
+      headers,
+      payload: {
+        query: "x".repeat(2048),
+        spaceId: defaultSpace,
+        vaultId,
+        maxTokens: 256,
+      },
+    });
+    expect(undersizedContext.statusCode, undersizedContext.body).toBe(422);
+    expect(undersizedContext.json()).toMatchObject({
+      code: "CONTEXT_PACKET_BUDGET_TOO_SMALL",
+      maxTokens: 256,
+    });
 
     const secondMarker = `rejected-marker-${randomUUID().replaceAll("-", "").slice(0, 12)}`;
     const second = await submitIngest("rejected-product-source", secondMarker);
@@ -761,9 +859,18 @@ describe("product lifecycle E2E", () => {
       lifecycle: string;
       index_status: string;
       active_units: number;
+      total_units: number;
+      inactive_units: number;
     }>(
       `select r.status review_status,d.lifecycle,i.status index_status,
-                (select count(*)::int from knowledge_units u where u.document_id=d.id) active_units
+                (select count(*)::int from knowledge_units u
+                  where u.document_id=d.id
+                    and u.lifecycle in ('ACTIVE','DISPUTED')) active_units,
+                (select count(*)::int from knowledge_units u
+                  where u.document_id=d.id) total_units,
+                (select count(*)::int from knowledge_units u
+                  where u.document_id=d.id
+                    and u.lifecycle not in ('ACTIVE','DISPUTED')) inactive_units
            from reviews r
            join knowledge_documents d on d.vault_id=r.vault_id
              and d.frontmatter->>'source_sha256'=$2
@@ -771,12 +878,16 @@ describe("product lifecycle E2E", () => {
           where r.id=$1`,
       [firstReviewId, firstSourceHash],
     );
-    expect(rolledBack.rows[0]).toEqual({
+    expect(rolledBack.rows[0]).toMatchObject({
       review_status: "ROLLED_BACK",
       lifecycle: "DELETED_TOMBSTONE",
       index_status: "DEGRADED",
       active_units: 0,
     });
+    expect(rolledBack.rows[0]?.total_units).toBeGreaterThan(0);
+    expect(rolledBack.rows[0]?.inactive_units).toBe(
+      rolledBack.rows[0]?.total_units,
+    );
 
     const afterRollbackSearch = await app.inject({
       method: "POST",

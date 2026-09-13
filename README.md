@@ -68,6 +68,13 @@ material, submit it through `/ingest` or the CLI, follow its job, and approve
 only the generated review after inspecting the diff and evidence. The original
 Obsidian vault is never the runtime job store and is not modified by import.
 
+## Prerequisites
+
+- Node.js 24 LTS (`>=24 <25`). Node 20 is no longer a supported runtime.
+- pnpm 10.34.5 through Corepack or an equivalent pinned installation.
+- Python 3.12 for the extractor development and test toolchain.
+- Docker with Compose v2 for PostgreSQL, MinIO and extractor services.
+
 ## Quick start on Windows
 
 ```powershell

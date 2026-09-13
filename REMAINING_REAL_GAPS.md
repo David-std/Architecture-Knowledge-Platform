@@ -2,6 +2,19 @@
 
 These are explicit product or assurance limits, not hidden placeholders.
 
+## Resolved in v0.3 P0
+
+- Node 20 is no longer the active compatibility target. Clean remote CI passes
+  under Node 24.20.0 with application engines constrained to `>=24 <25`.
+- Python local, CI and extractor-image dependency resolution now share the
+  checked-in `apps/extractor/uv.lock`; dev dependencies and heavyweight
+  provider extras are separated.
+- The product lifecycle passes unchanged with causal outbox eligibility and a
+  machine-readable drain that waits for durable retry/lease timestamps and
+  fails on quarantine or deadline.
+- CI now persists diagnostics and test reports and always removes disposable
+  containers and volumes.
+
 ## Product and operational limits
 
 1. `DEFERRED` — OIDC/SAML, MFA, device assurance, centralized secret
@@ -33,27 +46,24 @@ These are explicit product or assurance limits, not hidden placeholders.
    until a real held-out benchmark justifies an ADR-backed choice.
 3. Optional document-intelligence candidates were skipped honestly. The nine
    deterministic fixtures do not prove OCR or advanced scientific extraction.
-4. Final Node commands ran under Node 25.2.0 while CI targets Node 20. Python
-   extractor tests and the document benchmark ran under Python 3.12.13.
-5. Python dependencies use lower bounds without a hashed lock file.
-6. The external source vault retains unresolved wikilinks and has no Git
+4. The external source vault retains unresolved wikilinks and has no Git
    history. Warnings are preserved rather than repaired without evidence.
-7. Security coverage is meaningful but not exhaustive; no internet-facing
+5. Security coverage is meaningful but not exhaustive; no internet-facing
    or formally verified multi-tenant claim is made.
-8. The private recovery ZIP contains database/object-store/managed-Git data and
+6. The private recovery ZIP contains database/object-store/managed-Git data and
    must not be committed or shared publicly.
-9. The scale benchmark proves deterministic single-process mechanics up to
+7. The scale benchmark proves deterministic single-process mechanics up to
    100,000 synthetic documents/units/embeddings and 99,999 relations. It is
    cumulative and cache-sensitive; it does not establish concurrent API/worker
    throughput, production latency SLOs or semantic retrieval quality.
-10. A managed-Git bundle was not restored because no disposable external
-    managed repository was authorized. PostgreSQL and object-store backup and
-    restore were verified independently, including empty-state recovery,
-    migration idempotency and checksum failure.
-11. Agent usability is `PARTIALLY_PROVEN`: a real MCP session and bounded
-    ContextPacket returned the expected rule/claim with citations and controls,
-    but a longer lexical query missed, the serialized packet exceeded the raw
-    fixture size and no controlled LLM comparison measured completion quality.
+8. A managed-Git bundle was not restored because no disposable external
+   managed repository was authorized. PostgreSQL and object-store backup and
+   restore were verified independently, including empty-state recovery,
+   migration idempotency and checksum failure.
+9. Agent usability is `PARTIALLY_PROVEN`: a real MCP session and bounded
+   ContextPacket returned the expected rule/claim with citations and controls,
+   but a longer lexical query missed, the serialized packet exceeded the raw
+   fixture size and no controlled LLM comparison measured completion quality.
 
 ## Release closure
 

@@ -1,5 +1,24 @@
 # Project state
 
+## v0.3 product-completion draft
+
+- Status: `product-completion-in-progress`
+- Updated: 2026-08-31 (America/Bogota)
+- Draft PR:
+  `https://github.com/David-std/Architecture-Knowledge-Platform/pull/1`
+- Current validated head:
+  `10fbea61afe66342dd519ebdcf01e982364a76a3`
+- Completed phase: P0 remote CI and event correctness.
+- Remote proof: GitHub Actions run `33463026103` passed both TypeScript and
+  Python jobs from a clean checkout under Node 24.20.0 and Python 3.12.
+- P0 behavior: causal outbox eligibility, durable drain-to-quiescence,
+  checked-in `uv.lock`, locked extractor image, persistent CI diagnostics and
+  unconditional disposable-service cleanup.
+- Next required phase: P1 semantic vector retrieval. The PR remains draft and
+  is not a release tag.
+
+## v0.2.1 validated baseline
+
 - Status: `validation-baseline-stable`
 - Updated: 2026-08-30 (America/Bogota)
 - Release tag: `v0.2.1-platform-validation`
@@ -33,7 +52,9 @@
 | Docker     | 29.6.2           |
 | Git        | 2.49.0.windows.1 |
 
-CI remains the authoritative compatibility gate for Node 20 and Python 3.12.
+The table records the v0.2.1 local validation environment. Active v0.3
+compatibility is now gated remotely on Node 24.20.0 and Python 3.12; the Python
+dependency graph is consumed from `apps/extractor/uv.lock`.
 
 ## Proven candidate evidence
 

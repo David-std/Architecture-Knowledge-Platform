@@ -132,12 +132,27 @@
       "reason": "executable product test"
     },
     {
+      "path": "apps/api/test/graph-retrieval.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "apps/api/test/health.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
     {
+      "path": "apps/api/test/lexical-ranking.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "apps/api/test/product-lifecycle.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/api/test/projection-vector-preservation.integration.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -148,6 +163,11 @@
     },
     {
       "path": "apps/api/test/raw-evidence-export.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/api/test/real-semantic-retrieval.integration.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -163,6 +183,16 @@
     },
     {
       "path": "apps/api/test/security.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/api/test/semantic-retrieval.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/api/test/semantic-vector-query.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -337,6 +367,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "apps/extractor/uv.lock",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/mcp/package.json",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -502,7 +537,22 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/worker/src/compilation-probes.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/worker/src/compilation-stage.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/worker/src/document-artifact.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/worker/src/drain.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
@@ -513,6 +563,16 @@
     },
     {
       "path": "apps/worker/src/event-worker.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/worker/src/evidence-fragment.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/worker/src/knowledge-compilation.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
@@ -532,12 +592,37 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/worker/test/compilation-probes.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/worker/test/compilation-stage.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "apps/worker/test/document-artifact.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
     {
+      "path": "apps/worker/test/drain.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "apps/worker/test/event-handlers.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/worker/test/evidence-fragment.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/worker/test/knowledge-compilation.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -553,6 +638,11 @@
     },
     {
       "path": "apps/worker/tsconfig.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/worker/vitest.config.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
@@ -688,6 +778,31 @@
     },
     {
       "path": "db/migrations/018_outbox_attempt_outcomes.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
+      "path": "db/migrations/019_semantic_embedding_generations.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
+      "path": "db/migrations/020_validate_embedding_activation_completeness.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
+      "path": "db/migrations/021_scope_incremental_index_runs.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
+      "path": "db/migrations/022_enforce_l2_embedding_normalization.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
+      "path": "db/migrations/023_lexical_field_projections.sql",
       "category": "MIGRATION",
       "reason": "append-only database migration"
     },
@@ -972,12 +1087,47 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/compiler/src/contracts.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/compiler/src/grounding.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/compiler/src/index.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/compiler/src/openai-compatible.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/compiler/src/provider-registry.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/compiler/test/compiler-contract.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/compiler/test/openai-compatible.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "packages/compiler/test/path-safety.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/compiler/test/provider-registry.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -997,7 +1147,17 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/contracts/test/context-request.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "packages/contracts/test/document-artifact.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/contracts/test/graph-provenance.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -1127,12 +1287,42 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/indexing/src/embedding-generation.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/indexing/src/embedding-index.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/indexing/src/index.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/indexing/test/embedding-configuration-hash.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/indexing/test/embedding-generation.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/indexing/test/embedding-index.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "packages/indexing/test/incremental-index.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/indexing/test/incremental-vector-retry.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -1297,12 +1487,27 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/retrieval/src/embedding-provider-registry.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/retrieval/src/embeddings.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
     {
       "path": "packages/retrieval/src/index.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/retrieval/src/local-semantic-embedding.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/retrieval/src/openai-compatible-embedding.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
@@ -1332,7 +1537,27 @@
       "reason": "executable product test"
     },
     {
+      "path": "packages/retrieval/test/embedding-configuration-hash.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/embedding-provider-registry.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "packages/retrieval/test/embeddings.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/local-semantic-embedding.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/openai-compatible-embedding.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -1383,6 +1608,11 @@
     },
     {
       "path": "packages/vault-importer/test/parser.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/vault-importer/test/semantic-generation.integration.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },

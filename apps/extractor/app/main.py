@@ -1,4 +1,5 @@
 import hashlib
+import json
 import os
 import tempfile
 from pathlib import Path
@@ -22,6 +23,11 @@ def capabilities() -> dict[str, object]:
         (item for item in adapters if item["adapter"] == "deterministic-baseline"),
         None,
     )
+    docling = next(
+        (item for item in adapters if item["adapter"] == "docling"),
+        None,
+    )
+    docling_configured = bool(docling and docling.get("status") == "CONFIGURED")
     aliases = {
         "text/markdown": "markdown-text",
         "text/plain": "markdown-text",
@@ -51,6 +57,7 @@ def capabilities() -> dict[str, object]:
                 "media": "authenticated-multipart-upload",
                 "status": "CONFIGURED",
                 "sha256_verification": True,
+                "routing_controls": True,
             },
             {
                 "media": "document-intelligence-routing",
@@ -58,9 +65,24 @@ def capabilities() -> dict[str, object]:
                 "benchmark_required_for_optional_default": True,
             },
             {
-                "media": "image-ocr-vision",
+                "media": "document-image-ocr",
+                "status": (
+                    "CONFIGURED"
+                    if docling_configured
+                    else "CAPABILITY_NOT_CONFIGURED"
+                ),
+                "locators": bool(docling_configured and docling and docling.get("locators")),
+                "structured_artifact": bool(
+                    docling_configured and docling and docling.get("structured_output")
+                ),
+                "adapter": "docling" if docling_configured else None,
+                "explicit_or_benchmark_selection_required": True,
+            },
+            {
+                "media": "image-visual-reasoning",
                 "status": "CAPABILITY_NOT_CONFIGURED",
                 "locators": False,
+                "reason": "OCR is not equivalent to multimodal visual reasoning",
             },
             {
                 "media": "audio-transcript",
@@ -98,6 +120,29 @@ def _authorize(token: str | None) -> None:
     expected_token = os.getenv("AKP_EXTRACTOR_TOKEN")
     if not expected_token or token != expected_token:
         raise HTTPException(status_code=401, detail="Extractor authentication required")
+
+
+def _parse_upload_configuration(value: str | None) -> dict[str, object]:
+    if value is None or not value.strip():
+        return {}
+    if len(value) > 16_384:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "INVALID_EXTRACTOR_CONFIGURATION", "reason": "too_large"},
+        )
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as error:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "INVALID_EXTRACTOR_CONFIGURATION", "reason": "invalid_json"},
+        ) from error
+    if not isinstance(parsed, dict):
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "INVALID_EXTRACTOR_CONFIGURATION", "reason": "object_required"},
+        )
+    return {str(key): child for key, child in parsed.items()}
 
 
 def _extract_path(
@@ -215,9 +260,12 @@ async def extract_upload(
     expected_sha256: Annotated[str, Form(min_length=64, max_length=64)],
     media_type: Annotated[str, Form()] = "",
     source_id: Annotated[str | None, Form()] = None,
+    complexity: Annotated[str | None, Form()] = None,
+    configuration: Annotated[str | None, Form()] = None,
     x_akp_extractor_token: Annotated[str | None, Header()] = None,
 ) -> ExtractResponse:
     _authorize(x_akp_extractor_token)
+    extraction_configuration = _parse_upload_configuration(configuration)
     suffix = Path(file.filename or "source.bin").suffix[:20]
     maximum_bytes = int(os.getenv("AKP_MAX_SOURCE_BYTES", str(512 * 1024 * 1024)))
     digest = hashlib.sha256()
@@ -244,6 +292,8 @@ async def extract_upload(
             media_type,
             source_uri,
             source_id=source_id or source_uri,
+            complexity=complexity,
+            configuration=extraction_configuration,
         )
     finally:
         if temporary_path is not None:

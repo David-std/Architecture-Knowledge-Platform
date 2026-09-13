@@ -50,6 +50,24 @@ function textResult(value: unknown) {
   };
 }
 
+function compactTextResult(value: unknown) {
+  return {
+    content: [{ type: "text" as const, text: JSON.stringify(value) }],
+  };
+}
+
+const queryIntent = z.enum([
+  "EXACT_LOOKUP",
+  "CONCEPTUAL",
+  "COMPARISON",
+  "WORKFLOW_EXECUTION",
+  "SOURCE_VERIFICATION",
+  "PROJECT_CODE",
+  "GLOBAL_SYNTHESIS",
+  "IMPACT_ANALYSIS",
+  "NO_RETRIEVAL_REQUIRED",
+]);
+
 export function createMcpServer(): McpServer {
   const server = new McpServer({
     name: "architecture-knowledge-platform",
@@ -96,6 +114,7 @@ export function createMcpServer(): McpServer {
         "Search approved knowledge using exact, lexical and graph channels.",
       inputSchema: {
         query: z.string().min(1),
+        intent: queryIntent.optional(),
         spaceId: z.string().uuid(),
         vaultIds: z.array(z.string().uuid()).min(1).max(20),
         federated: z.boolean().default(false),
@@ -132,8 +151,11 @@ export function createMcpServer(): McpServer {
         spaceId: z.string().uuid(),
         vaultIds: z.array(z.string().uuid()).min(1).max(20),
         federated: z.boolean().default(false),
-        intent: z.string().default("architecture guidance"),
+        intent: queryIntent.default("CONCEPTUAL"),
         maxTokens: z.number().int().min(256).max(32000).default(6000),
+        packetMode: z
+          .enum(["FULL_CONTEXT_PACKET", "COMPACT_AGENT_PACKET"])
+          .default("COMPACT_AGENT_PACKET"),
         limit: z.number().int().min(1).max(50).default(20),
         mode: z
           .enum(["COMPILED_ONLY", "SOURCE_BACKED", "RAW_ONLY", "PROJECT_CODE"])
@@ -141,7 +163,7 @@ export function createMcpServer(): McpServer {
       },
     },
     async (input) =>
-      textResult(
+      compactTextResult(
         await api("/v1/context", {
           method: "POST",
           body: JSON.stringify(input),

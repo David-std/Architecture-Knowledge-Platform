@@ -67,7 +67,16 @@ def infer_complexity(request: DocumentExtractionRequest) -> str:
         if token in name:
             return value
     suffix = request.source_path.suffix.lower()
-    if suffix in {".md", ".markdown", ".txt", ".html", ".htm", ".docx", ".pptx", ".xlsx"}:
+    if suffix in {
+        ".md",
+        ".markdown",
+        ".txt",
+        ".html",
+        ".htm",
+        ".docx",
+        ".pptx",
+        ".xlsx",
+    }:
         return "simple"
     if suffix == ".pdf":
         return "digital"
@@ -108,7 +117,9 @@ class ExtractorRegistry:
             _RouteRule(
                 adapter=adapter.name,
                 media=frozenset(value.lower() for value in media),
-                complexities=frozenset(value.lower() for value in (complexities or {"*"})),
+                complexities=frozenset(
+                    value.lower() for value in (complexities or {"*"})
+                ),
                 priority=priority,
             )
         )
@@ -117,10 +128,15 @@ class ExtractorRegistry:
         try:
             return self._adapters[name]
         except KeyError as error:
-            raise UnsupportedMediaType(f"extractor adapter is not registered: {name}") from error
+            raise UnsupportedMediaType(
+                f"extractor adapter is not registered: {name}"
+            ) from error
 
     def capabilities(self) -> list[dict[str, Any]]:
-        return [adapter.availability().model_dump(mode="json") for adapter in self._adapters.values()]
+        return [
+            adapter.availability().model_dump(mode="json")
+            for adapter in self._adapters.values()
+        ]
 
     def _matching_rules(self, media_type: str, complexity: str) -> list[_RouteRule]:
         media = media_type.lower()
@@ -135,6 +151,34 @@ class ExtractorRegistry:
         ]
         return sorted(rules, key=lambda rule: rule.priority)
 
+    def _configured_preference(
+        self,
+        *,
+        adapter_name: str,
+        reason: str,
+        media_type: str,
+        complexity: str,
+        candidates: list[str],
+    ) -> RoutingDecision:
+        if adapter_name not in candidates:
+            raise UnsupportedMediaType(
+                f"{reason} adapter {adapter_name!r} is not a candidate for "
+                f"{media_type} ({complexity})"
+            )
+        availability = self._adapters[adapter_name].availability()
+        if availability.status != CapabilityStatus.CONFIGURED:
+            detail = availability.reason or str(availability.status)
+            raise CapabilityNotConfigured(
+                f"{reason} adapter {adapter_name!r} is not configured: {detail}"
+            )
+        return RoutingDecision(
+            media_type=media_type,
+            complexity=complexity,
+            candidates=candidates,
+            selected_adapter=adapter_name,
+            selection_reason=reason,
+        )
+
     def route(self, request: DocumentExtractionRequest) -> RoutingDecision:
         media_type = infer_media_type(request.source_path, request.media_type)
         complexity = infer_complexity(request)
@@ -144,36 +188,45 @@ class ExtractorRegistry:
             if rule.adapter not in candidates:
                 candidates.append(rule.adapter)
         if not candidates:
-            raise UnsupportedMediaType(f"no adapter route for {media_type} ({complexity})")
+            raise UnsupportedMediaType(
+                f"no adapter route for {media_type} ({complexity})"
+            )
 
         requested = str(request.configuration.get("extractor", "")).strip()
-        benchmark_candidate = self._benchmark_selection.get(complexity) or self._benchmark_selection.get(media_type)
-        preferred = requested or benchmark_candidate
-        warnings: list[str] = []
-        if preferred and preferred in candidates:
-            availability = self._adapters[preferred].availability()
-            if availability.status == CapabilityStatus.CONFIGURED:
-                reason = "explicit-configuration" if requested else "benchmark-selection"
-                return RoutingDecision(
-                    media_type=media_type,
-                    complexity=complexity,
-                    candidates=candidates,
-                    selected_adapter=preferred,
-                    selection_reason=reason,
-                    warnings=warnings,
-                )
-            warnings.append(f"{preferred}:{availability.reason or availability.status}")
-        elif preferred:
-            warnings.append(f"requested adapter is not a candidate: {preferred}")
+        if requested:
+            return self._configured_preference(
+                adapter_name=requested,
+                reason="explicit-configuration",
+                media_type=media_type,
+                complexity=complexity,
+                candidates=candidates,
+            )
 
-        deterministic = next((name for name in candidates if name == "deterministic-baseline"), None)
+        benchmark_candidate = self._benchmark_selection.get(
+            complexity
+        ) or self._benchmark_selection.get(media_type)
+        if benchmark_candidate:
+            return self._configured_preference(
+                adapter_name=benchmark_candidate,
+                reason="benchmark-selection",
+                media_type=media_type,
+                complexity=complexity,
+                candidates=candidates,
+            )
+
+        warnings: list[str] = []
+        deterministic = next(
+            (name for name in candidates if name == "deterministic-baseline"),
+            None,
+        )
         configured = [
             name
             for name in candidates
-            if self._adapters[name].availability().status == CapabilityStatus.CONFIGURED
+            if self._adapters[name].availability().status
+            == CapabilityStatus.CONFIGURED
         ]
         selected = deterministic or (configured[0] if configured else candidates[0])
-        if benchmark_candidate is None and selected == "deterministic-baseline":
+        if selected == "deterministic-baseline":
             reason = "deterministic-baseline-until-benchmark"
             warnings.append("OPTIONAL_DEFAULT_NOT_SELECTED_WITHOUT_BENCHMARK")
         elif selected != "deterministic-baseline":
@@ -196,6 +249,11 @@ class ExtractorRegistry:
             artifact = adapter.extract(request)
             return RoutedExtraction(artifact=artifact, decision=decision)
         except CapabilityNotConfigured as error:
+            if decision.selection_reason in {
+                "explicit-configuration",
+                "benchmark-selection",
+            }:
+                raise
             deterministic = self._adapters.get("deterministic-baseline")
             if adapter.name == "deterministic-baseline" or deterministic is None:
                 raise
@@ -238,7 +296,15 @@ def build_default_registry() -> ExtractorRegistry:
             "application/x-yaml",
             "application/yaml",
         },
-        complexities={"simple", "digital", "complex", "scanned", "formula", "table-heavy", "unknown"},
+        complexities={
+            "simple",
+            "digital",
+            "complex",
+            "scanned",
+            "formula",
+            "table-heavy",
+            "unknown",
+        },
         priority=100,
     )
     registry.register(
@@ -252,7 +318,14 @@ def build_default_registry() -> ExtractorRegistry:
             "image/png",
             "image/jpeg",
         },
-        complexities={"simple", "digital", "complex", "scanned", "formula", "table-heavy"},
+        complexities={
+            "simple",
+            "digital",
+            "complex",
+            "scanned",
+            "formula",
+            "table-heavy",
+        },
         priority=50,
     )
     registry.register(

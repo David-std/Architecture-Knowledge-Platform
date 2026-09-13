@@ -35,14 +35,7 @@ export const CompilationPlan = z.object({
 });
 export type CompilationPlan = z.infer<typeof CompilationPlan>;
 
-export function assertSafeKnowledgePath(path: string): void {
-  const normalized = path.replaceAll("\\", "/");
-  if (
-    normalized.startsWith("/") ||
-    normalized.startsWith("../") ||
-    normalized.includes("/../") ||
-    normalized.includes("\0")
-  ) {
-    throw new Error(`Unsafe knowledge path: ${path}`);
-  }
-}
+export * from "./contracts.js";
+export * from "./grounding.js";
+export * from "./openai-compatible.js";
+export * from "./provider-registry.js";

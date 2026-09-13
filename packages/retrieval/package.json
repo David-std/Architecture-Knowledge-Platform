@@ -12,7 +12,8 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@akp/contracts": "*"
+    "@akp/contracts": "*",
+    "@huggingface/transformers": "4.2.0"
   },
   "devDependencies": {}
 }

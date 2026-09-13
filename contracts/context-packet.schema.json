@@ -2,34 +2,107 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://akp.local/schemas/context-packet-0.3.0.json",
   "title": "Architecture Knowledge Platform ContextPacket",
-  "type": "object",
-  "additionalProperties": false,
-  "required": [
-    "packetId",
-    "query",
-    "intent",
-    "scope",
-    "corpusRevision",
-    "status",
-    "indexRevisions",
-    "retrievalConfiguration",
-    "generatedAt",
-    "budget",
-    "mode",
-    "sections",
-    "citations",
-    "gaps",
-    "conflicts",
-    "requiredActions",
-    "continuations",
-    "packetHash"
+  "oneOf": [
+    { "$ref": "#/$defs/FullContextPacket" },
+    { "$ref": "#/$defs/CompactAgentPacket" }
   ],
-  "properties": {
-    "packetId": { "type": "string", "format": "uuid" },
-    "vaultId": { "type": "string", "format": "uuid" },
-    "query": { "type": "string", "minLength": 1 },
-    "intent": { "type": "string" },
-    "scope": {
+  "$defs": {
+    "GraphRelationType": {
+      "type": "string",
+      "enum": [
+        "derives_from",
+        "supports",
+        "contradicts",
+        "supersedes",
+        "implements",
+        "applies_to",
+        "example_of",
+        "counterexample_of",
+        "uses",
+        "requires",
+        "validated_by",
+        "produces",
+        "consumed_by",
+        "related_to"
+      ]
+    },
+    "GraphPathNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["documentId", "document"],
+      "properties": {
+        "documentId": { "type": "string", "format": "uuid" },
+        "document": { "type": "string", "minLength": 1 },
+        "relation": { "$ref": "#/$defs/GraphRelationType" },
+        "direction": { "type": "string", "enum": ["outgoing", "incoming"] }
+      }
+    },
+    "GraphPathProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "channel",
+        "seedDocumentId",
+        "targetDocumentId",
+        "path",
+        "hops",
+        "graphScore"
+      ],
+      "properties": {
+        "channel": { "const": "graph" },
+        "seedDocumentId": { "type": "string", "format": "uuid" },
+        "targetDocumentId": { "type": "string", "format": "uuid" },
+        "path": {
+          "type": "array",
+          "minItems": 2,
+          "items": { "$ref": "#/$defs/GraphPathNode" }
+        },
+        "hops": { "type": "integer", "minimum": 1 },
+        "graphScore": { "type": "number", "minimum": 0 }
+      }
+    },
+    "DocumentDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["externalId", "path", "title"],
+      "properties": {
+        "externalId": { "type": ["string", "null"] },
+        "path": { "type": "string" },
+        "title": { "type": "string" }
+      }
+    },
+    "TokenizerMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "approximate", "source"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "approximate": { "type": "boolean" },
+        "source": { "type": "string", "enum": ["injected", "fallback"] }
+      }
+    },
+    "Budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maxTokens",
+        "usedTokens",
+        "contentTokens",
+        "metadataTokens",
+        "serializedTokens",
+        "tokenizer"
+      ],
+      "properties": {
+        "maxTokens": { "type": "integer", "minimum": 1 },
+        "usedTokens": { "type": "integer", "minimum": 0 },
+        "contentTokens": { "type": "integer", "minimum": 0 },
+        "metadataTokens": { "type": "integer", "minimum": 0 },
+        "serializedTokens": { "type": "integer", "minimum": 0 },
+        "tokenizer": { "$ref": "#/$defs/TokenizerMetadata" }
+      }
+    },
+    "Scope": {
       "type": "object",
       "additionalProperties": false,
       "required": ["spaceId", "vaultIds", "federated"],
@@ -44,124 +117,287 @@
         "federated": { "type": "boolean" }
       }
     },
-    "corpusRevision": { "type": "string", "minLength": 1 },
-    "status": {
-      "type": "string",
-      "enum": ["SUPPORTED", "INSUFFICIENT_KNOWLEDGE", "DEGRADED"]
-    },
-    "indexRevisions": {
+    "IndexRevisions": {
       "type": "object",
-      "additionalProperties": {
-        "type": ["string", "null"]
-      }
+      "additionalProperties": { "type": ["string", "null"] }
     },
-    "retrievalConfiguration": {
-      "type": "object",
-      "additionalProperties": true
-    },
-    "generatedAt": { "type": "string", "format": "date-time" },
-    "budget": {
+    "Continuation": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["maxTokens", "usedTokens"],
+      "required": ["handle", "reason", "remainingTokens"],
       "properties": {
-        "maxTokens": { "type": "integer", "minimum": 1 },
-        "usedTokens": { "type": "integer", "minimum": 0 }
+        "handle": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string" },
+        "remainingTokens": { "type": "integer", "minimum": 0 }
       }
     },
-    "mode": {
-      "type": "string",
-      "enum": [
-        "COMPILED_ONLY",
-        "SOURCE_BACKED",
-        "RAW_ONLY",
-        "PROJECT_CODE",
-        "DRAFT_INCLUDED"
-      ]
+    "ContextSection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "title",
+        "content",
+        "documentId",
+        "vaultId",
+        "document",
+        "documentRevision",
+        "selectionReason",
+        "sourceOrEvidenceIds"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "rule",
+            "workflow",
+            "concept",
+            "profile",
+            "decision",
+            "example",
+            "counterexample",
+            "evidence",
+            "source"
+          ]
+        },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "documentId": { "type": "string", "format": "uuid" },
+        "vaultId": { "type": "string", "format": "uuid" },
+        "unitId": { "type": "string", "format": "uuid" },
+        "parentUnitId": { "type": "string", "format": "uuid" },
+        "unitType": { "type": "string" },
+        "parentUnitType": { "type": "string" },
+        "headingPath": { "type": "array", "items": { "type": "string" } },
+        "document": { "$ref": "#/$defs/DocumentDescriptor" },
+        "retrievalChannels": { "type": "array", "items": { "type": "string" } },
+        "documentRevision": { "type": "string" },
+        "score": { "type": "number" },
+        "selectionReason": { "type": "string" },
+        "sourceOrEvidenceIds": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "graphProvenance": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/GraphPathProvenance" }
+        }
+      }
     },
-    "sections": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "kind",
-          "title",
-          "content",
-          "documentId",
-          "vaultId",
-          "documentRevision",
-          "selectionReason",
-          "sourceOrEvidenceIds"
-        ],
-        "properties": {
-          "kind": {
-            "type": "string",
-            "enum": [
-              "rule",
-              "workflow",
-              "concept",
-              "profile",
-              "decision",
-              "example",
-              "counterexample",
-              "evidence",
-              "source"
-            ]
-          },
-          "title": { "type": "string" },
-          "content": { "type": "string" },
-          "documentId": { "type": "string", "format": "uuid" },
-          "vaultId": { "type": "string", "format": "uuid" },
-          "unitId": { "type": "string", "format": "uuid" },
-          "parentUnitId": { "type": "string", "format": "uuid" },
-          "unitType": { "type": "string" },
-          "retrievalChannels": {
-            "type": "array",
-            "items": { "type": "string" }
-          },
-          "documentRevision": { "type": "string" },
-          "score": { "type": "number" },
-          "selectionReason": { "type": "string" },
-          "sourceOrEvidenceIds": {
-            "type": "array",
-            "items": { "type": "string" }
+    "FullContextPacket": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "packetMode",
+        "packetId",
+        "query",
+        "intent",
+        "scope",
+        "corpusRevision",
+        "status",
+        "indexRevisions",
+        "retrievalConfiguration",
+        "generatedAt",
+        "budget",
+        "mode",
+        "searchedChannels",
+        "sections",
+        "citations",
+        "gaps",
+        "conflicts",
+        "requiredActions",
+        "recommendedActions",
+        "continuations",
+        "packetHash"
+      ],
+      "properties": {
+        "packetMode": { "const": "FULL_CONTEXT_PACKET" },
+        "packetId": { "type": "string", "format": "uuid" },
+        "vaultId": { "type": "string", "format": "uuid" },
+        "query": { "type": "string", "minLength": 1 },
+        "intent": { "type": "string" },
+        "scope": { "$ref": "#/$defs/Scope" },
+        "corpusRevision": { "type": "string", "minLength": 1 },
+        "status": {
+          "type": "string",
+          "enum": ["SUPPORTED", "INSUFFICIENT_KNOWLEDGE", "DEGRADED"]
+        },
+        "indexRevisions": { "$ref": "#/$defs/IndexRevisions" },
+        "retrievalConfiguration": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "generatedAt": { "type": "string", "format": "date-time" },
+        "budget": { "$ref": "#/$defs/Budget" },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "COMPILED_ONLY",
+            "SOURCE_BACKED",
+            "RAW_ONLY",
+            "PROJECT_CODE",
+            "DRAFT_INCLUDED"
+          ]
+        },
+        "searchedChannels": { "type": "array", "items": { "type": "string" } },
+        "sections": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ContextSection" }
+        },
+        "citations": { "type": "array", "items": { "type": "string" } },
+        "gaps": { "type": "array", "items": { "type": "string" } },
+        "conflicts": { "type": "array", "items": { "type": "string" } },
+        "requiredActions": { "type": "array", "items": { "type": "string" } },
+        "recommendedActions": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "continuations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Continuation" }
+        },
+        "packetHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    },
+    "CompactSection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "identity",
+        "content",
+        "references",
+        "citations",
+        "retrievalChannels",
+        "selectionReason"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "rule",
+            "workflow",
+            "concept",
+            "profile",
+            "decision",
+            "example",
+            "counterexample",
+            "evidence",
+            "source"
+          ]
+        },
+        "identity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "documentId",
+            "vaultId",
+            "title",
+            "revision",
+            "document"
+          ],
+          "properties": {
+            "documentId": { "type": "string", "format": "uuid" },
+            "vaultId": { "type": "string", "format": "uuid" },
+            "title": { "type": "string" },
+            "revision": { "type": "string" },
+            "unitId": { "type": "string", "format": "uuid" },
+            "parentUnitId": { "type": "string", "format": "uuid" },
+            "unitType": { "type": "string" },
+            "parentUnitType": { "type": "string" },
+            "headingPath": { "type": "array", "items": { "type": "string" } },
+            "document": { "$ref": "#/$defs/DocumentDescriptor" }
           }
+        },
+        "content": { "type": "string" },
+        "references": { "type": "array", "items": { "type": "string" } },
+        "citations": { "type": "array", "items": { "type": "string" } },
+        "retrievalChannels": { "type": "array", "items": { "type": "string" } },
+        "selectionReason": { "type": "string" },
+        "score": { "type": "number" },
+        "graphProvenance": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/GraphPathProvenance" }
         }
       }
     },
-    "citations": {
-      "type": "array",
-      "items": { "type": "string" }
-    },
-    "gaps": {
-      "type": "array",
-      "items": { "type": "string" }
-    },
-    "conflicts": {
-      "type": "array",
-      "items": { "type": "string" }
-    },
-    "requiredActions": {
-      "type": "array",
-      "items": { "type": "string" }
-    },
-    "continuations": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["handle", "reason", "remainingTokens"],
-        "properties": {
-          "handle": { "type": "string", "minLength": 1 },
-          "reason": { "type": "string" },
-          "remainingTokens": { "type": "integer", "minimum": 0 }
-        }
+    "CompactAgentPacket": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "packetMode",
+        "identity",
+        "content",
+        "references",
+        "citations",
+        "searchedChannels",
+        "conflicts",
+        "gaps",
+        "requiredActions",
+        "recommendedActions",
+        "continuations",
+        "budget",
+        "packetHash"
+      ],
+      "properties": {
+        "packetMode": { "const": "COMPACT_AGENT_PACKET" },
+        "identity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "packetId",
+            "query",
+            "intent",
+            "corpusRevision",
+            "status",
+            "mode",
+            "scope",
+            "indexRevisions"
+          ],
+          "properties": {
+            "packetId": { "type": "string", "format": "uuid" },
+            "query": { "type": "string" },
+            "intent": { "type": "string" },
+            "corpusRevision": { "type": "string" },
+            "status": {
+              "type": "string",
+              "enum": ["SUPPORTED", "INSUFFICIENT_KNOWLEDGE", "DEGRADED"]
+            },
+            "mode": {
+              "type": "string",
+              "enum": [
+                "COMPILED_ONLY",
+                "SOURCE_BACKED",
+                "RAW_ONLY",
+                "PROJECT_CODE",
+                "DRAFT_INCLUDED"
+              ]
+            },
+            "scope": { "$ref": "#/$defs/Scope" },
+            "indexRevisions": { "$ref": "#/$defs/IndexRevisions" }
+          }
+        },
+        "content": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/CompactSection" }
+        },
+        "references": { "type": "array", "items": { "type": "string" } },
+        "citations": { "type": "array", "items": { "type": "string" } },
+        "searchedChannels": { "type": "array", "items": { "type": "string" } },
+        "conflicts": { "type": "array", "items": { "type": "string" } },
+        "gaps": { "type": "array", "items": { "type": "string" } },
+        "requiredActions": { "type": "array", "items": { "type": "string" } },
+        "recommendedActions": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "continuations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Continuation" }
+        },
+        "budget": { "$ref": "#/$defs/Budget" },
+        "packetHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
       }
-    },
-    "packetHash": {
-      "type": "string",
-      "pattern": "^[a-f0-9]{64}$"
     }
   }
 }

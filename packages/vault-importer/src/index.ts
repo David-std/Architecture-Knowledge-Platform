@@ -6,8 +6,10 @@ import fg from "fast-glob";
 import matter from "gray-matter";
 import type { Postgres } from "@akp/postgres";
 import {
-  DeterministicEmbeddingAdapter,
+  configurationHashForEmbeddingDescriptor,
+  createConfiguredEmbeddingProvider,
   parseKnowledgeUnits,
+  serializeEmbeddingRuntime,
   toPgVector,
 } from "@akp/retrieval";
 
@@ -686,8 +688,18 @@ export async function inspectVault(
   const snapshotMaterial = documents
     .map((document) => `${document.relativePath}\0${document.contentHash}`)
     .join("\n");
-  const revision =
-    gitRevision(canonicalPath) ?? `snapshot:${sha256(snapshotMaterial)}`;
+  const repositoryRevision = gitRevision(canonicalPath);
+  const snapshotHash = sha256(snapshotMaterial);
+  // `HEAD:dirty` alone is not a snapshot identity: two successive imports of
+  // different uncommitted worktree contents would otherwise overwrite one
+  // corpus revision and its units. Include the material hash while dirty so
+  // historical snapshots stay addressable and identical retries remain
+  // idempotent.
+  const revision = repositoryRevision
+    ? repositoryRevision.endsWith(":dirty")
+      ? `${repositoryRevision}:${snapshotHash}`
+      : repositoryRevision
+    : `snapshot:${snapshotHash}`;
 
   return {
     canonicalPath,
@@ -734,6 +746,438 @@ export async function inspectVault(
   };
 }
 
+type ConfiguredEmbeddingProvider = NonNullable<
+  ReturnType<typeof createConfiguredEmbeddingProvider>
+>;
+
+interface ImportEmbeddingPlan {
+  generationId: string | null;
+  needsBuild: boolean;
+  activate: boolean;
+}
+
+interface ImportEmbeddingBuildOptions {
+  spaceId: string;
+  vaultId: string;
+  corpusRevision: string;
+}
+
+function safeEmbeddingFailureReason(error: unknown): string {
+  const message =
+    error instanceof Error ? error.message : "Embedding provider failed.";
+  return message
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/giu, "Bearer [REDACTED]")
+    .replace(
+      /\b(api[_ -]?key|authorization|credential|password|passwd|secret|token)\b\s*[:=]\s*[^\s,;]+/giu,
+      "$1=[REDACTED]",
+    )
+    .replace(/(https?:\/\/)[^/\s:@]+:[^@\s/]+@/giu, "$1[REDACTED]@")
+    .slice(0, 500);
+}
+
+/**
+ * Build vectors only after the canonical import has committed.  The target
+ * generation is kept BUILDING while provider calls run, so a timeout or a
+ * process restart leaves a resumable partial generation instead of rolling
+ * back documents or deleting the previous generation's FK targets.
+ */
+async function buildImportedEmbeddingGeneration(
+  db: Postgres,
+  provider: ConfiguredEmbeddingProvider,
+  generationId: string,
+  options: ImportEmbeddingBuildOptions,
+): Promise<void> {
+  const dimensions = provider.descriptor.dimensions;
+  const units = await db.pool.query<{
+    id: string;
+    content_hash: string;
+    body: string;
+  }>(
+    `
+    select u.id,u.content_hash,u.body
+      from knowledge_units u
+      join knowledge_documents d on d.id=u.document_id
+     where u.space_id=$1 and u.vault_id=$2 and u.corpus_revision=$3
+       and u.embedding_eligible=true
+       and u.lifecycle in ('ACTIVE','DISPUTED')
+       and d.space_id=$1 and d.vault_id=$2
+       and d.lifecycle in ('ACTIVE','DISPUTED')
+       and d.refresh_status not in ('STALE_BLOCKED','INVALID')
+     order by u.document_id,u.structural_order,u.id
+    `,
+    [options.spaceId, options.vaultId, options.corpusRevision],
+  );
+
+  // A retry must repair stale rows as well as missing rows.  Ineligible or
+  // content-mismatched rows belong to an older snapshot and must not make a
+  // generation appear complete.
+  await db.pool.query(
+    `
+    delete from unit_embeddings e
+     where e.generation_id=$1
+       and exists (
+         select 1 from embedding_generations g
+          where g.id=e.generation_id and g.space_id=$2 and g.vault_id=$3
+            and g.corpus_revision=$4
+       )
+       and not exists (
+         select 1
+           from knowledge_units u
+           join knowledge_documents d on d.id=u.document_id
+          where u.id=e.unit_id
+            and u.space_id=$2 and u.vault_id=$3
+            and u.corpus_revision=$4
+            and u.embedding_eligible=true
+            and u.lifecycle in ('ACTIVE','DISPUTED')
+            and d.space_id=$2 and d.vault_id=$3
+            and d.lifecycle in ('ACTIVE','DISPUTED')
+            and d.refresh_status not in ('STALE_BLOCKED','INVALID')
+            and u.content_hash=e.content_hash
+            and e.embedding_dimensions=$5
+       )
+    `,
+    [
+      generationId,
+      options.spaceId,
+      options.vaultId,
+      options.corpusRevision,
+      dimensions,
+    ],
+  );
+
+  const written = await db.pool.query<{
+    unit_id: string;
+    content_hash: string;
+  }>(
+    `select e.unit_id,e.content_hash
+       from unit_embeddings e
+       join embedding_generations g on g.id=e.generation_id
+      where e.generation_id=$1 and g.space_id=$2 and g.vault_id=$3
+        and g.corpus_revision=$4`,
+    [generationId, options.spaceId, options.vaultId, options.corpusRevision],
+  );
+  const writtenHashes = new Map(
+    written.rows.map((row) => [String(row.unit_id), row.content_hash]),
+  );
+  const missing = units.rows.filter(
+    (unit) => writtenHashes.get(unit.id) !== unit.content_hash,
+  );
+
+  const batchSize = 64;
+  for (let start = 0; start < missing.length; start += batchSize) {
+    const batch = missing.slice(start, start + batchSize);
+    const vectors = await provider.embed(
+      batch.map((unit) => unit.body),
+      "passage",
+    );
+    if (vectors.length !== batch.length) {
+      throw new Error("EMBEDDING_PROVIDER_RESULT_COUNT_MISMATCH");
+    }
+    for (const [index, unit] of batch.entries()) {
+      const vector = vectors[index];
+      if (
+        !vector ||
+        vector.length !== dimensions ||
+        vector.some((value) => !Number.isFinite(value))
+      ) {
+        throw new Error("EMBEDDING_DIMENSION_MISMATCH");
+      }
+      if (provider.descriptor.normalization.toLowerCase() === "l2") {
+        const norm = Math.hypot(...vector);
+        if (!Number.isFinite(norm) || Math.abs(norm - 1) > 1e-4) {
+          throw new Error("EMBEDDING_NORMALIZATION_MISMATCH");
+        }
+      }
+      await db.pool.query(
+        `
+        insert into unit_embeddings(
+          unit_id,generation_id,content_hash,embedding,embedding_dimensions
+        ) values($1,$2,$3,$4::vector,$5)
+        on conflict(unit_id,generation_id) do update set
+          content_hash=excluded.content_hash,
+          embedding=excluded.embedding,
+          embedding_dimensions=excluded.embedding_dimensions
+        `,
+        [
+          unit.id,
+          generationId,
+          unit.content_hash,
+          toPgVector(vector),
+          dimensions,
+        ],
+      );
+    }
+  }
+
+  const counts = await db.pool.query<{
+    expected: number;
+    matching: number;
+    stored: number;
+  }>(
+    `
+    select
+      (select count(*)::int
+         from knowledge_units u
+         join knowledge_documents d on d.id=u.document_id
+        where u.space_id=$1 and u.vault_id=$2 and u.corpus_revision=$3
+          and u.embedding_eligible=true
+          and u.lifecycle in ('ACTIVE','DISPUTED')
+          and d.space_id=$1 and d.vault_id=$2
+          and d.lifecycle in ('ACTIVE','DISPUTED')
+          and d.refresh_status not in ('STALE_BLOCKED','INVALID')) expected,
+      (select count(*)::int
+         from unit_embeddings e
+         join knowledge_units u
+           on u.id=e.unit_id and u.space_id=$1 and u.vault_id=$2
+          and u.corpus_revision=$3 and u.content_hash=e.content_hash
+         join knowledge_documents d
+           on d.id=u.document_id and d.space_id=$1 and d.vault_id=$2
+          and d.lifecycle in ('ACTIVE','DISPUTED')
+          and d.refresh_status not in ('STALE_BLOCKED','INVALID')
+        where e.generation_id=$4
+          and u.embedding_eligible=true
+          and u.lifecycle in ('ACTIVE','DISPUTED')
+          and e.embedding_dimensions=$5) matching,
+      (select count(*)::int
+         from unit_embeddings e
+         join embedding_generations g on g.id=e.generation_id
+        where e.generation_id=$4 and g.space_id=$1 and g.vault_id=$2
+          and g.corpus_revision=$3) stored
+    `,
+    [
+      options.spaceId,
+      options.vaultId,
+      options.corpusRevision,
+      generationId,
+      dimensions,
+    ],
+  );
+  const count = counts.rows[0];
+  if (
+    !count ||
+    Number(count.expected) !== Number(count.matching) ||
+    Number(count.expected) !== Number(count.stored)
+  ) {
+    throw new Error("Embedding generation is incomplete.");
+  }
+
+  const ready = await db.pool.query(
+    `update embedding_generations
+        set status='READY'
+      where id=$1 and space_id=$2 and vault_id=$3 and corpus_revision=$4
+        and status='BUILDING'
+    returning id`,
+    [generationId, options.spaceId, options.vaultId, options.corpusRevision],
+  );
+  if (ready.rowCount !== 1) {
+    const current = await db.pool.query<{ status: string }>(
+      `select status
+         from embedding_generations
+        where id=$1 and space_id=$2 and vault_id=$3 and corpus_revision=$4`,
+      [generationId, options.spaceId, options.vaultId, options.corpusRevision],
+    );
+    if (!["READY", "ACTIVE"].includes(current.rows[0]?.status ?? "")) {
+      throw new Error("INVALID_EMBEDDING_GENERATION_TRANSITION");
+    }
+  }
+}
+
+/**
+ * Activate only while the structural marker still selects this import. The
+ * marker lock, generation switch and vector publication share one transaction
+ * so a slow R1 import cannot retire an already-current R2 generation.
+ */
+async function activateImportedGenerationIfCurrent(
+  db: Postgres,
+  generationId: string,
+  options: ImportEmbeddingBuildOptions,
+): Promise<boolean> {
+  const client = await db.pool.connect();
+  try {
+    await client.query("begin");
+    const marker = await client.query<{ corpus_revision: string }>(
+      `select corpus_revision
+         from vault_index_revisions
+        where space_id=$1 and vault_id=$2
+        for update`,
+      [options.spaceId, options.vaultId],
+    );
+    if (marker.rows[0]?.corpus_revision !== options.corpusRevision) {
+      await client.query("rollback");
+      return false;
+    }
+    const activated = await client.query(
+      `select * from akp_activate_embedding_generation($1)`,
+      [generationId],
+    );
+    if (activated.rowCount !== 1) {
+      throw new Error("EMBEDDING_GENERATION_NOT_FOUND");
+    }
+    const published = await client.query(
+      `update vault_index_revisions
+          set vector_revision=$3,
+              status=case
+                when lexical_revision=$3 and graph_revision=$3
+                  and context_pack_revision=$3 then 'CONSISTENT'
+                else 'DEGRADED'
+              end,
+              warnings=(
+                select coalesce(jsonb_agg(value),'[]'::jsonb)
+                  from jsonb_array_elements_text(warnings) value
+                 where value not in (
+                   'VECTOR_BUILD_PENDING','VECTOR_BUILD_FAILED',
+                   'VECTOR_PROVIDER_NOT_CONFIGURED',
+                   'VECTOR_PROVIDER_CONFIGURATION_INVALID',
+                   'VECTOR_DISABLED','VECTOR_DISABLED_PENDING_BENCHMARK',
+                   'VECTOR_PROVIDER_UNAVAILABLE'
+                 )
+              ),
+              updated_at=now()
+        where space_id=$1 and vault_id=$2 and corpus_revision=$3`,
+      [options.spaceId, options.vaultId, options.corpusRevision],
+    );
+    if (published.rowCount !== 1) {
+      throw new Error("INDEX_REVISION_MARKER_NOT_CURRENT");
+    }
+    await client.query("commit");
+    return true;
+  } catch (error) {
+    await client.query("rollback").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+interface FinalizeImportOptions {
+  runId: string;
+  spaceId: string;
+  vaultId: string;
+  projectionRevision: string;
+  preservedVectorRevision: string | null;
+  generationId: string | null;
+  vectorReady: boolean;
+  warning: string | null;
+  failureReason: string | null;
+  inspection: VaultInspection;
+}
+
+async function finalizeImportedProjection(
+  db: Postgres,
+  options: FinalizeImportOptions,
+): Promise<ImportResult["status"]> {
+  const client = await db.pool.connect();
+  const warnings = options.warning ? [options.warning] : [];
+  const status: ImportResult["status"] =
+    options.inspection.issues.some((issue) => issue.severity === "warning") ||
+    options.warning !== null
+      ? "COMPLETED_WITH_WARNINGS"
+      : "COMPLETED";
+  try {
+    await client.query("begin");
+    if (options.generationId && options.failureReason) {
+      await client.query(
+        `update embedding_generations
+            set status='FAILED',failure_reason=$2
+          where id=$1 and space_id=$3 and vault_id=$4
+            and status in ('REQUESTED','BUILDING')`,
+        [
+          options.generationId,
+          options.failureReason,
+          options.spaceId,
+          options.vaultId,
+        ],
+      );
+    }
+
+    // A structural refresh must not hide a still-valid active generation.
+    // Keep advertising that generation while a replacement is unavailable;
+    // this is the rollback/query anchor when the provider is down.
+    const vectorRevision = options.vectorReady
+      ? options.projectionRevision
+      : options.preservedVectorRevision;
+    const indexStatus = options.vectorReady ? "CONSISTENT" : "DEGRADED";
+    const warningJson = JSON.stringify(warnings);
+    await client.query(
+      `
+      insert into index_revisions(
+        space_id,corpus_revision,lexical_revision,vector_revision,graph_revision,
+        context_pack_revision,status,warnings
+      ) values($1,$2,$2,$3,$2,$2,$4,$5::jsonb)
+      on conflict(space_id) do update set
+        corpus_revision=excluded.corpus_revision,
+        lexical_revision=excluded.lexical_revision,
+        vector_revision=excluded.vector_revision,
+        graph_revision=excluded.graph_revision,
+        context_pack_revision=excluded.context_pack_revision,
+        status=excluded.status,warnings=excluded.warnings,updated_at=now()
+      where index_revisions.corpus_revision=excluded.corpus_revision
+      `,
+      [
+        options.spaceId,
+        options.projectionRevision,
+        vectorRevision,
+        indexStatus,
+        warningJson,
+      ],
+    );
+    await client.query(
+      `
+      insert into vault_index_revisions(
+        space_id,vault_id,corpus_revision,lexical_revision,vector_revision,
+        graph_revision,context_pack_revision,status,warnings
+      ) values($1,$2,$3,$3,$4,$3,$3,$5,$6::jsonb)
+      on conflict(space_id,vault_id) do update set
+        corpus_revision=excluded.corpus_revision,
+        lexical_revision=excluded.lexical_revision,
+        vector_revision=excluded.vector_revision,
+        graph_revision=excluded.graph_revision,
+        context_pack_revision=excluded.context_pack_revision,
+        status=excluded.status,warnings=excluded.warnings,updated_at=now()
+      where vault_index_revisions.corpus_revision=excluded.corpus_revision
+      `,
+      [
+        options.spaceId,
+        options.vaultId,
+        options.projectionRevision,
+        vectorRevision,
+        indexStatus,
+        warningJson,
+      ],
+    );
+    if (options.warning === "VECTOR_BUILD_FAILED") {
+      await client.query(
+        `insert into vault_import_issues(
+           run_id,severity,code,path,message
+         ) values($1,'warning',$2,null,$3)`,
+        [
+          options.runId,
+          options.warning,
+          "Embedding provider failed; the structural import completed and vector retrieval is degraded.",
+        ],
+      );
+    }
+    await client.query(
+      `update vault_import_runs
+          set status=$2,metrics=$3::jsonb,completed_at=now()
+        where id=$1`,
+      [options.runId, status, JSON.stringify(options.inspection.metrics)],
+    );
+    await client.query("commit");
+    return status;
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Import a read-only vault without coupling canonical persistence to optional
+ * semantic inference.  Historical unit snapshots remain addressable by their
+ * corpus revision until an explicit retention policy removes them.
+ */
 export async function importVaultReadOnly(
   db: Postgres,
   vaultPath: string,
@@ -745,6 +1189,15 @@ export async function importVaultReadOnly(
     profile?: VaultImportProfile;
   },
 ): Promise<ImportResult> {
+  let embeddingAdapter: ReturnType<typeof createConfiguredEmbeddingProvider> =
+    null;
+  let embeddingConfigurationWarning: string | null = null;
+  try {
+    embeddingAdapter = createConfiguredEmbeddingProvider();
+  } catch {
+    embeddingConfigurationWarning = "VECTOR_PROVIDER_CONFIGURATION_INVALID";
+  }
+
   const profile = normalizeProfile(options.profile);
   const inspection = await inspectVault(vaultPath, { profile });
   const spaceId = options.spaceId;
@@ -759,22 +1212,35 @@ export async function importVaultReadOnly(
     options.vaultKey ??
     `${baseKey || "vault"}-${sha256(inspection.canonicalPath).slice(0, 8)}`;
   const evalPack = options.evalPack ?? "generic";
+  const vectorEnabled = process.env.AKP_VECTOR_ENABLED === "true";
+
+  let vaultId = "";
+  let runId = "";
+  let projectionRevision = "";
+  let preservedVectorRevision: string | null = null;
+  let generationPlan: ImportEmbeddingPlan = {
+    generationId: null,
+    needsBuild: false,
+    activate: false,
+  };
+
   const client = await db.pool.connect();
   try {
     await client.query("begin");
-    const vaultResult = await client.query<{ id: string }>(
+
+    const insertedVault = await client.query<{
+      id: string;
+      space_id: string;
+      canonical_path: string;
+    }>(
       `
       insert into vaults(
         space_id,canonical_path,name,read_only,current_revision,vault_key,
         local_path,eval_pack,schema_profile
       )
       values ($1,$2,$3,true,$4,$5,$2,$6::jsonb,$7::jsonb)
-      on conflict (vault_key)
-      do update set name=excluded.name,read_only=true,
-        current_revision=excluded.current_revision,local_path=excluded.local_path,
-        eval_pack=excluded.eval_pack,
-        schema_profile=coalesce(vaults.schema_profile,'{}'::jsonb) || excluded.schema_profile
-      returning id
+      on conflict (vault_key) do nothing
+      returning id,space_id,canonical_path
       `,
       [
         spaceId,
@@ -791,13 +1257,58 @@ export async function importVaultReadOnly(
         JSON.stringify({ importProfile: profile }),
       ],
     );
-    const vaultId = vaultResult.rows[0]?.id;
-    if (!vaultId) throw new Error("Could not create or resolve vault record.");
+    let vault = insertedVault.rows[0];
+    if (!vault) {
+      const existingVault = await client.query<{
+        id: string;
+        space_id: string;
+        canonical_path: string;
+      }>(
+        `select id,space_id,canonical_path from vaults where vault_key=$1 for update`,
+        [vaultKey],
+      );
+      vault = existingVault.rows[0];
+    }
+    if (!vault) throw new Error("VAULT_KEY_RESOLUTION_FAILED");
+    if (vault.space_id !== spaceId) {
+      throw new Error("VAULT_KEY_SCOPE_CONFLICT");
+    }
+    if (vault.canonical_path !== inspection.canonicalPath) {
+      throw new Error("VAULT_KEY_CANONICAL_PATH_CONFLICT");
+    }
+
+    const updatedVault = await client.query<{ id: string }>(
+      `
+      update vaults
+         set name=$2,read_only=true,current_revision=$3,local_path=$4,
+             eval_pack=$5::jsonb,
+             schema_profile=coalesce(schema_profile,'{}'::jsonb)||$6::jsonb
+       where id=$1 and space_id=$7
+      returning id
+      `,
+      [
+        vault.id,
+        inspection.name,
+        inspection.revision,
+        inspection.canonicalPath,
+        JSON.stringify({
+          name: evalPack,
+          version: "1",
+          enabled: true,
+          criticalCases: [],
+        }),
+        JSON.stringify({ importProfile: profile }),
+        spaceId,
+      ],
+    );
+    vaultId = updatedVault.rows[0]?.id ?? "";
+    if (!vaultId) throw new Error("VAULT_SCOPE_MISMATCH");
 
     const runResult = await client.query<{ id: string }>(
       `
-      insert into vault_import_runs(vault_id, revision, source_path, read_only, status, report_path)
-      values ($1, $2, $3, true, 'RUNNING', $4)
+      insert into vault_import_runs(
+        vault_id,revision,source_path,read_only,status,report_path
+      ) values($1,$2,$3,true,'RUNNING',$4)
       returning id
       `,
       [
@@ -807,9 +1318,19 @@ export async function importVaultReadOnly(
         options.reportPath ?? null,
       ],
     );
-    const runId = runResult.rows[0]?.id;
-    if (!runId) throw new Error("Could not create import run.");
-    const projectionRevision = `vault:${vaultId}:${inspection.revision}`;
+    runId = runResult.rows[0]?.id ?? "";
+    if (!runId) throw new Error("IMPORT_RUN_CREATE_FAILED");
+    projectionRevision = `vault:${vaultId}:${inspection.revision}`;
+
+    const activeGeneration = await client.query<{ corpus_revision: string }>(
+      `select corpus_revision
+         from embedding_generations
+        where space_id=$1 and vault_id=$2 and status='ACTIVE'
+        order by activated_at desc nulls last,created_at desc
+        limit 1`,
+      [spaceId, vaultId],
+    );
+    preservedVectorRevision = activeGeneration.rows[0]?.corpus_revision ?? null;
 
     await client.query(
       `
@@ -818,69 +1339,45 @@ export async function importVaultReadOnly(
          and r.provenance='markdown'
          and exists (
            select 1 from knowledge_documents d
-            where d.id=r.from_document_id and d.vault_id=$2
+            where d.id=r.from_document_id
+              and d.space_id=$1 and d.vault_id=$2
          )
       `,
       [spaceId, vaultId],
     );
-    const embeddingAdapter = new DeterministicEmbeddingAdapter();
-    const embeddingGeneration = await client.query<{ id: string }>(
-      `
-      insert into embedding_generations(
-        space_id,vault_id,provider,model,model_revision,dimensions,normalization,
-        configuration_version,corpus_revision,status,activated_at
-      )
-      values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
-             case when $10='ACTIVE' then now() else null end)
-      on conflict(
-        vault_id,provider,model,model_revision,configuration_version,corpus_revision
-      ) do update set status=excluded.status,activated_at=excluded.activated_at
-      returning id
-      `,
-      [
-        spaceId,
-        vaultId,
-        embeddingAdapter.descriptor.provider,
-        embeddingAdapter.descriptor.model,
-        embeddingAdapter.descriptor.modelRevision,
-        embeddingAdapter.descriptor.dimensions,
-        embeddingAdapter.descriptor.normalization,
-        embeddingAdapter.descriptor.configurationVersion,
-        projectionRevision,
-        process.env.AKP_VECTOR_ENABLED === "true" ? "ACTIVE" : "READY",
-      ],
-    );
-    const generationId = embeddingGeneration.rows[0]?.id;
-    if (!generationId)
-      throw new Error("Could not create embedding generation.");
+
     const importedIds: string[] = [];
     const databaseIdByExternalId = new Map<string, string>();
     for (const document of inspection.documents) {
       const row = await client.query<{ id: string }>(
         `
         insert into knowledge_documents(
-          space_id, vault_id, path, external_id, title, type, lifecycle, trust_tier,
-          current_revision, body_cache, frontmatter, aliases, layer, content_hash,
-          token_estimate, raw_links, updated_at
+          space_id,vault_id,path,external_id,title,type,lifecycle,trust_tier,
+          current_revision,body_cache,frontmatter,aliases,layer,content_hash,
+          token_estimate,raw_links,updated_at
         )
-        values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,$13,$14,$15,$16::jsonb,now())
-        on conflict (vault_id, path) where vault_id is not null
+        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,$13,$14,$15,$16::jsonb,now())
+        on conflict (vault_id,path) where vault_id is not null
         do update set
-          vault_id = excluded.vault_id,
-          external_id = excluded.external_id,
-          title = excluded.title,
-          type = excluded.type,
-          lifecycle = excluded.lifecycle,
-          trust_tier = excluded.trust_tier,
-          current_revision = excluded.current_revision,
-          body_cache = excluded.body_cache,
-          frontmatter = excluded.frontmatter,
-          aliases = excluded.aliases,
-          layer = excluded.layer,
-          content_hash = excluded.content_hash,
-          token_estimate = excluded.token_estimate,
-          raw_links = excluded.raw_links,
-          updated_at = now()
+          space_id=excluded.space_id,
+          vault_id=excluded.vault_id,
+          external_id=excluded.external_id,
+          title=excluded.title,
+          type=excluded.type,
+          lifecycle=excluded.lifecycle,
+          trust_tier=excluded.trust_tier,
+          current_revision=excluded.current_revision,
+          body_cache=excluded.body_cache,
+          frontmatter=excluded.frontmatter,
+          aliases=excluded.aliases,
+          layer=excluded.layer,
+          content_hash=excluded.content_hash,
+          token_estimate=excluded.token_estimate,
+          raw_links=excluded.raw_links,
+          refresh_status='CURRENT',
+          invalidated_by=null,
+          stale_reason=null,
+          updated_at=now()
         returning id
         `,
         [
@@ -903,17 +1400,20 @@ export async function importVaultReadOnly(
         ],
       );
       const databaseId = row.rows[0]?.id;
-      if (!databaseId)
+      if (!databaseId) {
         throw new Error(
           `Document upsert returned no id for ${document.relativePath}`,
         );
+      }
       importedIds.push(databaseId);
       databaseIdByExternalId.set(document.externalId, databaseId);
+
       await client.query(
         `
-        insert into knowledge_versions(document_id, git_commit, content_hash, body, frontmatter)
-        values ($1,$2,$3,$4,$5::jsonb)
-        on conflict (document_id, git_commit) do nothing
+        insert into knowledge_versions(
+          document_id,git_commit,content_hash,body,frontmatter
+        ) values($1,$2,$3,$4,$5::jsonb)
+        on conflict(document_id,git_commit) do nothing
         `,
         [
           databaseId,
@@ -923,29 +1423,39 @@ export async function importVaultReadOnly(
           JSON.stringify(document.frontmatter),
         ],
       );
-      await client.query("delete from knowledge_units where document_id=$1", [
-        databaseId,
-      ]);
+
       const units = parseKnowledgeUnits(document.title, document.body);
-      const embeddable = units.filter((unit) => unit.embeddingEligible);
-      const embeddings = await embeddingAdapter.embed(
-        embeddable.map((unit) => unit.body),
-      );
-      const embeddingByKey = new Map(
-        embeddable.map((unit, index) => [unit.unitKey, embeddings[index]]),
-      );
       const unitIdByKey = new Map<string, string>();
       for (const unit of units) {
         const insertedUnit = await client.query<{ id: string }>(
           `
           insert into knowledge_units(
-            document_id,space_id,vault_id,unit_key,unit_type,heading_path,body,content_hash,
-            corpus_revision,document_revision,lifecycle,trust_tier,source_ids,
-            token_estimate,parent_unit_id,permissions,locator,structural_order,
-            container_only,embedding_eligible
-          )
-          values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,
-                 $16::jsonb,$17::jsonb,$18,$19,$20)
+            document_id,space_id,vault_id,unit_key,unit_type,heading_path,body,
+            content_hash,corpus_revision,document_revision,lifecycle,trust_tier,
+            source_ids,token_estimate,parent_unit_id,permissions,locator,
+            structural_order,container_only,embedding_eligible
+          ) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,
+                   $16::jsonb,$17::jsonb,$18,$19,$20)
+          on conflict(document_id,unit_key,corpus_revision)
+          do update set
+            space_id=excluded.space_id,
+            vault_id=excluded.vault_id,
+            unit_type=excluded.unit_type,
+            heading_path=excluded.heading_path,
+            body=excluded.body,
+            content_hash=excluded.content_hash,
+            document_revision=excluded.document_revision,
+            lifecycle=excluded.lifecycle,
+            trust_tier=excluded.trust_tier,
+            source_ids=excluded.source_ids,
+            token_estimate=excluded.token_estimate,
+            parent_unit_id=excluded.parent_unit_id,
+            permissions=excluded.permissions,
+            locator=excluded.locator,
+            structural_order=excluded.structural_order,
+            container_only=excluded.container_only,
+            embedding_eligible=excluded.embedding_eligible,
+            updated_at=now()
           returning id
           `,
           [
@@ -978,20 +1488,6 @@ export async function importVaultReadOnly(
           throw new Error(`Could not insert knowledge unit ${unit.unitKey}.`);
         }
         unitIdByKey.set(unit.unitKey, insertedUnitId);
-        const embedding = embeddingByKey.get(unit.unitKey);
-        if (!embedding) continue;
-        await client.query(
-          `
-          insert into unit_embeddings(unit_id,generation_id,content_hash,embedding)
-          values($1,$2,$3,$4::vector)
-          `,
-          [
-            insertedUnitId,
-            generationId,
-            unit.contentHash,
-            toPgVector(embedding),
-          ],
-        );
       }
     }
 
@@ -1003,9 +1499,20 @@ export async function importVaultReadOnly(
              stale_reason='Removed from imported vault revision',
              body_cache='',
              updated_at=now()
-       where vault_id=$1 and not (id=any($2::uuid[]))
+       where space_id=$1 and vault_id=$2 and not (id=any($3::uuid[]))
       `,
-      [vaultId, importedIds],
+      [spaceId, vaultId, importedIds],
+    );
+    await client.query(
+      `
+      update knowledge_units u
+         set lifecycle=d.lifecycle,updated_at=now()
+        from knowledge_documents d
+       where u.document_id=d.id and u.space_id=$1 and u.vault_id=$2
+         and d.space_id=$1 and d.vault_id=$2
+         and d.lifecycle='DELETED_TOMBSTONE'
+      `,
+      [spaceId, vaultId],
     );
 
     for (const relation of inspection.relations) {
@@ -1015,9 +1522,8 @@ export async function importVaultReadOnly(
       await client.query(
         `
         insert into knowledge_relations(
-          space_id, from_document_id, to_document_id, relation_type, provenance, metadata
-        )
-        values ($1,$2,$3,$4,'markdown',$5::jsonb)
+          space_id,from_document_id,to_document_id,relation_type,provenance,metadata
+        ) values($1,$2,$3,$4,'markdown',$5::jsonb)
         on conflict do nothing
         `,
         [
@@ -1033,57 +1539,197 @@ export async function importVaultReadOnly(
     for (const issue of inspection.issues) {
       await client.query(
         `
-        insert into vault_import_issues(run_id, severity, code, path, message)
-        values ($1,$2,$3,$4,$5)
+        insert into vault_import_issues(run_id,severity,code,path,message)
+        values($1,$2,$3,$4,$5)
         `,
         [runId, issue.severity, issue.code, issue.path ?? null, issue.message],
       );
     }
 
-    const status = inspection.issues.some(
-      (issue) => issue.severity === "warning",
-    )
-      ? "COMPLETED_WITH_WARNINGS"
-      : "COMPLETED";
+    if (embeddingAdapter) {
+      const runtime = serializeEmbeddingRuntime(
+        embeddingAdapter.descriptor.runtime,
+      );
+      const configurationHash = configurationHashForEmbeddingDescriptor(
+        embeddingAdapter.descriptor,
+      );
+      const insertedGeneration = await client.query<{
+        id: string;
+        status: string;
+      }>(
+        `
+        insert into embedding_generations(
+          space_id,vault_id,provider,model,model_revision,dimensions,
+          normalization,input_strategy,configuration_version,runtime,
+          configuration_hash,corpus_revision,status
+        ) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'REQUESTED')
+        on conflict do nothing
+        returning id,status
+        `,
+        [
+          spaceId,
+          vaultId,
+          embeddingAdapter.descriptor.provider,
+          embeddingAdapter.descriptor.model,
+          embeddingAdapter.descriptor.modelRevision,
+          embeddingAdapter.descriptor.dimensions,
+          embeddingAdapter.descriptor.normalization,
+          embeddingAdapter.descriptor.inputStrategy,
+          embeddingAdapter.descriptor.configurationVersion,
+          runtime,
+          configurationHash,
+          projectionRevision,
+        ],
+      );
+      let generation = insertedGeneration.rows[0];
+      if (!generation) {
+        generation = (
+          await client.query<{ id: string; status: string }>(
+            `
+            select id,status from embedding_generations
+             where space_id=$1 and vault_id=$2 and provider=$3 and model=$4
+               and model_revision=$5 and dimensions=$6 and normalization=$7
+               and input_strategy=$8 and configuration_version=$9
+               and runtime=$10 and configuration_hash=$11
+               and corpus_revision=$12
+             for update
+            `,
+            [
+              spaceId,
+              vaultId,
+              embeddingAdapter.descriptor.provider,
+              embeddingAdapter.descriptor.model,
+              embeddingAdapter.descriptor.modelRevision,
+              embeddingAdapter.descriptor.dimensions,
+              embeddingAdapter.descriptor.normalization,
+              embeddingAdapter.descriptor.inputStrategy,
+              embeddingAdapter.descriptor.configurationVersion,
+              runtime,
+              configurationHash,
+              projectionRevision,
+            ],
+          )
+        ).rows[0];
+      }
+      if (!generation) throw new Error("EMBEDDING_GENERATION_NOT_FOUND");
+
+      generationPlan = {
+        generationId: generation.id,
+        needsBuild: false,
+        activate: false,
+      };
+      const completeness = await client.query<{
+        expected: number;
+        matching: number;
+        stored: number;
+      }>(
+        `
+        select
+          (select count(*)::int
+             from knowledge_units u
+             join knowledge_documents d on d.id=u.document_id
+            where u.space_id=$1 and u.vault_id=$2 and u.corpus_revision=$3
+              and u.embedding_eligible=true
+              and u.lifecycle in ('ACTIVE','DISPUTED')
+              and d.space_id=$1 and d.vault_id=$2
+              and d.lifecycle in ('ACTIVE','DISPUTED')
+              and d.refresh_status not in ('STALE_BLOCKED','INVALID')) expected,
+          (select count(*)::int
+             from unit_embeddings e
+             join knowledge_units u
+               on u.id=e.unit_id and u.space_id=$1 and u.vault_id=$2
+              and u.corpus_revision=$3 and u.content_hash=e.content_hash
+             join knowledge_documents d
+               on d.id=u.document_id and d.space_id=$1 and d.vault_id=$2
+              and d.lifecycle in ('ACTIVE','DISPUTED')
+              and d.refresh_status not in ('STALE_BLOCKED','INVALID')
+            where e.generation_id=$4 and u.embedding_eligible=true
+              and u.lifecycle in ('ACTIVE','DISPUTED')
+              and e.embedding_dimensions=$5) matching,
+          (select count(*)::int from unit_embeddings where generation_id=$4) stored
+        `,
+        [
+          spaceId,
+          vaultId,
+          projectionRevision,
+          generation.id,
+          embeddingAdapter.descriptor.dimensions,
+        ],
+      );
+      const count = completeness.rows[0];
+      const complete =
+        count !== undefined &&
+        Number(count.expected) === Number(count.matching) &&
+        Number(count.expected) === Number(count.stored);
+      if (
+        !complete ||
+        !["ACTIVE", "READY", "RETIRED"].includes(generation.status)
+      ) {
+        if (generation.status === "ACTIVE" || generation.status === "READY") {
+          await client.query(
+            `update embedding_generations
+                set status='STALE'
+              where id=$1 and space_id=$2 and vault_id=$3
+                and corpus_revision=$4`,
+            [generation.id, spaceId, vaultId, projectionRevision],
+          );
+          generation.status = "STALE";
+        }
+        if (generation.status !== "BUILDING") {
+          await client.query(
+            `update embedding_generations
+                set status='BUILDING',failure_reason=null
+              where id=$1 and space_id=$2 and vault_id=$3
+                and corpus_revision=$4
+                and status in ('REQUESTED','FAILED','STALE','RETIRED')`,
+            [generation.id, spaceId, vaultId, projectionRevision],
+          );
+        }
+        generationPlan.needsBuild = true;
+      } else {
+        generationPlan.activate = generation.status !== "ACTIVE";
+      }
+    }
+
     await client.query(
-      `
-      update vault_import_runs
-         set status = $2, metrics = $3::jsonb, completed_at = now()
-       where id = $1
-      `,
-      [runId, status, JSON.stringify(inspection.metrics)],
+      `update vaults
+          set last_imported_at=now(),current_revision=$2
+        where id=$1 and space_id=$3`,
+      [vaultId, inspection.revision, spaceId],
     );
-    await client.query(
-      `update vaults set last_imported_at = now(), current_revision = $2 where id = $1`,
-      [vaultId, inspection.revision],
-    );
+
+    const initialWarning = embeddingConfigurationWarning
+      ? embeddingConfigurationWarning
+      : !embeddingAdapter
+        ? vectorEnabled
+          ? "VECTOR_PROVIDER_NOT_CONFIGURED"
+          : "VECTOR_DISABLED_PENDING_BENCHMARK"
+        : !vectorEnabled
+          ? "VECTOR_DISABLED_PENDING_BENCHMARK"
+          : generationPlan.needsBuild
+            ? "VECTOR_BUILD_PENDING"
+            : null;
+    const initialWarnings = initialWarning ? [initialWarning] : [];
+    const initialWarningJson = JSON.stringify(initialWarnings);
     await client.query(
       `
       insert into index_revisions(
         space_id,corpus_revision,lexical_revision,vector_revision,graph_revision,
         context_pack_revision,status,warnings
-      )
-      values($1,$2,$2,$3,$2,$2,$4,$5::jsonb)
+      ) values($1,$2,$2,$3,$2,$2,'DEGRADED',$4::jsonb)
       on conflict(space_id) do update set
         corpus_revision=excluded.corpus_revision,
         lexical_revision=excluded.lexical_revision,
         vector_revision=excluded.vector_revision,
         graph_revision=excluded.graph_revision,
         context_pack_revision=excluded.context_pack_revision,
-        status=excluded.status,
-        warnings=excluded.warnings,
-        updated_at=now()
+        status=excluded.status,warnings=excluded.warnings,updated_at=now()
       `,
       [
         spaceId,
         projectionRevision,
-        process.env.AKP_VECTOR_ENABLED === "true" ? projectionRevision : null,
-        process.env.AKP_VECTOR_ENABLED === "true" ? "CONSISTENT" : "DEGRADED",
-        JSON.stringify(
-          process.env.AKP_VECTOR_ENABLED === "true"
-            ? []
-            : ["VECTOR_DISABLED_PENDING_BENCHMARK"],
-        ),
+        preservedVectorRevision,
+        initialWarningJson,
       ],
     );
     await client.query(
@@ -1091,7 +1737,7 @@ export async function importVaultReadOnly(
       insert into vault_index_revisions(
         space_id,vault_id,corpus_revision,lexical_revision,vector_revision,
         graph_revision,context_pack_revision,status,warnings
-      ) values($1,$2,$3,$3,$4,$3,$3,$5,$6::jsonb)
+      ) values($1,$2,$3,$3,$4,$3,$3,'DEGRADED',$5::jsonb)
       on conflict(space_id,vault_id) do update set
         corpus_revision=excluded.corpus_revision,
         lexical_revision=excluded.lexical_revision,
@@ -1104,29 +1750,99 @@ export async function importVaultReadOnly(
         spaceId,
         vaultId,
         projectionRevision,
-        process.env.AKP_VECTOR_ENABLED === "true" ? projectionRevision : null,
-        process.env.AKP_VECTOR_ENABLED === "true" ? "CONSISTENT" : "DEGRADED",
-        JSON.stringify(
-          process.env.AKP_VECTOR_ENABLED === "true"
-            ? []
-            : ["VECTOR_DISABLED_PENDING_BENCHMARK"],
-        ),
+        preservedVectorRevision,
+        initialWarningJson,
       ],
     );
+
     await client.query("commit");
-    return {
-      ...inspection,
-      runId,
-      vaultId,
-      status,
-      ...(options.reportPath ? { reportPath: options.reportPath } : {}),
-    };
   } catch (error) {
     await client.query("rollback");
     throw error;
   } finally {
     client.release();
   }
+
+  let vectorReady = false;
+  let semanticWarning = embeddingConfigurationWarning;
+  let failureReason: string | null = null;
+  if (embeddingAdapter && generationPlan.generationId) {
+    if (generationPlan.needsBuild) {
+      try {
+        await buildImportedEmbeddingGeneration(
+          db,
+          embeddingAdapter,
+          generationPlan.generationId,
+          {
+            spaceId,
+            vaultId,
+            corpusRevision: projectionRevision,
+          },
+        );
+      } catch (error) {
+        semanticWarning = "VECTOR_BUILD_FAILED";
+        failureReason = safeEmbeddingFailureReason(error);
+      }
+    }
+    if (!semanticWarning && vectorEnabled) {
+      try {
+        let current = true;
+        if (generationPlan.needsBuild || generationPlan.activate) {
+          current = await activateImportedGenerationIfCurrent(
+            db,
+            generationPlan.generationId,
+            {
+              spaceId,
+              vaultId,
+              corpusRevision: projectionRevision,
+            },
+          );
+        }
+        if (current) {
+          const active = await db.pool.query<{ status: string }>(
+            `select status
+               from embedding_generations
+              where id=$1 and space_id=$2 and vault_id=$3
+                and corpus_revision=$4`,
+            [generationPlan.generationId, spaceId, vaultId, projectionRevision],
+          );
+          if (active.rows[0]?.status !== "ACTIVE") {
+            throw new Error("EMBEDDING_GENERATION_NOT_ACTIVE");
+          }
+          vectorReady = true;
+        }
+      } catch (error) {
+        semanticWarning = "VECTOR_BUILD_FAILED";
+        failureReason = safeEmbeddingFailureReason(error);
+      }
+    } else if (!vectorEnabled && !semanticWarning) {
+      semanticWarning = "VECTOR_DISABLED_PENDING_BENCHMARK";
+    }
+  } else if (!semanticWarning) {
+    semanticWarning = vectorEnabled
+      ? "VECTOR_PROVIDER_NOT_CONFIGURED"
+      : "VECTOR_DISABLED_PENDING_BENCHMARK";
+  }
+
+  const status = await finalizeImportedProjection(db, {
+    runId,
+    spaceId,
+    vaultId,
+    projectionRevision,
+    preservedVectorRevision,
+    generationId: generationPlan.generationId,
+    vectorReady,
+    warning: semanticWarning,
+    failureReason,
+    inspection,
+  });
+  return {
+    ...inspection,
+    runId,
+    vaultId,
+    status,
+    ...(options.reportPath ? { reportPath: options.reportPath } : {}),
+  };
 }
 
 export async function latestImportStatus(
