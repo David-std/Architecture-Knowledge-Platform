@@ -34,7 +34,13 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          mkdir -p reports/ci
+          mkdir -p reports/ci/formatted
+          pnpm exec prettier apps/api/src/routes/provider-tasks.ts \
+            > reports/ci/formatted/provider-tasks.ts
+          pnpm exec prettier apps/worker/src/document-intelligence-request.ts \
+            > reports/ci/formatted/document-intelligence-request.ts
+          pnpm exec prettier apps/worker/src/worker.ts \
+            > reports/ci/formatted/worker.ts
           pnpm exec prettier --check . 2>&1 | tee reports/ci/prettier-check.txt
       - run: docker compose config --quiet
       - run: docker compose up -d --wait postgres minio extractor
@@ -137,8 +143,10 @@ jobs:
       - name: Run Ruff with persisted diagnostics
         shell: bash
         run: |
-          set -o pipefail
           mkdir -p ../../reports/ci
+          uv run --locked ruff check --no-cache --fix --diff . \
+            > ../../reports/ci/python-ruff-fix.diff 2>&1 || true
+          set -o pipefail
           uv run --locked ruff check --no-cache . 2>&1 | tee ../../reports/ci/python-ruff.txt
       - run: uv run --locked mypy app
       - name: Run extractor suite with real local OCR tools
