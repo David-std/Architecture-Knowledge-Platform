@@ -16,6 +16,7 @@ import { registerEvaluationRoutes } from "./routes/evaluation.js";
 import { registerProjectRoutes } from "./routes/projects.js";
 import { registerSessionRoutes } from "./routes/sessions.js";
 import { registerGovernanceRoutes } from "./routes/governance.js";
+import { registerProviderTaskRoutes } from "./routes/provider-tasks.js";
 import { registerAuthentication } from "./auth.js";
 import { registerWriteIdempotency } from "./idempotency.js";
 import { registerWebAuthRoutes } from "./routes/web-auth.js";
@@ -102,11 +103,6 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
       });
     }
     request.log.error(error);
-    // Fastify's default error serializer includes `message`, `stack` and
-    // arbitrary properties from filesystem/Git/SQL errors. Those values can
-    // disclose host paths, connection details or source material. Routes may
-    // still return their deliberate domain payloads; this handler is only the
-    // last-resort boundary for errors that escaped a route handler.
     const statusCode = Number((error as { statusCode?: unknown }).statusCode);
     const status =
       Number.isInteger(statusCode) && statusCode >= 400 && statusCode < 500
@@ -179,6 +175,7 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
   registerErrorBookRoutes(app, db);
   registerAuditRoutes(app, db);
   registerAuditExportRoutes(app, db, rawObjectStore);
+  registerProviderTaskRoutes(app, db);
   registerSearchRoutes(
     app,
     db,
