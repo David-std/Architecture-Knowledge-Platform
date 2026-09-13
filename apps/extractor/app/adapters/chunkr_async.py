@@ -142,6 +142,8 @@ def _table_from_spreadsheet(
     for cell in normalized:
         row_raw = cell.get("row", cell.get("row_index"))
         col_raw = cell.get("column", cell.get("column_index", cell.get("col")))
+        if row_raw is None or col_raw is None:
+            continue
         try:
             row, col = int(row_raw), int(col_raw)
         except (TypeError, ValueError):
@@ -192,6 +194,8 @@ def map_chunkr_task(
             if not isinstance(raw_page, dict):
                 continue
             number_raw = raw_page.get("page_number", raw_page.get("page"))
+            if number_raw is None:
+                continue
             try:
                 number = int(number_raw)
             except (TypeError, ValueError):
@@ -283,7 +287,7 @@ def map_chunkr_task(
             }
             if kind == "table":
                 headers, rows, table_meta = _table_from_spreadsheet(segment)
-                item = TableArtifact(
+                table_item = TableArtifact(
                     id=segment_id,
                     kind="table",
                     text=_safe_text(segment),
@@ -292,27 +296,27 @@ def map_chunkr_task(
                     rows=rows,
                     metadata={**metadata, **table_meta},
                 )
-                blocks.append(item)
-                tables.append(item)
+                blocks.append(table_item)
+                tables.append(table_item)
             else:
-                item = ArtifactItem(
+                artifact_item = ArtifactItem(
                     id=segment_id,
                     kind=kind,
                     text=_safe_text(segment),
                     locator=locator,
                     metadata=metadata,
                 )
-                blocks.append(item)
+                blocks.append(artifact_item)
                 if kind == "heading":
-                    headings.append(item)
+                    headings.append(artifact_item)
                 elif kind == "paragraph":
-                    paragraphs.append(item)
+                    paragraphs.append(artifact_item)
                 elif kind == "list-item":
-                    lists.append(item)
+                    lists.append(artifact_item)
                 elif kind == "figure":
-                    figures.append(item)
+                    figures.append(artifact_item)
                 elif kind == "equation":
-                    equations.append(item)
+                    equations.append(artifact_item)
             reading_order.append(segment_id)
             locators.append(locator)
         chunks_meta.append(
@@ -398,7 +402,7 @@ def verify_chunkr_webhook(
 ) -> dict[str, Any]:
     """Verify a Svix-signed Chunkr webhook against the raw request bytes."""
 
-    webhook_secret = (secret or os.getenv("AKP_CHUNKR_WEBHOOK_SECRET", "")).strip()
+    webhook_secret = (secret or os.getenv("AKP_CHUNKR_WEBHOOK_SECRET") or "").strip()
     if not webhook_secret:
         raise CapabilityNotConfigured("AKP_CHUNKR_WEBHOOK_SECRET is not configured")
     msg_id = headers.get("svix-id") or headers.get("Svix-Id")
