@@ -42,7 +42,7 @@ const requiredMetrics = [
   "extract_latency",
 ];
 
-const roots = ["apps", "packages", "scripts"];
+const roots = ["apps", "packages"];
 const extensions = new Set([".ts", ".tsx", ".js", ".mjs"]);
 const files = [];
 
@@ -58,15 +58,24 @@ function walk(directory) {
 for (const root of roots) {
   if (fs.existsSync(root)) walk(root);
 }
+const telemetryCommand = path.join("scripts", "telemetry-command.ts");
+if (fs.existsSync(telemetryCommand)) files.push(telemetryCommand);
 
 const sources = files.map((file) => ({
   file,
   content: fs.readFileSync(file, "utf8"),
 }));
 
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function evidenceFor(name) {
+  const quotedLiteral = new RegExp(
+    `["'\\x60]${escapeRegExp(name)}["'\\x60]`,
+  );
   return sources
-    .filter(({ content }) => content.includes(name))
+    .filter(({ content }) => quotedLiteral.test(content))
     .map(({ file }) => file)
     .sort();
 }
