@@ -1,10 +1,12 @@
 import { timingSafeEqual } from "node:crypto";
+import type { PoolClient } from "pg";
 import type { FastifyInstance } from "fastify";
 import type { Postgres } from "@akp/postgres";
 import { z } from "zod";
 
 const ProviderTaskUpdate = z.object({
   jobId: z.string().uuid().optional(),
+  sourceId: z.string().uuid().optional(),
   provider: z
     .string()
     .min(1)
@@ -23,6 +25,13 @@ const ProviderTaskUpdate = z.object({
 });
 
 type ProviderTaskUpdate = z.infer<typeof ProviderTaskUpdate>;
+
+type ResolvedJob = {
+  id: string;
+  state: string;
+  space_id: string;
+  vault_id: string | null;
+};
 
 function tokenMatches(candidate: unknown, expected: string): boolean {
   if (typeof candidate !== "string" || !candidate || !expected) return false;
@@ -59,14 +68,106 @@ function boundedTaskRecord(input: ProviderTaskUpdate): Record<string, unknown> {
   };
 }
 
+async function resolveActiveJob(
+  client: PoolClient,
+  input: ProviderTaskUpdate,
+): Promise<ResolvedJob | null> {
+  if (input.jobId) {
+    const result = await client.query<ResolvedJob>(
+      `
+      select id,state,space_id,vault_id
+        from ingest_jobs
+       where id=$1 and cancelled_at is null
+      `,
+      [input.jobId],
+    );
+    return result.rows[0] ?? null;
+  }
+
+  if (input.sourceId) {
+    const result = await client.query<ResolvedJob>(
+      `
+      select id,state,space_id,vault_id
+        from ingest_jobs
+       where cancelled_at is null
+         and state='NORMALIZING'
+         and stage_outputs->>'sourceId'=$1
+       order by created_at desc
+       limit 2
+      `,
+      [input.sourceId],
+    );
+    if (result.rows.length > 1) {
+      const error = new Error(
+        "More than one active ingest job matches the provider source.",
+      ) as Error & { statusCode?: number; code?: string };
+      error.statusCode = 409;
+      error.code = "PROVIDER_TASK_SOURCE_AMBIGUOUS";
+      throw error;
+    }
+    return result.rows[0] ?? null;
+  }
+
+  // Authenticated provider webhooks commonly carry only their task ID. The
+  // creation transition must already have established this durable mapping;
+  // never guess by recency or accept more than one owner.
+  const result = await client.query<ResolvedJob>(
+    `
+    select id,state,space_id,vault_id
+      from ingest_jobs
+     where cancelled_at is null
+       and stage_outputs->'providerTasks'->$1->>'taskId'=$2
+     order by created_at desc
+     limit 2
+    `,
+    [input.provider, input.taskId],
+  );
+  if (result.rows.length > 1) {
+    const error = new Error(
+      "Provider task is associated with more than one active ingest job.",
+    ) as Error & { statusCode?: number; code?: string };
+    error.statusCode = 409;
+    error.code = "PROVIDER_TASK_OWNER_AMBIGUOUS";
+    throw error;
+  }
+  return result.rows[0] ?? null;
+}
+
+async function webhookAlreadyRecorded(
+  client: PoolClient,
+  jobId: string,
+  provider: string,
+  messageId: unknown,
+): Promise<boolean> {
+  if (typeof messageId !== "string" || !messageId.trim()) return false;
+  // Serialize duplicate Svix deliveries for the same message ID so concurrent
+  // retries remain idempotent without adding a provider-specific table.
+  await client.query("select pg_advisory_xact_lock(hashtext($1))", [
+    `provider-webhook:${provider}:${messageId}`,
+  ]);
+  const result = await client.query(
+    `
+    select 1
+      from ingest_job_events
+     where job_id=$1
+       and event_type='PROVIDER_TASK_STATE'
+       and payload->>'provider'=$2
+       and payload->'metadata'->>'webhookMessageId'=$3
+     limit 1
+    `,
+    [jobId, provider, messageId],
+  );
+  return Boolean(result.rowCount);
+}
+
 /**
  * Internal, token-authenticated journal for provider task lifecycles.
  *
- * The initial task-created update carries ``jobId`` and makes the external task
- * durable immediately. A subsequently verified provider webhook can omit the
- * job ID: the API resolves it from that pre-existing durable provider/task
- * mapping. This keeps provider IDs out of the relational schema while still
- * surviving extractor/worker crashes and lease reclamation.
+ * External document-intelligence services can create an asynchronous provider
+ * task before the synchronous extractor call returns. Persisting the task ID
+ * here immediately makes the association survive extractor/worker crashes and
+ * worker lease reclamation. The storage shape is intentionally provider
+ * neutral: adding a provider never requires a schema change.
  */
 export function registerProviderTaskRoutes(app: FastifyInstance, db: Postgres) {
   app.post("/internal/provider-tasks", async (request, reply) => {
@@ -96,45 +197,37 @@ export function registerProviderTaskRoutes(app: FastifyInstance, db: Postgres) {
     const client = await db.pool.connect();
     try {
       await client.query("begin");
-      let jobId = parsed.data.jobId;
-      if (!jobId) {
-        const matches = await client.query<{ id: string }>(
-          `
-          select id
-            from ingest_jobs
-           where cancelled_at is null
-             and stage_outputs #>> array['providerTasks',$1,'taskId'] = $2
-           order by updated_at desc,id
-           limit 2
-          `,
-          [parsed.data.provider, parsed.data.taskId],
-        );
-        if (matches.rowCount !== 1) {
-          await client.query("rollback");
-          return reply.code(409).send({
-            code:
-              matches.rowCount === 0
-                ? "PROVIDER_TASK_MAPPING_NOT_FOUND"
-                : "PROVIDER_TASK_MAPPING_AMBIGUOUS",
-            message: "The provider task could not be resolved safely.",
-          });
-        }
-        jobId = matches.rows[0]?.id;
-      }
-      if (!jobId) {
+      const job = await resolveActiveJob(client, parsed.data);
+      if (!job) {
         await client.query("rollback");
         return reply.code(409).send({
-          code: "PROVIDER_TASK_MAPPING_NOT_FOUND",
-          message: "The provider task could not be resolved safely.",
+          code: "INGEST_JOB_NOT_ACTIVE",
+          message:
+            "The provider task could not be correlated to one active ingest job.",
         });
       }
 
-      const updated = await client.query<{
-        id: string;
-        state: string;
-        space_id: string;
-        vault_id: string | null;
-      }>(
+      const webhookMessageId = (parsed.data.metadata ?? {}).webhookMessageId;
+      if (
+        await webhookAlreadyRecorded(
+          client,
+          job.id,
+          parsed.data.provider,
+          webhookMessageId,
+        )
+      ) {
+        await client.query("commit");
+        return reply.code(202).send({
+          accepted: true,
+          duplicate: true,
+          jobId: job.id,
+          provider: parsed.data.provider,
+          taskId: parsed.data.taskId,
+          status: parsed.data.status,
+        });
+      }
+
+      const updated = await client.query(
         `
         update ingest_jobs
            set stage_outputs = jsonb_set(
@@ -146,16 +239,14 @@ export function registerProviderTaskRoutes(app: FastifyInstance, db: Postgres) {
                ),
                updated_at = now()
          where id = $1 and cancelled_at is null
-         returning id,state,space_id,vault_id
         `,
-        [jobId, parsed.data.provider, JSON.stringify(record)],
+        [job.id, parsed.data.provider, JSON.stringify(record)],
       );
-      const job = updated.rows[0];
-      if (!job) {
+      if (!updated.rowCount) {
         await client.query("rollback");
         return reply.code(409).send({
           code: "INGEST_JOB_NOT_ACTIVE",
-          message: "The ingest job is missing or cancelled.",
+          message: "The ingest job became inactive before journaling completed.",
         });
       }
       await client.query(
@@ -164,10 +255,11 @@ export function registerProviderTaskRoutes(app: FastifyInstance, db: Postgres) {
         values($1,$2,'PROVIDER_TASK_STATE',$3::jsonb)
         `,
         [
-          jobId,
+          job.id,
           job.state,
           JSON.stringify({
             provider: parsed.data.provider,
+            sourceId: parsed.data.sourceId ?? null,
             ...record,
           }),
         ],
@@ -175,6 +267,7 @@ export function registerProviderTaskRoutes(app: FastifyInstance, db: Postgres) {
       await client.query("commit");
       return reply.code(202).send({
         accepted: true,
+        duplicate: false,
         jobId: job.id,
         provider: parsed.data.provider,
         taskId: parsed.data.taskId,
