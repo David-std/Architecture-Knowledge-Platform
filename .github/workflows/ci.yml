@@ -41,6 +41,12 @@ jobs:
             > reports/ci/formatted/document-intelligence-request.ts
           pnpm exec prettier apps/worker/src/worker.ts \
             > reports/ci/formatted/worker.ts
+          pnpm exec prettier apps/web/app/search/page.tsx \
+            > reports/ci/formatted/p6-search-page.tsx
+          node scripts/validate-repository-hygiene.mjs --write \
+            > reports/ci/formatted/p6-hygiene-write.txt 2>&1 || true
+          cp REPOSITORY_FILE_CLASSIFICATION.json \
+            reports/ci/formatted/REPOSITORY_FILE_CLASSIFICATION.json
           pnpm exec prettier --check . 2>&1 | tee reports/ci/prettier-check.txt
       - run: docker compose config --quiet
       - run: docker compose up -d --wait postgres minio extractor
