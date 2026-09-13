@@ -18,32 +18,41 @@ if (operation !== "backup" && operation !== "restore") {
   throw new Error(`UNSUPPORTED_TELEMETRY_OPERATION:${operation}`);
 }
 
+const OPERATION_SPAN_NAMES = {
+  backup: "backup",
+  restore: "restore",
+} as const;
+
 bootstrapOpenTelemetry({
   serviceName: process.env.OTEL_SERVICE_NAME ?? "akp-operations",
   autoInstrument: false,
 });
 
 async function run(): Promise<void> {
-  await withSpan(operation, { "akp.operation": operation }, async () => {
-    const exitCode = await new Promise<number>((resolve, reject) => {
-      const child = spawn(command, args, {
-        stdio: "inherit",
-        shell: false,
-        env: process.env,
+  await withSpan(
+    OPERATION_SPAN_NAMES[operation],
+    { "akp.operation": operation },
+    async () => {
+      const exitCode = await new Promise<number>((resolve, reject) => {
+        const child = spawn(command, args, {
+          stdio: "inherit",
+          shell: false,
+          env: process.env,
+        });
+        child.once("error", reject);
+        child.once("exit", (code, signal) => {
+          if (signal) {
+            reject(new Error(`${operation.toUpperCase()}_TERMINATED:${signal}`));
+            return;
+          }
+          resolve(code ?? 1);
+        });
       });
-      child.once("error", reject);
-      child.once("exit", (code, signal) => {
-        if (signal) {
-          reject(new Error(`${operation.toUpperCase()}_TERMINATED:${signal}`));
-          return;
-        }
-        resolve(code ?? 1);
-      });
-    });
-    if (exitCode !== 0) {
-      throw new Error(`${operation.toUpperCase()}_FAILED:${exitCode}`);
-    }
-  });
+      if (exitCode !== 0) {
+        throw new Error(`${operation.toUpperCase()}_FAILED:${exitCode}`);
+      }
+    },
+  );
 }
 
 try {
