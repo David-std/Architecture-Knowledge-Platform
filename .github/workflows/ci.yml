@@ -152,3 +152,385 @@ jobs:
           uv run --locked --extra docling pytest -p no:cacheprovider
           tests/test_document_intelligence.py
           -k docling_provider_real_native_structure_when_installed
+
+  p5-ocr-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: postgres://akp:akp@localhost:55432/akp
+      AKP_API_TOKEN: akp-ci-integration-token-not-for-production
+      AKP_API_TOKEN_SCOPES: >-
+        {"spaces":[{"spaceId":"00000000-0000-0000-0000-000000000003","pathPrefix":null,"permissions":["knowledge:read","source:read","source:write","knowledge:propose","knowledge:review","eval:run","admin"]}]}
+      AKP_INGEST_ROOTS: /tmp/akp-p5-ocr/source
+      AKP_MANAGED_REPO: /tmp/akp-p5-ocr/managed
+      AKP_EXTRACTOR_URL: http://127.0.0.1:8090
+      AKP_EXTRACTOR_TOKEN: akp-ci-extractor-token-not-for-production
+      AKP_RAW_ENDPOINT: http://127.0.0.1:19000
+      AKP_RAW_BUCKET: akp-raw
+      AKP_RAW_ACCESS_KEY: akp
+      AKP_RAW_SECRET_KEY: akp-ci-minio-secret-not-for-production
+      AKP_VECTOR_ENABLED: "false"
+      AKP_WORKER_DRAIN_DEADLINE_MS: "300000"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - uses: actions/setup-python@v7
+        with: { python-version: "3.12" }
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          version: 0.12.7
+          enable-cache: true
+          cache-dependency-glob: apps/extractor/uv.lock
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - run: docker compose up -d --wait postgres minio
+      - run: pnpm db:migrate
+      - run: pnpm auth:provision
+      - name: Install locked Docling provider
+        working-directory: apps/extractor
+        run: uv sync --locked --extra docling
+      - name: Create a raster-only scanned PDF fixture
+        working-directory: apps/extractor
+        run: |
+          mkdir -p "$AKP_INGEST_ROOTS" "${AKP_MANAGED_REPO}"
+          uv run --locked --extra docling python - <<'PY'
+          import os
+          from pathlib import Path
+          from PIL import Image, ImageDraw, ImageFont
+
+          target = Path(os.environ["AKP_INGEST_ROOTS"]) / "scanned-ocr.pdf"
+          image = Image.new("RGB", (1654, 2339), "white")
+          draw = ImageDraw.Draw(image)
+          font = ImageFont.truetype(
+              "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+              64,
+          )
+          draw.multiline_text(
+              (120, 260),
+              "AKP OCR PROBE 739241\n"
+              "Durable document intelligence\n"
+              "Native provenance must survive extraction.",
+              fill="black",
+              font=font,
+              spacing=36,
+          )
+          image.save(target, "PDF", resolution=150.0)
+          print(target)
+          PY
+      - name: Start locked Docling extractor
+        run: |
+          mkdir -p reports/ci
+          (
+            cd apps/extractor
+            nohup uv run --locked --extra docling uvicorn app.main:app \
+              --host 127.0.0.1 --port 8090 \
+              > ../../reports/ci/p5-extractor.log 2>&1 &
+            echo $! > ../../reports/ci/p5-extractor.pid
+          )
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:8090/health >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat reports/ci/p5-extractor.log
+          exit 1
+      - name: Prove durable OCR ingest through API, worker, artifact and evidence
+        run: |
+          cat > apps/api/test/.p5-ocr-e2e.runtime.ts <<'TS'
+          import { createHash, randomUUID } from "node:crypto";
+          import { execFile } from "node:child_process";
+          import { readFile } from "node:fs/promises";
+          import path from "node:path";
+          import { promisify } from "node:util";
+          import {
+            Postgres,
+            grantVaultMembership,
+            registerVault,
+          } from "@akp/postgres";
+
+          const execFileAsync = promisify(execFile);
+          const root = process.cwd();
+          const sourceRoot = process.env.AKP_INGEST_ROOTS!;
+          const sourcePath = path.join(sourceRoot, "scanned-ocr.pdf");
+          const managedRepository = process.env.AKP_MANAGED_REPO!;
+          const defaultSpace = "00000000-0000-0000-0000-000000000003";
+          const admin = "00000000-0000-0000-0000-000000000002";
+          const eventConsumer = `p5-ocr-${randomUUID()}`;
+          const token = `p5-ocr-${randomUUID()}`;
+          const tokenHash = createHash("sha256").update(token).digest("hex");
+          const content = await readFile(sourcePath);
+          const sourceHash = createHash("sha256").update(content).digest("hex");
+          const db = new Postgres(process.env.DATABASE_URL!);
+          let app: Awaited<ReturnType<typeof import("../src/server.js")["buildServer"]>> | undefined;
+
+          function assert(condition: unknown, message: string): asserts condition {
+            if (!condition) throw new Error(message);
+          }
+
+          try {
+            const vault = await registerVault(
+              db,
+              {
+                vaultKey: `p5-ocr-${randomUUID().replaceAll("-", "").slice(0, 12)}`,
+                name: "P5 OCR E2E",
+                spaceId: defaultSpace,
+                gitRepository: null,
+                defaultBranch: "main",
+                localPath: managedRepository,
+                contentRoots: ["."],
+                sourceRoots: [sourceRoot],
+                schemaProfile: {},
+                evalPack: {
+                  name: "generic",
+                  version: "1",
+                  enabled: true,
+                  criticalCases: [],
+                },
+                retrievalConfig: {},
+                permissions: {},
+                visibility: "PRIVATE",
+                enabled: true,
+              },
+              { ownerUserId: admin },
+            );
+            await grantVaultMembership(db, {
+              userId: admin,
+              vaultId: vault.id,
+              role: "ADMIN",
+              permissions: [
+                "knowledge:read",
+                "source:read",
+                "source:write",
+                "knowledge:propose",
+                "knowledge:review",
+                "eval:run",
+                "admin",
+              ],
+            });
+            await db.pool.query(
+              `insert into api_tokens(user_id,token_hash,label,scopes)
+               values($1,$2,$3,$4::jsonb)`,
+              [
+                admin,
+                tokenHash,
+                "P5 OCR E2E",
+                JSON.stringify({
+                  spaces: [
+                    {
+                      spaceId: defaultSpace,
+                      pathPrefix: null,
+                      permissions: [
+                        "knowledge:read",
+                        "source:read",
+                        "source:write",
+                        "knowledge:propose",
+                        "knowledge:review",
+                        "eval:run",
+                        "admin",
+                      ],
+                    },
+                  ],
+                }),
+              ],
+            );
+
+            const { buildServer } = await import("../src/server.js");
+            app = buildServer();
+            const response = await app.inject({
+              method: "POST",
+              url: "/v1/ingest",
+              headers: { authorization: `Bearer ${token}` },
+              payload: {
+                spaceId: defaultSpace,
+                vaultId: vault.id,
+                sourceUri: sourcePath,
+                expectedSha256: sourceHash,
+                title: "P5 scanned OCR proof",
+                mediaType: "application/pdf",
+                documentIntelligence: {
+                  complexity: "scanned",
+                  extractor: "docling",
+                  ocr: true,
+                  timeoutSeconds: 300,
+                },
+                policy: "REVIEW_REQUIRED",
+              },
+            });
+            assert(response.statusCode === 202, `ingest failed: ${response.body}`);
+            const body = response.json() as { jobId?: string; state?: string };
+            assert(body.jobId && body.state === "RECEIVED", "ingest was not accepted");
+            const jobId = body.jobId;
+
+            await db.pool.query(
+              `insert into event_consumers(consumer_name,enabled,max_attempts,lease_seconds)
+               values($1,true,8,60)`,
+              [eventConsumer],
+            );
+            await db.pool.query(
+              `insert into event_deliveries(event_id,consumer_name,status,completed_at)
+               select event_id,$1,'SUCCEEDED',now() from event_outbox
+               on conflict(event_id,consumer_name) do nothing`,
+              [eventConsumer],
+            );
+            const extraction = await db.pool.query<{ event_id: string }>(
+              `select event_id from event_outbox
+                where event_type='ExtractionRequested' and resource_id=$1
+                order by created_at desc limit 1`,
+              [jobId],
+            );
+            assert(extraction.rows[0]?.event_id, "ExtractionRequested event missing");
+            await db.pool.query(
+              `update event_deliveries
+                  set status='PENDING',completed_at=null,next_attempt_at=now()
+                where event_id=$1 and consumer_name=$2`,
+              [extraction.rows[0].event_id, eventConsumer],
+            );
+
+            const tsx = path.join(root, "node_modules", "tsx", "dist", "cli.mjs");
+            const worker = path.join(root, "apps", "worker", "src", "worker.ts");
+            const workerResult = await execFileAsync(process.execPath, [tsx, worker], {
+              cwd: root,
+              timeout: 300_000,
+              maxBuffer: 20 * 1024 * 1024,
+              env: {
+                ...process.env,
+                NODE_ENV: "test",
+                AKP_WORKER_DRAIN: "true",
+                AKP_EVENT_CONSUMER: eventConsumer,
+              },
+            });
+            assert(
+              !workerResult.stderr.includes("UnhandledPromiseRejection"),
+              workerResult.stderr,
+            );
+
+            const job = await db.pool.query<{
+              state: string;
+              stage_outputs: Record<string, unknown>;
+              error: unknown;
+            }>("select state,stage_outputs,error from ingest_jobs where id=$1", [jobId]);
+            assert(
+              job.rows[0]?.state === "REVIEW_REQUIRED",
+              `unexpected job state: ${JSON.stringify(job.rows[0])}`,
+            );
+            assert(
+              typeof job.rows[0]?.stage_outputs?.reviewId === "string",
+              "reviewId was not persisted",
+            );
+
+            const artifactResult = await db.pool.query<{
+              extractor: string;
+              document_artifact: Record<string, unknown>;
+              metadata: Record<string, unknown>;
+              locator: Record<string, unknown> | null;
+              excerpt: string | null;
+            }>(
+              `select a.extractor,a.document_artifact,a.metadata,e.locator,e.excerpt
+                 from source_artifacts a
+                 join sources s on s.id=a.source_id
+                 left join evidence e on e.artifact_id=a.id
+                where s.vault_id=$1 and s.sha256=$2
+                order by a.created_at desc limit 1`,
+              [vault.id, sourceHash],
+            );
+            const artifactRow = artifactResult.rows[0];
+            assert(artifactRow, "document artifact was not persisted");
+            assert(artifactRow.extractor === "docling", "Docling was not the actual extractor");
+            const artifact = artifactRow.document_artifact;
+            const configuration = artifact.configuration as Record<string, unknown>;
+            assert(configuration?.native_structure === true, "native structure was not preserved");
+            assert(configuration?.ocr_requested === true, "OCR was not requested by Docling");
+            const artifactText = JSON.stringify(artifact).toUpperCase();
+            assert(
+              artifactText.includes("AKP OCR PROBE 739241"),
+              "OCR marker is absent from the persisted artifact",
+            );
+            const metadata = artifactRow.metadata;
+            const routing = metadata.routing as Record<string, unknown>;
+            assert(routing?.selected_adapter === "docling", "routing did not select Docling");
+            assert(
+              routing?.selection_reason === "explicit-configuration",
+              "routing was not explicit",
+            );
+            assert(routing?.fallback === false, "OCR ingest unexpectedly used fallback");
+            assert(artifactRow.locator?.page === 1, "evidence locator lost PDF page provenance");
+            assert(
+              artifactRow.locator?.region && typeof artifactRow.locator.region === "object",
+              "evidence locator lost native bounding-box provenance",
+            );
+            assert(
+              artifactRow.excerpt?.toUpperCase().includes("AKP OCR PROBE 739241"),
+              "evidence excerpt was not grounded in OCR output",
+            );
+
+            const providerEvents = await db.pool.query<{
+              event_type: string;
+              payload: Record<string, unknown>;
+            }>(
+              `select event_type,payload from ingest_job_events
+                where job_id=$1 and event_type like 'PROVIDER_TASK_%'
+                order by id`,
+              [jobId],
+            );
+            assert(
+              providerEvents.rows.map((row) => row.event_type).join(",") ===
+                "PROVIDER_TASK_STARTED,PROVIDER_TASK_SUCCEEDED",
+              `unexpected provider task history: ${JSON.stringify(providerEvents.rows)}`,
+            );
+            const started = providerEvents.rows[0]?.payload;
+            const succeeded = providerEvents.rows[1]?.payload;
+            assert(started?.requestedExtractor === "docling", "requested provider was not persisted");
+            assert(started?.ocrRequested === true, "OCR request was not persisted");
+            assert(succeeded?.extractor === "docling", "actual provider was not persisted");
+            assert(succeeded?.selectedAdapter === "docling", "selected adapter was not persisted");
+            assert(succeeded?.fallback === false, "provider task reported a fallback");
+
+            process.stdout.write(
+              `${JSON.stringify({
+                status: "PASSED",
+                jobId,
+                vaultId: vault.id,
+                sourceHash,
+                extractor: artifactRow.extractor,
+                providerEvents: providerEvents.rows.map((row) => row.event_type),
+              })}\n`,
+            );
+          } finally {
+            if (app) await app.close();
+            await db.close();
+          }
+          TS
+          pnpm exec tsx apps/api/test/.p5-ocr-e2e.runtime.ts | tee reports/ci/p5-ocr-e2e.json
+          rm -f apps/api/test/.p5-ocr-e2e.runtime.ts
+      - name: Capture P5 OCR diagnostics
+        if: always()
+        run: |
+          set +e
+          mkdir -p reports/ci
+          docker compose ps --all > reports/ci/p5-docker-compose-ps.txt 2>&1
+          docker compose logs --no-color --timestamps postgres minio \
+            > reports/ci/p5-docker-compose.log 2>&1
+          docker compose exec -T postgres psql -X -U akp -d akp \
+            -c "\copy (select state,event_type,count(*) from ingest_job_events group by state,event_type order by state,event_type) to stdout with csv header" \
+            > reports/ci/p5-ingest-events.csv 2>&1
+      - name: Upload P5 OCR evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: p5-ocr-e2e-${{ github.run_id }}
+          path: reports/ci
+          if-no-files-found: error
+          retention-days: 14
+      - name: Stop P5 services
+        if: always()
+        run: |
+          if [ -f reports/ci/p5-extractor.pid ]; then
+            kill "$(cat reports/ci/p5-extractor.pid)" 2>/dev/null || true
+          fi
+          rm -f apps/api/test/.p5-ocr-e2e.runtime.ts
+          docker compose down -v --remove-orphans
