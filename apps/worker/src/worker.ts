@@ -210,8 +210,8 @@ async function updateState(
             state: next,
             revision:
               typeof (stageOutput ?? {}).revision === "string"
-              ? (stageOutput as Record<string, unknown>).revision
-              : null,
+                ? (stageOutput as Record<string, unknown>).revision
+                : null,
             changedPaths: Array.isArray((stageOutput ?? {}).changedPaths)
               ? (stageOutput as Record<string, unknown>).changedPaths
               : [],

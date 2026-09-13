@@ -246,7 +246,8 @@ export function registerProviderTaskRoutes(app: FastifyInstance, db: Postgres) {
         await client.query("rollback");
         return reply.code(409).send({
           code: "INGEST_JOB_NOT_ACTIVE",
-          message: "The ingest job became inactive before journaling completed.",
+          message:
+            "The ingest job became inactive before journaling completed.",
         });
       }
       await client.query(
