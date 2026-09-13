@@ -8,8 +8,6 @@ on:
 jobs:
   typescript:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     env:
       DATABASE_URL: postgres://akp:akp@localhost:55432/akp
       AKP_API_TOKEN: akp-ci-integration-token-not-for-production
@@ -32,20 +30,6 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
       - run: pnpm audit --audit-level high
-      - name: Materialize final P6 search formatting and hygiene inventory
-        if: github.event_name == 'pull_request' && github.head_ref == 'work/p5-document-intelligence'
-        shell: bash
-        run: |
-          set -euo pipefail
-          pnpm exec prettier --write apps/web/app/search/page.tsx
-          node scripts/validate-repository-hygiene.mjs --write
-          git config user.name "AKP CI"
-          git config user.email "akp-ci@localhost"
-          git add apps/web/app/search/page.tsx REPOSITORY_FILE_CLASSIFICATION.json
-          if ! git diff --cached --quiet; then
-            git commit -m "style(p6): materialize final search formatting and hygiene"
-            git push origin "HEAD:${GITHUB_HEAD_REF}"
-          fi
       - name: Check repository formatting
         shell: bash
         run: |
@@ -57,12 +41,6 @@ jobs:
             > reports/ci/formatted/document-intelligence-request.ts
           pnpm exec prettier apps/worker/src/worker.ts \
             > reports/ci/formatted/worker.ts
-          pnpm exec prettier apps/web/app/search/page.tsx \
-            > reports/ci/formatted/p6-search-page.tsx
-          node scripts/validate-repository-hygiene.mjs --write \
-            > reports/ci/formatted/p6-hygiene-write.txt 2>&1 || true
-          cp REPOSITORY_FILE_CLASSIFICATION.json \
-            reports/ci/formatted/REPOSITORY_FILE_CLASSIFICATION.json
           pnpm exec prettier --check . 2>&1 | tee reports/ci/prettier-check.txt
       - run: docker compose config --quiet
       - run: docker compose up -d --wait postgres minio extractor
