@@ -134,9 +134,9 @@ def _preserve_chunk_hierarchy(artifact: DocumentArtifact) -> DocumentArtifact:
         *artifact.equations,
         *artifact.code,
     ]:
-        chunk_id = item.metadata.get("chunk_id")
-        if isinstance(chunk_id, str) and chunk_id:
-            item.parent_id = chunk_id
+        parent_chunk_id = item.metadata.get("chunk_id")
+        if isinstance(parent_chunk_id, str) and parent_chunk_id:
+            item.parent_id = parent_chunk_id
 
     if chunk_parents:
         artifact.blocks = [*chunk_parents, *artifact.blocks]
