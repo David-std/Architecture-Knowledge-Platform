@@ -183,12 +183,25 @@ patchFile("apps/api/src/routes/search.ts", [
   ],
   [
     "search-request-metric",
-    '      const retrievalWarnings: string[] = plan.omittedChannels.map(',
-    '      telemetry.counter("retrieval_requests", 1, { intent: plan.intent });\n      telemetry.gauge(\n        "index_revision_mismatch",\n        String(index.status ?? "DEGRADED") === "CONSISTENT" ? 0 : 1,\n        { projection: "aggregate" },\n      );\n      const retrievalWarnings: string[] = plan.omittedChannels.map(',
+    `      const effectiveChannelState = effectiveRetrievalChannels(\n        channelState,\n        retrievalWarnings,\n        availableChannels,\n      );\n      return {`,
+    `      const effectiveChannelState = effectiveRetrievalChannels(\n        channelState,\n        retrievalWarnings,\n        availableChannels,\n      );\n      telemetry.counter("retrieval_requests", 1, { intent: plan.intent });\n      telemetry.gauge(\n        "index_revision_mismatch",\n        String(index.status ?? "DEGRADED") === "CONSISTENT" ? 0 : 1,\n        { projection: "aggregate" },\n      );\n      return {`,
   ],
   [
     "context-build",
     `        if (packetMode === "COMPACT_AGENT_PACKET") {\n          const pair = buildContextPacketPair(packetInput);\n          packet = pair.full;\n          responsePacket = pair.compact;\n        } else {\n          packet = buildContextPacket(packetInput);\n          responsePacket = packet;\n        }`,
     `        const built = await withSpan(\n          "context.build",\n          { "akp.context.mode": packetMode },\n          async () => {\n            if (packetMode === "COMPACT_AGENT_PACKET") {\n              const pair = buildContextPacketPair(packetInput);\n              return { packet: pair.full, responsePacket: pair.compact };\n            }\n            const full = buildContextPacket(packetInput);\n            return { packet: full, responsePacket: full };\n          },\n        );\n        packet = built.packet;\n        responsePacket = built.responsePacket;\n        telemetry.histogram("context_packet_tokens", packet.budget.usedTokens, {\n          mode: packetMode,\n        });\n        telemetry.histogram("context_packet_sections", packet.sections.length, {\n          mode: packetMode,\n        });`,
+  ],
+]);
+
+patchFile("apps/web/app/admin/health/page.tsx", [
+  [
+    "health-response-observability",
+    '  } | null;\n  indexes: Array<{',
+    '  } | null;\n  observability?: {\n    enabled?: boolean;\n    started?: boolean;\n    serviceName?: string | null;\n    tracesExporter?: string;\n    metricsExporter?: string;\n    endpointConfigured?: boolean;\n    protocol?: string;\n    w3cTraceContext?: boolean;\n    logs?: string;\n    lastError?: string | null;\n  };\n  indexes: Array<{',
+  ],
+  [
+    "health-otel-card",
+    `        <section className="card">\n          <h2>OpenTelemetry</h2>\n          <p>\n            <span className="badge">P7_PENDING</span>\n          </p>\n          <p className="muted">\n            P6 no infiere export saludable a partir de variables o APIs. El\n            estado de exportación real se mostrará cuando P7 conecte\n            SDK/exporter/Collector.\n          </p>\n        </section>`,
+    `        <section className="card">\n          <h2>OpenTelemetry</h2>\n          <p>\n            <span className="badge">\n              {health.observability?.enabled\n                ? health.observability.started\n                  ? "EXPORTING"\n                  : "START_FAILED"\n                : "DISABLED"}\n            </span>\n          </p>\n          <p className="muted">\n            traces {health.observability?.tracesExporter ?? "none"} · metrics{" "}\n            {health.observability?.metricsExporter ?? "none"} · protocol{" "}\n            {health.observability?.protocol ?? "—"}\n            <br />\n            W3C trace context: {health.observability?.w3cTraceContext ? "sí" : "no"}\n            {health.observability?.lastError ? (\n              <>\n                <br />\n                error: {health.observability.lastError}\n              </>\n            ) : null}\n          </p>\n        </section>`,
   ],
 ]);
