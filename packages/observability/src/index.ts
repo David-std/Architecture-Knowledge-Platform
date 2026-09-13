@@ -12,6 +12,9 @@ import {
   type SpanOptions,
 } from "@opentelemetry/api";
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
+import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-proto";
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
+import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 
 export interface AuditEvent {
@@ -100,6 +103,11 @@ function setSafeExporterDefaults(): void {
   }
 }
 
+function requireSupportedExporter(name: string, value: string): void {
+  if (value === "none" || value === "otlp") return;
+  throw new Error(`UNSUPPORTED_${name}_EXPORTER:${value}`);
+}
+
 /**
  * Register the real Node SDK only when an OpenTelemetry signal is explicitly
  * enabled. This keeps the local product runnable without a Collector while
@@ -116,6 +124,8 @@ export function bootstrapOpenTelemetry(
   setSafeExporterDefaults();
   const tracesExporter = process.env.OTEL_TRACES_EXPORTER ?? "none";
   const metricsExporter = process.env.OTEL_METRICS_EXPORTER ?? "none";
+  requireSupportedExporter("TRACES", tracesExporter);
+  requireSupportedExporter("METRICS", metricsExporter);
   const endpoint =
     process.env.OTEL_EXPORTER_OTLP_ENDPOINT ??
     process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT ??
@@ -139,8 +149,21 @@ export function bootstrapOpenTelemetry(
 
   sdkStarting = true;
   try {
+    const traceExporter =
+      tracesExporter === "otlp" ? new OTLPTraceExporter() : undefined;
+    const metricReader =
+      metricsExporter === "otlp"
+        ? new PeriodicExportingMetricReader({
+            exporter: new OTLPMetricExporter(),
+            exportIntervalMillis: Number(
+              process.env.OTEL_METRIC_EXPORT_INTERVAL ?? 60_000,
+            ),
+          })
+        : undefined;
     sdk = new NodeSDK({
       serviceName: runtimeStatus.serviceName ?? options.serviceName,
+      ...(traceExporter ? { traceExporter } : {}),
+      ...(metricReader ? { metricReader } : {}),
       ...(options.autoInstrument === false
         ? {}
         : {
