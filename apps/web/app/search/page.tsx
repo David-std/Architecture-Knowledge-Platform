@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { akp } from "../../lib/api";
+import { akp, akpOptional } from "../../lib/api";
 import {
   scopedSearchRequest,
   selectVault,
@@ -25,20 +25,6 @@ interface FusionContribution {
   reason: string;
 }
 
-type SearchCitationLink =
-  | {
-      kind: "document";
-      documentId: string;
-      path: string;
-      revision: string;
-    }
-  | {
-      kind: "source-evidence";
-      evidenceId: string;
-      sourceId: string;
-      locator: Record<string, unknown>;
-    };
-
 interface SearchHit {
   documentId: string;
   title: string;
@@ -50,7 +36,6 @@ interface SearchHit {
   excerpt: string;
   reasons: string[];
   citations: string[];
-  citationLinks?: SearchCitationLink[];
   warnings?: string[];
   fusionContributions?: FusionContribution[];
 }
@@ -75,6 +60,21 @@ interface SearchResponse {
     recommendedActions?: string[];
     guidance: string;
   } | null;
+}
+
+interface EvidenceProjection {
+  evidence: Array<{
+    id: string;
+    path: string;
+    title: string;
+    current_revision: string;
+  }>;
+  locators: Array<{
+    id: string;
+    source_id: string;
+    source_title?: string;
+    locator: Record<string, unknown>;
+  }>;
 }
 
 interface ContextSection {
@@ -171,6 +171,21 @@ export default async function SearchPage({
           body: JSON.stringify({ ...commonRequest, maxTokens: 1600 }),
         })
       : null;
+  const evidenceEntries = result
+    ? await Promise.all(
+        result.hits
+          .filter((hit) => hit.citations.length > 0)
+          .map(async (hit) =>
+            [
+              hit.documentId,
+              await akpOptional<EvidenceProjection>(
+                `/v1/documents/${encodeURIComponent(hit.documentId)}/evidence`,
+              ),
+            ] as const,
+          ),
+      )
+    : [];
+  const evidenceByDocument = new Map(evidenceEntries);
 
   return (
     <main>
@@ -279,86 +294,96 @@ export default async function SearchPage({
       ) : null}
 
       {result?.hits.length ? <h2>Resultados rankeados</h2> : null}
-      {result?.hits.map((hit, index) => (
-        <article
-          className="card"
-          key={hit.documentId}
-          style={{ marginTop: 16 }}
-        >
-          <p className="muted">
-            #{index + 1} · score {hit.score.toFixed(4)}
-          </p>
-          <h3>
-            <Link href={`/documents/${hit.documentId}`}>{hit.title}</Link>
-          </h3>
-          <p>
-            <span className="badge">{hit.type}</span>
-            <span className="badge">{hit.trust}</span>
-            <span className="badge">{hit.lifecycle}</span>
-            <span className="badge">freshness {hit.refreshStatus}</span>
-          </p>
-          <p>{hit.excerpt}</p>
-          <p className="muted">{hit.reasons.join(" · ")}</p>
-          {hit.fusionContributions?.length ? (
-            <table>
-              <thead>
-                <tr>
-                  <th>Canal</th>
-                  <th>Rank</th>
-                  <th>Peso</th>
-                  <th>Razón RRF</th>
-                </tr>
-              </thead>
-              <tbody>
-                {hit.fusionContributions.map((contribution) => (
-                  <tr key={`${hit.documentId}-${contribution.channel}`}>
-                    <td>{contribution.channel}</td>
-                    <td>{contribution.rank}</td>
-                    <td>{contribution.channelWeight}</td>
-                    <td>{contribution.reason}</td>
+      {result?.hits.map((hit, index) => {
+        const evidence = evidenceByDocument.get(hit.documentId);
+        return (
+          <article
+            className="card"
+            key={hit.documentId}
+            style={{ marginTop: 16 }}
+          >
+            <p className="muted">
+              #{index + 1} · score {hit.score.toFixed(4)}
+            </p>
+            <h3>
+              <Link href={`/documents/${hit.documentId}`}>{hit.title}</Link>
+            </h3>
+            <p>
+              <span className="badge">{hit.type}</span>
+              <span className="badge">{hit.trust}</span>
+              <span className="badge">{hit.lifecycle}</span>
+              <span className="badge">freshness {hit.refreshStatus}</span>
+            </p>
+            <p>{hit.excerpt}</p>
+            <p className="muted">{hit.reasons.join(" · ")}</p>
+            {hit.fusionContributions?.length ? (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Canal</th>
+                    <th>Rank</th>
+                    <th>Peso</th>
+                    <th>Razón RRF</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : null}
-          <div>
-            <strong>Citaciones/evidencia:</strong>
-            {hit.citationLinks?.length ? (
-              <ul>
-                {hit.citationLinks.map((citation) =>
-                  citation.kind === "document" ? (
-                    <li
-                      key={`document-${citation.documentId}-${citation.revision}`}
-                    >
-                      <Link href={`/documents/${citation.documentId}`}>
-                        {citation.path}@{citation.revision}
-                      </Link>
-                    </li>
-                  ) : (
-                    <li key={`evidence-${citation.evidenceId}`}>
-                      <Link href={`/sources/${citation.sourceId}`}>
-                        evidencia {citation.evidenceId.slice(0, 8)}
-                      </Link>{" "}
-                      <small className="muted">
-                        {evidenceLocatorLabel(citation.locator)}
-                      </small>
-                    </li>
-                  ),
-                )}
-              </ul>
-            ) : (
-              <p className="muted">
-                {hit.citations.length
-                  ? hit.citations.join(" · ")
-                  : "Sin referencias"}
-              </p>
-            )}
-          </div>
-          {hit.warnings?.length ? (
-            <p className="muted">Warnings: {hit.warnings.join(" · ")}</p>
-          ) : null}
-        </article>
-      ))}
+                </thead>
+                <tbody>
+                  {hit.fusionContributions.map((contribution) => (
+                    <tr key={`${hit.documentId}-${contribution.channel}`}>
+                      <td>{contribution.channel}</td>
+                      <td>{contribution.rank}</td>
+                      <td>{contribution.channelWeight}</td>
+                      <td>{contribution.reason}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : null}
+            <div>
+              <strong>Citaciones/evidencia:</strong>
+              {(evidence?.evidence.length ?? 0) > 0 ||
+              (evidence?.locators.length ?? 0) > 0 ? (
+                <>
+                  <ul>
+                    {evidence?.evidence.map((citation) => (
+                      <li key={`document-${citation.id}`}>
+                        <Link href={`/documents/${citation.id}`}>
+                          {citation.title || citation.path}
+                        </Link>{" "}
+                        <small className="muted">
+                          {citation.path}@{citation.current_revision}
+                        </small>
+                      </li>
+                    ))}
+                    {evidence?.locators.map((locator) => (
+                      <li key={`evidence-${locator.id}`}>
+                        <Link href={`/sources/${locator.source_id}`}>
+                          {locator.source_title ||
+                            `evidencia ${locator.id.slice(0, 8)}`}
+                        </Link>{" "}
+                        <small className="muted">
+                          {evidenceLocatorLabel(locator.locator)}
+                        </small>
+                      </li>
+                    ))}
+                  </ul>
+                  <small className="muted">
+                    Referencias del ranking: {hit.citations.join(" · ")}
+                  </small>
+                </>
+              ) : (
+                <p className="muted">
+                  {hit.citations.length
+                    ? hit.citations.join(" · ")
+                    : "Sin referencias"}
+                </p>
+              )}
+            </div>
+            {hit.warnings?.length ? (
+              <p className="muted">Warnings: {hit.warnings.join(" · ")}</p>
+            ) : null}
+          </article>
+        );
+      })}
 
       {packet ? (
         <section>
