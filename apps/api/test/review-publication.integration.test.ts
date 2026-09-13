@@ -21,6 +21,7 @@ let app: FastifyInstance;
 let db: Postgres;
 let fixtureRoot: string;
 let defaultVault: string;
+let createdVaultMembershipId: string | null = null;
 const createdReviewIds = new Set<string>();
 const previousManagedRepository = process.env.AKP_MANAGED_REPO;
 
@@ -145,6 +146,31 @@ beforeAll(async () => {
       ],
     );
   }
+  const vaultMembershipId = randomUUID();
+  const vaultMembership = await db.pool.query<{ id: string }>(
+    `
+    insert into vault_memberships(
+      id,user_id,vault_id,role,path_prefix,permissions,enabled
+    ) values($1,$2,$3,'ADMIN',null,$4::jsonb,true)
+    on conflict do nothing
+    returning id
+    `,
+    [
+      vaultMembershipId,
+      admin,
+      defaultVault,
+      JSON.stringify([
+        "knowledge:read",
+        "source:read",
+        "source:write",
+        "knowledge:propose",
+        "knowledge:review",
+        "eval:run",
+        "admin",
+      ]),
+    ],
+  );
+  createdVaultMembershipId = vaultMembership.rows[0]?.id ?? null;
   await db.pool.query(
     `
     insert into api_tokens(user_id,token_hash,label,scopes)
@@ -204,6 +230,11 @@ afterAll(async () => {
     await db.pool.query("delete from api_tokens where token_hash=$1", [
       tokenHash,
     ]);
+    if (createdVaultMembershipId) {
+      await db.pool.query("delete from vault_memberships where id=$1", [
+        createdVaultMembershipId,
+      ]);
+    }
     await db.close();
   }
   if (fixtureRoot) await rm(fixtureRoot, { recursive: true, force: true });
@@ -335,6 +366,107 @@ describe("review publication integration", () => {
       [defaultVault, `managed/${proposal.relativePath}`],
     );
     expect(indexed.rows[0]?.count).toBe(0);
+  });
+
+  it("publishes rollback as an atomic corpus revision event with inverse tombstones", async () => {
+    const repository = repositoryFor("rollback-outbox");
+    const proposal = await propose(repository, "rollback-outbox");
+    const approved = await decide(
+      proposal.reviewId,
+      "APPROVE",
+      "publish before rollback parity check",
+    );
+    expect(approved.statusCode).toBe(200);
+
+    const rollback = await app.inject({
+      method: "POST",
+      url: `/v1/reviews/${proposal.reviewId}/rollback`,
+      headers,
+      payload: {
+        reason: "undo the published CREATE through the durable outbox",
+      },
+    });
+    expect(rollback.statusCode, rollback.body).toBe(200);
+    const rollbackBody = rollback.json() as {
+      status: string;
+      revision: string;
+      indexing: string;
+      queuedEvents: string[];
+    };
+    expect(rollbackBody).toMatchObject({
+      status: "ROLLED_BACK",
+      indexing: "PENDING",
+    });
+    expect(rollbackBody.queuedEvents).toContain("CorpusRevisionPublished");
+
+    const stored = await db.pool.query<{
+      status: string;
+      decision_reason: string;
+    }>("select status,decision_reason from reviews where id=$1", [
+      proposal.reviewId,
+    ]);
+    expect(stored.rows[0]).toMatchObject({
+      status: "ROLLED_BACK",
+      decision_reason: "undo the published CREATE through the durable outbox",
+    });
+
+    const events = await db.pool.query<{
+      event_id: string;
+      event_type: string;
+      causation_id: string | null;
+      payload: {
+        operation?: string;
+        revision?: string;
+        changedPaths?: string[];
+        tombstones?: string[];
+      };
+    }>(
+      `select event_id,event_type,causation_id,payload
+         from event_outbox
+        where resource_id=$1 and payload->>'operation'='ROLLBACK'
+        order by created_at,event_id`,
+      [proposal.reviewId],
+    );
+    expect(events.rows.map((row) => row.event_type).sort()).toEqual(
+      [
+        "CorpusRevisionPublished",
+        "LexicalIndexUpdateRequested",
+        "VectorIndexUpdateRequested",
+        "GraphIndexUpdateRequested",
+        "ContextPackInvalidationRequested",
+        "ImpactedEvalRunRequested",
+      ].sort(),
+    );
+    const corpus = events.rows.find(
+      (row) => row.event_type === "CorpusRevisionPublished",
+    );
+    expect(corpus?.causation_id).toBeNull();
+    expect(corpus?.payload).toMatchObject({
+      operation: "ROLLBACK",
+      revision: rollbackBody.revision,
+      changedPaths: [proposal.relativePath],
+      tombstones: [proposal.relativePath],
+    });
+    expect(
+      events.rows
+        .filter((row) => row.event_type !== "CorpusRevisionPublished")
+        .every((row) => row.causation_id === corpus?.event_id),
+    ).toBe(true);
+
+    const store = new GitKnowledgeStore(repository);
+    expect(
+      await store.hasFileAtRevision(
+        await store.revision(),
+        proposal.relativePath,
+      ),
+    ).toBe(false);
+
+    const auditRows = await db.pool.query<{ count: number }>(
+      `select count(*)::int count from audit_events
+        where action='review.rollback' and resource_id=$1`,
+      [proposal.reviewId],
+    );
+    expect(auditRows.rows[0]?.count).toBe(1);
   });
 
   it("preserves review feedback, creates a new validated draft revision, resubmits, and approves it", async () => {

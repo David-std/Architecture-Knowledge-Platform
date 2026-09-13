@@ -104,17 +104,21 @@ export function changesFromEvent(event: IndexEvent): ManagedChange[] {
     normalizeManagedPath(value).slice("managed/".length);
   const addChange = (
     value: unknown,
-    fallbackOperation?: "CREATE" | "UPDATE",
+    fallbackOperation?: ManagedChange["operation"],
   ): void => {
     if (typeof value === "string") {
       const normalized = relativeManagedPath(value);
       const existing = seen.get(normalized);
       if (existing !== undefined) {
         // Publication payloads carry changedPaths and tombstones separately.
-        // A deleted path may therefore appear twice; retain the stronger
-        // UPDATE operation so downstream documents are invalidated rather
-        // than silently treated as an operation-less upsert.
-        if (fallbackOperation === "UPDATE") {
+        // A deleted path may therefore appear twice; DELETE is authoritative
+        // and must never be weakened back into an upsert. UPDATE remains
+        // stronger than an operation-less changed path.
+        const currentOperation = changes[existing]?.operation;
+        if (
+          fallbackOperation === "DELETE" ||
+          (fallbackOperation === "UPDATE" && currentOperation !== "DELETE")
+        ) {
           changes[existing] = {
             path: normalized,
             operation: fallbackOperation,
@@ -134,12 +138,18 @@ export function changesFromEvent(event: IndexEvent): ManagedChange[] {
     if (typeof candidate.path !== "string") return;
     const normalized = relativeManagedPath(candidate.path);
     const operation =
-      candidate.operation === "CREATE" || candidate.operation === "UPDATE"
+      candidate.operation === "CREATE" ||
+      candidate.operation === "UPDATE" ||
+      candidate.operation === "DELETE"
         ? candidate.operation
         : fallbackOperation;
     const existing = seen.get(normalized);
     if (existing !== undefined) {
-      if (operation === "UPDATE") {
+      const currentOperation = changes[existing]?.operation;
+      if (
+        operation === "DELETE" ||
+        (operation === "UPDATE" && currentOperation !== "DELETE")
+      ) {
         changes[existing] = { path: normalized, operation };
       }
       return;
@@ -152,7 +162,7 @@ export function changesFromEvent(event: IndexEvent): ManagedChange[] {
   }
   if (Array.isArray(event.payload.tombstones)) {
     for (const tombstone of event.payload.tombstones) {
-      addChange(tombstone, "UPDATE");
+      addChange(tombstone, "DELETE");
     }
   }
   return changes;

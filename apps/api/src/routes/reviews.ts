@@ -5,7 +5,6 @@ import type { FastifyInstance } from "fastify";
 import {
   pathMatchesVaultPrefix,
   resolveAuthorizedVaultScope,
-  runKnowledgeLint,
   type AppendOutboxEventInput,
   type Postgres,
 } from "@akp/postgres";
@@ -14,13 +13,11 @@ import { assertSafeKnowledgePath } from "@akp/compiler";
 import { validateMarkdownDocument } from "@akp/validation";
 import { withSpan } from "@akp/observability";
 import {
-  rebuildSpaceProjections,
   assertManagedRepositoryBoundary,
   repositoryPublicationKey,
   synchronizeManagedPaths,
   type ManagedChange,
 } from "../projections.js";
-import { runEvaluation } from "./evaluation.js";
 import {
   actorOf,
   audit,
@@ -85,21 +82,6 @@ async function recordPublicationFailure(
     `,
     [spaceId, rootCause, JSON.stringify(metadata)],
   );
-}
-
-async function evaluationTargetForReview(
-  db: Postgres,
-  review: Record<string, unknown>,
-): Promise<{ vaultId: string; evalPack: string }> {
-  const vaultId = String(review.vault_id ?? "");
-  if (!vaultId) throw new Error("REVIEW_VAULT_SCOPE_REQUIRED");
-  const result = await db.pool.query(
-    "select eval_pack from vaults where id=$1 and space_id=$2 and enabled=true",
-    [vaultId, review.space_id],
-  );
-  if (!result.rowCount) throw new Error("REVIEW_VAULT_SCOPE_NOT_FOUND");
-  const evalPack = (result.rows[0]?.eval_pack ?? {}) as Record<string, unknown>;
-  return { vaultId, evalPack: String(evalPack.name ?? "generic") };
 }
 
 /** Reconcile changed Git paths through the shared incremental index port. */
@@ -197,6 +179,86 @@ async function appendPublicationLifecycle(
     vaultId: input.vaultId,
     correlationId: input.jobId ?? input.reviewId,
     causationId: published.eventId,
+    payload,
+  });
+  const requested: Array<{
+    eventType:
+      | "LexicalIndexUpdateRequested"
+      | "VectorIndexUpdateRequested"
+      | "GraphIndexUpdateRequested"
+      | "ContextPackInvalidationRequested"
+      | "ImpactedEvalRunRequested";
+  }> = [
+    { eventType: "LexicalIndexUpdateRequested" },
+    { eventType: "VectorIndexUpdateRequested" },
+    { eventType: "GraphIndexUpdateRequested" },
+    { eventType: "ContextPackInvalidationRequested" },
+    { eventType: "ImpactedEvalRunRequested" },
+  ];
+  for (const request of requested) {
+    await appendReviewEvent(client, {
+      eventType: request.eventType,
+      resourceId: input.reviewId,
+      spaceId: input.spaceId,
+      vaultId: input.vaultId,
+      correlationId: input.jobId ?? input.reviewId,
+      causationId: corpus.eventId,
+      payload,
+    });
+  }
+}
+
+/**
+ * Rollback is a publication of a new canonical corpus revision, not an
+ * in-process projection mutation. The review state and root revision event
+ * commit atomically, then the same causal projection fanout used by normal
+ * publication is consumed by the durable worker.
+ */
+async function appendRollbackLifecycle(
+  client: AppendTarget,
+  input: PublicationLifecycle,
+): Promise<void> {
+  const proposed = Array.isArray(input.manifest.proposedChanges)
+    ? input.manifest.proposedChanges
+    : [];
+  const changedPaths = proposed
+    .map((entry) =>
+      entry && typeof entry === "object" && "path" in entry
+        ? String((entry as Record<string, unknown>).path ?? "")
+        : "",
+    )
+    .filter(Boolean);
+  // Reverting a CREATE removes the path from canonical Git. Reverting an
+  // UPDATE (or a future DELETE) restores bytes from the prior revision, so it
+  // remains a changed path but is not a tombstone.
+  const tombstones = proposed
+    .filter(
+      (entry) =>
+        entry &&
+        typeof entry === "object" &&
+        String(
+          (entry as Record<string, unknown>).operation ?? "",
+        ).toUpperCase() === "CREATE",
+    )
+    .map((entry) => String((entry as Record<string, unknown>).path ?? ""))
+    .filter(Boolean);
+  const payload = {
+    reviewId: input.reviewId,
+    operation: "ROLLBACK",
+    ...(input.jobId ? { jobId: input.jobId } : {}),
+    revision: input.revision,
+    changedPaths,
+    tombstones,
+    ...(typeof input.manifest.sourceId === "string"
+      ? { sourceId: input.manifest.sourceId }
+      : {}),
+  };
+  const corpus = await appendReviewEvent(client, {
+    eventType: "CorpusRevisionPublished",
+    resourceId: input.reviewId,
+    spaceId: input.spaceId,
+    vaultId: input.vaultId,
+    correlationId: input.jobId ?? input.reviewId,
     payload,
   });
   const requested: Array<{
@@ -1166,56 +1228,40 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
           () => store.rollbackMain(String(review.merged_commit)),
         );
         await renewPublicationLock(db, publicationKey, lockOwner);
-        const manifest = review.impact_manifest as {
-          sourceId?: string;
-          proposedChanges?: Array<{
-            path: string;
-            operation?: "CREATE" | "UPDATE";
-          }>;
-        };
-        await synchronizeManagedPaths(db, store, {
-          spaceId: String(review.space_id),
-          vaultId: String(review.vault_id ?? ""),
-          revision,
-          changes: (manifest.proposedChanges ?? []).map((change) => ({
-            path: change.path,
-            ...(change.operation ? { operation: change.operation } : {}),
-          })),
-          ...(typeof manifest.sourceId === "string"
-            ? { sourceId: manifest.sourceId }
-            : {}),
-        });
-        const projection = await rebuildSpaceProjections(
-          db,
-          String(review.space_id),
-          String(review.vault_id ?? ""),
-          revision,
-        );
-        const lint = await runKnowledgeLint(
-          db,
-          String(review.space_id),
-          String(review.vault_id ?? ""),
-          "INDEX_REBUILD",
-        );
-        const evaluationTarget = await evaluationTargetForReview(db, review);
-        const evals = await runEvaluation(
-          db,
-          { name: "post-rollback-impacted-regression" },
-          String(review.space_id),
-          evaluationTarget.evalPack,
-          evaluationTarget.vaultId,
-        );
+        const manifest = (review.impact_manifest ?? {}) as Record<
+          string,
+          unknown
+        >;
+        const jobId = manifest.jobId;
         await renewPublicationLock(db, publicationKey, lockOwner);
-        const completed = await db.pool.query(
-          `
-          update reviews set status='ROLLED_BACK',decision_reason=$2,updated_at=now()
-           where id=$1 and status='ROLLING_BACK'
-           returning id
-          `,
-          [request.params.id, request.body.reason.trim()],
-        );
-        if (!completed.rowCount) {
-          throw new Error("ROLLBACK_STATE_CONFLICT");
+        const rollbackClient = await db.pool.connect();
+        try {
+          await rollbackClient.query("begin");
+          const completed = await rollbackClient.query(
+            `
+            update reviews set status='ROLLED_BACK',decision_reason=$2,updated_at=now()
+             where id=$1 and status='ROLLING_BACK'
+             returning id
+            `,
+            [request.params.id, request.body.reason.trim()],
+          );
+          if (!completed.rowCount) {
+            throw new Error("ROLLBACK_STATE_CONFLICT");
+          }
+          await appendRollbackLifecycle(rollbackClient, {
+            reviewId: request.params.id,
+            ...(typeof jobId === "string" ? { jobId } : {}),
+            spaceId: String(review.space_id),
+            vaultId: String(review.vault_id ?? ""),
+            revision,
+            manifest,
+          });
+          await rollbackClient.query("commit");
+        } catch (error) {
+          await rollbackClient.query("rollback");
+          throw error;
+        } finally {
+          rollbackClient.release();
         }
         await audit(
           db,
@@ -1223,16 +1269,26 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
           "review.rollback",
           "review",
           request.params.id,
-          { vaultId: String(review.vault_id), revision, projection },
+          {
+            vaultId: String(review.vault_id),
+            revision,
+            indexing: "PENDING",
+          },
           String(review.space_id),
         );
         return {
           id: request.params.id,
           status: "ROLLED_BACK",
           revision,
-          projection,
-          lint,
-          evals,
+          indexing: "PENDING",
+          queuedEvents: [
+            "CorpusRevisionPublished",
+            "LexicalIndexUpdateRequested",
+            "VectorIndexUpdateRequested",
+            "GraphIndexUpdateRequested",
+            "ContextPackInvalidationRequested",
+            "ImpactedEvalRunRequested",
+          ],
         };
       } catch (error) {
         let recoveryRevision: string | null = null;
