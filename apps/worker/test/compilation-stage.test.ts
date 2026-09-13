@@ -182,6 +182,26 @@ describe("compilation stage", () => {
       contradictionCount: 0,
     });
     expect(output.plan.proposedChanges[0]?.evidenceIds).toEqual([EVIDENCE_ID]);
+    expect(output.plan.reviewContext).toMatchObject({
+      identity: {
+        classification: "DISTINCT",
+      },
+      evidence: [
+        {
+          id: EVIDENCE_ID,
+          sourceArtifactId: ARTIFACT_ID,
+          excerptHash: EXCERPT_HASH,
+        },
+      ],
+      knowledgeCandidates: [
+        {
+          candidateId: "candidate-1",
+          proposedAction: "CREATE",
+          evidenceIds: [EVIDENCE_ID],
+        },
+      ],
+    });
+    expect(output.plan.reviewContext?.evidence[0]).not.toHaveProperty("excerpt");
     expect(compile).toHaveBeenCalledOnce();
     expect(compile.mock.calls[0]?.[0]).toMatchObject({
       spaceId: SPACE_ID,
