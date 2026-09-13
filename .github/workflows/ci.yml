@@ -31,6 +31,12 @@ jobs:
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
       - run: pnpm audit --audit-level high
       - run: pnpm exec prettier --check .
+      - name: Capture exact Prettier diff on failure
+        if: failure()
+        run: |
+          mkdir -p reports/ci
+          pnpm exec prettier --write .
+          git diff --no-ext-diff -- . > reports/ci/prettier.diff
       - run: docker compose config --quiet
       - run: docker compose up -d --wait postgres minio extractor
       - run: |
