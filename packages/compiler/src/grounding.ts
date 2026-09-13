@@ -1,6 +1,7 @@
 import {
   KnowledgeCompilerInput,
   KnowledgeCompilerResult,
+  ReviewCompilationContext,
   type CompilerEvidence,
   type KnowledgeCompilerInput as KnowledgeCompilerInputType,
   type KnowledgeCompilerResult as KnowledgeCompilerResultType,
@@ -31,6 +32,7 @@ export type LegacyCompilationPlan = {
     criticality: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
     evidenceIds: string[];
   }>;
+  reviewContext?: ReturnType<typeof ReviewCompilationContext.parse>;
 };
 
 export function assertSafeKnowledgePath(path: string): void {
@@ -256,6 +258,32 @@ export function resultToCompilationPlan(
             )
           ? "UPDATE"
           : "NEW";
+  const reviewContext = ReviewCompilationContext.parse({
+    identity: result.identity,
+    evidence: input.evidence.map((entry) => ({
+      id: entry.id,
+      sourceArtifactId: entry.sourceArtifactId,
+      locator: entry.locator,
+      excerptHash: entry.excerptHash,
+    })),
+    evidenceCandidates: result.evidenceCandidates,
+    existingCandidates: input.existingCandidates.map((entry) => ({
+      documentId: entry.documentId,
+      externalId: entry.externalId,
+      path: entry.path,
+      title: entry.title,
+      type: entry.type,
+      lifecycle: entry.lifecycle,
+      trust: entry.trust,
+      revision: entry.revision,
+      ...(entry.score === undefined ? {} : { score: entry.score }),
+      reasons: entry.reasons,
+    })),
+    knowledgeCandidates: result.knowledgeCandidates,
+    contradictions: result.contradictions,
+    warnings: result.warnings,
+    summary: result.summary,
+  });
 
   return {
     sourceId: input.source.sourceId,
@@ -283,5 +311,6 @@ export function resultToCompilationPlan(
       criticality: probe.criticality,
       evidenceIds: probe.evidenceIds,
     })),
+    reviewContext,
   };
 }
