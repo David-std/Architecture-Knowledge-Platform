@@ -30,7 +30,34 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
       - run: pnpm audit --audit-level high
-      - run: pnpm exec prettier --check .
+      - name: Check repository formatting
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p reports/ci/formatted reports/ci/p6-formatted
+          pnpm exec prettier apps/api/src/routes/provider-tasks.ts \
+            > reports/ci/formatted/provider-tasks.ts
+          pnpm exec prettier apps/worker/src/document-intelligence-request.ts \
+            > reports/ci/formatted/document-intelligence-request.ts
+          pnpm exec prettier apps/worker/src/worker.ts \
+            > reports/ci/formatted/worker.ts
+          while IFS= read -r file; do
+            destination="reports/ci/p6-formatted/$file"
+            mkdir -p "$(dirname "$destination")"
+            pnpm exec prettier "$file" > "$destination"
+          done <<'P6_FORMAT_FILES'
+          apps/api/src/routes/operator.ts
+          apps/api/test/operator.integration.test.ts
+          apps/web/app/admin/health/page.tsx
+          apps/web/app/evals/page.tsx
+          apps/web/app/graph/graph-explorer.tsx
+          apps/web/app/graph/page.tsx
+          apps/web/app/jobs/[id]/page.tsx
+          apps/web/app/reviews/[id]/page.tsx
+          apps/web/app/search/page.tsx
+          apps/web/app/sources/[id]/page.tsx
+          P6_FORMAT_FILES
+          pnpm exec prettier --check . 2>&1 | tee reports/ci/prettier-check.txt
       - run: docker compose config --quiet
       - run: docker compose up -d --wait postgres minio extractor
       - run: |
@@ -116,12 +143,73 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with: { python-version: "3.12" }
+      - name: Install executable local document-intelligence tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends tesseract-ocr poppler-utils ffmpeg
+          tesseract --version | head -n 1
+          pdftoppm -v 2>&1 | head -n 1
+          ffmpeg -version | head -n 1
       - uses: astral-sh/setup-uv@v9.0.0
         with:
           version: 0.12.7
           enable-cache: true
           cache-dependency-glob: apps/extractor/uv.lock
       - run: uv sync --locked
-      - run: uv run --locked ruff check --no-cache .
+      - name: Run Ruff with persisted diagnostics
+        shell: bash
+        run: |
+          mkdir -p ../../reports/ci
+          uv run --locked ruff check --no-cache --fix --diff . \
+            > ../../reports/ci/python-ruff-fix.diff 2>&1 || true
+          set -o pipefail
+          uv run --locked ruff check --no-cache . 2>&1 | tee ../../reports/ci/python-ruff.txt
       - run: uv run --locked mypy app
-      - run: uv run --locked pytest -p no:cacheprovider
+      - name: Run extractor suite with real local OCR tools
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p ../../reports/ci
+          uv run --locked pytest -p no:cacheprovider -m "not provider_runtime" 2>&1 \
+            | tee ../../reports/ci/python-pytest.txt
+      - name: Upload Python diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-diagnostics-${{ github.run_id }}-${{ github.job }}
+          path: reports/ci
+          if-no-files-found: ignore
+          retention-days: 14
+
+  python-docling:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/extractor
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with: { python-version: "3.12" }
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          version: 0.12.7
+          enable-cache: true
+          cache-dependency-glob: apps/extractor/uv.lock
+      - name: Sync the locked opt-in Docling profile
+        run: uv sync --locked --extra docling
+      - name: Execute the real Docling provider against a structured fixture
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p ../../reports/ci
+          uv run --locked --extra docling pytest -p no:cacheprovider \
+            tests/test_p5_docling_runtime.py -q 2>&1 \
+            | tee ../../reports/ci/python-docling.txt
+      - name: Upload Docling diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-diagnostics-${{ github.run_id }}-${{ github.job }}
+          path: reports/ci
+          if-no-files-found: ignore
+          retention-days: 14

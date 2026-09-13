@@ -19,6 +19,22 @@ class CapabilityStatus(StrEnum):
     FAILED = "FAILED"
 
 
+class CostPolicy(StrEnum):
+    """Maximum external provider spend a request permits."""
+
+    NO_PAID = "NO_PAID"
+    STANDARD = "STANDARD"
+    QUALITY = "QUALITY"
+
+
+class PrivacyPolicy(StrEnum):
+    """Network/privacy boundary for document-intelligence routing."""
+
+    LOCAL_ONLY = "LOCAL_ONLY"
+    LOCAL_PREFERRED = "LOCAL_PREFERRED"
+    REMOTE_ALLOWED = "REMOTE_ALLOWED"
+
+
 class AdapterAvailability(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -33,6 +49,15 @@ class AdapterAvailability(BaseModel):
     local: bool = True
     provider: str | None = None
     benchmark_required: bool = False
+    ocr: bool = False
+    transcription: bool = False
+    timestamps: bool = False
+    video_demux_available: bool = False
+    visual_captioning: bool = False
+    async_task_lifecycle: bool = False
+    webhook_verification: bool = False
+    paid: bool = False
+    external_network: bool = False
 
 
 class DocumentExtractionRequest(BaseModel):
@@ -45,6 +70,12 @@ class DocumentExtractionRequest(BaseModel):
     source_uri: str | None = None
     media_type: str = "application/octet-stream"
     complexity: str | None = None
+    ocr_required: bool = False
+    tables: bool = False
+    formula: bool = False
+    cost_policy: CostPolicy = CostPolicy.STANDARD
+    privacy_policy: PrivacyPolicy = PrivacyPolicy.LOCAL_PREFERRED
+    ingest_job_id: str | None = None
     configuration: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -66,7 +97,7 @@ class DocumentIntelligencePort(ABC):
     """Provider-neutral document intelligence port.
 
     Implementations must either return a validated ``DocumentArtifact`` or
-    raise a typed error.  Returning a text placeholder for an unavailable
+    raise a typed error. Returning a text placeholder for an unavailable
     provider is explicitly forbidden because it makes benchmark results look
     like successful structured extraction.
     """

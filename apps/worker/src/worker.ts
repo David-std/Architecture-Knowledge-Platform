@@ -45,6 +45,7 @@ import { buildCompilationStage } from "./compilation-stage.js";
 import { evaluateCompilationProbes } from "./compilation-probes.js";
 import { selectEvidenceFragment } from "./evidence-fragment.js";
 import { resolveAuthorizedLocalSource } from "./source-boundary.js";
+import { appendDocumentIntelligenceFormFields } from "./document-intelligence-request.js";
 
 config({
   path: path.resolve(
@@ -354,6 +355,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
         String(outputs.mediaType ?? payload.mediaType ?? ""),
       );
       upload.set("expected_sha256", raw.sha256);
+      appendDocumentIntelligenceFormFields(upload, payload, id);
       const response = await fetch(`${extractorUrl}/v1/extract-upload`, {
         method: "POST",
         headers: {
