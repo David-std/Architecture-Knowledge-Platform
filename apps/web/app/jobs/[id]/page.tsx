@@ -55,8 +55,70 @@ interface OperatorJobResponse {
   outbox: OutboxEvent[];
 }
 
+interface FailureSummary {
+  code: string;
+  message: string;
+  stage: string;
+  retryable: string;
+}
+
 function time(value?: string | null): string {
   return value ? new Date(value).toLocaleString() : "—";
+}
+
+function scalar(value: unknown): string | null {
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return String(value);
+  }
+  return null;
+}
+
+function firstScalar(
+  record: Record<string, unknown>,
+  keys: string[],
+): string | null {
+  for (const key of keys) {
+    const value = scalar(record[key]);
+    if (value !== null && value.trim()) return value;
+  }
+  return null;
+}
+
+function failureSummary(error: unknown): FailureSummary {
+  if (typeof error === "string") {
+    return {
+      code: "UNSPECIFIED",
+      message: error,
+      stage: "—",
+      retryable: "No reportado",
+    };
+  }
+  if (!error || typeof error !== "object" || Array.isArray(error)) {
+    return {
+      code: "UNSPECIFIED",
+      message: "Fallo registrado sin mensaje estructurado.",
+      stage: "—",
+      retryable: "No reportado",
+    };
+  }
+  const record = error as Record<string, unknown>;
+  return {
+    code:
+      firstScalar(record, ["code", "errorCode", "error_code", "name", "type"]) ??
+      "UNSPECIFIED",
+    message:
+      firstScalar(record, ["message", "detail", "reason", "error"]) ??
+      "Fallo registrado sin mensaje estructurado.",
+    stage:
+      firstScalar(record, ["stage", "phase", "step", "provider"]) ?? "—",
+    retryable:
+      firstScalar(record, ["retryable", "retriable", "transient"]) ??
+      "No reportado",
+  };
 }
 
 export default async function JobPage({
@@ -68,6 +130,7 @@ export default async function JobPage({
   const result = await akp<OperatorJobResponse>(`/v1/operator/jobs/${id}`);
   const { job } = result;
   const providerEntries = Object.entries(result.providerTasks ?? {});
+  const failure = job.error ? failureSummary(job.error) : null;
 
   return (
     <main>
@@ -100,10 +163,40 @@ export default async function JobPage({
         </div>
       </div>
 
-      {job.error ? (
+      {failure ? (
         <section className="card" role="alert" style={{ marginTop: 16 }}>
-          <h2>Fallo</h2>
-          <pre>{JSON.stringify(job.error, null, 2)}</pre>
+          <h2>Fallo operativo</h2>
+          <div className="grid">
+            <div>
+              <span className="muted">Código</span>
+              <p>
+                <code>{failure.code}</code>
+              </p>
+            </div>
+            <div>
+              <span className="muted">Etapa</span>
+              <p>{failure.stage}</p>
+            </div>
+            <div>
+              <span className="muted">Retryable</span>
+              <p>{failure.retryable}</p>
+            </div>
+            <div>
+              <span className="muted">Retry durable</span>
+              <p>{time(job.next_attempt_at)}</p>
+            </div>
+          </div>
+          <p>
+            <strong>{failure.message}</strong>
+          </p>
+          <p className="muted">
+            Intentos consumidos: {job.attempts} de {job.max_attempts}. El estado
+            y el próximo retry mostrados aquí provienen del job durable.
+          </p>
+          <details>
+            <summary>Inspeccionar error JSON</summary>
+            <pre>{JSON.stringify(job.error, null, 2)}</pre>
+          </details>
         </section>
       ) : null}
 
