@@ -1,0 +1,29 @@
+name: p6-hygiene-output
+
+on:
+  pull_request:
+
+jobs:
+  hygiene-output:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+      - name: Capture exact hygiene result for final tree
+        shell: bash
+        run: |
+          mkdir -p reports/p6-hygiene
+          rm .github/workflows/p6-hygiene-output.yml
+          set +e
+          node scripts/validate-repository-hygiene.mjs > reports/p6-hygiene/output.txt 2>&1
+          status=$?
+          printf '%s\n' "$status" > reports/p6-hygiene/exit-code.txt
+          exit 0
+      - uses: actions/upload-artifact@v7
+        with:
+          name: p6-hygiene-output-${{ github.run_id }}
+          path: reports/p6-hygiene
+          if-no-files-found: error
+          retention-days: 1
