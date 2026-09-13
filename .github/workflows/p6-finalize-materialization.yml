@@ -14,7 +14,6 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 0
       - uses: pnpm/action-setup@v6
         with:
           version: 10.34.5
@@ -23,16 +22,13 @@ jobs:
           node-version: 24.20.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
-      - name: Materialize and retire temporary CI instrumentation
+      - name: Materialize final P6 search formatting
         shell: bash
         run: |
           set -euo pipefail
           pnpm exec prettier --write apps/web/app/search/page.tsx
-          git show 02b4953a636970ce8fec1b241fb4818ae141fc36:.github/workflows/ci.yml > .github/workflows/ci.yml
-          git rm .github/workflows/p6-finalize-materialization.yml
-          node scripts/validate-repository-hygiene.mjs --write
           git config user.name "AKP CI"
           git config user.email "akp-ci@localhost"
-          git add apps/web/app/search/page.tsx .github/workflows/ci.yml REPOSITORY_FILE_CLASSIFICATION.json
-          git commit -m "ci(p6): finalize clean search operator tree"
+          git add apps/web/app/search/page.tsx
+          git commit -m "style(p6): materialize final search formatting"
           git push origin "HEAD:${GITHUB_HEAD_REF}"
