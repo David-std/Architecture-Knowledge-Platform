@@ -51,6 +51,11 @@ class AdapterAvailability(BaseModel):
     benchmark_required: bool = False
     ocr: bool = False
     transcription: bool = False
+    timestamps: bool = False
+    video_demux_available: bool = False
+    visual_captioning: bool = False
+    async_task_lifecycle: bool = False
+    webhook_verification: bool = False
     paid: bool = False
     external_network: bool = False
 
