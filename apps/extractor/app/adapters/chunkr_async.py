@@ -7,7 +7,8 @@ import hashlib
 import hmac
 import os
 import time
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 from urllib.parse import urljoin, urlparse
 
 import httpx
@@ -418,7 +419,7 @@ def verify_chunkr_webhook(
         secret_bytes = base64.b64decode(encoded_secret, validate=True)
     except ValueError as error:
         raise DocumentIntelligenceError("Chunkr webhook secret is not valid base64") from error
-    signed = f"{msg_id}.{timestamp}.".encode("utf-8") + payload
+    signed = f"{msg_id}.{timestamp}.".encode() + payload
     expected = base64.b64encode(
         hmac.new(secret_bytes, signed, hashlib.sha256).digest()
     ).decode("ascii")

@@ -7,7 +7,7 @@ from email.parser import BytesParser
 from email.policy import default
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 from PIL import Image, ImageDraw, ImageFont
@@ -73,7 +73,7 @@ class _TranscriptionHandler(BaseHTTPRequestHandler):
     request_path: str | None = None
     authorization: str | None = None
     content_type: str | None = None
-    fields: dict[str, list[str]] = {}
+    fields: ClassVar[dict[str, list[str]]] = {}
     file_payload: bytes = b""
 
     def _send(self, payload: dict[str, Any], status: int = 200) -> None:
@@ -84,7 +84,7 @@ class _TranscriptionHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def do_POST(self) -> None:  # noqa: N802
+    def do_POST(self) -> None:
         type(self).request_path = self.path
         type(self).authorization = self.headers.get("Authorization")
         type(self).content_type = self.headers.get("Content-Type")
@@ -95,7 +95,7 @@ class _TranscriptionHandler(BaseHTTPRequestHandler):
             (
                 f"Content-Type: {content_type}\r\n"
                 "MIME-Version: 1.0\r\n\r\n"
-            ).encode("utf-8")
+            ).encode()
             + body
         )
         fields: dict[str, list[str]] = {}

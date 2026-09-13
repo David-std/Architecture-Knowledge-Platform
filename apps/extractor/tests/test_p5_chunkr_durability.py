@@ -12,7 +12,6 @@ import pytest
 from app.adapters.chunkr_runtime import ChunkrAdapter
 from app.ports import DocumentExtractionRequest, DocumentIntelligenceError
 
-
 _SEQUENCE: list[str] = []
 _JOURNAL_BODIES: list[dict[str, Any]] = []
 
@@ -28,7 +27,7 @@ class _ProviderHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
-    def do_POST(self) -> None:  # noqa: N802
+    def do_POST(self) -> None:
         assert self.path == "/tasks/parse"
         _SEQUENCE.append("provider:create")
         length = int(self.headers.get("Content-Length", "0"))
@@ -41,7 +40,7 @@ class _ProviderHandler(BaseHTTPRequestHandler):
             }
         )
 
-    def do_GET(self) -> None:  # noqa: N802
+    def do_GET(self) -> None:
         assert self.path.startswith("/tasks/task-durable")
         type(self).polls += 1
         _SEQUENCE.append(f"provider:poll:{type(self).polls}")
@@ -102,7 +101,7 @@ class _ProviderHandler(BaseHTTPRequestHandler):
 class _JournalHandler(BaseHTTPRequestHandler):
     fail = False
 
-    def do_POST(self) -> None:  # noqa: N802
+    def do_POST(self) -> None:
         length = int(self.headers.get("Content-Length", "0"))
         body = json.loads(self.rfile.read(length))
         _JOURNAL_BODIES.append(body)

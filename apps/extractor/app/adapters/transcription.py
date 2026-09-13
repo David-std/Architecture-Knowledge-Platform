@@ -206,11 +206,10 @@ class OpenAICompatibleTranscriptionAdapter(DocumentIntelligencePort):
         try:
             upload_path = request.source_path
             if is_video:
-                handle = tempfile.NamedTemporaryFile(
+                with tempfile.NamedTemporaryFile(
                     prefix="akp-transcript-", suffix=".wav", delete=False
-                )
-                handle.close()
-                temporary_audio = Path(handle.name)
+                ) as handle:
+                    temporary_audio = Path(handle.name)
                 _ffmpeg_audio(request.source_path, temporary_audio)
                 upload_path = temporary_audio
 

@@ -26,12 +26,14 @@ from ..ports import (
 from ..provider_task_journal import record_provider_task_state
 from .base import infer_media_type
 from .chunkr_async import (
-    ChunkrAdapter as _NativeChunkrAdapter,
     _IN_PROGRESS,
     _TERMINAL,
     _endpoint,
     _headers,
     map_chunkr_task,
+)
+from .chunkr_async import (
+    ChunkrAdapter as _NativeChunkrAdapter,
 )
 
 

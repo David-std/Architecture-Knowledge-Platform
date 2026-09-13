@@ -44,6 +44,12 @@ line-length = 100
 # Modules are importable source files, not executable scripts. Windows checkouts
 # do not preserve executable bits consistently when copied into CI containers.
 ignore = ["EXE002"]
+
+[tool.ruff.lint.per-file-ignores]
+# These two nested routing guards intentionally keep capability selection readable;
+# combining them is style-only and does not change runtime semantics.
+"app/registry.py" = ["SIM102"]
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["app*"]

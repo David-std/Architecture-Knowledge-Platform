@@ -224,7 +224,7 @@ class _ChunkrHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def do_POST(self) -> None:  # noqa: N802
+    def do_POST(self) -> None:
         if self.path != "/tasks/parse":
             self._send({"error": "not found"}, 404)
             return
@@ -240,7 +240,7 @@ class _ChunkrHandler(BaseHTTPRequestHandler):
             }
         )
 
-    def do_GET(self) -> None:  # noqa: N802
+    def do_GET(self) -> None:
         if not self.path.startswith("/tasks/task-123/parse"):
             self._send({"error": "not found"}, 404)
             return
@@ -387,7 +387,7 @@ def test_chunkr_adapter_executes_async_task_lifecycle_and_maps_segments(
 
 def _svix_signature(payload: bytes, *, secret: str, msg_id: str, timestamp: int) -> str:
     key = base64.b64decode(secret.removeprefix("whsec_"))
-    signed = f"{msg_id}.{timestamp}.".encode("utf-8") + payload
+    signed = f"{msg_id}.{timestamp}.".encode() + payload
     value = base64.b64encode(hmac.new(key, signed, hashlib.sha256).digest()).decode("ascii")
     return f"v1,{value}"
 
