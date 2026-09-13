@@ -88,6 +88,21 @@ function locatorLabel(locator: Record<string, unknown>): string {
   return parts.join(" · ") || "locator";
 }
 
+function scalarMetadata(
+  metadata: Record<string, unknown> | undefined,
+): Array<[string, string]> {
+  if (!metadata) return [];
+  return Object.entries(metadata)
+    .filter(
+      ([, value]) =>
+        typeof value === "string" ||
+        typeof value === "number" ||
+        typeof value === "boolean",
+    )
+    .slice(0, 8)
+    .map(([key, value]) => [key, String(value)]);
+}
+
 export default async function SourcePage({
   params,
 }: {
@@ -221,9 +236,60 @@ export default async function SourcePage({
               ) : null}
 
               {(document.figures ?? []).length ? (
-                <p>
-                  <strong>Figuras:</strong> {document.figures?.length}
-                </p>
+                <>
+                  <h3>Figuras</h3>
+                  <div className="grid">
+                    {(document.figures ?? [])
+                      .slice(0, 6)
+                      .map((figure, figureIndex) => {
+                        const metadata = scalarMetadata(figure.metadata);
+                        return (
+                          <section
+                            className="card"
+                            key={figure.id ?? figureIndex}
+                          >
+                            <p>
+                              <span className="badge">
+                                {figure.kind ?? "figure"}
+                              </span>
+                              {figure.locator ? (
+                                <small>{locatorLabel(figure.locator)}</small>
+                              ) : null}
+                            </p>
+                            {figure.text ? (
+                              <p>{figure.text}</p>
+                            ) : (
+                              <p className="muted">
+                                Figura sin texto o caption extraído.
+                              </p>
+                            )}
+                            {metadata.length ? (
+                              <table>
+                                <tbody>
+                                  {metadata.map(([key, value]) => (
+                                    <tr key={key}>
+                                      <th>{key}</th>
+                                      <td>{value}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            ) : (
+                              <small className="muted">
+                                Sin metadata escalar adicional.
+                              </small>
+                            )}
+                          </section>
+                        );
+                      })}
+                  </div>
+                  {(document.figures ?? []).length > 6 ? (
+                    <p className="muted">
+                      Se muestran 6 de {document.figures?.length} figuras; el
+                      artefacto completo permanece disponible para inspección.
+                    </p>
+                  ) : null}
+                </>
               ) : null}
               {(document.equations ?? []).length ? (
                 <p>
