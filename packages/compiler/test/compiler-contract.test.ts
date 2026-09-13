@@ -200,7 +200,9 @@ describe("Knowledge Compiler contracts", () => {
         },
       ],
       evidence: [{ id: EVIDENCE_ID, excerptHash: EXCERPT_HASH }],
-      existingCandidates: [{ documentId: DOCUMENT_ID, path: "20-knowledge/concept/cache.md" }],
+      existingCandidates: [
+        { documentId: DOCUMENT_ID, path: "20-knowledge/concept/cache.md" },
+      ],
     });
     expect(plan.reviewContext?.evidence[0]).not.toHaveProperty("excerpt");
     expect(plan.reviewContext?.existingCandidates[0]).not.toHaveProperty(
