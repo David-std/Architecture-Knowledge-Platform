@@ -26,13 +26,25 @@ product = replaceOnce(
   product,
   `        order by sequence\`,` ,
   `        order by created_at,event_id\`,` ,
-  "rollback outbox deterministic ordering",
+  "rollback outbox deterministic diagnostics ordering",
+);
+product = replaceOnce(
+  product,
+  `    expect(rollbackEvents.rows.map((row) => row.event_type)).toEqual([\n      "CorpusRevisionPublished",\n      "LexicalIndexUpdateRequested",\n      "VectorIndexUpdateRequested",\n      "GraphIndexUpdateRequested",\n      "ContextPackInvalidationRequested",\n      "ImpactedEvalRunRequested",\n    ]);\n    const rollbackCorpus = rollbackEvents.rows[0];`,
+  `    expect(rollbackEvents.rows.map((row) => row.event_type).sort()).toEqual(\n      [\n        "CorpusRevisionPublished",\n        "LexicalIndexUpdateRequested",\n        "VectorIndexUpdateRequested",\n        "GraphIndexUpdateRequested",\n        "ContextPackInvalidationRequested",\n        "ImpactedEvalRunRequested",\n      ].sort(),\n    );\n    const rollbackCorpus = rollbackEvents.rows.find(\n      (row) => row.event_type === "CorpusRevisionPublished",\n    );`,
+  "product rollback event set",
+);
+product = replaceOnce(
+  product,
+  `      rollbackEvents.rows\n        .slice(1)\n        .every((row) => row.causation_id === rollbackCorpus?.event_id),`,
+  `      rollbackEvents.rows\n        .filter((row) => row.event_type !== "CorpusRevisionPublished")\n        .every((row) => row.causation_id === rollbackCorpus?.event_id),`,
+  "product rollback causal children",
 );
 product = replaceOnce(
   product,
   `        order by e.sequence\`,` ,
   `        order by e.created_at,e.event_id\`,` ,
-  "rollback delivery deterministic ordering",
+  "rollback delivery deterministic diagnostics ordering",
 );
 await writeFile(productPath, product, "utf8");
 
@@ -55,6 +67,24 @@ review = replaceOnce(
   `    await db.pool.query("delete from api_tokens where token_hash=$1", [\n      tokenHash,\n    ]);\n    await db.close();`,
   `    await db.pool.query("delete from api_tokens where token_hash=$1", [\n      tokenHash,\n    ]);\n    if (createdVaultMembershipId) {\n      await db.pool.query("delete from vault_memberships where id=$1", [\n        createdVaultMembershipId,\n      ]);\n    }\n    await db.close();`,
   "cleanup isolated vault membership",
+);
+review = replaceOnce(
+  review,
+  `        order by sequence\`,` ,
+  `        order by created_at,event_id\`,` ,
+  "review rollback outbox diagnostics ordering",
+);
+review = replaceOnce(
+  review,
+  `    expect(events.rows.map((row) => row.event_type)).toEqual([\n      "CorpusRevisionPublished",\n      "LexicalIndexUpdateRequested",\n      "VectorIndexUpdateRequested",\n      "GraphIndexUpdateRequested",\n      "ContextPackInvalidationRequested",\n      "ImpactedEvalRunRequested",\n    ]);\n    const corpus = events.rows[0];`,
+  `    expect(events.rows.map((row) => row.event_type).sort()).toEqual(\n      [\n        "CorpusRevisionPublished",\n        "LexicalIndexUpdateRequested",\n        "VectorIndexUpdateRequested",\n        "GraphIndexUpdateRequested",\n        "ContextPackInvalidationRequested",\n        "ImpactedEvalRunRequested",\n      ].sort(),\n    );\n    const corpus = events.rows.find(\n      (row) => row.event_type === "CorpusRevisionPublished",\n    );`,
+  "review rollback event set",
+);
+review = replaceOnce(
+  review,
+  `      events.rows.slice(1).every((row) => row.causation_id === corpus?.event_id),`,
+  `      events.rows\n        .filter((row) => row.event_type !== "CorpusRevisionPublished")\n        .every((row) => row.causation_id === corpus?.event_id),`,
+  "review rollback causal children",
 );
 await writeFile(reviewPath, review, "utf8");
 
