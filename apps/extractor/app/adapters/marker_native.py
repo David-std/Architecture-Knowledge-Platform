@@ -166,6 +166,8 @@ def _table(block: dict[str, Any]) -> tuple[list[str], list[list[str]], dict[str,
                 raw_cell.get("col_id", raw_cell.get("col_idx", 0)),
             ),
         )
+        if row is None or col is None:
+            continue
         try:
             row_i, col_i = int(row), int(col)
         except (TypeError, ValueError):
@@ -258,7 +260,7 @@ def map_marker_json(rendered: Any, request: DocumentExtractionRequest) -> Docume
 
         if kind == "table":
             headers, rows, table_metadata = _table(block)
-            item = TableArtifact(
+            table_item = TableArtifact(
                 id=item_id,
                 kind="table",
                 text=_text(block),
@@ -268,10 +270,10 @@ def map_marker_json(rendered: Any, request: DocumentExtractionRequest) -> Docume
                 rows=rows,
                 metadata={**item_metadata, **table_metadata},
             )
-            blocks.append(item)
-            tables.append(item)
+            blocks.append(table_item)
+            tables.append(table_item)
         else:
-            item = ArtifactItem(
+            artifact_item = ArtifactItem(
                 id=item_id,
                 kind=kind,
                 text=_text(block),
@@ -279,19 +281,19 @@ def map_marker_json(rendered: Any, request: DocumentExtractionRequest) -> Docume
                 parent_id=parent_id,
                 metadata=item_metadata,
             )
-            blocks.append(item)
+            blocks.append(artifact_item)
             if kind == "heading":
-                headings.append(item)
+                headings.append(artifact_item)
             elif kind == "paragraph":
-                paragraphs.append(item)
+                paragraphs.append(artifact_item)
             elif kind == "list-item":
-                lists.append(item)
+                lists.append(artifact_item)
             elif kind == "figure":
-                figures.append(item)
+                figures.append(artifact_item)
             elif kind == "equation":
-                equations.append(item)
+                equations.append(artifact_item)
             elif kind == "code":
-                code.append(item)
+                code.append(artifact_item)
         reading_order.append(item_id)
         locators.append(locator)
         children = block.get("children")
