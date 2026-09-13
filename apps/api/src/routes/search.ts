@@ -1746,6 +1746,7 @@ export async function queryKnowledge(
         type: String(row.type),
         trust: String(row.trust_tier) as SearchHit["trust"],
         lifecycle: String(row.lifecycle) as SearchHit["lifecycle"],
+        refreshStatus: String(row.refresh_status),
         score: item.score,
         reasons: item.reasons,
         fusionContributions: item.contributions,
