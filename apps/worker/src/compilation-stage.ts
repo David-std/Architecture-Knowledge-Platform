@@ -3,6 +3,7 @@ import {
   type ConfiguredKnowledgeCompiler,
 } from "@akp/compiler";
 import { StructuralLocator, type DocumentArtifact } from "@akp/contracts";
+import { withSpan } from "@akp/observability";
 import type { Postgres } from "@akp/postgres";
 import { renderDocumentArtifactDraft } from "./document-artifact.js";
 import { compileGroundedKnowledgeProposal } from "./knowledge-compilation.js";
@@ -210,22 +211,30 @@ export async function buildCompilationStage(
     ...input,
     vaultId: input.vaultId,
   });
-  const compiled = await compileGroundedKnowledgeProposal(db, configured, {
-    source: {
-      sourceId: input.sourceId,
-      sourceArtifactId: input.sourceArtifactId,
-      sha256: input.sha256,
-      title: input.title,
-      mediaType: input.mediaType,
+  const compiled = await withSpan(
+    "compile.plan",
+    {
+      "akp.compiler.mode": "GENERATIVE",
+      "akp.vector.enabled": input.vectorEnabled,
     },
-    documentArtifact: input.artifact,
-    evidence: [evidence],
-    schemaProfile: vault.schemaProfile,
-    corpusRevision: vault.corpusRevision,
-    spaceId: input.spaceId,
-    vaultId: input.vaultId,
-    vectorEnabled: input.vectorEnabled,
-  });
+    () =>
+      compileGroundedKnowledgeProposal(db, configured, {
+        source: {
+          sourceId: input.sourceId,
+          sourceArtifactId: input.sourceArtifactId,
+          sha256: input.sha256,
+          title: input.title,
+          mediaType: input.mediaType,
+        },
+        documentArtifact: input.artifact,
+        evidence: [evidence],
+        schemaProfile: vault.schemaProfile,
+        corpusRevision: vault.corpusRevision,
+        spaceId: input.spaceId,
+        vaultId: input.vaultId,
+        vectorEnabled: input.vectorEnabled,
+      }),
+  );
   return {
     plan: compiled.plan,
     metadata: {
