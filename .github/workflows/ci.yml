@@ -125,3 +125,24 @@ jobs:
       - run: uv run --locked ruff check --no-cache .
       - run: uv run --locked mypy app
       - run: uv run --locked pytest -p no:cacheprovider
+
+  python-docling:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/extractor
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with: { python-version: "3.12" }
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          version: 0.12.7
+          enable-cache: true
+          cache-dependency-glob: apps/extractor/uv.lock
+      - run: uv sync --locked --extra docling
+      - name: Prove real Docling native structure
+        run: >-
+          uv run --locked --extra docling pytest -p no:cacheprovider
+          tests/test_document_intelligence.py
+          -k docling_provider_real_native_structure_when_installed
