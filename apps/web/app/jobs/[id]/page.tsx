@@ -108,13 +108,17 @@ function failureSummary(error: unknown): FailureSummary {
   const record = error as Record<string, unknown>;
   return {
     code:
-      firstScalar(record, ["code", "errorCode", "error_code", "name", "type"]) ??
-      "UNSPECIFIED",
+      firstScalar(record, [
+        "code",
+        "errorCode",
+        "error_code",
+        "name",
+        "type",
+      ]) ?? "UNSPECIFIED",
     message:
       firstScalar(record, ["message", "detail", "reason", "error"]) ??
       "Fallo registrado sin mensaje estructurado.",
-    stage:
-      firstScalar(record, ["stage", "phase", "step", "provider"]) ?? "—",
+    stage: firstScalar(record, ["stage", "phase", "step", "provider"]) ?? "—",
     retryable:
       firstScalar(record, ["retryable", "retriable", "transient"]) ??
       "No reportado",
