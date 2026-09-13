@@ -40,6 +40,7 @@ describe("graph provenance contracts", () => {
         type: "concept",
         trust: "HUMAN_REVIEWED",
         lifecycle: "ACTIVE",
+        refreshStatus: "CURRENT",
         score: 1,
         reasons: ["graph"],
         excerpt: "C",
