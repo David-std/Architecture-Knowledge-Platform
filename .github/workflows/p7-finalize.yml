@@ -49,6 +49,7 @@ jobs:
             apps/worker/src/knowledge-compilation.ts \
             apps/worker/src/compilation-stage.ts \
             apps/worker/src/event-handlers.ts \
+            apps/worker/src/event-worker.ts \
             apps/api/src/routes/reviews.ts \
             apps/api/src/routes/search.ts \
             apps/api/src/routes/operator.ts \
