@@ -1,4 +1,5 @@
 import { context, trace, TraceFlags } from "@opentelemetry/api";
+import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
 import { describe, expect, it, vi } from "vitest";
 import {
   ConsoleTelemetry,
@@ -62,13 +63,21 @@ describe("OpenTelemetry runtime", () => {
     });
     expect(remote?.traceState?.serialize()).toBe("vendor=value");
 
-    const local = trace.setSpanContext(context.active(), {
-      traceId: "4bf92f3577b34da6a3ce929d0e0e4736",
-      spanId: "00f067aa0ba902b7",
-      traceFlags: TraceFlags.SAMPLED,
-      traceState: remote?.traceState,
-    });
-    expect(context.with(local, () => currentTraceMetadata())).toEqual(metadata);
+    context.disable();
+    const contextManager = new AsyncLocalStorageContextManager().enable();
+    expect(context.setGlobalContextManager(contextManager)).toBe(true);
+    try {
+      const local = trace.setSpanContext(context.active(), {
+        traceId: "4bf92f3577b34da6a3ce929d0e0e4736",
+        spanId: "00f067aa0ba902b7",
+        traceFlags: TraceFlags.SAMPLED,
+        traceState: remote?.traceState,
+      });
+      expect(context.with(local, () => currentTraceMetadata())).toEqual(metadata);
+    } finally {
+      context.disable();
+      contextManager.disable();
+    }
   });
 
   it("rejects malformed persisted trace metadata", () => {
