@@ -34,13 +34,29 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          mkdir -p reports/ci/formatted
+          mkdir -p reports/ci/formatted reports/ci/p6-formatted
           pnpm exec prettier apps/api/src/routes/provider-tasks.ts \
             > reports/ci/formatted/provider-tasks.ts
           pnpm exec prettier apps/worker/src/document-intelligence-request.ts \
             > reports/ci/formatted/document-intelligence-request.ts
           pnpm exec prettier apps/worker/src/worker.ts \
             > reports/ci/formatted/worker.ts
+          while IFS= read -r file; do
+            destination="reports/ci/p6-formatted/$file"
+            mkdir -p "$(dirname "$destination")"
+            pnpm exec prettier "$file" > "$destination"
+          done <<'P6_FORMAT_FILES'
+          apps/api/src/routes/operator.ts
+          apps/api/test/operator.integration.test.ts
+          apps/web/app/admin/health/page.tsx
+          apps/web/app/evals/page.tsx
+          apps/web/app/graph/graph-explorer.tsx
+          apps/web/app/graph/page.tsx
+          apps/web/app/jobs/[id]/page.tsx
+          apps/web/app/reviews/[id]/page.tsx
+          apps/web/app/search/page.tsx
+          apps/web/app/sources/[id]/page.tsx
+          P6_FORMAT_FILES
           pnpm exec prettier --check . 2>&1 | tee reports/ci/prettier-check.txt
       - run: docker compose config --quiet
       - run: docker compose up -d --wait postgres minio extractor
