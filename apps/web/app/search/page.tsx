@@ -175,13 +175,14 @@ export default async function SearchPage({
     ? await Promise.all(
         result.hits
           .filter((hit) => hit.citations.length > 0)
-          .map(async (hit) =>
-            [
-              hit.documentId,
-              await akpOptional<EvidenceProjection>(
-                `/v1/documents/${encodeURIComponent(hit.documentId)}/evidence`,
-              ),
-            ] as const,
+          .map(
+            async (hit) =>
+              [
+                hit.documentId,
+                await akpOptional<EvidenceProjection>(
+                  `/v1/documents/${encodeURIComponent(hit.documentId)}/evidence`,
+                ),
+              ] as const,
           ),
       )
     : [];
