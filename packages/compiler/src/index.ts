@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ReviewCompilationContext } from "./contracts.js";
 
 export const Disposition = z.enum(["NEW", "UPDATE", "DISPUTED", "NO_MATERIAL"]);
 
@@ -32,6 +33,7 @@ export const CompilationPlan = z.object({
       evidenceIds: z.array(z.string()).min(1),
     }),
   ),
+  reviewContext: ReviewCompilationContext.optional(),
 });
 export type CompilationPlan = z.infer<typeof CompilationPlan>;
 
