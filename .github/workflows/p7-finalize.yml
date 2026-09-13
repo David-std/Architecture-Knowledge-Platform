@@ -1,0 +1,80 @@
+name: p7-finalize
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    if: github.head_ref == 'work/p5-document-intelligence'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - name: Resolve staging graph
+        run: pnpm install --no-frozen-lockfile --strict-peer-dependencies
+      - name: Materialize P7 runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/p7-observability-meter-materialize.mjs
+          node scripts/p7-runtime-materialize.mjs
+          node scripts/p7-operator-materialize.mjs
+          node scripts/p7-outbox-materialize.mjs
+          node scripts/p7-ci-materialize.mjs
+          node scripts/p7-integration-fixes.mjs
+          pnpm install --no-frozen-lockfile --strict-peer-dependencies
+          pnpm exec prettier --write \
+            packages/observability/src/index.ts \
+            packages/postgres/src/outbox.ts \
+            packages/postgres/package.json \
+            apps/mcp/src/server.ts \
+            apps/mcp/tsconfig.json \
+            apps/worker/src/worker.ts \
+            apps/worker/src/knowledge-compilation.ts \
+            apps/worker/src/compilation-stage.ts \
+            apps/api/src/routes/reviews.ts \
+            apps/api/src/routes/search.ts \
+            apps/api/src/routes/operator.ts \
+            apps/web/app/admin/health/page.tsx \
+            .github/workflows/ci.yml \
+            pnpm-lock.yaml
+          docker compose config >/dev/null
+          node scripts/verify-observability.mjs
+          pnpm check
+      - name: Retire materializers and validate final tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f \
+            scripts/p7-observability-meter-materialize.mjs \
+            scripts/p7-runtime-materialize.mjs \
+            scripts/p7-operator-materialize.mjs \
+            scripts/p7-outbox-materialize.mjs \
+            scripts/p7-ci-materialize.mjs \
+            scripts/p7-integration-fixes.mjs \
+            .github/workflows/p7-finalize.yml
+          node scripts/validate-repository-hygiene.mjs --write
+          pnpm exec prettier --check .
+          node scripts/validate-repository-hygiene.mjs
+      - name: Commit validated P7 materialization
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "AKP CI"
+          git config user.email "akp-ci@localhost"
+          git add -A
+          git diff --cached --check
+          git commit -m "feat(p7): materialize production OpenTelemetry runtime"
+          git push origin "HEAD:${GITHUB_HEAD_REF}"
