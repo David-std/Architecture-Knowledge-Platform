@@ -14,7 +14,8 @@
   "dependencies": {
     "pg": "^8.13.0",
     "@akp/domain": "*",
-    "@akp/contracts": "*"
+    "@akp/contracts": "*",
+    "@akp/observability": "*"
   },
   "devDependencies": {}
 }
