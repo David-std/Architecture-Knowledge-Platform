@@ -14,23 +14,24 @@ jobs:
       - name: Diff tracked and canonical inventory on PR merge tree
         shell: bash
         run: |
-          mkdir -p reports/p6-hygiene-diff
+          out="$RUNNER_TEMP/p6-hygiene-diff"
+          mkdir -p "$out"
           rm .github/workflows/p6-hygiene-diff.yml
-          cp REPOSITORY_FILE_CLASSIFICATION.json reports/p6-hygiene-diff/tracked.json
+          cp REPOSITORY_FILE_CLASSIFICATION.json "$out/tracked.json"
           set +e
-          node scripts/validate-repository-hygiene.mjs --write > reports/p6-hygiene-diff/generator.txt 2>&1
+          node scripts/validate-repository-hygiene.mjs --write > "$out/generator.txt" 2>&1
           generator_status=$?
-          cp REPOSITORY_FILE_CLASSIFICATION.json reports/p6-hygiene-diff/generated.json
-          diff -u reports/p6-hygiene-diff/tracked.json reports/p6-hygiene-diff/generated.json > reports/p6-hygiene-diff/diff.txt
+          cp REPOSITORY_FILE_CLASSIFICATION.json "$out/generated.json"
+          diff -u "$out/tracked.json" "$out/generated.json" > "$out/diff.txt"
           diff_status=$?
-          git status --short > reports/p6-hygiene-diff/git-status.txt
-          node scripts/validate-repository-hygiene.mjs > reports/p6-hygiene-diff/validation.txt 2>&1
+          git status --short > "$out/git-status.txt"
+          node scripts/validate-repository-hygiene.mjs > "$out/validation.txt" 2>&1
           validation_status=$?
-          printf 'generator=%s\ndiff=%s\nvalidation=%s\n' "$generator_status" "$diff_status" "$validation_status" > reports/p6-hygiene-diff/exit-codes.txt
+          printf 'generator=%s\ndiff=%s\nvalidation=%s\n' "$generator_status" "$diff_status" "$validation_status" > "$out/exit-codes.txt"
           exit 0
       - uses: actions/upload-artifact@v7
         with:
           name: p6-hygiene-diff-${{ github.run_id }}
-          path: reports/p6-hygiene-diff
+          path: ${{ runner.temp }}/p6-hygiene-diff
           if-no-files-found: error
           retention-days: 1
