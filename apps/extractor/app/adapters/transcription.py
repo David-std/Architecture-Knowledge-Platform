@@ -214,23 +214,23 @@ class OpenAICompatibleTranscriptionAdapter(DocumentIntelligencePort):
                 upload_path = temporary_audio
 
             headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-            data: list[tuple[str, str]] = [
-                ("model", model),
-                ("response_format", "verbose_json"),
-                ("timestamp_granularities[]", "segment"),
-            ]
+            form_data: dict[str, str] = {
+                "model": model,
+                "response_format": "verbose_json",
+                "timestamp_granularities[]": "segment",
+            }
             language = request.configuration.get("language")
             if language:
-                data.append(("language", str(language)))
+                form_data["language"] = str(language)
             prompt = request.configuration.get("transcription_prompt")
             if prompt:
                 # Prompt is provider context only; it grants no tool/runtime permissions.
-                data.append(("prompt", str(prompt)[:4000]))
+                form_data["prompt"] = str(prompt)[:4000]
             with upload_path.open("rb") as stream:
                 response = httpx.post(
                     endpoint,
                     headers=headers,
-                    data=data,
+                    data=form_data,
                     files={
                         "file": (
                             upload_path.name,
