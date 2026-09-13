@@ -330,6 +330,30 @@ export const ContextPacketResponse = z.discriminatedUnion("packetMode", [
 ]);
 export type ContextPacketResponse = z.infer<typeof ContextPacketResponse>;
 
+export const DocumentIntelligenceRequest = z
+  .object({
+    complexity: z
+      .enum([
+        "simple",
+        "digital",
+        "complex",
+        "scanned",
+        "formula",
+        "table-heavy",
+        "unknown",
+      ])
+      .optional(),
+    extractor: z.string().trim().min(1).max(100).optional(),
+    ocr: z.boolean().optional(),
+    ocrEngine: z.string().trim().min(1).max(100).optional(),
+    forceFullPageOcr: z.boolean().optional(),
+    timeoutSeconds: z.number().int().min(1).max(900).optional(),
+  })
+  .strict();
+export type DocumentIntelligenceRequest = z.infer<
+  typeof DocumentIntelligenceRequest
+>;
+
 export const IngestRequest = z.object({
   spaceId: z.string().uuid(),
   vaultId: z.string().uuid(),
@@ -340,6 +364,7 @@ export const IngestRequest = z.object({
     .optional(),
   title: z.string().optional(),
   mediaType: z.string().optional(),
+  documentIntelligence: DocumentIntelligenceRequest.optional(),
   policy: z
     .enum(["REVIEW_REQUIRED", "ALLOW_LOW_RISK_AUTO_APPROVAL"])
     .default("REVIEW_REQUIRED"),
