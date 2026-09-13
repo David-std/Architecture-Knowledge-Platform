@@ -37,6 +37,19 @@ patchFile("apps/mcp/tsconfig.json", [
   ],
 ]);
 
+patchFile("apps/api/src/routes/search.ts", [
+  [
+    "explicit-retrieval-span-map",
+    `type RequiredRetrievalChannel = "exact" | "lexical" | "vector" | "graph";\n\nasync function observedRetrieval<T>(`,
+    `type RequiredRetrievalChannel = "exact" | "lexical" | "vector" | "graph";\n\nconst RETRIEVAL_SPAN_NAMES: Record<RequiredRetrievalChannel, string> = {\n  exact: "retrieve.exact",\n  lexical: "retrieve.lexical",\n  vector: "retrieve.vector",\n  graph: "retrieve.graph",\n};\n\nasync function observedRetrieval<T>(`,
+  ],
+  [
+    "use-explicit-retrieval-span-map",
+    '      `retrieve.${channel}`,\n',
+    '      RETRIEVAL_SPAN_NAMES[channel],\n',
+  ],
+]);
+
 patchFile("packages/indexing/src/index.ts", [
   [
     "observability-import",
