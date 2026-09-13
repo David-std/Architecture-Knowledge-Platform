@@ -138,22 +138,6 @@ export const GraphPathProvenance = z.object({
 });
 export type GraphPathProvenance = z.infer<typeof GraphPathProvenance>;
 
-export const SearchCitationLink = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("document"),
-    documentId: z.string().uuid(),
-    path: z.string().min(1),
-    revision: z.string().min(1),
-  }),
-  z.object({
-    kind: z.literal("source-evidence"),
-    evidenceId: z.string().uuid(),
-    sourceId: z.string().uuid(),
-    locator: z.record(z.string(), z.unknown()),
-  }),
-]);
-export type SearchCitationLink = z.infer<typeof SearchCitationLink>;
-
 export const SearchHit = z.object({
   documentId: z.string().uuid(),
   vaultId: z.string().uuid(),
@@ -189,7 +173,6 @@ export const SearchHit = z.object({
     .optional(),
   excerpt: z.string(),
   citations: z.array(z.string()),
-  citationLinks: z.array(SearchCitationLink).optional(),
   warnings: z.array(z.string()).optional(),
   graphProvenance: z.array(GraphPathProvenance).optional(),
 });
