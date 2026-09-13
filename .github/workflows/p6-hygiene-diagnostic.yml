@@ -11,8 +11,10 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24.20.0
-      - name: Regenerate canonical repository classification
-        run: node scripts/validate-repository-hygiene.mjs --write
+      - name: Regenerate canonical repository classification for the final tree
+        run: |
+          rm .github/workflows/p6-hygiene-diagnostic.yml
+          node scripts/validate-repository-hygiene.mjs --write
       - name: Validate regenerated classification
         run: node scripts/validate-repository-hygiene.mjs
       - uses: actions/upload-artifact@v7
