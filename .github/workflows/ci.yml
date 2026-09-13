@@ -30,6 +30,66 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
       - run: pnpm audit --audit-level high
+      - name: Generate canonical P5 ingest contract patch
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+
+          function replaceOne(path, pattern, replacement) {
+            const before = fs.readFileSync(path, 'utf8');
+            const after = before.replace(pattern, replacement);
+            if (after === before) throw new Error(`Expected replacement did not match: ${path}`);
+            fs.writeFileSync(path, after);
+          }
+
+          replaceOne(
+            'packages/contracts/src/index.ts',
+            /export const IngestRequest = z\.object\(\{[\s\S]*?export type IngestRequest = z\.infer<typeof IngestRequest>;/,
+            `export const DocumentIntelligenceIngestOptions = z\n  .object({\n    complexity: z\n      .enum([\n        "simple",\n        "digital",\n        "complex",\n        "scanned",\n        "formula",\n        "table-heavy",\n        "unknown",\n      ])\n      .optional(),\n    ocrRequired: z.boolean().default(false),\n    tables: z.boolean().default(false),\n    formula: z.boolean().default(false),\n    costPolicy: z.enum(["NO_PAID", "STANDARD", "QUALITY"]).default("STANDARD"),\n    privacyPolicy: z\n      .enum(["LOCAL_ONLY", "LOCAL_PREFERRED", "REMOTE_ALLOWED"])\n      .default("LOCAL_PREFERRED"),\n    language: z\n      .string()\n      .trim()\n      .regex(/^[A-Za-z][A-Za-z0-9_-]{1,31}$/)\n      .optional(),\n  })\n  .strict();\nexport type DocumentIntelligenceIngestOptions = z.infer<\n  typeof DocumentIntelligenceIngestOptions\n>;\n\nexport const IngestRequest = z.object({\n  spaceId: z.string().uuid(),\n  vaultId: z.string().uuid(),\n  sourceUri: z.string(),\n  expectedSha256: z\n    .string()\n    .regex(/^[a-f0-9]{64}$/)\n    .optional(),\n  title: z.string().optional(),\n  mediaType: z.string().optional(),\n  documentIntelligence: DocumentIntelligenceIngestOptions.optional(),\n  policy: z\n    .enum(["REVIEW_REQUIRED", "ALLOW_LOW_RISK_AUTO_APPROVAL"])\n    .default("REVIEW_REQUIRED"),\n  idempotencyKey: z.string().min(8).max(200).optional(),\n});\nexport type IngestRequest = z.infer<typeof IngestRequest>;`,
+          );
+
+          replaceOne(
+            'apps/api/src/routes/ingest.ts',
+            'import { IngestRequest } from "@akp/contracts";\nimport { z } from "zod";',
+            'import { IngestRequest } from "@akp/contracts";',
+          );
+          replaceOne(
+            'apps/api/src/routes/ingest.ts',
+            /\nconst DocumentIntelligenceIngestOptions = z[\s\S]*?const DocumentIntelligenceIngestRequest = IngestRequest\.extend\(\{\n  documentIntelligence: DocumentIntelligenceIngestOptions\.optional\(\),\n\}\);\n/,
+            '\n',
+          );
+          replaceOne(
+            'apps/api/src/routes/ingest.ts',
+            'DocumentIntelligenceIngestRequest.safeParse(request.body)',
+            'IngestRequest.safeParse(request.body)',
+          );
+
+          fs.writeFileSync(
+            'apps/worker/src/document-intelligence-request.ts',
+            `import { DocumentIntelligenceIngestOptions } from "@akp/contracts";\n\n/**\n * Build the only document-intelligence values the ingest worker may send to\n * the internal extractor. Durable job payloads are revalidated even though\n * the API validated them at submission time. Legacy jobs without P5 policy\n * receive safe defaults; malformed/tampered P5 policy fails closed.\n */\nexport function documentIntelligenceFormFields(\n  payload: Record<string, unknown>,\n  jobId: string,\n): Record<string, string> {\n  const parsed = DocumentIntelligenceIngestOptions.safeParse(\n    payload.documentIntelligence ?? {},\n  );\n  if (!parsed.success) {\n    throw new Error("INVALID_DOCUMENT_INTELLIGENCE_PAYLOAD");\n  }\n  const options = parsed.data;\n  const configuration = options.language ? { language: options.language } : {};\n\n  return {\n    ...(options.complexity ? { complexity: options.complexity } : {}),\n    ocr_required: String(options.ocrRequired),\n    tables: String(options.tables),\n    formula: String(options.formula),\n    cost_policy: options.costPolicy,\n    privacy_policy: options.privacyPolicy,\n    ingest_job_id: jobId,\n    configuration_json: JSON.stringify(configuration),\n  };\n}\n\nexport function appendDocumentIntelligenceFormFields(\n  form: FormData,\n  payload: Record<string, unknown>,\n  jobId: string,\n): void {\n  for (const [name, value] of Object.entries(\n    documentIntelligenceFormFields(payload, jobId),\n  )) {\n    form.set(name, value);\n  }\n}\n`,
+          );
+
+          fs.writeFileSync(
+            'apps/worker/test/document-intelligence-request.test.ts',
+            `import { describe, expect, it } from "vitest";\nimport { IngestRequest } from "@akp/contracts";\nimport { documentIntelligenceFormFields } from "../src/document-intelligence-request.js";\n\ndescribe("document intelligence ingest controls", () => {\n  it("uses the shared ingest contract for provider-neutral policy", () => {\n    const parsed = IngestRequest.parse({\n      spaceId: "00000000-0000-0000-0000-000000000003",\n      vaultId: "00000000-0000-0000-0000-000000000004",\n      sourceUri: "/allowed/source.pdf",\n      documentIntelligence: {\n        complexity: "scanned",\n        ocrRequired: true,\n        tables: true,\n        formula: false,\n        costPolicy: "NO_PAID",\n        privacyPolicy: "LOCAL_ONLY",\n        language: "es",\n      },\n    });\n\n    expect(\n      documentIntelligenceFormFields(\n        parsed as unknown as Record<string, unknown>,\n        "11111111-1111-1111-1111-111111111111",\n      ),\n    ).toEqual({\n      complexity: "scanned",\n      ocr_required: "true",\n      tables: "true",\n      formula: "false",\n      cost_policy: "NO_PAID",\n      privacy_policy: "LOCAL_ONLY",\n      ingest_job_id: "11111111-1111-1111-1111-111111111111",\n      configuration_json: JSON.stringify({ language: "es" }),\n    });\n  });\n\n  it("uses safe defaults for legacy jobs without P5 policy", () => {\n    expect(documentIntelligenceFormFields({}, "job-legacy")).toEqual({\n      ocr_required: "false",\n      tables: "false",\n      formula: "false",\n      cost_policy: "STANDARD",\n      privacy_policy: "LOCAL_PREFERRED",\n      ingest_job_id: "job-legacy",\n      configuration_json: "{}",\n    });\n  });\n\n  it("rejects provider-specific or malformed durable policy instead of forwarding it", () => {\n    expect(() =>\n      documentIntelligenceFormFields(\n        {\n          documentIntelligence: {\n            complexity: "remote-magic",\n            ocrRequired: "yes",\n            extractor: "chunkr",\n            providerUrl: "https://attacker.invalid",\n          },\n        },\n        "job-tampered",\n      ),\n    ).toThrowError("INVALID_DOCUMENT_INTELLIGENCE_PAYLOAD");\n\n    expect(() =>\n      IngestRequest.parse({\n        spaceId: "00000000-0000-0000-0000-000000000003",\n        vaultId: "00000000-0000-0000-0000-000000000004",\n        sourceUri: "/allowed/source.pdf",\n        documentIntelligence: {\n          extractor: "chunkr",\n          providerUrl: "https://attacker.invalid",\n        },\n      }),\n    ).toThrow();\n  });\n});\n`,
+          );
+          NODE
+          pnpm exec prettier --write \
+            packages/contracts/src/index.ts \
+            apps/api/src/routes/ingest.ts \
+            apps/worker/src/document-intelligence-request.ts \
+            apps/worker/test/document-intelligence-request.test.ts
+      - name: Upload canonical P5 ingest contract patch
+        uses: actions/upload-artifact@v7
+        with:
+          name: p5-ingest-contract-${{ github.run_id }}
+          path: |
+            packages/contracts/src/index.ts
+            apps/api/src/routes/ingest.ts
+            apps/worker/src/document-intelligence-request.ts
+            apps/worker/test/document-intelligence-request.test.ts
+          retention-days: 1
       - name: Check repository formatting
         shell: bash
         run: |
