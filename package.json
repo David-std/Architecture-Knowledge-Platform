@@ -33,6 +33,7 @@
     "hygiene:validate": "node scripts/validate-repository-hygiene.mjs",
     "benchmark:retrieval:offline": "tsx scripts/retrieval_benchmark_offline.ts",
     "benchmark:retrieval:curated": "tsx scripts/retrieval_benchmark_curated.ts",
+    "benchmark:retrieval:runtime": "tsx scripts/runtime-retrieval-benchmark.ts",
     "benchmark:scale": "node --expose-gc node_modules/tsx/dist/cli.mjs scripts/load-scale-benchmark.ts"
   },
   "devDependencies": {
