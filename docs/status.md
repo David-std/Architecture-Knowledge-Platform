@@ -15,12 +15,6 @@ Architecture Knowledge Platform is under active pre-1.0 development. The current
 - Operator search, graph, source, job, review, evaluation and health views.
 - OpenTelemetry instrumentation, audit export, backup and isolated restore workflows.
 
-## Unified implementation state
-
-The active product line now contains both previously parallel completion tracks in one history: the hardened event/retrieval/compiler/security foundation and the later document-intelligence/operator/observability/recovery/productization work. The integration keeps a single set of runtime contracts rather than parallel implementations, and the merged tree is the only candidate that should advance toward final validation.
-
-The historical working branches remain comparison and provenance points until final validation completes; they are not separate supported product variants.
-
 ## Defaults and optional capabilities
 
 The platform is conservative by default. Optional model, vector and document-intelligence providers are not silently enabled. Provider endpoints and credentials are deployment configuration, not source content. A provider may be available without being selected as the production default.
