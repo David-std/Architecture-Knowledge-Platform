@@ -1,0 +1,71 @@
+name: repair-p10-harnesses
+
+on:
+  push:
+    branches: [work/product-completion-final]
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: work/product-completion-final
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Apply verified P10 harness corrections
+        shell: python
+        run: |
+          from pathlib import Path
+
+          scale = Path("scripts/load-scale-benchmark.ts")
+          text = scale.read_text(encoding="utf-8")
+          old_hash = "encode(digest(($5::text || ':embedding:' || i::text),'sha256'),'hex'),"
+          new_hash = "u.content_hash,"
+          if old_hash not in text:
+              raise SystemExit("expected synthetic embedding hash expression was not found")
+          text = text.replace(old_hash, new_hash, 1)
+          scale.write_text(text, encoding="utf-8")
+
+          event = Path("scripts/event-concurrency-benchmark.ts")
+          text = event.read_text(encoding="utf-8")
+          old_signature = '''async function cleanup(\n  db: Postgres,\n  consumerName: string,\n  eventIds: string[],\n): Promise<void> {'''
+          new_signature = '''async function cleanup(\n  db: Postgres,\n  consumerName: string,\n): Promise<void> {'''
+          if old_signature not in text:
+              raise SystemExit("expected event cleanup signature was not found")
+          text = text.replace(old_signature, new_signature, 1)
+          immutable_delete = '''  if (eventIds.length > 0) {\n    await db.pool.query("delete from event_outbox where event_id=any($1::uuid[])", [\n      eventIds,\n    ]);\n  }\n'''
+          if immutable_delete not in text:
+              raise SystemExit("expected immutable outbox cleanup block was not found")
+          text = text.replace(immutable_delete, "", 1)
+          old_call = "await cleanup(db, consumerName, eventIds);"
+          new_call = "await cleanup(db, consumerName);"
+          if old_call not in text:
+              raise SystemExit("expected event cleanup call was not found")
+          text = text.replace(old_call, new_call, 1)
+          event.write_text(text, encoding="utf-8")
+      - run: pnpm exec prettier --write scripts/load-scale-benchmark.ts scripts/event-concurrency-benchmark.ts
+      - name: Verify targeted diff
+        shell: bash
+        run: |
+          git diff --check
+          git diff -- scripts/load-scale-benchmark.ts scripts/event-concurrency-benchmark.ts
+          changed="$(git diff --name-only | sort | tr '\n' ' ')"
+          test "$changed" = "scripts/event-concurrency-benchmark.ts scripts/load-scale-benchmark.ts "
+      - name: Commit repaired P10 harnesses
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/load-scale-benchmark.ts scripts/event-concurrency-benchmark.ts
+          git commit -m "fix(eval): align P10 harnesses with runtime contracts"
+          git push origin HEAD:work/product-completion-final
