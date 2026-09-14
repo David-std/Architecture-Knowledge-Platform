@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { DocumentArtifact } from "@akp/contracts";
-import { selectEvidenceFragment } from "../src/evidence-fragment.js";
+import {
+  assertEvidenceFragmentIntegrity,
+  selectEvidenceFragment,
+} from "../src/evidence-fragment.js";
 
 const SOURCE_ID = "11111111-1111-4111-8111-111111111111";
 const SOURCE_HASH = "a".repeat(64);
@@ -94,5 +97,21 @@ describe("evidence fragment selection", () => {
     expect(fragment.excerptHash).toBe(
       createHash("sha256").update("Bounded source preview").digest("hex"),
     );
+  });
+
+  it("rejects a forged excerpt hash or locator outside the current artifact", () => {
+    const selected = selectEvidenceFragment(artifact(), "fallback preview");
+    expect(() =>
+      assertEvidenceFragmentIntegrity(artifact(), {
+        ...selected,
+        excerptHash: "b".repeat(64),
+      }),
+    ).toThrow(/EVIDENCE_HASH_MISMATCH/);
+    expect(() =>
+      assertEvidenceFragmentIntegrity(artifact(), {
+        ...selected,
+        locator: { ...selected.locator, paragraph: 99 },
+      }),
+    ).toThrow(/EVIDENCE_LOCATOR_MISMATCH/);
   });
 });

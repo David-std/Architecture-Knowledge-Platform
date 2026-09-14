@@ -4,7 +4,11 @@ import {
   GitKnowledgeFileNotFoundError,
   type GitKnowledgeStore,
 } from "@akp/git-store";
-import { incrementalIndex, synchronizeManagedPaths } from "../src/index.js";
+import {
+  incrementalIndex,
+  synchronizeManagedPaths,
+  vaultIndexRevisionStatus,
+} from "../src/index.js";
 
 function fakeDatabase(
   options: {
@@ -162,5 +166,51 @@ describe("vault-scoped incremental indexing", () => {
       }),
     ).rejects.toThrow("UNSAFE_MANAGED_PATH");
     expect(store.showFile).not.toHaveBeenCalled();
+  });
+});
+
+describe("vault index revision status", () => {
+  const corpus = "composite:vault-a+managed:abc";
+
+  it("is consistent once the vector generation matches with no warning", () => {
+    expect(vaultIndexRevisionStatus(corpus, corpus, [])).toBe("CONSISTENT");
+  });
+
+  it("stays consistent while the vector channel is off pending the benchmark", () => {
+    // The served channels are written at the corpus revision, so a missing vector
+    // generation here is the declared configuration, not an index defect.
+    expect(
+      vaultIndexRevisionStatus(corpus, null, [
+        "VECTOR_DISABLED_PENDING_BENCHMARK",
+      ]),
+    ).toBe("CONSISTENT");
+    expect(
+      vaultIndexRevisionStatus(corpus, "stale-revision", [
+        "VECTOR_DISABLED_PENDING_BENCHMARK",
+      ]),
+    ).toBe("CONSISTENT");
+  });
+
+  it.each([
+    "VECTOR_BUILD_PENDING",
+    "VECTOR_BUILD_FAILED",
+    "VECTOR_PROVIDER_NOT_CONFIGURED",
+    "VECTOR_PROVIDER_CONFIGURATION_INVALID",
+  ])(
+    "reports a served vector channel that is not ready as degraded (%s)",
+    (warning) => {
+      expect(vaultIndexRevisionStatus(corpus, null, [warning])).toBe(
+        "DEGRADED",
+      );
+    },
+  );
+
+  it("does not let a benign notice mask a real defect", () => {
+    expect(
+      vaultIndexRevisionStatus(corpus, null, [
+        "VECTOR_DISABLED_PENDING_BENCHMARK",
+        "VECTOR_BUILD_FAILED",
+      ]),
+    ).toBe("DEGRADED");
   });
 });

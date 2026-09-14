@@ -99,6 +99,33 @@ describe("compilation probes", () => {
     });
   });
 
+  it.each([
+    "# Cache\n\nCached material concerns authoritative ocean tides.",
+    "# Cache invalidation\n\nNever invalidate cached material when the authoritative revision changes.",
+    "# Cache invalidation\n\nInvalidate cached material when colors change, even if the authoritative revision is unchanged.",
+  ])(
+    "rejects common-token, negated, or overclaimed draft: %s",
+    async (content) => {
+      const query = vi.fn().mockResolvedValue({
+        rows: [
+          {
+            id: EVIDENCE_ID,
+            excerpt:
+              "Invalidate cached material when the authoritative revision changes.",
+          },
+        ],
+      });
+      const db = { pool: { query } } as unknown as Postgres;
+      const [result] = await evaluateCompilationProbes(db, {
+        plan: plan(content),
+        spaceId: SPACE_ID,
+        vaultId: VAULT_ID,
+        sourceId: SOURCE_ID,
+      });
+      expect(result?.passed).toBe(false);
+    },
+  );
+
   it("fails when the evidence row is outside the scoped query result", async () => {
     const query = vi.fn().mockResolvedValue({ rows: [] });
     const db = { pool: { query } } as unknown as Postgres;

@@ -47,6 +47,16 @@ export type ContextPacketBudget = ContractContextPacketBudget;
 
 type BaseContextSection = ContextPacket["sections"][number];
 
+export interface ContextContinuationPayload {
+  packetId: string;
+  continuation: ContextPacket["continuations"][number];
+  sections: ContextPacket["sections"];
+}
+
+export type ContextContinuationSink = (
+  payload: ContextContinuationPayload,
+) => void;
+
 export interface PacketCandidate {
   hit: SearchHit;
   content: string;
@@ -78,6 +88,12 @@ export interface BuildContextPacketInput {
   searchedChannels?: string[];
   requiredActions?: string[];
   recommendedActions?: string[];
+  /**
+   * Receives the exact omitted sections behind each public continuation
+   * handle. The callback is intentionally out-of-band so continuation payloads
+   * never inflate the measured or hashed packet wire representation.
+   */
+  continuationSink?: ContextContinuationSink;
 }
 
 export interface CompactPacketIdentity {
@@ -288,7 +304,9 @@ function compareCandidates(a: PacketCandidate, b: PacketCandidate): number {
   );
 }
 
-function sectionFromCandidate(candidate: PacketCandidate): BaseContextSection {
+export function contextSectionFromCandidate(
+  candidate: PacketCandidate,
+): BaseContextSection {
   const hit = candidate.hit;
   const retrievalChannels = [
     ...new Set(
@@ -431,7 +449,7 @@ function defaultMaxSections(_intent: string): number {
 }
 
 function continuationForCandidates(
-  packetId: string,
+  packetContentKey: string,
   candidates: PacketCandidate[],
   count: (text: string) => number,
   reason: string,
@@ -444,7 +462,7 @@ function continuationForCandidates(
     .join("|");
   return {
     handle: createHash("sha256")
-      .update(`${packetId}:continuation:${key}`)
+      .update(`${packetContentKey}:continuation:${key}`)
       .digest("hex"),
     reason,
     remainingTokens: candidates.reduce(
@@ -586,6 +604,16 @@ export function buildContextPacket(
     channels: [],
     vectorEnabled: false,
   };
+  const retrievalWarnings = Array.isArray(retrievalConfiguration.warnings)
+    ? retrievalConfiguration.warnings.filter(
+        (warning): warning is string =>
+          typeof warning === "string" && warning.length > 0,
+      )
+    : [];
+  const degradedRetrieval =
+    retrievalWarnings.length > 0 ||
+    (typeof retrievalConfiguration.indexStatus === "string" &&
+      retrievalConfiguration.indexStatus !== "CONSISTENT");
   const maxTokens = requestedMaxTokens(input.maxTokens);
   const requiresEvidence = input.intent.toUpperCase() === "SOURCE_VERIFICATION";
   const maxSectionsPerDocument = Number.isFinite(input.maxSectionsPerDocument)
@@ -614,7 +642,10 @@ export function buildContextPacket(
     packetCandidates,
     maxSectionsPerDocument,
   );
-  const omitted: PacketCandidate[] = [];
+  const orderedKeys = new Set(orderedCandidates.map(candidateKey));
+  const omitted: PacketCandidate[] = packetCandidates.filter(
+    (candidate) => !orderedKeys.has(candidateKey(candidate)),
+  );
   const seenCandidates = new Set<string>();
   const sectionsByDocument = new Map<string, number>();
   const selected: Array<{
@@ -680,7 +711,8 @@ export function buildContextPacket(
     const status: ContextPacket["status"] =
       candidateSections.length === 0
         ? "INSUFFICIENT_KNOWLEDGE"
-        : Object.values(indexRevisions).some(
+        : degradedRetrieval ||
+            Object.values(indexRevisions).some(
               (revision) =>
                 revision !== null && revision !== input.corpusRevision,
             )
@@ -691,7 +723,17 @@ export function buildContextPacket(
         ? []
         : [
             continuationForCandidates(
-              packetId,
+              createHash("sha256")
+                .update(
+                  JSON.stringify({
+                    request: input.request,
+                    intent: input.intent,
+                    corpusRevision: input.corpusRevision,
+                    indexRevisions,
+                    retrievalConfiguration,
+                  }),
+                )
+                .digest("hex"),
               omittedCandidates,
               count,
               `${omittedCandidates.length} lower-priority sections exceeded the token budget or document diversity cap.`,
@@ -723,7 +765,6 @@ export function buildContextPacket(
     const packetHash = createHash("sha256")
       .update(
         JSON.stringify({
-          packetId,
           request: input.request,
           intent: input.intent,
           corpusRevision: input.corpusRevision,
@@ -736,7 +777,10 @@ export function buildContextPacket(
           conflicts: packetConflicts,
           requiredActions,
           recommendedActions: recommendations,
-          continuations,
+          continuations: continuations.map(({ reason, remainingTokens }) => ({
+            reason,
+            remainingTokens,
+          })),
           budget: provisionalBudget,
         }),
       )
@@ -768,7 +812,7 @@ export function buildContextPacket(
       omitted.push(candidate);
       continue;
     }
-    const section = sectionFromCandidate(candidate);
+    const section = contextSectionFromCandidate(candidate);
     const tentative = baseEnvelope(
       [...selected.map((entry) => entry.section), section],
       omitted,
@@ -816,6 +860,14 @@ export function buildContextPacket(
         ...final.withHash,
         budget: finalBudget.budget,
       };
+      const continuation = full.continuations[0];
+      if (continuation && omitted.length > 0) {
+        input.continuationSink?.({
+          packetId: full.packetId,
+          continuation,
+          sections: omitted.map(contextSectionFromCandidate),
+        });
+      }
       return full;
     } catch (error) {
       if (
@@ -843,7 +895,11 @@ export function buildContextPacket(
  */
 export function projectContextPacket(
   packet: BuiltContextPacket | ContextPacket,
-  options?: { tokenizer?: Tokenizer; maxTokens?: number },
+  options?: {
+    tokenizer?: Tokenizer;
+    maxTokens?: number;
+    continuationSink?: ContextContinuationSink;
+  },
 ): CompactAgentPacket {
   const { count, metadata } = normalizeTokenizer(options?.tokenizer);
   const maxTokens = Number.isFinite(options?.maxTokens)
@@ -949,6 +1005,18 @@ export function projectContextPacket(
         final.provisionalBudget,
         count,
       );
+      if (omitted.length > 0) {
+        const compactContinuation = continuationForSections(
+          packet.packetId,
+          omitted,
+          count,
+        );
+        options?.continuationSink?.({
+          packetId: packet.packetId,
+          continuation: compactContinuation,
+          sections: [...omitted],
+        });
+      }
       return { ...final.compactBase, budget: finalBudget.budget };
     } catch (error) {
       if (
@@ -982,6 +1050,9 @@ export function buildContextPacketPair(
   const compact = projectContextPacket(full, {
     maxTokens: requestedMaxTokens(input.maxTokens),
     ...(input.tokenizer ? { tokenizer: input.tokenizer } : {}),
+    ...(input.continuationSink
+      ? { continuationSink: input.continuationSink }
+      : {}),
   });
   return { full, compact };
 }

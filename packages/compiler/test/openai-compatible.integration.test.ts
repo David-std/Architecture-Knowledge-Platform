@@ -3,7 +3,9 @@ import { createServer, type IncomingMessage, type Server } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   KnowledgeCompilerInput,
+  OpenAICompatibleKnowledgeCompiler,
   createConfiguredKnowledgeCompiler,
+  deriveKnowledgePath,
 } from "../src/index.js";
 
 const SOURCE_ID = "11111111-1111-4111-8111-111111111111";
@@ -153,7 +155,13 @@ describe("OpenAI-compatible compiler HTTP integration", () => {
         contradictions: [],
         proposedFileChanges: [
           {
-            path: "20-knowledge/generated/rule/cache-invalidation.md",
+            candidateId: "cache-rule-1",
+            path: deriveKnowledgePath({
+              title:
+                "Invalidate cached material when the authoritative revision changes.",
+              kind: "rule",
+              schemaProfile: boundedInput.schemaProfile,
+            }),
             operation: "CREATE",
             content:
               "---\nid: CACHE-RULE-1\ntype: rule\nstatus: draft\n---\n\n# Cache invalidation\n\nInvalidate cached material when the authoritative revision changes.\n",
@@ -210,5 +218,20 @@ describe("OpenAI-compatible compiler HTTP integration", () => {
       proposedAction: "CREATE",
     });
     expect(result.proposedFileChanges[0]?.evidenceIds).toEqual([EVIDENCE_ID]);
+  });
+
+  it("fails closed before parsing an oversized provider response", async () => {
+    const fetchMock = async () =>
+      new Response("x".repeat(1_000_001), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    const bounded = new OpenAICompatibleKnowledgeCompiler(
+      { baseUrl: "http://127.0.0.1:1/v1", model: "bounded", maxRetries: 0 },
+      fetchMock as typeof fetch,
+    );
+    await expect(bounded.compile(input())).rejects.toThrow(
+      /PROVIDER_RESPONSE_TOO_LARGE/,
+    );
   });
 });

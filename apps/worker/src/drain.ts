@@ -15,10 +15,6 @@ const INGEST_WORK_STATES = [
   "PLANNED",
   "DRAFTED",
   "VALIDATING",
-  "AUTO_APPROVED",
-  "MERGED",
-  "INDEXED",
-  "EVALUATED",
 ] as const;
 
 // Keep the default below the API integration subprocess timeout while still
