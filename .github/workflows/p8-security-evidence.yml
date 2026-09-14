@@ -38,10 +38,38 @@ jobs:
             packages/compiler/test/compiler-contract.test.ts
       - run: pnpm check
       - name: Run focused TypeScript security regressions
+        shell: bash
         run: |
+          set -euo pipefail
           pnpm --filter @akp/validation exec vitest run test/security.test.ts
           pnpm --filter @akp/api exec vitest run test/p8-security-boundaries.test.ts
-          pnpm --filter @akp/worker exec vitest run test/knowledge-compilation.test.ts
+          cat > apps/worker/vitest.p8.config.ts <<'EOF'
+          import path from "node:path";
+          import { fileURLToPath } from "node:url";
+          import { defineConfig } from "vitest/config";
+
+          const directory = path.dirname(fileURLToPath(import.meta.url));
+
+          export default defineConfig({
+            resolve: {
+              alias: {
+                "@akp/postgres": path.resolve(
+                  directory,
+                  "../../packages/postgres/src/index.ts",
+                ),
+              },
+            },
+            test: {
+              include: ["test/knowledge-compilation.test.ts"],
+              fileParallelism: false,
+              maxWorkers: 1,
+              testTimeout: 30_000,
+              hookTimeout: 30_000,
+            },
+          });
+          EOF
+          trap 'rm -f apps/worker/vitest.p8.config.ts' EXIT
+          pnpm --filter @akp/worker exec vitest run --config vitest.p8.config.ts
           pnpm --filter @akp/compiler exec vitest run test/compiler-contract.test.ts
       - uses: actions/setup-python@v7
         with: { python-version: "3.12" }
