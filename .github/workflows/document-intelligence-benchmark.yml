@@ -1,0 +1,124 @@
+name: document-intelligence-benchmark
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  binary-fidelity-and-resources:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      AKP_DI_BENCHMARK_DEVICE: CPU
+      CUDA_VISIBLE_DEVICES: ""
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with: { python-version: "3.12" }
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          version: 0.12.7
+          enable-cache: true
+          cache-dependency-glob: apps/extractor/uv.lock
+      - name: Install executable local document tools
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends tesseract-ocr poppler-utils
+          tesseract --version | head -n 1
+          pdftoppm -v 2>&1 | head -n 1
+      - name: Sync locked Docling benchmark profile
+        working-directory: apps/extractor
+        run: uv sync --locked --extra docling
+      - name: Execute binary fidelity and resource matrix
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p reports/ci
+          apps/extractor/.venv/bin/python scripts/document_intelligence_binary_benchmark.py \
+            --report reports/ci/document-intelligence-binary-benchmark.json \
+            --repeats 1 \
+            2>&1 | tee reports/ci/document-intelligence-binary-benchmark.log
+      - name: Validate benchmark evidence boundaries
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report_path = Path("reports/ci/document-intelligence-binary-benchmark.json")
+          report = json.loads(report_path.read_text(encoding="utf-8"))
+          if report.get("status") != "EXECUTED":
+              raise SystemExit(f"benchmark status is {report.get('status')!r}, expected EXECUTED")
+          if report.get("coverageStatus") != "PARTIALLY_PROVEN":
+              raise SystemExit("binary fixture evidence must retain its PARTIALLY_PROVEN boundary")
+          if report.get("selection", {}).get("status") != "NOT_SELECTED":
+              raise SystemExit("benchmark must not auto-select a document-intelligence provider")
+
+          required = {
+              "simple-pdf",
+              "two-column-pdf",
+              "table-heavy-pdf",
+              "formula-scientific-pdf",
+              "scanned-raster-pdf",
+              "structured-docx-binary",
+              "slide-deck-pptx-binary",
+              "table-workbook-xlsx-binary",
+              "diagram-image-binary",
+          }
+          evidence = {item["fixture"]: item for item in report.get("fixtureEvidence", [])}
+          missing = sorted(required - evidence.keys())
+          if missing:
+              raise SystemExit(f"missing binary fixtures: {missing}")
+          for fixture_id in sorted(required):
+              item = evidence[fixture_id]
+              if not item.get("source_hash") or int(item.get("source_size_bytes", 0)) <= 0:
+                  raise SystemExit(f"fixture lacks hash/size evidence: {fixture_id}")
+              if item.get("origin") != "GENERATED_REDISTRIBUTABLE_BINARY":
+                  raise SystemExit(f"fixture origin is not explicit: {fixture_id}")
+
+          docling = [row for row in report.get("fixtures", []) if row.get("adapter") == "docling"]
+          if len(docling) != len(required):
+              raise SystemExit(f"Docling matrix has {len(docling)} rows, expected {len(required)}")
+          skipped = [row["fixture"] for row in docling if row.get("status") == "SKIPPED"]
+          if skipped:
+              raise SystemExit(f"configured Docling unexpectedly skipped supported binary fixtures: {skipped}")
+          executed = [row for row in docling if row.get("status") == "EXECUTED"]
+          if not executed:
+              raise SystemExit("Docling did not execute any binary fixture")
+          if not any(row.get("fixture") == "scanned-raster-pdf" for row in docling):
+              raise SystemExit("raster-only PDF was not attempted by Docling")
+          if not any(
+              row.get("status") == "EXECUTED"
+              and row.get("media_type", "").startswith("application/vnd.openxmlformats")
+              for row in docling
+          ):
+              raise SystemExit("Docling did not execute any Office binary fixture")
+          for row in executed:
+              metrics = row.get("metrics", {})
+              if not isinstance(metrics.get("memory_peak_mb"), (int, float)):
+                  raise SystemExit(f"missing process RSS evidence for {row['fixture']}")
+              if metrics.get("execution_device") != "CPU":
+                  raise SystemExit(f"unexpected execution device for {row['fixture']}")
+
+          summary = report.get("adapterSummary", {}).get("docling", {})
+          if summary.get("failure_rate") is None:
+              raise SystemExit("Docling failure rate was not recorded")
+          print(json.dumps({
+              "doclingExecuted": summary.get("executed"),
+              "doclingFailed": summary.get("failed"),
+              "doclingFailureRate": summary.get("failure_rate"),
+              "selection": report["selection"]["status"],
+              "coverage": report["coverageStatus"],
+          }, indent=2))
+          PY
+      - name: Upload document-intelligence evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: document-intelligence-benchmark-${{ github.run_id }}
+          path: reports/ci
+          if-no-files-found: error
+          retention-days: 14
