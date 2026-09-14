@@ -110,18 +110,9 @@ try {
 
   New-Item -ItemType Directory -Path $reportRoot -Force | Out-Null
   $vaultKey = "p8-restore-$([guid]::NewGuid().ToString('N'))"
-  $importOutput = @(
-    Invoke-Checked "rebuild searchable projections from restored managed repository" {
-      pnpm akp vault import --vault-path $temporaryRoot --space-id $SpaceId --vault-key $vaultKey --read-only --report-dir $reportRoot
-    }
-  )
-  $importJson = ($importOutput | Out-String).Trim() | ConvertFrom-Json
-  if ($importJson.status -notin @("COMPLETED", "COMPLETED_WITH_WARNINGS")) {
-    throw "Restored managed repository import did not complete."
-  }
-  if ([int]$importJson.metrics.markdownFiles -lt 1) {
-    throw "Restored managed repository import found no Markdown files."
-  }
+  Invoke-Checked "rebuild searchable projections from restored managed repository" {
+    pnpm akp vault import --vault-path $temporaryRoot --space-id $SpaceId --vault-key $vaultKey --read-only --report-dir $reportRoot
+  } | Out-Null
 
   $safeVaultKey = $vaultKey.Replace("'", "''")
   $vaultId = ((Invoke-Checked "resolve rebuilt restored vault" {
@@ -129,6 +120,13 @@ try {
   }) | Out-String).Trim()
   if ($vaultId -notmatch '^[0-9a-fA-F-]{36}$') {
     throw "Could not resolve the rebuilt restored vault."
+  }
+
+  $importedDocuments = [int](((Invoke-Checked "verify rebuilt knowledge documents" {
+    docker exec $PostgresContainer psql -U akp -d $PostgresDatabase -At -v ON_ERROR_STOP=1 -c "select count(*) from knowledge_documents where vault_id='$vaultId' and lifecycle='ACTIVE';"
+  }) | Out-String).Trim())
+  if ($importedDocuments -lt 1) {
+    throw "Restored managed repository import produced no active knowledge documents."
   }
 
   $indexedUnits = [int](((Invoke-Checked "verify rebuilt knowledge units" {
@@ -151,6 +149,7 @@ try {
     restoredMainRevision = $actualRevision
     expectedFiles = $expectedFiles.Count
     restoredFiles = $actualFiles.Count
+    importedDocuments = $importedDocuments
     indexedUnits = $indexedUnits
     searchableUnits = $searchableUnits
   } | ConvertTo-Json)
