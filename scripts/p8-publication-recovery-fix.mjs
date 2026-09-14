@@ -35,27 +35,11 @@ source = replaceOnce(
   `async function finalizePublicationTransaction(\n  client: PublicationClient,`,
   "narrow publication client",
 );
+source = replaceOnce(
+  source,
+  `          const recoveryStatus = compensationSucceeded\n            ? "CHANGES_REQUESTED"\n            : "PUBLICATION_RECOVERY_REQUIRED";\n          await db.pool.query(\n            \`\n            update reviews\n               set status=$2,\n                   merged_commit=case when $2='CHANGES_REQUESTED' then null else merged_commit end,\n                   base_commit=case\n                     when $2='CHANGES_REQUESTED' and $4 is not null then $4\n                     else base_commit\n                   end,\n                   decision_by=case when $2='CHANGES_REQUESTED' then null else decision_by end,\n                   decision_at=case when $2='CHANGES_REQUESTED' then null else decision_at end,\n                   decision_reason=$3,updated_at=now()\n             where id=$1 and status='PUBLISHING'\n            \`,\n            [\n              request.params.id,\n              recoveryStatus,\n              "Publication failed; inspect the Error Book before retrying.",\n              compensatingRevision,\n            ],\n          );`,
+  `          if (compensationSucceeded) {\n            await db.pool.query(\n              \`\n              update reviews\n                 set status='CHANGES_REQUESTED',merged_commit=null,\n                     base_commit=coalesce($2,base_commit),\n                     decision_by=null,decision_at=null,\n                     decision_reason=$3,updated_at=now()\n               where id=$1 and status='PUBLISHING'\n              \`,\n              [\n                request.params.id,\n                compensatingRevision,\n                "Publication failed safely; retry from the compensated Git revision.",\n              ],\n            );\n          } else {\n            await db.pool.query(\n              \`\n              update reviews\n                 set status='PUBLICATION_RECOVERY_REQUIRED',\n                     decision_reason=$2,updated_at=now()\n               where id=$1 and status='PUBLISHING'\n              \`,\n              [\n                request.params.id,\n                "Publication state is ambiguous; manual reconciliation is required.",\n              ],\n            );\n          }`,
+  "explicit publication recovery transition",
+);
 await writeFile(file, source, "utf8");
-
-const testFile = "apps/api/test/review-publication.integration.test.ts";
-let test = await readFile(testFile, "utf8");
-test = replaceOnce(
-  test,
-  `    expect(failed.statusCode).toBe(500);\n    expect(failed.json()).toMatchObject({ code: "PUBLICATION_FAILED" });`,
-  `    console.error("P8_RECOVERY_DIAG_DB_FAILURE", failed.body);\n    expect(failed.statusCode).toBe(500);\n    expect(failed.json()).toMatchObject({ code: "PUBLICATION_FAILED" });`,
-  "db failure response diagnostics",
-);
-test = replaceOnce(
-  test,
-  `    expect(response.statusCode).toBe(409);\n    expect(response.json()).toMatchObject({ code: "PUBLICATION_CONFLICT" });`,
-  `    console.error("P8_RECOVERY_DIAG_MAIN_MOVED", response.body);\n    expect(response.statusCode).toBe(409);\n    expect(response.json()).toMatchObject({ code: "PUBLICATION_CONFLICT" });`,
-  "main moved response diagnostics",
-);
-test = replaceOnce(
-  test,
-  `      expect(response.statusCode).toBe(409);\n      expect(response.json()).toEqual({ code: "PUBLICATION_CONFLICT" });`,
-  `      console.error("P8_RECOVERY_DIAG_DRAFT_MOVED", response.body);\n      expect(response.statusCode).toBe(409);\n      expect(response.json()).toEqual({ code: "PUBLICATION_CONFLICT" });`,
-  "draft moved response diagnostics",
-);
-await writeFile(testFile, test, "utf8");
-console.log("P8.3 publication recovery compile fix and diagnostics applied");
+console.log("P8.3 publication recovery fixes applied");
