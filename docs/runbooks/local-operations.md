@@ -58,22 +58,26 @@ stores session/CSRF hashes plus the effective scope snapshot and intersects that
 snapshot with current memberships on every request. Session writes require
 `X-CSRF-Token`. Revoke with `POST /v1/auth/session/revoke`.
 
-## Import and inspect the external vault
+## Import and inspect an external vault
+
+The operator supplies the vault path. No personal corpus or workstation path is
+a platform default.
 
 ```powershell
+$env:AKP_VAULT_PATH = 'D:\Knowledge\my-vault'
+
 pnpm akp vault import `
-  --vault-path C:\Users\david\Documents\Architecture-Knowledge-System `
+  --vault-path $env:AKP_VAULT_PATH `
   --read-only `
   --report-dir reports\migration
+
 pnpm akp vault status `
-  --vault-path C:\Users\david\Documents\Architecture-Knowledge-System
+  --vault-path $env:AKP_VAULT_PATH
 ```
 
-The migration report records one historical import and its warnings. Treat its
-file, document and relation counts as dated provenance, not as current product
-requirements. The bootstrap verifier checks schema, isolation and lineage
-regardless of corpus size; populated thresholds are opt-in. Do not convert
-vault warnings into invented targets or agent instructions.
+On other platforms use the equivalent `<path-to-your-vault>`. Import is
+read-only. Treat import counts and warnings as observations about that corpus,
+not product invariants, and never invent targets for unresolved links.
 
 ## Submit and monitor a source
 
@@ -86,14 +90,17 @@ expired lease is reclaimable; a live worker renews its lease every third of the
 lease interval. Cancel/retry through the API rather than editing database job
 state.
 
-Check extractor capability truth at:
+Check extractor capability truth at runtime:
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8090/v1/capabilities
 ```
 
-Text/Markdown, PDF, captured HTML, image metadata, DOCX and PPTX are configured.
-OCR/vision, audio and video return `CAPABILITY_NOT_CONFIGURED`.
+Provider availability is configuration-dependent. Deterministic parsing remains
+a fallback; optional structured and OCR providers must report explicit
+availability or degradation rather than fabricated results. The maintained CI
+exercises real Docling native structure and a raster-only OCR path separately
+from the default extractor configuration.
 
 ## Search and build bounded context
 
@@ -103,10 +110,10 @@ pnpm akp search 'hexagonal architecture boundary'
 pnpm akp context 'choose architecture for volatile integrations'
 ```
 
-The 19-case synthetic and 13-case curated-fixture runners do not select a
-production default. Inspect the packet revision, channels, selection reasons,
-citations, conflicts and gaps before using it as authority. Follow continuation
-handles rather than loading the whole vault.
+The synthetic and curated-fixture runners do not select a production default.
+Inspect the packet revision, channels, selection reasons, citations, conflicts
+and gaps before using it as authority. Follow continuation handles rather than
+loading the whole vault.
 
 ## Rebuild derived indexes
 
@@ -132,8 +139,8 @@ or omitted. To import the configured vault before rebuilding, set
 
 The response reports `status`, `imports`, `relationCount`, `projection` and
 `lint`. Read the resulting lexical/vector/graph/context-pack revision markers
-separately with `GET /v1/indexes`; vector-disabled degradation is expected until
-a larger benchmark justifies activation.
+separately with `GET /v1/indexes`; optional vector retrieval remains dependent
+on a compatible configured provider and a consistent active generation.
 
 ## Schema, lint, Error Book and audit
 
@@ -155,20 +162,17 @@ result. Administrators inspect space-scoped events at `/admin/audit` or
 ## Backup and isolated restore
 
 ```powershell
-$env:AKP_MANAGED_REPO = 'C:\path\to\managed-knowledge'
+$env:AKP_MANAGED_REPO = 'D:\AKP\managed-knowledge'
 & .\scripts\backup.ps1 -OutputDirectory backups\release-candidate
 & .\scripts\restore-smoke.ps1 -BackupDirectory backups\release-candidate
 ```
 
-The set contains a PostgreSQL custom dump, MinIO data archive, managed Git
-bundle when configured and non-secret configuration metadata. Each file is
-SHA-256 listed in `manifest.json`. Restore smoke uses isolated resources and
-never overwrites the active environment.
-
-The 2026-08-28 v3 smoke restored all 18 migrations, one fixture document and 15
-MinIO files into isolated resources. A second backup/restore of a newly
-migrated empty database restored zero documents successfully. These are
-fixture-run counts, not claims about an external vault.
+Use an operator-supplied managed-repository path. The backup set contains a
+PostgreSQL custom dump, MinIO data archive, managed Git bundle when configured
+and non-secret configuration metadata. Each file is SHA-256 listed in
+`manifest.json`. Restore smoke uses isolated resources and never overwrites the
+active environment. Treat observed fixture counts as run evidence, not as
+product requirements.
 
 ## Final release gate
 
@@ -178,6 +182,7 @@ pnpm audit --audit-level high
 pnpm security:secrets
 pnpm contracts:validate
 pnpm docs:validate
+pnpm hygiene:validate
 pnpm format:check
 pnpm check
 pnpm build
@@ -189,22 +194,22 @@ pnpm benchmark:retrieval:curated
 pnpm benchmark:scale -- --targets 1000,10000,50000,100000 --iterations 3
 
 Push-Location apps/extractor
-python -m ruff check --no-cache .
-python -m mypy app
-python -m pytest -p no:cacheprovider
+uv sync --locked
+uv run --locked ruff check --no-cache .
+uv run --locked mypy app
+uv run --locked pytest -p no:cacheprovider
 Pop-Location
 
 docker compose config --quiet
 git diff --check
 ```
 
-The current integration suite covers security/governance and
-review-publication; record its exact final count together with the clean
-formatting gate before committing or tagging a new baseline.
+Record the clean-checkout CI result together with any optional provider evidence
+used for release claims. Broad benchmark results belong to final validation and
+must not replace focused correctness, failure or authorization tests.
 
-## Open the vault in Obsidian
+## Open an imported vault in Obsidian
 
-In Obsidian choose **Open folder as vault**, select
-`C:\Users\david\Documents\Architecture-Knowledge-System`, then open its
-`README.md`. Platform import remains read-only. Do not copy runtime indexes,
-jobs, secrets or raw object storage into that folder.
+In Obsidian choose **Open folder as vault** and select the same operator-provided
+`<path-to-your-vault>` used for import. Platform import remains read-only. Do not
+copy runtime indexes, jobs, secrets or raw object storage into that folder.
