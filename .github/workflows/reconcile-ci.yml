@@ -1,0 +1,72 @@
+name: Reconcile CI coverage
+
+on:
+  push:
+    branches:
+      - work/product-completion-unified
+
+permissions:
+  contents: write
+
+jobs:
+  reconcile-ci:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: work/product-completion-unified
+          fetch-depth: 0
+      - name: Merge durable document OCR proof into product CI
+        shell: python
+        run: |
+          from pathlib import Path
+          import subprocess
+
+          target_path = Path(".github/workflows/ci.yml")
+          target = target_path.read_text(encoding="utf-8")
+          if "\n  document-intelligence-ocr-e2e:\n" in target:
+              raise SystemExit("document intelligence OCR job already exists")
+
+          source = subprocess.check_output(
+              ["git", "show", "43280e7429a72c583bc32c657f7d39aabd37f398:.github/workflows/ci.yml"],
+              text=True,
+          )
+          marker = "\n  p5-ocr-e2e:\n"
+          if source.count(marker) != 1:
+              raise SystemExit("expected exactly one durable OCR job in proven core workflow")
+          block = marker + source.split(marker, 1)[1]
+          replacements = {
+              "\n  p5-ocr-e2e:\n": "\n  document-intelligence-ocr-e2e:\n",
+              "/tmp/akp-p5-ocr": "/tmp/akp-document-ocr",
+              "P5 OCR E2E": "Document OCR E2E",
+              "P5 scanned OCR proof": "Scanned OCR proof",
+              "p5-ocr-": "document-ocr-",
+              ".p5-ocr-e2e.runtime.ts": ".document-ocr-e2e.runtime.ts",
+              "p5-extractor.log": "document-ocr-extractor.log",
+              "p5-extractor.pid": "document-ocr-extractor.pid",
+              "p5-docker-compose-ps.txt": "document-ocr-docker-compose-ps.txt",
+              "p5-docker-compose.log": "document-ocr-docker-compose.log",
+              "p5-ingest-events.csv": "document-ocr-ingest-events.csv",
+              "p5-ocr-e2e.json": "document-ocr-e2e.json",
+              "p5-ocr-e2e-${{ github.run_id }}": "document-ocr-e2e-${{ github.run_id }}",
+              "Capture P5 OCR diagnostics": "Capture document OCR diagnostics",
+              "Upload P5 OCR evidence": "Upload document OCR evidence",
+              "Stop P5 services": "Stop document OCR services",
+          }
+          for old, new in replacements.items():
+              block = block.replace(old, new)
+          if "p5" in block.lower():
+              raise SystemExit("phase-coded P5 residue remains in reconciled OCR job")
+          target_path.write_text(target.rstrip() + "\n" + block.lstrip("\n"), encoding="utf-8")
+      - name: Remove reconciliation workflow
+        run: rm .github/workflows/reconcile-ci.yml
+      - name: Commit CI union
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/ci.yml .github/workflows/reconcile-ci.yml
+          git diff --cached --check
+          git diff --cached --quiet && exit 0
+          git commit -m "ci: preserve durable document OCR coverage"
+          git push origin HEAD:work/product-completion-unified
