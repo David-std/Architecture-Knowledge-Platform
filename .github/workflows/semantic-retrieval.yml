@@ -8,7 +8,7 @@ on:
 jobs:
   real-multilingual-semantic-retrieval:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     env:
       DATABASE_URL: postgres://akp:akp@localhost:55432/akp
       AKP_RUN_REAL_MODEL_TESTS: "1"
@@ -37,6 +37,13 @@ jobs:
             --reporter=default --reporter=junit \
             --outputFile.junit=../../reports/ci/semantic-retrieval-junit.xml \
             2>&1 | tee reports/ci/semantic-retrieval.log
+      - name: Execute retrieval matrix through the real runtime pipeline
+        shell: bash
+        run: |
+          set -o pipefail
+          AKP_RUNTIME_RETRIEVAL_REPORT=reports/ci/runtime-retrieval-benchmark.json \
+            pnpm benchmark:retrieval:runtime \
+            2>&1 | tee reports/ci/runtime-retrieval-benchmark.log
       - name: Capture semantic retrieval diagnostics
         if: always()
         shell: bash
