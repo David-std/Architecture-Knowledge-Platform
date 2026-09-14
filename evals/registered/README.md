@@ -1,7 +1,7 @@
-# Registered evaluation corpora
+# Registered retrieval datasets
 
-This directory contains small, versioned corpora whose source material is part of the product repository and can be redistributed with it. They are used to exercise the production retrieval path with real source text without treating synthetic fixtures as real-corpus evidence.
+Versioned, redistributable datasets used to evaluate retrieval against shipped product documentation live here.
 
-`public-product-corpus.json` registers repository documentation by relative path. The benchmark hashes those source files at execution time, loads the pinned multilingual embedding model, persists vectors in PostgreSQL/pgvector, and queries through the production retrieval/RRF implementation. `public-product-corpus-cases.jsonl` contains held-out labelled questions.
+`public-product-corpus.json` defines the source-document set and vault grouping. `public-product-corpus-cases.jsonl` defines held-out labelled queries and expected evidence.
 
-This corpus is intentionally limited to the Architecture Knowledge Platform documentation. Results measure this corpus only: they do not establish quality on private customer vaults, production traffic, extraction/chunking fidelity, or domain-general superiority. A production retrieval default must therefore remain a separate decision with explicit evidence and guardrails.
+Each evaluation records source hashes, model revision, retrieval configuration, runtime versions, and evidence level so results remain reproducible. This dataset measures retrieval quality for the public documentation corpus only; it does not represent customer vaults, private corpora, or production traffic.
