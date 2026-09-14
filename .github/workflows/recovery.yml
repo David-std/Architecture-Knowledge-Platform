@@ -1,0 +1,82 @@
+name: recovery
+
+on:
+  pull_request:
+
+jobs:
+  managed-git-restore:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgres://akp:akp@localhost:55432/akp
+      AKP_API_TOKEN: akp-ci-integration-token-not-for-production
+      AKP_API_TOKEN_SCOPES: >-
+        {"spaces":[{"spaceId":"00000000-0000-0000-0000-000000000003","pathPrefix":null,"permissions":["knowledge:read","source:read","source:write","knowledge:propose","knowledge:review","eval:run","admin"]}]}
+      AKP_INGEST_ROOTS: ${{ github.workspace }}/test/fixtures
+      AKP_PROJECT_ROOTS: ${{ github.workspace }}
+      AKP_MANAGED_REPO: /tmp/akp-managed-knowledge-recovery
+      AKP_EXTRACTOR_TOKEN: akp-ci-extractor-token-not-for-production
+      AKP_RAW_SECRET_KEY: akp-ci-minio-secret-not-for-production
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - run: docker compose up -d --wait postgres minio
+      - name: Create disposable managed repository with a searchable restore probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$AKP_MANAGED_REPO"
+          git init -b main "$AKP_MANAGED_REPO"
+          git -C "$AKP_MANAGED_REPO" config user.name "AKP Recovery CI"
+          git -C "$AKP_MANAGED_REPO" config user.email "akp-recovery-ci@localhost"
+          mkdir -p "$AKP_MANAGED_REPO/managed"
+          cat > "$AKP_MANAGED_REPO/managed/p8-restore-probe.md" <<'EOF'
+          ---
+          id: P8-RESTORE-PROBE
+          title: P8 Restore Probe
+          type: note
+          status: active
+          ---
+
+          This restore probe must become searchable after the managed Git bundle is restored into a new repository.
+          EOF
+          git -C "$AKP_MANAGED_REPO" add --all
+          git -C "$AKP_MANAGED_REPO" commit -m "test: seed managed restore probe"
+      - run: pnpm db:migrate
+      - name: Create complete disposable recovery backup
+        shell: pwsh
+        run: >-
+          ./scripts/backup.ps1
+          -OutputDirectory backups/ci-recovery
+          -ManagedRepository $env:AKP_MANAGED_REPO
+      - name: Verify PostgreSQL, MinIO and baseline Git restore smoke
+        shell: pwsh
+        run: >-
+          ./scripts/restore-smoke.ps1
+          -BackupDirectory backups/ci-recovery
+          -ManagedRepository $env:AKP_MANAGED_REPO
+      - name: Prove managed Git commit, files and searchable reindex after restore
+        shell: pwsh
+        run: >-
+          ./scripts/verify-managed-git-restore.ps1
+          -BackupDirectory backups/ci-recovery
+          -SourceManagedRepository $env:AKP_MANAGED_REPO
+          -SpaceId 00000000-0000-0000-0000-000000000003
+      - name: Upload recovery diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: recovery-diagnostics-${{ github.run_id }}
+          path: |
+            backups/ci-recovery/manifest.json
+            reports/migration
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Stop disposable recovery services
+        if: always()
+        run: docker compose down -v --remove-orphans
