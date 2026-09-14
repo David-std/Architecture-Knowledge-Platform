@@ -11,7 +11,6 @@ import {
   createConfiguredEmbeddingProvider,
   parseKnowledgeUnits,
 } from "@akp/retrieval";
-import { withSpan } from "@akp/observability";
 import { buildEmbeddingIndex } from "./embedding-index.js";
 
 export * from "./embedding-generation.js";
@@ -19,7 +18,7 @@ export * from "./embedding-index.js";
 
 export interface ManagedChange {
   path: string;
-  operation?: "CREATE" | "UPDATE" | "DELETE";
+  operation?: "CREATE" | "UPDATE";
 }
 
 export interface SynchronizeManagedPathsOptions {
@@ -226,14 +225,7 @@ async function synchronizeManagedPathsCore(
     await client.query("begin");
     for (const change of options.changes) {
       const managedPath = normalizeManagedPath(change.path);
-      // A durable tombstone is authoritative. Do not rehydrate a deleted
-      // path merely because a physical compatibility layout still exposes
-      // bytes at the same name. CREATE/UPDATE continue to derive state from
-      // the canonical Git revision.
-      const raw =
-        change.operation === "DELETE"
-          ? null
-          : await readManagedFile(store, options.revision, managedPath);
+      const raw = await readManagedFile(store, options.revision, managedPath);
       if (raw === null) {
         const tombstoned = await client.query<{ id: string }>(
           `
@@ -727,6 +719,36 @@ async function currentActiveVectorRevision(
   return result.rows[0]?.corpus_revision ?? null;
 }
 
+/**
+ * Warnings that record a declared configuration rather than an index defect. While
+ * the vector channel stays off pending the benchmark decision, its missing
+ * generation is the configured posture, not a broken index.
+ */
+const CONFIGURED_ABSENCE_WARNINGS = new Set([
+  "VECTOR_DISABLED_PENDING_BENCHMARK",
+]);
+
+/**
+ * Lexical, graph and context-pack revisions are written at `corpusRevision` by the
+ * statement below, so the served channels are consistent by construction. Vector is
+ * the only channel that can lag, and it counts against consistency only when the
+ * deployment actually serves it — otherwise every answer would be reported degraded
+ * and the signal would carry no information.
+ */
+export function vaultIndexRevisionStatus(
+  corpusRevision: string,
+  vectorRevision: string | null,
+  warnings: readonly string[],
+): "CONSISTENT" | "DEGRADED" {
+  if (vectorRevision === corpusRevision && warnings.length === 0) {
+    return "CONSISTENT";
+  }
+  return warnings.length > 0 &&
+    warnings.every((warning) => CONFIGURED_ABSENCE_WARNINGS.has(warning))
+    ? "CONSISTENT"
+    : "DEGRADED";
+}
+
 async function markVaultIndexRevision(
   db: Postgres,
   options: SynchronizeManagedPathsOptions,
@@ -755,9 +777,7 @@ async function markVaultIndexRevision(
       options.vaultId,
       corpusRevision,
       vectorRevision,
-      vectorRevision === corpusRevision && warnings.length === 0
-        ? "CONSISTENT"
-        : "DEGRADED",
+      vaultIndexRevisionStatus(corpusRevision, vectorRevision, warnings),
       JSON.stringify([...new Set(warnings)]),
     ],
   );
@@ -970,21 +990,13 @@ export async function incrementalIndex(
     };
     if (provider) {
       try {
-        const built = await withSpan(
-          "index.embedding",
-          {
-            "akp.vector.enabled": vectorEnabled,
-            "akp.embedding.provider": provider.descriptor.provider,
-          },
-          () =>
-            buildEmbeddingIndex(db, {
-              spaceId: options.spaceId,
-              vaultId: options.vaultId,
-              corpusRevision,
-              provider,
-              activate: vectorEnabled,
-            }),
-        );
+        const built = await buildEmbeddingIndex(db, {
+          spaceId: options.spaceId,
+          vaultId: options.vaultId,
+          corpusRevision,
+          provider,
+          activate: vectorEnabled,
+        });
         embeddingStats = {
           embeddingsReused: built.embeddingsReused,
           embeddingsCreated: built.embeddingsCreated,

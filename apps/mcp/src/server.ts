@@ -1,11 +1,11 @@
-import "./instrumentation.js";
 import { config } from "dotenv";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { SearchRequest } from "@akp/contracts";
+import { McpContextRequest } from "./context-request.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { shutdownOpenTelemetry, withSpan } from "@akp/observability";
 
 config({
   path: path.resolve(
@@ -19,23 +19,19 @@ const token = process.env.AKP_API_TOKEN;
 if (!token) throw new Error("AKP_API_TOKEN is required for MCP.");
 
 async function api(route: string, init?: RequestInit): Promise<unknown> {
-  const routeTemplate =
-    route.split("?")[0]?.replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, ":id") ?? "/";
-  return withSpan("mcp.tool", { "akp.mcp.route": routeTemplate }, async () => {
-    const response = await fetch(`${apiBase}${route}`, {
-      ...init,
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${token}`,
-        ...(init?.headers ?? {}),
-      },
-    });
-    const body = await response.json();
-    if (!response.ok) {
-      throw new Error(`AKP API ${response.status}: ${JSON.stringify(body)}`);
-    }
-    return body;
+  const response = await fetch(`${apiBase}${route}`, {
+    ...init,
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${token}`,
+      ...(init?.headers ?? {}),
+    },
   });
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(`AKP API ${response.status}: ${JSON.stringify(body)}`);
+  }
+  return body;
 }
 
 async function writeApi(
@@ -61,18 +57,6 @@ function compactTextResult(value: unknown) {
     content: [{ type: "text" as const, text: JSON.stringify(value) }],
   };
 }
-
-const queryIntent = z.enum([
-  "EXACT_LOOKUP",
-  "CONCEPTUAL",
-  "COMPARISON",
-  "WORKFLOW_EXECUTION",
-  "SOURCE_VERIFICATION",
-  "PROJECT_CODE",
-  "GLOBAL_SYNTHESIS",
-  "IMPACT_ANALYSIS",
-  "NO_RETRIEVAL_REQUIRED",
-]);
 
 export function createMcpServer(): McpServer {
   const server = new McpServer({
@@ -118,25 +102,7 @@ export function createMcpServer(): McpServer {
     {
       description:
         "Search approved knowledge using exact, lexical and graph channels.",
-      inputSchema: {
-        query: z.string().min(1),
-        intent: queryIntent.optional(),
-        spaceId: z.string().uuid(),
-        vaultIds: z.array(z.string().uuid()).min(1).max(20),
-        federated: z.boolean().default(false),
-        limit: z.number().int().min(1).max(50).default(10),
-        minimumTrust: z
-          .enum([
-            "UNVERIFIED",
-            "MACHINE_SUPPORTED",
-            "HUMAN_REVIEWED",
-            "ATTESTED",
-          ])
-          .default("MACHINE_SUPPORTED"),
-        mode: z
-          .enum(["COMPILED_ONLY", "SOURCE_BACKED", "RAW_ONLY", "PROJECT_CODE"])
-          .default("SOURCE_BACKED"),
-      },
+      inputSchema: SearchRequest.shape,
     },
     async (input) =>
       textResult(
@@ -152,21 +118,7 @@ export function createMcpServer(): McpServer {
     {
       description:
         "Build a token-budgeted, revisioned context packet with citations and gaps.",
-      inputSchema: {
-        query: z.string().min(1),
-        spaceId: z.string().uuid(),
-        vaultIds: z.array(z.string().uuid()).min(1).max(20),
-        federated: z.boolean().default(false),
-        intent: queryIntent.default("CONCEPTUAL"),
-        maxTokens: z.number().int().min(256).max(32000).default(6000),
-        packetMode: z
-          .enum(["FULL_CONTEXT_PACKET", "COMPACT_AGENT_PACKET"])
-          .default("COMPACT_AGENT_PACKET"),
-        limit: z.number().int().min(1).max(50).default(20),
-        mode: z
-          .enum(["COMPILED_ONLY", "SOURCE_BACKED", "RAW_ONLY", "PROJECT_CODE"])
-          .default("SOURCE_BACKED"),
-      },
+      inputSchema: McpContextRequest.shape,
     },
     async (input) =>
       compactTextResult(
@@ -206,6 +158,39 @@ export function createMcpServer(): McpServer {
     },
     async ({ id }) =>
       textResult(await api(`/v1/context-packs/${encodeURIComponent(id)}`)),
+  );
+
+  server.registerTool(
+    "akp_get_generated_context_packet",
+    {
+      description:
+        "Read a generated full ContextPacket by packet ID with current authorization and revision checks.",
+      inputSchema: { packetId: z.string().uuid() },
+    },
+    async ({ packetId }) =>
+      textResult(
+        await api(
+          `/v1/generated-context-packets/${encodeURIComponent(packetId)}`,
+        ),
+      ),
+  );
+
+  server.registerTool(
+    "akp_get_context_continuation",
+    {
+      description:
+        "Fetch the omitted sections behind a generated ContextPacket continuation handle.",
+      inputSchema: {
+        packetId: z.string().uuid(),
+        handle: z.string().regex(/^[a-f0-9]{64}$/),
+      },
+    },
+    async ({ packetId, handle }) =>
+      textResult(
+        await api(
+          `/v1/generated-context-packets/${encodeURIComponent(packetId)}/continuations/${encodeURIComponent(handle)}`,
+        ),
+      ),
   );
 
   server.registerTool(
@@ -471,7 +456,5 @@ export function createMcpServer(): McpServer {
 if (fileURLToPath(import.meta.url) === path.resolve(process.argv[1] ?? "")) {
   const server = createMcpServer();
   const transport = new StdioServerTransport();
-  process.once("SIGTERM", () => void shutdownOpenTelemetry());
-  process.once("SIGINT", () => void shutdownOpenTelemetry());
   await server.connect(transport);
 }

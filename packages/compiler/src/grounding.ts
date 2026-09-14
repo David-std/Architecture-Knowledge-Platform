@@ -1,7 +1,6 @@
 import {
   KnowledgeCompilerInput,
   KnowledgeCompilerResult,
-  ReviewCompilationContext,
   type CompilerEvidence,
   type KnowledgeCompilerInput as KnowledgeCompilerInputType,
   type KnowledgeCompilerResult as KnowledgeCompilerResultType,
@@ -32,19 +31,48 @@ export type LegacyCompilationPlan = {
     criticality: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
     evidenceIds: string[];
   }>;
-  reviewContext?: ReturnType<typeof ReviewCompilationContext.parse>;
 };
+
+// Vault infrastructure that is never a knowledge document. No proposal of any
+// origin may target these roots.
+const RESERVED_VAULT_ROOTS = ["README.md", "docs", ".obsidian"];
+
+// The curated source/evidence layer. Runtime-derived provenance drafts legitimately
+// live here, but a model-chosen path must never land in it: generated prose sitting
+// where curated evidence lives could later be cited as its own grounding.
+const SOURCE_LAYER_ROOTS = ["10-sources"];
+
+function knowledgePathSegments(path: string): string[] {
+  return path.replaceAll("\\", "/").split("/").filter(Boolean);
+}
 
 export function assertSafeKnowledgePath(path: string): void {
   const normalized = path.replaceAll("\\", "/");
+  const segments = knowledgePathSegments(normalized);
   if (
     !normalized.trim() ||
     normalized.startsWith("/") ||
     normalized.startsWith("../") ||
     normalized.includes("/../") ||
     normalized.includes("\0") ||
-    /^[a-z]:\//i.test(normalized)
+    /^[a-z]:\//i.test(normalized) ||
+    segments.some((segment) => segment === "." || segment === "..") ||
+    RESERVED_VAULT_ROOTS.includes(segments[0] ?? "")
   ) {
+    throw new Error(`Unsafe knowledge path: ${path}`);
+  }
+}
+
+/**
+ * Stricter boundary for paths a compiler (model) chose. It adds the source layer to
+ * the denylist so generated material can never be written where curated evidence
+ * lives. Runtime-derived paths use `assertSafeKnowledgePath` instead, because they
+ * come from a fixed template rather than model output.
+ */
+export function assertCompilerAuthoredKnowledgePath(path: string): void {
+  assertSafeKnowledgePath(path);
+  const segments = knowledgePathSegments(path);
+  if (SOURCE_LAYER_ROOTS.includes(segments[0] ?? "")) {
     throw new Error(`Unsafe knowledge path: ${path}`);
   }
 }
@@ -70,9 +98,9 @@ export function deriveKnowledgePath(input: {
     typeof configuredRoot === "string" && configuredRoot.trim()
       ? configuredRoot.replaceAll("\\", "/").replaceAll(/\/+$/g, "")
       : "20-knowledge/generated";
-  assertSafeKnowledgePath(root);
+  assertCompilerAuthoredKnowledgePath(root);
   const path = `${root}/${input.kind}/${slug(input.title)}.md`;
-  assertSafeKnowledgePath(path);
+  assertCompilerAuthoredKnowledgePath(path);
   return path;
 }
 
@@ -145,6 +173,9 @@ export function normalizeKnowledgeCompilerResult(
   const allowedDocumentIds = new Set(
     input.existingCandidates.map((entry) => entry.documentId),
   );
+  const existingById = new Map(
+    input.existingCandidates.map((entry) => [entry.documentId, entry]),
+  );
   const candidateIds = new Set(
     result.knowledgeCandidates.map((entry) => entry.candidateId),
   );
@@ -159,6 +190,12 @@ export function normalizeKnowledgeCompilerResult(
     !allowedDocumentIds.has(result.identity.existingDocumentId)
   ) {
     throw new Error("COMPILER_IDENTITY_REFERENCES_UNKNOWN_DOCUMENT");
+  }
+  if (
+    result.identity.classification === "SAME_IDENTITY" &&
+    !result.identity.existingDocumentId
+  ) {
+    throw new Error("COMPILER_SAME_IDENTITY_DOCUMENT_REQUIRED");
   }
 
   for (const candidate of result.evidenceCandidates) {
@@ -184,6 +221,20 @@ export function normalizeKnowledgeCompilerResult(
       throw new Error(
         `COMPILER_KNOWLEDGE_CANDIDATE_UNKNOWN_DOCUMENT:${candidate.existingDocumentId}`,
       );
+    }
+    if (
+      candidate.proposedAction === "NO_MATERIAL" &&
+      result.proposedFileChanges.length > 0
+    ) {
+      throw new Error("COMPILER_NO_MATERIAL_HAS_FILE_CHANGES");
+    }
+    if (
+      candidate.proposedAction === "CREATE" &&
+      ["SAME_IDENTITY", "LIKELY_DUPLICATE"].includes(
+        result.identity.classification,
+      )
+    ) {
+      throw new Error("COMPILER_IDENTITY_FORBIDS_CREATE");
     }
     if (
       requiresPreciseLocator &&
@@ -217,12 +268,58 @@ export function normalizeKnowledgeCompilerResult(
   }
 
   for (const change of result.proposedFileChanges) {
-    assertSafeKnowledgePath(change.path);
+    assertCompilerAuthoredKnowledgePath(change.path);
     assertEvidenceReferences(
       `COMPILER_FILE_CHANGE:${change.path}`,
       change.evidenceIds,
       allowedEvidenceIds,
     );
+    const candidate = result.knowledgeCandidates.find(
+      (entry) => entry.candidateId === change.candidateId,
+    );
+    if (!candidate) throw new Error("COMPILER_CHANGE_UNKNOWN_CANDIDATE");
+    if (!change.evidenceIds.every((id) => candidate.evidenceIds.includes(id))) {
+      throw new Error("COMPILER_CHANGE_EVIDENCE_MISMATCH");
+    }
+    if (change.operation === "CREATE") {
+      if (candidate.proposedAction !== "CREATE") {
+        throw new Error("COMPILER_CREATE_ACTION_MISMATCH");
+      }
+      if (!change.content.includes(candidate.statement)) {
+        throw new Error("COMPILER_FILE_CONTENT_MISSING_STATEMENT");
+      }
+      const expectedPath = deriveKnowledgePath({
+        title: candidate.statement,
+        kind: candidate.kind,
+        schemaProfile: input.schemaProfile,
+      });
+      if (change.path !== expectedPath) {
+        throw new Error("COMPILER_CREATE_PATH_NOT_RUNTIME_DERIVED");
+      }
+    } else {
+      const existing = candidate?.existingDocumentId
+        ? existingById.get(candidate.existingDocumentId)
+        : undefined;
+      if (!existing) throw new Error("COMPILER_CHANGE_DOCUMENT_REQUIRED");
+      if (change.path !== existing.path.replace(/^managed\//, "")) {
+        throw new Error("COMPILER_CHANGE_PATH_NOT_AUTHORIZED");
+      }
+    }
+  }
+
+  if (
+    result.proposedFileChanges.length > 0 &&
+    !result.probes.some((probe) => probe.criticality === "CRITICAL")
+  ) {
+    throw new Error("COMPILER_CRITICAL_PROBE_REQUIRED");
+  }
+  if (
+    result.contradictions.length > 0 &&
+    result.knowledgeCandidates.some(
+      (candidate) => candidate.proposedAction !== "DISPUTE",
+    )
+  ) {
+    throw new Error("COMPILER_CONTRADICTION_REQUIRES_DISPUTE");
   }
 
   for (const documentId of result.impactedDocumentIds) {
@@ -258,32 +355,6 @@ export function resultToCompilationPlan(
             )
           ? "UPDATE"
           : "NEW";
-  const reviewContext = ReviewCompilationContext.parse({
-    identity: result.identity,
-    evidence: input.evidence.map((entry) => ({
-      id: entry.id,
-      sourceArtifactId: entry.sourceArtifactId,
-      locator: entry.locator,
-      excerptHash: entry.excerptHash,
-    })),
-    evidenceCandidates: result.evidenceCandidates,
-    existingCandidates: input.existingCandidates.map((entry) => ({
-      documentId: entry.documentId,
-      externalId: entry.externalId,
-      path: entry.path,
-      title: entry.title,
-      type: entry.type,
-      lifecycle: entry.lifecycle,
-      trust: entry.trust,
-      revision: entry.revision,
-      ...(entry.score === undefined ? {} : { score: entry.score }),
-      reasons: entry.reasons,
-    })),
-    knowledgeCandidates: result.knowledgeCandidates,
-    contradictions: result.contradictions,
-    warnings: result.warnings,
-    summary: result.summary,
-  });
 
   return {
     sourceId: input.source.sourceId,
@@ -311,6 +382,5 @@ export function resultToCompilationPlan(
       criticality: probe.criticality,
       evidenceIds: probe.evidenceIds,
     })),
-    reviewContext,
   };
 }

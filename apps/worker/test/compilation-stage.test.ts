@@ -1,6 +1,10 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import type { Postgres } from "@akp/postgres";
-import type { ConfiguredKnowledgeCompiler } from "@akp/compiler";
+import {
+  deriveKnowledgePath,
+  type ConfiguredKnowledgeCompiler,
+} from "@akp/compiler";
 import { DocumentArtifact } from "@akp/contracts";
 import { buildCompilationStage } from "../src/compilation-stage.js";
 
@@ -90,6 +94,9 @@ describe("compilation stage", () => {
   });
 
   it("grounds generative compilation in evidence reloaded from the same vault", async () => {
+    const excerpt =
+      "Invalidate cached material when the authoritative revision changes.";
+    const excerptHash = createHash("sha256").update(excerpt).digest("hex");
     const locator = {
       kind: "paragraph",
       source_hash: SOURCE_HASH,
@@ -107,9 +114,8 @@ describe("compilation stage", () => {
           {
             id: EVIDENCE_ID,
             locator,
-            content_hash: EXCERPT_HASH,
-            excerpt:
-              "Invalidate cached material when the authoritative revision changes.",
+            content_hash: excerptHash,
+            excerpt,
           },
         ],
       })
@@ -124,7 +130,7 @@ describe("compilation stage", () => {
         {
           sourceArtifactId: ARTIFACT_ID,
           locator,
-          excerptHash: EXCERPT_HASH,
+          excerptHash,
         },
       ],
       knowledgeCandidates: [
@@ -142,10 +148,15 @@ describe("compilation stage", () => {
       contradictions: [],
       proposedFileChanges: [
         {
-          path: "20-knowledge/generated/rule/cache-invalidation.md",
+          candidateId: "candidate-1",
+          path: deriveKnowledgePath({
+            title:
+              "Invalidate cached material when the authoritative revision changes.",
+            kind: "rule",
+          }),
           operation: "CREATE" as const,
           content:
-            "---\nid: CACHE-1\ntype: rule\nstatus: draft\n---\n\n# Cache invalidation\n",
+            "---\nid: CACHE-1\ntype: rule\nstatus: draft\n---\n\n# Cache invalidation\n\nInvalidate cached material when the authoritative revision changes.\n",
           reasons: ["Grounded rule."],
           evidenceIds: [EVIDENCE_ID],
         },
@@ -180,30 +191,14 @@ describe("compilation stage", () => {
       retrievalWarnings: ["COMPILER_SEMANTIC_RETRIEVAL_DISABLED"],
       knowledgeCandidateCount: 1,
       contradictionCount: 0,
+      compilerResult: expect.objectContaining({
+        identity: expect.objectContaining({ classification: "DISTINCT" }),
+        knowledgeCandidates: [
+          expect.objectContaining({ candidateId: "candidate-1" }),
+        ],
+      }),
     });
     expect(output.plan.proposedChanges[0]?.evidenceIds).toEqual([EVIDENCE_ID]);
-    expect(output.plan.reviewContext).toMatchObject({
-      identity: {
-        classification: "DISTINCT",
-      },
-      evidence: [
-        {
-          id: EVIDENCE_ID,
-          sourceArtifactId: ARTIFACT_ID,
-          excerptHash: EXCERPT_HASH,
-        },
-      ],
-      knowledgeCandidates: [
-        {
-          candidateId: "candidate-1",
-          proposedAction: "CREATE",
-          evidenceIds: [EVIDENCE_ID],
-        },
-      ],
-    });
-    expect(output.plan.reviewContext?.evidence[0]).not.toHaveProperty(
-      "excerpt",
-    );
     expect(compile).toHaveBeenCalledOnce();
     expect(compile.mock.calls[0]?.[0]).toMatchObject({
       spaceId: SPACE_ID,
@@ -212,7 +207,7 @@ describe("compilation stage", () => {
         {
           id: EVIDENCE_ID,
           sourceArtifactId: ARTIFACT_ID,
-          excerptHash: EXCERPT_HASH,
+          excerptHash,
         },
       ],
     });

@@ -9,8 +9,12 @@ import {
 } from "@akp/postgres";
 import {
   GraphRelationType,
+  ContextContinuationResponse,
+  ContextPacket as ContextPacketSchema,
   ContextRequest,
   SearchRequest,
+  type ContextPacket,
+  type ContextSection,
   type GraphPathNode,
   type GraphPathProvenance,
   type SearchHit,
@@ -32,52 +36,15 @@ import {
   type QueryPlannerCapabilities,
   type RankedChannel,
   type Tokenizer,
+  type ContextContinuationPayload,
 } from "@akp/retrieval";
-import { OpenTelemetryBridge, withSpan } from "@akp/observability";
 import {
   actorOf,
   hasPathAccess,
   hasSpaceAccess,
+  pathPrefixesForPermission,
   requirePermission,
 } from "../auth.js";
-
-const telemetry = new OpenTelemetryBridge();
-
-type RequiredRetrievalChannel = "exact" | "lexical" | "vector" | "graph";
-
-const RETRIEVAL_SPAN_NAMES: Record<RequiredRetrievalChannel, string> = {
-  exact: "retrieve.exact",
-  lexical: "retrieve.lexical",
-  vector: "retrieve.vector",
-  graph: "retrieve.graph",
-};
-
-async function observedRetrieval<T>(
-  channel: RequiredRetrievalChannel,
-  operation: () => Promise<T>,
-): Promise<T> {
-  const started = performance.now();
-  try {
-    return await withSpan(
-      RETRIEVAL_SPAN_NAMES[channel],
-      { "akp.retrieval.channel": channel },
-      operation,
-    );
-  } finally {
-    telemetry.histogram(
-      "retrieval_channel_latency",
-      (performance.now() - started) / 1000,
-      { channel },
-    );
-  }
-}
-
-function recordRetrievalCandidates(
-  channel: RequiredRetrievalChannel,
-  count: number,
-): void {
-  telemetry.histogram("retrieval_candidates", count, { channel });
-}
 
 const TRUST_RANK: Record<string, number> = {
   UNVERIFIED: 0,
@@ -136,6 +103,7 @@ interface GraphDocumentRow {
   current_revision: string;
   lifecycle: string;
   refresh_status: string;
+  trust_tier: string;
 }
 
 interface ExactSearchRow {
@@ -349,6 +317,155 @@ export interface RetrievalExecutionOptions {
 export interface SearchRouteDependencies {
   /** Active model/agent tokenizer when the runtime provides one. */
   contextTokenizer?: Tokenizer;
+}
+
+interface StoredContextPacketRow {
+  id: string;
+  space_id: string;
+  corpus_revision: string;
+  packet_hash: string;
+  request: unknown;
+  packet: unknown;
+}
+
+interface StoredContextContinuationRow extends StoredContextPacketRow {
+  handle: string;
+  reason: string;
+  remaining_tokens: number;
+  sections: unknown;
+}
+
+interface CurrentContextDocumentRow {
+  id: string;
+  space_id: string;
+  vault_id: string;
+  path: string;
+  current_revision: string;
+  lifecycle: string;
+  refresh_status: string;
+  trust_tier: string;
+  layer: string;
+  type: string;
+}
+
+function sameStringSet(left: readonly string[], right: readonly string[]) {
+  if (left.length !== right.length) return false;
+  const rightSet = new Set(right);
+  return left.every((value) => rightSet.has(value));
+}
+
+function modeAllowsCurrentDocument(
+  mode: SearchInput["mode"],
+  row: CurrentContextDocumentRow,
+): boolean {
+  const raw = row.layer === "resource" || row.type === "raw-resource";
+  if (mode === "RAW_ONLY") return raw;
+  if (mode === "COMPILED_ONLY") {
+    return row.layer !== "resource" && row.layer !== "source";
+  }
+  if (mode === "SOURCE_BACKED") return !raw;
+  return true;
+}
+
+/**
+ * Re-authorize a persisted packet snapshot at read time. A handle is not a
+ * bearer credential: every vault, path, lifecycle, trust tier and revision is
+ * checked again so revocation or corpus mutation fails closed.
+ */
+async function readableContextSnapshot(
+  db: Postgres,
+  actor: NonNullable<ReturnType<typeof actorOf>>,
+  row: StoredContextPacketRow,
+  sections: readonly ContextSection[],
+): Promise<{ packet: ContextPacket; request: SearchInput } | null> {
+  const packetResult = ContextPacketSchema.safeParse(row.packet);
+  const requestResult = SearchRequest.safeParse(row.request);
+  if (!packetResult.success || !requestResult.success) return null;
+  const packet = packetResult.data;
+  const contextRequest = requestResult.data;
+  if (
+    packet.packetId !== row.id ||
+    packet.packetHash !== row.packet_hash ||
+    packet.corpusRevision !== row.corpus_revision ||
+    packet.scope.spaceId !== row.space_id ||
+    contextRequest.spaceId !== row.space_id ||
+    contextRequest.query !== packet.query ||
+    contextRequest.mode !== packet.mode ||
+    !sameStringSet(packet.scope.vaultIds, [
+      ...new Set([
+        ...(contextRequest.vaultId ? [contextRequest.vaultId] : []),
+        ...contextRequest.vaultIds,
+      ]),
+    ]) ||
+    !hasSpaceAccess(actor, row.space_id, "knowledge:read")
+  ) {
+    return null;
+  }
+
+  let accessByVault: Awaited<
+    ReturnType<typeof resolveAuthorizedVaultScope>
+  >["accessByVault"];
+  try {
+    const currentScope = await resolveAuthorizedVaultScope(db, {
+      userId: actor.id,
+      spaceId: row.space_id,
+      permission: "knowledge:read",
+      vaultIds: packet.scope.vaultIds,
+      federated: packet.scope.federated,
+    });
+    if (!sameStringSet(currentScope.vaultIds, packet.scope.vaultIds)) {
+      return null;
+    }
+    accessByVault = currentScope.accessByVault;
+  } catch {
+    return null;
+  }
+
+  const documentIds = [
+    ...new Set(sections.map((section) => section.documentId)),
+  ];
+  const currentDocuments =
+    documentIds.length === 0
+      ? { rows: [] as CurrentContextDocumentRow[] }
+      : await db.pool.query<CurrentContextDocumentRow>(
+          `
+          select id,space_id,vault_id,path,current_revision,lifecycle,
+                 refresh_status,trust_tier,layer,type
+            from knowledge_documents
+           where space_id=$1 and id=any($2::uuid[])
+          `,
+          [row.space_id, documentIds],
+        );
+  const currentById = new Map(
+    currentDocuments.rows.map((document) => [String(document.id), document]),
+  );
+  const allowedLifecycles = new Set(
+    contextRequest.mode === "DRAFT_INCLUDED"
+      ? ["ACTIVE", "DISPUTED", "DRAFT"]
+      : ["ACTIVE", "DISPUTED"],
+  );
+  const minimumTrust = TRUST_RANK[contextRequest.minimumTrust] ?? 1;
+  for (const section of sections) {
+    const current = currentById.get(section.documentId);
+    const vaultAccess = accessByVault[section.vaultId];
+    if (
+      !current ||
+      !vaultAccess ||
+      current.space_id !== row.space_id ||
+      current.vault_id !== section.vaultId ||
+      current.path !== section.document.path ||
+      current.current_revision !== section.documentRevision ||
+      !allowedLifecycles.has(current.lifecycle) ||
+      ["STALE_BLOCKED", "INVALID"].includes(current.refresh_status) ||
+      (TRUST_RANK[current.trust_tier] ?? -1) < minimumTrust ||
+      !modeAllowsCurrentDocument(contextRequest.mode, current) ||
+      !pathMatchesVaultPrefix(current.path, vaultAccess.pathPrefix) ||
+      !hasPathAccess(actor, row.space_id, "knowledge:read", current.path)
+    ) {
+      return null;
+    }
+  }
+  return { packet, request: contextRequest };
 }
 
 interface ActiveEmbeddingGenerationRow {
@@ -694,7 +811,7 @@ export function evidenceLocatorAllowed(
 }
 
 /** Keep only portable locator data in a retrieval response. */
-export function sanitizeEvidenceLocator(value: unknown): unknown {
+function sanitizeEvidenceLocator(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sanitizeEvidenceLocator);
   if (typeof value === "string") {
     return value.replace(
@@ -822,11 +939,27 @@ export async function queryKnowledge(
         : input.mode === "SOURCE_BACKED"
           ? "and not (layer = 'resource' or type = 'raw-resource')"
           : "";
+  const lifecycleClause =
+    input.mode === "DRAFT_INCLUDED"
+      ? "in ('ACTIVE','DISPUTED','DRAFT')"
+      : "in ('ACTIVE','DISPUTED')";
+  const allowedLifecycles = new Set(
+    input.mode === "DRAFT_INCLUDED"
+      ? ["ACTIVE", "DISPUTED", "DRAFT"]
+      : ["ACTIVE", "DISPUTED"],
+  );
+  const minimumTrust = TRUST_RANK[input.minimumTrust] ?? 1;
+  const trustClause = (alias = "") =>
+    `(case ${alias}trust_tier ` +
+    "when 'UNVERIFIED' then 0 " +
+    "when 'MACHINE_SUPPORTED' then 1 " +
+    "when 'HUMAN_REVIEWED' then 2 " +
+    "when 'ATTESTED' then 3 else -1 end) " +
+    `>= ${minimumTrust}`;
 
   const exact = channels.has("exact")
-    ? await observedRetrieval("exact", () =>
-        db.pool.query<ExactSearchRow>(
-          `
+    ? await db.pool.query<ExactSearchRow>(
+        `
         select d.id,d.current_revision document_revision,
                case
                  when lower(d.external_id)=lower($2) then 'exact:external-id'
@@ -840,7 +973,8 @@ export async function queryKnowledge(
           from knowledge_documents d
          where d.space_id=$1
            ${vaultFilter("d.")}
-           and d.lifecycle in ('ACTIVE','DISPUTED')
+           and d.lifecycle ${lifecycleClause}
+           and ${trustClause("d.")}
            and d.refresh_status not in ('STALE_BLOCKED','INVALID')
            and (
              lower(d.external_id)=lower($2)
@@ -865,18 +999,15 @@ export async function queryKnowledge(
            d.id
          limit $3
         `,
-          [spaceId, input.query, Math.max(input.limit * 2, 20)],
-        ),
+        [spaceId, input.query, Math.max(input.limit * 2, 20)],
       )
     : { rows: [] as ExactSearchRow[] };
-  recordRetrievalCandidates("exact", exact.rows.length);
   if (channels.has("exact")) options.availableChannelSink?.add("exact");
 
   const lexical =
     channels.has("lexical") || channels.has("graph")
-      ? await observedRetrieval("lexical", () =>
-          db.pool.query<LexicalSearchRow>(
-            `
+      ? await db.pool.query<LexicalSearchRow>(
+          `
           with query as (
             select plainto_tsquery('simple', $2) terms
           ), eligible_documents as (
@@ -891,7 +1022,8 @@ export async function queryKnowledge(
               cross join query
              where d.space_id=$1
                ${vaultFilter("d.")}
-               and d.lifecycle in ('ACTIVE','DISPUTED')
+               and d.lifecycle ${lifecycleClause}
+               and ${trustClause("d.")}
                and d.refresh_status not in ('STALE_BLOCKED','INVALID')
                ${modeClause}
                and (
@@ -903,8 +1035,8 @@ export async function queryKnowledge(
                       and matching_unit.space_id=d.space_id
                       and matching_unit.vault_id=d.vault_id
                       and matching_unit.corpus_revision=i.lexical_revision
-                      and matching_unit.lifecycle in ('ACTIVE','DISPUTED')
-                      and matching_unit.embedding_eligible
+                      and matching_unit.lifecycle ${lifecycleClause}
+                      and ${trustClause("matching_unit.")}
                       and matching_unit.lexical_search_vector @@ query.terms
                  )
                )
@@ -943,9 +1075,9 @@ export async function queryKnowledge(
                   from knowledge_units u
                  where u.document_id=d.id
                    and u.corpus_revision=d.index_revision
-                   and u.lifecycle in ('ACTIVE','DISPUTED')
-                   and u.embedding_eligible
-                 order by unit_score desc,u.structural_order,u.id
+                   and u.lifecycle ${lifecycleClause}
+                   and ${trustClause("u.")}
+                  order by unit_score desc,u.container_only,u.structural_order,u.id
                  limit 1
               ) best_unit on true
           )
@@ -954,11 +1086,9 @@ export async function queryKnowledge(
            order by score desc,id,unit_id nulls last
            limit $3
           `,
-            [spaceId, input.query, Math.max(input.limit * 3, 30)],
-          ),
+          [spaceId, input.query, Math.max(input.limit * 3, 30)],
         )
       : { rows: [] as LexicalSearchRow[] };
-  recordRetrievalCandidates("lexical", lexical.rows.length);
   if (channels.has("lexical")) {
     options.availableChannelSink?.add("lexical");
   }
@@ -1022,9 +1152,8 @@ export async function queryKnowledge(
       }
       const dimensions = generation.dimensions;
       try {
-        const result = await observedRetrieval("vector", () =>
-          db.pool.query<VectorSearchRow>(
-            `
+        const result = await db.pool.query<VectorSearchRow>(
+          `
           select u.document_id id,u.id unit_id,u.unit_type,
                  u.document_revision,
                  1 - (e.embedding::vector(${dimensions}) <=> $3::vector(${dimensions})) score
@@ -1035,22 +1164,23 @@ export async function queryKnowledge(
              and e.embedding_dimensions=${dimensions}
              and e.content_hash=u.content_hash
              and u.embedding_eligible
-             and u.lifecycle in ('ACTIVE','DISPUTED')
-             and d.lifecycle in ('ACTIVE','DISPUTED')
+             and u.lifecycle ${lifecycleClause}
+             and ${trustClause("u.")}
+             and d.lifecycle ${lifecycleClause}
+             and ${trustClause("d.")}
              and d.refresh_status not in ('STALE_BLOCKED','INVALID')
              ${modeClause}
            order by e.embedding::vector(${dimensions}) <=> $3::vector(${dimensions}),
                     u.document_id,u.id
            limit $5
           `,
-            [
-              generation.generationId,
-              spaceId,
-              toPgVector(queryVector),
-              generation.vaultId,
-              Math.max(input.limit * 3, 30),
-            ],
-          ),
+          [
+            generation.generationId,
+            spaceId,
+            toPgVector(queryVector),
+            generation.vaultId,
+            Math.max(input.limit * 3, 30),
+          ],
         );
         options.availableChannelSink?.add("vector");
         vector.rows.push(...result.rows);
@@ -1068,7 +1198,6 @@ export async function queryKnowledge(
     );
     vector.rows.splice(Math.max(input.limit * 3, 30));
   }
-  recordRetrievalCandidates("vector", vector.rows.length);
 
   const seedIds = [
     ...new Set(
@@ -1086,7 +1215,8 @@ export async function queryKnowledge(
             cross join query
            where d.space_id=$1
              ${vaultFilter("d.")}
-             and d.lifecycle in ('ACTIVE','DISPUTED')
+             and d.lifecycle ${lifecycleClause}
+             and ${trustClause("d.")}
              and d.refresh_status not in ('STALE_BLOCKED','INVALID')
              and (d.layer='context-pack' or d.type='context-pack')
              and d.lexical_search_vector @@ query.terms
@@ -1110,7 +1240,8 @@ export async function queryKnowledge(
             cross join query
            where d.space_id=$1
              ${vaultFilter("d.")}
-             and d.lifecycle in ('ACTIVE','DISPUTED')
+             and d.lifecycle ${lifecycleClause}
+             and ${trustClause("d.")}
              and d.refresh_status not in ('STALE_BLOCKED','INVALID')
              and (d.layer in ('source','resource') or d.type='raw-resource')
              and d.lexical_search_vector @@ query.terms
@@ -1133,7 +1264,8 @@ export async function queryKnowledge(
             cross join query
            where d.space_id=$1
              ${vaultFilter("d.")}
-             and d.lifecycle in ('ACTIVE','DISPUTED')
+             and d.lifecycle ${lifecycleClause}
+             and ${trustClause("d.")}
              and d.refresh_status not in ('STALE_BLOCKED','INVALID')
              and d.layer='project'
              and d.lexical_search_vector @@ query.terms
@@ -1155,9 +1287,8 @@ export async function queryKnowledge(
     graphScopes.length === 0
       ? []
       : (
-          await observedRetrieval("graph", () =>
-            db.pool.query<GraphTraversalRow>(
-              `
+          await db.pool.query<GraphTraversalRow>(
+            `
             with recursive
             graph_scopes as (
               select scope.vault_id,scope.path_prefix
@@ -1171,7 +1302,8 @@ export async function queryKnowledge(
                 join graph_scopes scope on scope.vault_id=d.vault_id
                where d.id=any($2::uuid[])
                  and d.space_id=$1
-                 and d.lifecycle in ('ACTIVE','DISPUTED')
+                 and d.lifecycle ${lifecycleClause}
+                 and ${trustClause("d.")}
                  and d.refresh_status not in ('STALE_BLOCKED','INVALID')
                  and (
                    scope.path_prefix is null
@@ -1202,8 +1334,10 @@ export async function queryKnowledge(
                  and r.weight is not null
                  and r.weight >= 0
                  and r.weight <= 1000000
-                 and edge_from.lifecycle in ('ACTIVE','DISPUTED')
-                 and edge_to.lifecycle in ('ACTIVE','DISPUTED')
+                 and edge_from.lifecycle ${lifecycleClause}
+                 and edge_to.lifecycle ${lifecycleClause}
+                 and ${trustClause("edge_from.")}
+                 and ${trustClause("edge_to.")}
                  and edge_from.refresh_status not in ('STALE_BLOCKED','INVALID')
                  and edge_to.refresh_status not in ('STALE_BLOCKED','INVALID')
                  and $7::text in ('outgoing','both')
@@ -1241,8 +1375,10 @@ export async function queryKnowledge(
                  and r.weight is not null
                  and r.weight >= 0
                  and r.weight <= 1000000
-                 and edge_from.lifecycle in ('ACTIVE','DISPUTED')
-                 and edge_to.lifecycle in ('ACTIVE','DISPUTED')
+                 and edge_from.lifecycle ${lifecycleClause}
+                 and edge_to.lifecycle ${lifecycleClause}
+                 and ${trustClause("edge_from.")}
+                 and ${trustClause("edge_to.")}
                  and edge_from.refresh_status not in ('STALE_BLOCKED','INVALID')
                  and edge_to.refresh_status not in ('STALE_BLOCKED','INVALID')
                  and $7::text in ('incoming','both')
@@ -1278,7 +1414,7 @@ export async function queryKnowledge(
                            1::double precision
                          )
                        * edge.weight
-                       * power($6::double precision,gp.hops+1),
+                        * $6::double precision,
                      array_append(gp.visited_document_ids,next_doc.id),
                      array_append(gp.path_document_ids,next_doc.id),
                      array_append(gp.path_relation_types,edge.relation_type),
@@ -1301,7 +1437,8 @@ export async function queryKnowledge(
                   on next_doc.id=edge.next_document_id
                  and next_doc.space_id=$1
                  and next_doc.vault_id=gp.seed_vault_id
-                 and next_doc.lifecycle in ('ACTIVE','DISPUTED')
+                 and next_doc.lifecycle ${lifecycleClause}
+                 and ${trustClause("next_doc.")}
                  and next_doc.refresh_status not in ('STALE_BLOCKED','INVALID')
                where gp.hops < $3::integer
                  and not (next_doc.id=any(gp.visited_document_ids))
@@ -1353,25 +1490,24 @@ export async function queryKnowledge(
                and rc.candidate_rank <= $10::integer
              order by rc.candidate_rank,rp.path_rank
             `,
-              [
-                spaceId,
-                candidateSeedIds,
-                graphPolicy.maxHops,
-                graphPolicy.allowedRelationTypes,
-                JSON.stringify(graphPolicy.relationWeights),
-                graphPolicy.decay,
-                graphPolicy.directionPolicy,
-                JSON.stringify(
-                  graphScopes.map((scope) => ({
-                    vault_id: scope.vaultId,
-                    path_prefix: scope.pathPrefix,
-                  })),
-                ),
-                graphPolicy.maxPathsPerCandidate,
-                graphPolicy.maxCandidates,
-                GRAPH_HARD_MAX_FANOUT,
-              ],
-            ),
+            [
+              spaceId,
+              candidateSeedIds,
+              graphPolicy.maxHops,
+              graphPolicy.allowedRelationTypes,
+              JSON.stringify(graphPolicy.relationWeights),
+              graphPolicy.decay,
+              graphPolicy.directionPolicy,
+              JSON.stringify(
+                graphScopes.map((scope) => ({
+                  vault_id: scope.vaultId,
+                  path_prefix: scope.pathPrefix,
+                })),
+              ),
+              graphPolicy.maxPathsPerCandidate,
+              graphPolicy.maxCandidates,
+              GRAPH_HARD_MAX_FANOUT,
+            ],
           )
         ).rows;
 
@@ -1390,7 +1526,7 @@ export async function queryKnowledge(
       : await db.pool.query<GraphDocumentRow>(
           `
           select id,space_id,vault_id,external_id,path,current_revision,
-                 lifecycle,refresh_status
+                 lifecycle,refresh_status,trust_tier
             from knowledge_documents
            where id=any($1::uuid[])
              and space_id=$2
@@ -1437,8 +1573,9 @@ export async function queryKnowledge(
           !node ||
           String(node.space_id) !== spaceId ||
           String(node.vault_id) !== String(row.seed_vault_id) ||
-          !["ACTIVE", "DISPUTED"].includes(String(node.lifecycle)) ||
+          !allowedLifecycles.has(String(node.lifecycle)) ||
           ["STALE_BLOCKED", "INVALID"].includes(String(node.refresh_status)) ||
+          (TRUST_RANK[String(node.trust_tier)] ?? -1) < minimumTrust ||
           !pathMatchesVaultPrefix(String(node.path), scope.pathPrefix) ||
           (options.pathAuthorizer !== undefined &&
             !options.pathAuthorizer(String(node.path), String(node.vault_id))),
@@ -1527,7 +1664,6 @@ export async function queryKnowledge(
     graphCandidates.map((candidate) => [candidate.id, candidate.provenance]),
   );
   const graph = { rows: graphCandidates };
-  recordRetrievalCandidates("graph", graph.rows.length);
   if (
     channels.has("graph") &&
     candidateSeedIds.length > 0 &&
@@ -1613,11 +1749,7 @@ export async function queryKnowledge(
       })),
     },
   ];
-  const fused = (
-    await withSpan("retrieve.fuse", {}, async () =>
-      reciprocalRankFusion(rankedChannels),
-    )
-  ).slice(0, input.limit * 2);
+  const fused = reciprocalRankFusion(rankedChannels).slice(0, input.limit * 2);
   if (fused.length === 0) return [];
 
   const details = await db.pool.query(
@@ -1654,6 +1786,7 @@ export async function queryKnowledge(
      where d.id = any($1::uuid[])
        and d.space_id = $2
        ${vaultFilter("d.")}
+       and ${trustClause("d.")}
      group by d.id
     `,
     [fused.map((item) => item.id), spaceId],
@@ -1721,8 +1854,6 @@ export async function queryKnowledge(
       },
     ]),
   );
-  const minimumTrust = TRUST_RANK[input.minimumTrust] ?? 1;
-
   const results = fused
     .map((item): SearchHit | null => {
       const row = byId.get(item.id);
@@ -1801,7 +1932,6 @@ export async function queryKnowledge(
         type: String(row.type),
         trust: String(row.trust_tier) as SearchHit["trust"],
         lifecycle: String(row.lifecycle) as SearchHit["lifecycle"],
-        refreshStatus: String(row.refresh_status),
         score: item.score,
         reasons: item.reasons,
         fusionContributions: item.contributions,
@@ -1915,13 +2045,24 @@ export function registerSearchRoutes(
         (channel) => `PLAN_CHANNEL_OMITTED:${channel}`,
       );
       const availableChannels = new Set<RetrievalChannel>();
+      const actorPathPrefixes = pathPrefixesForPermission(
+        actor,
+        requestedSpace,
+        "knowledge:read",
+      );
       const hits = await queryKnowledge(db, scopedRequest, {
         plan,
         vaultIds,
-        graphScopes: Object.entries(accessByVault).map(([vaultId, access]) => ({
-          vaultId,
-          pathPrefix: access.pathPrefix,
-        })),
+        graphScopes: Object.entries(accessByVault).flatMap(
+          ([vaultId, access]) =>
+            actorPathPrefixes.flatMap((actorPathPrefix) => {
+              const pathPrefix = intersectVaultPathPrefixes(
+                actorPathPrefix,
+                access.pathPrefix,
+              );
+              return pathPrefix === undefined ? [] : [{ vaultId, pathPrefix }];
+            }),
+        ),
         warningSink: retrievalWarnings,
         availableChannelSink: availableChannels,
         pathAuthorizer: (documentPath, vaultId) => {
@@ -1942,12 +2083,6 @@ export function registerSearchRoutes(
         channelState,
         retrievalWarnings,
         availableChannels,
-      );
-      telemetry.counter("retrieval_requests", 1, { intent: plan.intent });
-      telemetry.gauge(
-        "index_revision_mismatch",
-        String(index.status ?? "DEGRADED") === "CONSISTENT" ? 0 : 1,
-        { projection: "aggregate" },
       );
       return {
         mode: parsed.data.mode,
@@ -1981,6 +2116,112 @@ export function registerSearchRoutes(
               }
             : null,
       };
+    },
+  );
+
+  app.get<{ Params: { id: string } }>(
+    "/v1/generated-context-packets/:id",
+    { preHandler: requirePermission("knowledge:read") },
+    async (request, reply) => {
+      if (!UUID_PATTERN.test(request.params.id)) {
+        return reply
+          .code(404)
+          .send({ code: "GENERATED_CONTEXT_PACKET_NOT_FOUND" });
+      }
+      const actor = actorOf(request);
+      if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
+      const result = await db.pool.query<StoredContextPacketRow>(
+        `
+        select id,space_id,corpus_revision,packet_hash,request,packet
+          from context_packets
+         where id=$1 and (expires_at is null or expires_at > now())
+         limit 1
+        `,
+        [request.params.id],
+      );
+      const row = result.rows[0];
+      if (!row) {
+        return reply
+          .code(404)
+          .send({ code: "GENERATED_CONTEXT_PACKET_NOT_FOUND" });
+      }
+      const parsedPacket = ContextPacketSchema.safeParse(row.packet);
+      if (!parsedPacket.success) {
+        return reply
+          .code(404)
+          .send({ code: "GENERATED_CONTEXT_PACKET_NOT_FOUND" });
+      }
+      const readable = await readableContextSnapshot(
+        db,
+        actor,
+        row,
+        parsedPacket.data.sections,
+      );
+      if (!readable) {
+        return reply
+          .code(404)
+          .send({ code: "GENERATED_CONTEXT_PACKET_NOT_FOUND" });
+      }
+      return readable.packet;
+    },
+  );
+
+  app.get<{ Params: { id: string; handle: string } }>(
+    "/v1/generated-context-packets/:id/continuations/:handle",
+    { preHandler: requirePermission("knowledge:read") },
+    async (request, reply) => {
+      if (
+        !UUID_PATTERN.test(request.params.id) ||
+        !/^[a-f0-9]{64}$/.test(request.params.handle)
+      ) {
+        return reply.code(404).send({ code: "CONTEXT_CONTINUATION_NOT_FOUND" });
+      }
+      const actor = actorOf(request);
+      if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
+      const result = await db.pool.query<StoredContextContinuationRow>(
+        `
+        select p.id,p.space_id,p.corpus_revision,p.packet_hash,p.request,p.packet,
+               c.handle,c.reason,c.remaining_tokens,c.sections
+          from context_packets p
+          join context_packet_continuations c on c.packet_id=p.id
+         where p.id=$1 and c.handle=$2
+           and (p.expires_at is null or p.expires_at > now())
+         limit 1
+        `,
+        [request.params.id, request.params.handle],
+      );
+      const row = result.rows[0];
+      const sectionsResult = ContextPacketSchema.shape.sections.safeParse(
+        row?.sections,
+      );
+      if (!row || !sectionsResult.success || sectionsResult.data.length === 0) {
+        return reply.code(404).send({ code: "CONTEXT_CONTINUATION_NOT_FOUND" });
+      }
+      const readable = await readableContextSnapshot(
+        db,
+        actor,
+        row,
+        sectionsResult.data,
+      );
+      if (!readable) {
+        return reply.code(404).send({ code: "CONTEXT_CONTINUATION_NOT_FOUND" });
+      }
+      const response = ContextContinuationResponse.safeParse({
+        packetId: readable.packet.packetId,
+        packetHash: readable.packet.packetHash,
+        corpusRevision: readable.packet.corpusRevision,
+        scope: readable.packet.scope,
+        continuation: {
+          handle: row.handle,
+          reason: row.reason,
+          remainingTokens: Number(row.remaining_tokens),
+        },
+        sections: sectionsResult.data,
+      });
+      if (!response.success) {
+        return reply.code(404).send({ code: "CONTEXT_CONTINUATION_NOT_FOUND" });
+      }
+      return response.data;
     },
   );
 
@@ -2075,13 +2316,24 @@ export function registerSearchRoutes(
         (channel) => `PLAN_CHANNEL_OMITTED:${channel}`,
       );
       const availableChannels = new Set<RetrievalChannel>();
+      const actorPathPrefixes = pathPrefixesForPermission(
+        actor,
+        requestedSpace,
+        "knowledge:read",
+      );
       const hits = await queryKnowledge(db, scopedRequest, {
         plan,
         vaultIds,
-        graphScopes: Object.entries(accessByVault).map(([vaultId, access]) => ({
-          vaultId,
-          pathPrefix: access.pathPrefix,
-        })),
+        graphScopes: Object.entries(accessByVault).flatMap(
+          ([vaultId, access]) =>
+            actorPathPrefixes.flatMap((actorPathPrefix) => {
+              const pathPrefix = intersectVaultPathPrefixes(
+                actorPathPrefix,
+                access.pathPrefix,
+              );
+              return pathPrefix === undefined ? [] : [{ vaultId, pathPrefix }];
+            }),
+        ),
         warningSink: retrievalWarnings,
         availableChannelSink: availableChannels,
         pathAuthorizer: (documentPath, vaultId) => {
@@ -2130,6 +2382,10 @@ export function registerSearchRoutes(
             );
       let packet;
       let responsePacket;
+      const continuationPayloads = new Map<
+        string,
+        ContextContinuationPayload
+      >();
       try {
         const packetInput = {
           request: scopedRequest,
@@ -2159,6 +2415,7 @@ export function registerSearchRoutes(
             version: String(
               indexRow.retrieval_configuration_version ?? "rrf-v1",
             ),
+            indexStatus: String(indexRow.status ?? "DEGRADED"),
             channels: effectiveChannelState.channels,
             vectorEnabled: capabilities.vectorAvailable,
             warnings: effectiveChannelState.warnings,
@@ -2181,27 +2438,28 @@ export function registerSearchRoutes(
           conflicts: conflicts.rows.map(
             (row) => `${row.topic} (${row.status})`,
           ),
-        } satisfies Parameters<typeof buildContextPacket>[0];
-        const built = await withSpan(
-          "context.build",
-          { "akp.context.mode": packetMode },
-          async () => {
-            if (packetMode === "COMPACT_AGENT_PACKET") {
-              const pair = buildContextPacketPair(packetInput);
-              return { packet: pair.full, responsePacket: pair.compact };
+          continuationSink: (payload: ContextContinuationPayload) => {
+            const existing = continuationPayloads.get(
+              payload.continuation.handle,
+            );
+            if (
+              existing &&
+              JSON.stringify(existing.sections) !==
+                JSON.stringify(payload.sections)
+            ) {
+              throw new Error("CONTEXT_CONTINUATION_HANDLE_COLLISION");
             }
-            const full = buildContextPacket(packetInput);
-            return { packet: full, responsePacket: full };
+            continuationPayloads.set(payload.continuation.handle, payload);
           },
-        );
-        packet = built.packet;
-        responsePacket = built.responsePacket;
-        telemetry.histogram("context_packet_tokens", packet.budget.usedTokens, {
-          mode: packetMode,
-        });
-        telemetry.histogram("context_packet_sections", packet.sections.length, {
-          mode: packetMode,
-        });
+        } satisfies Parameters<typeof buildContextPacket>[0];
+        if (packetMode === "COMPACT_AGENT_PACKET") {
+          const pair = buildContextPacketPair(packetInput);
+          packet = pair.full;
+          responsePacket = pair.compact;
+        } else {
+          packet = buildContextPacket(packetInput);
+          responsePacket = packet;
+        }
       } catch (error) {
         if (error instanceof ContextPacketBudgetError) {
           return reply.code(422).send({
@@ -2212,29 +2470,76 @@ export function registerSearchRoutes(
         }
         throw error;
       }
-      await db.pool.query(
-        `
-        insert into context_packets(id, space_id, vault_id, actor_id, corpus_revision,
-                                    query_hash, packet_hash, request, packet, scope)
-        values ($1,$2,$3,$4,$5,encode(digest($6,'sha256'),'hex'),$7,$8::jsonb,$9::jsonb,$10::jsonb)
-        `,
-        [
-          packet.packetId,
-          requestedSpace,
-          vaultIds.length === 1 ? vaultIds[0] : null,
-          actorOf(request)?.id ?? null,
-          packet.corpusRevision,
-          parsed.data.query,
-          packet.packetHash,
-          JSON.stringify(scopedRequest),
-          JSON.stringify(packet),
-          JSON.stringify({
-            spaceId: requestedSpace,
-            vaultIds,
-            federated: parsed.data.federated,
-          }),
-        ],
+      const publicHandles = new Set(
+        responsePacket.continuations.map((continuation) => continuation.handle),
       );
+      if (
+        publicHandles.size !== continuationPayloads.size ||
+        [...publicHandles].some((handle) => !continuationPayloads.has(handle))
+      ) {
+        throw new Error("CONTEXT_CONTINUATION_PAYLOAD_MISSING");
+      }
+
+      const client = await db.pool.connect();
+      try {
+        await client.query("begin");
+        await client.query(
+          `
+          insert into context_packets(id, space_id, vault_id, actor_id, corpus_revision,
+                                      query_hash, packet_hash, request, packet, scope)
+          values ($1,$2,$3,$4,$5,encode(digest($6,'sha256'),'hex'),$7,$8::jsonb,$9::jsonb,$10::jsonb)
+          `,
+          [
+            packet.packetId,
+            requestedSpace,
+            vaultIds.length === 1 ? vaultIds[0] : null,
+            actor.id,
+            packet.corpusRevision,
+            parsed.data.query,
+            packet.packetHash,
+            JSON.stringify(scopedRequest),
+            JSON.stringify(packet),
+            JSON.stringify({
+              spaceId: requestedSpace,
+              vaultIds,
+              federated: parsed.data.federated,
+            }),
+          ],
+        );
+        for (const payload of continuationPayloads.values()) {
+          const validated = ContextContinuationResponse.safeParse({
+            packetId: packet.packetId,
+            packetHash: packet.packetHash,
+            corpusRevision: packet.corpusRevision,
+            scope: packet.scope,
+            continuation: payload.continuation,
+            sections: payload.sections,
+          });
+          if (!validated.success || payload.packetId !== packet.packetId) {
+            throw new Error("INVALID_CONTEXT_CONTINUATION_PAYLOAD");
+          }
+          await client.query(
+            `
+            insert into context_packet_continuations(
+              packet_id,handle,reason,remaining_tokens,sections
+            ) values($1,$2,$3,$4,$5::jsonb)
+            `,
+            [
+              packet.packetId,
+              payload.continuation.handle,
+              payload.continuation.reason,
+              payload.continuation.remainingTokens,
+              JSON.stringify(payload.sections),
+            ],
+          );
+        }
+        await client.query("commit");
+      } catch (error) {
+        await client.query("rollback");
+        throw error;
+      } finally {
+        client.release();
+      }
       return responsePacket;
     },
   );
