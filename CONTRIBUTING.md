@@ -1,8 +1,9 @@
 # Contributing
 
-Read `AGENTS.md`, `PROJECT_STATE.md` and `REMAINING_REAL_GAPS.md` before making a
-change. Keep product behavior generic: course names, private vault paths and
-consumer-specific gold IDs belong only in named fixture packs.
+Read `AGENTS.md`, `docs/status.md` and `ARCHITECTURE.md` before making a change.
+Keep product behavior generic: private vault paths, consumer-specific IDs and
+fixture-specific terminology belong only in explicitly named fixtures/case
+studies, never in the generic runtime.
 
 ## Change rules
 
@@ -16,15 +17,31 @@ consumer-specific gold IDs belong only in named fixture packs.
   reproducible benchmark and explicit decision.
 - Record uncertainty and negative results; never upgrade unexecuted work to an
   executed capability.
+- Keep the repository root product-facing. Historical assurance belongs under
+  `docs/assurance/`; deterministic generated evidence belongs under `reports/`
+  or CI artifacts.
 - Do not create root-level progress, handoff or scratch documents. Use ignored
   `.work/`, `.tmp/` and `.cache/` directories for local artifacts.
+
+## Branch lifecycle
+
+Keep only branches with a continuing purpose:
+
+- `main`;
+- heads of open pull requests;
+- baselines/checkpoints still referenced by an active PR or recovery plan.
+
+Delete temporary test, evidence, formatting and no-op branches after their
+useful commits are merged, cherry-picked or otherwise preserved. Before deleting
+a branch, verify both its PR association and commit ancestry; names alone are
+not sufficient evidence that a branch is obsolete.
 
 ## Required local gates
 
 ```powershell
 pnpm install --frozen-lockfile --strict-peer-dependencies
 pnpm audit --audit-level high
-pnpm exec prettier --check .
+pnpm format:check
 pnpm security:secrets
 pnpm contracts:validate
 pnpm docs:validate
@@ -34,10 +51,20 @@ pnpm build
 pnpm test:integration
 ```
 
-For extractor changes, run Ruff, pytest and the document-intelligence benchmark
-under Python 3.12. For runtime changes, migrate a fresh database, start Compose,
-exercise API/MCP/Web, and run backup/restore. Update canonical reports only with
-the exact commands and results actually observed.
+For extractor changes, use the checked-in Python lock:
 
-See [the detailed guide](docs/contributing.md) for repository conventions and
-[local operations](docs/runbooks/local-operations.md) for runtime setup.
+```powershell
+Push-Location apps/extractor
+uv sync --locked
+uv run --locked ruff check --no-cache .
+uv run --locked mypy app
+uv run --locked pytest -p no:cacheprovider
+Pop-Location
+```
+
+For runtime/recovery changes, migrate a fresh database, start Compose, exercise
+API/MCP/Web and run backup/restore. Update `docs/status.md` only with exact
+behavior actually observed.
+
+See [the detailed guide](docs/contributing.md) and
+[local operations](docs/runbooks/local-operations.md).

@@ -4,7 +4,7 @@ import path from "node:path";
 import process from "node:process";
 
 const root = path.resolve(import.meta.dirname, "..");
-const classificationPath = "REPOSITORY_FILE_CLASSIFICATION.json";
+const classificationPath = "reports/repository-file-classification.json";
 const categories = new Set([
   "PRODUCT_CODE",
   "PRODUCT_CONTRACT",
@@ -21,6 +21,47 @@ const categories = new Set([
   "UNKNOWN",
 ]);
 
+const allowedRootFiles = new Set([
+  ".env.example",
+  ".gitattributes",
+  ".gitignore",
+  ".prettierignore",
+  ".prettierrc.json",
+  "AGENTS.md",
+  "ARCHITECTURE.md",
+  "CHANGELOG.md",
+  "CONTRIBUTING.md",
+  "LICENSE",
+  "LICENSE.md",
+  "README.md",
+  "dependency-cruiser.cjs",
+  "docker-compose.yml",
+  "package.json",
+  "pnpm-lock.yaml",
+  "pnpm-workspace.yaml",
+  "tsconfig.base.json",
+  "turbo.json",
+]);
+const allowedRootDirectories = new Set([
+  ".github",
+  "apps",
+  "contracts",
+  "db",
+  "docs",
+  "evals",
+  "ops",
+  "packages",
+  "policies",
+  "reports",
+  "scripts",
+  "test",
+]);
+const historicalPrefixes = [
+  "docs/archive/",
+  "docs/assurance/archive/",
+  "docs/assurance/releases/",
+];
+
 function repositoryFiles() {
   const output = execFileSync(
     "git",
@@ -31,9 +72,6 @@ function repositoryFiles() {
     .split(/\r?\n/)
     .map((file) => file.replaceAll("\\", "/"))
     .filter(Boolean)
-    // `git ls-files --cached` also reports an unstaged deletion. A deleted
-    // path is not a repository artifact and must not make the generated
-    // inventory stale while a cleanup change is being reviewed.
     .filter((file) => existsSync(path.join(root, file)));
   if (!files.includes(classificationPath)) files.push(classificationPath);
   return [...new Set(files)].sort((left, right) => left.localeCompare(right));
@@ -42,12 +80,6 @@ function repositoryFiles() {
 function classify(file) {
   if (file === classificationPath) {
     return ["GENERATED_CANONICAL", "deterministic repository inventory"];
-  }
-  if (
-    file === "REPOSITORY_HYGIENE_REPORT.md" ||
-    file === "GENERICITY_AUDIT.md"
-  ) {
-    return ["PRODUCT_DOCUMENTATION", "canonical hygiene or genericity report"];
   }
   if (/^db\/migrations\/\d+_.+\.sql$/.test(file)) {
     return ["MIGRATION", "append-only database migration"];
@@ -58,7 +90,7 @@ function classify(file) {
   if (/^evals\/fixtures\/architecture-knowledge-system\//.test(file)) {
     return [
       "FIXTURE_VAULT_SPECIFIC",
-      "Architecture Knowledge System eval pack",
+      "explicit Architecture Knowledge System eval pack",
     ];
   }
   if (/^evals\/schemas\//.test(file)) {
@@ -76,7 +108,13 @@ function classify(file) {
   if (/^docs\/archive\/iterations\//.test(file)) {
     return [
       "OBSOLETE",
-      "archived iteration record excluded from normal retrieval",
+      "archived iteration record excluded from active documentation",
+    ];
+  }
+  if (/^docs\/assurance\/(?:archive|releases)\//.test(file)) {
+    return [
+      "PRODUCT_DOCUMENTATION",
+      "historical assurance snapshot excluded from active guidance",
     ];
   }
   if (
@@ -93,14 +131,11 @@ function classify(file) {
     return ["GENERATED_CANONICAL", "canonical reproducible report"];
   }
   if (
-    /^(?:docs\/|README\.md$|AGENTS\.md$|ARCHITECTURE\.md$|CONTRIBUTING\.md$)/.test(
-      file,
-    ) ||
-    /(?:_REPORT|_AUDIT|_BENCHMARK|_STATE|_LOG|_MATRIX|_GAPS|TRACEABILITY|CHANGELOG)\.md$/.test(
+    /^(?:docs\/|README\.md$|AGENTS\.md$|ARCHITECTURE\.md$|CONTRIBUTING\.md$|CHANGELOG\.md$)/.test(
       file,
     )
   ) {
-    return ["PRODUCT_DOCUMENTATION", "canonical product documentation"];
+    return ["PRODUCT_DOCUMENTATION", "active product documentation"];
   }
   if (
     /^(?:apps|packages|scripts)\//.test(file) ||
@@ -111,7 +146,7 @@ function classify(file) {
     return ["PRODUCT_CODE", "runtime, build or operational code"];
   }
   if (
-    /^(?:ops\/|policies\/|\.github\/|\.env\.example$|\.gitattributes$|\.gitignore$|\.prettierignore$|\.prettierrc\.json$|package\.json$|pnpm-workspace\.yaml$)/.test(
+    /^(?:ops\/|policies\/|\.github\/|\.env\.example$|\.gitattributes$|\.gitignore$|\.prettierignore$|\.prettierrc\.json$|package\.json$|pnpm-workspace\.yaml$|LICENSE(?:\.md)?$)/.test(
       file,
     )
   ) {
@@ -138,10 +173,55 @@ const iterationResidue = [
   /^IMPLEMENTATION_NOTES_.*\.md$/i,
 ];
 
-const retiredRootReports = new Set([
-  "RESEARCH_ADOPTION_MATRIX.md",
-  "RESIDUAL_ARTIFACTS_REPORT.md",
-]);
+function isHistorical(file) {
+  return historicalPrefixes.some((prefix) => file.startsWith(prefix));
+}
+
+function activeDocumentationOrConfiguration(file) {
+  if (isHistorical(file)) return false;
+  if (/^(?:README|AGENTS|ARCHITECTURE|CONTRIBUTING|CHANGELOG)\.md$/.test(file)) {
+    return true;
+  }
+  if (/^docs\/.*\.md$/.test(file)) return true;
+  if (file === ".env.example" || file === "docker-compose.yml") return true;
+  if (/^(?:\.github|ops|policies)\/.*\.(?:md|json|ya?ml)$/.test(file)) {
+    return true;
+  }
+  return false;
+}
+
+function normalizedPathText(content) {
+  let normalized = content;
+  while (normalized.includes("\\\\")) {
+    normalized = normalized.replaceAll("\\\\", "\\");
+  }
+  return normalized;
+}
+
+function pathPolicyFailures(file, content) {
+  const normalized = normalizedPathText(content);
+  const failures = [];
+  if (/\b[A-Za-z]:\\Users\\[^\\\r\n]+\\/i.test(normalized)) {
+    failures.push(`PERSONAL_WINDOWS_PATH ${file}`);
+  }
+  if (/\/Users\/[^/\s]+(?:\/|$)/i.test(normalized)) {
+    failures.push(`PERSONAL_MAC_PATH ${file}`);
+  }
+  for (const match of normalized.matchAll(/\/home\/([^/\s]+)(?:\/|$)/gi)) {
+    const user = String(match[1]).toLowerCase();
+    if (!["node", "runner", "root", "postgres", "app"].includes(user)) {
+      failures.push(`PERSONAL_LINUX_PATH ${file}`);
+      break;
+    }
+  }
+  if (/\bfile:\/\//i.test(normalized)) {
+    failures.push(`FILE_URI_IN_ACTIVE_DOC_OR_CONFIG ${file}`);
+  }
+  if (/Architecture-Knowledge-System/i.test(normalized)) {
+    failures.push(`PERSONAL_VAULT_IN_ACTIVE_GUIDANCE ${file}`);
+  }
+  return failures;
+}
 
 const files = repositoryFiles();
 const entries = files.map((file) => {
@@ -149,17 +229,29 @@ const entries = files.map((file) => {
   return { path: file, category, reason };
 });
 const failures = [];
+
 for (const entry of entries) {
   if (!categories.has(entry.category) || entry.category === "UNKNOWN") {
     failures.push(`UNCLASSIFIED ${entry.path}`);
   }
+
+  const [rootEntry] = entry.path.split("/", 1);
+  if (!entry.path.includes("/")) {
+    if (!allowedRootFiles.has(entry.path)) {
+      failures.push(`ROOT_FILE_NOT_ALLOWED ${entry.path}`);
+    }
+  } else if (!allowedRootDirectories.has(rootEntry)) {
+    failures.push(`ROOT_DIRECTORY_NOT_ALLOWED ${rootEntry}`);
+  }
+
   const name = path.posix.basename(entry.path);
-  const archived = entry.path.startsWith("docs/archive/iterations/");
-  if (!archived && iterationResidue.some((pattern) => pattern.test(name))) {
+  if (!isHistorical(entry.path) && iterationResidue.some((pattern) => pattern.test(name))) {
     failures.push(`ITERATION_RESIDUE ${entry.path}`);
   }
-  if (!archived && retiredRootReports.has(entry.path)) {
-    failures.push(`RETIRED_ROOT_REPORT ${entry.path}`);
+
+  if (activeDocumentationOrConfiguration(entry.path)) {
+    const content = readFileSync(path.join(root, entry.path), "utf8");
+    failures.push(...pathPolicyFailures(entry.path, content));
   }
 }
 
@@ -185,17 +277,15 @@ for (const file of genericCore) {
   }
 }
 
-const payload = `${JSON.stringify({ schemaVersion: 1, files: entries }, null, 2)}\n`;
+const payload = `${JSON.stringify({ schemaVersion: 2, files: entries }, null, 2)}\n`;
 const write = process.argv.includes("--write");
 if (write) writeFileSync(path.join(root, classificationPath), payload, "utf8");
 else {
   try {
     const current = readFileSync(path.join(root, classificationPath), "utf8");
-    // Git may materialize CRLF on Windows even though the canonical generated
-    // payload uses LF. Compare normalized text so a clean checkout remains
-    // reproducible across the CI/Linux and desktop/Windows environments.
-    if (current.replaceAll("\r\n", "\n") !== payload)
+    if (current.replaceAll("\r\n", "\n") !== payload) {
       failures.push(`${classificationPath} is stale; run with --write`);
+    }
   } catch {
     failures.push(`${classificationPath} is missing; run with --write`);
   }

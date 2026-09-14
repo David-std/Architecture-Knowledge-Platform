@@ -1,71 +1,114 @@
 # Agent operating contract
 
-## Scope
+## Scope and sources of truth
 
-This repository is the executable platform. The external vault at `C:\Users\david\Documents\Architecture-Knowledge-System` is an imported, read-only corpus unless a user explicitly authorizes a separate reviewed vault change. Never place runtime caches, embeddings, job state, secrets or licensed originals into that vault.
+This repository is the executable platform. Registered vaults are external,
+operator-supplied, read-only import sources unless a separate reviewed workflow
+explicitly authorizes a knowledge change. Never place runtime caches,
+embeddings, job state, secrets or licensed originals into an imported vault.
 
-## Progressive loading
+Start with:
 
-1. Read `README.md`, `PROJECT_STATE.md` and `REMAINING_REAL_GAPS.md`.
-2. For implementation, inspect the relevant package and its contract only.
-3. For knowledge answers, use API/MCP `akp_search` or `akp_build_context`; do not traverse the whole vault.
-4. Treat `Resources/transfer-packs/**` as archived provenance, not current guidance. Curated recovery maps are explicitly typed and promoted by the importer.
-5. Preserve `Source → Evidence → Claim → Rule → Workflow/Profile/Context pack → Eval` dependency direction. Unknown evidence stays unknown.
+1. `README.md` for product/runtime usage.
+2. `docs/status.md` for the concise executed state.
+3. `ARCHITECTURE.md` plus the relevant package/contract for implementation.
+4. `CONTRIBUTING.md` for change and branch discipline.
+5. `docs/assurance/` only when historical evidence is explicitly needed.
 
-Root-level audit, benchmark and validation reports are on-demand evidence, not
-startup context. Load the specific report only when a task cites its claim or
-needs to reproduce its command; do not traverse every report by default.
+Historical assurance snapshots are not active instructions. Do not infer current
+behavior from an archived report when current code/tests/status disagree.
 
-## Invariants
+## Architecture boundaries
 
-- Markdown/Git is canonical for approved compiled knowledge; derived indexes are rebuildable.
-- A write goes through isolated draft, deterministic validation, review and publication lock.
-- A raw source is content-addressed by SHA-256 and extraction reads the immutable object.
-- Every query is space-scoped; every write also enforces the membership path prefix.
-- `UNVERIFIED`, `DISPUTED`, `STALE_PENDING_REVIEW`, `STALE_BLOCKED`, `ARCHIVED` and `INVALID` are meaningful states, not cosmetic labels.
-- Do not promote copied acquisition instructions, unfinished task lists or transfer manifests into agent-facing knowledge.
-- Do not enable vectors or reranking by default without a benchmark that improves eligible quality metrics.
+- `apps/api` owns authenticated HTTP use cases and policy enforcement.
+- `apps/worker` owns durable ingest/event execution, leases, retries and
+  reconciliation.
+- `apps/extractor` implements provider-neutral document intelligence.
+- `apps/cli`, `apps/mcp` and `apps/web` are bounded clients of shared rules.
+- `packages/*` contains reusable domain, storage, retrieval, indexing,
+  compilation, publication and observability code.
+- `contracts/` is the versioned interface source; `db/migrations/` is append-only.
+- Approved Markdown/Git knowledge is canonical. Derived indexes are rebuildable.
+
+Preserve the dependency direction:
+
+```text
+Source -> Evidence -> Candidate knowledge -> Review -> Approved knowledge
+       -> Derived projections -> ContextPacket/Eval
+```
+
+Unknown or contradictory evidence remains explicit.
+
+## Security and publication invariants
+
+- Resolve authorization before retrieval or mutation; preserve space/vault/path
+  scope through exact, lexical, vector, graph, raw and compiler paths.
+- Provider/model output is untrusted input. It cannot grant tools, permissions,
+  trust or publication authority.
+- No model or client publishes directly. Writes go through isolated Git draft,
+  deterministic validation, human review and the publication lock/lifecycle.
+- Rollback is a publication event, not an ad-hoc projection mutation.
+- Raw source bytes are content-addressed; extraction must verify immutable input.
 - Never use known/default credentials outside disposable tests.
+- Do not hard-code one corpus, course, project, workstation path or private
+  identifier into generic runtime behavior.
 
-## Commands before handoff
+## Focused work
+
+Before editing, inspect the existing implementation and nearest focused tests.
+For a correctness gap use:
+
+```text
+reproduce -> strengthen focused test -> implement -> run focused test
+          -> run impacted integration gate
+```
+
+Do not replace a failing invariant with looser assertions, sleeps or mocks that
+avoid the real boundary.
+
+## Canonical gates
+
+For normal TypeScript/product changes:
 
 ```powershell
 pnpm install --frozen-lockfile --strict-peer-dependencies
 pnpm audit --audit-level high
+pnpm format:check
 pnpm security:secrets
 pnpm contracts:validate
 pnpm docs:validate
-pnpm format:check
 pnpm hygiene:validate
 pnpm check
 pnpm build
 pnpm test:integration
 pnpm verify:runtime
 pnpm test:mcp
-pnpm benchmark:retrieval:offline
-pnpm benchmark:retrieval:curated
-pnpm benchmark:scale -- --targets 1000,10000,50000,100000 --iterations 3
-
-Push-Location apps/extractor
-python -m ruff check --no-cache .
-python -m mypy app
-python -m pytest -p no:cacheprovider
-Pop-Location
-
-docker compose config
-& .\scripts\backup.ps1 -OutputDirectory backups\release-candidate
-& .\scripts\restore-smoke.ps1 -BackupDirectory backups\release-candidate
 ```
 
-Do not crawl or revalidate the external vault during ordinary platform work.
-Run its own validators read-only only when a task explicitly changes the import
-profile, importer compatibility, or a claim derived from that vault. Platform
-bootstrap, fixtures and release gates must remain valid without it.
+For extractor changes:
 
-## Change discipline
+```powershell
+Push-Location apps/extractor
+uv sync --locked
+uv run --locked ruff check --no-cache .
+uv run --locked mypy app
+uv run --locked pytest -p no:cacheprovider
+Pop-Location
+```
 
-- Add migrations; never edit an applied migration. Checksums are enforced.
-- Add tests for deterministic domain, security, retrieval, publication and recovery behavior.
-- Update contracts and state reports with runtime changes.
-- Capability reports use only: `IMPLEMENTED_AND_EXECUTED`, `IMPLEMENTED_NOT_EXECUTED`, `CONTRACT_ONLY`, `PARTIALLY_IMPLEMENTED`, `DEFERRED`, `BLOCKED`, `FAILED`, `UNKNOWN`.
-- Competitive claims use only: `WORSE_THAN_REFERENCE`, `ROUGHLY_COMPARABLE`, `BETTER_WITH_EVIDENCE`, `UNKNOWN_NOT_REPRODUCED`.
+For recovery-sensitive changes also execute the backup/restore and managed-Git
+recovery gates used by CI. Broad retrieval/document/agent/load comparisons are
+P10 evidence, not a substitute for focused correctness tests.
+
+## Repository and branch discipline
+
+- Keep the root product-facing. New assurance material belongs under `docs/` or
+  generated `reports/`, not as root progress files.
+- Do not create `GOAL_*`, `*_PROGRESS`, worklog, scratch or handoff documents in
+  the tracked product tree.
+- Keep `main`, active PR heads and explicitly referenced baselines. Delete
+  temporary evidence/test/no-op branches once their useful commits are merged
+  or otherwise preserved.
+- A branch name is not evidence that work is current; check its PR and ancestry.
+- Add migrations; never rewrite an applied migration.
+- Update contracts and current status only with behavior actually executed.
