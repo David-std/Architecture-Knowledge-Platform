@@ -18,6 +18,8 @@ jobs:
       AKP_RAW_SECRET_KEY: akp-ci-minio-secret-not-for-production
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
       - uses: pnpm/action-setup@v6
         with: { version: 10.34.5 }
       - uses: actions/setup-node@v7
@@ -25,6 +27,17 @@ jobs:
           node-version: 24.20.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Generate and validate repository classification
+        run: |
+          pnpm hygiene:write
+          pnpm hygiene:validate
+      - name: Upload P9 repository classification
+        uses: actions/upload-artifact@v7
+        with:
+          name: p9-repository-classification-${{ github.run_id }}
+          path: reports/repository-file-classification.json
+          if-no-files-found: error
+          retention-days: 7
       - run: pnpm build
       - run: docker compose up -d --wait postgres minio
       - name: Create disposable managed repository with a searchable restore probe
@@ -36,7 +49,7 @@ jobs:
           git -C "$AKP_MANAGED_REPO" config user.name "AKP Recovery CI"
           git -C "$AKP_MANAGED_REPO" config user.email "akp-recovery-ci@localhost"
           mkdir -p "$AKP_MANAGED_REPO/managed"
-          cat > "$AKP_MANAGED_REPO/managed/p8-restore-probe.md" <<'EOF'
+          cat > "$AKP_MANAGED_REPO/managed/p8-restore-probe.md" <<'EOPROBE'
           ---
           id: P8-RESTORE-PROBE
           title: P8 Restore Probe
@@ -46,7 +59,7 @@ jobs:
           ---
 
           This restore probe must become searchable after the managed Git bundle is restored into a new repository.
-          EOF
+          EOPROBE
           git -C "$AKP_MANAGED_REPO" add --all
           git -C "$AKP_MANAGED_REPO" commit -m "test: seed managed restore probe"
       - run: pnpm db:migrate
