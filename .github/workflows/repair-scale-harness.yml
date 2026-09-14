@@ -1,0 +1,57 @@
+name: repair-scale-harness
+
+on:
+  push:
+    branches: [work/product-completion-final]
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: work/product-completion-final
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Apply the two verified scale-harness corrections
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("scripts/load-scale-benchmark.ts")
+          text = path.read_text(encoding="utf-8")
+          malformed = '''  if (!Number.isFinite(parsed)\n  ) throw new Error(`non-numeric database value: ${value}`);'''
+          formatted = '''  if (!Number.isFinite(parsed))\n    throw new Error(`non-numeric database value: ${value}`);'''
+          if malformed not in text:
+              raise SystemExit("expected malformed asNumber block was not found")
+          text = text.replace(malformed, formatted, 1)
+          wrong_memory = "contextPacketHeapDeltaBytes: contextPacket.heapUsedBytes,"
+          correct_memory = "contextPacketHeapDeltaBytes: contextPacket.heapDeltaBytes,"
+          if wrong_memory not in text:
+              raise SystemExit("expected context packet memory typo was not found")
+          text = text.replace(wrong_memory, correct_memory, 1)
+          path.write_text(text, encoding="utf-8")
+      - run: pnpm exec prettier --write scripts/load-scale-benchmark.ts
+      - name: Verify diff is limited to the intended harness repair
+        shell: bash
+        run: |
+          git diff --check
+          git diff -- scripts/load-scale-benchmark.ts
+          test "$(git diff --name-only | tr -d '\r')" = "scripts/load-scale-benchmark.ts"
+      - name: Commit repaired harness
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/load-scale-benchmark.ts
+          git commit -m "fix(eval): repair scale benchmark metrics"
+          git push origin HEAD:work/product-completion-final
