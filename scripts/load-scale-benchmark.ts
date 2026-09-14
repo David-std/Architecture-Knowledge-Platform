@@ -511,7 +511,7 @@ async function insertUnits(
        format('Synthetic architecture unit %s for seed %s.',i,$4::text),
        encode(digest(($4::text || ':unit:' || i::text),'sha256'),'hex'),
        'synthetic-v1','ACTIVE','VERIFIED','{}'::text[],64,null,'synthetic-v1',
-       '{}'::jsonb,jsonb_build_object('path',d.path),null,0,false,false
+       '{}'::jsonb,jsonb_build_object('path',d.path),null,0,false,true
        from generate_series($5::int,$6::int) as generated(i)
        join knowledge_documents d
          on d.space_id=$1 and d.vault_id=$2 and d.external_id=$3 || i::text`,
