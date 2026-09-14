@@ -24,13 +24,57 @@ jobs:
       - run: pnpm build
       - run: docker compose up -d --wait postgres
       - run: pnpm db:migrate
-      - name: Execute authenticated API and worker concurrency benchmark
+      - name: Execute authenticated API and ingest-worker concurrency benchmark
         shell: bash
         run: |
           set -o pipefail
           mkdir -p reports/ci
           pnpm benchmark:concurrency \
             2>&1 | tee reports/ci/concurrency-benchmark.log
+      - name: Execute durable event-worker contention and retry benchmark
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm exec tsx scripts/event-concurrency-benchmark.ts \
+            2>&1 | tee reports/ci/event-concurrency-benchmark.log
+      - name: Validate P10 concurrency evidence dimensions
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const api = JSON.parse(readFileSync("reports/ci/concurrency-benchmark.json", "utf8"));
+          const events = JSON.parse(readFileSync("reports/ci/event-concurrency-benchmark.json", "utf8"));
+          if (api.status !== "PASSED" || api.coverageStatus !== "PARTIAL") {
+            throw new Error("API/ingest concurrency evidence did not pass with its PARTIAL boundary.");
+          }
+          if (events.status !== "PASSED" || events.coverageStatus !== "PARTIAL") {
+            throw new Error("Event-worker concurrency evidence did not pass with its PARTIAL boundary.");
+          }
+          if ((events.workload?.workers ?? 0) < 2) {
+            throw new Error("Event-worker benchmark did not exercise multiple workers.");
+          }
+          if ((events.claims?.retriedClaims ?? 0) < 1) {
+            throw new Error("Event-worker benchmark did not exercise a controlled retry.");
+          }
+          if (events.acceptance?.causalOrderPreserved !== true) {
+            throw new Error("Event-worker benchmark observed a causal ordering violation.");
+          }
+          if (events.acceptance?.noDuplicateSuccessfulEffects !== true) {
+            throw new Error("Event-worker benchmark observed duplicate successful effects.");
+          }
+          if (events.acceptance?.noForeignClaims !== true) {
+            throw new Error("Event-worker benchmark claimed foreign deliveries.");
+          }
+          console.log(JSON.stringify({
+            apiStatus: api.status,
+            eventStatus: events.status,
+            eventWorkers: events.workload.workers,
+            eventRetries: events.claims.retriedClaims,
+            retryRatePerEvent: events.claims.retryRatePerEvent,
+            eventP95Ms: events.claims.latency.p95Ms,
+          }, null, 2));
+          NODE
       - name: Capture concurrency diagnostics
         if: always()
         shell: bash
