@@ -1,0 +1,356 @@
+name: Reconcile contracts and worker
+
+on:
+  push:
+    branches:
+      - work/product-completion-final
+
+permissions:
+  contents: write
+
+jobs:
+  reconcile:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: work/product-completion-final
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - name: Reconcile shared contracts and worker serialization
+        shell: python
+        run: |
+          from pathlib import Path
+          import json
+          import re
+
+          contracts_path = Path("packages/contracts/src/index.ts")
+          contracts = contracts_path.read_text(encoding="utf-8")
+          if "refreshStatus: z.string().min(1)," not in contracts:
+              contracts = contracts.replace(
+                  "  lifecycle: Lifecycle,\n  score: z.number(),",
+                  "  lifecycle: Lifecycle,\n  refreshStatus: z.string().min(1),\n  score: z.number(),",
+                  1,
+              )
+
+          start = contracts.index("export const DocumentIntelligenceRequest = z")
+          end = contracts.index("export const IngestRequest = z.object({", start)
+          unified = '''export const DocumentIntelligenceIngestOptions = z
+            .object({
+              complexity: z
+                .enum([
+                  "simple",
+                  "digital",
+                  "complex",
+                  "scanned",
+                  "formula",
+                  "table-heavy",
+                  "unknown",
+                ])
+                .optional(),
+              ocrRequired: z.boolean().default(false),
+              tables: z.boolean().default(false),
+              formula: z.boolean().default(false),
+              costPolicy: z
+                .enum(["NO_PAID", "STANDARD", "QUALITY"])
+                .default("STANDARD"),
+              privacyPolicy: z
+                .enum(["LOCAL_ONLY", "LOCAL_PREFERRED", "REMOTE_ALLOWED"])
+                .default("LOCAL_PREFERRED"),
+              language: z
+                .string()
+                .trim()
+                .regex(/^[A-Za-z][A-Za-z0-9_-]{1,31}$/)
+                .optional(),
+              extractor: z
+                .string()
+                .trim()
+                .regex(/^[a-z0-9][a-z0-9-]{0,99}$/)
+                .optional(),
+              ocr: z.boolean().optional(),
+              ocrEngine: z
+                .string()
+                .trim()
+                .regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/)
+                .optional(),
+              forceFullPageOcr: z.boolean().optional(),
+              timeoutSeconds: z.number().int().min(1).max(900).optional(),
+            })
+            .strict();
+          export type DocumentIntelligenceIngestOptions = z.infer<
+            typeof DocumentIntelligenceIngestOptions
+          >;
+
+          // Backward-compatible name used by the P0-P4 worker/provider event path.
+          // Both names intentionally resolve to the same strict superset contract.
+          export const DocumentIntelligenceRequest = DocumentIntelligenceIngestOptions;
+          export type DocumentIntelligenceRequest = z.infer<
+            typeof DocumentIntelligenceRequest
+          >;
+
+          '''
+          contracts = contracts[:start] + unified + contracts[end:]
+          contracts = contracts.replace(
+              "  documentIntelligence: DocumentIntelligenceRequest.optional(),",
+              "  documentIntelligence: DocumentIntelligenceIngestOptions.optional(),",
+              1,
+          )
+          contracts_path.write_text(contracts, encoding="utf-8")
+
+          request_module = Path("apps/worker/src/document-intelligence-request.ts")
+          request_module.write_text('''import {
+            DocumentIntelligenceIngestOptions,
+            type DocumentIntelligenceIngestOptions as DocumentIntelligenceOptions,
+          } from "@akp/contracts";
+
+          export function parseDocumentIntelligenceOptions(
+            payload: Record<string, unknown>,
+          ): DocumentIntelligenceOptions {
+            const parsed = DocumentIntelligenceIngestOptions.safeParse(
+              payload.documentIntelligence ?? {},
+            );
+            if (!parsed.success) {
+              throw new Error("INVALID_DOCUMENT_INTELLIGENCE_PAYLOAD");
+            }
+            return parsed.data;
+          }
+
+          export function documentIntelligenceFormFields(
+            payload: Record<string, unknown>,
+            jobId: string,
+            parsedOptions?: DocumentIntelligenceOptions,
+          ): Record<string, string> {
+            const options = parsedOptions ?? parseDocumentIntelligenceOptions(payload);
+            const configuration: Record<string, unknown> = {
+              ...(options.language ? { language: options.language } : {}),
+              ...(options.extractor ? { extractor: options.extractor } : {}),
+              ...(options.ocr === undefined ? {} : { ocr: options.ocr }),
+              ...(options.ocrEngine ? { ocr_engine: options.ocrEngine } : {}),
+              ...(options.forceFullPageOcr === undefined
+                ? {}
+                : { force_full_page_ocr: options.forceFullPageOcr }),
+              ...(options.timeoutSeconds === undefined
+                ? {}
+                : { timeout_seconds: options.timeoutSeconds }),
+            };
+            const ocrRequired = options.ocrRequired || options.ocr === true;
+
+            return {
+              ...(options.complexity ? { complexity: options.complexity } : {}),
+              ocr_required: String(ocrRequired),
+              tables: String(options.tables),
+              formula: String(options.formula),
+              cost_policy: options.costPolicy,
+              privacy_policy: options.privacyPolicy,
+              ingest_job_id: jobId,
+              configuration_json: JSON.stringify(configuration),
+            };
+          }
+
+          export function appendDocumentIntelligenceFormFields(
+            form: FormData,
+            payload: Record<string, unknown>,
+            jobId: string,
+            parsedOptions?: DocumentIntelligenceOptions,
+          ): void {
+            for (const [name, value] of Object.entries(
+              documentIntelligenceFormFields(payload, jobId, parsedOptions),
+            )) {
+              form.set(name, value);
+            }
+          }
+          ''', encoding="utf-8")
+
+          worker_path = Path("apps/worker/src/worker.ts")
+          worker = worker_path.read_text(encoding="utf-8")
+          worker = worker.replace(
+              'import { DocumentIntelligenceRequest } from "@akp/contracts";\n',
+              '',
+              1,
+          )
+          source_boundary_import = 'import { resolveAuthorizedLocalSource } from "./source-boundary.js";\n'
+          unified_import = '''import {
+            appendDocumentIntelligenceFormFields,
+            parseDocumentIntelligenceOptions,
+          } from "./document-intelligence-request.js";
+          '''
+          if 'parseDocumentIntelligenceOptions' not in worker:
+              worker = worker.replace(source_boundary_import, source_boundary_import + unified_import, 1)
+          worker = re.sub(
+              r'\nfunction extractorConfiguration\([\s\S]*?\n}\n\nasync function processJob',
+              '\nasync function processJob',
+              worker,
+              count=1,
+          )
+          worker = worker.replace(
+              '''      const documentIntelligence = DocumentIntelligenceRequest.parse(
+                payload.documentIntelligence ?? {},
+              );
+              const configuration = extractorConfiguration(documentIntelligence);
+          ''',
+              '''      const documentIntelligence = parseDocumentIntelligenceOptions(payload);
+          ''',
+              1,
+          )
+          old_fields = '''      if (documentIntelligence.complexity) {
+                upload.set("complexity", documentIntelligence.complexity);
+              }
+              if (Object.keys(configuration).length) {
+                upload.set("configuration_json", JSON.stringify(configuration));
+              }
+          '''
+          worker = worker.replace(
+              old_fields,
+              '''      appendDocumentIntelligenceFormFields(
+                upload,
+                payload,
+                id,
+                documentIntelligence,
+              );
+          ''',
+              1,
+          )
+          worker = worker.replace(
+              'ocrRequested: documentIntelligence.ocr ?? false,',
+              'ocrRequested: documentIntelligence.ocrRequired || documentIntelligence.ocr === true,',
+          )
+          worker_path.write_text(worker, encoding="utf-8")
+
+          test_path = Path("apps/worker/test/document-intelligence-request.test.ts")
+          test_path.write_text('''import { describe, expect, it } from "vitest";
+          import { IngestRequest } from "@akp/contracts";
+          import { documentIntelligenceFormFields } from "../src/document-intelligence-request.js";
+
+          describe("document intelligence ingest controls", () => {
+            it("preserves provider-neutral policy and bounded explicit provider controls", () => {
+              const parsed = IngestRequest.parse({
+                spaceId: "00000000-0000-0000-0000-000000000003",
+                vaultId: "00000000-0000-0000-0000-000000000004",
+                sourceUri: "/allowed/source.pdf",
+                documentIntelligence: {
+                  complexity: "scanned",
+                  ocrRequired: true,
+                  tables: true,
+                  formula: false,
+                  costPolicy: "NO_PAID",
+                  privacyPolicy: "LOCAL_ONLY",
+                  language: "es",
+                  extractor: "docling",
+                  ocr: true,
+                  ocrEngine: "tesseract",
+                  forceFullPageOcr: true,
+                  timeoutSeconds: 300,
+                },
+              });
+
+              expect(
+                documentIntelligenceFormFields(
+                  parsed as unknown as Record<string, unknown>,
+                  "11111111-1111-1111-1111-111111111111",
+                ),
+              ).toEqual({
+                complexity: "scanned",
+                ocr_required: "true",
+                tables: "true",
+                formula: "false",
+                cost_policy: "NO_PAID",
+                privacy_policy: "LOCAL_ONLY",
+                ingest_job_id: "11111111-1111-1111-1111-111111111111",
+                configuration_json: JSON.stringify({
+                  language: "es",
+                  extractor: "docling",
+                  ocr: true,
+                  ocr_engine: "tesseract",
+                  force_full_page_ocr: true,
+                  timeout_seconds: 300,
+                }),
+              });
+            });
+
+            it("uses safe defaults for legacy jobs without document policy", () => {
+              expect(documentIntelligenceFormFields({}, "job-legacy")).toEqual({
+                ocr_required: "false",
+                tables: "false",
+                formula: "false",
+                cost_policy: "STANDARD",
+                privacy_policy: "LOCAL_PREFERRED",
+                ingest_job_id: "job-legacy",
+                configuration_json: "{}",
+              });
+            });
+
+            it("rejects arbitrary provider configuration instead of forwarding it", () => {
+              expect(() =>
+                documentIntelligenceFormFields(
+                  {
+                    documentIntelligence: {
+                      complexity: "remote-magic",
+                      ocrRequired: "yes",
+                      extractor: "https://attacker.invalid",
+                      providerUrl: "https://attacker.invalid",
+                    },
+                  },
+                  "job-tampered",
+                ),
+              ).toThrowError("INVALID_DOCUMENT_INTELLIGENCE_PAYLOAD");
+
+              expect(() =>
+                IngestRequest.parse({
+                  spaceId: "00000000-0000-0000-0000-000000000003",
+                  vaultId: "00000000-0000-0000-0000-000000000004",
+                  sourceUri: "/allowed/source.pdf",
+                  documentIntelligence: {
+                    extractor: "https://attacker.invalid",
+                    providerUrl: "https://attacker.invalid",
+                  },
+                }),
+              ).toThrow();
+            });
+          });
+          ''', encoding="utf-8")
+
+          mcp_package_path = Path("apps/mcp/package.json")
+          mcp_package = json.loads(mcp_package_path.read_text(encoding="utf-8"))
+          mcp_package["dependencies"]["zod"] = "^3.24.0"
+          mcp_package_path.write_text(json.dumps(mcp_package, indent=2) + "\n", encoding="utf-8")
+      - name: Regenerate and format deterministic artifacts
+        run: |
+          pnpm install --lockfile-only
+          pnpm exec prettier --write \
+            packages/contracts/src/index.ts \
+            apps/worker/src/document-intelligence-request.ts \
+            apps/worker/src/worker.ts \
+            apps/worker/test/document-intelligence-request.test.ts \
+            apps/mcp/package.json \
+            pnpm-lock.yaml
+      - name: Install reconciled workspace
+        run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Validate reconciled contracts and consumers
+        run: |
+          pnpm --filter @akp/contracts build
+          pnpm --filter @akp/worker check
+          pnpm --filter @akp/mcp build
+          pnpm --filter @akp/api build
+          pnpm build
+      - name: Commit reconciled source and lockfile
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            packages/contracts/src/index.ts \
+            apps/worker/src/document-intelligence-request.ts \
+            apps/worker/src/worker.ts \
+            apps/worker/test/document-intelligence-request.test.ts \
+            apps/mcp/package.json \
+            pnpm-lock.yaml
+          git diff --cached --check
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: reconcile shared ingestion and MCP contracts"
+          git push origin HEAD:work/product-completion-final
