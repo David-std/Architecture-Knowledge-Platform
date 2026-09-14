@@ -38,6 +38,21 @@ jobs:
           apps/api/test/review-publication.integration.test.ts
           docs/adr/0002-review-and-publication-isolation.md
       - run: pnpm check
+      - name: Capture materialized recovery tree
+        run: |
+          mkdir -p reports/p8-publication-recovery-materialized/packages/git-store/src
+          mkdir -p reports/p8-publication-recovery-materialized/apps/api/src/routes
+          mkdir -p reports/p8-publication-recovery-materialized/apps/api/test
+          mkdir -p reports/p8-publication-recovery-materialized/docs/adr
+          cp packages/git-store/src/index.ts reports/p8-publication-recovery-materialized/packages/git-store/src/index.ts
+          cp apps/api/src/routes/reviews.ts reports/p8-publication-recovery-materialized/apps/api/src/routes/reviews.ts
+          cp apps/api/test/review-publication.integration.test.ts reports/p8-publication-recovery-materialized/apps/api/test/review-publication.integration.test.ts
+          cp docs/adr/0002-review-and-publication-isolation.md reports/p8-publication-recovery-materialized/docs/adr/0002-review-and-publication-isolation.md
+      - uses: actions/upload-artifact@v7
+        with:
+          name: p8-publication-recovery-materialized-${{ github.run_id }}
+          path: reports/p8-publication-recovery-materialized
+          retention-days: 2
       - run: docker compose up -d --wait postgres minio extractor
       - run: |
           git init -b main "$AKP_MANAGED_REPO"
@@ -64,20 +79,6 @@ jobs:
           name: p8-publication-recovery-test-${{ github.run_id }}
           path: reports/p8-publication-recovery
           if-no-files-found: ignore
-          retention-days: 2
-      - run: |
-          mkdir -p reports/p8-publication-recovery-materialized/packages/git-store/src
-          mkdir -p reports/p8-publication-recovery-materialized/apps/api/src/routes
-          mkdir -p reports/p8-publication-recovery-materialized/apps/api/test
-          mkdir -p reports/p8-publication-recovery-materialized/docs/adr
-          cp packages/git-store/src/index.ts reports/p8-publication-recovery-materialized/packages/git-store/src/index.ts
-          cp apps/api/src/routes/reviews.ts reports/p8-publication-recovery-materialized/apps/api/src/routes/reviews.ts
-          cp apps/api/test/review-publication.integration.test.ts reports/p8-publication-recovery-materialized/apps/api/test/review-publication.integration.test.ts
-          cp docs/adr/0002-review-and-publication-isolation.md reports/p8-publication-recovery-materialized/docs/adr/0002-review-and-publication-isolation.md
-      - uses: actions/upload-artifact@v7
-        with:
-          name: p8-publication-recovery-materialized-${{ github.run_id }}
-          path: reports/p8-publication-recovery-materialized
           retention-days: 2
       - if: always()
         run: docker compose down -v --remove-orphans
