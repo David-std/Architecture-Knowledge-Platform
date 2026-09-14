@@ -1,3 +1,4 @@
+import { metrics } from "@opentelemetry/api";
 import pg from "pg";
 
 export * from "./vault-registry.js";
@@ -18,6 +19,26 @@ export class Postgres {
   async close(): Promise<void> {
     await this.pool.end();
   }
+}
+
+function recordIngestJobAge(job: Record<string, unknown>): void {
+  const rawCreatedAt = job.created_at;
+  const createdAt =
+    rawCreatedAt instanceof Date
+      ? rawCreatedAt
+      : typeof rawCreatedAt === "string" || typeof rawCreatedAt === "number"
+        ? new Date(rawCreatedAt)
+        : null;
+  const createdAtMs = createdAt?.getTime();
+  if (createdAtMs === undefined || !Number.isFinite(createdAtMs)) return;
+  const state = typeof job.state === "string" ? job.state : "UNKNOWN";
+  metrics
+    .getMeter("architecture-knowledge-platform", "0.3.0")
+    .createHistogram("ingest_job_age", {
+      description: "Age of an ingest job when a worker successfully claims it.",
+      unit: "s",
+    })
+    .record(Math.max(0, (Date.now() - createdAtMs) / 1000), { state });
 }
 
 export async function claimNextIngestJob(
@@ -53,7 +74,9 @@ export async function claimNextIngestJob(
     `,
     [workerId, leaseSeconds],
   );
-  return result.rows[0] ?? null;
+  const job = (result.rows[0] as Record<string, unknown> | undefined) ?? null;
+  if (job) recordIngestJobAge(job);
+  return job;
 }
 
 export type KnowledgeLintTrigger =

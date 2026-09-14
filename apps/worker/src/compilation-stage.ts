@@ -153,6 +153,17 @@ async function loadRetrievalPathPrefix(
   return access.pathPrefix;
 }
 
+async function validateCompilationPlan(
+  plan: CompilationPlan,
+  mode: CompilationStageMetadata["mode"],
+): Promise<CompilationPlan> {
+  return withSpan(
+    "compile.validate",
+    { "akp.compiler.mode": mode },
+    async () => CompilationPlan.parse(plan),
+  );
+}
+
 async function sourceSummaryFallback(
   db: Postgres,
   input: CompilationStageInput,
@@ -233,18 +244,21 @@ export async function buildCompilationStage(
         "akp.compiler.mode": "SOURCE_SUMMARY_FALLBACK",
         "akp.vector.enabled": input.vectorEnabled,
       },
-      async () => ({
-        plan: await sourceSummaryFallback(
+      async () => {
+        const plan = await sourceSummaryFallback(
           db,
           input,
           vault.corpusRevision,
           pathPrefix,
-        ),
-        metadata: {
-          mode: "SOURCE_SUMMARY_FALLBACK",
-          reason: "GENERIC_COMPILER_DISABLED_OR_UNCONFIGURED",
-        },
-      }),
+        );
+        return {
+          plan: await validateCompilationPlan(plan, "SOURCE_SUMMARY_FALLBACK"),
+          metadata: {
+            mode: "SOURCE_SUMMARY_FALLBACK",
+            reason: "GENERIC_COMPILER_DISABLED_OR_UNCONFIGURED",
+          },
+        };
+      },
     );
   }
   const vaultId = input.vaultId;
@@ -280,7 +294,7 @@ export async function buildCompilationStage(
       }),
   );
   return {
-    plan: compiled.plan,
+    plan: await validateCompilationPlan(compiled.plan, "GENERATIVE"),
     metadata: {
       mode: "GENERATIVE",
       provider: compiled.provider,

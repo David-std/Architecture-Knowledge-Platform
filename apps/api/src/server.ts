@@ -72,32 +72,56 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
     string,
     { trace: ActiveTrace; started: number }
   >();
+  const ingestTraces = new Map<string, ActiveTrace>();
 
   app.addHook("onRequest", async (request) => {
+    const requestPath = request.url.split("?")[0] ?? request.url;
     requestTraces.set(request.id, {
       trace: telemetry.startTrace("http.request", {
         "http.request.method": request.method,
-        "url.path": request.url.split("?")[0] ?? request.url,
+        "url.path": requestPath,
       }),
       started: performance.now(),
     });
+    if (request.method === "POST" && requestPath === "/v1/ingest") {
+      ingestTraces.set(
+        request.id,
+        telemetry.startTrace("ingest.receive", {
+          "akp.ingest.operation": "receive",
+        }),
+      );
+    }
   });
   app.addHook("onError", async (request, _reply, error) => {
     requestTraces.get(request.id)?.trace.fail(error);
+    ingestTraces.get(request.id)?.fail(error);
   });
   app.addHook("onResponse", async (request, reply) => {
     const active = requestTraces.get(request.id);
-    if (!active) return;
-    telemetry.histogram(
-      "akp.http.server.duration",
-      performance.now() - active.started,
-      {
-        method: request.method,
-        status: String(reply.statusCode),
-      },
-    );
-    active.trace.end({ "http.response.status_code": reply.statusCode });
-    requestTraces.delete(request.id);
+    if (active) {
+      telemetry.histogram(
+        "akp.http.server.duration",
+        performance.now() - active.started,
+        {
+          method: request.method,
+          status: String(reply.statusCode),
+        },
+      );
+      active.trace.end({ "http.response.status_code": reply.statusCode });
+      requestTraces.delete(request.id);
+    }
+    const ingestTrace = ingestTraces.get(request.id);
+    if (ingestTrace) {
+      const accepted = reply.statusCode === 202;
+      if (accepted) {
+        telemetry.counter("ingest_jobs_total", 1, { state: "RECEIVED" });
+      }
+      ingestTrace.end({
+        "http.response.status_code": reply.statusCode,
+        "akp.ingest.accepted": accepted,
+      });
+      ingestTraces.delete(request.id);
+    }
   });
 
   app.setErrorHandler((error, request, reply) => {
