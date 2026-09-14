@@ -88,8 +88,6 @@ jobs:
             typeof DocumentIntelligenceIngestOptions
           >;
 
-          // Backward-compatible name used by the P0-P4 worker/provider event path.
-          // Both names intentionally resolve to the same strict superset contract.
           export const DocumentIntelligenceRequest = DocumentIntelligenceIngestOptions;
           export type DocumentIntelligenceRequest = z.infer<
             typeof DocumentIntelligenceRequest
@@ -320,9 +318,12 @@ jobs:
           mcp_package = json.loads(mcp_package_path.read_text(encoding="utf-8"))
           mcp_package["dependencies"]["zod"] = "^3.24.0"
           mcp_package_path.write_text(json.dumps(mcp_package, indent=2) + "\n", encoding="utf-8")
-      - name: Regenerate and format deterministic artifacts
+      - name: Regenerate lockfile
+        run: pnpm install --lockfile-only
+      - name: Install reconciled workspace
+        run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Format reconciled sources and lockfile
         run: |
-          pnpm install --lockfile-only
           pnpm exec prettier --write \
             packages/contracts/src/index.ts \
             apps/worker/src/document-intelligence-request.ts \
@@ -330,8 +331,6 @@ jobs:
             apps/worker/test/document-intelligence-request.test.ts \
             apps/mcp/package.json \
             pnpm-lock.yaml
-      - name: Install reconciled workspace
-        run: pnpm install --frozen-lockfile --strict-peer-dependencies
       - name: Validate reconciled contracts and consumers
         run: |
           pnpm --filter @akp/contracts build
