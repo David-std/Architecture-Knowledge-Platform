@@ -157,7 +157,6 @@ export const SearchHit = z.object({
   type: z.string(),
   trust: TrustTier,
   lifecycle: Lifecycle,
-  refreshStatus: z.string().min(1),
   score: z.number(),
   reasons: z.array(z.string()),
   fusionContributions: z
@@ -207,6 +206,7 @@ export const ContextSection = z.object({
   sourceOrEvidenceIds: z.array(z.string()),
   graphProvenance: z.array(GraphPathProvenance).optional(),
 });
+export type ContextSection = z.infer<typeof ContextSection>;
 
 export const ContextPacketMode = z.enum([
   "FULL_CONTEXT_PACKET",
@@ -238,6 +238,13 @@ export const ContextPacketBudget = z.object({
 });
 export type ContextPacketBudget = z.infer<typeof ContextPacketBudget>;
 
+export const ContextContinuation = z.object({
+  handle: z.string().regex(/^[a-f0-9]{64}$/),
+  reason: z.string(),
+  remainingTokens: z.number().int().nonnegative(),
+});
+export type ContextContinuation = z.infer<typeof ContextContinuation>;
+
 export const ContextPacket = z.object({
   packetMode: z.literal("FULL_CONTEXT_PACKET"),
   packetId: z.string().uuid(),
@@ -264,16 +271,22 @@ export const ContextPacket = z.object({
   conflicts: z.array(z.string()),
   requiredActions: z.array(z.string()),
   recommendedActions: z.array(z.string()),
-  continuations: z.array(
-    z.object({
-      handle: z.string(),
-      reason: z.string(),
-      remainingTokens: z.number().int().nonnegative(),
-    }),
-  ),
+  continuations: z.array(ContextContinuation),
   packetHash: z.string(),
 });
 export type ContextPacket = z.infer<typeof ContextPacket>;
+
+export const ContextContinuationResponse = z.object({
+  packetId: z.string().uuid(),
+  packetHash: z.string(),
+  corpusRevision: z.string(),
+  scope: ContextPacket.shape.scope,
+  continuation: ContextContinuation,
+  sections: z.array(ContextSection).min(1),
+});
+export type ContextContinuationResponse = z.infer<
+  typeof ContextContinuationResponse
+>;
 
 export const CompactContextSection = z.object({
   kind: ContextSection.shape.kind,
@@ -331,7 +344,7 @@ export const ContextPacketResponse = z.discriminatedUnion("packetMode", [
 ]);
 export type ContextPacketResponse = z.infer<typeof ContextPacketResponse>;
 
-export const DocumentIntelligenceIngestOptions = z
+export const DocumentIntelligenceRequest = z
   .object({
     complexity: z
       .enum([
@@ -344,22 +357,15 @@ export const DocumentIntelligenceIngestOptions = z
         "unknown",
       ])
       .optional(),
-    ocrRequired: z.boolean().default(false),
-    tables: z.boolean().default(false),
-    formula: z.boolean().default(false),
-    costPolicy: z.enum(["NO_PAID", "STANDARD", "QUALITY"]).default("STANDARD"),
-    privacyPolicy: z
-      .enum(["LOCAL_ONLY", "LOCAL_PREFERRED", "REMOTE_ALLOWED"])
-      .default("LOCAL_PREFERRED"),
-    language: z
-      .string()
-      .trim()
-      .regex(/^[A-Za-z][A-Za-z0-9_-]{1,31}$/)
-      .optional(),
+    extractor: z.string().trim().min(1).max(100).optional(),
+    ocr: z.boolean().optional(),
+    ocrEngine: z.string().trim().min(1).max(100).optional(),
+    forceFullPageOcr: z.boolean().optional(),
+    timeoutSeconds: z.number().int().min(1).max(900).optional(),
   })
   .strict();
-export type DocumentIntelligenceIngestOptions = z.infer<
-  typeof DocumentIntelligenceIngestOptions
+export type DocumentIntelligenceRequest = z.infer<
+  typeof DocumentIntelligenceRequest
 >;
 
 export const IngestRequest = z.object({
@@ -372,7 +378,7 @@ export const IngestRequest = z.object({
     .optional(),
   title: z.string().optional(),
   mediaType: z.string().optional(),
-  documentIntelligence: DocumentIntelligenceIngestOptions.optional(),
+  documentIntelligence: DocumentIntelligenceRequest.optional(),
   policy: z
     .enum(["REVIEW_REQUIRED", "ALLOW_LOW_RISK_AUTO_APPROVAL"])
     .default("REVIEW_REQUIRED"),

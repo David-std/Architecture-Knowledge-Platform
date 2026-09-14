@@ -1,4 +1,3 @@
-import "./instrumentation.js";
 import { config } from "dotenv";
 import { createReadStream, createWriteStream, openAsBlob } from "node:fs";
 import { rm } from "node:fs/promises";
@@ -15,6 +14,7 @@ import {
   claimNextIngestJob,
   runKnowledgeLint,
 } from "@akp/postgres";
+import { DocumentIntelligenceRequest } from "@akp/contracts";
 import { transitionIngest, type IngestState } from "@akp/domain";
 import {
   hashFile,
@@ -46,12 +46,6 @@ import { buildCompilationStage } from "./compilation-stage.js";
 import { evaluateCompilationProbes } from "./compilation-probes.js";
 import { selectEvidenceFragment } from "./evidence-fragment.js";
 import { resolveAuthorizedLocalSource } from "./source-boundary.js";
-import { appendDocumentIntelligenceFormFields } from "./document-intelligence-request.js";
-import {
-  OpenTelemetryBridge,
-  shutdownOpenTelemetry,
-  withSpan,
-} from "@akp/observability";
 
 config({
   path: path.resolve(
@@ -68,7 +62,6 @@ const db = new Postgres(databaseUrl);
 const managedRepository =
   process.env.AKP_MANAGED_REPO || path.join(tmpdir(), "akp-managed-knowledge");
 const git = new GitKnowledgeStore(managedRepository);
-const telemetry = new OpenTelemetryBridge();
 
 const eventWorker = new DurableEventWorker(db, {
   consumerName: process.env.AKP_EVENT_CONSUMER ?? "ingest-and-indexing",
@@ -139,9 +132,13 @@ async function updateState(
   jobId: string,
   current: IngestState,
   next: IngestState,
+  expectedVersion: number,
   stageOutput?: Record<string, unknown>,
   result?: unknown,
 ): Promise<void> {
+  if (!Number.isSafeInteger(expectedVersion) || Number(expectedVersion) < 1) {
+    throw new Error("JOB_FENCING_VERSION_REQUIRED");
+  }
   transitionIngest(current, next);
   const client = await db.pool.connect();
   try {
@@ -161,7 +158,8 @@ async function updateState(
              lease_expires_at = null,
              heartbeat_at = now(),
              updated_at = now()
-       where id = $1 and state = $2 and lease_owner = $6 and cancelled_at is null
+       where id = $1 and state = $2 and lease_owner = $6 and version = $7
+         and cancelled_at is null
        returning id,space_id,vault_id,payload
       `,
       [
@@ -171,6 +169,7 @@ async function updateState(
         result === undefined ? null : JSON.stringify(result),
         stageOutput === undefined ? null : JSON.stringify(stageOutput),
         workerId,
+        expectedVersion,
       ],
     );
     if (!updated.rowCount) {
@@ -238,9 +237,68 @@ async function updateState(
   }
 }
 
+type ProviderTaskEvent =
+  "PROVIDER_TASK_STARTED" | "PROVIDER_TASK_SUCCEEDED" | "PROVIDER_TASK_FAILED";
+
+async function recordProviderTaskEvent(
+  jobId: string,
+  state: IngestState,
+  eventType: ProviderTaskEvent,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  const inserted = await db.pool.query(
+    `
+    insert into ingest_job_events(job_id,state,event_type,payload)
+    select $1,$2,$3,$4::jsonb
+     where exists (
+       select 1 from ingest_jobs
+        where id=$1 and lease_owner=$5 and cancelled_at is null
+     )
+    returning id
+    `,
+    [jobId, state, eventType, JSON.stringify(payload), workerId],
+  );
+  if (!inserted.rowCount) {
+    throw new Error("JOB_LEASE_LOST_OR_CANCELLED");
+  }
+}
+
+function providerTaskErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message
+    .replace(
+      /(?:[A-Za-z]:[\\/]|\\\\|file:\/\/|\/(?:Users|home|tmp|var)\/)[^\s"']+/g,
+      "[REDACTED_PATH]",
+    )
+    .slice(0, 2_000);
+}
+
+function extractorConfiguration(
+  documentIntelligence: ReturnType<typeof DocumentIntelligenceRequest.parse>,
+): Record<string, unknown> {
+  return {
+    ...(documentIntelligence.extractor
+      ? { extractor: documentIntelligence.extractor }
+      : {}),
+    ...(documentIntelligence.ocr === undefined
+      ? {}
+      : { ocr: documentIntelligence.ocr }),
+    ...(documentIntelligence.ocrEngine
+      ? { ocr_engine: documentIntelligence.ocrEngine }
+      : {}),
+    ...(documentIntelligence.forceFullPageOcr === undefined
+      ? {}
+      : { force_full_page_ocr: documentIntelligence.forceFullPageOcr }),
+    ...(documentIntelligence.timeoutSeconds === undefined
+      ? {}
+      : { timeout_seconds: documentIntelligence.timeoutSeconds }),
+  };
+}
+
 async function processJob(job: Record<string, unknown>): Promise<void> {
   const id = String(job.id);
   const state = String(job.state) as IngestState;
+  const version = Number(job.version);
   const payload = job.payload as Record<string, unknown>;
   const outputs = (job.stage_outputs ?? {}) as Record<string, unknown>;
   const sourceUri = String(payload.sourceUri ?? job.source_uri);
@@ -307,7 +365,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
           `,
           sourceValues,
         );
-    await updateState(id, state, "HASHED", {
+    await updateState(id, state, "HASHED", version, {
       raw,
       sourceId: source.rows[0]?.id,
       originalName: basename(sourcePath),
@@ -320,11 +378,11 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
     if (!raw?.sha256 || !(await objects.exists(raw.sha256))) {
       throw new Error("Immutable raw object is missing.");
     }
-    await updateState(id, state, "STORED");
+    await updateState(id, state, "STORED", version);
     return;
   }
   if (state === "STORED") {
-    await updateState(id, state, "NORMALIZING");
+    await updateState(id, state, "NORMALIZING", version);
     return;
   }
   if (state === "NORMALIZING") {
@@ -347,47 +405,92 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
       if (materialized.sha256 !== raw.sha256) {
         throw new Error("IMMUTABLE_OBJECT_HASH_MISMATCH");
       }
+      const documentIntelligence = DocumentIntelligenceRequest.parse(
+        payload.documentIntelligence ?? {},
+      );
+      const configuration = extractorConfiguration(documentIntelligence);
+      const mediaType = String(outputs.mediaType ?? payload.mediaType ?? "");
+      const attempt = Number(job.attempts ?? 0) + 1;
       const upload = new FormData();
       upload.set(
         "file",
-        await openAsBlob(immutablePath, {
-          type: String(outputs.mediaType ?? payload.mediaType ?? ""),
-        }),
+        await openAsBlob(immutablePath, { type: mediaType }),
         String(outputs.originalName ?? basename(sourceUri)),
       );
       upload.set("source_uri", sourceUri);
       upload.set("source_id", String(outputs.sourceId));
-      upload.set(
-        "media_type",
-        String(outputs.mediaType ?? payload.mediaType ?? ""),
-      );
+      upload.set("media_type", mediaType);
       upload.set("expected_sha256", raw.sha256);
-      appendDocumentIntelligenceFormFields(upload, payload, id);
-      const response = await fetch(`${extractorUrl}/v1/extract-upload`, {
-        method: "POST",
-        headers: {
-          "x-akp-extractor-token":
-            process.env.AKP_EXTRACTOR_TOKEN ??
-            "local-extractor-development-token",
-        },
-        body: upload,
+      if (documentIntelligence.complexity) {
+        upload.set("complexity", documentIntelligence.complexity);
+      }
+      if (Object.keys(configuration).length) {
+        upload.set("configuration", JSON.stringify(configuration));
+      }
+      await recordProviderTaskEvent(id, state, "PROVIDER_TASK_STARTED", {
+        attempt,
+        mediaType,
+        complexity: documentIntelligence.complexity ?? null,
+        requestedExtractor: documentIntelligence.extractor ?? null,
+        ocrRequested: documentIntelligence.ocr ?? false,
       });
-      if (!response.ok)
-        throw new Error(
-          `Extractor failed: ${response.status} ${await response.text()}`,
+
+      let canonical: ReturnType<typeof parseCanonicalExtractionResponse>;
+      try {
+        const response = await fetch(`${extractorUrl}/v1/extract-upload`, {
+          method: "POST",
+          headers: {
+            "x-akp-extractor-token":
+              process.env.AKP_EXTRACTOR_TOKEN ??
+              "local-extractor-development-token",
+          },
+          body: upload,
+        });
+        if (!response.ok) {
+          throw new Error(
+            `Extractor failed: ${response.status} ${await response.text()}`,
+          );
+        }
+        const extractedResponse = (await response.json()) as unknown;
+        const expectedIdentity = {
+          sourceId: String(outputs.sourceId),
+          sourceHash: raw.sha256,
+          ...(mediaType ? { mediaType } : {}),
+        };
+        canonical = parseCanonicalExtractionResponse(
+          extractedResponse,
+          expectedIdentity,
         );
-      const extractedResponse = (await response.json()) as unknown;
-      const expectedIdentity = {
-        sourceId: String(outputs.sourceId),
-        sourceHash: raw.sha256,
-        ...(String(outputs.mediaType ?? payload.mediaType ?? "")
-          ? { mediaType: String(outputs.mediaType ?? payload.mediaType) }
-          : {}),
-      };
-      const canonical = parseCanonicalExtractionResponse(
-        extractedResponse,
-        expectedIdentity,
-      );
+      } catch (error) {
+        await recordProviderTaskEvent(id, state, "PROVIDER_TASK_FAILED", {
+          attempt,
+          mediaType,
+          complexity: documentIntelligence.complexity ?? null,
+          requestedExtractor: documentIntelligence.extractor ?? null,
+          ocrRequested: documentIntelligence.ocr ?? false,
+          message: providerTaskErrorMessage(error),
+        });
+        throw error;
+      }
+
+      await recordProviderTaskEvent(id, state, "PROVIDER_TASK_SUCCEEDED", {
+        attempt,
+        extractor: canonical.extractor,
+        extractorVersion: canonical.extractorVersion,
+        selectedAdapter:
+          typeof canonical.routing.selected_adapter === "string"
+            ? canonical.routing.selected_adapter
+            : canonical.extractor,
+        selectionReason:
+          typeof canonical.routing.selection_reason === "string"
+            ? canonical.routing.selection_reason
+            : null,
+        fallback: canonical.routing.fallback === true,
+        configurationHash: canonical.configurationHash,
+        structuredContentHash: canonical.contentHash,
+        warnings: canonical.warnings,
+      });
+
       const storedArtifact = await db.pool.query<{ id: string }>(
         `
         insert into source_artifacts(
@@ -488,7 +591,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
         evidence_id: evidenceId,
         evidence_precision: evidenceFragment.precision,
       };
-      await updateState(id, state, "ANALYZING", { extracted });
+      await updateState(id, state, "ANALYZING", version, { extracted });
     } finally {
       await rm(immutablePath, { force: true });
     }
@@ -541,6 +644,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
         id,
         state,
         "NO_MATERIAL",
+        version,
         {
           identity: {
             classification: "SAME_IDENTITY",
@@ -576,7 +680,6 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
         extractorVersion: artifactResult.extractorVersion,
         artifact: artifactResult.artifact,
         vectorEnabled: process.env.AKP_VECTOR_ENABLED === "true",
-        requesterId: typeof job.created_by === "string" ? job.created_by : null,
       },
       createConfiguredKnowledgeCompiler(process.env),
     );
@@ -586,6 +689,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
         id,
         state,
         "NO_MATERIAL",
+        version,
         { plan, compilation: compilationStage.metadata },
         { disposition: "NO_MATERIAL", reason: plan.summary },
       );
@@ -595,7 +699,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
       "insert into compilation_plans(job_id,source_id,plan) values($1,$2,$3::jsonb)",
       [id, outputs.sourceId, JSON.stringify(plan)],
     );
-    await updateState(id, state, "PLANNED", {
+    await updateState(id, state, "PLANNED", version, {
       plan,
       compilation: compilationStage.metadata,
     });
@@ -613,7 +717,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
       authorName,
       authorEmail,
     );
-    await updateState(id, state, "DRAFTED", {
+    await updateState(id, state, "DRAFTED", version, {
       draft: { branchName, baseRevision, headCommit },
     });
     return;
@@ -666,7 +770,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
     }
     if (errors.length)
       throw new Error(`Draft validation failed: ${JSON.stringify(errors)}`);
-    await updateState(id, state, "VALIDATING", {
+    await updateState(id, state, "VALIDATING", version, {
       validation: { issues, errors: 0, probeResults },
     });
     return;
@@ -693,17 +797,21 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
         draft.baseRevision,
         draft.headCommit,
         job.created_by ?? null,
-        JSON.stringify({ jobId: id, ...plan }),
+        JSON.stringify({
+          jobId: id,
+          ...plan,
+          compilation: outputs.compilation ?? null,
+        }),
         JSON.stringify(outputs.validation ?? { issues: [], errors: 0 }),
       ],
     );
-    await updateState(id, state, "REVIEW_REQUIRED", { reviewId });
+    await updateState(id, state, "REVIEW_REQUIRED", version, { reviewId });
     return;
   }
 
   await db.pool.query(
-    "update ingest_jobs set lease_owner=null,lease_expires_at=null,updated_at=now() where id=$1",
-    [id],
+    "update ingest_jobs set lease_owner=null,lease_expires_at=null,updated_at=now() where id=$1 and lease_owner=$2 and version=$3",
+    [id, workerId, version],
   );
 }
 
@@ -715,8 +823,12 @@ async function handleFailure(
   const maxAttempts = Number(job.max_attempts ?? 5);
   const terminal = attempts >= maxAttempts;
   const delaySeconds = Math.min(300, 2 ** attempts);
-  await db.pool.query(
-    `
+  const version = Number(job.version);
+  const client = await db.pool.connect();
+  try {
+    await client.query("begin");
+    const updated = await client.query(
+      `
     update ingest_jobs
        set state = case when $2 then 'FAILED' else state end,
            attempts = $3,
@@ -725,35 +837,53 @@ async function handleFailure(
            lease_owner = null,
            lease_expires_at = null,
            updated_at = now()
-     where id = $1 and lease_owner = $6 and cancelled_at is null
+     where id = $1 and lease_owner = $6 and version = $7
+       and cancelled_at is null
+     returning id
     `,
-    [
-      job.id,
-      terminal,
-      attempts,
-      JSON.stringify({
-        message: error instanceof Error ? error.message : String(error),
-      }),
-      delaySeconds,
-      workerId,
-    ],
-  );
-  await db.pool.query(
-    "insert into ingest_job_events(job_id,state,event_type,payload) values($1,$2,'FAILURE',$3::jsonb)",
-    [
-      job.id,
-      terminal ? "FAILED" : String(job.state),
-      JSON.stringify({
+      [
+        job.id,
+        terminal,
         attempts,
-        maxAttempts,
+        JSON.stringify({
+          message: error instanceof Error ? error.message : String(error),
+        }),
         delaySeconds,
-        message: String(error),
-      }),
-    ],
-  );
+        workerId,
+        version,
+      ],
+    );
+    if (!updated.rowCount) {
+      await client.query("rollback");
+      return;
+    }
+    await client.query(
+      "insert into ingest_job_events(job_id,state,event_type,payload) values($1,$2,'FAILURE',$3::jsonb)",
+      [
+        job.id,
+        terminal ? "FAILED" : String(job.state),
+        JSON.stringify({
+          attempts,
+          maxAttempts,
+          delaySeconds,
+          message: String(error),
+        }),
+      ],
+    );
+    await client.query("commit");
+  } catch (failure) {
+    await client.query("rollback");
+    throw failure;
+  } finally {
+    client.release();
+  }
 }
 
-function startLeaseHeartbeat(jobId: string, leaseSeconds = 60): () => void {
+function startLeaseHeartbeat(
+  jobId: string,
+  version: number,
+  leaseSeconds = 60,
+): () => void {
   let updateInFlight = false;
   const timer = setInterval(
     () => {
@@ -765,9 +895,9 @@ function startLeaseHeartbeat(jobId: string, leaseSeconds = 60): () => void {
         update ingest_jobs
            set lease_expires_at=now()+make_interval(secs => $3),
                heartbeat_at=now(),updated_at=now()
-         where id=$1 and lease_owner=$2 and cancelled_at is null
-        `,
-          [jobId, workerId, leaseSeconds],
+         where id=$1 and lease_owner=$2 and version=$4 and cancelled_at is null
+         `,
+          [jobId, workerId, leaseSeconds, version],
         )
         .catch(() => undefined)
         .finally(() => {
@@ -780,53 +910,14 @@ function startLeaseHeartbeat(jobId: string, leaseSeconds = 60): () => void {
   return () => clearInterval(timer);
 }
 
-async function tracedProcessJob(job: Record<string, unknown>): Promise<void> {
-  const state = String(job.state);
-  const attributes = { "akp.ingest.state": state };
-  if (state === "RECEIVED") {
-    return withSpan("ingest.receive", attributes, () =>
-      withSpan("raw.store", attributes, () => processJob(job)),
-    );
-  }
-  if (state === "NORMALIZING") {
-    return withSpan("extract.request", attributes, () =>
-      withSpan("extract.process", attributes, () => processJob(job)),
-    );
-  }
-  if (state === "DRAFTED") {
-    return withSpan("compile.validate", attributes, () => processJob(job));
-  }
-  return processJob(job);
-}
-
 async function runClaimedJob(job: Record<string, unknown>): Promise<void> {
-  const stopHeartbeat = startLeaseHeartbeat(String(job.id));
-  const state = String(job.state);
-  const started = performance.now();
-  const createdAt = new Date(String(job.created_at ?? ""));
+  const stopHeartbeat = startLeaseHeartbeat(
+    String(job.id),
+    Number(job.version),
+  );
   try {
-    await tracedProcessJob(job);
-    telemetry.counter("ingest_jobs_total", 1, { state });
-    if (!Number.isNaN(createdAt.getTime())) {
-      telemetry.histogram(
-        "ingest_job_age",
-        Math.max(0, (Date.now() - createdAt.getTime()) / 1000),
-        { state },
-      );
-    }
-    if (state === "NORMALIZING") {
-      telemetry.histogram(
-        "extract_latency",
-        (performance.now() - started) / 1000,
-        { provider: "extractor-service" },
-      );
-    }
+    await processJob(job);
   } catch (error) {
-    if (state === "NORMALIZING") {
-      telemetry.counter("provider_failures", 1, {
-        provider: "extractor-service",
-      });
-    }
     await handleFailure(job, error);
   } finally {
     stopHeartbeat();
@@ -867,7 +958,6 @@ async function loop(): Promise<WorkerDrainSummary | undefined> {
 process.on("SIGTERM", async () => {
   eventWorker.stop();
   await db.close();
-  await shutdownOpenTelemetry();
   process.exit(0);
 });
 
@@ -883,5 +973,4 @@ try {
   }
 } finally {
   await db.close();
-  await shutdownOpenTelemetry();
 }
