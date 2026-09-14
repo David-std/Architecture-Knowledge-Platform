@@ -252,7 +252,10 @@ export async function buildCompilationStage(
           pathPrefix,
         );
         return {
-          plan: await validateCompilationPlan(plan, "SOURCE_SUMMARY_FALLBACK"),
+          plan: await validateCompilationPlan(
+            plan,
+            "SOURCE_SUMMARY_FALLBACK",
+          ),
           metadata: {
             mode: "SOURCE_SUMMARY_FALLBACK",
             reason: "GENERIC_COMPILER_DISABLED_OR_UNCONFIGURED",
