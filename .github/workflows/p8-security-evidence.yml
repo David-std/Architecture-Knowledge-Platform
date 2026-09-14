@@ -22,6 +22,7 @@ jobs:
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
       - name: Materialize P8.1 hardening
         run: |
+          node scripts/p8-security-bootstrap-fix.mjs
           node scripts/p8-security-materialize.mjs
           node scripts/p8-security-test-fix.mjs
           pnpm exec prettier --write \
