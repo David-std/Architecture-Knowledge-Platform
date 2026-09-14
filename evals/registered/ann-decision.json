@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "status": "DEFERRED",
+  "subject": "pgvector approximate-nearest-neighbor comparison",
+  "registeredCorpus": {
+    "manifest": "evals/registered/public-product-corpus.json",
+    "name": "architecture-knowledge-platform-public-product-docs",
+    "documentCount": 8
+  },
+  "decision": {
+    "selectedIndex": null,
+    "winner": null,
+    "reason": "The currently registered real product corpus contains only eight documents. An exact-vs-HNSW-vs-IVFFlat comparison at this size would not answer a current product scale question, so PR #1 requires deferral rather than manufacturing an ANN winner."
+  },
+  "supportingEvidence": [
+    {
+      "path": "reports/scale/load-scale-benchmark.json",
+      "role": "synthetic scale context only",
+      "limitation": "Synthetic fixed-dimensional vectors and three timing samples per target are not real-corpus semantic quality evidence and are not used to select a production ANN index."
+    }
+  ],
+  "reevaluateWhen": [
+    "A materially larger production-like registered corpus is available.",
+    "Measured exact-vector retrieval latency on that corpus creates a concrete scale question.",
+    "Recall@10, latency, build time, index size, RAM and incremental-update cost can all be measured on the same held-out corpus."
+  ]
+}
