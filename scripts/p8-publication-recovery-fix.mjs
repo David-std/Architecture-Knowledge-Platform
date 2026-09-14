@@ -36,4 +36,26 @@ source = replaceOnce(
   "narrow publication client",
 );
 await writeFile(file, source, "utf8");
-console.log("P8.3 publication recovery compile fix applied");
+
+const testFile = "apps/api/test/review-publication.integration.test.ts";
+let test = await readFile(testFile, "utf8");
+test = replaceOnce(
+  test,
+  `    expect(failed.statusCode).toBe(500);\n    expect(failed.json()).toMatchObject({ code: "PUBLICATION_FAILED" });`,
+  `    console.error("P8_RECOVERY_DIAG_DB_FAILURE", failed.body);\n    expect(failed.statusCode).toBe(500);\n    expect(failed.json()).toMatchObject({ code: "PUBLICATION_FAILED" });`,
+  "db failure response diagnostics",
+);
+test = replaceOnce(
+  test,
+  `    expect(response.statusCode).toBe(409);\n    expect(response.json()).toMatchObject({ code: "PUBLICATION_CONFLICT" });`,
+  `    console.error("P8_RECOVERY_DIAG_MAIN_MOVED", response.body);\n    expect(response.statusCode).toBe(409);\n    expect(response.json()).toMatchObject({ code: "PUBLICATION_CONFLICT" });`,
+  "main moved response diagnostics",
+);
+test = replaceOnce(
+  test,
+  `      expect(response.statusCode).toBe(409);\n      expect(response.json()).toEqual({ code: "PUBLICATION_CONFLICT" });`,
+  `      console.error("P8_RECOVERY_DIAG_DRAFT_MOVED", response.body);\n      expect(response.statusCode).toBe(409);\n      expect(response.json()).toEqual({ code: "PUBLICATION_CONFLICT" });`,
+  "draft moved response diagnostics",
+);
+await writeFile(testFile, test, "utf8");
+console.log("P8.3 publication recovery compile fix and diagnostics applied");
