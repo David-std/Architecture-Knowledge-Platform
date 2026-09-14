@@ -80,11 +80,7 @@ function summarize(samples: number[]): Stats {
   };
 }
 
-async function cleanup(
-  db: Postgres,
-  consumerName: string,
-  eventIds: string[],
-): Promise<void> {
+async function cleanup(db: Postgres, consumerName: string): Promise<void> {
   await db.pool.query(
     "delete from event_delivery_attempts where consumer_name=$1",
     [consumerName],
@@ -98,11 +94,6 @@ async function cleanup(
   await db.pool.query("delete from event_consumers where consumer_name=$1", [
     consumerName,
   ]);
-  if (eventIds.length > 0) {
-    await db.pool.query("delete from event_outbox where event_id=any($1::uuid[])", [
-      eventIds,
-    ]);
-  }
 }
 
 async function main(): Promise<void> {
@@ -173,14 +164,20 @@ async function main(): Promise<void> {
         const workerId = `event-benchmark-worker-${workerIndex + 1}`;
         while (true) {
           const claimStarted = performance.now();
-          const claim = await claimNextEventDelivery(db, consumerName, workerId);
+          const claim = await claimNextEventDelivery(
+            db,
+            consumerName,
+            workerId,
+          );
           latencies.push(performance.now() - claimStarted);
           if (!claim) return;
 
           const eventId = claim.event.eventId;
           if (!expected.has(eventId)) {
             foreignClaims.push(eventId);
-            throw new Error(`Event worker claimed non-benchmark event ${eventId}`);
+            throw new Error(
+              `Event worker claimed non-benchmark event ${eventId}`,
+            );
           }
           claimCounts.set(eventId, (claimCounts.get(eventId) ?? 0) + 1);
 
@@ -218,7 +215,10 @@ async function main(): Promise<void> {
         }
       }),
     );
-    const elapsedSeconds = Math.max(0.001, (performance.now() - started) / 1000);
+    const elapsedSeconds = Math.max(
+      0.001,
+      (performance.now() - started) / 1000,
+    );
 
     const deliveryState = await db.pool.query<{
       status: string;
@@ -270,7 +270,9 @@ async function main(): Promise<void> {
         successfulAttemptDuplicates.rows.length === 0,
       noForeignClaims: foreignClaims.length === 0,
     };
-    const status = Object.values(acceptance).every(Boolean) ? "PASSED" : "FAILED";
+    const status = Object.values(acceptance).every(Boolean)
+      ? "PASSED"
+      : "FAILED";
 
     report = {
       schemaVersion: "akp.event-concurrency-benchmark.v1",
@@ -337,7 +339,7 @@ async function main(): Promise<void> {
     process.exitCode = 1;
   } finally {
     try {
-      await cleanup(db, consumerName, eventIds);
+      await cleanup(db, consumerName);
     } finally {
       await db.close();
     }

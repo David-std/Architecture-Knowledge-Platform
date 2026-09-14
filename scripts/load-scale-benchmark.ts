@@ -537,7 +537,7 @@ async function insertEmbeddings(
     `insert into unit_embeddings(unit_id,generation_id,content_hash,embedding)
      select
        u.id,$4,
-       encode(digest(($5::text || ':embedding:' || i::text),'sha256'),'hex'),
+       u.content_hash,
        ('[' || (((i % 1000)::numeric / 1000)::text) || ',' ||
          repeat('0.01,',62) || '0.01]')::vector(64)
        from generate_series($6::int,$7::int) as generated(i)
