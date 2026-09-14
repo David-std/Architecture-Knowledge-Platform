@@ -1,0 +1,110 @@
+name: scale-benchmark
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  postgres-scale:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      DATABASE_URL: postgres://akp:akp@localhost:55432/akp
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - run: docker compose up -d --wait postgres
+      - run: pnpm db:migrate
+      - name: Execute 1K to 100K PostgreSQL scale benchmark
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p reports/ci
+          pnpm benchmark:scale -- \
+            --output reports/ci/load-scale-benchmark.json \
+            --targets 1000,10000,50000,100000 \
+            --iterations 3 \
+            2>&1 | tee reports/ci/load-scale-benchmark.log
+      - name: Validate scale evidence boundaries
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const report = JSON.parse(
+            readFileSync("reports/ci/load-scale-benchmark.json", "utf8"),
+          );
+          const expectedTargets = [1000, 10000, 50000, 100000];
+          if (report.status !== "PASSED") {
+            throw new Error(`Scale benchmark status is ${report.status}, expected PASSED.`);
+          }
+          if (report.evidenceLevel !== "SYNTHETIC_ISOLATED_POSTGRES") {
+            throw new Error(`Unexpected evidence level: ${report.evidenceLevel}`);
+          }
+          if (report.coverageStatus !== "PARTIAL") {
+            throw new Error("Synthetic scale evidence must retain its PARTIAL boundary.");
+          }
+          if (!String(report.execution?.nodeVersion ?? "").startsWith("v24.")) {
+            throw new Error(`Scale benchmark did not execute on supported Node 24: ${report.execution?.nodeVersion}`);
+          }
+          if (JSON.stringify(report.execution?.targets) !== JSON.stringify(expectedTargets)) {
+            throw new Error(`Unexpected scale targets: ${JSON.stringify(report.execution?.targets)}`);
+          }
+          for (const key of ["targetRowsExact", "relationRowsExact", "fixtureScoped", "cleanupSucceeded"]) {
+            if (report.acceptance?.[key] !== true) {
+              throw new Error(`Scale acceptance failed: ${key}`);
+            }
+          }
+          if (report.cleanup?.succeeded !== true) {
+            throw new Error("Scale fixture cleanup was not proven.");
+          }
+          const results = Array.isArray(report.results) ? report.results : [];
+          if (results.length !== expectedTargets.length) {
+            throw new Error(`Expected ${expectedTargets.length} scale rows, got ${results.length}.`);
+          }
+          for (let index = 0; index < expectedTargets.length; index += 1) {
+            const row = results[index];
+            const target = expectedTargets[index];
+            if (row.targetDocuments !== target || row.rows?.documents !== target || row.rows?.units !== target || row.rows?.embeddings !== target) {
+              throw new Error(`Scale row ${target} was not materialized exactly.`);
+            }
+            if (!Array.isArray(row.queryLatency) || row.queryLatency.length === 0) {
+              throw new Error(`Scale row ${target} lacks query-latency evidence.`);
+            }
+          }
+          console.log(JSON.stringify({
+            status: report.status,
+            node: report.execution.nodeVersion,
+            targets: report.execution.targets,
+            cleanup: report.cleanup.succeeded,
+            coverage: report.coverageStatus,
+          }, null, 2));
+          NODE
+      - name: Capture scale diagnostics
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          mkdir -p reports/ci
+          docker compose ps --all > reports/ci/scale-docker-compose-ps.txt 2>&1
+          docker compose logs --no-color --timestamps postgres \
+            > reports/ci/scale-postgres.log 2>&1
+      - name: Upload scale evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: scale-benchmark-${{ github.run_id }}
+          path: reports/ci
+          if-no-files-found: error
+          retention-days: 14
+      - name: Stop disposable services
+        if: always()
+        run: docker compose down -v --remove-orphans
