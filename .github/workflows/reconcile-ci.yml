@@ -6,7 +6,7 @@ on:
       - work/product-completion-unified
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   reconcile-ci:
@@ -49,7 +49,6 @@ jobs:
               "p5-docker-compose.log": "document-ocr-docker-compose.log",
               "p5-ingest-events.csv": "document-ocr-ingest-events.csv",
               "p5-ocr-e2e.json": "document-ocr-e2e.json",
-              "p5-ocr-e2e-${{ github.run_id }}": "document-ocr-e2e-${{ github.run_id }}",
               "Capture P5 OCR diagnostics": "Capture document OCR diagnostics",
               "Upload P5 OCR evidence": "Upload document OCR evidence",
               "Stop P5 services": "Stop document OCR services",
@@ -59,14 +58,22 @@ jobs:
           if "p5" in block.lower():
               raise SystemExit("phase-coded P5 residue remains in reconciled OCR job")
           target_path.write_text(target.rstrip() + "\n" + block.lstrip("\n"), encoding="utf-8")
-      - name: Remove reconciliation workflow
-        run: rm .github/workflows/reconcile-ci.yml
-      - name: Commit CI union
+      - name: Validate generated workflow
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .github/workflows/ci.yml .github/workflows/reconcile-ci.yml
-          git diff --cached --check
-          git diff --cached --quiet && exit 0
-          git commit -m "ci: preserve durable document OCR coverage"
-          git push origin HEAD:work/product-completion-unified
+          git diff --check -- .github/workflows/ci.yml
+          grep -q '^  document-intelligence-ocr-e2e:$' .github/workflows/ci.yml
+          if grep -qi 'p5' .github/workflows/ci.yml; then
+            echo 'phase-coded P5 residue remains in final workflow'
+            exit 1
+          fi
+      - name: Stage generated workflow
+        run: |
+          mkdir -p generated-workflow
+          cp .github/workflows/ci.yml generated-workflow/ci.yml
+      - name: Upload generated workflow
+        uses: actions/upload-artifact@v7
+        with:
+          name: reconciled-ci-workflow
+          path: generated-workflow/ci.yml
+          if-no-files-found: error
+          retention-days: 1
