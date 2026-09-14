@@ -25,6 +25,7 @@ jobs:
           node-version: 24.20.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - run: pnpm build
       - run: docker compose up -d --wait postgres minio
       - name: Create disposable managed repository with a searchable restore probe
         shell: bash
