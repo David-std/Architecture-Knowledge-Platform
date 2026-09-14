@@ -24,7 +24,11 @@
       "category": "workflow",
       "query": "What must happen if the reviewed Git commit succeeds but PostgreSQL publication finalization fails, including the unsafe-attribution case?",
       "intent": "WORKFLOW_EXECUTION",
-      "mandatoryTerms": ["Git revert", "CHANGES_REQUESTED", "PUBLICATION_RECOVERY_REQUIRED"],
+      "mandatoryTerms": [
+        "Git revert",
+        "CHANGES_REQUESTED",
+        "PUBLICATION_RECOVERY_REQUIRED"
+      ],
       "forbiddenTerms": []
     },
     {
