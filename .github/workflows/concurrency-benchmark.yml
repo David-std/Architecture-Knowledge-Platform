@@ -21,6 +21,13 @@ jobs:
           node-version: 24.20.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - run: pnpm build
+      - name: Capture exact formatter output
+        shell: bash
+        run: |
+          mkdir -p reports/ci
+          pnpm exec prettier scripts/concurrency-benchmark.ts \
+            > reports/ci/concurrency-benchmark.formatted.ts
       - run: docker compose up -d --wait postgres
       - run: pnpm db:migrate
       - name: Execute authenticated API and worker concurrency benchmark
