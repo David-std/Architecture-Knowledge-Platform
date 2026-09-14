@@ -50,6 +50,8 @@ jobs:
         run: |
           set +e
           mkdir -p reports/ci
+          pnpm exec prettier scripts/runtime-retrieval-benchmark.ts \
+            > reports/ci/formatted-runtime-retrieval-benchmark.ts
           docker compose ps --all > reports/ci/semantic-docker-compose-ps.txt 2>&1
           docker compose logs --no-color --timestamps postgres \
             > reports/ci/semantic-postgres.log 2>&1
