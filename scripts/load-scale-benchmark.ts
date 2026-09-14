@@ -238,8 +238,8 @@ function parseTargets(value: string | undefined): number[] {
 
 function asNumber(value: Numeric | null | undefined): number {
   const parsed = Number(value ?? 0);
-  if (!Number.isFinite(parsed))
-    throw new Error(`non-numeric database value: ${value}`);
+  if (!Number.isFinite(parsed)
+  ) throw new Error(`non-numeric database value: ${value}`);
   return parsed;
 }
 
@@ -411,7 +411,7 @@ async function createFixture(seed: string): Promise<FixtureIds> {
        space_id,vault_id,provider,model,model_revision,dimensions,normalization,
        configuration_version,corpus_revision,status,activated_at
      ) values ($1,$2,'synthetic','synthetic-64','v1',64,'NONE','load-scale-v1',
-       'synthetic-v1','ACTIVE',now()) returning id`,
+       'synthetic-v1','BUILDING',null) returning id`,
     [spaceId, vaultId],
   );
   const embeddingGenerationId = generation.rows[0]?.id;
@@ -1051,7 +1051,7 @@ async function runBenchmark(
     remainingRows: null,
   };
   const results: ScaleResult[] = [];
-  let baselineStorage = await storageSnapshot();
+  const baselineStorage = await storageSnapshot();
   let previousStorage = baselineStorage;
   let previousTarget = 0;
   let failure: string | undefined;
@@ -1094,7 +1094,7 @@ async function runBenchmark(
           loadHeapDeltaBytes: loadMemoryDelta.heapUsedBytes,
           queryHeapDeltaBytes: queryMemoryDelta.heapUsedBytes,
           contextPacketRssDeltaBytes: contextPacket.rssDeltaBytes,
-          contextPacketHeapDeltaBytes: contextPacket.heapDeltaBytes,
+          contextPacketHeapDeltaBytes: contextPacket.heapUsedBytes,
         },
         storage: {
           beforeLoad: storageBefore,
