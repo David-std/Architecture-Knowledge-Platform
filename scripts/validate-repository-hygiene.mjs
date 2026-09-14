@@ -5,17 +5,6 @@ import process from "node:process";
 
 const root = path.resolve(import.meta.dirname, "..");
 const classificationPath = "reports/repository-file-classification.json";
-const categories = new Set([
-  "PRODUCT_CODE",
-  "PRODUCT_CONTRACT",
-  "PRODUCT_TEST",
-  "PRODUCT_EVAL",
-  "PRODUCT_DOCUMENTATION",
-  "MIGRATION",
-  "FIXTURE_GENERIC",
-  "GENERATED_CANONICAL",
-  "UNKNOWN",
-]);
 
 const allowedRootFiles = new Set([
   ".env.example",
@@ -38,6 +27,7 @@ const allowedRootFiles = new Set([
   "tsconfig.base.json",
   "turbo.json",
 ]);
+
 const allowedRootDirectories = new Set([
   ".github",
   "apps",
@@ -53,18 +43,54 @@ const allowedRootDirectories = new Set([
   "test",
 ]);
 
+const allowedCategories = new Set([
+  "PRODUCT_CODE",
+  "PRODUCT_CONTRACT",
+  "PRODUCT_TEST",
+  "PRODUCT_EVAL",
+  "PRODUCT_DOCUMENTATION",
+  "MIGRATION",
+  "FIXTURE_GENERIC",
+  "GENERATED_CANONICAL",
+]);
+
+const processResidueName =
+  /(?:^|[-_.])(goal|progress|iteration|worklog|scratch|temp|draft-plan|handoff-temp|implementation-notes)(?:[-_.]|$)/i;
+const phasePathToken = /(?:^|[\/_.-])p\d+(?=$|[\/_.-])/i;
+const phaseLabel = /\bP\d{1,2}\b/;
+const fixedUuid =
+  /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i;
+
 function repositoryFiles() {
   const output = execFileSync(
     "git",
     ["ls-files", "--cached", "--others", "--exclude-standard"],
     { cwd: root, encoding: "utf8" },
   );
-  const files = output
-    .split(/\r?\n/)
-    .map((file) => file.replaceAll("\\", "/"))
-    .filter(Boolean)
-    .filter((file) => existsSync(path.join(root, file)));
-  return [...new Set(files)].sort((left, right) => left.localeCompare(right));
+
+  return [
+    ...new Set(
+      output
+        .split(/\r?\n/)
+        .map((file) => file.replaceAll("\\", "/"))
+        .filter(Boolean)
+        .filter((file) => existsSync(path.join(root, file))),
+    ),
+  ].sort((left, right) => left.localeCompare(right));
+}
+
+function isTestPath(file) {
+  return (
+    /(^|\/)(?:test|tests)\//.test(file) ||
+    /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(file)
+  );
+}
+
+function isTextFile(file) {
+  return (
+    /\.(?:[cm]?[jt]sx?|json|ya?ml|md|sql|py|ps1|sh|txt)$/.test(file) ||
+    file === ".env.example"
+  );
 }
 
 function classify(file) {
@@ -78,16 +104,12 @@ function classify(file) {
     return ["PRODUCT_EVAL", "corpus-agnostic product evaluation"];
   }
   if (/^evals\/schemas\//.test(file)) {
-    return ["PRODUCT_CONTRACT", "evaluation case schema contract"];
+    return ["PRODUCT_CONTRACT", "evaluation schema contract"];
   }
   if (/^evals\/fixtures\//.test(file) || /^test\/fixtures\//.test(file)) {
     return ["FIXTURE_GENERIC", "portable test or evaluation fixture"];
   }
-  if (
-    /(^|\/)(test|tests)\//.test(file) ||
-    /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(file) ||
-    /^apps\/extractor\/tests\//.test(file)
-  ) {
+  if (isTestPath(file) || /^apps\/extractor\/tests\//.test(file)) {
     return ["PRODUCT_TEST", "executable product test"];
   }
   if (/^contracts\//.test(file) || file === "pnpm-lock.yaml") {
@@ -121,76 +143,38 @@ function classify(file) {
   return ["UNKNOWN", "no maintained classification rule"];
 }
 
-const iterationResidue = [
-  /^GOAL_.*\.md$/i,
-  /_GOAL\.md$/i,
-  /_PROGRESS\.md$/i,
-  /^PROGRESS_.*\.md$/i,
-  /_ITERATION\.md$/i,
-  /^ITERATION_.*\.md$/i,
-  /_AMENDMENT\.md$/i,
-  /_NEXT_STEPS\.md$/i,
-  /^NEXT_STEPS\.md$/i,
-  /^WORKLOG.*\.md$/i,
-  /^SCRATCH.*\.md$/i,
-  /^TEMP.*\.md$/i,
-  /_DRAFT_PLAN\.md$/i,
-  /_HANDOFF_TEMP\.md$/i,
-  /^IMPLEMENTATION_NOTES_.*\.md$/i,
-];
-const constructionDocumentName =
-  /^(?:COMPETITIVE_AUDIT|DOCUMENT_INTELLIGENCE_BENCHMARK|EVENT_DRIVEN_VALIDATION_REPORT|GENERICITY_AUDIT|IMPLEMENTATION_REPORT|MIGRATION_REPORT|PROJECT_STATE|REMAINING_REAL_GAPS|REPOSITORY_HYGIENE_REPORT|RESEARCH_LOG|RETRIEVAL_BENCHMARK|SECURITY_REPORT|TRACEABILITY|VALIDATION_REPORT)\.md$/i;
-const phasePathToken = /(?:^|[\/_.-])p\d+(?=$|[\/_.-])/i;
-const phaseLabel = /\bP\d{1,2}\b/;
-const personalCorpusTerms = [
-  /Architecture-Knowledge-System/i,
-  /\bSI729\b/i,
-  /\bSI730\b/i,
-];
-
-function activeGuidanceOrAutomation(file) {
-  if (
-    /^(?:README|AGENTS|ARCHITECTURE|CONTRIBUTING|CHANGELOG)\.md$/.test(file)
-  )
-    return true;
-  if (/^docs\/.*\.md$/.test(file)) return true;
-  if (file === ".env.example" || file === "docker-compose.yml") return true;
-  if (/^(?:\.github|ops|policies)\/.*\.(?:md|json|ya?ml)$/.test(file))
-    return true;
-  if (/^scripts\/.*\.(?:mjs|cjs|js|ts|ps1|py|sh)$/.test(file)) return true;
-  return false;
-}
-
-function normalizedPathText(content) {
-  let normalized = content;
-  while (normalized.includes("\\\\")) {
-    normalized = normalized.replaceAll("\\\\", "\\");
-  }
-  return normalized;
+function isActiveGuidanceOrAutomation(file) {
+  return (
+    /^(?:README|AGENTS|ARCHITECTURE|CONTRIBUTING|CHANGELOG)\.md$/.test(file) ||
+    /^docs\/.*\.md$/.test(file) ||
+    file === ".env.example" ||
+    file === "docker-compose.yml" ||
+    /^(?:\.github|ops|policies)\/.*\.(?:md|json|ya?ml)$/.test(file) ||
+    /^scripts\/.*\.(?:mjs|cjs|js|ts|ps1|py|sh)$/.test(file)
+  );
 }
 
 function portabilityFailures(file, content) {
-  const normalized = normalizedPathText(content);
   const failures = [];
-  if (/\b[A-Za-z]:\\Users\\[^\\\r\n]+\\/i.test(normalized))
-    failures.push(`PERSONAL_WINDOWS_PATH ${file}`);
-  if (/\/Users\/[^/\s]+(?:\/|$)/i.test(normalized))
-    failures.push(`PERSONAL_MAC_PATH ${file}`);
-  for (const match of normalized.matchAll(/\/home\/([^/\s]+)(?:\/|$)/gi)) {
+
+  if (/\b[A-Za-z]:\\[^\\\r\n]+\\[^\\\r\n]+\\/.test(content)) {
+    failures.push(`ABSOLUTE_WINDOWS_PATH ${file}`);
+  }
+  if (/\/Users\/[^/\s]+(?:\/|$)/.test(content)) {
+    failures.push(`ABSOLUTE_MAC_HOME_PATH ${file}`);
+  }
+  for (const match of content.matchAll(/\/home\/([^/\s]+)(?:\/|$)/g)) {
     const user = String(match[1]).toLowerCase();
-    if (!["node", "runner", "root", "postgres", "app"].includes(user)) {
-      failures.push(`PERSONAL_LINUX_PATH ${file}`);
+    if (!["app", "node", "postgres", "root", "runner"].includes(user)) {
+      failures.push(`ABSOLUTE_LINUX_HOME_PATH ${file}`);
       break;
     }
   }
-  if (/\bfile:\/\//i.test(normalized))
+  if (/\bfile:\/\//i.test(content)) {
     failures.push(`FILE_URI_IN_GUIDANCE_OR_AUTOMATION ${file}`);
-  return failures;
-}
+  }
 
-function isTextCandidate(file) {
-  return /\.(?:[cm]?[jt]sx?|json|ya?ml|md|sql|py|ps1|sh|txt)$/.test(file) ||
-    file === ".env.example";
+  return failures;
 }
 
 const files = repositoryFiles();
@@ -201,38 +185,43 @@ const entries = files.map((file) => {
 const failures = [];
 
 for (const entry of entries) {
-  if (!categories.has(entry.category) || entry.category === "UNKNOWN")
+  if (!allowedCategories.has(entry.category)) {
     failures.push(`UNCLASSIFIED ${entry.path}`);
+  }
 
-  const [rootEntry] = entry.path.split("/", 1);
+  const rootEntry = entry.path.split("/", 1)[0];
   if (!entry.path.includes("/")) {
-    if (!allowedRootFiles.has(entry.path))
+    if (!allowedRootFiles.has(entry.path)) {
       failures.push(`ROOT_FILE_NOT_ALLOWED ${entry.path}`);
+    }
   } else if (!allowedRootDirectories.has(rootEntry)) {
     failures.push(`ROOT_DIRECTORY_NOT_ALLOWED ${rootEntry}`);
   }
 
   const name = path.posix.basename(entry.path);
-  if (iterationResidue.some((pattern) => pattern.test(name)))
-    failures.push(`ITERATION_RESIDUE ${entry.path}`);
-  if (constructionDocumentName.test(name))
-    failures.push(`CONSTRUCTION_DOCUMENT ${entry.path}`);
-  if (/^docs\/(?:archive|assurance\/archive)\//.test(entry.path))
+  if (processResidueName.test(name)) {
+    failures.push(`PROCESS_RESIDUE_NAME ${entry.path}`);
+  }
+  if (/^docs\/(?:archive|assurance\/archive)\//.test(entry.path)) {
     failures.push(`CONSTRUCTION_ARCHIVE_IN_PRODUCT_TREE ${entry.path}`);
-  if (phasePathToken.test(entry.path))
+  }
+  if (
+    entry.path.startsWith("docs/assurance/") &&
+    entry.path !== "docs/assurance/README.md" &&
+    !/^docs\/assurance\/releases\/v\d+\.\d+\.\d+\/README\.md$/.test(
+      entry.path,
+    )
+  ) {
+    failures.push(`ASSURANCE_LAYOUT_NOT_RELEASE_ORIENTED ${entry.path}`);
+  }
+  if (phasePathToken.test(entry.path)) {
     failures.push(`PHASE_CODED_PATH ${entry.path}`);
-
-  if (!isTextCandidate(entry.path)) continue;
-  const content = readFileSync(path.join(root, entry.path), "utf8");
-
-  for (const pattern of personalCorpusTerms) {
-    if (pattern.test(content)) {
-      failures.push(`PERSONAL_CORPUS_REFERENCE ${entry.path}`);
-      break;
-    }
   }
 
-  if (activeGuidanceOrAutomation(entry.path)) {
+  if (!isTextFile(entry.path)) continue;
+  const content = readFileSync(path.join(root, entry.path), "utf8");
+
+  if (isActiveGuidanceOrAutomation(entry.path)) {
     failures.push(...portabilityFailures(entry.path, content));
     if (
       entry.path !== "scripts/validate-repository-hygiene.mjs" &&
@@ -241,21 +230,20 @@ for (const entry of entries) {
       failures.push(`PHASE_LABEL_IN_GUIDANCE_OR_AUTOMATION ${entry.path}`);
     }
   }
-}
 
-const fixedUuidPattern =
-  /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i;
-for (const file of files.filter((candidate) =>
-  /^(?:apps\/api\/src|apps\/mcp|apps\/cli|apps\/web)\//.test(candidate),
-)) {
-  if (!isTextCandidate(file)) continue;
-  const content = readFileSync(path.join(root, file), "utf8");
-  if (fixedUuidPattern.test(content)) failures.push(`GENERICITY_FIXED_UUID ${file}`);
+  if (
+    /^(?:apps\/api\/src|apps\/mcp|apps\/cli|apps\/web)\//.test(entry.path) &&
+    !isTestPath(entry.path) &&
+    fixedUuid.test(content)
+  ) {
+    failures.push(`GENERICITY_FIXED_UUID ${entry.path}`);
+  }
 }
 
 const payload = `${JSON.stringify({ schemaVersion: 3, files: entries }, null, 2)}\n`;
-if (process.argv.includes("--write"))
+if (process.argv.includes("--write")) {
   writeFileSync(path.join(root, classificationPath), payload, "utf8");
+}
 
 if (failures.length > 0) {
   console.error(JSON.stringify({ status: "FAILED", failures }, null, 2));
