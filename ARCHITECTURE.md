@@ -37,20 +37,6 @@ query resolves an authorized scope; cross-vault federation is explicit opt-in.
 Optional semantic/document providers may degrade without changing canonical
 knowledge or bypassing review.
 
-## Reconciled implementation line
-
-The maintained product branch combines the hardened causal-event, retrieval,
-compiler and security foundations with the document-intelligence, operator,
-observability, recovery and repository-productization work. Shared contracts are
-resolved in-place rather than by maintaining parallel runtime variants: the
-outbox, authorization and validation rules remain canonical while later
-capabilities consume those same boundaries.
-
-This means the product has one supported execution path for ingestion,
-publication, projection, retrieval and recovery. Historical working branches
-remain useful as provenance, but they are not independent product variants and
-must not be used as runtime sources of truth.
-
 ## Detailed views
 
 - [C4 model](docs/architecture/c4.md)
