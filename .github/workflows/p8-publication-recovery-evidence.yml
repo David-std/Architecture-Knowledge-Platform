@@ -3,6 +3,9 @@ name: p8-publication-recovery-evidence
 on:
   pull_request:
 
+permissions:
+  contents: write
+
 jobs:
   evidence:
     runs-on: ubuntu-latest
@@ -29,14 +32,21 @@ jobs:
           node-version: 24.20.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
-      - run: node scripts/p8-publication-recovery-materialize.mjs
-      - run: node scripts/p8-publication-recovery-fix.mjs
-      - run: >-
-          pnpm exec prettier --write
-          packages/git-store/src/index.ts
-          apps/api/src/routes/reviews.ts
-          apps/api/test/review-publication.integration.test.ts
-          docs/adr/0002-review-and-publication-isolation.md
+      - name: Materialize publication recovery if needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -q 'export async function reconcilePublishingReview' apps/api/src/routes/reviews.ts; then
+            echo 'Publication recovery is already materialized.'
+          else
+            node scripts/p8-publication-recovery-materialize.mjs
+            node scripts/p8-publication-recovery-fix.mjs
+            pnpm exec prettier --write \
+              packages/git-store/src/index.ts \
+              apps/api/src/routes/reviews.ts \
+              apps/api/test/review-publication.integration.test.ts \
+              docs/adr/0002-review-and-publication-isolation.md
+          fi
       - run: pnpm check
       - name: Capture materialized recovery tree
         run: |
@@ -80,5 +90,25 @@ jobs:
           path: reports/p8-publication-recovery
           if-no-files-found: ignore
           retention-days: 2
+      - name: Promote verified recovery implementation
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          paths=(
+            packages/git-store/src/index.ts
+            apps/api/src/routes/reviews.ts
+            apps/api/test/review-publication.integration.test.ts
+            docs/adr/0002-review-and-publication-isolation.md
+          )
+          if git diff --quiet -- "${paths[@]}"; then
+            echo 'Verified publication recovery is already committed.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- "${paths[@]}"
+          git commit -m 'fix(p8): harden publication recovery [skip ci]'
+          git push origin "HEAD:${GITHUB_HEAD_REF}"
       - if: always()
         run: docker compose down -v --remove-orphans
