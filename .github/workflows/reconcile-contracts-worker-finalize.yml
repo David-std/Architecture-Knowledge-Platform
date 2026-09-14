@@ -82,11 +82,10 @@ jobs:
             pnpm-lock.yaml
       - name: Validate reconciled contracts and consumers
         run: |
-          pnpm --filter @akp/contracts build
+          pnpm build
           pnpm --filter @akp/worker check
           pnpm --filter @akp/mcp build
           pnpm --filter @akp/api build
-          pnpm build
       - name: Commit reconciled source and lockfile
         run: |
           git config user.name "github-actions[bot]"
