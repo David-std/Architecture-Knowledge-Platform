@@ -153,7 +153,7 @@ jobs:
           tests/test_document_intelligence.py
           -k docling_provider_real_native_structure_when_installed
 
-  p5-ocr-e2e:
+  document-intelligence-ocr-e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -161,8 +161,8 @@ jobs:
       AKP_API_TOKEN: akp-ci-integration-token-not-for-production
       AKP_API_TOKEN_SCOPES: >-
         {"spaces":[{"spaceId":"00000000-0000-0000-0000-000000000003","pathPrefix":null,"permissions":["knowledge:read","source:read","source:write","knowledge:propose","knowledge:review","eval:run","admin"]}]}
-      AKP_INGEST_ROOTS: /tmp/akp-p5-ocr/source
-      AKP_MANAGED_REPO: /tmp/akp-p5-ocr/managed
+      AKP_INGEST_ROOTS: /tmp/akp-document-ocr/source
+      AKP_MANAGED_REPO: /tmp/akp-document-ocr/managed
       AKP_EXTRACTOR_URL: http://127.0.0.1:8090
       AKP_EXTRACTOR_TOKEN: akp-ci-extractor-token-not-for-production
       AKP_RAW_ENDPOINT: http://127.0.0.1:19000
@@ -228,8 +228,8 @@ jobs:
             cd apps/extractor
             nohup uv run --locked --extra docling uvicorn app.main:app \
               --host 127.0.0.1 --port 8090 \
-              > ../../reports/ci/p5-extractor.log 2>&1 &
-            echo $! > ../../reports/ci/p5-extractor.pid
+              > ../../reports/ci/document-ocr-extractor.log 2>&1 &
+            echo $! > ../../reports/ci/document-ocr-extractor.pid
           )
           for i in $(seq 1 90); do
             if curl -fsS http://127.0.0.1:8090/health >/dev/null; then
@@ -237,11 +237,11 @@ jobs:
             fi
             sleep 1
           done
-          cat reports/ci/p5-extractor.log
+          cat reports/ci/document-ocr-extractor.log
           exit 1
       - name: Prove durable OCR ingest through API, worker, artifact and evidence
         run: |
-          cat > apps/api/test/.p5-ocr-e2e.runtime.ts <<'TS'
+          cat > apps/api/test/.document-ocr-e2e.runtime.ts <<'TS'
           import { createHash, randomUUID } from "node:crypto";
           import { execFile } from "node:child_process";
           import { readFile } from "node:fs/promises";
@@ -260,8 +260,8 @@ jobs:
           const managedRepository = process.env.AKP_MANAGED_REPO!;
           const defaultSpace = "00000000-0000-0000-0000-000000000003";
           const admin = "00000000-0000-0000-0000-000000000002";
-          const eventConsumer = `p5-ocr-${randomUUID()}`;
-          const token = `p5-ocr-${randomUUID()}`;
+          const eventConsumer = `document-ocr-${randomUUID()}`;
+          const token = `document-ocr-${randomUUID()}`;
           const tokenHash = createHash("sha256").update(token).digest("hex");
           const content = await readFile(sourcePath);
           const sourceHash = createHash("sha256").update(content).digest("hex");
@@ -276,8 +276,8 @@ jobs:
             const vault = await registerVault(
               db,
               {
-                vaultKey: `p5-ocr-${randomUUID().replaceAll("-", "").slice(0, 12)}`,
-                name: "P5 OCR E2E",
+                vaultKey: `document-ocr-${randomUUID().replaceAll("-", "").slice(0, 12)}`,
+                name: "Document OCR E2E",
                 spaceId: defaultSpace,
                 gitRepository: null,
                 defaultBranch: "main",
@@ -318,7 +318,7 @@ jobs:
               [
                 admin,
                 tokenHash,
-                "P5 OCR E2E",
+                "Document OCR E2E",
                 JSON.stringify({
                   spaces: [
                     {
@@ -350,7 +350,7 @@ jobs:
                 vaultId: vault.id,
                 sourceUri: sourcePath,
                 expectedSha256: sourceHash,
-                title: "P5 scanned OCR proof",
+                title: "Scanned OCR proof",
                 mediaType: "application/pdf",
                 documentIntelligence: {
                   complexity: "scanned",
@@ -505,32 +505,32 @@ jobs:
             await db.close();
           }
           TS
-          pnpm exec tsx apps/api/test/.p5-ocr-e2e.runtime.ts | tee reports/ci/p5-ocr-e2e.json
-          rm -f apps/api/test/.p5-ocr-e2e.runtime.ts
-      - name: Capture P5 OCR diagnostics
+          pnpm exec tsx apps/api/test/.document-ocr-e2e.runtime.ts | tee reports/ci/document-ocr-e2e.json
+          rm -f apps/api/test/.document-ocr-e2e.runtime.ts
+      - name: Capture document OCR diagnostics
         if: always()
         run: |
           set +e
           mkdir -p reports/ci
-          docker compose ps --all > reports/ci/p5-docker-compose-ps.txt 2>&1
+          docker compose ps --all > reports/ci/document-ocr-docker-compose-ps.txt 2>&1
           docker compose logs --no-color --timestamps postgres minio \
-            > reports/ci/p5-docker-compose.log 2>&1
+            > reports/ci/document-ocr-docker-compose.log 2>&1
           docker compose exec -T postgres psql -X -U akp -d akp \
             -c "\copy (select state,event_type,count(*) from ingest_job_events group by state,event_type order by state,event_type) to stdout with csv header" \
-            > reports/ci/p5-ingest-events.csv 2>&1
-      - name: Upload P5 OCR evidence
+            > reports/ci/document-ocr-ingest-events.csv 2>&1
+      - name: Upload document OCR evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: p5-ocr-e2e-${{ github.run_id }}
+          name: document-ocr-e2e-${{ github.run_id }}
           path: reports/ci
           if-no-files-found: error
           retention-days: 14
-      - name: Stop P5 services
+      - name: Stop document OCR services
         if: always()
         run: |
-          if [ -f reports/ci/p5-extractor.pid ]; then
-            kill "$(cat reports/ci/p5-extractor.pid)" 2>/dev/null || true
+          if [ -f reports/ci/document-ocr-extractor.pid ]; then
+            kill "$(cat reports/ci/document-ocr-extractor.pid)" 2>/dev/null || true
           fi
-          rm -f apps/api/test/.p5-ocr-e2e.runtime.ts
+          rm -f apps/api/test/.document-ocr-e2e.runtime.ts
           docker compose down -v --remove-orphans

@@ -1,184 +1,120 @@
 # Architecture Knowledge Platform
 
-Local-first executable platform around the Architecture Knowledge Vault. The
-approved knowledge remains readable Markdown; PostgreSQL, pgvector, the typed
-graph and ContextPackets are derived projections. Obsidian is the human reader
-for the external vault. Agents use bounded API, MCP or CLI operations instead
-of traversing every file.
+Architecture Knowledge Platform (AKP) is a local-first, multi-vault knowledge runtime for ingesting evidence, building scoped retrieval indexes and turning grounded evidence into governed knowledge changes. Git remains the canonical representation of approved knowledge; PostgreSQL stores durable operational state and derived indexes; object storage retains raw source evidence.
 
-This repository is the validated local baseline identified by
-`v0.2.1-platform-validation`, not a claim of production readiness. Exact
-validation state is recorded in
-[PROJECT_STATE.md](PROJECT_STATE.md),
-[VALIDATION_REPORT.md](VALIDATION_REPORT.md) and
-[REMAINING_REAL_GAPS.md](REMAINING_REAL_GAPS.md).
+The platform is designed to remain domain-agnostic. Vault-specific schemas, evaluation packs and source material are configuration/data rather than assumptions in the core runtime.
 
-## What the platform does
+## What this checkpoint supports
 
-- Imports `C:\Users\david\Documents\Architecture-Knowledge-System` read-only,
-  preserving IDs, aliases, frontmatter, wikilinks and source/evidence trails.
-- Separates useful agent knowledge from copied transfer logistics. Curated
-  `LINK.md` recovery maps remain searchable; acquisition/download backlogs are
-  archived and excluded from normal retrieval.
-- Compiles each imported snapshot into current documents, hierarchical
-  retrieval units and typed relations. Runtime verification treats corpus
-  sizes as observations; it never turns one vault's historical counts into a
-  product invariant.
-- Plans each query, retrieves through exact, lexical, graph, context-pack,
-  raw-source and code-evidence channels, then applies RBAC, lifecycle, trust,
-  freshness and contradiction policy.
-- Returns a bounded `ContextPacket` with revision, citations, selection reasons,
-  gaps, conflicts and continuation handles.
-- Accepts raw sources into immutable SHA-256 MinIO keys, processes durable
-  Postgres jobs and sends the verified object to the Python extractor through
-  authenticated multipart upload with a second SHA-256 check.
-- Extracts Markdown/text, PDF, captured HTML, image metadata, DOCX and PPTX with
-  locators. OCR/vision, audio transcription and video understanding report
-  `CAPABILITY_NOT_CONFIGURED`; no result is fabricated.
-- Produces an isolated Git draft, deterministic validation and a human review.
-  Approved changes are squash-merged under a publication lock and reindexed;
-  rejected changes remain isolated and published changes can be rolled back.
-- Exposes the same use cases through Fastify HTTP, 21 MCP tools over stdio or
-  Streamable HTTP, a CLI and a Next.js operational UI.
-- Tracks staleness, contradiction clusters, schema dry runs, deterministic
-  knowledge lint, audit events and an Error Book that can create regression
-  eval cases.
+- durable ingest jobs, leases, retries, fencing, quarantine and causal event delivery;
+- exact and weighted lexical retrieval over documents and structural units;
+- provider-neutral semantic embeddings with an opt-in local multilingual provider and deterministic test adapter;
+- typed, scoped, bounded multi-hop graph retrieval with path provenance;
+- capability-aware query planning, reciprocal-rank fusion and explainable retrieval provenance;
+- full and compact ContextPacket representations with explicit token budgets, gaps, conflicts and no-answer behavior;
+- grounded knowledge compilation into reviewable proposals rather than direct autonomous publication;
+- multi-vault and path-scoped authorization boundaries across retrieval and governance paths;
+- document extraction through the local extractor service, including native-structure and OCR verification paths;
+- CLI, API and MCP surfaces for the supported local workflow.
 
-## What happens when you use it
-
-```text
-Vault or source
-  -> read-only import or immutable SHA-256 storage
-  -> hierarchical units + lexical/graph projections
-  -> permission and knowledge-state policy
-  -> bounded ContextPacket for API/MCP/CLI/Web
-
-New material
-  -> durable ingest job
-  -> authenticated extractor
-  -> compilation plan
-  -> isolated Git draft
-  -> human review
-  -> merge + reindex, or rejection/rollback
-```
-
-For a knowledge question, search first and request a ContextPacket when the
-answer needs rules, workflow, evidence and provenance together. For new source
-material, submit it through `/ingest` or the CLI, follow its job, and approve
-only the generated review after inspecting the diff and evidence. The original
-Obsidian vault is never the runtime job store and is not modified by import.
+See [docs/status.md](docs/status.md) for the maintained operational status and [ARCHITECTURE.md](ARCHITECTURE.md) for the architecture overview.
 
 ## Prerequisites
 
-- Node.js 24 LTS (`>=24 <25`). Node 20 is no longer a supported runtime.
-- pnpm 10.34.5 through Corepack or an equivalent pinned installation.
-- Python 3.12 for the extractor development and test toolchain.
-- Docker with Compose v2 for PostgreSQL, MinIO and extractor services.
+- Node.js 24.x
+- pnpm 10.34.5
+- Python 3.12
+- uv 0.12.7
+- Docker with Compose
+- Git
 
-## Quick start on Windows
+## Bootstrap
 
-```powershell
-Copy-Item .env.example .env
+```bash
+cp .env.example .env
 pnpm install --frozen-lockfile --strict-peer-dependencies
-docker compose up -d --build --wait postgres minio extractor
 pnpm db:migrate
-
-# Use a private random value of at least 24 characters; never commit it.
-$env:AKP_API_TOKEN = '<private-random-token>'
-# Persist explicit, least-privilege scope(s); `pathPrefix` can be null only
-# when the token genuinely needs the whole space.
-$env:AKP_API_TOKEN_SCOPES = '{"spaces":[{"spaceId":"00000000-0000-0000-0000-000000000003","pathPrefix":null,"permissions":["knowledge:read","source:read"]}]}'
 pnpm auth:provision
-
-pnpm --filter @akp/api dev
-pnpm --filter @akp/worker dev
-pnpm --filter @akp/web dev
 ```
 
-Local defaults bind PostgreSQL, MinIO, the extractor and API to loopback. The
-default infrastructure ports are `55432`, `19000`, `19001` and `8090`.
+For the extractor environment:
 
-## Import the existing vault
-
-```powershell
-pnpm akp vault import `
-  --vault-path C:\Users\david\Documents\Architecture-Knowledge-System `
-  --read-only `
-  --report-dir reports\migration
-pnpm akp vault status `
-  --vault-path C:\Users\david\Documents\Architecture-Knowledge-System
+```bash
+cd apps/extractor
+uv sync --locked
+cd ../..
 ```
 
-The latest recorded import processed 548 Markdown files with zero import
-errors and 106 explicit warnings. One hundred unresolved wikilinks remain
-warnings; the importer does not invent targets.
+Start the disposable local dependencies with:
 
-## Use the agent interfaces
-
-```powershell
-$env:AKP_API_URL = 'http://127.0.0.1:8080'
-$env:AKP_API_TOKEN = '<provisioned-token>'
-
-pnpm akp search 'hexagonal architecture boundary'
-pnpm akp context 'choose architecture for volatile integrations'
-pnpm akp eval run
-pnpm akp benchmark retrieval
-pnpm akp benchmark packet 'compare Clean and Hexagonal' --runs 3
-pnpm akp schema dry-run --version 1.1 --require id type status
-pnpm akp lint run --trigger MANUAL
+```bash
+docker compose up -d --wait postgres minio extractor
 ```
 
-Start either MCP transport with the same scoped token:
+Set `AKP_VAULT_PATH` and any source/project roots to paths supplied by the operator. The example configuration intentionally does not assume a particular workstation, repository or private corpus.
 
-```powershell
-pnpm --filter @akp/mcp start
-pnpm --filter @akp/mcp start:http
+## Register or import a vault
+
+A vault is external product data. Supply its location explicitly rather than copying a repository-specific default:
+
+```bash
+pnpm akp vault import \
+  --vault-path "<vault-path>" \
+  --space-id "<space-id>" \
+  --read-only
 ```
 
-The 19-case synthetic runner and 13-case curated fixture runner both leave
-`productionDefault` as `null`. Vectors remain benchmark-only; query planning is
-intent-specific until a held-out production-like evaluation and explicit
-policy change justify a default.
+Keep authentication scopes and optional path prefixes as narrow as the integration requires. A registered vault may provide its own schema profile, evaluation pack and retrieval configuration without changing core runtime code.
 
-## Use the Web UI
+## Retrieval behavior
 
-Open `/login`, exchange a scoped bearer token once, and continue with the
-opaque HttpOnly session cookie. Session-authenticated writes require the paired
-CSRF token. The UI covers dashboard, search/ContextPacket inspection, source
-and derivative inspection, ingest/jobs, reviews, knowledge documents, graph,
-evals, spaces, health, audit and session login. The current Web smoke exercises `/`, `/login` and `/reviews`; production build enumerates the implemented routes.
+AKP combines only channels that are both requested by the planner and available for the current vault/revision. Exact/lexical retrieval is available without a semantic model. Vector retrieval is opt-in and requires a configured embedding provider plus a consistent active generation. Graph traversal is typed, bounded and scope-checked at every hop.
 
-## Open the human vault in Obsidian
+Context packaging retains provenance, selection reasons, structural context and continuation metadata. Compact output is intended for constrained agent surfaces; full output preserves the richer review/debug representation.
 
-1. Open Obsidian.
-2. Choose **Open folder as vault**.
-3. Select `C:\Users\david\Documents\Architecture-Knowledge-System`.
-4. Open `README.md` and follow its context-pack routes.
+## Knowledge changes
 
-Do not open this runtime repository as the knowledge vault. Jobs, raw objects,
-embeddings and index state intentionally stay outside the Obsidian corpus.
+Compilation produces a grounded proposal against existing approved knowledge. Provider output is untrusted input: proposed targets, evidence, paths and review state must satisfy runtime validation and authorization before a proposal can enter the governed review flow. Publication is not delegated directly to a language model.
 
-## Validation and operations
+## Verification
 
-```powershell
+Run the maintained local gates before publishing a change:
+
+```bash
 pnpm install --frozen-lockfile --strict-peer-dependencies
 pnpm audit --audit-level high
-pnpm security:secrets
-pnpm contracts:validate
-pnpm docs:validate
 pnpm format:check
 pnpm check
+pnpm contracts:validate
+pnpm docs:validate
+pnpm hygiene:validate
 pnpm build
-pnpm test:integration
-pnpm verify:runtime
-pnpm test:mcp
-pnpm benchmark:retrieval:offline
-pnpm benchmark:retrieval:curated
-pnpm benchmark:scale -- --targets 1000,10000,50000,100000 --iterations 3
+pnpm security:secrets
 ```
 
-See [the local operations runbook](docs/runbooks/local-operations.md),
-[the OpenAPI contract](contracts/openapi.yaml),
-[the MCP catalog](contracts/mcp-tools.json),
-[the runtime flows](docs/architecture/runtime-flows.md) and
-[the C4 model](docs/architecture/c4.md).
+Integration tests additionally require the disposable PostgreSQL, MinIO and extractor services. GitHub Actions is the clean-checkout source of truth for release claims; green unit tests alone are not treated as proof of the complete runtime path.
+
+## Repository layout
+
+```text
+apps/        executable API, worker, CLI, MCP, web and extractor surfaces
+packages/    reusable domain, persistence, retrieval, indexing and compiler packages
+contracts/   versioned API, event, schema and MCP contracts
+db/          append-only database migrations
+docs/        maintained architecture, security, runbook and release documentation
+evals/       corpus-agnostic evaluation packs and portable fixtures
+ops/         local operational configuration
+policies/    machine-readable product policies
+scripts/     build, validation, backup and operational tooling
+test/        generic integration fixtures
+```
+
+Generated diagnostics belong under ignored report directories or CI artifacts, not in the repository root. Construction transcripts and superseded validation reports remain available through Git history instead of being maintained as product documentation.
+
+## Security and deployment scope
+
+The maintained target is a reproducible local deployment with explicit authorization boundaries. It is not presented as an HA cluster, hostile-internet edge service or unlimited-scale retrieval system. Keep secrets out of the repository, use operator-provided credentials and review deployment assumptions before exposing any service beyond the intended local environment.
+
+## Contributing
+
+Read [AGENTS.md](AGENTS.md) for repository invariants and [CONTRIBUTING.md](CONTRIBUTING.md) for branch, test and documentation expectations.
