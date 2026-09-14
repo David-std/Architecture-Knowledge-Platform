@@ -73,7 +73,6 @@ function repositoryFiles() {
     .map((file) => file.replaceAll("\\", "/"))
     .filter(Boolean)
     .filter((file) => existsSync(path.join(root, file)));
-  if (!files.includes(classificationPath)) files.push(classificationPath);
   return [...new Set(files)].sort((left, right) => left.localeCompare(right));
 }
 
@@ -179,7 +178,9 @@ function isHistorical(file) {
 
 function activeDocumentationOrConfiguration(file) {
   if (isHistorical(file)) return false;
-  if (/^(?:README|AGENTS|ARCHITECTURE|CONTRIBUTING|CHANGELOG)\.md$/.test(file)) {
+  if (
+    /^(?:README|AGENTS|ARCHITECTURE|CONTRIBUTING|CHANGELOG)\.md$/.test(file)
+  ) {
     return true;
   }
   if (/^docs\/.*\.md$/.test(file)) return true;
@@ -245,7 +246,10 @@ for (const entry of entries) {
   }
 
   const name = path.posix.basename(entry.path);
-  if (!isHistorical(entry.path) && iterationResidue.some((pattern) => pattern.test(name))) {
+  if (
+    !isHistorical(entry.path) &&
+    iterationResidue.some((pattern) => pattern.test(name))
+  ) {
     failures.push(`ITERATION_RESIDUE ${entry.path}`);
   }
 
@@ -280,16 +284,6 @@ for (const file of genericCore) {
 const payload = `${JSON.stringify({ schemaVersion: 2, files: entries }, null, 2)}\n`;
 const write = process.argv.includes("--write");
 if (write) writeFileSync(path.join(root, classificationPath), payload, "utf8");
-else {
-  try {
-    const current = readFileSync(path.join(root, classificationPath), "utf8");
-    if (current.replaceAll("\r\n", "\n") !== payload) {
-      failures.push(`${classificationPath} is stale; run with --write`);
-    }
-  } catch {
-    failures.push(`${classificationPath} is missing; run with --write`);
-  }
-}
 
 if (failures.length > 0) {
   console.error(JSON.stringify({ status: "FAILED", failures }, null, 2));

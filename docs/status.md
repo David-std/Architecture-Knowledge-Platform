@@ -19,19 +19,19 @@ own clean-checkout CI/recovery runs complete.
 
 ## Phase state
 
-| Phase | State | Evidence summary |
-| --- | --- | --- |
-| P0 Remote CI + event correctness | `PROVEN` | Causal delivery/drain/runtime lock and clean remote gates executed. |
-| P1 Semantic vector retrieval | `PROVEN` | Real semantic provider/generation path and scoped retrieval exercised. |
-| P2 Typed multi-hop graph execution | `PROVEN` | Bounded scoped recursive traversal exercised. |
-| P3 Planner + lexical + ContextPacket | `PROVEN` | Planner/fusion, compact/full packet and no-answer behavior exercised. |
-| P4 Knowledge Compiler | `PROVEN` | Grounded structured compilation remains behind deterministic review/publication boundaries. |
-| P5 Document Intelligence | `PROVEN` | Provider-neutral structured extraction plus executed local/Docling paths; optional providers remain explicit. |
-| P6 Web operator UX | `PROVEN` | Search/graph/sources/jobs/reviews/evals/health operator surfaces exercised in CI/build evidence. |
-| P7 Production observability | `PROVEN` | OTLP trace/metric export to the local collector exercised. |
-| P8 Foundation/security/Git/multi-vault | `PROVEN` | Security boundaries, rollback/publication recovery, multi-vault isolation and managed-Git restore executed. |
+| Phase                                      | State                      | Evidence summary                                                                                                  |
+| ------------------------------------------ | -------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| P0 Remote CI + event correctness           | `PROVEN`                   | Causal delivery/drain/runtime lock and clean remote gates executed.                                               |
+| P1 Semantic vector retrieval               | `PROVEN`                   | Real semantic provider/generation path and scoped retrieval exercised.                                            |
+| P2 Typed multi-hop graph execution         | `PROVEN`                   | Bounded scoped recursive traversal exercised.                                                                     |
+| P3 Planner + lexical + ContextPacket       | `PROVEN`                   | Planner/fusion, compact/full packet and no-answer behavior exercised.                                             |
+| P4 Knowledge Compiler                      | `PROVEN`                   | Grounded structured compilation remains behind deterministic review/publication boundaries.                       |
+| P5 Document Intelligence                   | `PROVEN`                   | Provider-neutral structured extraction plus executed local/Docling paths; optional providers remain explicit.     |
+| P6 Web operator UX                         | `PROVEN`                   | Search/graph/sources/jobs/reviews/evals/health operator surfaces exercised in CI/build evidence.                  |
+| P7 Production observability                | `PROVEN`                   | OTLP trace/metric export to the local collector exercised.                                                        |
+| P8 Foundation/security/Git/multi-vault     | `PROVEN`                   | Security boundaries, rollback/publication recovery, multi-vault isolation and managed-Git restore executed.       |
 | P9 Documentation/repository productization | `IMPLEMENTED_NOT_EXECUTED` | This change relocates history, removes personal assumptions and hardens repository hygiene; remote proof pending. |
-| P10 Final benchmark/evidence matrix | `DEFERRED` | Broad retrieval/document/agent/load evidence runs after P9 closure. |
+| P10 Final benchmark/evidence matrix        | `DEFERRED`                 | Broad retrieval/document/agent/load evidence runs after P9 closure.                                               |
 
 ## Current product invariants
 

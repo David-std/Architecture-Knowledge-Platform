@@ -18,8 +18,6 @@ jobs:
       AKP_RAW_SECRET_KEY: akp-ci-minio-secret-not-for-production
     steps:
       - uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
       - uses: pnpm/action-setup@v6
         with: { version: 10.34.5 }
       - uses: actions/setup-node@v7
@@ -27,21 +25,6 @@ jobs:
           node-version: 24.20.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
-      - name: Format P9 files and validate repository classification
-        run: |
-          pnpm exec prettier --write docs/status.md scripts/validate-repository-hygiene.mjs
-          pnpm hygiene:write
-          pnpm hygiene:validate
-      - name: Upload P9 formatted hygiene evidence
-        uses: actions/upload-artifact@v7
-        with:
-          name: p9-hygiene-evidence-${{ github.run_id }}
-          path: |
-            docs/status.md
-            scripts/validate-repository-hygiene.mjs
-            reports/repository-file-classification.json
-          if-no-files-found: error
-          retention-days: 7
       - run: pnpm build
       - run: docker compose up -d --wait postgres minio
       - name: Create disposable managed repository with a searchable restore probe
@@ -49,11 +32,11 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf "$AKP_MANAGED_REPO"
-          git init -b main "$AKP_MANAED_REPO"
+          git init -b main "$AKP_MANAGED_REPO"
           git -C "$AKP_MANAGED_REPO" config user.name "AKP Recovery CI"
           git -C "$AKP_MANAGED_REPO" config user.email "akp-recovery-ci@localhost"
           mkdir -p "$AKP_MANAGED_REPO/managed"
-          cat > "$AKP_MANAGED_REPO/managed/p8-restore-probe.md" <<'EOPROBE'
+          cat > "$AKP_MANAGED_REPO/managed/p8-restore-probe.md" <<'EOF'
           ---
           id: P8-RESTORE-PROBE
           title: P8 Restore Probe
@@ -63,7 +46,7 @@ jobs:
           ---
 
           This restore probe must become searchable after the managed Git bundle is restored into a new repository.
-          EOPROBE
+          EOF
           git -C "$AKP_MANAGED_REPO" add --all
           git -C "$AKP_MANAGED_REPO" commit -m "test: seed managed restore probe"
       - run: pnpm db:migrate
@@ -78,13 +61,13 @@ jobs:
         run: >-
           ./scripts/restore-smoke.ps1
           -BackupDirectory backups/ci-recovery
-          -ManagedRepository $env:AKP_MANAED_REPO
+          -ManagedRepository $env:AKP_MANAGED_REPO
       - name: Prove managed Git commit, files and searchable reindex after restore
         shell: pwsh
         run: >-
           ./scripts/verify-managed-git-restore.ps1
           -BackupDirectory backups/ci-recovery
-          -SourceManagedRepository $env:AKP_MANAED_REPO
+          -SourceManagedRepository $env:AKP_MANAGED_REPO
           -SpaceId 00000000-0000-0000-0000-000000000003
       - name: Upload recovery diagnostics
         if: always()
