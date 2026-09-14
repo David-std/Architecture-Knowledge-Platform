@@ -6,8 +6,10 @@ const root = process.cwd();
 const failures = [];
 const required = [
   "README.md",
-  "PROJECT_STATE.md",
-  "VALIDATION_REPORT.md",
+  "CHANGELOG.md",
+  "CONTRIBUTING.md",
+  "docs/status.md",
+  "docs/assurance/README.md",
   "docs/architecture/c4.md",
   "docs/architecture/database-erd.md",
   "docs/security/threat-model.md",
@@ -22,7 +24,7 @@ for (const file of required) {
 const markdownFiles = await fg(["*.md", "docs/**/*.md", "reports/**/*.md"], {
   cwd: root,
   onlyFiles: true,
-  ignore: ["docs/archive/iterations/**"],
+  ignore: ["docs/archive/**", "reports/ci/**", "reports/migration/**"],
 });
 for (const relativePath of markdownFiles) {
   const raw = await readFile(path.join(root, relativePath), "utf8");
