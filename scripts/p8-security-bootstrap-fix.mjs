@@ -1,4 +1,7 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+
+await mkdir("packages/validation/test", { recursive: true });
+await mkdir("apps/api/test", { recursive: true });
 
 const path = "scripts/p8-security-materialize.mjs";
 let source = await readFile(path, "utf8");
@@ -11,4 +14,4 @@ if (!source.includes(before)) {
 }
 source = source.replace(before, after);
 await writeFile(path, source, "utf8");
-console.log("P8.1 security materializer interpolation repaired");
+console.log("P8.1 security materializer bootstrap repaired");
