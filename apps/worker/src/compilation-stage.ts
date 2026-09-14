@@ -1,10 +1,12 @@
 import {
   CompilationPlan,
   type ConfiguredKnowledgeCompiler,
+  type KnowledgeCompilerResult,
 } from "@akp/compiler";
 import { StructuralLocator, type DocumentArtifact } from "@akp/contracts";
 import type { Postgres } from "@akp/postgres";
 import { renderDocumentArtifactDraft } from "./document-artifact.js";
+import { assertEvidenceFragmentIntegrity } from "./evidence-fragment.js";
 import { compileGroundedKnowledgeProposal } from "./knowledge-compilation.js";
 
 interface EvidenceRow {
@@ -50,6 +52,7 @@ export interface CompilationStageMetadata {
   warnings?: string[];
   knowledgeCandidateCount?: number;
   contradictionCount?: number;
+  compilerResult?: KnowledgeCompilerResult;
   reason?: string;
 }
 
@@ -116,10 +119,16 @@ async function loadEvidence(
   if (!/^[a-f0-9]{64}$/.test(row.content_hash)) {
     throw new Error("COMPILER_EVIDENCE_HASH_INVALID");
   }
+  const locator = StructuralLocator.parse(row.locator);
+  assertEvidenceFragmentIntegrity(input.artifact, {
+    locator,
+    excerpt: row.excerpt,
+    excerptHash: row.content_hash,
+  });
   return {
     id: row.id,
     sourceArtifactId: input.sourceArtifactId,
-    locator: StructuralLocator.parse(row.locator),
+    locator,
     excerpt: row.excerpt,
     excerptHash: row.content_hash,
   };
@@ -237,6 +246,7 @@ export async function buildCompilationStage(
       warnings: compiled.result.warnings,
       knowledgeCandidateCount: compiled.result.knowledgeCandidates.length,
       contradictionCount: compiled.result.contradictions.length,
+      compilerResult: compiled.result,
     },
   };
 }

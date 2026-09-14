@@ -17,6 +17,20 @@ export interface CompilationProbeResult {
 }
 
 const TOKEN_PATTERN = /[\p{L}\p{N}]{4,}/gu;
+const NEGATION_PATTERN =
+  /\b(?:no|not|never|without|cannot|mustn['’]?t|nunca|sin|jam[aá]s)\b/iu;
+const MIN_EVIDENCE_COVERAGE = 0.45;
+const MIN_SHARED_TOKENS = 3;
+const PRESENTATION_TOKENS = new Set([
+  "draft",
+  "status",
+  "title",
+  "type",
+  "claim",
+  "rule",
+  "concept",
+  "knowledge",
+]);
 
 function tokens(value: string): Set<string> {
   return new Set(
@@ -40,6 +54,14 @@ function paragraphs(value: string): string[] {
     .filter(Boolean);
 }
 
+function semanticDraftText(value: string): string {
+  return value
+    .replace(/^---[\s\S]*?---\s*/u, "")
+    .split(/\r?\n/u)
+    .filter((line) => !/^\s*#{1,6}\s/u.test(line))
+    .join("\n");
+}
+
 function evidenceSupportScore(
   question: string,
   excerpt: string,
@@ -60,6 +82,10 @@ function evidenceSupportScore(
     best = Math.max(best, score);
   }
   return best;
+}
+
+function hasNegation(value: string): boolean {
+  return NEGATION_PATTERN.test(value.toLocaleLowerCase());
 }
 
 /**
@@ -119,8 +145,29 @@ export async function evaluateCompilationProbes(
         excerpt,
         linkedForEvidence.flatMap((change) => paragraphs(change.content)),
       );
+      const evidenceTokens = tokens(excerpt);
+      const draftText = linkedForEvidence
+        .map((change) => semanticDraftText(change.content))
+        .join("\n");
+      const draftTokens = tokens(draftText);
+      const sharedTokens = overlap(evidenceTokens, draftTokens);
+      const allowedTokens = new Set([
+        ...evidenceTokens,
+        ...tokens(probe.question),
+      ]);
+      const unsupportedTokens = [...draftTokens].filter(
+        (token) => !allowedTokens.has(token) && !PRESENTATION_TOKENS.has(token),
+      );
+      const polarityMatches = hasNegation(excerpt) === hasNegation(draftText);
       supportScore = Math.max(supportScore, score);
-      if (score > 0) matchedEvidenceIds.push(evidenceId);
+      if (
+        sharedTokens >= Math.min(MIN_SHARED_TOKENS, evidenceTokens.size) &&
+        score >= MIN_EVIDENCE_COVERAGE &&
+        polarityMatches &&
+        unsupportedTokens.length === 0
+      ) {
+        matchedEvidenceIds.push(evidenceId);
+      }
     }
     const passed =
       linkedFragments.length > 0 &&

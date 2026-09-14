@@ -14,7 +14,7 @@ export default defineConfig({
     },
   },
   test: {
-    include: ["test/**/*.integration.test.ts"],
+    include: ["test/**/*.test.ts"],
     fileParallelism: false,
     maxWorkers: 1,
     testTimeout: 30_000,

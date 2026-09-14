@@ -84,6 +84,8 @@ function compilerInput() {
 }
 
 function groundedResult() {
+  const statement =
+    "Invalidate cached material when its authoritative revision changes.";
   return {
     identity: {
       classification: "DISTINCT" as const,
@@ -101,8 +103,7 @@ function groundedResult() {
       {
         candidateId: "candidate-1",
         kind: "rule" as const,
-        statement:
-          "Invalidate cached material when its authoritative revision changes.",
+        statement,
         scope: "Applies to revision-addressed cached knowledge.",
         evidenceIds: [EVIDENCE_ID],
         confidence: 0.92,
@@ -112,7 +113,8 @@ function groundedResult() {
     contradictions: [],
     proposedFileChanges: [
       {
-        path: "20-knowledge/generated/rule/cache-invalidation.md",
+        candidateId: "candidate-1",
+        path: deriveKnowledgePath({ title: statement, kind: "rule" }),
         operation: "CREATE" as const,
         content:
           "---\nid: GEN-CACHE-INVALIDATION\ntype: rule\nstatus: draft\n---\n\n# Cache invalidation\n\nInvalidate cached material when its authoritative revision changes.\n",
@@ -172,6 +174,65 @@ describe("Knowledge Compiler contracts", () => {
     expect(() =>
       normalizeKnowledgeCompilerResult(compilerInput(), invalid),
     ).toThrow(/Unsafe knowledge path/);
+  });
+
+  it.each([
+    "README.md",
+    "docs/status.md",
+    ".obsidian/config",
+    "10-sources/raw.md",
+  ])("rejects compiler-owned writes to reserved path %s", (path) =>
+    expect(() =>
+      deriveKnowledgePath({
+        title: "x",
+        kind: "rule",
+        schemaProfile: { compiledRoot: path },
+      }),
+    ).toThrow(/Unsafe knowledge path/),
+  );
+
+  it("rejects identity and material-operation contradictions", () => {
+    const same = groundedResult();
+    same.identity.classification = "SAME_IDENTITY";
+    same.identity.existingDocumentId = DOCUMENT_ID;
+    expect(() =>
+      normalizeKnowledgeCompilerResult(compilerInput(), same),
+    ).toThrow(/IDENTITY_FORBIDS_CREATE/);
+
+    const duplicate = groundedResult();
+    duplicate.identity.classification = "LIKELY_DUPLICATE";
+    expect(() =>
+      normalizeKnowledgeCompilerResult(compilerInput(), duplicate),
+    ).toThrow(/IDENTITY_FORBIDS_CREATE/);
+
+    const noMaterial = groundedResult();
+    noMaterial.knowledgeCandidates[0]!.proposedAction = "NO_MATERIAL";
+    expect(() =>
+      normalizeKnowledgeCompilerResult(compilerInput(), noMaterial),
+    ).toThrow(/NO_MATERIAL_HAS_FILE_CHANGES/);
+  });
+
+  it("rejects provider-selected create paths and material changes without a critical probe", () => {
+    const path = groundedResult();
+    path.proposedFileChanges[0]!.path =
+      "20-knowledge/generated/rule/provider-picked.md";
+    expect(() =>
+      normalizeKnowledgeCompilerResult(compilerInput(), path),
+    ).toThrow(/CREATE_PATH_NOT_RUNTIME_DERIVED/);
+
+    const probe = groundedResult();
+    probe.probes[0]!.criticality = "HIGH";
+    expect(() =>
+      normalizeKnowledgeCompilerResult(compilerInput(), probe),
+    ).toThrow(/CRITICAL_PROBE_REQUIRED/);
+  });
+
+  it("rejects a file change that is not bound to an exact candidate", () => {
+    const invalid = groundedResult();
+    invalid.proposedFileChanges[0]!.candidateId = "unknown-candidate";
+    expect(() =>
+      normalizeKnowledgeCompilerResult(compilerInput(), invalid),
+    ).toThrow(/CHANGE_UNKNOWN_CANDIDATE/);
   });
 
   it("converts a grounded result into the existing review plan without publication", () => {

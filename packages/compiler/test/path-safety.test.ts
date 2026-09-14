@@ -4,7 +4,7 @@ import { assertSafeKnowledgePath } from "../src/index.js";
 describe("knowledge path safety", () => {
   it("accepts a repository-relative Markdown path", () => {
     expect(() =>
-      assertSafeKnowledgePath("10-sources/ingested/source.md"),
+      assertSafeKnowledgePath("20-knowledge/generated/source.md"),
     ).not.toThrow();
   });
 

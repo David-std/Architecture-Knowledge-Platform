@@ -4,6 +4,7 @@ import {
   acknowledgeEventDelivery,
   appendOutboxEvent,
   claimNextEventDelivery,
+  claimNextIngestJob,
   failEventDelivery,
   Postgres,
   registerEventConsumer,
@@ -175,8 +176,7 @@ describe("worker drain integration", () => {
              where id=$1
                and state in (
                  'RECEIVED', 'HASHED', 'STORED', 'NORMALIZING',
-                 'ANALYZING', 'PLANNED', 'DRAFTED', 'VALIDATING',
-                 'AUTO_APPROVED', 'MERGED', 'INDEXED', 'EVALUATED'
+                 'ANALYZING', 'PLANNED', 'DRAFTED', 'VALIDATING'
                )
                and cancelled_at is null
                and next_attempt_at<=now()
@@ -230,6 +230,68 @@ describe("worker drain integration", () => {
           await lockClient.query("rollback").catch(() => undefined);
           lockClient.release();
         }
+        await db.pool.query("delete from ingest_jobs where id=$1", [jobId]);
+        await db.pool.end();
+      }
+    },
+  );
+
+  it.skipIf(!databaseUrl)(
+    "treats post-review lifecycle states as quiescent for the ingest worker",
+    async () => {
+      if (!databaseUrl) return;
+      const db = new Postgres(databaseUrl);
+      const consumerName = `drain-post-review-${randomUUID()}`;
+      const jobId = await seedIngestJob(db);
+      try {
+        for (const state of [
+          "AUTO_APPROVED",
+          "MERGED",
+          "INDEXED",
+          "EVALUATED",
+        ]) {
+          await db.pool.query(
+            "update ingest_jobs set state=$2,lease_owner=null,lease_expires_at=null where id=$1",
+            [jobId, state],
+          );
+          expect(await claimNextIngestJob(db, "post-review-worker")).toBeNull();
+          const summary = await drainToQuiescence({
+            db,
+            consumerName,
+            workerId: "post-review-worker",
+            deadlineMs: 500,
+            runEventOnce: async () => false,
+            runIngestJob: noIngestJobs(),
+          });
+          expect(summary).toMatchObject({
+            reason: "QUIESCENT",
+            ingest: { work: 0 },
+          });
+        }
+      } finally {
+        await db.pool.query("delete from ingest_jobs where id=$1", [jobId]);
+        await db.pool.end();
+      }
+    },
+  );
+
+  it.skipIf(!databaseUrl)(
+    "increments the ingest fencing version on every lease claim",
+    async () => {
+      if (!databaseUrl) return;
+      const db = new Postgres(databaseUrl);
+      const jobId = await seedIngestJob(db);
+      try {
+        const first = await claimNextIngestJob(db, "fence-worker", 1);
+        expect(first?.id).toBe(jobId);
+        expect(Number(first?.version)).toBeGreaterThan(0);
+        await db.pool.query(
+          "update ingest_jobs set lease_expires_at=now()-interval '1 second' where id=$1",
+          [jobId],
+        );
+        const second = await claimNextIngestJob(db, "fence-worker", 1);
+        expect(Number(second?.version)).toBe(Number(first?.version) + 1);
+      } finally {
         await db.pool.query("delete from ingest_jobs where id=$1", [jobId]);
         await db.pool.end();
       }

@@ -32,8 +32,7 @@ export async function claimNextIngestJob(
       from ingest_jobs
       where state in (
         'RECEIVED', 'HASHED', 'STORED', 'NORMALIZING', 'ANALYZING',
-        'PLANNED', 'DRAFTED', 'VALIDATING', 'AUTO_APPROVED', 'MERGED',
-        'INDEXED', 'EVALUATED'
+        'PLANNED', 'DRAFTED', 'VALIDATING'
       )
         and cancelled_at is null
         and next_attempt_at <= now()
@@ -45,6 +44,7 @@ export async function claimNextIngestJob(
     update ingest_jobs j
     set lease_owner = $1,
         lease_expires_at = now() + make_interval(secs => $2),
+        version = version + 1,
         heartbeat_at = now(),
         updated_at = now()
     from candidate

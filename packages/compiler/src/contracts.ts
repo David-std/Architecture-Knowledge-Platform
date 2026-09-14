@@ -213,6 +213,7 @@ export type KnowledgeContradiction = z.infer<typeof KnowledgeContradiction>;
 
 export const ProposedKnowledgeFileChange = z
   .object({
+    candidateId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/),
     path: z.string().min(1).max(1_024),
     operation: z.enum(["CREATE", "UPDATE", "SUPERSEDE", "ARCHIVE"]),
     baseContentHash: Sha256.optional(),

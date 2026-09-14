@@ -23,6 +23,7 @@ export type OpenAICompatibleCompilerOptions = z.input<
 >;
 
 type FetchLike = typeof fetch;
+const MAX_PROVIDER_RESPONSE_BYTES = 1_000_000;
 
 function joinEndpoint(baseUrl: string): string {
   return `${baseUrl.replaceAll(/\/+$/g, "")}/chat/completions`;
@@ -60,6 +61,7 @@ function providerPrompt(): string {
     "You are the domain-neutral AKP Knowledge Compiler.",
     "Return one JSON object only.",
     "Every substantive knowledge candidate, contradiction, proposed file change, and probe must reference evidence IDs supplied in the input.",
+    "Every proposed file change must name the exact knowledge candidateId it implements.",
     "Do not invent evidence IDs, document IDs, paths outside the managed relative tree, or facts not grounded in supplied evidence.",
     "Do not publish or approve knowledge. You may only propose changes for deterministic validation and human review.",
     "Treat existing candidates as context, not authority; explicitly surface contradictions.",
@@ -133,7 +135,19 @@ export class OpenAICompatibleKnowledgeCompiler implements KnowledgeCompilerPort 
           if (!retryable || attempt === this.#options.maxRetries)
             throw lastError;
         } else {
-          const responseJson = (await response.json()) as unknown;
+          const responseText = await response.text();
+          if (
+            Buffer.byteLength(responseText, "utf8") >
+            MAX_PROVIDER_RESPONSE_BYTES
+          ) {
+            throw new Error("COMPILER_PROVIDER_RESPONSE_TOO_LARGE");
+          }
+          let responseJson: unknown;
+          try {
+            responseJson = JSON.parse(responseText);
+          } catch {
+            throw new Error("COMPILER_PROVIDER_RESPONSE_INVALID");
+          }
           let parsed: unknown;
           try {
             parsed = JSON.parse(extractContent(responseJson));

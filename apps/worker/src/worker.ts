@@ -132,9 +132,13 @@ async function updateState(
   jobId: string,
   current: IngestState,
   next: IngestState,
+  expectedVersion: number,
   stageOutput?: Record<string, unknown>,
   result?: unknown,
 ): Promise<void> {
+  if (!Number.isSafeInteger(expectedVersion) || Number(expectedVersion) < 1) {
+    throw new Error("JOB_FENCING_VERSION_REQUIRED");
+  }
   transitionIngest(current, next);
   const client = await db.pool.connect();
   try {
@@ -154,7 +158,8 @@ async function updateState(
              lease_expires_at = null,
              heartbeat_at = now(),
              updated_at = now()
-       where id = $1 and state = $2 and lease_owner = $6 and cancelled_at is null
+       where id = $1 and state = $2 and lease_owner = $6 and version = $7
+         and cancelled_at is null
        returning id,space_id,vault_id,payload
       `,
       [
@@ -164,6 +169,7 @@ async function updateState(
         result === undefined ? null : JSON.stringify(result),
         stageOutput === undefined ? null : JSON.stringify(stageOutput),
         workerId,
+        expectedVersion,
       ],
     );
     if (!updated.rowCount) {
@@ -292,6 +298,7 @@ function extractorConfiguration(
 async function processJob(job: Record<string, unknown>): Promise<void> {
   const id = String(job.id);
   const state = String(job.state) as IngestState;
+  const version = Number(job.version);
   const payload = job.payload as Record<string, unknown>;
   const outputs = (job.stage_outputs ?? {}) as Record<string, unknown>;
   const sourceUri = String(payload.sourceUri ?? job.source_uri);
@@ -358,7 +365,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
           `,
           sourceValues,
         );
-    await updateState(id, state, "HASHED", {
+    await updateState(id, state, "HASHED", version, {
       raw,
       sourceId: source.rows[0]?.id,
       originalName: basename(sourcePath),
@@ -371,11 +378,11 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
     if (!raw?.sha256 || !(await objects.exists(raw.sha256))) {
       throw new Error("Immutable raw object is missing.");
     }
-    await updateState(id, state, "STORED");
+    await updateState(id, state, "STORED", version);
     return;
   }
   if (state === "STORED") {
-    await updateState(id, state, "NORMALIZING");
+    await updateState(id, state, "NORMALIZING", version);
     return;
   }
   if (state === "NORMALIZING") {
@@ -584,7 +591,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
         evidence_id: evidenceId,
         evidence_precision: evidenceFragment.precision,
       };
-      await updateState(id, state, "ANALYZING", { extracted });
+      await updateState(id, state, "ANALYZING", version, { extracted });
     } finally {
       await rm(immutablePath, { force: true });
     }
@@ -637,6 +644,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
         id,
         state,
         "NO_MATERIAL",
+        version,
         {
           identity: {
             classification: "SAME_IDENTITY",
@@ -681,6 +689,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
         id,
         state,
         "NO_MATERIAL",
+        version,
         { plan, compilation: compilationStage.metadata },
         { disposition: "NO_MATERIAL", reason: plan.summary },
       );
@@ -690,7 +699,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
       "insert into compilation_plans(job_id,source_id,plan) values($1,$2,$3::jsonb)",
       [id, outputs.sourceId, JSON.stringify(plan)],
     );
-    await updateState(id, state, "PLANNED", {
+    await updateState(id, state, "PLANNED", version, {
       plan,
       compilation: compilationStage.metadata,
     });
@@ -708,7 +717,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
       authorName,
       authorEmail,
     );
-    await updateState(id, state, "DRAFTED", {
+    await updateState(id, state, "DRAFTED", version, {
       draft: { branchName, baseRevision, headCommit },
     });
     return;
@@ -761,7 +770,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
     }
     if (errors.length)
       throw new Error(`Draft validation failed: ${JSON.stringify(errors)}`);
-    await updateState(id, state, "VALIDATING", {
+    await updateState(id, state, "VALIDATING", version, {
       validation: { issues, errors: 0, probeResults },
     });
     return;
@@ -788,17 +797,21 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
         draft.baseRevision,
         draft.headCommit,
         job.created_by ?? null,
-        JSON.stringify({ jobId: id, ...plan }),
+        JSON.stringify({
+          jobId: id,
+          ...plan,
+          compilation: outputs.compilation ?? null,
+        }),
         JSON.stringify(outputs.validation ?? { issues: [], errors: 0 }),
       ],
     );
-    await updateState(id, state, "REVIEW_REQUIRED", { reviewId });
+    await updateState(id, state, "REVIEW_REQUIRED", version, { reviewId });
     return;
   }
 
   await db.pool.query(
-    "update ingest_jobs set lease_owner=null,lease_expires_at=null,updated_at=now() where id=$1",
-    [id],
+    "update ingest_jobs set lease_owner=null,lease_expires_at=null,updated_at=now() where id=$1 and lease_owner=$2 and version=$3",
+    [id, workerId, version],
   );
 }
 
@@ -810,8 +823,12 @@ async function handleFailure(
   const maxAttempts = Number(job.max_attempts ?? 5);
   const terminal = attempts >= maxAttempts;
   const delaySeconds = Math.min(300, 2 ** attempts);
-  await db.pool.query(
-    `
+  const version = Number(job.version);
+  const client = await db.pool.connect();
+  try {
+    await client.query("begin");
+    const updated = await client.query(
+      `
     update ingest_jobs
        set state = case when $2 then 'FAILED' else state end,
            attempts = $3,
@@ -820,35 +837,53 @@ async function handleFailure(
            lease_owner = null,
            lease_expires_at = null,
            updated_at = now()
-     where id = $1 and lease_owner = $6 and cancelled_at is null
+     where id = $1 and lease_owner = $6 and version = $7
+       and cancelled_at is null
+     returning id
     `,
-    [
-      job.id,
-      terminal,
-      attempts,
-      JSON.stringify({
-        message: error instanceof Error ? error.message : String(error),
-      }),
-      delaySeconds,
-      workerId,
-    ],
-  );
-  await db.pool.query(
-    "insert into ingest_job_events(job_id,state,event_type,payload) values($1,$2,'FAILURE',$3::jsonb)",
-    [
-      job.id,
-      terminal ? "FAILED" : String(job.state),
-      JSON.stringify({
+      [
+        job.id,
+        terminal,
         attempts,
-        maxAttempts,
+        JSON.stringify({
+          message: error instanceof Error ? error.message : String(error),
+        }),
         delaySeconds,
-        message: String(error),
-      }),
-    ],
-  );
+        workerId,
+        version,
+      ],
+    );
+    if (!updated.rowCount) {
+      await client.query("rollback");
+      return;
+    }
+    await client.query(
+      "insert into ingest_job_events(job_id,state,event_type,payload) values($1,$2,'FAILURE',$3::jsonb)",
+      [
+        job.id,
+        terminal ? "FAILED" : String(job.state),
+        JSON.stringify({
+          attempts,
+          maxAttempts,
+          delaySeconds,
+          message: String(error),
+        }),
+      ],
+    );
+    await client.query("commit");
+  } catch (failure) {
+    await client.query("rollback");
+    throw failure;
+  } finally {
+    client.release();
+  }
 }
 
-function startLeaseHeartbeat(jobId: string, leaseSeconds = 60): () => void {
+function startLeaseHeartbeat(
+  jobId: string,
+  version: number,
+  leaseSeconds = 60,
+): () => void {
   let updateInFlight = false;
   const timer = setInterval(
     () => {
@@ -860,9 +895,9 @@ function startLeaseHeartbeat(jobId: string, leaseSeconds = 60): () => void {
         update ingest_jobs
            set lease_expires_at=now()+make_interval(secs => $3),
                heartbeat_at=now(),updated_at=now()
-         where id=$1 and lease_owner=$2 and cancelled_at is null
-        `,
-          [jobId, workerId, leaseSeconds],
+         where id=$1 and lease_owner=$2 and version=$4 and cancelled_at is null
+         `,
+          [jobId, workerId, leaseSeconds, version],
         )
         .catch(() => undefined)
         .finally(() => {
@@ -876,7 +911,10 @@ function startLeaseHeartbeat(jobId: string, leaseSeconds = 60): () => void {
 }
 
 async function runClaimedJob(job: Record<string, unknown>): Promise<void> {
-  const stopHeartbeat = startLeaseHeartbeat(String(job.id));
+  const stopHeartbeat = startLeaseHeartbeat(
+    String(job.id),
+    Number(job.version),
+  );
   try {
     await processJob(job);
   } catch (error) {

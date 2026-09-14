@@ -11,6 +11,24 @@ export interface EvidenceFragment {
   precision: "STRUCTURAL" | "SOURCE";
 }
 
+export function assertEvidenceFragmentIntegrity(
+  artifact: DocumentArtifact,
+  fragment: Pick<EvidenceFragment, "locator" | "excerpt" | "excerptHash">,
+): void {
+  if (fragmentHash(fragment.excerpt) !== fragment.excerptHash) {
+    throw new Error("COMPILER_EVIDENCE_HASH_MISMATCH");
+  }
+  if (
+    fragment.locator.source_hash !== artifact.source_hash ||
+    !artifact.locators.some(
+      (candidate) =>
+        JSON.stringify(candidate) === JSON.stringify(fragment.locator),
+    )
+  ) {
+    throw new Error("COMPILER_EVIDENCE_LOCATOR_MISMATCH");
+  }
+}
+
 function normalizedExcerpt(value: string, maxCharacters: number): string {
   return value.replaceAll(/\r\n/g, "\n").trim().slice(0, maxCharacters).trim();
 }
