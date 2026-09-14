@@ -540,7 +540,7 @@ async function insertEmbeddings(
        u.content_hash,
        ('[' || (((i % 1000)::numeric / 1000)::text) || ',' ||
          repeat('0.01,',62) || '0.01]')::vector(64)
-       from generate_series($6::int,$7::int) as generated(i)
+       from generate_series($5::int,$6::int) as generated(i)
        join knowledge_documents d
          on d.space_id=$1 and d.vault_id=$2 and d.external_id=$3 || i::text
        join knowledge_units u
@@ -551,7 +551,6 @@ async function insertEmbeddings(
       fixture.vaultId,
       fixture.externalPrefix,
       fixture.embeddingGenerationId,
-      fixture.runId,
       start,
       end,
     ],

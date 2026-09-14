@@ -80,22 +80,6 @@ function summarize(samples: number[]): Stats {
   };
 }
 
-async function cleanup(db: Postgres, consumerName: string): Promise<void> {
-  await db.pool.query(
-    "delete from event_delivery_attempts where consumer_name=$1",
-    [consumerName],
-  );
-  await db.pool.query("delete from event_quarantine where consumer_name=$1", [
-    consumerName,
-  ]);
-  await db.pool.query("delete from event_deliveries where consumer_name=$1", [
-    consumerName,
-  ]);
-  await db.pool.query("delete from event_consumers where consumer_name=$1", [
-    consumerName,
-  ]);
-}
-
 async function main(): Promise<void> {
   const db = new Postgres(databaseUrl);
   const consumerName = `benchmark-event-${randomUUID()}`;
@@ -338,11 +322,7 @@ async function main(): Promise<void> {
     };
     process.exitCode = 1;
   } finally {
-    try {
-      await cleanup(db, consumerName);
-    } finally {
-      await db.close();
-    }
+    await db.close();
   }
 
   await mkdir(path.dirname(outputPath), { recursive: true });
