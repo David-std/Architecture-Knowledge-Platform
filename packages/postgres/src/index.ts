@@ -4,11 +4,18 @@ import pg from "pg";
 export * from "./vault-registry.js";
 export * from "./outbox.js";
 
+export interface PostgresOptions {
+  onIdleClientError?: (error: Error) => void;
+}
+
 export class Postgres {
   readonly pool: pg.Pool;
 
-  constructor(databaseUrl: string) {
+  constructor(databaseUrl: string, options: PostgresOptions = {}) {
     this.pool = new pg.Pool({ connectionString: databaseUrl });
+    this.pool.on("error", (error) => {
+      options.onIdleClientError?.(error);
+    });
   }
 
   async health(): Promise<boolean> {
