@@ -36,17 +36,21 @@ sequenceDiagram
   W->>O: download immutable bytes
   W->>W: rehash materialized object
   W->>X: authenticated multipart + expected SHA-256
-  X->>X: bounded stream, hash verification, extraction
-  X-->>W: artifacts + locators + extractor version
+  X->>X: bounded stream, hash verification, capability routing
+  X-->>W: artifacts + locators + extractor/provider version
   X->>X: delete temporary file
   W->>D: source, artifacts, evidence and identity result
 ```
 
 Hash mismatch fails with `IMMUTABLE_OBJECT_HASH_MISMATCH`. DOCX paragraphs and
-tables and PPTX slides/notes carry source-hash locators. Audio/video and
-OCR/vision return `CAPABILITY_NOT_CONFIGURED` rather than a fabricated artifact.
-Long stages renew their lease. Another worker can reclaim the job only after
-lease expiry.
+tables and PPTX slides/notes carry source-hash locators. OCR-capable routes
+produce page and region provenance when the selected local/provider capability
+is configured; an unavailable explicitly requested capability fails closed with
+`CAPABILITY_NOT_CONFIGURED` rather than fabricating an artifact. Audio/video
+transcription is optional and requires an administrator-configured transcription
+endpoint; video demux additionally requires local ffmpeg. Visual captioning is
+reported separately and is never implied by transcription. Long stages renew
+their lease. Another worker can reclaim the job only after lease expiry.
 
 ## Compilation, review and publication
 
@@ -147,5 +151,5 @@ flowchart LR
   Config["Non-secret configuration"] --> Set
   Set --> Hash["Per-file SHA-256"]
   Hash --> Isolated["Isolated restore smoke"]
-  Isolated --> Checks["18-migration manifest + Git/MinIO archive (if configured)"]
+  Isolated --> Checks["Applied migration manifest + Git/MinIO integrity + rebuild checks"]
 ```
