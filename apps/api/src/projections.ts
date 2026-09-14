@@ -10,7 +10,7 @@ import {
   createConfiguredEmbeddingProvider,
   parseKnowledgeUnits,
 } from "@akp/retrieval";
-import { buildEmbeddingIndex } from "@akp/indexing";
+import { buildEmbeddingIndex, vaultIndexRevisionStatus } from "@akp/indexing";
 import type { GitKnowledgeStore } from "@akp/git-store";
 
 export type ManagedChange = IncrementalManagedChange;
@@ -135,6 +135,10 @@ export async function rebuildSpaceProjections(
   documentCount: number;
 }> {
   assertVaultScope(vaultId);
+  const vectorEnabled = process.env.AKP_VECTOR_ENABLED === "true";
+  const vectorWarning = vectorEnabled
+    ? "VECTOR_BUILD_PENDING"
+    : "VECTOR_DISABLED_PENDING_BENCHMARK";
   const corpusRevision = await compositeRevision(
     db,
     spaceId,
@@ -273,12 +277,14 @@ export async function rebuildSpaceProjections(
         vaultId,
         corpusRevision,
         previousVectorRevision,
-        "DEGRADED",
-        JSON.stringify([
-          process.env.AKP_VECTOR_ENABLED === "true"
-            ? "VECTOR_BUILD_PENDING"
-            : "VECTOR_DISABLED_PENDING_BENCHMARK",
+        // Shares the incremental indexer's rule so both projection paths report
+        // the same consistency: the served channels are written at this corpus
+        // revision above, and a missing vector generation only counts against the
+        // index while the deployment actually serves that channel.
+        vaultIndexRevisionStatus(corpusRevision, previousVectorRevision, [
+          vectorWarning,
         ]),
+        JSON.stringify([vectorWarning]),
       ],
     );
     await client.query("commit");
@@ -307,7 +313,7 @@ export async function rebuildSpaceProjections(
         vaultId,
         corpusRevision,
         provider,
-        activate: process.env.AKP_VECTOR_ENABLED === "true",
+        activate: vectorEnabled,
       });
     } catch {
       await db.pool.query(
@@ -318,7 +324,7 @@ export async function rebuildSpaceProjections(
         [spaceId, vaultId, corpusRevision],
       );
     }
-  } else if (process.env.AKP_VECTOR_ENABLED === "true") {
+  } else if (vectorEnabled) {
     await db.pool.query(
       `update vault_index_revisions
           set warnings='["VECTOR_PROVIDER_NOT_CONFIGURED"]'::jsonb,

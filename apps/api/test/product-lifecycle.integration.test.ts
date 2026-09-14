@@ -560,7 +560,7 @@ describe("product lifecycle E2E", () => {
         ],
       },
     });
-    expect(revised.statusCode).toBe(200);
+    expect(revised.statusCode, revised.body).toBe(200);
     expect(revised.json()).toMatchObject({
       id: firstReviewId,
       status: "CHANGES_REQUESTED",
@@ -589,7 +589,12 @@ describe("product lifecycle E2E", () => {
       body_cache: string;
       unit_count: number;
       index_status: string;
+      index_warnings: string[];
       corpus_revision: string;
+      lexical_revision: string;
+      graph_revision: string;
+      context_pack_revision: string;
+      vector_revision: string | null;
     }>(
       `select j.state,j.stage_outputs->>'sourceId' source_id,
                 (select count(*)::int from source_artifacts a join sources s on s.id=a.source_id
@@ -598,7 +603,9 @@ describe("product lifecycle E2E", () => {
                   where s.vault_id=j.vault_id and s.sha256=$2) evidence_count,
                 d.id document_id,d.body_cache,
                 (select count(*)::int from knowledge_units u where u.document_id=d.id) unit_count,
-                i.status index_status,i.corpus_revision
+                i.status index_status,i.warnings index_warnings,i.corpus_revision,
+                i.lexical_revision,i.graph_revision,i.context_pack_revision,
+                i.vector_revision
            from ingest_jobs j
            join knowledge_documents d on d.vault_id=j.vault_id
              and d.frontmatter->>'source_sha256'=$2
@@ -614,8 +621,20 @@ describe("product lifecycle E2E", () => {
     });
     expect(indexed.rows[0]?.body_cache).toContain(revisionMarker);
     expect(Number(indexed.rows[0]?.unit_count)).toBeGreaterThan(0);
-    expect(indexed.rows[0]?.index_status).toBe("DEGRADED");
     expect(indexed.rows[0]?.corpus_revision).toContain("managed:");
+    // Vector stays off pending the benchmark decision, so its absence is the
+    // declared configuration rather than an index defect: every channel this
+    // deployment serves is at the corpus revision, the vector generation is
+    // genuinely absent, and the reason is still recorded on the marker.
+    const indexRow = indexed.rows[0];
+    expect(indexRow?.lexical_revision).toBe(indexRow?.corpus_revision);
+    expect(indexRow?.graph_revision).toBe(indexRow?.corpus_revision);
+    expect(indexRow?.context_pack_revision).toBe(indexRow?.corpus_revision);
+    expect(indexRow?.vector_revision).toBeNull();
+    expect(indexRow?.index_warnings).toContain(
+      "VECTOR_DISABLED_PENDING_BENCHMARK",
+    );
+    expect(indexRow?.index_status).toBe("CONSISTENT");
 
     const sourceRow = await db.pool.query<{ object_key: string }>(
       "select object_key from sources where vault_id=$1 and sha256=$2",
@@ -881,7 +900,10 @@ describe("product lifecycle E2E", () => {
     expect(rolledBack.rows[0]).toMatchObject({
       review_status: "ROLLED_BACK",
       lifecycle: "DELETED_TOMBSTONE",
-      index_status: "DEGRADED",
+      // Rolling back republishes the vault at a new corpus revision; the served
+      // channels are reprojected with it, so the marker stays consistent while
+      // vector remains off pending the benchmark decision.
+      index_status: "CONSISTENT",
       active_units: 0,
     });
     expect(rolledBack.rows[0]?.total_units).toBeGreaterThan(0);
