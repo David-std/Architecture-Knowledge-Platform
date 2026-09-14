@@ -164,7 +164,7 @@ Choose **Open folder as vault** and select the same operator-provided
 `<path-to-your-vault>`. Platform import remains read-only. Do not copy runtime
 indexes, jobs, secrets or raw object storage into that folder.
 
-## Repository gate before handoff
+## Repository gate before review or release
 
 ```powershell
 pnpm install --frozen-lockfile --strict-peer-dependencies
