@@ -36,7 +36,8 @@
     "benchmark:retrieval:runtime": "tsx scripts/runtime-retrieval-benchmark.ts",
     "benchmark:retrieval:registered": "tsx scripts/registered-corpus-retrieval-benchmark.ts",
     "benchmark:agent-ab": "tsx scripts/agent-ab-benchmark.ts",
-    "benchmark:scale": "node --expose-gc node_modules/tsx/dist/cli.mjs scripts/load-scale-benchmark.ts"
+    "benchmark:scale": "node --expose-gc node_modules/tsx/dist/cli.mjs scripts/load-scale-benchmark.ts",
+    "benchmark:concurrency": "tsx scripts/concurrency-benchmark.ts"
   },
   "devDependencies": {
     "@types/mime-types": "^3.0.1",

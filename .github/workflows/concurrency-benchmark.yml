@@ -1,0 +1,52 @@
+name: concurrency-benchmark
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  api-and-worker-concurrency:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: postgres://akp:akp@localhost:55432/akp
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - run: docker compose up -d --wait postgres
+      - run: pnpm db:migrate
+      - name: Execute authenticated API and worker concurrency benchmark
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p reports/ci
+          pnpm benchmark:concurrency \
+            2>&1 | tee reports/ci/concurrency-benchmark.log
+      - name: Capture concurrency diagnostics
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          mkdir -p reports/ci
+          docker compose ps --all > reports/ci/concurrency-docker-compose-ps.txt 2>&1
+          docker compose logs --no-color --timestamps postgres \
+            > reports/ci/concurrency-postgres.log 2>&1
+      - name: Upload concurrency evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: concurrency-benchmark-${{ github.run_id }}
+          path: reports/ci
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Stop disposable services
+        if: always()
+        run: docker compose down -v --remove-orphans
