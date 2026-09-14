@@ -216,9 +216,7 @@ for (const entry of entries) {
   if (
     entry.path.startsWith("docs/assurance/") &&
     entry.path !== "docs/assurance/README.md" &&
-    !/^docs\/assurance\/releases\/v\d+\.\d+\.\d+\/README\.md$/.test(
-      entry.path,
-    )
+    !/^docs\/assurance\/releases\/v\d+\.\d+\.\d+\/README\.md$/.test(entry.path)
   )
     failures.push(`ASSURANCE_LAYOUT_NOT_RELEASE_ORIENTED ${entry.path}`);
   if (phasePathToken.test(entry.path))
