@@ -253,12 +253,30 @@ def _table_data(item: Any) -> tuple[list[str], list[list[str]], dict[str, Any]]:
         )
         row_span = payload.get("row_span")
         row_fallback = row_span[0] if isinstance(row_span, list) and row_span else 0
-        row_start = int(payload.get("start_row_offset", row_fallback) or 0)
-        row_end = int(payload.get("end_row_offset", row_start + 1) or row_start + 1)
+        row_start = int(
+            payload.get("start_row_offset_idx", payload.get("start_row_offset", row_fallback))
+            or 0
+        )
+        row_end = int(
+            payload.get(
+                "end_row_offset_idx",
+                payload.get("end_row_offset", row_start + 1),
+            )
+            or row_start + 1
+        )
         col_span = payload.get("col_span")
         col_fallback = col_span[0] if isinstance(col_span, list) and col_span else 0
-        col_start = int(payload.get("start_col_offset", col_fallback) or 0)
-        col_end = int(payload.get("end_col_offset", col_start + 1) or col_start + 1)
+        col_start = int(
+            payload.get("start_col_offset_idx", payload.get("start_col_offset", col_fallback))
+            or 0
+        )
+        col_end = int(
+            payload.get(
+                "end_col_offset_idx",
+                payload.get("end_col_offset", col_start + 1),
+            )
+            or col_start + 1
+        )
         text = str(payload.get("text", "") or "")
         max_row = max(max_row, row_end)
         max_col = max(max_col, col_end)
