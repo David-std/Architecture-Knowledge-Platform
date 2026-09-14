@@ -6,6 +6,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   api-and-worker-concurrency:
     runs-on: ubuntu-latest
@@ -14,6 +17,8 @@ jobs:
       DATABASE_URL: postgres://akp:akp@localhost:55432/akp
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.ref || github.ref }}
       - uses: pnpm/action-setup@v6
         with: { version: 10.34.5 }
       - uses: actions/setup-node@v7
@@ -22,12 +27,19 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
       - run: pnpm build
-      - name: Capture exact formatter output
+      - name: Apply canonical formatter output
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         shell: bash
         run: |
-          mkdir -p reports/ci
-          pnpm exec prettier scripts/concurrency-benchmark.ts \
-            > reports/ci/concurrency-benchmark.formatted.ts
+          pnpm exec prettier --write scripts/concurrency-benchmark.ts
+          if git diff --quiet -- scripts/concurrency-benchmark.ts; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/concurrency-benchmark.ts
+          git commit -m "style(eval): format concurrency benchmark"
+          git push origin "HEAD:${GITHUB_HEAD_REF}"
       - run: docker compose up -d --wait postgres
       - run: pnpm db:migrate
       - name: Execute authenticated API and worker concurrency benchmark
