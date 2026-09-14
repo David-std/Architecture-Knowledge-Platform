@@ -49,7 +49,12 @@ jobs:
         shell: bash
         run: |
           set +e
-          mkdir -p reports/ci
+          mkdir -p reports/ci/formatted
+          pnpm exec prettier packages/evaluation/src/agent-ab.ts > reports/ci/formatted/agent-ab.ts
+          pnpm exec prettier packages/evaluation/test/agent-ab.test.ts > reports/ci/formatted/agent-ab.test.ts
+          pnpm exec prettier scripts/agent-ab-benchmark.ts > reports/ci/formatted/agent-ab-benchmark.ts
+          pnpm exec prettier evals/fixtures/agent-ab-curated-tasks.json > reports/ci/formatted/agent-ab-curated-tasks.json
+          pnpm exec prettier docs/assurance/p10-gap-matrix.md > reports/ci/formatted/p10-gap-matrix.md
           docker compose ps --all > reports/ci/semantic-docker-compose-ps.txt 2>&1
           docker compose logs --no-color --timestamps postgres \
             > reports/ci/semantic-postgres.log 2>&1
