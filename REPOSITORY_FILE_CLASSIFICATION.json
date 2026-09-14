@@ -377,6 +377,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/mcp/src/context-request.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/mcp/src/http.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -385,6 +390,11 @@
       "path": "apps/mcp/src/server.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/mcp/test/context-request.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
     },
     {
       "path": "apps/mcp/tsconfig.json",

@@ -1,7 +1,8 @@
 import { config } from "dotenv";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { ContextRequest, SearchRequest } from "@akp/contracts";
+import { SearchRequest } from "@akp/contracts";
+import { McpContextRequest } from "./context-request.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -117,7 +118,7 @@ export function createMcpServer(): McpServer {
     {
       description:
         "Build a token-budgeted, revisioned context packet with citations and gaps.",
-      inputSchema: ContextRequest.shape,
+      inputSchema: McpContextRequest.shape,
     },
     async (input) =>
       compactTextResult(
