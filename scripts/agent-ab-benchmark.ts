@@ -38,7 +38,11 @@ type ContextPacket = {
   citations?: string[];
   references?: string[];
   sections?: Array<{ content?: string; sourceOrEvidenceIds?: string[] }>;
-  content?: Array<{ content?: string; citations?: string[]; references?: string[] }>;
+  content?: Array<{
+    content?: string;
+    citations?: string[];
+    references?: string[];
+  }>;
   requiredActions?: string[];
   gaps?: string[];
   conflicts?: string[];
@@ -144,8 +148,10 @@ function benchmarkPrerequisites(): {
   if (!apiUrl) reasons.push("AKP_API_URL is required.");
   if (!apiToken) reasons.push("AKP_API_TOKEN is required.");
   if (!spaceId) reasons.push("AKP_AGENT_AB_SPACE_ID is required.");
-  if (vaultIds.length === 0) reasons.push("AKP_AGENT_AB_VAULT_IDS is required.");
-  if (!providerBaseUrl) reasons.push("AKP_AGENT_AB_PROVIDER_BASE_URL is required.");
+  if (vaultIds.length === 0)
+    reasons.push("AKP_AGENT_AB_VAULT_IDS is required.");
+  if (!providerBaseUrl)
+    reasons.push("AKP_AGENT_AB_PROVIDER_BASE_URL is required.");
   if (!providerModel) reasons.push("AKP_AGENT_AB_PROVIDER_MODEL is required.");
   if (!Number.isFinite(temperature) || temperature < 0 || temperature > 2) {
     reasons.push("AKP_AGENT_AB_TEMPERATURE must be between 0 and 2.");
@@ -155,7 +161,9 @@ function benchmarkPrerequisites(): {
     maxOutputTokens < 64 ||
     maxOutputTokens > 8192
   ) {
-    reasons.push("AKP_AGENT_AB_MAX_OUTPUT_TOKENS must be an integer from 64 to 8192.");
+    reasons.push(
+      "AKP_AGENT_AB_MAX_OUTPUT_TOKENS must be an integer from 64 to 8192.",
+    );
   }
   return {
     ready: reasons.length === 0,
@@ -195,20 +203,21 @@ async function postJson<T>(
 
 function rawSearchContext(response: SearchResponse): ArmInput {
   const context = response.hits
-    .map(
-      (hit, index) =>
-        [
-          `RESULT ${index + 1}`,
-          `DOCUMENT: ${hit.document?.externalId ?? hit.documentId}`,
-          `TITLE: ${hit.title}`,
-          `TEXT: ${hit.excerpt}`,
-          `CITATIONS: ${hit.citations.join(", ") || "none"}`,
-        ].join("\n"),
+    .map((hit, index) =>
+      [
+        `RESULT ${index + 1}`,
+        `DOCUMENT: ${hit.document?.externalId ?? hit.documentId}`,
+        `TITLE: ${hit.title}`,
+        `TEXT: ${hit.excerpt}`,
+        `CITATIONS: ${hit.citations.join(", ") || "none"}`,
+      ].join("\n"),
     )
     .join("\n\n");
   return {
     context,
-    allowedCitations: [...new Set(response.hits.flatMap((hit) => hit.citations))],
+    allowedCitations: [
+      ...new Set(response.hits.flatMap((hit) => hit.citations)),
+    ],
     retrievalLatencyMs: 0,
     retrievalMetadata: {
       hits: response.hits.length,
@@ -325,8 +334,13 @@ function parseModelOutput(content: string): AgentAbModelOutput {
           : [];
       })
     : [];
-  if (typeof parsed.answer !== "string" || typeof parsed.abstain !== "boolean") {
-    throw new Error("Provider response did not match the Agent A/B JSON contract.");
+  if (
+    typeof parsed.answer !== "string" ||
+    typeof parsed.abstain !== "boolean"
+  ) {
+    throw new Error(
+      "Provider response did not match the Agent A/B JSON contract.",
+    );
   }
   return {
     answer: parsed.answer,
@@ -343,32 +357,29 @@ async function invokeProvider(
 ): Promise<ProviderResult> {
   const prompt = evaluationPrompt(task, input.context);
   const started = performance.now();
-  const response = await fetch(
-    `${config.providerBaseUrl}/chat/completions`,
-    {
-      method: "POST",
-      headers: {
-        ...(config.providerApiKey
-          ? { authorization: `Bearer ${config.providerApiKey}` }
-          : {}),
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: config.providerModel,
-        temperature: config.temperature,
-        max_tokens: config.maxOutputTokens,
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are a controlled evaluation assistant. Follow the caller's JSON contract and never use knowledge outside the supplied context.",
-          },
-          { role: "user", content: prompt },
-        ],
-      }),
-      signal: AbortSignal.timeout(120_000),
+  const response = await fetch(`${config.providerBaseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      ...(config.providerApiKey
+        ? { authorization: `Bearer ${config.providerApiKey}` }
+        : {}),
+      "content-type": "application/json",
     },
-  );
+    body: JSON.stringify({
+      model: config.providerModel,
+      temperature: config.temperature,
+      max_tokens: config.maxOutputTokens,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a controlled evaluation assistant. Follow the caller's JSON contract and never use knowledge outside the supplied context.",
+        },
+        { role: "user", content: prompt },
+      ],
+    }),
+    signal: AbortSignal.timeout(120_000),
+  });
   const latencyMs = performance.now() - started;
   const text = await response.text();
   if (!response.ok) {
@@ -402,7 +413,14 @@ async function runArm(
   task: AgentAbTask,
   input: ArmInput,
   config: ReturnType<typeof benchmarkPrerequisites>,
-): Promise<AgentAbArmObservation & { retrievalMetadata: Record<string, unknown>; modelOutput: AgentAbModelOutput; retrievalLatencyMs: number; modelLatencyMs: number }> {
+): Promise<
+  AgentAbArmObservation & {
+    retrievalMetadata: Record<string, unknown>;
+    modelOutput: AgentAbModelOutput;
+    retrievalLatencyMs: number;
+    modelLatencyMs: number;
+  }
+> {
   const provider = await invokeProvider(task, input, config);
   const score = scoreAgentAbOutput(
     task,
