@@ -238,8 +238,8 @@ function parseTargets(value: string | undefined): number[] {
 
 function asNumber(value: Numeric | null | undefined): number {
   const parsed = Number(value ?? 0);
-  if (!Number.isFinite(parsed)
-  ) throw new Error(`non-numeric database value: ${value}`);
+  if (!Number.isFinite(parsed))
+    throw new Error(`non-numeric database value: ${value}`);
   return parsed;
 }
 
@@ -1094,7 +1094,7 @@ async function runBenchmark(
           loadHeapDeltaBytes: loadMemoryDelta.heapUsedBytes,
           queryHeapDeltaBytes: queryMemoryDelta.heapUsedBytes,
           contextPacketRssDeltaBytes: contextPacket.rssDeltaBytes,
-          contextPacketHeapDeltaBytes: contextPacket.heapUsedBytes,
+          contextPacketHeapDeltaBytes: contextPacket.heapDeltaBytes,
         },
         storage: {
           beforeLoad: storageBefore,
