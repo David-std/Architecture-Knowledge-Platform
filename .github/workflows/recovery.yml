@@ -25,6 +25,24 @@ jobs:
           node-version: 24.20.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Capture canonical formatter output
+        run: >-
+          pnpm exec prettier
+          packages/evaluation/src/dataset.ts
+          scripts/validate-repository-hygiene.mjs
+          --write
+      - name: Upload canonical formatter output
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: canonical-formatter-${{ github.run_id }}
+          path: |
+            packages/evaluation/src/dataset.ts
+            scripts/validate-repository-hygiene.mjs
+          if-no-files-found: error
+          retention-days: 7
+      - name: Validate product-tree hygiene
+        run: pnpm hygiene:validate
       - run: pnpm build
       - run: docker compose up -d --wait postgres minio
       - name: Create disposable managed repository with a searchable restore probe
