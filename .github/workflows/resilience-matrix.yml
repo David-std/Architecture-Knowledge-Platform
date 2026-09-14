@@ -132,22 +132,32 @@ jobs:
             local service="$1"
             local field="$2"
             local label="$3"
+            local observed_down=0
             docker compose stop "$service"
             for i in $(seq 1 30); do
               local code
               code=$(curl -sS -o "reports/ci/readiness-${label}-down.json" \
                 -w '%{http_code}' http://127.0.0.1:8080/health/readiness || true)
-              curl -fsS http://127.0.0.1:8080/health/liveness \
-                > "reports/ci/liveness-${label}-down.json"
+              if ! curl -fsS http://127.0.0.1:8080/health/liveness \
+                > "reports/ci/liveness-${label}-down.json"; then
+                echo "API liveness failed while ${service} was stopped" >&2
+                return 1
+              fi
               if [ "$code" = "503" ] && FIELD="$field" node -e '
                 const fs=require("fs");
                 const body=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
                 if (body.status!=="DOWN" || body[process.env.FIELD]!==false) process.exit(1);
               ' "reports/ci/readiness-${label}-down.json"; then
+                observed_down=1
                 break
               fi
               sleep 1
             done
+            if [ "$observed_down" -ne 1 ]; then
+              echo "Readiness never reported ${field}=false while ${service} was stopped" >&2
+              cat "reports/ci/readiness-${label}-down.json" 2>/dev/null || true
+              return 1
+            fi
             docker compose up -d --wait "$service"
             wait_ready "${label}-recovered"
           }
