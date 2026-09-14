@@ -1,25 +1,23 @@
 {
   "name": "@akp/mcp",
-  "version": "0.1.0",
   "private": true,
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/server.ts",
-    "dev:http": "tsx watch src/http.ts",
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "check": "tsc --noEmit -p tsconfig.json && vitest run",
+    "lint": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
   },
   "dependencies": {
-    "@akp/contracts": "*",
-    "@modelcontextprotocol/sdk": "^1.0.0",
-    "dotenv": "^17.4.2",
-    "zod": "^3.24.0"
+    "@akp/application": "workspace:*",
+    "@akp/contracts": "workspace:*",
+    "@akp/observability": "workspace:*",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "zod": "4.3.6"
   },
   "devDependencies": {
-    "tsx": "^4.0.0",
-    "typescript": "^5.7.0",
-    "vitest": "^4.1.10"
+    "tsx": "4.23.1",
+    "vitest": "4.1.10"
   }
 }
