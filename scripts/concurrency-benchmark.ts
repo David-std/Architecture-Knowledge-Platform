@@ -3,7 +3,10 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
-import { claimNextIngestJob, Postgres } from "../packages/postgres/src/index.js";
+import {
+  claimNextIngestJob,
+  Postgres,
+} from "../packages/postgres/src/index.js";
 
 type Stats = {
   samples: number;
@@ -45,8 +48,7 @@ const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is required");
 
 const outputPath = path.resolve(
-  process.env.AKP_CONCURRENCY_REPORT ??
-    "reports/ci/concurrency-benchmark.json",
+  process.env.AKP_CONCURRENCY_REPORT ?? "reports/ci/concurrency-benchmark.json",
 );
 const searchRequests = positiveInteger(
   process.env.AKP_CONCURRENCY_SEARCH_REQUESTS,
@@ -126,7 +128,10 @@ function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function collectVaultIds(value: unknown, target = new Set<string>()): Set<string> {
+function collectVaultIds(
+  value: unknown,
+  target = new Set<string>(),
+): Set<string> {
   if (Array.isArray(value)) {
     value.forEach((entry) => collectVaultIds(entry, target));
     return target;
@@ -346,11 +351,7 @@ async function seedFixture(db: Postgres, fixture: Fixture): Promise<void> {
         `insert into knowledge_relations(
            space_id,from_document_id,to_document_id,relation_type,weight,provenance
          ) values($1,$2,$3,'related_to',1,'concurrency-benchmark')`,
-        [
-          fixture.spaceId,
-          documentIds[ordinal],
-          documentIds[ordinal + 1],
-        ],
+        [fixture.spaceId, documentIds[ordinal], documentIds[ordinal + 1]],
       );
     }
   }
@@ -381,9 +382,15 @@ async function cleanupFixture(db: Postgres, fixture: Fixture): Promise<void> {
   await db.pool.query("delete from vault_memberships where user_id=$1", [
     fixture.userId,
   ]);
-  await db.pool.query("delete from api_tokens where user_id=$1", [fixture.userId]);
-  await db.pool.query("delete from memberships where user_id=$1", [fixture.userId]);
-  await db.pool.query("delete from vaults where space_id=$1", [fixture.spaceId]);
+  await db.pool.query("delete from api_tokens where user_id=$1", [
+    fixture.userId,
+  ]);
+  await db.pool.query("delete from memberships where user_id=$1", [
+    fixture.userId,
+  ]);
+  await db.pool.query("delete from vaults where space_id=$1", [
+    fixture.spaceId,
+  ]);
   await db.pool.query("delete from spaces where id=$1", [fixture.spaceId]);
   await db.pool.query("delete from users where id=$1", [fixture.userId]);
   await db.pool.query("delete from organizations where id=$1", [
@@ -392,7 +399,9 @@ async function cleanupFixture(db: Postgres, fixture: Fixture): Promise<void> {
 }
 
 async function measureApi(
-  app: Awaited<ReturnType<typeof import("../apps/api/src/server.js")["buildServer"]>>,
+  app: Awaited<
+    ReturnType<(typeof import("../apps/api/src/server.js"))["buildServer"]>
+  >,
   fixture: Fixture,
   endpoint: "/v1/search" | "/v1/context",
   total: number,
@@ -457,7 +466,10 @@ async function measureApi(
   };
 }
 
-async function seedIngestJobs(db: Postgres, fixture: Fixture): Promise<string[]> {
+async function seedIngestJobs(
+  db: Postgres,
+  fixture: Fixture,
+): Promise<string[]> {
   const eligible = await db.pool.query<{ count: string }>(
     `select count(*)::text as count
        from ingest_jobs
@@ -584,15 +596,13 @@ async function main(): Promise<void> {
   const connectionsBefore = await databaseConnections(db);
   let app:
     | Awaited<
-        ReturnType<typeof import("../apps/api/src/server.js")["buildServer"]>
+        ReturnType<(typeof import("../apps/api/src/server.js"))["buildServer"]>
       >
     | undefined;
   let failure: string | undefined;
   let search: ApiMeasurement | undefined;
   let context: ApiMeasurement | undefined;
-  let workers:
-    | Awaited<ReturnType<typeof measureWorkerClaims>>
-    | undefined;
+  let workers: Awaited<ReturnType<typeof measureWorkerClaims>> | undefined;
   try {
     await seedFixture(db, fixture);
     const module = await import("../apps/api/src/server.js");
@@ -711,7 +721,8 @@ async function main(): Promise<void> {
     await db.close();
     if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
     else process.env.NODE_ENV = previousNodeEnv;
-    if (previousVectorEnabled === undefined) delete process.env.AKP_VECTOR_ENABLED;
+    if (previousVectorEnabled === undefined)
+      delete process.env.AKP_VECTOR_ENABLED;
     else process.env.AKP_VECTOR_ENABLED = previousVectorEnabled;
   }
 
