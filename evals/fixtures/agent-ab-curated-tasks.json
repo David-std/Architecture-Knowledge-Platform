@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "evidenceLevel": "CURATED_FIXTURE",
+  "sourceCorpus": "curated-level-b",
+  "tasks": [
+    {
+      "id": "agent-exact-retry-policy",
+      "category": "exact-lookup",
+      "query": "What retry rule applies to transient calls?",
+      "intent": "EXACT_LOOKUP",
+      "mandatoryTerms": ["capped exponential backoff", "retry budget"],
+      "forbiddenTerms": []
+    },
+    {
+      "id": "agent-concept-api-boundary",
+      "category": "conceptual",
+      "query": "What does the API ingress boundary do before application services and why is that decision retained?",
+      "intent": "CONCEPTUAL",
+      "mandatoryTerms": ["validates requests", "boundary decision", "audit"],
+      "forbiddenTerms": []
+    },
+    {
+      "id": "agent-workflow-cache-recovery",
+      "category": "workflow",
+      "query": "Give the required cache incident recovery sequence.",
+      "intent": "WORKFLOW_EXECUTION",
+      "mandatoryTerms": [
+        "inspect stale entries",
+        "restore the previous configuration",
+        "verify service health",
+        "document the recovery result"
+      ],
+      "forbiddenTerms": []
+    },
+    {
+      "id": "agent-source-release-gate",
+      "category": "source-verification",
+      "query": "Which three requirements are stated for a release before publication?",
+      "intent": "SOURCE_VERIFICATION",
+      "mandatoryTerms": ["reviewer signoff", "rollback note", "verification step"],
+      "forbiddenTerms": []
+    },
+    {
+      "id": "agent-project-code-worker-retry",
+      "category": "project-code",
+      "query": "When implementing transient-call retry behavior in a worker, which two constraints from the registered knowledge must the code preserve?",
+      "intent": "PROJECT_CODE",
+      "mandatoryTerms": ["capped exponential backoff", "retry budget"],
+      "forbiddenTerms": []
+    },
+    {
+      "id": "agent-no-answer-archive-encryption",
+      "category": "no-answer",
+      "query": "Which encryption algorithm and key length are mandated for archived records?",
+      "intent": "CONCEPTUAL",
+      "mandatoryTerms": [],
+      "forbiddenTerms": [],
+      "expectNoAnswer": true
+    }
+  ]
+}
