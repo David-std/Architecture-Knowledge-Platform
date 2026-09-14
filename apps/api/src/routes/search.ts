@@ -38,6 +38,7 @@ import {
   type Tokenizer,
   type ContextContinuationPayload,
 } from "@akp/retrieval";
+import { OpenTelemetryBridge, withSpan } from "@akp/observability";
 import {
   actorOf,
   hasPathAccess,
@@ -45,6 +46,44 @@ import {
   pathPrefixesForPermission,
   requirePermission,
 } from "../auth.js";
+
+const telemetry = new OpenTelemetryBridge();
+
+type RequiredRetrievalChannel = "exact" | "lexical" | "vector" | "graph";
+
+const RETRIEVAL_SPAN_NAMES: Record<RequiredRetrievalChannel, string> = {
+  exact: "retrieve.exact",
+  lexical: "retrieve.lexical",
+  vector: "retrieve.vector",
+  graph: "retrieve.graph",
+};
+
+async function observedRetrieval<T>(
+  channel: RequiredRetrievalChannel,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const started = performance.now();
+  try {
+    return await withSpan(
+      RETRIEVAL_SPAN_NAMES[channel],
+      { "akp.retrieval.channel": channel },
+      operation,
+    );
+  } finally {
+    telemetry.histogram(
+      "retrieval_channel_latency",
+      (performance.now() - started) / 1000,
+      { channel },
+    );
+  }
+}
+
+function recordRetrievalCandidates(
+  channel: RequiredRetrievalChannel,
+  count: number,
+): void {
+  telemetry.histogram("retrieval_candidates", count, { channel });
+}
 
 const TRUST_RANK: Record<string, number> = {
   UNVERIFIED: 0,
@@ -811,7 +850,7 @@ export function evidenceLocatorAllowed(
 }
 
 /** Keep only portable locator data in a retrieval response. */
-function sanitizeEvidenceLocator(value: unknown): unknown {
+export function sanitizeEvidenceLocator(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sanitizeEvidenceLocator);
   if (typeof value === "string") {
     return value.replace(
@@ -958,8 +997,9 @@ export async function queryKnowledge(
     `>= ${minimumTrust}`;
 
   const exact = channels.has("exact")
-    ? await db.pool.query<ExactSearchRow>(
-        `
+    ? await observedRetrieval("exact", () =>
+        db.pool.query<ExactSearchRow>(
+          `
         select d.id,d.current_revision document_revision,
                case
                  when lower(d.external_id)=lower($2) then 'exact:external-id'
@@ -999,15 +1039,18 @@ export async function queryKnowledge(
            d.id
          limit $3
         `,
-        [spaceId, input.query, Math.max(input.limit * 2, 20)],
+          [spaceId, input.query, Math.max(input.limit * 2, 20)],
+        ),
       )
     : { rows: [] as ExactSearchRow[] };
+  recordRetrievalCandidates("exact", exact.rows.length);
   if (channels.has("exact")) options.availableChannelSink?.add("exact");
 
   const lexical =
     channels.has("lexical") || channels.has("graph")
-      ? await db.pool.query<LexicalSearchRow>(
-          `
+      ? await observedRetrieval("lexical", () =>
+          db.pool.query<LexicalSearchRow>(
+            `
           with query as (
             select plainto_tsquery('simple', $2) terms
           ), eligible_documents as (
@@ -1086,9 +1129,11 @@ export async function queryKnowledge(
            order by score desc,id,unit_id nulls last
            limit $3
           `,
-          [spaceId, input.query, Math.max(input.limit * 3, 30)],
+            [spaceId, input.query, Math.max(input.limit * 3, 30)],
+          ),
         )
       : { rows: [] as LexicalSearchRow[] };
+  recordRetrievalCandidates("lexical", lexical.rows.length);
   if (channels.has("lexical")) {
     options.availableChannelSink?.add("lexical");
   }
@@ -1152,8 +1197,9 @@ export async function queryKnowledge(
       }
       const dimensions = generation.dimensions;
       try {
-        const result = await db.pool.query<VectorSearchRow>(
-          `
+        const result = await observedRetrieval("vector", () =>
+          db.pool.query<VectorSearchRow>(
+            `
           select u.document_id id,u.id unit_id,u.unit_type,
                  u.document_revision,
                  1 - (e.embedding::vector(${dimensions}) <=> $3::vector(${dimensions})) score
@@ -1174,13 +1220,14 @@ export async function queryKnowledge(
                     u.document_id,u.id
            limit $5
           `,
-          [
-            generation.generationId,
-            spaceId,
-            toPgVector(queryVector),
-            generation.vaultId,
-            Math.max(input.limit * 3, 30),
-          ],
+            [
+              generation.generationId,
+              spaceId,
+              toPgVector(queryVector),
+              generation.vaultId,
+              Math.max(input.limit * 3, 30),
+            ],
+          ),
         );
         options.availableChannelSink?.add("vector");
         vector.rows.push(...result.rows);
@@ -1198,6 +1245,7 @@ export async function queryKnowledge(
     );
     vector.rows.splice(Math.max(input.limit * 3, 30));
   }
+  recordRetrievalCandidates("vector", vector.rows.length);
 
   const seedIds = [
     ...new Set(
@@ -1287,8 +1335,9 @@ export async function queryKnowledge(
     graphScopes.length === 0
       ? []
       : (
-          await db.pool.query<GraphTraversalRow>(
-            `
+          await observedRetrieval("graph", () =>
+            db.pool.query<GraphTraversalRow>(
+              `
             with recursive
             graph_scopes as (
               select scope.vault_id,scope.path_prefix
@@ -1490,24 +1539,25 @@ export async function queryKnowledge(
                and rc.candidate_rank <= $10::integer
              order by rc.candidate_rank,rp.path_rank
             `,
-            [
-              spaceId,
-              candidateSeedIds,
-              graphPolicy.maxHops,
-              graphPolicy.allowedRelationTypes,
-              JSON.stringify(graphPolicy.relationWeights),
-              graphPolicy.decay,
-              graphPolicy.directionPolicy,
-              JSON.stringify(
-                graphScopes.map((scope) => ({
-                  vault_id: scope.vaultId,
-                  path_prefix: scope.pathPrefix,
-                })),
-              ),
-              graphPolicy.maxPathsPerCandidate,
-              graphPolicy.maxCandidates,
-              GRAPH_HARD_MAX_FANOUT,
-            ],
+              [
+                spaceId,
+                candidateSeedIds,
+                graphPolicy.maxHops,
+                graphPolicy.allowedRelationTypes,
+                JSON.stringify(graphPolicy.relationWeights),
+                graphPolicy.decay,
+                graphPolicy.directionPolicy,
+                JSON.stringify(
+                  graphScopes.map((scope) => ({
+                    vault_id: scope.vaultId,
+                    path_prefix: scope.pathPrefix,
+                  })),
+                ),
+                graphPolicy.maxPathsPerCandidate,
+                graphPolicy.maxCandidates,
+                GRAPH_HARD_MAX_FANOUT,
+              ],
+            ),
           )
         ).rows;
 
@@ -1664,6 +1714,7 @@ export async function queryKnowledge(
     graphCandidates.map((candidate) => [candidate.id, candidate.provenance]),
   );
   const graph = { rows: graphCandidates };
+  recordRetrievalCandidates("graph", graph.rows.length);
   if (
     channels.has("graph") &&
     candidateSeedIds.length > 0 &&
@@ -1749,7 +1800,11 @@ export async function queryKnowledge(
       })),
     },
   ];
-  const fused = reciprocalRankFusion(rankedChannels).slice(0, input.limit * 2);
+  const fused = (
+    await withSpan("retrieve.fuse", {}, async () =>
+      reciprocalRankFusion(rankedChannels),
+    )
+  ).slice(0, input.limit * 2);
   if (fused.length === 0) return [];
 
   const details = await db.pool.query(
@@ -1932,6 +1987,7 @@ export async function queryKnowledge(
         type: String(row.type),
         trust: String(row.trust_tier) as SearchHit["trust"],
         lifecycle: String(row.lifecycle) as SearchHit["lifecycle"],
+        refreshStatus: String(row.refresh_status),
         score: item.score,
         reasons: item.reasons,
         fusionContributions: item.contributions,
@@ -2083,6 +2139,12 @@ export function registerSearchRoutes(
         channelState,
         retrievalWarnings,
         availableChannels,
+      );
+      telemetry.counter("retrieval_requests", 1, { intent: plan.intent });
+      telemetry.gauge(
+        "index_revision_mismatch",
+        String(index.status ?? "DEGRADED") === "CONSISTENT" ? 0 : 1,
+        { projection: "aggregate" },
       );
       return {
         mode: parsed.data.mode,
@@ -2452,14 +2514,26 @@ export function registerSearchRoutes(
             continuationPayloads.set(payload.continuation.handle, payload);
           },
         } satisfies Parameters<typeof buildContextPacket>[0];
-        if (packetMode === "COMPACT_AGENT_PACKET") {
-          const pair = buildContextPacketPair(packetInput);
-          packet = pair.full;
-          responsePacket = pair.compact;
-        } else {
-          packet = buildContextPacket(packetInput);
-          responsePacket = packet;
-        }
+        const built = await withSpan(
+          "context.build",
+          { "akp.context.mode": packetMode },
+          async () => {
+            if (packetMode === "COMPACT_AGENT_PACKET") {
+              const pair = buildContextPacketPair(packetInput);
+              return { packet: pair.full, responsePacket: pair.compact };
+            }
+            const full = buildContextPacket(packetInput);
+            return { packet: full, responsePacket: full };
+          },
+        );
+        packet = built.packet;
+        responsePacket = built.responsePacket;
+        telemetry.histogram("context_packet_tokens", packet.budget.usedTokens, {
+          mode: packetMode,
+        });
+        telemetry.histogram("context_packet_sections", packet.sections.length, {
+          mode: packetMode,
+        });
       } catch (error) {
         if (error instanceof ContextPacketBudgetError) {
           return reply.code(422).send({

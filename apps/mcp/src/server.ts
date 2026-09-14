@@ -1,3 +1,4 @@
+import "./instrumentation.js";
 import { config } from "dotenv";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,6 +7,7 @@ import { McpContextRequest } from "./context-request.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { shutdownOpenTelemetry, withSpan } from "@akp/observability";
 
 config({
   path: path.resolve(
@@ -19,19 +21,23 @@ const token = process.env.AKP_API_TOKEN;
 if (!token) throw new Error("AKP_API_TOKEN is required for MCP.");
 
 async function api(route: string, init?: RequestInit): Promise<unknown> {
-  const response = await fetch(`${apiBase}${route}`, {
-    ...init,
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${token}`,
-      ...(init?.headers ?? {}),
-    },
+  const routeTemplate =
+    route.split("?")[0]?.replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, ":id") ?? "/";
+  return withSpan("mcp.tool", { "akp.mcp.route": routeTemplate }, async () => {
+    const response = await fetch(`${apiBase}${route}`, {
+      ...init,
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${token}`,
+        ...(init?.headers ?? {}),
+      },
+    });
+    const body = await response.json();
+    if (!response.ok) {
+      throw new Error(`AKP API ${response.status}: ${JSON.stringify(body)}`);
+    }
+    return body;
   });
-  const body = await response.json();
-  if (!response.ok) {
-    throw new Error(`AKP API ${response.status}: ${JSON.stringify(body)}`);
-  }
-  return body;
 }
 
 async function writeApi(
@@ -456,5 +462,7 @@ export function createMcpServer(): McpServer {
 if (fileURLToPath(import.meta.url) === path.resolve(process.argv[1] ?? "")) {
   const server = createMcpServer();
   const transport = new StdioServerTransport();
+  process.once("SIGTERM", () => void shutdownOpenTelemetry());
+  process.once("SIGINT", () => void shutdownOpenTelemetry());
   await server.connect(transport);
 }

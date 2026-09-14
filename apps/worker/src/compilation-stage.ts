@@ -4,7 +4,8 @@ import {
   type KnowledgeCompilerResult,
 } from "@akp/compiler";
 import { StructuralLocator, type DocumentArtifact } from "@akp/contracts";
-import type { Postgres } from "@akp/postgres";
+import { withSpan } from "@akp/observability";
+import { resolveAuthorizedVaultScope, type Postgres } from "@akp/postgres";
 import { renderDocumentArtifactDraft } from "./document-artifact.js";
 import { assertEvidenceFragmentIntegrity } from "./evidence-fragment.js";
 import { compileGroundedKnowledgeProposal } from "./knowledge-compilation.js";
@@ -41,6 +42,7 @@ export interface CompilationStageInput {
   extractorVersion: string;
   artifact: DocumentArtifact;
   vectorEnabled: boolean;
+  requesterId?: string | null;
 }
 
 export interface CompilationStageMetadata {
@@ -134,10 +136,28 @@ async function loadEvidence(
   };
 }
 
+async function loadRetrievalPathPrefix(
+  db: Postgres,
+  input: CompilationStageInput,
+): Promise<string | null> {
+  if (!input.vaultId || !input.requesterId) return null;
+  const scope = await resolveAuthorizedVaultScope(db, {
+    userId: input.requesterId,
+    spaceId: input.spaceId,
+    vaultId: input.vaultId,
+    permission: "knowledge:read",
+    federated: false,
+  });
+  const access = scope.accessByVault[input.vaultId];
+  if (!access) throw new Error("COMPILER_REQUESTER_SCOPE_DENIED");
+  return access.pathPrefix;
+}
+
 async function sourceSummaryFallback(
   db: Postgres,
   input: CompilationStageInput,
   corpusRevision: string,
+  pathPrefix: string | null,
 ): Promise<CompilationPlan> {
   const priorSource = await db.pool.query<PriorSourceRow>(
     `
@@ -146,11 +166,12 @@ async function sourceSummaryFallback(
      where space_id=$1
        and (($2::uuid is null and vault_id is null) or vault_id=$2::uuid)
        and (frontmatter->>'source_id'=$3 or frontmatter->>'source_sha256'=$4)
+       and ($5::text is null or path=$5 or path like $5 || '/%')
        and lifecycle in ('ACTIVE','DISPUTED')
      order by updated_at desc
      limit 1
     `,
-    [input.spaceId, input.vaultId, input.sourceId, input.sha256],
+    [input.spaceId, input.vaultId, input.sourceId, input.sha256, pathPrefix],
   );
   const prior = priorSource.rows[0];
   const externalId = `SRC-INGEST-${input.sha256.slice(0, 12).toUpperCase()}`;
@@ -204,37 +225,60 @@ export async function buildCompilationStage(
   configured: ConfiguredKnowledgeCompiler | null,
 ): Promise<CompilationStageOutput> {
   const vault = await loadVaultContext(db, input.spaceId, input.vaultId);
+  const pathPrefix = await loadRetrievalPathPrefix(db, input);
   if (!configured) {
-    return {
-      plan: await sourceSummaryFallback(db, input, vault.corpusRevision),
-      metadata: {
-        mode: "SOURCE_SUMMARY_FALLBACK",
-        reason: "GENERIC_COMPILER_DISABLED_OR_UNCONFIGURED",
+    return withSpan(
+      "compile.plan",
+      {
+        "akp.compiler.mode": "SOURCE_SUMMARY_FALLBACK",
+        "akp.vector.enabled": input.vectorEnabled,
       },
-    };
+      async () => ({
+        plan: await sourceSummaryFallback(
+          db,
+          input,
+          vault.corpusRevision,
+          pathPrefix,
+        ),
+        metadata: {
+          mode: "SOURCE_SUMMARY_FALLBACK",
+          reason: "GENERIC_COMPILER_DISABLED_OR_UNCONFIGURED",
+        },
+      }),
+    );
   }
-  if (!input.vaultId) throw new Error("KNOWLEDGE_COMPILER_VAULT_REQUIRED");
+  const vaultId = input.vaultId;
+  if (!vaultId) throw new Error("KNOWLEDGE_COMPILER_VAULT_REQUIRED");
 
   const evidence = await loadEvidence(db, {
     ...input,
-    vaultId: input.vaultId,
+    vaultId,
   });
-  const compiled = await compileGroundedKnowledgeProposal(db, configured, {
-    source: {
-      sourceId: input.sourceId,
-      sourceArtifactId: input.sourceArtifactId,
-      sha256: input.sha256,
-      title: input.title,
-      mediaType: input.mediaType,
+  const compiled = await withSpan(
+    "compile.plan",
+    {
+      "akp.compiler.mode": "GENERATIVE",
+      "akp.vector.enabled": input.vectorEnabled,
     },
-    documentArtifact: input.artifact,
-    evidence: [evidence],
-    schemaProfile: vault.schemaProfile,
-    corpusRevision: vault.corpusRevision,
-    spaceId: input.spaceId,
-    vaultId: input.vaultId,
-    vectorEnabled: input.vectorEnabled,
-  });
+    () =>
+      compileGroundedKnowledgeProposal(db, configured, {
+        source: {
+          sourceId: input.sourceId,
+          sourceArtifactId: input.sourceArtifactId,
+          sha256: input.sha256,
+          title: input.title,
+          mediaType: input.mediaType,
+        },
+        documentArtifact: input.artifact,
+        evidence: [evidence],
+        schemaProfile: vault.schemaProfile,
+        corpusRevision: vault.corpusRevision,
+        spaceId: input.spaceId,
+        vaultId,
+        pathPrefix,
+        vectorEnabled: input.vectorEnabled,
+      }),
+  );
   return {
     plan: compiled.plan,
     metadata: {

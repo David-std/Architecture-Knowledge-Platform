@@ -392,6 +392,12 @@ describe("production lexical ranking", () => {
       const db = new Postgres(databaseUrl);
       try {
         await seedLexical(db, fixture);
+        await db.pool.query(
+          `update knowledge_documents
+              set refresh_status='STALE_PENDING_REVIEW'
+            where id=$1`,
+          [fixture.documents.externalId],
+        );
         const hits = await queryKnowledge(db, searchRequest(fixture), {
           channels: ["exact", "lexical"],
           plan: planQuery("ranking", {
@@ -434,7 +440,9 @@ describe("production lexical ranking", () => {
           unitType: "PARAGRAPH",
           parentUnitId: fixture.structuralParentId,
           revision: fixture.corpusRevision,
+          refreshStatus: "STALE_PENDING_REVIEW",
         });
+        expect(best?.warnings).toContain("STALE_PENDING_REVIEW");
 
         expect(best?.parentUnitType).toBe("SECTION");
         expect(best?.headingPath).toEqual(["Canonical identity", "Child"]);

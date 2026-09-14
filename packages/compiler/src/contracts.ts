@@ -250,6 +250,37 @@ export const KnowledgeCompilerResult = z
   .strict();
 export type KnowledgeCompilerResult = z.infer<typeof KnowledgeCompilerResult>;
 
+export const ReviewEvidence = CompilerEvidence.pick({
+  id: true,
+  sourceArtifactId: true,
+  locator: true,
+  excerptHash: true,
+});
+export type ReviewEvidence = z.infer<typeof ReviewEvidence>;
+
+export const ReviewExistingKnowledgeCandidate = ExistingKnowledgeCandidate.omit(
+  {
+    contentExcerpt: true,
+  },
+);
+export type ReviewExistingKnowledgeCandidate = z.infer<
+  typeof ReviewExistingKnowledgeCandidate
+>;
+
+export const ReviewCompilationContext = z
+  .object({
+    identity: IdentityAssessment,
+    evidence: z.array(ReviewEvidence).max(50),
+    evidenceCandidates: z.array(EvidenceCandidate).max(50),
+    existingCandidates: z.array(ReviewExistingKnowledgeCandidate).max(50),
+    knowledgeCandidates: z.array(KnowledgeCandidate).max(50),
+    contradictions: z.array(KnowledgeContradiction).max(50),
+    warnings: z.array(z.string().min(1).max(2_000)).max(50),
+    summary: z.string().min(1).max(8_000),
+  })
+  .strict();
+export type ReviewCompilationContext = z.infer<typeof ReviewCompilationContext>;
+
 export interface KnowledgeCompilerPort {
   compile(input: KnowledgeCompilerInput): Promise<KnowledgeCompilerResult>;
 }

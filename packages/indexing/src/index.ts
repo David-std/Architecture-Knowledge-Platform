@@ -11,6 +11,7 @@ import {
   createConfiguredEmbeddingProvider,
   parseKnowledgeUnits,
 } from "@akp/retrieval";
+import { withSpan } from "@akp/observability";
 import { buildEmbeddingIndex } from "./embedding-index.js";
 
 export * from "./embedding-generation.js";
@@ -18,7 +19,7 @@ export * from "./embedding-index.js";
 
 export interface ManagedChange {
   path: string;
-  operation?: "CREATE" | "UPDATE";
+  operation?: "CREATE" | "UPDATE" | "DELETE";
 }
 
 export interface SynchronizeManagedPathsOptions {
@@ -225,7 +226,14 @@ async function synchronizeManagedPathsCore(
     await client.query("begin");
     for (const change of options.changes) {
       const managedPath = normalizeManagedPath(change.path);
-      const raw = await readManagedFile(store, options.revision, managedPath);
+      // A durable tombstone is authoritative. Do not rehydrate a deleted
+      // path merely because a physical compatibility layout still exposes
+      // bytes at the same name. CREATE/UPDATE continue to derive state from
+      // the canonical Git revision.
+      const raw =
+        change.operation === "DELETE"
+          ? null
+          : await readManagedFile(store, options.revision, managedPath);
       if (raw === null) {
         const tombstoned = await client.query<{ id: string }>(
           `
@@ -990,13 +998,21 @@ export async function incrementalIndex(
     };
     if (provider) {
       try {
-        const built = await buildEmbeddingIndex(db, {
-          spaceId: options.spaceId,
-          vaultId: options.vaultId,
-          corpusRevision,
-          provider,
-          activate: vectorEnabled,
-        });
+        const built = await withSpan(
+          "index.embedding",
+          {
+            "akp.vector.enabled": vectorEnabled,
+            "akp.embedding.provider": provider.descriptor.provider,
+          },
+          () =>
+            buildEmbeddingIndex(db, {
+              spaceId: options.spaceId,
+              vaultId: options.vaultId,
+              corpusRevision,
+              provider,
+              activate: vectorEnabled,
+            }),
+        );
         embeddingStats = {
           embeddingsReused: built.embeddingsReused,
           embeddingsCreated: built.embeddingsCreated,
