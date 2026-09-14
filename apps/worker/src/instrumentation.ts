@@ -74,7 +74,10 @@ globalThis.fetch = async (input, init) => {
   } catch {
     return originalFetch(input, init);
   }
-  if (url.pathname !== "/v1/extract" && url.pathname !== "/v1/extract-upload") {
+  if (
+    url.pathname !== "/v1/extract" &&
+    url.pathname !== "/v1/extract-upload"
+  ) {
     return originalFetch(input, init);
   }
 
