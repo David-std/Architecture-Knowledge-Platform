@@ -116,14 +116,14 @@ jobs:
           pnpm exec tsx scripts/telemetry-command.ts restore
           pwsh -NoProfile -File scripts/restore-smoke.ps1
           -BackupDirectory backups/ci
-      - name: Verify P7 OpenTelemetry runtime evidence
+      - name: Verify OpenTelemetry runtime evidence
         shell: bash
         run: |
           sleep 5
           mkdir -p reports/ci
           docker compose --profile observability logs --no-color otel-collector > reports/ci/otel-collector.log 2>&1
           AKP_OTEL_COLLECTOR_LOG=reports/ci/otel-collector.log node scripts/verify-observability.mjs \
-            | tee reports/ci/p7-observability-verification.json
+            | tee reports/ci/observability-verification.json
       - name: Capture service and durable-work diagnostics
         if: always()
         shell: bash
@@ -228,7 +228,7 @@ jobs:
           set -o pipefail
           mkdir -p ../../reports/ci
           uv run --locked --extra docling pytest -p no:cacheprovider \
-            tests/test_p5_docling_runtime.py -q 2>&1 \
+            tests/test_docling_runtime.py -q 2>&1 \
             | tee ../../reports/ci/python-docling.txt
       - name: Upload Docling diagnostics
         if: always()

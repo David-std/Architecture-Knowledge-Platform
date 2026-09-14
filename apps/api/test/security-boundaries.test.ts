@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { sanitizeEvidenceLocator } from "../src/routes/search.js";
 import { reviewAccessPaths } from "../src/routes/reviews.js";
 
-describe("P8 retrieval security boundaries", () => {
+describe("retrieval security boundaries", () => {
   it("redacts local paths and drops private locator keys recursively", () => {
     expect(
       sanitizeEvidenceLocator({

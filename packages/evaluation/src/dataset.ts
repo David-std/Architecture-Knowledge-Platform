@@ -37,42 +37,6 @@ export const REQUIRED_GENERIC_SLICES = Object.freeze([
 ] as const);
 
 const safePackName = /^[a-z0-9][a-z0-9-]{1,62}$/;
-const genericLeakageTerms = [
-  ["SI", "729"].join(""),
-  ["SI", "730"].join(""),
-  ["U", "PC"].join(""),
-  ["WF-DDD-END-", "TO-END"].join(""),
-  ["cqrs-capability-", "model"].join(""),
-  ["resources-is-", "layer"].join(""),
-  "eventstorming",
-];
-
-function containsGenericLeakage(value: unknown): boolean {
-  const serialized = JSON.stringify(value).toLocaleLowerCase();
-  // Match both ordinary token spelling and separators inserted
-  // into identifiers (e.g. `SI 729` or `event storming`).  This keeps the
-  // generic pack portable without banning unrelated words that merely contain
-  // a short token as a substring.
-  const tokens = serialized.match(/[a-z0-9]+/g) ?? [];
-  return genericLeakageTerms.some((term) => {
-    const normalized = term.toLocaleLowerCase();
-    const escaped = normalized.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const compactTarget = normalized.replace(/[^a-z0-9]+/g, "");
-    const separatorInsensitive = tokens.some((_, index) =>
-      tokens
-        .slice(index, index + 4)
-        .some(
-          (__, offset) =>
-            tokens.slice(index, index + offset + 1).join("") === compactTarget,
-        ),
-    );
-    return (
-      new RegExp(`(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`, "i").test(
-        serialized,
-      ) || separatorInsensitive
-    );
-  });
-}
 
 async function jsonlFiles(root: string): Promise<string[]> {
   const files: string[] = [];
@@ -87,15 +51,14 @@ async function jsonlFiles(root: string): Promise<string[]> {
   try {
     await visit(root);
   } catch (error) {
-    // Some checked-in fixtures are kept flat so a constrained checkout can
-    // add one pack without creating a directory entry.  The fallback is
-    // prefix-scoped and never broadens a pack to unrelated JSONL files.
-    if (!(
-      error &&
-      typeof error === "object" &&
-      "code" in error &&
-      error.code === "ENOENT"
-    ))
+    if (
+      !(
+        error &&
+        typeof error === "object" &&
+        "code" in error &&
+        error.code === "ENOENT"
+      )
+    )
       throw error;
     const parent = path.dirname(root);
     const prefix = `${path.basename(root)}-`;
@@ -114,9 +77,7 @@ async function jsonlFiles(root: string): Promise<string[]> {
 
 function validateCase(candidate: unknown, source: string): GoldCase {
   if (!candidate || typeof candidate !== "object") {
-    throw new Error(
-      `Invalid evaluation case in ${source}: expected an object.`,
-    );
+    throw new Error(`Invalid evaluation case in ${source}: expected an object.`);
   }
   const value = candidate as Record<string, unknown>;
   const allowedKeys = new Set([
@@ -220,11 +181,6 @@ export async function loadEvaluationPack(
       if (packName === "generic" && parsed.vault !== undefined) {
         throw new Error(
           `Generic evaluation case cannot declare a vault scope: ${source}`,
-        );
-      }
-      if (packName === "generic" && containsGenericLeakage(parsed)) {
-        throw new Error(
-          `Generic evaluation case contains vault-specific data: ${source}`,
         );
       }
       if (ids.has(parsed.id))

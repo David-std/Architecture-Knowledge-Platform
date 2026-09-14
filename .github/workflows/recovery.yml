@@ -36,10 +36,10 @@ jobs:
           git -C "$AKP_MANAGED_REPO" config user.name "AKP Recovery CI"
           git -C "$AKP_MANAGED_REPO" config user.email "akp-recovery-ci@localhost"
           mkdir -p "$AKP_MANAGED_REPO/managed"
-          cat > "$AKP_MANAGED_REPO/managed/p8-restore-probe.md" <<'EOF'
+          cat > "$AKP_MANAGED_REPO/managed/restore-probe.md" <<'EOF'
           ---
-          id: P8-RESTORE-PROBE
-          title: P8 Restore Probe
+          id: RECOVERY-RESTORE-PROBE
+          title: Recovery Restore Probe
           type: note
           status: active
           knowledge_layer: managed

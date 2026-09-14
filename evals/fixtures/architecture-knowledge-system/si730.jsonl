@@ -1,2 +1,0 @@
-{"id":"resources-layer","category":"profile","query":"¿Resources es una quinta capa en SI730?","gold_documents":["si730-methodology-audit-detailed"],"must_not_include":["resources-is-layer"],"critical":true}
-{"id":"vertical-slice-evidence","category":"evidence","query":"¿SI730 enseñó explícitamente Vertical Slice?","gold_documents":["claim-vertical-slice-not-course-evidence"],"must_not_include":["explicitly-taught"],"critical":true}

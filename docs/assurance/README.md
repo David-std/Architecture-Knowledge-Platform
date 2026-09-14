@@ -1,15 +1,7 @@
-# Assurance documentation
+# Release evidence
 
-`docs/status.md` is the only concise current status page. This directory keeps
-supporting and historical assurance material out of the product-facing root.
+This directory contains concise, release-specific evidence that remains useful to operators and maintainers after a release is cut. Current product behavior belongs in the main documentation and runbooks; detailed construction logs, one-off audits and local validation transcripts are not maintained in the active tree.
 
-- `releases/` preserves version-specific release evidence.
-- `archive/` preserves construction-era reports that are no longer active
-  instructions.
-- machine-generated benchmark/inventory output belongs under `reports/` or CI
-  artifacts.
+- [v0.2.1](releases/v0.2.1/README.md)
 
-Historical snapshots may contain paths, counts, commands and relative links that
-were accurate in their original repository layout. They are retained for audit
-history, not as current setup guidance. Current code, tests, contracts and
-`docs/status.md` take precedence.
+Git history remains the archive for superseded implementation and validation material.

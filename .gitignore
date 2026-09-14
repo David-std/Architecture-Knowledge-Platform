@@ -12,6 +12,8 @@ coverage/
 *.log
 backups/
 reports/ci/
+reports/migration/
+reports/repository-file-classification.json
 reports-vault-stat-*.txt
 apps/extractor/.venv/
 apps/extractor/.pytest_cache/

@@ -13,11 +13,7 @@ const categories = new Set([
   "PRODUCT_DOCUMENTATION",
   "MIGRATION",
   "FIXTURE_GENERIC",
-  "FIXTURE_VAULT_SPECIFIC",
   "GENERATED_CANONICAL",
-  "GENERATED_EPHEMERAL",
-  "TEMPORARY_ITERATION_ARTIFACT",
-  "OBSOLETE",
   "UNKNOWN",
 ]);
 
@@ -56,11 +52,6 @@ const allowedRootDirectories = new Set([
   "scripts",
   "test",
 ]);
-const historicalPrefixes = [
-  "docs/archive/",
-  "docs/assurance/archive/",
-  "docs/assurance/releases/",
-];
 
 function repositoryFiles() {
   const output = execFileSync(
@@ -78,43 +69,19 @@ function repositoryFiles() {
 
 function classify(file) {
   if (file === classificationPath) {
-    return ["GENERATED_CANONICAL", "deterministic repository inventory"];
+    return ["GENERATED_CANONICAL", "generated repository inventory"];
   }
   if (/^db\/migrations\/\d+_.+\.sql$/.test(file)) {
     return ["MIGRATION", "append-only database migration"];
   }
   if (/^evals\/generic\//.test(file)) {
-    return ["PRODUCT_EVAL", "generic product evaluation"];
-  }
-  if (/^evals\/fixtures\/architecture-knowledge-system\//.test(file)) {
-    return [
-      "FIXTURE_VAULT_SPECIFIC",
-      "explicit Architecture Knowledge System eval pack",
-    ];
+    return ["PRODUCT_EVAL", "corpus-agnostic product evaluation"];
   }
   if (/^evals\/schemas\//.test(file)) {
     return ["PRODUCT_CONTRACT", "evaluation case schema contract"];
   }
-  if (
-    /^evals\/fixtures\//.test(file) ||
-    /^test\/fixtures\/synthetic/.test(file)
-  ) {
-    return ["FIXTURE_GENERIC", "portable synthetic fixture"];
-  }
-  if (/^test\/fixtures\//.test(file)) {
-    return ["FIXTURE_GENERIC", "generic integration fixture"];
-  }
-  if (/^docs\/archive\/iterations\//.test(file)) {
-    return [
-      "OBSOLETE",
-      "archived iteration record excluded from active documentation",
-    ];
-  }
-  if (/^docs\/assurance\/(?:archive|releases)\//.test(file)) {
-    return [
-      "PRODUCT_DOCUMENTATION",
-      "historical assurance snapshot excluded from active guidance",
-    ];
+  if (/^evals\/fixtures\//.test(file) || /^test\/fixtures\//.test(file)) {
+    return ["FIXTURE_GENERIC", "portable test or evaluation fixture"];
   }
   if (
     /(^|\/)(test|tests)\//.test(file) ||
@@ -127,14 +94,14 @@ function classify(file) {
     return ["PRODUCT_CONTRACT", "versioned interface or dependency contract"];
   }
   if (/^reports\//.test(file)) {
-    return ["GENERATED_CANONICAL", "canonical reproducible report"];
+    return ["GENERATED_CANONICAL", "reproducible product report"];
   }
   if (
     /^(?:docs\/|README\.md$|AGENTS\.md$|ARCHITECTURE\.md$|CONTRIBUTING\.md$|CHANGELOG\.md$)/.test(
       file,
     )
   ) {
-    return ["PRODUCT_DOCUMENTATION", "active product documentation"];
+    return ["PRODUCT_DOCUMENTATION", "product documentation"];
   }
   if (
     /^(?:apps|packages|scripts)\//.test(file) ||
@@ -171,23 +138,26 @@ const iterationResidue = [
   /_HANDOFF_TEMP\.md$/i,
   /^IMPLEMENTATION_NOTES_.*\.md$/i,
 ];
+const constructionDocumentName =
+  /^(?:COMPETITIVE_AUDIT|DOCUMENT_INTELLIGENCE_BENCHMARK|EVENT_DRIVEN_VALIDATION_REPORT|GENERICITY_AUDIT|IMPLEMENTATION_REPORT|MIGRATION_REPORT|PROJECT_STATE|REMAINING_REAL_GAPS|REPOSITORY_HYGIENE_REPORT|RESEARCH_LOG|RETRIEVAL_BENCHMARK|SECURITY_REPORT|TRACEABILITY|VALIDATION_REPORT)\.md$/i;
+const phasePathToken = /(?:^|[\/_.-])p\d+(?=$|[\/_.-])/i;
+const phaseLabel = /\bP\d{1,2}\b/;
+const personalCorpusTerms = [
+  /Architecture-Knowledge-System/i,
+  /\bSI729\b/i,
+  /\bSI730\b/i,
+];
 
-function isHistorical(file) {
-  return historicalPrefixes.some((prefix) => file.startsWith(prefix));
-}
-
-function activeDocumentationOrConfiguration(file) {
-  if (isHistorical(file)) return false;
+function activeGuidanceOrAutomation(file) {
   if (
     /^(?:README|AGENTS|ARCHITECTURE|CONTRIBUTING|CHANGELOG)\.md$/.test(file)
-  ) {
+  )
     return true;
-  }
   if (/^docs\/.*\.md$/.test(file)) return true;
   if (file === ".env.example" || file === "docker-compose.yml") return true;
-  if (/^(?:\.github|ops|policies)\/.*\.(?:md|json|ya?ml)$/.test(file)) {
+  if (/^(?:\.github|ops|policies)\/.*\.(?:md|json|ya?ml)$/.test(file))
     return true;
-  }
+  if (/^scripts\/.*\.(?:mjs|cjs|js|ts|ps1|py|sh)$/.test(file)) return true;
   return false;
 }
 
@@ -199,15 +169,13 @@ function normalizedPathText(content) {
   return normalized;
 }
 
-function pathPolicyFailures(file, content) {
+function portabilityFailures(file, content) {
   const normalized = normalizedPathText(content);
   const failures = [];
-  if (/\b[A-Za-z]:\\Users\\[^\\\r\n]+\\/i.test(normalized)) {
+  if (/\b[A-Za-z]:\\Users\\[^\\\r\n]+\\/i.test(normalized))
     failures.push(`PERSONAL_WINDOWS_PATH ${file}`);
-  }
-  if (/\/Users\/[^/\s]+(?:\/|$)/i.test(normalized)) {
+  if (/\/Users\/[^/\s]+(?:\/|$)/i.test(normalized))
     failures.push(`PERSONAL_MAC_PATH ${file}`);
-  }
   for (const match of normalized.matchAll(/\/home\/([^/\s]+)(?:\/|$)/gi)) {
     const user = String(match[1]).toLowerCase();
     if (!["node", "runner", "root", "postgres", "app"].includes(user)) {
@@ -215,13 +183,14 @@ function pathPolicyFailures(file, content) {
       break;
     }
   }
-  if (/\bfile:\/\//i.test(normalized)) {
-    failures.push(`FILE_URI_IN_ACTIVE_DOC_OR_CONFIG ${file}`);
-  }
-  if (/Architecture-Knowledge-System/i.test(normalized)) {
-    failures.push(`PERSONAL_VAULT_IN_ACTIVE_GUIDANCE ${file}`);
-  }
+  if (/\bfile:\/\//i.test(normalized))
+    failures.push(`FILE_URI_IN_GUIDANCE_OR_AUTOMATION ${file}`);
   return failures;
+}
+
+function isTextCandidate(file) {
+  return /\.(?:[cm]?[jt]sx?|json|ya?ml|md|sql|py|ps1|sh|txt)$/.test(file) ||
+    file === ".env.example";
 }
 
 const files = repositoryFiles();
@@ -232,58 +201,61 @@ const entries = files.map((file) => {
 const failures = [];
 
 for (const entry of entries) {
-  if (!categories.has(entry.category) || entry.category === "UNKNOWN") {
+  if (!categories.has(entry.category) || entry.category === "UNKNOWN")
     failures.push(`UNCLASSIFIED ${entry.path}`);
-  }
 
   const [rootEntry] = entry.path.split("/", 1);
   if (!entry.path.includes("/")) {
-    if (!allowedRootFiles.has(entry.path)) {
+    if (!allowedRootFiles.has(entry.path))
       failures.push(`ROOT_FILE_NOT_ALLOWED ${entry.path}`);
-    }
   } else if (!allowedRootDirectories.has(rootEntry)) {
     failures.push(`ROOT_DIRECTORY_NOT_ALLOWED ${rootEntry}`);
   }
 
   const name = path.posix.basename(entry.path);
-  if (
-    !isHistorical(entry.path) &&
-    iterationResidue.some((pattern) => pattern.test(name))
-  ) {
+  if (iterationResidue.some((pattern) => pattern.test(name)))
     failures.push(`ITERATION_RESIDUE ${entry.path}`);
+  if (constructionDocumentName.test(name))
+    failures.push(`CONSTRUCTION_DOCUMENT ${entry.path}`);
+  if (/^docs\/(?:archive|assurance\/archive)\//.test(entry.path))
+    failures.push(`CONSTRUCTION_ARCHIVE_IN_PRODUCT_TREE ${entry.path}`);
+  if (phasePathToken.test(entry.path))
+    failures.push(`PHASE_CODED_PATH ${entry.path}`);
+
+  if (!isTextCandidate(entry.path)) continue;
+  const content = readFileSync(path.join(root, entry.path), "utf8");
+
+  for (const pattern of personalCorpusTerms) {
+    if (pattern.test(content)) {
+      failures.push(`PERSONAL_CORPUS_REFERENCE ${entry.path}`);
+      break;
+    }
   }
 
-  if (activeDocumentationOrConfiguration(entry.path)) {
-    const content = readFileSync(path.join(root, entry.path), "utf8");
-    failures.push(...pathPolicyFailures(entry.path, content));
+  if (activeGuidanceOrAutomation(entry.path)) {
+    failures.push(...portabilityFailures(entry.path, content));
+    if (
+      entry.path !== "scripts/validate-repository-hygiene.mjs" &&
+      phaseLabel.test(content)
+    ) {
+      failures.push(`PHASE_LABEL_IN_GUIDANCE_OR_AUTOMATION ${entry.path}`);
+    }
   }
 }
 
-const genericCore = files.filter(
-  (file) =>
-    /^(?:apps|packages|contracts|policies|evals\/generic)\//.test(file) &&
-    !/(^|\/)(?:test|tests|fixtures)\//.test(file) &&
-    !/\.(?:test|spec)\.[cm]?[jt]sx?$/.test(file),
-);
-const leakagePattern =
-  /\b(?:SI729|SI730|UPC|WF-DDD-END-TO-END|cqrs-capability-model|resources-is-layer)\b/i;
 const fixedUuidPattern =
   /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i;
-for (const file of genericCore) {
-  if (!/\.(?:[cm]?[jt]sx?|json|ya?ml|md|sql|py)$/.test(file)) continue;
+for (const file of files.filter((candidate) =>
+  /^(?:apps\/api\/src|apps\/mcp|apps\/cli|apps\/web)\//.test(candidate),
+)) {
+  if (!isTextCandidate(file)) continue;
   const content = readFileSync(path.join(root, file), "utf8");
-  if (leakagePattern.test(content)) failures.push(`GENERICITY_LEAK ${file}`);
-  if (
-    /^(?:apps\/api\/src|apps\/mcp|apps\/cli|apps\/web)\//.test(file) &&
-    fixedUuidPattern.test(content)
-  ) {
-    failures.push(`GENERICITY_FIXED_UUID ${file}`);
-  }
+  if (fixedUuidPattern.test(content)) failures.push(`GENERICITY_FIXED_UUID ${file}`);
 }
 
-const payload = `${JSON.stringify({ schemaVersion: 2, files: entries }, null, 2)}\n`;
-const write = process.argv.includes("--write");
-if (write) writeFileSync(path.join(root, classificationPath), payload, "utf8");
+const payload = `${JSON.stringify({ schemaVersion: 3, files: entries }, null, 2)}\n`;
+if (process.argv.includes("--write"))
+  writeFileSync(path.join(root, classificationPath), payload, "utf8");
 
 if (failures.length > 0) {
   console.error(JSON.stringify({ status: "FAILED", failures }, null, 2));

@@ -109,7 +109,7 @@ try {
   }
 
   New-Item -ItemType Directory -Path $reportRoot -Force | Out-Null
-  $vaultKey = "p8-restore-$([guid]::NewGuid().ToString('N'))"
+  $vaultKey = "recovery-restore-$([guid]::NewGuid().ToString('N'))"
   Invoke-Checked "rebuild searchable projections from restored managed repository" {
     pnpm akp vault import --vault-path $temporaryRoot --space-id $SpaceId --vault-key $vaultKey --read-only --report-dir $reportRoot
   } | Out-Null
