@@ -1,0 +1,78 @@
+name: p8-security-evidence
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  evidence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Materialize P8.1 hardening
+        run: |
+          node scripts/p8-security-materialize.mjs
+          node scripts/p8-security-test-fix.mjs
+          pnpm exec prettier --write \
+            packages/validation/src/index.ts \
+            packages/validation/test/security.test.ts \
+            apps/api/src/routes/search.ts \
+            apps/api/src/routes/reviews.ts \
+            apps/api/test/p8-security-boundaries.test.ts \
+            apps/worker/src/knowledge-compilation.ts \
+            apps/worker/src/compilation-stage.ts \
+            apps/worker/src/worker.ts \
+            apps/worker/test/knowledge-compilation.test.ts \
+            packages/compiler/test/compiler-contract.test.ts
+      - run: pnpm check
+      - name: Run focused TypeScript security regressions
+        run: |
+          pnpm --filter @akp/validation exec vitest run test/security.test.ts
+          pnpm --filter @akp/api exec vitest run test/p8-security-boundaries.test.ts
+          pnpm --filter @akp/worker exec vitest run test/knowledge-compilation.test.ts
+          pnpm --filter @akp/compiler exec vitest run test/compiler-contract.test.ts
+      - uses: actions/setup-python@v7
+        with: { python-version: "3.12" }
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          version: 0.12.7
+          enable-cache: true
+      - name: Run focused Chunkr SSRF regression
+        working-directory: apps/extractor
+        run: |
+          uv sync --locked
+          uv run --locked pytest tests/test_p5_chunkr_durability.py -q
+      - name: Promote verified P8.1 hardening
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          paths=(
+            packages/validation/src/index.ts
+            packages/validation/test/security.test.ts
+            apps/api/src/routes/search.ts
+            apps/api/src/routes/reviews.ts
+            apps/api/test/p8-security-boundaries.test.ts
+            apps/worker/src/knowledge-compilation.ts
+            apps/worker/src/compilation-stage.ts
+            apps/worker/src/worker.ts
+            apps/worker/test/knowledge-compilation.test.ts
+            packages/compiler/test/compiler-contract.test.ts
+            apps/extractor/tests/test_p5_chunkr_durability.py
+          )
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- "${paths[@]}"
+          git commit -m 'fix(p8): harden retrieval security boundaries [skip ci]'
+          git push origin "HEAD:${GITHUB_HEAD_REF}"
