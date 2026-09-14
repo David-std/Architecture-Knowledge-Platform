@@ -3,6 +3,9 @@ name: recovery
 on:
   pull_request:
 
+permissions:
+  contents: write
+
 jobs:
   managed-git-restore:
     runs-on: ubuntu-latest
@@ -18,6 +21,8 @@ jobs:
       AKP_RAW_SECRET_KEY: akp-ci-minio-secret-not-for-production
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
       - uses: pnpm/action-setup@v6
         with: { version: 10.34.5 }
       - uses: actions/setup-node@v7
@@ -25,6 +30,19 @@ jobs:
           node-version: 24.20.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Refresh deterministic repository classification
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm hygiene:write
+          pnpm hygiene:validate
+          if ! git diff --quiet -- REPOSITORY_FILE_CLASSIFICATION.json; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add REPOSITORY_FILE_CLASSIFICATION.json
+            git commit -m 'chore(p8): refresh repository classification [skip ci]'
+            git push origin "HEAD:${GITHUB_HEAD_REF}"
+          fi
       - run: pnpm build
       - run: docker compose up -d --wait postgres minio
       - name: Create disposable managed repository with a searchable restore probe
