@@ -173,7 +173,8 @@ async function seedFixture(
 
   for (const vault of manifest.vaults) {
     const vaultId = fixture.vaultIds.get(vault.id);
-    if (!vaultId) throw new Error(`Missing runtime vault mapping for ${vault.id}`);
+    if (!vaultId)
+      throw new Error(`Missing runtime vault mapping for ${vault.id}`);
     await db.pool.query(
       `insert into vaults(
          id,space_id,canonical_path,name,read_only,current_revision,
@@ -341,7 +342,8 @@ async function buildRealEmbeddings(
   const generations: ActiveEmbeddingGenerationDescriptor[] = [];
   for (const vault of manifest.vaults) {
     const vaultId = fixture.vaultIds.get(vault.id);
-    if (!vaultId) throw new Error(`Missing runtime vault mapping for ${vault.id}`);
+    if (!vaultId)
+      throw new Error(`Missing runtime vault mapping for ${vault.id}`);
     const built = await buildEmbeddingIndex(db, {
       spaceId: fixture.spaceId,
       vaultId,
@@ -475,7 +477,9 @@ async function main(): Promise<void> {
       fixture,
       adapter,
     );
-    const queryEmbeddingService = new QueryEmbeddingService(async () => adapter);
+    const queryEmbeddingService = new QueryEmbeddingService(
+      async () => adapter,
+    );
     const configurations = benchmarkConfigurations();
     const runs = [];
     for (const configuration of configurations) {
@@ -497,9 +501,12 @@ async function main(): Promise<void> {
     const isolationViolations = runs.flatMap((run) =>
       run.results.flatMap((result) =>
         result.rankedVaultIds.some(
-          (vaultId) => vaultId !== fixture.vaultIds.get(
-            dataset.cases.find((entry) => entry.id === result.caseId)?.vault ?? "",
-          ),
+          (vaultId) =>
+            vaultId !==
+            fixture.vaultIds.get(
+              dataset.cases.find((entry) => entry.id === result.caseId)
+                ?.vault ?? "",
+            ),
         )
           ? [`${run.configurationName}:${result.caseId}`]
           : [],
