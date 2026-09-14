@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "evidenceLevel": "REGISTERED_PUBLIC_PRODUCT_CORPUS",
+  "sourceCorpus": "architecture-knowledge-platform-public-product-docs",
+  "tasks": [
+    {
+      "id": "agent-public-exact-runtime-flows",
+      "category": "exact-lookup",
+      "query": "Which product document defines publication recovery and rollback behavior?",
+      "intent": "EXACT_LOOKUP",
+      "mandatoryTerms": ["Runtime flows"],
+      "forbiddenTerms": []
+    },
+    {
+      "id": "agent-public-concept-canonical-authority",
+      "category": "conceptual",
+      "query": "What is canonical knowledge in the platform, and which major stores are rebuildable projections?",
+      "intent": "CONCEPTUAL",
+      "mandatoryTerms": ["approved Markdown", "Git", "rebuildable projections"],
+      "forbiddenTerms": []
+    },
+    {
+      "id": "agent-public-workflow-publication-recovery",
+      "category": "workflow",
+      "query": "What must happen if the reviewed Git commit succeeds but PostgreSQL publication finalization fails, including the unsafe-attribution case?",
+      "intent": "WORKFLOW_EXECUTION",
+      "mandatoryTerms": ["Git revert", "CHANGES_REQUESTED", "PUBLICATION_RECOVERY_REQUIRED"],
+      "forbiddenTerms": []
+    },
+    {
+      "id": "agent-public-source-sanitized-packet",
+      "category": "source-verification",
+      "query": "Which three kinds of content are deliberately omitted from sample ContextPacket files in a sanitized audit bundle?",
+      "intent": "SOURCE_VERIFICATION",
+      "mandatoryTerms": ["query text", "citations", "section content"],
+      "forbiddenTerms": []
+    },
+    {
+      "id": "agent-public-project-code-health-boundary",
+      "category": "project-code",
+      "query": "When implementing health endpoints, what distinction between liveness and readiness must the code preserve?",
+      "intent": "PROJECT_CODE",
+      "mandatoryTerms": ["API process", "required runtime dependencies"],
+      "forbiddenTerms": []
+    },
+    {
+      "id": "agent-public-no-answer-cloud-region",
+      "category": "no-answer",
+      "query": "Which public cloud region hosts the managed production SaaS service?",
+      "intent": "CONCEPTUAL",
+      "mandatoryTerms": [],
+      "forbiddenTerms": [],
+      "expectNoAnswer": true
+    }
+  ]
+}
