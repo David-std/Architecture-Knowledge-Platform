@@ -51,14 +51,12 @@ async function jsonlFiles(root: string): Promise<string[]> {
   try {
     await visit(root);
   } catch (error) {
-    if (
-      !(
-        error &&
-        typeof error === "object" &&
-        "code" in error &&
-        error.code === "ENOENT"
-      )
-    )
+    if (!(
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      error.code === "ENOENT"
+    ))
       throw error;
     const parent = path.dirname(root);
     const prefix = `${path.basename(root)}-`;
@@ -77,7 +75,9 @@ async function jsonlFiles(root: string): Promise<string[]> {
 
 function validateCase(candidate: unknown, source: string): GoldCase {
   if (!candidate || typeof candidate !== "object") {
-    throw new Error(`Invalid evaluation case in ${source}: expected an object.`);
+    throw new Error(
+      `Invalid evaluation case in ${source}: expected an object.`,
+    );
   }
   const value = candidate as Record<string, unknown>;
   const allowedKeys = new Set([
