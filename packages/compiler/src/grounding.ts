@@ -33,9 +33,22 @@ export type LegacyCompilationPlan = {
   }>;
 };
 
+// Vault infrastructure that is never a knowledge document. No proposal of any
+// origin may target these roots.
+const RESERVED_VAULT_ROOTS = ["README.md", "docs", ".obsidian"];
+
+// The curated source/evidence layer. Runtime-derived provenance drafts legitimately
+// live here, but a model-chosen path must never land in it: generated prose sitting
+// where curated evidence lives could later be cited as its own grounding.
+const SOURCE_LAYER_ROOTS = ["10-sources"];
+
+function knowledgePathSegments(path: string): string[] {
+  return path.replaceAll("\\", "/").split("/").filter(Boolean);
+}
+
 export function assertSafeKnowledgePath(path: string): void {
   const normalized = path.replaceAll("\\", "/");
-  const segments = normalized.split("/").filter(Boolean);
+  const segments = knowledgePathSegments(normalized);
   if (
     !normalized.trim() ||
     normalized.startsWith("/") ||
@@ -44,8 +57,22 @@ export function assertSafeKnowledgePath(path: string): void {
     normalized.includes("\0") ||
     /^[a-z]:\//i.test(normalized) ||
     segments.some((segment) => segment === "." || segment === "..") ||
-    ["README.md", "docs", ".obsidian", "10-sources"].includes(segments[0] ?? "")
+    RESERVED_VAULT_ROOTS.includes(segments[0] ?? "")
   ) {
+    throw new Error(`Unsafe knowledge path: ${path}`);
+  }
+}
+
+/**
+ * Stricter boundary for paths a compiler (model) chose. It adds the source layer to
+ * the denylist so generated material can never be written where curated evidence
+ * lives. Runtime-derived paths use `assertSafeKnowledgePath` instead, because they
+ * come from a fixed template rather than model output.
+ */
+export function assertCompilerAuthoredKnowledgePath(path: string): void {
+  assertSafeKnowledgePath(path);
+  const segments = knowledgePathSegments(path);
+  if (SOURCE_LAYER_ROOTS.includes(segments[0] ?? "")) {
     throw new Error(`Unsafe knowledge path: ${path}`);
   }
 }
@@ -71,9 +98,9 @@ export function deriveKnowledgePath(input: {
     typeof configuredRoot === "string" && configuredRoot.trim()
       ? configuredRoot.replaceAll("\\", "/").replaceAll(/\/+$/g, "")
       : "20-knowledge/generated";
-  assertSafeKnowledgePath(root);
+  assertCompilerAuthoredKnowledgePath(root);
   const path = `${root}/${input.kind}/${slug(input.title)}.md`;
-  assertSafeKnowledgePath(path);
+  assertCompilerAuthoredKnowledgePath(path);
   return path;
 }
 
@@ -241,7 +268,7 @@ export function normalizeKnowledgeCompilerResult(
   }
 
   for (const change of result.proposedFileChanges) {
-    assertSafeKnowledgePath(change.path);
+    assertCompilerAuthoredKnowledgePath(change.path);
     assertEvidenceReferences(
       `COMPILER_FILE_CHANGE:${change.path}`,
       change.evidenceIds,
