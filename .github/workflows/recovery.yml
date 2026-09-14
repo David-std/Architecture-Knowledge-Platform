@@ -42,6 +42,7 @@ jobs:
           title: P8 Restore Probe
           type: note
           status: active
+          knowledge_layer: managed
           ---
 
           This restore probe must become searchable after the managed Git bundle is restored into a new repository.
