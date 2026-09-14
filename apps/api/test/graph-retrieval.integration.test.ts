@@ -215,6 +215,14 @@ describe("recursive graph retrieval PostgreSQL integration", () => {
         const threeHopD = threeHop.find(
           (hit) => hit.documentId === fixture.documents.D,
         );
+        expect(
+          threeHop.find((hit) => hit.documentId === fixture.documents.B)
+            ?.graphProvenance?.[0]?.graphScore,
+        ).toBeCloseTo(0.5);
+        expect(
+          threeHop.find((hit) => hit.documentId === fixture.documents.C)
+            ?.graphProvenance?.[0]?.graphScore,
+        ).toBeCloseTo(0.25);
         expect(threeHopD).toBeDefined();
         expect(threeHopD?.reasons).toContain("graph:bounded-path");
         expect(threeHopD?.graphProvenance?.[0]).toMatchObject({
@@ -248,9 +256,7 @@ describe("recursive graph retrieval PostgreSQL integration", () => {
           }),
           expect.objectContaining({ documentId: fixture.documents.D }),
         ]);
-        expect(threeHopD?.graphProvenance?.[0]?.graphScore).toBeCloseTo(
-          0.015625,
-        );
+        expect(threeHopD?.graphProvenance?.[0]?.graphScore).toBeCloseTo(0.125);
         expect(threeHopD?.graphProvenance).toHaveLength(2);
 
         const weighted = await queryKnowledge(db, searchRequest(fixture), {
@@ -259,7 +265,7 @@ describe("recursive graph retrieval PostgreSQL integration", () => {
           graphPolicy: {
             maxHops: 3,
             directionPolicy: "outgoing",
-            relationWeights: { supports: 2 },
+            relationWeights: { supports: 6 },
           },
         });
         const weightedD = weighted.find(
@@ -268,7 +274,7 @@ describe("recursive graph retrieval PostgreSQL integration", () => {
         expect(
           weightedD?.graphProvenance?.[0]?.path.map((node) => node.document),
         ).toEqual(["GRAPH-A", "GRAPH-E", "GRAPH-D"]);
-        expect(weightedD?.graphProvenance?.[0]?.graphScore).toBeCloseTo(0.025);
+        expect(weightedD?.graphProvenance?.[0]?.graphScore).toBeCloseTo(0.15);
 
         const noDecay = await queryKnowledge(db, searchRequest(fixture), {
           vaultIds: [fixture.vaultId],
@@ -421,6 +427,43 @@ describe("recursive graph retrieval PostgreSQL integration", () => {
         } finally {
           await db.pool.query(
             "update knowledge_documents set lifecycle='ACTIVE' where id=$1",
+            [fixture.documents.B],
+          );
+        }
+
+        await db.pool.query(
+          "update knowledge_documents set trust_tier='UNVERIFIED' where id=$1",
+          [fixture.documents.B],
+        );
+        try {
+          const untrustedBridge = await queryKnowledge(
+            db,
+            {
+              ...searchRequest(fixture),
+              minimumTrust: "HUMAN_REVIEWED",
+            },
+            {
+              vaultIds: [fixture.vaultId],
+              channels: ["exact", "graph"],
+              graphPolicy: {
+                maxHops: 3,
+                allowedRelationTypes: ["requires", "validated_by"],
+                directionPolicy: "outgoing",
+              },
+            },
+          );
+          expect(untrustedBridge.map((hit) => hit.documentId)).not.toContain(
+            fixture.documents.B,
+          );
+          expect(untrustedBridge.map((hit) => hit.documentId)).not.toContain(
+            fixture.documents.C,
+          );
+          expect(untrustedBridge.map((hit) => hit.documentId)).not.toContain(
+            fixture.documents.D,
+          );
+        } finally {
+          await db.pool.query(
+            "update knowledge_documents set trust_tier='HUMAN_REVIEWED' where id=$1",
             [fixture.documents.B],
           );
         }

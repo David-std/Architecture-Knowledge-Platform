@@ -320,6 +320,71 @@ function searchRequest(fixture: LexicalFixture): SearchRequest {
 
 describe("production lexical ranking", () => {
   it.skipIf(!databaseUrl)(
+    "includes drafts only on request and keeps lexical search independent of vector eligibility",
+    async () => {
+      if (!databaseUrl) return;
+      const fixture = lexicalFixture();
+      const db = new Postgres(databaseUrl);
+      try {
+        await seedLexical(db, fixture);
+        await db.pool.query(
+          "update knowledge_documents set lifecycle='DRAFT' where id=$1",
+          [fixture.documents.bodyTerms],
+        );
+        await db.pool.query(
+          "update knowledge_units set lifecycle='DRAFT',embedding_eligible=false where id=$1",
+          [fixture.units.bodyTerms],
+        );
+        const options = {
+          channels: ["lexical"] as const,
+          vaultIds: [fixture.vaultId],
+          deterministicRerank: false,
+        };
+        const normal = await queryKnowledge(
+          db,
+          { ...searchRequest(fixture), query: "evidence" },
+          options,
+        );
+        expect(
+          normal.some((hit) => hit.documentId === fixture.documents.bodyTerms),
+        ).toBe(false);
+        const drafts = await queryKnowledge(
+          db,
+          {
+            ...searchRequest(fixture),
+            query: "evidence",
+            mode: "DRAFT_INCLUDED",
+          },
+          options,
+        );
+        expect(
+          drafts.some((hit) => hit.documentId === fixture.documents.bodyTerms),
+        ).toBe(true);
+
+        await db.pool.query(
+          "update knowledge_documents set lifecycle='ACTIVE' where id=$1",
+          [fixture.documents.bodyTerms],
+        );
+        await db.pool.query(
+          "update knowledge_units set lifecycle='ACTIVE' where id=$1",
+          [fixture.units.bodyTerms],
+        );
+        const nonVectorUnit = await queryKnowledge(
+          db,
+          { ...searchRequest(fixture), query: "evidence" },
+          options,
+        );
+        expect(
+          nonVectorUnit.some((hit) => hit.unitId === fixture.units.bodyTerms),
+        ).toBe(true);
+      } finally {
+        await cleanupLexical(db, fixture);
+        await db.pool.end();
+      }
+    },
+  );
+
+  it.skipIf(!databaseUrl)(
     "orders field signals and preserves the matched unit context",
     async () => {
       if (!databaseUrl) return;

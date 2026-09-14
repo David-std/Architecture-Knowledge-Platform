@@ -206,6 +206,7 @@ export const ContextSection = z.object({
   sourceOrEvidenceIds: z.array(z.string()),
   graphProvenance: z.array(GraphPathProvenance).optional(),
 });
+export type ContextSection = z.infer<typeof ContextSection>;
 
 export const ContextPacketMode = z.enum([
   "FULL_CONTEXT_PACKET",
@@ -237,6 +238,13 @@ export const ContextPacketBudget = z.object({
 });
 export type ContextPacketBudget = z.infer<typeof ContextPacketBudget>;
 
+export const ContextContinuation = z.object({
+  handle: z.string().regex(/^[a-f0-9]{64}$/),
+  reason: z.string(),
+  remainingTokens: z.number().int().nonnegative(),
+});
+export type ContextContinuation = z.infer<typeof ContextContinuation>;
+
 export const ContextPacket = z.object({
   packetMode: z.literal("FULL_CONTEXT_PACKET"),
   packetId: z.string().uuid(),
@@ -263,16 +271,22 @@ export const ContextPacket = z.object({
   conflicts: z.array(z.string()),
   requiredActions: z.array(z.string()),
   recommendedActions: z.array(z.string()),
-  continuations: z.array(
-    z.object({
-      handle: z.string(),
-      reason: z.string(),
-      remainingTokens: z.number().int().nonnegative(),
-    }),
-  ),
+  continuations: z.array(ContextContinuation),
   packetHash: z.string(),
 });
 export type ContextPacket = z.infer<typeof ContextPacket>;
+
+export const ContextContinuationResponse = z.object({
+  packetId: z.string().uuid(),
+  packetHash: z.string(),
+  corpusRevision: z.string(),
+  scope: ContextPacket.shape.scope,
+  continuation: ContextContinuation,
+  sections: z.array(ContextSection).min(1),
+});
+export type ContextContinuationResponse = z.infer<
+  typeof ContextContinuationResponse
+>;
 
 export const CompactContextSection = z.object({
   kind: ContextSection.shape.kind,

@@ -38,7 +38,7 @@ export function expandGraph(
           current.score *
           (options.relationWeights[edge.type] ?? 1) *
           edge.weight *
-          Math.pow(options.decay, hop + 1);
+          options.decay;
         const existing = scores.get(edge.to) ?? {
           id: edge.to,
           score: 0,
