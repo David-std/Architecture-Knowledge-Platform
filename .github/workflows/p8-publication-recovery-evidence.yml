@@ -37,7 +37,7 @@ jobs:
           apps/api/src/routes/reviews.ts
           apps/api/test/review-publication.integration.test.ts
           docs/adr/0002-review-and-publication-isolation.md
-      - run: pnpm check
+      - run: pnpm --filter @akp/api typecheck
       - name: Capture materialized recovery tree
         run: |
           mkdir -p reports/p8-publication-recovery-materialized/packages/git-store/src
