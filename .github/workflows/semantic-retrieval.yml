@@ -1,0 +1,61 @@
+name: semantic-retrieval
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  real-multilingual-semantic-retrieval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: postgres://akp:akp@localhost:55432/akp
+      AKP_RUN_REAL_MODEL_TESTS: "1"
+      AKP_VECTOR_ENABLED: "true"
+      AKP_MODEL_CACHE_DIR: /tmp/akp-model-cache
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - run: docker compose up -d --wait postgres
+      - run: pnpm db:migrate
+      - name: Execute pinned multilingual E5 retrieval end to end
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p reports/ci "$AKP_MODEL_CACHE_DIR"
+          pnpm --filter @akp/api exec vitest run \
+            --config vitest.integration.config.ts \
+            test/real-semantic-retrieval.integration.test.ts \
+            --reporter=default --reporter=junit \
+            --outputFile.junit=../../reports/ci/semantic-retrieval-junit.xml \
+            2>&1 | tee reports/ci/semantic-retrieval.log
+      - name: Capture semantic retrieval diagnostics
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          mkdir -p reports/ci
+          docker compose ps --all > reports/ci/semantic-docker-compose-ps.txt 2>&1
+          docker compose logs --no-color --timestamps postgres \
+            > reports/ci/semantic-postgres.log 2>&1
+          docker compose exec -T postgres psql -X -U akp -d akp \
+            -c "\\copy (select provider,model,model_revision,dimensions,input_strategy,status,count(*) over () as generation_rows from embedding_generations order by created_at desc) to stdout with csv header" \
+            > reports/ci/semantic-generations.csv 2>&1
+      - name: Upload semantic retrieval evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: semantic-retrieval-${{ github.run_id }}
+          path: reports/ci
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Stop disposable services
+        if: always()
+        run: docker compose down -v --remove-orphans
