@@ -77,6 +77,9 @@ function classify(file) {
   if (/^evals\/generic\//.test(file)) {
     return ["PRODUCT_EVAL", "corpus-agnostic product evaluation"];
   }
+  if (/^evals\/registered\//.test(file)) {
+    return ["PRODUCT_EVAL", "versioned registered product evaluation"];
+  }
   if (/^evals\/schemas\//.test(file)) {
     return ["PRODUCT_CONTRACT", "evaluation case schema contract"];
   }
