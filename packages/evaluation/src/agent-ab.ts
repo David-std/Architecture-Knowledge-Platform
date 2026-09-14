@@ -7,8 +7,7 @@ export const AGENT_AB_REQUIRED_CATEGORIES = [
   "no-answer",
 ] as const;
 
-export type AgentAbTaskCategory =
-  (typeof AGENT_AB_REQUIRED_CATEGORIES)[number];
+export type AgentAbTaskCategory = (typeof AGENT_AB_REQUIRED_CATEGORIES)[number];
 
 export interface AgentAbTask {
   id: string;
@@ -84,7 +83,8 @@ export function validateAgentAbTasks(tasks: AgentAbTask[]): void {
   const ids = new Set<string>();
   for (const task of tasks) {
     if (!task.id.trim()) throw new Error("Agent A/B task id is required.");
-    if (ids.has(task.id)) throw new Error(`Duplicate Agent A/B task: ${task.id}`);
+    if (ids.has(task.id))
+      throw new Error(`Duplicate Agent A/B task: ${task.id}`);
     ids.add(task.id);
     if (!AGENT_AB_REQUIRED_CATEGORIES.includes(task.category)) {
       throw new Error(`Unsupported Agent A/B category: ${task.category}`);

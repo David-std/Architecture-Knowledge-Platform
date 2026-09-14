@@ -60,7 +60,12 @@ describe("Agent A/B evaluation", () => {
     const noAnswer = tasks.at(-1)!;
     const score = scoreAgentAbOutput(
       noAnswer,
-      { answer: "Insufficient evidence.", abstain: true, citations: [], claims: [] },
+      {
+        answer: "Insufficient evidence.",
+        abstain: true,
+        citations: [],
+        claims: [],
+      },
       [],
     );
     expect(score.correctness).toBe(1);

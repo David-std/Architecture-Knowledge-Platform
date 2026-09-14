@@ -37,7 +37,11 @@
       "category": "source-verification",
       "query": "Which three requirements are stated for a release before publication?",
       "intent": "SOURCE_VERIFICATION",
-      "mandatoryTerms": ["reviewer signoff", "rollback note", "verification step"],
+      "mandatoryTerms": [
+        "reviewer signoff",
+        "rollback note",
+        "verification step"
+      ],
       "forbiddenTerms": []
     },
     {
