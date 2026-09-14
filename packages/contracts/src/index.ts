@@ -157,6 +157,7 @@ export const SearchHit = z.object({
   type: z.string(),
   trust: TrustTier,
   lifecycle: Lifecycle,
+  refreshStatus: z.string().min(1),
   score: z.number(),
   reasons: z.array(z.string()),
   fusionContributions: z
@@ -344,7 +345,7 @@ export const ContextPacketResponse = z.discriminatedUnion("packetMode", [
 ]);
 export type ContextPacketResponse = z.infer<typeof ContextPacketResponse>;
 
-export const DocumentIntelligenceRequest = z
+export const DocumentIntelligenceIngestOptions = z
   .object({
     complexity: z
       .enum([
@@ -357,13 +358,38 @@ export const DocumentIntelligenceRequest = z
         "unknown",
       ])
       .optional(),
-    extractor: z.string().trim().min(1).max(100).optional(),
+    ocrRequired: z.boolean().default(false),
+    tables: z.boolean().default(false),
+    formula: z.boolean().default(false),
+    costPolicy: z.enum(["NO_PAID", "STANDARD", "QUALITY"]).default("STANDARD"),
+    privacyPolicy: z
+      .enum(["LOCAL_ONLY", "LOCAL_PREFERRED", "REMOTE_ALLOWED"])
+      .default("LOCAL_PREFERRED"),
+    language: z
+      .string()
+      .trim()
+      .regex(/^[A-Za-z][A-Za-z0-9_-]{1,31}$/)
+      .optional(),
+    extractor: z
+      .string()
+      .trim()
+      .regex(/^[a-z0-9][a-z0-9-]{0,99}$/)
+      .optional(),
     ocr: z.boolean().optional(),
-    ocrEngine: z.string().trim().min(1).max(100).optional(),
+    ocrEngine: z
+      .string()
+      .trim()
+      .regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/)
+      .optional(),
     forceFullPageOcr: z.boolean().optional(),
     timeoutSeconds: z.number().int().min(1).max(900).optional(),
   })
   .strict();
+export type DocumentIntelligenceIngestOptions = z.infer<
+  typeof DocumentIntelligenceIngestOptions
+>;
+
+export const DocumentIntelligenceRequest = DocumentIntelligenceIngestOptions;
 export type DocumentIntelligenceRequest = z.infer<
   typeof DocumentIntelligenceRequest
 >;
@@ -378,7 +404,7 @@ export const IngestRequest = z.object({
     .optional(),
   title: z.string().optional(),
   mediaType: z.string().optional(),
-  documentIntelligence: DocumentIntelligenceRequest.optional(),
+  documentIntelligence: DocumentIntelligenceIngestOptions.optional(),
   policy: z
     .enum(["REVIEW_REQUIRED", "ALLOW_LOW_RISK_AUTO_APPROVAL"])
     .default("REVIEW_REQUIRED"),

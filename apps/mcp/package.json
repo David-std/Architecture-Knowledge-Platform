@@ -14,7 +14,7 @@
     "@akp/contracts": "workspace:*",
     "@akp/observability": "workspace:*",
     "@modelcontextprotocol/sdk": "1.30.0",
-    "zod": "4.3.6"
+    "zod": "^3.24.0"
   },
   "devDependencies": {
     "tsx": "4.23.1",

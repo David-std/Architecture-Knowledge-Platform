@@ -14,7 +14,6 @@ import {
   claimNextIngestJob,
   runKnowledgeLint,
 } from "@akp/postgres";
-import { DocumentIntelligenceRequest } from "@akp/contracts";
 import { transitionIngest, type IngestState } from "@akp/domain";
 import {
   hashFile,
@@ -46,6 +45,10 @@ import { buildCompilationStage } from "./compilation-stage.js";
 import { evaluateCompilationProbes } from "./compilation-probes.js";
 import { selectEvidenceFragment } from "./evidence-fragment.js";
 import { resolveAuthorizedLocalSource } from "./source-boundary.js";
+import {
+  appendDocumentIntelligenceFormFields,
+  parseDocumentIntelligenceOptions,
+} from "./document-intelligence-request.js";
 
 config({
   path: path.resolve(
@@ -273,28 +276,6 @@ function providerTaskErrorMessage(error: unknown): string {
     .slice(0, 2_000);
 }
 
-function extractorConfiguration(
-  documentIntelligence: ReturnType<typeof DocumentIntelligenceRequest.parse>,
-): Record<string, unknown> {
-  return {
-    ...(documentIntelligence.extractor
-      ? { extractor: documentIntelligence.extractor }
-      : {}),
-    ...(documentIntelligence.ocr === undefined
-      ? {}
-      : { ocr: documentIntelligence.ocr }),
-    ...(documentIntelligence.ocrEngine
-      ? { ocr_engine: documentIntelligence.ocrEngine }
-      : {}),
-    ...(documentIntelligence.forceFullPageOcr === undefined
-      ? {}
-      : { force_full_page_ocr: documentIntelligence.forceFullPageOcr }),
-    ...(documentIntelligence.timeoutSeconds === undefined
-      ? {}
-      : { timeout_seconds: documentIntelligence.timeoutSeconds }),
-  };
-}
-
 async function processJob(job: Record<string, unknown>): Promise<void> {
   const id = String(job.id);
   const state = String(job.state) as IngestState;
@@ -405,10 +386,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
       if (materialized.sha256 !== raw.sha256) {
         throw new Error("IMMUTABLE_OBJECT_HASH_MISMATCH");
       }
-      const documentIntelligence = DocumentIntelligenceRequest.parse(
-        payload.documentIntelligence ?? {},
-      );
-      const configuration = extractorConfiguration(documentIntelligence);
+      const documentIntelligence = parseDocumentIntelligenceOptions(payload);
       const mediaType = String(outputs.mediaType ?? payload.mediaType ?? "");
       const attempt = Number(job.attempts ?? 0) + 1;
       const upload = new FormData();
@@ -421,18 +399,19 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
       upload.set("source_id", String(outputs.sourceId));
       upload.set("media_type", mediaType);
       upload.set("expected_sha256", raw.sha256);
-      if (documentIntelligence.complexity) {
-        upload.set("complexity", documentIntelligence.complexity);
-      }
-      if (Object.keys(configuration).length) {
-        upload.set("configuration_json", JSON.stringify(configuration));
-      }
+      appendDocumentIntelligenceFormFields(
+        upload,
+        payload,
+        id,
+        documentIntelligence,
+      );
       await recordProviderTaskEvent(id, state, "PROVIDER_TASK_STARTED", {
         attempt,
         mediaType,
         complexity: documentIntelligence.complexity ?? null,
         requestedExtractor: documentIntelligence.extractor ?? null,
-        ocrRequested: documentIntelligence.ocr ?? false,
+        ocrRequested:
+          documentIntelligence.ocrRequired || documentIntelligence.ocr === true,
       });
 
       let canonical: ReturnType<typeof parseCanonicalExtractionResponse>;
@@ -467,7 +446,9 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
           mediaType,
           complexity: documentIntelligence.complexity ?? null,
           requestedExtractor: documentIntelligence.extractor ?? null,
-          ocrRequested: documentIntelligence.ocr ?? false,
+          ocrRequested:
+            documentIntelligence.ocrRequired ||
+            documentIntelligence.ocr === true,
           message: providerTaskErrorMessage(error),
         });
         throw error;

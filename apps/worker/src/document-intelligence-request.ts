@@ -1,27 +1,43 @@
-import { DocumentIntelligenceIngestOptions } from "@akp/contracts";
+import {
+  DocumentIntelligenceIngestOptions,
+  type DocumentIntelligenceIngestOptions as DocumentIntelligenceOptions,
+} from "@akp/contracts";
 
-/**
- * Build the only document-intelligence values the ingest worker may send to
- * the internal extractor. Durable job payloads are revalidated even though
- * the API validated them at submission time. Legacy jobs without P5 policy
- * receive safe defaults; malformed/tampered P5 policy fails closed.
- */
-export function documentIntelligenceFormFields(
+export function parseDocumentIntelligenceOptions(
   payload: Record<string, unknown>,
-  jobId: string,
-): Record<string, string> {
+): DocumentIntelligenceOptions {
   const parsed = DocumentIntelligenceIngestOptions.safeParse(
     payload.documentIntelligence ?? {},
   );
   if (!parsed.success) {
     throw new Error("INVALID_DOCUMENT_INTELLIGENCE_PAYLOAD");
   }
-  const options = parsed.data;
-  const configuration = options.language ? { language: options.language } : {};
+  return parsed.data;
+}
+
+export function documentIntelligenceFormFields(
+  payload: Record<string, unknown>,
+  jobId: string,
+  parsedOptions?: DocumentIntelligenceOptions,
+): Record<string, string> {
+  const options = parsedOptions ?? parseDocumentIntelligenceOptions(payload);
+  const configuration: Record<string, unknown> = {
+    ...(options.language ? { language: options.language } : {}),
+    ...(options.extractor ? { extractor: options.extractor } : {}),
+    ...(options.ocr === undefined ? {} : { ocr: options.ocr }),
+    ...(options.ocrEngine ? { ocr_engine: options.ocrEngine } : {}),
+    ...(options.forceFullPageOcr === undefined
+      ? {}
+      : { force_full_page_ocr: options.forceFullPageOcr }),
+    ...(options.timeoutSeconds === undefined
+      ? {}
+      : { timeout_seconds: options.timeoutSeconds }),
+  };
+  const ocrRequired = options.ocrRequired || options.ocr === true;
 
   return {
     ...(options.complexity ? { complexity: options.complexity } : {}),
-    ocr_required: String(options.ocrRequired),
+    ocr_required: String(ocrRequired),
     tables: String(options.tables),
     formula: String(options.formula),
     cost_policy: options.costPolicy,
@@ -35,9 +51,10 @@ export function appendDocumentIntelligenceFormFields(
   form: FormData,
   payload: Record<string, unknown>,
   jobId: string,
+  parsedOptions?: DocumentIntelligenceOptions,
 ): void {
   for (const [name, value] of Object.entries(
-    documentIntelligenceFormFields(payload, jobId),
+    documentIntelligenceFormFields(payload, jobId, parsedOptions),
   )) {
     form.set(name, value);
   }
