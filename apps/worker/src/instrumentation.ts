@@ -53,14 +53,13 @@ MinioObjectStore.prototype.putImmutable = async function (
   this: MinioObjectStore,
   input: Parameters<typeof originalPutImmutable>[0],
 ) {
-  return withSpan(
-    "raw.store",
-    { "akp.storage.kind": "raw" },
-    () => originalPutImmutable.call(this, input),
+  return withSpan("raw.store", { "akp.storage.kind": "raw" }, () =>
+    originalPutImmutable.call(this, input),
   );
 };
 
-const originalFetch: typeof globalThis.fetch = globalThis.fetch.bind(globalThis);
+const originalFetch: typeof globalThis.fetch =
+  globalThis.fetch.bind(globalThis);
 globalThis.fetch = async (input, init) => {
   const rawUrl =
     typeof input === "string"
@@ -74,10 +73,7 @@ globalThis.fetch = async (input, init) => {
   } catch {
     return originalFetch(input, init);
   }
-  if (
-    url.pathname !== "/v1/extract" &&
-    url.pathname !== "/v1/extract-upload"
-  ) {
+  if (url.pathname !== "/v1/extract" && url.pathname !== "/v1/extract-upload") {
     return originalFetch(input, init);
   }
 

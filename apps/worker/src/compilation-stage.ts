@@ -157,10 +157,8 @@ async function validateCompilationPlan(
   plan: CompilationPlan,
   mode: CompilationStageMetadata["mode"],
 ): Promise<CompilationPlan> {
-  return withSpan(
-    "compile.validate",
-    { "akp.compiler.mode": mode },
-    async () => CompilationPlan.parse(plan),
+  return withSpan("compile.validate", { "akp.compiler.mode": mode }, async () =>
+    CompilationPlan.parse(plan),
   );
 }
 
@@ -252,10 +250,7 @@ export async function buildCompilationStage(
           pathPrefix,
         );
         return {
-          plan: await validateCompilationPlan(
-            plan,
-            "SOURCE_SUMMARY_FALLBACK",
-          ),
+          plan: await validateCompilationPlan(plan, "SOURCE_SUMMARY_FALLBACK"),
           metadata: {
             mode: "SOURCE_SUMMARY_FALLBACK",
             reason: "GENERIC_COMPILER_DISABLED_OR_UNCONFIGURED",
