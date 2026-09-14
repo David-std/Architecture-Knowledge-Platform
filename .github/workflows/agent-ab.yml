@@ -1,0 +1,109 @@
+name: agent-ab
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  controlled-comparison:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      AKP_AGENT_AB_TASKS: evals/registered/agent-ab-public-product-tasks.json
+      AKP_AGENT_AB_REPORT: reports/ci/agent-ab-benchmark.json
+      AKP_AGENT_AB_ENABLE: ${{ vars.AKP_AGENT_AB_ENABLE }}
+      AKP_AGENT_AB_REAL_MODEL: ${{ vars.AKP_AGENT_AB_REAL_MODEL }}
+      AKP_API_URL: ${{ vars.AKP_AGENT_AB_API_URL }}
+      AKP_API_TOKEN: ${{ secrets.AKP_AGENT_AB_API_TOKEN }}
+      AKP_AGENT_AB_SPACE_ID: ${{ vars.AKP_AGENT_AB_SPACE_ID }}
+      AKP_AGENT_AB_VAULT_IDS: ${{ vars.AKP_AGENT_AB_VAULT_IDS }}
+      AKP_AGENT_AB_PROVIDER_BASE_URL: ${{ vars.AKP_AGENT_AB_PROVIDER_BASE_URL }}
+      AKP_AGENT_AB_PROVIDER_API_KEY: ${{ secrets.AKP_AGENT_AB_PROVIDER_API_KEY }}
+      AKP_AGENT_AB_PROVIDER_MODEL: ${{ vars.AKP_AGENT_AB_PROVIDER_MODEL }}
+      AKP_AGENT_AB_TEMPERATURE: ${{ vars.AKP_AGENT_AB_TEMPERATURE }}
+      AKP_AGENT_AB_MAX_OUTPUT_TOKENS: ${{ vars.AKP_AGENT_AB_MAX_OUTPUT_TOKENS }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Execute controlled Agent A/B harness when prerequisites exist
+        shell: bash
+        run: |
+          set +e
+          mkdir -p reports/ci
+          pnpm benchmark:agent-ab > reports/ci/agent-ab.log 2>&1
+          status=$?
+          cat reports/ci/agent-ab.log
+          if [ ! -f reports/ci/agent-ab-benchmark.json ]; then
+            echo "Agent A/B harness did not produce its report" >&2
+            exit 1
+          fi
+          exit "$status"
+      - name: Validate evidence claim discipline
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const report = JSON.parse(
+            readFileSync("reports/ci/agent-ab-benchmark.json", "utf8"),
+          );
+          if (report.taskSet?.evidenceLevel !== "REGISTERED_PUBLIC_PRODUCT_CORPUS") {
+            throw new Error("Agent A/B must use the registered public product corpus task set.");
+          }
+          if (report.taskSet?.sourceCorpus !== "architecture-knowledge-platform-public-product-docs") {
+            throw new Error("Agent A/B source corpus does not match the registered product corpus.");
+          }
+          if (report.taskSet?.tasks !== 6) {
+            throw new Error(`Expected six controlled Agent A/B tasks, got ${report.taskSet?.tasks}.`);
+          }
+          if (report.status === "IMPLEMENTED_NOT_EXECUTED") {
+            if (!Array.isArray(report.reasons) || report.reasons.length === 0) {
+              throw new Error("Non-executed Agent A/B evidence must state its missing prerequisites.");
+            }
+            console.log(JSON.stringify({
+              status: report.status,
+              reasons: report.reasons,
+              superiorityClaimAllowed: report.claimPolicy?.superiorityClaimAllowed,
+            }, null, 2));
+            process.exit(0);
+          }
+          if (report.status !== "PROVEN") {
+            throw new Error(`Agent A/B benchmark status is ${report.status}, expected PROVEN or IMPLEMENTED_NOT_EXECUTED.`);
+          }
+          if (report.claimPolicy?.realModelRequired !== true || report.execution?.provider?.operatorAssertedRealModel !== true) {
+            throw new Error("PROVEN Agent A/B evidence requires an explicitly asserted real model.");
+          }
+          if (report.winner !== null) {
+            throw new Error("The harness must report measurements rather than manufacture a winner.");
+          }
+          const observations = Array.isArray(report.observations) ? report.observations : [];
+          if (observations.length !== 12) {
+            throw new Error(`Expected 12 arm observations, got ${observations.length}.`);
+          }
+          const arms = new Set(observations.map((item) => item.arm));
+          if (!arms.has("A_RAW_SEARCH") || !arms.has("B_AKP_CONTEXT_PACKET")) {
+            throw new Error("Both controlled comparison arms must be present.");
+          }
+          console.log(JSON.stringify({
+            status: report.status,
+            model: report.execution.provider.model,
+            observations: observations.length,
+            aggregates: report.aggregates,
+          }, null, 2));
+          NODE
+      - name: Upload Agent A/B evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: agent-ab-${{ github.run_id }}
+          path: reports/ci
+          if-no-files-found: error
+          retention-days: 14
