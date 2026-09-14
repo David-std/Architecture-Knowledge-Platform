@@ -425,7 +425,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
         upload.set("complexity", documentIntelligence.complexity);
       }
       if (Object.keys(configuration).length) {
-        upload.set("configuration", JSON.stringify(configuration));
+        upload.set("configuration_json", JSON.stringify(configuration));
       }
       await recordProviderTaskEvent(id, state, "PROVIDER_TASK_STARTED", {
         attempt,
