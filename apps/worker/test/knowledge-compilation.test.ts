@@ -63,6 +63,7 @@ describe("compiler existing-knowledge retrieval", () => {
       title: "Renamed cache policy",
       evidenceExcerpt: "Invalidate cached knowledge when revision changes.",
       vectorEnabled: true,
+      pathPrefix: "20-knowledge/public",
       limit: 8,
     });
 
@@ -78,10 +79,18 @@ describe("compiler existing-knowledge retrieval", () => {
       const parameters = call[1] as unknown[];
       expect(parameters[0]).toBe(SPACE_ID);
       expect(parameters[1]).toBe(VAULT_ID);
+      expect(parameters.at(-1)).toBe("20-knowledge/public");
     }
     const lexicalSql = String(query.mock.calls[0]?.[0]);
     const lexicalParameters = query.mock.calls[0]?.[1] as unknown[];
     expect(lexicalSql).toContain("frontmatter->>'source_id'=$7");
+    expect(lexicalSql).toContain("d.path like $9 || '/%'");
+    expect(String(query.mock.calls[1]?.[0])).toContain(
+      "d.path like $6 || '/%'",
+    );
+    expect(String(query.mock.calls[2]?.[0])).toContain(
+      "d.path like $6 || '/%'",
+    );
     expect(lexicalSql).toContain("frontmatter->>'source_sha256'=$8");
     expect(lexicalParameters[6]).toBe(SOURCE_ID);
     expect(lexicalParameters[7]).toBe(SOURCE_SHA256);

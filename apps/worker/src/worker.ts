@@ -576,6 +576,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
         extractorVersion: artifactResult.extractorVersion,
         artifact: artifactResult.artifact,
         vectorEnabled: process.env.AKP_VECTOR_ENABLED === "true",
+        requesterId: typeof job.created_by === "string" ? job.created_by : null,
       },
       createConfiguredKnowledgeCompiler(process.env),
     );

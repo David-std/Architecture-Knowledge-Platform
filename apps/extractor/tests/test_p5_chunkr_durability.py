@@ -10,7 +10,11 @@ from uuid import uuid4
 import pytest
 
 from app.adapters.chunkr_runtime import ChunkrAdapter
-from app.ports import DocumentExtractionRequest, DocumentIntelligenceError
+from app.ports import (
+    CapabilityNotConfigured,
+    DocumentExtractionRequest,
+    DocumentIntelligenceError,
+)
 
 _SEQUENCE: list[str] = []
 _JOURNAL_BODIES: list[dict[str, Any]] = []
@@ -221,3 +225,27 @@ def test_chunkr_does_not_poll_when_durable_journal_rejects_creation(
 
     assert _ProviderHandler.polls == 0
     assert _SEQUENCE == ["provider:create", "journal:Starting"]
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "http://127.0.0.1:8080",
+        "https://localhost/internal",
+        "https://user:password@example.test",
+        "file:///etc/passwd",
+    ],
+)
+def test_chunkr_cloud_rejects_unsafe_admin_endpoints(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, endpoint: str
+) -> None:
+    source = tmp_path / "source.pdf"
+    source.write_bytes(b"%PDF-ssrf")
+    monkeypatch.setenv("AKP_CHUNKR_MODE", "cloud")
+    monkeypatch.setenv("AKP_CHUNKR_ENDPOINT", endpoint)
+    monkeypatch.setenv("AKP_CHUNKR_API_KEY", "configured-by-admin")
+
+    availability = ChunkrAdapter().availability()
+    assert availability.status.value != "configured"
+    with pytest.raises(CapabilityNotConfigured, match="not configured"):
+        ChunkrAdapter().extract(_request(source, str(uuid4())))

@@ -410,19 +410,17 @@ export async function reconcilePublishingReview(
     } finally {
       client.release();
     }
-    await store
-      .cleanupDraft(String(review.branch_name))
-      .catch(async (error) =>
-        recordPublicationFailure(
-          db,
-          String(review.space_id),
-          "Recovered publication draft cleanup failed",
-          {
-            reviewId,
-            error: error instanceof Error ? error.message : String(error),
-          },
-        ),
-      );
+    await store.cleanupDraft(String(review.branch_name)).catch(async (error) =>
+      recordPublicationFailure(
+        db,
+        String(review.space_id),
+        "Recovered publication draft cleanup failed",
+        {
+          reviewId,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      ),
+    );
     return { status: "RECOVERED", reviewId, revision: current.revision };
   } finally {
     await db.pool.query(
@@ -528,6 +526,28 @@ function hasValidReviewManifest(review: Record<string, unknown>): boolean {
   return paths.length > 0 && new Set(paths).size === paths.length;
 }
 
+/** Include compiler retrieval context in the authorization boundary. A review
+ * cannot expose candidate metadata gathered from a path the current actor
+ * cannot read, even when the proposed file itself is inside their prefix. */
+export function reviewAccessPaths(review: Record<string, unknown>): string[] {
+  const manifest = (review.impact_manifest ?? {}) as Record<string, unknown>;
+  const context =
+    manifest.reviewContext && typeof manifest.reviewContext === "object"
+      ? (manifest.reviewContext as Record<string, unknown>)
+      : null;
+  const candidates = Array.isArray(context?.existingCandidates)
+    ? context.existingCandidates
+    : [];
+  const candidatePaths = candidates
+    .map((candidate) =>
+      candidate && typeof candidate === "object" && "path" in candidate
+        ? String((candidate as Record<string, unknown>).path ?? "")
+        : "",
+    )
+    .filter(Boolean);
+  return [...new Set([...reviewPaths(review), ...candidatePaths])];
+}
+
 const REVIEW_VAULT_ID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -577,7 +597,7 @@ async function canAccessReview(
   const access = await reviewVaultAccess(db, actor, review, permission);
   if (!access) return false;
   const spaceId = String(review.space_id);
-  return reviewPaths(review).every(
+  return reviewAccessPaths(review).every(
     (reviewPath) =>
       hasPathAccess(actor, spaceId, permission, reviewPath) &&
       pathMatchesVaultPrefix(reviewPath, access.pathPrefix),

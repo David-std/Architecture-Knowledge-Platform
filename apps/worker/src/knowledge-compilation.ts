@@ -39,6 +39,7 @@ export interface ExistingKnowledgeRetrievalInput {
   sourceId?: string;
   sourceSha256?: string;
   evidenceExcerpt: string;
+  pathPrefix?: string | null;
   limit?: number;
   vectorEnabled?: boolean;
 }
@@ -164,6 +165,7 @@ async function exactAndLexicalCandidates(
       from knowledge_documents d
       cross join q
      where d.space_id=$1 and d.vault_id=$2
+       and ($9::text is null or d.path=$9 or d.path like $9 || '/%')
        and d.lifecycle in ('ACTIVE','DISPUTED')
        and d.refresh_status not in ('STALE_BLOCKED','INVALID')
        and (
@@ -187,6 +189,7 @@ async function exactAndLexicalCandidates(
       CANDIDATE_EXCERPT_CHARACTERS,
       input.sourceId ?? "",
       input.sourceSha256 ?? "",
+      input.pathPrefix ?? null,
     ],
   );
   return result.rows;
@@ -254,6 +257,7 @@ async function semanticNeighborhoodCandidates(
            and u.embedding_eligible
            and e.embedding_dimensions=s.embedding_dimensions
            and not (d.id=any($3::uuid[]))
+           and ($6::text is null or d.path=$6 or d.path like $6 || '/%')
            and d.lifecycle in ('ACTIVE','DISPUTED')
            and d.refresh_status not in ('STALE_BLOCKED','INVALID')
       )
@@ -270,6 +274,7 @@ async function semanticNeighborhoodCandidates(
         seedDocumentIds,
         Math.max(limit * 2, 10),
         CANDIDATE_EXCERPT_CHARACTERS,
+        input.pathPrefix ?? null,
       ],
     );
     if (!result.rows.length) {
@@ -317,6 +322,7 @@ async function graphCandidates(
       from neighbors n
       join knowledge_documents d on d.id=n.document_id
      where d.space_id=$1 and d.vault_id=$2
+       and ($6::text is null or d.path=$6 or d.path like $6 || '/%')
        and not (d.id=any($3::uuid[]))
        and d.lifecycle in ('ACTIVE','DISPUTED')
        and d.refresh_status not in ('STALE_BLOCKED','INVALID')
@@ -331,6 +337,7 @@ async function graphCandidates(
       seedDocumentIds,
       Math.max(limit, 8),
       CANDIDATE_EXCERPT_CHARACTERS,
+      input.pathPrefix ?? null,
     ],
   );
   return result.rows;
@@ -393,6 +400,7 @@ export interface GroundedCompilationRequest {
   vaultId: string;
   vectorEnabled?: boolean;
   candidateLimit?: number;
+  pathPrefix?: string | null;
 }
 
 export interface GroundedCompilationResult {
@@ -422,6 +430,7 @@ export async function compileGroundedKnowledgeProposal(
         sourceId: request.source.sourceId,
         sourceSha256: request.source.sha256,
         evidenceExcerpt: primaryEvidence.excerpt,
+        pathPrefix: request.pathPrefix ?? null,
         ...(request.candidateLimit === undefined
           ? {}
           : { limit: request.candidateLimit }),

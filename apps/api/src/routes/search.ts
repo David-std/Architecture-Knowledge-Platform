@@ -694,7 +694,7 @@ export function evidenceLocatorAllowed(
 }
 
 /** Keep only portable locator data in a retrieval response. */
-function sanitizeEvidenceLocator(value: unknown): unknown {
+export function sanitizeEvidenceLocator(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sanitizeEvidenceLocator);
   if (typeof value === "string") {
     return value.replace(
