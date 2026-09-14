@@ -98,24 +98,14 @@ const missingMetrics = requiredMetrics.filter(
   (name) => metricEvidence[name].length === 0,
 );
 
-if (missingSpans.length || missingMetrics.length) {
-  process.stderr.write(
-    `${JSON.stringify({ missingSpans, missingMetrics }, null, 2)}\n`,
-  );
-  process.exitCode = 1;
-} else {
-  process.stdout.write(
-    `${JSON.stringify({ spanEvidence, metricEvidence }, null, 2)}\n`,
-  );
-}
-
+let runtimeChecks = null;
 const collectorLog = process.env.AKP_OTEL_COLLECTOR_LOG;
 if (collectorLog) {
   const log = fs.readFileSync(collectorLog, "utf8");
   // The Collector debug exporter aligns labels with padding, e.g.
   // `Name           : backup`. Match semantic label/value boundaries instead
   // of depending on a particular amount of formatting whitespace.
-  const runtimeChecks = {
+  runtimeChecks = {
     resourceSpans: /ResourceSpans|ScopeSpans|Span #/i.test(log),
     resourceMetrics: /ResourceMetrics|ScopeMetrics|Metric #/i.test(log),
     apiService: /service\.name\s*:\s*Str\(akp-api\)/i.test(log),
@@ -127,10 +117,31 @@ if (collectorLog) {
     backupSpan: /\bName\s*:\s*backup\b/i.test(log),
     restoreSpan: /\bName\s*:\s*restore\b/i.test(log),
   };
-  if (Object.values(runtimeChecks).some((passed) => !passed)) {
-    process.stderr.write(`${JSON.stringify({ runtimeChecks }, null, 2)}\n`);
-    process.exitCode = 1;
-  } else {
-    process.stdout.write(`${JSON.stringify({ runtimeChecks }, null, 2)}\n`);
-  }
+}
+
+const failedRuntimeChecks = runtimeChecks
+  ? Object.entries(runtimeChecks)
+      .filter(([, passed]) => !passed)
+      .map(([name]) => name)
+  : [];
+const report = {
+  missingSpans,
+  missingMetrics,
+  spanEvidence,
+  metricEvidence,
+  runtimeChecks,
+  failedRuntimeChecks,
+};
+
+// Always emit one machine-readable report. CI can retain this exact payload as
+// evidence even when verification fails, instead of splitting the failure
+// details across stdout/stderr.
+process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+
+if (
+  missingSpans.length > 0 ||
+  missingMetrics.length > 0 ||
+  failedRuntimeChecks.length > 0
+) {
+  process.exitCode = 1;
 }
