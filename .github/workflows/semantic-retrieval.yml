@@ -23,17 +23,6 @@ jobs:
           node-version: 24.20.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
-      - name: Capture exact formatter output for registered benchmark
-        shell: bash
-        run: |
-          mkdir -p reports/ci/formatted/evals/registered reports/ci/formatted/scripts
-          pnpm exec prettier --write \
-            evals/registered/public-product-corpus.json \
-            scripts/registered-corpus-retrieval-benchmark.ts
-          cp evals/registered/public-product-corpus.json \
-            reports/ci/formatted/evals/registered/public-product-corpus.json
-          cp scripts/registered-corpus-retrieval-benchmark.ts \
-            reports/ci/formatted/scripts/registered-corpus-retrieval-benchmark.ts
       - run: pnpm build
       - run: docker compose up -d --wait postgres
       - run: pnpm db:migrate

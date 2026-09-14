@@ -11,7 +11,11 @@
         {
           "id": "product-architecture-overview",
           "title": "Architecture overview",
-          "aliases": ["canonical architecture", "system boundary", "canonical data flow"],
+          "aliases": [
+            "canonical architecture",
+            "system boundary",
+            "canonical data flow"
+          ],
           "sourcePath": "ARCHITECTURE.md",
           "related": ["product-runtime-flows", "product-c4", "product-modules"],
           "evidence": ["repo://ARCHITECTURE.md"],
@@ -20,7 +24,11 @@
         {
           "id": "product-runtime-flows",
           "title": "Runtime flows",
-          "aliases": ["publication recovery", "rollback flow", "retrieval flow"],
+          "aliases": [
+            "publication recovery",
+            "rollback flow",
+            "retrieval flow"
+          ],
           "sourcePath": "docs/architecture/runtime-flows.md",
           "related": ["product-architecture-overview", "product-c4"],
           "evidence": ["repo://docs/architecture/runtime-flows.md"],
@@ -29,7 +37,11 @@
         {
           "id": "product-c4",
           "title": "C4 architecture views",
-          "aliases": ["container responsibilities", "trust boundaries", "system context"],
+          "aliases": [
+            "container responsibilities",
+            "trust boundaries",
+            "system context"
+          ],
           "sourcePath": "docs/architecture/c4.md",
           "related": ["product-architecture-overview", "product-modules"],
           "evidence": ["repo://docs/architecture/c4.md"],
@@ -38,7 +50,11 @@
         {
           "id": "product-modules",
           "title": "Module and dependency model",
-          "aliases": ["dependency cruiser", "modular monolith", "module boundaries"],
+          "aliases": [
+            "dependency cruiser",
+            "modular monolith",
+            "module boundaries"
+          ],
           "sourcePath": "docs/architecture/modules.md",
           "related": ["product-c4"],
           "evidence": ["repo://docs/architecture/modules.md"],
@@ -53,16 +69,28 @@
         {
           "id": "operations-runbook",
           "title": "Local operations runbook",
-          "aliases": ["runtime operations", "publication recovery runbook", "local runbook"],
+          "aliases": [
+            "runtime operations",
+            "publication recovery runbook",
+            "local runbook"
+          ],
           "sourcePath": "docs/runbooks/local-operations.md",
-          "related": ["security-threat-model", "operations-error-book", "operations-audit-export"],
+          "related": [
+            "security-threat-model",
+            "operations-error-book",
+            "operations-audit-export"
+          ],
           "evidence": ["repo://docs/runbooks/local-operations.md"],
           "citations": ["repo://docs/runbooks/local-operations.md"]
         },
         {
           "id": "security-threat-model",
           "title": "Threat model",
-          "aliases": ["security residual risks", "trust boundaries", "threat controls"],
+          "aliases": [
+            "security residual risks",
+            "trust boundaries",
+            "threat controls"
+          ],
           "sourcePath": "docs/security/threat-model.md",
           "related": ["operations-runbook", "operations-audit-export"],
           "evidence": ["repo://docs/security/threat-model.md"],
@@ -71,7 +99,11 @@
         {
           "id": "operations-error-book",
           "title": "Error Book guide",
-          "aliases": ["recurring failure register", "error book", "regression evidence"],
+          "aliases": [
+            "recurring failure register",
+            "error book",
+            "regression evidence"
+          ],
           "sourcePath": "docs/error-book.md",
           "related": ["operations-runbook"],
           "evidence": ["repo://docs/error-book.md"],
@@ -80,7 +112,11 @@
         {
           "id": "operations-audit-export",
           "title": "Audit and evidence export contract",
-          "aliases": ["sanitized audit bundle", "raw evidence export", "audit serializer"],
+          "aliases": [
+            "sanitized audit bundle",
+            "raw evidence export",
+            "audit serializer"
+          ],
           "sourcePath": "docs/architecture/audit-export.md",
           "related": ["operations-runbook", "security-threat-model"],
           "evidence": ["repo://docs/architecture/audit-export.md"],

@@ -89,8 +89,12 @@ const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is required");
 
 const repositoryRoot = path.resolve(".");
-const manifestPath = path.resolve("evals/registered/public-product-corpus.json");
-const casesPath = path.resolve("evals/registered/public-product-corpus-cases.jsonl");
+const manifestPath = path.resolve(
+  "evals/registered/public-product-corpus.json",
+);
+const casesPath = path.resolve(
+  "evals/registered/public-product-corpus-cases.jsonl",
+);
 const outputPath = path.resolve(
   process.env.AKP_REGISTERED_RETRIEVAL_REPORT ??
     "reports/ci/registered-corpus-retrieval-benchmark.json",
