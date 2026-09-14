@@ -6,7 +6,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
-import { Postgres } from "@akp/postgres";
+import { Postgres, grantVaultMembership } from "@akp/postgres";
 import { GitKnowledgeStore } from "@akp/git-store";
 
 const execFileAsync = promisify(execFile);
@@ -21,6 +21,7 @@ let app: FastifyInstance;
 let db: Postgres;
 let fixtureRoot: string;
 let defaultVault: string;
+let createdVault = false;
 const createdReviewIds = new Set<string>();
 const previousManagedRepository = process.env.AKP_MANAGED_REPO;
 
@@ -129,7 +130,8 @@ beforeAll(async () => {
     [defaultSpace],
   );
   defaultVault = vault.rows[0]?.id ?? randomUUID();
-  if (!vault.rows[0]) {
+  createdVault = !vault.rows[0];
+  if (createdVault) {
     await db.pool.query(
       `insert into vaults(
          id,space_id,canonical_path,name,read_only,current_revision,
@@ -145,6 +147,23 @@ beforeAll(async () => {
       ],
     );
   }
+  // A PRIVATE vault grants nothing by space membership alone, so this fixture
+  // needs its own explicit grant. Without it the file only passed when another
+  // integration file had already granted membership on the vault it happened to
+  // select, which made a run against a fresh database order-dependent.
+  await grantVaultMembership(db, {
+    userId: admin,
+    vaultId: defaultVault,
+    role: "ADMIN",
+    pathPrefix: null,
+    permissions: [
+      "knowledge:read",
+      "source:read",
+      "knowledge:propose",
+      "knowledge:review",
+      "admin",
+    ],
+  });
   await db.pool.query(
     `
     insert into api_tokens(user_id,token_hash,label,scopes)
@@ -204,6 +223,14 @@ afterAll(async () => {
     await db.pool.query("delete from api_tokens where token_hash=$1", [
       tokenHash,
     ]);
+    if (createdVault) {
+      // Only the grant this file created is removed, so a pre-existing
+      // environment is left exactly as it was found.
+      await db.pool.query(
+        "delete from vault_memberships where user_id=$1 and vault_id=$2",
+        [admin, defaultVault],
+      );
+    }
     await db.close();
   }
   if (fixtureRoot) await rm(fixtureRoot, { recursive: true, force: true });
