@@ -807,6 +807,11 @@
       "reason": "append-only database migration"
     },
     {
+      "path": "db/migrations/024_context_packet_continuations.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
       "path": "dependency-cruiser.cjs",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -1275,6 +1280,11 @@
       "path": "packages/graph/src/index.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/graph/test/decay.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
     },
     {
       "path": "packages/graph/tsconfig.json",
