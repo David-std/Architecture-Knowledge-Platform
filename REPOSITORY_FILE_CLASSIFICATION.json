@@ -17,6 +17,11 @@
       "reason": "configuration or policy contract"
     },
     {
+      "path": ".github/workflows/recovery.yml",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "configuration or policy contract"
+    },
+    {
       "path": ".gitignore",
       "category": "PRODUCT_CONTRACT",
       "reason": "configuration or policy contract"
@@ -168,6 +173,11 @@
     },
     {
       "path": "apps/api/test/operator.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/api/test/p8-security-boundaries.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -1722,6 +1732,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/validation/test/security.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "packages/validation/tsconfig.json",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -1938,6 +1953,11 @@
     },
     {
       "path": "scripts/validate-repository-hygiene.mjs",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/verify-managed-git-restore.ps1",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
