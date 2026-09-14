@@ -23,9 +23,10 @@ jobs:
           node-version: 24.20.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - run: pnpm build
       - run: docker compose up -d --wait postgres
       - run: pnpm db:migrate
-      - name: Execute pinned multilingual E5 retrieval end to end
+      - name: Execute pinned multilingual semantic retrieval end to end
         shell: bash
         run: |
           set -o pipefail
