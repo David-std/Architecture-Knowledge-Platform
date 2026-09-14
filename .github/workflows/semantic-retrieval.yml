@@ -44,6 +44,13 @@ jobs:
           AKP_RUNTIME_RETRIEVAL_REPORT=reports/ci/runtime-retrieval-benchmark.json \
             pnpm benchmark:retrieval:runtime \
             2>&1 | tee reports/ci/runtime-retrieval-benchmark.log
+      - name: Execute registered public corpus retrieval benchmark
+        shell: bash
+        run: |
+          set -o pipefail
+          AKP_REGISTERED_RETRIEVAL_REPORT=reports/ci/registered-corpus-retrieval-benchmark.json \
+            pnpm benchmark:retrieval:registered \
+            2>&1 | tee reports/ci/registered-corpus-retrieval-benchmark.log
       - name: Capture semantic retrieval diagnostics
         if: always()
         shell: bash
