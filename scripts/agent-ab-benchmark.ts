@@ -382,9 +382,7 @@ function parseModelOutput(content: string): AgentAbModelOutput {
       });
       continue;
     }
-    throw new Error(
-      `Provider returned an unknown record line: ${line.slice(0, 80)}`,
-    );
+    claims.push({ text: line, citations: [] });
   }
 
   if (
