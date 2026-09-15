@@ -133,35 +133,35 @@ jobs:
 
           workflow = Path('.github/workflows/agent-ab.yml')
           text = workflow.read_text()
-          guard_anchor = '''          for (const observation of observations) {
-                    if (!Number.isFinite(observation.contextTokens) || !Number.isFinite(observation.latencyMs)) {
+          guard_anchor = '          for (const observation of observations) {\n'
+          if text.count(guard_anchor) != 1:
+              raise SystemExit(f'Agent live evidence guard marker count={text.count(guard_anchor)}')
+          guard_prefix = '''          const supportedTaskIds = new Set([
+                    "agent-public-exact-runtime-flows",
+                    "agent-public-concept-canonical-authority",
+                    "agent-public-workflow-publication-recovery",
+                    "agent-public-source-sanitized-packet",
+                    "agent-public-project-code-health-boundary",
+                  ]);
           '''
-          guard = '''          const supportedTaskIds = new Set([
-                      "agent-public-exact-runtime-flows",
-                      "agent-public-concept-canonical-authority",
-                      "agent-public-workflow-publication-recovery",
-                      "agent-public-source-sanitized-packet",
-                      "agent-public-project-code-health-boundary",
-                    ]);
-                    for (const observation of observations) {
-                      if (supportedTaskIds.has(observation.taskId)) {
-                        if (
-                          observation.arm === "A_RAW_SEARCH" &&
-                          (!(observation.contextTokens > 0) || !(observation.retrievalMetadata?.hits > 0))
-                        ) {
-                          throw new Error(`Supported Agent A/B task ${observation.taskId} has no raw-search context.`);
-                        }
-                        if (
-                          observation.arm === "B_AKP_CONTEXT_PACKET" &&
-                          Array.isArray(observation.retrievalMetadata?.gaps) &&
-                          observation.retrievalMetadata.gaps.includes("No source-backed material matched the request.")
-                        ) {
-                          throw new Error(`Supported Agent A/B task ${observation.taskId} has no ContextPacket source material.`);
-                        }
+          guard_body = '''          for (const observation of observations) {
+                    if (supportedTaskIds.has(observation.taskId)) {
+                      if (
+                        observation.arm === "A_RAW_SEARCH" &&
+                        (!(observation.contextTokens > 0) || !(observation.retrievalMetadata?.hits > 0))
+                      ) {
+                        throw new Error(`Supported Agent A/B task ${observation.taskId} has no raw-search context.`);
                       }
-                      if (!Number.isFinite(observation.contextTokens) || !Number.isFinite(observation.latencyMs)) {
+                      if (
+                        observation.arm === "B_AKP_CONTEXT_PACKET" &&
+                        Array.isArray(observation.retrievalMetadata?.gaps) &&
+                        observation.retrievalMetadata.gaps.includes("No source-backed material matched the request.")
+                      ) {
+                        throw new Error(`Supported Agent A/B task ${observation.taskId} has no ContextPacket source material.`);
+                      }
+                    }
           '''
-          text = replace_once(text, guard_anchor, guard, 'Agent live evidence guard')
+          text = text.replace(guard_anchor, guard_prefix + guard_body, 1)
           workflow.write_text(text)
           PY
           pnpm exec prettier --write \
