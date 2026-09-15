@@ -23,6 +23,14 @@ jobs:
           node-version: 24.20.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Capture exact Prettier output for P0 benchmark sources
+        shell: bash
+        run: |
+          mkdir -p reports/ci/prettier
+          pnpm exec prettier packages/retrieval/scripts/context-tokenizer-baseline.ts \
+            > reports/ci/prettier/context-tokenizer-baseline.ts
+          pnpm exec prettier scripts/filtered-ann-baseline.ts \
+            > reports/ci/prettier/filtered-ann-baseline.ts
       - run: pnpm build
       - run: docker compose up -d --wait postgres
       - run: pnpm db:migrate
