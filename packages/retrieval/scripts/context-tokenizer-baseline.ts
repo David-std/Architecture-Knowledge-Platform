@@ -105,11 +105,7 @@ function packetCandidate(content: string, suffix: string): PacketCandidate {
   };
 }
 
-function buildPacket(
-  content: string,
-  suffix: string,
-  tokenizer?: Tokenizer,
-) {
+function buildPacket(content: string, suffix: string, tokenizer?: Tokenizer) {
   return buildContextPacket({
     request: {
       query: `measure ${suffix} context tokenization`,
@@ -154,7 +150,9 @@ const samples = languageEntries.map(([language, text], index) => {
   const exactWireTokens = countExact(JSON.stringify(exactPacket));
 
   if (exactPacket.budget.tokenizer.approximate) {
-    throw new Error(`${language} packet did not use the exact model tokenizer.`);
+    throw new Error(
+      `${language} packet did not use the exact model tokenizer.`,
+    );
   }
   if (exactPacket.budget.serializedTokens !== exactWireTokens) {
     throw new Error(
