@@ -1,5 +1,8 @@
 import {
   CompilationPlan,
+  defaultCompilerKnowledgeProfileContext,
+  durableCompilerKnowledgeProfileContext,
+  type CompilerKnowledgeProfileContext,
   type ConfiguredKnowledgeCompiler,
   type KnowledgeCompilerResult,
 } from "@akp/compiler";
@@ -20,6 +23,10 @@ interface EvidenceRow {
 interface VaultRow {
   schema_profile: Record<string, unknown>;
   current_revision: string | null;
+  active_profile_revision_id?: string | null;
+  profile_revision_id?: string | null;
+  profile_hash?: string | null;
+  canonical_profile?: string | null;
 }
 
 interface PriorSourceRow {
@@ -63,19 +70,59 @@ export interface CompilationStageOutput {
   metadata: CompilationStageMetadata;
 }
 
+function resolveCompilerProfileFromVault(
+  row: VaultRow,
+): CompilerKnowledgeProfileContext {
+  if (!row.active_profile_revision_id) {
+    return defaultCompilerKnowledgeProfileContext();
+  }
+  if (
+    !row.profile_revision_id ||
+    row.profile_revision_id !== row.active_profile_revision_id ||
+    !row.profile_hash ||
+    !row.canonical_profile
+  ) {
+    throw new Error("ACTIVE_KNOWLEDGE_PROFILE_BINDING_INVALID");
+  }
+  let profile: unknown;
+  try {
+    profile = JSON.parse(row.canonical_profile);
+  } catch {
+    throw new Error("ACTIVE_KNOWLEDGE_PROFILE_CANONICAL_INVALID");
+  }
+  return durableCompilerKnowledgeProfileContext({
+    revisionId: row.profile_revision_id,
+    profileHash: row.profile_hash,
+    profile,
+  });
+}
+
 async function loadVaultContext(
   db: Postgres,
   spaceId: string,
   vaultId: string | null,
-): Promise<{ schemaProfile: Record<string, unknown>; corpusRevision: string }> {
+): Promise<{
+  schemaProfile: Record<string, unknown>;
+  corpusRevision: string;
+  knowledgeProfile: CompilerKnowledgeProfileContext;
+}> {
   if (!vaultId) {
-    return { schemaProfile: {}, corpusRevision: "managed:initial" };
+    return {
+      schemaProfile: {},
+      corpusRevision: "managed:initial",
+      knowledgeProfile: defaultCompilerKnowledgeProfileContext(),
+    };
   }
   const result = await db.pool.query<VaultRow>(
     `
-    select schema_profile,current_revision
-      from vaults
-     where id=$1 and space_id=$2 and enabled
+    select v.schema_profile,v.current_revision,
+           v.active_knowledge_profile_revision_id active_profile_revision_id,
+           p.id profile_revision_id,p.profile_hash,p.canonical_profile
+      from vaults v
+      left join knowledge_profile_revisions p
+        on p.id=v.active_knowledge_profile_revision_id
+       and p.space_id=v.space_id and p.vault_id=v.id and p.status='ACTIVE'
+     where v.id=$1 and v.space_id=$2 and v.enabled
      limit 1
     `,
     [vaultId, spaceId],
@@ -85,6 +132,7 @@ async function loadVaultContext(
   return {
     schemaProfile: row.schema_profile ?? {},
     corpusRevision: row.current_revision ?? "managed:initial",
+    knowledgeProfile: resolveCompilerProfileFromVault(row),
   };
 }
 
@@ -283,6 +331,7 @@ export async function buildCompilationStage(
         },
         documentArtifact: input.artifact,
         evidence: [evidence],
+        knowledgeProfile: vault.knowledgeProfile,
         schemaProfile: vault.schemaProfile,
         corpusRevision: vault.corpusRevision,
         spaceId: input.spaceId,
