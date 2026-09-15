@@ -1,0 +1,91 @@
+name: P1 review kinds fix materializer
+
+on:
+  push:
+    branches:
+      - feat/v0.4-enterprise-context-workspace
+    paths:
+      - scripts/tmp-review-kinds-fix.py
+      - .github/workflows/review-kinds-fix.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgres://akp:akp@localhost:55432/akp
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.34.5
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+
+      - name: Install workspace
+        run: pnpm install --frozen-lockfile --strict-peer-dependencies
+
+      - name: Materialize exact review kinds snapshot fix
+        run: python scripts/tmp-review-kinds-fix.py
+
+      - name: Format candidate
+        run: >-
+          pnpm exec prettier --write
+          packages/compiler/src/contracts.ts
+          packages/compiler/src/grounding.ts
+          packages/compiler/test/profile-policy-enforcement.test.ts
+          apps/api/src/review-policy.ts
+          apps/api/test/review-policy.integration.test.ts
+
+      - name: Build workspace packages
+        run: pnpm build
+
+      - name: Start PostgreSQL
+        run: docker compose up -d --wait postgres
+
+      - name: Run migrations
+        run: pnpm db:migrate
+
+      - name: Run compiler policy tests
+        run: pnpm --filter @akp/compiler test
+
+      - name: Run review policy integration
+        run: >-
+          pnpm --filter @akp/api exec vitest run
+          --config vitest.integration.config.ts
+          test/review-policy.integration.test.ts
+
+      - name: Run workspace check
+        run: pnpm check
+
+      - name: Promote clean product commit
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            packages/compiler/src/contracts.ts \
+            packages/compiler/src/grounding.ts \
+            packages/compiler/test/profile-policy-enforcement.test.ts \
+            apps/api/src/review-policy.ts \
+            apps/api/test/review-policy.integration.test.ts
+          git rm -f .github/workflows/review-kinds-fix.yml scripts/tmp-review-kinds-fix.py
+          git diff --cached --check
+          git commit -m "fix(p1): pin exact review policy kinds"
+          git push origin HEAD:feat/v0.4-enterprise-context-workspace
+
+      - name: Stop disposable services
+        if: always()
+        run: docker compose down -v --remove-orphans || true
