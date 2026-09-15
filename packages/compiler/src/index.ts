@@ -39,5 +39,6 @@ export type CompilationPlan = z.infer<typeof CompilationPlan>;
 
 export * from "./contracts.js";
 export * from "./grounding.js";
+export * from "./knowledge-profile.js";
 export * from "./openai-compatible.js";
 export * from "./provider-registry.js";
