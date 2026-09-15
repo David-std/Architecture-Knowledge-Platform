@@ -12,6 +12,9 @@
       "@akp/contracts/knowledge-profile": [
         "packages/contracts/src/knowledge-profile.ts"
       ],
+      "@akp/contracts/knowledge-profile-compatibility": [
+        "packages/contracts/src/knowledge-profile-compatibility.ts"
+      ],
       "@akp/domain": ["packages/domain/src/index.ts"],
       "@akp/evaluation": ["packages/evaluation/src/index.ts"],
       "@akp/git-store": ["packages/git-store/src/index.ts"],
