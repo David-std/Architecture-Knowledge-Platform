@@ -63,5 +63,18 @@ describe("context correctness regression contract", () => {
     expect(token?.approximateFallbackMustBeLabeled).toBe(true);
     expect(token?.serializedContextPacketMeasured).toBe(true);
     expect(token?.exactOrLexicalIdentifierChannelRequired).toBe(true);
+
+    const placementCase = pack.cases.find(
+      (item) => item.kind === "CONTEXT_PLACEMENT_AND_MANDATORY_CONSTRAINTS",
+    );
+    expect(placementCase).toBeDefined();
+
+    const placement = placementCase?.expectations;
+    expect(placement?.rulePlacedBeforeHigherScoreConcept).toBe(true);
+    expect(placement?.requiredActionsRetainedInFullPacket).toBe(true);
+    expect(placement?.requiredActionsRetainedInCompactPacket).toBe(true);
+    expect(placement?.requiredActionOrderPreserved).toBe(true);
+    expect(placement?.truncatedEvidenceUsesContinuation).toBe(true);
+    expect(placement?.mandatoryActionsNeverMoveIntoRetrievedContent).toBe(true);
   });
 });
