@@ -39,12 +39,16 @@ jobs:
           apps/worker/src/compilation-stage.ts
           packages/compiler/test/profile-policy-enforcement.test.ts
       - name: Run focused compiler tests
-        run: pnpm --filter @akp/compiler test
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm --filter @akp/compiler test 2>&1 | tee profile-policy-compiler-test.log
       - name: Run worker profile integration test
         run: pnpm exec vitest run apps/worker/test/knowledge-profile-compilation.test.ts
       - name: Run TypeScript check
         run: pnpm check
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: profile-policy-candidate-${{ github.run_id }}
           path: |
@@ -53,4 +57,5 @@ jobs:
             packages/compiler/src/grounding.ts
             apps/worker/src/compilation-stage.ts
             packages/compiler/test/profile-policy-enforcement.test.ts
-          if-no-files-found: error
+            profile-policy-compiler-test.log
+          if-no-files-found: warn
