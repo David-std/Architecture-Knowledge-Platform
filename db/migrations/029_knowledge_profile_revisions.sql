@@ -2,10 +2,17 @@
 -- runtime default. A vault with no active durable revision continues to use
 -- its legacy schema_profile/default behavior until an explicit reviewed
 -- activation path is introduced.
+
+-- Profile revisions are always scoped by both space and vault. The composite
+-- key makes that isolation a database invariant instead of relying only on
+-- application predicates.
+alter table vaults
+  add constraint vaults_space_id_id_profile_scope_key unique (space_id, id);
+
 create table knowledge_profile_revisions (
   id uuid primary key default gen_random_uuid(),
-  space_id uuid not null references spaces(id),
-  vault_id uuid not null references vaults(id) on delete cascade,
+  space_id uuid not null,
+  vault_id uuid not null,
   profile_id text not null,
   version text not null,
   profile_hash text not null check (profile_hash ~ '^[a-f0-9]{64}$'),
@@ -38,6 +45,9 @@ create table knowledge_profile_revisions (
   retired_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
+  constraint knowledge_profile_revisions_space_vault_fk
+    foreign key (space_id, vault_id)
+    references vaults(space_id, id) on delete cascade,
   constraint knowledge_profile_revisions_profile_id_format
     check (profile_id ~ '^[a-z0-9][a-z0-9-]{1,62}$'),
   constraint knowledge_profile_revisions_version_nonempty
