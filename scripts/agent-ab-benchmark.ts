@@ -252,7 +252,10 @@ function packetContext(packet: ContextPacket): ArmInput {
       requiredActions: packet.requiredActions ?? [],
       gaps: packet.gaps ?? [],
       conflicts: packet.conflicts ?? [],
-      sourceSections: packet.sections?.length ?? 0,
+      sourceSections: Math.max(
+        packet.sections?.length ?? 0,
+        packet.content?.length ?? 0,
+      ),
     },
   };
 }
