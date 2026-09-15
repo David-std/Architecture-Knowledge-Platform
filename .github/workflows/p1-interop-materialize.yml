@@ -76,7 +76,7 @@ jobs:
           path.write_text(text)
           PY
 
-      - name: Align integration bootstrap with Vitest module reset
+      - name: Align integration bootstrap with scoped credential and Vitest module reset
         shell: bash
         run: |
           python - <<'PY'
@@ -95,6 +95,27 @@ jobs:
           replace_once(
               'import { afterAll, beforeAll, describe, expect, it } from "vitest";',
               'import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";',
+          )
+          replace_once(
+              '''  await db.pool.query(
+            `insert into api_tokens(user_id,token_hash,label)
+             values($1,$2,'interop-integration') on conflict(token_hash) do nothing`,
+            [adminId, tokenHash],
+          );''',
+              '''  const tokenScopes = {
+            spaces: [
+              {
+                spaceId,
+                pathPrefix: null,
+                permissions: ["knowledge:read", "knowledge:propose"],
+              },
+            ],
+          };
+          await db.pool.query(
+            `insert into api_tokens(user_id,token_hash,label,scopes)
+             values($1,$2,'interop-integration',$3::jsonb) on conflict(token_hash) do nothing`,
+            [adminId, tokenHash, JSON.stringify(tokenScopes)],
+          );''',
           )
           replace_once(
               '  const module = await import(`../src/server.js?interop=${randomUUID()}`);',
