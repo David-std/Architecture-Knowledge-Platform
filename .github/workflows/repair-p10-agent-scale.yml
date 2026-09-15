@@ -26,191 +26,102 @@ jobs:
       - name: Apply evidence fixes
         shell: bash
         run: |
-          python - <<'PY'
-          from pathlib import Path
-
-          def replace_once(text, old, new, label):
-              if text.count(old) != 1:
-                  raise SystemExit(f'{label} count={text.count(old)}')
-              return text.replace(old, new, 1)
-
-          agent = Path('scripts/agent-ab-benchmark.ts')
-          text = agent.read_text()
-          text = replace_once(
-              text,
-              '''type ProviderResult = {
-            output: AgentAbModelOutput;
-            usage: ProviderUsage;
-            latencyMs: number;
-          };''',
-              '''type ProviderResult = {
-            output: AgentAbModelOutput;
-            usage: ProviderUsage;
-            latencyMs: number;
-            formatRetries: number;
-          };''',
-              'ProviderResult type',
-          )
-          text = replace_once(
-              text,
-              '''    "Return one JSON object with exactly these fields:",
-            '{"answer":"...","abstain":false,"citations":["..."],"claims":[{"text":"...","citations":["..."]}]}',
-            "Use only citation identifiers that appear verbatim in the supplied context.",''',
-              '''    "Return one complete JSON object only, with no markdown or text outside JSON.",
-            "Keep answer under 120 words and use at most four concise claims so the JSON always fits the output budget.",
-            "Return exactly these fields:",
-            '{"answer":"...","abstain":false,"citations":["..."],"claims":[{"text":"...","citations":["..."]}]}',
-            "Use only citation identifiers that appear verbatim in the supplied context.",''',
-              'evaluation prompt contract',
-          )
-          invoke_start = text.index('async function invokeProvider(')
-          run_arm_start = text.index('\nasync function runArm(', invoke_start)
-          replacement = r'''async function invokeProvider(
-            task: AgentAbTask,
-            input: ArmInput,
-            config: ReturnType<typeof benchmarkPrerequisites>,
-          ): Promise<ProviderResult> {
-            const basePrompt = evaluationPrompt(task, input.context);
-            let totalLatencyMs = 0;
-            let totalPromptTokens: number | null = null;
-            let totalCompletionTokens: number | null = null;
-
-            for (let attempt = 0; attempt < 2; attempt += 1) {
-              const prompt =
-                attempt === 0
-                  ? basePrompt
-                  : `${basePrompt}\n\nFORMAT RETRY: The prior completion was not a complete valid JSON object. Return the same answer task again as exactly one complete JSON object, no markdown, no commentary, and keep it concise.`;
-              const started = performance.now();
-              const response = await fetch(`${config.providerBaseUrl}/chat/completions`, {
-                method: "POST",
-                headers: {
-                  ...(config.providerApiKey
-                    ? { authorization: `Bearer ${config.providerApiKey}` }
-                    : {}),
-                  "content-type": "application/json",
-                },
-                body: JSON.stringify({
-                  model: config.providerModel,
-                  temperature: config.temperature,
-                  max_tokens: config.maxOutputTokens,
-                  messages: [
-                    {
-                      role: "system",
-                      content:
-                        "You are a controlled evaluation assistant. Follow the caller's JSON contract and never use knowledge outside the supplied context.",
-                    },
-                    { role: "user", content: prompt },
-                  ],
-                }),
-                signal: AbortSignal.timeout(120_000),
-              });
-              totalLatencyMs += performance.now() - started;
-              const responseText = await response.text();
-              if (!response.ok) {
-                throw new Error(
-                  `Provider request ${response.status}: ${responseText.slice(0, 500)}`,
-                );
-              }
-              const body = JSON.parse(responseText) as Record<string, unknown>;
-              const choices = Array.isArray(body.choices) ? body.choices : [];
-              const first = choices[0] as Record<string, unknown> | undefined;
-              const message = first?.message as Record<string, unknown> | undefined;
-              const content =
-                typeof message?.content === "string" ? message.content : null;
-              if (!content) throw new Error("Provider returned no text completion.");
-              const usage = (body.usage ?? {}) as Record<string, unknown>;
-              const promptTokens =
-                typeof usage.prompt_tokens === "number" ? usage.prompt_tokens : null;
-              const completionTokens =
-                typeof usage.completion_tokens === "number"
-                  ? usage.completion_tokens
-                  : null;
-              if (promptTokens !== null) {
-                totalPromptTokens = (totalPromptTokens ?? 0) + promptTokens;
-              }
-              if (completionTokens !== null) {
-                totalCompletionTokens =
-                  (totalCompletionTokens ?? 0) + completionTokens;
-              }
-              try {
-                return {
-                  output: parseModelOutput(content),
-                  usage: {
-                    promptTokens: totalPromptTokens,
-                    completionTokens: totalCompletionTokens,
-                  },
-                  latencyMs: totalLatencyMs,
-                  formatRetries: attempt,
-                };
-              } catch (error) {
-                if (attempt === 0) continue;
-                const detail = error instanceof Error ? error.message : String(error);
-                throw new Error(
-                  `Provider response remained invalid after one format retry: ${detail}`,
-                );
-              }
-            }
-            throw new Error("Provider format retry loop exhausted unexpectedly.");
-          }
-'''
-          text = text[:invoke_start] + replacement + text[run_arm_start:]
-          text = replace_once(
-              text,
-              '''    retrievalMetadata: input.retrievalMetadata,
-            modelOutput: provider.output,''',
-              '''    retrievalMetadata: {
-              ...input.retrievalMetadata,
-              modelFormatRetries: provider.formatRetries,
-            },
-            modelOutput: provider.output,''',
-              'record model format retries',
-          )
-          agent.write_text(text)
-
-          scale = Path('scripts/load-scale-benchmark.ts')
-          text = scale.read_text()
-          text = replace_once(
-              text,
-              '''  await client.query("drop index if exists unit_embeddings_vector_idx");
-          }''',
-              '''  await client.query("drop index if exists unit_embeddings_vector_idx");
-            await client.query("drop index if exists unit_embeddings_64_vector_idx");
-            await client.query("drop index if exists unit_embeddings_384_vector_idx");
-            const remainingAnnIndexes = await client.query<{ indexname: string }>(
-              `select indexname
-                 from pg_indexes
-                where schemaname='public'
-                  and tablename='unit_embeddings'
-                  and lower(indexdef) like '% using hnsw %'`,
-            );
-            if (remainingAnnIndexes.rowCount !== 0) {
-              throw new Error(
-                `Scale benchmark exact-vector mode still has HNSW indexes: ${remainingAnnIndexes.rows
-                  .map((row) => row.indexname)
-                  .join(", ")}`,
-              );
-            }
-          }''',
-              'exact vector index preparation',
-          )
-          text = replace_once(
-              text,
-              '"The disposable scale database removes the HNSW index before fixture loading so general 1K-100K scale evidence is not conflated with ANN tuning; ANN selection is evaluated separately.",',
-              '"The disposable scale database removes all HNSW indexes from unit_embeddings before fixture loading so general 1K-100K scale evidence is not conflated with ANN tuning; ANN selection is evaluated separately.",',
-              'scale ANN limitation wording',
-          )
-          scale.write_text(text)
-
-          workflow = Path('.github/workflows/agent-ab.yml')
-          text = workflow.read_text()
-          text = replace_once(
-              text,
-              'AKP_AGENT_AB_MAX_OUTPUT_TOKENS: "320"',
-              'AKP_AGENT_AB_MAX_OUTPUT_TOKENS: "512"',
-              'Agent output token budget',
-          )
-          workflow.write_text(text)
-          PY
+          base64 -d > /tmp/repair.py <<'PATCH'
+          ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCgpkZWYgcmVwbGFjZV9vbmNlKHRleHQsIG9sZCwgbmV3LCBsYWJlbCk6CiAgICBjb3Vu
+          dCA9IHRleHQuY291bnQob2xkKQogICAgaWYgY291bnQgIT0gMToKICAgICAgICByYWlzZSBTeXN0ZW1FeGl0KGYie2xhYmVsfSBj
+          b3VudD17Y291bnR9IikKICAgIHJldHVybiB0ZXh0LnJlcGxhY2Uob2xkLCBuZXcsIDEpCgphZ2VudCA9IFBhdGgoInNjcmlwdHMv
+          YWdlbnQtYWItYmVuY2htYXJrLnRzIikKdGV4dCA9IGFnZW50LnJlYWRfdGV4dCgpCnRleHQgPSByZXBsYWNlX29uY2UoCiAgICB0
+          ZXh0LAogICAgJycndHlwZSBQcm92aWRlclJlc3VsdCA9IHsKICBvdXRwdXQ6IEFnZW50QWJNb2RlbE91dHB1dDsKICB1c2FnZTog
+          UHJvdmlkZXJVc2FnZTsKICBsYXRlbmN5TXM6IG51bWJlcjsKfTsnJycsCiAgICAnJyd0eXBlIFByb3ZpZGVyUmVzdWx0ID0gewog
+          IG91dHB1dDogQWdlbnRBYk1vZGVsT3V0cHV0OwogIHVzYWdlOiBQcm92aWRlclVzYWdlOwogIGxhdGVuY3lNczogbnVtYmVyOwog
+          IGZvcm1hdFJldHJpZXM6IG51bWJlcjsKfTsnJycsCiAgICAiUHJvdmlkZXJSZXN1bHQgdHlwZSIsCikKdGV4dCA9IHJlcGxhY2Vf
+          b25jZSgKICAgIHRleHQsCiAgICAnJycgICAgIlJldHVybiBvbmUgSlNPTiBvYmplY3Qgd2l0aCBleGFjdGx5IHRoZXNlIGZpZWxk
+          czoiLAogICAgJ3siYW5zd2VyIjoiLi4uIiwiYWJzdGFpbiI6ZmFsc2UsImNpdGF0aW9ucyI6WyIuLi4iXSwiY2xhaW1zIjpbeyJ0
+          ZXh0IjoiLi4uIiwiY2l0YXRpb25zIjpbIi4uLiJdfV19JywKICAgICJVc2Ugb25seSBjaXRhdGlvbiBpZGVudGlmaWVycyB0aGF0
+          IGFwcGVhciB2ZXJiYXRpbSBpbiB0aGUgc3VwcGxpZWQgY29udGV4dC4iLCcnJywKICAgICcnJyAgICAiUmV0dXJuIG9uZSBjb21w
+          bGV0ZSBKU09OIG9iamVjdCBvbmx5LCB3aXRoIG5vIG1hcmtkb3duIG9yIHRleHQgb3V0c2lkZSBKU09OLiIsCiAgICAiS2VlcCBh
+          bnN3ZXIgdW5kZXIgMTIwIHdvcmRzIGFuZCB1c2UgYXQgbW9zdCBmb3VyIGNvbmNpc2UgY2xhaW1zIHNvIHRoZSBKU09OIGFsd2F5
+          cyBmaXRzIHRoZSBvdXRwdXQgYnVkZ2V0LiIsCiAgICAiUmV0dXJuIGV4YWN0bHkgdGhlc2UgZmllbGRzOiIsCiAgICAneyJhbnN3
+          ZXIiOiIuLi4iLCJhYnN0YWluIjpmYWxzZSwiY2l0YXRpb25zIjpbIi4uLiJdLCJjbGFpbXMiOlt7InRleHQiOiIuLi4iLCJjaXRh
+          dGlvbnMiOlsiLi4uIl19XX0nLAogICAgIlVzZSBvbmx5IGNpdGF0aW9uIGlkZW50aWZpZXJzIHRoYXQgYXBwZWFyIHZlcmJhdGlt
+          IGluIHRoZSBzdXBwbGllZCBjb250ZXh0LiIsJycnLAogICAgImV2YWx1YXRpb24gcHJvbXB0IGNvbnRyYWN0IiwKKQppbnZva2Vf
+          c3RhcnQgPSB0ZXh0LmluZGV4KCJhc3luYyBmdW5jdGlvbiBpbnZva2VQcm92aWRlcigiKQpydW5fYXJtX3N0YXJ0ID0gdGV4dC5p
+          bmRleCgiXG5hc3luYyBmdW5jdGlvbiBydW5Bcm0oIiwgaW52b2tlX3N0YXJ0KQpyZXBsYWNlbWVudCA9IHInJydhc3luYyBmdW5j
+          dGlvbiBpbnZva2VQcm92aWRlcigKICB0YXNrOiBBZ2VudEFiVGFzaywKICBpbnB1dDogQXJtSW5wdXQsCiAgY29uZmlnOiBSZXR1
+          cm5UeXBlPHR5cGVvZiBiZW5jaG1hcmtQcmVyZXF1aXNpdGVzPiwKKTogUHJvbWlzZTxQcm92aWRlclJlc3VsdD4gewogIGNvbnN0
+          IGJhc2VQcm9tcHQgPSBldmFsdWF0aW9uUHJvbXB0KHRhc2ssIGlucHV0LmNvbnRleHQpOwogIGxldCB0b3RhbExhdGVuY3lNcyA9
+          IDA7CiAgbGV0IHRvdGFsUHJvbXB0VG9rZW5zOiBudW1iZXIgfCBudWxsID0gbnVsbDsKICBsZXQgdG90YWxDb21wbGV0aW9uVG9r
+          ZW5zOiBudW1iZXIgfCBudWxsID0gbnVsbDsKCiAgZm9yIChsZXQgYXR0ZW1wdCA9IDA7IGF0dGVtcHQgPCAyOyBhdHRlbXB0ICs9
+          IDEpIHsKICAgIGNvbnN0IHByb21wdCA9CiAgICAgIGF0dGVtcHQgPT09IDAKICAgICAgICA/IGJhc2VQcm9tcHQKICAgICAgICA6
+          IGAke2Jhc2VQcm9tcHR9XG5cbkZPUk1BVCBSRVRSWTogVGhlIHByaW9yIGNvbXBsZXRpb24gd2FzIG5vdCBhIGNvbXBsZXRlIHZh
+          bGlkIEpTT04gb2JqZWN0LiBSZXR1cm4gdGhlIHNhbWUgYW5zd2VyIHRhc2sgYWdhaW4gYXMgZXhhY3RseSBvbmUgY29tcGxldGUg
+          SlNPTiBvYmplY3QsIG5vIG1hcmtkb3duLCBubyBjb21tZW50YXJ5LCBhbmQga2VlcCBpdCBjb25jaXNlLmA7CiAgICBjb25zdCBz
+          dGFydGVkID0gcGVyZm9ybWFuY2Uubm93KCk7CiAgICBjb25zdCByZXNwb25zZSA9IGF3YWl0IGZldGNoKGAke2NvbmZpZy5wcm92
+          aWRlckJhc2VVcmx9L2NoYXQvY29tcGxldGlvbnNgLCB7CiAgICAgIG1ldGhvZDogIlBPU1QiLAogICAgICBoZWFkZXJzOiB7CiAg
+          ICAgICAgLi4uKGNvbmZpZy5wcm92aWRlckFwaUtleQogICAgICAgICAgPyB7IGF1dGhvcml6YXRpb246IGBCZWFyZXIgJHtjb25m
+          aWcucHJvdmlkZXJBcGlLZXl9YCB9CiAgICAgICAgICA6IHt9KSwKICAgICAgICAiY29udGVudC10eXBlIjogImFwcGxpY2F0aW9u
+          L2pzb24iLAogICAgICB9LAogICAgICBib2R5OiBKU09OLnN0cmluZ2lmeSh7CiAgICAgICAgbW9kZWw6IGNvbmZpZy5wcm92aWRl
+          ck1vZGVsLAogICAgICAgIHRlbXBlcmF0dXJlOiBjb25maWcudGVtcGVyYXR1cmUsCiAgICAgICAgbWF4X3Rva2VuczogY29uZmln
+          Lm1heE91dHB1dFRva2VucywKICAgICAgICBtZXNzYWdlczogWwogICAgICAgICAgewogICAgICAgICAgICByb2xlOiAic3lzdGVt
+          IiwKICAgICAgICAgICAgY29udGVudDoKICAgICAgICAgICAgICAiWW91IGFyZSBhIGNvbnRyb2xsZWQgZXZhbHVhdGlvbiBhc3Np
+          c3RhbnQuIEZvbGxvdyB0aGUgY2FsbGVyJ3MgSlNPTiBjb250cmFjdCBhbmQgbmV2ZXIgdXNlIGtub3dsZWRnZSBvdXRzaWRlIHRo
+          ZSBzdXBwbGllZCBjb250ZXh0LiIsCiAgICAgICAgICB9LAogICAgICAgICAgeyByb2xlOiAidXNlciIsIGNvbnRlbnQ6IHByb21w
+          dCB9LAogICAgICAgIF0sCiAgICAgIH0pLAogICAgICBzaWduYWw6IEFib3J0U2lnbmFsLnRpbWVvdXQoMTIwXzAwMCksCiAgICB9
+          KTsKICAgIHRvdGFsTGF0ZW5jeU1zICs9IHBlcmZvcm1hbmNlLm5vdygpIC0gc3RhcnRlZDsKICAgIGNvbnN0IHJlc3BvbnNlVGV4
+          dCA9IGF3YWl0IHJlc3BvbnNlLnRleHQoKTsKICAgIGlmICghcmVzcG9uc2Uub2spIHsKICAgICAgdGhyb3cgbmV3IEVycm9yKAog
+          ICAgICAgIGBQcm92aWRlciByZXF1ZXN0ICR7cmVzcG9uc2Uuc3RhdHVzfTogJHtyZXNwb25zZVRleHQuc2xpY2UoMCwgNTAwKX1g
+          LAogICAgICApOwogICAgfQogICAgY29uc3QgYm9keSA9IEpTT04ucGFyc2UocmVzcG9uc2VUZXh0KSBhcyBSZWNvcmQ8c3RyaW5n
+          LCB1bmtub3duPjsKICAgIGNvbnN0IGNob2ljZXMgPSBBcnJheS5pc0FycmF5KGJvZHkuY2hvaWNlcykgPyBib2R5LmNob2ljZXMg
+          OiBbXTsKICAgIGNvbnN0IGZpcnN0ID0gY2hvaWNlc1swXSBhcyBSZWNvcmQ8c3RyaW5nLCB1bmtub3duPiB8IHVuZGVmaW5lZDsK
+          ICAgIGNvbnN0IG1lc3NhZ2UgPSBmaXJzdD8ubWVzc2FnZSBhcyBSZWNvcmQ8c3RyaW5nLCB1bmtub3duPiB8IHVuZGVmaW5lZDsK
+          ICAgIGNvbnN0IGNvbnRlbnQgPQogICAgICB0eXBlb2YgbWVzc2FnZT8uY29udGVudCA9PT0gInN0cmluZyIgPyBtZXNzYWdlLmNv
+          bnRlbnQgOiBudWxsOwogICAgaWYgKCFjb250ZW50KSB0aHJvdyBuZXcgRXJyb3IoIlByb3ZpZGVyIHJldHVybmVkIG5vIHRleHQg
+          Y29tcGxldGlvbi4iKTsKICAgIGNvbnN0IHVzYWdlID0gKGJvZHkudXNhZ2UgPz8ge30pIGFzIFJlY29yZDxzdHJpbmcsIHVua25v
+          d24+OwogICAgY29uc3QgcHJvbXB0VG9rZW5zID0KICAgICAgdHlwZW9mIHVzYWdlLnByb21wdF90b2tlbnMgPT09ICJudW1iZXIi
+          ID8gdXNhZ2UucHJvbXB0X3Rva2VucyA6IG51bGw7CiAgICBjb25zdCBjb21wbGV0aW9uVG9rZW5zID0KICAgICAgdHlwZW9mIHVz
+          YWdlLmNvbXBsZXRpb25fdG9rZW5zID09PSAibnVtYmVyIgogICAgICAgID8gdXNhZ2UuY29tcGxldGlvbl90b2tlbnMKICAgICAg
+          ICA6IG51bGw7CiAgICBpZiAocHJvbXB0VG9rZW5zICE9PSBudWxsKSB7CiAgICAgIHRvdGFsUHJvbXB0VG9rZW5zID0gKHRvdGFs
+          UHJvbXB0VG9rZW5zID8/IDApICsgcHJvbXB0VG9rZW5zOwogICAgfQogICAgaWYgKGNvbXBsZXRpb25Ub2tlbnMgIT09IG51bGwp
+          IHsKICAgICAgdG90YWxDb21wbGV0aW9uVG9rZW5zID0gKHRvdGFsQ29tcGxldGlvblRva2VucyA/PyAwKSArIGNvbXBsZXRpb25U
+          b2tlbnM7CiAgICB9CiAgICB0cnkgewogICAgICByZXR1cm4gewogICAgICAgIG91dHB1dDogcGFyc2VNb2RlbE91dHB1dChjb250
+          ZW50KSwKICAgICAgICB1c2FnZTogewogICAgICAgICAgcHJvbXB0VG9rZW5zOiB0b3RhbFByb21wdFRva2VucywKICAgICAgICAg
+          IGNvbXBsZXRpb25Ub2tlbnM6IHRvdGFsQ29tcGxldGlvblRva2VucywKICAgICAgICB9LAogICAgICAgIGxhdGVuY3lNczogdG90
+          YWxMYXRlbmN5TXMsCiAgICAgICAgZm9ybWF0UmV0cmllczogYXR0ZW1wdCwKICAgICAgfTsKICAgIH0gY2F0Y2ggKGVycm9yKSB7
+          CiAgICAgIGlmIChhdHRlbXB0ID09PSAwKSBjb250aW51ZTsKICAgICAgY29uc3QgZGV0YWlsID0gZXJyb3IgaW5zdGFuY2VvZiBF
+          cnJvciA/IGVycm9yLm1lc3NhZ2UgOiBTdHJpbmcoZXJyb3IpOwogICAgICB0aHJvdyBuZXcgRXJyb3IoCiAgICAgICAgYFByb3Zp
+          ZGVyIHJlc3BvbnNlIHJlbWFpbmVkIGludmFsaWQgYWZ0ZXIgb25lIGZvcm1hdCByZXRyeTogJHtkZXRhaWx9YCwKICAgICAgKTsK
+          ICAgIH0KICB9CiAgdGhyb3cgbmV3IEVycm9yKCJQcm92aWRlciBmb3JtYXQgcmV0cnkgbG9vcCBleGhhdXN0ZWQgdW5leHBlY3Rl
+          ZGx5LiIpOwp9CicnJwp0ZXh0ID0gdGV4dFs6aW52b2tlX3N0YXJ0XSArIHJlcGxhY2VtZW50ICsgdGV4dFtydW5fYXJtX3N0YXJ0
+          Ol0KdGV4dCA9IHJlcGxhY2Vfb25jZSgKICAgIHRleHQsCiAgICAnJycgICAgcmV0cmlldmFsTWV0YWRhdGE6IGlucHV0LnJldHJp
+          ZXZhbE1ldGFkYXRhLAogICAgbW9kZWxPdXRwdXQ6IHByb3ZpZGVyLm91dHB1dCwnJycsCiAgICAnJycgICAgcmV0cmlldmFsTWV0
+          YWRhdGE6IHsKICAgICAgLi4uaW5wdXQucmV0cmlldmFsTWV0YWRhdGEsCiAgICAgIG1vZGVsRm9ybWF0UmV0cmllczogcHJvdmlk
+          ZXIuZm9ybWF0UmV0cmllcywKICAgIH0sCiAgICBtb2RlbE91dHB1dDogcHJvdmlkZXIub3V0cHV0LCcnJywKICAgICJyZWNvcmQg
+          bW9kZWwgZm9ybWF0IHJldHJpZXMiLAopCmFnZW50LndyaXRlX3RleHQodGV4dCkKCnNjYWxlID0gUGF0aCgic2NyaXB0cy9sb2Fk
+          LXNjYWxlLWJlbmNobWFyay50cyIpCnRleHQgPSBzY2FsZS5yZWFkX3RleHQoKQp0ZXh0ID0gcmVwbGFjZV9vbmNlKAogICAgdGV4
+          dCwKICAgICcnJyAgYXdhaXQgY2xpZW50LnF1ZXJ5KCJkcm9wIGluZGV4IGlmIGV4aXN0cyB1bml0X2VtYmVkZGluZ3NfdmVjdG9y
+          X2lkeCIpOwp9JycnLAogICAgJycnICBhd2FpdCBjbGllbnQucXVlcnkoImRyb3AgaW5kZXggaWYgZXhpc3RzIHVuaXRfZW1iZWRk
+          aW5nc192ZWN0b3JfaWR4Iik7CiAgYXdhaXQgY2xpZW50LnF1ZXJ5KCJkcm9wIGluZGV4IGlmIGV4aXN0cyB1bml0X2VtYmVkZGlu
+          Z3NfNjRfdmVjdG9yX2lkeCIpOwogIGF3YWl0IGNsaWVudC5xdWVyeSgiZHJvcCBpbmRleCBpZiBleGlzdHMgdW5pdF9lbWJlZGRp
+          bmdzXzM4NF92ZWN0b3JfaWR4Iik7CiAgY29uc3QgcmVtYWluaW5nQW5uSW5kZXhlcyA9IGF3YWl0IGNsaWVudC5xdWVyeTx7IGlu
+          ZGV4bmFtZTogc3RyaW5nIH0+KAogICAgYHNlbGVjdCBpbmRleG5hbWUKICAgICAgIGZyb20gcGdfaW5kZXhlcwogICAgICB3aGVy
+          ZSBzY2hlbWFuYW1lPSdwdWJsaWMnCiAgICAgICAgYW5kIHRhYmxlbmFtZT0ndW5pdF9lbWJlZGRpbmdzJwogICAgICAgIGFuZCBs
+          b3dlcihpbmRleGRlZikgbGlrZSAnJSB1c2luZyBobnN3ICUnYCwKICApOwogIGlmIChyZW1haW5pbmdBbm5JbmRleGVzLnJvd0Nv
+          dW50ICE9PSAwKSB7CiAgICB0aHJvdyBuZXcgRXJyb3IoCiAgICAgIGBTY2FsZSBiZW5jaG1hcmsgZXhhY3QtdmVjdG9yIG1vZGUg
+          c3RpbGwgaGFzIEhOU1cgaW5kZXhlczogJHtyZW1haW5pbmdBbm5JbmRleGVzLnJvd3MKICAgICAgICAubWFwKChyb3cpID0+IHJv
+          dy5pbmRleG5hbWUpCiAgICAgICAgLmpvaW4oIiwgIil9YCwKICAgICk7CiAgfQp9JycnLAogICAgImV4YWN0IHZlY3RvciBpbmRl
+          eCBwcmVwYXJhdGlvbiIsCikKdGV4dCA9IHJlcGxhY2Vfb25jZSgKICAgIHRleHQsCiAgICAnIlRoZSBkaXNwb3NhYmxlIHNjYWxl
+          IGRhdGFiYXNlIHJlbW92ZXMgdGhlIEhOU1cgaW5kZXggYmVmb3JlIGZpeHR1cmUgbG9hZGluZyBzbyBnZW5lcmFsIDFLLTEwMEsg
+          c2NhbGUgZXZpZGVuY2UgaXMgbm90IGNvbmZsYXRlZCB3aXRoIEFOTiB0dW5pbmc7IEFOTiBzZWxlY3Rpb24gaXMgZXZhbHVhdGVk
+          IHNlcGFyYXRlbHkuIiwnLAogICAgJyJUaGUgZGlzcG9zYWJsZSBzY2FsZSBkYXRhYmFzZSByZW1vdmVzIGFsbCBITlNXIGluZGV4
+          ZXMgZnJvbSB1bml0X2VtYmVkZGluZ3MgYmVmb3JlIGZpeHR1cmUgbG9hZGluZyBzbyBnZW5lcmFsIDFLLTEwMEsgc2NhbGUgZXZp
+          ZGVuY2UgaXMgbm90IGNvbmZsYXRlZCB3aXRoIEFOTiB0dW5pbmc7IEFOTiBzZWxlY3Rpb24gaXMgZXZhbHVhdGVkIHNlcGFyYXRl
+          bHkuIiwnLAogICAgInNjYWxlIEFOTiBsaW1pdGF0aW9uIHdvcmRpbmciLAopCnNjYWxlLndyaXRlX3RleHQodGV4dCkKCndvcmtm
+          bG93ID0gUGF0aCgiLmdpdGh1Yi93b3JrZmxvd3MvYWdlbnQtYWIueW1sIikKdGV4dCA9IHdvcmtmbG93LnJlYWRfdGV4dCgpCnRl
+          eHQgPSByZXBsYWNlX29uY2UoCiAgICB0ZXh0LAogICAgJ0FLUF9BR0VOVF9BQl9NQVhfT1VUUFVUX1RPS0VOUzogIjMyMCInLAog
+          ICAgJ0FLUF9BR0VOVF9BQl9NQVhfT1VUUFVUX1RPS0VOUzogIjUxMiInLAogICAgIkFnZW50IG91dHB1dCB0b2tlbiBidWRnZXQi
+          LAopCndvcmtmbG93LndyaXRlX3RleHQodGV4dCkK
+          PATCH
+          python /tmp/repair.py
           pnpm exec prettier --write \
             scripts/agent-ab-benchmark.ts \
             scripts/load-scale-benchmark.ts \
