@@ -533,28 +533,34 @@ async function insertEmbeddings(
   end: number,
 ): Promise<number> {
   if (start > end) return 0;
-  const { elapsedMs } = await timedQuery(
-    `insert into unit_embeddings(unit_id,generation_id,content_hash,embedding)
-     select
-       u.id,$4,
-       u.content_hash,
-       ('[' || (((i % 1000)::numeric / 1000)::text) || ',' ||
-         repeat('0.01,',62) || '0.01]')::vector(64)
-       from generate_series($5::int,$6::int) as generated(i)
-       join knowledge_documents d
-         on d.space_id=$1 and d.vault_id=$2 and d.external_id=$3 || i::text
-       join knowledge_units u
-         on u.document_id=d.id and u.space_id=$1 and u.vault_id=$2
-      on conflict (unit_id,generation_id) do nothing`,
-    [
-      fixture.spaceId,
-      fixture.vaultId,
-      fixture.externalPrefix,
-      fixture.embeddingGenerationId,
-      start,
-      end,
-    ],
-  );
+  const batchSize = 10_000;
+  let elapsedMs = 0;
+  for (let batchStart = start; batchStart <= end; batchStart += batchSize) {
+    const batchEnd = Math.min(end, batchStart + batchSize - 1);
+    const measured = await timedQuery(
+      `insert into unit_embeddings(unit_id,generation_id,content_hash,embedding)
+       select
+         u.id,$4,
+         u.content_hash,
+         ('[' || (((i % 1000)::numeric / 1000)::text) || ',' ||
+           repeat('0.01,',62) || '0.01]')::vector(64)
+         from generate_series($5::int,$6::int) as generated(i)
+         join knowledge_documents d
+           on d.space_id=$1 and d.vault_id=$2 and d.external_id=$3 || i::text
+         join knowledge_units u
+           on u.document_id=d.id and u.space_id=$1 and u.vault_id=$2
+        on conflict (unit_id,generation_id) do nothing`,
+      [
+        fixture.spaceId,
+        fixture.vaultId,
+        fixture.externalPrefix,
+        fixture.embeddingGenerationId,
+        batchStart,
+        batchEnd,
+      ],
+    );
+    elapsedMs += measured.elapsedMs;
+  }
   return elapsedMs;
 }
 
