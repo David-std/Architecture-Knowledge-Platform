@@ -7,7 +7,7 @@ import {
 import {
   Postgres,
   createKnowledgeProfileDraft,
-  recordKnowledgeProfileValidation,
+  recordKnowledgeProfileDryRun,
   resolveEffectiveKnowledgeProfile,
 } from "../src/index.js";
 
@@ -84,43 +84,57 @@ describe("knowledge profile registry integration", () => {
         expect(duplicate.id).toBe(firstDraft.id);
         expect(duplicate.profileHash).toBe(firstDraft.profileHash);
 
-        const validated = await recordKnowledgeProfileValidation(db, {
+        const firstValidation = await recordKnowledgeProfileDryRun(db, {
           spaceId,
           vaultId: firstVault.id,
           revisionId: firstDraft.id,
+          actorId,
           expectedCorpusRevision: "profile-test-corpus",
           compatibilityClass: "NON_BREAKING",
-          validationReport: { corpusRevision: "profile-test-corpus" },
+          affectedDocumentCount: 0,
+          report: { corpusRevision: "profile-test-corpus" },
+          corpusFingerprintBefore: "fingerprint-1",
+          corpusFingerprintAfter: "fingerprint-1",
         });
-        expect(validated.status).toBe("VALIDATED");
-        expect(validated.compatibilityClass).toBe("NON_BREAKING");
+        expect(firstValidation.revision.status).toBe("VALIDATED");
+        expect(firstValidation.revision.compatibilityClass).toBe("NON_BREAKING");
 
         await db.pool.query(
           "update vaults set current_revision='profile-test-corpus-2' where id=$1",
           [firstVault.id],
         );
         await expect(
-          recordKnowledgeProfileValidation(db, {
+          recordKnowledgeProfileDryRun(db, {
             spaceId,
             vaultId: firstVault.id,
             revisionId: firstDraft.id,
+            actorId,
             expectedCorpusRevision: "profile-test-corpus",
             compatibilityClass: "NON_BREAKING",
-            validationReport: { corpusRevision: "profile-test-corpus" },
+            affectedDocumentCount: 0,
+            report: { corpusRevision: "profile-test-corpus" },
+            corpusFingerprintBefore: "fingerprint-1",
+            corpusFingerprintAfter: "fingerprint-1",
           }),
         ).rejects.toThrow("CONTEXT_REVISION_CHANGED");
 
-        const revalidated = await recordKnowledgeProfileValidation(db, {
+        const revalidated = await recordKnowledgeProfileDryRun(db, {
           spaceId,
           vaultId: firstVault.id,
           revisionId: firstDraft.id,
+          actorId,
           expectedCorpusRevision: "profile-test-corpus-2",
           compatibilityClass: "MIGRATION_REQUIRED",
-          validationReport: { corpusRevision: "profile-test-corpus-2" },
+          affectedDocumentCount: 0,
+          report: { corpusRevision: "profile-test-corpus-2" },
+          corpusFingerprintBefore: "fingerprint-2",
+          corpusFingerprintAfter: "fingerprint-2",
         });
-        expect(revalidated.id).toBe(firstDraft.id);
-        expect(revalidated.status).toBe("REVIEW_REQUIRED");
-        expect(revalidated.compatibilityClass).toBe("MIGRATION_REQUIRED");
+        expect(revalidated.revision.id).toBe(firstDraft.id);
+        expect(revalidated.revision.status).toBe("REVIEW_REQUIRED");
+        expect(revalidated.revision.compatibilityClass).toBe(
+          "MIGRATION_REQUIRED",
+        );
 
         const nextProfile = {
           ...DEFAULT_KNOWLEDGE_PROFILE_V1,
@@ -181,6 +195,10 @@ describe("knowledge profile registry integration", () => {
       } finally {
         await db.pool.query(
           "update vaults set active_knowledge_profile_revision_id=null where id=any($1::uuid[])",
+          [[firstVault.id, secondVault.id]],
+        );
+        await db.pool.query(
+          "delete from schema_dry_runs where vault_id=any($1::uuid[])",
           [[firstVault.id, secondVault.id]],
         );
         await db.pool.query("delete from vaults where id=any($1::uuid[])", [
