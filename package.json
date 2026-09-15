@@ -35,7 +35,7 @@
     "benchmark:retrieval:curated": "tsx scripts/retrieval_benchmark_curated.ts",
     "benchmark:retrieval:runtime": "tsx scripts/runtime-retrieval-benchmark.ts",
     "benchmark:retrieval:registered": "tsx scripts/registered-corpus-retrieval-benchmark.ts",
-    "benchmark:context-tokenization": "tsx scripts/context-tokenizer-baseline.ts",
+    "benchmark:context-tokenization": "pnpm --filter @akp/retrieval exec tsx scripts/context-tokenizer-baseline.ts",
     "benchmark:agent-ab": "tsx scripts/agent-ab-benchmark.ts",
     "benchmark:scale": "node --expose-gc node_modules/tsx/dist/cli.mjs scripts/load-scale-benchmark.ts",
     "benchmark:concurrency": "tsx scripts/concurrency-benchmark.ts"
