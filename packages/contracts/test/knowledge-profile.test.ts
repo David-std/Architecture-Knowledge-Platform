@@ -36,32 +36,39 @@ describe("KnowledgeProfileV1", () => {
       "note",
       "procedure",
     ]);
-    expect(parsed.lifecycles["procedure-flow"]?.states).toContain("VALIDATED");
+    expect(parsed.lifecycles["procedure-flow"]?.states).toContain(
+      "VALIDATED",
+    );
     expect(parsed.relationTypes.follows?.from).toEqual(["procedure"]);
   });
 
-  it("canonicalizes semantic profiles independently of object key order", () => {
-    const baseline = canonicalKnowledgeProfileJson(DEFAULT_KNOWLEDGE_PROFILE_V1);
-    const reordered = {
-      freshnessPolicy: DEFAULT_KNOWLEDGE_PROFILE_V1.freshnessPolicy,
-      promotionPolicy: DEFAULT_KNOWLEDGE_PROFILE_V1.promotionPolicy,
-      retrievalPolicy: DEFAULT_KNOWLEDGE_PROFILE_V1.retrievalPolicy,
-      artifactContracts: DEFAULT_KNOWLEDGE_PROFILE_V1.artifactContracts,
-      reviewPolicies: DEFAULT_KNOWLEDGE_PROFILE_V1.reviewPolicies,
-      evidencePolicies: DEFAULT_KNOWLEDGE_PROFILE_V1.evidencePolicies,
-      lifecycles: DEFAULT_KNOWLEDGE_PROFILE_V1.lifecycles,
-      relationTypes: DEFAULT_KNOWLEDGE_PROFILE_V1.relationTypes,
-      knowledgeKinds: Object.fromEntries(
-        Object.entries(DEFAULT_KNOWLEDGE_PROFILE_V1.knowledgeKinds).reverse(),
-      ),
-      displayName: DEFAULT_KNOWLEDGE_PROFILE_V1.displayName,
-      version: DEFAULT_KNOWLEDGE_PROFILE_V1.version,
-      profileId: DEFAULT_KNOWLEDGE_PROFILE_V1.profileId,
-      schemaVersion: DEFAULT_KNOWLEDGE_PROFILE_V1.schemaVersion,
-      modelRoleConstraints: DEFAULT_KNOWLEDGE_PROFILE_V1.modelRoleConstraints,
-    };
-    expect(canonicalKnowledgeProfileJson(reordered)).toBe(baseline);
-  });
+  it(
+    "canonicalizes semantic profiles independently of object key order",
+    () => {
+      const baseline = canonicalKnowledgeProfileJson(
+        DEFAULT_KNOWLEDGE_PROFILE_V1,
+      );
+      const reordered = {
+        freshnessPolicy: DEFAULT_KNOWLEDGE_PROFILE_V1.freshnessPolicy,
+        promotionPolicy: DEFAULT_KNOWLEDGE_PROFILE_V1.promotionPolicy,
+        retrievalPolicy: DEFAULT_KNOWLEDGE_PROFILE_V1.retrievalPolicy,
+        artifactContracts: DEFAULT_KNOWLEDGE_PROFILE_V1.artifactContracts,
+        reviewPolicies: DEFAULT_KNOWLEDGE_PROFILE_V1.reviewPolicies,
+        evidencePolicies: DEFAULT_KNOWLEDGE_PROFILE_V1.evidencePolicies,
+        lifecycles: DEFAULT_KNOWLEDGE_PROFILE_V1.lifecycles,
+        relationTypes: DEFAULT_KNOWLEDGE_PROFILE_V1.relationTypes,
+        knowledgeKinds: Object.fromEntries(
+          Object.entries(DEFAULT_KNOWLEDGE_PROFILE_V1.knowledgeKinds).reverse(),
+        ),
+        displayName: DEFAULT_KNOWLEDGE_PROFILE_V1.displayName,
+        version: DEFAULT_KNOWLEDGE_PROFILE_V1.version,
+        profileId: DEFAULT_KNOWLEDGE_PROFILE_V1.profileId,
+        schemaVersion: DEFAULT_KNOWLEDGE_PROFILE_V1.schemaVersion,
+        modelRoleConstraints: DEFAULT_KNOWLEDGE_PROFILE_V1.modelRoleConstraints,
+      };
+      expect(canonicalKnowledgeProfileJson(reordered)).toBe(baseline);
+    },
+  );
 
   it("rejects relations that reference unknown knowledge kinds", () => {
     const invalid = structuredClone(NEUTRAL_KNOWLEDGE_PROFILE_V1);
