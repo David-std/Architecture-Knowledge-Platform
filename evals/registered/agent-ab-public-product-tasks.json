@@ -9,7 +9,8 @@
       "query": "Which product document defines publication recovery and rollback behavior?",
       "intent": "EXACT_LOOKUP",
       "mandatoryTerms": ["Runtime flows"],
-      "forbiddenTerms": []
+      "forbiddenTerms": [],
+      "retrievalQuery": "publication recovery"
     },
     {
       "id": "agent-public-concept-canonical-authority",
@@ -17,7 +18,8 @@
       "query": "What is canonical knowledge in the platform, and which major stores are rebuildable projections?",
       "intent": "CONCEPTUAL",
       "mandatoryTerms": ["approved Markdown", "Git", "rebuildable projections"],
-      "forbiddenTerms": []
+      "forbiddenTerms": [],
+      "retrievalQuery": "canonical architecture"
     },
     {
       "id": "agent-public-workflow-publication-recovery",
@@ -29,7 +31,8 @@
         "CHANGES_REQUESTED",
         "PUBLICATION_RECOVERY_REQUIRED"
       ],
-      "forbiddenTerms": []
+      "forbiddenTerms": [],
+      "retrievalQuery": "publication recovery"
     },
     {
       "id": "agent-public-source-sanitized-packet",
@@ -37,7 +40,8 @@
       "query": "Which three kinds of content are deliberately omitted from sample ContextPacket files in a sanitized audit bundle?",
       "intent": "SOURCE_VERIFICATION",
       "mandatoryTerms": ["query text", "citations", "section content"],
-      "forbiddenTerms": []
+      "forbiddenTerms": [],
+      "retrievalQuery": "sanitized audit bundle"
     },
     {
       "id": "agent-public-project-code-health-boundary",
@@ -45,7 +49,8 @@
       "query": "When implementing health endpoints, what distinction between liveness and readiness must the code preserve?",
       "intent": "PROJECT_CODE",
       "mandatoryTerms": ["API process", "required runtime dependencies"],
-      "forbiddenTerms": []
+      "forbiddenTerms": [],
+      "retrievalQuery": "runtime operations"
     },
     {
       "id": "agent-public-no-answer-cloud-region",

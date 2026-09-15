@@ -249,6 +249,7 @@ function packetContext(packet: ContextPacket): ArmInput {
       requiredActions: packet.requiredActions ?? [],
       gaps: packet.gaps ?? [],
       conflicts: packet.conflicts ?? [],
+      sourceSections: packet.sections?.length ?? 0,
     },
   };
 }
@@ -258,11 +259,12 @@ async function retrieveArmA(
   config: ReturnType<typeof benchmarkPrerequisites>,
 ): Promise<ArmInput> {
   const started = performance.now();
+  const retrievalQuery = task.retrievalQuery ?? task.query;
   const response = await postJson<SearchResponse>(
     `${config.apiUrl}/v1/search`,
     config.apiToken,
     {
-      query: task.query,
+      query: retrievalQuery,
       intent: task.intent,
       spaceId: config.spaceId,
       vaultIds: config.vaultIds,
@@ -274,6 +276,7 @@ async function retrieveArmA(
   );
   const result = rawSearchContext(response);
   result.retrievalLatencyMs = performance.now() - started;
+  result.retrievalMetadata.retrievalQuery = retrievalQuery;
   return result;
 }
 
@@ -282,11 +285,12 @@ async function retrieveArmB(
   config: ReturnType<typeof benchmarkPrerequisites>,
 ): Promise<ArmInput> {
   const started = performance.now();
+  const retrievalQuery = task.retrievalQuery ?? task.query;
   const packet = await postJson<ContextPacket>(
     `${config.apiUrl}/v1/context`,
     config.apiToken,
     {
-      query: task.query,
+      query: retrievalQuery,
       intent: task.intent,
       spaceId: config.spaceId,
       vaultIds: config.vaultIds,
@@ -300,6 +304,7 @@ async function retrieveArmB(
   );
   const result = packetContext(packet);
   result.retrievalLatencyMs = performance.now() - started;
+  result.retrievalMetadata.retrievalQuery = retrievalQuery;
   return result;
 }
 
@@ -525,6 +530,36 @@ async function main(): Promise<void> {
             ] as const);
       for (const [arm, input] of ordered) {
         observations.push(await runArm(arm, task, input, config));
+      }
+    }
+    const supportedTaskIds = new Set([
+      "agent-public-exact-runtime-flows",
+      "agent-public-concept-canonical-authority",
+      "agent-public-workflow-publication-recovery",
+      "agent-public-source-sanitized-packet",
+      "agent-public-project-code-health-boundary",
+    ]);
+    for (const observation of observations) {
+      if (!supportedTaskIds.has(observation.taskId)) continue;
+      if (
+        observation.arm === "A_RAW_SEARCH" &&
+        (observation.contextTokens <= 0 ||
+          Number(observation.retrievalMetadata.hits ?? 0) <= 0)
+      ) {
+        throw new Error(
+          `Supported Agent A/B task ${observation.taskId} has no raw-search context.`,
+        );
+      }
+      if (
+        observation.arm === "B_AKP_CONTEXT_PACKET" &&
+        (Number(observation.retrievalMetadata.sourceSections ?? 0) <= 0 ||
+          stringArray(observation.retrievalMetadata.gaps).includes(
+            "No source-backed material matched the request.",
+          ))
+      ) {
+        throw new Error(
+          `Supported Agent A/B task ${observation.taskId} has no ContextPacket source material.`,
+        );
       }
     }
     const armA = observations.filter((item) => item.arm === "A_RAW_SEARCH");

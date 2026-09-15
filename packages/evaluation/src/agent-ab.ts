@@ -13,6 +13,7 @@ export interface AgentAbTask {
   id: string;
   category: AgentAbTaskCategory;
   query: string;
+  retrievalQuery?: string;
   intent:
     | "EXACT_LOOKUP"
     | "CONCEPTUAL"

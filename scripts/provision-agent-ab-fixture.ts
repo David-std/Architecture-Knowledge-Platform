@@ -50,7 +50,8 @@ async function main(): Promise<void> {
   try {
     for (const vault of manifest.vaults) {
       const vaultId = VAULT_IDS[vault.id];
-      if (!vaultId) throw new Error(`No live-comparison vault id for ${vault.id}`);
+      if (!vaultId)
+        throw new Error(`No live-comparison vault id for ${vault.id}`);
       const vaultKey = `agent-ab-${vault.id.replace(/^product-/u, "")}`;
       await db.pool.query(
         `insert into vaults(

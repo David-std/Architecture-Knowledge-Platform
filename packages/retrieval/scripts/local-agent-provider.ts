@@ -2,8 +2,7 @@ import { createServer } from "node:http";
 import { pipeline } from "@huggingface/transformers";
 
 const MODEL =
-  process.env.AKP_LOCAL_AGENT_MODEL ??
-  "onnx-community/Qwen2.5-0.5B-Instruct";
+  process.env.AKP_LOCAL_AGENT_MODEL ?? "onnx-community/Qwen2.5-0.5B-Instruct";
 const REVISION =
   process.env.AKP_LOCAL_AGENT_MODEL_REVISION ??
   "cc5cc01a65cc3ff17bdb73a7de33d879f62599b0";
@@ -92,8 +91,7 @@ const server = createServer(async (request, response) => {
     if (!messages) {
       return jsonResponse(response, 400, { error: "MESSAGES_REQUIRED" });
     }
-    const requestedModel =
-      typeof body.model === "string" ? body.model : MODEL;
+    const requestedModel = typeof body.model === "string" ? body.model : MODEL;
     if (requestedModel !== MODEL) {
       return jsonResponse(response, 400, {
         error: "MODEL_MISMATCH",
@@ -106,7 +104,8 @@ const server = createServer(async (request, response) => {
       ? Math.max(64, Math.min(512, Math.trunc(requestedMax)))
       : 320;
     const requestedTemperature = Number(body.temperature ?? 0);
-    const doSample = Number.isFinite(requestedTemperature) && requestedTemperature > 0;
+    const doSample =
+      Number.isFinite(requestedTemperature) && requestedTemperature > 0;
 
     const started = performance.now();
     const output = await generator(messages as never, {
