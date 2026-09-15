@@ -23,6 +23,19 @@ jobs:
           node-version: 24.20.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Fetch exact v0.3 baseline commit
+        shell: bash
+        run: |
+          git fetch --no-tags --depth=1 origin \
+            a6bdcc38fdf026d6c353db096799366865011022
+      - name: Generate v0.3 capability maturity baseline
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p reports/ci
+          AKP_P0_CAPABILITY_REPORT=reports/ci/p0-v0.3-capability-baseline.json \
+            pnpm benchmark:p0-baseline \
+            2>&1 | tee reports/ci/p0-v0.3-capability-baseline.log
       - run: pnpm build
       - run: docker compose up -d --wait postgres
       - run: pnpm db:migrate
