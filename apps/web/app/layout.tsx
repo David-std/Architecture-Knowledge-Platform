@@ -24,6 +24,7 @@ export default function RootLayout({
             <Link href="/evals">Evaluaciones</Link>
             <Link href="/admin/health">Salud</Link>
             <Link href="/admin/spaces">Espacios</Link>
+            <Link href="/admin/profiles">Perfiles</Link>
             <Link href="/admin/audit">Auditoría</Link>
             <Link href="/login">Sesión</Link>
           </nav>
