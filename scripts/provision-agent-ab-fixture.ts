@@ -112,8 +112,8 @@ async function main(): Promise<void> {
              id,space_id,vault_id,path,external_id,title,type,lifecycle,trust_tier,
              current_revision,body_cache,frontmatter,aliases,layer,content_hash,
              token_estimate,raw_links
-           ) values($1,$2,$3,$4,$5,$6,'concept','ACTIVE','HUMAN_REVIEWED',$7,$8,
-                    $9::jsonb,$10,'concept',$11,$12,'[]'::jsonb)`,
+           ) values($1,$2,$3,$4,$5,$6,'source','ACTIVE','HUMAN_REVIEWED',$7,$8,
+                    $9::jsonb,$10,'source',$11,$12,'[]'::jsonb)`,
           [
             documentId,
             SPACE_ID,
