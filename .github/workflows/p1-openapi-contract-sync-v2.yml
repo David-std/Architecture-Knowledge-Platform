@@ -1,0 +1,85 @@
+name: p1-openapi-contract-sync-v2
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  sync-contract:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'feat/v0.4-enterprise-context-workspace'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/v0.4-enterprise-context-workspace
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Build validated OpenAPI block from the guarded source
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          source_path = Path('.github/workflows/p1-openapi-contract-sync.yml')
+          source = source_path.read_text().splitlines()
+          opener = "          replacement = '''  /v1/schema/dry-run:"
+          closer = "          '''"
+          start = source.index(opener)
+          end = source.index(closer, start + 1)
+
+          runtime_lines = ['  /v1/schema/dry-run:']
+          for line in source[start + 1:end]:
+              if not line.startswith('          '):
+                  raise SystemExit('unexpected workflow block indentation')
+              runtime_lines.append(line[10:])
+
+          corrected = []
+          for line in runtime_lines:
+              if line.startswith('  /v1/schema/'):
+                  corrected.append(line)
+              elif line:
+                  corrected.append('  ' + line)
+              else:
+                  corrected.append(line)
+          replacement = '\n'.join(corrected) + '\n'
+
+          openapi = Path('contracts/openapi.yaml')
+          text = openapi.read_text()
+          start_marker = '  /v1/schema/dry-run:\n'
+          end_marker = '  /v1/indexes:\n'
+          if text.count(start_marker) != 1 or text.count(end_marker) != 1:
+              raise SystemExit('schema governance OpenAPI markers are not unique')
+          if '  /v1/schema/activate:\n' in text:
+              raise SystemExit('activation path already exists; refusing blind rewrite')
+          block_start = text.index(start_marker)
+          block_end = text.index(end_marker, block_start)
+          openapi.write_text(text[:block_start] + replacement + text[block_end:])
+          PY
+      - name: Format and validate contracts
+        run: |
+          pnpm exec prettier --write contracts/openapi.yaml contracts/knowledge-profile.schema.json
+          pnpm contracts:validate
+          pnpm exec prettier --check contracts/openapi.yaml contracts/knowledge-profile.schema.json
+      - name: Commit contract and remove temporary workflows
+        shell: bash
+        run: |
+          rm .github/workflows/p1-openapi-contract-sync.yml
+          rm .github/workflows/p1-openapi-contract-sync-v2.yml
+          git config user.name "David"
+          git config user.email "165101013+David-std@users.noreply.github.com"
+          git add contracts/openapi.yaml contracts/knowledge-profile.schema.json .github/workflows/p1-openapi-contract-sync.yml .github/workflows/p1-openapi-contract-sync-v2.yml
+          git diff --cached --check
+          git commit -m "docs(p1): document profile governance HTTP contract"
+          git push origin HEAD:feat/v0.4-enterprise-context-workspace
