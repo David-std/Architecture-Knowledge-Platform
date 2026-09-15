@@ -244,14 +244,13 @@ export function effectiveReviewPolicyForKinds(
   });
 }
 
-function effectiveReviewPolicy(
-  input: KnowledgeCompilerInputType,
+export function effectiveReviewKinds(
   result: KnowledgeCompilerResultType,
-) {
+): string[] {
   const materialCandidateIds = new Set(
     result.proposedFileChanges.map((change) => change.candidateId),
   );
-  const kinds = [
+  return [
     ...new Set(
       result.knowledgeCandidates
         .filter((candidate) =>
@@ -262,7 +261,16 @@ function effectiveReviewPolicy(
         .map((candidate) => candidate.kind),
     ),
   ];
-  return effectiveReviewPolicyForKinds(input.knowledgeProfile, kinds);
+}
+
+function effectiveReviewPolicy(
+  input: KnowledgeCompilerInputType,
+  result: KnowledgeCompilerResultType,
+) {
+  return effectiveReviewPolicyForKinds(
+    input.knowledgeProfile,
+    effectiveReviewKinds(result),
+  );
 }
 
 function assertEvidenceReferences(
@@ -582,6 +590,7 @@ export function resultToCompilationPlan(
       reasons: entry.reasons,
     })),
     knowledgeCandidates: result.knowledgeCandidates,
+    reviewKinds: effectiveReviewKinds(result),
     contradictions: result.contradictions,
     reviewPolicy: effectiveReviewPolicy(input, result),
     warnings: result.warnings,

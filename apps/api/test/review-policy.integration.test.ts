@@ -10,6 +10,7 @@ import {
   canonicalKnowledgeProfileJson,
 } from "@akp/contracts/knowledge-profile";
 import { Postgres, grantVaultMembership } from "@akp/postgres";
+import { reviewPolicyState } from "../src/review-policy.js";
 
 const spaceId = "00000000-0000-0000-0000-000000000003";
 const adminId = "00000000-0000-0000-0000-000000000002";
@@ -501,5 +502,26 @@ describe("KnowledgeProfile review policy integration", () => {
         profileRevisionId: newRevisionId,
       },
     });
+  });
+  it("revalidates a compiler review with the exact material kind snapshot", () => {
+    const state = reviewPolicyState({
+      impact_manifest: {
+        reviewContext: {
+          reviewKinds: ["note"],
+          knowledgeCandidates: [{ kind: "note" }, { kind: "procedure" }],
+          reviewPolicy: {
+            required: true,
+            minimumApprovals: 2,
+            allowedRoles: ["REVIEWER"],
+            profileSource: "DURABLE_REVISION",
+            profileRevisionId: activeProfileRevisionId,
+            profileHash: "a".repeat(64),
+            profileId: "neutral-notes",
+            profileVersion: "1.0.1-review-policy",
+          },
+        },
+      },
+    });
+    expect(state.kinds).toEqual(["note"]);
   });
 });

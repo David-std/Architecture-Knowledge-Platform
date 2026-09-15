@@ -218,4 +218,40 @@ describe("KnowledgeProfile runtime policy enforcement", () => {
       profileId: "neutral-notes",
     });
   });
+
+  it("snapshots only the kinds that materially produced the review policy", () => {
+    const profile = structuredClone(NEUTRAL_KNOWLEDGE_PROFILE_V1);
+    profile.reviewPolicies["procedure-review"] = {
+      required: true,
+      minimumApprovals: 2,
+      allowedRoles: ["ARCHITECT"],
+    };
+    profile.knowledgeKinds.procedure!.reviewPolicy = "procedure-review";
+    const input = inputFor(profile, "MACHINE_SUPPORTED");
+    const result = resultFor(input, "note");
+    result.knowledgeCandidates.push({
+      candidateId: "orphan-procedure",
+      kind: "procedure",
+      statement: "Document the cache invalidation procedure for operators.",
+      scope: "Operational cache maintenance.",
+      evidenceIds: [EVIDENCE_ID],
+      confidence: 0.8,
+      proposedAction: "CREATE",
+    });
+
+    const plan = resultToCompilationPlan(input, result);
+    expect(
+      plan.reviewContext?.knowledgeCandidates.map(
+        (candidate) => candidate.kind,
+      ),
+    ).toEqual(["note", "procedure"]);
+    expect(plan.reviewContext?.reviewKinds).toEqual(["note"]);
+    expect(plan.reviewContext?.reviewPolicy).toMatchObject({
+      minimumApprovals: 1,
+      allowedRoles: [
+        ...NEUTRAL_KNOWLEDGE_PROFILE_V1.reviewPolicies["neutral-review"]!
+          .allowedRoles,
+      ].sort(),
+    });
+  });
 });

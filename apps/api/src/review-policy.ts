@@ -58,6 +58,14 @@ function manifestReviewKinds(manifest: Record<string, unknown>): string[] {
     ];
   }
   const context = asRecord(manifest.reviewContext);
+  const nested = context.reviewKinds;
+  if (Array.isArray(nested) && nested.length > 0) {
+    return [
+      ...new Set(
+        nested.filter((kind): kind is string => typeof kind === "string"),
+      ),
+    ];
+  }
   const candidates = Array.isArray(context.knowledgeCandidates)
     ? context.knowledgeCandidates
     : [];

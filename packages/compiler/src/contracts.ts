@@ -302,6 +302,7 @@ export const ReviewCompilationContext = z
     evidenceCandidates: z.array(EvidenceCandidate).max(50),
     existingCandidates: z.array(ReviewExistingKnowledgeCandidate).max(50),
     knowledgeCandidates: z.array(KnowledgeCandidate).max(50),
+    reviewKinds: z.array(KnowledgeKind).max(50).optional(),
     contradictions: z.array(KnowledgeContradiction).max(50),
     reviewPolicy: EffectiveReviewPolicy.optional(),
     warnings: z.array(z.string().min(1).max(2_000)).max(50),
