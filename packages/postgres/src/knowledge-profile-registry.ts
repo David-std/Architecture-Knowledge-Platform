@@ -1,0 +1,236 @@
+import { createHash } from "node:crypto";
+import {
+  DEFAULT_KNOWLEDGE_PROFILE_V1,
+  KnowledgeProfileV1,
+  canonicalKnowledgeProfileJson,
+  type KnowledgeProfileCompatibility,
+  type KnowledgeProfileRevisionStatus,
+} from "@akp/contracts/knowledge-profile";
+import type { Postgres } from "./index.js";
+
+interface KnowledgeProfileRevisionRow {
+  id: string;
+  space_id: string;
+  vault_id: string;
+  profile_id: string;
+  version: string;
+  profile_hash: string;
+  profile: unknown;
+  status: KnowledgeProfileRevisionStatus;
+  compatibility_class: KnowledgeProfileCompatibility | null;
+  corpus_revision: string;
+  created_by: string | null;
+  validation_report: unknown;
+  validated_at: Date | null;
+  activated_at: Date | null;
+  superseded_at: Date | null;
+  retired_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface KnowledgeProfileRevisionRecord {
+  id: string;
+  spaceId: string;
+  vaultId: string;
+  profileId: string;
+  version: string;
+  profileHash: string;
+  profile: KnowledgeProfileV1;
+  status: KnowledgeProfileRevisionStatus;
+  compatibilityClass: KnowledgeProfileCompatibility | null;
+  corpusRevision: string;
+  createdBy: string | null;
+  validationReport: Record<string, unknown>;
+  validatedAt: Date | null;
+  activatedAt: Date | null;
+  supersededAt: Date | null;
+  retiredAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CreateKnowledgeProfileDraftInput {
+  spaceId: string;
+  vaultId: string;
+  profile: unknown;
+  createdBy?: string | null;
+}
+
+export interface EffectiveKnowledgeProfile {
+  source: "DURABLE_REVISION" | "V03_DEFAULT";
+  revisionId: string | null;
+  profileHash: string;
+  profile: KnowledgeProfileV1;
+  legacySchemaProfile: Record<string, unknown>;
+}
+
+const revisionColumns = `
+  id,space_id,vault_id,profile_id,version,profile_hash,profile,status,
+  compatibility_class,corpus_revision,created_by,validation_report,
+  validated_at,activated_at,superseded_at,retired_at,created_at,updated_at
+`;
+
+function asRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+}
+
+function hashCanonicalProfile(profile: unknown): {
+  parsed: KnowledgeProfileV1;
+  canonical: string;
+  hash: string;
+} {
+  const canonical = canonicalKnowledgeProfileJson(profile);
+  const parsed = KnowledgeProfileV1.parse(JSON.parse(canonical));
+  return {
+    parsed,
+    canonical,
+    hash: createHash("sha256").update(canonical).digest("hex"),
+  };
+}
+
+function mapRevision(row: KnowledgeProfileRevisionRow): KnowledgeProfileRevisionRecord {
+  return {
+    id: row.id,
+    spaceId: row.space_id,
+    vaultId: row.vault_id,
+    profileId: row.profile_id,
+    version: row.version,
+    profileHash: row.profile_hash,
+    profile: KnowledgeProfileV1.parse(row.profile),
+    status: row.status,
+    compatibilityClass: row.compatibility_class,
+    corpusRevision: row.corpus_revision,
+    createdBy: row.created_by,
+    validationReport: asRecord(row.validation_report),
+    validatedAt: row.validated_at,
+    activatedAt: row.activated_at,
+    supersededAt: row.superseded_at,
+    retiredAt: row.retired_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+/**
+ * Persist an immutable semantic draft. The profile hash is calculated from the
+ * canonical validated contract, never from caller key order. No activation or
+ * compatibility claim is made here.
+ */
+export async function createKnowledgeProfileDraft(
+  db: Postgres,
+  input: CreateKnowledgeProfileDraftInput,
+): Promise<KnowledgeProfileRevisionRecord> {
+  const { parsed, canonical, hash } = hashCanonicalProfile(input.profile);
+  const result = await db.pool.query<KnowledgeProfileRevisionRow>(
+    `
+    insert into knowledge_profile_revisions(
+      space_id,vault_id,profile_id,version,profile_hash,profile,status,
+      compatibility_class,corpus_revision,created_by
+    )
+    select v.space_id,v.id,$3,$4,$5,$6::jsonb,'DRAFT',null,
+           coalesce(r.corpus_revision,v.current_revision,'unknown'),$7
+      from vaults v
+      left join vault_index_revisions r
+        on r.space_id=v.space_id and r.vault_id=v.id
+     where v.space_id=$1 and v.id=$2
+    on conflict (vault_id,profile_hash) do update
+      set profile_hash=excluded.profile_hash
+    returning ${revisionColumns}
+    `,
+    [
+      input.spaceId,
+      input.vaultId,
+      parsed.profileId,
+      parsed.version,
+      hash,
+      canonical,
+      input.createdBy ?? null,
+    ],
+  );
+  const row = result.rows[0];
+  if (!row) throw new Error("VAULT_NOT_FOUND_OR_SCOPE_MISMATCH");
+  return mapRevision(row);
+}
+
+export async function getKnowledgeProfileRevision(
+  db: Postgres,
+  spaceId: string,
+  vaultId: string,
+  revisionId: string,
+): Promise<KnowledgeProfileRevisionRecord | null> {
+  const result = await db.pool.query<KnowledgeProfileRevisionRow>(
+    `
+    select ${revisionColumns}
+      from knowledge_profile_revisions
+     where space_id=$1 and vault_id=$2 and id=$3
+    `,
+    [spaceId, vaultId, revisionId],
+  );
+  return result.rows[0] ? mapRevision(result.rows[0]) : null;
+}
+
+export async function getActiveKnowledgeProfileRevision(
+  db: Postgres,
+  spaceId: string,
+  vaultId: string,
+): Promise<KnowledgeProfileRevisionRecord | null> {
+  const result = await db.pool.query<KnowledgeProfileRevisionRow>(
+    `
+    select ${revisionColumns.replaceAll("id,", "p.id,").replaceAll("space_id,", "p.space_id,").replaceAll("vault_id,", "p.vault_id,").replaceAll("profile_id,", "p.profile_id,").replaceAll("version,", "p.version,").replaceAll("profile_hash,", "p.profile_hash,").replaceAll("profile,", "p.profile,").replaceAll("status,", "p.status,").replaceAll("compatibility_class,", "p.compatibility_class,").replaceAll("corpus_revision,", "p.corpus_revision,").replaceAll("created_by,", "p.created_by,").replaceAll("validation_report,", "p.validation_report,").replaceAll("validated_at,", "p.validated_at,").replaceAll("activated_at,", "p.activated_at,").replaceAll("superseded_at,", "p.superseded_at,").replaceAll("retired_at,", "p.retired_at,").replaceAll("created_at,", "p.created_at,").replaceAll("updated_at", "p.updated_at")}
+      from vaults v
+      join knowledge_profile_revisions p
+        on p.vault_id=v.id and p.id=v.active_knowledge_profile_revision_id
+     where v.space_id=$1 and v.id=$2 and p.status='ACTIVE'
+    `,
+    [spaceId, vaultId],
+  );
+  return result.rows[0] ? mapRevision(result.rows[0]) : null;
+}
+
+/**
+ * Resolve the semantic profile without changing any v0.3 consumer. Durable
+ * revisions win only after an explicit active binding exists. Otherwise the
+ * built-in v0.3-compatible KnowledgeProfile is returned while the old
+ * schema_profile JSON is retained only as legacy configuration metadata.
+ */
+export async function resolveEffectiveKnowledgeProfile(
+  db: Postgres,
+  spaceId: string,
+  vaultId: string,
+): Promise<EffectiveKnowledgeProfile> {
+  const vault = await db.pool.query<{
+    schema_profile: unknown;
+    active_knowledge_profile_revision_id: string | null;
+  }>(
+    `
+    select schema_profile,active_knowledge_profile_revision_id
+      from vaults where space_id=$1 and id=$2
+    `,
+    [spaceId, vaultId],
+  );
+  const vaultRow = vault.rows[0];
+  if (!vaultRow) throw new Error("VAULT_NOT_FOUND_OR_SCOPE_MISMATCH");
+
+  if (vaultRow.active_knowledge_profile_revision_id) {
+    const active = await getActiveKnowledgeProfileRevision(db, spaceId, vaultId);
+    if (!active) throw new Error("ACTIVE_KNOWLEDGE_PROFILE_BINDING_INVALID");
+    return {
+      source: "DURABLE_REVISION",
+      revisionId: active.id,
+      profileHash: active.profileHash,
+      profile: active.profile,
+      legacySchemaProfile: asRecord(vaultRow.schema_profile),
+    };
+  }
+
+  const fallback = hashCanonicalProfile(DEFAULT_KNOWLEDGE_PROFILE_V1);
+  return {
+    source: "V03_DEFAULT",
+    revisionId: null,
+    profileHash: fallback.hash,
+    profile: fallback.parsed,
+    legacySchemaProfile: asRecord(vaultRow.schema_profile),
+  };
+}
