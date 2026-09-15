@@ -31,6 +31,13 @@ jobs:
             > reports/ci/prettier/context-tokenizer-baseline.ts
           pnpm exec prettier scripts/filtered-ann-baseline.ts \
             > reports/ci/prettier/filtered-ann-baseline.ts
+      - name: Upload exact Prettier output
+        uses: actions/upload-artifact@v7
+        with:
+          name: p0-prettier-${{ github.run_id }}
+          path: reports/ci/prettier
+          if-no-files-found: error
+          retention-days: 1
       - run: pnpm build
       - run: docker compose up -d --wait postgres
       - run: pnpm db:migrate
