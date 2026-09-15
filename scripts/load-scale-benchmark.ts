@@ -1221,7 +1221,7 @@ async function runBenchmark(
     measured: [
       "PostgreSQL synthetic document/unit/relation materialisation latency",
       "Client-observed point, lexical, exact synthetic pgvector, graph, unit and count query latency",
-      "Deterministic context-packet assembly latency for candidate sets sized to each target",
+      "Deterministic context-packet assembly latency for the retrieval-bounded candidate set (up to request limit 20)",
       "Node process RSS and heap deltas around load and query phases",
       "PostgreSQL database and table relation storage growth",
       "Exact row-count and fixture cleanup acceptance checks",
@@ -1272,7 +1272,7 @@ async function runBenchmark(
       "Storage snapshots use whole-database and whole-table relation sizes, so they include pre-existing isolated-database overhead and index pages.",
       "The cumulative targets append rows to one fixture; they are not independent cold-start trials and cache state may affect latency.",
       "Vector timings exercise exact sequential pgvector distance over deterministic coordinates; ANN index construction and maintenance are intentionally excluded and evaluated separately.",
-      "Context-packet timings exercise the in-process deterministic builder over synthetic candidates, not retrieval, persistence or API latency.",
+      "Context-packet timings exercise the in-process deterministic builder over at most the request limit of 20 synthetic candidates; corpus scale is measured in PostgreSQL, while retrieval, persistence and API latency remain separate dimensions.",
       "The reported memory is Node RSS/heap, not PostgreSQL backend or container memory.",
       "A passing result is evidence for this synthetic PostgreSQL path only; it is not a production capacity SLO or a vector-quality claim.",
     ],
