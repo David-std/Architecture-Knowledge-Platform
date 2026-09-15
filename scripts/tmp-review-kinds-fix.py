@@ -46,8 +46,10 @@ replace_once(
     '''import { Postgres, grantVaultMembership } from "@akp/postgres";\nimport { reviewPolicyState } from "../src/review-policy.js";\n''',
 )
 
-replace_once(
-    "apps/api/test/review-policy.integration.test.ts",
-    '''  it("rejects a direct proposal kind not declared by the durable profile", async () => {\n    const response = await propose("rule");\n    expect(response.statusCode).toBe(422);\n    expect(response.json()).toMatchObject({\n      code: "KNOWLEDGE_PROFILE_KIND_NOT_ALLOWED",\n      kind: "rule",\n    });\n  });\n});\n''',
-    '''  it("rejects a direct proposal kind not declared by the durable profile", async () => {\n    const response = await propose("rule");\n    expect(response.statusCode).toBe(422);\n    expect(response.json()).toMatchObject({\n      code: "KNOWLEDGE_PROFILE_KIND_NOT_ALLOWED",\n      kind: "rule",\n    });\n  });\n\n  it("revalidates a compiler review with the exact material kind snapshot", () => {\n    const state = reviewPolicyState({\n      impact_manifest: {\n        reviewContext: {\n          reviewKinds: ["note"],\n          knowledgeCandidates: [{ kind: "note" }, { kind: "procedure" }],\n          reviewPolicy: {\n            required: true,\n            minimumApprovals: 2,\n            allowedRoles: ["REVIEWER"],\n            profileSource: "DURABLE_REVISION",\n            profileRevisionId: activeProfileRevisionId,\n            profileHash: "a".repeat(64),\n            profileId: "neutral-notes",\n            profileVersion: "1.0.1-review-policy",\n          },\n        },\n      },\n    });\n    expect(state.kinds).toEqual(["note"]);\n  });\n});\n''',
-)
+api_test = Path("apps/api/test/review-policy.integration.test.ts")
+api_text = api_test.read_text()
+suffix = "\n});\n"
+if not api_text.endswith(suffix):
+    raise SystemExit("apps/api/test/review-policy.integration.test.ts: suite closing anchor missing")
+api_regression = '''\n  it("revalidates a compiler review with the exact material kind snapshot", () => {\n    const state = reviewPolicyState({\n      impact_manifest: {\n        reviewContext: {\n          reviewKinds: ["note"],\n          knowledgeCandidates: [{ kind: "note" }, { kind: "procedure" }],\n          reviewPolicy: {\n            required: true,\n            minimumApprovals: 2,\n            allowedRoles: ["REVIEWER"],\n            profileSource: "DURABLE_REVISION",\n            profileRevisionId: activeProfileRevisionId,\n            profileHash: "a".repeat(64),\n            profileId: "neutral-notes",\n            profileVersion: "1.0.1-review-policy",\n          },\n        },\n      },\n    });\n    expect(state.kinds).toEqual(["note"]);\n  });\n'''
+api_test.write_text(api_text[: -len(suffix)] + api_regression + suffix)
