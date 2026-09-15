@@ -5,19 +5,17 @@ import {
   StructuralLocator,
   TrustTier,
 } from "@akp/contracts";
+import {
+  CompilerKnowledgeProfileContext,
+  defaultCompilerKnowledgeProfileContext,
+} from "./knowledge-profile.js";
 
 const Sha256 = z.string().regex(/^[a-f0-9]{64}$/);
 const BoundedText = z.string().min(1).max(60_000);
 
-export const KnowledgeKind = z.enum([
-  "claim",
-  "decision",
-  "rule",
-  "workflow",
-  "concept",
-  "example",
-  "counterexample",
-]);
+export const KnowledgeKind = z
+  .string()
+  .regex(/^[A-Za-z][A-Za-z0-9._:-]{0,127}$/);
 export type KnowledgeKind = z.infer<typeof KnowledgeKind>;
 
 export const CompilerEvidence = z
@@ -100,6 +98,9 @@ export const KnowledgeCompilerInput = z
     documentArtifact: DocumentArtifactSchema,
     evidence: z.array(CompilerEvidence).max(50),
     existingCandidates: z.array(ExistingKnowledgeCandidate).max(50),
+    knowledgeProfile: CompilerKnowledgeProfileContext.default(
+      defaultCompilerKnowledgeProfileContext(),
+    ),
     schemaProfile: z.record(z.string(), z.unknown()).default({}),
     policy: CompilerPolicy.default({}),
     budget: CompilerBudget.default({}),
@@ -137,6 +138,18 @@ export const KnowledgeCompilerInput = z
         path: ["existingCandidates"],
         message: "existing knowledge candidates exceed configured budget",
       });
+    }
+    const declaredKinds = new Set(
+      Object.keys(input.knowledgeProfile.profile.knowledgeKinds),
+    );
+    for (const kind of input.policy.allowedKnowledgeKinds) {
+      if (!declaredKinds.has(kind)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["policy", "allowedKnowledgeKinds"],
+          message: `compiler policy allows a kind not declared by the active profile: ${kind}`,
+        });
+      }
     }
     for (const evidence of input.evidence) {
       if (evidence.sourceArtifactId !== input.source.sourceArtifactId) {
