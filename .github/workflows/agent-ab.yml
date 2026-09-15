@@ -153,14 +153,14 @@ jobs:
             throw new Error("Local provider did not execute the pinned model revision and dtype.");
           }
           if (tokenizerBaseline.status !== "PROVEN" || tokenizerBaseline.productionDefaultsChanged !== false) {
-            throw new Error("P0 tokenizer baseline must be proven without changing production defaults.");
+            throw new Error("Tokenizer baseline must be proven without changing production defaults.");
           }
           if (
             tokenizerBaseline.targetModel?.model !== "onnx-community/Qwen2.5-0.5B-Instruct" ||
             tokenizerBaseline.targetModel?.revision !== "cc5cc01a65cc3ff17bdb73a7de33d879f62599b0" ||
             tokenizerBaseline.targetModel?.exact !== true
           ) {
-            throw new Error("P0 tokenizer baseline did not use the pinned exact model tokenizer.");
+            throw new Error("Tokenizer baseline did not use the pinned exact model tokenizer.");
           }
           const tokenizerSamples = Array.isArray(tokenizerBaseline.samples)
             ? tokenizerBaseline.samples

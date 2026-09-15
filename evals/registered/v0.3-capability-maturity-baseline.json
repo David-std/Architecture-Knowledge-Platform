@@ -40,7 +40,7 @@
     "packages/retrieval/scripts/context-tokenizer-baseline.ts",
     "packages/retrieval/test/context-correctness-regression.test.ts",
     "scripts/filtered-ann-baseline.ts",
-    "scripts/p0-capability-baseline.ts"
+    "scripts/capability-maturity-baseline.ts"
   ],
   "capabilities": [
     {

@@ -33,9 +33,9 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p reports/ci
-          AKP_P0_CAPABILITY_REPORT=reports/ci/p0-v0.3-capability-baseline.json \
-            pnpm benchmark:p0-baseline \
-            2>&1 | tee reports/ci/p0-v0.3-capability-baseline.log
+          AKP_CAPABILITY_BASELINE_REPORT=reports/ci/v0.3-capability-maturity-baseline.json \
+            pnpm benchmark:capability-baseline \
+            2>&1 | tee reports/ci/v0.3-capability-maturity-baseline.log
       - run: pnpm build
       - run: docker compose up -d --wait postgres
       - run: pnpm db:migrate
@@ -60,7 +60,7 @@ jobs:
             throw new Error(`Filtered ANN measurement status is ${report.status}.`);
           }
           if (report.productionDefaultChanged !== false || report.productionIndexSelected !== false) {
-            throw new Error("P0 filtered ANN characterization must not change or select a production default.");
+            throw new Error("Filtered ANN characterization must not change or select a production default.");
           }
           if (report.fixture?.duplicateIdentifiersAcrossVaults !== true || report.fixture?.duplicateTextAcrossVaults !== true) {
             throw new Error("Filtered ANN fixture must include cross-vault identifier and text collisions.");
