@@ -216,10 +216,6 @@ jobs:
                   "404": { $ref: "#/components/responses/NotFound" }
                   "409": { $ref: "#/components/responses/Conflict" }
           '''
-          # Dedent the source literal from this workflow while preserving the
-          # intended two-space OpenAPI path indentation.
-          import textwrap
-          replacement = textwrap.dedent(replacement)
           if not replacement.startswith('  /v1/schema/dry-run:\n'):
               raise SystemExit('replacement indentation invalid')
           path.write_text(text[:start] + replacement + text[end:])
