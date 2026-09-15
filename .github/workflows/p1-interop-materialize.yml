@@ -112,6 +112,10 @@ jobs:
               '  const module = await import(`../src/server.js?interop=${randomUUID()}`);',
               '  vi.resetModules();\n  const module = await import("../src/server.js");',
           )
+          replace_once(
+              'await db.pool.query("delete from vaults where id=$1", [vaultId]);',
+              'await db.pool.query("delete from audit_events where vault_id=$1", [vaultId]);\n    await db.pool.query("delete from vaults where id=$1", [vaultId]);',
+          )
           path.write_text(text)
           PY
 
