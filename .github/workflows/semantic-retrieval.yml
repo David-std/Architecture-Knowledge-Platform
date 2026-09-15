@@ -23,6 +23,25 @@ jobs:
           node-version: 24.20.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Capture exact Prettier output for P0 baseline sources
+        shell: bash
+        run: |
+          mkdir -p reports/ci/prettier
+          pnpm exec prettier packages/retrieval/test/context-correctness-regression.test.ts \
+            > reports/ci/prettier/context-correctness-regression.test.ts
+          pnpm exec prettier scripts/p0-capability-baseline.ts \
+            > reports/ci/prettier/p0-capability-baseline.ts
+          pnpm exec prettier evals/registered/v0.3-capability-maturity-baseline.json \
+            > reports/ci/prettier/v0.3-capability-maturity-baseline.json
+          pnpm exec prettier .github/workflows/semantic-retrieval.yml \
+            > reports/ci/prettier/semantic-retrieval.yml
+      - name: Upload exact Prettier output
+        uses: actions/upload-artifact@v7
+        with:
+          name: p0-prettier-${{ github.run_id }}
+          path: reports/ci/prettier
+          if-no-files-found: error
+          retention-days: 1
       - name: Fetch exact v0.3 baseline commit
         shell: bash
         run: |
