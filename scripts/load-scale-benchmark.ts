@@ -1042,6 +1042,21 @@ function buildGrowth(results: ScaleResult[]): ScaleReport["growth"] {
   };
 }
 
+async function prepareExactVectorScaleDatabase(): Promise<void> {
+  const rows = await client.query<{ count: Numeric }>(
+    "select count(*)::bigint as count from unit_embeddings",
+  );
+  if (asNumber(rows.rows[0]?.count) !== 0) {
+    throw new Error(
+      "Scale benchmark refuses to alter vector indexes in a database with pre-existing unit embeddings.",
+    );
+  }
+  // ANN construction/maintenance is a separate evaluation dimension. This
+  // disposable scale harness measures exact pgvector query behavior and
+  // bulk materialisation without conflating it with HNSW build cost.
+  await client.query("drop index if exists unit_embeddings_vector_idx");
+}
+
 async function runBenchmark(
   targets: number[],
   iterations: number,
@@ -1049,6 +1064,7 @@ async function runBenchmark(
 ): Promise<ScaleReport> {
   await client.connect();
   const info = await databaseInfo();
+  await prepareExactVectorScaleDatabase();
   const fixture = await createFixture(seed);
   let cleanup: CleanupResult = {
     attempted: false,
@@ -1162,7 +1178,7 @@ async function runBenchmark(
     growth: buildGrowth(results),
     measured: [
       "PostgreSQL synthetic document/unit/relation materialisation latency",
-      "Client-observed point, lexical, synthetic pgvector, graph, unit and count query latency",
+      "Client-observed point, lexical, exact synthetic pgvector, graph, unit and count query latency",
       "Deterministic context-packet assembly latency for candidate sets sized to each target",
       "Node process RSS and heap deltas around load and query phases",
       "PostgreSQL database and table relation storage growth",
@@ -1178,6 +1194,11 @@ async function runBenchmark(
         dimension: "semantic vector quality or real embedding generation",
         reason:
           "The vector path uses deterministic fixed 64-dimensional fixture values; no provider, model quality or relevance ground truth was evaluated.",
+      },
+      {
+        dimension: "ANN index construction and maintenance",
+        reason:
+          "The disposable scale database removes the HNSW index before fixture loading so general 1K-100K scale evidence is not conflated with ANN tuning; ANN selection is evaluated separately.",
       },
       {
         dimension: "HTTP/API and worker throughput",
@@ -1208,7 +1229,7 @@ async function runBenchmark(
     limitations: [
       "Storage snapshots use whole-database and whole-table relation sizes, so they include pre-existing isolated-database overhead and index pages.",
       "The cumulative targets append rows to one fixture; they are not independent cold-start trials and cache state may affect latency.",
-      "Vector timings exercise pgvector operators/indexes over deterministic coordinates, not embedding-model quality or semantic recall.",
+      "Vector timings exercise exact sequential pgvector distance over deterministic coordinates; ANN index construction and maintenance are intentionally excluded and evaluated separately.",
       "Context-packet timings exercise the in-process deterministic builder over synthetic candidates, not retrieval, persistence or API latency.",
       "The reported memory is Node RSS/heap, not PostgreSQL backend or container memory.",
       "A passing result is evidence for this synthetic PostgreSQL path only; it is not a production capacity SLO or a vector-quality claim.",

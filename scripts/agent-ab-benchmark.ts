@@ -319,12 +319,42 @@ function evaluationPrompt(task: AgentAbTask, context: string): string {
   ].join("\n");
 }
 
+function firstJsonObject(value: string): string {
+  const start = value.indexOf("{");
+  if (start < 0) throw new Error("Provider response contained no JSON object.");
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < value.length; index += 1) {
+    const character = value[index];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (character === "\\") {
+        escaped = true;
+      } else if (character === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (character === '"') {
+      inString = true;
+    } else if (character === "{") {
+      depth += 1;
+    } else if (character === "}") {
+      depth -= 1;
+      if (depth === 0) return value.slice(start, index + 1);
+    }
+  }
+  throw new Error("Provider response contained an unterminated JSON object.");
+}
+
 function parseModelOutput(content: string): AgentAbModelOutput {
-  const cleaned = content
-    .trim()
-    .replace(/^```(?:json)?\s*/iu, "")
-    .replace(/\s*```$/u, "");
-  const parsed = JSON.parse(cleaned) as Record<string, unknown>;
+  const cleaned = content.trim().replace(/^```(?:json)?\s*/iu, "");
+  const parsed = JSON.parse(firstJsonObject(cleaned)) as Record<
+    string,
+    unknown
+  >;
   const claims = Array.isArray(parsed.claims)
     ? parsed.claims.flatMap((value) => {
         if (!value || typeof value !== "object") return [];
