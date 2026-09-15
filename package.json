@@ -31,6 +31,7 @@
     "docs:validate": "node scripts/validate-docs.mjs",
     "hygiene:write": "node scripts/validate-repository-hygiene.mjs --write",
     "hygiene:validate": "node scripts/validate-repository-hygiene.mjs",
+    "benchmark:p0-baseline": "tsx scripts/p0-capability-baseline.ts",
     "benchmark:retrieval:offline": "tsx scripts/retrieval_benchmark_offline.ts",
     "benchmark:retrieval:curated": "tsx scripts/retrieval_benchmark_curated.ts",
     "benchmark:retrieval:runtime": "tsx scripts/runtime-retrieval-benchmark.ts",
