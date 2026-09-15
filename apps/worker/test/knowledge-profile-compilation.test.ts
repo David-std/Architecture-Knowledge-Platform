@@ -5,11 +5,11 @@ import {
   knowledgeProfileHash,
   type ConfiguredKnowledgeCompiler,
 } from "@akp/compiler";
+import { DocumentArtifact } from "@akp/contracts";
 import {
-  DocumentArtifact,
   NEUTRAL_KNOWLEDGE_PROFILE_V1,
   canonicalKnowledgeProfileJson,
-} from "@akp/contracts";
+} from "@akp/contracts/knowledge-profile";
 import type { Postgres } from "@akp/postgres";
 import { buildCompilationStage } from "../src/compilation-stage.js";
 
@@ -194,8 +194,8 @@ describe("active profile compiler integration", () => {
     const { db } = dbWithNeutralProfile();
     const { configured } = configuredCompiler("rule");
 
-    await expect(buildCompilationStage(db, stageInput(), configured)).rejects.toThrow(
-      /COMPILER_KIND_NOT_ALLOWED:rule/,
-    );
+    await expect(
+      buildCompilationStage(db, stageInput(), configured),
+    ).rejects.toThrow(/COMPILER_KIND_NOT_ALLOWED:rule/);
   });
 });
