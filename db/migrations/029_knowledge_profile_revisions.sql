@@ -20,8 +20,8 @@ create table knowledge_profile_revisions (
       'RETIRED'
     )
   ),
-  compatibility_class text not null default 'NON_BREAKING' check (
-    compatibility_class in (
+  compatibility_class text check (
+    compatibility_class is null or compatibility_class in (
       'NON_BREAKING',
       'REINDEX_REQUIRED',
       'RECOMPILE_REQUIRED',
@@ -42,6 +42,8 @@ create table knowledge_profile_revisions (
     check (profile_id ~ '^[a-z0-9][a-z0-9-]{1,62}$'),
   constraint knowledge_profile_revisions_version_nonempty
     check (length(btrim(version)) between 1 and 100),
+  constraint knowledge_profile_revisions_classified_after_draft
+    check (status = 'DRAFT' or compatibility_class is not null),
   unique (vault_id, profile_id, version),
   unique (vault_id, profile_hash),
   unique (vault_id, id)
