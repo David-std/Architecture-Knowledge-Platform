@@ -353,7 +353,9 @@ export const KnowledgeProfileV1 = z
       }
     }
 
-    for (const [relation, definition] of Object.entries(profile.relationTypes)) {
+    for (const [relation, definition] of Object.entries(
+      profile.relationTypes,
+    )) {
       for (const kind of [...definition.from, ...definition.to]) {
         if (!kindNames.has(kind)) {
           context.addIssue({
@@ -379,7 +381,8 @@ export const KnowledgeProfileV1 = z
         context.addIssue({
           code: z.ZodIssueCode.custom,
           path: ["retrievalPolicy", "relationAllowlist"],
-          message: `retrieval policy references an unknown relation: ${relation}`,
+          message:
+            `retrieval policy references an unknown relation: ${relation}`,
         });
       }
     }
@@ -398,7 +401,10 @@ export const KnowledgeProfileV1 = z
     }
 
     for (const [name, artifact] of Object.entries(profile.artifactContracts)) {
-      if (unsafeProfilePath(artifact.root) || unsafeProfilePath(artifact.pathTemplate)) {
+      if (
+        unsafeProfilePath(artifact.root) ||
+        unsafeProfilePath(artifact.pathTemplate)
+      ) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
           path: ["artifactContracts", name],
@@ -434,6 +440,33 @@ const v03Kinds = [
   "counterexample",
 ] as const;
 
+function v03Transition(
+  from: string,
+  to: string,
+  allowedActors: string[],
+  options: { requiredEvidence?: boolean; requiredReview?: boolean } = {},
+) {
+  return {
+    from,
+    to,
+    allowedActors,
+    requiredEvidence: options.requiredEvidence ?? false,
+    requiredReview: options.requiredReview ?? false,
+  };
+}
+
+function v03Relation(options: {
+  symmetric?: boolean;
+  evidenceRequired?: boolean;
+} = {}) {
+  return {
+    from: [...v03Kinds],
+    to: [...v03Kinds],
+    symmetric: options.symmetric ?? false,
+    evidenceRequired: options.evidenceRequired ?? false,
+  };
+}
+
 const v03KindDefinitions = Object.fromEntries(
   v03Kinds.map((kind) => [
     kind,
@@ -457,20 +490,20 @@ export const DEFAULT_KNOWLEDGE_PROFILE_V1 = KnowledgeProfileV1.parse({
   displayName: "AKP v0.3 compatibility profile",
   knowledgeKinds: v03KindDefinitions,
   relationTypes: {
-    derives_from: { from: [...v03Kinds], to: [...v03Kinds] },
-    supports: { from: [...v03Kinds], to: [...v03Kinds], evidenceRequired: true },
-    contradicts: { from: [...v03Kinds], to: [...v03Kinds], symmetric: true },
-    supersedes: { from: [...v03Kinds], to: [...v03Kinds] },
-    implements: { from: [...v03Kinds], to: [...v03Kinds] },
-    applies_to: { from: [...v03Kinds], to: [...v03Kinds] },
-    example_of: { from: [...v03Kinds], to: [...v03Kinds] },
-    counterexample_of: { from: [...v03Kinds], to: [...v03Kinds] },
-    uses: { from: [...v03Kinds], to: [...v03Kinds] },
-    requires: { from: [...v03Kinds], to: [...v03Kinds] },
-    validated_by: { from: [...v03Kinds], to: [...v03Kinds] },
-    produces: { from: [...v03Kinds], to: [...v03Kinds] },
-    consumed_by: { from: [...v03Kinds], to: [...v03Kinds] },
-    related_to: { from: [...v03Kinds], to: [...v03Kinds], symmetric: true },
+    derives_from: v03Relation(),
+    supports: v03Relation({ evidenceRequired: true }),
+    contradicts: v03Relation({ symmetric: true }),
+    supersedes: v03Relation(),
+    implements: v03Relation(),
+    applies_to: v03Relation(),
+    example_of: v03Relation(),
+    counterexample_of: v03Relation(),
+    uses: v03Relation(),
+    requires: v03Relation(),
+    validated_by: v03Relation(),
+    produces: v03Relation(),
+    consumed_by: v03Relation(),
+    related_to: v03Relation({ symmetric: true }),
   },
   lifecycles: {
     "knowledge-v03": {
@@ -485,16 +518,32 @@ export const DEFAULT_KNOWLEDGE_PROFILE_V1 = KnowledgeProfileV1.parse({
       initial: "DRAFT",
       terminal: ["DELETED_TOMBSTONE"],
       transitions: [
-        { from: "DRAFT", to: "ACTIVE", allowedActors: ["REVIEWER"], requiredReview: true },
-        { from: "DRAFT", to: "ARCHIVED", allowedActors: ["REVIEWER"], requiredReview: true },
-        { from: "ACTIVE", to: "DISPUTED", allowedActors: ["REVIEWER", "ARCHITECT"] },
-        { from: "ACTIVE", to: "SUPERSEDED", allowedActors: ["REVIEWER", "ARCHITECT"], requiredReview: true },
-        { from: "ACTIVE", to: "ARCHIVED", allowedActors: ["REVIEWER", "ARCHITECT"], requiredReview: true },
-        { from: "DISPUTED", to: "ACTIVE", allowedActors: ["REVIEWER", "ARCHITECT"], requiredReview: true },
-        { from: "DISPUTED", to: "SUPERSEDED", allowedActors: ["REVIEWER", "ARCHITECT"], requiredReview: true },
-        { from: "DISPUTED", to: "ARCHIVED", allowedActors: ["REVIEWER", "ARCHITECT"], requiredReview: true },
-        { from: "SUPERSEDED", to: "ARCHIVED", allowedActors: ["REVIEWER", "ARCHITECT"] },
-        { from: "ARCHIVED", to: "DELETED_TOMBSTONE", allowedActors: ["ADMIN"], requiredReview: true },
+        v03Transition("DRAFT", "ACTIVE", ["REVIEWER"], {
+          requiredReview: true,
+        }),
+        v03Transition("DRAFT", "ARCHIVED", ["REVIEWER"], {
+          requiredReview: true,
+        }),
+        v03Transition("ACTIVE", "DISPUTED", ["REVIEWER", "ARCHITECT"]),
+        v03Transition("ACTIVE", "SUPERSEDED", ["REVIEWER", "ARCHITECT"], {
+          requiredReview: true,
+        }),
+        v03Transition("ACTIVE", "ARCHIVED", ["REVIEWER", "ARCHITECT"], {
+          requiredReview: true,
+        }),
+        v03Transition("DISPUTED", "ACTIVE", ["REVIEWER", "ARCHITECT"], {
+          requiredReview: true,
+        }),
+        v03Transition("DISPUTED", "SUPERSEDED", ["REVIEWER", "ARCHITECT"], {
+          requiredReview: true,
+        }),
+        v03Transition("DISPUTED", "ARCHIVED", ["REVIEWER", "ARCHITECT"], {
+          requiredReview: true,
+        }),
+        v03Transition("SUPERSEDED", "ARCHIVED", ["REVIEWER", "ARCHITECT"]),
+        v03Transition("ARCHIVED", "DELETED_TOMBSTONE", ["ADMIN"], {
+          requiredReview: true,
+        }),
       ],
     },
   },
@@ -544,7 +593,9 @@ export const DEFAULT_KNOWLEDGE_PROFILE_V1 = KnowledgeProfileV1.parse({
     allowedTargetScopes: ["PROJECT", "TEAM", "ORGANIZATION"],
     reviewRequired: true,
   },
-  freshnessPolicy: { sourceChangeAction: "MARK_STALE" },
+  freshnessPolicy: {
+    sourceChangeAction: "MARK_STALE",
+  },
 });
 
 export const NEUTRAL_KNOWLEDGE_PROFILE_V1 = KnowledgeProfileV1.parse({
@@ -554,7 +605,9 @@ export const NEUTRAL_KNOWLEDGE_PROFILE_V1 = KnowledgeProfileV1.parse({
   displayName: "Neutral notes and procedures",
   knowledgeKinds: {
     note: {
-      fields: { body: { type: "markdown", required: true } },
+      fields: {
+        body: { type: "markdown", required: true },
+      },
       lifecycle: "note-flow",
       evidencePolicy: "optional-evidence",
       reviewPolicy: "neutral-review",
@@ -572,8 +625,14 @@ export const NEUTRAL_KNOWLEDGE_PROFILE_V1 = KnowledgeProfileV1.parse({
     },
   },
   relationTypes: {
-    follows: { from: ["procedure"], to: ["procedure"] },
-    explains: { from: ["note"], to: ["procedure"] },
+    follows: {
+      from: ["procedure"],
+      to: ["procedure"],
+    },
+    explains: {
+      from: ["note"],
+      to: ["procedure"],
+    },
   },
   lifecycles: {
     "note-flow": {
@@ -581,8 +640,18 @@ export const NEUTRAL_KNOWLEDGE_PROFILE_V1 = KnowledgeProfileV1.parse({
       initial: "DRAFT",
       terminal: ["RETIRED"],
       transitions: [
-        { from: "DRAFT", to: "ACTIVE", allowedActors: ["REVIEWER"], requiredReview: true },
-        { from: "ACTIVE", to: "RETIRED", allowedActors: ["REVIEWER"], requiredReview: true },
+        {
+          from: "DRAFT",
+          to: "ACTIVE",
+          allowedActors: ["REVIEWER"],
+          requiredReview: true,
+        },
+        {
+          from: "ACTIVE",
+          to: "RETIRED",
+          allowedActors: ["REVIEWER"],
+          requiredReview: true,
+        },
       ],
     },
     "procedure-flow": {
@@ -590,9 +659,24 @@ export const NEUTRAL_KNOWLEDGE_PROFILE_V1 = KnowledgeProfileV1.parse({
       initial: "DRAFT",
       terminal: ["RETIRED"],
       transitions: [
-        { from: "DRAFT", to: "VALIDATED", allowedActors: ["CURATOR"], requiredEvidence: true },
-        { from: "VALIDATED", to: "ACTIVE", allowedActors: ["REVIEWER"], requiredReview: true },
-        { from: "ACTIVE", to: "RETIRED", allowedActors: ["REVIEWER"], requiredReview: true },
+        {
+          from: "DRAFT",
+          to: "VALIDATED",
+          allowedActors: ["CURATOR"],
+          requiredEvidence: true,
+        },
+        {
+          from: "VALIDATED",
+          to: "ACTIVE",
+          allowedActors: ["REVIEWER"],
+          requiredReview: true,
+        },
+        {
+          from: "ACTIVE",
+          to: "RETIRED",
+          allowedActors: ["REVIEWER"],
+          requiredReview: true,
+        },
       ],
     },
   },
@@ -631,5 +715,8 @@ export const NEUTRAL_KNOWLEDGE_PROFILE_V1 = KnowledgeProfileV1.parse({
     allowedTargetScopes: ["PROJECT", "TEAM"],
     reviewRequired: true,
   },
-  freshnessPolicy: { sourceChangeAction: "REVIEW_REQUIRED", staleAfterDays: 180 },
+  freshnessPolicy: {
+    sourceChangeAction: "REVIEW_REQUIRED",
+    staleAfterDays: 180,
+  },
 });
