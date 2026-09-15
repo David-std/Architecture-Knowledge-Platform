@@ -59,6 +59,8 @@ type ProviderResult = {
   usage: ProviderUsage;
   latencyMs: number;
   formatRetries: number;
+  formatFallback: boolean;
+  formatError: string | null;
 };
 
 type ArmInput = {
@@ -477,13 +479,33 @@ async function invokeProvider(
         },
         latencyMs: totalLatencyMs,
         formatRetries: attempt,
+        formatFallback: false,
+        formatError: null,
       };
     } catch (error) {
       if (attempt === 0) continue;
       const detail = error instanceof Error ? error.message : String(error);
-      throw new Error(
-        `Provider response remained invalid after one format retry: ${detail}`,
-      );
+      return {
+        output: {
+          answer: "",
+          abstain: false,
+          citations: [],
+          claims: [
+            {
+              text: content.trim() || "<empty provider completion>",
+              citations: [],
+            },
+          ],
+        },
+        usage: {
+          promptTokens: totalPromptTokens,
+          completionTokens: totalCompletionTokens,
+        },
+        latencyMs: totalLatencyMs,
+        formatRetries: attempt,
+        formatFallback: true,
+        formatError: detail,
+      };
     }
   }
   throw new Error("Provider format retry loop exhausted unexpectedly.");
@@ -520,6 +542,8 @@ async function runArm(
     retrievalMetadata: {
       ...input.retrievalMetadata,
       modelFormatRetries: provider.formatRetries,
+      modelFormatFallback: provider.formatFallback,
+      modelFormatError: provider.formatError,
     },
     modelOutput: provider.output,
     retrievalLatencyMs: input.retrievalLatencyMs,
@@ -543,7 +567,7 @@ async function main(): Promise<void> {
     claimPolicy: {
       realModelRequired: true,
       superiorityClaimAllowed: false,
-      note: "Execution compares two context delivery arms with the same configured real model and settings. The harness reports measurements; it does not manufacture a winner.",
+      note: "Execution compares two context delivery arms with the same configured real model and settings. The harness reports measurements; it does not manufacture a winner. Provider output that remains structurally invalid after one retry is retained as an unsupported non-abstaining claim with no answer or citation credit, and the fallback is recorded per observation.",
     },
   };
   if (!config.ready) {
