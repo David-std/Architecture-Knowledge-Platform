@@ -76,6 +76,33 @@ jobs:
           path.write_text(text)
           PY
 
+      - name: Align integration bootstrap with Vitest module reset
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("apps/api/test/interoperability.integration.test.ts")
+          text = path.read_text()
+
+          def replace_once(old: str, new: str) -> None:
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"integration anchor expected once, found {count}: {old[:100]}")
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              'import { afterAll, beforeAll, describe, expect, it } from "vitest";',
+              'import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";',
+          )
+          replace_once(
+              '  const module = await import(`../src/server.js?interop=${randomUUID()}`);',
+              '  vi.resetModules();\n  const module = await import("../src/server.js");',
+          )
+          path.write_text(text)
+          PY
+
       - name: Format candidate
         run: >-
           pnpm exec prettier --write
