@@ -37,7 +37,7 @@ jobs:
           set -o pipefail
           pnpm exec tsx scripts/event-concurrency-benchmark.ts \
             2>&1 | tee reports/ci/event-concurrency-benchmark.log
-      - name: Validate P10 concurrency evidence dimensions
+      - name: Validate concurrency evidence dimensions
         shell: bash
         run: |
           node --input-type=module <<'NODE'
