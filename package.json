@@ -35,32 +35,33 @@
     "benchmark:retrieval:curated": "tsx scripts/retrieval_benchmark_curated.ts",
     "benchmark:retrieval:runtime": "tsx scripts/runtime-retrieval-benchmark.ts",
     "benchmark:retrieval:registered": "tsx scripts/registered-corpus-retrieval-benchmark.ts",
+    "benchmark:context-tokenization": "tsx scripts/context-tokenizer-baseline.ts",
     "benchmark:agent-ab": "tsx scripts/agent-ab-benchmark.ts",
     "benchmark:scale": "node --expose-gc node_modules/tsx/dist/cli.mjs scripts/load-scale-benchmark.ts",
     "benchmark:concurrency": "tsx scripts/concurrency-benchmark.ts"
   },
   "devDependencies": {
     "@types/mime-types": "^3.0.1",
-    "@types/node": "^24.0.0",
-    "@types/pg": "^8.11.0",
-    "dependency-cruiser": "^16.0.0",
-    "prettier": "^3.0.0",
-    "tsx": "^4.0.0",
-    "turbo": "^2.0.0",
-    "typescript": "^5.7.0",
-    "vitest": "^4.1.10"
+    "@types/node": "^24.13.3",
+    "@types/pg": "^8.20.0",
+    "dependency-cruiser": "^16.10.4",
+    "prettier": "^3.9.6",
+    "tsx": "^4.23.1",
+    "turbo": "^2.10.7",
+    "typescript": "^5.9.3",
+    "vitest": "4.1.10"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0",
-    "@fastify/cors": "^11.3.0",
-    "@fastify/rate-limit": "^11.2.0",
-    "commander": "^15.0.0",
-    "dotenv": "^17.4.2",
-    "fast-glob": "^3.3.3",
-    "gray-matter": "^4.0.3",
-    "mime-types": "^3.0.2",
-    "minio": "^8.0.7",
-    "pg": "^8.13.0",
-    "yaml": "^2.9.0"
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "@fastify/cors": "11.3.0",
+    "@fastify/rate-limit": "11.2.0",
+    "commander": "15.0.0",
+    "dotenv": "17.4.2",
+    "fast-glob": "3.3.3",
+    "gray-matter": "4.0.3",
+    "mime-types": "3.0.2",
+    "minio": "8.0.7",
+    "pg": "8.22.0",
+    "yaml": "2.9.0"
   }
 }
