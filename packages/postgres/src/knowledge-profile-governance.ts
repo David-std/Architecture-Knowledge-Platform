@@ -25,6 +25,25 @@ export interface RecordedKnowledgeProfileDryRun {
   revision: KnowledgeProfileRevisionRecord;
 }
 
+export interface ActivateKnowledgeProfileInput {
+  spaceId: string;
+  vaultId: string;
+  revisionId: string;
+  dryRunId: string;
+  expectedProfileHash: string;
+  expectedCorpusRevision: string;
+  actorId: string;
+  traceId: string;
+}
+
+export interface ActivatedKnowledgeProfile {
+  revision: KnowledgeProfileRevisionRecord;
+  previousRevisionId: string | null;
+  corpusRevision: string;
+  dryRunId: string;
+  alreadyActive: boolean;
+}
+
 function validationStatus(
   compatibilityClass: KnowledgeProfileCompatibility,
 ): Extract<KnowledgeProfileRevisionStatus, "VALIDATED" | "REVIEW_REQUIRED"> {
@@ -160,4 +179,229 @@ export async function recordKnowledgeProfileDryRun(
   );
   if (!revision) throw new Error("KNOWLEDGE_PROFILE_REVISION_NOT_FOUND");
   return { id: dryRun.id, createdAt: dryRun.created_at, revision };
+}
+
+/**
+ * Activate only a non-breaking profile that was validated against the exact
+ * current corpus snapshot. Breaking profiles intentionally remain blocked at
+ * REVIEW_REQUIRED until a dedicated profile-review workflow exists.
+ */
+export async function activateKnowledgeProfile(
+  db: Postgres,
+  input: ActivateKnowledgeProfileInput,
+): Promise<ActivatedKnowledgeProfile> {
+  const client = await db.pool.connect();
+  let previousRevisionId: string | null = null;
+  let alreadyActive = false;
+  try {
+    await client.query("begin isolation level serializable");
+    const vaultResult = await client.query<{
+      active_revision_id: string | null;
+      corpus_revision: string;
+    }>(
+      `
+      select v.active_knowledge_profile_revision_id active_revision_id,
+             coalesce(r.corpus_revision,v.current_revision,'unknown') corpus_revision
+        from vaults v
+        left join vault_index_revisions r
+          on r.space_id=v.space_id and r.vault_id=v.id
+       where v.space_id=$1 and v.id=$2
+       for update of v
+      `,
+      [input.spaceId, input.vaultId],
+    );
+    const vault = vaultResult.rows[0];
+    if (!vault) throw new Error("VAULT_NOT_FOUND_OR_SCOPE_MISMATCH");
+    if (vault.corpus_revision !== input.expectedCorpusRevision) {
+      throw new Error("CONTEXT_REVISION_CHANGED");
+    }
+    previousRevisionId = vault.active_revision_id;
+
+    const fingerprintResult = await client.query<{ fingerprint: string }>(
+      `
+      select encode(digest(coalesce(string_agg(
+        id::text||':'||coalesce(content_hash,'')||':'||current_revision,
+        '|' order by id
+      ),''),'sha256'),'hex') fingerprint
+        from knowledge_documents where space_id=$1 and vault_id=$2
+      `,
+      [input.spaceId, input.vaultId],
+    );
+    const currentFingerprint = String(
+      fingerprintResult.rows[0]?.fingerprint ?? "",
+    );
+
+    const candidateResult = await client.query<{
+      id: string;
+      profile_hash: string;
+      status: KnowledgeProfileRevisionStatus;
+      compatibility_class: KnowledgeProfileCompatibility | null;
+      supersedes_revision_id: string | null;
+    }>(
+      `
+      select id,profile_hash,status,compatibility_class,supersedes_revision_id
+        from knowledge_profile_revisions
+       where id=$3 and space_id=$1 and vault_id=$2
+       for update
+      `,
+      [input.spaceId, input.vaultId, input.revisionId],
+    );
+    const candidate = candidateResult.rows[0];
+    if (!candidate) throw new Error("KNOWLEDGE_PROFILE_REVISION_NOT_FOUND");
+    if (candidate.profile_hash !== input.expectedProfileHash) {
+      throw new Error("CONTEXT_REVISION_CHANGED");
+    }
+
+    const dryRunResult = await client.query<{
+      id: string;
+      candidate_hash: string;
+      corpus_revision: string;
+      compatibility_class: KnowledgeProfileCompatibility;
+      corpus_fingerprint_before: string;
+      corpus_fingerprint_after: string;
+    }>(
+      `
+      select id,candidate_hash,corpus_revision,compatibility_class,
+             corpus_fingerprint_before,corpus_fingerprint_after
+        from schema_dry_runs
+       where id=$3 and space_id=$1 and vault_id=$2 and profile_revision_id=$4
+       for share
+      `,
+      [input.spaceId, input.vaultId, input.dryRunId, input.revisionId],
+    );
+    const dryRun = dryRunResult.rows[0];
+    if (!dryRun) throw new Error("KNOWLEDGE_PROFILE_DRY_RUN_REQUIRED");
+    if (
+      dryRun.candidate_hash !== candidate.profile_hash ||
+      dryRun.corpus_revision !== input.expectedCorpusRevision ||
+      dryRun.corpus_fingerprint_before !== dryRun.corpus_fingerprint_after ||
+      dryRun.corpus_fingerprint_after !== currentFingerprint
+    ) {
+      throw new Error("CONTEXT_REVISION_CHANGED");
+    }
+
+    if (
+      candidate.status === "ACTIVE" &&
+      previousRevisionId === candidate.id
+    ) {
+      if (
+        candidate.compatibility_class !== "NON_BREAKING" ||
+        dryRun.compatibility_class !== "NON_BREAKING"
+      ) {
+        throw new Error("ACTIVE_KNOWLEDGE_PROFILE_BINDING_INVALID");
+      }
+      alreadyActive = true;
+      await client.query("commit");
+    } else {
+      if (
+        candidate.status === "REVIEW_REQUIRED" ||
+        candidate.compatibility_class !== "NON_BREAKING" ||
+        dryRun.compatibility_class !== "NON_BREAKING"
+      ) {
+        throw new Error("PROFILE_REVIEW_REQUIRED");
+      }
+      if (candidate.status !== "VALIDATED") {
+        throw new Error("KNOWLEDGE_PROFILE_NOT_VALIDATED");
+      }
+
+      if (previousRevisionId) {
+        if (candidate.supersedes_revision_id !== previousRevisionId) {
+          throw new Error("KNOWLEDGE_PROFILE_SUPERSESSION_REQUIRED");
+        }
+        const previous = await client.query<{ status: string }>(
+          `
+          select status from knowledge_profile_revisions
+           where id=$3 and space_id=$1 and vault_id=$2
+           for update
+          `,
+          [input.spaceId, input.vaultId, previousRevisionId],
+        );
+        if (previous.rows[0]?.status !== "ACTIVE") {
+          throw new Error("ACTIVE_KNOWLEDGE_PROFILE_BINDING_INVALID");
+        }
+        await client.query(
+          `
+          update knowledge_profile_revisions
+             set status='SUPERSEDED',superseded_at=now(),updated_at=now()
+           where id=$3 and space_id=$1 and vault_id=$2 and status='ACTIVE'
+          `,
+          [input.spaceId, input.vaultId, previousRevisionId],
+        );
+      } else if (candidate.supersedes_revision_id !== null) {
+        throw new Error("KNOWLEDGE_PROFILE_SUPERSESSION_REQUIRED");
+      }
+
+      const activated = await client.query(
+        `
+        update knowledge_profile_revisions
+           set status='ACTIVE',activated_at=now(),updated_at=now()
+         where id=$3 and space_id=$1 and vault_id=$2 and status='VALIDATED'
+         returning id
+        `,
+        [input.spaceId, input.vaultId, input.revisionId],
+      );
+      if (!activated.rowCount) {
+        throw new Error("KNOWLEDGE_PROFILE_ACTIVATION_CONFLICT");
+      }
+      await client.query(
+        `
+        update vaults
+           set active_knowledge_profile_revision_id=$3
+         where space_id=$1 and id=$2
+        `,
+        [input.spaceId, input.vaultId, input.revisionId],
+      );
+      const audit = await client.query(
+        `
+        insert into audit_events(
+          organization_id,space_id,actor_id,action,resource_type,resource_id,
+          metadata,trace_id,vault_id
+        )
+        select s.organization_id,s.id,$3,'schema.profile_activate',
+               'knowledge_profile_revision',$4,$5::jsonb,$6,$2
+          from spaces s where s.id=$1
+        returning id
+        `,
+        [
+          input.spaceId,
+          input.vaultId,
+          input.actorId,
+          input.revisionId,
+          JSON.stringify({
+            vaultId: input.vaultId,
+            profileRevisionId: input.revisionId,
+            previousRevisionId,
+            profileHash: candidate.profile_hash,
+            corpusRevision: input.expectedCorpusRevision,
+            dryRunId: input.dryRunId,
+          }),
+          input.traceId,
+        ],
+      );
+      if (!audit.rowCount) throw new Error("AUDIT_ORGANIZATION_UNRESOLVED");
+      await client.query("commit");
+    }
+  } catch (error) {
+    await client.query("rollback").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  const revision = await getKnowledgeProfileRevision(
+    db,
+    input.spaceId,
+    input.vaultId,
+    input.revisionId,
+  );
+  if (!revision || revision.status !== "ACTIVE") {
+    throw new Error("ACTIVE_KNOWLEDGE_PROFILE_BINDING_INVALID");
+  }
+  return {
+    revision,
+    previousRevisionId,
+    corpusRevision: input.expectedCorpusRevision,
+    dryRunId: input.dryRunId,
+    alreadyActive,
+  };
 }
