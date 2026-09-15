@@ -1055,6 +1055,22 @@ async function prepareExactVectorScaleDatabase(): Promise<void> {
   // disposable scale harness measures exact pgvector query behavior and
   // bulk materialisation without conflating it with HNSW build cost.
   await client.query("drop index if exists unit_embeddings_vector_idx");
+  await client.query("drop index if exists unit_embeddings_64_vector_idx");
+  await client.query("drop index if exists unit_embeddings_384_vector_idx");
+  const remainingAnnIndexes = await client.query<{ indexname: string }>(
+    `select indexname
+       from pg_indexes
+      where schemaname='public'
+        and tablename='unit_embeddings'
+        and lower(indexdef) like '% using hnsw %'`,
+  );
+  if (remainingAnnIndexes.rowCount !== 0) {
+    throw new Error(
+      `Scale benchmark exact-vector mode still has HNSW indexes: ${remainingAnnIndexes.rows
+        .map((row) => row.indexname)
+        .join(", ")}`,
+    );
+  }
 }
 
 async function runBenchmark(
@@ -1198,7 +1214,7 @@ async function runBenchmark(
       {
         dimension: "ANN index construction and maintenance",
         reason:
-          "The disposable scale database removes the HNSW index before fixture loading so general 1K-100K scale evidence is not conflated with ANN tuning; ANN selection is evaluated separately.",
+          "The disposable scale database removes all HNSW indexes from unit_embeddings before fixture loading so general 1K-100K scale evidence is not conflated with ANN tuning; ANN selection is evaluated separately.",
       },
       {
         dimension: "HTTP/API and worker throughput",
