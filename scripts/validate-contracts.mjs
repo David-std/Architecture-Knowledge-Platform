@@ -33,8 +33,7 @@ function requiredSet(schema) {
 
 function hasIdempotencyKey(operation) {
   return (operation?.parameters ?? []).some(
-    (parameter) =>
-      parameter?.$ref === "#/components/parameters/IdempotencyKey",
+    (parameter) => parameter?.$ref === "#/components/parameters/IdempotencyKey",
   );
 }
 
@@ -104,8 +103,7 @@ if (
   );
 }
 if (
-  dryRunSchema?.properties?.profile?.$ref !==
-  "./knowledge-profile.schema.json"
+  dryRunSchema?.properties?.profile?.$ref !== "./knowledge-profile.schema.json"
 ) {
   failures.push(
     "contracts/openapi.yaml: schema dry-run profile must reference knowledge-profile.schema.json",
@@ -117,7 +115,9 @@ const activationSchema =
   activation?.requestBody?.content?.["application/json"]?.schema ?? {};
 const activationRequired = requiredSet(activationSchema);
 if (activation?.["x-akp-permission"] !== "admin") {
-  failures.push("contracts/openapi.yaml: profile activation must require admin");
+  failures.push(
+    "contracts/openapi.yaml: profile activation must require admin",
+  );
 }
 if (
   activation?.["x-akp-requires-unrestricted-space"] !== true ||
@@ -160,7 +160,9 @@ if (
   );
 }
 
-if (knowledgeProfile?.$schema !== "https://json-schema.org/draft/2020-12/schema") {
+if (
+  knowledgeProfile?.$schema !== "https://json-schema.org/draft/2020-12/schema"
+) {
   failures.push(
     "contracts/knowledge-profile.schema.json: expected JSON Schema 2020-12",
   );
