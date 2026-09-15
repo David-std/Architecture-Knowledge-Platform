@@ -9,6 +9,9 @@
       "@akp/audit-export": ["packages/audit-export/src/index.ts"],
       "@akp/compiler": ["packages/compiler/src/index.ts"],
       "@akp/contracts": ["packages/contracts/src/index.ts"],
+      "@akp/contracts/knowledge-profile": [
+        "packages/contracts/src/knowledge-profile.ts"
+      ],
       "@akp/domain": ["packages/domain/src/index.ts"],
       "@akp/evaluation": ["packages/evaluation/src/index.ts"],
       "@akp/git-store": ["packages/git-store/src/index.ts"],
