@@ -561,8 +561,8 @@ export const DEFAULT_KNOWLEDGE_PROFILE_V1 = KnowledgeProfileV1.parse({
   },
   artifactContracts: {
     "markdown-v03": {
-      root: "knowledge",
-      pathTemplate: "{kind}/{candidateId}.md",
+      root: "20-knowledge/generated",
+      pathTemplate: "{kind}/{slug}.md",
       extension: ".md",
     },
   },

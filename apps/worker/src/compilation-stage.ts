@@ -6,7 +6,11 @@ import {
   type ConfiguredKnowledgeCompiler,
   type KnowledgeCompilerResult,
 } from "@akp/compiler";
-import { StructuralLocator, type DocumentArtifact } from "@akp/contracts";
+import {
+  StructuralLocator,
+  type DocumentArtifact,
+  type TrustTier,
+} from "@akp/contracts";
 import { withSpan } from "@akp/observability";
 import { resolveAuthorizedVaultScope, type Postgres } from "@akp/postgres";
 import { renderDocumentArtifactDraft } from "./document-artifact.js";
@@ -18,6 +22,7 @@ interface EvidenceRow {
   locator: unknown;
   content_hash: string;
   excerpt: string | null;
+  review_status?: string | null;
 }
 
 interface VaultRow {
@@ -136,6 +141,22 @@ async function loadVaultContext(
   };
 }
 
+function evidenceTrustFromStatus(
+  status: string | null | undefined,
+): TrustTier | undefined {
+  switch (status) {
+    case "HUMAN_REVIEWED":
+      return "HUMAN_REVIEWED";
+    case "ATTESTED":
+      return "ATTESTED";
+    case "PENDING":
+    case "UNVERIFIED":
+      return "UNVERIFIED";
+    default:
+      return undefined;
+  }
+}
+
 async function loadEvidence(
   db: Postgres,
   input: CompilationStageInput & { vaultId: string },
@@ -148,7 +169,7 @@ async function loadEvidence(
 }> {
   const result = await db.pool.query<EvidenceRow>(
     `
-    select id,locator,content_hash,excerpt
+    select id,locator,content_hash,excerpt,review_status
       from evidence
      where id=$1 and space_id=$2 and vault_id=$3
        and source_id=$4 and artifact_id=$5
@@ -175,12 +196,14 @@ async function loadEvidence(
     excerpt: row.excerpt,
     excerptHash: row.content_hash,
   });
+  const trust = evidenceTrustFromStatus(row.review_status);
   return {
     id: row.id,
     sourceArtifactId: input.sourceArtifactId,
     locator,
     excerpt: row.excerpt,
     excerptHash: row.content_hash,
+    ...(trust ? { trust } : {}),
   };
 }
 

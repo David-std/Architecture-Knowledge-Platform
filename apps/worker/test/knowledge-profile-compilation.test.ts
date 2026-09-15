@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import {
   deriveKnowledgePath,
+  deriveProfileKnowledgePath,
+  durableCompilerKnowledgeProfileContext,
   knowledgeProfileHash,
   type ConfiguredKnowledgeCompiler,
 } from "@akp/compiler";
@@ -136,7 +138,21 @@ function configuredCompiler(kind: "note" | "rule") {
     proposedFileChanges: [
       {
         candidateId: "candidate-1",
-        path: deriveKnowledgePath({ title: statement, kind }),
+        path:
+          kind === "note"
+            ? deriveProfileKnowledgePath({
+                title: statement,
+                kind,
+                candidateId: "candidate-1",
+                knowledgeProfile: durableCompilerKnowledgeProfileContext({
+                  revisionId: PROFILE_REVISION_ID,
+                  profileHash: knowledgeProfileHash(
+                    NEUTRAL_KNOWLEDGE_PROFILE_V1,
+                  ),
+                  profile: NEUTRAL_KNOWLEDGE_PROFILE_V1,
+                }),
+              })
+            : deriveKnowledgePath({ title: statement, kind }),
         operation: "CREATE" as const,
         content: `---\nid: CACHE-1\ntype: ${kind}\nstatus: draft\n---\n\n${statement}\n`,
         reasons: ["Grounded in source evidence."],

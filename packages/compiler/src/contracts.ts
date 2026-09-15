@@ -25,6 +25,7 @@ export const CompilerEvidence = z
     locator: StructuralLocator,
     excerpt: z.string().min(1).max(12_000),
     excerptHash: Sha256,
+    trust: TrustTier.optional(),
   })
   .strict();
 export type CompilerEvidence = z.infer<typeof CompilerEvidence>;
@@ -280,6 +281,20 @@ export type ReviewExistingKnowledgeCandidate = z.infer<
   typeof ReviewExistingKnowledgeCandidate
 >;
 
+export const EffectiveReviewPolicy = z
+  .object({
+    required: z.literal(true),
+    minimumApprovals: z.number().int().min(1).max(20),
+    allowedRoles: z.array(z.string().min(1).max(100)).min(1),
+    profileSource: z.enum(["DURABLE_REVISION", "V03_DEFAULT"]),
+    profileRevisionId: z.string().uuid().nullable(),
+    profileHash: Sha256,
+    profileId: z.string().min(1).max(100),
+    profileVersion: z.string().min(1).max(100),
+  })
+  .strict();
+export type EffectiveReviewPolicy = z.infer<typeof EffectiveReviewPolicy>;
+
 export const ReviewCompilationContext = z
   .object({
     identity: IdentityAssessment,
@@ -288,6 +303,7 @@ export const ReviewCompilationContext = z
     existingCandidates: z.array(ReviewExistingKnowledgeCandidate).max(50),
     knowledgeCandidates: z.array(KnowledgeCandidate).max(50),
     contradictions: z.array(KnowledgeContradiction).max(50),
+    reviewPolicy: EffectiveReviewPolicy.optional(),
     warnings: z.array(z.string().min(1).max(2_000)).max(50),
     summary: z.string().min(1).max(8_000),
   })
