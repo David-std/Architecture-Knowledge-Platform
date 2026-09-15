@@ -46,18 +46,33 @@ jobs:
 
           path = Path("apps/api/test/interoperability.test.ts")
           text = path.read_text()
-          text = text.replace(
-              '''    expect(plan.changes[0]?.path).toBe(\n      "knowledge/note/OKF-4E44DC153642E5DA.md",\n    );''',
-              '''    expect(plan.changes[0]?.path).toMatch(\n      /^knowledge\\/note\\/OKF-[A-F0-9]{16}\\.md$/,\n    );''',
+
+          def replace_once(old: str, new: str) -> None:
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"fixture anchor expected once, found {count}: {old[:80]}")
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              'expect(plan.changes[0]?.path).toBe(',
+              'expect(plan.changes[0]?.path).toMatch(',
           )
-          text = text.replace(
-              '''    const second = {\n      ...bundle().documents[0]!,\n      id: "FOREIGN-2",\n      externalId: "ADR-78",\n      title: "Second note",\n      sourcePath: "knowledge/notes/second.md",\n    };''',
-              '''    const second = {\n      ...bundle().documents[0]!,\n      id: "FOREIGN-2",\n      externalId: "ADR-78",\n      title: "Second procedure",\n      kind: "procedure",\n      sourcePath: "knowledge/procedures/second.md",\n    };''',
+          replace_once(
+              '"knowledge/note/OKF-4E44DC153642E5DA.md"',
+              '/^knowledge\\/note\\/OKF-[A-F0-9]{16}\\.md$/',
           )
-          text = text.replace(
-              '''    const plan = planOkfReviewImport({\n      bundle: related,\n      knowledgeProfile: profile,\n    });\n    expect(plan.changes[0]?.content).toContain('"localType":"supports"');\n    expect(plan.changes[1]?.content).toContain('"localType":"supports"');''',
-              '''    const plan = planOkfReviewImport({\n      bundle: related,\n      mapping: { relations: { supports: "explains" } },\n      knowledgeProfile: profile,\n    });\n    expect(plan.changes[0]?.content).toContain('"localType":"explains"');\n    expect(plan.changes[1]?.content).toContain('"localType":"explains"');''',
+          replace_once(
+              'title: "Second note",\n      sourcePath: "knowledge/notes/second.md",',
+              'title: "Second procedure",\n      kind: "procedure",\n      sourcePath: "knowledge/procedures/second.md",',
           )
+          replace_once(
+              'bundle: related,\n      knowledgeProfile: profile,',
+              'bundle: related,\n      mapping: { relations: { supports: "explains" } },\n      knowledgeProfile: profile,',
+          )
+          if text.count('"localType":"supports"') != 2:
+              raise SystemExit("expected exactly two supports assertions")
+          text = text.replace('"localType":"supports"', '"localType":"explains"')
           path.write_text(text)
           PY
 
