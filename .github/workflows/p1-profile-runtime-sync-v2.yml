@@ -1,0 +1,429 @@
+name: p1-profile-runtime-sync-v2
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  apply:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'feat/v0.4-enterprise-context-workspace'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/v0.4-enterprise-context-workspace
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Apply active-profile compiler binding
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new, label):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected one marker in {path}, found {count}")
+              p.write_text(text.replace(old, new, 1))
+
+          # Compiler contract: semantic kinds come from the bound profile.
+          path = 'packages/compiler/src/contracts.ts'
+          replace_once(path,
+          'import { z } from "zod";\nimport {\n  DocumentArtifact as DocumentArtifactSchema,',
+          'import { z } from "zod";\nimport { KnowledgeProfileV1 } from "@akp/contracts/knowledge-profile";\nimport {\n  DocumentArtifact as DocumentArtifactSchema,',
+          'compiler profile import')
+          replace_once(path,
+          '''export const KnowledgeKind = z.enum([
+            "claim",
+            "decision",
+            "rule",
+            "workflow",
+            "concept",
+            "example",
+            "counterexample",
+          ]);
+          export type KnowledgeKind = z.infer<typeof KnowledgeKind>;''',
+          '''export const KnowledgeKind = z
+            .string()
+            .regex(/^[A-Za-z][A-Za-z0-9._:-]{0,127}$/);
+          export type KnowledgeKind = z.infer<typeof KnowledgeKind>;''',
+          'dynamic knowledge kind')
+          replace_once(path,
+          'export type CompilerPolicy = z.infer<typeof CompilerPolicy>;\n\nexport const KnowledgeCompilerInput = z',
+          '''export type CompilerPolicy = z.infer<typeof CompilerPolicy>;
+
+          export const CompilerKnowledgeProfileContext = z
+            .object({
+              source: z.enum(["DURABLE_REVISION", "V03_DEFAULT"]),
+              revisionId: z.string().uuid().nullable(),
+              profileHash: Sha256,
+              profile: KnowledgeProfileV1,
+            })
+            .strict()
+            .superRefine((binding, context) => {
+              if (binding.source === "DURABLE_REVISION" && !binding.revisionId) {
+                context.addIssue({
+                  code: z.ZodIssueCode.custom,
+                  path: ["revisionId"],
+                  message: "durable profile bindings require a revision id",
+                });
+              }
+              if (binding.source === "V03_DEFAULT" && binding.revisionId) {
+                context.addIssue({
+                  code: z.ZodIssueCode.custom,
+                  path: ["revisionId"],
+                  message: "v0.3 default profile bindings cannot claim a durable revision",
+                });
+              }
+            });
+          export type CompilerKnowledgeProfileContext = z.infer<
+            typeof CompilerKnowledgeProfileContext
+          >;
+
+          export const KnowledgeCompilerInput = z''',
+          'profile context schema')
+          replace_once(path,
+          '    existingCandidates: z.array(ExistingKnowledgeCandidate).max(50),\n    schemaProfile: z.record(z.string(), z.unknown()).default({}),',
+          '    existingCandidates: z.array(ExistingKnowledgeCandidate).max(50),\n    knowledgeProfile: CompilerKnowledgeProfileContext,\n    schemaProfile: z.record(z.string(), z.unknown()).default({}),',
+          'profile context input')
+          replace_once(path,
+          '''    if (input.existingCandidates.length > input.budget.maxExistingCandidates) {
+              context.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ["existingCandidates"],
+                message: "existing knowledge candidates exceed configured budget",
+              });
+            }
+            for (const evidence of input.evidence) {''',
+          '''    if (input.existingCandidates.length > input.budget.maxExistingCandidates) {
+              context.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ["existingCandidates"],
+                message: "existing knowledge candidates exceed configured budget",
+              });
+            }
+            const declaredKinds = new Set(
+              Object.keys(input.knowledgeProfile.profile.knowledgeKinds),
+            );
+            for (const kind of input.policy.allowedKnowledgeKinds) {
+              if (!declaredKinds.has(kind)) {
+                context.addIssue({
+                  code: z.ZodIssueCode.custom,
+                  path: ["policy", "allowedKnowledgeKinds"],
+                  message: `compiler policy allows a kind not declared by the active profile: ${kind}`,
+                });
+              }
+            }
+            for (const evidence of input.evidence) {''',
+          'profile policy refinement')
+
+          path = 'packages/compiler/src/grounding.ts'
+          replace_once(path,
+          '''    if (!input.policy.allowedKnowledgeKinds.includes(candidate.kind)) {
+              throw new Error(`COMPILER_KIND_NOT_ALLOWED:${candidate.kind}`);
+            }
+            assertEvidenceReferences(''',
+          '''    if (!input.policy.allowedKnowledgeKinds.includes(candidate.kind)) {
+              throw new Error(`COMPILER_KIND_NOT_ALLOWED:${candidate.kind}`);
+            }
+            const kindDefinition =
+              input.knowledgeProfile.profile.knowledgeKinds[candidate.kind];
+            if (!kindDefinition) {
+              throw new Error(`COMPILER_PROFILE_KIND_NOT_DECLARED:${candidate.kind}`);
+            }
+            const evidencePolicy =
+              input.knowledgeProfile.profile.evidencePolicies[
+                kindDefinition.evidencePolicy
+              ];
+            if (!evidencePolicy) {
+              throw new Error(
+                `COMPILER_PROFILE_EVIDENCE_POLICY_MISSING:${candidate.kind}`,
+              );
+            }
+            if (
+              new Set(candidate.evidenceIds).size < evidencePolicy.minimumEvidence
+            ) {
+              throw new Error(
+                `COMPILER_PROFILE_EVIDENCE_MINIMUM:${candidate.kind}:${evidencePolicy.minimumEvidence}`,
+              );
+            }
+            assertEvidenceReferences(''',
+          'profile evidence enforcement')
+
+          path = 'apps/worker/src/knowledge-compilation.ts'
+          replace_once(path,
+          '  type CompilerEvidence,\n  type ConfiguredKnowledgeCompiler,',
+          '  type CompilerEvidence,\n  type CompilerKnowledgeProfileContext,\n  type ConfiguredKnowledgeCompiler,',
+          'worker compiler context import')
+          replace_once(path,
+          '  evidence: CompilerEvidence[];\n  schemaProfile: Record<string, unknown>;\n  corpusRevision: string;',
+          '  evidence: CompilerEvidence[];\n  knowledgeProfile: CompilerKnowledgeProfileContext;\n  schemaProfile: Record<string, unknown>;\n  corpusRevision: string;',
+          'grounded request profile')
+          replace_once(path,
+          '''    existingCandidates: retrieval.candidates,
+            schemaProfile: request.schemaProfile,
+            policy: {
+              reviewRequired: true,
+              allowDirectPublication: false,
+            },''',
+          '''    existingCandidates: retrieval.candidates,
+            knowledgeProfile: request.knowledgeProfile,
+            schemaProfile: request.schemaProfile,
+            policy: {
+              reviewRequired: true,
+              allowDirectPublication: false,
+              allowedKnowledgeKinds: Object.keys(
+                request.knowledgeProfile.profile.knowledgeKinds,
+              ),
+            },''',
+          'grounded compiler input profile')
+
+          path = 'apps/worker/src/compilation-stage.ts'
+          replace_once(path,
+          '''import {
+            CompilationPlan,
+            type ConfiguredKnowledgeCompiler,
+            type KnowledgeCompilerResult,
+          } from "@akp/compiler";
+          import { StructuralLocator, type DocumentArtifact } from "@akp/contracts";''',
+          '''import { createHash } from "node:crypto";
+          import {
+            CompilationPlan,
+            type CompilerKnowledgeProfileContext,
+            type ConfiguredKnowledgeCompiler,
+            type KnowledgeCompilerResult,
+          } from "@akp/compiler";
+          import { StructuralLocator, type DocumentArtifact } from "@akp/contracts";
+          import {
+            DEFAULT_KNOWLEDGE_PROFILE_V1,
+            KnowledgeProfileV1,
+            canonicalKnowledgeProfileJson,
+          } from "@akp/contracts/knowledge-profile";''',
+          'compilation stage profile imports')
+          replace_once(path,
+          'import { resolveAuthorizedVaultScope, type Postgres } from "@akp/postgres";',
+          '''import {
+            resolveAuthorizedVaultScope,
+            resolveKnowledgeProfileBinding,
+            type Postgres,
+          } from "@akp/postgres";''',
+          'profile binding import')
+          marker = '''async function loadEvidence(
+            db: Postgres,'''
+          helper = '''function profileHash(profile: unknown): string {
+            return createHash("sha256")
+              .update(canonicalKnowledgeProfileJson(profile))
+              .digest("hex");
+          }
+
+          function defaultProfileContext(): CompilerKnowledgeProfileContext {
+            return {
+              source: "V03_DEFAULT",
+              revisionId: null,
+              profileHash: profileHash(DEFAULT_KNOWLEDGE_PROFILE_V1),
+              profile: DEFAULT_KNOWLEDGE_PROFILE_V1,
+            };
+          }
+
+          async function loadKnowledgeProfileContext(
+            db: Postgres,
+            spaceId: string,
+            vaultId: string | null,
+          ): Promise<CompilerKnowledgeProfileContext> {
+            if (!vaultId) return defaultProfileContext();
+            const binding = await resolveKnowledgeProfileBinding(db, spaceId, vaultId);
+            if (!binding.revision) return defaultProfileContext();
+            const profile = KnowledgeProfileV1.parse(binding.revision.profile);
+            const computedHash = profileHash(profile);
+            if (computedHash !== binding.revision.profileHash) {
+              throw new Error("ACTIVE_KNOWLEDGE_PROFILE_HASH_MISMATCH");
+            }
+            return {
+              source: "DURABLE_REVISION",
+              revisionId: binding.revision.id,
+              profileHash: binding.revision.profileHash,
+              profile,
+            };
+          }
+
+          async function loadEvidence(
+            db: Postgres,'''
+          replace_once(path, marker, helper, 'profile resolver helper')
+          replace_once(path,
+          '  const vault = await loadVaultContext(db, input.spaceId, input.vaultId);\n  const pathPrefix = await loadRetrievalPathPrefix(db, input);',
+          '  const vault = await loadVaultContext(db, input.spaceId, input.vaultId);\n  const knowledgeProfile = await loadKnowledgeProfileContext(\n    db,\n    input.spaceId,\n    input.vaultId,\n  );\n  const pathPrefix = await loadRetrievalPathPrefix(db, input);',
+          'load active profile')
+          replace_once(path,
+          '        evidence: [evidence],\n        schemaProfile: vault.schemaProfile,\n        corpusRevision: vault.corpusRevision,',
+          '        evidence: [evidence],\n        knowledgeProfile,\n        schemaProfile: vault.schemaProfile,\n        corpusRevision: vault.corpusRevision,',
+          'pass active profile')
+
+          path = 'packages/compiler/test/compiler-contract.test.ts'
+          replace_once(path,
+          'import { describe, expect, it, vi } from "vitest";\nimport {',
+          '''import { createHash } from "node:crypto";
+          import { describe, expect, it, vi } from "vitest";
+          import {
+            DEFAULT_KNOWLEDGE_PROFILE_V1,
+            NEUTRAL_KNOWLEDGE_PROFILE_V1,
+            canonicalKnowledgeProfileJson,
+          } from "@akp/contracts/knowledge-profile";
+          import {''',
+          'compiler test profile imports')
+          replace_once(path,
+          'function compilerInput() {\n  return KnowledgeCompilerInput.parse({',
+          '''function profileContext(
+            profile = DEFAULT_KNOWLEDGE_PROFILE_V1,
+            source: "DURABLE_REVISION" | "V03_DEFAULT" = "V03_DEFAULT",
+          ) {
+            return {
+              source,
+              revisionId:
+                source === "DURABLE_REVISION"
+                  ? "77777777-7777-4777-8777-777777777777"
+                  : null,
+              profileHash: createHash("sha256")
+                .update(canonicalKnowledgeProfileJson(profile))
+                .digest("hex"),
+              profile,
+            };
+          }
+
+          function compilerInput() {
+            return KnowledgeCompilerInput.parse({''',
+          'compiler test profile helper')
+          replace_once(path,
+          '    existingCandidates: [\n      {',
+          '    knowledgeProfile: profileContext(),\n    existingCandidates: [\n      {',
+          'compiler test input profile')
+          anchor = '''  it("rejects unbounded/unknown root fields", () => {
+            expect(() =>
+              KnowledgeCompilerInput.parse({ ...compilerInput(), surprise: true }),
+            ).toThrow();
+          });'''
+          replace_once(path, anchor, anchor + '''
+
+            it("rejects compiler kinds that are not declared by the active profile", () => {
+              expect(() =>
+                KnowledgeCompilerInput.parse({
+                  ...compilerInput(),
+                  knowledgeProfile: profileContext(
+                    NEUTRAL_KNOWLEDGE_PROFILE_V1,
+                    "DURABLE_REVISION",
+                  ),
+                  policy: {
+                    reviewRequired: true,
+                    allowDirectPublication: false,
+                    allowedKnowledgeKinds: ["rule"],
+                  },
+                }),
+              ).toThrow(/not declared by the active profile/);
+            });''',
+          'compiler active-profile negative test')
+
+          path = 'apps/worker/test/compilation-stage.test.ts'
+          # Both existing stage tests now perform one additional vault binding query.
+          replace_once(path,
+          '''      .mockResolvedValueOnce({
+                rows: [{ schema_profile: {}, current_revision: "managed:7" }],
+              })
+              .mockResolvedValueOnce({ rows: [] });''',
+          '''      .mockResolvedValueOnce({
+                rows: [{ schema_profile: {}, current_revision: "managed:7" }],
+              })
+              .mockResolvedValueOnce({
+                rows: [
+                  {
+                    schema_profile: {},
+                    active_knowledge_profile_revision_id: null,
+                  },
+                ],
+              })
+              .mockResolvedValueOnce({ rows: [] });''',
+          'fallback binding mock')
+          replace_once(path,
+          '''      .mockResolvedValueOnce({
+                rows: [{ schema_profile: {}, current_revision: "managed:8" }],
+              })
+              .mockResolvedValueOnce({
+                rows: [''',
+          '''      .mockResolvedValueOnce({
+                rows: [{ schema_profile: {}, current_revision: "managed:8" }],
+              })
+              .mockResolvedValueOnce({
+                rows: [
+                  {
+                    schema_profile: {},
+                    active_knowledge_profile_revision_id: null,
+                  },
+                ],
+              })
+              .mockResolvedValueOnce({
+                rows: [''',
+          'generative binding mock')
+          replace_once(path,
+          '''    expect(compile.mock.calls[0]?.[0]).toMatchObject({
+              spaceId: SPACE_ID,
+              vaultId: VAULT_ID,
+              evidence: [''',
+          '''    expect(compile.mock.calls[0]?.[0]).toMatchObject({
+              spaceId: SPACE_ID,
+              vaultId: VAULT_ID,
+              knowledgeProfile: {
+                source: "V03_DEFAULT",
+                revisionId: null,
+                profile: { profileId: "default", version: "0.3-compat" },
+              },
+              policy: {
+                allowedKnowledgeKinds: expect.arrayContaining(["rule", "concept"]),
+              },
+              evidence: [''',
+          'worker provider profile assertion')
+          PY
+      - name: Format and execute focused P1 tests
+        run: |
+          pnpm exec prettier --write \
+            packages/compiler/src/contracts.ts \
+            packages/compiler/src/grounding.ts \
+            packages/compiler/test/compiler-contract.test.ts \
+            apps/worker/src/knowledge-compilation.ts \
+            apps/worker/src/compilation-stage.ts \
+            apps/worker/test/compilation-stage.test.ts
+          pnpm --filter @akp/contracts test
+          pnpm --filter @akp/compiler test
+          pnpm --filter @akp/worker test
+          pnpm --filter @akp/compiler typecheck
+          pnpm --filter @akp/worker typecheck
+      - name: Commit validated runtime slice and remove temporary workflows
+        shell: bash
+        run: |
+          rm .github/workflows/p1-profile-runtime-sync.yml
+          rm .github/workflows/p1-profile-runtime-sync-v2.yml
+          git config user.name "David"
+          git config user.email "165101013+David-std@users.noreply.github.com"
+          git add \
+            packages/compiler/src/contracts.ts \
+            packages/compiler/src/grounding.ts \
+            packages/compiler/test/compiler-contract.test.ts \
+            apps/worker/src/knowledge-compilation.ts \
+            apps/worker/src/compilation-stage.ts \
+            apps/worker/test/compilation-stage.test.ts \
+            .github/workflows/p1-profile-runtime-sync.yml \
+            .github/workflows/p1-profile-runtime-sync-v2.yml
+          git diff --cached --check
+          git commit -m "feat(p1): bind active knowledge profile into compiler"
+          git push origin HEAD:feat/v0.4-enterprise-context-workspace
