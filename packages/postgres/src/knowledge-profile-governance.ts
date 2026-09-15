@@ -12,6 +12,7 @@ export interface RecordKnowledgeProfileValidationInput {
   spaceId: string;
   vaultId: string;
   revisionId: string;
+  expectedCorpusRevision: string;
   compatibilityClass: KnowledgeProfileCompatibility;
   validationReport: Record<string, unknown>;
 }
@@ -25,10 +26,10 @@ function validationStatus(
 }
 
 /**
- * Persist validation only while the corpus revision captured by the immutable
- * draft still matches the vault's current corpus revision. This prevents a
- * profile from being validated against one snapshot and later presented as if
- * it were validated against a different corpus.
+ * Persist validation only while the caller's corpus revision still matches the
+ * vault. Corpus identity belongs to the validation evidence, not to the
+ * semantic profile revision, so the same immutable profile can be revalidated
+ * after corpus changes without creating a duplicate profile revision.
  */
 export async function recordKnowledgeProfileValidation(
   db: Postgres,
@@ -41,7 +42,7 @@ export async function recordKnowledgeProfileValidation(
        set status=$4,
            compatibility_class=$5,
            validation_report=$6::jsonb,
-           validated_at=coalesce(p.validated_at,now()),
+           validated_at=now(),
            updated_at=now()
       from vaults v
       left join vault_index_revisions r
@@ -49,10 +50,10 @@ export async function recordKnowledgeProfileValidation(
      where p.id=$3
        and p.space_id=$1
        and p.vault_id=$2
-       and p.status='DRAFT'
+       and p.status in ('DRAFT','VALIDATED','REVIEW_REQUIRED')
        and v.space_id=p.space_id
        and v.id=p.vault_id
-       and p.corpus_revision=coalesce(r.corpus_revision,v.current_revision,'unknown')
+       and coalesce(r.corpus_revision,v.current_revision,'unknown')=$7
     returning p.id
     `,
     [
@@ -62,6 +63,7 @@ export async function recordKnowledgeProfileValidation(
       targetStatus,
       input.compatibilityClass,
       JSON.stringify(input.validationReport),
+      input.expectedCorpusRevision,
     ],
   );
 
@@ -83,15 +85,8 @@ export async function recordKnowledgeProfileValidation(
     input.revisionId,
   );
   if (!existing) throw new Error("KNOWLEDGE_PROFILE_REVISION_NOT_FOUND");
-
-  if (
-    existing.status === targetStatus &&
-    existing.compatibilityClass === input.compatibilityClass
-  ) {
-    return existing;
-  }
-  if (existing.status !== "DRAFT") {
-    throw new Error("KNOWLEDGE_PROFILE_REVISION_NOT_DRAFT");
+  if (!["DRAFT", "VALIDATED", "REVIEW_REQUIRED"].includes(existing.status)) {
+    throw new Error("KNOWLEDGE_PROFILE_REVISION_NOT_VALIDATABLE");
   }
   throw new Error("CONTEXT_REVISION_CHANGED");
 }
