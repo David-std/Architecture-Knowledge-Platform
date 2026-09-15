@@ -115,18 +115,20 @@ jobs:
               raise SystemExit('scale setup target not found')
           text = text.replace(old, new, 1)
 
-          before_http = '''      {
-                dimension: "HTTP/API and worker throughput",
-          '''
+          marker = '        dimension: "HTTP/API and worker throughput",'
+          marker_index = text.find(marker)
+          if marker_index < 0:
+              raise SystemExit('scale HTTP/API notMeasured marker not found')
+          block_start = text.rfind('      {', 0, marker_index)
+          if block_start < 0:
+              raise SystemExit('scale HTTP/API block start not found')
           ann_block = '''      {
-                dimension: "ANN index construction and maintenance",
-                reason:
-                  "The disposable scale database removes the HNSW index before fixture loading so general 1K-100K scale evidence is not conflated with ANN tuning; ANN selection is evaluated separately.",
-              },
+            dimension: "ANN index construction and maintenance",
+            reason:
+              "The disposable scale database removes the HNSW index before fixture loading so general 1K-100K scale evidence is not conflated with ANN tuning; ANN selection is evaluated separately.",
+          },
           '''
-          if before_http not in text:
-              raise SystemExit('scale HTTP/API notMeasured anchor not found')
-          text = text.replace(before_http, ann_block + before_http, 1)
+          text = text[:block_start] + ann_block + text[block_start:]
 
           replacements = {
             '"Client-observed point, lexical, synthetic pgvector, graph, unit and count query latency"':
