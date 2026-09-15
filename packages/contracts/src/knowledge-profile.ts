@@ -69,9 +69,7 @@ export const KnowledgeFieldDefinition = z
       });
     }
   });
-export type KnowledgeFieldDefinition = z.infer<
-  typeof KnowledgeFieldDefinition
->;
+export type KnowledgeFieldDefinition = z.infer<typeof KnowledgeFieldDefinition>;
 
 export const LifecycleTransitionDefinition = z
   .object({
@@ -146,9 +144,7 @@ export const EvidencePolicyDefinition = z
     minimumTrust: TrustTier.default("MACHINE_SUPPORTED"),
   })
   .strict();
-export type EvidencePolicyDefinition = z.infer<
-  typeof EvidencePolicyDefinition
->;
+export type EvidencePolicyDefinition = z.infer<typeof EvidencePolicyDefinition>;
 
 export const ReviewPolicyDefinition = z
   .object({
@@ -172,7 +168,10 @@ export const ArtifactContractDefinition = z
   .object({
     root: z.string().min(1).max(500),
     pathTemplate: z.string().min(1).max(500),
-    extension: z.string().regex(/^\.[A-Za-z0-9]+$/).default(".md"),
+    extension: z
+      .string()
+      .regex(/^\.[A-Za-z0-9]+$/)
+      .default(".md"),
   })
   .strict();
 export type ArtifactContractDefinition = z.infer<
@@ -188,9 +187,7 @@ export const KnowledgeKindDefinition = z
     artifactContract: SemanticName,
   })
   .strict();
-export type KnowledgeKindDefinition = z.infer<
-  typeof KnowledgeKindDefinition
->;
+export type KnowledgeKindDefinition = z.infer<typeof KnowledgeKindDefinition>;
 
 export const RelationDefinition = z
   .object({
@@ -381,8 +378,7 @@ export const KnowledgeProfileV1 = z
         context.addIssue({
           code: z.ZodIssueCode.custom,
           path: ["retrievalPolicy", "relationAllowlist"],
-          message:
-            `retrieval policy references an unknown relation: ${relation}`,
+          message: `retrieval policy references an unknown relation: ${relation}`,
         });
       }
     }
@@ -455,10 +451,12 @@ function v03Transition(
   };
 }
 
-function v03Relation(options: {
-  symmetric?: boolean;
-  evidenceRequired?: boolean;
-} = {}) {
+function v03Relation(
+  options: {
+    symmetric?: boolean;
+    evidenceRequired?: boolean;
+  } = {},
+) {
   return {
     from: [...v03Kinds],
     to: [...v03Kinds],
