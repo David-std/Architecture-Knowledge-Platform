@@ -20,7 +20,8 @@ const ARTIFACT_ID = "44444444-4444-4444-8444-444444444444";
 const EVIDENCE_ID = "55555555-5555-4555-8555-555555555555";
 const PROFILE_REVISION_ID = "77777777-7777-4777-8777-777777777777";
 const SOURCE_HASH = "a".repeat(64);
-const EXCERPT = "Invalidate cached material when the authoritative revision changes.";
+const EXCERPT =
+  "Invalidate cached material when the authoritative revision changes.";
 const EXCERPT_HASH = createHash("sha256").update(EXCERPT).digest("hex");
 
 function locator() {

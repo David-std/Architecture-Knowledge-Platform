@@ -29,7 +29,8 @@ export const CompilerKnowledgeProfileContext = z
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["revisionId"],
-        message: "v0.3 default profile bindings cannot claim a durable revision",
+        message:
+          "v0.3 default profile bindings cannot claim a durable revision",
       });
     }
   });
