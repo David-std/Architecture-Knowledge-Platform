@@ -36,7 +36,6 @@ create table knowledge_profile_revisions (
       'UNSAFE'
     )
   ),
-  corpus_revision text not null,
   supersedes_revision_id uuid,
   created_by uuid references users(id),
   validation_report jsonb not null default '{}'::jsonb,
@@ -78,9 +77,9 @@ create unique index knowledge_profile_revisions_one_active_per_vault_idx
   on knowledge_profile_revisions(vault_id)
   where status = 'ACTIVE';
 
--- A revision's semantic identity is immutable. Lifecycle, compatibility,
--- validation evidence and lifecycle timestamps may evolve through governed
--- transitions, but changing the serialized contract creates a new revision.
+-- A revision's semantic identity is immutable. Validation evidence is tied to
+-- a corpus snapshot in schema_dry_runs, not to the profile identity, so the
+-- same profile revision can be revalidated when the corpus changes.
 create or replace function akp_guard_knowledge_profile_revision_identity()
 returns trigger
 language plpgsql
@@ -93,7 +92,6 @@ begin
     new.version,
     new.profile_hash,
     new.canonical_profile,
-    new.corpus_revision,
     new.supersedes_revision_id,
     new.created_by,
     new.created_at
@@ -104,7 +102,6 @@ begin
     old.version,
     old.profile_hash,
     old.canonical_profile,
-    old.corpus_revision,
     old.supersedes_revision_id,
     old.created_by,
     old.created_at
