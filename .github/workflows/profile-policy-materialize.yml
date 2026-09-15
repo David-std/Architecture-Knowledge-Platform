@@ -38,6 +38,8 @@ jobs:
           packages/compiler/src/grounding.ts
           apps/worker/src/compilation-stage.ts
           packages/compiler/test/profile-policy-enforcement.test.ts
+      - name: Build workspace packages
+        run: pnpm build
       - name: Run focused compiler tests
         shell: bash
         run: |
