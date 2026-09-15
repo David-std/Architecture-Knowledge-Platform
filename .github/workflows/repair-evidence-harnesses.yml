@@ -114,31 +114,30 @@ jobs:
           if old not in text:
               raise SystemExit('scale setup target not found')
           text = text.replace(old, new, 1)
-          text = text.replace(
-            '''      "Vector timings exercise pgvector operators/indexes over deterministic coordinates, not embedding-model quality or semantic recall.",''',
-            '''      "Vector timings exercise exact sequential pgvector distance over deterministic coordinates; ANN index construction and maintenance are intentionally excluded and evaluated separately.",''',
-            1,
-          )
-          anchor = '''      {
-                dimension: "semantic vector quality or real embedding generation",
-                reason:
-                  "The vector path uses deterministic fixed 64-dimensional fixture values; no provider, model quality or relevance ground truth was evaluated.",
-              },
+
+          before_http = '''      {
+                dimension: "HTTP/API and worker throughput",
           '''
-          addition = anchor + '''      {
+          ann_block = '''      {
                 dimension: "ANN index construction and maintenance",
                 reason:
                   "The disposable scale database removes the HNSW index before fixture loading so general 1K-100K scale evidence is not conflated with ANN tuning; ANN selection is evaluated separately.",
               },
           '''
-          if anchor not in text:
-              raise SystemExit('scale notMeasured anchor not found')
-          text = text.replace(anchor, addition, 1)
-          text = text.replace(
-            '''      "Client-observed point, lexical, synthetic pgvector, graph, unit and count query latency",''',
-            '''      "Client-observed point, lexical, exact synthetic pgvector, graph, unit and count query latency",''',
-            1,
-          )
+          if before_http not in text:
+              raise SystemExit('scale HTTP/API notMeasured anchor not found')
+          text = text.replace(before_http, ann_block + before_http, 1)
+
+          replacements = {
+            '"Client-observed point, lexical, synthetic pgvector, graph, unit and count query latency"':
+              '"Client-observed point, lexical, exact synthetic pgvector, graph, unit and count query latency"',
+            '"Vector timings exercise pgvector operators/indexes over deterministic coordinates, not embedding-model quality or semantic recall."':
+              '"Vector timings exercise exact sequential pgvector distance over deterministic coordinates; ANN index construction and maintenance are intentionally excluded and evaluated separately."',
+          }
+          for old_value, new_value in replacements.items():
+              if old_value not in text:
+                  raise SystemExit(f'scale wording target not found: {old_value}')
+              text = text.replace(old_value, new_value, 1)
           scale.write_text(text)
           PY
           pnpm exec prettier --write scripts/agent-ab-benchmark.ts scripts/load-scale-benchmark.ts
