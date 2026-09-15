@@ -24,6 +24,10 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Align materializer anchor with current worker
+        run: >-
+          sed -i 's/locator: parsedLocator.data,/locator,/'
+          scripts/tmp-profile-policy-materialize.py
       - name: Materialize enforcement slice
         run: python scripts/tmp-profile-policy-materialize.py
       - name: Format candidate files
