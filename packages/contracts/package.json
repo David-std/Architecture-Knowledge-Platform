@@ -13,6 +13,10 @@
     "./knowledge-profile": {
       "types": "./dist/knowledge-profile.d.ts",
       "default": "./dist/knowledge-profile.js"
+    },
+    "./knowledge-profile-compatibility": {
+      "types": "./dist/knowledge-profile-compatibility.d.ts",
+      "default": "./dist/knowledge-profile-compatibility.js"
     }
   },
   "scripts": {
