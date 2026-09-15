@@ -36,7 +36,9 @@ const fixturePath = path.join(
 );
 
 async function loadPlacementRegression(): Promise<PlacementRegression> {
-  const pack = JSON.parse(await readFile(fixturePath, "utf8")) as RegressionPack;
+  const pack = JSON.parse(
+    await readFile(fixturePath, "utf8"),
+  ) as RegressionPack;
   const candidate = pack.cases.find(
     (item) => item.kind === "CONTEXT_PLACEMENT_AND_MANDATORY_CONSTRAINTS",
   );
@@ -98,21 +100,27 @@ describe("registered P0 ContextPacket correctness", () => {
 
     expect(packet.sections[0]?.kind).toBe("rule");
     expect(packet.sections[0]?.title).toBe("governance-rule");
-    expect(packet.sections.some((section) => section.title === "oversized-source")).toBe(false);
+    expect(
+      packet.sections.some((section) => section.title === "oversized-source"),
+    ).toBe(false);
     expect(packet.continuations.length).toBeGreaterThan(0);
 
-    expect(packet.requiredActions.slice(0, regression.requiredActions.length)).toEqual(
-      regression.requiredActions,
+    expect(
+      packet.requiredActions.slice(0, regression.requiredActions.length),
+    ).toEqual(regression.requiredActions);
+    expect(packet.requiredActions).toContain(
+      UNTRUSTED_RETRIEVED_CONTENT_ACTION,
     );
-    expect(packet.requiredActions).toContain(UNTRUSTED_RETRIEVED_CONTENT_ACTION);
     for (const action of regression.requiredActions) {
-      expect(packet.sections.some((section) => section.content.includes(action))).toBe(false);
+      expect(
+        packet.sections.some((section) => section.content.includes(action)),
+      ).toBe(false);
     }
 
     const compact = projectContextPacket(packet, { maxTokens: 4_000 });
     expect(compact.requiredActions).toEqual(packet.requiredActions);
-    expect(compact.requiredActions.slice(0, regression.requiredActions.length)).toEqual(
-      regression.requiredActions,
-    );
+    expect(
+      compact.requiredActions.slice(0, regression.requiredActions.length),
+    ).toEqual(regression.requiredActions);
   });
 });

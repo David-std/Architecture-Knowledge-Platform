@@ -67,7 +67,8 @@ function sha256(value: string): string {
 }
 
 function inventory(files: string[]) {
-  const matches = (prefix: string) => files.filter((item) => item.startsWith(prefix));
+  const matches = (prefix: string) =>
+    files.filter((item) => item.startsWith(prefix));
   const migrations = files.filter(
     (item) => item.startsWith("db/migrations/") && item.endsWith(".sql"),
   );
@@ -96,12 +97,16 @@ function inventory(files: string[]) {
 const manifestRaw = await readFile(manifestPath, "utf8");
 const manifest = JSON.parse(manifestRaw) as BaselineManifest;
 if (manifest.schemaVersion !== 1) {
-  throw new Error(`Unsupported capability baseline schema ${manifest.schemaVersion}.`);
+  throw new Error(
+    `Unsupported capability baseline schema ${manifest.schemaVersion}.`,
+  );
 }
 if (new Set(manifest.dimensions).size !== manifest.dimensions.length) {
   throw new Error("Capability baseline dimensions must be unique.");
 }
-if (new Set(manifest.harnessAllowlist).size !== manifest.harnessAllowlist.length) {
+if (
+  new Set(manifest.harnessAllowlist).size !== manifest.harnessAllowlist.length
+) {
   throw new Error("P0 harness allowlist must be unique.");
 }
 
@@ -176,7 +181,10 @@ for (const capability of manifest.capabilities) {
         `Capability ${capability.id}/${dimension} requires executable or retained evidence.`,
       );
     }
-    if (evidence.status === "PARTIALLY_PROVEN" && !evidence.limitation?.trim()) {
+    if (
+      evidence.status === "PARTIALLY_PROVEN" &&
+      !evidence.limitation?.trim()
+    ) {
       throw new Error(
         `Capability ${capability.id}/${dimension} is PARTIALLY_PROVEN without an explicit limitation.`,
       );

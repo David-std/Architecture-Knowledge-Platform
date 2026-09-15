@@ -12,11 +12,7 @@
     "DOCUMENTED",
     "PRODUCTIZED"
   ],
-  "evidenceStatuses": [
-    "PROVEN",
-    "PARTIALLY_PROVEN",
-    "NOT_APPLICABLE"
-  ],
+  "evidenceStatuses": ["PROVEN", "PARTIALLY_PROVEN", "NOT_APPLICABLE"],
   "dimensions": [
     "semantic_correctness",
     "real_adapter_provider_behavior",
