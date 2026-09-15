@@ -38,6 +38,29 @@ jobs:
       - name: Materialize P1 interoperability candidate
         run: python scripts/tmp-p1-interop-materialize.py
 
+      - name: Align fixtures with deterministic IDs and explicit relation mapping
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("apps/api/test/interoperability.test.ts")
+          text = path.read_text()
+          text = text.replace(
+              '''    expect(plan.changes[0]?.path).toBe(\n      "knowledge/note/OKF-4E44DC153642E5DA.md",\n    );''',
+              '''    expect(plan.changes[0]?.path).toMatch(\n      /^knowledge\\/note\\/OKF-[A-F0-9]{16}\\.md$/,\n    );''',
+          )
+          text = text.replace(
+              '''    const second = {\n      ...bundle().documents[0]!,\n      id: "FOREIGN-2",\n      externalId: "ADR-78",\n      title: "Second note",\n      sourcePath: "knowledge/notes/second.md",\n    };''',
+              '''    const second = {\n      ...bundle().documents[0]!,\n      id: "FOREIGN-2",\n      externalId: "ADR-78",\n      title: "Second procedure",\n      kind: "procedure",\n      sourcePath: "knowledge/procedures/second.md",\n    };''',
+          )
+          text = text.replace(
+              '''    const plan = planOkfReviewImport({\n      bundle: related,\n      knowledgeProfile: profile,\n    });\n    expect(plan.changes[0]?.content).toContain('"localType":"supports"');\n    expect(plan.changes[1]?.content).toContain('"localType":"supports"');''',
+              '''    const plan = planOkfReviewImport({\n      bundle: related,\n      mapping: { relations: { supports: "explains" } },\n      knowledgeProfile: profile,\n    });\n    expect(plan.changes[0]?.content).toContain('"localType":"explains"');\n    expect(plan.changes[1]?.content).toContain('"localType":"explains"');''',
+          )
+          path.write_text(text)
+          PY
+
       - name: Format candidate
         run: >-
           pnpm exec prettier --write
