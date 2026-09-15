@@ -31,6 +31,13 @@ function requiredSet(schema) {
   return new Set(Array.isArray(schema?.required) ? schema.required : []);
 }
 
+function hasIdempotencyKey(operation) {
+  return (operation?.parameters ?? []).some(
+    (parameter) =>
+      parameter?.$ref === "#/components/parameters/IdempotencyKey",
+  );
+}
+
 const openapi = await yaml("contracts/openapi.yaml");
 const asyncapi = await yaml("contracts/asyncapi.yaml");
 const mcp = await json("contracts/mcp-tools.json");
@@ -66,6 +73,16 @@ if (
 ) {
   failures.push(
     "contracts/openapi.yaml: schema dry-run must require unrestricted vault-scoped access",
+  );
+}
+if (!hasIdempotencyKey(dryRun)) {
+  failures.push(
+    "contracts/openapi.yaml: schema dry-run must declare Idempotency-Key",
+  );
+}
+if (!dryRun?.responses?.["409"]) {
+  failures.push(
+    "contracts/openapi.yaml: schema dry-run must declare revision-conflict response",
   );
 }
 for (const field of ["spaceId", "vaultId"]) {
@@ -108,6 +125,16 @@ if (
 ) {
   failures.push(
     "contracts/openapi.yaml: profile activation must require unrestricted vault-scoped access",
+  );
+}
+if (!hasIdempotencyKey(activation)) {
+  failures.push(
+    "contracts/openapi.yaml: profile activation must declare Idempotency-Key",
+  );
+}
+if (!activation?.responses?.["409"]) {
+  failures.push(
+    "contracts/openapi.yaml: profile activation must declare revision-conflict response",
   );
 }
 for (const field of [
