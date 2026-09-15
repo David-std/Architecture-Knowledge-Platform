@@ -40,25 +40,30 @@ jobs:
           scale = Path("scripts/load-scale-benchmark.ts")
           replace_once(
               scale,
-              '      "Deterministic context-packet assembly latency for candidate sets sized to each target",',
-              '      "Deterministic context-packet assembly latency for the retrieval-bounded candidate set (up to request limit 20)",',
+              '"Deterministic context-packet assembly latency for candidate sets sized to each target"',
+              '"Deterministic context-packet assembly latency for the retrieval-bounded candidate set (up to request limit 20)"',
           )
           replace_once(
               scale,
-              '      "Context-packet timings exercise the in-process deterministic builder over synthetic candidates, not retrieval, persistence or API latency.",',
-              '      "Context-packet timings exercise the in-process deterministic builder over at most the request limit of 20 synthetic candidates; corpus scale is measured in PostgreSQL, while retrieval, persistence and API latency remain separate dimensions.",',
+              '"Context-packet timings exercise the in-process deterministic builder over synthetic candidates, not retrieval, persistence or API latency."',
+              '"Context-packet timings exercise the in-process deterministic builder over at most the request limit of 20 synthetic candidates; corpus scale is measured in PostgreSQL, while retrieval, persistence and API latency remain separate dimensions."',
           )
 
           agent = Path("scripts/agent-ab-benchmark.ts")
           replace_once(
               agent,
-              '              "Keep ANSWER under 120 words and use at most four concise CLAIM lines.",',
-              '              "Keep ANSWER under 120 words. When ABSTAIN is false, return one to four concise CLAIM lines; when true, CLAIM lines may be omitted.",',
+              '"Keep ANSWER under 120 words and use at most four concise CLAIM lines."',
+              '"Keep ANSWER under 120 words. When ABSTAIN is false, return one to four concise CLAIM lines; when true, CLAIM lines may be omitted."',
           )
           replace_once(
               agent,
-              '            if (answer === undefined || abstain === undefined || citations === undefined) {\n              throw new Error("Provider response did not match the Agent A/B line contract.");\n            }\n            return { answer, abstain, citations, claims };',
-              '            if (answer === undefined || abstain === undefined || citations === undefined) {\n              throw new Error("Provider response did not match the Agent A/B line contract.");\n            }\n            if (!abstain && claims.length === 0) {\n              throw new Error("Provider omitted CLAIM lines for a non-abstaining answer.");\n            }\n            return { answer, abstain, citations, claims };',
+              '`${basePrompt}\\n\\nFORMAT RETRY: The prior completion violated the line-oriented record contract. Return the same answer again using only ANSWER, ABSTAIN, CITATIONS, and zero to four CLAIM lines.`',
+              '`${basePrompt}\\n\\nFORMAT RETRY: The prior completion violated the line-oriented record contract. Return only ANSWER, ABSTAIN, CITATIONS, plus one to four CLAIM lines when ABSTAIN is false; CLAIM lines may be omitted only when ABSTAIN is true.`',
+          )
+          replace_once(
+              agent,
+              '  return { answer, abstain, citations, claims };',
+              '  if (!abstain && claims.length === 0) {\n    throw new Error("Provider omitted CLAIM lines for a non-abstaining answer.");\n  }\n  return { answer, abstain, citations, claims };',
           )
 
           report = Path("reports/preflight/scale-100000.json")
