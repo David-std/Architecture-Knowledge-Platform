@@ -1,12 +1,39 @@
 import { createHash } from "node:crypto";
 import type { FastifyInstance } from "fastify";
-import { resolveAuthorizedVaultScope, type Postgres } from "@akp/postgres";
+import type { KnowledgeProfileV1 } from "@akp/contracts/knowledge-profile";
+import {
+  classifyKnowledgeProfileCompatibility,
+  type KnowledgeProfileCompatibilityIssue,
+  type KnowledgeProfileCorpusUsage,
+} from "@akp/contracts/knowledge-profile-compatibility";
+import {
+  createKnowledgeProfileDraft,
+  recordKnowledgeProfileDryRun,
+  resolveAuthorizedVaultScope,
+  resolveEffectiveKnowledgeProfile,
+  type Postgres,
+} from "@akp/postgres";
 import {
   actorOf,
   audit,
   hasUnrestrictedPathAccess,
   requirePermission,
 } from "../auth.js";
+
+interface CorpusDocument extends Record<string, unknown> {
+  id: string;
+  external_id: string | null;
+  path: string;
+  type: string;
+  lifecycle: string;
+  frontmatter: Record<string, unknown>;
+  current_revision: string;
+}
+
+interface RelationUsageRow {
+  relation_type: string;
+  relation_count: string | number;
+}
 
 function normalized(values: unknown): string[] {
   if (!Array.isArray(values)) return [];
@@ -41,6 +68,71 @@ async function corpusFingerprint(
   return String(result.rows[0]?.fingerprint ?? "");
 }
 
+function buildProfileCorpusUsage(
+  documents: CorpusDocument[],
+  relationRows: RelationUsageRow[],
+  currentProfile: KnowledgeProfileV1,
+): KnowledgeProfileCorpusUsage {
+  const kindCounts: Record<string, number> = {};
+  const lifecycleStateCounts: Record<string, Record<string, number>> = {};
+  for (const document of documents) {
+    kindCounts[document.type] = (kindCounts[document.type] ?? 0) + 1;
+    const lifecycleName = currentProfile.knowledgeKinds[document.type]?.lifecycle;
+    if (!lifecycleName) continue;
+    const states = (lifecycleStateCounts[lifecycleName] ??= {});
+    states[document.lifecycle] = (states[document.lifecycle] ?? 0) + 1;
+  }
+  const relationCounts = Object.fromEntries(
+    relationRows.map((row) => [row.relation_type, Number(row.relation_count)]),
+  );
+  return { kindCounts, relationCounts, lifecycleStateCounts };
+}
+
+function profileAffectedDocumentCount(
+  documents: CorpusDocument[],
+  currentProfile: KnowledgeProfileV1,
+  issues: KnowledgeProfileCompatibilityIssue[],
+): number {
+  const kinds = new Set<string>();
+  const addKindsUsing = (
+    field: "lifecycle" | "evidencePolicy" | "reviewPolicy" | "artifactContract",
+    value: string,
+  ) => {
+    for (const [kind, definition] of Object.entries(
+      currentProfile.knowledgeKinds,
+    )) {
+      if (definition[field] === value) kinds.add(kind);
+    }
+  };
+
+  for (const issue of issues) {
+    const [root, name] = issue.path.split(".");
+    if (issue.code === "PROFILE_ID_CHANGED") {
+      for (const kind of Object.keys(currentProfile.knowledgeKinds)) {
+        kinds.add(kind);
+      }
+      continue;
+    }
+    if (!name) continue;
+    if (root === "knowledgeKinds") kinds.add(name);
+    if (root === "lifecycles") addKindsUsing("lifecycle", name);
+    if (root === "evidencePolicies") addKindsUsing("evidencePolicy", name);
+    if (root === "reviewPolicies") addKindsUsing("reviewPolicy", name);
+    if (root === "artifactContracts") addKindsUsing("artifactContract", name);
+  }
+
+  return documents.filter((document) => kinds.has(document.type)).length;
+}
+
+function legacyCompatibilityStatus(
+  compatibilityClass: string,
+): "COMPATIBLE" | "MIGRATION_REQUIRED" {
+  return compatibilityClass === "MIGRATION_REQUIRED" ||
+    compatibilityClass === "UNSAFE"
+    ? "MIGRATION_REQUIRED"
+    : "COMPATIBLE";
+}
+
 export function registerSchemaGovernanceRoutes(
   app: FastifyInstance,
   db: Postgres,
@@ -52,6 +144,8 @@ export function registerSchemaGovernanceRoutes(
       candidateVersion?: string;
       requiredFrontmatterFields?: string[];
       allowedTypes?: string[];
+      profile?: unknown;
+      supersedesRevisionId?: string;
     };
   }>(
     "/v1/schema/dry-run",
@@ -87,26 +181,64 @@ export function registerSchemaGovernanceRoutes(
       if (!vaultAccess || vaultAccess.pathPrefix !== null) {
         return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
       }
+
+      const fullProfileRequested = request.body?.profile !== undefined;
       const candidateVersion = request.body?.candidateVersion?.trim();
-      if (!candidateVersion) {
+      if (!fullProfileRequested && !candidateVersion) {
         return reply
           .code(400)
           .send({ code: "CANDIDATE_SCHEMA_VERSION_REQUIRED" });
       }
+
+      let currentProfileBefore:
+        | Awaited<ReturnType<typeof resolveEffectiveKnowledgeProfile>>
+        | undefined;
+      let profileDraft:
+        | Awaited<ReturnType<typeof createKnowledgeProfileDraft>>
+        | undefined;
+      if (fullProfileRequested) {
+        try {
+          currentProfileBefore = await resolveEffectiveKnowledgeProfile(
+            db,
+            spaceId,
+            vaultId,
+          );
+          profileDraft = await createKnowledgeProfileDraft(db, {
+            spaceId,
+            vaultId,
+            profile: request.body.profile,
+            supersedesRevisionId:
+              request.body.supersedesRevisionId?.trim() || null,
+            createdBy: actor.id,
+          });
+        } catch (error) {
+          return reply.code(400).send({
+            code: "INVALID_KNOWLEDGE_PROFILE",
+            detail: error instanceof Error ? error.message : "invalid profile",
+          });
+        }
+      }
+
       const requiredFields = normalized(request.body.requiredFrontmatterFields);
       const allowedTypes = normalized(request.body.allowedTypes);
-      const candidate = {
-        candidateVersion,
-        requiredFrontmatterFields: requiredFields,
-        allowedTypes,
-      };
-      const candidateHash = createHash("sha256")
-        .update(JSON.stringify(candidate))
-        .digest("hex");
+      const legacyCandidate = candidateVersion
+        ? {
+            candidateVersion,
+            requiredFrontmatterFields: requiredFields,
+            allowedTypes,
+          }
+        : null;
+      const legacyCandidateHash = legacyCandidate
+        ? createHash("sha256")
+            .update(JSON.stringify(legacyCandidate))
+            .digest("hex")
+        : null;
+
       const client = await db.pool.connect();
       let before = "";
-      let after = "";
-      let documents: Array<Record<string, unknown>> = [];
+      let documents: CorpusDocument[] = [];
+      let relationRows: RelationUsageRow[] = [];
+      let corpusRevision = "unknown";
       try {
         await client.query("begin isolation level repeatable read read only");
         before = await corpusFingerprint(
@@ -114,19 +246,42 @@ export function registerSchemaGovernanceRoutes(
           spaceId,
           vaultId,
         );
-        const result = await client.query(
+        const result = await client.query<CorpusDocument>(
           `
-          select id,external_id,path,type,frontmatter,current_revision
+          select id,external_id,path,type,lifecycle,frontmatter,current_revision
             from knowledge_documents where space_id=$1 and vault_id=$2 order by path
           `,
           [spaceId, vaultId],
         );
         documents = result.rows;
-        after = await corpusFingerprint(
-          client.query.bind(client),
-          spaceId,
-          vaultId,
+        if (fullProfileRequested) {
+          const relations = await client.query<RelationUsageRow>(
+            `
+            select r.relation_type,count(*) relation_count
+              from knowledge_relations r
+              join knowledge_documents source on source.id=r.from_document_id
+              join knowledge_documents target on target.id=r.to_document_id
+             where r.space_id=$1
+               and source.space_id=$1 and source.vault_id=$2
+               and target.space_id=$1 and target.vault_id=$2
+             group by r.relation_type
+             order by r.relation_type
+            `,
+            [spaceId, vaultId],
+          );
+          relationRows = relations.rows;
+        }
+        const revision = await client.query<{ revision: string }>(
+          `
+          select coalesce(
+            (select corpus_revision from vault_index_revisions where space_id=$1 and vault_id=$2),
+            (select current_revision from vaults where space_id=$1 and id=$2),
+            'unknown'
+          ) revision
+          `,
+          [spaceId, vaultId],
         );
+        corpusRevision = String(revision.rows[0]?.revision ?? "unknown");
         await client.query("rollback");
       } catch (error) {
         await client.query("rollback").catch(() => undefined);
@@ -134,17 +289,136 @@ export function registerSchemaGovernanceRoutes(
       } finally {
         client.release();
       }
+
+      const after = await corpusFingerprint(
+        async (text, values) => {
+          const result = await db.pool.query(text, values);
+          return { rows: result.rows as Array<Record<string, unknown>> };
+        },
+        spaceId,
+        vaultId,
+      );
+
+      if (fullProfileRequested && currentProfileBefore && profileDraft) {
+        const currentProfileAfter = await resolveEffectiveKnowledgeProfile(
+          db,
+          spaceId,
+          vaultId,
+        );
+        if (
+          before !== after ||
+          currentProfileBefore.revisionId !== currentProfileAfter.revisionId ||
+          currentProfileBefore.profileHash !== currentProfileAfter.profileHash
+        ) {
+          return reply.code(409).send({ code: "CONTEXT_REVISION_CHANGED" });
+        }
+
+        const corpusUsage = buildProfileCorpusUsage(
+          documents,
+          relationRows,
+          currentProfileBefore.profile,
+        );
+        const compatibility = classifyKnowledgeProfileCompatibility(
+          currentProfileBefore.profile,
+          profileDraft.profile,
+          corpusUsage,
+        );
+        const affectedDocumentCount = profileAffectedDocumentCount(
+          documents,
+          currentProfileBefore.profile,
+          compatibility.issues,
+        );
+        const report = {
+          mode: "KNOWLEDGE_PROFILE",
+          currentProfile: {
+            source: currentProfileBefore.source,
+            revisionId: currentProfileBefore.revisionId,
+            profileId: currentProfileBefore.profile.profileId,
+            version: currentProfileBefore.profile.version,
+            profileHash: currentProfileBefore.profileHash,
+          },
+          candidateProfile: {
+            revisionId: profileDraft.id,
+            profileId: profileDraft.profileId,
+            version: profileDraft.version,
+            profileHash: profileDraft.profileHash,
+            supersedesRevisionId: profileDraft.supersedesRevisionId,
+          },
+          compatibilityStatus: legacyCompatibilityStatus(
+            compatibility.compatibilityClass,
+          ),
+          compatibilityClass: compatibility.compatibilityClass,
+          requiresArchitectureOrCuratorApproval: compatibility.requiresReview,
+          requiredFollowUp: compatibility.requiredActions,
+          issues: compatibility.issues,
+          corpusUsage,
+          affectedDocumentCount,
+          affectedDocumentCountScope: "DOCUMENT_KIND_AND_POLICY_IMPACT",
+          corpusRevision,
+          corpusUnchanged: before === after,
+          rollbackPlan:
+            "Keep the prior active profile binding and activate a reviewed successor only after required migration/reindex/recompile work succeeds.",
+        };
+
+        let recorded: Awaited<ReturnType<typeof recordKnowledgeProfileDryRun>>;
+        try {
+          recorded = await recordKnowledgeProfileDryRun(db, {
+            spaceId,
+            vaultId,
+            revisionId: profileDraft.id,
+            actorId: actor.id,
+            expectedCorpusRevision: corpusRevision,
+            compatibilityClass: compatibility.compatibilityClass,
+            affectedDocumentCount,
+            report,
+            corpusFingerprintBefore: before,
+            corpusFingerprintAfter: after,
+          });
+        } catch (error) {
+          if (
+            error instanceof Error &&
+            error.message === "CONTEXT_REVISION_CHANGED"
+          ) {
+            return reply.code(409).send({ code: "CONTEXT_REVISION_CHANGED" });
+          }
+          throw error;
+        }
+
+        await audit(
+          db,
+          request,
+          "schema.profile_dry_run",
+          "knowledge_profile_revision",
+          profileDraft.id,
+          {
+            vaultId,
+            dryRunId: recorded.id,
+            candidateHash: profileDraft.profileHash,
+            compatibilityClass: compatibility.compatibilityClass,
+            affectedDocumentCount,
+            corpusRevision,
+          },
+          spaceId,
+        );
+        return {
+          id: recorded.id,
+          createdAt: recorded.createdAt,
+          profileRevisionId: recorded.revision.id,
+          profileRevisionStatus: recorded.revision.status,
+          candidateHash: profileDraft.profileHash,
+          corpusFingerprintBefore: before,
+          corpusFingerprintAfter: after,
+          ...report,
+        };
+      }
+
       const affected = documents.flatMap((document) => {
-        const frontmatter = (document.frontmatter ?? {}) as Record<
-          string,
-          unknown
-        >;
+        const frontmatter = document.frontmatter ?? {};
         const missingFields = requiredFields.filter(
           (field) => !(field in frontmatter) || frontmatter[field] === null,
         );
         const unsupportedType =
-          allowedTypes.length > 0 &&
-          !allowedTypes.includes(String(document.type));
+          allowedTypes.length > 0 && !allowedTypes.includes(document.type);
         return missingFields.length || unsupportedType
           ? [
               {
@@ -158,19 +432,20 @@ export function registerSchemaGovernanceRoutes(
             ]
           : [];
       });
-      const revision = await db.pool.query(
-        "select coalesce(corpus_revision,'unknown') revision from vault_index_revisions where space_id=$1 and vault_id=$2",
-        [spaceId, vaultId],
-      );
       const compatibilityStatus = affected.length
         ? "MIGRATION_REQUIRED"
         : "COMPATIBLE";
+      const compatibilityClass = affected.length
+        ? "MIGRATION_REQUIRED"
+        : "NON_BREAKING";
       const report = {
-        candidate,
+        candidate: legacyCandidate,
         compatibilityStatus,
+        compatibilityClass,
         affectedDocumentCount: affected.length,
         affectedSample: affected.slice(0, 100),
         sampleTruncated: affected.length > 100,
+        corpusRevision,
         corpusUnchanged: before === after,
         requiresArchitectureOrCuratorApproval: true,
         requiredFollowUp: affected.length
@@ -188,19 +463,21 @@ export function registerSchemaGovernanceRoutes(
         `
         insert into schema_dry_runs(
           space_id,vault_id,actor_id,candidate_version,candidate_hash,corpus_revision,
-          affected_document_count,compatibility_status,report,
+          affected_document_count,compatibility_status,compatibility_class,report,
           corpus_fingerprint_before,corpus_fingerprint_after
-        ) values($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11) returning id,created_at
+        ) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12)
+        returning id,created_at
         `,
         [
           spaceId,
           vaultId,
-          actor?.id ?? null,
+          actor.id,
           candidateVersion,
-          candidateHash,
-          String(revision.rows[0]?.revision ?? "unknown"),
+          legacyCandidateHash,
+          corpusRevision,
           affected.length,
           compatibilityStatus,
+          compatibilityClass,
           JSON.stringify(report),
           before,
           after,
@@ -214,7 +491,7 @@ export function registerSchemaGovernanceRoutes(
         String(inserted.rows[0]?.id),
         {
           vaultId,
-          candidateHash,
+          candidateHash: legacyCandidateHash,
           affectedDocumentCount: affected.length,
         },
         spaceId,
@@ -222,7 +499,7 @@ export function registerSchemaGovernanceRoutes(
       return {
         id: inserted.rows[0]?.id,
         createdAt: inserted.rows[0]?.created_at,
-        candidateHash,
+        candidateHash: legacyCandidateHash,
         corpusFingerprintBefore: before,
         corpusFingerprintAfter: after,
         ...report,
