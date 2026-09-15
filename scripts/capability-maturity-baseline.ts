@@ -120,7 +120,9 @@ const changedPaths = lines(
   await git(["diff", "--name-only", manifest.baseCommit, "HEAD"]),
 );
 const allowedPaths = new Set(manifest.harnessAllowlist);
-const harnessOwnedChanges = changedPaths.filter((item) => allowedPaths.has(item));
+const harnessOwnedChanges = changedPaths.filter((item) =>
+  allowedPaths.has(item),
+);
 const postBaselineProductChanges = changedPaths.filter(
   (item) => !allowedPaths.has(item),
 );
@@ -249,7 +251,8 @@ console.log(
       inventoryCounts,
       dimensionStatusCounts,
       confirmedEvidenceFiles: report.summary.confirmedEvidenceFiles.length,
-      postBaselineProductChanges: report.harnessIsolation.postBaselineProductChanges,
+      postBaselineProductChanges:
+        report.harnessIsolation.postBaselineProductChanges,
       outputPath,
     },
     null,
