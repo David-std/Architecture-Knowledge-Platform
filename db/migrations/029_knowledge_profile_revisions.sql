@@ -1,0 +1,100 @@
+-- Persist versioned KnowledgeProfile revisions without changing the v0.3
+-- runtime default. A vault with no active durable revision continues to use
+-- its legacy schema_profile/default behavior until an explicit reviewed
+-- activation path is introduced.
+create table knowledge_profile_revisions (
+  id uuid primary key default gen_random_uuid(),
+  space_id uuid not null references spaces(id),
+  vault_id uuid not null references vaults(id) on delete cascade,
+  profile_id text not null,
+  version text not null,
+  profile_hash text not null check (profile_hash ~ '^[a-f0-9]{64}$'),
+  profile jsonb not null check (jsonb_typeof(profile) = 'object'),
+  status text not null default 'DRAFT' check (
+    status in (
+      'DRAFT',
+      'VALIDATED',
+      'REVIEW_REQUIRED',
+      'ACTIVE',
+      'SUPERSEDED',
+      'RETIRED'
+    )
+  ),
+  compatibility_class text not null default 'NON_BREAKING' check (
+    compatibility_class in (
+      'NON_BREAKING',
+      'REINDEX_REQUIRED',
+      'RECOMPILE_REQUIRED',
+      'MIGRATION_REQUIRED',
+      'UNSAFE'
+    )
+  ),
+  corpus_revision text not null,
+  created_by uuid references users(id),
+  validation_report jsonb not null default '{}'::jsonb,
+  validated_at timestamptz,
+  activated_at timestamptz,
+  superseded_at timestamptz,
+  retired_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint knowledge_profile_revisions_profile_id_format
+    check (profile_id ~ '^[a-z0-9][a-z0-9-]{1,62}$'),
+  constraint knowledge_profile_revisions_version_nonempty
+    check (length(btrim(version)) between 1 and 100),
+  unique (vault_id, profile_id, version),
+  unique (vault_id, profile_hash),
+  unique (vault_id, id)
+);
+
+create index knowledge_profile_revisions_vault_created_idx
+  on knowledge_profile_revisions(vault_id, created_at desc);
+create index knowledge_profile_revisions_space_vault_status_idx
+  on knowledge_profile_revisions(space_id, vault_id, status);
+create unique index knowledge_profile_revisions_one_active_per_vault_idx
+  on knowledge_profile_revisions(vault_id)
+  where status = 'ACTIVE';
+
+alter table vaults
+  add column active_knowledge_profile_revision_id uuid;
+
+-- The composite FK prevents a vault from pointing at a profile revision owned
+-- by another vault. It is nullable so existing v0.3 vaults remain untouched.
+alter table vaults
+  add constraint vaults_active_knowledge_profile_revision_fk
+  foreign key (id, active_knowledge_profile_revision_id)
+  references knowledge_profile_revisions(vault_id, id)
+  deferrable initially deferred;
+
+comment on column vaults.schema_profile is
+  'Legacy v0.3 schema profile/configuration. When active_knowledge_profile_revision_id is non-null, the referenced durable KnowledgeProfile revision is authoritative.';
+comment on column vaults.active_knowledge_profile_revision_id is
+  'Atomic binding to the authoritative durable KnowledgeProfile revision. NULL preserves v0.3 legacy/default semantics.';
+
+alter table schema_dry_runs
+  add column profile_revision_id uuid references knowledge_profile_revisions(id),
+  add column compatibility_class text;
+
+update schema_dry_runs
+   set compatibility_class = case compatibility_status
+     when 'MIGRATION_REQUIRED' then 'MIGRATION_REQUIRED'
+     else 'NON_BREAKING'
+   end
+ where compatibility_class is null;
+
+alter table schema_dry_runs
+  alter column compatibility_class set not null,
+  add constraint schema_dry_runs_profile_compatibility_class_check
+  check (
+    compatibility_class in (
+      'NON_BREAKING',
+      'REINDEX_REQUIRED',
+      'RECOMPILE_REQUIRED',
+      'MIGRATION_REQUIRED',
+      'UNSAFE'
+    )
+  );
+
+create index schema_dry_runs_profile_revision_idx
+  on schema_dry_runs(profile_revision_id, created_at desc)
+  where profile_revision_id is not null;
