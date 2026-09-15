@@ -1,0 +1,310 @@
+{
+  "schemaVersion": "akp.scale-benchmark.v1",
+  "generatedAt": "2026-09-15T03:36:55.467Z",
+  "status": "PASSED",
+  "evidenceLevel": "SYNTHETIC_ISOLATED_POSTGRES",
+  "coverageStatus": "PARTIAL",
+  "execution": {
+    "nodeVersion": "v24.20.0",
+    "platform": "linux",
+    "postgresVersion": "16.15 (Debian 16.15-1.pgdg12+2)",
+    "databaseName": "akp",
+    "seed": "akp-scale-v1",
+    "targets": [
+      100000
+    ],
+    "iterations": 1,
+    "queryLatencyClock": "Node performance.now around client.query; includes client/network/PostgreSQL time",
+    "fixtureGeneration": "PostgreSQL generate_series with deterministic seed/content; no real vault data"
+  },
+  "acceptance": {
+    "targetRowsExact": true,
+    "relationRowsExact": true,
+    "fixtureScoped": true,
+    "cleanupSucceeded": true
+  },
+  "results": [
+    {
+      "targetDocuments": 100000,
+      "appendedDocuments": 100000,
+      "appendedRelations": 99999,
+      "appendedEmbeddings": 100000,
+      "rows": {
+        "documents": 100000,
+        "units": 100000,
+        "relations": 99999,
+        "embeddings": 100000
+      },
+      "loadLatencyMs": {
+        "documentsInsert": 21372.807,
+        "unitsInsert": 10918.689,
+        "embeddingsInsert": 5043.03,
+        "relationsInsert": 6378.019,
+        "commit": 1241.528,
+        "analyze": 3473.465,
+        "total": 48429.684
+      },
+      "queryLatency": [
+        {
+          "name": "point-document-by-vault-path",
+          "description": "Indexed point lookup by vault and path.",
+          "stats": {
+            "samples": 1,
+            "minMs": 0.507,
+            "p50Ms": 0.507,
+            "p95Ms": 0.507,
+            "maxMs": 0.507,
+            "meanMs": 0.507
+          },
+          "observedRowCounts": [
+            1
+          ]
+        },
+        {
+          "name": "lexical-document-search",
+          "description": "GIN-backed full-text search over the synthetic vault.",
+          "stats": {
+            "samples": 1,
+            "minMs": 73.513,
+            "p50Ms": 73.513,
+            "p95Ms": 73.513,
+            "maxMs": 73.513,
+            "meanMs": 73.513
+          },
+          "observedRowCounts": [
+            20
+          ]
+        },
+        {
+          "name": "graph-neighbor-lookup",
+          "description": "Indexed outgoing relation lookup for a document in the synthetic chain.",
+          "stats": {
+            "samples": 1,
+            "minMs": 0.439,
+            "p50Ms": 0.439,
+            "p95Ms": 0.439,
+            "maxMs": 0.439,
+            "meanMs": 0.439
+          },
+          "observedRowCounts": [
+            1
+          ]
+        },
+        {
+          "name": "unit-by-document-lookup",
+          "description": "Structural unit lookup joined through an indexed document identity.",
+          "stats": {
+            "samples": 1,
+            "minMs": 0.773,
+            "p50Ms": 0.773,
+            "p95Ms": 0.773,
+            "maxMs": 0.773,
+            "meanMs": 0.773
+          },
+          "observedRowCounts": [
+            1
+          ]
+        },
+        {
+          "name": "synthetic-vector-unit-search",
+          "description": "pgvector nearest-neighbor query over fixed 64-dimensional synthetic vectors; not semantic quality evidence.",
+          "stats": {
+            "samples": 1,
+            "minMs": 59.976,
+            "p50Ms": 59.976,
+            "p95Ms": 59.976,
+            "maxMs": 59.976,
+            "meanMs": 59.976
+          },
+          "observedRowCounts": [
+            20
+          ]
+        },
+        {
+          "name": "vault-document-count",
+          "description": "Count over the vault scope to expose aggregate growth.",
+          "stats": {
+            "samples": 1,
+            "minMs": 74.356,
+            "p50Ms": 74.356,
+            "p95Ms": 74.356,
+            "maxMs": 74.356,
+            "meanMs": 74.356
+          },
+          "observedRowCounts": [
+            100000
+          ]
+        }
+      ],
+      "memory": {
+        "gcAvailable": false,
+        "beforeLoad": {
+          "rssBytes": 97644544,
+          "heapUsedBytes": 12973352,
+          "heapTotalBytes": 18808832,
+          "externalBytes": 5183407
+        },
+        "afterLoad": {
+          "rssBytes": 98299904,
+          "heapUsedBytes": 10855208,
+          "heapTotalBytes": 19333120,
+          "externalBytes": 5045229
+        },
+        "afterQueries": {
+          "rssBytes": 98299904,
+          "heapUsedBytes": 11113376,
+          "heapTotalBytes": 19333120,
+          "externalBytes": 5117006
+        },
+        "afterContextPacket": {
+          "rssBytes": 100397056,
+          "heapUsedBytes": 13038400,
+          "heapTotalBytes": 19333120,
+          "externalBytes": 5117006
+        },
+        "loadRssDeltaBytes": 655360,
+        "queryRssDeltaBytes": 0,
+        "loadHeapDeltaBytes": -2118144,
+        "queryHeapDeltaBytes": 258168,
+        "contextPacketRssDeltaBytes": 2097152,
+        "contextPacketHeapDeltaBytes": 1922368
+      },
+      "storage": {
+        "beforeLoad": {
+          "databaseBytes": 11328535,
+          "documentsTableBytes": 262144,
+          "unitsTableBytes": 221184,
+          "relationsTableBytes": 40960,
+          "embeddingsTableBytes": 65536
+        },
+        "afterLoad": {
+          "databaseBytes": 668630039,
+          "documentsTableBytes": 370393088,
+          "unitsTableBytes": 183910400,
+          "relationsTableBytes": 45948928,
+          "embeddingsTableBytes": 57507840
+        },
+        "deltaFromBaseline": {
+          "databaseBytes": 657301504,
+          "documentsTableBytes": 370130944,
+          "unitsTableBytes": 183689216,
+          "relationsTableBytes": 45907968,
+          "embeddingsTableBytes": 57442304
+        },
+        "deltaFromPreviousTarget": {
+          "databaseBytes": 657301504,
+          "documentsTableBytes": 370130944,
+          "unitsTableBytes": 183689216,
+          "relationsTableBytes": 45907968,
+          "embeddingsTableBytes": 57442304
+        }
+      },
+      "contextPacket": {
+        "candidateCount": 20,
+        "candidateGenerationMs": 0.465,
+        "latency": {
+          "samples": 1,
+          "minMs": 2.821,
+          "p50Ms": 2.821,
+          "p95Ms": 2.821,
+          "maxMs": 2.821,
+          "meanMs": 2.821
+        },
+        "selectedSections": 20,
+        "omittedCandidates": 0,
+        "usedTokens": 2612,
+        "status": "SUPPORTED",
+        "memoryBefore": {
+          "rssBytes": 98299904,
+          "heapUsedBytes": 11116032,
+          "heapTotalBytes": 19333120,
+          "externalBytes": 5117006
+        },
+        "memoryAfter": {
+          "rssBytes": 100397056,
+          "heapUsedBytes": 13038400,
+          "heapTotalBytes": 19333120,
+          "externalBytes": 5117006
+        },
+        "rssDeltaBytes": 2097152,
+        "heapDeltaBytes": 1922368
+      }
+    }
+  ],
+  "growth": {
+    "firstTarget": 100000,
+    "lastTarget": 100000,
+    "documentGrowthFactor": 1,
+    "storageGrowthBytes": 657301504,
+    "queryP95ByTarget": {
+      "100000": {
+        "point-document-by-vault-path": 0.507,
+        "lexical-document-search": 73.513,
+        "graph-neighbor-lookup": 0.439,
+        "unit-by-document-lookup": 0.773,
+        "synthetic-vector-unit-search": 59.976,
+        "vault-document-count": 74.356
+      }
+    }
+  },
+  "measured": [
+    "PostgreSQL synthetic document/unit/relation materialisation latency",
+    "Client-observed point, lexical, exact synthetic pgvector, graph, unit and count query latency",
+    "Deterministic context-packet assembly latency for candidate sets sized to each target",
+    "Node process RSS and heap deltas around load and query phases",
+    "PostgreSQL database and table relation storage growth",
+    "Exact row-count and fixture cleanup acceptance checks"
+  ],
+  "notMeasured": [
+    {
+      "dimension": "real vault corpus",
+      "reason": "The fixture is generated and isolated; no private or external vault was read."
+    },
+    {
+      "dimension": "semantic vector quality or real embedding generation",
+      "reason": "The vector path uses deterministic fixed 64-dimensional fixture values; no provider, model quality or relevance ground truth was evaluated."
+    },
+    {
+      "dimension": "ANN index construction and maintenance",
+      "reason": "The disposable scale database removes all HNSW indexes from unit_embeddings before fixture loading so general 1K-100K scale evidence is not conflated with ANN tuning; ANN selection is evaluated separately."
+    },
+    {
+      "dimension": "HTTP/API and worker throughput",
+      "reason": "The harness calls PostgreSQL and the packet builder directly; it does not claim service-level throughput or concurrency results."
+    },
+    {
+      "dimension": "context packet retrieval/persistence path",
+      "reason": "Only the deterministic in-process packet builder is measured; candidate retrieval, API serialization and context_packets persistence are not measured."
+    },
+    {
+      "dimension": "incremental indexing and event delivery",
+      "reason": "No outbox event, worker, or incremental-index run was created; rebuild/reuse behavior remains unmeasured."
+    },
+    {
+      "dimension": "PostgreSQL server RAM",
+      "reason": "Only the benchmark Node process memory is observable without a server-side memory extension or host telemetry."
+    },
+    {
+      "dimension": "multi-tenant concurrent isolation under load",
+      "reason": "The fixture uses one isolated vault and sequential operations; concurrency and cross-tenant contention were not exercised."
+    }
+  ],
+  "limitations": [
+    "Storage snapshots use whole-database and whole-table relation sizes, so they include pre-existing isolated-database overhead and index pages.",
+    "The cumulative targets append rows to one fixture; they are not independent cold-start trials and cache state may affect latency.",
+    "Vector timings exercise exact sequential pgvector distance over deterministic coordinates; ANN index construction and maintenance are intentionally excluded and evaluated separately.",
+    "Context-packet timings exercise the in-process deterministic builder over synthetic candidates, not retrieval, persistence or API latency.",
+    "The reported memory is Node RSS/heap, not PostgreSQL backend or container memory.",
+    "A passing result is evidence for this synthetic PostgreSQL path only; it is not a production capacity SLO or a vector-quality claim."
+  ],
+  "cleanup": {
+    "attempted": true,
+    "succeeded": true,
+    "remainingRows": {
+      "documents": 0,
+      "units": 0,
+      "relations": 0,
+      "embeddings": 0
+    }
+  }
+}

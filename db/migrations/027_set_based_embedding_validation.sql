@@ -82,7 +82,7 @@ begin
 end;
 $function$;
 
-drop trigger if exists unit_embeddings_validate_scope on unit_embeddings;
+drop trigger if exists unit_embeddings_validate_generation on unit_embeddings;
 drop trigger if exists unit_embeddings_validate_l2 on unit_embeddings;
 
 create trigger unit_embeddings_validate_insert_statement

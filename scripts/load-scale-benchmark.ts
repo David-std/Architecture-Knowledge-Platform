@@ -534,32 +534,53 @@ async function insertEmbeddings(
 ): Promise<number> {
   if (start > end) return 0;
   const batchSize = 10_000;
+  const expected = end - start + 1;
+  const embedding = `[${Array.from({ length: 64 }, () => "0.01").join(",")}]`;
+  let inserted = 0;
   let elapsedMs = 0;
-  for (let batchStart = start; batchStart <= end; batchStart += batchSize) {
-    const batchEnd = Math.min(end, batchStart + batchSize - 1);
-    const measured = await timedQuery(
-      `insert into unit_embeddings(unit_id,generation_id,content_hash,embedding)
-       select
-         u.id,$4,
-         u.content_hash,
-         $7::vector(64)
-         from generate_series($5::int,$6::int) as generated(i)
-         join knowledge_documents d
-           on d.space_id=$1 and d.vault_id=$2 and d.external_id=$3 || i::text
-         join knowledge_units u
-           on u.document_id=d.id and u.space_id=$1 and u.vault_id=$2
-        on conflict (unit_id,generation_id) do nothing`,
+  while (inserted < expected) {
+    const measured = await timedQuery<{ inserted: Numeric }>(
+      `with candidates as (
+         select u.id,u.content_hash
+           from knowledge_units u
+           left join unit_embeddings e
+             on e.unit_id=u.id and e.generation_id=$3
+          where u.space_id=$1
+            and u.vault_id=$2
+            and u.corpus_revision='synthetic-v1'
+            and u.embedding_eligible=true
+            and e.unit_id is null
+          order by u.id
+          limit $4
+       ), inserted as (
+         insert into unit_embeddings(unit_id,generation_id,content_hash,embedding)
+         select id,$3,content_hash,$5::vector(64)
+           from candidates
+         on conflict (unit_id,generation_id) do nothing
+         returning 1
+       )
+       select count(*)::int as inserted from inserted`,
       [
         fixture.spaceId,
         fixture.vaultId,
-        fixture.externalPrefix,
         fixture.embeddingGenerationId,
-        batchStart,
-        batchEnd,
-        `[${Array.from({ length: 64 }, () => "0.01").join(",")}]`,
+        batchSize,
+        embedding,
       ],
     );
     elapsedMs += measured.elapsedMs;
+    const batchInserted = asNumber(measured.result.rows[0]?.inserted);
+    if (batchInserted <= 0) {
+      throw new Error(
+        `embedding fixture stalled after ${inserted}/${expected} inserts`,
+      );
+    }
+    inserted += batchInserted;
+  }
+  if (inserted !== expected) {
+    throw new Error(
+      `embedding fixture inserted ${inserted} rows, expected ${expected}`,
+    );
   }
   return elapsedMs;
 }
@@ -643,7 +664,12 @@ function measureContextPacket(
   if (typeof global.gc === "function") global.gc();
   const memoryBefore = snapshotMemory();
   const candidateStarted = performance.now();
-  const candidates = syntheticPacketCandidates(fixture, target, seed);
+  const packetCandidateLimit = Math.min(target, 20);
+  const candidates = syntheticPacketCandidates(
+    fixture,
+    packetCandidateLimit,
+    seed,
+  );
   const candidateGenerationMs = performance.now() - candidateStarted;
   const request: SearchRequest = {
     query: "architecture synthetic",
