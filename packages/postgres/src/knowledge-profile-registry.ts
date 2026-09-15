@@ -1,12 +1,19 @@
-import { createHash } from "node:crypto";
-import {
-  DEFAULT_KNOWLEDGE_PROFILE_V1,
-  KnowledgeProfileV1,
-  canonicalKnowledgeProfileJson,
-  type KnowledgeProfileCompatibility,
-  type KnowledgeProfileRevisionStatus,
-} from "@akp/contracts/knowledge-profile";
 import type { Postgres } from "./index.js";
+
+export type KnowledgeProfileRevisionStatus =
+  | "DRAFT"
+  | "VALIDATED"
+  | "REVIEW_REQUIRED"
+  | "ACTIVE"
+  | "SUPERSEDED"
+  | "RETIRED";
+
+export type KnowledgeProfileCompatibility =
+  | "NON_BREAKING"
+  | "REINDEX_REQUIRED"
+  | "RECOMPILE_REQUIRED"
+  | "MIGRATION_REQUIRED"
+  | "UNSAFE";
 
 interface KnowledgeProfileRevisionRow {
   id: string;
@@ -37,7 +44,7 @@ export interface KnowledgeProfileRevisionRecord {
   version: string;
   profileHash: string;
   canonicalProfile: string;
-  profile: KnowledgeProfileV1;
+  profile: Record<string, unknown>;
   status: KnowledgeProfileRevisionStatus;
   compatibilityClass: KnowledgeProfileCompatibility | null;
   supersedesRevisionId: string | null;
@@ -54,16 +61,17 @@ export interface KnowledgeProfileRevisionRecord {
 export interface CreateKnowledgeProfileDraftInput {
   spaceId: string;
   vaultId: string;
-  profile: unknown;
+  profileId: string;
+  version: string;
+  canonicalProfile: string;
+  profileHash: string;
   supersedesRevisionId?: string | null;
   createdBy?: string | null;
 }
 
-export interface EffectiveKnowledgeProfile {
-  source: "DURABLE_REVISION" | "V03_DEFAULT";
-  revisionId: string | null;
-  profileHash: string;
-  profile: KnowledgeProfileV1;
+export interface KnowledgeProfileBinding {
+  source: "DURABLE_REVISION" | "LEGACY_UNBOUND";
+  revision: KnowledgeProfileRevisionRecord | null;
   legacySchemaProfile: Record<string, unknown>;
 }
 
@@ -72,18 +80,13 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function hashCanonicalProfile(profile: unknown): {
-  parsed: KnowledgeProfileV1;
-  canonical: string;
-  hash: string;
-} {
-  const canonical = canonicalKnowledgeProfileJson(profile);
-  const parsed = KnowledgeProfileV1.parse(JSON.parse(canonical));
-  return {
-    parsed,
-    canonical,
-    hash: createHash("sha256").update(canonical).digest("hex"),
-  };
+function parseCanonicalProfile(value: string): Record<string, unknown> {
+  const parsed: unknown = JSON.parse(value);
+  const record = asRecord(parsed);
+  if (Object.keys(record).length === 0) {
+    throw new Error("KNOWLEDGE_PROFILE_CANONICAL_OBJECT_REQUIRED");
+  }
+  return record;
 }
 
 function mapRevision(
@@ -97,7 +100,7 @@ function mapRevision(
     version: row.version,
     profileHash: row.profile_hash,
     canonicalProfile: row.canonical_profile,
-    profile: KnowledgeProfileV1.parse(JSON.parse(row.canonical_profile)),
+    profile: parseCanonicalProfile(row.canonical_profile),
     status: row.status,
     compatibilityClass: row.compatibility_class,
     supersedesRevisionId: row.supersedes_revision_id,
@@ -113,15 +116,14 @@ function mapRevision(
 }
 
 /**
- * Persist an immutable semantic draft. The profile hash is calculated from the
- * canonical validated contract, never from caller key order. No activation or
- * compatibility claim is made here.
+ * Persist an immutable semantic draft that has already been validated and
+ * canonicalized by the contracts layer. PostgreSQL independently verifies the
+ * canonical JSON shape and SHA-256 through migration constraints.
  */
 export async function createKnowledgeProfileDraft(
   db: Postgres,
   input: CreateKnowledgeProfileDraftInput,
 ): Promise<KnowledgeProfileRevisionRecord> {
-  const { parsed, canonical, hash } = hashCanonicalProfile(input.profile);
   const result = await db.pool.query<KnowledgeProfileRevisionRow>(
     `
     with inserted as (
@@ -146,10 +148,10 @@ export async function createKnowledgeProfileDraft(
     [
       input.spaceId,
       input.vaultId,
-      parsed.profileId,
-      parsed.version,
-      hash,
-      canonical,
+      input.profileId,
+      input.version,
+      input.profileHash,
+      input.canonicalProfile,
       input.supersedesRevisionId ?? null,
       input.createdBy ?? null,
     ],
@@ -195,16 +197,15 @@ export async function getActiveKnowledgeProfileRevision(
 }
 
 /**
- * Resolve the semantic profile without changing any v0.3 consumer. Durable
- * revisions win only after an explicit active binding exists. Otherwise the
- * built-in v0.3-compatible KnowledgeProfile is returned while the old
- * schema_profile JSON is retained only as legacy configuration metadata.
+ * Resolve only the durable persistence binding. The contracts/application
+ * layer supplies the v0.3-compatible semantic default when no revision is
+ * active, so PostgreSQL does not become a second profile-definition authority.
  */
-export async function resolveEffectiveKnowledgeProfile(
+export async function resolveKnowledgeProfileBinding(
   db: Postgres,
   spaceId: string,
   vaultId: string,
-): Promise<EffectiveKnowledgeProfile> {
+): Promise<KnowledgeProfileBinding> {
   const vault = await db.pool.query<{
     schema_profile: unknown;
     active_knowledge_profile_revision_id: string | null;
@@ -223,19 +224,14 @@ export async function resolveEffectiveKnowledgeProfile(
     if (!active) throw new Error("ACTIVE_KNOWLEDGE_PROFILE_BINDING_INVALID");
     return {
       source: "DURABLE_REVISION",
-      revisionId: active.id,
-      profileHash: active.profileHash,
-      profile: active.profile,
+      revision: active,
       legacySchemaProfile: asRecord(vaultRow.schema_profile),
     };
   }
 
-  const fallback = hashCanonicalProfile(DEFAULT_KNOWLEDGE_PROFILE_V1);
   return {
-    source: "V03_DEFAULT",
-    revisionId: null,
-    profileHash: fallback.hash,
-    profile: fallback.parsed,
+    source: "LEGACY_UNBOUND",
+    revision: null,
     legacySchemaProfile: asRecord(vaultRow.schema_profile),
   };
 }
