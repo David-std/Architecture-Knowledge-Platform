@@ -9,7 +9,7 @@ on:
       - "scripts/tmp-profile-policy-materialize.py"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   materialize:
@@ -86,7 +86,6 @@ jobs:
       - name: Run TypeScript check
         run: pnpm check
       - uses: actions/upload-artifact@v4
-        if: always()
         with:
           name: profile-policy-candidate-${{ github.run_id }}
           path: |
@@ -97,4 +96,23 @@ jobs:
             packages/compiler/test/profile-policy-enforcement.test.ts
             apps/worker/test/knowledge-profile-compilation.test.ts
             profile-policy-compiler-test.log
-          if-no-files-found: warn
+          if-no-files-found: error
+      - name: Promote validated slice and remove harness
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git config user.name "Architecture Knowledge Platform"
+          git config user.email "akp@localhost"
+          git add \
+            packages/contracts/src/knowledge-profile.ts \
+            packages/compiler/src/contracts.ts \
+            packages/compiler/src/grounding.ts \
+            apps/worker/src/compilation-stage.ts \
+            packages/compiler/test/profile-policy-enforcement.test.ts \
+            apps/worker/test/knowledge-profile-compilation.test.ts
+          git rm .github/workflows/profile-policy-materialize.yml scripts/tmp-profile-policy-materialize.py
+          rm -f profile-policy-compiler-test.log
+          git diff --cached --check
+          git diff --cached --quiet && { echo "No validated product changes to promote"; exit 1; }
+          git commit -m "feat(p1): enforce KnowledgeProfile runtime policies"
+          git push origin HEAD:${GITHUB_REF_NAME}
