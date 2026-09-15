@@ -1055,6 +1055,40 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
           .code(422)
           .send({ code: "DRAFT_VALIDATION_FAILED", issues });
       }
+      const revisedReviewKinds = changes.map(
+        (change) => parseKnowledgeDocumentMetadata(change.content)?.type,
+      );
+      if (revisedReviewKinds.some((kind) => !kind)) {
+        return reply.code(422).send({ code: "KNOWLEDGE_KIND_REQUIRED" });
+      }
+      let revisedReviewPolicy: Awaited<
+        ReturnType<typeof resolveProposalReviewPolicy>
+      >;
+      try {
+        revisedReviewPolicy = await resolveProposalReviewPolicy(
+          db,
+          String(review.space_id),
+          String(review.vault_id),
+          revisedReviewKinds as string[],
+        );
+      } catch (error) {
+        const code = error instanceof Error ? error.message : String(error);
+        if (code.startsWith("COMPILER_PROFILE_KIND_NOT_DECLARED:")) {
+          return reply.code(422).send({
+            code: "KNOWLEDGE_PROFILE_KIND_NOT_ALLOWED",
+            kind: code.split(":")[1] ?? "",
+          });
+        }
+        if (code === "COMPILER_REVIEW_POLICY_ROLE_CONFLICT") {
+          return reply
+            .code(422)
+            .send({ code: "KNOWLEDGE_PROFILE_REVIEW_POLICY_CONFLICT" });
+        }
+        if (code === "ACTIVE_KNOWLEDGE_PROFILE_BINDING_INVALID") {
+          return reply.code(409).send({ code });
+        }
+        throw error;
+      }
 
       const previousManifest = (review.impact_manifest ?? {}) as Record<
         string,
@@ -1107,6 +1141,9 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
               summary: request.body.summary ?? previousManifest.summary ?? "",
               draftRevision,
               proposedChanges,
+              reviewKinds: [...new Set(revisedReviewKinds as string[])],
+              reviewPolicy: revisedReviewPolicy.policy,
+              reviewPolicyPinned: revisedReviewPolicy.pinned,
             }),
             JSON.stringify({ issues, errors: 0 }),
             actor?.id ?? null,

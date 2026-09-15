@@ -144,6 +144,30 @@ async function approve(reviewId: string, headers: Record<string, string>) {
   });
 }
 
+async function requestChanges(
+  reviewId: string,
+  headers: Record<string, string>,
+) {
+  return app.inject({
+    method: "POST",
+    url: `/v1/reviews/${reviewId}/decision`,
+    headers,
+    payload: {
+      decision: "REQUEST_CHANGES",
+      reason: "profile policy revision requested",
+    },
+  });
+}
+
+async function proposedPath(reviewId: string): Promise<string> {
+  const result = await db.pool.query<{
+    impact_manifest: { proposedChanges?: Array<{ path?: string }> };
+  }>("select impact_manifest from reviews where id=$1", [reviewId]);
+  const candidate = result.rows[0]?.impact_manifest.proposedChanges?.[0]?.path;
+  if (!candidate) throw new Error("TEST_REVIEW_PATH_REQUIRED");
+  return candidate;
+}
+
 beforeAll(async () => {
   if (!process.env.DATABASE_URL) {
     throw new Error("DATABASE_URL is required for integration tests.");
@@ -365,6 +389,117 @@ describe("KnowledgeProfile review policy integration", () => {
     expect(response.json()).toMatchObject({
       code: "KNOWLEDGE_PROFILE_KIND_NOT_ALLOWED",
       kind: "rule",
+    });
+  });
+
+  it("revalidates revised kinds instead of reusing the original review policy", async () => {
+    const proposed = await propose("note");
+    expect(proposed.statusCode).toBe(201);
+    const reviewId = (proposed.json() as { reviewId: string }).reviewId;
+    const path = await proposedPath(reviewId);
+    const before = await db.pool.query<{
+      head_commit: string;
+      impact_manifest: Record<string, unknown>;
+    }>("select head_commit,impact_manifest from reviews where id=$1", [
+      reviewId,
+    ]);
+
+    const requested = await requestChanges(reviewId, reviewerOneHeaders);
+    expect(requested.statusCode).toBe(200);
+    expect(requested.json()).toMatchObject({ status: "CHANGES_REQUESTED" });
+
+    const revised = await app.inject({
+      method: "POST",
+      url: `/v1/reviews/${reviewId}/revise`,
+      headers: adminHeaders,
+      payload: {
+        summary: "attempt disallowed kind revision",
+        changes: [{ path, content: documentContent("rule") }],
+      },
+    });
+    expect(revised.statusCode).toBe(422);
+    expect(revised.json()).toMatchObject({
+      code: "KNOWLEDGE_PROFILE_KIND_NOT_ALLOWED",
+      kind: "rule",
+    });
+
+    const after = await db.pool.query<{
+      head_commit: string;
+      impact_manifest: Record<string, unknown>;
+    }>("select head_commit,impact_manifest from reviews where id=$1", [
+      reviewId,
+    ]);
+    expect(after.rows[0]?.head_commit).toBe(before.rows[0]?.head_commit);
+    expect(after.rows[0]?.impact_manifest).toMatchObject({
+      reviewKinds: ["note"],
+      reviewPolicy: { profileRevisionId: activeProfileRevisionId },
+    });
+  });
+
+  it("pins new v0.3-default proposals so later profile activation makes them stale", async () => {
+    await db.pool.query(
+      "update vaults set active_knowledge_profile_revision_id=null where id=$1 and space_id=$2",
+      [vaultId, spaceId],
+    );
+    await db.pool.query(
+      `update knowledge_profile_revisions
+          set status='SUPERSEDED',superseded_at=now(),updated_at=now()
+        where vault_id=$1 and status='ACTIVE'`,
+      [vaultId],
+    );
+
+    const proposed = await propose("rule");
+    expect(proposed.statusCode).toBe(201);
+    const reviewId = (proposed.json() as { reviewId: string }).reviewId;
+    const persisted = await db.pool.query<{
+      impact_manifest: Record<string, unknown>;
+    }>("select impact_manifest from reviews where id=$1", [reviewId]);
+    expect(persisted.rows[0]?.impact_manifest).toMatchObject({
+      reviewKinds: ["rule"],
+      reviewPolicyPinned: true,
+      reviewPolicy: {
+        profileSource: "V03_DEFAULT",
+        profileRevisionId: null,
+      },
+    });
+
+    await activateProfile("1.0.3-default-stale");
+    const stale = await approve(reviewId, reviewerOneHeaders);
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json()).toMatchObject({ code: "REVIEW_PROFILE_STALE" });
+  });
+
+  it("rebinds an explicit revision to the current profile policy snapshot", async () => {
+    const proposed = await propose("note");
+    expect(proposed.statusCode).toBe(201);
+    const reviewId = (proposed.json() as { reviewId: string }).reviewId;
+    const path = await proposedPath(reviewId);
+    const requested = await requestChanges(reviewId, reviewerOneHeaders);
+    expect(requested.statusCode).toBe(200);
+
+    const newRevisionId = await activateProfile("1.0.4-review-rebind");
+    const revised = await app.inject({
+      method: "POST",
+      url: `/v1/reviews/${reviewId}/revise`,
+      headers: adminHeaders,
+      payload: {
+        summary: "rebind review to current profile",
+        changes: [{ path, content: documentContent("note") }],
+      },
+    });
+    expect(revised.statusCode).toBe(200);
+
+    const persisted = await db.pool.query<{
+      impact_manifest: Record<string, unknown>;
+    }>("select impact_manifest from reviews where id=$1", [reviewId]);
+    expect(persisted.rows[0]?.impact_manifest).toMatchObject({
+      reviewKinds: ["note"],
+      reviewPolicyPinned: true,
+      reviewPolicy: {
+        minimumApprovals: 2,
+        allowedRoles: ["REVIEWER"],
+        profileRevisionId: newRevisionId,
+      },
     });
   });
 });

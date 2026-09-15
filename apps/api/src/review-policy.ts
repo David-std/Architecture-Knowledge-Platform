@@ -118,7 +118,7 @@ export async function resolveProposalReviewPolicy(
 ): Promise<{ policy: EffectiveReviewPolicyType; pinned: boolean }> {
   const binding = await resolveKnowledgeProfileBinding(db, spaceId, vaultId);
   if (binding.source === "LEGACY_UNBOUND") {
-    return { policy: defaultReviewPolicy(), pinned: false };
+    return { policy: defaultReviewPolicy(), pinned: true };
   }
   const revision = binding.revision;
   if (!revision) throw new Error("ACTIVE_KNOWLEDGE_PROFILE_BINDING_INVALID");
