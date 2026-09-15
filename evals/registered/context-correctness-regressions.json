@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "evidenceLevel": "P0_REGRESSION_SPEC",
+  "productionDefaultsChanged": false,
+  "cases": [
+    {
+      "id": "temporal-vector-contradiction-jwt-storage",
+      "kind": "TEMPORAL_TRUTH_CONTRADICTION",
+      "query": "Where should the browser store the current session token?",
+      "documents": [
+        {
+          "id": "security-guide-v1",
+          "validFrom": "2024-01-01T00:00:00Z",
+          "validTo": "2025-06-30T23:59:59Z",
+          "authority": "OFFICIAL_SUPERSEDED",
+          "text": "Store the session token in localStorage so application code can attach it to requests."
+        },
+        {
+          "id": "security-guide-v3",
+          "validFrom": "2025-07-01T00:00:00Z",
+          "validTo": null,
+          "authority": "OFFICIAL_CURRENT",
+          "text": "Do not store the session token in localStorage. Use a Secure, HttpOnly, SameSite cookie."
+        }
+      ],
+      "denseScores": {
+        "security-guide-v1": 0.9321,
+        "security-guide-v3": 0.9318
+      },
+      "expectations": {
+        "current": ["security-guide-v3"],
+        "asOfBeforeChange": ["security-guide-v1"],
+        "mustNotResolveBy": "DENSE_SCORE_ONLY",
+        "mustExposeContradiction": true,
+        "readTimeSupportValidationRequired": true
+      }
+    },
+    {
+      "id": "token-budget-multilingual-identifiers",
+      "kind": "TOKENIZATION_AND_EXACT_IDENTIFIER",
+      "samples": {
+        "english": "Rotate the authentication token before deployment.",
+        "spanish": "Rota el token de autenticación antes del despliegue.",
+        "code": "AuthTokenRotationPolicy.rotate_access_token(user_id)"
+      },
+      "identifiers": [
+        "AuthTokenRotationPolicy",
+        "rotate_access_token",
+        "user_id"
+      ],
+      "expectations": {
+        "exactModelTokenizerPreferred": true,
+        "approximateFallbackMustBeLabeled": true,
+        "serializedContextPacketMeasured": true,
+        "exactOrLexicalIdentifierChannelRequired": true,
+        "benchmarkLanguages": ["en", "es", "code"]
+      }
+    }
+  ]
+}
