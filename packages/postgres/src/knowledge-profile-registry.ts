@@ -18,7 +18,6 @@ interface KnowledgeProfileRevisionRow {
   canonical_profile: string;
   status: KnowledgeProfileRevisionStatus;
   compatibility_class: KnowledgeProfileCompatibility | null;
-  corpus_revision: string;
   supersedes_revision_id: string | null;
   created_by: string | null;
   validation_report: unknown;
@@ -41,7 +40,6 @@ export interface KnowledgeProfileRevisionRecord {
   profile: KnowledgeProfileV1;
   status: KnowledgeProfileRevisionStatus;
   compatibilityClass: KnowledgeProfileCompatibility | null;
-  corpusRevision: string;
   supersedesRevisionId: string | null;
   createdBy: string | null;
   validationReport: Record<string, unknown>;
@@ -102,7 +100,6 @@ function mapRevision(
     profile: KnowledgeProfileV1.parse(JSON.parse(row.canonical_profile)),
     status: row.status,
     compatibilityClass: row.compatibility_class,
-    corpusRevision: row.corpus_revision,
     supersedesRevisionId: row.supersedes_revision_id,
     createdBy: row.created_by,
     validationReport: asRecord(row.validation_report),
@@ -130,14 +127,10 @@ export async function createKnowledgeProfileDraft(
     with inserted as (
       insert into knowledge_profile_revisions(
         space_id,vault_id,profile_id,version,profile_hash,canonical_profile,
-        status,compatibility_class,corpus_revision,supersedes_revision_id,
-        created_by
+        status,compatibility_class,supersedes_revision_id,created_by
       )
-      select v.space_id,v.id,$3,$4,$5,$6,'DRAFT',null,
-             coalesce(r.corpus_revision,v.current_revision,'unknown'),$7,$8
+      select v.space_id,v.id,$3,$4,$5,$6,'DRAFT',null,$7,$8
         from vaults v
-        left join vault_index_revisions r
-          on r.space_id=v.space_id and r.vault_id=v.id
        where v.space_id=$1 and v.id=$2
       on conflict (vault_id,profile_hash) do nothing
       returning *
