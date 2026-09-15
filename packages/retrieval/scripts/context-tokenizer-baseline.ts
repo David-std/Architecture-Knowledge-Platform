@@ -63,7 +63,9 @@ async function loadTokenizationCase(): Promise<{
     (item) => item.kind === "TOKENIZATION_AND_EXACT_IDENTIFIER",
   );
   if (!candidate) {
-    throw new Error("Missing TOKENIZATION_AND_EXACT_IDENTIFIER regression case.");
+    throw new Error(
+      "Missing TOKENIZATION_AND_EXACT_IDENTIFIER regression case.",
+    );
   }
   const testCase = candidate as unknown as TokenizationRegressionCase;
   if (
@@ -160,7 +162,9 @@ const samples = languageEntries.map(([language, text], index) => {
     );
   }
   if (!fallbackPacket.budget.tokenizer.approximate) {
-    throw new Error(`${language} fallback tokenizer was not labelled approximate.`);
+    throw new Error(
+      `${language} fallback tokenizer was not labelled approximate.`,
+    );
   }
 
   const exactContentTokens = countExact(text);
@@ -210,4 +214,6 @@ const report = {
 
 await mkdir(path.dirname(outputPath), { recursive: true });
 await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
-console.log(JSON.stringify({ outputPath, status: report.status, samples }, null, 2));
+console.log(
+  JSON.stringify({ outputPath, status: report.status, samples }, null, 2),
+);
