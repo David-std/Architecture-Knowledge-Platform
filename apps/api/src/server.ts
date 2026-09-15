@@ -32,6 +32,7 @@ import { registerProfileGovernanceRoutes } from "./routes/profile-governance.js"
 import { registerErrorBookRoutes } from "./routes/error-book.js";
 import { registerAuditRoutes } from "./routes/audit.js";
 import { registerAuditExportRoutes } from "./routes/audit-export.js";
+import { registerInteroperabilityRoutes } from "./routes/interoperability.js";
 
 config({
   path: path.resolve(
@@ -213,6 +214,7 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
   registerErrorBookRoutes(app, db);
   registerAuditRoutes(app, db);
   registerAuditExportRoutes(app, db, rawObjectStore);
+  registerInteroperabilityRoutes(app, db);
   registerProviderTaskRoutes(app, db);
   registerOperatorRoutes(app, db);
   registerSearchRoutes(

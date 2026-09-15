@@ -36,6 +36,7 @@ import {
   resolveProposalReviewPolicy,
   reviewApprovalStatus,
 } from "../review-policy.js";
+import { createReviewDraft } from "../review-draft.js";
 
 // Keep review routes importable by lightweight API tests that mock only the
 // Postgres constructor. The helper is resolved lazily when a review is
@@ -797,70 +798,37 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
         }
         throw error;
       }
-      const reviewId = randomUUID();
-      const store = new GitKnowledgeStore(repositoryPath());
-      const baseRevision = await store.ensureRepository(
-        process.env.AKP_GIT_AUTHOR_NAME ?? "Architecture Knowledge Platform",
-        process.env.AKP_GIT_AUTHOR_EMAIL ?? "akp@localhost",
-      );
-      const branchName = await store.createDraftBranch(reviewId, baseRevision);
-      const proposedChanges = await Promise.all(
-        changes.map(async (change) => ({
-          path: change.path,
-          operation: (await store.hasFileAtRevision(baseRevision, change.path))
-            ? ("UPDATE" as const)
-            : ("CREATE" as const),
-          reasons: [change.reason ?? "Direct proposal"],
-        })),
-      );
-      for (const change of changes)
-        await store.writeDraftFile(change.path, change.content);
-      const headCommit = await store.commitAll(
-        request.body.summary ?? "knowledge: direct proposal",
-        process.env.AKP_GIT_AUTHOR_NAME ?? "Architecture Knowledge Platform",
-        process.env.AKP_GIT_AUTHOR_EMAIL ?? "akp@localhost",
-      );
-      try {
-        await db.pool.query(
-          `
-          insert into reviews(id,space_id,vault_id,branch_name,base_commit,head_commit,status,author_id,
-                              impact_manifest,validation_report)
-          values($1,$2,$3,$4,$5,$6,'PENDING',$7,$8::jsonb,$9::jsonb)
-          `,
-          [
-            reviewId,
-            spaceId,
-            vaultId,
-            branchName,
-            baseRevision,
-            headCommit,
-            actorOf(request)?.id ?? null,
-            JSON.stringify({
-              summary: request.body.summary ?? "",
-              proposedChanges,
-              reviewKinds: [...new Set(reviewKinds as string[])],
-              reviewPolicy: resolvedReviewPolicy.policy,
-              reviewPolicyPinned: resolvedReviewPolicy.pinned,
-            }),
-            JSON.stringify({ issues, errors: 0 }),
-          ],
-        );
-      } catch (error) {
-        await store.cleanupDraft(branchName).catch(() => undefined);
-        throw error;
-      }
+      const created = await createReviewDraft(db, {
+        repositoryPath: repositoryPath(),
+        spaceId,
+        vaultId,
+        authorId: actorOf(request)?.id ?? null,
+        summary: request.body.summary ?? "knowledge: direct proposal",
+        changes,
+        defaultReason: "Direct proposal",
+        impactManifest: {
+          summary: request.body.summary ?? "",
+          reviewKinds: [...new Set(reviewKinds as string[])],
+          reviewPolicy: resolvedReviewPolicy.policy,
+          reviewPolicyPinned: resolvedReviewPolicy.pinned,
+        },
+        validationReport: { issues, errors: 0 },
+      });
       await audit(
         db,
         request,
         "knowledge.propose",
         "review",
-        reviewId,
+        created.reviewId,
         { vaultId },
         spaceId,
       );
-      return reply
-        .code(201)
-        .send({ reviewId, status: "PENDING", branchName, headCommit });
+      return reply.code(201).send({
+        reviewId: created.reviewId,
+        status: "PENDING",
+        branchName: created.branchName,
+        headCommit: created.headCommit,
+      });
     },
   );
 
