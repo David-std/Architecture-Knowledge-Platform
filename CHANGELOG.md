@@ -4,13 +4,18 @@ Notable user-visible and architectural changes are recorded here. Validation tra
 
 ## Unreleased
 
+## 0.3.0 — Product completion
+
 - Expanded the operator console with search, graph, source, durable-job, review, evaluation and health views.
 - Hardened vault/path isolation across lexical, semantic, graph, review and evidence boundaries.
+- Added real multilingual semantic retrieval with versioned embedding generations and explicit activation/revision consistency.
+- Added typed multi-hop graph execution, retrieval planning, ContextPacket continuations and grounded knowledge compilation.
+- Improved document-intelligence routing, provider durability, OCR/transcription support and provider endpoint validation.
 - Added publication reconciliation for recoverable Git/database failure windows and explicit operator recovery for ambiguous states.
 - Added managed-Git backup/restore verification with commit, file and searchable-index checks.
-- Improved document-intelligence routing, provider durability, OCR/transcription support and provider endpoint validation.
 - Added OpenTelemetry traces and metrics across API, worker, backup and restore workflows.
-- Productized repository documentation, contributor guidance and hygiene rules so the generic platform no longer depends on a developer workstation or a specific corpus.
+- Added reproducible semantic, document-intelligence, concurrency, resilience, scale and Agent A/B evaluation workflows with bounded claims.
+- Productized repository documentation, contributor guidance and hygiene rules so the generic platform no longer depends on a developer workstation, construction artifacts or a specific corpus.
 
 ## 0.2.1 — Platform validation
 
