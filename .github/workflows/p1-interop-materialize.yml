@@ -97,25 +97,16 @@ jobs:
               'import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";',
           )
           replace_once(
-              '''  await db.pool.query(
-            `insert into api_tokens(user_id,token_hash,label)
-             values($1,$2,'interop-integration') on conflict(token_hash) do nothing`,
-            [adminId, tokenHash],
-          );''',
-              '''  const tokenScopes = {
-            spaces: [
-              {
-                spaceId,
-                pathPrefix: null,
-                permissions: ["knowledge:read", "knowledge:propose"],
-              },
-            ],
-          };
-          await db.pool.query(
-            `insert into api_tokens(user_id,token_hash,label,scopes)
-             values($1,$2,'interop-integration',$3::jsonb) on conflict(token_hash) do nothing`,
-            [adminId, tokenHash, JSON.stringify(tokenScopes)],
-          );''',
+              'insert into api_tokens(user_id,token_hash,label)',
+              'insert into api_tokens(user_id,token_hash,label,scopes)',
+          )
+          replace_once(
+              "values($1,$2,'interop-integration') on conflict(token_hash) do nothing",
+              "values($1,$2,'interop-integration',$3::jsonb) on conflict(token_hash) do nothing",
+          )
+          replace_once(
+              '[adminId, tokenHash],',
+              '[adminId, tokenHash, JSON.stringify({ spaces: [{ spaceId, pathPrefix: null, permissions: ["knowledge:read", "knowledge:propose"] }] })],',
           )
           replace_once(
               '  const module = await import(`../src/server.js?interop=${randomUUID()}`);',
