@@ -50,9 +50,9 @@ jobs:
           text = benchmark.read_text()
           arm_a_start = text.index('async function retrieveArmA(')
           arm_b_start = text.index('async function retrieveArmB(', arm_a_start)
-          invoke_start = text.index('function evaluationPrompt(', arm_b_start)
+          prompt_start = text.index('function evaluationPrompt(', arm_b_start)
           arm_a = text[arm_a_start:arm_b_start]
-          arm_b = text[arm_b_start:invoke_start]
+          arm_b = text[arm_b_start:prompt_start]
           arm_a = replace_once(
               arm_a,
               '  const started = performance.now();\n',
@@ -79,7 +79,49 @@ jobs:
               '  result.retrievalLatencyMs = performance.now() - started;\n  result.retrievalMetadata.retrievalQuery = retrievalQuery;\n  return result;',
               'Agent arm B metadata',
           )
-          benchmark.write_text(text[:arm_a_start] + arm_a + arm_b + text[invoke_start:])
+          text = text[:arm_a_start] + arm_a + arm_b + text[prompt_start:]
+          text = replace_once(
+              text,
+              '      conflicts: packet.conflicts ?? [],\n',
+              '      conflicts: packet.conflicts ?? [],\n      sourceSections: packet.sections?.length ?? 0,\n',
+              'ContextPacket source section metadata',
+          )
+          guard_anchor = '''    const armA = observations.filter((item) => item.arm === "A_RAW_SEARCH");
+          '''
+          guard = '''    const supportedTaskIds = new Set([
+                "agent-public-exact-runtime-flows",
+                "agent-public-concept-canonical-authority",
+                "agent-public-workflow-publication-recovery",
+                "agent-public-source-sanitized-packet",
+                "agent-public-project-code-health-boundary",
+              ]);
+              for (const observation of observations) {
+                if (!supportedTaskIds.has(observation.taskId)) continue;
+                if (
+                  observation.arm === "A_RAW_SEARCH" &&
+                  (observation.contextTokens <= 0 ||
+                    Number(observation.retrievalMetadata.hits ?? 0) <= 0)
+                ) {
+                  throw new Error(
+                    `Supported Agent A/B task ${observation.taskId} has no raw-search context.`,
+                  );
+                }
+                if (
+                  observation.arm === "B_AKP_CONTEXT_PACKET" &&
+                  (Number(observation.retrievalMetadata.sourceSections ?? 0) <= 0 ||
+                    stringArray(observation.retrievalMetadata.gaps).includes(
+                      "No source-backed material matched the request.",
+                    ))
+                ) {
+                  throw new Error(
+                    `Supported Agent A/B task ${observation.taskId} has no ContextPacket source material.`,
+                  );
+                }
+              }
+              const armA = observations.filter((item) => item.arm === "A_RAW_SEARCH");
+          '''
+          text = replace_once(text, guard_anchor, guard, 'Agent evidence guard')
+          benchmark.write_text(text)
 
           tasks_path = Path('evals/registered/agent-ab-public-product-tasks.json')
           tasks = json.loads(tasks_path.read_text())
@@ -130,51 +172,16 @@ jobs:
           if count != 1:
               raise SystemExit(f'Scale vector probe replacement count={count}')
           scale.write_text(text)
-
-          workflow = Path('.github/workflows/agent-ab.yml')
-          text = workflow.read_text()
-          guard_anchor = '          for (const observation of observations) {\n'
-          if text.count(guard_anchor) != 1:
-              raise SystemExit(f'Agent live evidence guard marker count={text.count(guard_anchor)}')
-          guard_prefix = '''          const supportedTaskIds = new Set([
-                    "agent-public-exact-runtime-flows",
-                    "agent-public-concept-canonical-authority",
-                    "agent-public-workflow-publication-recovery",
-                    "agent-public-source-sanitized-packet",
-                    "agent-public-project-code-health-boundary",
-                  ]);
-          '''
-          guard_body = '''          for (const observation of observations) {
-                    if (supportedTaskIds.has(observation.taskId)) {
-                      if (
-                        observation.arm === "A_RAW_SEARCH" &&
-                        (!(observation.contextTokens > 0) || !(observation.retrievalMetadata?.hits > 0))
-                      ) {
-                        throw new Error(`Supported Agent A/B task ${observation.taskId} has no raw-search context.`);
-                      }
-                      if (
-                        observation.arm === "B_AKP_CONTEXT_PACKET" &&
-                        Array.isArray(observation.retrievalMetadata?.gaps) &&
-                        observation.retrievalMetadata.gaps.includes("No source-backed material matched the request.")
-                      ) {
-                        throw new Error(`Supported Agent A/B task ${observation.taskId} has no ContextPacket source material.`);
-                      }
-                    }
-          '''
-          text = text.replace(guard_anchor, guard_prefix + guard_body, 1)
-          workflow.write_text(text)
           PY
           pnpm exec prettier --write \
             packages/evaluation/src/agent-ab.ts \
             scripts/agent-ab-benchmark.ts \
             evals/registered/agent-ab-public-product-tasks.json \
             scripts/load-scale-benchmark.ts \
-            .github/workflows/agent-ab.yml \
             packages/retrieval/scripts/local-agent-provider.ts \
             scripts/provision-agent-ab-fixture.ts
           git diff --check
           printf '%s\n' \
-            .github/workflows/agent-ab.yml \
             evals/registered/agent-ab-public-product-tasks.json \
             packages/evaluation/src/agent-ab.ts \
             packages/retrieval/scripts/local-agent-provider.ts \
@@ -191,7 +198,6 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add \
-            .github/workflows/agent-ab.yml \
             evals/registered/agent-ab-public-product-tasks.json \
             packages/evaluation/src/agent-ab.ts \
             packages/retrieval/scripts/local-agent-provider.ts \
