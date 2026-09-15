@@ -110,7 +110,7 @@ jobs:
             apps/worker/src/compilation-stage.ts \
             packages/compiler/test/profile-policy-enforcement.test.ts \
             apps/worker/test/knowledge-profile-compilation.test.ts
-          git rm .github/workflows/profile-policy-materialize.yml scripts/tmp-profile-policy-materialize.py
+          git rm -f .github/workflows/profile-policy-materialize.yml scripts/tmp-profile-policy-materialize.py
           rm -f profile-policy-compiler-test.log
           git diff --cached --check
           git diff --cached --quiet && { echo "No validated product changes to promote"; exit 1; }
