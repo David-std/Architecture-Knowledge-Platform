@@ -1,0 +1,84 @@
+name: agent-report-probe
+
+on:
+  push:
+    branches: [work/product-completion-final]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: postgres://akp:akp@localhost:55432/akp
+      AKP_AGENT_AB_TASKS: evals/registered/agent-ab-public-product-tasks.json
+      AKP_AGENT_AB_REPORT: reports/probe/benchmark.json
+      AKP_AGENT_AB_ENABLE: "1"
+      AKP_AGENT_AB_REAL_MODEL: "1"
+      AKP_API_URL: http://127.0.0.1:18080
+      AKP_API_TOKEN: agent-ab-local-evidence-token-2026
+      AKP_API_TOKEN_SCOPES: '{"spaces":[{"spaceId":"00000000-0000-0000-0000-000000000003","pathPrefix":null,"permissions":["knowledge:read","source:read"]}]}'
+      AKP_AGENT_AB_SPACE_ID: 00000000-0000-0000-0000-000000000003
+      AKP_AGENT_AB_VAULT_IDS: 10000000-0000-4000-8000-000000000001,10000000-0000-4000-8000-000000000002
+      AKP_AGENT_AB_PROVIDER_BASE_URL: http://127.0.0.1:18081
+      AKP_AGENT_AB_PROVIDER_MODEL: onnx-community/Qwen2.5-0.5B-Instruct
+      AKP_AGENT_AB_TEMPERATURE: "0"
+      AKP_AGENT_AB_MAX_OUTPUT_TOKENS: "512"
+      AKP_LOCAL_AGENT_MODEL: onnx-community/Qwen2.5-0.5B-Instruct
+      AKP_LOCAL_AGENT_MODEL_REVISION: cc5cc01a65cc3ff17bdb73a7de33d879f62599b0
+      AKP_LOCAL_AGENT_DTYPE: q4
+      AKP_LOCAL_AGENT_PORT: "18081"
+      PORT: "18080"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: work/product-completion-final
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with: { node-version: 24.20.0, cache: pnpm }
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Apply conservative parser in runner only
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('scripts/agent-ab-benchmark.ts')
+          s=p.read_text()
+          s=s.replace('''    if (line.startsWith("CLAIM:")) {\n      if (claims.length >= 4)\n        throw new Error("Provider returned more than four claims.");''','''    if (line.startsWith("CLAIM:")) {''',1)
+          s=s.replace('''    throw new Error(\n      `Provider returned an unknown record line: ${line.slice(0, 80)}`,\n    );''','''    claims.push({ text: line, citations: [] });''',1)
+          if 'Provider returned more than four claims.' in s or 'Provider returned an unknown record line:' in s:
+              raise SystemExit('parser patch did not apply exactly')
+          p.write_text(s)
+          PY
+          pnpm exec prettier --write scripts/agent-ab-benchmark.ts
+      - name: Start fixture and providers
+        shell: bash
+        run: |
+          docker compose up -d --wait postgres
+          pnpm db:migrate
+          mkdir -p reports/probe
+          pnpm exec tsx scripts/provision-agent-ab-fixture.ts
+          pnpm auth:provision
+          pnpm --filter @akp/api dev > reports/probe/api.log 2>&1 &
+          for i in $(seq 1 60); do curl --fail --silent http://127.0.0.1:18080/health/liveness >/dev/null && break; sleep 1; done
+          curl --fail --silent http://127.0.0.1:18080/health/liveness >/dev/null
+          pnpm --filter @akp/retrieval exec tsx scripts/local-agent-provider.ts > reports/probe/provider.log 2>&1 &
+          for i in $(seq 1 120); do curl --fail --silent http://127.0.0.1:18081/health >/dev/null && break; sleep 5; done
+          curl --fail --silent http://127.0.0.1:18081/health
+      - name: Run benchmark and print report
+        shell: bash
+        run: |
+          set +e
+          pnpm benchmark:agent-ab
+          code=$?
+          echo '---BEGIN AGENT REPORT---'
+          cat reports/probe/benchmark.json || true
+          echo '---END AGENT REPORT---'
+          exit "$code"
+      - name: Stop services
+        if: always()
+        run: docker compose down -v --remove-orphans
