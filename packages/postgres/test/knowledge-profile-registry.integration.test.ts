@@ -7,6 +7,7 @@ import {
 import {
   Postgres,
   createKnowledgeProfileDraft,
+  recordKnowledgeProfileValidation,
   resolveEffectiveKnowledgeProfile,
 } from "../src/index.js";
 
@@ -38,7 +39,7 @@ async function createVault(
 
 describe("knowledge profile registry integration", () => {
   it.skipIf(!databaseUrl)(
-    "persists immutable canonical drafts without replacing v0.3 fallback semantics",
+    "persists immutable profiles and revalidates them against explicit corpus snapshots",
     async () => {
       if (!databaseUrl) return;
       const db = new Postgres(databaseUrl);
@@ -64,7 +65,6 @@ describe("knowledge profile registry integration", () => {
         });
         expect(firstDraft.status).toBe("DRAFT");
         expect(firstDraft.compatibilityClass).toBeNull();
-        expect(firstDraft.corpusRevision).toBe("profile-test-corpus");
         expect(firstDraft.canonicalProfile).toBe(
           canonicalKnowledgeProfileJson(DEFAULT_KNOWLEDGE_PROFILE_V1),
         );
@@ -83,6 +83,44 @@ describe("knowledge profile registry integration", () => {
         });
         expect(duplicate.id).toBe(firstDraft.id);
         expect(duplicate.profileHash).toBe(firstDraft.profileHash);
+
+        const validated = await recordKnowledgeProfileValidation(db, {
+          spaceId,
+          vaultId: firstVault.id,
+          revisionId: firstDraft.id,
+          expectedCorpusRevision: "profile-test-corpus",
+          compatibilityClass: "NON_BREAKING",
+          validationReport: { corpusRevision: "profile-test-corpus" },
+        });
+        expect(validated.status).toBe("VALIDATED");
+        expect(validated.compatibilityClass).toBe("NON_BREAKING");
+
+        await db.pool.query(
+          "update vaults set current_revision='profile-test-corpus-2' where id=$1",
+          [firstVault.id],
+        );
+        await expect(
+          recordKnowledgeProfileValidation(db, {
+            spaceId,
+            vaultId: firstVault.id,
+            revisionId: firstDraft.id,
+            expectedCorpusRevision: "profile-test-corpus",
+            compatibilityClass: "NON_BREAKING",
+            validationReport: { corpusRevision: "profile-test-corpus" },
+          }),
+        ).rejects.toThrow("CONTEXT_REVISION_CHANGED");
+
+        const revalidated = await recordKnowledgeProfileValidation(db, {
+          spaceId,
+          vaultId: firstVault.id,
+          revisionId: firstDraft.id,
+          expectedCorpusRevision: "profile-test-corpus-2",
+          compatibilityClass: "MIGRATION_REQUIRED",
+          validationReport: { corpusRevision: "profile-test-corpus-2" },
+        });
+        expect(revalidated.id).toBe(firstDraft.id);
+        expect(revalidated.status).toBe("REVIEW_REQUIRED");
+        expect(revalidated.compatibilityClass).toBe("MIGRATION_REQUIRED");
 
         const nextProfile = {
           ...DEFAULT_KNOWLEDGE_PROFILE_V1,
