@@ -50,8 +50,11 @@ jobs:
           s=p.read_text()
           s=s.replace('''    if (line.startsWith("CLAIM:")) {\n      if (claims.length >= 4)\n        throw new Error("Provider returned more than four claims.");''','''    if (line.startsWith("CLAIM:")) {''',1)
           s=s.replace('''    throw new Error(\n      `Provider returned an unknown record line: ${line.slice(0, 80)}`,\n    );''','''    claims.push({ text: line, citations: [] });''',1)
+          s=s.replace('''    throw new Error(\n      "Provider response did not match the Agent A/B line contract.",\n    );''','''    throw new Error(\n      `Provider response did not match the Agent A/B line contract. output=${JSON.stringify(content.slice(0, 1000))}`,\n    );''',1)
           if 'Provider returned more than four claims.' in s or 'Provider returned an unknown record line:' in s:
               raise SystemExit('parser patch did not apply exactly')
+          if 'output=${JSON.stringify(content.slice(0, 1000))}' not in s:
+              raise SystemExit('diagnostic patch did not apply')
           p.write_text(s)
           PY
           pnpm exec prettier --write scripts/agent-ab-benchmark.ts
