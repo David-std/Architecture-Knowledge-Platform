@@ -220,7 +220,11 @@ export async function resolveKnowledgeProfileBinding(
   if (!vaultRow) throw new Error("VAULT_NOT_FOUND_OR_SCOPE_MISMATCH");
 
   if (vaultRow.active_knowledge_profile_revision_id) {
-    const active = await getActiveKnowledgeProfileRevision(db, spaceId, vaultId);
+    const active = await getActiveKnowledgeProfileRevision(
+      db,
+      spaceId,
+      vaultId,
+    );
     if (!active) throw new Error("ACTIVE_KNOWLEDGE_PROFILE_BINDING_INVALID");
     return {
       source: "DURABLE_REVISION",

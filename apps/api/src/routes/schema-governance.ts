@@ -129,7 +129,8 @@ function buildProfileCorpusUsage(
   const lifecycleStateCounts: Record<string, Record<string, number>> = {};
   for (const document of documents) {
     kindCounts[document.type] = (kindCounts[document.type] ?? 0) + 1;
-    const lifecycleName = currentProfile.knowledgeKinds[document.type]?.lifecycle;
+    const lifecycleName =
+      currentProfile.knowledgeKinds[document.type]?.lifecycle;
     if (!lifecycleName) continue;
     const states = (lifecycleStateCounts[lifecycleName] ??= {});
     states[document.lifecycle] = (states[document.lifecycle] ?? 0) + 1;
@@ -246,8 +247,7 @@ export function registerSchemaGovernanceRoutes(
         | Awaited<ReturnType<typeof resolveEffectiveKnowledgeProfile>>
         | undefined;
       let profileDraft:
-        | Awaited<ReturnType<typeof createKnowledgeProfileDraft>>
-        | undefined;
+        Awaited<ReturnType<typeof createKnowledgeProfileDraft>> | undefined;
       let profileCandidate: KnowledgeProfileV1 | undefined;
       if (fullProfileRequested) {
         try {

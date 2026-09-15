@@ -33,7 +33,13 @@ async function createVault(
       '{}'::jsonb,'{}'::jsonb,true,'PRIVATE','profile-test-corpus'
     ) returning id
     `,
-    [spaceId, `/tmp/${vaultKey}`, vaultKey, vaultKey, JSON.stringify({ marker })],
+    [
+      spaceId,
+      `/tmp/${vaultKey}`,
+      vaultKey,
+      vaultKey,
+      JSON.stringify({ marker }),
+    ],
   );
   return { id: String(result.rows[0]?.id), vaultKey };
 }
@@ -88,7 +94,9 @@ describe("knowledge profile registry integration", () => {
         const reordered = {
           ...DEFAULT_KNOWLEDGE_PROFILE_V1,
           knowledgeKinds: Object.fromEntries(
-            Object.entries(DEFAULT_KNOWLEDGE_PROFILE_V1.knowledgeKinds).reverse(),
+            Object.entries(
+              DEFAULT_KNOWLEDGE_PROFILE_V1.knowledgeKinds,
+            ).reverse(),
           ),
         };
         const duplicate = await createKnowledgeProfileDraft(
@@ -111,7 +119,9 @@ describe("knowledge profile registry integration", () => {
           corpusFingerprintAfter: "fingerprint-1",
         });
         expect(firstValidation.revision.status).toBe("VALIDATED");
-        expect(firstValidation.revision.compatibilityClass).toBe("NON_BREAKING");
+        expect(firstValidation.revision.compatibilityClass).toBe(
+          "NON_BREAKING",
+        );
 
         await db.pool.query(
           "update vaults set current_revision='profile-test-corpus-2' where id=$1",

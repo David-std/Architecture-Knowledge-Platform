@@ -75,7 +75,10 @@ export async function recordKnowledgeProfileDryRun(
       throw new Error("CONTEXT_REVISION_CHANGED");
     }
 
-    const updated = await client.query<{ version: string; profile_hash: string }>(
+    const updated = await client.query<{
+      version: string;
+      profile_hash: string;
+    }>(
       `
       update knowledge_profile_revisions
          set status=$4,
@@ -139,7 +142,8 @@ export async function recordKnowledgeProfileDryRun(
       ],
     );
     dryRun = inserted.rows[0];
-    if (!dryRun) throw new Error("KNOWLEDGE_PROFILE_DRY_RUN_PERSISTENCE_FAILED");
+    if (!dryRun)
+      throw new Error("KNOWLEDGE_PROFILE_DRY_RUN_PERSISTENCE_FAILED");
     await client.query("commit");
   } catch (error) {
     await client.query("rollback").catch(() => undefined);

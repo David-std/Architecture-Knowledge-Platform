@@ -107,13 +107,19 @@ afterAll(async () => {
   if (app) await app.close();
   if (!db) return;
   await db.pool.query("delete from audit_events where vault_id=$1", [vaultId]);
-  await db.pool.query("delete from schema_dry_runs where vault_id=$1", [vaultId]);
-  await db.pool.query("delete from knowledge_documents where id=$1", [documentId]);
+  await db.pool.query("delete from schema_dry_runs where vault_id=$1", [
+    vaultId,
+  ]);
+  await db.pool.query("delete from knowledge_documents where id=$1", [
+    documentId,
+  ]);
   await db.pool.query("delete from vault_index_revisions where vault_id=$1", [
     vaultId,
   ]);
   await db.pool.query("delete from vaults where id=$1", [vaultId]);
-  await db.pool.query("delete from api_tokens where token_hash=$1", [tokenHash]);
+  await db.pool.query("delete from api_tokens where token_hash=$1", [
+    tokenHash,
+  ]);
   await db.close();
 });
 

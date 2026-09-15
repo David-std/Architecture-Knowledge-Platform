@@ -43,7 +43,9 @@ function stableValue(value: unknown): unknown {
 }
 
 function same(left: unknown, right: unknown): boolean {
-  return JSON.stringify(stableValue(left)) === JSON.stringify(stableValue(right));
+  return (
+    JSON.stringify(stableValue(left)) === JSON.stringify(stableValue(right))
+  );
 }
 
 function countKind(usage: KnowledgeProfileCorpusUsage, kind: string): number {
@@ -225,7 +227,8 @@ export function classifyKnowledgeProfileCompatibility(
         continue;
       }
       if (!same(currentField, candidateField)) {
-        const becameRequired = !currentField.required && candidateField.required;
+        const becameRequired =
+          !currentField.required && candidateField.required;
         const structuralChange =
           currentField.type !== candidateField.type ||
           !same(currentField.enumValues, candidateField.enumValues);
@@ -243,7 +246,9 @@ export function classifyKnowledgeProfileCompatibility(
       }
     }
 
-    for (const [field, candidateField] of Object.entries(candidateKind.fields)) {
+    for (const [field, candidateField] of Object.entries(
+      candidateKind.fields,
+    )) {
       if (currentKind.fields[field]) continue;
       if (candidateField.required) {
         add(
@@ -327,7 +332,9 @@ export function classifyKnowledgeProfileCompatibility(
     }
   }
 
-  for (const [name, currentPolicy] of Object.entries(current.evidencePolicies)) {
+  for (const [name, currentPolicy] of Object.entries(
+    current.evidencePolicies,
+  )) {
     const candidatePolicy = candidate.evidencePolicies[name];
     if (!candidatePolicy || same(currentPolicy, candidatePolicy)) continue;
     const affectedKinds = kindsUsingPolicy(current, "evidencePolicy", name);
@@ -357,7 +364,8 @@ export function classifyKnowledgeProfileCompatibility(
     current.artifactContracts,
   )) {
     const candidateContract = candidate.artifactContracts[name];
-    if (!candidateContract || same(currentContract, candidateContract)) continue;
+    if (!candidateContract || same(currentContract, candidateContract))
+      continue;
     const affectedUsage = usageForKinds(
       usage,
       kindsUsingPolicy(current, "artifactContract", name),
