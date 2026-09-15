@@ -30,14 +30,14 @@ jobs:
           scripts/tmp-profile-policy-materialize.py
       - name: Materialize enforcement slice
         run: python scripts/tmp-profile-policy-materialize.py
-      - name: Harden candidate typing
+      - name: Harden candidate typing and worker regression
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
 
-          path = Path("packages/compiler/src/grounding.ts")
-          text = path.read_text()
+          grounding = Path("packages/compiler/src/grounding.ts")
+          text = grounding.read_text()
 
           old = "      schemaProfile: input.schemaProfile,\n    });\n  }\n  const kind ="
           new = "      ...(input.schemaProfile ? { schemaProfile: input.schemaProfile } : {}),\n    });\n  }\n  const kind ="
@@ -49,9 +49,21 @@ jobs:
           new = "        (!evidence.locator.path?.trim() || !evidence.locator.source_hash?.trim())"
           if text.count(old) != 1:
               raise SystemExit(f"locator typing anchor count={text.count(old)}")
+          grounding.write_text(text.replace(old, new, 1))
+
+          test = Path("apps/worker/test/knowledge-profile-compilation.test.ts")
+          text = test.read_text()
+          old = '''  deriveKnowledgePath,\n  knowledgeProfileHash,'''
+          new = '''  deriveKnowledgePath,\n  deriveProfileKnowledgePath,\n  durableCompilerKnowledgeProfileContext,\n  knowledgeProfileHash,'''
+          if text.count(old) != 1:
+              raise SystemExit(f"worker import anchor count={text.count(old)}")
           text = text.replace(old, new, 1)
 
-          path.write_text(text)
+          old = '''        path: deriveKnowledgePath({ title: statement, kind }),'''
+          new = '''        path:\n          kind === "note"\n            ? deriveProfileKnowledgePath({\n                title: statement,\n                kind,\n                candidateId: "candidate-1",\n                knowledgeProfile: durableCompilerKnowledgeProfileContext({\n                  revisionId: PROFILE_REVISION_ID,\n                  profileHash: knowledgeProfileHash(\n                    NEUTRAL_KNOWLEDGE_PROFILE_V1,\n                  ),\n                  profile: NEUTRAL_KNOWLEDGE_PROFILE_V1,\n                }),\n              })\n            : deriveKnowledgePath({ title: statement, kind }),'''
+          if text.count(old) != 1:
+              raise SystemExit(f"worker path anchor count={text.count(old)}")
+          test.write_text(text.replace(old, new, 1))
           PY
       - name: Format candidate files
         run: >-
@@ -61,6 +73,7 @@ jobs:
           packages/compiler/src/grounding.ts
           apps/worker/src/compilation-stage.ts
           packages/compiler/test/profile-policy-enforcement.test.ts
+          apps/worker/test/knowledge-profile-compilation.test.ts
       - name: Build workspace packages
         run: pnpm build
       - name: Run focused compiler tests
@@ -82,5 +95,6 @@ jobs:
             packages/compiler/src/grounding.ts
             apps/worker/src/compilation-stage.ts
             packages/compiler/test/profile-policy-enforcement.test.ts
+            apps/worker/test/knowledge-profile-compilation.test.ts
             profile-policy-compiler-test.log
           if-no-files-found: warn
