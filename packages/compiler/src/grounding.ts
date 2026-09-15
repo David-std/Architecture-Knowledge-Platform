@@ -1,5 +1,6 @@
 import type { TrustTier } from "@akp/contracts";
 import {
+  EffectiveReviewPolicy,
   KnowledgeCompilerInput,
   KnowledgeCompilerResult,
   ReviewCompilationContext,
@@ -198,31 +199,17 @@ function effectiveEvidenceTrust(
     : "UNVERIFIED";
 }
 
-function effectiveReviewPolicy(
-  input: KnowledgeCompilerInputType,
-  result: KnowledgeCompilerResultType,
-) {
-  const materialCandidateIds = new Set(
-    result.proposedFileChanges.map((change) => change.candidateId),
-  );
-  const kinds = [
-    ...new Set(
-      result.knowledgeCandidates
-        .filter((candidate) =>
-          materialCandidateIds.size
-            ? materialCandidateIds.has(candidate.candidateId)
-            : candidate.proposedAction !== "NO_MATERIAL",
-        )
-        .map((candidate) => candidate.kind),
-    ),
-  ];
-  const policyDefinitions = kinds.map((kindName) => {
-    const kind = input.knowledgeProfile.profile.knowledgeKinds[kindName];
+export function effectiveReviewPolicyForKinds(
+  knowledgeProfile: KnowledgeCompilerInputType["knowledgeProfile"],
+  kinds: readonly string[],
+): ReturnType<typeof EffectiveReviewPolicy.parse> {
+  const uniqueKinds = [...new Set(kinds)];
+  const policyDefinitions = uniqueKinds.map((kindName) => {
+    const kind = knowledgeProfile.profile.knowledgeKinds[kindName];
     if (!kind) {
       throw new Error(`COMPILER_PROFILE_KIND_NOT_DECLARED:${kindName}`);
     }
-    const policy =
-      input.knowledgeProfile.profile.reviewPolicies[kind.reviewPolicy];
+    const policy = knowledgeProfile.profile.reviewPolicies[kind.reviewPolicy];
     if (!policy) {
       throw new Error(`COMPILER_REVIEW_POLICY_NOT_FOUND:${kind.reviewPolicy}`);
     }
@@ -245,16 +232,37 @@ function effectiveReviewPolicy(
   if (!allowedRoles.length) {
     throw new Error("COMPILER_REVIEW_POLICY_ROLE_CONFLICT");
   }
-  return {
-    required: true as const,
+  return EffectiveReviewPolicy.parse({
+    required: true,
     minimumApprovals,
     allowedRoles,
-    profileSource: input.knowledgeProfile.source,
-    profileRevisionId: input.knowledgeProfile.revisionId,
-    profileHash: input.knowledgeProfile.profileHash,
-    profileId: input.knowledgeProfile.profile.profileId,
-    profileVersion: input.knowledgeProfile.profile.version,
-  };
+    profileSource: knowledgeProfile.source,
+    profileRevisionId: knowledgeProfile.revisionId,
+    profileHash: knowledgeProfile.profileHash,
+    profileId: knowledgeProfile.profile.profileId,
+    profileVersion: knowledgeProfile.profile.version,
+  });
+}
+
+function effectiveReviewPolicy(
+  input: KnowledgeCompilerInputType,
+  result: KnowledgeCompilerResultType,
+) {
+  const materialCandidateIds = new Set(
+    result.proposedFileChanges.map((change) => change.candidateId),
+  );
+  const kinds = [
+    ...new Set(
+      result.knowledgeCandidates
+        .filter((candidate) =>
+          materialCandidateIds.size
+            ? materialCandidateIds.has(candidate.candidateId)
+            : candidate.proposedAction !== "NO_MATERIAL",
+        )
+        .map((candidate) => candidate.kind),
+    ),
+  ];
+  return effectiveReviewPolicyForKinds(input.knowledgeProfile, kinds);
 }
 
 function assertEvidenceReferences(

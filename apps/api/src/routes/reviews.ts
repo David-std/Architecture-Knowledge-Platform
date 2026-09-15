@@ -10,7 +10,10 @@ import {
 } from "@akp/postgres";
 import { GitKnowledgeStore } from "@akp/git-store";
 import { assertSafeKnowledgePath } from "@akp/compiler";
-import { validateMarkdownDocument } from "@akp/validation";
+import {
+  parseKnowledgeDocumentMetadata,
+  validateMarkdownDocument,
+} from "@akp/validation";
 import { withSpan } from "@akp/observability";
 import {
   assertManagedRepositoryBoundary,
@@ -27,6 +30,12 @@ import {
   requirePermission,
   spaceIdsForPermission,
 } from "../auth.js";
+import {
+  claimReviewForPublication,
+  recordReviewApproval,
+  resolveProposalReviewPolicy,
+  reviewApprovalStatus,
+} from "../review-policy.js";
 
 // Keep review routes importable by lightweight API tests that mock only the
 // Postgres constructor. The helper is resolved lazily when a review is
@@ -604,6 +613,25 @@ async function canAccessReview(
   );
 }
 
+function reviewPolicyDecisionHttpStatus(code: string): 403 | 409 | null {
+  if (code === "REVIEW_ROLE_NOT_ALLOWED") return 403;
+  if (
+    [
+      "REVIEW_PROFILE_STALE",
+      "REVIEW_POLICY_SNAPSHOT_INVALID",
+      "REVIEW_POLICY_KINDS_REQUIRED",
+      "REVIEW_ROUND_INVALID",
+      "REVIEW_HEAD_REQUIRED",
+      "REVIEW_ALREADY_DECIDED",
+      "REVIEW_APPROVAL_CONTEXT_CHANGED",
+      "REVIEW_APPROVAL_QUORUM_NOT_MET",
+    ].includes(code)
+  ) {
+    return 409;
+  }
+  return null;
+}
+
 export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
   app.post<{ Body: { reviewId?: string } }>(
     "/v1/operator/publications/reconcile",
@@ -735,6 +763,40 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
           .code(422)
           .send({ code: "DRAFT_VALIDATION_FAILED", issues });
       }
+      const reviewKinds = changes.map(
+        (change) => parseKnowledgeDocumentMetadata(change.content)?.type,
+      );
+      if (reviewKinds.some((kind) => !kind)) {
+        return reply.code(422).send({ code: "KNOWLEDGE_KIND_REQUIRED" });
+      }
+      let resolvedReviewPolicy: Awaited<
+        ReturnType<typeof resolveProposalReviewPolicy>
+      >;
+      try {
+        resolvedReviewPolicy = await resolveProposalReviewPolicy(
+          db,
+          spaceId,
+          vaultId,
+          reviewKinds as string[],
+        );
+      } catch (error) {
+        const code = error instanceof Error ? error.message : String(error);
+        if (code.startsWith("COMPILER_PROFILE_KIND_NOT_DECLARED:")) {
+          return reply.code(422).send({
+            code: "KNOWLEDGE_PROFILE_KIND_NOT_ALLOWED",
+            kind: code.split(":")[1] ?? "",
+          });
+        }
+        if (code === "COMPILER_REVIEW_POLICY_ROLE_CONFLICT") {
+          return reply
+            .code(422)
+            .send({ code: "KNOWLEDGE_PROFILE_REVIEW_POLICY_CONFLICT" });
+        }
+        if (code === "ACTIVE_KNOWLEDGE_PROFILE_BINDING_INVALID") {
+          return reply.code(409).send({ code });
+        }
+        throw error;
+      }
       const reviewId = randomUUID();
       const store = new GitKnowledgeStore(repositoryPath());
       const baseRevision = await store.ensureRepository(
@@ -776,6 +838,9 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
             JSON.stringify({
               summary: request.body.summary ?? "",
               proposedChanges,
+              reviewKinds: [...new Set(reviewKinds as string[])],
+              reviewPolicy: resolvedReviewPolicy.policy,
+              reviewPolicyPinned: resolvedReviewPolicy.pinned,
             }),
             JSON.stringify({ issues, errors: 0 }),
           ],
@@ -1111,11 +1176,25 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
         "select * from review_comments where review_id=$1 order by created_at",
         [request.params.id],
       );
+      const approvalStatus = await reviewApprovalStatus(db, review);
       const store = new GitKnowledgeStore(repositoryPath());
       const diff = await store
         .diff(String(review.base_commit), String(review.head_commit))
         .catch(() => "");
-      return { ...review, comments: comments.rows, diff };
+      return {
+        ...review,
+        comments: comments.rows,
+        diff,
+        reviewPolicy: approvalStatus.policy,
+        approvalProgress: {
+          reviewRound: approvalStatus.reviewRound,
+          count: approvalStatus.approvalCount,
+          minimumApprovals: approvalStatus.minimumApprovals,
+          remainingApprovals: approvalStatus.remainingApprovals,
+          pinned: approvalStatus.pinned,
+        },
+        approvals: approvalStatus.approvals,
+      };
     },
   );
 
@@ -1170,6 +1249,51 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
         ) {
           return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
         }
+        if (!actor)
+          return reply.code(401).send({ code: "AUTHENTICATION_REQUIRED" });
+        let approval: Awaited<ReturnType<typeof recordReviewApproval>>;
+        try {
+          approval = await recordReviewApproval(db, {
+            reviewId: request.params.id,
+            actor,
+            reason: request.body.reason ?? "",
+          });
+        } catch (error) {
+          const code = error instanceof Error ? error.message : String(error);
+          const status = reviewPolicyDecisionHttpStatus(code);
+          if (status) return reply.code(status).send({ code });
+          throw error;
+        }
+        await audit(
+          db,
+          request,
+          "review.approval_recorded",
+          "review",
+          request.params.id,
+          {
+            vaultId: String(review.vault_id),
+            reviewerRole: approval.reviewerRole,
+            approvalCount: approval.approvalCount,
+            minimumApprovals: approval.minimumApprovals,
+            duplicate: approval.duplicate,
+            reviewRound: approval.reviewRound,
+          },
+          String(review.space_id),
+        );
+        if (!approval.quorumReached) {
+          return {
+            id: request.params.id,
+            status: "PENDING",
+            approvalProgress: {
+              reviewRound: approval.reviewRound,
+              count: approval.approvalCount,
+              minimumApprovals: approval.minimumApprovals,
+              remainingApprovals:
+                approval.minimumApprovals - approval.approvalCount,
+              duplicate: approval.duplicate,
+            },
+          };
+        }
         const store = new GitKnowledgeStore(repositoryPath());
         const publicationKey = repositoryPublicationKey(repositoryPath());
         const lockOwner = `approve:${request.params.id}:${request.id}`;
@@ -1189,26 +1313,21 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
         }
         let revision: string | null = null;
         try {
-          const claimed = await db.pool.query(
-            `
-            update reviews
-               set status='PUBLISHING',decision_by=$3,decision_at=now(),
-                   decision_reason=$4,updated_at=now()
-             where id=$1 and space_id=$2 and status in ('PENDING','CHANGES_REQUESTED')
-             returning *
-            `,
-            [
-              request.params.id,
-              review.space_id,
-              actor?.id ?? null,
-              request.body.reason ?? null,
-            ],
-          );
-          if (!claimed.rowCount) {
-            return reply.code(409).send({
-              code: "REVIEW_ALREADY_DECIDED",
-              status: review.status,
+          let claimedReview: Record<string, unknown>;
+          try {
+            claimedReview = await claimReviewForPublication(db, {
+              reviewId: request.params.id,
+              expectedHeadCommit: approval.headCommit,
+              expectedPolicyFingerprint: approval.policyFingerprint,
+              expectedReviewRound: approval.reviewRound,
+              actorId: actor.id,
+              reason: request.body.reason ?? "",
             });
+          } catch (error) {
+            const code = error instanceof Error ? error.message : String(error);
+            const status = reviewPolicyDecisionHttpStatus(code);
+            if (status) return reply.code(status).send({ code });
+            throw error;
           }
           await renewPublicationLock(db, publicationKey, lockOwner);
           revision = await withSpan(
@@ -1230,7 +1349,7 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
             await publicationClient.query("begin");
             const finalized = await finalizePublicationTransaction(
               publicationClient,
-              claimed.rows[0] as Record<string, unknown>,
+              claimedReview,
               revision,
             );
             if (!finalized) throw new Error("PUBLICATION_STATE_LOST");
@@ -1270,6 +1389,12 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
             id: request.params.id,
             status: "APPROVED",
             mergedCommit: revision,
+            approvalProgress: {
+              reviewRound: approval.reviewRound,
+              count: approval.approvalCount,
+              minimumApprovals: approval.minimumApprovals,
+              remainingApprovals: 0,
+            },
             indexing: "PENDING",
             queuedEvents: [
               "KnowledgePublished",
@@ -1374,7 +1499,9 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
       const transitioned = await db.pool.query(
         `
         update reviews set status=$2,decision_by=$3,decision_at=now(),
-               decision_reason=$4,updated_at=now()
+               decision_reason=$4,
+               review_round=case when $2='CHANGES_REQUESTED' then review_round+1 else review_round end,
+               updated_at=now()
          where id=$1 and space_id=$5 and status in ('PENDING','CHANGES_REQUESTED')
          returning id,status
         `,

@@ -375,6 +375,25 @@ export function spaceIdsForPermission(
   ];
 }
 
+export function rolesForPermission(
+  actor: Actor | null,
+  spaceId: string,
+  permission: Permission,
+): string[] {
+  if (!actor) return [];
+  return [
+    ...new Set(
+      actor.memberships
+        .filter(
+          (membership) =>
+            membership.spaceId === spaceId &&
+            permissionsForMembership(membership).includes(permission),
+        )
+        .map((membership) => membership.role),
+    ),
+  ].sort();
+}
+
 export function hasPathAccess(
   actor: Actor | null,
   spaceId: string,
