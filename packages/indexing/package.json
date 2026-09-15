@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@akp/git-store": "*",
+    "@akp/observability": "*",
     "@akp/postgres": "*",
     "@akp/retrieval": "*",
     "@akp/vault-importer": "*",

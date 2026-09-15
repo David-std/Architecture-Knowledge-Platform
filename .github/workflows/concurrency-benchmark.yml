@@ -1,0 +1,97 @@
+name: concurrency-benchmark
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  api-and-worker-concurrency:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: postgres://akp:akp@localhost:55432/akp
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - run: pnpm build
+      - run: docker compose up -d --wait postgres
+      - run: pnpm db:migrate
+      - name: Execute authenticated API and ingest-worker concurrency benchmark
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p reports/ci
+          pnpm benchmark:concurrency \
+            2>&1 | tee reports/ci/concurrency-benchmark.log
+      - name: Execute durable event-worker contention and retry benchmark
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm exec tsx scripts/event-concurrency-benchmark.ts \
+            2>&1 | tee reports/ci/event-concurrency-benchmark.log
+      - name: Validate concurrency evidence dimensions
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const api = JSON.parse(readFileSync("reports/ci/concurrency-benchmark.json", "utf8"));
+          const events = JSON.parse(readFileSync("reports/ci/event-concurrency-benchmark.json", "utf8"));
+          if (api.status !== "PASSED" || api.coverageStatus !== "PARTIAL") {
+            throw new Error("API/ingest concurrency evidence did not pass with its PARTIAL boundary.");
+          }
+          if (events.status !== "PASSED" || events.coverageStatus !== "PARTIAL") {
+            throw new Error("Event-worker concurrency evidence did not pass with its PARTIAL boundary.");
+          }
+          if ((events.workload?.workers ?? 0) < 2) {
+            throw new Error("Event-worker benchmark did not exercise multiple workers.");
+          }
+          if ((events.claims?.retriedClaims ?? 0) < 1) {
+            throw new Error("Event-worker benchmark did not exercise a controlled retry.");
+          }
+          if (events.acceptance?.causalOrderPreserved !== true) {
+            throw new Error("Event-worker benchmark observed a causal ordering violation.");
+          }
+          if (events.acceptance?.noDuplicateSuccessfulEffects !== true) {
+            throw new Error("Event-worker benchmark observed duplicate successful effects.");
+          }
+          if (events.acceptance?.noForeignClaims !== true) {
+            throw new Error("Event-worker benchmark claimed foreign deliveries.");
+          }
+          console.log(JSON.stringify({
+            apiStatus: api.status,
+            eventStatus: events.status,
+            eventWorkers: events.workload.workers,
+            eventRetries: events.claims.retriedClaims,
+            retryRatePerEvent: events.claims.retryRatePerEvent,
+            eventP95Ms: events.claims.latency.p95Ms,
+          }, null, 2));
+          NODE
+      - name: Capture concurrency diagnostics
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          mkdir -p reports/ci
+          docker compose ps --all > reports/ci/concurrency-docker-compose-ps.txt 2>&1
+          docker compose logs --no-color --timestamps postgres \
+            > reports/ci/concurrency-postgres.log 2>&1
+      - name: Upload concurrency evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: concurrency-benchmark-${{ github.run_id }}
+          path: reports/ci
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Stop disposable services
+        if: always()
+        run: docker compose down -v --remove-orphans

@@ -399,6 +399,32 @@ export function hasPathAccess(
   });
 }
 
+/**
+ * Return the normalized path scopes that currently grant a permission in one
+ * space. Callers that execute recursive SQL use these values before ranking or
+ * traversal so an unauthorized document cannot act as an invisible bridge.
+ */
+export function pathPrefixesForPermission(
+  actor: Actor | null,
+  spaceId: string,
+  permission: Permission,
+): Array<string | null> {
+  if (!actor) return [];
+  const prefixes = actor.memberships.flatMap((membership) => {
+    if (
+      membership.spaceId !== spaceId ||
+      !permissionsForMembership(membership).includes(permission)
+    ) {
+      return [];
+    }
+    const prefix = normalizePath(membership.pathPrefix);
+    return prefix === undefined ? [] : [prefix];
+  });
+  return [
+    ...new Map(prefixes.map((prefix) => [prefix ?? "", prefix])).values(),
+  ];
+}
+
 /** A path-scoped membership cannot read or mutate a resource that has no
  * canonical knowledge path to evaluate. This conservative default avoids
  * leaking raw sources, jobs or workspace-wide operational metadata. */

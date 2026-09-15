@@ -112,6 +112,32 @@ try {
       `Unexpected MCP search payload: ${JSON.stringify(searchPayload)}`,
     );
   }
+  const context = await client.callTool({
+    name: "akp_build_context",
+    arguments: {
+      query: "dependency inversion architecture",
+      spaceId,
+      vaultIds: [vaultId],
+      federated: false,
+      limit: 3,
+    },
+  });
+  const contextPayload = structuredToolResult(context);
+  const contextBudget = contextPayload.budget as
+    Record<string, unknown> | undefined;
+  if (
+    contextPayload.packetMode !== "COMPACT_AGENT_PACKET" ||
+    !contextPayload.identity ||
+    typeof contextPayload.identity !== "object" ||
+    !contextBudget ||
+    typeof contextBudget.maxTokens !== "number" ||
+    typeof contextBudget.serializedTokens !== "number" ||
+    contextBudget.serializedTokens > contextBudget.maxTokens
+  ) {
+    throw new Error(
+      `Unexpected MCP compact context payload: ${JSON.stringify(contextPayload)}`,
+    );
+  }
   console.log(
     JSON.stringify(
       {
@@ -122,6 +148,9 @@ try {
         visibleVaultCount: vaults.length,
         scopedVaultId: vaultId,
         searchHitCount: searchPayload.hits.length,
+        contextPacketMode: contextPayload.packetMode,
+        contextSerializedTokens: contextBudget.serializedTokens,
+        contextMaxTokens: contextBudget.maxTokens,
       },
       null,
       2,

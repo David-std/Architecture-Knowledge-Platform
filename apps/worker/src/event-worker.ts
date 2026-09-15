@@ -1,5 +1,6 @@
 import { hostname } from "node:os";
 import { randomUUID } from "node:crypto";
+import { OpenTelemetryBridge, withRemoteParentSpan } from "@akp/observability";
 import {
   acknowledgeEventDelivery,
   claimNextEventDelivery,
@@ -12,6 +13,8 @@ import {
   type RetryPolicy,
   DEFAULT_RETRY_POLICY,
 } from "@akp/postgres";
+
+const telemetry = new OpenTelemetryBridge();
 
 export type EventHandler = (event: OutboxEventRecord) => Promise<void>;
 export type EventHandlers = Partial<
@@ -100,22 +103,53 @@ export class DurableEventWorker {
     if (!claim) return false;
     const stopHeartbeat = this.startHeartbeat(claim);
     try {
-      const supported = this.supportedVersions[claim.event.eventType] ?? [1];
-      if (!supported.includes(claim.event.eventVersion)) {
-        throw new Error(
-          `UNSUPPORTED_EVENT_VERSION:${claim.event.eventType}:${claim.event.eventVersion}`,
-        );
-      }
-      const handler =
-        this.handlers[claim.event.eventType] ?? this.defaultHandler;
-      await handler(claim.event);
-      await acknowledgeEventDelivery(this.db, claim);
+      await withRemoteParentSpan(
+        "outbox.deliver",
+        claim.event.telemetry ?? {},
+        {
+          "akp.event.type": claim.event.eventType,
+          "akp.consumer": this.consumerName,
+          "akp.delivery.attempt": claim.attempts,
+        },
+        async () => {
+          const supported = this.supportedVersions[claim.event.eventType] ?? [
+            1,
+          ];
+          if (!supported.includes(claim.event.eventVersion)) {
+            throw new Error(
+              `UNSUPPORTED_EVENT_VERSION:${claim.event.eventType}:${claim.event.eventVersion}`,
+            );
+          }
+          const handler =
+            this.handlers[claim.event.eventType] ?? this.defaultHandler;
+          await handler(claim.event);
+          await acknowledgeEventDelivery(this.db, claim);
+        },
+      );
+      telemetry.counter("outbox_deliveries", 1, { status: "SUCCEEDED" });
     } catch (error) {
       // A stale worker cannot mutate a newer fenced claim.  Surface only
       // unexpected database failures; ordinary handler failures are persisted
       // as RETRY or QUARANTINED by failEventDelivery.
       try {
-        await failEventDelivery(this.db, claim, error, this.retryPolicy);
+        const failure = await failEventDelivery(
+          this.db,
+          claim,
+          error,
+          this.retryPolicy,
+        );
+        telemetry.counter("outbox_deliveries", 1, {
+          status: failure.status,
+        });
+        if (failure.status === "QUARANTINED") {
+          telemetry.counter("outbox_quarantined", 1, {
+            consumer: this.consumerName,
+          });
+        } else {
+          telemetry.histogram("outbox_retry_age", failure.delayMs / 1000, {
+            consumer: this.consumerName,
+          });
+        }
       } catch (failureError) {
         if (
           failureError instanceof Error &&

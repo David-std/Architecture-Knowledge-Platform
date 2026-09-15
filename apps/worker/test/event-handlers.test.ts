@@ -59,7 +59,7 @@ describe("index event consumers", () => {
           tombstones: ["managed/removed.md"],
         },
       }),
-    ).toEqual([{ path: "removed.md", operation: "UPDATE" }]);
+    ).toEqual([{ path: "removed.md", operation: "DELETE" }]);
   });
 
   it("fails closed for traversal paths in publication payloads", () => {

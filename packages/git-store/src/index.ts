@@ -45,6 +45,29 @@ export class GitKnowledgeStore {
     return this.git(["rev-parse", "HEAD"]);
   }
 
+  async commitMetadata(revision = "HEAD"): Promise<{
+    revision: string;
+    parents: string[];
+    tree: string;
+    subject: string;
+  }> {
+    const output = await this.git([
+      "show",
+      "-s",
+      "--format=%H%x00%P%x00%T%x00%s",
+      `${revision}^{commit}`,
+    ]);
+    const [resolved, parents = "", tree = "", subject = ""] =
+      output.split("\0");
+    if (!resolved || !tree) throw new Error("GIT_COMMIT_METADATA_INVALID");
+    return {
+      revision: resolved,
+      parents: parents.split(" ").filter(Boolean),
+      tree,
+      subject,
+    };
+  }
+
   async ensureRepository(
     authorName: string,
     authorEmail: string,

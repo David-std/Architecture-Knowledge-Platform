@@ -4,11 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/worker.ts",
+    "dev": "node --watch --import tsx --import ./src/instrumentation.ts src/worker.ts",
+    "start": "node --import ./dist/instrumentation.js ./dist/worker.js",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "check": "pnpm typecheck && pnpm test"
   },
   "dependencies": {
     "@akp/compiler": "*",
@@ -17,6 +19,7 @@
     "@akp/git-store": "*",
     "@akp/indexing": "*",
     "@akp/object-store": "*",
+    "@akp/observability": "*",
     "@akp/postgres": "*",
     "@akp/validation": "*",
     "dotenv": "^17.4.2",

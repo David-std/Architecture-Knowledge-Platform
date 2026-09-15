@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { hostname } from "node:os";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { pipeline } from "node:stream/promises";
 import {
   Postgres,
@@ -20,7 +20,10 @@ import {
   MinioObjectStore,
   type RawObjectRef,
 } from "@akp/object-store";
-import { CompilationPlan } from "@akp/compiler";
+import {
+  CompilationPlan,
+  createConfiguredKnowledgeCompiler,
+} from "@akp/compiler";
 import { GitKnowledgeStore } from "@akp/git-store";
 import { validateMarkdownDocument } from "@akp/validation";
 import mime from "mime-types";
@@ -28,12 +31,24 @@ import { DurableEventWorker } from "./event-worker.js";
 import { createIndexEventHandlers } from "./event-handlers.js";
 import { lifecycleEventForState } from "./lifecycle.js";
 import {
+  DEFAULT_WORKER_DRAIN_DEADLINE_MS,
+  drainToQuiescence,
+  WorkerDrainError,
+  type WorkerDrainSummary,
+} from "./drain.js";
+import {
   DOCUMENT_ARTIFACT_SCHEMA_VERSION,
   parseCanonicalExtractionResponse,
-  renderDocumentArtifactDraft,
   renderDocumentArtifactPreview,
 } from "./document-artifact.js";
+import { buildCompilationStage } from "./compilation-stage.js";
+import { evaluateCompilationProbes } from "./compilation-probes.js";
+import { selectEvidenceFragment } from "./evidence-fragment.js";
 import { resolveAuthorizedLocalSource } from "./source-boundary.js";
+import {
+  appendDocumentIntelligenceFormFields,
+  parseDocumentIntelligenceOptions,
+} from "./document-intelligence-request.js";
 
 config({
   path: path.resolve(
@@ -120,9 +135,13 @@ async function updateState(
   jobId: string,
   current: IngestState,
   next: IngestState,
+  expectedVersion: number,
   stageOutput?: Record<string, unknown>,
   result?: unknown,
 ): Promise<void> {
+  if (!Number.isSafeInteger(expectedVersion) || Number(expectedVersion) < 1) {
+    throw new Error("JOB_FENCING_VERSION_REQUIRED");
+  }
   transitionIngest(current, next);
   const client = await db.pool.connect();
   try {
@@ -142,7 +161,8 @@ async function updateState(
              lease_expires_at = null,
              heartbeat_at = now(),
              updated_at = now()
-       where id = $1 and state = $2 and lease_owner = $6 and cancelled_at is null
+       where id = $1 and state = $2 and lease_owner = $6 and version = $7
+         and cancelled_at is null
        returning id,space_id,vault_id,payload
       `,
       [
@@ -152,6 +172,7 @@ async function updateState(
         result === undefined ? null : JSON.stringify(result),
         stageOutput === undefined ? null : JSON.stringify(stageOutput),
         workerId,
+        expectedVersion,
       ],
     );
     if (!updated.rowCount) {
@@ -219,9 +240,46 @@ async function updateState(
   }
 }
 
+type ProviderTaskEvent =
+  "PROVIDER_TASK_STARTED" | "PROVIDER_TASK_SUCCEEDED" | "PROVIDER_TASK_FAILED";
+
+async function recordProviderTaskEvent(
+  jobId: string,
+  state: IngestState,
+  eventType: ProviderTaskEvent,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  const inserted = await db.pool.query(
+    `
+    insert into ingest_job_events(job_id,state,event_type,payload)
+    select $1,$2,$3,$4::jsonb
+     where exists (
+       select 1 from ingest_jobs
+        where id=$1 and lease_owner=$5 and cancelled_at is null
+     )
+    returning id
+    `,
+    [jobId, state, eventType, JSON.stringify(payload), workerId],
+  );
+  if (!inserted.rowCount) {
+    throw new Error("JOB_LEASE_LOST_OR_CANCELLED");
+  }
+}
+
+function providerTaskErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message
+    .replace(
+      /(?:[A-Za-z]:[\\/]|\\\\|file:\/\/|\/(?:Users|home|tmp|var)\/)[^\s"']+/g,
+      "[REDACTED_PATH]",
+    )
+    .slice(0, 2_000);
+}
+
 async function processJob(job: Record<string, unknown>): Promise<void> {
   const id = String(job.id);
   const state = String(job.state) as IngestState;
+  const version = Number(job.version);
   const payload = job.payload as Record<string, unknown>;
   const outputs = (job.stage_outputs ?? {}) as Record<string, unknown>;
   const sourceUri = String(payload.sourceUri ?? job.source_uri);
@@ -288,7 +346,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
           `,
           sourceValues,
         );
-    await updateState(id, state, "HASHED", {
+    await updateState(id, state, "HASHED", version, {
       raw,
       sourceId: source.rows[0]?.id,
       originalName: basename(sourcePath),
@@ -301,11 +359,11 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
     if (!raw?.sha256 || !(await objects.exists(raw.sha256))) {
       throw new Error("Immutable raw object is missing.");
     }
-    await updateState(id, state, "STORED");
+    await updateState(id, state, "STORED", version);
     return;
   }
   if (state === "STORED") {
-    await updateState(id, state, "NORMALIZING");
+    await updateState(id, state, "NORMALIZING", version);
     return;
   }
   if (state === "NORMALIZING") {
@@ -328,46 +386,92 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
       if (materialized.sha256 !== raw.sha256) {
         throw new Error("IMMUTABLE_OBJECT_HASH_MISMATCH");
       }
+      const documentIntelligence = parseDocumentIntelligenceOptions(payload);
+      const mediaType = String(outputs.mediaType ?? payload.mediaType ?? "");
+      const attempt = Number(job.attempts ?? 0) + 1;
       const upload = new FormData();
       upload.set(
         "file",
-        await openAsBlob(immutablePath, {
-          type: String(outputs.mediaType ?? payload.mediaType ?? ""),
-        }),
+        await openAsBlob(immutablePath, { type: mediaType }),
         String(outputs.originalName ?? basename(sourceUri)),
       );
       upload.set("source_uri", sourceUri);
       upload.set("source_id", String(outputs.sourceId));
-      upload.set(
-        "media_type",
-        String(outputs.mediaType ?? payload.mediaType ?? ""),
-      );
+      upload.set("media_type", mediaType);
       upload.set("expected_sha256", raw.sha256);
-      const response = await fetch(`${extractorUrl}/v1/extract-upload`, {
-        method: "POST",
-        headers: {
-          "x-akp-extractor-token":
-            process.env.AKP_EXTRACTOR_TOKEN ??
-            "local-extractor-development-token",
-        },
-        body: upload,
-      });
-      if (!response.ok)
-        throw new Error(
-          `Extractor failed: ${response.status} ${await response.text()}`,
-        );
-      const extractedResponse = (await response.json()) as unknown;
-      const expectedIdentity = {
-        sourceId: String(outputs.sourceId),
-        sourceHash: raw.sha256,
-        ...(String(outputs.mediaType ?? payload.mediaType ?? "")
-          ? { mediaType: String(outputs.mediaType ?? payload.mediaType) }
-          : {}),
-      };
-      const canonical = parseCanonicalExtractionResponse(
-        extractedResponse,
-        expectedIdentity,
+      appendDocumentIntelligenceFormFields(
+        upload,
+        payload,
+        id,
+        documentIntelligence,
       );
+      await recordProviderTaskEvent(id, state, "PROVIDER_TASK_STARTED", {
+        attempt,
+        mediaType,
+        complexity: documentIntelligence.complexity ?? null,
+        requestedExtractor: documentIntelligence.extractor ?? null,
+        ocrRequested:
+          documentIntelligence.ocrRequired || documentIntelligence.ocr === true,
+      });
+
+      let canonical: ReturnType<typeof parseCanonicalExtractionResponse>;
+      try {
+        const response = await fetch(`${extractorUrl}/v1/extract-upload`, {
+          method: "POST",
+          headers: {
+            "x-akp-extractor-token":
+              process.env.AKP_EXTRACTOR_TOKEN ??
+              "local-extractor-development-token",
+          },
+          body: upload,
+        });
+        if (!response.ok) {
+          throw new Error(
+            `Extractor failed: ${response.status} ${await response.text()}`,
+          );
+        }
+        const extractedResponse = (await response.json()) as unknown;
+        const expectedIdentity = {
+          sourceId: String(outputs.sourceId),
+          sourceHash: raw.sha256,
+          ...(mediaType ? { mediaType } : {}),
+        };
+        canonical = parseCanonicalExtractionResponse(
+          extractedResponse,
+          expectedIdentity,
+        );
+      } catch (error) {
+        await recordProviderTaskEvent(id, state, "PROVIDER_TASK_FAILED", {
+          attempt,
+          mediaType,
+          complexity: documentIntelligence.complexity ?? null,
+          requestedExtractor: documentIntelligence.extractor ?? null,
+          ocrRequested:
+            documentIntelligence.ocrRequired ||
+            documentIntelligence.ocr === true,
+          message: providerTaskErrorMessage(error),
+        });
+        throw error;
+      }
+
+      await recordProviderTaskEvent(id, state, "PROVIDER_TASK_SUCCEEDED", {
+        attempt,
+        extractor: canonical.extractor,
+        extractorVersion: canonical.extractorVersion,
+        selectedAdapter:
+          typeof canonical.routing.selected_adapter === "string"
+            ? canonical.routing.selected_adapter
+            : canonical.extractor,
+        selectionReason:
+          typeof canonical.routing.selection_reason === "string"
+            ? canonical.routing.selection_reason
+            : null,
+        fallback: canonical.routing.fallback === true,
+        configurationHash: canonical.configurationHash,
+        structuredContentHash: canonical.contentHash,
+        warnings: canonical.warnings,
+      });
+
       const storedArtifact = await db.pool.query<{ id: string }>(
         `
         insert into source_artifacts(
@@ -427,13 +531,11 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
         ).rows[0]?.id;
       if (!artifactId) throw new Error("Could not persist document artifact.");
       const preview = renderDocumentArtifactPreview(canonical.artifact, 4_000);
-      const evidenceLocator = canonical.artifact.locators[0] ?? {
-        kind: "source",
-        source_hash: raw.sha256,
-        path: `source:${String(outputs.sourceId)}`,
-        heading_path: [],
-      };
-      await db.pool.query(
+      const evidenceFragment = selectEvidenceFragment(
+        canonical.artifact,
+        preview.markdown,
+      );
+      const storedEvidence = await db.pool.query<{ id: string }>(
         `
         insert into evidence(
           space_id,vault_id,source_id,artifact_id,locator,content_hash,excerpt,review_status
@@ -443,17 +545,20 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
           vault_id=excluded.vault_id,locator=excluded.locator,
           content_hash=excluded.content_hash,excerpt=excluded.excerpt,
           review_status=excluded.review_status
+        returning id
         `,
         [
           spaceId,
           vaultId,
           outputs.sourceId,
           artifactId,
-          JSON.stringify(evidenceLocator),
-          createHash("sha256").update(preview.markdown).digest("hex"),
-          preview.markdown.slice(0, 2000) || null,
+          JSON.stringify(evidenceFragment.locator),
+          evidenceFragment.excerptHash,
+          evidenceFragment.excerpt,
         ],
       );
+      const evidenceId = storedEvidence.rows[0]?.id;
+      if (!evidenceId) throw new Error("Could not persist evidence.");
       const extracted = {
         extractor: canonical.extractor,
         extractor_version: canonical.extractorVersion,
@@ -464,8 +569,10 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
         routing: canonical.routing,
         warnings: canonical.warnings,
         source_artifact_id: artifactId,
+        evidence_id: evidenceId,
+        evidence_precision: evidenceFragment.precision,
       };
-      await updateState(id, state, "ANALYZING", { extracted });
+      await updateState(id, state, "ANALYZING", version, { extracted });
     } finally {
       await rm(immutablePath, { force: true });
     }
@@ -475,10 +582,15 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
     const extracted = outputs.extracted as {
       document_artifact?: unknown;
       source_artifact_id?: string;
+      evidence_id?: string;
       extractor?: string;
       extractor_version?: string;
     };
-    if (!extracted?.document_artifact || !extracted.source_artifact_id) {
+    if (
+      !extracted?.document_artifact ||
+      !extracted.source_artifact_id ||
+      !extracted.evidence_id
+    ) {
       throw new Error("DOCUMENT_ARTIFACT_STAGE_OUTPUT_REQUIRED");
     }
     const expectedIdentity = {
@@ -513,6 +625,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
         id,
         state,
         "NO_MATERIAL",
+        version,
         {
           identity: {
             classification: "SAME_IDENTITY",
@@ -527,76 +640,50 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
       );
       return;
     }
-    const externalId = `SRC-INGEST-${raw.sha256.slice(0, 12).toUpperCase()}`;
+
     const title = String(
       payload.title ?? outputs.originalName ?? basename(sourceUri),
     );
-    const priorSource = await db.pool.query(
-      `
-      select id,path,external_id,current_revision from knowledge_documents
-       where space_id=$1
-         and (($2::uuid is null and vault_id is null) or vault_id=$2::uuid)
-         and (frontmatter->>'source_id'=$3 or frontmatter->>'source_sha256'=$4)
-         and lifecycle in ('ACTIVE','DISPUTED')
-       order by updated_at desc limit 1
-      `,
-      [spaceId, vaultId, String(outputs.sourceId), raw.sha256],
+    const compilationStage = await buildCompilationStage(
+      db,
+      {
+        spaceId,
+        vaultId,
+        sourceId: String(outputs.sourceId),
+        sourceArtifactId: extracted.source_artifact_id,
+        evidenceId: extracted.evidence_id,
+        sha256: raw.sha256,
+        title,
+        mediaType: String(
+          outputs.mediaType ?? payload.mediaType ?? "application/octet-stream",
+        ),
+        extractor: artifactResult.extractor,
+        extractorVersion: artifactResult.extractorVersion,
+        artifact: artifactResult.artifact,
+        vectorEnabled: process.env.AKP_VECTOR_ENABLED === "true",
+      },
+      createConfiguredKnowledgeCompiler(process.env),
     );
-    const prior = priorSource.rows[0];
-    const relativePath = prior?.path
-      ? String(prior.path).replace(/^managed\//, "")
-      : `10-sources/ingested/source-${raw.sha256.slice(0, 16)}.md`;
-    const content = renderDocumentArtifactDraft({
-      externalId,
-      title,
-      sourceId: String(outputs.sourceId),
-      sourceArtifactId: extracted.source_artifact_id,
-      sha256: raw.sha256,
-      mediaType: String(outputs.mediaType ?? "application/octet-stream"),
-      extractor: artifactResult.extractor,
-      extractorVersion: artifactResult.extractorVersion,
-      artifact: artifactResult.artifact,
-    });
-    const plan = CompilationPlan.parse({
-      sourceId: String(outputs.sourceId),
-      corpusRevision: String(
-        (
-          await db.pool.query(
-            "select current_revision from vaults where space_id=$1 order by last_imported_at desc limit 1",
-            [spaceId],
-          )
-        ).rows[0]?.current_revision ?? "managed:initial",
-      ),
-      disposition: prior ? "UPDATE" : "NEW",
-      summary:
-        "Create a provenance-preserving machine draft; no claim is activated.",
-      proposedChanges: [
-        {
-          path: relativePath,
-          operation: prior ? "UPDATE" : "CREATE",
-          content,
-          reasons: [
-            "New immutable source requires an inspectable summary draft.",
-          ],
-          evidenceIds: [],
-        },
-      ],
-      impactedDocumentIds: prior ? [String(prior.id)] : [],
-      conflicts: [],
-      probes: [
-        {
-          question:
-            "Does the draft retain the immutable source hash and uncertainty?",
-          criticality: "CRITICAL",
-          evidenceIds: [String(extracted.source_artifact_id)],
-        },
-      ],
-    });
+    const plan = CompilationPlan.parse(compilationStage.plan);
+    if (plan.disposition === "NO_MATERIAL" || !plan.proposedChanges.length) {
+      await updateState(
+        id,
+        state,
+        "NO_MATERIAL",
+        version,
+        { plan, compilation: compilationStage.metadata },
+        { disposition: "NO_MATERIAL", reason: plan.summary },
+      );
+      return;
+    }
     await db.pool.query(
       "insert into compilation_plans(job_id,source_id,plan) values($1,$2,$3::jsonb)",
       [id, outputs.sourceId, JSON.stringify(plan)],
     );
-    await updateState(id, state, "PLANNED", { plan });
+    await updateState(id, state, "PLANNED", version, {
+      plan,
+      compilation: compilationStage.metadata,
+    });
     return;
   }
   if (state === "PLANNED") {
@@ -611,7 +698,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
       authorName,
       authorEmail,
     );
-    await updateState(id, state, "DRAFTED", {
+    await updateState(id, state, "DRAFTED", version, {
       draft: { branchName, baseRevision, headCommit },
     });
     return;
@@ -625,17 +712,35 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
       })),
     );
     const errors = issues.filter((issue) => issue.severity === "ERROR");
-    const probeResults = plan.probes.map((probe) => {
-      const proposedText = plan.proposedChanges
-        .map((change) => change.content)
-        .join("\n");
-      const passed =
-        proposedText.includes(
-          String((outputs.raw as { sha256?: string })?.sha256 ?? ""),
-        ) &&
-        /uncertainty|incertidumbre|human review required/i.test(proposedText);
-      return { ...probe, passed, method: "DETERMINISTIC_DRAFT_INVARIANT" };
-    });
+    const compilation = outputs.compilation as { mode?: string } | undefined;
+    const probeResults =
+      compilation?.mode === "GENERATIVE"
+        ? await (async () => {
+            if (!vaultId) throw new Error("KNOWLEDGE_COMPILER_VAULT_REQUIRED");
+            return evaluateCompilationProbes(db, {
+              plan,
+              spaceId,
+              vaultId,
+              sourceId: String(outputs.sourceId),
+            });
+          })()
+        : plan.probes.map((probe) => {
+            const proposedText = plan.proposedChanges
+              .map((change) => change.content)
+              .join("\n");
+            const passed =
+              proposedText.includes(
+                String((outputs.raw as { sha256?: string })?.sha256 ?? ""),
+              ) &&
+              /uncertainty|incertidumbre|human review required/i.test(
+                proposedText,
+              );
+            return {
+              ...probe,
+              passed,
+              method: "DETERMINISTIC_DRAFT_INVARIANT",
+            };
+          });
     const failedCritical = probeResults.filter(
       (probe) => probe.criticality === "CRITICAL" && !probe.passed,
     );
@@ -646,7 +751,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
     }
     if (errors.length)
       throw new Error(`Draft validation failed: ${JSON.stringify(errors)}`);
-    await updateState(id, state, "VALIDATING", {
+    await updateState(id, state, "VALIDATING", version, {
       validation: { issues, errors: 0, probeResults },
     });
     return;
@@ -673,17 +778,21 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
         draft.baseRevision,
         draft.headCommit,
         job.created_by ?? null,
-        JSON.stringify({ jobId: id, ...plan }),
+        JSON.stringify({
+          jobId: id,
+          ...plan,
+          compilation: outputs.compilation ?? null,
+        }),
         JSON.stringify(outputs.validation ?? { issues: [], errors: 0 }),
       ],
     );
-    await updateState(id, state, "REVIEW_REQUIRED", { reviewId });
+    await updateState(id, state, "REVIEW_REQUIRED", version, { reviewId });
     return;
   }
 
   await db.pool.query(
-    "update ingest_jobs set lease_owner=null,lease_expires_at=null,updated_at=now() where id=$1",
-    [id],
+    "update ingest_jobs set lease_owner=null,lease_expires_at=null,updated_at=now() where id=$1 and lease_owner=$2 and version=$3",
+    [id, workerId, version],
   );
 }
 
@@ -695,8 +804,12 @@ async function handleFailure(
   const maxAttempts = Number(job.max_attempts ?? 5);
   const terminal = attempts >= maxAttempts;
   const delaySeconds = Math.min(300, 2 ** attempts);
-  await db.pool.query(
-    `
+  const version = Number(job.version);
+  const client = await db.pool.connect();
+  try {
+    await client.query("begin");
+    const updated = await client.query(
+      `
     update ingest_jobs
        set state = case when $2 then 'FAILED' else state end,
            attempts = $3,
@@ -705,35 +818,53 @@ async function handleFailure(
            lease_owner = null,
            lease_expires_at = null,
            updated_at = now()
-     where id = $1 and lease_owner = $6 and cancelled_at is null
+     where id = $1 and lease_owner = $6 and version = $7
+       and cancelled_at is null
+     returning id
     `,
-    [
-      job.id,
-      terminal,
-      attempts,
-      JSON.stringify({
-        message: error instanceof Error ? error.message : String(error),
-      }),
-      delaySeconds,
-      workerId,
-    ],
-  );
-  await db.pool.query(
-    "insert into ingest_job_events(job_id,state,event_type,payload) values($1,$2,'FAILURE',$3::jsonb)",
-    [
-      job.id,
-      terminal ? "FAILED" : String(job.state),
-      JSON.stringify({
+      [
+        job.id,
+        terminal,
         attempts,
-        maxAttempts,
+        JSON.stringify({
+          message: error instanceof Error ? error.message : String(error),
+        }),
         delaySeconds,
-        message: String(error),
-      }),
-    ],
-  );
+        workerId,
+        version,
+      ],
+    );
+    if (!updated.rowCount) {
+      await client.query("rollback");
+      return;
+    }
+    await client.query(
+      "insert into ingest_job_events(job_id,state,event_type,payload) values($1,$2,'FAILURE',$3::jsonb)",
+      [
+        job.id,
+        terminal ? "FAILED" : String(job.state),
+        JSON.stringify({
+          attempts,
+          maxAttempts,
+          delaySeconds,
+          message: String(error),
+        }),
+      ],
+    );
+    await client.query("commit");
+  } catch (failure) {
+    await client.query("rollback");
+    throw failure;
+  } finally {
+    client.release();
+  }
 }
 
-function startLeaseHeartbeat(jobId: string, leaseSeconds = 60): () => void {
+function startLeaseHeartbeat(
+  jobId: string,
+  version: number,
+  leaseSeconds = 60,
+): () => void {
   let updateInFlight = false;
   const timer = setInterval(
     () => {
@@ -745,9 +876,9 @@ function startLeaseHeartbeat(jobId: string, leaseSeconds = 60): () => void {
         update ingest_jobs
            set lease_expires_at=now()+make_interval(secs => $3),
                heartbeat_at=now(),updated_at=now()
-         where id=$1 and lease_owner=$2 and cancelled_at is null
-        `,
-          [jobId, workerId, leaseSeconds],
+         where id=$1 and lease_owner=$2 and version=$4 and cancelled_at is null
+         `,
+          [jobId, workerId, leaseSeconds, version],
         )
         .catch(() => undefined)
         .finally(() => {
@@ -760,28 +891,48 @@ function startLeaseHeartbeat(jobId: string, leaseSeconds = 60): () => void {
   return () => clearInterval(timer);
 }
 
-async function loop(): Promise<void> {
+async function runClaimedJob(job: Record<string, unknown>): Promise<void> {
+  const stopHeartbeat = startLeaseHeartbeat(
+    String(job.id),
+    Number(job.version),
+  );
+  try {
+    await processJob(job);
+  } catch (error) {
+    await handleFailure(job, error);
+  } finally {
+    stopHeartbeat();
+  }
+}
+
+async function loop(): Promise<WorkerDrainSummary | undefined> {
   const drain = process.env.AKP_WORKER_DRAIN === "true";
   await eventWorker.register();
   await runScheduledLintIfDue(process.env.AKP_LINT_RUN_ONCE === "true");
+  if (drain) {
+    return drainToQuiescence({
+      db,
+      consumerName: eventWorker.consumerName,
+      workerId,
+      leaseSeconds: 60,
+      deadlineMs: Number(
+        process.env.AKP_WORKER_DRAIN_DEADLINE_MS ??
+          DEFAULT_WORKER_DRAIN_DEADLINE_MS,
+      ),
+      runEventOnce: () => eventWorker.runOnce(),
+      runIngestJob: runClaimedJob,
+    });
+  }
   for (;;) {
     const eventHandled = await eventWorker.runOnce();
     const job = await claimNextIngestJob(db, workerId, 60);
     if (!job) {
-      if (drain && !eventHandled) return;
       await runScheduledLintIfDue();
       if (eventHandled) continue;
       await new Promise((resolve) => setTimeout(resolve, 1000));
       continue;
     }
-    const stopHeartbeat = startLeaseHeartbeat(String(job.id));
-    try {
-      await processJob(job);
-    } catch (error) {
-      await handleFailure(job, error);
-    } finally {
-      stopHeartbeat();
-    }
+    await runClaimedJob(job);
   }
 }
 
@@ -792,7 +943,15 @@ process.on("SIGTERM", async () => {
 });
 
 try {
-  await loop();
+  const summary = await loop();
+  if (summary) process.stdout.write(`${JSON.stringify(summary)}\n`);
+} catch (error) {
+  if (error instanceof WorkerDrainError) {
+    process.stderr.write(`${JSON.stringify(error.summary)}\n`);
+    process.exitCode = 1;
+  } else {
+    throw error;
+  }
 } finally {
   await db.close();
 }

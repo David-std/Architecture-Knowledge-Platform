@@ -5,21 +5,19 @@ import type { FastifyInstance } from "fastify";
 import {
   pathMatchesVaultPrefix,
   resolveAuthorizedVaultScope,
-  runKnowledgeLint,
   type AppendOutboxEventInput,
   type Postgres,
 } from "@akp/postgres";
 import { GitKnowledgeStore } from "@akp/git-store";
 import { assertSafeKnowledgePath } from "@akp/compiler";
 import { validateMarkdownDocument } from "@akp/validation";
+import { withSpan } from "@akp/observability";
 import {
-  rebuildSpaceProjections,
   assertManagedRepositoryBoundary,
   repositoryPublicationKey,
   synchronizeManagedPaths,
   type ManagedChange,
 } from "../projections.js";
-import { runEvaluation } from "./evaluation.js";
 import {
   actorOf,
   audit,
@@ -35,6 +33,7 @@ import {
 // published, while still receiving the caller's transaction client.
 type AppendHelper = (typeof import("@akp/postgres"))["appendOutboxEvent"];
 type AppendTarget = Parameters<AppendHelper>[0];
+type PublicationClient = Exclude<AppendTarget, Postgres>;
 let reviewOutboxModule: Promise<typeof import("@akp/postgres")> | undefined;
 async function appendReviewEvent(
   client: AppendTarget,
@@ -86,22 +85,8 @@ async function recordPublicationFailure(
   );
 }
 
-async function evaluationTargetForReview(
-  db: Postgres,
-  review: Record<string, unknown>,
-): Promise<{ vaultId: string; evalPack: string }> {
-  const vaultId = String(review.vault_id ?? "");
-  if (!vaultId) throw new Error("REVIEW_VAULT_SCOPE_REQUIRED");
-  const result = await db.pool.query(
-    "select eval_pack from vaults where id=$1 and space_id=$2 and enabled=true",
-    [vaultId, review.space_id],
-  );
-  if (!result.rowCount) throw new Error("REVIEW_VAULT_SCOPE_NOT_FOUND");
-  const evalPack = (result.rows[0]?.eval_pack ?? {}) as Record<string, unknown>;
-  return { vaultId, evalPack: String(evalPack.name ?? "generic") };
-}
-
-/** Reconcile changed Git paths through the shared incremental index port. */
+/** Reconcile changed Git paths only for rollback compensation. Publication
+ * success and crash recovery use the durable outbox instead. */
 async function indexMergedChanges(
   db: Postgres,
   review: Record<string, unknown>,
@@ -225,6 +210,306 @@ async function appendPublicationLifecycle(
   }
 }
 
+async function finalizePublicationTransaction(
+  client: PublicationClient,
+  review: Record<string, unknown>,
+  revision: string,
+): Promise<boolean> {
+  const approved = await client.query(
+    `
+    update reviews
+       set status='APPROVED',decision_at=coalesce(decision_at,now()),
+           merged_commit=$2,updated_at=now()
+     where id=$1 and status='PUBLISHING'
+     returning id
+    `,
+    [review.id, revision],
+  );
+  if (!approved.rowCount) return false;
+  const manifest = (review.impact_manifest ?? {}) as Record<string, unknown>;
+  const jobId = manifest.jobId;
+  if (typeof jobId === "string") {
+    await client.query(
+      `
+      update ingest_jobs set state='COMPLETED',updated_at=now(),
+             result=coalesce(result,'{}'::jsonb)||$2::jsonb
+       where id=$1 and space_id=$3 and vault_id=$4
+      `,
+      [
+        jobId,
+        JSON.stringify({ mergedCommit: revision }),
+        review.space_id,
+        review.vault_id,
+      ],
+    );
+  }
+  await appendPublicationLifecycle(client, {
+    reviewId: String(review.id),
+    ...(typeof jobId === "string" ? { jobId } : {}),
+    spaceId: String(review.space_id),
+    vaultId: String(review.vault_id ?? ""),
+    revision,
+    manifest,
+  });
+  return true;
+}
+
+export type PublicationReconciliationResult =
+  | { status: "RECOVERED"; reviewId: string; revision: string }
+  | { status: "ALREADY_COMMITTED"; reviewId: string; revision: string }
+  | {
+      status: "RECOVERY_REQUIRED";
+      reviewId: string;
+      currentRevision: string;
+      reason: "MAIN_REVISION_MISMATCH" | "DRAFT_REVISION_UNAVAILABLE";
+    }
+  | { status: "NOT_RECOVERABLE"; reviewId: string; reviewStatus: string };
+
+/**
+ * Recover only a publication whose Git commit can be attributed exactly to
+ * the durable PUBLISHING intent. Ambiguous main history is never reverted or
+ * finalized automatically. The PUBLISHING -> APPROVED conditional update is
+ * the idempotency fence: only its winner may append the publication outbox.
+ */
+export async function reconcilePublishingReview(
+  db: Postgres,
+  reviewId: string,
+): Promise<PublicationReconciliationResult> {
+  const initial = await db.pool.query("select * from reviews where id=$1", [
+    reviewId,
+  ]);
+  const row = initial.rows[0] as Record<string, unknown> | undefined;
+  if (!row) throw new Error("REVIEW_NOT_FOUND");
+  if (String(row.status) === "APPROVED" && row.merged_commit) {
+    return {
+      status: "ALREADY_COMMITTED",
+      reviewId,
+      revision: String(row.merged_commit),
+    };
+  }
+  if (String(row.status) !== "PUBLISHING") {
+    return {
+      status: "NOT_RECOVERABLE",
+      reviewId,
+      reviewStatus: String(row.status),
+    };
+  }
+
+  const publicationKey = repositoryPublicationKey(repositoryPath());
+  const lockOwner = `reconcile:${reviewId}:${randomUUID()}`;
+  const lock = await db.pool.query(
+    `
+    insert into repository_publication_locks(repository_key,owner,expires_at)
+    values($1,$2,now()+interval '10 minutes')
+    on conflict(repository_key) do update set
+      owner=excluded.owner,expires_at=excluded.expires_at,updated_at=now()
+    where repository_publication_locks.expires_at < now()
+    returning owner
+    `,
+    [publicationKey, lockOwner],
+  );
+  if (!lock.rowCount) throw new Error("PUBLICATION_LOCKED");
+  const store = new GitKnowledgeStore(repositoryPath());
+  try {
+    const refreshed = await db.pool.query("select * from reviews where id=$1", [
+      reviewId,
+    ]);
+    const review = refreshed.rows[0] as Record<string, unknown> | undefined;
+    if (!review) throw new Error("REVIEW_NOT_FOUND");
+    if (String(review.status) === "APPROVED" && review.merged_commit) {
+      return {
+        status: "ALREADY_COMMITTED",
+        reviewId,
+        revision: String(review.merged_commit),
+      };
+    }
+    if (String(review.status) !== "PUBLISHING") {
+      return {
+        status: "NOT_RECOVERABLE",
+        reviewId,
+        reviewStatus: String(review.status),
+      };
+    }
+
+    const current = await store.commitMetadata();
+    const draft = await store
+      .commitMetadata(String(review.head_commit))
+      .catch(() => null);
+    const expectedSubject = `review: publish ${String(review.branch_name)}`;
+    const exact =
+      draft !== null &&
+      current.parents.length === 1 &&
+      current.parents[0] === String(review.base_commit) &&
+      current.tree === draft.tree &&
+      current.subject === expectedSubject;
+    if (!exact) {
+      const reason = draft
+        ? "MAIN_REVISION_MISMATCH"
+        : "DRAFT_REVISION_UNAVAILABLE";
+      await db.pool.query(
+        `update reviews
+            set status='PUBLICATION_RECOVERY_REQUIRED',
+                decision_reason='Publication reconciliation requires manual review.',
+                updated_at=now()
+          where id=$1 and status='PUBLISHING'`,
+        [reviewId],
+      );
+      await recordPublicationFailure(
+        db,
+        String(review.space_id),
+        "Publication reconciliation could not attribute current main",
+        {
+          reviewId,
+          expectedBase: review.base_commit,
+          currentRevision: current.revision,
+          reason,
+        },
+      );
+      return {
+        status: "RECOVERY_REQUIRED",
+        reviewId,
+        currentRevision: current.revision,
+        reason,
+      };
+    }
+
+    const client = await db.pool.connect();
+    try {
+      await client.query("begin");
+      const finalized = await finalizePublicationTransaction(
+        client,
+        review,
+        current.revision,
+      );
+      if (!finalized) {
+        await client.query("rollback");
+        const latest = await db.pool.query(
+          "select status,merged_commit from reviews where id=$1",
+          [reviewId],
+        );
+        if (
+          latest.rows[0]?.status === "APPROVED" &&
+          latest.rows[0]?.merged_commit
+        ) {
+          return {
+            status: "ALREADY_COMMITTED",
+            reviewId,
+            revision: String(latest.rows[0].merged_commit),
+          };
+        }
+        return {
+          status: "NOT_RECOVERABLE",
+          reviewId,
+          reviewStatus: String(latest.rows[0]?.status ?? "UNKNOWN"),
+        };
+      }
+      await client.query("commit");
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
+    await store.cleanupDraft(String(review.branch_name)).catch(async (error) =>
+      recordPublicationFailure(
+        db,
+        String(review.space_id),
+        "Recovered publication draft cleanup failed",
+        {
+          reviewId,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      ),
+    );
+    return { status: "RECOVERED", reviewId, revision: current.revision };
+  } finally {
+    await db.pool.query(
+      "delete from repository_publication_locks where repository_key=$1 and owner=$2",
+      [publicationKey, lockOwner],
+    );
+  }
+}
+
+/**
+ * Rollback is a publication of a new canonical corpus revision, not an
+ * in-process projection mutation. The review state and root revision event
+ * commit atomically, then the same causal projection fanout used by normal
+ * publication is consumed by the durable worker.
+ */
+async function appendRollbackLifecycle(
+  client: AppendTarget,
+  input: PublicationLifecycle,
+): Promise<void> {
+  const proposed = Array.isArray(input.manifest.proposedChanges)
+    ? input.manifest.proposedChanges
+    : [];
+  const changedPaths = proposed
+    .map((entry) =>
+      entry && typeof entry === "object" && "path" in entry
+        ? String((entry as Record<string, unknown>).path ?? "")
+        : "",
+    )
+    .filter(Boolean);
+  // Reverting a CREATE removes the path from canonical Git. Reverting an
+  // UPDATE (or a future DELETE) restores bytes from the prior revision, so it
+  // remains a changed path but is not a tombstone.
+  const tombstones = proposed
+    .filter(
+      (entry) =>
+        entry &&
+        typeof entry === "object" &&
+        String(
+          (entry as Record<string, unknown>).operation ?? "",
+        ).toUpperCase() === "CREATE",
+    )
+    .map((entry) => String((entry as Record<string, unknown>).path ?? ""))
+    .filter(Boolean);
+  const payload = {
+    reviewId: input.reviewId,
+    operation: "ROLLBACK",
+    ...(input.jobId ? { jobId: input.jobId } : {}),
+    revision: input.revision,
+    changedPaths,
+    tombstones,
+    ...(typeof input.manifest.sourceId === "string"
+      ? { sourceId: input.manifest.sourceId }
+      : {}),
+  };
+  const corpus = await appendReviewEvent(client, {
+    eventType: "CorpusRevisionPublished",
+    resourceId: input.reviewId,
+    spaceId: input.spaceId,
+    vaultId: input.vaultId,
+    correlationId: input.jobId ?? input.reviewId,
+    payload,
+  });
+  const requested: Array<{
+    eventType:
+      | "LexicalIndexUpdateRequested"
+      | "VectorIndexUpdateRequested"
+      | "GraphIndexUpdateRequested"
+      | "ContextPackInvalidationRequested"
+      | "ImpactedEvalRunRequested";
+  }> = [
+    { eventType: "LexicalIndexUpdateRequested" },
+    { eventType: "VectorIndexUpdateRequested" },
+    { eventType: "GraphIndexUpdateRequested" },
+    { eventType: "ContextPackInvalidationRequested" },
+    { eventType: "ImpactedEvalRunRequested" },
+  ];
+  for (const request of requested) {
+    await appendReviewEvent(client, {
+      eventType: request.eventType,
+      resourceId: input.reviewId,
+      spaceId: input.spaceId,
+      vaultId: input.vaultId,
+      correlationId: input.jobId ?? input.reviewId,
+      causationId: corpus.eventId,
+      payload,
+    });
+  }
+}
+
 function reviewPaths(review: Record<string, unknown>): string[] {
   const manifest = review.impact_manifest as {
     proposedChanges?: Array<{ path?: string }>;
@@ -239,6 +524,28 @@ function reviewPaths(review: Record<string, unknown>): string[] {
 function hasValidReviewManifest(review: Record<string, unknown>): boolean {
   const paths = reviewPaths(review);
   return paths.length > 0 && new Set(paths).size === paths.length;
+}
+
+/** Include compiler retrieval context in the authorization boundary. A review
+ * cannot expose candidate metadata gathered from a path the current actor
+ * cannot read, even when the proposed file itself is inside their prefix. */
+export function reviewAccessPaths(review: Record<string, unknown>): string[] {
+  const manifest = (review.impact_manifest ?? {}) as Record<string, unknown>;
+  const context =
+    manifest.reviewContext && typeof manifest.reviewContext === "object"
+      ? (manifest.reviewContext as Record<string, unknown>)
+      : null;
+  const candidates = Array.isArray(context?.existingCandidates)
+    ? context.existingCandidates
+    : [];
+  const candidatePaths = candidates
+    .map((candidate) =>
+      candidate && typeof candidate === "object" && "path" in candidate
+        ? String((candidate as Record<string, unknown>).path ?? "")
+        : "",
+    )
+    .filter(Boolean);
+  return [...new Set([...reviewPaths(review), ...candidatePaths])];
 }
 
 const REVIEW_VAULT_ID =
@@ -290,7 +597,7 @@ async function canAccessReview(
   const access = await reviewVaultAccess(db, actor, review, permission);
   if (!access) return false;
   const spaceId = String(review.space_id);
-  return reviewPaths(review).every(
+  return reviewAccessPaths(review).every(
     (reviewPath) =>
       hasPathAccess(actor, spaceId, permission, reviewPath) &&
       pathMatchesVaultPrefix(reviewPath, access.pathPrefix),
@@ -298,6 +605,48 @@ async function canAccessReview(
 }
 
 export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
+  app.post<{ Body: { reviewId?: string } }>(
+    "/v1/operator/publications/reconcile",
+    { preHandler: requirePermission("admin") },
+    async (request, reply) => {
+      const reviewId = request.body?.reviewId?.trim();
+      if (!reviewId) {
+        return reply.code(400).send({ code: "REVIEW_ID_REQUIRED" });
+      }
+      const actor = actorOf(request);
+      const found = await db.pool.query(
+        "select * from reviews where id=$1 and space_id=any($2::uuid[])",
+        [reviewId, spaceIdsForPermission(actor, "admin")],
+      );
+      const review = found.rows[0] as Record<string, unknown> | undefined;
+      if (!review) return reply.code(404).send({ code: "REVIEW_NOT_FOUND" });
+      if (
+        !hasUnrestrictedPathAccess(actor, String(review.space_id), "admin") ||
+        !(await canAccessReview(db, actor, review, "admin"))
+      ) {
+        return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
+      }
+      try {
+        const result = await reconcilePublishingReview(db, reviewId);
+        await audit(
+          db,
+          request,
+          "review.reconcile",
+          "review",
+          reviewId,
+          { vaultId: String(review.vault_id), result: result.status },
+          String(review.space_id),
+        );
+        return result;
+      } catch (error) {
+        if (String(error).includes("PUBLICATION_LOCKED")) {
+          return reply.code(409).send({ code: "PUBLICATION_LOCKED" });
+        }
+        throw error;
+      }
+    },
+  );
+
   app.post<{
     Body: {
       spaceId: string;
@@ -842,11 +1191,18 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
         try {
           const claimed = await db.pool.query(
             `
-            update reviews set status='PUBLISHING',updated_at=now()
+            update reviews
+               set status='PUBLISHING',decision_by=$3,decision_at=now(),
+                   decision_reason=$4,updated_at=now()
              where id=$1 and space_id=$2 and status in ('PENDING','CHANGES_REQUESTED')
              returning *
             `,
-            [request.params.id, review.space_id],
+            [
+              request.params.id,
+              review.space_id,
+              actor?.id ?? null,
+              request.body.reason ?? null,
+            ],
           );
           if (!claimed.rowCount) {
             return reply.code(409).send({
@@ -855,61 +1211,29 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
             });
           }
           await renewPublicationLock(db, publicationKey, lockOwner);
-          revision = await store.mergeDraft(
-            String(review.branch_name),
-            String(review.base_commit),
-            String(review.head_commit),
-            process.env.AKP_GIT_AUTHOR_NAME ??
-              "Architecture Knowledge Platform",
-            process.env.AKP_GIT_AUTHOR_EMAIL ?? "akp@localhost",
+          revision = await withSpan(
+            "review.publish",
+            { "akp.review.operation": "approve" },
+            () =>
+              store.mergeDraft(
+                String(review.branch_name),
+                String(review.base_commit),
+                String(review.head_commit),
+                process.env.AKP_GIT_AUTHOR_NAME ??
+                  "Architecture Knowledge Platform",
+                process.env.AKP_GIT_AUTHOR_EMAIL ?? "akp@localhost",
+              ),
           );
           await renewPublicationLock(db, publicationKey, lockOwner);
-          const jobId = (review.impact_manifest as Record<string, unknown>)
-            ?.jobId;
           const publicationClient = await db.pool.connect();
           try {
             await publicationClient.query("begin");
-            const approved = await publicationClient.query(
-              `
-              update reviews set status='APPROVED',decision_by=$2,decision_at=now(),
-                     decision_reason=$3,merged_commit=$4,updated_at=now()
-               where id=$1 and status='PUBLISHING'
-               returning id
-              `,
-              [
-                request.params.id,
-                actor?.id ?? null,
-                request.body.reason ?? null,
-                revision,
-              ],
-            );
-            if (!approved.rowCount) throw new Error("PUBLICATION_STATE_LOST");
-            if (typeof jobId === "string") {
-              await publicationClient.query(
-                `
-                update ingest_jobs set state='COMPLETED',updated_at=now(),
-                       result=coalesce(result,'{}'::jsonb)||$2::jsonb
-                 where id=$1 and space_id=$3 and vault_id=$4
-                `,
-                [
-                  jobId,
-                  JSON.stringify({ mergedCommit: revision }),
-                  review.space_id,
-                  review.vault_id,
-                ],
-              );
-            }
-            await appendPublicationLifecycle(publicationClient, {
-              reviewId: request.params.id,
-              ...(typeof jobId === "string" ? { jobId } : {}),
-              spaceId: String(review.space_id),
-              vaultId: String(review.vault_id ?? ""),
+            const finalized = await finalizePublicationTransaction(
+              publicationClient,
+              claimed.rows[0] as Record<string, unknown>,
               revision,
-              manifest: (review.impact_manifest ?? {}) as Record<
-                string,
-                unknown
-              >,
-            });
+            );
+            if (!finalized) throw new Error("PUBLICATION_STATE_LOST");
             await publicationClient.query("commit");
           } catch (error) {
             await publicationClient.query("rollback");
@@ -959,11 +1283,11 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
           };
         } catch (error) {
           let compensatingRevision: string | null = null;
-          let compensationSucceeded = revision === null;
+          let observedMainRevision: string | null = null;
+          let compensationSucceeded = false;
           if (revision) {
             try {
               compensatingRevision = await store.rollbackMain(revision);
-              await indexMergedChanges(db, review, compensatingRevision);
               compensationSucceeded = true;
             } catch (compensationError) {
               await recordPublicationFailure(
@@ -980,22 +1304,45 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
                 },
               );
             }
+          } else {
+            try {
+              observedMainRevision = await store.revision();
+              compensationSucceeded =
+                observedMainRevision === String(review.base_commit);
+            } catch {
+              compensationSucceeded = false;
+            }
           }
-          await db.pool.query(
-            `
-            update reviews
-               set status=$2,merged_commit=case when $2='CHANGES_REQUESTED' then null else merged_commit end,
-                   decision_reason=$3,updated_at=now()
-             where id=$1 and status='PUBLISHING'
-            `,
-            [
-              request.params.id,
-              compensationSucceeded
-                ? "CHANGES_REQUESTED"
-                : "PUBLICATION_RECOVERY_REQUIRED",
-              "Publication failed; inspect the Error Book before retrying.",
-            ],
-          );
+          if (compensationSucceeded) {
+            await db.pool.query(
+              `
+              update reviews
+                 set status='CHANGES_REQUESTED',merged_commit=null,
+                     base_commit=coalesce($2,base_commit),
+                     decision_by=null,decision_at=null,
+                     decision_reason=$3,updated_at=now()
+               where id=$1 and status='PUBLISHING'
+              `,
+              [
+                request.params.id,
+                compensatingRevision,
+                "Publication failed safely; retry from the compensated Git revision.",
+              ],
+            );
+          } else {
+            await db.pool.query(
+              `
+              update reviews
+                 set status='PUBLICATION_RECOVERY_REQUIRED',
+                     decision_reason=$2,updated_at=now()
+               where id=$1 and status='PUBLISHING'
+              `,
+              [
+                request.params.id,
+                "Publication state is ambiguous; manual reconciliation is required.",
+              ],
+            );
+          }
           await recordPublicationFailure(
             db,
             String(review.space_id),
@@ -1004,6 +1351,7 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
               reviewId: request.params.id,
               mergedRevision: revision,
               compensatingRevision,
+              observedMainRevision,
               compensationSucceeded,
             },
           );
@@ -1154,58 +1502,46 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
           return reply.code(409).send({ code: "REVIEW_NOT_ROLLBACKABLE" });
         }
         await renewPublicationLock(db, publicationKey, lockOwner);
-        revision = await store.rollbackMain(String(review.merged_commit));
-        await renewPublicationLock(db, publicationKey, lockOwner);
-        const manifest = review.impact_manifest as {
-          sourceId?: string;
-          proposedChanges?: Array<{
-            path: string;
-            operation?: "CREATE" | "UPDATE";
-          }>;
-        };
-        await synchronizeManagedPaths(db, store, {
-          spaceId: String(review.space_id),
-          vaultId: String(review.vault_id ?? ""),
-          revision,
-          changes: (manifest.proposedChanges ?? []).map((change) => ({
-            path: change.path,
-            ...(change.operation ? { operation: change.operation } : {}),
-          })),
-          ...(typeof manifest.sourceId === "string"
-            ? { sourceId: manifest.sourceId }
-            : {}),
-        });
-        const projection = await rebuildSpaceProjections(
-          db,
-          String(review.space_id),
-          String(review.vault_id ?? ""),
-          revision,
-        );
-        const lint = await runKnowledgeLint(
-          db,
-          String(review.space_id),
-          String(review.vault_id ?? ""),
-          "INDEX_REBUILD",
-        );
-        const evaluationTarget = await evaluationTargetForReview(db, review);
-        const evals = await runEvaluation(
-          db,
-          { name: "post-rollback-impacted-regression" },
-          String(review.space_id),
-          evaluationTarget.evalPack,
-          evaluationTarget.vaultId,
+        revision = await withSpan(
+          "review.rollback",
+          { "akp.review.operation": "rollback" },
+          () => store.rollbackMain(String(review.merged_commit)),
         );
         await renewPublicationLock(db, publicationKey, lockOwner);
-        const completed = await db.pool.query(
-          `
-          update reviews set status='ROLLED_BACK',decision_reason=$2,updated_at=now()
-           where id=$1 and status='ROLLING_BACK'
-           returning id
-          `,
-          [request.params.id, request.body.reason.trim()],
-        );
-        if (!completed.rowCount) {
-          throw new Error("ROLLBACK_STATE_CONFLICT");
+        const manifest = (review.impact_manifest ?? {}) as Record<
+          string,
+          unknown
+        >;
+        const jobId = manifest.jobId;
+        await renewPublicationLock(db, publicationKey, lockOwner);
+        const rollbackClient = await db.pool.connect();
+        try {
+          await rollbackClient.query("begin");
+          const completed = await rollbackClient.query(
+            `
+            update reviews set status='ROLLED_BACK',decision_reason=$2,updated_at=now()
+             where id=$1 and status='ROLLING_BACK'
+             returning id
+            `,
+            [request.params.id, request.body.reason.trim()],
+          );
+          if (!completed.rowCount) {
+            throw new Error("ROLLBACK_STATE_CONFLICT");
+          }
+          await appendRollbackLifecycle(rollbackClient, {
+            reviewId: request.params.id,
+            ...(typeof jobId === "string" ? { jobId } : {}),
+            spaceId: String(review.space_id),
+            vaultId: String(review.vault_id ?? ""),
+            revision,
+            manifest,
+          });
+          await rollbackClient.query("commit");
+        } catch (error) {
+          await rollbackClient.query("rollback");
+          throw error;
+        } finally {
+          rollbackClient.release();
         }
         await audit(
           db,
@@ -1213,16 +1549,26 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
           "review.rollback",
           "review",
           request.params.id,
-          { vaultId: String(review.vault_id), revision, projection },
+          {
+            vaultId: String(review.vault_id),
+            revision,
+            indexing: "PENDING",
+          },
           String(review.space_id),
         );
         return {
           id: request.params.id,
           status: "ROLLED_BACK",
           revision,
-          projection,
-          lint,
-          evals,
+          indexing: "PENDING",
+          queuedEvents: [
+            "CorpusRevisionPublished",
+            "LexicalIndexUpdateRequested",
+            "VectorIndexUpdateRequested",
+            "GraphIndexUpdateRequested",
+            "ContextPackInvalidationRequested",
+            "ImpactedEvalRunRequested",
+          ],
         };
       } catch (error) {
         let recoveryRevision: string | null = null;

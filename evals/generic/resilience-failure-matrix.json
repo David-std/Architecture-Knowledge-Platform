@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "evidenceLevel": "CI_INJECTED_RESILIENCE_MATRIX",
+  "scenarios": [
+    {
+      "id": "worker-crash-before-ack",
+      "expectedOutcome": "An expired durable lease is reclaimed and the previous worker is fenced from acknowledging it.",
+      "evidence": "packages/postgres/test/outbox.integration.test.ts"
+    },
+    {
+      "id": "worker-crash-after-side-effect",
+      "expectedOutcome": "Redelivery of the same indexing event is idempotent and does not repeat the completed projection side effect.",
+      "evidence": "packages/indexing/test/incremental-index.integration.test.ts"
+    },
+    {
+      "id": "expired-lease-and-quarantine",
+      "expectedOutcome": "Expired work is reclaimable, poisoned work is quarantined, and causal descendants remain blocked until operator recovery.",
+      "evidence": "packages/postgres/test/outbox.integration.test.ts; apps/worker/test/drain.integration.test.ts"
+    },
+    {
+      "id": "postgresql-restart",
+      "expectedOutcome": "Readiness fails while PostgreSQL is stopped and returns to UP after the service restarts.",
+      "evidence": ".github/workflows/resilience-matrix.yml"
+    },
+    {
+      "id": "minio-restart",
+      "expectedOutcome": "Readiness reports raw object storage unavailable while MinIO is stopped and recovers after restart.",
+      "evidence": ".github/workflows/resilience-matrix.yml"
+    },
+    {
+      "id": "extractor-unavailable",
+      "expectedOutcome": "Readiness reports the extractor unavailable without treating the API process as live-dead, then recovers after restart.",
+      "evidence": ".github/workflows/resilience-matrix.yml"
+    },
+    {
+      "id": "provider-unavailable",
+      "expectedOutcome": "An explicitly selected unavailable document-intelligence provider fails closed with a capability error.",
+      "evidence": "apps/extractor/tests/test_explicit_provider_fail_closed.py"
+    },
+    {
+      "id": "wrong-vector-dimensions",
+      "expectedOutcome": "Embedding writes with the wrong dimensions are rejected by both the lifecycle boundary and database invariant.",
+      "evidence": "packages/indexing/test/embedding-generation.integration.test.ts"
+    },
+    {
+      "id": "stale-generation",
+      "expectedOutcome": "A stale embedding generation leaves normal selection and can enter a controlled rebuild lifecycle.",
+      "evidence": "packages/indexing/test/embedding-stale-generation.integration.test.ts"
+    },
+    {
+      "id": "graph-revision-mismatch",
+      "expectedOutcome": "A graph revision that differs from the current corpus disables graph traversal and falls back to permitted channels.",
+      "evidence": "apps/api/test/retrieval-capabilities.test.ts; packages/retrieval/test/query-planner.test.ts"
+    },
+    {
+      "id": "git-or-database-publication-failure",
+      "expectedOutcome": "Publication compensates or enters explicit recovery without emitting duplicate or premature durable events.",
+      "evidence": "apps/api/test/publication-recovery.integration.test.ts"
+    },
+    {
+      "id": "mcp-unavailable",
+      "expectedOutcome": "The core API remains live and ready when no MCP process is present because MCP is a consumer, not a runtime dependency.",
+      "evidence": ".github/workflows/resilience-matrix.yml"
+    },
+    {
+      "id": "otel-unavailable",
+      "expectedOutcome": "The core API remains live and ready when the configured OpenTelemetry collector endpoint is unreachable.",
+      "evidence": "packages/observability/test/bridge.test.ts; .github/workflows/resilience-matrix.yml"
+    }
+  ],
+  "limitations": [
+    "Service restart probes exercise deterministic CI stop/start failures rather than long-duration network partitions or managed-service failover.",
+    "The post-side-effect crash case is scoped to the idempotent indexing consumer and does not claim exactly-once semantics for arbitrary external systems.",
+    "Provider unavailability is injected at the document-intelligence routing boundary.",
+    "The MCP scenario proves independence of the core API while MCP is absent; it does not emulate a connected MCP client losing its transport mid-request."
+  ]
+}

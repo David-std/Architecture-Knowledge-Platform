@@ -15,11 +15,15 @@
           "type": "array",
           "minItems": 1,
           "maxItems": 20,
-          "uniqueItems": true,
           "items": { "type": "string", "format": "uuid" }
         },
         "federated": { "type": "boolean", "default": false },
-        "limit": { "type": "integer", "minimum": 1, "maximum": 50 },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "default": 10
+        },
         "minimumTrust": {
           "type": "string",
           "enum": [
@@ -27,14 +31,91 @@
             "MACHINE_SUPPORTED",
             "HUMAN_REVIEWED",
             "ATTESTED"
-          ]
+          ],
+          "default": "MACHINE_SUPPORTED"
         },
         "mode": {
           "type": "string",
-          "enum": ["COMPILED_ONLY", "SOURCE_BACKED", "RAW_ONLY", "PROJECT_CODE"]
+          "enum": [
+            "COMPILED_ONLY",
+            "SOURCE_BACKED",
+            "RAW_ONLY",
+            "PROJECT_CODE"
+          ],
+          "default": "SOURCE_BACKED"
         },
-        "intent": { "type": "string" },
-        "maxTokens": { "type": "integer", "minimum": 256, "maximum": 32000 }
+        "intent": {
+          "type": "string",
+          "enum": [
+            "EXACT_LOOKUP",
+            "CONCEPTUAL",
+            "COMPARISON",
+            "WORKFLOW_EXECUTION",
+            "SOURCE_VERIFICATION",
+            "PROJECT_CODE",
+            "GLOBAL_SYNTHESIS",
+            "IMPACT_ANALYSIS",
+            "NO_RETRIEVAL_REQUIRED"
+          ]
+        }
+      }
+    },
+    "ScopedContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["query", "spaceId", "vaultIds"],
+      "properties": {
+        "query": { "type": "string", "minLength": 1 },
+        "spaceId": { "type": "string", "format": "uuid" },
+        "vaultIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": { "type": "string", "format": "uuid" }
+        },
+        "federated": { "type": "boolean", "default": false },
+        "intent": {
+          "type": "string",
+          "enum": [
+            "EXACT_LOOKUP",
+            "CONCEPTUAL",
+            "COMPARISON",
+            "WORKFLOW_EXECUTION",
+            "SOURCE_VERIFICATION",
+            "PROJECT_CODE",
+            "GLOBAL_SYNTHESIS",
+            "IMPACT_ANALYSIS",
+            "NO_RETRIEVAL_REQUIRED"
+          ],
+          "default": "CONCEPTUAL"
+        },
+        "maxTokens": {
+          "type": "integer",
+          "minimum": 256,
+          "maximum": 32000,
+          "default": 6000
+        },
+        "packetMode": {
+          "type": "string",
+          "enum": ["FULL_CONTEXT_PACKET", "COMPACT_AGENT_PACKET"],
+          "default": "COMPACT_AGENT_PACKET"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "default": 20
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "COMPILED_ONLY",
+            "SOURCE_BACKED",
+            "RAW_ONLY",
+            "PROJECT_CODE"
+          ],
+          "default": "SOURCE_BACKED"
+        }
       }
     }
   },
@@ -101,7 +182,7 @@
       "permission": "knowledge:read",
       "mutates": false,
       "sideEffects": ["persists_context_packet"],
-      "inputSchema": { "$ref": "#/definitions/ScopedSearch" },
+      "inputSchema": { "$ref": "#/definitions/ScopedContext" },
       "http": { "method": "POST", "path": "/v1/context" }
     },
     {

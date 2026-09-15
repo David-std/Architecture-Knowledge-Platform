@@ -19,6 +19,20 @@ export interface ValidationIssue {
   message: string;
 }
 
+const ACTIVE_HTML_TAG =
+  /<\s*\/?\s*(?:script|iframe|object|embed|form|svg|math|style|link|meta|base)\b/i;
+const ACTIVE_HTML_ATTRIBUTE = /\b(?:on[a-z]+|srcdoc)\s*=/i;
+const DANGEROUS_URI =
+  /(?:\]\(\s*|(?:href|src|xlink:href)\s*=\s*["']?\s*)(?:(?:javascript|vbscript)\s*:|data\s*:\s*text\/html)/i;
+
+/** Reject active markup instead of trying to repair untrusted generated text. */
+export function unsafeGeneratedMarkup(markdownBody: string): string | null {
+  if (ACTIVE_HTML_TAG.test(markdownBody)) return "ACTIVE_HTML_TAG";
+  if (ACTIVE_HTML_ATTRIBUTE.test(markdownBody)) return "ACTIVE_HTML_ATTRIBUTE";
+  if (DANGEROUS_URI.test(markdownBody)) return "DANGEROUS_URI";
+  return null;
+}
+
 export function validateMarkdownDocument(markdown: string): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   let parsed: matter.GrayMatterFile<string>;
@@ -39,6 +53,18 @@ export function validateMarkdownDocument(markdown: string): ValidationIssue[] {
         message: `${issue.path.join(".")}: ${issue.message}`,
       });
     }
+  }
+
+  const unsafeMarkup = unsafeGeneratedMarkup(parsed.content);
+  if (unsafeMarkup) {
+    issues.push({
+      code: "UNSAFE_ACTIVE_MARKUP",
+      severity: "ERROR",
+      message:
+        "Generated Markdown contains unsafe active markup: " +
+        unsafeMarkup +
+        ".",
+    });
   }
 
   if (parsed.content.trim().length < 100) {

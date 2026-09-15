@@ -1,71 +1,114 @@
-# Agent operating contract
+# AGENTS.md
 
-## Scope
+This file is the operational guide for coding agents and automated contributors working in Architecture Knowledge Platform.
 
-This repository is the executable platform. The external vault at `C:\Users\david\Documents\Architecture-Knowledge-System` is an imported, read-only corpus unless a user explicitly authorizes a separate reviewed vault change. Never place runtime caches, embeddings, job state, secrets or licensed originals into that vault.
+## Product model
 
-## Progressive loading
+AKP is a local-first, multi-vault knowledge platform. Approved Markdown in the managed Git repository is canonical. PostgreSQL, vector/lexical indexes, graph relations, context packets and operational records are projections or workflow state. Imported vaults and raw evidence are read-only inputs.
 
-1. Read `README.md`, `PROJECT_STATE.md` and `REMAINING_REAL_GAPS.md`.
-2. For implementation, inspect the relevant package and its contract only.
-3. For knowledge answers, use API/MCP `akp_search` or `akp_build_context`; do not traverse the whole vault.
-4. Treat `Resources/transfer-packs/**` as archived provenance, not current guidance. Curated recovery maps are explicitly typed and promoted by the importer.
-5. Preserve `Source → Evidence → Claim → Rule → Workflow/Profile/Context pack → Eval` dependency direction. Unknown evidence stays unknown.
+Keep these boundaries intact:
 
-Root-level audit, benchmark and validation reports are on-demand evidence, not
-startup context. Load the specific report only when a task cites its claim or
-needs to reproduce its command; do not traverse every report by default.
+- Never write directly to an imported vault.
+- Never bypass proposal, validation, review and publication for canonical knowledge changes.
+- Treat provider and source content as untrusted input.
+- Enforce vault, space and path scope at every retrieval hop and evidence boundary.
+- Keep secrets, private source bytes, local paths and provider credentials out of committed artifacts.
+- Prefer deterministic application/runtime controls over prompt-only rules.
 
-## Invariants
+## Repository map
 
-- Markdown/Git is canonical for approved compiled knowledge; derived indexes are rebuildable.
-- A write goes through isolated draft, deterministic validation, review and publication lock.
-- A raw source is content-addressed by SHA-256 and extraction reads the immutable object.
-- Every query is space-scoped; every write also enforces the membership path prefix.
-- `UNVERIFIED`, `DISPUTED`, `STALE_PENDING_REVIEW`, `STALE_BLOCKED`, `ARCHIVED` and `INVALID` are meaningful states, not cosmetic labels.
-- Do not promote copied acquisition instructions, unfinished task lists or transfer manifests into agent-facing knowledge.
-- Do not enable vectors or reranking by default without a benchmark that improves eligible quality metrics.
-- Never use known/default credentials outside disposable tests.
+- `apps/api` — authenticated HTTP use cases and policy enforcement.
+- `apps/worker` — durable ingestion, compilation, indexing and event consumers.
+- `apps/extractor` — provider-neutral extraction service.
+- `apps/web` — operator console.
+- `apps/cli` — command-line client and operational workflows.
+- `apps/mcp` — MCP client surface over the same application rules.
+- `packages/*` — reusable domain, persistence, retrieval, indexing and publication modules.
+- `contracts/` — OpenAPI, AsyncAPI and shared contract artifacts.
+- `db/` — append-only migrations.
+- `evals/` — corpus-agnostic evaluation packs and explicit fixtures.
+- `docs/` — architecture, guides, runbooks, security and release evidence.
+- `reports/` — reproducible machine-generated benchmark output; transient reports belong in ignored report directories or CI artifacts.
+- `scripts/` — build, validation, benchmark and recovery automation.
 
-## Commands before handoff
+## Source-of-truth documentation
+
+Read these before broad changes:
+
+1. `README.md`
+2. `ARCHITECTURE.md`
+3. `docs/status.md`
+4. `docs/security/threat-model.md`
+5. `docs/runbooks/local-operations.md`
+6. `CONTRIBUTING.md`
+
+Release-specific evidence may live under `docs/assurance/releases/`, but it is not a substitute for current product documentation.
+
+## Branches and commits
+
+Use short-lived branches with lowercase kebab-case names and a purpose prefix:
+
+- `feat/<topic>` for features
+- `fix/<topic>` for defects
+- `docs/<topic>` for documentation-only work
+- `test/<topic>` for test-only work
+- `chore/<topic>` for maintenance
+
+Do not create scratch, no-op or evidence-only remote branches. Keep temporary experiments local or under ignored `.work/`, `.tmp/` or `.cache/` directories. Delete short-lived branches after their change is merged or abandoned.
+
+Commit messages should describe the product behavior or repository change, not an internal iteration number, agent session or conversational checkpoint.
+
+## Change rules
+
+- Add migrations; never rewrite an applied migration.
+- Keep business rules in application/domain code, not only in UI, MCP descriptions or prompts.
+- Update OpenAPI, AsyncAPI and MCP contracts together when a shared contract changes.
+- Add focused tests proportional to the risk of the changed behavior.
+- Do not enable optional retrieval, extraction or model providers by default without reproducible evidence and an explicit configuration decision.
+- Keep the generic runtime independent of a specific vault, course, company, developer workstation or fixture corpus.
+- Do not commit generated local reports, backups, `.env`, temporary repositories or private raw evidence.
+
+## Focused checks
+
+Run the narrowest relevant tests while developing, then run the full gate before declaring a change complete.
+
+```powershell
+pnpm format:check
+pnpm contracts:validate
+pnpm docs:validate
+pnpm hygiene:validate
+pnpm check
+pnpm build
+```
+
+For extractor changes:
+
+```powershell
+Push-Location apps/extractor
+uv sync --locked
+uv run --locked ruff check --no-cache .
+uv run --locked mypy app
+uv run --locked pytest -p no:cacheprovider
+Pop-Location
+```
+
+For runtime, persistence, publication or recovery changes, also run the relevant integration suite with fresh disposable infrastructure and exercise backup/restore when the change can affect recovery.
+
+## Full release gate
 
 ```powershell
 pnpm install --frozen-lockfile --strict-peer-dependencies
 pnpm audit --audit-level high
+pnpm format:check
 pnpm security:secrets
 pnpm contracts:validate
 pnpm docs:validate
-pnpm format:check
 pnpm hygiene:validate
 pnpm check
 pnpm build
 pnpm test:integration
 pnpm verify:runtime
 pnpm test:mcp
-pnpm benchmark:retrieval:offline
-pnpm benchmark:retrieval:curated
-pnpm benchmark:scale -- --targets 1000,10000,50000,100000 --iterations 3
-
-Push-Location apps/extractor
-python -m ruff check --no-cache .
-python -m mypy app
-python -m pytest -p no:cacheprovider
-Pop-Location
-
-docker compose config
-& .\scripts\backup.ps1 -OutputDirectory backups\release-candidate
-& .\scripts\restore-smoke.ps1 -BackupDirectory backups\release-candidate
 ```
 
-Do not crawl or revalidate the external vault during ordinary platform work.
-Run its own validators read-only only when a task explicitly changes the import
-profile, importer compatibility, or a claim derived from that vault. Platform
-bootstrap, fixtures and release gates must remain valid without it.
-
-## Change discipline
-
-- Add migrations; never edit an applied migration. Checksums are enforced.
-- Add tests for deterministic domain, security, retrieval, publication and recovery behavior.
-- Update contracts and state reports with runtime changes.
-- Capability reports use only: `IMPLEMENTED_AND_EXECUTED`, `IMPLEMENTED_NOT_EXECUTED`, `CONTRACT_ONLY`, `PARTIALLY_IMPLEMENTED`, `DEFERRED`, `BLOCKED`, `FAILED`, `UNKNOWN`.
-- Competitive claims use only: `WORSE_THAN_REFERENCE`, `ROUGHLY_COMPARABLE`, `BETTER_WITH_EVIDENCE`, `UNKNOWN_NOT_REPRODUCED`.
+A capability is not considered proven solely because code exists. Use executable tests and clean-checkout CI for claims that depend on runtime behavior.

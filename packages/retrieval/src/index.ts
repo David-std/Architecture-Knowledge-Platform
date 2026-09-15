@@ -3,4 +3,7 @@ export * from "./context-packet.js";
 export * from "./query-planner.js";
 export * from "./chunking.js";
 export * from "./embeddings.js";
+export * from "./local-semantic-embedding.js";
+export * from "./openai-compatible-embedding.js";
+export * from "./embedding-provider-registry.js";
 export * from "./structural-context.js";

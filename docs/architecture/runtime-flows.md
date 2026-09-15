@@ -36,17 +36,21 @@ sequenceDiagram
   W->>O: download immutable bytes
   W->>W: rehash materialized object
   W->>X: authenticated multipart + expected SHA-256
-  X->>X: bounded stream, hash verification, extraction
-  X-->>W: artifacts + locators + extractor version
+  X->>X: bounded stream, hash verification, capability routing
+  X-->>W: artifacts + locators + extractor/provider version
   X->>X: delete temporary file
   W->>D: source, artifacts, evidence and identity result
 ```
 
 Hash mismatch fails with `IMMUTABLE_OBJECT_HASH_MISMATCH`. DOCX paragraphs and
-tables and PPTX slides/notes carry source-hash locators. Audio/video and
-OCR/vision return `CAPABILITY_NOT_CONFIGURED` rather than a fabricated artifact.
-Long stages renew their lease. Another worker can reclaim the job only after
-lease expiry.
+tables and PPTX slides/notes carry source-hash locators. OCR-capable routes
+produce page and region provenance when the selected local/provider capability
+is configured; an unavailable explicitly requested capability fails closed with
+`CAPABILITY_NOT_CONFIGURED` rather than fabricating an artifact. Audio/video
+transcription is optional and requires an administrator-configured transcription
+endpoint; video demux additionally requires local ffmpeg. Visual captioning is
+reported separately and is never implied by transcription. Long stages renew
+their lease. Another worker can reclaim the job only after lease expiry.
 
 ## Compilation, review and publication
 
@@ -56,6 +60,7 @@ sequenceDiagram
   participant D as PostgreSQL
   participant G as Managed Git repository
   participant R as Reviewer
+  participant P as Projection worker
   W->>D: identity and materiality classification
   alt identical representation
     W->>D: NO_MATERIAL
@@ -64,17 +69,38 @@ sequenceDiagram
     W->>D: validation, probes, impact, REVIEW_REQUIRED
     R->>D: approve/reject/request changes with reason
     alt approved
-      D->>D: acquire publication lock and verify base
-      D->>G: squash merge exact review branch
-      D->>D: versions, units, relations, lint and revisions
+      D->>D: acquire publication lock
+      D->>D: persist PUBLISHING intent
+      D->>G: squash merge exact reviewed head onto expected base
+      D->>D: atomically mark APPROVED + append durable publication events
+      D-->>P: causal outbox delivery
+      P->>D: rebuild exact/lexical/vector/graph/context projections
     else rejected
       D->>D: retain auditable rejection; no main-branch write
     end
   end
 ```
 
-If a downstream projection step fails after Git publication, compensation
-attempts a revert and records the failure in the Error Book.
+Canonical publication and projection maintenance are deliberately separated.
+After the reviewed Git commit succeeds, the API finalizes the review and appends
+`KnowledgePublished`, `CorpusRevisionPublished` and the projection requests in
+one PostgreSQL transaction. Lexical, vector, graph and ContextPacket state is
+then rebuilt asynchronously by the durable outbox worker; an ordinary
+projection failure is retried, quarantined or reconciled and does not revert
+canonical Git.
+
+If Git moved but database finalization fails, publication compensation attempts
+a Git revert before returning the review to `CHANGES_REQUESTED`. If that state
+cannot be attributed or compensated safely, the review moves to
+`PUBLICATION_RECOVERY_REQUIRED` and requires explicit reconciliation. A crash
+after the Git commit and before database finalization is recovered only when the
+current main commit can be matched exactly to the durable `PUBLISHING` intent;
+otherwise reconciliation fails closed.
+
+Rollback is itself a new canonical publication. The managed repository creates
+a Git revert commit and the database appends a new `CorpusRevisionPublished`
+root event plus the same projection invalidation/update fanout, so derived state
+converges to the rollback revision through the normal durable lifecycle.
 
 ## Retrieval and ContextPacket
 
@@ -147,5 +173,5 @@ flowchart LR
   Config["Non-secret configuration"] --> Set
   Set --> Hash["Per-file SHA-256"]
   Hash --> Isolated["Isolated restore smoke"]
-  Isolated --> Checks["18-migration manifest + Git/MinIO archive (if configured)"]
+  Isolated --> Checks["Applied migration manifest + Git/MinIO integrity + rebuild checks"]
 ```

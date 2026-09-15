@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import path from "node:path";
 import { VaultRegistration } from "@akp/contracts";
 import {
+  intersectVaultPathPrefixes,
   pathMatchesVaultPrefix,
   registerVault,
   resolveAuthorizedVaultScope,
@@ -11,6 +12,7 @@ import {
   actorOf,
   audit,
   hasPathAccess,
+  pathPrefixesForPermission,
   hasUnrestrictedPathAccess,
   requirePermission,
   spaceIdsForPermission,
@@ -202,7 +204,12 @@ export function registerKnowledgeRoutes(
           [scope.spaces, scope.vaultIds],
         ),
         db.pool.query(
-          "select count(*)::int count from knowledge_units where space_id=any($1::uuid[]) and vault_id=any($2::uuid[])",
+          `select count(*)::int count
+             from knowledge_units u
+             join vault_index_revisions i
+               on i.space_id=u.space_id and i.vault_id=u.vault_id
+              and i.lexical_revision=u.corpus_revision
+            where u.space_id=any($1::uuid[]) and u.vault_id=any($2::uuid[])`,
           [scope.spaces, scope.vaultIds],
         ),
         db.pool.query(
@@ -484,23 +491,56 @@ export function registerKnowledgeRoutes(
       );
       if (!accessibleSeeds.length)
         return reply.code(404).send({ code: "DOCUMENT_NOT_FOUND" });
+      const vaultPathPrefix =
+        scope.accessByVault[String(accessibleSeeds[0].vault_id)]?.pathPrefix ??
+        null;
+      const effectivePathPrefixes = pathPrefixesForPermission(
+        actor,
+        String(accessibleSeeds[0].space_id),
+        "knowledge:read",
+      ).flatMap((actorPathPrefix) => {
+        const intersection = intersectVaultPathPrefixes(
+          actorPathPrefix,
+          vaultPathPrefix,
+        );
+        return intersection === undefined ? [] : [intersection ?? ""];
+      });
+      if (effectivePathPrefixes.length === 0) {
+        return reply.code(404).send({ code: "DOCUMENT_NOT_FOUND" });
+      }
       const result = await db.pool.query(
         `
         with recursive impact(depth, from_id, to_id, relation_type, trail) as (
           select 1, r.from_document_id, r.to_document_id, r.relation_type,
                  array[r.from_document_id, r.to_document_id]
             from knowledge_relations r
-           where (r.from_document_id = $1 or r.to_document_id = $1)
+           where r.from_document_id = $1
              and r.space_id=$3
              and exists (
                select 1 from knowledge_documents edge_from
                 where edge_from.id=r.from_document_id
-                  and edge_from.space_id=$3 and edge_from.vault_id=$4
+                   and edge_from.space_id=$3 and edge_from.vault_id=$4
+                   and edge_from.lifecycle in ('ACTIVE','DISPUTED')
+                   and edge_from.refresh_status not in ('STALE_BLOCKED','INVALID')
+                   and exists (
+                     select 1 from unnest($5::text[]) allowed(path_prefix)
+                      where allowed.path_prefix=''
+                         or edge_from.path=allowed.path_prefix
+                         or starts_with(edge_from.path,allowed.path_prefix || '/')
+                   )
              )
              and exists (
                select 1 from knowledge_documents edge_to
                 where edge_to.id=r.to_document_id
-                  and edge_to.space_id=$3 and edge_to.vault_id=$4
+                   and edge_to.space_id=$3 and edge_to.vault_id=$4
+                   and edge_to.lifecycle in ('ACTIVE','DISPUTED')
+                   and edge_to.refresh_status not in ('STALE_BLOCKED','INVALID')
+                   and exists (
+                     select 1 from unnest($5::text[]) allowed(path_prefix)
+                      where allowed.path_prefix=''
+                         or edge_to.path=allowed.path_prefix
+                         or starts_with(edge_to.path,allowed.path_prefix || '/')
+                   )
              )
           union all
           select i.depth + 1, r.from_document_id, r.to_document_id, r.relation_type,
@@ -512,12 +552,28 @@ export function registerKnowledgeRoutes(
              and exists (
                select 1 from knowledge_documents edge_from
                 where edge_from.id=r.from_document_id
-                  and edge_from.space_id=$3 and edge_from.vault_id=$4
+                   and edge_from.space_id=$3 and edge_from.vault_id=$4
+                   and edge_from.lifecycle in ('ACTIVE','DISPUTED')
+                   and edge_from.refresh_status not in ('STALE_BLOCKED','INVALID')
+                   and exists (
+                     select 1 from unnest($5::text[]) allowed(path_prefix)
+                      where allowed.path_prefix=''
+                         or edge_from.path=allowed.path_prefix
+                         or starts_with(edge_from.path,allowed.path_prefix || '/')
+                   )
              )
              and exists (
                select 1 from knowledge_documents edge_to
                 where edge_to.id=r.to_document_id
-                  and edge_to.space_id=$3 and edge_to.vault_id=$4
+                   and edge_to.space_id=$3 and edge_to.vault_id=$4
+                   and edge_to.lifecycle in ('ACTIVE','DISPUTED')
+                   and edge_to.refresh_status not in ('STALE_BLOCKED','INVALID')
+                   and exists (
+                     select 1 from unnest($5::text[]) allowed(path_prefix)
+                      where allowed.path_prefix=''
+                         or edge_to.path=allowed.path_prefix
+                         or starts_with(edge_to.path,allowed.path_prefix || '/')
+                   )
              )
         )
         select distinct i.depth, i.relation_type, d.id, d.external_id, d.path, d.title, d.type
@@ -525,12 +581,14 @@ export function registerKnowledgeRoutes(
           join knowledge_documents d on d.id = i.to_id
          where d.space_id=$3 and d.vault_id=$4
          order by i.depth, d.path
+         limit 500
         `,
         [
           accessibleSeeds[0].id,
           depth,
           accessibleSeeds[0].space_id,
           accessibleSeeds[0].vault_id,
+          effectivePathPrefixes,
         ],
       );
       return {

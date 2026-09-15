@@ -1,0 +1,228 @@
+name: scale-benchmark
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  postgres-scale:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [1000, 10000, 50000, 100000]
+    env:
+      DATABASE_URL: postgres://akp:akp@localhost:55432/akp
+      SCALE_TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - run: docker compose up -d --wait postgres
+      - run: pnpm db:migrate
+      - name: Execute PostgreSQL scale benchmark shard
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p reports/ci
+          pnpm benchmark:scale -- \
+            --output "reports/ci/load-scale-benchmark-${SCALE_TARGET}.json" \
+            --targets "${SCALE_TARGET}" \
+            --iterations 3 \
+            2>&1 | tee "reports/ci/load-scale-benchmark-${SCALE_TARGET}.log"
+      - name: Validate scale evidence shard
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const target = Number(process.env.SCALE_TARGET);
+          const report = JSON.parse(
+            readFileSync(`reports/ci/load-scale-benchmark-${target}.json`, "utf8"),
+          );
+          if (report.status !== "PASSED") {
+            throw new Error(`Scale benchmark status is ${report.status}, expected PASSED.`);
+          }
+          if (report.evidenceLevel !== "SYNTHETIC_ISOLATED_POSTGRES") {
+            throw new Error(`Unexpected evidence level: ${report.evidenceLevel}`);
+          }
+          if (report.coverageStatus !== "PARTIAL") {
+            throw new Error("Synthetic scale evidence must retain its PARTIAL boundary.");
+          }
+          if (!String(report.execution?.nodeVersion ?? "").startsWith("v24.")) {
+            throw new Error(`Scale benchmark did not execute on supported Node 24: ${report.execution?.nodeVersion}`);
+          }
+          if (JSON.stringify(report.execution?.targets) !== JSON.stringify([target])) {
+            throw new Error(`Unexpected scale target: ${JSON.stringify(report.execution?.targets)}`);
+          }
+          if (report.execution?.iterations !== 3) {
+            throw new Error(`Unexpected iteration count: ${report.execution?.iterations}`);
+          }
+          for (const key of ["targetRowsExact", "relationRowsExact", "fixtureScoped", "cleanupSucceeded"]) {
+            if (report.acceptance?.[key] !== true) {
+              throw new Error(`Scale acceptance failed: ${key}`);
+            }
+          }
+          if (report.cleanup?.succeeded !== true) {
+            throw new Error("Scale fixture cleanup was not proven.");
+          }
+          const results = Array.isArray(report.results) ? report.results : [];
+          if (results.length !== 1) {
+            throw new Error(`Expected one scale row for ${target}, got ${results.length}.`);
+          }
+          const row = results[0];
+          if (row.targetDocuments !== target || row.rows?.documents !== target || row.rows?.units !== target || row.rows?.embeddings !== target) {
+            throw new Error(`Scale row ${target} was not materialized exactly.`);
+          }
+          if (!Array.isArray(row.queryLatency) || row.queryLatency.length === 0) {
+            throw new Error(`Scale row ${target} lacks query-latency evidence.`);
+          }
+          console.log(JSON.stringify({
+            status: report.status,
+            node: report.execution.nodeVersion,
+            target,
+            iterations: report.execution.iterations,
+            cleanup: report.cleanup.succeeded,
+            coverage: report.coverageStatus,
+          }, null, 2));
+          NODE
+      - name: Capture scale diagnostics
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          mkdir -p reports/ci
+          docker compose ps --all > "reports/ci/scale-docker-compose-ps-${SCALE_TARGET}.txt" 2>&1
+          docker compose logs --no-color --timestamps postgres \
+            > "reports/ci/scale-postgres-${SCALE_TARGET}.log" 2>&1
+      - name: Upload scale shard evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: scale-benchmark-${{ github.run_id }}-${{ matrix.target }}
+          path: reports/ci
+          if-no-files-found: error
+          retention-days: 14
+      - name: Stop disposable services
+        if: always()
+        run: docker compose down -v --remove-orphans
+
+  aggregate-scale-evidence:
+    needs: postgres-scale
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download scale shard evidence
+        uses: actions/download-artifact@v7
+        with:
+          pattern: scale-benchmark-${{ github.run_id }}-*
+          path: reports/scale-shards
+          merge-multiple: true
+      - name: Validate and aggregate exact scale matrix
+        shell: bash
+        run: |
+          mkdir -p reports/ci
+          node --input-type=module <<'NODE'
+          import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+          import path from "node:path";
+
+          const expectedTargets = [1000, 10000, 50000, 100000];
+          const shardRoot = "reports/scale-shards";
+          const files = readdirSync(shardRoot)
+            .filter((name) => /^load-scale-benchmark-\d+\.json$/.test(name))
+            .sort((left, right) => Number(left.match(/\d+/)?.[0]) - Number(right.match(/\d+/)?.[0]));
+          if (files.length !== expectedTargets.length) {
+            throw new Error(`Expected ${expectedTargets.length} scale reports, got ${files.length}: ${files.join(", ")}`);
+          }
+
+          const reports = files.map((name) =>
+            JSON.parse(readFileSync(path.join(shardRoot, name), "utf8")),
+          );
+          const targets = reports.map((report) => report.execution?.targets?.[0]);
+          if (JSON.stringify(targets) !== JSON.stringify(expectedTargets)) {
+            throw new Error(`Scale matrix targets do not match the required set: ${JSON.stringify(targets)}`);
+          }
+          for (const report of reports) {
+            const target = report.execution.targets[0];
+            if (report.status !== "PASSED") throw new Error(`Scale shard ${target} did not pass.`);
+            if (report.evidenceLevel !== "SYNTHETIC_ISOLATED_POSTGRES") {
+              throw new Error(`Scale shard ${target} changed evidence level.`);
+            }
+            if (report.coverageStatus !== "PARTIAL") {
+              throw new Error(`Scale shard ${target} lost the PARTIAL evidence boundary.`);
+            }
+            if (!String(report.execution?.nodeVersion ?? "").startsWith("v24.")) {
+              throw new Error(`Scale shard ${target} did not run on Node 24.`);
+            }
+            if (report.execution?.iterations !== 3) {
+              throw new Error(`Scale shard ${target} did not retain three measured iterations.`);
+            }
+            for (const key of ["targetRowsExact", "relationRowsExact", "fixtureScoped", "cleanupSucceeded"]) {
+              if (report.acceptance?.[key] !== true) {
+                throw new Error(`Scale shard ${target} failed acceptance ${key}.`);
+              }
+            }
+            const row = report.results?.[0];
+            if (!row || row.targetDocuments !== target || row.rows?.documents !== target || row.rows?.units !== target || row.rows?.embeddings !== target) {
+              throw new Error(`Scale shard ${target} does not contain its exact materialized row.`);
+            }
+            if (!Array.isArray(row.queryLatency) || row.queryLatency.length === 0) {
+              throw new Error(`Scale shard ${target} lacks query-latency evidence.`);
+            }
+          }
+
+          const combined = {
+            schemaVersion: "akp.scale-benchmark-matrix.v1",
+            generatedAt: new Date().toISOString(),
+            status: "PASSED",
+            evidenceLevel: "SYNTHETIC_ISOLATED_POSTGRES",
+            coverageStatus: "PARTIAL",
+            execution: {
+              targets: expectedTargets,
+              iterationsPerTarget: 3,
+              nodeVersions: [...new Set(reports.map((report) => report.execution.nodeVersion))],
+              platforms: [...new Set(reports.map((report) => report.execution.platform))],
+              isolation: "one disposable PostgreSQL service per target shard",
+            },
+            acceptance: {
+              exactTargetSet: true,
+              allShardsPassed: true,
+              targetRowsExact: true,
+              relationRowsExact: true,
+              fixtureScoped: true,
+              cleanupSucceeded: true,
+            },
+            results: reports.map((report) => report.results[0]),
+            shards: reports.map((report) => ({
+              target: report.execution.targets[0],
+              generatedAt: report.generatedAt,
+              postgresVersion: report.execution.postgresVersion,
+              cleanup: report.cleanup,
+            })),
+            limitations: [
+              "Targets execute in separate disposable PostgreSQL services to bound CI wall-clock time; cross-target cache warming is intentionally not measured by the matrix.",
+              "Each shard remains synthetic isolated-PostgreSQL evidence and does not become a production capacity SLO.",
+            ],
+          };
+          writeFileSync("reports/ci/load-scale-benchmark.json", `${JSON.stringify(combined, null, 2)}\n`, "utf8");
+          console.log(JSON.stringify({
+            status: combined.status,
+            targets: combined.execution.targets,
+            iterationsPerTarget: combined.execution.iterationsPerTarget,
+            coverage: combined.coverageStatus,
+          }, null, 2));
+          NODE
+      - name: Upload consolidated scale evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: scale-benchmark-${{ github.run_id }}-consolidated
+          path: reports/ci/load-scale-benchmark.json
+          if-no-files-found: error
+          retention-days: 14

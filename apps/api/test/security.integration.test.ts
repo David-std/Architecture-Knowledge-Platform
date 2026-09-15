@@ -445,6 +445,125 @@ describe("API security boundaries", () => {
     }
   });
 
+  it("keeps impact traversal outbound and rejects unauthorized or inactive bridges at every hop", async () => {
+    const suffix = randomUUID();
+    const token = `akp-impact-scope-${suffix}`;
+    const hash = createHash("sha256").update(token).digest("hex");
+    const documentIds = {
+      seed: randomUUID(),
+      allowed: randomUUID(),
+      tail: randomUUID(),
+      privateBridge: randomUUID(),
+      privateTail: randomUUID(),
+      archivedBridge: randomUUID(),
+      archivedTail: randomUUID(),
+      incoming: randomUUID(),
+    };
+    const documents = [
+      ["seed", "shared/impact-seed", "ACTIVE"],
+      ["allowed", "shared/impact-allowed", "ACTIVE"],
+      ["tail", "shared/impact-tail", "ACTIVE"],
+      ["privateBridge", "private/impact-bridge", "ACTIVE"],
+      ["privateTail", "shared/private-tail", "ACTIVE"],
+      ["archivedBridge", "shared/archived-bridge", "ARCHIVED"],
+      ["archivedTail", "shared/archived-tail", "ACTIVE"],
+      ["incoming", "shared/impact-incoming", "ACTIVE"],
+    ] as const;
+    const relations = [
+      ["seed", "allowed"],
+      ["allowed", "tail"],
+      ["seed", "privateBridge"],
+      ["privateBridge", "privateTail"],
+      ["seed", "archivedBridge"],
+      ["archivedBridge", "archivedTail"],
+      ["incoming", "seed"],
+    ] as const;
+
+    await db.pool.query(
+      `insert into api_tokens(user_id,token_hash,label,scopes)
+       values($1,$2,'impact path-scope integration',$3::jsonb)`,
+      [
+        admin,
+        hash,
+        JSON.stringify({
+          spaces: [
+            {
+              spaceId: defaultSpace,
+              pathPrefix: "shared",
+              permissions: ["knowledge:read"],
+            },
+          ],
+        }),
+      ],
+    );
+    try {
+      for (const [key, pathPrefix, lifecycle] of documents) {
+        const id = documentIds[key];
+        const externalId = `IMPACT-${key}-${suffix}`;
+        const body = `Impact traversal fixture ${key}`;
+        await db.pool.query(
+          `insert into knowledge_documents(
+             id,space_id,vault_id,path,external_id,title,type,lifecycle,
+             trust_tier,current_revision,body_cache,frontmatter,aliases,layer,
+             content_hash,token_estimate,raw_links,refresh_status
+           ) values($1,$2,$3,$4,$5,$5,'note',$6,'HUMAN_REVIEWED','impact-scope',
+                    $7,'{}'::jsonb,'{}','concept',$8,4,'[]'::jsonb,'CURRENT')`,
+          [
+            id,
+            defaultSpace,
+            defaultVaultId,
+            `${pathPrefix}-${suffix}.md`,
+            externalId,
+            lifecycle,
+            body,
+            createHash("sha256").update(body).digest("hex"),
+          ],
+        );
+      }
+      for (const [from, to] of relations) {
+        await db.pool.query(
+          `insert into knowledge_relations(
+             space_id,from_document_id,to_document_id,relation_type,provenance
+           ) values($1,$2,$3,'requires','impact-scope-integration')`,
+          [defaultSpace, documentIds[from], documentIds[to]],
+        );
+      }
+
+      const response = await app.inject({
+        method: "GET",
+        url: `/v1/impact/${encodeURIComponent(documentIds.seed)}?depth=3`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(response.statusCode).toBe(200);
+      const impactedIds = response
+        .json()
+        .impacted.map((document: { id: string }) => document.id);
+      expect(impactedIds).toContain(documentIds.allowed);
+      expect(impactedIds).toContain(documentIds.tail);
+      expect(impactedIds).not.toContain(documentIds.incoming);
+      expect(impactedIds).not.toContain(documentIds.privateBridge);
+      expect(impactedIds).not.toContain(documentIds.privateTail);
+      expect(impactedIds).not.toContain(documentIds.archivedBridge);
+      expect(impactedIds).not.toContain(documentIds.archivedTail);
+      expect(new Set(impactedIds)).toEqual(
+        new Set([documentIds.allowed, documentIds.tail]),
+      );
+    } finally {
+      const ids = Object.values(documentIds);
+      await db.pool.query(
+        `delete from knowledge_relations
+          where from_document_id=any($1::uuid[])
+             or to_document_id=any($1::uuid[])`,
+        [ids],
+      );
+      await db.pool.query(
+        "delete from knowledge_documents where id=any($1::uuid[])",
+        [ids],
+      );
+      await db.pool.query("delete from api_tokens where token_hash=$1", [hash]);
+    }
+  });
+
   it("preserves a narrow token scope when it is exchanged for a web session", async () => {
     const suffix = randomUUID();
     const token = `akp-session-scope-${suffix}`;
@@ -1788,6 +1907,243 @@ describe("API security boundaries", () => {
         "delete from audit_events where resource_id=$1 and action like 'audit.export%'",
         [vaultId],
       );
+    }
+  });
+
+  it("persists consumable context continuations and re-authorizes them on every read", async () => {
+    const vaultId = randomUUID();
+    const packetToken = `akp-context-continuation-${randomUUID()}`;
+    const packetTokenHash = createHash("sha256")
+      .update(packetToken)
+      .digest("hex");
+    const packetHeaders = { authorization: `Bearer ${packetToken}` };
+    const marker = `continuationmarker${randomUUID().replaceAll("-", "")}`;
+    const documentIds = Array.from({ length: 6 }, () => randomUUID());
+    await db.pool.query(
+      `
+      insert into vaults(
+        id,space_id,canonical_path,name,read_only,current_revision,
+        vault_key,local_path,visibility,enabled
+      ) values($1,$2,$3,'Context continuation fixture',true,'fixture:context',
+               $4,$3,'PRIVATE',true)
+      `,
+      [
+        vaultId,
+        defaultSpace,
+        path.join(allowedRoot, `context-${vaultId}`),
+        `context-continuation-${vaultId.slice(0, 8)}`,
+      ],
+    );
+    await db.pool.query(
+      `
+      insert into vault_memberships(user_id,vault_id,role,path_prefix,permissions)
+      values($1,$2,'VIEWER',null,'["knowledge:read"]'::jsonb)
+      `,
+      [admin, vaultId],
+    );
+    await db.pool.query(
+      `
+      insert into api_tokens(user_id,token_hash,label,scopes)
+      values($1,$2,'context continuation fixture',$3::jsonb)
+      `,
+      [
+        admin,
+        packetTokenHash,
+        JSON.stringify({
+          spaces: [
+            {
+              spaceId: defaultSpace,
+              pathPrefix: "shared",
+              permissions: ["knowledge:read"],
+            },
+          ],
+        }),
+      ],
+    );
+    for (const [index, documentId] of documentIds.entries()) {
+      const body = `${marker} evidence ${index} `.repeat(80);
+      await db.pool.query(
+        `
+        insert into knowledge_documents(
+          id,space_id,vault_id,path,external_id,title,type,lifecycle,trust_tier,
+          current_revision,body_cache,frontmatter,aliases,layer,raw_links
+        ) values($1,$2,$3,$4,$5,$6,'concept','ACTIVE','HUMAN_REVIEWED',
+                 'fixture:context',$7,$8::jsonb,'{}'::text[],'concept','[]'::jsonb)
+        `,
+        [
+          documentId,
+          defaultSpace,
+          vaultId,
+          `shared/context-${index}.md`,
+          `CONTEXT-${index}-${vaultId}`,
+          `${marker} ${index}`,
+          body,
+          JSON.stringify({ id: `CONTEXT-${index}-${vaultId}` }),
+        ],
+      );
+    }
+    await db.pool.query(
+      `
+      insert into vault_index_revisions(
+        space_id,vault_id,corpus_revision,lexical_revision,graph_revision,
+        context_pack_revision,status,warnings
+      ) values($1,$2,'fixture:context','fixture:context','fixture:context',
+               'fixture:context','CONSISTENT','[]'::jsonb)
+      `,
+      [defaultSpace, vaultId],
+    );
+
+    try {
+      const built = await app.inject({
+        method: "POST",
+        url: "/v1/context",
+        headers: packetHeaders,
+        payload: {
+          query: marker,
+          intent: "CONCEPTUAL",
+          spaceId: defaultSpace,
+          vaultId,
+          packetMode: "COMPACT_AGENT_PACKET",
+          maxTokens: 1_500,
+        },
+      });
+      expect(built.statusCode, built.body).toBe(200);
+      const compact = built.json() as {
+        identity: { packetId: string };
+        continuations: Array<{ handle: string }>;
+      };
+      expect(compact.continuations.length).toBeGreaterThan(0);
+      const packetId = compact.identity.packetId;
+      const handle = compact.continuations.at(-1)?.handle;
+      expect(handle).toMatch(/^[a-f0-9]{64}$/);
+      if (!handle) throw new Error("Context continuation handle is missing");
+
+      const persisted = await db.pool.query(
+        `select count(*)::int count
+           from context_packet_continuations
+          where packet_id=$1 and handle=$2`,
+        [packetId, handle],
+      );
+      expect(persisted.rows[0]?.count).toBe(1);
+
+      const detail = await app.inject({
+        method: "GET",
+        url: `/v1/generated-context-packets/${packetId}`,
+        headers: packetHeaders,
+      });
+      expect(detail.statusCode, detail.body).toBe(200);
+      expect(detail.json()).toMatchObject({
+        packetMode: "FULL_CONTEXT_PACKET",
+        packetId,
+      });
+
+      const continuation = await app.inject({
+        method: "GET",
+        url: `/v1/generated-context-packets/${packetId}/continuations/${handle}`,
+        headers: packetHeaders,
+      });
+      expect(continuation.statusCode, continuation.body).toBe(200);
+      expect(continuation.json()).toMatchObject({
+        packetId,
+        continuation: { handle },
+      });
+      expect(continuation.json().sections.length).toBeGreaterThan(0);
+      expect(
+        continuation
+          .json()
+          .sections.every((section: { document: { path: string } }) =>
+            section.document.path.startsWith("shared/"),
+          ),
+      ).toBe(true);
+
+      const continuedDocumentId = continuation.json().sections[0]
+        ?.documentId as string;
+      await db.pool.query(
+        "update knowledge_documents set lifecycle='ARCHIVED' where id=$1",
+        [continuedDocumentId],
+      );
+      const archivedContinuation = await app.inject({
+        method: "GET",
+        url: `/v1/generated-context-packets/${packetId}/continuations/${handle}`,
+        headers: packetHeaders,
+      });
+      expect(archivedContinuation.statusCode).toBe(404);
+      await db.pool.query(
+        "update knowledge_documents set lifecycle='ACTIVE',trust_tier='UNVERIFIED' where id=$1",
+        [continuedDocumentId],
+      );
+      const downgradedContinuation = await app.inject({
+        method: "GET",
+        url: `/v1/generated-context-packets/${packetId}/continuations/${handle}`,
+        headers: packetHeaders,
+      });
+      expect(downgradedContinuation.statusCode).toBe(404);
+      await db.pool.query(
+        "update knowledge_documents set trust_tier='HUMAN_REVIEWED',current_revision='fixture:changed' where id=$1",
+        [continuedDocumentId],
+      );
+      const staleContinuation = await app.inject({
+        method: "GET",
+        url: `/v1/generated-context-packets/${packetId}/continuations/${handle}`,
+        headers: packetHeaders,
+      });
+      expect(staleContinuation.statusCode).toBe(404);
+      await db.pool.query(
+        "update knowledge_documents set current_revision='fixture:context' where id=$1",
+        [continuedDocumentId],
+      );
+
+      await db.pool.query(
+        `update api_tokens
+            set scopes=$2::jsonb
+          where token_hash=$1`,
+        [
+          packetTokenHash,
+          JSON.stringify({
+            spaces: [
+              {
+                spaceId: defaultSpace,
+                pathPrefix: "revoked-scope",
+                permissions: ["knowledge:read"],
+              },
+            ],
+          }),
+        ],
+      );
+      const deniedContinuation = await app.inject({
+        method: "GET",
+        url: `/v1/generated-context-packets/${packetId}/continuations/${handle}`,
+        headers: packetHeaders,
+      });
+      expect(deniedContinuation.statusCode).toBe(404);
+      expect(deniedContinuation.json()).toMatchObject({
+        code: "CONTEXT_CONTINUATION_NOT_FOUND",
+      });
+      const deniedDetail = await app.inject({
+        method: "GET",
+        url: `/v1/generated-context-packets/${packetId}`,
+        headers: packetHeaders,
+      });
+      expect(deniedDetail.statusCode).toBe(404);
+    } finally {
+      await db.pool.query("delete from context_packets where vault_id=$1", [
+        vaultId,
+      ]);
+      await db.pool.query(
+        "delete from vault_index_revisions where vault_id=$1",
+        [vaultId],
+      );
+      await db.pool.query(
+        "delete from knowledge_documents where id=any($1::uuid[])",
+        [documentIds],
+      );
+      await db.pool.query("delete from api_tokens where token_hash=$1", [
+        packetTokenHash,
+      ]);
+      await db.pool.query("delete from vault_memberships where vault_id=$1", [
+        vaultId,
+      ]);
+      await db.pool.query("delete from vaults where id=$1", [vaultId]);
     }
   });
 });

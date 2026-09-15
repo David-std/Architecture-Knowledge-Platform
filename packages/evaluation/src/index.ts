@@ -8,6 +8,7 @@ export * from "./dataset.js";
 export * from "./benchmark.js";
 export * from "./offline.js";
 export * from "./curated.js";
+export * from "./agent-ab.js";
 
 export interface RetrievalMetrics {
   recallAtK: number;

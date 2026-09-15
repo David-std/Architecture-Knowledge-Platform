@@ -1,9 +1,10 @@
 # Local operations runbook
 
-## Start infrastructure and verify dependencies
+## Start infrastructure
 
 ```powershell
 Copy-Item .env.example .env
+pnpm install --frozen-lockfile --strict-peer-dependencies
 docker compose up -d --build --wait postgres minio extractor
 pnpm db:migrate
 pnpm verify:runtime
@@ -21,11 +22,10 @@ pnpm --filter @akp/worker dev
 pnpm --filter @akp/web dev
 ```
 
-`/health/liveness` confirms the API process. `/health/readiness` checks
-PostgreSQL, MinIO and the extractor. Local infrastructure binds to loopback by
-default.
+`/health/liveness` confirms the API process. `/health/readiness` checks required
+runtime dependencies. Development infrastructure binds to loopback by default.
 
-## Provision automation credentials and use a browser session
+## Provision scoped credentials
 
 ```powershell
 $env:AKP_API_TOKEN = '<private-random-token-at-least-24-characters>'
@@ -33,82 +33,71 @@ $env:AKP_API_TOKEN_SCOPES = '{"spaces":[{"spaceId":"00000000-0000-0000-0000-0000
 pnpm auth:provision
 ```
 
-`AKP_API_TOKEN_SCOPES` is required and must contain at least one explicit
-`spaces` entry. Each entry has a UUID `spaceId`, an explicit `pathPrefix`
-(`null` means the whole space; a relative path such as `shared` limits access),
-and one or more supported permissions. Re-run `pnpm auth:provision` after
-changing the scope profile; provisioning replaces the token's persisted scope
+`AKP_API_TOKEN_SCOPES` must contain explicit space entries. A `pathPrefix` may
+be `null` only when the token genuinely needs whole-space access. Evaluation,
+administration and rebuild operations that aggregate a full space require a
+whole-space grant; do not give `admin` to a path-scoped token.
+
+MCP, CLI and automation use the bearer token. The Web UI exchanges it at
+`/login` for an opaque HttpOnly session and paired CSRF boundary. Current
+membership and path scope are re-evaluated rather than trusting a stale client
 snapshot.
 
-Use a least-privilege profile appropriate to the operation:
+## Import and inspect a vault
 
-| Profile | `pathPrefix`              | Permissions                                                                                                   | Typical use                               |
-| ------- | ------------------------- | ------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
-| read    | a relative path or `null` | `knowledge:read`, `source:read`                                                                               | Search, context and source inspection     |
-| eval    | `null`                    | read permissions plus `eval:run`                                                                              | Evaluation, benchmark and lint operations |
-| admin   | `null`                    | `knowledge:read`, `source:read`, `source:write`, `knowledge:propose`, `knowledge:review`, `eval:run`, `admin` | Schema governance, audit and reindex      |
-
-Evaluation and administration routes that aggregate or rebuild a space require
-whole-space access (`pathPrefix: null`). Do not grant `admin` to a path-scoped
-token.
-
-For MCP, CLI and automation, send the bearer token in `Authorization`. For the
-Web UI, open `/login` and exchange it for an opaque HttpOnly session. The API
-stores session/CSRF hashes plus the effective scope snapshot and intersects that
-snapshot with current memberships on every request. Session writes require
-`X-CSRF-Token`. Revoke with `POST /v1/auth/session/revoke`.
-
-## Import and inspect the external vault
+The operator supplies the vault path. No personal corpus or workstation path is
+a platform default.
 
 ```powershell
+$env:AKP_VAULT_PATH = 'D:\Knowledge\my-vault'
+
 pnpm akp vault import `
-  --vault-path C:\Users\david\Documents\Architecture-Knowledge-System `
+  --vault-path $env:AKP_VAULT_PATH `
   --read-only `
   --report-dir reports\migration
+
 pnpm akp vault status `
-  --vault-path C:\Users\david\Documents\Architecture-Knowledge-System
+  --vault-path $env:AKP_VAULT_PATH
 ```
 
-The migration report records one historical import and its warnings. Treat its
-file, document and relation counts as dated provenance, not as current product
-requirements. The bootstrap verifier checks schema, isolation and lineage
-regardless of corpus size; populated thresholds are opt-in. Do not convert
-vault warnings into invented targets or agent instructions.
+On other platforms use the equivalent `<path-to-your-vault>`. Import is
+read-only. Treat import counts and warnings as observations about that corpus,
+not product invariants, and never invent targets for unresolved links.
 
 ## Submit and monitor a source
 
-The submitted path must be under an `AKP_INGEST_ROOTS` entry. The API creates a
-durable job; the worker stores the object by SHA-256 and transfers the immutable
-bytes to the extractor through authenticated multipart with an expected hash.
+Submitted paths must be under an `AKP_INGEST_ROOTS` entry. The API creates a
+durable job; raw bytes are stored content-addressed and extraction verifies the
+immutable source hash before derived work continues.
 
-Use `GET /v1/ingest/:id` or the `/jobs/:id` page to inspect transitions. An
-expired lease is reclaimable; a live worker renews its lease every third of the
-lease interval. Cancel/retry through the API rather than editing database job
-state.
+Use `GET /v1/ingest/:id` or the `/jobs/:id` operator page to inspect state,
+attempts, retry/lease data, provider correlation and failures. Retry or cancel
+through supported APIs rather than editing job tables directly.
 
-Check extractor capability truth at:
+Inspect extractor/provider capability truth at runtime:
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8090/v1/capabilities
 ```
 
-Text/Markdown, PDF, captured HTML, image metadata, DOCX and PPTX are configured.
-OCR/vision, audio and video return `CAPABILITY_NOT_CONFIGURED`.
+Provider availability is configuration-dependent. Deterministic parsing remains
+a fallback; optional structured/OCR/multimedia providers must report explicit
+availability or degradation rather than fabricated results.
 
 ## Search and build bounded context
 
 ```powershell
 $env:AKP_API_URL = 'http://127.0.0.1:8080'
-pnpm akp search 'hexagonal architecture boundary'
-pnpm akp context 'choose architecture for volatile integrations'
+pnpm akp search 'exact identifier or knowledge question'
+pnpm akp context 'question that needs evidence and policy context'
 ```
 
-The 19-case synthetic and 13-case curated-fixture runners do not select a
-production default. Inspect the packet revision, channels, selection reasons,
-citations, conflicts and gaps before using it as authority. Follow continuation
-handles rather than loading the whole vault.
+Inspect requested/effective channels, degradation warnings, packet revision,
+selection reasons, citations, conflicts and gaps. Follow continuation handles
+rather than loading an entire vault. A missing semantic/optional provider should
+degrade explicitly while permitted deterministic channels continue.
 
-## Rebuild derived indexes
+## Rebuild derived projections
 
 ```powershell
 $spaceId = '00000000-0000-0000-0000-000000000003'
@@ -125,15 +114,21 @@ Invoke-RestMethod -Method Post -ContentType application/json -Body $body `
   -Headers $headers -Uri "$env:AKP_API_URL/v1/reindex"
 ```
 
-The caller must use an admin token with `pathPrefix: null` for `$spaceId`. The
-confirmation must be `REBUILD_DERIVED_PROJECTIONS` when `reimportVault` is false
-or omitted. To import the configured vault before rebuilding, set
-`reimportVault = $true` and use `confirm = 'REIMPORT_AND_REBUILD'`.
+Use an admin token with `pathPrefix: null` for the target space. Rebuild is an
+explicit repair operation; normal publication and rollback use durable
+incremental projection events. Inspect revision parity through the index/health
+surfaces after completion.
 
-The response reports `status`, `imports`, `relationCount`, `projection` and
-`lint`. Read the resulting lexical/vector/graph/context-pack revision markers
-separately with `GET /v1/indexes`; vector-disabled degradation is expected until
-a larger benchmark justifies activation.
+## Review and publication recovery
+
+Generated/provider output is candidate material only. Inspect evidence,
+compilation candidates, contradictions, probes and diff before approval. Direct
+model publication is forbidden.
+
+If publication is interrupted between Git and PostgreSQL, use the supported
+review reconciliation operation. Do not manually guess or rewrite an ambiguous
+main revision. Recovery is idempotent and fails closed when attribution is not
+safe.
 
 ## Schema, lint, Error Book and audit
 
@@ -142,69 +137,59 @@ pnpm akp schema dry-run --version 1.1 --require id type status
 pnpm akp lint run --trigger MANUAL
 ```
 
-Schema dry-run opens a repeatable read-only transaction, fingerprints the
-corpus before and after, reports compatibility/affected documents and persists
-the report. It does not apply the schema. The worker runs scheduled lint;
-merge, source update and reindex also invoke deterministic lint.
+Schema dry-run is read-only. Error Book entries can become regression evals;
+audit views remain scope-controlled. Resolve recurring failures only after
+verification evidence exists.
 
-Create recurring failures through `/v1/error-book`, turn them into active evals
-with `/v1/error-book/:id/regression`, then resolve only with a verification
-result. Administrators inspect space-scoped events at `/admin/audit` or
-`GET /v1/audit-events`.
-
-## Backup and isolated restore
+## Backup and managed-Git restore
 
 ```powershell
-$env:AKP_MANAGED_REPO = 'C:\path\to\managed-knowledge'
+$env:AKP_MANAGED_REPO = 'D:\AKP\managed-knowledge'
 & .\scripts\backup.ps1 -OutputDirectory backups\release-candidate
 & .\scripts\restore-smoke.ps1 -BackupDirectory backups\release-candidate
+& .\scripts\verify-managed-git-restore.ps1 `
+  -BackupDirectory backups\release-candidate `
+  -SourceManagedRepository $env:AKP_MANAGED_REPO `
+  -SpaceId 00000000-0000-0000-0000-000000000003
 ```
 
-The set contains a PostgreSQL custom dump, MinIO data archive, managed Git
-bundle when configured and non-secret configuration metadata. Each file is
-SHA-256 listed in `manifest.json`. Restore smoke uses isolated resources and
-never overwrites the active environment.
+The backup set contains PostgreSQL, MinIO data and a managed Git bundle when
+configured, plus non-secret metadata. Restore verification uses isolated
+resources, checks the bundle in a newly cloned repository, verifies its expected
+main commit/files and proves that searchable derived state can be rebuilt.
 
-The 2026-08-28 v3 smoke restored all 18 migrations, one fixture document and 15
-MinIO files into isolated resources. A second backup/restore of a newly
-migrated empty database restored zero documents successfully. These are
-fixture-run counts, not claims about an external vault.
+## Open an imported vault in Obsidian
 
-## Final release gate
+Choose **Open folder as vault** and select the same operator-provided
+`<path-to-your-vault>`. Platform import remains read-only. Do not copy runtime
+indexes, jobs, secrets or raw object storage into that folder.
+
+## Repository gate before review or release
 
 ```powershell
 pnpm install --frozen-lockfile --strict-peer-dependencies
 pnpm audit --audit-level high
+pnpm format:check
 pnpm security:secrets
 pnpm contracts:validate
 pnpm docs:validate
-pnpm format:check
+pnpm hygiene:validate
 pnpm check
 pnpm build
 pnpm test:integration
 pnpm verify:runtime
 pnpm test:mcp
-pnpm benchmark:retrieval:offline
-pnpm benchmark:retrieval:curated
-pnpm benchmark:scale -- --targets 1000,10000,50000,100000 --iterations 3
 
 Push-Location apps/extractor
-python -m ruff check --no-cache .
-python -m mypy app
-python -m pytest -p no:cacheprovider
+uv sync --locked
+uv run --locked ruff check --no-cache .
+uv run --locked mypy app
+uv run --locked pytest -p no:cacheprovider
 Pop-Location
 
 docker compose config --quiet
 git diff --check
 ```
 
-The current integration suite covers security/governance and
-review-publication; record its exact final count together with the clean
-formatting gate before committing or tagging a new baseline.
-
-## Open the vault in Obsidian
-
-In Obsidian choose **Open folder as vault**, select
-`C:\Users\david\Documents\Architecture-Knowledge-System`, then open its
-`README.md`. Platform import remains read-only. Do not copy runtime indexes,
-jobs, secrets or raw object storage into that folder.
+Broad retrieval/document/agent/load comparisons are final validation evidence,
+not a reason to weaken focused correctness gates.

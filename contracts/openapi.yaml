@@ -160,9 +160,33 @@ paths:
                     oneOf:
                       - type: "null"
                       - type: object
-                        required: [reason, guidance]
+                        required:
+                          [
+                            status,
+                            reason,
+                            searchedChannels,
+                            gaps,
+                            conflicts,
+                            recommendedActions,
+                            guidance,
+                          ]
                         properties:
+                          status:
+                            type: string
+                            enum: [INSUFFICIENT_KNOWLEDGE]
                           reason: { type: string }
+                          searchedChannels:
+                            type: array
+                            items: { type: string }
+                          gaps:
+                            type: array
+                            items: { type: string }
+                          conflicts:
+                            type: array
+                            items: { type: string }
+                          recommendedActions:
+                            type: array
+                            items: { type: string }
                           guidance: { type: string }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
@@ -182,6 +206,10 @@ paths:
                 - type: object
                   properties:
                     intent: { type: string }
+                    packetMode:
+                      type: string
+                      enum: [FULL_CONTEXT_PACKET, COMPACT_AGENT_PACKET]
+                      default: FULL_CONTEXT_PACKET
                     maxTokens:
                       {
                         type: integer,
@@ -199,6 +227,12 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "422":
+          description: Requested token budget cannot represent the context packet envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContextPacketBudgetError"
 
   /v1/sessions:
     get:
@@ -1300,6 +1334,20 @@ components:
       properties:
         code: { type: string }
       additionalProperties: true
+    ContextPacketBudgetError:
+      type: object
+      additionalProperties: false
+      required: [code, maxTokens, requiredTokens]
+      properties:
+        code:
+          type: string
+          const: CONTEXT_PACKET_BUDGET_TOO_SMALL
+        maxTokens:
+          type: integer
+          minimum: 1
+        requiredTokens:
+          type: integer
+          minimum: 1
     Health:
       type: object
       required: [status]
@@ -1323,11 +1371,70 @@ components:
     Lifecycle:
       type: string
       enum: [DRAFT, ACTIVE, DISPUTED, SUPERSEDED, ARCHIVED, DELETED_TOMBSTONE]
+    GraphRelationType:
+      type: string
+      enum:
+        [
+          derives_from,
+          supports,
+          contradicts,
+          supersedes,
+          implements,
+          applies_to,
+          example_of,
+          counterexample_of,
+          uses,
+          requires,
+          validated_by,
+          produces,
+          consumed_by,
+          related_to,
+        ]
+    GraphPathNode:
+      type: object
+      additionalProperties: false
+      required: [documentId, document]
+      properties:
+        documentId: { type: string, format: uuid }
+        document: { type: string, minLength: 1 }
+        relation: { $ref: "#/components/schemas/GraphRelationType" }
+        direction:
+          type: string
+          enum: [outgoing, incoming]
+    GraphPathProvenance:
+      type: object
+      additionalProperties: false
+      required:
+        [channel, seedDocumentId, targetDocumentId, path, hops, graphScore]
+      properties:
+        channel: { type: string, const: graph }
+        seedDocumentId: { type: string, format: uuid }
+        targetDocumentId: { type: string, format: uuid }
+        path:
+          type: array
+          minItems: 2
+          items: { $ref: "#/components/schemas/GraphPathNode" }
+        hops: { type: integer, minimum: 1 }
+        graphScore: { type: number, minimum: 0 }
     SearchRequest:
       type: object
       required: [query, spaceId]
       properties:
         query: { type: string, minLength: 1 }
+        intent:
+          type: string
+          enum:
+            [
+              EXACT_LOOKUP,
+              CONCEPTUAL,
+              COMPARISON,
+              WORKFLOW_EXECUTION,
+              SOURCE_VERIFICATION,
+              PROJECT_CODE,
+              GLOBAL_SYNTHESIS,
+              IMPACT_ANALYSIS,
+              NO_RETRIEVAL_REQUIRED,
+            ]
         organizationId: { type: string, format: uuid }
         spaceId: { type: string, format: uuid }
         vaultId: { type: string, format: uuid }
@@ -1365,6 +1472,7 @@ components:
         [
           documentId,
           vaultId,
+          document,
           revision,
           title,
           type,
@@ -1381,9 +1489,20 @@ components:
         unitId: { type: string, format: uuid }
         unitType: { type: string }
         parentUnitId: { type: string, format: uuid }
+        parentUnitType: { type: string }
+        headingPath:
+          type: array
+          items: { type: string }
         parentContext:
           type: string
           description: Bounded structural parent context; never the full dossier container.
+        document:
+          type: object
+          required: [externalId, path, title]
+          properties:
+            externalId: { type: [string, "null"] }
+            path: { type: string }
+            title: { type: string }
         revision: { type: string }
         title: { type: string }
         type: { type: string }
@@ -1393,6 +1512,17 @@ components:
         reasons:
           type: array
           items: { type: string }
+        fusionContributions:
+          type: array
+          items:
+            type: object
+            required: [channel, rank, channelWeight, reason]
+            properties:
+              channel: { type: string }
+              rank: { type: integer, minimum: 1 }
+              channelWeight: { type: number, minimum: 0 }
+              reason: { type: string }
+              candidateRevision: { type: [string, "null"] }
         excerpt: { type: string }
         citations:
           type: array
@@ -1400,6 +1530,9 @@ components:
         warnings:
           type: array
           items: { type: string }
+        graphProvenance:
+          type: array
+          items: { $ref: "#/components/schemas/GraphPathProvenance" }
     IngestRequest:
       type: object
       required: [spaceId, vaultId, sourceUri]

@@ -4,7 +4,7 @@ import path from "node:path";
 import process from "node:process";
 
 const root = path.resolve(import.meta.dirname, "..");
-const classificationPath = "REPOSITORY_FILE_CLASSIFICATION.json";
+const classificationPath = "reports/repository-file-classification.json";
 const categories = new Set([
   "PRODUCT_CODE",
   "PRODUCT_CONTRACT",
@@ -13,12 +13,44 @@ const categories = new Set([
   "PRODUCT_DOCUMENTATION",
   "MIGRATION",
   "FIXTURE_GENERIC",
-  "FIXTURE_VAULT_SPECIFIC",
   "GENERATED_CANONICAL",
-  "GENERATED_EPHEMERAL",
-  "TEMPORARY_ITERATION_ARTIFACT",
-  "OBSOLETE",
   "UNKNOWN",
+]);
+
+const allowedRootFiles = new Set([
+  ".env.example",
+  ".gitattributes",
+  ".gitignore",
+  ".prettierignore",
+  ".prettierrc.json",
+  "AGENTS.md",
+  "ARCHITECTURE.md",
+  "CHANGELOG.md",
+  "CONTRIBUTING.md",
+  "LICENSE",
+  "LICENSE.md",
+  "README.md",
+  "dependency-cruiser.cjs",
+  "docker-compose.yml",
+  "package.json",
+  "pnpm-lock.yaml",
+  "pnpm-workspace.yaml",
+  "tsconfig.base.json",
+  "turbo.json",
+]);
+const allowedRootDirectories = new Set([
+  ".github",
+  "apps",
+  "contracts",
+  "db",
+  "docs",
+  "evals",
+  "ops",
+  "packages",
+  "policies",
+  "reports",
+  "scripts",
+  "test",
 ]);
 
 function repositoryFiles() {
@@ -31,53 +63,28 @@ function repositoryFiles() {
     .split(/\r?\n/)
     .map((file) => file.replaceAll("\\", "/"))
     .filter(Boolean)
-    // `git ls-files --cached` also reports an unstaged deletion. A deleted
-    // path is not a repository artifact and must not make the generated
-    // inventory stale while a cleanup change is being reviewed.
     .filter((file) => existsSync(path.join(root, file)));
-  if (!files.includes(classificationPath)) files.push(classificationPath);
   return [...new Set(files)].sort((left, right) => left.localeCompare(right));
 }
 
 function classify(file) {
   if (file === classificationPath) {
-    return ["GENERATED_CANONICAL", "deterministic repository inventory"];
-  }
-  if (
-    file === "REPOSITORY_HYGIENE_REPORT.md" ||
-    file === "GENERICITY_AUDIT.md"
-  ) {
-    return ["PRODUCT_DOCUMENTATION", "canonical hygiene or genericity report"];
+    return ["GENERATED_CANONICAL", "generated repository inventory"];
   }
   if (/^db\/migrations\/\d+_.+\.sql$/.test(file)) {
     return ["MIGRATION", "append-only database migration"];
   }
   if (/^evals\/generic\//.test(file)) {
-    return ["PRODUCT_EVAL", "generic product evaluation"];
+    return ["PRODUCT_EVAL", "corpus-agnostic product evaluation"];
   }
-  if (/^evals\/fixtures\/architecture-knowledge-system\//.test(file)) {
-    return [
-      "FIXTURE_VAULT_SPECIFIC",
-      "Architecture Knowledge System eval pack",
-    ];
+  if (/^evals\/registered\//.test(file)) {
+    return ["PRODUCT_EVAL", "versioned registered product evaluation"];
   }
   if (/^evals\/schemas\//.test(file)) {
     return ["PRODUCT_CONTRACT", "evaluation case schema contract"];
   }
-  if (
-    /^evals\/fixtures\//.test(file) ||
-    /^test\/fixtures\/synthetic/.test(file)
-  ) {
-    return ["FIXTURE_GENERIC", "portable synthetic fixture"];
-  }
-  if (/^test\/fixtures\//.test(file)) {
-    return ["FIXTURE_GENERIC", "generic integration fixture"];
-  }
-  if (/^docs\/archive\/iterations\//.test(file)) {
-    return [
-      "OBSOLETE",
-      "archived iteration record excluded from normal retrieval",
-    ];
+  if (/^evals\/fixtures\//.test(file) || /^test\/fixtures\//.test(file)) {
+    return ["FIXTURE_GENERIC", "portable test or evaluation fixture"];
   }
   if (
     /(^|\/)(test|tests)\//.test(file) ||
@@ -90,17 +97,14 @@ function classify(file) {
     return ["PRODUCT_CONTRACT", "versioned interface or dependency contract"];
   }
   if (/^reports\//.test(file)) {
-    return ["GENERATED_CANONICAL", "canonical reproducible report"];
+    return ["GENERATED_CANONICAL", "reproducible product report"];
   }
   if (
-    /^(?:docs\/|README\.md$|AGENTS\.md$|ARCHITECTURE\.md$|CONTRIBUTING\.md$)/.test(
-      file,
-    ) ||
-    /(?:_REPORT|_AUDIT|_BENCHMARK|_STATE|_LOG|_MATRIX|_GAPS|TRACEABILITY|CHANGELOG)\.md$/.test(
+    /^(?:docs\/|README\.md$|AGENTS\.md$|ARCHITECTURE\.md$|CONTRIBUTING\.md$|CHANGELOG\.md$)/.test(
       file,
     )
   ) {
-    return ["PRODUCT_DOCUMENTATION", "canonical product documentation"];
+    return ["PRODUCT_DOCUMENTATION", "product documentation"];
   }
   if (
     /^(?:apps|packages|scripts)\//.test(file) ||
@@ -111,7 +115,7 @@ function classify(file) {
     return ["PRODUCT_CODE", "runtime, build or operational code"];
   }
   if (
-    /^(?:policies\/|\.github\/|\.env\.example$|\.gitattributes$|\.gitignore$|\.prettierignore$|\.prettierrc\.json$|package\.json$|pnpm-workspace\.yaml$)/.test(
+    /^(?:ops\/|policies\/|\.github\/|\.env\.example$|\.gitattributes$|\.gitignore$|\.prettierignore$|\.prettierrc\.json$|package\.json$|pnpm-workspace\.yaml$|LICENSE(?:\.md)?$)/.test(
       file,
     )
   ) {
@@ -137,11 +141,54 @@ const iterationResidue = [
   /_HANDOFF_TEMP\.md$/i,
   /^IMPLEMENTATION_NOTES_.*\.md$/i,
 ];
+const constructionDocumentName =
+  /^(?:COMPETITIVE_AUDIT|DOCUMENT_INTELLIGENCE_BENCHMARK|EVENT_DRIVEN_VALIDATION_REPORT|GENERICITY_AUDIT|IMPLEMENTATION_REPORT|MIGRATION_REPORT|PROJECT_STATE|REMAINING_REAL_GAPS|REPOSITORY_HYGIENE_REPORT|RESEARCH_LOG|RETRIEVAL_BENCHMARK|SECURITY_REPORT|TRACEABILITY|VALIDATION_REPORT)\.md$/i;
+const phasePathToken = /(?:^|[\/_.-])p\d+(?=$|[\/_.-])/i;
+const phaseLabel = /\bP\d{1,2}\b/;
+function activeGuidanceOrAutomation(file) {
+  if (/^(?:README|AGENTS|ARCHITECTURE|CONTRIBUTING|CHANGELOG)\.md$/.test(file))
+    return true;
+  if (/^docs\/.*\.md$/.test(file)) return true;
+  if (file === ".env.example" || file === "docker-compose.yml") return true;
+  if (/^(?:\.github|ops|policies)\/.*\.(?:md|json|ya?ml)$/.test(file))
+    return true;
+  if (/^scripts\/.*\.(?:mjs|cjs|js|ts|ps1|py|sh)$/.test(file)) return true;
+  return false;
+}
 
-const retiredRootReports = new Set([
-  "RESEARCH_ADOPTION_MATRIX.md",
-  "RESIDUAL_ARTIFACTS_REPORT.md",
-]);
+function normalizedPathText(content) {
+  let normalized = content;
+  while (normalized.includes("\\\\")) {
+    normalized = normalized.replaceAll("\\\\", "\\");
+  }
+  return normalized;
+}
+
+function portabilityFailures(file, content) {
+  const normalized = normalizedPathText(content);
+  const failures = [];
+  if (/\b[A-Za-z]:\\Users\\[^\\\r\n]+\\/i.test(normalized))
+    failures.push(`PERSONAL_WINDOWS_PATH ${file}`);
+  if (/\/Users\/[^/\s]+(?:\/|$)/i.test(normalized))
+    failures.push(`PERSONAL_MAC_PATH ${file}`);
+  for (const match of normalized.matchAll(/\/home\/([^/\s]+)(?:\/|$)/gi)) {
+    const user = String(match[1]).toLowerCase();
+    if (!["node", "runner", "root", "postgres", "app"].includes(user)) {
+      failures.push(`PERSONAL_LINUX_PATH ${file}`);
+      break;
+    }
+  }
+  if (/\bfile:\/\//i.test(normalized))
+    failures.push(`FILE_URI_IN_GUIDANCE_OR_AUTOMATION ${file}`);
+  return failures;
+}
+
+function isTextCandidate(file) {
+  return (
+    /\.(?:[cm]?[jt]sx?|json|ya?ml|md|sql|py|ps1|sh|txt)$/.test(file) ||
+    file === ".env.example"
+  );
+}
 
 const files = repositoryFiles();
 const entries = files.map((file) => {
@@ -149,57 +196,68 @@ const entries = files.map((file) => {
   return { path: file, category, reason };
 });
 const failures = [];
+
 for (const entry of entries) {
-  if (!categories.has(entry.category) || entry.category === "UNKNOWN") {
+  if (!categories.has(entry.category) || entry.category === "UNKNOWN")
     failures.push(`UNCLASSIFIED ${entry.path}`);
+
+  const [rootEntry] = entry.path.split("/", 1);
+  if (!entry.path.includes("/")) {
+    if (!allowedRootFiles.has(entry.path))
+      failures.push(`ROOT_FILE_NOT_ALLOWED ${entry.path}`);
+  } else if (!allowedRootDirectories.has(rootEntry)) {
+    failures.push(`ROOT_DIRECTORY_NOT_ALLOWED ${rootEntry}`);
   }
+
   const name = path.posix.basename(entry.path);
-  const archived = entry.path.startsWith("docs/archive/iterations/");
-  if (!archived && iterationResidue.some((pattern) => pattern.test(name))) {
+  if (iterationResidue.some((pattern) => pattern.test(name)))
     failures.push(`ITERATION_RESIDUE ${entry.path}`);
-  }
-  if (!archived && retiredRootReports.has(entry.path)) {
-    failures.push(`RETIRED_ROOT_REPORT ${entry.path}`);
+  if (constructionDocumentName.test(name))
+    failures.push(`CONSTRUCTION_DOCUMENT ${entry.path}`);
+  if (/^docs\/(?:archive|assurance\/archive)\//.test(entry.path))
+    failures.push(`CONSTRUCTION_ARCHIVE_IN_PRODUCT_TREE ${entry.path}`);
+  if (
+    entry.path.startsWith("docs/assurance/") &&
+    entry.path !== "docs/assurance/README.md" &&
+    !/^docs\/assurance\/releases\/v\d+\.\d+\.\d+\/README\.md$/.test(entry.path)
+  )
+    failures.push(`ASSURANCE_LAYOUT_NOT_RELEASE_ORIENTED ${entry.path}`);
+  if (phasePathToken.test(entry.path))
+    failures.push(`PHASE_CODED_PATH ${entry.path}`);
+  if (/^reports\/.*\.json$/i.test(entry.path))
+    failures.push(`GENERATED_REPORT_TRACKED ${entry.path}`);
+
+  if (!isTextCandidate(entry.path)) continue;
+  const content = readFileSync(path.join(root, entry.path), "utf8");
+
+  if (activeGuidanceOrAutomation(entry.path)) {
+    failures.push(...portabilityFailures(entry.path, content));
+    if (
+      entry.path !== "scripts/validate-repository-hygiene.mjs" &&
+      phaseLabel.test(content)
+    ) {
+      failures.push(`PHASE_LABEL_IN_GUIDANCE_OR_AUTOMATION ${entry.path}`);
+    }
   }
 }
 
-const genericCore = files.filter(
-  (file) =>
-    /^(?:apps|packages|contracts|policies|evals\/generic)\//.test(file) &&
-    !/(^|\/)(?:test|tests|fixtures)\//.test(file) &&
-    !/\.(?:test|spec)\.[cm]?[jt]sx?$/.test(file),
-);
-const leakagePattern =
-  /\b(?:SI729|SI730|UPC|WF-DDD-END-TO-END|cqrs-capability-model|resources-is-layer)\b/i;
 const fixedUuidPattern =
   /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i;
-for (const file of genericCore) {
-  if (!/\.(?:[cm]?[jt]sx?|json|ya?ml|md|sql|py)$/.test(file)) continue;
+for (const file of files.filter(
+  (candidate) =>
+    /^(?:apps\/api\/src|apps\/mcp|apps\/cli|apps\/web)\//.test(candidate) &&
+    !/(^|\/)(?:test|tests)\//.test(candidate) &&
+    !/\.(?:test|spec)\.[cm]?[jt]sx?$/.test(candidate),
+)) {
+  if (!isTextCandidate(file)) continue;
   const content = readFileSync(path.join(root, file), "utf8");
-  if (leakagePattern.test(content)) failures.push(`GENERICITY_LEAK ${file}`);
-  if (
-    /^(?:apps\/api\/src|apps\/mcp|apps\/cli|apps\/web)\//.test(file) &&
-    fixedUuidPattern.test(content)
-  ) {
+  if (fixedUuidPattern.test(content))
     failures.push(`GENERICITY_FIXED_UUID ${file}`);
-  }
 }
 
-const payload = `${JSON.stringify({ schemaVersion: 1, files: entries }, null, 2)}\n`;
-const write = process.argv.includes("--write");
-if (write) writeFileSync(path.join(root, classificationPath), payload, "utf8");
-else {
-  try {
-    const current = readFileSync(path.join(root, classificationPath), "utf8");
-    // Git may materialize CRLF on Windows even though the canonical generated
-    // payload uses LF. Compare normalized text so a clean checkout remains
-    // reproducible across the CI/Linux and desktop/Windows environments.
-    if (current.replaceAll("\r\n", "\n") !== payload)
-      failures.push(`${classificationPath} is stale; run with --write`);
-  } catch {
-    failures.push(`${classificationPath} is missing; run with --write`);
-  }
-}
+const payload = `${JSON.stringify({ schemaVersion: 3, files: entries }, null, 2)}\n`;
+if (process.argv.includes("--write"))
+  writeFileSync(path.join(root, classificationPath), payload, "utf8");
 
 if (failures.length > 0) {
   console.error(JSON.stringify({ status: "FAILED", failures }, null, 2));

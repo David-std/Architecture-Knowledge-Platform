@@ -411,7 +411,7 @@ async function createFixture(seed: string): Promise<FixtureIds> {
        space_id,vault_id,provider,model,model_revision,dimensions,normalization,
        configuration_version,corpus_revision,status,activated_at
      ) values ($1,$2,'synthetic','synthetic-64','v1',64,'NONE','load-scale-v1',
-       'synthetic-v1','ACTIVE',now()) returning id`,
+       'synthetic-v1','BUILDING',null) returning id`,
     [spaceId, vaultId],
   );
   const embeddingGenerationId = generation.rows[0]?.id;
@@ -511,7 +511,7 @@ async function insertUnits(
        format('Synthetic architecture unit %s for seed %s.',i,$4::text),
        encode(digest(($4::text || ':unit:' || i::text),'sha256'),'hex'),
        'synthetic-v1','ACTIVE','VERIFIED','{}'::text[],64,null,'synthetic-v1',
-       '{}'::jsonb,jsonb_build_object('path',d.path),null,0,false,false
+       '{}'::jsonb,jsonb_build_object('path',d.path),null,0,false,true
        from generate_series($5::int,$6::int) as generated(i)
        join knowledge_documents d
          on d.space_id=$1 and d.vault_id=$2 and d.external_id=$3 || i::text`,
@@ -533,29 +533,55 @@ async function insertEmbeddings(
   end: number,
 ): Promise<number> {
   if (start > end) return 0;
-  const { elapsedMs } = await timedQuery(
-    `insert into unit_embeddings(unit_id,generation_id,content_hash,embedding)
-     select
-       u.id,$4,
-       encode(digest(($5::text || ':embedding:' || i::text),'sha256'),'hex'),
-       ('[' || (((i % 1000)::numeric / 1000)::text) || ',' ||
-         repeat('0.01,',62) || '0.01]')::vector(64)
-       from generate_series($6::int,$7::int) as generated(i)
-       join knowledge_documents d
-         on d.space_id=$1 and d.vault_id=$2 and d.external_id=$3 || i::text
-       join knowledge_units u
-         on u.document_id=d.id and u.space_id=$1 and u.vault_id=$2
-      on conflict (unit_id,generation_id) do nothing`,
-    [
-      fixture.spaceId,
-      fixture.vaultId,
-      fixture.externalPrefix,
-      fixture.embeddingGenerationId,
-      fixture.runId,
-      start,
-      end,
-    ],
-  );
+  const batchSize = 10_000;
+  const expected = end - start + 1;
+  const embedding = `[${Array.from({ length: 64 }, () => "0.01").join(",")}]`;
+  let inserted = 0;
+  let elapsedMs = 0;
+  while (inserted < expected) {
+    const measured = await timedQuery<{ inserted: Numeric }>(
+      `with candidates as (
+         select u.id,u.content_hash
+           from knowledge_units u
+           left join unit_embeddings e
+             on e.unit_id=u.id and e.generation_id=$3
+          where u.space_id=$1
+            and u.vault_id=$2
+            and u.corpus_revision='synthetic-v1'
+            and u.embedding_eligible=true
+            and e.unit_id is null
+          order by u.id
+          limit $4
+       ), inserted as (
+         insert into unit_embeddings(unit_id,generation_id,content_hash,embedding)
+         select id,$3,content_hash,$5::vector(64)
+           from candidates
+         on conflict (unit_id,generation_id) do nothing
+         returning 1
+       )
+       select count(*)::int as inserted from inserted`,
+      [
+        fixture.spaceId,
+        fixture.vaultId,
+        fixture.embeddingGenerationId,
+        batchSize,
+        embedding,
+      ],
+    );
+    elapsedMs += measured.elapsedMs;
+    const batchInserted = asNumber(measured.result.rows[0]?.inserted);
+    if (batchInserted <= 0) {
+      throw new Error(
+        `embedding fixture stalled after ${inserted}/${expected} inserts`,
+      );
+    }
+    inserted += batchInserted;
+  }
+  if (inserted !== expected) {
+    throw new Error(
+      `embedding fixture inserted ${inserted} rows, expected ${expected}`,
+    );
+  }
   return elapsedMs;
 }
 
@@ -638,7 +664,12 @@ function measureContextPacket(
   if (typeof global.gc === "function") global.gc();
   const memoryBefore = snapshotMemory();
   const candidateStarted = performance.now();
-  const candidates = syntheticPacketCandidates(fixture, target, seed);
+  const packetCandidateLimit = Math.min(target, 20);
+  const candidates = syntheticPacketCandidates(
+    fixture,
+    packetCandidateLimit,
+    seed,
+  );
   const candidateGenerationMs = performance.now() - candidateStarted;
   const request: SearchRequest = {
     query: "architecture synthetic",
@@ -757,7 +788,7 @@ async function measureQueries(
 ): Promise<QueryMeasurement[]> {
   const documentPath = `synthetic/${target}.md`;
   const graphProbePath = `synthetic/${Math.max(1, target - 1)}.md`;
-  const vectorProbe = `[${((target % 1000) / 1000).toFixed(3)},${"0.01,".repeat(62)}0.01]`;
+  const vectorProbe = `[${Array.from({ length: 64 }, () => "0.01").join(",")}]`;
   const operations: Array<{
     name: string;
     description: string;
@@ -1037,6 +1068,37 @@ function buildGrowth(results: ScaleResult[]): ScaleReport["growth"] {
   };
 }
 
+async function prepareExactVectorScaleDatabase(): Promise<void> {
+  const rows = await client.query<{ count: Numeric }>(
+    "select count(*)::bigint as count from unit_embeddings",
+  );
+  if (asNumber(rows.rows[0]?.count) !== 0) {
+    throw new Error(
+      "Scale benchmark refuses to alter vector indexes in a database with pre-existing unit embeddings.",
+    );
+  }
+  // ANN construction/maintenance is a separate evaluation dimension. This
+  // disposable scale harness measures exact pgvector query behavior and
+  // bulk materialisation without conflating it with HNSW build cost.
+  await client.query("drop index if exists unit_embeddings_vector_idx");
+  await client.query("drop index if exists unit_embeddings_64_vector_idx");
+  await client.query("drop index if exists unit_embeddings_384_vector_idx");
+  const remainingAnnIndexes = await client.query<{ indexname: string }>(
+    `select indexname
+       from pg_indexes
+      where schemaname='public'
+        and tablename='unit_embeddings'
+        and lower(indexdef) like '% using hnsw %'`,
+  );
+  if (remainingAnnIndexes.rowCount !== 0) {
+    throw new Error(
+      `Scale benchmark exact-vector mode still has HNSW indexes: ${remainingAnnIndexes.rows
+        .map((row) => row.indexname)
+        .join(", ")}`,
+    );
+  }
+}
+
 async function runBenchmark(
   targets: number[],
   iterations: number,
@@ -1044,6 +1106,7 @@ async function runBenchmark(
 ): Promise<ScaleReport> {
   await client.connect();
   const info = await databaseInfo();
+  await prepareExactVectorScaleDatabase();
   const fixture = await createFixture(seed);
   let cleanup: CleanupResult = {
     attempted: false,
@@ -1051,7 +1114,7 @@ async function runBenchmark(
     remainingRows: null,
   };
   const results: ScaleResult[] = [];
-  let baselineStorage = await storageSnapshot();
+  const baselineStorage = await storageSnapshot();
   let previousStorage = baselineStorage;
   let previousTarget = 0;
   let failure: string | undefined;
@@ -1157,8 +1220,8 @@ async function runBenchmark(
     growth: buildGrowth(results),
     measured: [
       "PostgreSQL synthetic document/unit/relation materialisation latency",
-      "Client-observed point, lexical, synthetic pgvector, graph, unit and count query latency",
-      "Deterministic context-packet assembly latency for candidate sets sized to each target",
+      "Client-observed point, lexical, exact synthetic pgvector, graph, unit and count query latency",
+      "Deterministic context-packet assembly latency for the retrieval-bounded candidate set (up to request limit 20)",
       "Node process RSS and heap deltas around load and query phases",
       "PostgreSQL database and table relation storage growth",
       "Exact row-count and fixture cleanup acceptance checks",
@@ -1173,6 +1236,11 @@ async function runBenchmark(
         dimension: "semantic vector quality or real embedding generation",
         reason:
           "The vector path uses deterministic fixed 64-dimensional fixture values; no provider, model quality or relevance ground truth was evaluated.",
+      },
+      {
+        dimension: "ANN index construction and maintenance",
+        reason:
+          "The disposable scale database removes all HNSW indexes from unit_embeddings before fixture loading so general 1K-100K scale evidence is not conflated with ANN tuning; ANN selection is evaluated separately.",
       },
       {
         dimension: "HTTP/API and worker throughput",
@@ -1203,8 +1271,8 @@ async function runBenchmark(
     limitations: [
       "Storage snapshots use whole-database and whole-table relation sizes, so they include pre-existing isolated-database overhead and index pages.",
       "The cumulative targets append rows to one fixture; they are not independent cold-start trials and cache state may affect latency.",
-      "Vector timings exercise pgvector operators/indexes over deterministic coordinates, not embedding-model quality or semantic recall.",
-      "Context-packet timings exercise the in-process deterministic builder over synthetic candidates, not retrieval, persistence or API latency.",
+      "Vector timings exercise exact sequential pgvector distance over deterministic coordinates; ANN index construction and maintenance are intentionally excluded and evaluated separately.",
+      "Context-packet timings exercise the in-process deterministic builder over at most the request limit of 20 synthetic candidates; corpus scale is measured in PostgreSQL, while retrieval, persistence and API latency remain separate dimensions.",
       "The reported memory is Node RSS/heap, not PostgreSQL backend or container memory.",
       "A passing result is evidence for this synthetic PostgreSQL path only; it is not a production capacity SLO or a vector-quality claim.",
     ],

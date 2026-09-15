@@ -2,9 +2,9 @@
 
 Architecture Knowledge Platform is a generic, local-first, multi-vault system.
 It keeps approved Markdown in Git as canonical compiled knowledge; PostgreSQL,
-pgvector, graph relations, context packets and operational state are derived or
+pgvector, graph relations, ContextPackets and operational state are derived or
 rebuildable projections. Immutable source bytes live in content-addressed
-object storage and remain separate from the imported Obsidian vault.
+object storage and remain separate from imported vaults.
 
 ## System boundary
 
@@ -14,25 +14,28 @@ object storage and remain separate from the imported Obsidian vault.
 - `apps/extractor` implements the provider-neutral Document Intelligence port.
 - `apps/mcp` and `apps/cli` are bounded clients of the same application rules.
 - `apps/web` provides human search, ingest, review and operational views.
-- `packages/*` contain domain, storage, retrieval, indexing, publication and
-  contract adapters; dependency rules are enforced by Dependency Cruiser.
+- `packages/*` contain domain, storage, retrieval, indexing, compilation,
+  publication and contract adapters; dependency rules are enforced by
+  Dependency Cruiser.
 
 ## Canonical data flow
 
 ```text
 registered vault (read-only import) or immutable source
   -> canonical document artifact and evidence locators
-  -> compilation plan and isolated Git draft
+  -> grounded compilation plan and isolated Git draft
   -> deterministic validation and human review
-  -> approved Git merge
-  -> transactional lifecycle events
+  -> approved Git publication or reviewed rollback
+  -> durable lifecycle events
   -> incremental lexical/vector/graph/context projections
   -> bounded ContextPacket for humans and agents
 ```
 
 Normal publication queues incremental work through the PostgreSQL outbox. Full
 reindex remains an explicit repair operation, not the normal write path. Every
-query resolves an authorized vault scope; cross-vault federation is opt-in.
+query resolves an authorized scope; cross-vault federation is explicit opt-in.
+Optional semantic/document providers may degrade without changing canonical
+knowledge or bypassing review.
 
 ## Detailed views
 
@@ -43,6 +46,7 @@ query resolves an authorized vault scope; cross-vault federation is opt-in.
 - [Audit export](docs/architecture/audit-export.md)
 - [Threat model](docs/security/threat-model.md)
 - [Architecture decisions](docs/adr/)
+- [Current executed status](docs/status.md)
 
-The external Architecture Knowledge System vault is one registered consumer and
-fixture pack. It is not the product core and is never a runtime write target.
+Registered vaults are consumers of the platform, not product-core defaults or
+runtime write targets.

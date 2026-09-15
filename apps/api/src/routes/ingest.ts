@@ -50,13 +50,13 @@ async function allowedLocalSource(sourceUri: string): Promise<string | null> {
 }
 
 /**
- * Operational job rows are pathless resources.  Never echo the canonical
+ * Operational job rows are pathless resources. Never echo the canonical
  * local source path or object-store key back to a caller, even when the
- * caller has whole-vault source:read access.  The worker still receives the
+ * caller has whole-vault source:read access. The worker still receives the
  * immutable values from PostgreSQL; this boundary only shapes HTTP output.
  *
  * Keep this recursive because stage outputs and persisted job events contain
- * nested payloads written by several lifecycle stages.  Unknown fields stay
+ * nested payloads written by several lifecycle stages. Unknown fields stay
  * intact so clients can inspect deterministic state without receiving raw
  * source routing details.
  */
@@ -103,7 +103,7 @@ async function resolveVaultScope(
 type IngestPermission = "source:read" | "source:write";
 
 /**
- * Jobs have no canonical knowledge path of their own.  Resolve their vault
+ * Jobs have no canonical knowledge path of their own. Resolve their vault
  * scope before reading or mutating them so an unrestricted membership in a
  * space cannot reach a private vault that was never granted to that actor.
  */
@@ -226,7 +226,13 @@ export function registerIngestRoutes(app: FastifyInstance, db: Postgres): void {
         );
         await client.query(
           "insert into ingest_job_events(job_id,state,event_type,payload) values ($1,'RECEIVED','SUBMITTED',$2::jsonb)",
-          [id, JSON.stringify({ sourceUri: canonicalSource })],
+          [
+            id,
+            JSON.stringify({
+              sourceUri: canonicalSource,
+              documentIntelligence: parsed.data.documentIntelligence ?? null,
+            }),
+          ],
         );
         const registered = await appendEvent(client, {
           eventType: "SourceRegistered",
@@ -252,6 +258,7 @@ export function registerIngestRoutes(app: FastifyInstance, db: Postgres): void {
             jobId: id,
             sourceUri: canonicalSource,
             expectedSha256: parsed.data.expectedSha256 ?? null,
+            documentIntelligence: parsed.data.documentIntelligence ?? null,
           },
         });
         await client.query("commit");
@@ -270,6 +277,7 @@ export function registerIngestRoutes(app: FastifyInstance, db: Postgres): void {
         {
           vaultId: parsed.data.vaultId,
           sourceUri: canonicalSource,
+          documentIntelligence: parsed.data.documentIntelligence ?? null,
         },
         parsed.data.spaceId,
       );

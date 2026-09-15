@@ -6,8 +6,10 @@ const root = process.cwd();
 const failures = [];
 const required = [
   "README.md",
-  "PROJECT_STATE.md",
-  "VALIDATION_REPORT.md",
+  "ARCHITECTURE.md",
+  "CONTRIBUTING.md",
+  "AGENTS.md",
+  "docs/status.md",
   "docs/architecture/c4.md",
   "docs/architecture/database-erd.md",
   "docs/security/threat-model.md",
@@ -22,20 +24,26 @@ for (const file of required) {
 const markdownFiles = await fg(["*.md", "docs/**/*.md", "reports/**/*.md"], {
   cwd: root,
   onlyFiles: true,
-  ignore: ["docs/archive/iterations/**"],
+  ignore: [
+    "docs/archive/**",
+    "docs/assurance/archive/**",
+    "docs/assurance/releases/**",
+  ],
 });
 for (const relativePath of markdownFiles) {
   const raw = await readFile(path.join(root, relativePath), "utf8");
-  if (/\b(TODO|TBD)\b/.test(raw))
+  if (/\b(TODO|TBD)\b/.test(raw)) {
     failures.push(`${relativePath}: unresolved TODO/TBD marker`);
+  }
   for (const match of raw.matchAll(/\[[^\]]+\]\(([^)]+)\)/g)) {
     const target = String(match[1]).split("#", 1)[0]?.trim() ?? "";
     if (
       !target ||
       /^(?:https?:|mailto:|#)/i.test(target) ||
       path.isAbsolute(target)
-    )
+    ) {
       continue;
+    }
     const resolved = path.resolve(
       path.dirname(path.join(root, relativePath)),
       target,

@@ -1,4 +1,57 @@
 import { randomUUID } from "node:crypto";
+import { context, SpanStatusCode, trace, TraceFlags } from "@opentelemetry/api";
+
+export interface TraceMetadata {
+  traceparent?: string;
+  tracestate?: string;
+}
+
+const outboxTracer = trace.getTracer("akp-postgres-outbox", "0.3.0");
+
+function validTraceId(value: string): boolean {
+  return /^[0-9a-f]{32}$/i.test(value) && !/^0{32}$/i.test(value);
+}
+
+function validSpanId(value: string): boolean {
+  return /^[0-9a-f]{16}$/i.test(value) && !/^0{16}$/i.test(value);
+}
+
+function currentTraceMetadata(): TraceMetadata {
+  const active = trace.getSpanContext(context.active());
+  if (!active || !validTraceId(active.traceId) || !validSpanId(active.spanId)) {
+    return {};
+  }
+  const flags = (active.traceFlags & TraceFlags.SAMPLED)
+    .toString(16)
+    .padStart(2, "0");
+  return {
+    traceparent: `00-${active.traceId}-${active.spanId}-${flags}`,
+    ...(active.traceState ? { tracestate: active.traceState.serialize() } : {}),
+  };
+}
+
+async function withSpan<T>(
+  name: string,
+  attributes: Record<string, string | number | boolean>,
+  operation: () => Promise<T>,
+): Promise<T> {
+  return outboxTracer.startActiveSpan(name, { attributes }, async (span) => {
+    try {
+      return await operation();
+    } catch (error) {
+      const normalized =
+        error instanceof Error ? error : new Error(String(error));
+      span.recordException(normalized);
+      span.setStatus({
+        code: SpanStatusCode.ERROR,
+        message: normalized.message,
+      });
+      throw error;
+    } finally {
+      span.end();
+    }
+  });
+}
 import type { PoolClient, QueryResult } from "pg";
 import type { Postgres } from "./index.js";
 
@@ -47,6 +100,7 @@ export interface EventEnvelope {
   causationId: string | null;
   occurredAt: string;
   payload: Record<string, unknown>;
+  telemetry?: TraceMetadata;
 }
 
 export interface AppendOutboxEventInput {
@@ -61,6 +115,7 @@ export interface AppendOutboxEventInput {
   causationId?: string | null;
   occurredAt?: Date | string;
   payload?: Record<string, unknown>;
+  telemetry?: TraceMetadata;
 }
 
 export interface OutboxEventRecord extends EventEnvelope {
@@ -186,6 +241,27 @@ function isUuid(value: string): boolean {
   );
 }
 
+function normalizeTelemetry(value: unknown): TraceMetadata {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const candidate = value as Record<string, unknown>;
+  const traceparent =
+    typeof candidate.traceparent === "string" &&
+    /^[\da-f]{2}-[\da-f]{32}-[\da-f]{16}-[\da-f]{2}$/i.test(
+      candidate.traceparent,
+    )
+      ? candidate.traceparent.toLowerCase()
+      : undefined;
+  const tracestate =
+    typeof candidate.tracestate === "string" &&
+    candidate.tracestate.length <= 512
+      ? candidate.tracestate
+      : undefined;
+  return {
+    ...(traceparent ? { traceparent } : {}),
+    ...(tracestate ? { tracestate } : {}),
+  };
+}
+
 function parseEnvelope(input: Record<string, unknown>): EventEnvelope {
   const eventId = String(input.eventId);
   const eventType = String(input.eventType);
@@ -237,6 +313,7 @@ function parseEnvelope(input: Record<string, unknown>): EventEnvelope {
         : String(input.causationId),
     occurredAt,
     payload,
+    telemetry: normalizeTelemetry(input.telemetry),
   };
 }
 
@@ -256,6 +333,7 @@ function mapEvent(row: Record<string, unknown>): OutboxEventRecord {
       row.payload && typeof row.payload === "object"
         ? (row.payload as Record<string, unknown>)
         : {},
+    telemetry: row.telemetry_metadata,
   });
   return {
     ...parsed,
@@ -306,6 +384,7 @@ function normalizeEvent(input: AppendOutboxEventInput): EventEnvelope {
     causationId: input.causationId ?? null,
     occurredAt: iso(input.occurredAt),
     payload: input.payload ?? {},
+    telemetry: input.telemetry ?? currentTraceMetadata(),
   });
 }
 
@@ -319,61 +398,67 @@ export async function appendOutboxEvent(
   input: AppendOutboxEventInput,
 ): Promise<OutboxEventRecord> {
   const event = normalizeEvent(input);
-  return inTransaction(target, async (client) => {
-    const inserted = await client.query(
-      `
+  return withSpan("outbox.append", { "akp.event.type": event.eventType }, () =>
+    inTransaction(target, async (client) => {
+      const inserted = await client.query(
+        `
       insert into event_outbox(
         event_id,event_type,event_version,resource_id,organization_id,space_id,
-        vault_id,correlation_id,causation_id,occurred_at,payload
-      ) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb)
+        vault_id,correlation_id,causation_id,occurred_at,payload,telemetry_metadata
+      ) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb)
       on conflict(event_id) do nothing
       returning event_id,event_type,event_version,resource_id,organization_id,
                 space_id,vault_id,correlation_id,causation_id,occurred_at,payload,
-                created_at
+                telemetry_metadata,created_at
       `,
-      [
-        event.eventId,
-        event.eventType,
-        event.eventVersion,
-        event.resourceId,
-        event.organizationId,
-        event.spaceId,
-        event.vaultId,
-        event.correlationId,
-        event.causationId,
-        event.occurredAt,
-        JSON.stringify(event.payload),
-      ],
-    );
-    const row = inserted.rows[0] as Record<string, unknown> | undefined;
-    if (row) return mapEvent(row);
-    const existing = await client.query(
-      `
+        [
+          event.eventId,
+          event.eventType,
+          event.eventVersion,
+          event.resourceId,
+          event.organizationId,
+          event.spaceId,
+          event.vaultId,
+          event.correlationId,
+          event.causationId,
+          event.occurredAt,
+          JSON.stringify(event.payload),
+          JSON.stringify(event.telemetry ?? {}),
+        ],
+      );
+      const row = inserted.rows[0] as Record<string, unknown> | undefined;
+      if (row) return mapEvent(row);
+      const existing = await client.query(
+        `
       select event_id,event_type,event_version,resource_id,organization_id,
              space_id,vault_id,correlation_id,causation_id,occurred_at,payload,
-             created_at
+             telemetry_metadata,created_at
         from event_outbox where event_id=$1
       `,
-      [event.eventId],
-    );
-    const existingRow = existing.rows[0] as Record<string, unknown> | undefined;
-    if (!existingRow) throw new Error("OUTBOX_EVENT_INSERT_FAILED");
-    const persisted = mapEvent(existingRow);
-    if (
-      persisted.eventType !== event.eventType ||
-      persisted.eventVersion !== event.eventVersion ||
-      persisted.resourceId !== event.resourceId ||
-      persisted.organizationId !== event.organizationId ||
-      persisted.spaceId !== event.spaceId ||
-      persisted.vaultId !== event.vaultId ||
-      persisted.correlationId !== event.correlationId ||
-      persisted.causationId !== event.causationId ||
-      JSON.stringify(persisted.payload) !== JSON.stringify(event.payload)
-    ) {
-      throw new Error("OUTBOX_EVENT_ID_CONFLICT");
-    }
-    return persisted;
-  });
+        [event.eventId],
+      );
+      const existingRow = existing.rows[0] as
+        Record<string, unknown> | undefined;
+      if (!existingRow) throw new Error("OUTBOX_EVENT_INSERT_FAILED");
+      const persisted = mapEvent(existingRow);
+      if (
+        persisted.eventType !== event.eventType ||
+        persisted.eventVersion !== event.eventVersion ||
+        persisted.resourceId !== event.resourceId ||
+        persisted.organizationId !== event.organizationId ||
+        persisted.spaceId !== event.spaceId ||
+        persisted.vaultId !== event.vaultId ||
+        persisted.correlationId !== event.correlationId ||
+        persisted.causationId !== event.causationId ||
+        JSON.stringify(persisted.payload) !== JSON.stringify(event.payload) ||
+        JSON.stringify(persisted.telemetry ?? {}) !==
+          JSON.stringify(event.telemetry ?? {})
+      ) {
+        throw new Error("OUTBOX_EVENT_ID_CONFLICT");
+      }
+      return persisted;
+    }),
+  );
 }
 
 export interface RegisterConsumerOptions {
@@ -428,11 +513,25 @@ export async function claimNextEventDelivery(
     with candidate as (
       select d.event_id
         from event_deliveries d
+        join event_outbox e on e.event_id=d.event_id
         join event_consumers c on c.consumer_name=d.consumer_name
        where d.consumer_name=$1 and c.enabled
          and (
            (d.status in ('PENDING','RETRY') and d.next_attempt_at <= now())
            or (d.status='CLAIMED' and d.lease_expires_at < now())
+         )
+         and (
+           e.causation_id is null
+           or not exists (
+             select 1 from event_outbox parent_event
+              where parent_event.event_id::text=e.causation_id
+           )
+           or exists (
+             select 1 from event_deliveries parent_delivery
+              where parent_delivery.event_id::text=e.causation_id
+                and parent_delivery.consumer_name=d.consumer_name
+                and parent_delivery.status='SUCCEEDED'
+           )
          )
        order by d.next_attempt_at, d.created_at, d.event_id
        for update skip locked
@@ -470,7 +569,7 @@ export async function claimNextEventDelivery(
            c.max_attempts,c.lease_seconds,
            e.event_type,e.event_version,e.resource_id,e.organization_id,e.space_id,
            e.vault_id,e.correlation_id,e.causation_id,e.occurred_at,e.payload,
-           e.created_at event_created_at
+           e.telemetry_metadata,e.created_at event_created_at
       from claimed d
       join event_consumers c on c.consumer_name=d.consumer_name
       join event_outbox e on e.event_id=d.event_id
@@ -692,6 +791,128 @@ export interface ReconciliationReport {
   staleClaims: number;
   quarantined: number;
   orphanDeliveries: number;
+}
+
+/**
+ * A point-in-time view of one consumer's durable queue.  The buckets are
+ * mutually exclusive for every delivery row, which makes the result safe to
+ * serialize as a worker drain contract instead of relying on log text.
+ *
+ * `causallyBlocked` includes a non-terminal delivery whose known causating
+ * event has not succeeded for this consumer.  A causation id that does not
+ * resolve to an event is intentionally treated as an unblocked legacy/root
+ * event, matching claimNextEventDelivery's fail-open compatibility rule.
+ */
+export interface OutboxDrainSummary {
+  consumerName: string;
+  total: number;
+  immediatelyClaimable: number;
+  causallyBlocked: number;
+  scheduledRetry: number;
+  leased: number;
+  quarantined: number;
+  succeeded: number;
+  nonTerminal: number;
+  nextWakeAt: string | null;
+}
+
+/**
+ * Inspect durable delivery state without changing it.  `nextWakeAt` is the
+ * earliest database-owned retry or lease timestamp still in the queue.  A
+ * caller can therefore wait on a durable deadline rather than guessing with
+ * a polling sleep; a null value means the queue is blocked without a future
+ * timestamp (for example a malformed causal cycle) and must be bounded by
+ * the caller's own drain deadline.
+ */
+export async function summarizeOutbox(
+  target: OutboxTarget,
+  consumerName: string,
+): Promise<OutboxDrainSummary> {
+  if (!consumerName.trim()) throw new Error("CONSUMER_NAME_REQUIRED");
+  const result = await executorFor(target).query(
+    `
+    with delivery_state as (
+      select d.status,d.next_attempt_at,d.lease_expires_at,
+             case
+               when e.causation_id is null then false
+               when not exists (
+                 select 1 from event_outbox parent_event
+                  where parent_event.event_id::text=e.causation_id
+               ) then false
+               when exists (
+                 select 1 from event_deliveries parent_delivery
+                  where parent_delivery.event_id::text=e.causation_id
+                    and parent_delivery.consumer_name=d.consumer_name
+                    and parent_delivery.status='SUCCEEDED'
+               ) then false
+               else true
+             end causally_blocked
+        from event_deliveries d
+        join event_outbox e on e.event_id=d.event_id
+       where d.consumer_name=$1
+    ), rollup as (
+      select
+        count(*)::int total,
+        count(*) filter (
+          where status not in ('SUCCEEDED','QUARANTINED')
+            and not causally_blocked
+            and (
+              (status in ('PENDING','RETRY') and next_attempt_at <= now())
+              or (status='CLAIMED' and lease_expires_at <= now())
+            )
+        )::int immediately_claimable,
+        count(*) filter (
+          where status not in ('SUCCEEDED','QUARANTINED')
+            and causally_blocked
+        )::int causally_blocked,
+        count(*) filter (
+          where status in ('PENDING','RETRY')
+            and not causally_blocked and next_attempt_at > now()
+        )::int scheduled_retry,
+        count(*) filter (
+          where status='CLAIMED'
+            and not causally_blocked
+            and (lease_expires_at is null or lease_expires_at > now())
+        )::int leased,
+        count(*) filter (where status='QUARANTINED')::int quarantined,
+        count(*) filter (where status='SUCCEEDED')::int succeeded,
+        min(
+          case
+            when status in ('PENDING','RETRY') and next_attempt_at > now()
+              then next_attempt_at
+            when status='CLAIMED' and lease_expires_at > now()
+              then lease_expires_at
+            else null
+          end
+        ) next_wake_at
+      from delivery_state
+    )
+    select total,immediately_claimable,causally_blocked,scheduled_retry,
+           leased,quarantined,succeeded,next_wake_at
+      from rollup
+    `,
+    [consumerName],
+  );
+  const row = result.rows[0] as Record<string, unknown> | undefined;
+  const total = Number(row?.total ?? 0);
+  const immediatelyClaimable = Number(row?.immediately_claimable ?? 0);
+  const causallyBlocked = Number(row?.causally_blocked ?? 0);
+  const scheduledRetry = Number(row?.scheduled_retry ?? 0);
+  const leased = Number(row?.leased ?? 0);
+  const quarantined = Number(row?.quarantined ?? 0);
+  const succeeded = Number(row?.succeeded ?? 0);
+  return {
+    consumerName,
+    total,
+    immediatelyClaimable,
+    causallyBlocked,
+    scheduledRetry,
+    leased,
+    quarantined,
+    succeeded,
+    nonTerminal: total - quarantined - succeeded,
+    nextWakeAt: row?.next_wake_at ? iso(row.next_wake_at) : null,
+  };
 }
 
 /**

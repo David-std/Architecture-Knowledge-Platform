@@ -1,3 +1,4 @@
+import "./instrumentation.js";
 import { config } from "dotenv";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,7 +7,12 @@ import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import { Postgres } from "@akp/postgres";
 import { MinioObjectStore } from "@akp/object-store";
-import { OpenTelemetryBridge, type ActiveTrace } from "@akp/observability";
+import {
+  OpenTelemetryBridge,
+  shutdownOpenTelemetry,
+  type ActiveTrace,
+} from "@akp/observability";
+import type { Tokenizer } from "@akp/retrieval";
 import { registerSearchRoutes } from "./routes/search.js";
 import { registerIngestRoutes } from "./routes/ingest.js";
 import { registerKnowledgeRoutes } from "./routes/knowledge.js";
@@ -15,6 +21,8 @@ import { registerEvaluationRoutes } from "./routes/evaluation.js";
 import { registerProjectRoutes } from "./routes/projects.js";
 import { registerSessionRoutes } from "./routes/sessions.js";
 import { registerGovernanceRoutes } from "./routes/governance.js";
+import { registerProviderTaskRoutes } from "./routes/provider-tasks.js";
+import { registerOperatorRoutes } from "./routes/operator.js";
 import { registerAuthentication } from "./auth.js";
 import { registerWriteIdempotency } from "./idempotency.js";
 import { registerWebAuthRoutes } from "./routes/web-auth.js";
@@ -30,7 +38,11 @@ config({
   ),
 });
 
-export function buildServer() {
+export interface ApiServerDependencies {
+  contextTokenizer?: Tokenizer;
+}
+
+export function buildServer(dependencies: ApiServerDependencies = {}) {
   const app = Fastify({
     logger: process.env.NODE_ENV !== "test",
     bodyLimit: 10 * 1024 * 1024,
@@ -38,7 +50,11 @@ export function buildServer() {
   });
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) throw new Error("DATABASE_URL is required");
-  const db = new Postgres(databaseUrl);
+  const db = new Postgres(databaseUrl, {
+    onIdleClientError: (error) => {
+      app.log.error({ err: error }, "PostgreSQL idle client disconnected");
+    },
+  });
   const rawStoreConfig = [
     process.env.AKP_RAW_ENDPOINT,
     process.env.AKP_RAW_ACCESS_KEY,
@@ -60,32 +76,56 @@ export function buildServer() {
     string,
     { trace: ActiveTrace; started: number }
   >();
+  const ingestTraces = new Map<string, ActiveTrace>();
 
   app.addHook("onRequest", async (request) => {
+    const requestPath = request.url.split("?")[0] ?? request.url;
     requestTraces.set(request.id, {
       trace: telemetry.startTrace("http.request", {
         "http.request.method": request.method,
-        "url.path": request.url.split("?")[0] ?? request.url,
+        "url.path": requestPath,
       }),
       started: performance.now(),
     });
+    if (request.method === "POST" && requestPath === "/v1/ingest") {
+      ingestTraces.set(
+        request.id,
+        telemetry.startTrace("ingest.receive", {
+          "akp.ingest.operation": "receive",
+        }),
+      );
+    }
   });
   app.addHook("onError", async (request, _reply, error) => {
     requestTraces.get(request.id)?.trace.fail(error);
+    ingestTraces.get(request.id)?.fail(error);
   });
   app.addHook("onResponse", async (request, reply) => {
     const active = requestTraces.get(request.id);
-    if (!active) return;
-    telemetry.histogram(
-      "akp.http.server.duration",
-      performance.now() - active.started,
-      {
-        method: request.method,
-        status: String(reply.statusCode),
-      },
-    );
-    active.trace.end({ "http.response.status_code": reply.statusCode });
-    requestTraces.delete(request.id);
+    if (active) {
+      telemetry.histogram(
+        "akp.http.server.duration",
+        performance.now() - active.started,
+        {
+          method: request.method,
+          status: String(reply.statusCode),
+        },
+      );
+      active.trace.end({ "http.response.status_code": reply.statusCode });
+      requestTraces.delete(request.id);
+    }
+    const ingestTrace = ingestTraces.get(request.id);
+    if (ingestTrace) {
+      const accepted = reply.statusCode === 202;
+      if (accepted) {
+        telemetry.counter("ingest_jobs_total", 1, { state: "RECEIVED" });
+      }
+      ingestTrace.end({
+        "http.response.status_code": reply.statusCode,
+        "akp.ingest.accepted": accepted,
+      });
+      ingestTraces.delete(request.id);
+    }
   });
 
   app.setErrorHandler((error, request, reply) => {
@@ -97,11 +137,6 @@ export function buildServer() {
       });
     }
     request.log.error(error);
-    // Fastify's default error serializer includes `message`, `stack` and
-    // arbitrary properties from filesystem/Git/SQL errors. Those values can
-    // disclose host paths, connection details or source material. Routes may
-    // still return their deliberate domain payloads; this handler is only the
-    // last-resort boundary for errors that escaped a route handler.
     const statusCode = Number((error as { statusCode?: unknown }).statusCode);
     const status =
       Number.isInteger(statusCode) && statusCode >= 400 && statusCode < 500
@@ -174,7 +209,15 @@ export function buildServer() {
   registerErrorBookRoutes(app, db);
   registerAuditRoutes(app, db);
   registerAuditExportRoutes(app, db, rawObjectStore);
-  registerSearchRoutes(app, db);
+  registerProviderTaskRoutes(app, db);
+  registerOperatorRoutes(app, db);
+  registerSearchRoutes(
+    app,
+    db,
+    dependencies.contextTokenizer
+      ? { contextTokenizer: dependencies.contextTokenizer }
+      : {},
+  );
   registerIngestRoutes(app, db);
   registerKnowledgeRoutes(app, db);
   registerReviewRoutes(app, db);
@@ -190,5 +233,11 @@ export function buildServer() {
 if (process.env.NODE_ENV !== "test") {
   const app = buildServer();
   const port = Number(process.env.PORT ?? 8080);
+  const close = async () => {
+    await app.close();
+    await shutdownOpenTelemetry();
+  };
+  process.once("SIGTERM", () => void close());
+  process.once("SIGINT", () => void close());
   await app.listen({ port, host: "127.0.0.1" });
 }
