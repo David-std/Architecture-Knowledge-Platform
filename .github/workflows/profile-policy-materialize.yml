@@ -30,6 +30,45 @@ jobs:
           scripts/tmp-profile-policy-materialize.py
       - name: Materialize enforcement slice
         run: python scripts/tmp-profile-policy-materialize.py
+      - name: Harden candidate typing
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("packages/compiler/src/grounding.ts")
+          text = path.read_text()
+
+          old = '''    return deriveKnowledgePath({
+              title: input.title,
+              kind: input.kind,
+              schemaProfile: input.schemaProfile,
+            });'''
+          new = '''    return deriveKnowledgePath({
+              title: input.title,
+              kind: input.kind,
+              ...(input.schemaProfile ? { schemaProfile: input.schemaProfile } : {}),
+            });'''
+          if old not in text:
+              raise SystemExit("deriveKnowledgePath typing anchor missing")
+          text = text.replace(old, new, 1)
+
+          old = '''      if (
+                evidencePolicy.requireSourceLocator &&
+                (!evidence.locator.path.trim() || !evidence.locator.source_hash.trim())
+              ) {'''
+          new = '''      const locatorPath = evidence.locator.path;
+              const locatorSourceHash = evidence.locator.source_hash;
+              if (
+                evidencePolicy.requireSourceLocator &&
+                (!locatorPath?.trim() || !locatorSourceHash?.trim())
+              ) {'''
+          if old not in text:
+              raise SystemExit("locator typing anchor missing")
+          text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          PY
       - name: Format candidate files
         run: >-
           pnpm exec prettier --write
