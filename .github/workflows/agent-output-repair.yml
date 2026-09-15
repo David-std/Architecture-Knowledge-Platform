@@ -96,7 +96,9 @@ jobs:
       - name: Start live evidence fixture
         shell: bash
         run: |
-          echo "AKP_API_TOKEN=agent-repair-$(openssl rand -hex 16)" >> "$GITHUB_ENV"
+          AKP_API_TOKEN="agent-repair-$(openssl rand -hex 16)"
+          export AKP_API_TOKEN
+          echo "AKP_API_TOKEN=$AKP_API_TOKEN" >> "$GITHUB_ENV"
           docker compose up -d --wait postgres
           pnpm db:migrate
           mkdir -p reports/agent-repair
