@@ -70,9 +70,13 @@ export function validateContextCorrectnessRegressionPack(
   if (value.schemaVersion !== 1)
     throw new Error("Unsupported context correctness regression schemaVersion.");
   if (value.evidenceLevel !== "P0_REGRESSION_SPEC")
-    throw new Error("Context correctness regression evidenceLevel must remain P0_REGRESSION_SPEC.");
+    throw new Error(
+      "Context correctness regression evidenceLevel must remain P0_REGRESSION_SPEC.",
+    );
   if (value.productionDefaultsChanged !== false)
-    throw new Error("P0 context correctness fixtures must not change production defaults.");
+    throw new Error(
+      "P0 context correctness fixtures must not change production defaults.",
+    );
   if (!Array.isArray(value.cases) || value.cases.length === 0)
     throw new Error("Context correctness regression pack must contain cases.");
 
@@ -86,47 +90,66 @@ export function validateContextCorrectnessRegressionPack(
     const testCase = rawCase as Record<string, unknown>;
     assertString(testCase.id, `Regression case ${index} id`);
     if (ids.has(testCase.id))
-      throw new Error(`Duplicate context correctness regression id: ${testCase.id}`);
+      throw new Error(
+        `Duplicate context correctness regression id: ${testCase.id}`,
+      );
     ids.add(testCase.id);
 
     if (testCase.kind === "TEMPORAL_TRUTH_CONTRADICTION") {
       temporalCases += 1;
       if (!Array.isArray(testCase.documents) || testCase.documents.length < 2)
-        throw new Error(`${testCase.id} must contain at least two temporal documents.`);
+        throw new Error(
+          `${testCase.id} must contain at least two temporal documents.`,
+        );
       if (!testCase.denseScores || typeof testCase.denseScores !== "object")
         throw new Error(`${testCase.id} must contain denseScores.`);
-      const expectations = testCase.expectations as Record<string, unknown> | undefined;
+      const expectations = testCase.expectations as
+        | Record<string, unknown>
+        | undefined;
       if (
         expectations?.mustNotResolveBy !== "DENSE_SCORE_ONLY" ||
         expectations.mustExposeContradiction !== true ||
         expectations.readTimeSupportValidationRequired !== true
       ) {
-        throw new Error(`${testCase.id} must encode truth-before-rank expectations.`);
+        throw new Error(
+          `${testCase.id} must encode truth-before-rank expectations.`,
+        );
       }
       continue;
     }
 
     if (testCase.kind === "TOKENIZATION_AND_EXACT_IDENTIFIER") {
       tokenCases += 1;
-      if (!Array.isArray(testCase.identifiers) || testCase.identifiers.length === 0)
+      if (
+        !Array.isArray(testCase.identifiers) ||
+        testCase.identifiers.length === 0
+      )
         throw new Error(`${testCase.id} must contain exact identifiers.`);
-      const expectations = testCase.expectations as Record<string, unknown> | undefined;
+      const expectations = testCase.expectations as
+        | Record<string, unknown>
+        | undefined;
       if (
         expectations?.exactModelTokenizerPreferred !== true ||
         expectations.approximateFallbackMustBeLabeled !== true ||
         expectations.serializedContextPacketMeasured !== true ||
         expectations.exactOrLexicalIdentifierChannelRequired !== true
       ) {
-        throw new Error(`${testCase.id} must encode tokenizer and exact-identifier expectations.`);
+        throw new Error(
+          `${testCase.id} must encode tokenizer and exact-identifier expectations.`,
+        );
       }
       continue;
     }
 
-    throw new Error(`Unsupported context correctness regression kind in ${testCase.id}.`);
+    throw new Error(
+      `Unsupported context correctness regression kind in ${testCase.id}.`,
+    );
   }
 
   if (temporalCases === 0 || tokenCases === 0)
-    throw new Error("Context correctness regressions require both temporal-truth and tokenization cases.");
+    throw new Error(
+      "Context correctness regressions require both temporal-truth and tokenization cases.",
+    );
 
   return candidate as ContextCorrectnessRegressionPack;
 }
