@@ -47,9 +47,10 @@ describe("context correctness regression contract", () => {
     ];
     const actualKinds = new Set(pack.cases.map((item) => item.kind));
     for (const kind of requiredKinds) {
-      expect(actualKinds.has(kind), `missing P0 regression family ${kind}`).toBe(
-        true,
-      );
+      expect(
+        actualKinds.has(kind),
+        `missing P0 regression family ${kind}`,
+      ).toBe(true);
     }
 
     const temporal = pack.cases.find(
@@ -77,9 +78,9 @@ describe("context correctness regression contract", () => {
     ]);
     expect(tokenCase?.expectations.approximateFallbackMustBeLabeled).toBe(true);
     expect(tokenCase?.expectations.serializedContextPacketMeasured).toBe(true);
-    expect(tokenCase?.expectations.exactOrLexicalIdentifierChannelRequired).toBe(
-      true,
-    );
+    expect(
+      tokenCase?.expectations.exactOrLexicalIdentifierChannelRequired,
+    ).toBe(true);
 
     const multivault = pack.cases.find(
       (item) => item.kind === "MULTI_VAULT_COLLISION",
@@ -108,15 +109,17 @@ describe("context correctness regression contract", () => {
     expect(codeGraph?.expectations.inheritancePresent).toBe(true);
     expect(codeGraph?.expectations.testLinkagePresent).toBe(true);
     expect(codeGraph?.expectations.generatedAndVendorExcluded).toBe(true);
-    expect(codeGraph?.expectations.ambiguousCallNotUpgradedToExtracted).toBe(true);
+    expect(
+      codeGraph?.expectations.ambiguousCallNotUpgradedToExtracted,
+    ).toBe(true);
 
     const disagreement = pack.cases.find(
       (item) => item.kind === "DECLARED_VS_OBSERVED_SYSTEM",
     );
     expect(disagreement?.expectations.preserveAllObservations).toBe(true);
-    expect(disagreement?.expectations.runtimeAbsenceDoesNotDeleteCatalogRelation).toBe(
-      true,
-    );
+    expect(
+      disagreement?.expectations.runtimeAbsenceDoesNotDeleteCatalogRelation,
+    ).toBe(true);
     expect(disagreement?.expectations.mustNotFlattenToGenericRelatedTo).toBe(
       true,
     );
@@ -133,22 +136,26 @@ describe("context correctness regression contract", () => {
     expect(
       truthMaintenance?.expectations.sourceADerivedCandidateRejectedBeforeRanking,
     ).toBe(true);
-    expect(truthMaintenance?.expectations.physicalCleanupMayBeAsynchronous).toBe(
-      true,
-    );
+    expect(
+      truthMaintenance?.expectations.physicalCleanupMayBeAsynchronous,
+    ).toBe(true);
 
     const placement = pack.cases.find(
       (item) => item.kind === "CONTEXT_PLACEMENT_AND_MANDATORY_CONSTRAINTS",
     );
-    expect(placement?.expectations.rulePlacedBeforeHigherScoreConcept).toBe(true);
-    expect(placement?.expectations.requiredActionsRetainedInFullPacket).toBe(true);
+    expect(placement?.expectations.rulePlacedBeforeHigherScoreConcept).toBe(
+      true,
+    );
+    expect(placement?.expectations.requiredActionsRetainedInFullPacket).toBe(
+      true,
+    );
     expect(placement?.expectations.requiredActionsRetainedInCompactPacket).toBe(
       true,
     );
     expect(placement?.expectations.requiredActionOrderPreserved).toBe(true);
     expect(placement?.expectations.truncatedEvidenceUsesContinuation).toBe(true);
-    expect(placement?.expectations.mandatoryActionsNeverMoveIntoRetrievedContent).toBe(
-      true,
-    );
+    expect(
+      placement?.expectations.mandatoryActionsNeverMoveIntoRetrievedContent,
+    ).toBe(true);
   });
 });
