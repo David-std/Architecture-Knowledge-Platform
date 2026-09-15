@@ -65,12 +65,6 @@ export interface EffectiveKnowledgeProfile {
   legacySchemaProfile: Record<string, unknown>;
 }
 
-const revisionColumns = `
-  id,space_id,vault_id,profile_id,version,profile_hash,profile,status,
-  compatibility_class,corpus_revision,created_by,validation_report,
-  validated_at,activated_at,superseded_at,retired_at,created_at,updated_at
-`;
-
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return value as Record<string, unknown>;
@@ -125,19 +119,27 @@ export async function createKnowledgeProfileDraft(
   const { parsed, canonical, hash } = hashCanonicalProfile(input.profile);
   const result = await db.pool.query<KnowledgeProfileRevisionRow>(
     `
-    insert into knowledge_profile_revisions(
-      space_id,vault_id,profile_id,version,profile_hash,profile,status,
-      compatibility_class,corpus_revision,created_by
+    with inserted as (
+      insert into knowledge_profile_revisions(
+        space_id,vault_id,profile_id,version,profile_hash,profile,status,
+        compatibility_class,corpus_revision,created_by
+      )
+      select v.space_id,v.id,$3,$4,$5,$6::jsonb,'DRAFT',null,
+             coalesce(r.corpus_revision,v.current_revision,'unknown'),$7
+        from vaults v
+        left join vault_index_revisions r
+          on r.space_id=v.space_id and r.vault_id=v.id
+       where v.space_id=$1 and v.id=$2
+      on conflict (vault_id,profile_hash) do nothing
+      returning *
     )
-    select v.space_id,v.id,$3,$4,$5,$6::jsonb,'DRAFT',null,
-           coalesce(r.corpus_revision,v.current_revision,'unknown'),$7
-      from vaults v
-      left join vault_index_revisions r
-        on r.space_id=v.space_id and r.vault_id=v.id
-     where v.space_id=$1 and v.id=$2
-    on conflict (vault_id,profile_hash) do update
-      set profile_hash=excluded.profile_hash
-    returning ${revisionColumns}
+    select * from inserted
+    union all
+    select p.*
+      from knowledge_profile_revisions p
+     where p.space_id=$1 and p.vault_id=$2 and p.profile_hash=$5
+       and not exists (select 1 from inserted)
+    limit 1
     `,
     [
       input.spaceId,
@@ -162,7 +164,7 @@ export async function getKnowledgeProfileRevision(
 ): Promise<KnowledgeProfileRevisionRecord | null> {
   const result = await db.pool.query<KnowledgeProfileRevisionRow>(
     `
-    select ${revisionColumns}
+    select *
       from knowledge_profile_revisions
      where space_id=$1 and vault_id=$2 and id=$3
     `,
@@ -178,7 +180,7 @@ export async function getActiveKnowledgeProfileRevision(
 ): Promise<KnowledgeProfileRevisionRecord | null> {
   const result = await db.pool.query<KnowledgeProfileRevisionRow>(
     `
-    select ${revisionColumns.replaceAll("id,", "p.id,").replaceAll("space_id,", "p.space_id,").replaceAll("vault_id,", "p.vault_id,").replaceAll("profile_id,", "p.profile_id,").replaceAll("version,", "p.version,").replaceAll("profile_hash,", "p.profile_hash,").replaceAll("profile,", "p.profile,").replaceAll("status,", "p.status,").replaceAll("compatibility_class,", "p.compatibility_class,").replaceAll("corpus_revision,", "p.corpus_revision,").replaceAll("created_by,", "p.created_by,").replaceAll("validation_report,", "p.validation_report,").replaceAll("validated_at,", "p.validated_at,").replaceAll("activated_at,", "p.activated_at,").replaceAll("superseded_at,", "p.superseded_at,").replaceAll("retired_at,", "p.retired_at,").replaceAll("created_at,", "p.created_at,").replaceAll("updated_at", "p.updated_at")}
+    select p.*
       from vaults v
       join knowledge_profile_revisions p
         on p.vault_id=v.id and p.id=v.active_knowledge_profile_revision_id
