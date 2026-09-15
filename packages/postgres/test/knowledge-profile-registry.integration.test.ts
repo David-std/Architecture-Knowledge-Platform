@@ -1,14 +1,15 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_KNOWLEDGE_PROFILE_V1,
+  KnowledgeProfileV1,
   canonicalKnowledgeProfileJson,
 } from "@akp/contracts/knowledge-profile";
 import {
   Postgres,
   createKnowledgeProfileDraft,
   recordKnowledgeProfileDryRun,
-  resolveEffectiveKnowledgeProfile,
+  resolveKnowledgeProfileBinding,
 } from "../src/index.js";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -37,6 +38,25 @@ async function createVault(
   return { id: String(result.rows[0]?.id), vaultKey };
 }
 
+function draftInput(
+  vaultId: string,
+  profile: unknown,
+  options: { supersedesRevisionId?: string | null; space?: string } = {},
+) {
+  const parsed = KnowledgeProfileV1.parse(profile);
+  const canonicalProfile = canonicalKnowledgeProfileJson(parsed);
+  return {
+    spaceId: options.space ?? spaceId,
+    vaultId,
+    profileId: parsed.profileId,
+    version: parsed.version,
+    canonicalProfile,
+    profileHash: createHash("sha256").update(canonicalProfile).digest("hex"),
+    supersedesRevisionId: options.supersedesRevisionId ?? null,
+    createdBy: actorId,
+  };
+}
+
 describe("knowledge profile registry integration", () => {
   it.skipIf(!databaseUrl)(
     "persists immutable profiles and revalidates them against explicit corpus snapshots",
@@ -46,23 +66,19 @@ describe("knowledge profile registry integration", () => {
       const firstVault = await createVault(db, "legacy-a");
       const secondVault = await createVault(db, "legacy-b");
       try {
-        const fallback = await resolveEffectiveKnowledgeProfile(
+        const binding = await resolveKnowledgeProfileBinding(
           db,
           spaceId,
           firstVault.id,
         );
-        expect(fallback.source).toBe("V03_DEFAULT");
-        expect(fallback.revisionId).toBeNull();
-        expect(fallback.profile.profileId).toBe("default");
-        expect(fallback.profile.version).toBe("0.3-compat");
-        expect(fallback.legacySchemaProfile).toEqual({ marker: "legacy-a" });
+        expect(binding.source).toBe("LEGACY_UNBOUND");
+        expect(binding.revision).toBeNull();
+        expect(binding.legacySchemaProfile).toEqual({ marker: "legacy-a" });
 
-        const firstDraft = await createKnowledgeProfileDraft(db, {
-          spaceId,
-          vaultId: firstVault.id,
-          profile: DEFAULT_KNOWLEDGE_PROFILE_V1,
-          createdBy: actorId,
-        });
+        const firstDraft = await createKnowledgeProfileDraft(
+          db,
+          draftInput(firstVault.id, DEFAULT_KNOWLEDGE_PROFILE_V1),
+        );
         expect(firstDraft.status).toBe("DRAFT");
         expect(firstDraft.compatibilityClass).toBeNull();
         expect(firstDraft.canonicalProfile).toBe(
@@ -75,12 +91,10 @@ describe("knowledge profile registry integration", () => {
             Object.entries(DEFAULT_KNOWLEDGE_PROFILE_V1.knowledgeKinds).reverse(),
           ),
         };
-        const duplicate = await createKnowledgeProfileDraft(db, {
-          spaceId,
-          vaultId: firstVault.id,
-          profile: reordered,
-          createdBy: actorId,
-        });
+        const duplicate = await createKnowledgeProfileDraft(
+          db,
+          draftInput(firstVault.id, reordered),
+        );
         expect(duplicate.id).toBe(firstDraft.id);
         expect(duplicate.profileHash).toBe(firstDraft.profileHash);
 
@@ -140,13 +154,12 @@ describe("knowledge profile registry integration", () => {
           ...DEFAULT_KNOWLEDGE_PROFILE_V1,
           version: "0.3-compat-next",
         };
-        const successor = await createKnowledgeProfileDraft(db, {
-          spaceId,
-          vaultId: firstVault.id,
-          profile: nextProfile,
-          supersedesRevisionId: firstDraft.id,
-          createdBy: actorId,
-        });
+        const successor = await createKnowledgeProfileDraft(
+          db,
+          draftInput(firstVault.id, nextProfile, {
+            supersedesRevisionId: firstDraft.id,
+          }),
+        );
         expect(successor.id).not.toBe(firstDraft.id);
         expect(successor.supersedesRevisionId).toBe(firstDraft.id);
 
@@ -157,20 +170,20 @@ describe("knowledge profile registry integration", () => {
           ),
         ).rejects.toThrow("KNOWLEDGE_PROFILE_REVISION_IMMUTABLE");
 
-        const stillFallback = await resolveEffectiveKnowledgeProfile(
+        const stillUnbound = await resolveKnowledgeProfileBinding(
           db,
           spaceId,
           firstVault.id,
         );
-        expect(stillFallback.source).toBe("V03_DEFAULT");
-        expect(stillFallback.revisionId).toBeNull();
+        expect(stillUnbound.source).toBe("LEGACY_UNBOUND");
+        expect(stillUnbound.revision).toBeNull();
 
         await db.pool.query(
           "update vaults set active_knowledge_profile_revision_id=$1 where id=$2",
           [firstDraft.id, firstVault.id],
         );
         await expect(
-          resolveEffectiveKnowledgeProfile(db, spaceId, firstVault.id),
+          resolveKnowledgeProfileBinding(db, spaceId, firstVault.id),
         ).rejects.toThrow("ACTIVE_KNOWLEDGE_PROFILE_BINDING_INVALID");
         await db.pool.query(
           "update vaults set active_knowledge_profile_revision_id=null where id=$1",
@@ -185,12 +198,12 @@ describe("knowledge profile registry integration", () => {
         ).rejects.toThrow();
 
         await expect(
-          createKnowledgeProfileDraft(db, {
-            spaceId: randomUUID(),
-            vaultId: firstVault.id,
-            profile: DEFAULT_KNOWLEDGE_PROFILE_V1,
-            createdBy: actorId,
-          }),
+          createKnowledgeProfileDraft(
+            db,
+            draftInput(firstVault.id, DEFAULT_KNOWLEDGE_PROFILE_V1, {
+              space: randomUUID(),
+            }),
+          ),
         ).rejects.toThrow("VAULT_NOT_FOUND_OR_SCOPE_MISMATCH");
       } finally {
         await db.pool.query(

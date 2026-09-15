@@ -1,11 +1,9 @@
-import type {
-  KnowledgeProfileCompatibility,
-  KnowledgeProfileRevisionStatus,
-} from "@akp/contracts/knowledge-profile";
 import type { Postgres } from "./index.js";
 import {
   getKnowledgeProfileRevision,
+  type KnowledgeProfileCompatibility,
   type KnowledgeProfileRevisionRecord,
+  type KnowledgeProfileRevisionStatus,
 } from "./knowledge-profile-registry.js";
 
 export interface RecordKnowledgeProfileDryRunInput {

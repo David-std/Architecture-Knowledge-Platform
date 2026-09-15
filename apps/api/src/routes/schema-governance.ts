@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import type { FastifyInstance } from "fastify";
-import type { KnowledgeProfileV1 } from "@akp/contracts/knowledge-profile";
+import {
+  DEFAULT_KNOWLEDGE_PROFILE_V1,
+  KnowledgeProfileV1,
+  canonicalKnowledgeProfileJson,
+} from "@akp/contracts/knowledge-profile";
 import {
   classifyKnowledgeProfileCompatibility,
   type KnowledgeProfileCompatibilityIssue,
@@ -10,7 +14,7 @@ import {
   createKnowledgeProfileDraft,
   recordKnowledgeProfileDryRun,
   resolveAuthorizedVaultScope,
-  resolveEffectiveKnowledgeProfile,
+  resolveKnowledgeProfileBinding,
   type Postgres,
 } from "@akp/postgres";
 import {
@@ -35,6 +39,14 @@ interface RelationUsageRow {
   relation_count: string | number;
 }
 
+interface EffectiveKnowledgeProfile {
+  source: "DURABLE_REVISION" | "V03_DEFAULT";
+  revisionId: string | null;
+  profileHash: string;
+  profile: KnowledgeProfileV1;
+  legacySchemaProfile: Record<string, unknown>;
+}
+
 function normalized(values: unknown): string[] {
   if (!Array.isArray(values)) return [];
   return [
@@ -45,6 +57,46 @@ function normalized(values: unknown): string[] {
         .filter(Boolean),
     ),
   ].sort();
+}
+
+function canonicalProfile(profile: unknown): {
+  parsed: KnowledgeProfileV1;
+  canonical: string;
+  hash: string;
+} {
+  const parsed = KnowledgeProfileV1.parse(profile);
+  const canonical = canonicalKnowledgeProfileJson(parsed);
+  return {
+    parsed,
+    canonical,
+    hash: createHash("sha256").update(canonical).digest("hex"),
+  };
+}
+
+async function resolveEffectiveKnowledgeProfile(
+  db: Postgres,
+  spaceId: string,
+  vaultId: string,
+): Promise<EffectiveKnowledgeProfile> {
+  const binding = await resolveKnowledgeProfileBinding(db, spaceId, vaultId);
+  if (binding.revision) {
+    return {
+      source: "DURABLE_REVISION",
+      revisionId: binding.revision.id,
+      profileHash: binding.revision.profileHash,
+      profile: KnowledgeProfileV1.parse(binding.revision.profile),
+      legacySchemaProfile: binding.legacySchemaProfile,
+    };
+  }
+
+  const fallback = canonicalProfile(DEFAULT_KNOWLEDGE_PROFILE_V1);
+  return {
+    source: "V03_DEFAULT",
+    revisionId: null,
+    profileHash: fallback.hash,
+    profile: fallback.parsed,
+    legacySchemaProfile: binding.legacySchemaProfile,
+  };
 }
 
 async function corpusFingerprint(
@@ -196,6 +248,7 @@ export function registerSchemaGovernanceRoutes(
       let profileDraft:
         | Awaited<ReturnType<typeof createKnowledgeProfileDraft>>
         | undefined;
+      let profileCandidate: KnowledgeProfileV1 | undefined;
       if (fullProfileRequested) {
         try {
           currentProfileBefore = await resolveEffectiveKnowledgeProfile(
@@ -203,10 +256,15 @@ export function registerSchemaGovernanceRoutes(
             spaceId,
             vaultId,
           );
+          const candidate = canonicalProfile(request.body.profile);
+          profileCandidate = candidate.parsed;
           profileDraft = await createKnowledgeProfileDraft(db, {
             spaceId,
             vaultId,
-            profile: request.body.profile,
+            profileId: candidate.parsed.profileId,
+            version: candidate.parsed.version,
+            canonicalProfile: candidate.canonical,
+            profileHash: candidate.hash,
             supersedesRevisionId:
               request.body.supersedesRevisionId?.trim() || null,
             createdBy: actor.id,
@@ -299,7 +357,12 @@ export function registerSchemaGovernanceRoutes(
         vaultId,
       );
 
-      if (fullProfileRequested && currentProfileBefore && profileDraft) {
+      if (
+        fullProfileRequested &&
+        currentProfileBefore &&
+        profileDraft &&
+        profileCandidate
+      ) {
         const currentProfileAfter = await resolveEffectiveKnowledgeProfile(
           db,
           spaceId,
@@ -320,7 +383,7 @@ export function registerSchemaGovernanceRoutes(
         );
         const compatibility = classifyKnowledgeProfileCompatibility(
           currentProfileBefore.profile,
-          profileDraft.profile,
+          profileCandidate,
           corpusUsage,
         );
         const affectedDocumentCount = profileAffectedDocumentCount(
