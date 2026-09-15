@@ -81,7 +81,15 @@
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["string", "markdown", "number", "boolean", "datetime", "enum", "json"]
+          "enum": [
+            "string",
+            "markdown",
+            "number",
+            "boolean",
+            "datetime",
+            "enum",
+            "json"
+          ]
         },
         "required": { "type": "boolean" },
         "enumValues": {
@@ -95,7 +103,13 @@
     "KnowledgeKindDefinition": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["fields", "lifecycle", "evidencePolicy", "reviewPolicy", "artifactContract"],
+      "required": [
+        "fields",
+        "lifecycle",
+        "evidencePolicy",
+        "reviewPolicy",
+        "artifactContract"
+      ],
       "properties": {
         "fields": {
           "type": "object",
@@ -110,7 +124,13 @@
     "LifecycleTransitionDefinition": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["from", "to", "allowedActors", "requiredEvidence", "requiredReview"],
+      "required": [
+        "from",
+        "to",
+        "allowedActors",
+        "requiredEvidence",
+        "requiredReview"
+      ],
       "properties": {
         "from": { "$ref": "#/$defs/SemanticName" },
         "to": { "$ref": "#/$defs/SemanticName" },
@@ -154,7 +174,12 @@
         "requireSourceLocator": { "type": "boolean" },
         "minimumTrust": {
           "type": "string",
-          "enum": ["UNVERIFIED", "MACHINE_SUPPORTED", "HUMAN_REVIEWED", "ATTESTED"]
+          "enum": [
+            "UNVERIFIED",
+            "MACHINE_SUPPORTED",
+            "HUMAN_REVIEWED",
+            "ATTESTED"
+          ]
         }
       }
     },
@@ -205,7 +230,12 @@
     "RetrievalProfilePolicy": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["allowedKinds", "relationAllowlist", "mandatoryKindsByIntent", "progressiveDisclosure"],
+      "required": [
+        "allowedKinds",
+        "relationAllowlist",
+        "mandatoryKindsByIntent",
+        "progressiveDisclosure"
+      ],
       "properties": {
         "allowedKinds": {
           "type": "array",
@@ -240,7 +270,13 @@
           "minItems": 1,
           "items": {
             "type": "string",
-            "enum": ["PERSONAL", "PROJECT", "TEAM", "ORGANIZATION", "EXTERNAL_FEDERATED"]
+            "enum": [
+              "PERSONAL",
+              "PROJECT",
+              "TEAM",
+              "ORGANIZATION",
+              "EXTERNAL_FEDERATED"
+            ]
           }
         },
         "reviewRequired": { "type": "boolean" }
@@ -268,7 +304,12 @@
           "minItems": 1,
           "items": {
             "type": "string",
-            "enum": ["MIRROR_INDEXED", "REMOTE_FEDERATED", "REFERENCE_LIVE", "HYBRID_CACHE"]
+            "enum": [
+              "MIRROR_INDEXED",
+              "REMOTE_FEDERATED",
+              "REFERENCE_LIVE",
+              "HYBRID_CACHE"
+            ]
           }
         },
         "requirePermissionFidelity": { "type": "boolean" }
