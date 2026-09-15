@@ -29,7 +29,7 @@ async function loadRegressionPack(): Promise<RegressionPack> {
 }
 
 describe("context correctness regression contract", () => {
-  it("pins temporal contradiction and tokenization regressions without changing defaults", async () => {
+  it("pins required P0 correctness regressions", async () => {
     const pack = await loadRegressionPack();
     expect(pack.schemaVersion).toBe(1);
     expect(pack.productionDefaultsChanged).toBe(false);
@@ -39,36 +39,30 @@ describe("context correctness regression contract", () => {
       (testCase) => testCase.kind === "TEMPORAL_TRUTH_CONTRADICTION",
     );
     expect(temporal).toBeDefined();
-    expect(temporal?.denseScores?.["security-guide-v1"] ?? 0).toBeGreaterThan(
-      temporal?.denseScores?.["security-guide-v3"] ?? Number.POSITIVE_INFINITY,
-    );
-    expect(
-      Math.abs(
-        (temporal?.denseScores?.["security-guide-v1"] ?? 0) -
-          (temporal?.denseScores?.["security-guide-v3"] ?? 0),
-      ),
-    ).toBeLessThan(0.01);
-    expect(temporal?.expectations.current).toEqual(["security-guide-v3"]);
-    expect(temporal?.expectations.asOfBeforeChange).toEqual([
+
+    const oldScore = temporal?.denseScores?.["security-guide-v1"] ?? 0;
+    const currentScore = temporal?.denseScores?.["security-guide-v3"] ?? Infinity;
+    expect(oldScore).toBeGreaterThan(currentScore);
+    expect(Math.abs(oldScore - currentScore)).toBeLessThan(0.01);
+
+    const temporalExpectations = temporal?.expectations;
+    expect(temporalExpectations?.current).toEqual(["security-guide-v3"]);
+    expect(temporalExpectations?.asOfBeforeChange).toEqual([
       "security-guide-v1",
     ]);
-    expect(temporal?.expectations.mustNotResolveBy).toBe("DENSE_SCORE_ONLY");
-    expect(temporal?.expectations.mustExposeContradiction).toBe(true);
-    expect(temporal?.expectations.readTimeSupportValidationRequired).toBe(true);
+    expect(temporalExpectations?.mustNotResolveBy).toBe("DENSE_SCORE_ONLY");
+    expect(temporalExpectations?.mustExposeContradiction).toBe(true);
+    expect(temporalExpectations?.readTimeSupportValidationRequired).toBe(true);
 
     const tokenCase = pack.cases.find(
       (testCase) => testCase.kind === "TOKENIZATION_AND_EXACT_IDENTIFIER",
     );
     expect(tokenCase).toBeDefined();
-    expect(tokenCase?.expectations.benchmarkLanguages).toEqual([
-      "en",
-      "es",
-      "code",
-    ]);
-    expect(tokenCase?.expectations.approximateFallbackMustBeLabeled).toBe(true);
-    expect(tokenCase?.expectations.serializedContextPacketMeasured).toBe(true);
-    expect(tokenCase?.expectations.exactOrLexicalIdentifierChannelRequired).toBe(
-      true,
-    );
+
+    const tokenExpectations = tokenCase?.expectations;
+    expect(tokenExpectations?.benchmarkLanguages).toEqual(["en", "es", "code"]);
+    expect(tokenExpectations?.approximateFallbackMustBeLabeled).toBe(true);
+    expect(tokenExpectations?.serializedContextPacketMeasured).toBe(true);
+    expect(tokenExpectations?.exactOrLexicalIdentifierChannelRequired).toBe(true);
   });
 });
