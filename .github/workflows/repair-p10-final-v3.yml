@@ -23,9 +23,11 @@ jobs:
           node-version: 24.20.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
-      - name: Apply Agent A/B evidence fix
+      - name: Apply Agent A/B and embedding validation fixes
         shell: bash
         run: |
+          cp db/migrations/026_consolidate_embedding_validation.sql /tmp/026-committed.sql
+          rm db/migrations/026_consolidate_embedding_validation.sql
           python - <<'PY'
           from pathlib import Path
           import base64, gzip
@@ -53,7 +55,13 @@ jobs:
           PY
           pnpm exec prettier --write scripts/agent-ab-benchmark.ts
           git diff --check
-          test "$(git diff --name-only)" = "scripts/agent-ab-benchmark.ts"
+          printf '%s\n' \
+            db/migrations/026_consolidate_embedding_validation.sql \
+            scripts/agent-ab-benchmark.ts | sort > /tmp/expected
+          git diff --name-only | sort > /tmp/changed
+          diff -u /tmp/expected /tmp/changed
+          echo '--- migration delta vs committed candidate ---'
+          diff -u /tmp/026-committed.sql db/migrations/026_consolidate_embedding_validation.sql || true
       - name: Validate repository
         run: pnpm check
       - name: Start disposable PostgreSQL
@@ -82,13 +90,15 @@ jobs:
             throw new Error(`Scale 100K preflight failed: ${JSON.stringify({status: report.status, cleanup: report.cleanup, failure: report.failure})}`);
           }
           NODE
-      - name: Commit validated Agent fix
+      - name: Commit validated fixes
         shell: bash
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add scripts/agent-ab-benchmark.ts
-          git commit -m "fix(eval): stabilize live Agent A/B output contract"
+          git add \
+            db/migrations/026_consolidate_embedding_validation.sql \
+            scripts/agent-ab-benchmark.ts
+          git commit -m "fix(p10): stabilize agent evidence and embedding scale"
           git push origin HEAD:work/product-completion-final
       - name: Stop disposable services
         if: always()
