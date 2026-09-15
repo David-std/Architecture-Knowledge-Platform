@@ -2,8 +2,10 @@ import {
   CompilationPlan,
   ExistingKnowledgeCandidate,
   KnowledgeCompilerInput,
+  allowedCompilerKnowledgeKinds,
   resultToCompilationPlan,
   type CompilerEvidence,
+  type CompilerKnowledgeProfileContext,
   type ConfiguredKnowledgeCompiler,
   type KnowledgeCompilerInput as KnowledgeCompilerInputType,
   type KnowledgeCompilerResult,
@@ -394,6 +396,7 @@ export interface GroundedCompilationRequest {
   };
   documentArtifact: DocumentArtifact;
   evidence: CompilerEvidence[];
+  knowledgeProfile: CompilerKnowledgeProfileContext;
   schemaProfile: Record<string, unknown>;
   corpusRevision: string;
   spaceId: string;
@@ -444,10 +447,14 @@ export async function compileGroundedKnowledgeProposal(
     documentArtifact: request.documentArtifact,
     evidence: request.evidence,
     existingCandidates: retrieval.candidates,
+    knowledgeProfile: request.knowledgeProfile,
     schemaProfile: request.schemaProfile,
     policy: {
       reviewRequired: true,
       allowDirectPublication: false,
+      allowedKnowledgeKinds: allowedCompilerKnowledgeKinds(
+        request.knowledgeProfile.profile,
+      ),
     },
     budget: {
       maxInputCharacters: 80_000,
