@@ -86,6 +86,7 @@ jobs:
           SQL
 
           pnpm exec prettier --write scripts/agent-ab-benchmark.ts
+          git add -N db/migrations/028_preserve_embedding_shape_errors.sql
           git diff --check
           printf '%s\n' \
             db/migrations/028_preserve_embedding_shape_errors.sql \
