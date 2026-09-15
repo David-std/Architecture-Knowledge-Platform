@@ -15,10 +15,11 @@ interface KnowledgeProfileRevisionRow {
   profile_id: string;
   version: string;
   profile_hash: string;
-  profile: unknown;
+  canonical_profile: string;
   status: KnowledgeProfileRevisionStatus;
   compatibility_class: KnowledgeProfileCompatibility | null;
   corpus_revision: string;
+  supersedes_revision_id: string | null;
   created_by: string | null;
   validation_report: unknown;
   validated_at: Date | null;
@@ -36,10 +37,12 @@ export interface KnowledgeProfileRevisionRecord {
   profileId: string;
   version: string;
   profileHash: string;
+  canonicalProfile: string;
   profile: KnowledgeProfileV1;
   status: KnowledgeProfileRevisionStatus;
   compatibilityClass: KnowledgeProfileCompatibility | null;
   corpusRevision: string;
+  supersedesRevisionId: string | null;
   createdBy: string | null;
   validationReport: Record<string, unknown>;
   validatedAt: Date | null;
@@ -54,6 +57,7 @@ export interface CreateKnowledgeProfileDraftInput {
   spaceId: string;
   vaultId: string;
   profile: unknown;
+  supersedesRevisionId?: string | null;
   createdBy?: string | null;
 }
 
@@ -84,7 +88,9 @@ function hashCanonicalProfile(profile: unknown): {
   };
 }
 
-function mapRevision(row: KnowledgeProfileRevisionRow): KnowledgeProfileRevisionRecord {
+function mapRevision(
+  row: KnowledgeProfileRevisionRow,
+): KnowledgeProfileRevisionRecord {
   return {
     id: row.id,
     spaceId: row.space_id,
@@ -92,10 +98,12 @@ function mapRevision(row: KnowledgeProfileRevisionRow): KnowledgeProfileRevision
     profileId: row.profile_id,
     version: row.version,
     profileHash: row.profile_hash,
-    profile: KnowledgeProfileV1.parse(row.profile),
+    canonicalProfile: row.canonical_profile,
+    profile: KnowledgeProfileV1.parse(JSON.parse(row.canonical_profile)),
     status: row.status,
     compatibilityClass: row.compatibility_class,
     corpusRevision: row.corpus_revision,
+    supersedesRevisionId: row.supersedes_revision_id,
     createdBy: row.created_by,
     validationReport: asRecord(row.validation_report),
     validatedAt: row.validated_at,
@@ -121,11 +129,12 @@ export async function createKnowledgeProfileDraft(
     `
     with inserted as (
       insert into knowledge_profile_revisions(
-        space_id,vault_id,profile_id,version,profile_hash,profile,status,
-        compatibility_class,corpus_revision,created_by
+        space_id,vault_id,profile_id,version,profile_hash,canonical_profile,
+        status,compatibility_class,corpus_revision,supersedes_revision_id,
+        created_by
       )
-      select v.space_id,v.id,$3,$4,$5,$6::jsonb,'DRAFT',null,
-             coalesce(r.corpus_revision,v.current_revision,'unknown'),$7
+      select v.space_id,v.id,$3,$4,$5,$6,'DRAFT',null,
+             coalesce(r.corpus_revision,v.current_revision,'unknown'),$7,$8
         from vaults v
         left join vault_index_revisions r
           on r.space_id=v.space_id and r.vault_id=v.id
@@ -148,6 +157,7 @@ export async function createKnowledgeProfileDraft(
       parsed.version,
       hash,
       canonical,
+      input.supersedesRevisionId ?? null,
       input.createdBy ?? null,
     ],
   );
