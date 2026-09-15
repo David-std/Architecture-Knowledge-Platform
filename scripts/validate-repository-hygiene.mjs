@@ -224,6 +224,8 @@ for (const entry of entries) {
     failures.push(`ASSURANCE_LAYOUT_NOT_RELEASE_ORIENTED ${entry.path}`);
   if (phasePathToken.test(entry.path))
     failures.push(`PHASE_CODED_PATH ${entry.path}`);
+  if (/^reports\/.*\.json$/i.test(entry.path))
+    failures.push(`GENERATED_REPORT_TRACKED ${entry.path}`);
 
   if (!isTextCandidate(entry.path)) continue;
   const content = readFileSync(path.join(root, entry.path), "utf8");
