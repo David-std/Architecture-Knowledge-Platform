@@ -373,13 +373,12 @@ function parseModelOutput(content: string): AgentAbModelOutput {
         throw new Error("Provider returned more than four claims.");
       const value = line.slice("CLAIM:".length).trim();
       const separator = value.indexOf(" || ");
-      if (separator < 0)
-        throw new Error("Provider CLAIM omitted its citation delimiter.");
-      const text = value.slice(0, separator).trim();
+      const text = (separator < 0 ? value : value.slice(0, separator)).trim();
       if (!text) throw new Error("Provider CLAIM text was empty.");
       claims.push({
         text,
-        citations: citationList(value.slice(separator + 4)),
+        citations:
+          separator < 0 ? [] : citationList(value.slice(separator + 4)),
       });
       continue;
     }
