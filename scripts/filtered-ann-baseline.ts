@@ -46,11 +46,17 @@ type ScenarioMeasurement = {
 };
 
 function normalize(values: number[]): number[] {
-  const magnitude = Math.sqrt(values.reduce((sum, value) => sum + value * value, 0));
+  const magnitude = Math.sqrt(
+    values.reduce((sum, value) => sum + value * value, 0),
+  );
   return values.map((value) => value / magnitude);
 }
 
-function clusterVector(cluster: number, noise: number, variant: number): number[] {
+function clusterVector(
+  cluster: number,
+  noise: number,
+  variant: number,
+): number[] {
   const values = Array.from({ length: dimensions }, () => 0);
   values[cluster] = 1;
   values[16 + ((cluster + variant) % 32)] = noise;
@@ -60,7 +66,9 @@ function clusterVector(cluster: number, noise: number, variant: number): number[
 
 function backgroundVector(seed: number): number[] {
   const values = Array.from({ length: dimensions }, (_, index) => {
-    const raw = Math.sin((seed + 1) * (index + 3) * 0.731) + Math.cos((seed + 7) * (index + 1) * 0.193);
+    const raw =
+      Math.sin((seed + 1) * (index + 3) * 0.731) +
+      Math.cos((seed + 7) * (index + 1) * 0.193);
     return raw;
   });
   return normalize(values);
@@ -156,7 +164,8 @@ function collectIndexNames(plan: unknown): string[] {
   const visit = (node: unknown): void => {
     if (!node || typeof node !== "object") return;
     const record = node as Record<string, unknown>;
-    if (typeof record["Index Name"] === "string") names.add(record["Index Name"]);
+    if (typeof record["Index Name"] === "string")
+      names.add(record["Index Name"]);
     for (const value of Object.values(record)) {
       if (Array.isArray(value)) value.forEach(visit);
       else if (value && typeof value === "object") visit(value);
@@ -166,7 +175,10 @@ function collectIndexNames(plan: unknown): string[] {
   return [...names].sort();
 }
 
-async function configureMode(client: PoolClient, mode: SearchMode): Promise<void> {
+async function configureMode(
+  client: PoolClient,
+  mode: SearchMode,
+): Promise<void> {
   await client.query("set enable_bitmapscan=off");
   if (mode === "EXACT") {
     await client.query("set enable_indexscan=off");
@@ -256,9 +268,11 @@ async function measureScenario(
     scenario,
     mode,
     queries: queries.length,
-    meanRecallAtK: recalls.reduce((sum, value) => sum + value, 0) / recalls.length,
+    meanRecallAtK:
+      recalls.reduce((sum, value) => sum + value, 0) / recalls.length,
     minimumRecallAtK: Math.min(...recalls),
-    meanReturned: returned.reduce((sum, value) => sum + value, 0) / returned.length,
+    meanReturned:
+      returned.reduce((sum, value) => sum + value, 0) / returned.length,
     leakageCount,
     planIndexNames: [...planIndexNames].sort(),
   };
@@ -270,7 +284,8 @@ try {
   const extension = await client.query<{ extversion: string }>(
     "select extversion from pg_extension where extname='vector'",
   );
-  if (!extension.rows[0]) throw new Error("pgvector extension is not installed.");
+  if (!extension.rows[0])
+    throw new Error("pgvector extension is not installed.");
 
   await client.query(`
     create temp table p0_filtered_ann_probe(
@@ -363,7 +378,9 @@ try {
     0,
   );
   if (leakageCount !== 0) {
-    throw new Error(`Filtered ANN baseline observed ${leakageCount} leaked rows.`);
+    throw new Error(
+      `Filtered ANN baseline observed ${leakageCount} leaked rows.`,
+    );
   }
 
   const report = {
