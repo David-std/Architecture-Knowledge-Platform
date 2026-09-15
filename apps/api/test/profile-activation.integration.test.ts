@@ -83,9 +83,13 @@ afterAll(async () => {
     [vaultId],
   );
   await db.pool.query("delete from audit_events where vault_id=$1", [vaultId]);
-  await db.pool.query("delete from schema_dry_runs where vault_id=$1", [vaultId]);
+  await db.pool.query("delete from schema_dry_runs where vault_id=$1", [
+    vaultId,
+  ]);
   await db.pool.query("delete from vaults where id=$1", [vaultId]);
-  await db.pool.query("delete from api_tokens where token_hash=$1", [tokenHash]);
+  await db.pool.query("delete from api_tokens where token_hash=$1", [
+    tokenHash,
+  ]);
   await db.close();
 });
 
@@ -145,9 +149,9 @@ describe("KnowledgeProfile activation API integration", () => {
       payload,
     });
     expect(repeatedResponse.statusCode).toBe(200);
-    expect(repeatedResponse.json<{ alreadyActive: boolean }>().alreadyActive).toBe(
-      true,
-    );
+    expect(
+      repeatedResponse.json<{ alreadyActive: boolean }>().alreadyActive,
+    ).toBe(true);
 
     const auditCount = await db.pool.query<{ count: string }>(
       `

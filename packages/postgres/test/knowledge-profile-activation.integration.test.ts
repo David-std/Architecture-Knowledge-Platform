@@ -41,7 +41,11 @@ async function createVault(db: Postgres): Promise<string> {
       '{}'::jsonb,'{}'::jsonb,true,'PRIVATE','activation-r1'
     ) returning id
     `,
-    [spaceId, `/tmp/profile-activation-${marker}`, `profile-activation-${marker}`],
+    [
+      spaceId,
+      `/tmp/profile-activation-${marker}`,
+      `profile-activation-${marker}`,
+    ],
   );
   return String(result.rows[0]?.id);
 }
@@ -227,7 +231,9 @@ describe("knowledge profile activation integration", () => {
           "update vaults set active_knowledge_profile_revision_id=null where id=$1",
           [vaultId],
         );
-        await db.pool.query("delete from audit_events where vault_id=$1", [vaultId]);
+        await db.pool.query("delete from audit_events where vault_id=$1", [
+          vaultId,
+        ]);
         await db.pool.query("delete from schema_dry_runs where vault_id=$1", [
           vaultId,
         ]);

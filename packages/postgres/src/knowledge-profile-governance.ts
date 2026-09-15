@@ -280,10 +280,7 @@ export async function activateKnowledgeProfile(
       throw new Error("CONTEXT_REVISION_CHANGED");
     }
 
-    if (
-      candidate.status === "ACTIVE" &&
-      previousRevisionId === candidate.id
-    ) {
+    if (candidate.status === "ACTIVE" && previousRevisionId === candidate.id) {
       if (
         candidate.compatibility_class !== "NON_BREAKING" ||
         dryRun.compatibility_class !== "NON_BREAKING"

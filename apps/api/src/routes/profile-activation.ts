@@ -54,7 +54,9 @@ export function registerProfileActivationRoutes(
         !body.expectedProfileHash ||
         !body.expectedCorpusRevision
       ) {
-        return reply.code(400).send({ code: "PROFILE_ACTIVATION_INPUT_REQUIRED" });
+        return reply
+          .code(400)
+          .send({ code: "PROFILE_ACTIVATION_INPUT_REQUIRED" });
       }
       if (!/^[a-f0-9]{64}$/.test(body.expectedProfileHash)) {
         return reply.code(400).send({ code: "INVALID_PROFILE_HASH" });
