@@ -1,0 +1,241 @@
+name: p1-openapi-contract-sync
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  sync-contract:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'feat/v0.4-enterprise-context-workspace'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/v0.4-enterprise-context-workspace
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Patch schema governance OpenAPI paths
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('contracts/openapi.yaml')
+          text = path.read_text()
+          start_marker = '  /v1/schema/dry-run:\n'
+          end_marker = '  /v1/indexes:\n'
+          if text.count(start_marker) != 1 or text.count(end_marker) != 1:
+              raise SystemExit('schema governance OpenAPI markers are not unique')
+          if '  /v1/schema/activate:\n' in text:
+              raise SystemExit('activation path already exists; refusing blind rewrite')
+          start = text.index(start_marker)
+          end = text.index(end_marker, start)
+          replacement = '''  /v1/schema/dry-run:
+            post:
+              tags: [Governance]
+              operationId: dryRunKnowledgeSchema
+              x-akp-permission: admin
+              x-akp-requires-unrestricted-space: true
+              x-akp-requires-vault-scope: true
+              description: >
+                Validates either the legacy schema candidate or a complete
+                KnowledgeProfileV1 against the exact authorized vault corpus.
+                Full-profile dry-runs persist an immutable profile revision and
+                corpus-pinned validation evidence without activating it.
+              parameters:
+                - { $ref: "#/components/parameters/IdempotencyKey" }
+              requestBody:
+                required: true
+                content:
+                  application/json:
+                    schema:
+                      type: object
+                      additionalProperties: false
+                      required: [spaceId, vaultId]
+                      anyOf:
+                        - required: [candidateVersion]
+                        - required: [profile]
+                      properties:
+                        spaceId: { type: string, format: uuid }
+                        vaultId: { type: string, format: uuid }
+                        candidateVersion: { type: string, minLength: 1 }
+                        requiredFrontmatterFields:
+                          { type: array, items: { type: string } }
+                        allowedTypes: { type: array, items: { type: string } }
+                        profile: { $ref: "./knowledge-profile.schema.json" }
+                        supersedesRevisionId: { type: string, format: uuid }
+              responses:
+                "200":
+                  description: Corpus-pinned compatibility report; full-profile mode also returns the durable profile revision.
+                  content:
+                    application/json:
+                      schema:
+                        type: object
+                        required:
+                          [
+                            id,
+                            createdAt,
+                            candidateHash,
+                            corpusFingerprintBefore,
+                            corpusFingerprintAfter,
+                            compatibilityStatus,
+                            compatibilityClass,
+                            affectedDocumentCount,
+                            corpusRevision,
+                            corpusUnchanged,
+                          ]
+                        properties:
+                          id: { type: string, format: uuid }
+                          createdAt: { type: string, format: date-time }
+                          profileRevisionId: { type: string, format: uuid }
+                          profileRevisionStatus:
+                            type: string
+                            enum:
+                              [
+                                DRAFT,
+                                VALIDATED,
+                                REVIEW_REQUIRED,
+                                ACTIVE,
+                                SUPERSEDED,
+                                RETIRED,
+                              ]
+                          candidateHash:
+                            { type: string, pattern: "^[a-f0-9]{64}$" }
+                          corpusFingerprintBefore:
+                            { type: string, pattern: "^[a-f0-9]{64}$" }
+                          corpusFingerprintAfter:
+                            { type: string, pattern: "^[a-f0-9]{64}$" }
+                          compatibilityStatus:
+                            type: string
+                            enum: [COMPATIBLE, MIGRATION_REQUIRED]
+                          compatibilityClass:
+                            type: string
+                            enum:
+                              [
+                                NON_BREAKING,
+                                REINDEX_REQUIRED,
+                                RECOMPILE_REQUIRED,
+                                MIGRATION_REQUIRED,
+                                UNSAFE,
+                              ]
+                          affectedDocumentCount:
+                            { type: integer, minimum: 0 }
+                          corpusRevision: { type: string, minLength: 1 }
+                          corpusUnchanged: { type: boolean }
+                        additionalProperties: true
+                "400": { $ref: "#/components/responses/BadRequest" }
+                "401": { $ref: "#/components/responses/Unauthorized" }
+                "403": { $ref: "#/components/responses/Forbidden" }
+                "409": { $ref: "#/components/responses/Conflict" }
+            /v1/schema/activate:
+              post:
+                tags: [Governance]
+                operationId: activateKnowledgeProfile
+                x-akp-permission: admin
+                x-akp-requires-unrestricted-space: true
+                x-akp-requires-vault-scope: true
+                description: >
+                  Atomically activates a VALIDATED, NON_BREAKING profile only
+                  when the exact dry-run, profile hash, corpus revision and
+                  corpus fingerprint still match. REVIEW_REQUIRED and breaking
+                  profiles remain blocked until governed profile review and
+                  migration approval are complete.
+                parameters:
+                  - { $ref: "#/components/parameters/IdempotencyKey" }
+                requestBody:
+                  required: true
+                  content:
+                    application/json:
+                      schema:
+                        type: object
+                        additionalProperties: false
+                        required:
+                          [
+                            spaceId,
+                            vaultId,
+                            profileRevisionId,
+                            dryRunId,
+                            expectedProfileHash,
+                            expectedCorpusRevision,
+                          ]
+                        properties:
+                          spaceId: { type: string, format: uuid }
+                          vaultId: { type: string, format: uuid }
+                          profileRevisionId: { type: string, format: uuid }
+                          dryRunId: { type: string, format: uuid }
+                          expectedProfileHash:
+                            { type: string, pattern: "^[a-f0-9]{64}$" }
+                          expectedCorpusRevision: { type: string, minLength: 1 }
+                responses:
+                  "200":
+                    description: Active profile binding, including idempotent replay state.
+                    content:
+                      application/json:
+                        schema:
+                          type: object
+                          additionalProperties: false
+                          required:
+                            [
+                              profileRevisionId,
+                              profileId,
+                              version,
+                              profileHash,
+                              status,
+                              corpusRevision,
+                              dryRunId,
+                              alreadyActive,
+                            ]
+                          properties:
+                            profileRevisionId: { type: string, format: uuid }
+                            profileId: { type: string }
+                            version: { type: string }
+                            profileHash:
+                              { type: string, pattern: "^[a-f0-9]{64}$" }
+                            status: { type: string, const: ACTIVE }
+                            previousRevisionId:
+                              type: [string, "null"]
+                              format: uuid
+                            corpusRevision: { type: string, minLength: 1 }
+                            dryRunId: { type: string, format: uuid }
+                            alreadyActive: { type: boolean }
+                  "400": { $ref: "#/components/responses/BadRequest" }
+                  "401": { $ref: "#/components/responses/Unauthorized" }
+                  "403": { $ref: "#/components/responses/Forbidden" }
+                  "404": { $ref: "#/components/responses/NotFound" }
+                  "409": { $ref: "#/components/responses/Conflict" }
+          '''
+          # Dedent the source literal from this workflow while preserving the
+          # intended two-space OpenAPI path indentation.
+          import textwrap
+          replacement = textwrap.dedent(replacement)
+          if not replacement.startswith('  /v1/schema/dry-run:\n'):
+              raise SystemExit('replacement indentation invalid')
+          path.write_text(text[:start] + replacement + text[end:])
+          PY
+      - name: Format and validate contracts
+        run: |
+          pnpm exec prettier --write contracts/openapi.yaml contracts/knowledge-profile.schema.json
+          pnpm contracts:validate
+          pnpm exec prettier --check contracts/openapi.yaml contracts/knowledge-profile.schema.json
+      - name: Commit contract and remove temporary workflow
+        shell: bash
+        run: |
+          rm .github/workflows/p1-openapi-contract-sync.yml
+          git config user.name "David"
+          git config user.email "165101013+David-std@users.noreply.github.com"
+          git add contracts/openapi.yaml contracts/knowledge-profile.schema.json .github/workflows/p1-openapi-contract-sync.yml
+          git diff --cached --check
+          git commit -m "docs(p1): document profile governance HTTP contract"
+          git push origin HEAD:feat/v0.4-enterprise-context-workspace
