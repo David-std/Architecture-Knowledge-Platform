@@ -29,6 +29,9 @@ jobs:
       AKP_LOCAL_AGENT_MODEL_REVISION: cc5cc01a65cc3ff17bdb73a7de33d879f62599b0
       AKP_LOCAL_AGENT_DTYPE: q4
       AKP_LOCAL_AGENT_PORT: "18081"
+      AKP_CONTEXT_TOKENIZER_MODEL: onnx-community/Qwen2.5-0.5B-Instruct
+      AKP_CONTEXT_TOKENIZER_REVISION: cc5cc01a65cc3ff17bdb73a7de33d879f62599b0
+      AKP_CONTEXT_TOKENIZER_REPORT: reports/ci/context-tokenizer-baseline.json
       PORT: "18080"
     steps:
       - uses: actions/checkout@v7
@@ -78,6 +81,12 @@ jobs:
           done
           cat reports/ci/local-agent-provider.log >&2
           exit 1
+      - name: Measure pinned tokenizer against serialized ContextPacket
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm benchmark:context-tokenization \
+            2>&1 | tee reports/ci/context-tokenizer-baseline.log
       - name: Execute live controlled Agent A/B comparison
         shell: bash
         run: |
@@ -102,6 +111,9 @@ jobs:
           const providerHealth = JSON.parse(
             readFileSync("reports/ci/local-agent-provider-health.json", "utf8"),
           );
+          const tokenizerBaseline = JSON.parse(
+            readFileSync("reports/ci/context-tokenizer-baseline.json", "utf8"),
+          );
           if (report.taskSet?.evidenceLevel !== "REGISTERED_PUBLIC_PRODUCT_CORPUS") {
             throw new Error("Agent A/B must use the registered public product corpus task set.");
           }
@@ -122,6 +134,39 @@ jobs:
           }
           if (providerHealth.revision !== "cc5cc01a65cc3ff17bdb73a7de33d879f62599b0" || providerHealth.dtype !== "q4") {
             throw new Error("Local provider did not execute the pinned model revision and dtype.");
+          }
+          if (tokenizerBaseline.status !== "PROVEN" || tokenizerBaseline.productionDefaultsChanged !== false) {
+            throw new Error("P0 tokenizer baseline must be proven without changing production defaults.");
+          }
+          if (
+            tokenizerBaseline.targetModel?.model !== "onnx-community/Qwen2.5-0.5B-Instruct" ||
+            tokenizerBaseline.targetModel?.revision !== "cc5cc01a65cc3ff17bdb73a7de33d879f62599b0" ||
+            tokenizerBaseline.targetModel?.exact !== true
+          ) {
+            throw new Error("P0 tokenizer baseline did not use the pinned exact model tokenizer.");
+          }
+          const tokenizerSamples = Array.isArray(tokenizerBaseline.samples)
+            ? tokenizerBaseline.samples
+            : [];
+          if (tokenizerSamples.length !== 3) {
+            throw new Error(`Expected three tokenizer baseline samples, got ${tokenizerSamples.length}.`);
+          }
+          const languages = new Set(tokenizerSamples.map((item) => item.language));
+          for (const requiredLanguage of ["english", "spanish", "code"]) {
+            if (!languages.has(requiredLanguage)) {
+              throw new Error(`Tokenizer baseline is missing ${requiredLanguage}.`);
+            }
+          }
+          for (const sample of tokenizerSamples) {
+            if (sample.tokenizer?.approximate !== false || sample.fallbackTokenizer?.approximate !== true) {
+              throw new Error(`Tokenizer baseline ${sample.language} did not preserve EXACT/APPROXIMATE evidence.`);
+            }
+            if (!Number.isFinite(sample.exactContentTokens) || !Number.isFinite(sample.exactSerializedPacketTokens)) {
+              throw new Error(`Tokenizer baseline ${sample.language} lacks exact token measurements.`);
+            }
+          }
+          if (!Array.isArray(tokenizerBaseline.identifiers) || tokenizerBaseline.identifiers.length === 0) {
+            throw new Error("Tokenizer baseline must measure exact code identifiers.");
           }
           if (report.winner !== null || report.claimPolicy?.superiorityClaimAllowed !== false) {
             throw new Error("The harness must report measurements without manufacturing a superiority claim.");
@@ -147,6 +192,12 @@ jobs:
             model: report.execution.provider.model,
             modelRevision: providerHealth.revision,
             dtype: providerHealth.dtype,
+            tokenizerBaseline: {
+              model: tokenizerBaseline.targetModel.model,
+              revision: tokenizerBaseline.targetModel.revision,
+              samples: tokenizerSamples,
+              identifiers: tokenizerBaseline.identifiers,
+            },
             observations: observations.length,
             aggregates: report.aggregates,
           }, null, 2));
