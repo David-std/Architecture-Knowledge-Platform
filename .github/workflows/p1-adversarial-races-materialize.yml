@@ -38,11 +38,50 @@ jobs:
       - name: Materialize adversarial race candidate
         run: python scripts/tmp-p1-adversarial-races.py
 
+      - name: Align existing compilation-stage regression with post-provider profile recheck
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("apps/worker/test/compilation-stage.test.ts")
+          text = path.read_text()
+          old = '''      .mockResolvedValueOnce({
+                rows: [
+                  {
+                    id: EVIDENCE_ID,
+                    locator,
+                    content_hash: excerptHash,
+                    excerpt,
+                  },
+                ],
+              })
+              .mockResolvedValueOnce({ rows: [] });'''
+          new = '''      .mockResolvedValueOnce({
+                rows: [
+                  {
+                    id: EVIDENCE_ID,
+                    locator,
+                    content_hash: excerptHash,
+                    excerpt,
+                  },
+                ],
+              })
+              .mockResolvedValueOnce({ rows: [] })
+              .mockResolvedValueOnce({
+                rows: [{ schema_profile: {}, current_revision: "managed:8" }],
+              });'''
+          if text.count(old) != 1:
+              raise SystemExit(f"compilation-stage regression anchor expected once, found {text.count(old)}")
+          path.write_text(text.replace(old, new, 1))
+          PY
+
       - name: Format candidate
         run: >-
           pnpm exec prettier --write
           apps/worker/src/compilation-stage.ts
           apps/worker/test/knowledge-profile-compilation.test.ts
+          apps/worker/test/compilation-stage.test.ts
           packages/postgres/test/knowledge-profile-activation.integration.test.ts
 
       - name: Build workspace packages
@@ -52,6 +91,7 @@ jobs:
         run: >-
           pnpm --filter @akp/worker exec vitest run
           test/knowledge-profile-compilation.test.ts
+          test/compilation-stage.test.ts
 
       - name: Start PostgreSQL
         run: docker compose up -d --wait postgres
@@ -77,6 +117,7 @@ jobs:
           git add \
             apps/worker/src/compilation-stage.ts \
             apps/worker/test/knowledge-profile-compilation.test.ts \
+            apps/worker/test/compilation-stage.test.ts \
             packages/postgres/test/knowledge-profile-activation.integration.test.ts
           git rm -f \
             .github/workflows/p1-adversarial-races-materialize.yml \
