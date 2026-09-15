@@ -1,0 +1,156 @@
+name: repair-evidence-harnesses
+
+on:
+  push:
+    branches: [work/product-completion-final]
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: work/product-completion-final
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Normalize live-model JSON and isolate exact vector scale
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          agent = Path('scripts/agent-ab-benchmark.ts')
+          text = agent.read_text()
+          old = '''function parseModelOutput(content: string): AgentAbModelOutput {
+            const cleaned = content
+              .trim()
+              .replace(/^```(?:json)?\\s*/iu, "")
+              .replace(/\\s*```$/u, "");
+            const parsed = JSON.parse(cleaned) as Record<string, unknown>;
+          '''
+          new = '''function firstJsonObject(value: string): string {
+            const start = value.indexOf("{");
+            if (start < 0) throw new Error("Provider response contained no JSON object.");
+            let depth = 0;
+            let inString = false;
+            let escaped = false;
+            for (let index = start; index < value.length; index += 1) {
+              const character = value[index];
+              if (inString) {
+                if (escaped) {
+                  escaped = false;
+                } else if (character === "\\\\") {
+                  escaped = true;
+                } else if (character === '\"') {
+                  inString = false;
+                }
+                continue;
+              }
+              if (character === '\"') {
+                inString = true;
+              } else if (character === "{") {
+                depth += 1;
+              } else if (character === "}") {
+                depth -= 1;
+                if (depth === 0) return value.slice(start, index + 1);
+              }
+            }
+            throw new Error("Provider response contained an unterminated JSON object.");
+          }
+
+          function parseModelOutput(content: string): AgentAbModelOutput {
+            const cleaned = content.trim().replace(/^```(?:json)?\\s*/iu, "");
+            const parsed = JSON.parse(firstJsonObject(cleaned)) as Record<string, unknown>;
+          '''
+          if old not in text:
+              raise SystemExit('agent parser target not found')
+          agent.write_text(text.replace(old, new, 1))
+
+          scale = Path('scripts/load-scale-benchmark.ts')
+          text = scale.read_text()
+          old = '''async function runBenchmark(
+            targets: number[],
+            iterations: number,
+            seed: string,
+          ): Promise<ScaleReport> {
+            await client.connect();
+            const info = await databaseInfo();
+            const fixture = await createFixture(seed);
+          '''
+          new = '''async function prepareExactVectorScaleDatabase(): Promise<void> {
+            const rows = await client.query<{ count: Numeric }>(
+              "select count(*)::bigint as count from unit_embeddings",
+            );
+            if (asNumber(rows.rows[0]?.count) !== 0) {
+              throw new Error(
+                "Scale benchmark refuses to alter vector indexes in a database with pre-existing unit embeddings.",
+              );
+            }
+            // ANN construction/maintenance is a separate evaluation dimension. This
+            // disposable scale harness measures exact pgvector query behavior and
+            // bulk materialisation without conflating it with HNSW build cost.
+            await client.query("drop index if exists unit_embeddings_vector_idx");
+          }
+
+          async function runBenchmark(
+            targets: number[],
+            iterations: number,
+            seed: string,
+          ): Promise<ScaleReport> {
+            await client.connect();
+            const info = await databaseInfo();
+            await prepareExactVectorScaleDatabase();
+            const fixture = await createFixture(seed);
+          '''
+          if old not in text:
+              raise SystemExit('scale setup target not found')
+          text = text.replace(old, new, 1)
+          text = text.replace(
+            '''      "Vector timings exercise pgvector operators/indexes over deterministic coordinates, not embedding-model quality or semantic recall.",''',
+            '''      "Vector timings exercise exact sequential pgvector distance over deterministic coordinates; ANN index construction and maintenance are intentionally excluded and evaluated separately.",''',
+            1,
+          )
+          anchor = '''      {
+                dimension: "semantic vector quality or real embedding generation",
+                reason:
+                  "The vector path uses deterministic fixed 64-dimensional fixture values; no provider, model quality or relevance ground truth was evaluated.",
+              },
+          '''
+          addition = anchor + '''      {
+                dimension: "ANN index construction and maintenance",
+                reason:
+                  "The disposable scale database removes the HNSW index before fixture loading so general 1K-100K scale evidence is not conflated with ANN tuning; ANN selection is evaluated separately.",
+              },
+          '''
+          if anchor not in text:
+              raise SystemExit('scale notMeasured anchor not found')
+          text = text.replace(anchor, addition, 1)
+          text = text.replace(
+            '''      "Client-observed point, lexical, synthetic pgvector, graph, unit and count query latency",''',
+            '''      "Client-observed point, lexical, exact synthetic pgvector, graph, unit and count query latency",''',
+            1,
+          )
+          scale.write_text(text)
+          PY
+          pnpm exec prettier --write scripts/agent-ab-benchmark.ts scripts/load-scale-benchmark.ts
+          git diff --check
+          printf '%s\n' "$(git diff --name-only)" | sort > /tmp/changed
+          printf '%s\n' scripts/agent-ab-benchmark.ts scripts/load-scale-benchmark.ts | sort > /tmp/expected
+          diff -u /tmp/expected /tmp/changed
+      - name: Commit evidence harness repairs
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add scripts/agent-ab-benchmark.ts scripts/load-scale-benchmark.ts
+          git commit -m "fix(eval): preserve live agent and exact scale evidence"
+          git push origin HEAD:work/product-completion-final
