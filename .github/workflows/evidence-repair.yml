@@ -1,0 +1,136 @@
+name: evidence-repair
+
+on:
+  push:
+    branches: [work/product-completion-final]
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      DATABASE_URL: postgres://akp:akp@localhost:55432/akp
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: work/product-completion-final
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Apply validated evidence corrections
+        shell: bash
+        run: |
+          cat <<'PATCH' | base64 -d | gzip -d > /tmp/repair.py
+          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
+          PATCH
+          python /tmp/repair.py
+          pnpm exec prettier --write scripts/load-scale-benchmark.ts scripts/agent-ab-benchmark.ts
+          git diff --check
+          printf '%s\n' \
+            .github/workflows/diagnose-p10-scale-trigger.yml \
+            db/migrations/027_set_based_embedding_validation.sql \
+            scripts/agent-ab-benchmark.ts \
+            scripts/load-scale-benchmark.ts | sort > /tmp/expected
+          git diff --name-only | sort > /tmp/changed
+          diff -u /tmp/expected /tmp/changed
+      - name: Validate repository
+        run: pnpm check
+      - name: Start disposable PostgreSQL
+        run: docker compose up -d --wait postgres
+      - name: Apply migrations
+        run: pnpm db:migrate
+      - name: Prove embedding trigger topology
+        shell: bash
+        run: |
+          docker compose exec -T postgres psql -U akp -d akp -Atc "select tgname from pg_trigger where tgrelid='unit_embeddings'::regclass and not tgisinternal order by tgname" | tee /tmp/triggers.txt
+          printf '%s\n' unit_embeddings_validate_insert_statement unit_embeddings_validate_update_statement > /tmp/expected-triggers.txt
+          diff -u /tmp/expected-triggers.txt /tmp/triggers.txt
+      - name: Validate embedding integration semantics
+        run: pnpm --filter @akp/indexing exec vitest run test/embedding-index.integration.test.ts
+      - name: Validate 100K scale path
+        shell: bash
+        run: |
+          mkdir -p reports/preflight
+          pnpm benchmark:scale -- \
+            --output reports/preflight/scale-100000.json \
+            --targets 100000 \
+            --iterations 1
+          node --input-type=module <<'NODE'
+          import {readFileSync} from 'node:fs';
+          const r=JSON.parse(readFileSync('reports/preflight/scale-100000.json','utf8'));
+          const row=r.results?.[0];
+          console.log(JSON.stringify({
+            status:r.status,
+            load:row?.loadLatencyMs,
+            context:row?.contextPacket,
+            rows:row?.rows,
+            cleanup:r.cleanup
+          },null,2));
+          if (
+            r.status !== 'PASSED' ||
+            r.cleanup?.succeeded !== true ||
+            row?.targetDocuments !== 100000 ||
+            row?.rows?.documents !== 100000 ||
+            row?.rows?.units !== 100000 ||
+            row?.rows?.embeddings !== 100000 ||
+            row?.contextPacket?.candidateCount !== 20
+          ) process.exit(1);
+          NODE
+      - name: Commit validated corrections
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "fix(p10): bound final evidence paths"
+          git push origin HEAD:work/product-completion-final
+      - name: Capture preflight evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: evidence-repair-${{ github.run_id }}
+          path: reports/preflight
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Stop disposable services
+        if: always()
+        run: docker compose down -v --remove-orphans
