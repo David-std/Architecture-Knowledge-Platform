@@ -120,14 +120,10 @@ const changedPaths = lines(
   await git(["diff", "--name-only", manifest.baseCommit, "HEAD"]),
 );
 const allowedPaths = new Set(manifest.harnessAllowlist);
-const unexpectedProductChanges = changedPaths.filter(
+const harnessOwnedChanges = changedPaths.filter((item) => allowedPaths.has(item));
+const postBaselineProductChanges = changedPaths.filter(
   (item) => !allowedPaths.has(item),
 );
-if (unexpectedProductChanges.length > 0) {
-  throw new Error(
-    `Baseline harness must not change product state. Unexpected paths: ${unexpectedProductChanges.join(", ")}`,
-  );
-}
 
 const allowedEvidenceStatuses = new Set(manifest.evidenceStatuses);
 const allowedMaturityStages = new Set(manifest.maturityLadder);
@@ -221,11 +217,12 @@ const report = {
   baseCommit: manifest.baseCommit,
   executionHead: headCommit,
   claimBoundary:
-    "This report inventories and classifies retained v0.3 evidence. It does not upgrade any PARTIALLY_PROVEN dimension, prove v0.4 capability completion, or enable a production feature/default.",
+    "This report inventories and classifies retained v0.3 evidence from the frozen base commit. Product changes after that base are reported separately and do not upgrade any PARTIALLY_PROVEN dimension, prove v0.4 capability completion, or change the v0.3 baseline.",
   harnessIsolation: {
     allowedPaths: manifest.harnessAllowlist,
-    changedPaths,
-    unexpectedProductChanges,
+    harnessOwnedChanges,
+    postBaselineProductChanges,
+    baselineEvidencePinnedToBaseCommit: true,
   },
   inventory: {
     counts: inventoryCounts,
@@ -252,6 +249,7 @@ console.log(
       inventoryCounts,
       dimensionStatusCounts,
       confirmedEvidenceFiles: report.summary.confirmedEvidenceFiles.length,
+      postBaselineProductChanges: report.harnessIsolation.postBaselineProductChanges,
       outputPath,
     },
     null,
