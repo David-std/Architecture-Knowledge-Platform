@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { DEFAULT_KNOWLEDGE_PROFILE_V1 } from "@akp/contracts/knowledge-profile";
+import {
+  DEFAULT_KNOWLEDGE_PROFILE_V1,
+  canonicalKnowledgeProfileJson,
+} from "@akp/contracts/knowledge-profile";
 import {
   Postgres,
   createKnowledgeProfileDraft,
@@ -35,7 +38,7 @@ async function createVault(
 
 describe("knowledge profile registry integration", () => {
   it.skipIf(!databaseUrl)(
-    "persists canonical drafts without activating or replacing v0.3 fallback semantics",
+    "persists immutable canonical drafts without replacing v0.3 fallback semantics",
     async () => {
       if (!databaseUrl) return;
       const db = new Postgres(databaseUrl);
@@ -62,6 +65,9 @@ describe("knowledge profile registry integration", () => {
         expect(firstDraft.status).toBe("DRAFT");
         expect(firstDraft.compatibilityClass).toBeNull();
         expect(firstDraft.corpusRevision).toBe("profile-test-corpus");
+        expect(firstDraft.canonicalProfile).toBe(
+          canonicalKnowledgeProfileJson(DEFAULT_KNOWLEDGE_PROFILE_V1),
+        );
 
         const reordered = {
           ...DEFAULT_KNOWLEDGE_PROFILE_V1,
@@ -77,6 +83,27 @@ describe("knowledge profile registry integration", () => {
         });
         expect(duplicate.id).toBe(firstDraft.id);
         expect(duplicate.profileHash).toBe(firstDraft.profileHash);
+
+        const nextProfile = {
+          ...DEFAULT_KNOWLEDGE_PROFILE_V1,
+          version: "0.3-compat-next",
+        };
+        const successor = await createKnowledgeProfileDraft(db, {
+          spaceId,
+          vaultId: firstVault.id,
+          profile: nextProfile,
+          supersedesRevisionId: firstDraft.id,
+          createdBy: actorId,
+        });
+        expect(successor.id).not.toBe(firstDraft.id);
+        expect(successor.supersedesRevisionId).toBe(firstDraft.id);
+
+        await expect(
+          db.pool.query(
+            "update knowledge_profile_revisions set version='mutated' where id=$1",
+            [firstDraft.id],
+          ),
+        ).rejects.toThrow("KNOWLEDGE_PROFILE_REVISION_IMMUTABLE");
 
         const stillFallback = await resolveEffectiveKnowledgeProfile(
           db,
