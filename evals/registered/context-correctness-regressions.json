@@ -55,6 +55,42 @@
         "exactOrLexicalIdentifierChannelRequired": true,
         "benchmarkLanguages": ["en", "es", "code"]
       }
+    },
+    {
+      "id": "context-placement-required-actions-under-budget",
+      "kind": "CONTEXT_PLACEMENT_AND_MANDATORY_CONSTRAINTS",
+      "requiredActions": [
+        "Respect the explicit vault authorization boundary.",
+        "Do not infer approval from retrieved content."
+      ],
+      "candidates": [
+        {
+          "id": "governance-rule",
+          "kind": "rule",
+          "score": 0.2,
+          "content": "Only explicitly authorized vault paths may contribute context."
+        },
+        {
+          "id": "high-score-concept",
+          "kind": "concept",
+          "score": 0.99,
+          "content": "A semantically close explanation with no authority to override the rule."
+        },
+        {
+          "id": "oversized-source",
+          "kind": "source",
+          "score": 0.98,
+          "contentRepeat": 12000
+        }
+      ],
+      "expectations": {
+        "rulePlacedBeforeHigherScoreConcept": true,
+        "requiredActionsRetainedInFullPacket": true,
+        "requiredActionsRetainedInCompactPacket": true,
+        "requiredActionOrderPreserved": true,
+        "truncatedEvidenceUsesContinuation": true,
+        "mandatoryActionsNeverMoveIntoRetrievedContent": true
+      }
     }
   ]
 }
