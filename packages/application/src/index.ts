@@ -122,9 +122,7 @@ function workspaceEventsOfType(
 }
 
 export class BootstrapContext<TContextPacket = unknown> {
-  constructor(
-    private readonly ports: BootstrapContextPorts<TContextPacket>,
-  ) {}
+  constructor(private readonly ports: BootstrapContextPorts<TContextPacket>) {}
 
   async execute(
     request: BootstrapContextRequest,
