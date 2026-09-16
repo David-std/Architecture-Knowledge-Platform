@@ -80,6 +80,9 @@ importers:
 
   apps/api:
     dependencies:
+      "@akp/application":
+        specifier: "*"
+        version: link:../../packages/application
       "@akp/audit-export":
         specifier: "*"
         version: link:../../packages/audit-export
