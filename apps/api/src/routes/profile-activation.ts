@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import {
   activateKnowledgeProfile,
+  rollbackKnowledgeProfile,
   resolveAuthorizedVaultScope,
   type Postgres,
 } from "@akp/postgres";
@@ -19,6 +20,16 @@ interface ProfileActivationBody {
   expectedCorpusRevision: string;
 }
 
+interface ProfileRollbackBody {
+  spaceId: string;
+  vaultId: string;
+  targetRevisionId: string;
+  dryRunId: string;
+  expectedProfileHash: string;
+  expectedCorpusRevision: string;
+  expectedActiveRevisionId: string;
+}
+
 function activationErrorStatus(code: string): number {
   if (code === "KNOWLEDGE_PROFILE_REVISION_NOT_FOUND") return 404;
   if (code === "VAULT_NOT_FOUND_OR_SCOPE_MISMATCH") return 404;
@@ -26,14 +37,47 @@ function activationErrorStatus(code: string): number {
     code === "CONTEXT_REVISION_CHANGED" ||
     code === "KNOWLEDGE_PROFILE_DRY_RUN_REQUIRED" ||
     code === "PROFILE_REVIEW_REQUIRED" ||
+    code === "PROFILE_ROLLBACK_REVIEW_REQUIRED" ||
     code === "KNOWLEDGE_PROFILE_NOT_VALIDATED" ||
     code === "KNOWLEDGE_PROFILE_SUPERSESSION_REQUIRED" ||
     code === "KNOWLEDGE_PROFILE_ACTIVATION_CONFLICT" ||
+    code === "KNOWLEDGE_PROFILE_ROLLBACK_TARGET_INVALID" ||
+    code === "KNOWLEDGE_PROFILE_ROLLBACK_TARGET_NOT_PREDECESSOR" ||
+    code === "KNOWLEDGE_PROFILE_ROLLBACK_CONFLICT" ||
     code === "ACTIVE_KNOWLEDGE_PROFILE_BINDING_INVALID"
   ) {
     return 409;
   }
   return 500;
+}
+
+async function authorizeProfileMutation(
+  db: Postgres,
+  input: {
+    actor: ReturnType<typeof actorOf>;
+    spaceId: string;
+    vaultId: string;
+  },
+): Promise<"OK" | "AUTH_REQUIRED" | "PATH_SCOPE_DENIED" | string> {
+  if (!hasUnrestrictedPathAccess(input.actor, input.spaceId, "admin")) {
+    return "PATH_SCOPE_DENIED";
+  }
+  if (!input.actor) return "AUTH_REQUIRED";
+  try {
+    const scope = await resolveAuthorizedVaultScope(db, {
+      userId: input.actor.id,
+      spaceId: input.spaceId,
+      vaultId: input.vaultId,
+      vaultIds: [input.vaultId],
+      permission: "admin",
+      federated: false,
+    });
+    const access = scope.accessByVault[input.vaultId];
+    if (!access || access.pathPrefix !== null) return "PATH_SCOPE_DENIED";
+  } catch (error) {
+    return error instanceof Error ? error.message : "VAULT_ACCESS_DENIED";
+  }
+  return "OK";
 }
 
 export function registerProfileActivationRoutes(
@@ -61,29 +105,17 @@ export function registerProfileActivationRoutes(
       if (!/^[a-f0-9]{64}$/.test(body.expectedProfileHash)) {
         return reply.code(400).send({ code: "INVALID_PROFILE_HASH" });
       }
-      if (!hasUnrestrictedPathAccess(actor, body.spaceId, "admin")) {
-        return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
+      const authorization = await authorizeProfileMutation(db, {
+        actor,
+        spaceId: body.spaceId,
+        vaultId: body.vaultId,
+      });
+      if (authorization !== "OK") {
+        return reply
+          .code(authorization === "AUTH_REQUIRED" ? 401 : 403)
+          .send({ code: authorization });
       }
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
-
-      try {
-        const scope = await resolveAuthorizedVaultScope(db, {
-          userId: actor.id,
-          spaceId: body.spaceId,
-          vaultId: body.vaultId,
-          vaultIds: [body.vaultId],
-          permission: "admin",
-          federated: false,
-        });
-        const access = scope.accessByVault[body.vaultId];
-        if (!access || access.pathPrefix !== null) {
-          return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
-        }
-      } catch (error) {
-        return reply.code(403).send({
-          code: error instanceof Error ? error.message : "VAULT_ACCESS_DENIED",
-        });
-      }
 
       try {
         const activated = await activateKnowledgeProfile(db, {
@@ -110,6 +142,73 @@ export function registerProfileActivationRoutes(
       } catch (error) {
         const code =
           error instanceof Error ? error.message : "PROFILE_ACTIVATION_FAILED";
+        const status = activationErrorStatus(code);
+        if (status < 500) return reply.code(status).send({ code });
+        throw error;
+      }
+    },
+  );
+
+  app.post<{ Body: ProfileRollbackBody }>(
+    "/v1/schema/rollback",
+    { preHandler: requirePermission("admin") },
+    async (request, reply) => {
+      const actor = actorOf(request);
+      const body = request.body;
+      if (
+        !body?.spaceId ||
+        !body.vaultId ||
+        !body.targetRevisionId ||
+        !body.dryRunId ||
+        !body.expectedProfileHash ||
+        !body.expectedCorpusRevision ||
+        !body.expectedActiveRevisionId
+      ) {
+        return reply
+          .code(400)
+          .send({ code: "PROFILE_ROLLBACK_INPUT_REQUIRED" });
+      }
+      if (!/^[a-f0-9]{64}$/.test(body.expectedProfileHash)) {
+        return reply.code(400).send({ code: "INVALID_PROFILE_HASH" });
+      }
+      const authorization = await authorizeProfileMutation(db, {
+        actor,
+        spaceId: body.spaceId,
+        vaultId: body.vaultId,
+      });
+      if (authorization !== "OK") {
+        return reply
+          .code(authorization === "AUTH_REQUIRED" ? 401 : 403)
+          .send({ code: authorization });
+      }
+      if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
+
+      try {
+        const rolledBack = await rollbackKnowledgeProfile(db, {
+          spaceId: body.spaceId,
+          vaultId: body.vaultId,
+          targetRevisionId: body.targetRevisionId,
+          dryRunId: body.dryRunId,
+          expectedProfileHash: body.expectedProfileHash,
+          expectedCorpusRevision: body.expectedCorpusRevision,
+          expectedActiveRevisionId: body.expectedActiveRevisionId,
+          actorId: actor.id,
+          traceId: request.id,
+        });
+        return {
+          profileRevisionId: rolledBack.revision.id,
+          profileId: rolledBack.revision.profileId,
+          version: rolledBack.revision.version,
+          profileHash: rolledBack.revision.profileHash,
+          status: rolledBack.revision.status,
+          rolledBackFromRevisionId: rolledBack.rolledBackFromRevisionId,
+          corpusRevision: rolledBack.corpusRevision,
+          dryRunId: rolledBack.dryRunId,
+          alreadyActive: rolledBack.alreadyActive,
+        };
+      } catch (error) {
+        const code =
+          error instanceof Error ? error.message : "PROFILE_ROLLBACK_FAILED";
         const status = activationErrorStatus(code);
         if (status < 500) return reply.code(status).send({ code });
         throw error;
