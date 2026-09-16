@@ -5,6 +5,7 @@ on:
     branches: [feat/v0.4-enterprise-context-workspace]
     paths:
       - .github/workflows/workspace-context-materializer-inspect.yml
+      - .github/scripts/workspace-context-boundary-patch.py
   workflow_dispatch:
 
 permissions:
