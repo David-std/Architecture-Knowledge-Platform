@@ -26,6 +26,7 @@ jobs:
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
       - run: docker compose up -d --wait postgres
       - run: pnpm db:migrate
+      - run: pnpm build
       - name: Run authorization-before-expansion regression
         run: >-
           pnpm --filter @akp/api exec vitest run
