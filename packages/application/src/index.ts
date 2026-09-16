@@ -72,6 +72,13 @@ export interface BootstrapContextRequest {
   mode?: BootstrapContextMode;
 }
 
+export interface PromotionRequestDraft {
+  sessionId: string;
+  evidenceEventIds: string[];
+  summary: string;
+  changes: Array<{ path: string; content: string; reason?: string }>;
+}
+
 export interface BootstrapContextResult<TContextPacket = unknown> {
   schemaVersion: 1;
   workContext: BootstrapWorkContextSnapshot;
