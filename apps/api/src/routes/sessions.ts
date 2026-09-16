@@ -529,11 +529,23 @@ export function registerSessionRoutes(
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
       const evidenceEventIds = request.body?.evidenceEventIds ?? [];
       const changes = request.body?.changes ?? [];
+      if (evidenceEventIds.length > 100) {
+        return reply.code(413).send({ code: "PROMOTION_EVIDENCE_LIMIT_EXCEEDED" });
+      }
+      if (changes.length > 100) {
+        return reply.code(413).send({ code: "PROMOTION_CHANGE_LIMIT_EXCEEDED" });
+      }
       if (!evidenceEventIds.length) {
         return reply.code(400).send({ code: "PROMOTION_EVIDENCE_REQUIRED" });
       }
       if (!changes.length) {
         return reply.code(400).send({ code: "PROMOTION_CHANGES_REQUIRED" });
+      }
+      const duplicatePaths = changes
+        .map((change) => change.path.trim())
+        .filter((path, index, all) => all.indexOf(path) !== index);
+      if (duplicatePaths.length) {
+        return reply.code(400).send({ code: "PROMOTION_DUPLICATE_PATH" });
       }
       const evidence = await workspacePromotionEvidence(db, {
         sessionId: session.id,
