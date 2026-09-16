@@ -1,0 +1,72 @@
+name: p2-context-fabric-hardening
+# Temporary focused P2 harness. Remove before consolidating into PR #12.
+
+on:
+  push:
+    branches: [batch/p2-context-fabric-hardening-20260916]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: p2-context-fabric-hardening-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  offline-draft-session-scope:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgres://akp:akp@localhost:55432/akp
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - run: python .github/scripts/p2-harden-offline-draft-scope.py
+      - name: Format focused changes
+        run: >-
+          pnpm exec prettier --write
+          packages/postgres/src/team-context-fabric.ts
+          apps/api/src/routes/context-fabric.ts
+          apps/api/test/context-fabric.integration.test.ts
+      - name: Check focused formatting
+        run: >-
+          pnpm exec prettier --check
+          packages/postgres/src/team-context-fabric.ts
+          apps/api/src/routes/context-fabric.ts
+          apps/api/test/context-fabric.integration.test.ts
+      - run: pnpm check
+      - run: pnpm build
+      - run: docker compose up -d --wait postgres
+      - run: pnpm db:migrate
+      - name: Run cross-session offline draft regression
+        run: >-
+          pnpm --filter @akp/api exec vitest run
+          --config vitest.integration.config.ts
+          test/context-fabric.integration.test.ts
+      - run: git diff --check
+      - name: Commit validated context-fabric hardening
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No generated changes remain."
+            exit 0
+          fi
+          git config user.name "AKP P2 Context Fabric Hardening"
+          git config user.email "akp-p2-context-fabric@users.noreply.github.com"
+          git add \
+            packages/postgres/src/team-context-fabric.ts \
+            apps/api/src/routes/context-fabric.ts \
+            apps/api/test/context-fabric.integration.test.ts
+          git commit -m "fix(p2): bind offline draft apply to session scope"
+          git push origin HEAD:batch/p2-context-fabric-hardening-20260916
+      - name: Stop disposable services
+        if: always()
+        run: docker compose down -v --remove-orphans
