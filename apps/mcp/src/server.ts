@@ -104,6 +104,128 @@ export function createMcpServer(): McpServer {
   );
 
   server.registerTool(
+    "akp_list_sessions",
+    {
+      description:
+        "List durable workspace sessions visible to the authenticated participant.",
+      inputSchema: {},
+    },
+    async () => textResult(await api("/v1/sessions")),
+  );
+
+  server.registerTool(
+    "akp_get_session_state",
+    {
+      description:
+        "Read durable structured workspace state so an authorized participant can resume without prior chat history.",
+      inputSchema: { sessionId: z.string().uuid() },
+    },
+    async ({ sessionId }) =>
+      textResult(
+        await api(`/v1/sessions/${encodeURIComponent(sessionId)}/state`),
+      ),
+  );
+
+  server.registerTool(
+    "akp_claim_workspace_work",
+    {
+      description:
+        "Acquire a bounded exact or recursive workspace claim with a lease and fencing token.",
+      inputSchema: {
+        sessionId: z.string().uuid(),
+        workKey: z.string().min(1).max(200),
+        leaseSeconds: z.number().int().min(15).max(900).default(120),
+        idempotencyKey: z.string().min(8).max(200),
+      },
+    },
+    async ({ sessionId, idempotencyKey, ...body }) =>
+      textResult(
+        await writeApi(
+          `/v1/sessions/${encodeURIComponent(sessionId)}/claims`,
+          idempotencyKey,
+          body,
+        ),
+      ),
+  );
+
+  server.registerTool(
+    "akp_heartbeat_workspace_claim",
+    {
+      description:
+        "Renew an owned workspace claim only when its current fencing token matches.",
+      inputSchema: {
+        sessionId: z.string().uuid(),
+        workKey: z.string().min(1).max(200),
+        fencingToken: z.number().int().min(1),
+        leaseSeconds: z.number().int().min(15).max(900).default(120),
+        idempotencyKey: z.string().min(8).max(200),
+      },
+    },
+    async ({ sessionId, idempotencyKey, ...body }) =>
+      textResult(
+        await writeApi(
+          `/v1/sessions/${encodeURIComponent(sessionId)}/claims/heartbeat`,
+          idempotencyKey,
+          body,
+        ),
+      ),
+  );
+
+  server.registerTool(
+    "akp_handoff_workspace_claim",
+    {
+      description:
+        "Transfer an owned fenced workspace claim to another authorized participant with an optional structured note.",
+      inputSchema: {
+        sessionId: z.string().uuid(),
+        workKey: z.string().min(1).max(200),
+        toUserId: z.string().uuid(),
+        fencingToken: z.number().int().min(1),
+        leaseSeconds: z.number().int().min(15).max(900).default(120),
+        note: z.string().max(2048).optional(),
+        idempotencyKey: z.string().min(8).max(200),
+      },
+    },
+    async ({ sessionId, idempotencyKey, ...body }) =>
+      textResult(
+        await writeApi(
+          `/v1/sessions/${encodeURIComponent(sessionId)}/claims/handoff`,
+          idempotencyKey,
+          body,
+        ),
+      ),
+  );
+
+  server.registerTool(
+    "akp_append_workspace_event",
+    {
+      description:
+        "Append a bounded finding, blocker, question, artifact, decision candidate, or note to the durable workspace blackboard.",
+      inputSchema: {
+        sessionId: z.string().uuid(),
+        eventType: z.enum([
+          "FINDING",
+          "BLOCKER",
+          "QUESTION",
+          "ARTIFACT",
+          "DECISION_CANDIDATE",
+          "NOTE",
+        ]),
+        payload: z.record(z.unknown()).default({}),
+        idempotencyKey: z.string().min(8).max(200),
+      },
+    },
+    async ({ sessionId, idempotencyKey, ...body }) =>
+      textResult(
+        await writeApi(
+          `/v1/sessions/${encodeURIComponent(sessionId)}/events`,
+          idempotencyKey,
+          body,
+        ),
+      ),
+  );
+
+  server.registerTool(
     "akp_search",
     {
       description:

@@ -169,6 +169,160 @@
       "http": { "method": "POST", "path": "/v1/sessions" }
     },
     {
+      "name": "akp_list_sessions",
+      "version": "1.0.0",
+      "permission": "knowledge:read",
+      "mutates": false,
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "http": { "method": "GET", "path": "/v1/sessions" }
+    },
+    {
+      "name": "akp_get_session_state",
+      "version": "1.0.0",
+      "permission": "knowledge:read",
+      "mutates": false,
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sessionId"],
+        "properties": {
+          "sessionId": { "type": "string", "format": "uuid" }
+        }
+      },
+      "http": { "method": "GET", "path": "/v1/sessions/{id}/state" }
+    },
+    {
+      "name": "akp_claim_workspace_work",
+      "version": "1.0.0",
+      "permission": "knowledge:read",
+      "mutates": true,
+      "requiresIdempotencyKey": true,
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sessionId", "workKey", "idempotencyKey"],
+        "properties": {
+          "sessionId": { "type": "string", "format": "uuid" },
+          "workKey": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "leaseSeconds": {
+            "type": "integer",
+            "minimum": 15,
+            "maximum": 900,
+            "default": 120
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 200
+          }
+        }
+      },
+      "http": { "method": "POST", "path": "/v1/sessions/{id}/claims" }
+    },
+    {
+      "name": "akp_heartbeat_workspace_claim",
+      "version": "1.0.0",
+      "permission": "knowledge:read",
+      "mutates": true,
+      "requiresIdempotencyKey": true,
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sessionId", "workKey", "fencingToken", "idempotencyKey"],
+        "properties": {
+          "sessionId": { "type": "string", "format": "uuid" },
+          "workKey": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "fencingToken": { "type": "integer", "minimum": 1 },
+          "leaseSeconds": {
+            "type": "integer",
+            "minimum": 15,
+            "maximum": 900,
+            "default": 120
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 200
+          }
+        }
+      },
+      "http": { "method": "POST", "path": "/v1/sessions/{id}/claims/heartbeat" }
+    },
+    {
+      "name": "akp_handoff_workspace_claim",
+      "version": "1.0.0",
+      "permission": "knowledge:read",
+      "mutates": true,
+      "requiresIdempotencyKey": true,
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sessionId",
+          "workKey",
+          "toUserId",
+          "fencingToken",
+          "idempotencyKey"
+        ],
+        "properties": {
+          "sessionId": { "type": "string", "format": "uuid" },
+          "workKey": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "toUserId": { "type": "string", "format": "uuid" },
+          "fencingToken": { "type": "integer", "minimum": 1 },
+          "leaseSeconds": {
+            "type": "integer",
+            "minimum": 15,
+            "maximum": 900,
+            "default": 120
+          },
+          "note": { "type": "string", "maxLength": 2048 },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 200
+          }
+        }
+      },
+      "http": { "method": "POST", "path": "/v1/sessions/{id}/claims/handoff" }
+    },
+    {
+      "name": "akp_append_workspace_event",
+      "version": "1.0.0",
+      "permission": "knowledge:read",
+      "mutates": true,
+      "requiresIdempotencyKey": true,
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sessionId", "eventType", "idempotencyKey"],
+        "properties": {
+          "sessionId": { "type": "string", "format": "uuid" },
+          "eventType": {
+            "type": "string",
+            "enum": [
+              "FINDING",
+              "BLOCKER",
+              "QUESTION",
+              "ARTIFACT",
+              "DECISION_CANDIDATE",
+              "NOTE"
+            ]
+          },
+          "payload": { "type": "object", "additionalProperties": true },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 200
+          }
+        }
+      },
+      "http": { "method": "POST", "path": "/v1/sessions/{id}/events" }
+    },
+    {
       "name": "akp_search",
       "version": "1.0.0",
       "permission": "knowledge:read",

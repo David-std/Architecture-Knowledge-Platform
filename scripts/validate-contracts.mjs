@@ -59,6 +59,108 @@ for (const required of requiredPaths) {
     failures.push(`contracts/openapi.yaml: missing ${required}`);
 }
 
+const p2WorkspacePaths = {
+  "/v1/sessions": { get: "workspace:read", post: "workspace:create" },
+  "/v1/sessions/{id}/state": { get: "workspace:read" },
+  "/v1/sessions/{id}/participants": {
+    post: "workspace:manage-participants",
+  },
+  "/v1/sessions/{id}/claims": { post: "workspace:claim" },
+  "/v1/sessions/{id}/claims/heartbeat": { post: "workspace:claim" },
+  "/v1/sessions/{id}/claims/handoff": { post: "workspace:handoff" },
+  "/v1/sessions/{id}/events": { post: "workspace:event:append" },
+  "/v1/sessions/{id}/agent-processes": { post: "workspace:manage-agents" },
+  "/v1/agent-processes/{id}/revoke": { post: "workspace:manage-agents" },
+};
+for (const [route, methods] of Object.entries(p2WorkspacePaths)) {
+  for (const [method, principalAction] of Object.entries(methods)) {
+    const operation = openapi?.paths?.[route]?.[method];
+    if (!operation) {
+      failures.push(
+        `contracts/openapi.yaml: missing P2 ${method.toUpperCase()} ${route}`,
+      );
+      continue;
+    }
+    if (operation["x-akp-permission"] !== "knowledge:read") {
+      failures.push(
+        `contracts/openapi.yaml: P2 ${method.toUpperCase()} ${route} must require knowledge:read`,
+      );
+    }
+    if (operation["x-akp-principal-action"] !== principalAction) {
+      failures.push(
+        `contracts/openapi.yaml: P2 ${method.toUpperCase()} ${route} must require principal action ${principalAction}`,
+      );
+    }
+  }
+}
+
+const sessionStartSchema =
+  openapi?.paths?.["/v1/sessions"]?.post?.requestBody?.content?.[
+    "application/json"
+  ]?.schema ?? {};
+const sessionStartRequired = requiredSet(sessionStartSchema);
+for (const field of ["purpose", "spaceId", "vaultId"]) {
+  if (!sessionStartRequired.has(field)) {
+    failures.push(
+      `contracts/openapi.yaml: session start missing required ${field}`,
+    );
+  }
+}
+
+for (const route of [
+  "/v1/sessions",
+  "/v1/sessions/{id}/participants",
+  "/v1/sessions/{id}/claims",
+  "/v1/sessions/{id}/claims/heartbeat",
+  "/v1/sessions/{id}/claims/handoff",
+  "/v1/sessions/{id}/events",
+  "/v1/agent-processes/{id}/revoke",
+]) {
+  if (!hasIdempotencyKey(openapi?.paths?.[route]?.post)) {
+    failures.push(
+      `contracts/openapi.yaml: P2 write ${route} must declare Idempotency-Key`,
+    );
+  }
+}
+const agentIssue = openapi?.paths?.["/v1/sessions/{id}/agent-processes"]?.post;
+if (
+  agentIssue?.["x-akp-idempotency-exempt"] !== true ||
+  agentIssue?.["x-akp-secret-response"] !== true
+) {
+  failures.push(
+    "contracts/openapi.yaml: agent-process issuance must be marked one-time-secret and idempotency-exempt",
+  );
+}
+
+if (!asyncapi?.channels?.workspaceEvents) {
+  failures.push(
+    "contracts/asyncapi.yaml: missing durable workspaceEvents channel",
+  );
+}
+if (
+  !asyncapi?.components?.schemas?.AuditEventPayload?.properties?.principalId
+) {
+  failures.push(
+    "contracts/asyncapi.yaml: audit events must expose principalId",
+  );
+}
+const workspaceEvent = asyncapi?.components?.schemas?.WorkspaceEventPayload;
+const workspaceEventRequired = requiredSet(workspaceEvent);
+for (const field of [
+  "sessionId",
+  "spaceId",
+  "vaultId",
+  "sessionVersion",
+  "eventType",
+  "payload",
+]) {
+  if (!workspaceEventRequired.has(field)) {
+    failures.push(
+      `contracts/asyncapi.yaml: workspace event missing required ${field}`,
+    );
+  }
+}
+
 const dryRun = openapi?.paths?.["/v1/schema/dry-run"]?.post;
 const dryRunSchema =
   dryRun?.requestBody?.content?.["application/json"]?.schema ?? {};
@@ -225,6 +327,30 @@ for (const tool of mcp.tools ?? []) {
       `contracts/mcp-tools.json: write tool lacks idempotency ${tool.name}`,
     );
   }
+}
+
+const requiredP2McpTools = [
+  "akp_list_sessions",
+  "akp_get_session_state",
+  "akp_claim_workspace_work",
+  "akp_heartbeat_workspace_claim",
+  "akp_handoff_workspace_claim",
+  "akp_append_workspace_event",
+];
+const declaredMcpNames = new Set((mcp.tools ?? []).map((tool) => tool.name));
+for (const name of requiredP2McpTools) {
+  if (!declaredMcpNames.has(name)) {
+    failures.push(`contracts/mcp-tools.json: missing P2 tool ${name}`);
+  }
+}
+if (
+  (mcp.tools ?? []).some(
+    (tool) => tool?.http?.path === "/v1/sessions/{id}/agent-processes",
+  )
+) {
+  failures.push(
+    "contracts/mcp-tools.json: one-time agent credential issuance must remain outside MCP",
+  );
 }
 
 console.log(

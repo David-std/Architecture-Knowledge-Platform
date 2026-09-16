@@ -5,7 +5,9 @@ info:
   x-akp-write-idempotency: >
     Mutating POST operations accept Idempotency-Key and MCP write tools require
     it. POST /v1/auth/session is intentionally exempt because it creates a
-    Set-Cookie response that cannot be safely replayed.
+    Set-Cookie response that cannot be safely replayed. Agent-process credential
+    issuance is also exempt because its raw token is returned exactly once and
+    is never stored in replayable plaintext form.
   description: >
     HTTP contract for the routes registered by the current Fastify runtime.
     All /v1 operations require a scoped bearer API token or an unexpired
@@ -239,6 +241,10 @@ paths:
       tags: [Sessions]
       operationId: listAgentSessions
       x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:read
+      description: >
+        List durable workspace sessions visible to the current participant. An
+        AGENT_PROCESS principal only sees the session bound into its credential.
       responses:
         "200": { $ref: "#/components/responses/ObjectResponse" }
         "401": { $ref: "#/components/responses/Unauthorized" }
@@ -247,24 +253,296 @@ paths:
       tags: [Sessions]
       operationId: startAgentSession
       x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:create
+      parameters:
+        - { $ref: "#/components/parameters/IdempotencyKey" }
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [purpose]
+              additionalProperties: false
+              required: [purpose, spaceId, vaultId]
               properties:
                 purpose: { type: string, minLength: 1 }
                 contextBudget:
                   { type: integer, minimum: 256, maximum: 32000, default: 6000 }
                 projectId: { type: string, format: uuid }
                 spaceId: { type: string, format: uuid }
+                vaultId: { type: string, format: uuid }
       responses:
         "201": { $ref: "#/components/responses/ObjectResponse" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/sessions/{id}/state:
+    get:
+      tags: [Sessions]
+      operationId: getAgentSessionState
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:read
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+      description: >
+        Read the durable structured workspace snapshot for one authorized
+        participant. The snapshot is sufficient for another participant to
+        resume without relying on a prior chat transcript.
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/sessions/{id}/participants:
+    post:
+      tags: [Sessions]
+      operationId: addAgentSessionParticipant
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:manage-participants
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [userId]
+              properties:
+                userId: { type: string, format: uuid }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "201": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422":
+          description: Target participant is not authorized for the full session vault.
+
+  /v1/sessions/{id}/claims:
+    post:
+      tags: [Sessions]
+      operationId: claimAgentSessionWork
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:claim
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [workKey]
+              properties:
+                workKey:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                  description: Exact work key or terminal /** recursive scope.
+                leaseSeconds:
+                  { type: integer, minimum: 15, maximum: 900, default: 120 }
+      responses:
+        "201": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/sessions/{id}/claims/heartbeat:
+    post:
+      tags: [Sessions]
+      operationId: heartbeatAgentSessionClaim
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:claim
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [workKey, fencingToken]
+              properties:
+                workKey: { type: string, minLength: 1, maxLength: 200 }
+                fencingToken: { type: integer, minimum: 1 }
+                leaseSeconds:
+                  { type: integer, minimum: 15, maximum: 900, default: 120 }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/sessions/{id}/claims/handoff:
+    post:
+      tags: [Sessions]
+      operationId: handoffAgentSessionClaim
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:handoff
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [workKey, toUserId, fencingToken]
+              properties:
+                workKey: { type: string, minLength: 1, maxLength: 200 }
+                toUserId: { type: string, format: uuid }
+                fencingToken: { type: integer, minimum: 1 }
+                leaseSeconds:
+                  { type: integer, minimum: 15, maximum: 900, default: 120 }
+                note: { type: string, maxLength: 2048 }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413":
+          description: Handoff note exceeds the bounded payload size.
+        "422":
+          description: Handoff target is not authorized for the full session vault.
+
+  /v1/sessions/{id}/events:
+    post:
+      tags: [Sessions]
+      operationId: appendAgentSessionEvent
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:event:append
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [eventType]
+              properties:
+                eventType:
+                  type: string
+                  enum:
+                    [
+                      FINDING,
+                      BLOCKER,
+                      QUESTION,
+                      ARTIFACT,
+                      DECISION_CANDIDATE,
+                      NOTE,
+                    ]
+                payload:
+                  type: object
+                  additionalProperties: true
+                  description: Bounded to 16 KiB after JSON serialization.
+      responses:
+        "201": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413":
+          description: Event payload is invalid or exceeds 16 KiB.
+
+  /v1/sessions/{id}/agent-processes:
+    post:
+      tags: [Sessions, Authentication]
+      operationId: issueAgentProcessCredential
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:manage-agents
+      x-akp-idempotency-exempt: true
+      x-akp-secret-response: true
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+      description: >
+        OWNER-only human operation that creates a session- and vault-bound
+        AGENT_PROCESS principal. The raw bearer token is returned exactly once;
+        only its SHA-256 hash is persisted, so this operation is deliberately
+        not replayed through the idempotency journal and is not exposed as an
+        MCP tool.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                label: { type: string, minLength: 1, maxLength: 200 }
+                durationMinutes:
+                  { type: number, minimum: 5, maximum: 720, default: 60 }
+                allowedActions:
+                  type: array
+                  minItems: 1
+                  uniqueItems: true
+                  items:
+                    type: string
+                    enum:
+                      - workspace:read
+                      - workspace:claim
+                      - workspace:handoff
+                      - workspace:event:append
+                      - knowledge:read
+                      - knowledge:propose
+      responses:
+        "201":
+          description: Newly issued principal metadata plus one-time raw bearer token.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [principal, token, authenticationKind]
+                properties:
+                  principal: { type: object, additionalProperties: true }
+                  token: { type: string, minLength: 32 }
+                  authenticationKind: { type: string, const: PRINCIPAL_TOKEN }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/agent-processes/{id}/revoke:
+    post:
+      tags: [Sessions, Authentication]
+      operationId: revokeAgentProcessCredential
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:manage-agents
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      description: >
+        Revoke an AGENT_PROCESS principal owned by the current human principal.
+        Existing process credentials stop authenticating after revocation.
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /v1/context-packs/{id}:
     get:
