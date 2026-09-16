@@ -1,4 +1,10 @@
 import type { Postgres, PostgresPoolClient } from "./index.js";
+import {
+  assertWorkspaceContextRevisionCurrent,
+  pinWorkspaceContextRevisionSet,
+  workspaceContextRevisionState,
+  type ContextRevisionSet,
+} from "./context-revision-set.js";
 
 export type WorkspaceParticipantRole = "OWNER" | "PARTICIPANT";
 export type WorkspaceEventType =
@@ -24,6 +30,8 @@ export interface WorkspaceSessionAccess {
   contextBudget: number;
   coordinationVersion: number;
   state: Record<string, unknown>;
+  contextRevisionSet: ContextRevisionSet | null;
+  contextRevisionSetHash: string | null;
   role: WorkspaceParticipantRole;
 }
 
@@ -66,6 +74,13 @@ function normalizeSession(
       row.state && typeof row.state === "object"
         ? (row.state as Record<string, unknown>)
         : {},
+    contextRevisionSet:
+      row.context_revision_set && typeof row.context_revision_set === "object"
+        ? (row.context_revision_set as ContextRevisionSet)
+        : null,
+    contextRevisionSetHash: row.context_revision_set_hash
+      ? String(row.context_revision_set_hash)
+      : null,
     role: String(row.participant_role) as WorkspaceParticipantRole,
   };
 }
@@ -221,6 +236,12 @@ export async function createWorkspaceSession(
     );
     const row = created.rows[0];
     if (!row) throw workspaceError("WORKSPACE_SESSION_CREATE_FAILED", 500);
+    const pinnedContext = await pinWorkspaceContextRevisionSet(
+      client,
+      String(row.id),
+      input.spaceId,
+      input.vaultId,
+    );
     await client.query(
       `insert into workspace_session_participants(session_id,user_id,role)
        values($1,$2,'OWNER')`,
@@ -230,12 +251,17 @@ export async function createWorkspaceSession(
       sessionId: String(row.id),
       actorId: input.actorId,
       eventType: "SESSION_CREATED",
-      payload: { purpose: input.purpose },
+      payload: {
+        purpose: input.purpose,
+        contextRevisionSetHash: pinnedContext.revisionSetHash,
+      },
     });
     await client.query("commit");
     return normalizeSession({
       ...row,
       coordination_version: event.session_version,
+      context_revision_set: pinnedContext.revisionSet,
+      context_revision_set_hash: pinnedContext.revisionSetHash,
       participant_role: "OWNER",
     });
   } catch (error) {
@@ -252,8 +278,11 @@ export async function getWorkspaceSessionForParticipant(
   userId: string,
 ): Promise<WorkspaceSessionAccess | null> {
   const result = await db.pool.query<Record<string, unknown>>(
-    `select s.*,p.role participant_role
+    `select s.*,c.revision_set context_revision_set,
+            c.revision_set_hash context_revision_set_hash,
+            p.role participant_role
        from agent_sessions s
+       left join workspace_context_revision_sets c on c.session_id=s.id
        join workspace_session_participants p
          on p.session_id=s.id and p.user_id=$2 and p.left_at is null
       where s.id=$1`,
@@ -270,8 +299,11 @@ export async function listWorkspaceSessionsForParticipant(
 ): Promise<WorkspaceSessionAccess[]> {
   if (!spaceIds.length || !vaultIds.length) return [];
   const result = await db.pool.query<Record<string, unknown>>(
-    `select s.*,p.role participant_role
+    `select s.*,c.revision_set context_revision_set,
+            c.revision_set_hash context_revision_set_hash,
+            p.role participant_role
        from agent_sessions s
+       left join workspace_context_revision_sets c on c.session_id=s.id
        join workspace_session_participants p
          on p.session_id=s.id and p.user_id=$1 and p.left_at is null
       where s.space_id=any($2::uuid[])
@@ -384,6 +416,20 @@ export async function claimWorkspaceWork(
       [input.sessionId, input.actorId],
     );
     if (!session.rowCount) throw workspaceError("SESSION_NOT_FOUND", 404);
+    const sessionScope = await client.query<{
+      space_id: string;
+      vault_id: string;
+    }>("select space_id,vault_id from agent_sessions where id=$1", [
+      input.sessionId,
+    ]);
+    const scope = sessionScope.rows[0];
+    if (!scope?.vault_id) throw workspaceError("SESSION_NOT_FOUND", 404);
+    await assertWorkspaceContextRevisionCurrent(
+      client,
+      input.sessionId,
+      scope.space_id,
+      scope.vault_id,
+    );
 
     // The session row lock serializes claim acquisition in this workspace. Without
     // it, two overlapping prefixes could both observe an empty set and commit.
@@ -475,6 +521,20 @@ export async function heartbeatWorkspaceWork(
       [input.sessionId, input.actorId],
     );
     if (!participant.rowCount) throw workspaceError("SESSION_NOT_FOUND", 404);
+    const sessionScope = await client.query<{
+      space_id: string;
+      vault_id: string;
+    }>("select space_id,vault_id from agent_sessions where id=$1", [
+      input.sessionId,
+    ]);
+    const scope = sessionScope.rows[0];
+    if (!scope?.vault_id) throw workspaceError("SESSION_NOT_FOUND", 404);
+    await assertWorkspaceContextRevisionCurrent(
+      client,
+      input.sessionId,
+      scope.space_id,
+      scope.vault_id,
+    );
     const updated = await client.query<Record<string, unknown>>(
       `update workspace_claims
           set lease_expires_at=now()+make_interval(secs => $5),
@@ -555,6 +615,20 @@ export async function handoffWorkspaceWork(
     if (!session.rowCount) {
       throw workspaceError("WORKSPACE_HANDOFF_PARTICIPANT_REQUIRED", 422);
     }
+    const sessionScope = await client.query<{
+      space_id: string;
+      vault_id: string;
+    }>("select space_id,vault_id from agent_sessions where id=$1", [
+      input.sessionId,
+    ]);
+    const scope = sessionScope.rows[0];
+    if (!scope?.vault_id) throw workspaceError("SESSION_NOT_FOUND", 404);
+    await assertWorkspaceContextRevisionCurrent(
+      client,
+      input.sessionId,
+      scope.space_id,
+      scope.vault_id,
+    );
     const current = await client.query<Record<string, unknown>>(
       `select *
          from workspace_claims
@@ -647,6 +721,20 @@ export async function appendWorkspaceEvent(
       [input.sessionId, input.actorId],
     );
     if (!participant.rowCount) throw workspaceError("SESSION_NOT_FOUND", 404);
+    const sessionScope = await client.query<{
+      space_id: string;
+      vault_id: string;
+    }>("select space_id,vault_id from agent_sessions where id=$1", [
+      input.sessionId,
+    ]);
+    const scope = sessionScope.rows[0];
+    if (!scope?.vault_id) throw workspaceError("SESSION_NOT_FOUND", 404);
+    await assertWorkspaceContextRevisionCurrent(
+      client,
+      input.sessionId,
+      scope.space_id,
+      scope.vault_id,
+    );
     const row = await appendCoordinationEvent(client, {
       sessionId: input.sessionId,
       actorId: input.actorId,
@@ -680,6 +768,7 @@ export async function workspaceSessionSnapshot(
     oldestVersion: number | null;
     latestVersion: number | null;
   };
+  contextRevision: Awaited<ReturnType<typeof workspaceContextRevisionState>>;
 } | null> {
   const client = await db.pool.connect();
   try {
@@ -711,6 +800,12 @@ export async function workspaceSessionSnapshot(
         order by work_key`,
       [sessionId],
     );
+    const contextRevision = await workspaceContextRevisionState(
+      client,
+      sessionId,
+      String(sessionRow.space_id),
+      String(sessionRow.vault_id),
+    );
     const events = await client.query<Record<string, unknown>>(
       `select *,count(*) over() total_count
          from workspace_events
@@ -739,6 +834,7 @@ export async function workspaceSessionSnapshot(
       claims: claims.rows.map(normalizeClaim),
       events: cleanEvents,
       snapshotVersion: session.coordinationVersion,
+      contextRevision,
       eventWindow: {
         total,
         returned: cleanEvents.length,
