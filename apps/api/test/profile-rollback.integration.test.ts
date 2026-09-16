@@ -139,7 +139,7 @@ afterAll(async () => {
 });
 
 describe("KnowledgeProfile rollback API", () => {
-  it("restores a freshly revalidated immediate predecessor", async () => {
+  it("revalidates the historical profile through dry-run before restoring it", async () => {
     const baseline = await createValidatedRevision(
       DEFAULT_KNOWLEDGE_PROFILE_V1,
       null,
@@ -174,21 +174,30 @@ describe("KnowledgeProfile rollback API", () => {
       traceId: "profile-rollback-api-successor",
     });
 
-    const rollbackEvidence = await recordKnowledgeProfileDryRun(db, {
-      spaceId,
-      vaultId,
-      revisionId: baseline.revision.id,
-      actorId: adminId,
-      expectedCorpusRevision: "profile-rollback-api-r1",
-      compatibilityClass: "NON_BREAKING",
-      affectedDocumentCount: 0,
-      report: {
-        currentProfile: { revisionId: successor.revision.id },
-        candidateProfile: { revisionId: baseline.revision.id },
+    const dryRunResponse = await app.inject({
+      method: "POST",
+      url: "/v1/schema/dry-run",
+      headers,
+      payload: {
+        spaceId,
+        vaultId,
+        profile: DEFAULT_KNOWLEDGE_PROFILE_V1,
       },
-      corpusFingerprintBefore: emptyFingerprint,
-      corpusFingerprintAfter: emptyFingerprint,
     });
+    expect(dryRunResponse.statusCode).toBe(200);
+    const rollbackEvidence = dryRunResponse.json<{
+      id: string;
+      profileRevisionId: string;
+      profileRevisionStatus: string;
+      compatibilityClass: string;
+      currentProfile: { revisionId: string | null };
+    }>();
+    expect(rollbackEvidence.profileRevisionId).toBe(baseline.revision.id);
+    expect(rollbackEvidence.profileRevisionStatus).toBe("SUPERSEDED");
+    expect(rollbackEvidence.compatibilityClass).toBe("NON_BREAKING");
+    expect(rollbackEvidence.currentProfile.revisionId).toBe(
+      successor.revision.id,
+    );
 
     const response = await app.inject({
       method: "POST",
