@@ -1,14 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@akp/postgres", () => ({
-  Postgres: class {
-    async health() {
-      return true;
-    }
-    async close() {}
-    pool = { query: async () => ({ rows: [], rowCount: 0 }) };
-  },
-}));
+vi.mock("@akp/postgres", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@akp/postgres")>();
+  return {
+    ...actual,
+    Postgres: class {
+      async health() {
+        return true;
+      }
+      async close() {}
+      pool = { query: async () => ({ rows: [], rowCount: 0 }) };
+    },
+  };
+});
 
 describe("health", () => {
   it("builds the server", async () => {
