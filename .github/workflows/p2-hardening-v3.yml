@@ -34,8 +34,12 @@ jobs:
           else
             python .github/scripts/p2-harden-search.py
           fi
-      - name: Format generated source
-        run: pnpm exec prettier --write apps/api/src/routes/search.ts apps/api/test/health.test.ts
+      - name: Format generated source and regression
+        run: >-
+          pnpm exec prettier --write
+          apps/api/src/routes/search.ts
+          apps/api/test/health.test.ts
+          apps/api/test/retrieval-authorization-expansion.integration.test.ts
       - name: Validate formatting
         run: pnpm exec prettier --check .
       - name: Validate workspace
@@ -53,6 +57,9 @@ jobs:
           fi
           git config user.name "AKP P2 Hardening"
           git config user.email "akp-p2-hardening@users.noreply.github.com"
-          git add apps/api/src/routes/search.ts apps/api/test/health.test.ts
+          git add \
+            apps/api/src/routes/search.ts \
+            apps/api/test/health.test.ts \
+            apps/api/test/retrieval-authorization-expansion.integration.test.ts
           git commit -m "fix(p2): normalize authorized expansion scopes"
           git push origin HEAD:batch/p2-hardening-20260916
