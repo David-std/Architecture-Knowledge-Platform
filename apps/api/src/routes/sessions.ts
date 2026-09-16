@@ -141,6 +141,7 @@ export function registerSessionRoutes(
   app: FastifyInstance,
   db: Postgres,
 ): void {
+  const workspaceTelemetry = new OpenTelemetryBridge();
   app.get(
     "/v1/sessions",
     {
