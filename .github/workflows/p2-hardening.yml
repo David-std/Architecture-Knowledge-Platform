@@ -64,12 +64,12 @@ jobs:
         run: |
           mapfile -t files < <(
             git diff --name-only 2e93a0a1d4ed5b0a20b77cde4921fb23befb260f...HEAD \
-              | grep -E '\.(ts|tsx|js|mjs|cjs|json|md|ya?ml|sql)$' || true
+              | grep -E '\.(ts|tsx|js|mjs|cjs|json|md|ya?ml)$' || true
           )
           if [ "${#files[@]}" -gt 0 ]; then
             pnpm exec prettier --write "${files[@]}"
-            pnpm exec prettier --check "${files[@]}"
           fi
+          pnpm exec prettier --check .
       - name: Validate TypeScript workspace
         run: pnpm check
       - name: Validate build
