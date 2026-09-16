@@ -55,7 +55,7 @@ if count != 1:
 
 text, count = re.subn(
     r"function policyRevision\(profile: Record<string, unknown>\): string \{",
-    "export function contextPolicyRevisionFromProfile(\n  profile: Record<string, unknown>,\n): string {",
+    "function contextPolicyRevisionFromProfile(\n  profile: Record<string, unknown>,\n): string {",
     text,
     count=1,
 )
@@ -148,21 +148,40 @@ if "DEFAULT_KNOWLEDGE_PROFILE_V1" not in test:
         raise SystemExit(f"test contracts import anchor count={test.count(marker)}")
     test = test.replace(marker, "  DEFAULT_KNOWLEDGE_PROFILE_V1,\n" + marker, 1)
 
-if "contextPolicyRevisionFromProfile" not in test:
-    postgres_import = re.search(
-        r'import\s*\{(?P<body>.*?)\}\s*from\s*"@akp/postgres";',
-        test,
-        re.DOTALL,
-    )
-    if not postgres_import:
-        raise SystemExit("test postgres import block not found")
-    original = postgres_import.group(0)
-    patched = original.replace(
-        "{",
-        "{\n  contextPolicyRevisionFromProfile,",
-        1,
-    )
-    test = test[: postgres_import.start()] + patched + test[postgres_import.end() :]
+helper_anchor = "const vaultId = randomUUID();\n"
+helper = r'''
+
+function stablePolicyValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stablePolicyValue);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, nested]) => [key, stablePolicyValue(nested)]),
+  );
+}
+
+function expectedDefaultPolicyRevision(): string {
+  const profile = DEFAULT_KNOWLEDGE_PROFILE_V1;
+  const policy = {
+    lifecycles: profile.lifecycles ?? {},
+    evidencePolicies: profile.evidencePolicies ?? {},
+    reviewPolicies: profile.reviewPolicies ?? {},
+    retrievalPolicy: profile.retrievalPolicy ?? {},
+    promotionPolicy: profile.promotionPolicy ?? {},
+    freshnessPolicy: profile.freshnessPolicy ?? {},
+    connectorPolicy: profile.connectorPolicy ?? null,
+    modelRoleConstraints: profile.modelRoleConstraints ?? [],
+  };
+  return createHash("sha256")
+    .update(JSON.stringify(stablePolicyValue(policy)))
+    .digest("hex");
+}
+'''
+if "function expectedDefaultPolicyRevision()" not in test:
+    if test.count(helper_anchor) != 1:
+        raise SystemExit(f"test policy helper anchor count={test.count(helper_anchor)}")
+    test = test.replace(helper_anchor, helper_anchor + helper, 1)
 
 old_type = "profile: { source: string; revisionId: string | null; profileId: string };"
 new_type = (
@@ -172,6 +191,19 @@ new_type = (
 if test.count(old_type) != 1:
     raise SystemExit(f"test profile type anchor count={test.count(old_type)}")
 test = test.replace(old_type, new_type, 1)
+
+old_vault_delete = '    await db.pool.query("delete from vaults where id=$1", [vaultId]);'
+new_vault_delete = "\n".join(
+    [
+        '    await db.pool.query("delete from vault_index_revisions where vault_id=$1", [',
+        "      vaultId,",
+        "    ]);",
+        old_vault_delete,
+    ]
+)
+if test.count(old_vault_delete) != 1:
+    raise SystemExit(f"test vault cleanup anchor count={test.count(old_vault_delete)}")
+test = test.replace(old_vault_delete, new_vault_delete, 1)
 
 old_expect = "\n".join(
     [
@@ -199,9 +231,7 @@ new_expect = "\n".join(
         "      hash: defaultProfileHash,",
         "    });",
         "    expect(initial.contextRevisionSet.policy.revision).toBe(",
-        "      contextPolicyRevisionFromProfile(",
-        "        DEFAULT_KNOWLEDGE_PROFILE_V1 as unknown as Record<string, unknown>,",
-        "      ),",
+        "      expectedDefaultPolicyRevision(),",
         "    );",
     ]
 )
