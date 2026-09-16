@@ -380,7 +380,8 @@ export function registerSessionRoutes(
                 revisionSetHash:
                   snapshot.contextRevision.current.revisionSetHash,
               },
-              changedDimensions: snapshot.contextRevision.changedDimensions,
+              changedDimensions:
+                snapshot.contextRevision.changedDimensions,
             },
           };
         },
@@ -396,18 +397,16 @@ export function registerSessionRoutes(
           const revision = session.contextRevisionSet;
           if (!revision) throw new Error("CONTEXT_REVISION_PIN_REQUIRED");
           const mandatoryKinds =
-            profile.retrievalPolicy.mandatoryKindsByIntent[bootstrapIntent] ??
-            [];
+            profile.retrievalPolicy.mandatoryKindsByIntent[bootstrapIntent] ?? [];
           return {
-            source: active
-              ? ("DURABLE_REVISION" as const)
-              : ("DEFAULT" as const),
+            source: active ? ("DURABLE_REVISION" as const) : ("DEFAULT" as const),
             revisionId: active?.id ?? null,
             profileId: profile.profileId,
             version: profile.version,
             hash: active?.profileHash ?? revision.profile.hash,
             policyRevision: revision.policy.revision,
-            allowedKnowledgeKinds: profile.retrievalPolicy.allowedKinds,
+            allowedKnowledgeKinds:
+              profile.retrievalPolicy.allowedKinds,
             mandatoryKinds,
             progressiveDisclosure:
               profile.retrievalPolicy.progressiveDisclosure,
