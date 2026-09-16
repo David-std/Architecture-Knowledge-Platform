@@ -1,0 +1,33 @@
+name: p2-session-create-diagnostic
+# Temporary diagnostic harness. Remove after the shared session-create failure is isolated.
+
+on:
+  push:
+    branches: [batch/p2-session-create-diagnostic-20260916]
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgres://akp:akp@localhost:55432/akp
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - run: python .github/scripts/p2-harden-bootstrap-errors.py
+      - run: docker compose up -d --wait postgres
+      - run: pnpm db:migrate
+      - name: Run revision fixture with Fastify diagnostics
+        run: >-
+          pnpm --filter @akp/api exec vitest run
+          --config vitest.integration.config.ts
+          test/context-revision-set.integration.test.ts
+      - name: Stop disposable services
+        if: always()
+        run: docker compose down -v --remove-orphans
