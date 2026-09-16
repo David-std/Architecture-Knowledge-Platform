@@ -126,7 +126,26 @@ export async function resolveProposalReviewPolicy(
 ): Promise<{ policy: EffectiveReviewPolicyType; pinned: boolean }> {
   const binding = await resolveKnowledgeProfileBinding(db, spaceId, vaultId);
   if (binding.source === "LEGACY_UNBOUND") {
-    return { policy: defaultReviewPolicy(), pinned: true };
+    const context = defaultCompilerKnowledgeProfileContext();
+    try {
+      return {
+        policy: effectiveReviewPolicyForKinds(context, kinds),
+        pinned: true,
+      };
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === "COMPILER_PROFILE_KIND_NOT_DECLARED:source-summary" &&
+        kinds.length === 1 &&
+        kinds[0] === "source-summary"
+      ) {
+        // `source-summary` is the v0.3 worker fallback draft kind. It predates
+        // KnowledgeProfile declarations, so keep only that exact legacy shape
+        // reviewable without pretending it is bound to the default profile.
+        return { policy: defaultReviewPolicy(), pinned: false };
+      }
+      throw error;
+    }
   }
   const revision = binding.revision;
   if (!revision) throw new Error("ACTIVE_KNOWLEDGE_PROFILE_BINDING_INVALID");
