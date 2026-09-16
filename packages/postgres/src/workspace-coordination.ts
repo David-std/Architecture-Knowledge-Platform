@@ -764,6 +764,9 @@ export async function workspacePromotionEvidence(
   events: Record<string, unknown>[];
 }> {
   const uniqueIds = [...new Set(input.eventIds)];
+  if (uniqueIds.length > 100) {
+    throw workspaceError("PROMOTION_EVIDENCE_LIMIT_EXCEEDED", 413);
+  }
   if (!uniqueIds.length || uniqueIds.length !== input.eventIds.length) {
     throw workspaceError("PROMOTION_EVIDENCE_REQUIRED", 400);
   }
@@ -786,6 +789,13 @@ export async function workspacePromotionEvidence(
       String(sessionRow.space_id),
       String(sessionRow.vault_id),
     );
+    const malformedId = uniqueIds.some(
+      (id) =>
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          id,
+        ),
+    );
+    if (malformedId) throw workspaceError("PROMOTION_EVIDENCE_INVALID", 400);
     const events = await client.query<Record<string, unknown>>(
       `select *
          from workspace_events
