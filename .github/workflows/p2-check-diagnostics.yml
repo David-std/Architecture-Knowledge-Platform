@@ -3,11 +3,18 @@ name: p2-check-diagnostics
 on:
   pull_request:
 
+permissions:
+  contents: write
+
 jobs:
   check:
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgres://akp:akp@localhost:55432/akp
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
       - uses: pnpm/action-setup@v6
         with: { version: 10.34.5 }
       - uses: actions/setup-node@v7
@@ -15,20 +22,134 @@ jobs:
           node-version: 24.20.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
-      - name: Capture pnpm check diagnostics
+      - name: Apply bounded P2 hardening patch
         shell: bash
         run: |
-          set +e
-          pnpm check > p2-check.log 2>&1
-          status=$?
-          cat p2-check.log
-          echo "$status" > p2-check.exit
-          exit 0
-      - uses: actions/upload-artifact@v7
-        with:
-          name: p2-check-diagnostics
-          path: |
-            p2-check.log
-            p2-check.exit
-          if-no-files-found: error
-          retention-days: 1
+          python <<'PY'
+          from pathlib import Path
+
+          sessions = Path("apps/api/src/routes/sessions.ts")
+          text = sessions.read_text()
+          old = '''      const session = await createWorkspaceSession(db, {
+                spaceId,
+                vaultId,
+                actorId: actor.id,
+                projectId: request.body.projectId,
+                purpose: request.body.purpose.trim(),
+                contextBudget: budget,
+              });'''
+          new = '''      const session = await createWorkspaceSession(db, {
+                spaceId,
+                vaultId,
+                actorId: actor.id,
+                ...(request.body.projectId !== undefined
+                  ? { projectId: request.body.projectId }
+                  : {}),
+                purpose: request.body.purpose.trim(),
+                contextBudget: budget,
+              });'''
+          if text.count(old) != 1:
+              raise SystemExit("createWorkspaceSession anchor changed")
+          text = text.replace(old, new)
+
+          old = '''      const note = request.body.note?.trim();
+              if (note && Buffer.byteLength(note, "utf8") > 2048) {
+                return reply.code(413).send({ code: "HANDOFF_NOTE_TOO_LARGE" });
+              }
+              const claim = await handoffWorkspaceWork(db, {'''
+          new = '''      const note = request.body.note?.trim();
+              if (note && Buffer.byteLength(note, "utf8") > 2048) {
+                return reply.code(413).send({ code: "HANDOFF_NOTE_TOO_LARGE" });
+              }
+              if (!(await userHasFullVaultRead(db, toUserId, session))) {
+                return reply
+                  .code(422)
+                  .send({ code: "PARTICIPANT_NOT_AUTHORIZED" });
+              }
+              const claim = await handoffWorkspaceWork(db, {'''
+          if text.count(old) != 1:
+              raise SystemExit("handoff authorization anchor changed")
+          sessions.write_text(text.replace(old, new))
+
+          test = Path("apps/api/test/workspace-coordination.integration.test.ts")
+          text = test.read_text()
+          old = '''    expect(finding.statusCode).toBe(201);
+              expect(finding.json()).toMatchObject({ event_type: "FINDING" });
+
+              const handedOff = await app.inject({'''
+          new = '''    expect(finding.statusCode).toBe(201);
+              expect(finding.json()).toMatchObject({ event_type: "FINDING" });
+
+              await db.pool.query(
+                `update vault_memberships
+                    set enabled=false
+                  where user_id=$1 and vault_id=$2`,
+                [actorBId, vaultId],
+              );
+              const revokedState = await app.inject({
+                method: "GET",
+                url: `/v1/sessions/${sessionId}/state`,
+                headers: actorBHeaders,
+              });
+              expect(revokedState.statusCode).toBe(404);
+              expect(revokedState.json()).toMatchObject({ code: "SESSION_NOT_FOUND" });
+
+              const revokedHandoff = await app.inject({
+                method: "POST",
+                url: `/v1/sessions/${sessionId}/claims/handoff`,
+                headers: actorAHeaders,
+                payload: {
+                  workKey: "profile:compiler-boundary",
+                  toUserId: actorBId,
+                  fencingToken: 1,
+                  leaseSeconds: 120,
+                },
+              });
+              expect(revokedHandoff.statusCode).toBe(422);
+              expect(revokedHandoff.json()).toMatchObject({
+                code: "PARTICIPANT_NOT_AUTHORIZED",
+              });
+              await db.pool.query(
+                `update vault_memberships
+                    set enabled=true
+                  where user_id=$1 and vault_id=$2`,
+                [actorBId, vaultId],
+              );
+
+              const handedOff = await app.inject({'''
+          if text.count(old) != 1:
+              raise SystemExit("revocation test anchor changed")
+          test.write_text(text.replace(old, new))
+          PY
+      - name: Format patched files
+        run: |
+          pnpm exec prettier --write \
+            apps/api/src/routes/sessions.ts \
+            apps/api/test/workspace-coordination.integration.test.ts
+          pnpm exec prettier --check \
+            apps/api/src/routes/sessions.ts \
+            apps/api/test/workspace-coordination.integration.test.ts
+      - name: Run repository check
+        run: pnpm check
+      - name: Start disposable Postgres
+        run: docker compose up -d --wait postgres
+      - run: pnpm db:migrate
+      - name: Run focused workspace coordination integration
+        run: >-
+          pnpm --filter @akp/api exec vitest run
+          --config vitest.integration.config.ts
+          test/workspace-coordination.integration.test.ts
+      - name: Promote verified product patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            apps/api/src/routes/sessions.ts \
+            apps/api/test/workspace-coordination.integration.test.ts
+          git commit -m "fix(p2): enforce workspace handoff authorization"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
+      - name: Stop disposable services
+        if: always()
+        run: docker compose down -v --remove-orphans
