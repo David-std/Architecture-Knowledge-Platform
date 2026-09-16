@@ -27,7 +27,13 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
       - name: Apply retrieval authorization hardening
-        run: python .github/scripts/p2-harden-search.py
+        shell: bash
+        run: |
+          if grep -q 'PostgresAuthorizationPort' apps/api/src/routes/search.ts; then
+            python .github/scripts/p2-fix-scope-json.py
+          else
+            python .github/scripts/p2-harden-search.py
+          fi
       - name: Format generated source
         run: pnpm exec prettier --write apps/api/src/routes/search.ts apps/api/test/health.test.ts
       - name: Validate formatting
@@ -48,5 +54,5 @@ jobs:
           git config user.name "AKP P2 Hardening"
           git config user.email "akp-p2-hardening@users.noreply.github.com"
           git add apps/api/src/routes/search.ts apps/api/test/health.test.ts
-          git commit -m "fix(p2): authorize retrieval before expansion"
+          git commit -m "fix(p2): normalize authorized expansion scopes"
           git push origin HEAD:batch/p2-hardening-20260916
