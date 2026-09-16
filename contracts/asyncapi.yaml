@@ -95,6 +95,14 @@ components:
             - GraphIndexUpdateRequested
             - ContextPackInvalidationRequested
             - ImpactedEvalRunRequested
+            - WorkspaceSessionCreated
+            - WorkspaceClaimUpdated
+            - WorkspaceHandoffCreated
+            - WorkspacePromotionRequested
+            - ExternalObjectRefUpserted
+            - OfflineDraftQueued
+            - OfflineDraftReconciled
+            - ContextFabricPeerRegistered
         eventVersion: { type: integer, minimum: 1 }
         resourceId: { type: string, minLength: 1 }
         organizationId: { type: [string, "null"], format: uuid }
@@ -157,6 +165,7 @@ components:
             - QUESTION
             - ARTIFACT
             - DECISION_CANDIDATE
+            - PROMOTION_REQUESTED
             - NOTE
         payload:
           type: object

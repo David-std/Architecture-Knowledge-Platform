@@ -457,6 +457,14 @@ export const IntegrationEventType = z.enum([
   "GraphIndexUpdateRequested",
   "ContextPackInvalidationRequested",
   "ImpactedEvalRunRequested",
+  "WorkspaceSessionCreated",
+  "WorkspaceClaimUpdated",
+  "WorkspaceHandoffCreated",
+  "WorkspacePromotionRequested",
+  "ExternalObjectRefUpserted",
+  "OfflineDraftQueued",
+  "OfflineDraftReconciled",
+  "ContextFabricPeerRegistered",
 ]);
 export type IntegrationEventType = z.infer<typeof IntegrationEventType>;
 
