@@ -28,7 +28,8 @@
     "@fastify/cors": "^11.3.0",
     "@fastify/rate-limit": "^11.2.0",
     "fastify": "^5.0.0",
-    "zod": "^3.24.0"
+    "zod": "^3.24.0",
+    "@akp/application": "*"
   },
   "devDependencies": {
     "tsx": "^4.0.0",
