@@ -614,6 +614,52 @@ describe("workspace coordination integration", () => {
       (event) => event.event_type === "FINDING",
     );
     expect(findingEvent).toBeDefined();
+    const invalidPromotionEvidence = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/promotions`,
+      headers: actorAHeaders,
+      payload: {
+        evidenceEventIds: ["not-a-uuid"],
+        changes: [
+          {
+            path: "knowledge/invalid.md",
+            content:
+              "---\ntype: claim\nstatus: proposed\nknowledge_layer: project\n---\n# Invalid evidence\n\nThis proposal must never be created because its workspace evidence identifier is malformed and cannot establish durable provenance.\n",
+          },
+        ],
+      },
+    });
+    expect(invalidPromotionEvidence.statusCode).toBe(400);
+    expect(invalidPromotionEvidence.json()).toMatchObject({
+      code: "PROMOTION_EVIDENCE_INVALID",
+    });
+
+    const nonPromotableEvent = snapshot.events.find(
+      (event) => event.event_type === "BLOCKER",
+    );
+    expect(nonPromotableEvent).toBeDefined();
+    const nonPromotable = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/promotions`,
+      headers: actorAHeaders,
+      payload: {
+        evidenceEventIds: [
+          String((nonPromotableEvent as { id: string }).id),
+        ],
+        changes: [
+          {
+            path: "knowledge/blocker.md",
+            content:
+              "---\ntype: claim\nstatus: proposed\nknowledge_layer: project\n---\n# Blocker\n\nA blocker alone is coordination state and must not be accepted as canonical promotion evidence without a promotable finding, artifact, or decision candidate.\n",
+          },
+        ],
+      },
+    });
+    expect(nonPromotable.statusCode).toBe(404);
+    expect(nonPromotable.json()).toMatchObject({
+      code: "PROMOTION_EVIDENCE_NOT_FOUND",
+    });
+
     const promotion = await app.inject({
       method: "POST",
       url: `/v1/sessions/${sessionId}/promotions`,
