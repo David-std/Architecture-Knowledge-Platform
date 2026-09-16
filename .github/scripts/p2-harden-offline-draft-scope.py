@@ -12,28 +12,23 @@ new = '''export async function applyWorkspaceOfflineDraft(
   input: { draftId: string; sessionId: string; actorId: string },
 ): Promise<WorkspaceOfflineDraftRecord> {
   const client = await db.pool.connect();'''
-if "sessionId: string; actorId: string" not in postgres:
-    if old not in postgres:
-        raise SystemExit("applyWorkspaceOfflineDraft signature changed")
+if old in postgres:
     postgres = postgres.replace(old, new, 1)
-old = '''      `select id,client_draft_id,session_id,space_id,vault_id,actor_id,
-              base_revision_set_hash,event_type,payload,status,queued_at,
-              reconciled_at,applied_event_id
-         from workspace_offline_drafts
+elif new not in postgres:
+    raise SystemExit("applyWorkspaceOfflineDraft signature changed")
+
+old = '''      `select * from workspace_offline_drafts
         where id=$1 and actor_id=$2
         for update`,
       [input.draftId, input.actorId],'''
-new = '''      `select id,client_draft_id,session_id,space_id,vault_id,actor_id,
-              base_revision_set_hash,event_type,payload,status,queued_at,
-              reconciled_at,applied_event_id
-         from workspace_offline_drafts
+new = '''      `select * from workspace_offline_drafts
         where id=$1 and session_id=$2 and actor_id=$3
         for update`,
       [input.draftId, input.sessionId, input.actorId],'''
-if "where id=$1 and session_id=$2 and actor_id=$3" not in postgres:
-    if old not in postgres:
-        raise SystemExit("offline draft select shape changed")
+if old in postgres:
     postgres = postgres.replace(old, new, 1)
+elif "where id=$1 and session_id=$2 and actor_id=$3" not in postgres:
+    raise SystemExit("offline draft select shape changed")
 postgres_path.write_text(postgres)
 
 routes_path = Path("apps/api/src/routes/context-fabric.ts")
@@ -61,10 +56,10 @@ new = '''      let draft;
         }
         throw error;
       }'''
-if "sessionId: session.id," not in routes:
-    if old not in routes:
-        raise SystemExit("offline draft apply route shape changed")
+if old in routes:
     routes = routes.replace(old, new, 1)
+elif "sessionId: session.id," not in routes:
+    raise SystemExit("offline draft apply route shape changed")
 routes_path.write_text(routes)
 
 test_path = Path("apps/api/test/context-fabric.integration.test.ts")
