@@ -74,159 +74,11 @@ jobs:
           cat /tmp/default-context-fingerprints.json
       - name: Materialize and repair workspace context revision product
         shell: bash
+        env:
+          PATCH_PAYLOAD: "CmltcG9ydCBiYXNlNjQKaW1wb3J0IGpzb24KaW1wb3J0IHJlCmltcG9ydCBzdWJwcm9jZXNzCmltcG9ydCB6bGliCmZyb20gcGF0aGxpYiBpbXBvcnQgUGF0aAoKd29ya2Zsb3cgPSBQYXRoKCIuZ2l0aHViL3dvcmtmbG93cy93b3Jrc3BhY2UtY29udGV4dC1wcmVmbGlnaHQueW1sIikucmVhZF90ZXh0KCkKbWF0Y2ggPSByZS5zZWFyY2gocidwYXlsb2FkID0gIihbQS1aYS16MC05Ky89XSspIicsIHdvcmtmbG93KQppZiBub3QgbWF0Y2g6CiAgICByYWlzZSBTeXN0ZW1FeGl0KCJlbWJlZGRlZCBtYXRlcmlhbGl6ZXIgcGF5bG9hZCBub3QgZm91bmQiKQoKc2NyaXB0ID0gemxpYi5kZWNvbXByZXNzKGJhc2U2NC5iNjRkZWNvZGUobWF0Y2guZ3JvdXAoMSkpKS5kZWNvZGUoKQpvbGRfbG9vcCA9ICIjIFNhbWUgc2VsZWN0IHNoYXBlIG9jY3VycyBpbiBsaXN0IGFuZCBzbmFwc2hvdDsgcGF0Y2ggcmVtYWluaW5nIG9jY3VycmVuY2VzLlxuZm9yIF8gaW4gcmFuZ2UoMik6IgpuZXdfbG9vcCA9ICIjIFRoZSBjdXJyZW50IHNvdXJjZSBoYXMgb25lIHJlbWFpbmluZyBtYXRjaGluZyBzZWxlY3QgKGxpc3QpOyBzbmFwc2hvdCB1c2VzIGEgZGlzdGluY3QgcXVlcnkuXG5mb3IgXyBpbiByYW5nZSgxKToiCmlmIHNjcmlwdC5jb3VudChvbGRfbG9vcCkgIT0gMToKICAgIHJhaXNlIFN5c3RlbUV4aXQoZiJ1bmV4cGVjdGVkIG1hdGVyaWFsaXplciBsb29wIGNvdW50OiB7c2NyaXB0LmNvdW50KG9sZF9sb29wKX0iKQpzY3JpcHQgPSBzY3JpcHQucmVwbGFjZShvbGRfbG9vcCwgbmV3X2xvb3AsIDEpClBhdGgoIi90bXAvd29ya3NwYWNlLWNvbnRleHQtbWF0ZXJpYWxpemUucHkiKS53cml0ZV90ZXh0KHNjcmlwdCkKc3VicHJvY2Vzcy5ydW4oWyJweXRob24iLCAiL3RtcC93b3Jrc3BhY2UtY29udGV4dC1tYXRlcmlhbGl6ZS5weSJdLCBjaGVjaz1UcnVlKQoKZnAgPSBqc29uLmxvYWRzKFBhdGgoIi90bXAvZGVmYXVsdC1jb250ZXh0LWZpbmdlcnByaW50cy5qc29uIikucmVhZF90ZXh0KCkpCm1vZHVsZV9wYXRoID0gUGF0aCgicGFja2FnZXMvcG9zdGdyZXMvc3JjL2NvbnRleHQtcmV2aXNpb24tc2V0LnRzIikKdGV4dCA9IG1vZHVsZV9wYXRoLnJlYWRfdGV4dCgpCgpjb250cmFjdHNfaW1wb3J0ID0gcmUuY29tcGlsZSgKICAgIHInaW1wb3J0IFx7XHMqREVGQVVMVF9LTk9XTEVER0VfUFJPRklMRV9WMSxccypjYW5vbmljYWxLbm93bGVkZ2VQcm9maWxlSnNvbixccypcfSBmcm9tICJAYWtwL2NvbnRyYWN0cy9rbm93bGVkZ2UtcHJvZmlsZSI7XG4nLAogICAgcmUuTVVMVElMSU5FLAopCnRleHQsIGNvdW50ID0gY29udHJhY3RzX2ltcG9ydC5zdWJuKCiiIiwgdGV4dCwgY291bnQ9MSkKaWYgY291bnQgIT0gMToKICAgIHJhaXNlIFN5c3RlbUV4aXQoZiJjb250cmFjdHMgaW1wb3J0IHBhdGNoIGNvdW50PXtjb3VudH0iKQoKZGVmYXVsdHMgPSByZS5jb21waWxlKAogICAgciJjb25zdCBERUZBVUxUX1BST0ZJTEVfQ0FOT05JQ0FMID0gY2Fub25pY2FsS25vd2xlZGdlUHJvZmlsZUpzb25cKFxzKkRFRkFVTFRfS05PV0xFREdFX1BST0ZJTEVfVjEsXHMqXClcO1xuIgogICAgciJjb25zdCBERUZBVUxUX1BST0ZJTEVfSEFTSCA9IHNoYTI1NihERUZBVUxUX1BST0ZJTEVfQ0FOT05JQ0FMXCIpOyIKKQpyZXBsYWNlbWVudCA9ICJcbiIuam9pbigKICAgIFsKICAgICAgICBmImNvbnN0IERFRkFVTFRfUFJPRklMRV9JRCA9IHtqc29uLmR1bXBzKGZwWydwcm9maWxlSWQnXSl9OyIsCiAgICAgICAgZiJjb25zdCBERUZBVUxUX1BST0ZJTEVfVkVSU0lPTiA9IHtqc29uLmR1bXBzKGZwWyd2ZXJzaW9uJyl9OyIsCiAgICAgICAgZiJjb25zdCBERUZBVUxUX1BST0ZJTEVfSEFTSCA9IHtqc29uLmR1bXBzKGZwWydwcm9maWxlSGFzaCddKX07IiwKICAgICAgICBmImNvbnN0IERFRkFVTFRfUE9MSUNZX1JFVklTSU9OID0ge2pzb24uZHVtcHMoZnBbJ3BvbGljeVJldmlzaW9uJ10pfTsiLAogICAgXQopCnRleHQsIGNvdW50ID0gZGVmYXVsdHMuc3VibihyZXBsYWNlbWVudCwgdGV4dCwgY291bnQ9MSkKaWYgY291bnQgIT0gMToKICAgIHJhaXNlIFN5c3RlbUV4aXQoZiJkZWZhdWx0IGNvbnN0YW50cyBwYXRjaCBjb3VudD17Y291bnR9IikKCnRleHQsIGNvdW50ID0gcmUuc3VibigKICAgIHIiZnVuY3Rpb24gcG9saWN5UmV2aXNpb25cKHByb2ZpbGU6IFJlY29yZDxzdHJpbmcsIHVua25vd24+XCk6IHN0cmluZyBcLyIsCiAgICAiZXhwb3J0IGZ1bmN0aW9uIGNvbnRleHRQb2xpY3lSZXZpc2lvbkZyb21Qcm9maWxlKFxuICBwcm9maWxlOiBSZWNvcmQ8c3RyaW5nLCB1bmtub3duPixcbik6IHN0cmluZyB7IiwKICAgIHRleHQsCiAgICBjb3VudD0xLAopCmlmIGNvdW50ICE9IDE6CiAgICByYWlzZSBTeXN0ZW1FeGl0KGYicG9saWN5IGhlbHBlciBwYXRjaCBjb3VudD17Y291bnR9IikKCm9sZF9zaWduYXR1cmUgPSAiXG4iLmpvaW4oCiAgICBbCiAgICAgICAgImZ1bmN0aW9uIHByb2ZpbGVJZGVudGl0eShyb3c6IENvbnRleHRSZXZpc2lvblJvdyk6IHsiLAogICAgICAgICIgIGlkZW50aXR5OiBDb250ZXh0UHJvZmlsZVJldmlzaW9uOyIsCiAgICAgICAgIiAgcHJvZmlsZTogUmVjb3JkPHN0cmluZywgdW5rbm93bj47IiwKICAgICAgICAifSB7IiwKICAgIF0KKQpuZXdfc2lnbmF0dXJlID0gIlxuIi5qb2luKAogICAgWwogICAgICAgICJmdW5jdGlvbiBwcm9maWxlSWRlbnRpdHkocm93OiBDb250ZXh0UmV2aXNpb25Sb3cpOiB7IiwKICAgICAgICAiICBpZGVudGl0eTogQ29udGV4dFByb2ZpbGVSZXZpc2lvbjsiLAogICAgICAgICIgIHBvbGljeVJldmlzaW9uOiBzdHJpbmc7IiwKICAgICAgICAifSB7IiwKICAgIF0KKQppZiB0ZXh0LmNvdW50KG9sZF9zaWduYXR1cmUpICE9IDE6CiAgICByYWlzZSBTeXN0ZW1FeGl0KGYicHJvZmlsZUlkZW50aXR5IHNpZ25hdHVyZSBjb3VudD17dGV4dC5jb3VudChvbGRfc2lnbmF0dXJlKX0iKQp0ZXh0ID0gdGV4dC5yZXBsYWNlKG9sZF9zaWduYXR1cmUsIG5ld19zaWduYXR1cmUsIDEpCgpvbGRfZGVmYXVsdCA9ICJcbiIuam9pbigKICAgIFsKICAgICAgICAiICAgICAgICBwcm9maWxlSWQ6IERFRkFVTFRfS05PV0xFREdFX1BST0ZJTEVfVjEucHJvZmlsZUlkLCIsCiAgICAgICAgIiAgICAgICAgdmVyc2lvbjogREVGQVVMVF9LTk9XTEVER0VfUFJPRklMRV9WMS52ZXJzaW9uLCIsCiAgICAgICAgIiAgICAgICAgaGFzaDogREVGQVVMVF9QUk9GSUxFX0hBU0gsIiwKICAgICAgICAiICAgICAgfSwiLAogICAgICAgICIgICAgICBwcm9maWxlOiBERUZBVUxUX0tOT1dMRURHRV9QUk9GSUxFX1YxIGFzIHVua25vd24gYXMgUmVjb3JkPHN0cmluZywgdW5rbm93bj4sIiwKICAgIF0KKQpuZXdfZGVmYXVsdCA9ICJcbiIuam9pbigKICAgIFsKICAgICAgICAiICAgICAgICBwcm9maWxlSWQ6IERFRkFVTFRfUFJPRklMRV9JRCwiLAogICAgICAgICIgICAgICAgIHZlcnNpb246IERFRkFVTFRfUFJPRklMRV9WRVJTSU9OLCIsCiAgICAgICAgIiAgICAgICAgaGFzaDogREVGQVVMVF9QUk9GSUxFX0hBU0gsIiwKICAgICAgICAiICAgICAgfSwiLAogICAgICAgICIgICAgICBwb2xpY3lSZXZpc2lvbjogREVGQVVMVF9QT0xJQ1lfUkVWSVNJT04sIiwKICAgIF0KKQppZiB0ZXh0LmNvdW50KG9sZF9kZWZhdWx0KSAhPSAxOgogICAgcmFpc2UgU3lzdGVtRXhpdChmImRlZmF1bHQgaWRlbnRpdHkgcGF0Y2ggY291bnQ9e3RleHQuY291bnQob2xkX2RlZmF1bHQpfSIpCnRleHQgPSB0ZXh0LnJlcGxhY2Uob2xkX2RlZmF1bHQsIG5ld19kZWZhdWx0LCAxKQoKb2xkX2R1cmFibGUgPSAiXG4iLmpvaW4oCiAgICBbCiAgICAgICAgIiAgICB9LCIsCiAgICAgICAgIiAgICBwcm9maWxlOiBwYXJzZVByb2ZpbGUocm93LmNhbm9uaWNhbF9wcm9maWxlKSwiLAogICAgICAgICIgIH07IiwKICAgICAgICAifSIsCiAgICBdCikKbmV3X2R1cmFibGUgPSAiXG4iLmpvaW4oCiAgICBbCiAgICAgICAgIiAgICB9LCIsCiAgICAgICAgIiAgICBwb2xpY3lSZXZpc2lvbjogY29udGV4dFBvbGljeVJldmlzaW9uRnJvbVByb2ZpbGUoIiwKICAgICAgICAiICAgICAgcGFyc2VQcm9maWxlKHJvdy5jYW5vbmljYWxfcHJvZmlsZSksIiwKICAgICAgICAiICAgICksIiwKICAgICAgICAiICB9OyIsCiAgICAgICAgIn0iLAogICAgXQopCmlmIHRleHQuY291bnQob2xkX2R1cmFibGUpICE9IDE6CiAgICByYWlzZSBTeXN0ZW1FeGl0KGYiZHVyYWJsZSBwcm9maWxlIHBhdGNoIGNvdW50PXt0ZXh0LmNvdW50KG9sZF9kdXJhYmxlKX0iKQp0ZXh0ID0gdGV4dC5yZXBsYWNlKG9sZF9kdXJhYmxlLCBuZXdfZHVyYWJsZSwgMSkKCm9sZF9wb2xpY3kgPSAiICAgICAgcmV2aXNpb246IHBvbGljeVJldmlzaW9uKHByb2ZpbGUucHJvZmlsZSksIgppZiB0ZXh0LmNvdW50KG9sZF9wb2xpY3kpICE9IDE6CiAgICByYWlzZSBTeXN0ZW1FeGl0KGYicG9saWN5IHJldmlzaW9uIHVzZSBjb3VudD17dGV4dC5jb3VudChvbGRfcG9saWN5KX0iKQp0ZXh0ID0gdGV4dC5yZXBsYWNlKG9sZF9wb2xpY3ksICIgICAgICByZXZpc2lvbjogcHJvZmlsZS5wb2xpY3lSZXZpc2lvbiwiLCAxKQoKaWYgKAogICAgIkBha3AvY29udHJhY3RzIiBpbiB0ZXh0CiAgICBvciAiREVGQVVMVF9LTk9XTEVER0VfUFJPRklMRV9WMSIgaW4gdGV4dAogICAgb3IgImNhbm9uaWNhbEtub3dsZWRnZVByb2ZpbGVKc29uIiBpbiB0ZXh0Cik6CiAgICByYWlzZSBTeXN0ZW1FeGl0KCJwb3N0Z3JlcyBtb2R1bGUgc3RpbGwgcmVmZXJlbmNlcyBzZW1hbnRpYyBjb250cmFjdHMgYXV0aG9yaXR5IikKbW9kdWxlX3BhdGgud3JpdGVfdGV4dCh0ZXh0KQoKdGVzdF9wYXRoID0gUGF0aCgiYXBwcy9hcGkvdGVzdC9jb250ZXh0LXJldmlzaW9uLXNldC5pbnRlZ3JhdGlvbi50ZXN0LnRzIikKdGVzdCA9IHRlc3RfcGF0aC5yZWFkX3RleHQoKQoKaWYgIkRFRkFVTFRfS05PV0xFREdFX1BST0ZJTEVfVjEiIG5vdCBpbiB0ZXN0OgogICAgbWFya2VyID0gIiAgTkVVVFJBTF9LTk9XTEVER0VfUFJPRklMRV9WMSxcbiIKICAgIGlmIHRlc3QuY291bnQobWFya2VyKSAhPSAxOgogICAgICAgIHJhaXNlIFN5c3RlbUV4aXQoZiJ0ZXN0IGNvbnRyYWN0cyBpbXBvcnQgYW5jaG9yIGNvdW50PXt0ZXN0LmNvdW50KG1hcmtlcil9IikKICAgIHRlc3QgPSB0ZXN0LnJlcGxhY2UobWFya2VyLCAiICBERUZBVUxUX0tOT1dMRURHRV9QUk9GSUxFX1YxLFxuIiArIG1hcmtlciwgMSkKCmlmICJjb250ZXh0UG9saWN5UmV2aXNpb25Gcm9tUHJvZmlsZSIgbm90IGluIHRlc3Q6CiAgICBtYXJrZXIgPSAiICBQb3N0Z3JlcyxcbiIKICAgIGlmIHRlc3QuY291bnQobWFya2VyKSAhPSAxOgogICAgICAgIHJhaXNlIFN5c3RlbUV4aXQoZiJ0ZXN0IHBvc3RncmVzIGltcG9ydCBhbmNob3IgY291bnQ9e3Rlc3QuY291bnQobWFya2VyKX0iKQogICAgdGVzdCA9IHRlc3QucmVwbGFjZShtYXJrZXIsIG1hcmtlciArICIgIGNvbnRleHRQb2xpY3lSZXZpc2lvbkZyb21Qcm9maWxlLFxuIiwgMSkKCm9sZF90eXBlID0gInByb2ZpbGU6IHsgc291cmNlOiBzdHJpbmc7IHJldmlzaW9uSWQ6IHN0cmluZyB8IG51bGw7IHByb2ZpbGVJZDogc3RyaW5nIH07IgpuZXdfdHlwZSA9ICgKICAgICJwcm9maWxlOiB7IHNvdXJjZTogc3RyaW5nOyByZXZpc2lvbklkOiBzdHJpbmcgfCBudWxsOyBwcm9maWxlSWQ6IHN0cmluZzsgIgogICAgInZlcnNpb246IHN0cmluZzsgaGFzaDogc3RyaW5nIH07IgopCmlmIHRlc3QuY291bnQob2xkX3R5cGUpICE9IDE6CiAgICByYWlzZSBTeXN0ZW1FeGl0KGYidGVzdCBwcm9maWxlIHR5cGUgYW5jaG9yIGNvdW50PXt0ZXN0LmNvdW50KG9sZF90eXBlKX0iKQp0ZXN0ID0gdGVzdC5yZXBsYWNlKG9sZF90eXBlLCBuZXdfdHlwZSwgMSkKCm9sZF9leHBlY3QgPSAiXG4iLmpvaW4oCiAgICBbCiAgICAgICAgJyAgICBleHBlY3QoaW5pdGlhbC5jb250ZXh0UmV2aXNpb25TZXQucHJvZmlsZSkudG9NYXRjaE9iamVjdCh7JywKICAgICAgICAnICAgICAgc291cmNlOiAiREVGQVVMVCIsJywKICAgICAgICAiICAgICAgcmV2aXNpb25JZDogbnVsbCwiLAogICAgICAgICcgICAgICBwcm9maWxlSWQ6ICJkZWZhdWx0Iiw nLAogICAgICAgICIgICAgfSk7IiwKICAgICAgICAiICAgIGV4cGVjdChpbml0aWFsLmNvbnRleHRSZXZpc2lvblNldC5wb2xpY3kucmV2aXNpb24pLnRvTWF0Y2goL15bYS1mMC05XXs2NH0kLyk7IiwKICAgIF0KKQpuZXdfZXhwZWN0ID0gIlxuIi5qb2luKAogICAgWwogICAgICAgICIgICAgY29uc3QgZGVmYXVsdENhbm9uaWNhbCA9IGNhbm9uaWNhbEtub3dsZWRnZVByb2ZpbGVKc29uKCIsCiAgICAgICAgIiAgICAgIERFRkFVTFRfS05PV0xFREdFX1BST0ZJTEVfVjEsIiwKICAgICAgICAiICAgICk7IiwKICAgICAgICAnICAgIGNvbnN0IGRlZmF1bHRQcm9maWxlSGFzaCA9IGNyZWF0ZUhhc2goInNoYTI1NiIpJywKICAgICAgICAiICAgICAgLnVwZGF0ZShkZWZhdWx0Q2Fub25pY2FsKSIsCiAgICAgICAgJyAgICAgIC5kaWdlc3QoImhleCIpOycsCiAgICAgICAgIiAgICBleHBlY3QoaW5pdGlhbC5jb250ZXh0UmV2aXNpb25TZXQucHJvZmlsZSkudG9NYXRjaE9iamVjdCh7IiwKICAgICAgICAnICAgICAgc291cmNlOiAiREVGQVVMVCIsJywKICAgICAgICAiICAgICAgcmV2aXNpb25JZDogbnVsbCwiLAogICAgICAgICIgICAgICBwcm9maWxlSWQ6IERFRkFVTFRfS05PV0xFREdFX1BST0ZJTEVfVjEucHJvZmlsZUlkLCIsCiAgICAgICAgIiAgICAgIHZlcnNpb246IERFRkFVTFRfS05PV0xFREdFX1BST0ZJTEVfVjEudmVyc2lvbiwiLAogICAgICAgICIgICAgICBoYXNoOiBkZWZhdWx0UHJvZmlsZUhhc2gsIiwKICAgICAgICAiICAgIH0pOyIsCiAgICAgICAgIiAgICBleHBlY3QoaW5pdGlhbC5jb250ZXh0UmV2aXNpb25TZXQucG9saWN5LnJldmlzaW9uKS50b0JlKCIsCiAgICAgICAgIiAgICAgIGNvbnRleHRQb2xpY3lSZXZpc2lvbkZyb21Qcm9maWxlKCIsCiAgICAgICAgIiAgICAgICAgREVGQVVMVF9LTk9XTEVER0VfUFJPRklMRV9WMSBhcyB1bmtub3duIGFzIFJlY29yZDxzdHJpbmcsIHVua25vd24+LCIsCiAgICAgICAgIiAgICAgICksIiwKICAgICAgICAiICAgICk7IiwKICAgIF0KKQppZiB0ZXN0LmNvdW50KG9sZF9leHBlY3QpICE9IDE6CiAgICByYWlzZSBTeXN0ZW1FeGl0KGYidGVzdCBkZWZhdWx0IGV4cGVjdGF0aW9uIGFuY2hvciBjb3VudD17dGVzdC5jb3VudChvbGRfZXhwZWN0KX0iKQp0ZXN0ID0gdGVzdC5yZXBsYWNlKG9sZF9leHBlY3QsIG5ld19leHBlY3QsIDEpCnRlc3RfcGF0aC53cml0ZV90ZXh0KHRlc3QpCg=="
         run: |
-          python - <<'PY'
-          import base64, json, re, zlib
-          from pathlib import Path
-
-          workflow = Path('.github/workflows/workspace-context-preflight.yml').read_text()
-          match = re.search(r'payload = "([A-Za-z0-9+/=]+)"', workflow)
-          if not match:
-              raise SystemExit('embedded materializer payload not found')
-          script = zlib.decompress(base64.b64decode(match.group(1))).decode()
-          old_loop = '# Same select shape occurs in list and snapshot; patch remaining occurrences.\nfor _ in range(2):'
-          new_loop = '# The current source has one remaining matching select (list); snapshot uses a distinct query.\nfor _ in range(1):'
-          if script.count(old_loop) != 1:
-              raise SystemExit(f'unexpected materializer loop count: {script.count(old_loop)}')
-          script = script.replace(old_loop, new_loop, 1)
-          Path('/tmp/workspace-context-materialize.py').write_text(script)
-          PY
-          python /tmp/workspace-context-materialize.py
-
-          python - <<'PY'
-          import json, re
-          from pathlib import Path
-
-          fp = json.loads(Path('/tmp/default-context-fingerprints.json').read_text())
-          module_path = Path('packages/postgres/src/context-revision-set.ts')
-          text = module_path.read_text()
-
-          contracts_import = re.compile(
-              r'import \{\s*DEFAULT_KNOWLEDGE_PROFILE_V1,\s*canonicalKnowledgeProfileJson,\s*\} from "@akp/contracts/knowledge-profile";\n',
-              re.MULTILINE,
-          )
-          text, count = contracts_import.subn('', text, count=1)
-          if count != 1:
-              raise SystemExit(f'contracts import patch count={count}')
-
-          defaults = re.compile(
-              r'const DEFAULT_PROFILE_CANONICAL = canonicalKnowledgeProfileJson\(\s*DEFAULT_KNOWLEDGE_PROFILE_V1,\s*\);\nconst DEFAULT_PROFILE_HASH = sha256\(DEFAULT_PROFILE_CANONICAL\);'
-          )
-          replacement = (
-              f'const DEFAULT_PROFILE_ID = {json.dumps(fp["profileId"])};\n'
-              f'const DEFAULT_PROFILE_VERSION = {json.dumps(fp["version"])};\n'
-              f'const DEFAULT_PROFILE_HASH = {json.dumps(fp["profileHash"])};\n'
-              f'const DEFAULT_POLICY_REVISION = {json.dumps(fp["policyRevision"])};'
-          )
-          text, count = defaults.subn(replacement, text, count=1)
-          if count != 1:
-              raise SystemExit(f'default constants patch count={count}')
-
-          text, count = re.subn(
-              r'function policyRevision\(profile: Record<string, unknown>\): string \{',
-              'export function contextPolicyRevisionFromProfile(\n  profile: Record<string, unknown>,\n): string {',
-              text,
-              count=1,
-          )
-          if count != 1:
-              raise SystemExit(f'policy helper patch count={count}')
-
-          old_signature = '''function profileIdentity(row: ContextRevisionRow): {
-  identity: ContextProfileRevision;
-  profile: Record<string, unknown>;
-} {'''
-          new_signature = '''function profileIdentity(row: ContextRevisionRow): {
-  identity: ContextProfileRevision;
-  policyRevision: string;
-} {'''
-          if text.count(old_signature) != 1:
-              raise SystemExit(f'profileIdentity signature count={text.count(old_signature)}')
-          text = text.replace(old_signature, new_signature, 1)
-
-          old_default = '''        profileId: DEFAULT_KNOWLEDGE_PROFILE_V1.profileId,
-        version: DEFAULT_KNOWLEDGE_PROFILE_V1.version,
-        hash: DEFAULT_PROFILE_HASH,
-      },
-      profile: DEFAULT_KNOWLEDGE_PROFILE_V1 as unknown as Record<string, unknown>,'''
-          new_default = '''        profileId: DEFAULT_PROFILE_ID,
-        version: DEFAULT_PROFILE_VERSION,
-        hash: DEFAULT_PROFILE_HASH,
-      },
-      policyRevision: DEFAULT_POLICY_REVISION,'''
-          if text.count(old_default) != 1:
-              raise SystemExit(f'default identity patch count={text.count(old_default)}')
-          text = text.replace(old_default, new_default, 1)
-
-          old_durable = '''    },
-    profile: parseProfile(row.canonical_profile),
-  };
-}'''
-          new_durable = '''    },
-    policyRevision: contextPolicyRevisionFromProfile(
-      parseProfile(row.canonical_profile),
-    ),
-  };
-}'''
-          if text.count(old_durable) != 1:
-              raise SystemExit(f'durable profile patch count={text.count(old_durable)}')
-          text = text.replace(old_durable, new_durable, 1)
-
-          old_policy = '''      revision: policyRevision(profile.profile),'''
-          if text.count(old_policy) != 1:
-              raise SystemExit(f'policy revision use count={text.count(old_policy)}')
-          text = text.replace(old_policy, '      revision: profile.policyRevision,', 1)
-          if '@akp/contracts' in text or 'DEFAULT_KNOWLEDGE_PROFILE_V1' in text or 'canonicalKnowledgeProfileJson' in text:
-              raise SystemExit('postgres module still references semantic contracts authority')
-          module_path.write_text(text)
-
-          test_path = Path('apps/api/test/context-revision-set.integration.test.ts')
-          test = test_path.read_text()
-          if 'DEFAULT_KNOWLEDGE_PROFILE_V1' not in test:
-              marker = '  NEUTRAL_KNOWLEDGE_PROFILE_V1,\n'
-              if test.count(marker) != 1:
-                  raise SystemExit(f'test contracts import anchor count={test.count(marker)}')
-              test = test.replace(marker, '  DEFAULT_KNOWLEDGE_PROFILE_V1,\n' + marker, 1)
-          if 'contextPolicyRevisionFromProfile' not in test:
-              marker = '  Postgres,\n'
-              if test.count(marker) != 1:
-                  raise SystemExit(f'test postgres import anchor count={test.count(marker)}')
-              test = test.replace(marker, marker + '  contextPolicyRevisionFromProfile,\n', 1)
-
-          old_type = 'profile: { source: string; revisionId: string | null; profileId: string };'
-          new_type = 'profile: { source: string; revisionId: string | null; profileId: string; version: string; hash: string };'
-          if test.count(old_type) != 1:
-              raise SystemExit(f'test profile type anchor count={test.count(old_type)}')
-          test = test.replace(old_type, new_type, 1)
-
-          old_expect = '''    expect(initial.contextRevisionSet.profile).toMatchObject({
-      source: "DEFAULT",
-      revisionId: null,
-      profileId: "default",
-    });
-    expect(initial.contextRevisionSet.policy.revision).toMatch(/^[a-f0-9]{64}$/);'''
-          new_expect = '''    const defaultCanonical = canonicalKnowledgeProfileJson(
-      DEFAULT_KNOWLEDGE_PROFILE_V1,
-    );
-    const defaultProfileHash = createHash("sha256")
-      .update(defaultCanonical)
-      .digest("hex");
-    expect(initial.contextRevisionSet.profile).toMatchObject({
-      source: "DEFAULT",
-      revisionId: null,
-      profileId: DEFAULT_KNOWLEDGE_PROFILE_V1.profileId,
-      version: DEFAULT_KNOWLEDGE_PROFILE_V1.version,
-      hash: defaultProfileHash,
-    });
-    expect(initial.contextRevisionSet.policy.revision).toBe(
-      contextPolicyRevisionFromProfile(
-        DEFAULT_KNOWLEDGE_PROFILE_V1 as unknown as Record<string, unknown>,
-      ),
-    );'''
-          if test.count(old_expect) != 1:
-              raise SystemExit(f'test default expectation anchor count={test.count(old_expect)}')
-          test = test.replace(old_expect, new_expect, 1)
-          test_path.write_text(test)
-          PY
+          printf '%s' "$PATCH_PAYLOAD" | base64 -d > /tmp/workspace-context-boundary-patch.py
+          python /tmp/workspace-context-boundary-patch.py
       - name: Format product sources
         run: |
           pnpm exec prettier --write \
@@ -281,7 +133,8 @@ jobs:
           fi
           rm -f \
             .github/workflows/workspace-context-preflight.yml \
-            .github/workflows/workspace-context-materializer-inspect.yml
+            .github/workflows/workspace-context-materializer-inspect.yml \
+            .github/workflows/workspace-context-yaml-inspect.yml
           git add -A
           git diff --cached --check
           git config user.name "github-actions[bot]"
