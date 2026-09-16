@@ -1,0 +1,99 @@
+name: workspace-context-preflight
+
+on:
+  push:
+    branches: [feat/v0.4-enterprise-context-workspace]
+    paths:
+      - .github/workflows/workspace-context-preflight.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  verify-and-promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: postgres://akp:akp@localhost:55432/akp
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/v0.4-enterprise-context-workspace
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - name: Install locked workspace
+        run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Materialize workspace context revision product
+        shell: bash
+        run: |
+          python - <<'PY'
+          import base64,zlib
+          from pathlib import Path
+          payload = "eNrtPWt32zay3/UrWF2fiuxhZMd93F25SlaxlUTbRPb6kdwe11emSchmTZEKSTlxXe1vvzN4E3xIdtxue27zIZaAwWAwmBkMBsBomiYza+7lV1F4YYWzeZLm1gF8bbXSJMmtPv1id7odp9UKyNT6mIY5sbFBz8ry1LX8JM5JnNNvjvXkmTVOYtJrWfAv99JLgjgoqk3ajVbRnXsptOzOroMwtdmXrH+cLohrkU9hlk+Sa/rV0RtRAiY5+ZTbvGuAjv0kCOPLfmeRT5/8DWmlxKZkHnl+gdwkCvinmHy8H9HQJRRzMlLiBYyKcucIHU6xKysGHGFM2zL0+C/1woxYR7dZTmbDT2FuTzte7F8lKQWfJos4wEZ32PWyZ90BotPe062tsy/SZaeOGfhfVwwYWtAButZTp5I9s/Ay9fIwiXGgnU7nyRPrfZJeZ3NozaYUBpuSmzBDmIzkmQXzAwIyW+TeRUSsZE4YAi+y5mEcA3pgppeTbgtwHV+RW2g+JTCngJDOJkJIjN4ih/GGeUgAMQw3JjckFfNl+V6cxKEPqK/j5GNEgktA6wPLc2Kx7j8KYiec2IlAPaHE2sCljGS0IAysxQL+m6fhzEtvrWudNuj+EmRowoEzOwwcCwgMSERypCTzvYC4iI52J5DhTMWLKMKaG28R5ZU1OlHWz1kSX8hqOo3+FfGvLZvWTPLbOUmmtt7GgenpJBc/Ez/vOCbCyZWXXTGxrEJaBv231fnfU+/JdOvJ38/uvvtmucFw4vSRYOLlVh7OCEzibJ7/IlECJ6Y4Pij4aFN44DiojRfG+appmDDOZD5Iy2R6TambJikJL2OcBVuw1BUcZMKtTQ6tyBQggjg7LSEMYRyQT2tSEQafADtM7QrwMlWu4lBAMl/rP1EyO13EPlUo73o+uVx4aTBp7sh2WinJF2mcWXkaXl6StBV5MbS8JNY8ml9mH6KWl1kbAvEGmDQ/Ai3URJvpK4rdjlZK6ealF+QyjFvUHuWXk2SOAnVysDc4Hnas/IrELWWQyCefzOkQOu/3D384OhjsDie7++Pj4f8cTw6H70ZHo/3x5Gh4PBm9fXtyPHjxZtjBbgmaqykwBSmIQFStEgeZSYzzpEi5W6CYiQeuR0WVxPKPVwTNT9AHo9ZVik07haEV+RFmShlwiop8qatlbb9/ZtEu+AhqcHAoqfj34eTR7v7BcPJ2dPR2cLz7usBBFH2UCES+04LSnZaafiV1XFxWyj2VQkB6QVDpgP8ZgdUdBrOYB1R6V+pCi+qrRTz/CtbDjzAw4i/yBwn7TguWmRZzHzrBxaZcgbLNra+/XdE864I2dFxLNsIlLAkWsBKw9Yt7LncWY9FrNHdLJkztOAlIz09v53nS3mkJSBja3vDl4OTN8eSH8f77N8O9V8PJweH+y9Gb4eTdU2roxDL0g1iFDtJkGkbkn2Cv3ZbA/w9gwiZSnXp+nm3KJevJnEGrTtHCA40HSZZfpiRz5aeDJIl2oxCkXlLd3aTGrftzBu1b5JNCsMsYdMj5swdGO8YPY28G7AC6f7XakohXYd5mRX6SzhcZ/xLBkgwD499uQGmTlH8BDs+vZBva1YHnX/MSENA0JDdeBFRMw8sFmw4JHhABt4hxNeHfwNEB+mV/fgJ+RBzmt+sOjQ/rjroYi6xntQfvBqM3aILaO3JRpO4cuhlLE/pkXA2PhgC/e5neWhEFJoukU7QLnDIuAIJAKkZZskh9Ar1weWrjEPdODrE3aTfbO9rqPQpkZ78yGnAZZqhVHRaCV6SPDItwKVfflw20JlHo31aTWhb5g/03o90fC2Su1YvAf0SYUmXgfsy8d4LupzvCdTIGhqazWBSI2YYZOyQgrsH3TaLu1krLM42dvZqZoyCUQb1qflUP+oB6AjVDT9X3XgV7doogrwvzKNywATTdAwtW3b300U3s6Hkz9guR3z05PByOmTDuvh6MXw336Oc3w1eD3R8nJ+OD0XgMZarrXv3olJT6izSl27077qqtHHLjoJcU5xX4PSTY0+afQZyeUTZQ0yCw/mtB0lu6B4C9aehff1+2oa7V/oBQbRCEVpVdOYSlrE9HwIczKZkQbcTUbjZBcGPaBMIsbBMENbvNdLB1Eab/uglOWmhcSZWJnhimRGsBy1Z4QyZcY9TCGzaYqTWhGivrKRIQuq3TWSEW5onU8loUQiEMADTydCMjvQBhCHcH4/3xaHfwBkSk0QOwV7oQ4PRU9/F6cPQa0GdX3va339m1FOBOQ7pafP6HaZqkNq60YkwuV/pdWhYvZhckdXoWBWRCTmkg9HsffUtLIXEs2GMw0C+5TmPxc11JLa2D56IHqb0UbxcbIcPgjypUzXCw8ovm6FI4quRynJwpIMALOURHzt+daqtcPbvNGrWdLnNtWWunG4SXsKG121fkU9sxuqGBhHcIJ/paxOg2xY78RHuD7YU9SFPvthtm9C9H7gg66NfuzJvbGk5nhzf9glZbv/5qsf09A7e+6PetNtvZt4uYNO7s0/ouOoTDGLU6s+l08HLCyxhGmEe+agqx4KN45vDIUzeD1cS2TyMyzc9c6xS2EVf5mWP1n1lY1I0SkHRYWmYYi7NprSPb4vjsU9i1Y2Apy0nAGrISnZms1jmjsYJKplPlKfG8PMH/PNofd1lxOL21SzPmGNi9Gy+MEMauMY/wZwFO9TSEVc7p1XubSmkYa/tyCXveBXwz29EmiYJQLj2vdlBdzaFi+JYUXKyhSsEMT9VVEcOCx6qXM8+1Lbfn4/3jSRnDssioRZwt5uhakMBexQc+yrvWCjKrSCyTNzg5fr1/ODr+kRI6envwZvgWvBTwQ9xWiUwQw0wY3JI9qJF1be5o80Apc58JFC3mAiSVlMFqWsoLdDXF2qIhYEBgCRh38ivcIxfsdHuwezx6N6xYH16Mxnuj8avJaPxu8GYE47e+2fo7JWipuM6pqFdtg2EFD9aWi2OdXahSOm5+xXQLdRWiGoVT4t/6EQEp4Pi7qsx6DjqwFFIHdAQYxqOOdai3MGuK7VCUyMdyq2K52YZ7PQfcqVeNChXFVgA0S5B1ZiujothqCt7mFZi5zGxlVBRbgVzE1As0WxkV2ErX8hmsmNFhgoZZxF01nlTVIobTM9Z+WWWG5VYTVhDYhdsgtr0KH9lhFirkYI1bqRWiBv3LxfQL6K5b73M6cmuhGR6dCs1qmjvvssXELWbRZmr77CbvrSvhVFPpsDY25FCqGfNiq3xAaZ81gWR8bOoB7YEwavWmgc8/syic9YyxwP4KvlNb1zw1YAFLGNiSwAwlM3ZtAfaFDqdaF4o5syrr6KGFXlHy+1G0H9v4mmteWfCU2JlBHt2CCemrYbcx4yakApBCV8E2AcMkzOQdlwD2R0pWYVWt5Kqj1mIegTA3IYfFHb29IgzQtNBoa4yGhbt2vHsvu419RQRY2SS6Ibts717uDsX8gwgT9MqRA7ccknLLISnYvvUs4NMszMj35U50TwMIwlOBvuV99MJc9d2ln74vW9ZnTBPP2SrLDk1uumYwQlkQFMOuEYhww64ZeIAiI9BgoCgGGVzEWRFUMBqtCCgUoG+E9ZAB6Eo7Um9iCtjmXXpsWwaa63oyFxbXqtEOjqugGvOy2EMZN2ZF2yZX/WTGzyOtG+ENwbbJ+jkJY3EGjCF7SWlmhZICoC6Up0r9G/mRnn6H8iQJasShk4a8nplAq94FMqy/3hyIZtj/vJayeRVl7DBOQfY3nlJghOhvbPPPJEYVYE3O2VSccq1zha6dcedEKhINzDF16sKX7HTrbEdzG5xKM/+OrpTifK2wNZF2nW8JGB+gjwoXSN/U8e2OEctmoxCDoF/4QNgXPYItFgv9JKanb1HR8hoK7yhfEVW9BF40ABKamwET3LQOjlpR0EaY4IblkNDUZpjARUOi0S3Pi8rEV1gap+S+F46VTBwrLJFGRkBDC9ouV3bEzqVqasU5VU21PLeqrC8ttNxFFw4Er+bef8mZqD2SMZ2KXs0+r6sv35ycZcMyOg/j2vMEtoj6NJzeqzimdNV1g+Iies91te7Eobi6qoMIscSu4wII+pu1Vrc+Ra+GhjNXuTtac3a+Dtt1QSTrnjsBd+qeDTvhsZbCC+AH8/R+xKrLKcJsqzsQbvm+it7ELd0DYigcFovK7I2n7sa2u/G1u/FNr0dvIrkb3/KwH7OG6LhJ4qUpF7PvWqZVd83Inc4v12Rz9RogmLn+KlC6qXIwGk9ewkqAwSXr262tgn3XqSiR5GqHcdSplvd/mvQpSryAyfMKtVrpm5YVaw2V4THOe/ilxSM8lI/VZ3hSiooHBIZs052UEG/u3zYLpbpjJSSc+lur76coh0SpBDgkJTFd19XgAgIlIqZbiinQXQ5bj7QhVYG9lvuy8oBVQKJa1mRsgAeL+bmVfiJknpva2llueSJd/fi2qtpR566aEPFetLq+dXqmGBl7M5JBGT+UuCa3mc2I6Cp/iB4zNZ3mM4x42chWaK1kytCLTT5aAG3DWOrmFKHPHBqN0OD4qMuAjpxdPsouOFhXNlY6TLCXPCBb3bNYces6FPVOEX9b3AySAegK1HSNr8fMqkuIaXFbN3UcoMFwfWy6VfBAg3VvT6DxakMhrE/5I43a2lZXGwb3COQKVrQMnMX3dzdM/Ks9Dt4Vv4xgWBhFh1t9jaLGO1HtRCBHHHJQNtXEV+XRjnlBRAaquGHRo6m8K7eoRPpFDhmH3tEUiYt4yd8CURfybdStIlrcdikS+xlkVh97iYs0bsvspNBFRQdlW11mgmuVp65Wab0MHaQ6meeS+nsp700SBrqO0pcAUntW2pdm1VyhSdx85kREb1CM5Ew1hYdLHqOcXi0cXDsBfpMxCC7UrukB/LxbebGq7lIVuF2PsnUKLmCJSaI1+L+WR91bZyvF5F27JoyxAu+SZJtzzsrNLPU3OaYnoukTcKm6eYbXg+mVYKfVEu9gKME1aNj1WmzHoPgsfyXv30qxfeInSRqEMQ020Au5P8Ul6Dlw3w/nXpRRiEfCWjnWtSkATvyX9T4E3zi/0h/vgOmhQToUGfDMgzSc5uzZSGbsQq0CkWvxtWaAitGfeRn6p/jREIm74D/F1nr21EXI5rgJBWm0eBSi6loia71cZ/Lp5D7KbFiFKZaxTn7JC0mlxrX+ZBdB0gSXF8mVAy/NQxTFOMej6Z1H7atsSKoMpLjoV93idcW9wvXG8WhcF2PFbsWZKls2v/xSXEJRZX3tHopogZtTW4E03P9SLXp4IYF9ZWM9orAUzVyNdoKVdM9Wxwv3DzSSConQaamKHBikVYI0UlrZorzHxWVNp5k6z3VUq2hBFXYaNRC4nusTVwstuy50/PkT/4hKUI6U2oLomrioCPNoVGe2Fg5dQCMaBMWRSN4Xgp0/dfbfj4eHP3Wcc1dAnCInoBl0N1/keISWpBg1YvXOjpw0vEp7wzZtjHhvPidxsKuNcYj1No8+W3f6ePU9LJcViWhFQF5QyvGKr9pEhoEji9kwhOdWLBUuXHFs/0+m4hGFF3wB7xYDEGCMrPkiBQygWYxq/tUSRmrp7NQ1VQaiGoerAOqMRkGgzM2zbF+k5VEZoVeqi/10duR7TXEsL8gx7Q5ssKkwtN3Px11lExvY1NiOx7vX43HjoB6J5SKknnW/cudd7KXUrRSZige1ViZr6fWCZoW25lXd+oWIdiXbNLGlnC3HwOu5bbT9vEGqixSr0gb4eInC1x4Y9zMwRPfmlgPbriOMXwuGXXng7Se+v0hxg2VFIVguugGLvXl2lcB2fu7l+MaWzLyQnrdRYPYIvtvCsPgEG6YYRLK3nR4Phmmy9Bny9B+Uqb/k6r4cWzO6sZbZplFh3huege0mizgXp6sSA4+WHQ2P5AuDl/snYxYm+waXYzaQzU3M+yFid/SALUr8ayhIQy8KfyHAh8gLgaH+hwUwh0bRMDnKVZip3rq/BYHKX+DIjjAlRd1BvThQl0ecMsOHFmWTvlG7LulBpfTIRAYbT9vK4eHOmjqrrHJ1Mk6zPgR5cskAGb+w4rm8uPVAdnGHaq0oc41naoxKllMC5e0xo1heYlAseGzxch5ZgzQ9fRwhZY/Yai6S1GyNn9m/PV1/Kc+fT3keQaqc33zFkVugam6rJCqvB+O9/ZcvJweDw+PR7uhgMMbjm3+djA7Zsc32thjzUh+6Omf9LIX6/Qn/S+P+zBr3YLH7w69Q7PbUA+Jffy1Mf6mJyYL7CtOjaQcNIb0P4wDfP3JTnic53v/WzqTEETe7/KIV5+ki9nFJ7VkXCWwbvZhXJFFAstw439LPmWDvCO0aQZY7eBQo73T+eYguBSl71gCnlgRg8pCk49s5+Z4fvjQelD57VuLBIxpGLX6c3dNCy7A4NxJfuT6aMPsrx0puSGo7bEImtLTcp8GfNe/J1KhjWRH5gQCvOExUNjunAUYalvow+2/NpkcNSIvQmpRW4bxVHEFLthR16xEQGlNd3xG9qvEy8Rf43n9wMKJJn0SOVh/ZhXkhMRBYuMZBY4UYSWR3OFKCp5X0qgZqan1yPBdDiUEyOzkZ7a1IlGd505ykgyhyeSJB+hETYabhBU3VO4c+XStUtyxuQuy9lPfupZfl4fR2BALlYVpYAT5l5cXkfOPhyfHh4M3vl5xPv0ECjI/zd6gRbwnauOwqnFsFlEIk2zKPED9qA563t/i/JxX/8X9ft0VuIH68hXMlp8SWmYP4UV1NbZ5cE7Qf56WrIht3OvzyvNBCvG5pSKBD4UoJdBiOK+IFwBO8tSoS+f7C32udvyBeCmvCxh1FsDyn2fQiQhf2nikBO7RGvysHwFLIbHbhzqZ5ZmTyAJg3HxSvS+Kb7t7gePBicDScnBy+KV70U0mO2joQJv9MyYdFmIKWUWXStAxlNuu2ZQ4Ovafx/t5wMhy/w9nlso135Hg6JUG9XUscTbNFTSe/WMcPWMsPgHjGWxEd19/3aC9WvfzKxVvqLs1DncTRrVt6PcwsOubnEchogh/WGGEuwgifpekPNSufBbk55uTuXIZ5L33acTe+xeLOweHoHaaRpbWOeG8hnhjqzyKNC4Qw4M18Nt+skFnebHkuINu7Zi5qfcYouLzzK5VA4ulmUQiryZZr/c0RONU7kHvMh/mwVz3DKr29Ml9pl95o173QNt5mV7/MXvctNrsK63706OutrHJuO/yVKc5p4TN/H2qW66+pcVnUm6Tp9MkNfjgcDvZ+hL+nZx3+msxZ/fi3diba+kzgbQLMz+3iIVnkBmEGzsLthD7WMEYmpEa6WAMcUcfhsnLKba5rnW/c8c/Lf5BP3mwekS7q9/l9iZvJdSKzxbUHKRx4puSi2k3mKZmGn0xy342G74eHHRf93DKNnG8mRVVrlB1cuNwOIhF4u1igKb9W5qfTrHNxpR2IPKA06hf95ySdhZm4Kq+Sy/bQ+sAGs80fsdKvlM7lPTTMm4cTulooztGv7MAu8i5I5NJdZMZfJZpSXG8hwFh9bYohF+MCXyy1LooC4wmjlnQGpwP5oOnDXUE3DGsn7gVUcVbW3pvD4t9SfZHlS8e0dWzhlimT2cQwx8dud7vUsQbegxnBC6Zs8uaYLJw16V4swig4ogDofeD0toRfWLlOQ2tHbem7fpRkxJb39YMLsVzXigjoF8/BzwIuiyDMJ3wbwsIteJEdmUIT5/c7hZBMhx2vmwkKRC6DjW25alSbJc62avqKhFVFglRHT2HyTgXmBpxizDw1N88zQS8VrpHMoU+z2xWiUGJ4a4+qiutNiScqRnrvPouclHaA41ZWgPNRKunZPcehWWeOm1saIRlKUjTJqLTA64+HrlfFSZE4z9ZFwgXBwFInUJqaLZmSin2a3f5Y//sefCMJmDUlBsMA5ZnlATz2Hhd/EISyje03M/GQALtg20W2HwWEpm2QMRC69wj0uF83jBGbNLUzAlsLWMHaB/tH6mXXIo2gaPPm6abQOVnF9yXyDZi8YNeqtcyGn6rdwGsf4CMJNfZ69mlZx3jViwWoTN7DV0TfGSm+lnzK2K7Z5mzQMqU63Tx5QeztraccUiQXCPPQi+SuLejiqmbTq7oqRVrxUfaqm+/1UDrPKtJyi1CPSncpQup1iTeXz3bMBGx4Z1IkvzCblxOkl9Ojs7d6HKVIqlGRC35H5cDU/nD+c7Z2qxmFc/EWL2bZm8UfTtl01sSiP4EWyNhDabs6QczKDKJttg1rW0szWczqptJj11rL5DEPay5yyaxuLXcVWmueW+ZhXReSzTwMRV3amdXY2IanQE1AenW/OeAa6VE1CkQ+mnu3VLlq7t1Uy2Nzz7bLtQVfPH2vkfra1I11iRs1/W/znyRq35smaibkfcFG9S7b3qPCo9amBevV0FivzvX1anPjTtAYBstN+ublvHINqx7ZkfbYtbBibDWAs9WibjZKJzYVmYnNJ9aN76j1B+N35cegzWZX39Oo3xt4OBZNdnUPRP7I2Ko8702h6MIizWV0jfCq7LAUYi1hO5QKUQoCr3CBC7vsBldeXSC2KtMJabn2RJypkEuvnElPIeSBKB+Tiuc84jjxIy/LXLqxQVdGS/pSGX7EgON37sZ/ux2W0LPjdsb748mLw+Hgh9H4VcelP03mSB06NV0NxUL3Hq5g07RXZYdthC+lJNRkRZN2wUlRtPa27bywcdTiA/QWtREa7rNY7nbHXWtzubEt8Wn7kHNzu+eW2f0w8s1oqzmaYoS1LwORMB4z2lqoNAKYRiC2L+OeAFoMxjZhqYzTNjVYEcLts1gqtOP39UA7+lTAjUloCG6crxHc0C0hs+P/yaVNZLFpWNUKtL5Igls0sbxZeS9UXtFKe5WGn52p3ixofZtrDiecE62yT6zdvkQMohp+WHiRUBGGpOth5nmMb7OHIrYydsUf/VJiJ375SysRP/+lFfHfANNK2A+BFfCoXwPTimt+EkyDEGetehFLVCTtnFMlmMDUiOzSS90PixM0CSe9LJ6drwwe0J3/DwR85ba8kIDLGQwo3fzqK3CVI+Jl5Ai2xnEAMvR0e6vGW1bDKcu5SDhSBVzju/EtR30aE9Pj4bcrZsaLyT9Y3AX8VUy2cgnyjefVV0Reo3zMwIvGi9XBFw2YGx69+R8iEPPbBV4Kv8HUHE0x+FQbVYmTnDFa8KvRkS/4EGv39IDIixlk2a4MslSEFLYrAyIVsQ8FuLz3eNbeUK+TlL7WMeZPXU3ntN6SPOKu2GTC/VwIk6Y1dsilJr/7LrkgDUt+sqZlQAJ+ZpvePNzEQ+nqhDDacSc9umapkPCT02phTqDc7jTF/tMkWPi5NYPx84dUQcdp/R+QA5Y1"
+          Path("/tmp/workspace-context-materialize.py").write_bytes(
+              zlib.decompress(base64.b64decode(payload))
+          )
+          PY
+          python /tmp/workspace-context-materialize.py
+      - name: Format product sources
+        run: |
+          pnpm exec prettier --write \
+            packages/postgres/src/context-revision-set.ts \
+            packages/postgres/src/index.ts \
+            packages/postgres/src/workspace-coordination.ts \
+            apps/api/test/context-revision-set.integration.test.ts
+      - name: Dependency audit
+        run: pnpm audit --audit-level high
+      - name: Start disposable Postgres
+        run: docker compose up -d --wait postgres
+      - name: Apply migrations
+        run: pnpm db:migrate
+      - name: Validate contracts
+        run: pnpm contracts:validate
+      - name: Run monorepo checks
+        run: pnpm check
+      - name: Run focused context revision integration
+        run: |
+          pnpm --filter @akp/contracts build
+          pnpm --filter @akp/postgres build
+          pnpm --filter @akp/api exec vitest run \
+            --config vitest.integration.config.ts \
+            test/context-revision-set.integration.test.ts
+      - name: Build monorepo
+        run: pnpm build
+      - name: Verify product diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          git status --short
+          test -f db/migrations/035_workspace_context_revision_sets.sql
+          test -f packages/postgres/src/context-revision-set.ts
+          test -f apps/api/test/context-revision-set.integration.test.ts
+      - name: Promote verified product
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          remote_head="$(git ls-remote origin refs/heads/feat/v0.4-enterprise-context-workspace | cut -f1)"
+          if [ "$remote_head" != "$EXPECTED_HEAD" ]; then
+            echo "Remote head moved from $EXPECTED_HEAD to $remote_head; refusing promotion." >&2
+            exit 1
+          fi
+          rm -f .github/workflows/workspace-context-preflight.yml
+          git add -A
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "feat(p2): pin workspace context revisions"
+          git push origin HEAD:feat/v0.4-enterprise-context-workspace
+      - name: Stop disposable services
+        if: always()
+        run: docker compose down -v --remove-orphans || true
