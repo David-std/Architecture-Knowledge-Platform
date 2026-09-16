@@ -304,7 +304,6 @@ export function registerSessionRoutes(
     },
   );
 
-
   app.post<{
     Params: { id: string };
     Body: {
@@ -321,7 +320,12 @@ export function registerSessionRoutes(
       ],
     },
     async (request, reply) => {
-      const session = await authorizedSession(db, request, reply, request.params.id);
+      const session = await authorizedSession(
+        db,
+        request,
+        reply,
+        request.params.id,
+      );
       if (!session) return;
       const actor = actorOf(request);
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
@@ -345,7 +349,11 @@ export function registerSessionRoutes(
 
       const bootstrap = new BootstrapContext({
         loadWorkContext: async (sessionId, actorId) => {
-          const snapshot = await workspaceSessionSnapshot(db, sessionId, actorId);
+          const snapshot = await workspaceSessionSnapshot(
+            db,
+            sessionId,
+            actorId,
+          );
           if (!snapshot) return null;
           return {
             session: {
@@ -365,8 +373,12 @@ export function registerSessionRoutes(
               pinned: snapshot.contextRevision.pinned
                 ? { revisionSetHash: snapshot.contextRevision.pinned.revisionSetHash }
                 : null,
-              current: { revisionSetHash: snapshot.contextRevision.current.revisionSetHash },
-              changedDimensions: snapshot.contextRevision.changedDimensions,
+              current: {
+                revisionSetHash:
+                  snapshot.contextRevision.current.revisionSetHash,
+              },
+              changedDimensions:
+                snapshot.contextRevision.changedDimensions,
             },
           };
         },
@@ -390,11 +402,13 @@ export function registerSessionRoutes(
             version: profile.version,
             hash: active?.profileHash ?? revision.profile.hash,
             policyRevision: revision.policy.revision,
-            allowedKnowledgeKinds: profile.retrievalPolicy.allowedKinds,
+            allowedKnowledgeKinds:
+              profile.retrievalPolicy.allowedKinds,
             mandatoryKinds,
             progressiveDisclosure: profile.retrievalPolicy.progressiveDisclosure,
             promotion: {
-              allowedTargetScopes: profile.promotionPolicy.allowedTargetScopes,
+              allowedTargetScopes:
+                profile.promotionPolicy.allowedTargetScopes,
               reviewRequired: profile.promotionPolicy.reviewRequired,
             },
           };
@@ -404,10 +418,18 @@ export function registerSessionRoutes(
             method: "POST",
             url: "/v1/context",
             headers: {
-              ...(request.headers.authorization ? { authorization: request.headers.authorization } : {}),
-              ...(request.headers.cookie ? { cookie: request.headers.cookie } : {}),
+              ...(request.headers.authorization
+                ? { authorization: request.headers.authorization }
+                : {}),
+              ...(request.headers.cookie
+                ? { cookie: request.headers.cookie }
+                : {}),
               ...(request.headers["x-csrf-token"]
-                ? { "x-csrf-token": String(request.headers["x-csrf-token"]) }
+                ? {
+                    "x-csrf-token": String(
+                      request.headers["x-csrf-token"],
+                    ),
+                  }
                 : {}),
             },
             payload: {
