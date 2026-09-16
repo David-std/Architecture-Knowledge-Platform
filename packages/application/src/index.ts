@@ -6,7 +6,9 @@ import type {
 } from "@akp/contracts";
 import type { JobId } from "@akp/domain";
 
-export type BootstrapContextMode = "COMPACT_AGENT_PACKET" | "FULL_CONTEXT_PACKET";
+export type BootstrapContextMode =
+  | "COMPACT_AGENT_PACKET"
+  | "FULL_CONTEXT_PACKET";
 
 export interface BootstrapWorkContextSnapshot {
   session: {
