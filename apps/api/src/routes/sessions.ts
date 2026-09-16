@@ -2,7 +2,10 @@ import { createHash, randomBytes } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { BootstrapContext } from "@akp/application";
 import { ContextPacketResponse, QueryIntent } from "@akp/contracts";
-import { DEFAULT_KNOWLEDGE_PROFILE_V1, KnowledgeProfileV1 } from "@akp/contracts/knowledge-profile";
+import {
+  DEFAULT_KNOWLEDGE_PROFILE_V1,
+  KnowledgeProfileV1,
+} from "@akp/contracts/knowledge-profile";
 import {
   AGENT_PROCESS_ALLOWED_ACTIONS,
   DEFAULT_AGENT_PROCESS_ACTIONS,
@@ -14,9 +17,9 @@ import {
   getWorkspaceSessionForParticipant,
   handoffWorkspaceWork,
   heartbeatWorkspaceWork,
-  isWorkspaceWorkKey,
   getActiveKnowledgeProfileRevision,
   assertWorkspaceContextRevisionCurrent,
+  isWorkspaceWorkKey,
   listWorkspaceSessionsForParticipant,
   resolveAuthorizedVaultScope,
   revokeAgentProcessPrincipal,
@@ -304,7 +307,11 @@ export function registerSessionRoutes(
 
   app.post<{
     Params: { id: string };
-    Body: { query?: string; intent?: string; packetMode?: "COMPACT_AGENT_PACKET" | "FULL_CONTEXT_PACKET" };
+    Body: {
+      query?: string;
+      intent?: string;
+      packetMode?: "COMPACT_AGENT_PACKET" | "FULL_CONTEXT_PACKET";
+    };
   }>(
     "/v1/sessions/:id/bootstrap",
     {
@@ -319,12 +326,16 @@ export function registerSessionRoutes(
       const actor = actorOf(request);
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
 
-      const intent = QueryIntent.safeParse(request.body?.intent ?? "WORKFLOW_EXECUTION");
+      const intent = QueryIntent.safeParse(
+        request.body?.intent ?? "WORKFLOW_EXECUTION",
+      );
       if (!intent.success) {
         return reply.code(400).send({ code: "INVALID_BOOTSTRAP_INTENT" });
       }
       const packetMode = request.body?.packetMode ?? "COMPACT_AGENT_PACKET";
-      if (!["COMPACT_AGENT_PACKET", "FULL_CONTEXT_PACKET"].includes(packetMode)) {
+      if (
+        !["COMPACT_AGENT_PACKET", "FULL_CONTEXT_PACKET"].includes(packetMode)
+      ) {
         return reply.code(400).send({ code: "INVALID_BOOTSTRAP_PACKET_MODE" });
       }
       const query = request.body?.query?.trim();
@@ -360,11 +371,18 @@ export function registerSessionRoutes(
           };
         },
         loadKnowledgeProfile: async (spaceId, vaultId, bootstrapIntent) => {
-          const active = await getActiveKnowledgeProfileRevision(db, spaceId, vaultId);
-          const profile = KnowledgeProfileV1.parse(active?.profile ?? DEFAULT_KNOWLEDGE_PROFILE_V1);
+          const active = await getActiveKnowledgeProfileRevision(
+            db,
+            spaceId,
+            vaultId,
+          );
+          const profile = KnowledgeProfileV1.parse(
+            active?.profile ?? DEFAULT_KNOWLEDGE_PROFILE_V1,
+          );
           const revision = session.contextRevisionSet;
           if (!revision) throw new Error("CONTEXT_REVISION_PIN_REQUIRED");
-          const mandatoryKinds = profile.retrievalPolicy.mandatoryKindsByIntent[bootstrapIntent] ?? [];
+          const mandatoryKinds =
+            profile.retrievalPolicy.mandatoryKindsByIntent[bootstrapIntent] ?? [];
           return {
             source: active ? "DURABLE_REVISION" as const : "DEFAULT" as const,
             revisionId: active?.id ?? null,
@@ -405,7 +423,9 @@ export function registerSessionRoutes(
           });
           if (response.statusCode !== 200) {
             const body = response.json() as { code?: string };
-            const error = new Error(body.code ?? "BOOTSTRAP_CONTEXT_BUILD_FAILED") as Error & { statusCode?: number; code?: string };
+            const error = new Error(
+              body.code ?? "BOOTSTRAP_CONTEXT_BUILD_FAILED",
+            ) as Error & { statusCode?: number; code?: string };
             error.statusCode = response.statusCode;
             error.code = body.code ?? "BOOTSTRAP_CONTEXT_BUILD_FAILED";
             throw error;
@@ -413,7 +433,12 @@ export function registerSessionRoutes(
           return ContextPacketResponse.parse(response.json());
         },
         verifyRevisionCurrent: async (sessionId, spaceId, vaultId) =>
-          assertWorkspaceContextRevisionCurrent(db.pool, sessionId, spaceId, vaultId),
+          assertWorkspaceContextRevisionCurrent(
+            db.pool,
+            sessionId,
+            spaceId,
+            vaultId,
+          ),
       });
 
       const result = await bootstrap.execute(
