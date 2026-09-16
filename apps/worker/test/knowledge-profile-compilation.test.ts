@@ -21,6 +21,7 @@ const SOURCE_ID = "33333333-3333-4333-8333-333333333333";
 const ARTIFACT_ID = "44444444-4444-4444-8444-444444444444";
 const EVIDENCE_ID = "55555555-5555-4555-8555-555555555555";
 const PROFILE_REVISION_ID = "77777777-7777-4777-8777-777777777777";
+const SECOND_PROFILE_REVISION_ID = "88888888-8888-4888-8888-888888888888";
 const SOURCE_HASH = "a".repeat(64);
 const EXCERPT =
   "Invalidate cached material when the authoritative revision changes.";
@@ -73,24 +74,23 @@ function stageInput() {
   };
 }
 
-function dbWithNeutralProfile() {
-  const canonicalProfile = canonicalKnowledgeProfileJson(
-    NEUTRAL_KNOWLEDGE_PROFILE_V1,
-  );
+function neutralProfileRow(revisionId = PROFILE_REVISION_ID) {
+  return {
+    schema_profile: {},
+    current_revision: "managed:neutral-1",
+    active_profile_revision_id: revisionId,
+    profile_revision_id: revisionId,
+    profile_hash: knowledgeProfileHash(NEUTRAL_KNOWLEDGE_PROFILE_V1),
+    canonical_profile: canonicalKnowledgeProfileJson(
+      NEUTRAL_KNOWLEDGE_PROFILE_V1,
+    ),
+  };
+}
+
+function dbWithNeutralProfile(postCompileRevisionId = PROFILE_REVISION_ID) {
   const query = vi
     .fn()
-    .mockResolvedValueOnce({
-      rows: [
-        {
-          schema_profile: {},
-          current_revision: "managed:neutral-1",
-          active_profile_revision_id: PROFILE_REVISION_ID,
-          profile_revision_id: PROFILE_REVISION_ID,
-          profile_hash: knowledgeProfileHash(NEUTRAL_KNOWLEDGE_PROFILE_V1),
-          canonical_profile: canonicalProfile,
-        },
-      ],
-    })
+    .mockResolvedValueOnce({ rows: [neutralProfileRow()] })
     .mockResolvedValueOnce({
       rows: [
         {
@@ -101,75 +101,84 @@ function dbWithNeutralProfile() {
         },
       ],
     })
-    .mockResolvedValueOnce({ rows: [] });
+    .mockResolvedValueOnce({ rows: [] })
+    .mockResolvedValueOnce({
+      rows: [neutralProfileRow(postCompileRevisionId)],
+    });
   return {
     db: { pool: { query } } as unknown as Postgres,
     query,
   };
 }
 
-function configuredCompiler(kind: "note" | "rule") {
+function configuredCompiler(
+  kind: "note" | "rule",
+  beforeReturn?: () => Promise<void> | void,
+) {
   const statement = "Invalidate stale cached material after a revision change.";
-  const compile = vi.fn(async () => ({
-    identity: {
-      classification: "DISTINCT" as const,
-      candidates: [],
-      reason: "New grounded guidance.",
-    },
-    evidenceCandidates: [
-      {
-        sourceArtifactId: ARTIFACT_ID,
-        locator: locator(),
-        excerptHash: EXCERPT_HASH,
+  const compile = vi.fn(async () => {
+    await beforeReturn?.();
+    return {
+      identity: {
+        classification: "DISTINCT" as const,
+        candidates: [],
+        reason: "New grounded guidance.",
       },
-    ],
-    knowledgeCandidates: [
-      {
-        candidateId: "candidate-1",
-        kind,
-        statement,
-        scope: "Revision-addressed caches.",
-        evidenceIds: [EVIDENCE_ID],
-        confidence: 0.9,
-        proposedAction: "CREATE" as const,
-      },
-    ],
-    contradictions: [],
-    proposedFileChanges: [
-      {
-        candidateId: "candidate-1",
-        path:
-          kind === "note"
-            ? deriveProfileKnowledgePath({
-                title: statement,
-                kind,
-                candidateId: "candidate-1",
-                knowledgeProfile: durableCompilerKnowledgeProfileContext({
-                  revisionId: PROFILE_REVISION_ID,
-                  profileHash: knowledgeProfileHash(
-                    NEUTRAL_KNOWLEDGE_PROFILE_V1,
-                  ),
-                  profile: NEUTRAL_KNOWLEDGE_PROFILE_V1,
-                }),
-              })
-            : deriveKnowledgePath({ title: statement, kind }),
-        operation: "CREATE" as const,
-        content: `---\nid: CACHE-1\ntype: ${kind}\nstatus: draft\n---\n\n${statement}\n`,
-        reasons: ["Grounded in source evidence."],
-        evidenceIds: [EVIDENCE_ID],
-      },
-    ],
-    impactedDocumentIds: [],
-    probes: [
-      {
-        question: "Is the proposal grounded?",
-        criticality: "CRITICAL" as const,
-        evidenceIds: [EVIDENCE_ID],
-      },
-    ],
-    warnings: [],
-    summary: "One grounded proposal for review.",
-  }));
+      evidenceCandidates: [
+        {
+          sourceArtifactId: ARTIFACT_ID,
+          locator: locator(),
+          excerptHash: EXCERPT_HASH,
+        },
+      ],
+      knowledgeCandidates: [
+        {
+          candidateId: "candidate-1",
+          kind,
+          statement,
+          scope: "Revision-addressed caches.",
+          evidenceIds: [EVIDENCE_ID],
+          confidence: 0.9,
+          proposedAction: "CREATE" as const,
+        },
+      ],
+      contradictions: [],
+      proposedFileChanges: [
+        {
+          candidateId: "candidate-1",
+          path:
+            kind === "note"
+              ? deriveProfileKnowledgePath({
+                  title: statement,
+                  kind,
+                  candidateId: "candidate-1",
+                  knowledgeProfile: durableCompilerKnowledgeProfileContext({
+                    revisionId: PROFILE_REVISION_ID,
+                    profileHash: knowledgeProfileHash(
+                      NEUTRAL_KNOWLEDGE_PROFILE_V1,
+                    ),
+                    profile: NEUTRAL_KNOWLEDGE_PROFILE_V1,
+                  }),
+                })
+              : deriveKnowledgePath({ title: statement, kind }),
+          operation: "CREATE" as const,
+          content: `---\nid: CACHE-1\ntype: ${kind}\nstatus: draft\n---\n\n${statement}\n`,
+          reasons: ["Grounded in source evidence."],
+          evidenceIds: [EVIDENCE_ID],
+        },
+      ],
+      impactedDocumentIds: [],
+      probes: [
+        {
+          question: "Is the proposal grounded?",
+          criticality: "CRITICAL" as const,
+          evidenceIds: [EVIDENCE_ID],
+        },
+      ],
+      warnings: [],
+      summary: "One grounded proposal for review.",
+    };
+  });
   return {
     configured: {
       compiler: { compile },
@@ -214,5 +223,29 @@ describe("active profile compiler integration", () => {
     await expect(
       buildCompilationStage(db, stageInput(), configured),
     ).rejects.toThrow(/COMPILER_KIND_NOT_ALLOWED:rule/);
+  });
+
+  it("rejects a compilation when the active profile revision changes while the provider is in flight", async () => {
+    const { db, query } = dbWithNeutralProfile(SECOND_PROFILE_REVISION_ID);
+    let signalProviderEntered!: () => void;
+    let releaseProvider!: () => void;
+    const providerEntered = new Promise<void>((resolve) => {
+      signalProviderEntered = resolve;
+    });
+    const providerRelease = new Promise<void>((resolve) => {
+      releaseProvider = resolve;
+    });
+    const { configured, compile } = configuredCompiler("note", async () => {
+      signalProviderEntered();
+      await providerRelease;
+    });
+
+    const pending = buildCompilationStage(db, stageInput(), configured);
+    await providerEntered;
+    releaseProvider();
+
+    await expect(pending).rejects.toThrow("CONTEXT_REVISION_CHANGED");
+    expect(compile).toHaveBeenCalledOnce();
+    expect(query).toHaveBeenCalledTimes(4);
   });
 });

@@ -141,6 +141,19 @@ async function loadVaultContext(
   };
 }
 
+function assertCompilerProfileBindingUnchanged(
+  before: CompilerKnowledgeProfileContext,
+  after: CompilerKnowledgeProfileContext,
+): void {
+  if (
+    before.source !== after.source ||
+    before.revisionId !== after.revisionId ||
+    before.profileHash !== after.profileHash
+  ) {
+    throw new Error("CONTEXT_REVISION_CHANGED");
+  }
+}
+
 function evidenceTrustFromStatus(
   status: string | null | undefined,
 ): TrustTier | undefined {
@@ -362,6 +375,11 @@ export async function buildCompilationStage(
         pathPrefix,
         vectorEnabled: input.vectorEnabled,
       }),
+  );
+  const currentVault = await loadVaultContext(db, input.spaceId, vaultId);
+  assertCompilerProfileBindingUnchanged(
+    vault.knowledgeProfile,
+    currentVault.knowledgeProfile,
   );
   return {
     plan: await validateCompilationPlan(compiled.plan, "GENERATIVE"),

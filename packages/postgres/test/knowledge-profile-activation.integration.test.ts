@@ -242,4 +242,146 @@ describe("knowledge profile activation integration", () => {
       }
     },
   );
+
+  it.skipIf(!databaseUrl)(
+    "serializes concurrent successor activation without split brain",
+    async () => {
+      if (!databaseUrl) return;
+      const db = new Postgres(databaseUrl);
+      const vaultId = await createVault(db);
+      try {
+        const baseline = await draftAndValidate(
+          db,
+          vaultId,
+          DEFAULT_KNOWLEDGE_PROFILE_V1,
+          "NON_BREAKING",
+        );
+        await activateKnowledgeProfile(db, {
+          spaceId,
+          vaultId,
+          revisionId: baseline.draft.id,
+          dryRunId: baseline.dryRunId,
+          expectedProfileHash: baseline.material.profileHash,
+          expectedCorpusRevision: "activation-r1",
+          actorId,
+          traceId: "activation-concurrent-baseline",
+        });
+
+        const successorA = await draftAndValidate(
+          db,
+          vaultId,
+          {
+            ...DEFAULT_KNOWLEDGE_PROFILE_V1,
+            version: "0.4-concurrent-a",
+            displayName: "AKP v0.4 concurrent successor A",
+          },
+          "NON_BREAKING",
+          baseline.draft.id,
+        );
+        const successorB = await draftAndValidate(
+          db,
+          vaultId,
+          {
+            ...DEFAULT_KNOWLEDGE_PROFILE_V1,
+            version: "0.4-concurrent-b",
+            displayName: "AKP v0.4 concurrent successor B",
+          },
+          "NON_BREAKING",
+          baseline.draft.id,
+        );
+
+        const attempts = await Promise.allSettled([
+          activateKnowledgeProfile(db, {
+            spaceId,
+            vaultId,
+            revisionId: successorA.draft.id,
+            dryRunId: successorA.dryRunId,
+            expectedProfileHash: successorA.material.profileHash,
+            expectedCorpusRevision: "activation-r1",
+            actorId,
+            traceId: "activation-concurrent-a",
+          }),
+          activateKnowledgeProfile(db, {
+            spaceId,
+            vaultId,
+            revisionId: successorB.draft.id,
+            dryRunId: successorB.dryRunId,
+            expectedProfileHash: successorB.material.profileHash,
+            expectedCorpusRevision: "activation-r1",
+            actorId,
+            traceId: "activation-concurrent-b",
+          }),
+        ]);
+        const fulfilled = attempts.filter(
+          (
+            attempt,
+          ): attempt is PromiseFulfilledResult<
+            Awaited<ReturnType<typeof activateKnowledgeProfile>>
+          > => attempt.status === "fulfilled",
+        );
+        const rejected = attempts.filter(
+          (attempt): attempt is PromiseRejectedResult =>
+            attempt.status === "rejected",
+        );
+        expect(fulfilled).toHaveLength(1);
+        expect(rejected).toHaveLength(1);
+
+        const winnerId = fulfilled[0]!.value.revision.id;
+        const loserId =
+          winnerId === successorA.draft.id
+            ? successorB.draft.id
+            : successorA.draft.id;
+        const binding = await db.pool.query<{
+          active_knowledge_profile_revision_id: string | null;
+        }>(
+          "select active_knowledge_profile_revision_id from vaults where id=$1",
+          [vaultId],
+        );
+        expect(binding.rows[0]?.active_knowledge_profile_revision_id).toBe(
+          winnerId,
+        );
+
+        const statuses = await db.pool.query<{ id: string; status: string }>(
+          `
+          select id,status from knowledge_profile_revisions
+           where id = any($1::uuid[])
+          `,
+          [[baseline.draft.id, successorA.draft.id, successorB.draft.id]],
+        );
+        const statusById = new Map(
+          statuses.rows.map((row) => [row.id, row.status]),
+        );
+        expect(statusById.get(baseline.draft.id)).toBe("SUPERSEDED");
+        expect(statusById.get(winnerId)).toBe("ACTIVE");
+        expect(statusById.get(loserId)).toBe("VALIDATED");
+        expect(
+          [successorA.draft.id, successorB.draft.id].filter(
+            (id) => statusById.get(id) === "ACTIVE",
+          ),
+        ).toHaveLength(1);
+
+        const auditCount = await db.pool.query<{ count: string }>(
+          `
+          select count(*)::text count from audit_events
+           where vault_id=$1 and action='schema.profile_activate'
+          `,
+          [vaultId],
+        );
+        expect(Number(auditCount.rows[0]?.count ?? 0)).toBe(2);
+      } finally {
+        await db.pool.query(
+          "update vaults set active_knowledge_profile_revision_id=null where id=$1",
+          [vaultId],
+        );
+        await db.pool.query("delete from audit_events where vault_id=$1", [
+          vaultId,
+        ]);
+        await db.pool.query("delete from schema_dry_runs where vault_id=$1", [
+          vaultId,
+        ]);
+        await db.pool.query("delete from vaults where id=$1", [vaultId]);
+        await db.close();
+      }
+    },
+  );
 });
