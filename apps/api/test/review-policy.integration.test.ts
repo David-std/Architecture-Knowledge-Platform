@@ -470,6 +470,28 @@ describe("KnowledgeProfile review policy integration", () => {
     expect(stale.json()).toMatchObject({ code: "REVIEW_PROFILE_STALE" });
   });
 
+  it("rejects source-summary as a direct semantic proposal under the v0.3 default profile", async () => {
+    await db.pool.query(
+      "update vaults set active_knowledge_profile_revision_id=null where id=$1 and space_id=$2",
+      [vaultId, spaceId],
+    );
+    await db.pool.query(
+      `update knowledge_profile_revisions
+          set status='SUPERSEDED',superseded_at=now(),updated_at=now()
+        where vault_id=$1 and status='ACTIVE'`,
+      [vaultId],
+    );
+
+    const proposed = await propose("source-summary");
+    expect(proposed.statusCode).toBe(422);
+    expect(proposed.json()).toMatchObject({
+      code: "KNOWLEDGE_PROFILE_KIND_NOT_ALLOWED",
+      kind: "source-summary",
+    });
+
+    await activateProfile("1.0.3-source-summary-guard");
+  });
+
   it("rebinds an explicit revision to the current profile policy snapshot", async () => {
     const proposed = await propose("note");
     expect(proposed.statusCode).toBe(201);
