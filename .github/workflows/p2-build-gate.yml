@@ -1,0 +1,32 @@
+name: p2-build-gate
+
+on:
+  push:
+    branches:
+      - batch/p2-build-gate-20260916
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Verify formatting
+        run: pnpm exec prettier --check .
+      - name: Capture build
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm build 2>&1 | tee p2-build.log
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: p2-build-gate-${{ github.run_id }}
+          path: p2-build.log
+          if-no-files-found: warn
