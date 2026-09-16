@@ -8,6 +8,7 @@ on:
       - .github/scripts/p2-principal-auth-compat.py
       - .github/scripts/p2-principal-vault-compat.py
       - .github/scripts/p2-principal-vault-hardening.py
+      - .github/scripts/p2-principal-integration-fix.py
       - .github/workflows/p2-principal-auth-preflight.yml
 
 permissions:
@@ -45,6 +46,7 @@ jobs:
           python3 .github/scripts/p2-principal-auth.py
           python3 .github/scripts/p2-principal-vault-compat.py
           python3 .github/scripts/p2-principal-vault-hardening.py
+          python3 .github/scripts/p2-principal-integration-fix.py
 
       - name: Format touched TypeScript
         run: |
@@ -82,9 +84,10 @@ jobs:
 
       - name: Principal and workspace integration
         run: >-
-          pnpm --filter @akp/api test:integration --
-          principal-auth.integration.test.ts
-          workspace-coordination.integration.test.ts
+          pnpm --filter @akp/api exec vitest run
+          --config vitest.integration.config.ts
+          test/principal-auth.integration.test.ts
+          test/workspace-coordination.integration.test.ts
 
       - name: Promote verified product patch
         run: |
