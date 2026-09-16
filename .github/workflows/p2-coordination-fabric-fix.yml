@@ -1,0 +1,160 @@
+name: p2-coordination-fabric-fix
+
+on:
+  push:
+    branches:
+      - batch/p2-coordination-fixture-fix-20260916
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgres://akp:akp@localhost:55432/akp
+      AKP_API_TOKEN: akp-ci-integration-token-not-for-production
+      AKP_API_TOKEN_SCOPES: >-
+        {"spaces":[{"spaceId":"00000000-0000-0000-0000-000000000003","pathPrefix":null,"permissions":["knowledge:read","source:read","source:write","knowledge:propose","knowledge:review","eval:run","admin"]}]}
+      AKP_INGEST_ROOTS: ${{ github.workspace }}/test/fixtures
+      AKP_PROJECT_ROOTS: ${{ github.workspace }}
+      AKP_MANAGED_REPO: /tmp/akp-managed-knowledge
+      AKP_EXTRACTOR_TOKEN: akp-ci-extractor-token-not-for-production
+      AKP_RAW_SECRET_KEY: akp-ci-minio-secret-not-for-production
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Apply P2 fixture and cross-session hardening
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          def must_replace(text: str, old: str, new: str, label: str, count: int = 1) -> str:
+              if old not in text:
+                  raise SystemExit(f'{label}: target not found')
+              return text.replace(old, new, count)
+
+          coordination = Path('apps/api/test/workspace-coordination.integration.test.ts')
+          text = coordination.read_text()
+          text = must_replace(
+              text,
+              """      ($1,$4,'VIEWER',null),\n      ($2,$4,'VIEWER',null),\n      ($3,$4,'VIEWER',null)`""",
+              """      ($1,$4,'CONTRIBUTOR',null),\n      ($2,$4,'CONTRIBUTOR',null),\n      ($3,$4,'VIEWER',null)`""",
+              'coordination memberships',
+          )
+          text = must_replace(
+              text,
+              '      role: "VIEWER",\n      pathPrefix: null,\n      permissions: ["knowledge:read", "knowledge:propose", "source:read"],',
+              '      role: "CONTRIBUTOR",\n      pathPrefix: null,\n      permissions: ["knowledge:read", "knowledge:propose", "source:read"],',
+              'coordination vault role',
+          )
+          pattern = re.compile(r'afterAll\(async \(\) => \{.*?\n\}\);\n\ndescribe\("workspace coordination integration"', re.S)
+          replacement = '''afterAll(async () => {\n  if (app) await app.close();\n  if (db) await db.close();\n});\n\ndescribe("workspace coordination integration"'''
+          text, n = pattern.subn(replacement, text, count=1)
+          if n != 1:
+              raise SystemExit('coordination cleanup target not found')
+          coordination.write_text(text)
+
+          fabric = Path('packages/postgres/src/team-context-fabric.ts')
+          text = fabric.read_text()
+          text = must_replace(
+              text,
+              '  input: { draftId: string; actorId: string },',
+              '  input: { draftId: string; actorId: string; sessionId: string },',
+              'offline draft signature',
+          )
+          text = must_replace(
+              text,
+              '''      `select * from workspace_offline_drafts\n        where id=$1 and actor_id=$2\n        for update`,\n      [input.draftId, input.actorId],''',
+              '''      `select * from workspace_offline_drafts\n        where id=$1 and actor_id=$2 and session_id=$3\n        for update`,\n      [input.draftId, input.actorId, input.sessionId],''',
+              'offline draft scoped select',
+          )
+          text = must_replace(
+              text,
+              '    const sessionId = String(draft.session_id);',
+              '    const sessionId = input.sessionId;',
+              'offline draft session authority',
+          )
+          fabric.write_text(text)
+
+          route = Path('apps/api/src/routes/context-fabric.ts')
+          text = route.read_text()
+          text = must_replace(
+              text,
+              '''      const draft = await applyWorkspaceOfflineDraft(db, {\n        draftId: request.params.draftId,\n        actorId: actor.id,\n      });''',
+              '''      const draft = await applyWorkspaceOfflineDraft(db, {\n        draftId: request.params.draftId,\n        actorId: actor.id,\n        sessionId: session.id,\n      });''',
+              'offline draft route session binding',
+          )
+          route.write_text(text)
+
+          test = Path('apps/api/test/context-fabric.integration.test.ts')
+          text = test.read_text()
+          text = must_replace(
+              text,
+              'let sessionId = "";\nlet peerId = "";',
+              'let sessionId = "";\nlet secondarySessionId = "";\nlet peerId = "";',
+              'secondary session state',
+          )
+          pattern = re.compile(r'afterAll\(async \(\) => \{.*?\n\}\);\n\ndescribe\("team context fabric integration"', re.S)
+          replacement = '''afterAll(async () => {\n  if (app) await app.close();\n  if (db) await db.close();\n});\n\ndescribe("team context fabric integration"'''
+          text, n = pattern.subn(replacement, text, count=1)
+          if n != 1:
+              raise SystemExit('fabric cleanup target not found')
+          anchor = '''    const appliedEvents = await db.pool.query<{ count: number }>(\n      `select count(*)::int count from workspace_events\n        where session_id=$1 and event_type='FINDING'\n          and payload->>'summary'='Offline finding that remains coordination state'`,\n      [sessionId],\n    );\n    expect(appliedEvents.rows[0]?.count).toBe(1);\n'''
+          addition = anchor + '''\n    const secondary = await app.inject({\n      method: "POST",\n      url: "/v1/sessions",\n      headers,\n      payload: {\n        spaceId,\n        vaultId,\n        purpose: "Cross-session offline draft isolation fixture",\n        contextBudget: 2048,\n      },\n    });\n    expect(secondary.statusCode).toBe(201);\n    const secondaryBody = secondary.json() as {\n      id: string;\n      contextRevisionSetHash: string;\n    };\n    secondarySessionId = secondaryBody.id;\n\n    const secondaryDraftResponse = await app.inject({\n      method: "POST",\n      url: `/v1/sessions/${secondarySessionId}/offline-drafts`,\n      headers,\n      payload: {\n        clientDraftId: "cross-session-draft",\n        baseRevisionSetHash: secondaryBody.contextRevisionSetHash,\n        eventType: "NOTE",\n        payload: { note: "must remain bound to its own session" },\n      },\n    });\n    expect(secondaryDraftResponse.statusCode).toBe(201);\n    const secondaryDraft = secondaryDraftResponse.json() as {\n      id: string;\n      status: string;\n    };\n    expect(secondaryDraft.status).toBe("QUEUED");\n\n    const crossSessionApply = await app.inject({\n      method: "POST",\n      url: `/v1/sessions/${sessionId}/offline-drafts/${secondaryDraft.id}/apply`,\n      headers,\n    });\n    expect(crossSessionApply.statusCode).toBe(404);\n    expect(crossSessionApply.json()).toMatchObject({\n      code: "OFFLINE_DRAFT_NOT_FOUND",\n    });\n    const untouchedSecondaryDraft = await db.pool.query<{\n      status: string;\n      applied_event_id: number | null;\n    }>(\n      "select status,applied_event_id from workspace_offline_drafts where id=$1",\n      [secondaryDraft.id],\n    );\n    expect(untouchedSecondaryDraft.rows[0]).toMatchObject({\n      status: "QUEUED",\n      applied_event_id: null,\n    });\n'''
+          text = must_replace(text, anchor, addition, 'cross-session regression')
+          test.write_text(text)
+          PY
+          pnpm exec prettier --write \
+            apps/api/test/workspace-coordination.integration.test.ts \
+            packages/postgres/src/team-context-fabric.ts \
+            apps/api/src/routes/context-fabric.ts \
+            apps/api/test/context-fabric.integration.test.ts
+      - run: pnpm exec prettier --check .
+      - run: pnpm build
+      - run: docker compose up -d --wait postgres minio
+      - run: |
+          rm -rf "$AKP_MANAGED_REPO"
+          git init -b main "$AKP_MANAGED_REPO"
+          git -C "$AKP_MANAGED_REPO" config user.name "AKP CI"
+          git -C "$AKP_MANAGED_REPO" config user.email "akp-ci@localhost"
+          git -C "$AKP_MANAGED_REPO" commit --allow-empty -m "chore: initialize managed knowledge for CI"
+      - run: pnpm db:migrate
+      - name: Run P2 coordination, context fabric, and governed flow integration
+        run: >-
+          pnpm --filter @akp/api exec vitest run
+          --config vitest.integration.config.ts
+          test/workspace-coordination.integration.test.ts
+          test/context-fabric.integration.test.ts
+          test/p2-product-flow.integration.test.ts
+      - name: Commit validated P2 hardening without harness residue
+        if: success()
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            apps/api/test/workspace-coordination.integration.test.ts \
+            packages/postgres/src/team-context-fabric.ts \
+            apps/api/src/routes/context-fabric.ts \
+            apps/api/test/context-fabric.integration.test.ts
+          git rm .github/workflows/p2-coordination-fabric-fix.yml
+          git commit -m "fix(p2): enforce session-bound offline reconciliation"
+          git push origin HEAD:batch/p2-coordination-fixture-fix-20260916
+      - name: Diagnostics
+        if: failure()
+        run: |
+          docker compose ps --all || true
+          docker compose logs --no-color postgres minio || true
+      - name: Stop services
+        if: always()
+        run: docker compose down -v
