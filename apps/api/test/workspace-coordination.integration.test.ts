@@ -624,7 +624,7 @@ describe("workspace coordination integration", () => {
           {
             path: "knowledge/compiler-boundary.md",
             content:
-              "---\\ntype: note\\n---\\n# Compiler boundary\\n\\nCanonical publication requires governed review.\\n",
+              "---\\ntype: claim\\n---\\n# Compiler boundary\\n\\nCanonical publication requires governed review.\\n",
             reason: "Promote durable workspace evidence",
           },
         ],
