@@ -167,7 +167,9 @@ describe("knowledge profile rollback integration", () => {
             where id=any($1::uuid[]) order by id`,
           [[baseline.revision.id, successor.revision.id]],
         );
-        expect(new Map(statuses.rows.map((row) => [row.id, row.status]))).toEqual(
+        expect(
+          new Map(statuses.rows.map((row) => [row.id, row.status])),
+        ).toEqual(
           new Map([
             [baseline.revision.id, "ACTIVE"],
             [successor.revision.id, "SUPERSEDED"],
@@ -175,9 +177,10 @@ describe("knowledge profile rollback integration", () => {
         );
         const binding = await db.pool.query<{
           active_knowledge_profile_revision_id: string | null;
-        }>("select active_knowledge_profile_revision_id from vaults where id=$1", [
-          vaultId,
-        ]);
+        }>(
+          "select active_knowledge_profile_revision_id from vaults where id=$1",
+          [vaultId],
+        );
         expect(binding.rows[0]?.active_knowledge_profile_revision_id).toBe(
           baseline.revision.id,
         );
@@ -206,7 +209,9 @@ describe("knowledge profile rollback integration", () => {
           "update vaults set active_knowledge_profile_revision_id=null where id=$1",
           [vaultId],
         );
-        await db.pool.query("delete from audit_events where vault_id=$1", [vaultId]);
+        await db.pool.query("delete from audit_events where vault_id=$1", [
+          vaultId,
+        ]);
         await db.pool.query("delete from schema_dry_runs where vault_id=$1", [
           vaultId,
         ]);
