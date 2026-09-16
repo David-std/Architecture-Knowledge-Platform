@@ -37,12 +37,28 @@ jobs:
 
           def replace_once(old: str, new: str, marker: str) -> None:
               global text
-              if old in text:
-                  text = text.replace(old, new, 1)
-                  return
               if marker in text:
                   return
-              raise SystemExit(f"search.ts shape changed before {marker}")
+              if old not in text:
+                  raise SystemExit(f"search.ts shape changed before {marker}")
+              text = text.replace(old, new, 1)
+
+          def patch_section(start: str, end: str, replacements: list[tuple[str, str, str]]) -> None:
+              global text
+              start_at = text.find(start)
+              if start_at < 0:
+                  raise SystemExit(f"missing section {start}")
+              end_at = text.find(end, start_at)
+              if end_at < 0:
+                  raise SystemExit(f"missing section end {end}")
+              section = text[start_at:end_at]
+              for old, new, marker in replacements:
+                  if marker in section:
+                      continue
+                  if old not in section:
+                      raise SystemExit(f"{start} shape changed before {marker}")
+                  section = section.replace(old, new, 1)
+              text = text[:start_at] + section + text[end_at:]
 
           replace_once(
               '''import {
@@ -76,6 +92,7 @@ jobs:
             allowVectorForBenchmark?: boolean;''',
               'expansionScopes?:',
           )
+
           replace_once(
               '''  /** Applied after policy/trust filtering so a scoped caller never receives a
              * path it is not allowed to read. */
@@ -140,98 +157,79 @@ jobs:
               'const expansionScopeJson = JSON.stringify(expansionScopes);',
           )
 
-          # Exact channel: authorize before ranking/limit.
-          replace_once(
-              '''         where d.space_id=$1
-                     ${vaultFilter("d.")}
-                     and d.lifecycle ${lifecycleClause}''',
-              '''         where d.space_id=$1
-                     ${vaultFilter("d.")}
-                     ${expansionScopeClause("d.", "$4")}
-                     and d.lifecycle ${lifecycleClause}''',
-              '${expansionScopeClause("d.", "$4")}',
-          )
-          replace_once(
-              '''          [spaceId, input.query, Math.max(input.limit * 2, 20)],''',
-              '''          [
-                    spaceId,
-                    input.query,
-                    Math.max(input.limit * 2, 20),
-                    expansionScopeJson,
-                  ],''',
-              'Math.max(input.limit * 2, 20),\n            expansionScopeJson',
+          patch_section(
+              '  const exact = channels.has("exact")',
+              '  recordRetrievalCandidates("exact"',
+              [
+                  (
+                      '${vaultFilter("d.")}\n           and d.lifecycle',
+                      '${vaultFilter("d.")}\n           ${expansionScopeClause("d.", "$4")}\n           and d.lifecycle',
+                      '${expansionScopeClause("d.", "$4")}',
+                  ),
+                  (
+                      '[spaceId, input.query, Math.max(input.limit * 2, 20)]',
+                      '[spaceId, input.query, Math.max(input.limit * 2, 20), expansionScopeJson]',
+                      'expansionScopeJson]',
+                  ),
+              ],
           )
 
-          # Lexical channel: authorize eligible documents before scoring/ranking.
-          lexical_anchor = '''             where d.space_id=$1
-                       ${vaultFilter("d.")}
-                       and d.lifecycle ${lifecycleClause}'''
-          lexical_new = '''             where d.space_id=$1
-                       ${vaultFilter("d.")}
-                       ${expansionScopeClause("d.", "$4")}
-                       and d.lifecycle ${lifecycleClause}'''
-          if lexical_anchor in text:
-              text = text.replace(lexical_anchor, lexical_new, 1)
-          elif text.count('${expansionScopeClause("d.", "$4")}') < 2:
-              raise SystemExit("search.ts lexical authorization shape changed")
-          replace_once(
-              '''            [spaceId, input.query, Math.max(input.limit * 3, 30)],''',
-              '''            [
-                      spaceId,
-                      input.query,
-                      Math.max(input.limit * 3, 30),
-                      expansionScopeJson,
-                    ],''',
-              'Math.max(input.limit * 3, 30),\n              expansionScopeJson',
+          patch_section(
+              '  const lexical =',
+              '  recordRetrievalCandidates("lexical"',
+              [
+                  (
+                      '${vaultFilter("d.")}\n               and d.lifecycle',
+                      '${vaultFilter("d.")}\n               ${expansionScopeClause("d.", "$4")}\n               and d.lifecycle',
+                      '${expansionScopeClause("d.", "$4")}',
+                  ),
+                  (
+                      '[spaceId, input.query, Math.max(input.limit * 3, 30)]',
+                      '[spaceId, input.query, Math.max(input.limit * 3, 30), expansionScopeJson]',
+                      'expansionScopeJson]',
+                  ),
+              ],
           )
 
-          # Vector channel: path-filter the joined document before ANN ranking/limit.
-          replace_once(
-              '''           where e.generation_id=$1 and u.space_id=$2 and u.vault_id=$4
-                       and e.embedding_dimensions=${dimensions}''',
-              '''           where e.generation_id=$1 and u.space_id=$2 and u.vault_id=$4
-                       ${expansionScopeClause("d.", "$6")}
-                       and e.embedding_dimensions=${dimensions}''',
-              '${expansionScopeClause("d.", "$6")}',
-          )
-          replace_once(
-              '''              Math.max(input.limit * 3, 30),
-                    ],''',
-              '''              Math.max(input.limit * 3, 30),
-                      expansionScopeJson,
-                    ],''',
-              'generation.vaultId,\n              Math.max(input.limit * 3, 30),\n              expansionScopeJson',
+          patch_section(
+              '  const vector = { rows: [] as VectorSearchRow[] };',
+              '  recordRetrievalCandidates("vector"',
+              [
+                  (
+                      'where e.generation_id=$1 and u.space_id=$2 and u.vault_id=$4\n             and e.embedding_dimensions',
+                      'where e.generation_id=$1 and u.space_id=$2 and u.vault_id=$4\n             ${expansionScopeClause("d.", "$6")}\n             and e.embedding_dimensions',
+                      '${expansionScopeClause("d.", "$6")}',
+                  ),
+                  (
+                      'generation.vaultId,\n              Math.max(input.limit * 3, 30),\n            ]',
+                      'generation.vaultId,\n              Math.max(input.limit * 3, 30),\n              expansionScopeJson,\n            ]',
+                      'expansionScopeJson,\n            ]',
+                  ),
+              ],
           )
 
-          # Context-pack, raw and code fallbacks all rank only authorized documents.
-          fallback_anchor = '''           where d.space_id=$1
-                       ${vaultFilter("d.")}
-                       and d.lifecycle ${lifecycleClause}'''
-          fallback_new = '''           where d.space_id=$1
-                       ${vaultFilter("d.")}
-                       ${expansionScopeClause("d.", "$4")}
-                       and d.lifecycle ${lifecycleClause}'''
-          # Three fallback queries remain after exact/lexical have been patched.
-          for _ in range(3):
-              if fallback_anchor in text:
-                  text = text.replace(fallback_anchor, fallback_new, 1)
-              elif text.count('${expansionScopeClause("d.", "$4")}') < 5:
-                  raise SystemExit("search.ts fallback authorization shape changed")
-          fallback_params = '''        [spaceId, input.query, Math.max(input.limit, 10)],'''
-          fallback_params_new = '''        [
-                  spaceId,
-                  input.query,
-                  Math.max(input.limit, 10),
-                  expansionScopeJson,
-                ],'''
-          for _ in range(3):
-              if fallback_params in text:
-                  text = text.replace(fallback_params, fallback_params_new, 1)
-              elif text.count('Math.max(input.limit, 10),\n          expansionScopeJson') < 3:
-                  raise SystemExit("search.ts fallback parameter shape changed")
+          for start, end in [
+              ('  const contextPack = channels.has("context-pack")', '  if (channels.has("context-pack"))'),
+              ('  const rawFallback = channels.has("raw")', '  if (channels.has("raw"))'),
+              ('  const codeFallback = channels.has("code")', '  if (channels.has("code"))'),
+          ]:
+              patch_section(
+                  start,
+                  end,
+                  [
+                      (
+                          '${vaultFilter("d.")}\n             and d.lifecycle',
+                          '${vaultFilter("d.")}\n             ${expansionScopeClause("d.", "$4")}\n             and d.lifecycle',
+                          '${expansionScopeClause("d.", "$4")}',
+                      ),
+                      (
+                          '[spaceId, input.query, Math.max(input.limit, 10)]',
+                          '[spaceId, input.query, Math.max(input.limit, 10), expansionScopeJson]',
+                          'expansionScopeJson]',
+                      ),
+                  ],
+              )
 
-          # Route-level wiring: one AuthorizationPort resolves scope and participates in
-          # every per-document authorization decision; token scope remains an additional fence.
           replace_once(
               '''export function registerSearchRoutes(
             app: FastifyInstance,
@@ -247,56 +245,38 @@ jobs:
             const authorizationPort =
               dependencies.authorizationPort ?? new PostgresAuthorizationPort(db);
             app.post(''',
-              'const authorizationPort =',
+              'dependencies.authorizationPort ?? new PostgresAuthorizationPort(db)',
           )
-          replace_once(
-              '''      let vaultIds: string[];
-                  let accessByVault: Awaited<
-                    ReturnType<typeof resolveAuthorizedVaultScope>
-                  >["accessByVault"] = {};
-                  try {
-                    const scope = await resolveAuthorizedVaultScope(db, {''',
-              '''      let vaultIds: string[];
-                  let authorizationScope: AuthorizedVaultScope;
-                  try {
-                    authorizationScope = await authorizationPort.resolveVaultScope({''',
-              'let authorizationScope: AuthorizedVaultScope;',
-          )
-          replace_once(
-              '''        vaultIds = scope.vaultIds;
-                    accessByVault = scope.accessByVault;
-                  } catch (error) {''',
-              '''        vaultIds = authorizationScope.vaultIds;
-                  } catch (error) {''',
-              'vaultIds = authorizationScope.vaultIds;',
-          )
-          replace_once(
-              '''      const actorPathPrefixes = pathPrefixesForPermission(
-                    actor,
-                    requestedSpace,
-                    "knowledge:read",
-                  );
-                  const hits = await queryKnowledge(db, scopedRequest, {
-                    plan,
-                    vaultIds,
-                    graphScopes: Object.entries(accessByVault).flatMap(
-                      ([vaultId, access]) =>
-                        actorPathPrefixes.flatMap((actorPathPrefix) => {
-                          const pathPrefix = intersectVaultPathPrefixes(
-                            actorPathPrefix,
-                            access.pathPrefix,
-                          );
-                          return pathPrefix === undefined ? [] : [{ vaultId, pathPrefix }];
-                        }),
-                    ),''',
-              '''      const actorPathPrefixes = pathPrefixesForPermission(
-                    actor,
-                    requestedSpace,
-                    "knowledge:read",
-                  );
-                  const expansionScopes = Object.entries(
-                    authorizationScope.accessByVault,
-                  ).flatMap(([vaultId, access]) =>
+
+          patch_section(
+              '    "/v1/search",',
+              '  app.get<{ Params: { id: string } }>',
+              [
+                  (
+                      '''      let vaultIds: string[];
+                let accessByVault: Awaited<
+                  ReturnType<typeof resolveAuthorizedVaultScope>
+                >["accessByVault"] = {};
+                try {
+                  const scope = await resolveAuthorizedVaultScope(db, {''',
+                      '''      let vaultIds: string[];
+                let authorizationScope: AuthorizedVaultScope;
+                try {
+                  authorizationScope = await authorizationPort.resolveVaultScope({''',
+                      'let authorizationScope: AuthorizedVaultScope;',
+                  ),
+                  (
+                      '''        vaultIds = scope.vaultIds;
+                  accessByVault = scope.accessByVault;''',
+                      '''        vaultIds = authorizationScope.vaultIds;''',
+                      'vaultIds = authorizationScope.vaultIds;',
+                  ),
+                  (
+                      '''      const hits = await queryKnowledge(db, scopedRequest, {
+                plan,
+                vaultIds,
+                graphScopes: Object.entries(accessByVault).flatMap(
+                  ([vaultId, access]) =>
                     actorPathPrefixes.flatMap((actorPathPrefix) => {
                       const pathPrefix = intersectVaultPathPrefixes(
                         actorPathPrefix,
@@ -304,35 +284,48 @@ jobs:
                       );
                       return pathPrefix === undefined ? [] : [{ vaultId, pathPrefix }];
                     }),
+                ),''',
+                      '''      const expansionScopes = Object.entries(
+                authorizationScope.accessByVault,
+              ).flatMap(([vaultId, access]) =>
+                actorPathPrefixes.flatMap((actorPathPrefix) => {
+                  const pathPrefix = intersectVaultPathPrefixes(
+                    actorPathPrefix,
+                    access.pathPrefix,
                   );
-                  const hits = await queryKnowledge(db, scopedRequest, {
-                    plan,
-                    vaultIds,
-                    expansionScopes,
-                    graphScopes: expansionScopes,''',
-              'expansionScopes,\n        graphScopes: expansionScopes',
-          )
-          replace_once(
-              '''        pathAuthorizer: (documentPath, vaultId) => {
-                      const access = accessByVault[String(vaultId ?? "")];
-                      if (!access) return false;
-                      return (
-                        pathMatchesVaultPrefix(documentPath, access.pathPrefix) &&
-                        hasPathAccess(actor, requestedSpace, "knowledge:read", documentPath)
-                      );
-                    },''',
-              '''        pathAuthorizer: (documentPath, vaultId) =>
-                      authorizationPort.canExpandResource(authorizationScope, {
-                        vaultId: String(vaultId ?? ""),
-                        path: documentPath,
-                      }) &&
-                      hasPathAccess(
-                        actor,
-                        requestedSpace,
-                        "knowledge:read",
-                        documentPath,
-                      ),''',
-              'authorizationPort.canExpandResource(authorizationScope',
+                  return pathPrefix === undefined ? [] : [{ vaultId, pathPrefix }];
+                }),
+              );
+              const hits = await queryKnowledge(db, scopedRequest, {
+                plan,
+                vaultIds,
+                expansionScopes,
+                graphScopes: expansionScopes,''',
+                      'graphScopes: expansionScopes',
+                  ),
+                  (
+                      '''        pathAuthorizer: (documentPath, vaultId) => {
+                  const access = accessByVault[String(vaultId ?? "")];
+                  if (!access) return false;
+                  return (
+                    pathMatchesVaultPrefix(documentPath, access.pathPrefix) &&
+                    hasPathAccess(actor, requestedSpace, "knowledge:read", documentPath)
+                  );
+                },''',
+                      '''        pathAuthorizer: (documentPath, vaultId) =>
+                  authorizationPort.canExpandResource(authorizationScope, {
+                    vaultId: String(vaultId ?? ""),
+                    path: documentPath,
+                  }) &&
+                  hasPathAccess(
+                    actor,
+                    requestedSpace,
+                    "knowledge:read",
+                    documentPath,
+                  ),''',
+                      'authorizationPort.canExpandResource(authorizationScope',
+                  ),
+              ],
           )
 
           path.write_text(text)
