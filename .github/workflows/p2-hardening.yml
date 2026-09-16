@@ -1,4 +1,5 @@
 name: p2-hardening
+# Clean rerun after generated P2 corrections are committed.
 
 on:
   push:
