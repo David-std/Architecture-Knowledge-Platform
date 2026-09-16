@@ -2,7 +2,11 @@ from pathlib import Path
 
 path = Path(".github/scripts/p2-principal-auth.py")
 text = path.read_text()
-old = '''old = ''' + "'''" + '''      const sessions = await listWorkspaceSessionsForParticipant(
+
+# The workspace slice evolved after this materializer was drafted. Rewrite only
+# the stale literals inside the temporary staging script so it still validates
+# every real product anchor rather than weakening the product patch itself.
+old_list = '''old = ''' + "'''" + '''      const sessions = await listWorkspaceSessionsForParticipant(
         db,
         actor.id,
         unrestrictedSpaces,
@@ -25,7 +29,7 @@ new = ''' + "'''" + '''      const sessions = await listWorkspaceSessionsForPart
 ''' + "'''" + '''
 text = replace_once(text, old, new, "bound session list")
 '''
-new = '''old = ''' + "'''" + '''      const sessions = await listWorkspaceSessionsForParticipant(
+new_list = '''old = ''' + "'''" + '''      const sessions = await listWorkspaceSessionsForParticipant(
         db,
         actor.id,
         spaces,
@@ -48,6 +52,14 @@ new = ''' + "'''" + '''      const sessions = await listWorkspaceSessionsForPart
 ''' + "'''" + '''
 text = replace_once(text, old, new, "bound session list")
 '''
-if text.count(old) != 1:
-    raise SystemExit(f"principal staging compatibility anchor changed: {text.count(old)}")
-path.write_text(text.replace(old, new, 1))
+if text.count(old_list) != 1:
+    raise SystemExit(f"principal session-list compatibility anchor changed: {text.count(old_list)}")
+text = text.replace(old_list, new_list, 1)
+
+old_event = '    Body: { eventType: string; payload: Record<string, unknown> };\\n'
+new_event = '    Body: { eventType: string; payload?: Record<string, unknown> };\\n'
+if text.count(old_event) != 1:
+    raise SystemExit(f"principal event-payload compatibility anchor changed: {text.count(old_event)}")
+text = text.replace(old_event, new_event, 1)
+
+path.write_text(text)
