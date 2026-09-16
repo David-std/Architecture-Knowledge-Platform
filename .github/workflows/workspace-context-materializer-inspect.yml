@@ -1,4 +1,4 @@
-name: workspace-context-materializer-source-inspect
+name: workspace-context-materializer-resolver-inspect
 
 on:
   push:
@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: feat/v0.4-enterprise-context-workspace
-      - name: Inspect context revision source in embedded materializer
+      - name: Inspect resolver block in embedded materializer
         shell: bash
         run: |
           python - <<'PY'
@@ -27,27 +27,7 @@ jobs:
           match = re.search(r'payload = "([A-Za-z0-9+/=]+)"', workflow)
           if not match:
               raise SystemExit('payload not found')
-          script = zlib.decompress(base64.b64decode(match.group(1))).decode()
-          lines = script.splitlines()
-          needles = (
-              'context_revision_set =',
-              '@akp/contracts',
-              'DEFAULT_KNOWLEDGE',
-              'NEUTRAL_KNOWLEDGE',
-              'canonicalKnowledgeProfileJson',
-              'policyFingerprint',
-              'profileHash',
-          )
-          emitted = set()
-          for i, line in enumerate(lines):
-              if any(n in line for n in needles):
-                  lo = max(0, i - 12)
-                  hi = min(len(lines), i + 36)
-                  key = (lo, hi)
-                  if key in emitted:
-                      continue
-                  emitted.add(key)
-                  print(f'--- lines {lo+1}-{hi} ---')
-                  for n in range(lo, hi):
-                      print(f'{n+1:04d}: {lines[n]}')
+          lines = zlib.decompress(base64.b64decode(match.group(1))).decode().splitlines()
+          for n in range(180, min(470, len(lines))):
+              print(f'{n+1:04d}: {lines[n]}')
           PY
