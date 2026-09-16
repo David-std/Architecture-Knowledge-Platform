@@ -614,6 +614,29 @@ describe("workspace coordination integration", () => {
       (event) => event.event_type === "FINDING",
     );
     expect(findingEvent).toBeDefined();
+    const duplicateEvidencePromotion = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/promotions`,
+      headers: actorAHeaders,
+      payload: {
+        evidenceEventIds: [
+          String((findingEvent as { id: string }).id),
+          String((findingEvent as { id: string }).id),
+        ],
+        changes: [
+          {
+            path: "knowledge/duplicate-evidence.md",
+            content:
+              "---\ntype: claim\nstatus: proposed\nknowledge_layer: project\n---\n# Duplicate evidence\n\nDuplicate evidence identifiers are rejected so provenance remains a deterministic set rather than an ambiguous multiset.\n",
+          },
+        ],
+      },
+    });
+    expect(duplicateEvidencePromotion.statusCode).toBe(400);
+    expect(duplicateEvidencePromotion.json()).toMatchObject({
+      code: "PROMOTION_EVIDENCE_REQUIRED",
+    });
+
     const invalidPromotionEvidence = await app.inject({
       method: "POST",
       url: `/v1/sessions/${sessionId}/promotions`,
