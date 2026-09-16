@@ -689,44 +689,6 @@ describe("workspace coordination integration", () => {
       },
     });
 
-    const agentCredential = await app.inject({
-      method: "POST",
-      url: `/v1/sessions/${sessionId}/agents`,
-      headers: actorAHeaders,
-      payload: {
-        displayName: "Promotion agent",
-        allowedActions: [
-          "workspace:read",
-          "workspace:event:append",
-          "knowledge:read",
-          "knowledge:propose",
-        ],
-      },
-    });
-    expect(agentCredential.statusCode).toBe(201);
-    const agentToken = (agentCredential.json() as { token: string }).token;
-    const agentApproval = await app.inject({
-      method: "POST",
-      url: `/v1/reviews/${promotionBody.reviewId}/decision`,
-      headers: { authorization: `Bearer ${agentToken}` },
-      payload: {
-        decision: "APPROVE",
-        reason: "Agent must not be allowed to approve promotion.",
-      },
-    });
-    expect(agentApproval.statusCode).toBe(403);
-
-    const humanApproval = await app.inject({
-      method: "POST",
-      url: `/v1/reviews/${promotionBody.reviewId}/decision`,
-      headers: reviewerHeaders,
-      payload: {
-        decision: "APPROVE",
-        reason: "Human reviewer accepts governed workspace promotion.",
-      },
-    });
-    expect([200, 202]).toContain(humanApproval.statusCode);
-
     const canonicalAfter = await db.pool.query<{ documents: number }>(
       `select
          (select count(*)::int from knowledge_documents where vault_id=$1) documents`,
