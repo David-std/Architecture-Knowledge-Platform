@@ -1,5 +1,5 @@
 name: p2-hardening
-# Clean rerun after generated P2 corrections are committed.
+# Temporary P2 branch harness. Remove before promoting this batch to PR #12.
 
 on:
   push:
@@ -26,45 +26,324 @@ jobs:
           node-version: 24.20.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
-      - name: Apply isolated P2 TypeScript corrections
+      - name: Harden retrieval authorization before candidate expansion
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
 
-          context_path = Path("apps/api/src/routes/context-fabric.ts")
-          context = context_path.read_text()
-          old_authority = "        authority: request.body?.authority,\n"
-          new_authority = (
-              "        ...(request.body?.authority\n"
-              "          ? { authority: request.body.authority }\n"
-              "          : {}),\n"
-          )
-          if old_authority in context:
-              context = context.replace(old_authority, new_authority, 1)
-              context_path.write_text(context)
-          elif new_authority not in context:
-              raise SystemExit("context-fabric authority call shape changed unexpectedly")
+          path = Path("apps/api/src/routes/search.ts")
+          text = path.read_text()
 
-          presence_path = Path("apps/api/src/routes/workspace-presence.ts")
-          presence = presence_path.read_text()
-          old_ttl = "        ttlSeconds: request.body?.ttlSeconds,\n"
-          new_ttl = (
-              "        ...(request.body?.ttlSeconds !== undefined\n"
-              "          ? { ttlSeconds: request.body.ttlSeconds }\n"
-              "          : {}),\n"
+          def replace_once(old: str, new: str, marker: str) -> None:
+              global text
+              if old in text:
+                  text = text.replace(old, new, 1)
+                  return
+              if marker in text:
+                  return
+              raise SystemExit(f"search.ts shape changed before {marker}")
+
+          replace_once(
+              '''import {
+            intersectVaultPathPrefixes,
+            normalizeVaultPathPrefix,
+            pathMatchesVaultPrefix,
+            resolveAuthorizedVaultScope,
+            type Postgres,
+          } from "@akp/postgres";''',
+              '''import {
+            intersectVaultPathPrefixes,
+            normalizeVaultPathPrefix,
+            pathMatchesVaultPrefix,
+            PostgresAuthorizationPort,
+            resolveAuthorizedVaultScope,
+            type AuthorizationPort,
+            type AuthorizedVaultScope,
+            type Postgres,
+          } from "@akp/postgres";''',
+              'PostgresAuthorizationPort',
           )
-          if old_ttl in presence:
-              presence = presence.replace(old_ttl, new_ttl, 1)
-              presence_path.write_text(presence)
-          elif new_ttl not in presence:
-              raise SystemExit("workspace-presence ttl call shape changed unexpectedly")
+
+          replace_once(
+              '''  graphPolicy?: Partial<GraphTraversalPolicy>;
+            graphScopes?: Array<{ vaultId: string; pathPrefix: string | null }>;
+            allowVectorForBenchmark?: boolean;''',
+              '''  graphPolicy?: Partial<GraphTraversalPolicy>;
+            /** SQL authorization scopes applied before bounded candidate selection. */
+            expansionScopes?: Array<{ vaultId: string; pathPrefix: string | null }>;
+            graphScopes?: Array<{ vaultId: string; pathPrefix: string | null }>;
+            allowVectorForBenchmark?: boolean;''',
+              'expansionScopes?:',
+          )
+          replace_once(
+              '''  /** Applied after policy/trust filtering so a scoped caller never receives a
+             * path it is not allowed to read. */
+            pathAuthorizer?: (path: string, vaultId?: string) => boolean;
+          }
+
+          export interface SearchRouteDependencies {
+            /** Active model/agent tokenizer when the runtime provides one. */
+            contextTokenizer?: Tokenizer;
+          }''',
+              '''  /** Final defense after SQL pre-expansion authorization and trust filtering. */
+            pathAuthorizer?: (path: string, vaultId?: string) => boolean;
+          }
+
+          export interface SearchRouteDependencies {
+            /** Active model/agent tokenizer when the runtime provides one. */
+            contextTokenizer?: Tokenizer;
+            /** Central authorization boundary for retrieval expansion. */
+            authorizationPort?: AuthorizationPort;
+          }''',
+              'authorizationPort?: AuthorizationPort',
+          )
+
+          replace_once(
+              '''  // A JavaScript path callback cannot safely participate in SQL ranking.  If a
+            // caller supplies one, require equivalent SQL scopes so unauthorized seeds
+            // or paths cannot consume bounded graph slots before the callback runs.
+            const graphScopes = normalizeGraphScopes(
+              vaultIds,
+              options.pathAuthorizer !== undefined && options.graphScopes === undefined
+                ? []
+                : options.graphScopes,
+            );''',
+              '''  // Authorization is part of retrieval semantics, not a response redaction pass.
+            // Every bounded candidate channel receives SQL-equivalent scopes before ranking;
+            // a JavaScript authorizer without matching scopes therefore fails closed.
+            const expansionScopes = normalizeGraphScopes(
+              vaultIds,
+              options.pathAuthorizer !== undefined && options.expansionScopes === undefined
+                ? []
+                : options.expansionScopes,
+            );
+            const graphScopes = normalizeGraphScopes(
+              vaultIds,
+              options.graphScopes ??
+                options.expansionScopes ??
+                (options.pathAuthorizer !== undefined ? [] : undefined),
+            );
+            const expansionScopeJson = JSON.stringify(expansionScopes);
+            const expansionScopeClause = (alias: string, parameter: string) => `
+              and exists (
+                select 1
+                  from jsonb_to_recordset(${parameter}::jsonb)
+                    as authorized_scope(vault_id uuid,path_prefix text)
+                 where authorized_scope.vault_id=${alias}vault_id
+                   and (
+                     authorized_scope.path_prefix is null
+                     or ${alias}path=authorized_scope.path_prefix
+                     or starts_with(${alias}path,authorized_scope.path_prefix || '/')
+                   )
+              )`;''',
+              'const expansionScopeJson = JSON.stringify(expansionScopes);',
+          )
+
+          # Exact channel: authorize before ranking/limit.
+          replace_once(
+              '''         where d.space_id=$1
+                     ${vaultFilter("d.")}
+                     and d.lifecycle ${lifecycleClause}''',
+              '''         where d.space_id=$1
+                     ${vaultFilter("d.")}
+                     ${expansionScopeClause("d.", "$4")}
+                     and d.lifecycle ${lifecycleClause}''',
+              '${expansionScopeClause("d.", "$4")}',
+          )
+          replace_once(
+              '''          [spaceId, input.query, Math.max(input.limit * 2, 20)],''',
+              '''          [
+                    spaceId,
+                    input.query,
+                    Math.max(input.limit * 2, 20),
+                    expansionScopeJson,
+                  ],''',
+              'Math.max(input.limit * 2, 20),\n            expansionScopeJson',
+          )
+
+          # Lexical channel: authorize eligible documents before scoring/ranking.
+          lexical_anchor = '''             where d.space_id=$1
+                       ${vaultFilter("d.")}
+                       and d.lifecycle ${lifecycleClause}'''
+          lexical_new = '''             where d.space_id=$1
+                       ${vaultFilter("d.")}
+                       ${expansionScopeClause("d.", "$4")}
+                       and d.lifecycle ${lifecycleClause}'''
+          if lexical_anchor in text:
+              text = text.replace(lexical_anchor, lexical_new, 1)
+          elif text.count('${expansionScopeClause("d.", "$4")}') < 2:
+              raise SystemExit("search.ts lexical authorization shape changed")
+          replace_once(
+              '''            [spaceId, input.query, Math.max(input.limit * 3, 30)],''',
+              '''            [
+                      spaceId,
+                      input.query,
+                      Math.max(input.limit * 3, 30),
+                      expansionScopeJson,
+                    ],''',
+              'Math.max(input.limit * 3, 30),\n              expansionScopeJson',
+          )
+
+          # Vector channel: path-filter the joined document before ANN ranking/limit.
+          replace_once(
+              '''           where e.generation_id=$1 and u.space_id=$2 and u.vault_id=$4
+                       and e.embedding_dimensions=${dimensions}''',
+              '''           where e.generation_id=$1 and u.space_id=$2 and u.vault_id=$4
+                       ${expansionScopeClause("d.", "$6")}
+                       and e.embedding_dimensions=${dimensions}''',
+              '${expansionScopeClause("d.", "$6")}',
+          )
+          replace_once(
+              '''              Math.max(input.limit * 3, 30),
+                    ],''',
+              '''              Math.max(input.limit * 3, 30),
+                      expansionScopeJson,
+                    ],''',
+              'generation.vaultId,\n              Math.max(input.limit * 3, 30),\n              expansionScopeJson',
+          )
+
+          # Context-pack, raw and code fallbacks all rank only authorized documents.
+          fallback_anchor = '''           where d.space_id=$1
+                       ${vaultFilter("d.")}
+                       and d.lifecycle ${lifecycleClause}'''
+          fallback_new = '''           where d.space_id=$1
+                       ${vaultFilter("d.")}
+                       ${expansionScopeClause("d.", "$4")}
+                       and d.lifecycle ${lifecycleClause}'''
+          # Three fallback queries remain after exact/lexical have been patched.
+          for _ in range(3):
+              if fallback_anchor in text:
+                  text = text.replace(fallback_anchor, fallback_new, 1)
+              elif text.count('${expansionScopeClause("d.", "$4")}') < 5:
+                  raise SystemExit("search.ts fallback authorization shape changed")
+          fallback_params = '''        [spaceId, input.query, Math.max(input.limit, 10)],'''
+          fallback_params_new = '''        [
+                  spaceId,
+                  input.query,
+                  Math.max(input.limit, 10),
+                  expansionScopeJson,
+                ],'''
+          for _ in range(3):
+              if fallback_params in text:
+                  text = text.replace(fallback_params, fallback_params_new, 1)
+              elif text.count('Math.max(input.limit, 10),\n          expansionScopeJson') < 3:
+                  raise SystemExit("search.ts fallback parameter shape changed")
+
+          # Route-level wiring: one AuthorizationPort resolves scope and participates in
+          # every per-document authorization decision; token scope remains an additional fence.
+          replace_once(
+              '''export function registerSearchRoutes(
+            app: FastifyInstance,
+            db: Postgres,
+            dependencies: SearchRouteDependencies = {},
+          ): void {
+            app.post(''',
+              '''export function registerSearchRoutes(
+            app: FastifyInstance,
+            db: Postgres,
+            dependencies: SearchRouteDependencies = {},
+          ): void {
+            const authorizationPort =
+              dependencies.authorizationPort ?? new PostgresAuthorizationPort(db);
+            app.post(''',
+              'const authorizationPort =',
+          )
+          replace_once(
+              '''      let vaultIds: string[];
+                  let accessByVault: Awaited<
+                    ReturnType<typeof resolveAuthorizedVaultScope>
+                  >["accessByVault"] = {};
+                  try {
+                    const scope = await resolveAuthorizedVaultScope(db, {''',
+              '''      let vaultIds: string[];
+                  let authorizationScope: AuthorizedVaultScope;
+                  try {
+                    authorizationScope = await authorizationPort.resolveVaultScope({''',
+              'let authorizationScope: AuthorizedVaultScope;',
+          )
+          replace_once(
+              '''        vaultIds = scope.vaultIds;
+                    accessByVault = scope.accessByVault;
+                  } catch (error) {''',
+              '''        vaultIds = authorizationScope.vaultIds;
+                  } catch (error) {''',
+              'vaultIds = authorizationScope.vaultIds;',
+          )
+          replace_once(
+              '''      const actorPathPrefixes = pathPrefixesForPermission(
+                    actor,
+                    requestedSpace,
+                    "knowledge:read",
+                  );
+                  const hits = await queryKnowledge(db, scopedRequest, {
+                    plan,
+                    vaultIds,
+                    graphScopes: Object.entries(accessByVault).flatMap(
+                      ([vaultId, access]) =>
+                        actorPathPrefixes.flatMap((actorPathPrefix) => {
+                          const pathPrefix = intersectVaultPathPrefixes(
+                            actorPathPrefix,
+                            access.pathPrefix,
+                          );
+                          return pathPrefix === undefined ? [] : [{ vaultId, pathPrefix }];
+                        }),
+                    ),''',
+              '''      const actorPathPrefixes = pathPrefixesForPermission(
+                    actor,
+                    requestedSpace,
+                    "knowledge:read",
+                  );
+                  const expansionScopes = Object.entries(
+                    authorizationScope.accessByVault,
+                  ).flatMap(([vaultId, access]) =>
+                    actorPathPrefixes.flatMap((actorPathPrefix) => {
+                      const pathPrefix = intersectVaultPathPrefixes(
+                        actorPathPrefix,
+                        access.pathPrefix,
+                      );
+                      return pathPrefix === undefined ? [] : [{ vaultId, pathPrefix }];
+                    }),
+                  );
+                  const hits = await queryKnowledge(db, scopedRequest, {
+                    plan,
+                    vaultIds,
+                    expansionScopes,
+                    graphScopes: expansionScopes,''',
+              'expansionScopes,\n        graphScopes: expansionScopes',
+          )
+          replace_once(
+              '''        pathAuthorizer: (documentPath, vaultId) => {
+                      const access = accessByVault[String(vaultId ?? "")];
+                      if (!access) return false;
+                      return (
+                        pathMatchesVaultPrefix(documentPath, access.pathPrefix) &&
+                        hasPathAccess(actor, requestedSpace, "knowledge:read", documentPath)
+                      );
+                    },''',
+              '''        pathAuthorizer: (documentPath, vaultId) =>
+                      authorizationPort.canExpandResource(authorizationScope, {
+                        vaultId: String(vaultId ?? ""),
+                        path: documentPath,
+                      }) &&
+                      hasPathAccess(
+                        actor,
+                        requestedSpace,
+                        "knowledge:read",
+                        documentPath,
+                      ),''',
+              'authorizationPort.canExpandResource(authorizationScope',
+          )
+
+          path.write_text(text)
           PY
       - name: Format P2 sources
         shell: bash
         run: |
           {
             git diff --name-only 2e93a0a1d4ed5b0a20b77cde4921fb23befb260f...HEAD \
+              | grep -E '\.(ts|tsx|js|mjs|cjs|json|md|ya?ml)$' || true
+            git diff --name-only \
               | grep -E '\.(ts|tsx|js|mjs|cjs|json|md|ya?ml)$' || true
             printf '%s\n' \
               apps/api/src/routes/sessions.ts \
@@ -82,7 +361,7 @@ jobs:
         run: pnpm build
       - name: Validate patch hygiene
         run: git diff --check
-      - name: Commit generated formatting and corrections
+      - name: Commit generated authorization hardening
         shell: bash
         run: |
           if git diff --quiet; then
@@ -92,5 +371,5 @@ jobs:
           git config user.name "AKP P2 Hardening"
           git config user.email "akp-p2-hardening@users.noreply.github.com"
           git add --all
-          git commit -m "fix(p2): satisfy type and formatting gates"
+          git commit -m "fix(p2): authorize retrieval before expansion"
           git push origin HEAD:batch/p2-hardening-20260916
