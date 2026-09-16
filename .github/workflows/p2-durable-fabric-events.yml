@@ -1,0 +1,163 @@
+name: p2-durable-fabric-events
+
+on:
+  push:
+    branches:
+      - batch/p2-durable-fabric-events-20260916
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Bind P2 context-fabric state to durable outbox events
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: Path, old: str, new: str, label: str) -> None:
+              text = path.read_text()
+              if old not in text:
+                  raise SystemExit(f'{label} target not found in {path}')
+              path.write_text(text.replace(old, new, 1))
+
+          outbox = Path('packages/postgres/src/outbox.ts')
+          replace_once(
+              outbox,
+              '''  "ImpactedEvalRunRequested",\n] as const;''',
+              '''  "ImpactedEvalRunRequested",\n  "WorkspaceSessionCreated",\n  "WorkspaceClaimUpdated",\n  "WorkspaceHandoffCreated",\n  "WorkspacePromotionRequested",\n  "ExternalObjectRefUpserted",\n  "OfflineDraftQueued",\n  "OfflineDraftReconciled",\n  "ContextFabricPeerRegistered",\n] as const;''',
+              'integration event types',
+          )
+          replace_once(
+              outbox,
+              '''    "ImpactedEvalRunRequested",\n  ]);''',
+              '''    "ImpactedEvalRunRequested",\n    "WorkspaceSessionCreated",\n    "WorkspaceClaimUpdated",\n    "WorkspaceHandoffCreated",\n    "WorkspacePromotionRequested",\n    "ExternalObjectRefUpserted",\n    "OfflineDraftQueued",\n    "OfflineDraftReconciled",\n  ]);''',
+              'vault scoped event types',
+          )
+
+          fabric = Path('packages/postgres/src/team-context-fabric.ts')
+          replace_once(
+              fabric,
+              '''import { workspaceContextRevisionState } from "./context-revision-set.js";\n''',
+              '''import { workspaceContextRevisionState } from "./context-revision-set.js";\nimport { appendOutboxEvent } from "./outbox.js";\n''',
+              'outbox import',
+          )
+          replace_once(
+              fabric,
+              '''async function requireSessionParticipant(\n  client: PostgresPoolClient,\n  sessionId: string,\n  actorId: string,\n): Promise<{ spaceId: string; vaultId: string }> {\n  const result = await client.query<{ space_id: string; vault_id: string }>(\n    `select s.space_id,s.vault_id\n       from agent_sessions s\n       join workspace_session_participants p\n         on p.session_id=s.id\n        and p.user_id=$2\n        and p.left_at is null\n      where s.id=$1`,\n    [sessionId, actorId],\n  );\n  const row = result.rows[0];\n  if (!row) throw fabricError("SESSION_NOT_FOUND", 404);\n  return { spaceId: row.space_id, vaultId: row.vault_id };\n}\n''',
+              '''async function requireSessionParticipant(\n  client: PostgresPoolClient,\n  sessionId: string,\n  actorId: string,\n): Promise<{ organizationId: string; spaceId: string; vaultId: string }> {\n  const result = await client.query<{\n    organization_id: string;\n    space_id: string;\n    vault_id: string;\n  }>(\n    `select sp.organization_id,s.space_id,s.vault_id\n       from agent_sessions s\n       join spaces sp on sp.id=s.space_id\n       join workspace_session_participants p\n         on p.session_id=s.id\n        and p.user_id=$2\n        and p.left_at is null\n      where s.id=$1`,\n    [sessionId, actorId],\n  );\n  const row = result.rows[0];\n  if (!row) throw fabricError("SESSION_NOT_FOUND", 404);\n  return {\n    organizationId: row.organization_id,\n    spaceId: row.space_id,\n    vaultId: row.vault_id,\n  };\n}\n''',
+              'participant scope',
+          )
+          replace_once(
+              fabric,
+              '''    const row = result.rows[0];\n    if (!row) throw fabricError("EXTERNAL_OBJECT_REF_WRITE_FAILED", 500);\n    await client.query("commit");\n    return normalizeExternalRef(row);\n''',
+              '''    const row = result.rows[0];\n    if (!row) throw fabricError("EXTERNAL_OBJECT_REF_WRITE_FAILED", 500);\n    await appendOutboxEvent(client, {\n      eventType: "ExternalObjectRefUpserted",\n      resourceId: String(row.id),\n      organizationId: scope.organizationId,\n      spaceId: scope.spaceId,\n      vaultId: scope.vaultId,\n      payload: {\n        sessionId: input.sessionId,\n        actorId: input.actorId,\n        provider: String(row.provider),\n        objectType: String(row.object_type),\n        externalId: String(row.external_id),\n        authority: String(row.authority),\n        sourceRevision: row.source_revision ? String(row.source_revision) : null,\n      },\n    });\n    await client.query("commit");\n    return normalizeExternalRef(row);\n''',
+              'external ref outbox',
+          )
+          replace_once(
+              fabric,
+              '''    let row = result.rows[0];\n    if (!row) {\n''',
+              '''    let row = result.rows[0];\n    const inserted = Boolean(row);\n    if (!row) {\n''',
+              'offline insert marker',
+          )
+          replace_once(
+              fabric,
+              '''      if (!samePayload)\n        throw fabricError("OFFLINE_DRAFT_IDEMPOTENCY_CONFLICT", 409);\n    }\n    await client.query("commit");\n    return normalizeOfflineDraft(row);\n''',
+              '''      if (!samePayload)\n        throw fabricError("OFFLINE_DRAFT_IDEMPOTENCY_CONFLICT", 409);\n    }\n    if (inserted) {\n      await appendOutboxEvent(client, {\n        eventType: "OfflineDraftQueued",\n        resourceId: String(row.id),\n        organizationId: scope.organizationId,\n        spaceId: scope.spaceId,\n        vaultId: scope.vaultId,\n        payload: {\n          sessionId: input.sessionId,\n          actorId: input.actorId,\n          clientDraftId: input.clientDraftId,\n          baseRevisionSetHash: input.baseRevisionSetHash,\n          eventType: input.eventType,\n          status: String(row.status),\n        },\n      });\n    }\n    await client.query("commit");\n    return normalizeOfflineDraft(row);\n''',
+              'offline queued outbox',
+          )
+          replace_once(
+              fabric,
+              '''      await client.query("commit");\n      const row = conflict.rows[0];\n      if (!row) throw fabricError("OFFLINE_DRAFT_WRITE_FAILED", 500);\n      return normalizeOfflineDraft(row);\n''',
+              '''      const row = conflict.rows[0];\n      if (!row) throw fabricError("OFFLINE_DRAFT_WRITE_FAILED", 500);\n      await client.query("commit");\n      return normalizeOfflineDraft(row);\n''',
+              'stale offline commit order',
+          )
+          replace_once(
+              fabric,
+              '''    const applied = await client.query<Record<string, unknown>>(\n      `update workspace_offline_drafts\n          set status='APPLIED',reconciled_at=now(),applied_event_id=$2\n        where id=$1\n        returning *`,\n      [input.draftId, Number(event.id)],\n    );\n    await client.query("commit");\n    const row = applied.rows[0];\n    if (!row) throw fabricError("OFFLINE_DRAFT_WRITE_FAILED", 500);\n    return normalizeOfflineDraft(row);\n''',
+              '''    const applied = await client.query<Record<string, unknown>>(\n      `update workspace_offline_drafts\n          set status='APPLIED',reconciled_at=now(),applied_event_id=$2\n        where id=$1\n        returning *`,\n      [input.draftId, Number(event.id)],\n    );\n    const row = applied.rows[0];\n    if (!row) throw fabricError("OFFLINE_DRAFT_WRITE_FAILED", 500);\n    await appendOutboxEvent(client, {\n      eventType: "OfflineDraftReconciled",\n      resourceId: String(row.id),\n      organizationId: scope.organizationId,\n      spaceId: scope.spaceId,\n      vaultId: scope.vaultId,\n      payload: {\n        sessionId,\n        actorId: input.actorId,\n        clientDraftId: String(row.client_draft_id),\n        baseRevisionSetHash: String(row.base_revision_set_hash),\n        appliedEventId: Number(event.id),\n        status: "APPLIED",\n      },\n    });\n    await client.query("commit");\n    return normalizeOfflineDraft(row);\n''',
+              'offline reconciled outbox',
+          )
+
+          text = fabric.read_text()
+          start = text.index('export async function upsertContextFabricPeer(')
+          end = text.index('export async function listContextFabricPeers(', start)
+          peer_function = '''export async function upsertContextFabricPeer(\n  db: Postgres,\n  input: {\n    organizationId: string;\n    spaceId?: string | null;\n    peerKey: string;\n    displayName: string;\n    endpoint?: string | null;\n    discoveryMode?: FederationDiscoveryMode;\n    trustState?: FederationPeerTrustState;\n    capabilities?: Record<string, unknown>;\n    revision?: string | null;\n    lastSeenAt?: Date | null;\n  },\n): Promise<ContextFabricPeerRecord> {\n  const client = await db.pool.connect();\n  try {\n    await client.query("begin");\n    if (input.spaceId) {\n      const scope = await client.query<{ id: string }>(\n        `select id from spaces where id=$1 and organization_id=$2`,\n        [input.spaceId, input.organizationId],\n      );\n      if (!scope.rows[0]) {\n        throw fabricError("CONTEXT_FABRIC_PEER_SCOPE_MISMATCH", 409);\n      }\n    }\n    const result = await client.query<Record<string, unknown>>(\n      `insert into context_fabric_peers(\n         organization_id,space_id,peer_key,display_name,endpoint,discovery_mode,\n         trust_state,capabilities,revision,last_seen_at\n       ) values($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10)\n       on conflict(organization_id,peer_key) do update\n         set space_id=excluded.space_id,\n             display_name=excluded.display_name,\n             endpoint=excluded.endpoint,\n             discovery_mode=excluded.discovery_mode,\n             trust_state=excluded.trust_state,\n             capabilities=excluded.capabilities,\n             revision=excluded.revision,\n             last_seen_at=excluded.last_seen_at,\n             updated_at=now()\n       returning *`,\n      [\n        input.organizationId,\n        input.spaceId ?? null,\n        input.peerKey,\n        input.displayName,\n        input.endpoint?.trim() || null,\n        input.discoveryMode ?? "CATALOG_ONLY",\n        input.trustState ?? "DISCOVERED",\n        JSON.stringify(input.capabilities ?? {}),\n        input.revision?.trim() || null,\n        input.lastSeenAt ?? null,\n      ],\n    );\n    const row = result.rows[0];\n    if (!row) throw fabricError("CONTEXT_FABRIC_PEER_WRITE_FAILED", 500);\n    await appendOutboxEvent(client, {\n      eventType: "ContextFabricPeerRegistered",\n      resourceId: String(row.id),\n      organizationId: input.organizationId,\n      spaceId: row.space_id ? String(row.space_id) : null,\n      payload: {\n        peerKey: String(row.peer_key),\n        discoveryMode: String(row.discovery_mode),\n        trustState: String(row.trust_state),\n        revision: row.revision ? String(row.revision) : null,\n        boundary: "DISCOVERY_METADATA_ONLY",\n      },\n    });\n    await client.query("commit");\n    return normalizePeer(row);\n  } catch (error) {\n    await client.query("rollback");\n    throw error;\n  } finally {\n    client.release();\n  }\n}\n\n'''
+          fabric.write_text(text[:start] + peer_function + text[end:])
+
+          test = Path('apps/api/test/context-fabric.integration.test.ts')
+          replace_once(
+              test,
+              '''import { Postgres, grantVaultMembership } from "@akp/postgres";''',
+              '''import {\n  Postgres,\n  grantVaultMembership,\n  upsertContextFabricPeer,\n} from "@akp/postgres";''',
+              'test imports',
+          )
+          replace_once(
+              test,
+              '''let db: Postgres;\nlet sessionId = "";\n''',
+              '''let db: Postgres;\nlet sessionId = "";\nlet peerId = "";\n''',
+              'peer cleanup state',
+          )
+          replace_once(
+              test,
+              '''  if (db) {\n    if (sessionId) {\n''',
+              '''  if (db) {\n    await db.pool.query("delete from event_outbox where vault_id=$1", [vaultId]);\n    if (peerId) {\n      await db.pool.query("delete from event_outbox where resource_id=$1", [peerId]);\n      await db.pool.query("delete from context_fabric_peers where id=$1", [peerId]);\n    }\n    if (sessionId) {\n''',
+              'outbox cleanup',
+          )
+          replace_once(
+              test,
+              '''    expect(externalRef.statusCode).toBe(201);\n    expect(externalRef.json()).toMatchObject({\n      provider: "github",\n      objectType: "issue",\n      externalId: "GH-42",\n      authority: "SYSTEM_OF_RECORD",\n    });\n''',
+              '''    expect(externalRef.statusCode).toBe(201);\n    const externalRefBody = externalRef.json() as {\n      id: string;\n      provider: string;\n      objectType: string;\n      externalId: string;\n      authority: string;\n    };\n    expect(externalRefBody).toMatchObject({\n      provider: "github",\n      objectType: "issue",\n      externalId: "GH-42",\n      authority: "SYSTEM_OF_RECORD",\n    });\n    const externalRefOutbox = await db.pool.query<{\n      space_id: string;\n      vault_id: string;\n      payload: Record<string, unknown>;\n    }>(\n      `select space_id,vault_id,payload from event_outbox\n        where event_type='ExternalObjectRefUpserted' and resource_id=$1`,\n      [externalRefBody.id],\n    );\n    expect(externalRefOutbox.rows).toHaveLength(1);\n    expect(externalRefOutbox.rows[0]).toMatchObject({\n      space_id: spaceId,\n      vault_id: vaultId,\n      payload: {\n        sessionId,\n        externalId: "GH-42",\n        authority: "SYSTEM_OF_RECORD",\n      },\n    });\n''',
+              'external outbox assertion',
+          )
+          replace_once(
+              test,
+              '''    expect(duplicate.json()).toMatchObject({\n      id: queuedDraft.id,\n      status: "QUEUED",\n    });\n\n    const applied = await app.inject({\n''',
+              '''    expect(duplicate.json()).toMatchObject({\n      id: queuedDraft.id,\n      status: "QUEUED",\n    });\n    const queueOutbox = await db.pool.query<{ count: number }>(\n      `select count(*)::int count from event_outbox\n        where event_type='OfflineDraftQueued' and resource_id=$1`,\n      [queuedDraft.id],\n    );\n    expect(queueOutbox.rows[0]?.count).toBe(1);\n\n    const applied = await app.inject({\n''',
+              'queue idempotency event assertion',
+          )
+          replace_once(
+              test,
+              '''    const appliedEvents = await db.pool.query<{ count: number }>(\n      `select count(*)::int count from workspace_events\n        where session_id=$1 and event_type='FINDING'\n          and payload->>'summary'='Offline finding that remains coordination state'`,\n      [sessionId],\n    );\n    expect(appliedEvents.rows[0]?.count).toBe(1);\n\n    await db.pool.query(\n''',
+              '''    const appliedEvents = await db.pool.query<{ count: number }>(\n      `select count(*)::int count from workspace_events\n        where session_id=$1 and event_type='FINDING'\n          and payload->>'summary'='Offline finding that remains coordination state'`,\n      [sessionId],\n    );\n    expect(appliedEvents.rows[0]?.count).toBe(1);\n    const reconciledOutbox = await db.pool.query<{ count: number }>(\n      `select count(*)::int count from event_outbox\n        where event_type='OfflineDraftReconciled' and resource_id=$1`,\n      [queuedDraft.id],\n    );\n    expect(reconciledOutbox.rows[0]?.count).toBe(1);\n\n    await db.pool.query(\n''',
+              'reconcile idempotency event assertion',
+          )
+          replace_once(
+              test,
+              '''    const staleNote = await db.pool.query<{ count: number }>(\n      `select count(*)::int count from workspace_events\n        where session_id=$1 and payload->>'note'='must not last-write-wins across revision drift'`,\n      [sessionId],\n    );\n    expect(staleNote.rows[0]?.count).toBe(0);\n\n    const afterDocuments = await db.pool.query<{ count: number }>(\n''',
+              '''    const staleNote = await db.pool.query<{ count: number }>(\n      `select count(*)::int count from workspace_events\n        where session_id=$1 and payload->>'note'='must not last-write-wins across revision drift'`,\n      [sessionId],\n    );\n    expect(staleNote.rows[0]?.count).toBe(0);\n    const staleReconciledOutbox = await db.pool.query<{ count: number }>(\n      `select count(*)::int count from event_outbox\n        where event_type='OfflineDraftReconciled' and resource_id=$1`,\n      [staleDraft.id],\n    );\n    expect(staleReconciledOutbox.rows[0]?.count).toBe(0);\n\n    const organization = await db.pool.query<{ organization_id: string }>(\n      "select organization_id from spaces where id=$1",\n      [spaceId],\n    );\n    const organizationId = organization.rows[0]?.organization_id;\n    expect(organizationId).toBeTruthy();\n    const peer = await upsertContextFabricPeer(db, {\n      organizationId: organizationId!,\n      spaceId,\n      peerKey: `integration-peer-${vaultId.slice(0, 8)}`,\n      displayName: "Integration discovery peer",\n      discoveryMode: "CATALOG_ONLY",\n      trustState: "DISCOVERED",\n      capabilities: { discovery: true },\n      revision: "peer:r1",\n      lastSeenAt: new Date(),\n    });\n    peerId = peer.id;\n    const peerOutbox = await db.pool.query<{\n      organization_id: string;\n      space_id: string;\n      vault_id: string | null;\n      payload: Record<string, unknown>;\n    }>(\n      `select organization_id,space_id,vault_id,payload from event_outbox\n        where event_type='ContextFabricPeerRegistered' and resource_id=$1`,\n      [peerId],\n    );\n    expect(peerOutbox.rows).toHaveLength(1);\n    expect(peerOutbox.rows[0]).toMatchObject({\n      organization_id: organizationId,\n      space_id: spaceId,\n      vault_id: null,\n      payload: {\n        boundary: "DISCOVERY_METADATA_ONLY",\n        discoveryMode: "CATALOG_ONLY",\n        trustState: "DISCOVERED",\n      },\n    });\n\n    const afterDocuments = await db.pool.query<{ count: number }>(\n''',
+              'stale and peer outbox assertions',
+          )
+          PY
+          pnpm exec prettier --write \
+            packages/postgres/src/outbox.ts \
+            packages/postgres/src/team-context-fabric.ts \
+            apps/api/test/context-fabric.integration.test.ts
+      - name: Verify repository formatting
+        run: pnpm exec prettier --check .
+      - name: Build durable fabric event slice
+        run: pnpm build
+      - name: Commit durable fabric event slice
+        if: success()
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            packages/postgres/src/outbox.ts \
+            packages/postgres/src/team-context-fabric.ts \
+            apps/api/test/context-fabric.integration.test.ts
+          git diff --cached --quiet && exit 0
+          git commit -m "feat(p2): persist context fabric integration events"
+          git push origin HEAD:batch/p2-durable-fabric-events-20260916
