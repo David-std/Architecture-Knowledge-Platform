@@ -31,8 +31,7 @@ interface ProfileRollbackBody {
 }
 
 type ProfileMutationAuthorization =
-  | { ok: true }
-  | { ok: false; status: 401 | 403 | 404; code: string };
+  { ok: true } | { ok: false; status: 401 | 403 | 404; code: string };
 
 function activationErrorStatus(code: string): number {
   if (code === "KNOWLEDGE_PROFILE_REVISION_NOT_FOUND") return 404;
