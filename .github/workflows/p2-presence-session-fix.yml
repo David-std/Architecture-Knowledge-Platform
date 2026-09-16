@@ -1,0 +1,72 @@
+name: p2-presence-session-fix
+# Temporary focused P2 harness. Remove before consolidating into PR #12.
+
+on:
+  push:
+    branches: [batch/p2-presence-session-fix-20260916]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: p2-presence-session-fix-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  participant-presence:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgres://akp:akp@localhost:55432/akp
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - run: python .github/scripts/p2-fix-presence-participant-writes.py
+      - name: Format focused changes
+        run: >-
+          pnpm exec prettier --write
+          packages/postgres/src/workspace-coordination.ts
+          apps/api/test/workspace-presence.integration.test.ts
+      - name: Validate focused formatting
+        run: >-
+          pnpm exec prettier --check
+          packages/postgres/src/workspace-coordination.ts
+          apps/api/test/workspace-presence.integration.test.ts
+      - run: pnpm check
+      - run: pnpm build
+      - run: docker compose up -d --wait postgres
+      - run: pnpm db:migrate
+      - name: Run presence/session regression
+        run: >-
+          pnpm --filter @akp/api exec vitest run
+          --config vitest.integration.config.ts
+          test/workspace-presence.integration.test.ts
+          test/context-revision-set.integration.test.ts
+          test/context-fabric.integration.test.ts
+      - run: git diff --check
+      - name: Commit validated participant presence fix
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No generated changes remain."
+            exit 0
+          fi
+          git config user.name "AKP P2 Presence Hardening"
+          git config user.email "akp-p2-presence@users.noreply.github.com"
+          git add \
+            db/migrations/039_workspace_presence_defaults.sql \
+            packages/postgres/src/workspace-coordination.ts \
+            apps/api/test/workspace-presence.integration.test.ts
+          git commit -m "fix(p2): restore participant presence initialization"
+          git push origin HEAD:batch/p2-presence-session-fix-20260916
+      - name: Stop disposable services
+        if: always()
+        run: docker compose down -v --remove-orphans
