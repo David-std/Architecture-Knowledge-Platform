@@ -278,6 +278,20 @@ describe("workspace context revision pinning", () => {
       ]),
     );
 
+    const staleBootstrap = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${initial.id}/bootstrap`,
+      headers,
+      payload: {
+        query: "continue against stale pinned context",
+        intent: "WORKFLOW_EXECUTION",
+      },
+    });
+    expect(staleBootstrap.statusCode).toBe(409);
+    expect(staleBootstrap.json()).toMatchObject({
+      code: "CONTEXT_REVISION_CHANGED",
+    });
+
     const staleClaim = await app.inject({
       method: "POST",
       url: `/v1/sessions/${initial.id}/claims`,

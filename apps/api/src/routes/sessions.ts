@@ -468,21 +468,39 @@ export function registerSessionRoutes(
           ),
       });
 
-      const result = await bootstrap.execute(
-        {
-          sessionId: session.id,
-          actorId: actor.id,
-          ...(query ? { query } : {}),
-          intent: intent.data,
-          mode: packetMode,
-        },
-        {
-          principalId: actor.principalId,
-          principalKind: actor.principalKind,
-          principalPolicyRevision: actor.principalPolicyRevision,
-          scopeFingerprint: actor.idempotencyScopeFingerprint,
-        },
-      );
+      let result: Awaited<ReturnType<typeof bootstrap.execute>>;
+      try {
+        result = await bootstrap.execute(
+          {
+            sessionId: session.id,
+            actorId: actor.id,
+            ...(query ? { query } : {}),
+            intent: intent.data,
+            mode: packetMode,
+          },
+          {
+            principalId: actor.principalId,
+            principalKind: actor.principalKind,
+            principalPolicyRevision: actor.principalPolicyRevision,
+            scopeFingerprint: actor.idempotencyScopeFingerprint,
+          },
+        );
+      } catch (error) {
+        const code =
+          error instanceof Error
+            ? String((error as Error & { code?: string }).code ?? error.message)
+            : "BOOTSTRAP_CONTEXT_FAILED";
+        if (code === "SESSION_NOT_FOUND") {
+          return reply.code(404).send({ code });
+        }
+        if (
+          code === "CONTEXT_REVISION_CHANGED" ||
+          code === "CONTEXT_REVISION_PIN_REQUIRED"
+        ) {
+          return reply.code(409).send({ code });
+        }
+        throw error;
+      }
       workspaceTelemetry.counter("akp.workspace.bootstrap_total", 1, {
         mode: packetMode,
         profileSource: result.knowledgeProfile.source,
