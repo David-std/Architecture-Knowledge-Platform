@@ -35,6 +35,7 @@ import {
   recordReviewApproval,
   resolveProposalReviewPolicy,
   reviewApprovalStatus,
+  reviewPolicyState,
 } from "../review-policy.js";
 import { createReviewDraft } from "../review-draft.js";
 
@@ -78,6 +79,40 @@ async function renewPublicationLock(
   if (!renewed.rowCount) {
     throw new Error("PUBLICATION_LOCK_LOST");
   }
+}
+
+/** `source-summary` is a v0.3 ingest/compiler provenance draft, not a
+ * KnowledgeProfile kind. Only an already-persisted worker review whose
+ * manifest points back to its durable ingest job may retain that legacy
+ * shape while being revised. Direct proposals never reach this boundary. */
+async function isLegacyWorkerSourceSummaryReview(
+  db: Postgres,
+  review: Record<string, unknown>,
+  kinds: readonly string[],
+): Promise<boolean> {
+  if (
+    kinds.length !== 1 ||
+    kinds[0] !== "source-summary" ||
+    reviewPolicyState(review).pinned
+  ) {
+    return false;
+  }
+  const manifest = (review.impact_manifest ?? {}) as Record<string, unknown>;
+  const jobId = typeof manifest.jobId === "string" ? manifest.jobId : "";
+  const spaceId = String(review.space_id ?? "");
+  const vaultId = String(review.vault_id ?? "");
+  const authorId =
+    typeof review.author_id === "string" ? review.author_id : null;
+  if (!jobId || !spaceId || !vaultId) return false;
+  const source = await db.pool.query(
+    `select 1
+       from ingest_jobs
+      where id::text=$1 and space_id=$2 and vault_id=$3
+        and created_by is not distinct from $4::uuid
+      limit 1`,
+    [jobId, spaceId, vaultId, authorId],
+  );
+  return Boolean(source.rowCount);
 }
 
 async function recordPublicationFailure(
@@ -571,7 +606,10 @@ async function reviewVaultAccess(
   actor: ReturnType<typeof actorOf>,
   review: Record<string, unknown>,
   permission:
-    "knowledge:read" | "knowledge:propose" | "knowledge:review" | "admin",
+    | "knowledge:read"
+    | "knowledge:propose"
+    | "knowledge:review"
+    | "admin",
 ): Promise<ReviewVaultAccess | null> {
   if (!actor) return null;
   const spaceId = String(review.space_id);
@@ -602,7 +640,10 @@ async function canAccessReview(
   actor: ReturnType<typeof actorOf>,
   review: Record<string, unknown>,
   permission:
-    "knowledge:read" | "knowledge:propose" | "knowledge:review" | "admin",
+    | "knowledge:read"
+    | "knowledge:propose"
+    | "knowledge:review"
+    | "admin",
 ): Promise<boolean> {
   const access = await reviewVaultAccess(db, actor, review, permission);
   if (!access) return false;
@@ -1041,21 +1082,33 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
         );
       } catch (error) {
         const code = error instanceof Error ? error.message : String(error);
-        if (code.startsWith("COMPILER_PROFILE_KIND_NOT_DECLARED:")) {
+        if (
+          code === "COMPILER_PROFILE_KIND_NOT_DECLARED:source-summary" &&
+          (await isLegacyWorkerSourceSummaryReview(
+            db,
+            review,
+            revisedReviewKinds as string[],
+          ))
+        ) {
+          const legacyState = reviewPolicyState(review);
+          revisedReviewPolicy = {
+            policy: legacyState.policy,
+            pinned: false,
+          };
+        } else if (code.startsWith("COMPILER_PROFILE_KIND_NOT_DECLARED:")) {
           return reply.code(422).send({
             code: "KNOWLEDGE_PROFILE_KIND_NOT_ALLOWED",
             kind: code.split(":")[1] ?? "",
           });
-        }
-        if (code === "COMPILER_REVIEW_POLICY_ROLE_CONFLICT") {
+        } else if (code === "COMPILER_REVIEW_POLICY_ROLE_CONFLICT") {
           return reply
             .code(422)
             .send({ code: "KNOWLEDGE_PROFILE_REVIEW_POLICY_CONFLICT" });
-        }
-        if (code === "ACTIVE_KNOWLEDGE_PROFILE_BINDING_INVALID") {
+        } else if (code === "ACTIVE_KNOWLEDGE_PROFILE_BINDING_INVALID") {
           return reply.code(409).send({ code });
+        } else {
+          throw error;
         }
-        throw error;
       }
 
       const previousManifest = (review.impact_manifest ?? {}) as Record<
