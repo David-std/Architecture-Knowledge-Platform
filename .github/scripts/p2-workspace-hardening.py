@@ -1,0 +1,1087 @@
+from pathlib import Path
+
+
+def replace_between(text: str, start: str, end: str, replacement: str) -> str:
+    if text.count(start) != 1:
+        raise SystemExit(f"anchor changed: {start}")
+    i = text.index(start)
+    j = text.index(end, i)
+    return text[:i] + replacement + text[j:]
+
+
+migration = Path("db/migrations/032_workspace_coordination_hardening.sql")
+migration.write_text(
+    """-- P2 coordination hardening. Preserve migration 031 and evolve the blackboard
+-- with session-local versions, safe lease renewal, and stronger relational invariants.
+alter table agent_sessions
+  add column coordination_version bigint not null default 0;
+alter table agent_sessions
+  add constraint agent_sessions_coordination_version_check
+  check (coordination_version >= 0);
+
+alter table workspace_events
+  add column session_version bigint;
+
+with ranked as (
+  select id,
+         row_number() over (partition by session_id order by id) session_version
+    from workspace_events
+)
+update workspace_events target
+   set session_version=ranked.session_version
+  from ranked
+ where target.id=ranked.id;
+
+update agent_sessions target
+   set coordination_version=coalesce(events.max_version,0)
+  from (
+    select session_id,max(session_version) max_version
+      from workspace_events
+     group by session_id
+  ) events
+ where target.id=events.session_id;
+
+alter table workspace_events
+  alter column session_version set not null;
+create unique index workspace_events_session_version_idx
+  on workspace_events(session_id,session_version);
+
+alter table workspace_events
+  drop constraint if exists workspace_events_event_type_check;
+alter table workspace_events
+  add constraint workspace_events_event_type_check
+  check (
+    event_type in (
+      'SESSION_CREATED',
+      'PARTICIPANT_JOINED',
+      'CLAIM_ACQUIRED',
+      'CLAIM_HEARTBEAT',
+      'CLAIM_HANDOFF',
+      'FINDING',
+      'BLOCKER',
+      'QUESTION',
+      'ARTIFACT',
+      'DECISION_CANDIDATE',
+      'NOTE'
+    )
+  );
+
+alter table workspace_claims
+  add constraint workspace_claims_session_owner_fk
+  foreign key(session_id,owner_id)
+  references workspace_session_participants(session_id,user_id);
+""",
+)
+
+module = Path("packages/postgres/src/workspace-coordination.ts")
+text = module.read_text()
+text = text.replace(
+    'import type { Postgres } from "./index.js";',
+    'import type { Postgres, PostgresPoolClient } from "./index.js";',
+    1,
+)
+text = text.replace(
+    '  | "CLAIM_ACQUIRED"\n  | "CLAIM_HANDOFF"',
+    '  | "CLAIM_ACQUIRED"\n  | "CLAIM_HEARTBEAT"\n  | "CLAIM_HANDOFF"',
+    1,
+)
+text = text.replace(
+    '  contextBudget: number;\n  state: Record<string, unknown>;',
+    '  contextBudget: number;\n  coordinationVersion: number;\n  state: Record<string, unknown>;',
+    1,
+)
+text = text.replace(
+    '    contextBudget: Number(row.context_budget),\n    state:',
+    '    contextBudget: Number(row.context_budget),\n    coordinationVersion: Number(row.coordination_version ?? 0),\n    state:',
+    1,
+)
+
+helpers = '''function assertLeaseSeconds(value: number): void {
+  if (!Number.isSafeInteger(value) || value < 15 || value > 900) {
+    throw workspaceError("INVALID_CLAIM_LEASE", 400);
+  }
+}
+
+async function appendCoordinationEvent(
+  client: PostgresPoolClient,
+  input: {
+    sessionId: string;
+    actorId: string | null;
+    eventType: WorkspaceEventType;
+    payload: Record<string, unknown>;
+    claimId?: string | null;
+  },
+): Promise<Record<string, unknown>> {
+  const bumped = await client.query<Record<string, unknown>>(
+    `update agent_sessions
+        set coordination_version=coordination_version+1,
+            updated_at=now()
+      where id=$1
+      returning space_id,vault_id,coordination_version`,
+    [input.sessionId],
+  );
+  const session = bumped.rows[0];
+  if (!session || !session.vault_id) {
+    throw workspaceError("SESSION_NOT_FOUND", 404);
+  }
+  const inserted = await client.query<Record<string, unknown>>(
+    `insert into workspace_events(
+       session_id,space_id,vault_id,actor_id,claim_id,event_type,payload,session_version
+     ) values($1,$2,$3,$4,$5,$6,$7::jsonb,$8)
+     returning *`,
+    [
+      input.sessionId,
+      session.space_id,
+      session.vault_id,
+      input.actorId,
+      input.claimId ?? null,
+      input.eventType,
+      JSON.stringify(input.payload),
+      session.coordination_version,
+    ],
+  );
+  const row = inserted.rows[0];
+  if (!row) throw workspaceError("WORKSPACE_EVENT_APPEND_FAILED", 500);
+  return row;
+}
+
+'''
+anchor = "export async function createWorkspaceSession("
+if text.count(anchor) != 1:
+    raise SystemExit("create session anchor changed")
+text = text.replace(anchor, helpers + anchor, 1)
+
+create_fn = '''export async function createWorkspaceSession(
+  db: Postgres,
+  input: {
+    spaceId: string;
+    vaultId: string;
+    actorId: string;
+    projectId?: string | null;
+    purpose: string;
+    contextBudget: number;
+  },
+): Promise<WorkspaceSessionAccess> {
+  const client = await db.pool.connect();
+  try {
+    await client.query("begin");
+    const created = await client.query<Record<string, unknown>>(
+      `insert into agent_sessions(
+         space_id,vault_id,actor_id,project_id,purpose,context_budget,state
+       ) values($1,$2,$3,$4,$5,$6,$7::jsonb)
+       returning *`,
+      [
+        input.spaceId,
+        input.vaultId,
+        input.actorId,
+        input.projectId ?? null,
+        input.purpose,
+        input.contextBudget,
+        JSON.stringify({ status: "ACTIVE", createdBy: "api" }),
+      ],
+    );
+    const row = created.rows[0];
+    if (!row) throw workspaceError("WORKSPACE_SESSION_CREATE_FAILED", 500);
+    await client.query(
+      `insert into workspace_session_participants(session_id,user_id,role)
+       values($1,$2,'OWNER')`,
+      [row.id, input.actorId],
+    );
+    const event = await appendCoordinationEvent(client, {
+      sessionId: String(row.id),
+      actorId: input.actorId,
+      eventType: "SESSION_CREATED",
+      payload: { purpose: input.purpose },
+    });
+    await client.query("commit");
+    return normalizeSession({
+      ...row,
+      coordination_version: event.session_version,
+      participant_role: "OWNER",
+    });
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+'''
+text = replace_between(
+    text,
+    "export async function createWorkspaceSession(",
+    "export async function getWorkspaceSessionForParticipant(",
+    create_fn,
+)
+
+add_fn = '''export async function addWorkspaceParticipant(
+  db: Postgres,
+  input: {
+    sessionId: string;
+    actorId: string;
+    userId: string;
+  },
+): Promise<{ joined: boolean; role: WorkspaceParticipantRole }> {
+  const client = await db.pool.connect();
+  try {
+    await client.query("begin");
+    const session = await client.query<Record<string, unknown>>(
+      `select p.role
+         from agent_sessions s
+         join workspace_session_participants p
+           on p.session_id=s.id and p.user_id=$2 and p.left_at is null
+        where s.id=$1
+        for update of s`,
+      [input.sessionId, input.actorId],
+    );
+    const actor = session.rows[0];
+    if (!actor) throw workspaceError("SESSION_NOT_FOUND", 404);
+    if (actor.role !== "OWNER") {
+      throw workspaceError("WORKSPACE_SESSION_OWNER_REQUIRED", 403);
+    }
+    const existing = await client.query<Record<string, unknown>>(
+      `select role,left_at
+         from workspace_session_participants
+        where session_id=$1 and user_id=$2
+        for update`,
+      [input.sessionId, input.userId],
+    );
+    const current = existing.rows[0];
+    if (current && current.left_at === null) {
+      await client.query("commit");
+      return {
+        joined: false,
+        role: String(current.role) as WorkspaceParticipantRole,
+      };
+    }
+    let role: WorkspaceParticipantRole = "PARTICIPANT";
+    if (current) {
+      const rejoined = await client.query<Record<string, unknown>>(
+        `update workspace_session_participants
+            set left_at=null,
+                joined_at=now(),
+                role=case when role='OWNER' then 'OWNER' else 'PARTICIPANT' end
+          where session_id=$1 and user_id=$2
+          returning role`,
+        [input.sessionId, input.userId],
+      );
+      role = String(
+        rejoined.rows[0]?.role ?? "PARTICIPANT",
+      ) as WorkspaceParticipantRole;
+    } else {
+      await client.query(
+        `insert into workspace_session_participants(session_id,user_id,role,left_at)
+         values($1,$2,'PARTICIPANT',null)`,
+        [input.sessionId, input.userId],
+      );
+    }
+    await appendCoordinationEvent(client, {
+      sessionId: input.sessionId,
+      actorId: input.actorId,
+      eventType: "PARTICIPANT_JOINED",
+      payload: { userId: input.userId, role },
+    });
+    await client.query("commit");
+    return { joined: true, role };
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+'''
+text = replace_between(
+    text,
+    "export async function addWorkspaceParticipant(",
+    "export async function claimWorkspaceWork(",
+    add_fn,
+)
+
+claim_fn = '''export async function claimWorkspaceWork(
+  db: Postgres,
+  input: {
+    sessionId: string;
+    actorId: string;
+    workKey: string;
+    leaseSeconds: number;
+  },
+): Promise<WorkspaceClaim> {
+  assertLeaseSeconds(input.leaseSeconds);
+  const client = await db.pool.connect();
+  try {
+    await client.query("begin");
+    const session = await client.query(
+      `select 1
+         from agent_sessions s
+         join workspace_session_participants p
+           on p.session_id=s.id and p.user_id=$2 and p.left_at is null
+        where s.id=$1`,
+      [input.sessionId, input.actorId],
+    );
+    if (!session.rowCount) throw workspaceError("SESSION_NOT_FOUND", 404);
+    const claimed = await client.query<Record<string, unknown>>(
+      `insert into workspace_claims(
+         session_id,work_key,owner_id,status,fencing_token,lease_expires_at,version
+       ) values(
+         $1,$2,$3,'ACTIVE',1,now()+make_interval(secs => $4),1
+       )
+       on conflict(session_id,work_key) do update set
+         owner_id=excluded.owner_id,
+         status='ACTIVE',
+         fencing_token=workspace_claims.fencing_token+1,
+         lease_expires_at=excluded.lease_expires_at,
+         version=workspace_claims.version+1,
+         updated_at=now()
+       where workspace_claims.status<>'ACTIVE'
+          or workspace_claims.lease_expires_at<=now()
+       returning *`,
+      [input.sessionId, input.workKey, input.actorId, input.leaseSeconds],
+    );
+    const row = claimed.rows[0];
+    if (!row) throw workspaceError("WORK_CLAIM_HELD", 409);
+    await appendCoordinationEvent(client, {
+      sessionId: input.sessionId,
+      actorId: input.actorId,
+      claimId: String(row.id),
+      eventType: "CLAIM_ACQUIRED",
+      payload: {
+        workKey: input.workKey,
+        fencingToken: Number(row.fencing_token),
+        leaseExpiresAt: row.lease_expires_at,
+      },
+    });
+    await client.query("commit");
+    return normalizeClaim(row);
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function heartbeatWorkspaceWork(
+  db: Postgres,
+  input: {
+    sessionId: string;
+    actorId: string;
+    workKey: string;
+    fencingToken: number;
+    leaseSeconds: number;
+  },
+): Promise<WorkspaceClaim> {
+  assertLeaseSeconds(input.leaseSeconds);
+  const client = await db.pool.connect();
+  try {
+    await client.query("begin");
+    const participant = await client.query(
+      `select 1
+         from workspace_session_participants
+        where session_id=$1 and user_id=$2 and left_at is null`,
+      [input.sessionId, input.actorId],
+    );
+    if (!participant.rowCount) throw workspaceError("SESSION_NOT_FOUND", 404);
+    const updated = await client.query<Record<string, unknown>>(
+      `update workspace_claims
+          set lease_expires_at=now()+make_interval(secs => $5),
+              version=version+1,
+              updated_at=now()
+        where session_id=$1
+          and work_key=$2
+          and owner_id=$3
+          and fencing_token=$4
+          and status='ACTIVE'
+          and lease_expires_at>now()
+        returning *`,
+      [
+        input.sessionId,
+        input.workKey,
+        input.actorId,
+        input.fencingToken,
+        input.leaseSeconds,
+      ],
+    );
+    const row = updated.rows[0];
+    if (!row) throw workspaceError("WORK_CLAIM_FENCE_STALE", 409);
+    await appendCoordinationEvent(client, {
+      sessionId: input.sessionId,
+      actorId: input.actorId,
+      claimId: String(row.id),
+      eventType: "CLAIM_HEARTBEAT",
+      payload: {
+        workKey: input.workKey,
+        fencingToken: Number(row.fencing_token),
+        leaseExpiresAt: row.lease_expires_at,
+      },
+    });
+    await client.query("commit");
+    return normalizeClaim(row);
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+'''
+text = replace_between(
+    text,
+    "export async function claimWorkspaceWork(",
+    "export async function handoffWorkspaceWork(",
+    claim_fn,
+)
+
+handoff_fn = '''export async function handoffWorkspaceWork(
+  db: Postgres,
+  input: {
+    sessionId: string;
+    actorId: string;
+    workKey: string;
+    toUserId: string;
+    fencingToken: number;
+    leaseSeconds: number;
+    note?: string;
+  },
+): Promise<WorkspaceClaim> {
+  assertLeaseSeconds(input.leaseSeconds);
+  if (input.toUserId === input.actorId) {
+    throw workspaceError("WORKSPACE_HANDOFF_SELF", 400);
+  }
+  const client = await db.pool.connect();
+  try {
+    await client.query("begin");
+    const session = await client.query(
+      `select 1
+         from agent_sessions s
+         join workspace_session_participants actor
+           on actor.session_id=s.id
+          and actor.user_id=$2
+          and actor.left_at is null
+         join workspace_session_participants target
+           on target.session_id=s.id
+          and target.user_id=$3
+          and target.left_at is null
+        where s.id=$1`,
+      [input.sessionId, input.actorId, input.toUserId],
+    );
+    if (!session.rowCount) {
+      throw workspaceError("WORKSPACE_HANDOFF_PARTICIPANT_REQUIRED", 422);
+    }
+    const current = await client.query<Record<string, unknown>>(
+      `select *
+         from workspace_claims
+        where session_id=$1 and work_key=$2
+        for update`,
+      [input.sessionId, input.workKey],
+    );
+    const currentRow = current.rows[0];
+    if (
+      !currentRow ||
+      currentRow.status !== "ACTIVE" ||
+      String(currentRow.owner_id) !== input.actorId ||
+      Number(currentRow.fencing_token) !== input.fencingToken
+    ) {
+      throw workspaceError("WORK_CLAIM_FENCE_STALE", 409);
+    }
+    const previousFencingToken = Number(currentRow.fencing_token);
+    const updated = await client.query<Record<string, unknown>>(
+      `update workspace_claims
+          set owner_id=$4,
+              fencing_token=fencing_token+1,
+              lease_expires_at=now()+make_interval(secs => $5),
+              version=version+1,
+              updated_at=now()
+        where session_id=$1
+          and work_key=$2
+          and owner_id=$3
+          and fencing_token=$6
+          and status='ACTIVE'
+          and lease_expires_at>now()
+        returning *`,
+      [
+        input.sessionId,
+        input.workKey,
+        input.actorId,
+        input.toUserId,
+        input.leaseSeconds,
+        input.fencingToken,
+      ],
+    );
+    const row = updated.rows[0];
+    if (!row) throw workspaceError("WORK_CLAIM_FENCE_STALE", 409);
+    await appendCoordinationEvent(client, {
+      sessionId: input.sessionId,
+      actorId: input.actorId,
+      claimId: String(row.id),
+      eventType: "CLAIM_HANDOFF",
+      payload: {
+        workKey: input.workKey,
+        fromUserId: input.actorId,
+        toUserId: input.toUserId,
+        previousFencingToken,
+        fencingToken: Number(row.fencing_token),
+        ...(input.note ? { note: input.note } : {}),
+      },
+    });
+    await client.query("commit");
+    return normalizeClaim(row);
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+'''
+text = replace_between(
+    text,
+    "export async function handoffWorkspaceWork(",
+    "export async function appendWorkspaceEvent(",
+    handoff_fn,
+)
+
+append_fn = '''export async function appendWorkspaceEvent(
+  db: Postgres,
+  input: {
+    sessionId: string;
+    actorId: string;
+    eventType: Exclude<
+      WorkspaceEventType,
+      | "SESSION_CREATED"
+      | "PARTICIPANT_JOINED"
+      | "CLAIM_ACQUIRED"
+      | "CLAIM_HEARTBEAT"
+      | "CLAIM_HANDOFF"
+    >;
+    payload: Record<string, unknown>;
+  },
+): Promise<Record<string, unknown>> {
+  const client = await db.pool.connect();
+  try {
+    await client.query("begin");
+    const participant = await client.query(
+      `select 1
+         from workspace_session_participants
+        where session_id=$1 and user_id=$2 and left_at is null`,
+      [input.sessionId, input.actorId],
+    );
+    if (!participant.rowCount) throw workspaceError("SESSION_NOT_FOUND", 404);
+    const row = await appendCoordinationEvent(client, {
+      sessionId: input.sessionId,
+      actorId: input.actorId,
+      eventType: input.eventType,
+      payload: input.payload,
+    });
+    await client.query("commit");
+    return row;
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+'''
+text = replace_between(
+    text,
+    "export async function appendWorkspaceEvent(",
+    "export async function workspaceSessionSnapshot(",
+    append_fn,
+)
+
+snapshot_fn = '''export async function workspaceSessionSnapshot(
+  db: Postgres,
+  sessionId: string,
+  userId: string,
+): Promise<{
+  session: WorkspaceSessionAccess;
+  participants: Record<string, unknown>[];
+  claims: WorkspaceClaim[];
+  events: Record<string, unknown>[];
+  snapshotVersion: number;
+  eventWindow: {
+    total: number;
+    returned: number;
+    truncated: boolean;
+    oldestVersion: number | null;
+    latestVersion: number | null;
+  };
+} | null> {
+  const client = await db.pool.connect();
+  try {
+    await client.query("begin isolation level repeatable read read only");
+    const sessionResult = await client.query<Record<string, unknown>>(
+      `select s.*,p.role participant_role
+         from agent_sessions s
+         join workspace_session_participants p
+           on p.session_id=s.id and p.user_id=$2 and p.left_at is null
+        where s.id=$1`,
+      [sessionId, userId],
+    );
+    const sessionRow = sessionResult.rows[0];
+    if (!sessionRow) {
+      await client.query("rollback");
+      return null;
+    }
+    const participants = await client.query<Record<string, unknown>>(
+      `select user_id,role,joined_at
+         from workspace_session_participants
+        where session_id=$1 and left_at is null
+        order by joined_at,user_id`,
+      [sessionId],
+    );
+    const claims = await client.query<Record<string, unknown>>(
+      `select *
+         from workspace_claims
+        where session_id=$1
+        order by work_key`,
+      [sessionId],
+    );
+    const events = await client.query<Record<string, unknown>>(
+      `select *,count(*) over() total_count
+         from workspace_events
+        where session_id=$1
+        order by session_version desc
+        limit 500`,
+      [sessionId],
+    );
+    await client.query("commit");
+    const orderedEvents = [...events.rows].reverse();
+    const total = Number(events.rows[0]?.total_count ?? 0);
+    const cleanEvents = orderedEvents.map((event) => {
+      const { total_count: _totalCount, ...rest } = event;
+      return rest;
+    });
+    const oldestVersion = cleanEvents.length
+      ? Number(cleanEvents[0]?.session_version)
+      : null;
+    const latestVersion = cleanEvents.length
+      ? Number(cleanEvents[cleanEvents.length - 1]?.session_version)
+      : null;
+    const session = normalizeSession(sessionRow);
+    return {
+      session,
+      participants: participants.rows,
+      claims: claims.rows.map(normalizeClaim),
+      events: cleanEvents,
+      snapshotVersion: session.coordinationVersion,
+      eventWindow: {
+        total,
+        returned: cleanEvents.length,
+        truncated: total > cleanEvents.length,
+        oldestVersion,
+        latestVersion,
+      },
+    };
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+'''
+start = "export async function workspaceSessionSnapshot("
+if text.count(start) != 1:
+    raise SystemExit("snapshot anchor changed")
+text = text[: text.index(start)] + snapshot_fn
+module.write_text(text)
+
+sessions = Path("apps/api/src/routes/sessions.ts")
+text = sessions.read_text()
+old = '''  if (!session) {
+    await reply.code(404).send({ code: "SESSION_NOT_FOUND" });
+    return null;
+  }
+  try {
+'''
+new = '''  if (!session) {
+    await reply.code(404).send({ code: "SESSION_NOT_FOUND" });
+    return null;
+  }
+  if (
+    !unrestrictedSpaceIdsForPermission(actor, "knowledge:read").includes(
+      session.spaceId,
+    )
+  ) {
+    await reply.code(404).send({ code: "SESSION_NOT_FOUND" });
+    return null;
+  }
+  try {
+'''
+if text.count(old) != 1:
+    raise SystemExit("authorizedSession scope anchor changed")
+text = text.replace(old, new, 1)
+text = text.replace(
+    "  handoffWorkspaceWork,\n  listWorkspaceSessionsForParticipant,",
+    "  handoffWorkspaceWork,\n  heartbeatWorkspaceWork,\n  listWorkspaceSessionsForParticipant,",
+    1,
+)
+old = '''      await addWorkspaceParticipant(db, {
+        sessionId: session.id,
+        actorId: actor.id,
+        userId,
+      });
+'''
+new = '''      const participant = await addWorkspaceParticipant(db, {
+        sessionId: session.id,
+        actorId: actor.id,
+        userId,
+      });
+'''
+if text.count(old) != 1:
+    raise SystemExit("participant add anchor changed")
+text = text.replace(old, new, 1)
+old = '      return reply.code(201).send({ sessionId: session.id, userId });\n'
+new = '''      return reply
+        .code(participant.joined ? 201 : 200)
+        .send({ sessionId: session.id, userId, ...participant });
+'''
+if text.count(old) != 1:
+    raise SystemExit("participant response anchor changed")
+text = text.replace(old, new, 1)
+
+handoff_anchor = '''  app.post<{
+    Params: { id: string };
+    Body: {
+      workKey: string;
+      toUserId: string;
+'''
+heartbeat_route = '''  app.post<{
+    Params: { id: string };
+    Body: {
+      workKey: string;
+      fencingToken: number;
+      leaseSeconds?: number;
+    };
+  }>(
+    "/v1/sessions/:id/claims/heartbeat",
+    { preHandler: requirePermission("knowledge:read") },
+    async (request, reply) => {
+      const session = await authorizedSession(
+        db,
+        request,
+        reply,
+        request.params.id,
+      );
+      if (!session) return;
+      const actor = actorOf(request);
+      if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
+      const workKey = request.body?.workKey?.trim();
+      if (!workKey || !WORK_KEY_PATTERN.test(workKey)) {
+        return reply.code(400).send({ code: "INVALID_WORK_KEY" });
+      }
+      const fencingToken = Number(request.body.fencingToken);
+      if (!Number.isSafeInteger(fencingToken) || fencingToken < 1) {
+        return reply.code(400).send({ code: "INVALID_FENCING_TOKEN" });
+      }
+      const leaseSeconds = boundedLeaseSeconds(request.body.leaseSeconds);
+      if (!leaseSeconds) {
+        return reply.code(400).send({ code: "INVALID_CLAIM_LEASE" });
+      }
+      const claim = await heartbeatWorkspaceWork(db, {
+        sessionId: session.id,
+        actorId: actor.id,
+        workKey,
+        fencingToken,
+        leaseSeconds,
+      });
+      await audit(
+        db,
+        request,
+        "workspace.claim.heartbeat",
+        "agent_session",
+        session.id,
+        {
+          vaultId: session.vaultId,
+          claimId: claim.id,
+          workKey,
+          fencingToken: claim.fencingToken,
+        },
+        session.spaceId,
+      );
+      return claim;
+    },
+  );
+
+'''
+if text.count(handoff_anchor) != 1:
+    raise SystemExit("handoff route anchor changed")
+text = text.replace(handoff_anchor, heartbeat_route + handoff_anchor, 1)
+sessions.write_text(text)
+
+test = Path("apps/api/test/workspace-coordination.integration.test.ts")
+text = test.read_text()
+text = text.replace(
+    'import { Postgres, grantVaultMembership } from "@akp/postgres";',
+    'import { Postgres, claimWorkspaceWork, grantVaultMembership } from "@akp/postgres";',
+    1,
+)
+text = text.replace(
+    'const actorBToken = `workspace-b-${randomUUID()}`;\n',
+    'const actorBToken = `workspace-b-${randomUUID()}`;\nconst actorBNarrowToken = `workspace-b-narrow-${randomUUID()}`;\n',
+    1,
+)
+text = text.replace(
+    'const actorBHeaders = { authorization: `Bearer ${actorBToken}` };\n',
+    'const actorBHeaders = { authorization: `Bearer ${actorBToken}` };\nconst actorBNarrowHeaders = { authorization: `Bearer ${actorBNarrowToken}` };\n',
+    1,
+)
+old = '''async function insertToken(
+  userId: string,
+  token: string,
+  label: string,
+): Promise<void> {'''
+new = '''async function insertToken(
+  userId: string,
+  token: string,
+  label: string,
+  pathPrefix: string | null = null,
+): Promise<void> {'''
+if text.count(old) != 1:
+    raise SystemExit("token helper anchor changed")
+text = text.replace(old, new, 1)
+text = text.replace("            pathPrefix: null,\n", "            pathPrefix,\n", 1)
+text = text.replace(
+    '  await insertToken(actorBId, actorBToken, "workspace actor b");\n',
+    '  await insertToken(actorBId, actorBToken, "workspace actor b");\n  await insertToken(actorBId, actorBNarrowToken, "workspace actor b narrow", "docs");\n',
+    1,
+)
+text = text.replace(
+    "          tokenHash(actorBToken),\n          tokenHash(outsiderToken),",
+    "          tokenHash(actorBToken),\n          tokenHash(actorBNarrowToken),\n          tokenHash(outsiderToken),",
+    1,
+)
+
+joined_anchor = "    const joined = await app.inject({\n"
+owner_test = '''    const ownerReadd = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/participants`,
+      headers: actorAHeaders,
+      payload: { userId: actorAId },
+    });
+    expect(ownerReadd.statusCode).toBe(200);
+    expect(ownerReadd.json()).toMatchObject({
+      joined: false,
+      role: "OWNER",
+    });
+    const ownerState = await app.inject({
+      method: "GET",
+      url: `/v1/sessions/${sessionId}/state`,
+      headers: actorAHeaders,
+    });
+    expect(ownerState.statusCode).toBe(200);
+    expect(ownerState.json()).toMatchObject({
+      session: { id: sessionId, role: "OWNER" },
+    });
+
+'''
+if text.count(joined_anchor) != 1:
+    raise SystemExit("joined anchor changed")
+text = text.replace(joined_anchor, owner_test + joined_anchor, 1)
+
+outsider_anchor = "    const hiddenFromOutsider = await app.inject({\n"
+narrow_test = '''    const hiddenFromNarrowCredential = await app.inject({
+      method: "GET",
+      url: `/v1/sessions/${sessionId}/state`,
+      headers: actorBNarrowHeaders,
+    });
+    expect(hiddenFromNarrowCredential.statusCode).toBe(404);
+    expect(hiddenFromNarrowCredential.json()).toMatchObject({
+      code: "SESSION_NOT_FOUND",
+    });
+    const narrowList = await app.inject({
+      method: "GET",
+      url: "/v1/sessions",
+      headers: actorBNarrowHeaders,
+    });
+    expect(narrowList.statusCode).toBe(403);
+    expect(narrowList.json()).toMatchObject({ code: "PATH_SCOPE_DENIED" });
+
+'''
+if text.count(outsider_anchor) != 1:
+    raise SystemExit("outsider anchor changed")
+text = text.replace(outsider_anchor, narrow_test + outsider_anchor, 1)
+
+blocked_anchor = "    const blockedB = await app.inject({\n"
+heartbeat_test = '''    await expect(
+      claimWorkspaceWork(db, {
+        sessionId,
+        actorId: actorAId,
+        workKey: "invalid:lease",
+        leaseSeconds: 0,
+      }),
+    ).rejects.toThrow("INVALID_CLAIM_LEASE");
+
+    const duplicateClaim = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/claims`,
+      headers: actorAHeaders,
+      payload: { workKey: "profile:compiler-boundary", leaseSeconds: 120 },
+    });
+    expect(duplicateClaim.statusCode).toBe(409);
+    expect(duplicateClaim.json()).toMatchObject({ code: "WORK_CLAIM_HELD" });
+
+    const heartbeatA = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/claims/heartbeat`,
+      headers: actorAHeaders,
+      payload: {
+        workKey: "profile:compiler-boundary",
+        fencingToken: 1,
+        leaseSeconds: 120,
+      },
+    });
+    expect(heartbeatA.statusCode).toBe(200);
+    expect(heartbeatA.json()).toMatchObject({
+      ownerId: actorAId,
+      fencingToken: 1,
+      version: 2,
+    });
+
+'''
+if text.count(blocked_anchor) != 1:
+    raise SystemExit("blocked B anchor changed")
+text = text.replace(blocked_anchor, heartbeat_test + blocked_anchor, 1)
+
+resume_anchor = "    const resumedByB = await app.inject({\n"
+stale_heartbeat = '''    const staleHeartbeat = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/claims/heartbeat`,
+      headers: actorAHeaders,
+      payload: {
+        workKey: "profile:compiler-boundary",
+        fencingToken: 1,
+        leaseSeconds: 120,
+      },
+    });
+    expect(staleHeartbeat.statusCode).toBe(409);
+    expect(staleHeartbeat.json()).toMatchObject({
+      code: "WORK_CLAIM_FENCE_STALE",
+    });
+
+'''
+if text.count(resume_anchor) != 1:
+    raise SystemExit("resume anchor changed")
+text = text.replace(resume_anchor, stale_heartbeat + resume_anchor, 1)
+text = text.replace(
+    "      session: { id: string; role: string };\n",
+    "      session: { id: string; role: string; coordinationVersion: number };\n",
+    1,
+)
+old = "      events: Array<{ event_type: string; payload: Record<string, unknown> }>;\n    };"
+new = '''      events: Array<{
+        event_type: string;
+        session_version: number;
+        payload: Record<string, unknown>;
+      }>;
+      snapshotVersion: number;
+      eventWindow: {
+        total: number;
+        returned: number;
+        truncated: boolean;
+        oldestVersion: number | null;
+        latestVersion: number | null;
+      };
+    };'''
+if text.count(old) != 1:
+    raise SystemExit("snapshot type anchor changed")
+text = text.replace(old, new, 1)
+
+event_assert = '''    expect(snapshot.events.map((event) => event.event_type)).toEqual(
+      expect.arrayContaining([
+        "SESSION_CREATED",
+        "PARTICIPANT_JOINED",
+        "CLAIM_ACQUIRED",
+        "FINDING",
+        "CLAIM_HANDOFF",
+      ]),
+    );
+'''
+event_assert_new = event_assert + '''    expect(
+      snapshot.events.filter((event) => event.event_type === "PARTICIPANT_JOINED"),
+    ).toHaveLength(1);
+    expect(snapshot.events.map((event) => event.event_type)).toContain(
+      "CLAIM_HEARTBEAT",
+    );
+    expect(snapshot.snapshotVersion).toBe(snapshot.session.coordinationVersion);
+    expect(snapshot.eventWindow.latestVersion).toBe(snapshot.snapshotVersion);
+'''
+if text.count(event_assert) != 1:
+    raise SystemExit("event assertion anchor changed")
+text = text.replace(event_assert, event_assert_new, 1)
+
+canonical_anchor = "    const canonicalAfter = await db.pool.query<{\n"
+tail_test = '''    const stressClient = await db.pool.connect();
+    try {
+      await stressClient.query("begin");
+      const current = await stressClient.query<{ coordination_version: number }>(
+        "select coordination_version from agent_sessions where id=$1 for update",
+        [sessionId],
+      );
+      const baseVersion = Number(current.rows[0]?.coordination_version ?? 0);
+      await stressClient.query(
+        `insert into workspace_events(
+           session_id,space_id,vault_id,actor_id,event_type,payload,session_version
+         )
+         select $1,$2,$3,$4,'NOTE',jsonb_build_object('sequence',g),$5+g
+           from generate_series(1,505) g`,
+        [sessionId, spaceId, vaultId, actorBId, baseVersion],
+      );
+      await stressClient.query(
+        `update agent_sessions
+            set coordination_version=$2,updated_at=now()
+          where id=$1`,
+        [sessionId, baseVersion + 505],
+      );
+      await stressClient.query("commit");
+    } catch (error) {
+      await stressClient.query("rollback");
+      throw error;
+    } finally {
+      stressClient.release();
+    }
+
+    const tailed = await app.inject({
+      method: "GET",
+      url: `/v1/sessions/${sessionId}/state`,
+      headers: actorBHeaders,
+    });
+    expect(tailed.statusCode).toBe(200);
+    const tailSnapshot = tailed.json() as {
+      snapshotVersion: number;
+      events: Array<{ event_type: string; payload: { sequence?: number } }>;
+      eventWindow: {
+        total: number;
+        returned: number;
+        truncated: boolean;
+        oldestVersion: number | null;
+        latestVersion: number | null;
+      };
+    };
+    expect(tailSnapshot.eventWindow.returned).toBe(500);
+    expect(tailSnapshot.eventWindow.truncated).toBe(true);
+    expect(tailSnapshot.eventWindow.total).toBeGreaterThan(500);
+    expect(tailSnapshot.eventWindow.latestVersion).toBe(
+      tailSnapshot.snapshotVersion,
+    );
+    expect(tailSnapshot.events[0]).toMatchObject({
+      event_type: "NOTE",
+      payload: { sequence: 6 },
+    });
+    expect(tailSnapshot.events.at(-1)).toMatchObject({
+      event_type: "NOTE",
+      payload: { sequence: 505 },
+    });
+
+'''
+if text.count(canonical_anchor) != 1:
+    raise SystemExit("canonical anchor changed")
+text = text.replace(canonical_anchor, tail_test + canonical_anchor, 1)
+test.write_text(text)
