@@ -251,8 +251,9 @@ export async function createWorkspaceSession(
       input.vaultId,
     );
     await client.query(
-      `insert into workspace_session_participants(session_id,user_id,role)
-       values($1,$2,'OWNER')`,
+      `insert into workspace_session_participants(
+         session_id,user_id,role,last_seen_at
+       ) values($1,$2,'OWNER',now())`,
       [row.id, input.actorId],
     );
     const event = await appendCoordinationEvent(client, {
@@ -369,6 +370,8 @@ export async function addWorkspaceParticipant(
         `update workspace_session_participants
             set left_at=null,
                 joined_at=now(),
+                last_seen_at=now(),
+                presence_expires_at=null,
                 role=case when role='OWNER' then 'OWNER' else 'PARTICIPANT' end
           where session_id=$1 and user_id=$2
           returning role`,
@@ -379,8 +382,9 @@ export async function addWorkspaceParticipant(
       ) as WorkspaceParticipantRole;
     } else {
       await client.query(
-        `insert into workspace_session_participants(session_id,user_id,role,left_at)
-         values($1,$2,'PARTICIPANT',null)`,
+        `insert into workspace_session_participants(
+           session_id,user_id,role,left_at,last_seen_at
+         ) values($1,$2,'PARTICIPANT',null,now())`,
         [input.sessionId, input.userId],
       );
     }
@@ -815,11 +819,7 @@ export async function workspacePromotionEvidence(
           and id=any($2::uuid[])
           and event_type=any($3::text[])
         order by session_version`,
-      [
-        input.sessionId,
-        uniqueIds,
-        PROMOTABLE_WORKSPACE_EVENT_TYPES,
-      ],
+      [input.sessionId, uniqueIds, PROMOTABLE_WORKSPACE_EVENT_TYPES],
     );
     if (events.rowCount !== uniqueIds.length) {
       throw workspaceError("PROMOTION_EVIDENCE_NOT_FOUND", 404);

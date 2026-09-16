@@ -89,6 +89,30 @@ describe("workspace presence", () => {
     expect(created.statusCode).toBe(201);
     const sessionId = (created.json() as { id: string }).id;
 
+    const initialPresence = await app.inject({
+      method: "GET",
+      url: `/v1/sessions/${sessionId}/presence`,
+      headers,
+    });
+    expect(initialPresence.statusCode).toBe(200);
+    expect(
+      (
+        initialPresence.json() as {
+          participants: Array<{
+            userId: string;
+            lastSeenAt: string;
+            online: boolean;
+          }>;
+        }
+      ).participants,
+    ).toContainEqual(
+      expect.objectContaining({
+        userId: actorId,
+        lastSeenAt: expect.any(String),
+        online: false,
+      }),
+    );
+
     const invalid = await app.inject({
       method: "POST",
       url: `/v1/sessions/${sessionId}/presence/heartbeat`,
@@ -119,9 +143,14 @@ describe("workspace presence", () => {
     });
     expect(listed.statusCode).toBe(200);
     expect(
-      (listed.json() as { participants: Array<{ userId: string; online: boolean }> })
-        .participants,
-    ).toContainEqual(expect.objectContaining({ userId: actorId, online: true }));
+      (
+        listed.json() as {
+          participants: Array<{ userId: string; online: boolean }>;
+        }
+      ).participants,
+    ).toContainEqual(
+      expect.objectContaining({ userId: actorId, online: true }),
+    );
 
     const claims = await db.pool.query<{ count: number }>(
       "select count(*)::int count from workspace_claims where session_id=$1",
