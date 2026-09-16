@@ -30,57 +30,31 @@ jobs:
 
           sessions = Path("apps/api/src/routes/sessions.ts")
           text = sessions.read_text()
-          old = '''      const session = await createWorkspaceSession(db, {
-                spaceId,
-                vaultId,
-                actorId: actor.id,
-                projectId: request.body.projectId,
-                purpose: request.body.purpose.trim(),
-                contextBudget: budget,
-              });'''
-          new = '''      const session = await createWorkspaceSession(db, {
-                spaceId,
-                vaultId,
-                actorId: actor.id,
-                ...(request.body.projectId !== undefined
+          old = "        projectId: request.body.projectId,\n"
+          new = '''        ...(request.body.projectId !== undefined
                   ? { projectId: request.body.projectId }
                   : {}),
-                purpose: request.body.purpose.trim(),
-                contextBudget: budget,
-              });'''
+          '''
           if text.count(old) != 1:
-              raise SystemExit("createWorkspaceSession anchor changed")
+              raise SystemExit("projectId anchor changed")
           text = text.replace(old, new)
 
-          old = '''      const note = request.body.note?.trim();
-              if (note && Buffer.byteLength(note, "utf8") > 2048) {
-                return reply.code(413).send({ code: "HANDOFF_NOTE_TOO_LARGE" });
-              }
-              const claim = await handoffWorkspaceWork(db, {'''
-          new = '''      const note = request.body.note?.trim();
-              if (note && Buffer.byteLength(note, "utf8") > 2048) {
-                return reply.code(413).send({ code: "HANDOFF_NOTE_TOO_LARGE" });
-              }
-              if (!(await userHasFullVaultRead(db, toUserId, session))) {
+          old = "      const claim = await handoffWorkspaceWork(db, {\n"
+          new = '''      if (!(await userHasFullVaultRead(db, toUserId, session))) {
                 return reply
                   .code(422)
                   .send({ code: "PARTICIPANT_NOT_AUTHORIZED" });
               }
-              const claim = await handoffWorkspaceWork(db, {'''
+              const claim = await handoffWorkspaceWork(db, {
+          '''
           if text.count(old) != 1:
               raise SystemExit("handoff authorization anchor changed")
           sessions.write_text(text.replace(old, new))
 
           test = Path("apps/api/test/workspace-coordination.integration.test.ts")
           text = test.read_text()
-          old = '''    expect(finding.statusCode).toBe(201);
-              expect(finding.json()).toMatchObject({ event_type: "FINDING" });
-
-              const handedOff = await app.inject({'''
-          new = '''    expect(finding.statusCode).toBe(201);
-              expect(finding.json()).toMatchObject({ event_type: "FINDING" });
-
-              await db.pool.query(
+          old = "    const handedOff = await app.inject({\n"
+          new = '''    await db.pool.query(
                 `update vault_memberships
                     set enabled=false
                   where user_id=$1 and vault_id=$2`,
@@ -116,7 +90,8 @@ jobs:
                 [actorBId, vaultId],
               );
 
-              const handedOff = await app.inject({'''
+              const handedOff = await app.inject({
+          '''
           if text.count(old) != 1:
               raise SystemExit("revocation test anchor changed")
           test.write_text(text.replace(old, new))
