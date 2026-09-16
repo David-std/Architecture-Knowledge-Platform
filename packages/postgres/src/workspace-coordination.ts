@@ -5,6 +5,7 @@ import {
   workspaceContextRevisionState,
   type ContextRevisionSet,
 } from "./context-revision-set.js";
+import { appendOutboxEvent, type IntegrationEventType } from "./outbox.js";
 
 export type WorkspaceParticipantRole = "OWNER" | "PARTICIPANT";
 export const PROMOTABLE_WORKSPACE_EVENT_TYPES = [
@@ -27,6 +28,33 @@ export type WorkspaceEventType =
   | "DECISION_CANDIDATE"
   | "PROMOTION_REQUESTED"
   | "NOTE";
+
+export type WorkspaceUserEventType = Exclude<
+  WorkspaceEventType,
+  | "SESSION_CREATED"
+  | "PARTICIPANT_JOINED"
+  | "CLAIM_ACQUIRED"
+  | "CLAIM_HEARTBEAT"
+  | "CLAIM_HANDOFF"
+>;
+
+function workspaceIntegrationEventType(
+  eventType: WorkspaceEventType,
+): IntegrationEventType | null {
+  switch (eventType) {
+    case "SESSION_CREATED":
+      return "WorkspaceSessionCreated";
+    case "CLAIM_ACQUIRED":
+    case "CLAIM_HEARTBEAT":
+      return "WorkspaceClaimUpdated";
+    case "CLAIM_HANDOFF":
+      return "WorkspaceHandoffCreated";
+    case "PROMOTION_REQUESTED":
+      return "WorkspacePromotionRequested";
+    default:
+      return null;
+  }
+}
 
 export interface WorkspaceSessionAccess {
   id: string;
@@ -210,6 +238,35 @@ async function appendCoordinationEvent(
   );
   const row = inserted.rows[0];
   if (!row) throw workspaceError("WORKSPACE_EVENT_APPEND_FAILED", 500);
+  const integrationEventType = workspaceIntegrationEventType(input.eventType);
+  if (integrationEventType) {
+    const organization = await client.query<{ organization_id: string }>(
+      "select organization_id from spaces where id=$1",
+      [String(session.space_id)],
+    );
+    const organizationId = organization.rows[0]?.organization_id;
+    if (!organizationId) {
+      throw workspaceError("WORKSPACE_EVENT_ORGANIZATION_NOT_FOUND", 500);
+    }
+    await appendOutboxEvent(client, {
+      eventType: integrationEventType,
+      resourceId: `workspace-event:${String(row.id)}`,
+      organizationId,
+      spaceId: String(session.space_id),
+      vaultId: String(session.vault_id),
+      correlationId: input.sessionId,
+      causationId: input.claimId ?? null,
+      payload: {
+        sessionId: input.sessionId,
+        workspaceEventId: String(row.id),
+        sessionVersion: Number(row.session_version),
+        workspaceEventType: input.eventType,
+        actorId: input.actorId,
+        claimId: input.claimId ?? null,
+        data: input.payload,
+      },
+    });
+  }
   return row;
 }
 
@@ -703,52 +760,52 @@ export async function handoffWorkspaceWork(
   }
 }
 
+export async function appendWorkspaceEventInTransaction(
+  client: PostgresPoolClient,
+  input: {
+    sessionId: string;
+    actorId: string;
+    eventType: WorkspaceUserEventType;
+    payload: Record<string, unknown>;
+  },
+): Promise<Record<string, unknown>> {
+  const participant = await client.query(
+    `select 1
+       from workspace_session_participants
+      where session_id=$1 and user_id=$2 and left_at is null`,
+    [input.sessionId, input.actorId],
+  );
+  if (!participant.rowCount) throw workspaceError("SESSION_NOT_FOUND", 404);
+  const sessionScope = await client.query<{
+    space_id: string;
+    vault_id: string;
+  }>("select space_id,vault_id from agent_sessions where id=$1", [
+    input.sessionId,
+  ]);
+  const scope = sessionScope.rows[0];
+  if (!scope?.vault_id) throw workspaceError("SESSION_NOT_FOUND", 404);
+  await assertWorkspaceContextRevisionCurrent(
+    client,
+    input.sessionId,
+    scope.space_id,
+    scope.vault_id,
+  );
+  return appendCoordinationEvent(client, input);
+}
+
 export async function appendWorkspaceEvent(
   db: Postgres,
   input: {
     sessionId: string;
     actorId: string;
-    eventType: Exclude<
-      WorkspaceEventType,
-      | "SESSION_CREATED"
-      | "PARTICIPANT_JOINED"
-      | "CLAIM_ACQUIRED"
-      | "CLAIM_HEARTBEAT"
-      | "CLAIM_HANDOFF"
-    >;
+    eventType: WorkspaceUserEventType;
     payload: Record<string, unknown>;
   },
 ): Promise<Record<string, unknown>> {
   const client = await db.pool.connect();
   try {
     await client.query("begin");
-    const participant = await client.query(
-      `select 1
-         from workspace_session_participants
-        where session_id=$1 and user_id=$2 and left_at is null`,
-      [input.sessionId, input.actorId],
-    );
-    if (!participant.rowCount) throw workspaceError("SESSION_NOT_FOUND", 404);
-    const sessionScope = await client.query<{
-      space_id: string;
-      vault_id: string;
-    }>("select space_id,vault_id from agent_sessions where id=$1", [
-      input.sessionId,
-    ]);
-    const scope = sessionScope.rows[0];
-    if (!scope?.vault_id) throw workspaceError("SESSION_NOT_FOUND", 404);
-    await assertWorkspaceContextRevisionCurrent(
-      client,
-      input.sessionId,
-      scope.space_id,
-      scope.vault_id,
-    );
-    const row = await appendCoordinationEvent(client, {
-      sessionId: input.sessionId,
-      actorId: input.actorId,
-      eventType: input.eventType,
-      payload: input.payload,
-    });
+    const row = await appendWorkspaceEventInTransaction(client, input);
     await client.query("commit");
     return row;
   } catch (error) {
@@ -801,18 +858,13 @@ export async function workspacePromotionEvidence(
       String(sessionRow.space_id),
       String(sessionRow.vault_id),
     );
-    const malformedId = uniqueIds.some(
-      (id) =>
-        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-          id,
-        ),
-    );
+    const malformedId = uniqueIds.some((id) => !/^[1-9][0-9]*$/.test(id));
     if (malformedId) throw workspaceError("PROMOTION_EVIDENCE_INVALID", 400);
     const events = await client.query<Record<string, unknown>>(
       `select *
          from workspace_events
         where session_id=$1
-          and id=any($2::uuid[])
+          and id=any($2::bigint[])
           and event_type=any($3::text[])
         order by session_version`,
       [input.sessionId, uniqueIds, PROMOTABLE_WORKSPACE_EVENT_TYPES],

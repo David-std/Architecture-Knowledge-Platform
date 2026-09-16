@@ -12,6 +12,7 @@ import {
   DEFAULT_AGENT_PROCESS_ACTIONS,
   addWorkspaceParticipant,
   appendWorkspaceEvent,
+  appendWorkspaceEventInTransaction,
   createAgentProcessPrincipalCredential,
   claimWorkspaceWork,
   createWorkspaceSession,
@@ -605,43 +606,21 @@ export function registerSessionRoutes(
         if (lockedReview.rowCount !== 1) {
           throw new Error("PROMOTION_REVIEW_NOT_PENDING");
         }
-        const eventResult = await promotionClient.query<
-          Record<string, unknown>
-        >(
-          `with locked as (
-             select id,coordination_version
-               from agent_sessions
-              where id=$1
-              for update
-           ),
-           bumped as (
-             update agent_sessions s
-                set coordination_version=locked.coordination_version+1,
-                    updated_at=now()
-               from locked
-              where s.id=locked.id
-              returning s.coordination_version
-           )
-           insert into workspace_events(
-             session_id,actor_id,event_type,payload,session_version
-           )
-           select $1,$2,'PROMOTION_REQUESTED',$3::jsonb,bumped.coordination_version
-             from bumped
-           returning *`,
-          [
-            session.id,
-            actor.id,
-            JSON.stringify({
+        const insertedEvent = await appendWorkspaceEventInTransaction(
+          promotionClient,
+          {
+            sessionId: session.id,
+            actorId: actor.id,
+            eventType: "PROMOTION_REQUESTED",
+            payload: {
               reviewId: created.reviewId,
               evidenceEventIds,
               evidenceVersions,
               revisionSetHash: session.contextRevisionSetHash,
               requestedPaths: changes.map((change) => change.path),
-            }),
-          ],
+            },
+          },
         );
-        const insertedEvent = eventResult.rows[0];
-        if (!insertedEvent) throw new Error("PROMOTION_EVENT_APPEND_FAILED");
         const provenanceUpdate = await promotionClient.query(
           `update reviews
               set impact_manifest =
