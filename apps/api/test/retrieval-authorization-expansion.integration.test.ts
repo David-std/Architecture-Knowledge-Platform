@@ -146,6 +146,86 @@ describe("retrieval authorization expansion boundary", () => {
       const db = new Postgres(databaseUrl);
       try {
         await seed(db, current);
+
+        // Keep the regression diagnostic at the actual SQL boundary: if one
+        // of these preconditions fails, the fixture is invalid rather than the
+        // bounded retrieval implementation being allowed to hide the reason.
+        const lexicalPrecondition = await db.pool.query<{
+          lexical_match: boolean;
+          scope_match: boolean;
+          index_current: boolean;
+        }>(
+          `select d.lexical_search_vector @@ plainto_tsquery('simple',$2) lexical_match,
+                  exists (
+                    select 1
+                      from jsonb_to_recordset($3::jsonb)
+                        as authorized_scope(vault_id uuid,path_prefix text)
+                     where authorized_scope.vault_id=d.vault_id
+                       and (
+                         authorized_scope.path_prefix is null
+                         or d.path=authorized_scope.path_prefix
+                         or starts_with(d.path,authorized_scope.path_prefix || '/')
+                       )
+                  ) scope_match,
+                  i.lexical_revision=i.corpus_revision index_current
+             from knowledge_documents d
+             join vault_index_revisions i
+               on i.space_id=d.space_id and i.vault_id=d.vault_id
+            where d.id=$1`,
+          [
+            current.targetId,
+            "authorization clipping",
+            JSON.stringify([
+              { vault_id: current.vaultId, path_prefix: "shared" },
+            ]),
+          ],
+        );
+        expect(lexicalPrecondition.rows[0]).toMatchObject({
+          lexical_match: true,
+          scope_match: true,
+          index_current: true,
+        });
+
+        const scopedCandidates = await db.pool.query<{ id: string }>(
+          `with query as (select plainto_tsquery('simple',$2) terms)
+           select d.id
+             from knowledge_documents d
+             join vault_index_revisions i
+               on i.space_id=d.space_id and i.vault_id=d.vault_id
+              and i.lexical_revision=i.corpus_revision
+             cross join query
+            where d.space_id=$1
+              and d.vault_id=$3
+              and exists (
+                select 1
+                  from jsonb_to_recordset($4::jsonb)
+                    as authorized_scope(vault_id uuid,path_prefix text)
+                 where authorized_scope.vault_id=d.vault_id
+                   and (
+                     authorized_scope.path_prefix is null
+                     or d.path=authorized_scope.path_prefix
+                     or starts_with(d.path,authorized_scope.path_prefix || '/')
+                   )
+              )
+              and d.lifecycle in ('ACTIVE','DISPUTED')
+              and d.refresh_status not in ('STALE_BLOCKED','INVALID')
+              and not (d.layer='resource' or d.type='raw-resource')
+              and d.lexical_search_vector @@ query.terms
+            order by d.id
+            limit 30`,
+          [
+            current.spaceId,
+            "authorization clipping",
+            current.vaultId,
+            JSON.stringify([
+              { vault_id: current.vaultId, path_prefix: "shared" },
+            ]),
+          ],
+        );
+        expect(scopedCandidates.rows.map((row) => row.id)).toEqual([
+          current.targetId,
+        ]);
+
         const hits = await queryKnowledge(
           db,
           {
