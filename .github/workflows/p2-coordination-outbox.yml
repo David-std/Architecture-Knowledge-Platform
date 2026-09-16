@@ -1,0 +1,96 @@
+name: p2-coordination-outbox
+
+on:
+  push:
+    branches:
+      - batch/p2-coordination-outbox-20260916
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Bind coordination lifecycle to transactional outbox
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: Path, old: str, new: str, label: str) -> None:
+              text = path.read_text()
+              if old not in text:
+                  raise SystemExit(f'{label} target not found in {path}')
+              path.write_text(text.replace(old, new, 1))
+
+          workspace = Path('packages/postgres/src/workspace-coordination.ts')
+          replace_once(
+              workspace,
+              '''} from "./context-revision-set.js";\n''',
+              '''} from "./context-revision-set.js";\nimport { appendOutboxEvent, type IntegrationEventType } from "./outbox.js";\n''',
+              'outbox import',
+          )
+          replace_once(
+              workspace,
+              '''  | "PROMOTION_REQUESTED"\n  | "NOTE";\n\nexport interface WorkspaceSessionAccess {''',
+              '''  | "PROMOTION_REQUESTED"\n  | "NOTE";\n\nfunction workspaceIntegrationEventType(\n  eventType: WorkspaceEventType,\n): IntegrationEventType | null {\n  switch (eventType) {\n    case "SESSION_CREATED":\n      return "WorkspaceSessionCreated";\n    case "CLAIM_ACQUIRED":\n    case "CLAIM_HEARTBEAT":\n      return "WorkspaceClaimUpdated";\n    case "CLAIM_HANDOFF":\n      return "WorkspaceHandoffCreated";\n    case "PROMOTION_REQUESTED":\n      return "WorkspacePromotionRequested";\n    default:\n      return null;\n  }\n}\n\nexport interface WorkspaceSessionAccess {''',
+              'integration event mapping',
+          )
+          replace_once(
+              workspace,
+              '''  const row = inserted.rows[0];\n  if (!row) throw workspaceError("WORKSPACE_EVENT_APPEND_FAILED", 500);\n  return row;\n}\n''',
+              '''  const row = inserted.rows[0];\n  if (!row) throw workspaceError("WORKSPACE_EVENT_APPEND_FAILED", 500);\n  const integrationEventType = workspaceIntegrationEventType(input.eventType);\n  if (integrationEventType) {\n    const organization = await client.query<{ organization_id: string }>(\n      "select organization_id from spaces where id=$1",\n      [String(session.space_id)],\n    );\n    const organizationId = organization.rows[0]?.organization_id;\n    if (!organizationId) {\n      throw workspaceError("WORKSPACE_EVENT_ORGANIZATION_NOT_FOUND", 500);\n    }\n    await appendOutboxEvent(client, {\n      eventType: integrationEventType,\n      resourceId: `workspace-event:${String(row.id)}`,\n      organizationId,\n      spaceId: String(session.space_id),\n      vaultId: String(session.vault_id),\n      correlationId: input.sessionId,\n      causationId: input.claimId ?? null,\n      payload: {\n        sessionId: input.sessionId,\n        workspaceEventId: String(row.id),\n        sessionVersion: Number(row.session_version),\n        workspaceEventType: input.eventType,\n        actorId: input.actorId,\n        claimId: input.claimId ?? null,\n        data: input.payload,\n      },\n    });\n  }\n  return row;\n}\n''',
+              'transactional outbox append',
+          )
+
+          test = Path('apps/api/test/workspace-coordination.integration.test.ts')
+          replace_once(
+              test,
+              '''  if (db) {\n    if (sessionId) {\n''',
+              '''  if (db) {\n    await db.pool.query(\n      `delete from event_deliveries\n        where event_id in (select event_id from event_outbox where vault_id=$1)`,\n      [vaultId],\n    );\n    await db.pool.query("delete from event_outbox where vault_id=$1", [vaultId]);\n    if (sessionId) {\n''',
+              'outbox cleanup',
+          )
+          replace_once(
+              test,
+              '''    expect(created.statusCode).toBe(201);\n    sessionId = (created.json() as { id: string }).id;\n\n    const ownerReadd = await app.inject({''',
+              '''    expect(created.statusCode).toBe(201);\n    sessionId = (created.json() as { id: string }).id;\n    const sessionOutbox = await db.pool.query<{ count: number }>(\n      `select count(*)::int count from event_outbox\n        where event_type='WorkspaceSessionCreated'\n          and vault_id=$1\n          and payload->>'sessionId'=$2`,\n      [vaultId, sessionId],\n    );\n    expect(sessionOutbox.rows[0]?.count).toBe(1);\n\n    const ownerReadd = await app.inject({''',
+              'session outbox assertion',
+          )
+          replace_once(
+              test,
+              '''    expect(handedOff.json()).toMatchObject({\n      ownerId: actorBId,\n      workKey: "profile:compiler-boundary",\n      fencingToken: 2,\n      status: "ACTIVE",\n    });\n\n    const staleOwner = await app.inject({''',
+              '''    expect(handedOff.json()).toMatchObject({\n      ownerId: actorBId,\n      workKey: "profile:compiler-boundary",\n      fencingToken: 2,\n      status: "ACTIVE",\n    });\n    const durableCoordinationEvents = await db.pool.query<{ event_type: string }>(\n      `select event_type from event_outbox\n        where vault_id=$1 and payload->>'sessionId'=$2\n        order by occurred_at,event_id`,\n      [vaultId, sessionId],\n    );\n    expect(durableCoordinationEvents.rows.map((row) => row.event_type)).toEqual(\n      expect.arrayContaining([\n        "WorkspaceSessionCreated",\n        "WorkspaceClaimUpdated",\n        "WorkspaceHandoffCreated",\n      ]),\n    );\n\n    const staleOwner = await app.inject({''',
+              'coordination outbox assertions',
+          )
+          replace_once(
+              test,
+              '''    expect(promotedReview.rows[0]).toMatchObject({\n      status: "PENDING",\n      impact_manifest: {\n        promotionRequest: {\n          sessionId,\n          promotionEventId: promotionBody.promotionEventId,\n          evidenceEventIds: [String((findingEvent as { id: string }).id)],\n          revisionSetHash: promotionBody.revisionSetHash,\n        },\n      },\n    });\n\n    const canonicalAfter = await db.pool.query<{ documents: number }>(\n''',
+              '''    expect(promotedReview.rows[0]).toMatchObject({\n      status: "PENDING",\n      impact_manifest: {\n        promotionRequest: {\n          sessionId,\n          promotionEventId: promotionBody.promotionEventId,\n          evidenceEventIds: [String((findingEvent as { id: string }).id)],\n          revisionSetHash: promotionBody.revisionSetHash,\n        },\n      },\n    });\n    const promotionOutbox = await db.pool.query<{\n      count: number;\n    }>(\n      `select count(*)::int count from event_outbox\n        where event_type='WorkspacePromotionRequested'\n          and vault_id=$1\n          and payload->>'sessionId'=$2\n          and payload->>'workspaceEventId'=$3`,\n      [vaultId, sessionId, promotionBody.promotionEventId],\n    );\n    expect(promotionOutbox.rows[0]?.count).toBe(1);\n\n    const canonicalAfter = await db.pool.query<{ documents: number }>(\n''',
+              'promotion outbox assertion',
+          )
+          PY
+          pnpm exec prettier --write \
+            packages/postgres/src/workspace-coordination.ts \
+            apps/api/test/workspace-coordination.integration.test.ts
+      - name: Verify formatting
+        run: pnpm exec prettier --check .
+      - name: Build
+        run: pnpm build
+      - name: Commit slice
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add packages/postgres/src/workspace-coordination.ts apps/api/test/workspace-coordination.integration.test.ts
+          git diff --cached --quiet && exit 0
+          git commit -m "feat(p2): publish coordination lifecycle events"
+          git push origin HEAD:batch/p2-coordination-outbox-20260916
