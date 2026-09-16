@@ -127,3 +127,5 @@ jobs:
       - name: Teardown
         if: always()
         run: docker compose down -v --remove-orphans
+
+# Temporary P2 preflight: removed after product and contract proof.
