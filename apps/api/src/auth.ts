@@ -561,6 +561,12 @@ function agentProcessRouteAction(
     return "workspace:read";
   }
   if (
+    /^\/v1\/sessions\/[^/]+\/promotions$/.test(requestPath) &&
+    method === "POST"
+  ) {
+    return "knowledge:propose";
+  }
+  if (
     /^\/v1\/sessions\/[^/]+\/claims$/.test(requestPath) &&
     method === "POST"
   ) {
