@@ -554,6 +554,9 @@ function agentProcessRouteAction(
   if (/^\/v1\/sessions\/[^/]+\/state$/.test(requestPath) && method === "GET") {
     return "workspace:read";
   }
+  if (/^\/v1\/sessions\/[^/]+\/bootstrap$/.test(requestPath) && method === "POST") {
+    return "workspace:read";
+  }
   if (
     /^\/v1\/sessions\/[^/]+\/claims$/.test(requestPath) &&
     method === "POST"
