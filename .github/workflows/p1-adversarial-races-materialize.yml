@@ -46,34 +46,20 @@ jobs:
 
           path = Path("apps/worker/test/compilation-stage.test.ts")
           text = path.read_text()
-          old = '''      .mockResolvedValueOnce({
-                rows: [
-                  {
-                    id: EVIDENCE_ID,
-                    locator,
-                    content_hash: excerptHash,
-                    excerpt,
-                  },
-                ],
-              })
-              .mockResolvedValueOnce({ rows: [] });'''
-          new = '''      .mockResolvedValueOnce({
-                rows: [
-                  {
-                    id: EVIDENCE_ID,
-                    locator,
-                    content_hash: excerptHash,
-                    excerpt,
-                  },
-                ],
-              })
-              .mockResolvedValueOnce({ rows: [] })
+          marker = 'current_revision: "managed:8"'
+          start = text.find(marker)
+          if start < 0:
+              raise SystemExit("managed:8 compilation-stage fixture marker not found")
+          needle = '.mockResolvedValueOnce({ rows: [] });'
+          position = text.find(needle, start)
+          if position < 0:
+              raise SystemExit("managed:8 compilation-stage terminal mock not found")
+          replacement = '''.mockResolvedValueOnce({ rows: [] })
               .mockResolvedValueOnce({
                 rows: [{ schema_profile: {}, current_revision: "managed:8" }],
               });'''
-          if text.count(old) != 1:
-              raise SystemExit(f"compilation-stage regression anchor expected once, found {text.count(old)}")
-          path.write_text(text.replace(old, new, 1))
+          text = text[:position] + replacement + text[position + len(needle):]
+          path.write_text(text)
           PY
 
       - name: Format candidate
