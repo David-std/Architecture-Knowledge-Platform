@@ -99,8 +99,8 @@ beforeAll(async () => {
   );
   await db.pool.query(
     `insert into memberships(user_id,space_id,role,path_prefix) values
-      ($1,$4,'VIEWER',null),
-      ($2,$4,'VIEWER',null),
+      ($1,$5,'VIEWER',null),
+      ($2,$5,'VIEWER',null),
       ($3,$5,'VIEWER',null),
       ($4,$5,'REVIEWER',null)`,
     [actorAId, actorBId, outsiderId, reviewerId, spaceId],
