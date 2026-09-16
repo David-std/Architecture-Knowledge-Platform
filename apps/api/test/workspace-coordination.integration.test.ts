@@ -624,7 +624,7 @@ describe("workspace coordination integration", () => {
           {
             path: "knowledge/compiler-boundary.md",
             content:
-              "---\\ntype: claim\\n---\\n# Compiler boundary\\n\\nCanonical publication requires governed review.\\n",
+              "---\\ntype: claim\\nstatus: proposed\\nknowledge_layer: project\\n---\\n# Compiler boundary\\n\\nCanonical publication requires governed review. This promoted claim preserves provenance to the durable workspace finding and remains pending until an authorized human reviewer completes the existing review lifecycle.\\n",
             reason: "Promote durable workspace evidence",
           },
         ],
@@ -668,11 +668,9 @@ describe("workspace coordination integration", () => {
 
     const canonicalAfter = await db.pool.query<{
       documents: number;
-      reviews: number;
     }>(
       `select
-         (select count(*)::int from knowledge_documents where vault_id=$1) documents,
-         (select count(*)::int from reviews where vault_id=$1) reviews`,
+         (select count(*)::int from knowledge_documents where vault_id=$1) documents`,
       [vaultId],
     );
     expect(canonicalAfter.rows[0].documents).toBe(
