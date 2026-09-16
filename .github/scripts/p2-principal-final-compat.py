@@ -48,4 +48,26 @@ text = replace_count(
     2,
     "principal fixture local path",
 )
+
+# The default agent intentionally cannot propose. This fixture needs an
+# explicitly proposal-capable, still narrowly scoped agent so the cross-vault
+# proposal assertion reaches the immutable vault boundary instead of being
+# rejected earlier by the central deny-by-default route allowlist.
+text = replace_once(
+    text,
+    '      payload: { label: "Compiler worker" },\n',
+    '''      payload: {
+        label: "Compiler worker",
+        allowedActions: [
+          "workspace:read",
+          "workspace:claim",
+          "workspace:handoff",
+          "workspace:event:append",
+          "knowledge:read",
+          "knowledge:propose",
+        ],
+      },
+''',
+    "proposal-capable principal fixture",
+)
 test.write_text(text)
