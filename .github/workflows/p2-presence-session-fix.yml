@@ -34,11 +34,15 @@ jobs:
         run: >-
           pnpm exec prettier --write
           packages/postgres/src/workspace-coordination.ts
+          apps/api/src/routes/context-fabric.ts
+          apps/api/src/routes/workspace-presence.ts
           apps/api/test/workspace-presence.integration.test.ts
       - name: Validate focused formatting
         run: >-
           pnpm exec prettier --check
           packages/postgres/src/workspace-coordination.ts
+          apps/api/src/routes/context-fabric.ts
+          apps/api/src/routes/workspace-presence.ts
           apps/api/test/workspace-presence.integration.test.ts
       - run: pnpm check
       - run: pnpm build
@@ -64,6 +68,8 @@ jobs:
           git add \
             db/migrations/039_workspace_presence_defaults.sql \
             packages/postgres/src/workspace-coordination.ts \
+            apps/api/src/routes/context-fabric.ts \
+            apps/api/src/routes/workspace-presence.ts \
             apps/api/test/workspace-presence.integration.test.ts
           git commit -m "fix(p2): restore participant presence initialization"
           git push origin HEAD:batch/p2-presence-session-fix-20260916
