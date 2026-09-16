@@ -167,8 +167,7 @@ describe("retrieval authorization expansion boundary", () => {
             ],
             pathAuthorizer: (documentPath, vaultId) =>
               vaultId === current.vaultId &&
-              (documentPath === "shared" ||
-                documentPath.startsWith("shared/")),
+              (documentPath === "shared" || documentPath.startsWith("shared/")),
           },
         );
 
