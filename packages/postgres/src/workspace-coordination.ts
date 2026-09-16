@@ -18,6 +18,7 @@ export type WorkspaceEventType =
   | "QUESTION"
   | "ARTIFACT"
   | "DECISION_CANDIDATE"
+  | "PROMOTION_REQUESTED"
   | "NOTE";
 
 export interface WorkspaceSessionAccess {
@@ -743,6 +744,70 @@ export async function appendWorkspaceEvent(
     });
     await client.query("commit");
     return row;
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+
+export async function workspacePromotionEvidence(
+  db: Postgres,
+  input: {
+    sessionId: string;
+    actorId: string;
+    eventIds: string[];
+  },
+): Promise<{
+  session: WorkspaceSessionAccess;
+  events: Record<string, unknown>[];
+}> {
+  const uniqueIds = [...new Set(input.eventIds)];
+  if (!uniqueIds.length || uniqueIds.length !== input.eventIds.length) {
+    throw workspaceError("PROMOTION_EVIDENCE_REQUIRED", 400);
+  }
+  const client = await db.pool.connect();
+  try {
+    await client.query("begin isolation level repeatable read read only");
+    const sessionResult = await client.query<Record<string, unknown>>(
+      `select s.*,p.role participant_role
+         from agent_sessions s
+         join workspace_session_participants p
+           on p.session_id=s.id and p.user_id=$2 and p.left_at is null
+        where s.id=$1`,
+      [input.sessionId, input.actorId],
+    );
+    const sessionRow = sessionResult.rows[0];
+    if (!sessionRow) throw workspaceError("SESSION_NOT_FOUND", 404);
+    await assertWorkspaceContextRevisionCurrent(
+      client,
+      input.sessionId,
+      String(sessionRow.space_id),
+      String(sessionRow.vault_id),
+    );
+    const events = await client.query<Record<string, unknown>>(
+      `select *
+         from workspace_events
+        where session_id=$1
+          and id=any($2::uuid[])
+          and event_type=any($3::text[])
+        order by session_version`,
+      [
+        input.sessionId,
+        uniqueIds,
+        ["FINDING", "ARTIFACT", "DECISION_CANDIDATE"],
+      ],
+    );
+    if (events.rowCount !== uniqueIds.length) {
+      throw workspaceError("PROMOTION_EVIDENCE_NOT_FOUND", 404);
+    }
+    await client.query("commit");
+    return {
+      session: normalizeSession(sessionRow),
+      events: events.rows,
+    };
   } catch (error) {
     await client.query("rollback");
     throw error;
