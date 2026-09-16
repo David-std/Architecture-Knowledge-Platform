@@ -1,33 +1,293 @@
-name: workspace-context-materializer-test-inspect
+name: workspace-context-boundary-preflight
 
 on:
   push:
     branches: [feat/v0.4-enterprise-context-workspace]
     paths:
       - .github/workflows/workspace-context-materializer-inspect.yml
+  workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  inspect:
+  verify-and-promote:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 35
+    env:
+      DATABASE_URL: postgres://akp:akp@localhost:55432/akp
     steps:
       - uses: actions/checkout@v7
         with:
           ref: feat/v0.4-enterprise-context-workspace
-      - name: Inspect focused integration block
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - name: Install locked workspace
+        run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Build semantic contract authority
+        run: pnpm --filter @akp/contracts build
+      - name: Derive default context fingerprints from contracts
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { createHash } from 'node:crypto';
+          import { writeFileSync } from 'node:fs';
+          import {
+            DEFAULT_KNOWLEDGE_PROFILE_V1,
+            canonicalKnowledgeProfileJson,
+          } from './packages/contracts/dist/knowledge-profile.js';
+
+          function stableValue(value) {
+            if (Array.isArray(value)) return value.map(stableValue);
+            if (!value || typeof value !== 'object') return value;
+            return Object.fromEntries(
+              Object.entries(value)
+                .sort(([left], [right]) => left.localeCompare(right))
+                .map(([key, nested]) => [key, stableValue(nested)]),
+            );
+          }
+          const stableJson = (value) => JSON.stringify(stableValue(value));
+          const sha256 = (value) => createHash('sha256').update(value).digest('hex');
+          const profile = DEFAULT_KNOWLEDGE_PROFILE_V1;
+          const policy = {
+            lifecycles: profile.lifecycles ?? {},
+            evidencePolicies: profile.evidencePolicies ?? {},
+            reviewPolicies: profile.reviewPolicies ?? {},
+            retrievalPolicy: profile.retrievalPolicy ?? {},
+            promotionPolicy: profile.promotionPolicy ?? {},
+            freshnessPolicy: profile.freshnessPolicy ?? {},
+            connectorPolicy: profile.connectorPolicy ?? null,
+            modelRoleConstraints: profile.modelRoleConstraints ?? [],
+          };
+          writeFileSync('/tmp/default-context-fingerprints.json', JSON.stringify({
+            profileId: profile.profileId,
+            version: profile.version,
+            profileHash: sha256(canonicalKnowledgeProfileJson(profile)),
+            policyRevision: sha256(stableJson(policy)),
+          }));
+          NODE
+          cat /tmp/default-context-fingerprints.json
+      - name: Materialize and repair workspace context revision product
         shell: bash
         run: |
           python - <<'PY'
-          import base64, re, zlib
+          import base64, json, re, zlib
           from pathlib import Path
+
           workflow = Path('.github/workflows/workspace-context-preflight.yml').read_text()
           match = re.search(r'payload = "([A-Za-z0-9+/=]+)"', workflow)
           if not match:
-              raise SystemExit('payload not found')
-          lines = zlib.decompress(base64.b64decode(match.group(1))).decode().splitlines()
-          for n in range(620, min(720, len(lines))):
-              print(f'{n+1:04d}: {lines[n]}')
+              raise SystemExit('embedded materializer payload not found')
+          script = zlib.decompress(base64.b64decode(match.group(1))).decode()
+          old_loop = '# Same select shape occurs in list and snapshot; patch remaining occurrences.\nfor _ in range(2):'
+          new_loop = '# The current source has one remaining matching select (list); snapshot uses a distinct query.\nfor _ in range(1):'
+          if script.count(old_loop) != 1:
+              raise SystemExit(f'unexpected materializer loop count: {script.count(old_loop)}')
+          script = script.replace(old_loop, new_loop, 1)
+          Path('/tmp/workspace-context-materialize.py').write_text(script)
           PY
+          python /tmp/workspace-context-materialize.py
+
+          python - <<'PY'
+          import json, re
+          from pathlib import Path
+
+          fp = json.loads(Path('/tmp/default-context-fingerprints.json').read_text())
+          module_path = Path('packages/postgres/src/context-revision-set.ts')
+          text = module_path.read_text()
+
+          contracts_import = re.compile(
+              r'import \{\s*DEFAULT_KNOWLEDGE_PROFILE_V1,\s*canonicalKnowledgeProfileJson,\s*\} from "@akp/contracts/knowledge-profile";\n',
+              re.MULTILINE,
+          )
+          text, count = contracts_import.subn('', text, count=1)
+          if count != 1:
+              raise SystemExit(f'contracts import patch count={count}')
+
+          defaults = re.compile(
+              r'const DEFAULT_PROFILE_CANONICAL = canonicalKnowledgeProfileJson\(\s*DEFAULT_KNOWLEDGE_PROFILE_V1,\s*\);\nconst DEFAULT_PROFILE_HASH = sha256\(DEFAULT_PROFILE_CANONICAL\);'
+          )
+          replacement = (
+              f'const DEFAULT_PROFILE_ID = {json.dumps(fp["profileId"])};\n'
+              f'const DEFAULT_PROFILE_VERSION = {json.dumps(fp["version"])};\n'
+              f'const DEFAULT_PROFILE_HASH = {json.dumps(fp["profileHash"])};\n'
+              f'const DEFAULT_POLICY_REVISION = {json.dumps(fp["policyRevision"])};'
+          )
+          text, count = defaults.subn(replacement, text, count=1)
+          if count != 1:
+              raise SystemExit(f'default constants patch count={count}')
+
+          text, count = re.subn(
+              r'function policyRevision\(profile: Record<string, unknown>\): string \{',
+              'export function contextPolicyRevisionFromProfile(\n  profile: Record<string, unknown>,\n): string {',
+              text,
+              count=1,
+          )
+          if count != 1:
+              raise SystemExit(f'policy helper patch count={count}')
+
+          old_signature = '''function profileIdentity(row: ContextRevisionRow): {
+  identity: ContextProfileRevision;
+  profile: Record<string, unknown>;
+} {'''
+          new_signature = '''function profileIdentity(row: ContextRevisionRow): {
+  identity: ContextProfileRevision;
+  policyRevision: string;
+} {'''
+          if text.count(old_signature) != 1:
+              raise SystemExit(f'profileIdentity signature count={text.count(old_signature)}')
+          text = text.replace(old_signature, new_signature, 1)
+
+          old_default = '''        profileId: DEFAULT_KNOWLEDGE_PROFILE_V1.profileId,
+        version: DEFAULT_KNOWLEDGE_PROFILE_V1.version,
+        hash: DEFAULT_PROFILE_HASH,
+      },
+      profile: DEFAULT_KNOWLEDGE_PROFILE_V1 as unknown as Record<string, unknown>,'''
+          new_default = '''        profileId: DEFAULT_PROFILE_ID,
+        version: DEFAULT_PROFILE_VERSION,
+        hash: DEFAULT_PROFILE_HASH,
+      },
+      policyRevision: DEFAULT_POLICY_REVISION,'''
+          if text.count(old_default) != 1:
+              raise SystemExit(f'default identity patch count={text.count(old_default)}')
+          text = text.replace(old_default, new_default, 1)
+
+          old_durable = '''    },
+    profile: parseProfile(row.canonical_profile),
+  };
+}'''
+          new_durable = '''    },
+    policyRevision: contextPolicyRevisionFromProfile(
+      parseProfile(row.canonical_profile),
+    ),
+  };
+}'''
+          if text.count(old_durable) != 1:
+              raise SystemExit(f'durable profile patch count={text.count(old_durable)}')
+          text = text.replace(old_durable, new_durable, 1)
+
+          old_policy = '''      revision: policyRevision(profile.profile),'''
+          if text.count(old_policy) != 1:
+              raise SystemExit(f'policy revision use count={text.count(old_policy)}')
+          text = text.replace(old_policy, '      revision: profile.policyRevision,', 1)
+          if '@akp/contracts' in text or 'DEFAULT_KNOWLEDGE_PROFILE_V1' in text or 'canonicalKnowledgeProfileJson' in text:
+              raise SystemExit('postgres module still references semantic contracts authority')
+          module_path.write_text(text)
+
+          test_path = Path('apps/api/test/context-revision-set.integration.test.ts')
+          test = test_path.read_text()
+          if 'DEFAULT_KNOWLEDGE_PROFILE_V1' not in test:
+              marker = '  NEUTRAL_KNOWLEDGE_PROFILE_V1,\n'
+              if test.count(marker) != 1:
+                  raise SystemExit(f'test contracts import anchor count={test.count(marker)}')
+              test = test.replace(marker, '  DEFAULT_KNOWLEDGE_PROFILE_V1,\n' + marker, 1)
+          if 'contextPolicyRevisionFromProfile' not in test:
+              marker = '  Postgres,\n'
+              if test.count(marker) != 1:
+                  raise SystemExit(f'test postgres import anchor count={test.count(marker)}')
+              test = test.replace(marker, marker + '  contextPolicyRevisionFromProfile,\n', 1)
+
+          old_type = 'profile: { source: string; revisionId: string | null; profileId: string };'
+          new_type = 'profile: { source: string; revisionId: string | null; profileId: string; version: string; hash: string };'
+          if test.count(old_type) != 1:
+              raise SystemExit(f'test profile type anchor count={test.count(old_type)}')
+          test = test.replace(old_type, new_type, 1)
+
+          old_expect = '''    expect(initial.contextRevisionSet.profile).toMatchObject({
+      source: "DEFAULT",
+      revisionId: null,
+      profileId: "default",
+    });
+    expect(initial.contextRevisionSet.policy.revision).toMatch(/^[a-f0-9]{64}$/);'''
+          new_expect = '''    const defaultCanonical = canonicalKnowledgeProfileJson(
+      DEFAULT_KNOWLEDGE_PROFILE_V1,
+    );
+    const defaultProfileHash = createHash("sha256")
+      .update(defaultCanonical)
+      .digest("hex");
+    expect(initial.contextRevisionSet.profile).toMatchObject({
+      source: "DEFAULT",
+      revisionId: null,
+      profileId: DEFAULT_KNOWLEDGE_PROFILE_V1.profileId,
+      version: DEFAULT_KNOWLEDGE_PROFILE_V1.version,
+      hash: defaultProfileHash,
+    });
+    expect(initial.contextRevisionSet.policy.revision).toBe(
+      contextPolicyRevisionFromProfile(
+        DEFAULT_KNOWLEDGE_PROFILE_V1 as unknown as Record<string, unknown>,
+      ),
+    );'''
+          if test.count(old_expect) != 1:
+              raise SystemExit(f'test default expectation anchor count={test.count(old_expect)}')
+          test = test.replace(old_expect, new_expect, 1)
+          test_path.write_text(test)
+          PY
+      - name: Format product sources
+        run: |
+          pnpm exec prettier --write \
+            packages/postgres/src/context-revision-set.ts \
+            packages/postgres/src/index.ts \
+            packages/postgres/src/workspace-coordination.ts \
+            apps/api/test/context-revision-set.integration.test.ts
+      - name: Dependency audit
+        run: pnpm audit --audit-level high
+      - name: Start disposable Postgres
+        run: docker compose up -d --wait postgres
+      - name: Apply migrations
+        run: pnpm db:migrate
+      - name: Validate contracts
+        run: pnpm contracts:validate
+      - name: Verify postgres package boundary
+        shell: bash
+        run: |
+          ! grep -R '@akp/contracts' packages/postgres/src/context-revision-set.ts
+          pnpm --filter @akp/postgres check
+      - name: Run monorepo checks
+        run: pnpm check
+      - name: Run focused context revision integration
+        run: |
+          pnpm --filter @akp/contracts build
+          pnpm --filter @akp/postgres build
+          pnpm --filter @akp/api exec vitest run \
+            --config vitest.integration.config.ts \
+            test/context-revision-set.integration.test.ts
+      - name: Build monorepo
+        run: pnpm build
+      - name: Verify product diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          git status --short
+          test -f db/migrations/035_workspace_context_revision_sets.sql
+          test -f packages/postgres/src/context-revision-set.ts
+          test -f apps/api/test/context-revision-set.integration.test.ts
+          ! grep -R '@akp/contracts' packages/postgres/src/context-revision-set.ts
+      - name: Promote verified product
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          remote_head="$(git ls-remote origin refs/heads/feat/v0.4-enterprise-context-workspace | cut -f1)"
+          if [ "$remote_head" != "$EXPECTED_HEAD" ]; then
+            echo "Remote head moved from $EXPECTED_HEAD to $remote_head; refusing promotion." >&2
+            exit 1
+          fi
+          rm -f \
+            .github/workflows/workspace-context-preflight.yml \
+            .github/workflows/workspace-context-materializer-inspect.yml
+          git add -A
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "feat(p2): pin workspace context revisions"
+          git push origin HEAD:feat/v0.4-enterprise-context-workspace
+      - name: Stop disposable services
+        if: always()
+        run: docker compose down -v --remove-orphans || true
