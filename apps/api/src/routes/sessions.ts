@@ -530,10 +530,14 @@ export function registerSessionRoutes(
       const evidenceEventIds = request.body?.evidenceEventIds ?? [];
       const changes = request.body?.changes ?? [];
       if (evidenceEventIds.length > 100) {
-        return reply.code(413).send({ code: "PROMOTION_EVIDENCE_LIMIT_EXCEEDED" });
+        return reply
+          .code(413)
+          .send({ code: "PROMOTION_EVIDENCE_LIMIT_EXCEEDED" });
       }
       if (changes.length > 100) {
-        return reply.code(413).send({ code: "PROMOTION_CHANGE_LIMIT_EXCEEDED" });
+        return reply
+          .code(413)
+          .send({ code: "PROMOTION_CHANGE_LIMIT_EXCEEDED" });
       }
       if (!evidenceEventIds.length) {
         return reply.code(400).send({ code: "PROMOTION_EVIDENCE_REQUIRED" });
