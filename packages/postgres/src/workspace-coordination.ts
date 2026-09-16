@@ -776,7 +776,9 @@ export async function workspacePromotionEvidence(
   }
   if (!uniqueIds.length || uniqueIds.length !== input.eventIds.length) {
     throw workspaceError(
-      uniqueIds.length ? "PROMOTION_EVIDENCE_DUPLICATE" : "PROMOTION_EVIDENCE_REQUIRED",
+      uniqueIds.length
+        ? "PROMOTION_EVIDENCE_DUPLICATE"
+        : "PROMOTION_EVIDENCE_REQUIRED",
       400,
     );
   }
