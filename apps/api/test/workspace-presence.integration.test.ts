@@ -119,9 +119,14 @@ describe("workspace presence", () => {
     });
     expect(listed.statusCode).toBe(200);
     expect(
-      (listed.json() as { participants: Array<{ userId: string; online: boolean }> })
-        .participants,
-    ).toContainEqual(expect.objectContaining({ userId: actorId, online: true }));
+      (
+        listed.json() as {
+          participants: Array<{ userId: string; online: boolean }>;
+        }
+      ).participants,
+    ).toContainEqual(
+      expect.objectContaining({ userId: actorId, online: true }),
+    );
 
     const claims = await db.pool.query<{ count: number }>(
       "select count(*)::int count from workspace_claims where session_id=$1",

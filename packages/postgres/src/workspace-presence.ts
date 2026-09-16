@@ -19,7 +19,9 @@ function presenceError(code: string, statusCode: number): Error {
   return error;
 }
 
-function normalizePresence(row: Record<string, unknown>): WorkspacePresenceRecord {
+function normalizePresence(
+  row: Record<string, unknown>,
+): WorkspacePresenceRecord {
   const expires = row.presence_expires_at
     ? new Date(String(row.presence_expires_at))
     : null;
@@ -38,7 +40,11 @@ export async function heartbeatWorkspacePresence(
   input: { sessionId: string; actorId: string; ttlSeconds?: number },
 ): Promise<WorkspacePresenceRecord> {
   const ttlSeconds = input.ttlSeconds ?? 60;
-  if (!Number.isSafeInteger(ttlSeconds) || ttlSeconds < 15 || ttlSeconds > 300) {
+  if (
+    !Number.isSafeInteger(ttlSeconds) ||
+    ttlSeconds < 15 ||
+    ttlSeconds > 300
+  ) {
     throw presenceError("INVALID_PRESENCE_TTL", 400);
   }
   const result = await db.pool.query<Record<string, unknown>>(

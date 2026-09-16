@@ -2,9 +2,7 @@ import type { Postgres, PostgresPoolClient } from "./index.js";
 import { workspaceContextRevisionState } from "./context-revision-set.js";
 
 export type ExternalObjectAuthority =
-  | "SYSTEM_OF_RECORD"
-  | "REFERENCE"
-  | "MIRRORED_PROJECTION";
+  "SYSTEM_OF_RECORD" | "REFERENCE" | "MIRRORED_PROJECTION";
 
 export interface ExternalObjectRefRecord {
   id: string;
@@ -24,16 +22,10 @@ export interface ExternalObjectRefRecord {
 }
 
 export type OfflineDraftStatus =
-  | "QUEUED"
-  | "RECONCILE_REQUIRED"
-  | "APPLIED"
-  | "DISCARDED";
+  "QUEUED" | "RECONCILE_REQUIRED" | "APPLIED" | "DISCARDED";
 
 export type OfflineDraftEventType =
-  | "FINDING"
-  | "ARTIFACT"
-  | "DECISION_CANDIDATE"
-  | "NOTE";
+  "FINDING" | "ARTIFACT" | "DECISION_CANDIDATE" | "NOTE";
 
 export interface WorkspaceOfflineDraftRecord {
   id: string;
@@ -52,9 +44,7 @@ export interface WorkspaceOfflineDraftRecord {
 }
 
 export type FederationDiscoveryMode =
-  | "CATALOG_ONLY"
-  | "REMOTE_QUERY"
-  | "MIRROR_BUNDLE";
+  "CATALOG_ONLY" | "REMOTE_QUERY" | "MIRROR_BUNDLE";
 
 export type FederationPeerTrustState = "DISCOVERED" | "APPROVED" | "DISABLED";
 
@@ -90,7 +80,9 @@ function recordObject(value: unknown): Record<string, unknown> {
     : {};
 }
 
-function normalizeExternalRef(row: Record<string, unknown>): ExternalObjectRefRecord {
+function normalizeExternalRef(
+  row: Record<string, unknown>,
+): ExternalObjectRefRecord {
   return {
     id: String(row.id),
     spaceId: String(row.space_id),
@@ -326,8 +318,10 @@ export async function queueWorkspaceOfflineDraft(
       const samePayload =
         String(row.base_revision_set_hash) === input.baseRevisionSetHash &&
         String(row.event_type) === input.eventType &&
-        JSON.stringify(recordObject(row.payload)) === JSON.stringify(input.payload);
-      if (!samePayload) throw fabricError("OFFLINE_DRAFT_IDEMPOTENCY_CONFLICT", 409);
+        JSON.stringify(recordObject(row.payload)) ===
+          JSON.stringify(input.payload);
+      if (!samePayload)
+        throw fabricError("OFFLINE_DRAFT_IDEMPOTENCY_CONFLICT", 409);
     }
     await client.query("commit");
     return normalizeOfflineDraft(row);
@@ -387,7 +381,11 @@ export async function applyWorkspaceOfflineDraft(
       throw fabricError("OFFLINE_DRAFT_DISCARDED", 409);
     }
     const sessionId = String(draft.session_id);
-    const scope = await requireSessionParticipant(client, sessionId, input.actorId);
+    const scope = await requireSessionParticipant(
+      client,
+      sessionId,
+      input.actorId,
+    );
     const revision = await workspaceContextRevisionState(
       client,
       sessionId,

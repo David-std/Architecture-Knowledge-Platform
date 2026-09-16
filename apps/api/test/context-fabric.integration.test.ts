@@ -77,9 +77,13 @@ afterAll(async () => {
         "delete from audit_events where resource_id=$1 or metadata->>'sessionId'=$1",
         [sessionId],
       );
-      await db.pool.query("delete from agent_sessions where id=$1", [sessionId]);
+      await db.pool.query("delete from agent_sessions where id=$1", [
+        sessionId,
+      ]);
     }
-    await db.pool.query("delete from api_tokens where token_hash=$1", [tokenHash]);
+    await db.pool.query("delete from api_tokens where token_hash=$1", [
+      tokenHash,
+    ]);
     await db.pool.query(
       "delete from memberships where user_id=$1 and space_id=$2",
       [actorId, spaceId],
@@ -198,7 +202,10 @@ describe("team context fabric integration", () => {
       },
     });
     expect(duplicate.statusCode).toBe(201);
-    expect(duplicate.json()).toMatchObject({ id: queuedDraft.id, status: "QUEUED" });
+    expect(duplicate.json()).toMatchObject({
+      id: queuedDraft.id,
+      status: "QUEUED",
+    });
 
     const applied = await app.inject({
       method: "POST",

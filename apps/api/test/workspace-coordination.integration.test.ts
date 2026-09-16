@@ -109,13 +109,10 @@ beforeAll(async () => {
     "workspace actor b narrow",
     "docs",
   );
-  await insertToken(
-    outsiderId,
-    outsiderToken,
-    "workspace outsider",
-    null,
-    ["knowledge:read", "source:read"],
-  );
+  await insertToken(outsiderId, outsiderToken, "workspace outsider", null, [
+    "knowledge:read",
+    "source:read",
+  ]);
   const module = await import("../src/server.js");
   app = module.buildServer();
 });
@@ -201,7 +198,9 @@ describe("workspace coordination integration", () => {
       headers: outsiderHeaders,
     });
     expect(hiddenFromOutsider.statusCode).toBe(404);
-    expect(hiddenFromOutsider.json()).toMatchObject({ code: "SESSION_NOT_FOUND" });
+    expect(hiddenFromOutsider.json()).toMatchObject({
+      code: "SESSION_NOT_FOUND",
+    });
 
     const compilerScope = await app.inject({
       method: "POST",
@@ -245,7 +244,9 @@ describe("workspace coordination integration", () => {
       payload: { workKey: "packages/**/compiler", leaseSeconds: 120 },
     });
     expect(invalidRecursiveScope.statusCode).toBe(400);
-    expect(invalidRecursiveScope.json()).toMatchObject({ code: "INVALID_WORK_KEY" });
+    expect(invalidRecursiveScope.json()).toMatchObject({
+      code: "INVALID_WORK_KEY",
+    });
 
     const race = await Promise.all([
       app.inject({
@@ -261,7 +262,9 @@ describe("workspace coordination integration", () => {
         payload: { workKey: "services/payments/api/**", leaseSeconds: 120 },
       }),
     ]);
-    expect(race.map((response) => response.statusCode).sort()).toEqual([201, 409]);
+    expect(race.map((response) => response.statusCode).sort()).toEqual([
+      201, 409,
+    ]);
     expect(
       race.find((response) => response.statusCode === 409)?.json(),
     ).toMatchObject({ code: "WORK_CLAIM_OVERLAP" });
@@ -330,7 +333,8 @@ describe("workspace coordination integration", () => {
       payload: {
         eventType: "FINDING",
         payload: {
-          summary: "The compiler boundary is isolated from canonical publication.",
+          summary:
+            "The compiler boundary is isolated from canonical publication.",
           evidence: "integration-fixture",
         },
       },
@@ -443,7 +447,10 @@ describe("workspace coordination integration", () => {
         latestVersion: number | null;
       };
     };
-    expect(snapshot.session).toMatchObject({ id: sessionId, role: "PARTICIPANT" });
+    expect(snapshot.session).toMatchObject({
+      id: sessionId,
+      role: "PARTICIPANT",
+    });
     expect(snapshot.participants.map((item) => item.user_id)).toEqual(
       expect.arrayContaining([actorAId, actorBId]),
     );
@@ -470,7 +477,9 @@ describe("workspace coordination integration", () => {
     const stressClient = await db.pool.connect();
     try {
       await stressClient.query("begin");
-      const current = await stressClient.query<{ coordination_version: number }>(
+      const current = await stressClient.query<{
+        coordination_version: number;
+      }>(
         "select coordination_version from agent_sessions where id=$1 for update",
         [sessionId],
       );
@@ -517,7 +526,9 @@ describe("workspace coordination integration", () => {
     expect(tailSnapshot.eventWindow.returned).toBe(500);
     expect(tailSnapshot.eventWindow.truncated).toBe(true);
     expect(tailSnapshot.eventWindow.total).toBeGreaterThan(500);
-    expect(tailSnapshot.eventWindow.latestVersion).toBe(tailSnapshot.snapshotVersion);
+    expect(tailSnapshot.eventWindow.latestVersion).toBe(
+      tailSnapshot.snapshotVersion,
+    );
     expect(tailSnapshot.events[0]).toMatchObject({
       event_type: "NOTE",
       payload: { sequence: 6 },

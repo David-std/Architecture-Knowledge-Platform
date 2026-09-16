@@ -13,7 +13,11 @@ async function ensureAuthorizedSession(
   actorId: string,
   sessionId: string,
 ): Promise<{ spaceId: string; vaultId: string } | null> {
-  const session = await getWorkspaceSessionForParticipant(db, sessionId, actorId);
+  const session = await getWorkspaceSessionForParticipant(
+    db,
+    sessionId,
+    actorId,
+  );
   if (!session) return null;
   try {
     const scope = await resolveAuthorizedVaultScope(db, {
@@ -41,7 +45,11 @@ export function registerWorkspacePresenceRoutes(
     async (request, reply) => {
       const actor = actorOf(request);
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
-      const scope = await ensureAuthorizedSession(db, actor.id, request.params.id);
+      const scope = await ensureAuthorizedSession(
+        db,
+        actor.id,
+        request.params.id,
+      );
       if (!scope) return reply.code(404).send({ code: "SESSION_NOT_FOUND" });
       return {
         sessionId: request.params.id,
@@ -60,12 +68,18 @@ export function registerWorkspacePresenceRoutes(
     async (request, reply) => {
       const actor = actorOf(request);
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
-      const scope = await ensureAuthorizedSession(db, actor.id, request.params.id);
+      const scope = await ensureAuthorizedSession(
+        db,
+        actor.id,
+        request.params.id,
+      );
       if (!scope) return reply.code(404).send({ code: "SESSION_NOT_FOUND" });
       const presence = await heartbeatWorkspacePresence(db, {
         sessionId: request.params.id,
         actorId: actor.id,
-        ttlSeconds: request.body?.ttlSeconds,
+        ...(request.body?.ttlSeconds !== undefined
+          ? { ttlSeconds: request.body.ttlSeconds }
+          : {}),
       });
       await audit(
         db,

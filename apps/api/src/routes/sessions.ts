@@ -415,8 +415,7 @@ export function registerSessionRoutes(
             progressiveDisclosure:
               profile.retrievalPolicy.progressiveDisclosure,
             promotion: {
-              allowedTargetScopes:
-                profile.promotionPolicy.allowedTargetScopes,
+              allowedTargetScopes: profile.promotionPolicy.allowedTargetScopes,
               reviewRequired: profile.promotionPolicy.reviewRequired,
             },
           };
@@ -434,9 +433,7 @@ export function registerSessionRoutes(
                 : {}),
               ...(request.headers["x-csrf-token"]
                 ? {
-                    "x-csrf-token": String(
-                      request.headers["x-csrf-token"],
-                    ),
+                    "x-csrf-token": String(request.headers["x-csrf-token"]),
                   }
                 : {}),
             },
@@ -569,9 +566,7 @@ export function registerSessionRoutes(
           ...(request.headers.authorization
             ? { authorization: request.headers.authorization }
             : {}),
-          ...(request.headers.cookie
-            ? { cookie: request.headers.cookie }
-            : {}),
+          ...(request.headers.cookie ? { cookie: request.headers.cookie } : {}),
           ...(request.headers["x-csrf-token"]
             ? {
                 "x-csrf-token": String(request.headers["x-csrf-token"]),
@@ -610,7 +605,9 @@ export function registerSessionRoutes(
         if (lockedReview.rowCount !== 1) {
           throw new Error("PROMOTION_REVIEW_NOT_PENDING");
         }
-        const eventResult = await promotionClient.query<Record<string, unknown>>(
+        const eventResult = await promotionClient.query<
+          Record<string, unknown>
+        >(
           `with locked as (
              select id,coordination_version
                from agent_sessions

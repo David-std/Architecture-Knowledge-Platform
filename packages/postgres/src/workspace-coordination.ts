@@ -815,11 +815,7 @@ export async function workspacePromotionEvidence(
           and id=any($2::uuid[])
           and event_type=any($3::text[])
         order by session_version`,
-      [
-        input.sessionId,
-        uniqueIds,
-        PROMOTABLE_WORKSPACE_EVENT_TYPES,
-      ],
+      [input.sessionId, uniqueIds, PROMOTABLE_WORKSPACE_EVENT_TYPES],
     );
     if (events.rowCount !== uniqueIds.length) {
       throw workspaceError("PROMOTION_EVIDENCE_NOT_FOUND", 404);
