@@ -59,7 +59,7 @@ for (const required of requiredPaths) {
     failures.push(`contracts/openapi.yaml: missing ${required}`);
 }
 
-const p2WorkspacePaths = {
+const workspaceCoordinationPaths = {
   "/v1/sessions": { get: "workspace:read", post: "workspace:create" },
   "/v1/sessions/{id}/state": { get: "workspace:read" },
   "/v1/sessions/{id}/participants": {
@@ -72,23 +72,23 @@ const p2WorkspacePaths = {
   "/v1/sessions/{id}/agent-processes": { post: "workspace:manage-agents" },
   "/v1/agent-processes/{id}/revoke": { post: "workspace:manage-agents" },
 };
-for (const [route, methods] of Object.entries(p2WorkspacePaths)) {
+for (const [route, methods] of Object.entries(workspaceCoordinationPaths)) {
   for (const [method, principalAction] of Object.entries(methods)) {
     const operation = openapi?.paths?.[route]?.[method];
     if (!operation) {
       failures.push(
-        `contracts/openapi.yaml: missing P2 ${method.toUpperCase()} ${route}`,
+        `contracts/openapi.yaml: missing workspace coordination ${method.toUpperCase()} ${route}`,
       );
       continue;
     }
     if (operation["x-akp-permission"] !== "knowledge:read") {
       failures.push(
-        `contracts/openapi.yaml: P2 ${method.toUpperCase()} ${route} must require knowledge:read`,
+        `contracts/openapi.yaml: workspace coordination ${method.toUpperCase()} ${route} must require knowledge:read`,
       );
     }
     if (operation["x-akp-principal-action"] !== principalAction) {
       failures.push(
-        `contracts/openapi.yaml: P2 ${method.toUpperCase()} ${route} must require principal action ${principalAction}`,
+        `contracts/openapi.yaml: workspace coordination ${method.toUpperCase()} ${route} must require principal action ${principalAction}`,
       );
     }
   }
@@ -118,7 +118,7 @@ for (const route of [
 ]) {
   if (!hasIdempotencyKey(openapi?.paths?.[route]?.post)) {
     failures.push(
-      `contracts/openapi.yaml: P2 write ${route} must declare Idempotency-Key`,
+      `contracts/openapi.yaml: workspace coordination write ${route} must declare Idempotency-Key`,
     );
   }
 }
@@ -329,7 +329,7 @@ for (const tool of mcp.tools ?? []) {
   }
 }
 
-const requiredP2McpTools = [
+const requiredWorkspaceMcpTools = [
   "akp_list_sessions",
   "akp_get_session_state",
   "akp_claim_workspace_work",
@@ -338,9 +338,11 @@ const requiredP2McpTools = [
   "akp_append_workspace_event",
 ];
 const declaredMcpNames = new Set((mcp.tools ?? []).map((tool) => tool.name));
-for (const name of requiredP2McpTools) {
+for (const name of requiredWorkspaceMcpTools) {
   if (!declaredMcpNames.has(name)) {
-    failures.push(`contracts/mcp-tools.json: missing P2 tool ${name}`);
+    failures.push(
+      `contracts/mcp-tools.json: missing workspace coordination tool ${name}`,
+    );
   }
 }
 if (
