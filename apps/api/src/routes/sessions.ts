@@ -7,6 +7,7 @@ import {
   getWorkspaceSessionForParticipant,
   handoffWorkspaceWork,
   heartbeatWorkspaceWork,
+  isWorkspaceWorkKey,
   listWorkspaceSessionsForParticipant,
   resolveAuthorizedVaultScope,
   workspaceSessionSnapshot,
@@ -20,7 +21,6 @@ import {
   unrestrictedSpaceIdsForPermission,
 } from "../auth.js";
 
-const WORK_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/;
 const USER_EVENT_TYPES = new Set([
   "FINDING",
   "BLOCKER",
@@ -325,7 +325,7 @@ export function registerSessionRoutes(
       const actor = actorOf(request);
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
       const workKey = request.body?.workKey?.trim();
-      if (!workKey || !WORK_KEY_PATTERN.test(workKey)) {
+      if (!workKey || !isWorkspaceWorkKey(workKey)) {
         return reply.code(400).send({ code: "INVALID_WORK_KEY" });
       }
       const leaseSeconds = boundedLeaseSeconds(request.body.leaseSeconds);
@@ -377,7 +377,7 @@ export function registerSessionRoutes(
       const actor = actorOf(request);
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
       const workKey = request.body?.workKey?.trim();
-      if (!workKey || !WORK_KEY_PATTERN.test(workKey)) {
+      if (!workKey || !isWorkspaceWorkKey(workKey)) {
         return reply.code(400).send({ code: "INVALID_WORK_KEY" });
       }
       const fencingToken = Number(request.body.fencingToken);
@@ -437,7 +437,7 @@ export function registerSessionRoutes(
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
       const workKey = request.body?.workKey?.trim();
       const toUserId = request.body?.toUserId?.trim();
-      if (!workKey || !WORK_KEY_PATTERN.test(workKey) || !toUserId) {
+      if (!workKey || !isWorkspaceWorkKey(workKey) || !toUserId) {
         return reply.code(400).send({ code: "INVALID_WORK_HANDOFF" });
       }
       const fencingToken = Number(request.body.fencingToken);

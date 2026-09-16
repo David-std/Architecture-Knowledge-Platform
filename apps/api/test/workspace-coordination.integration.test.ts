@@ -244,6 +244,82 @@ describe("workspace coordination integration", () => {
       code: "SESSION_NOT_FOUND",
     });
 
+    const compilerScope = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/claims`,
+      headers: actorAHeaders,
+      payload: { workKey: "packages/compiler/**", leaseSeconds: 120 },
+    });
+    expect(compilerScope.statusCode).toBe(201);
+    expect(compilerScope.json()).toMatchObject({
+      ownerId: actorAId,
+      workKey: "packages/compiler/**",
+      fencingToken: 1,
+    });
+
+    const webScope = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/claims`,
+      headers: actorBHeaders,
+      payload: { workKey: "apps/web/**", leaseSeconds: 120 },
+    });
+    expect(webScope.statusCode).toBe(201);
+
+    const overlap = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/claims`,
+      headers: actorBHeaders,
+      payload: {
+        workKey: "packages/compiler/src/parser.ts",
+        leaseSeconds: 120,
+      },
+    });
+    expect(overlap.statusCode).toBe(409);
+    expect(overlap.json()).toMatchObject({ code: "WORK_CLAIM_OVERLAP" });
+
+    const overlapPrefix = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/claims`,
+      headers: actorBHeaders,
+      payload: { workKey: "packages/compiler/src/**", leaseSeconds: 120 },
+    });
+    expect(overlapPrefix.statusCode).toBe(409);
+    expect(overlapPrefix.json()).toMatchObject({ code: "WORK_CLAIM_OVERLAP" });
+
+    const invalidRecursiveScope = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/claims`,
+      headers: actorBHeaders,
+      payload: { workKey: "packages/**/compiler", leaseSeconds: 120 },
+    });
+    expect(invalidRecursiveScope.statusCode).toBe(400);
+    expect(invalidRecursiveScope.json()).toMatchObject({
+      code: "INVALID_WORK_KEY",
+    });
+
+    const race = await Promise.all([
+      app.inject({
+        method: "POST",
+        url: `/v1/sessions/${sessionId}/claims`,
+        headers: actorAHeaders,
+        payload: { workKey: "services/payments/**", leaseSeconds: 120 },
+      }),
+      app.inject({
+        method: "POST",
+        url: `/v1/sessions/${sessionId}/claims`,
+        headers: actorBHeaders,
+        payload: { workKey: "services/payments/api/**", leaseSeconds: 120 },
+      }),
+    ]);
+    expect(race.map((response) => response.statusCode).sort()).toEqual([
+      201, 409,
+    ]);
+    expect(
+      race.find((response) => response.statusCode === 409)?.json(),
+    ).toMatchObject({
+      code: "WORK_CLAIM_OVERLAP",
+    });
+
     const claimedByA = await app.inject({
       method: "POST",
       url: `/v1/sessions/${sessionId}/claims`,

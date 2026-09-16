@@ -91,6 +91,62 @@ function assertLeaseSeconds(value: number): void {
   }
 }
 
+type WorkspaceWorkScope =
+  { mode: "EXACT"; key: string } | { mode: "PREFIX"; key: string };
+
+const EXACT_WORK_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/;
+const PREFIX_WORK_KEY_PATTERN = /^(.+)\/\*\*$/;
+
+export function workspaceWorkScope(value: string): WorkspaceWorkScope | null {
+  if (value.length < 1 || value.length > 200) return null;
+  const prefix = PREFIX_WORK_KEY_PATTERN.exec(value);
+  if (prefix) {
+    const key = prefix[1];
+    if (!key || key.length > 197 || !EXACT_WORK_KEY_PATTERN.test(key))
+      return null;
+    const segments = key.split("/");
+    if (
+      segments.some(
+        (segment) => !segment || segment === "." || segment === "..",
+      )
+    ) {
+      return null;
+    }
+    return { mode: "PREFIX", key };
+  }
+  return EXACT_WORK_KEY_PATTERN.test(value)
+    ? { mode: "EXACT", key: value }
+    : null;
+}
+
+export function isWorkspaceWorkKey(value: string): boolean {
+  return workspaceWorkScope(value) !== null;
+}
+
+function requiredWorkScope(value: string): WorkspaceWorkScope {
+  const scope = workspaceWorkScope(value);
+  if (!scope) throw workspaceError("INVALID_WORK_KEY", 400);
+  return scope;
+}
+
+function workspaceScopesOverlap(
+  left: WorkspaceWorkScope,
+  right: WorkspaceWorkScope,
+): boolean {
+  if (left.mode === "EXACT" && right.mode === "EXACT") {
+    return left.key === right.key;
+  }
+  if (left.mode === "PREFIX") {
+    if (right.key === left.key || right.key.startsWith(`${left.key}/`))
+      return true;
+  }
+  if (right.mode === "PREFIX") {
+    if (left.key === right.key || left.key.startsWith(`${right.key}/`))
+      return true;
+  }
+  return false;
+}
+
 async function appendCoordinationEvent(
   client: PostgresPoolClient,
   input: {
@@ -314,6 +370,7 @@ export async function claimWorkspaceWork(
   },
 ): Promise<WorkspaceClaim> {
   assertLeaseSeconds(input.leaseSeconds);
+  const requestedScope = requiredWorkScope(input.workKey);
   const client = await db.pool.connect();
   try {
     await client.query("begin");
@@ -322,10 +379,37 @@ export async function claimWorkspaceWork(
          from agent_sessions s
          join workspace_session_participants p
            on p.session_id=s.id and p.user_id=$2 and p.left_at is null
-        where s.id=$1`,
+        where s.id=$1
+        for update of s`,
       [input.sessionId, input.actorId],
     );
     if (!session.rowCount) throw workspaceError("SESSION_NOT_FOUND", 404);
+
+    // The session row lock serializes claim acquisition in this workspace. Without
+    // it, two overlapping prefixes could both observe an empty set and commit.
+    const liveClaims = await client.query<{ work_key: string }>(
+      `select work_key
+         from workspace_claims
+        where session_id=$1
+          and status='ACTIVE'
+          and lease_expires_at>now()`,
+      [input.sessionId],
+    );
+    const conflict = liveClaims.rows.find((candidate) =>
+      workspaceScopesOverlap(
+        requestedScope,
+        requiredWorkScope(candidate.work_key),
+      ),
+    );
+    if (conflict) {
+      throw workspaceError(
+        conflict.work_key === input.workKey
+          ? "WORK_CLAIM_HELD"
+          : "WORK_CLAIM_OVERLAP",
+        409,
+      );
+    }
+
     const claimed = await client.query<Record<string, unknown>>(
       `insert into workspace_claims(
          session_id,work_key,owner_id,status,fencing_token,lease_expires_at,version
@@ -353,6 +437,8 @@ export async function claimWorkspaceWork(
       eventType: "CLAIM_ACQUIRED",
       payload: {
         workKey: input.workKey,
+        scopeMode: requestedScope.mode,
+        scopeKey: requestedScope.key,
         fencingToken: Number(row.fencing_token),
         leaseExpiresAt: row.lease_expires_at,
       },
@@ -378,6 +464,7 @@ export async function heartbeatWorkspaceWork(
   },
 ): Promise<WorkspaceClaim> {
   assertLeaseSeconds(input.leaseSeconds);
+  requiredWorkScope(input.workKey);
   const client = await db.pool.connect();
   try {
     await client.query("begin");
@@ -444,6 +531,7 @@ export async function handoffWorkspaceWork(
   },
 ): Promise<WorkspaceClaim> {
   assertLeaseSeconds(input.leaseSeconds);
+  requiredWorkScope(input.workKey);
   if (input.toUserId === input.actorId) {
     throw workspaceError("WORKSPACE_HANDOFF_SELF", 400);
   }
