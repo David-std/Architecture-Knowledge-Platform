@@ -132,9 +132,13 @@ afterAll(async () => {
     [vaultId],
   );
   await db.pool.query("delete from audit_events where vault_id=$1", [vaultId]);
-  await db.pool.query("delete from schema_dry_runs where vault_id=$1", [vaultId]);
+  await db.pool.query("delete from schema_dry_runs where vault_id=$1", [
+    vaultId,
+  ]);
   await db.pool.query("delete from vaults where id=$1", [vaultId]);
-  await db.pool.query("delete from api_tokens where token_hash=$1", [tokenHash]);
+  await db.pool.query("delete from api_tokens where token_hash=$1", [
+    tokenHash,
+  ]);
   await db.close();
 });
 
