@@ -47,7 +47,11 @@ function boundedObject(
 function safeText(value: unknown, maxLength: number): string | null {
   if (typeof value !== "string") return null;
   const normalized = value.trim();
-  if (!normalized || normalized.length > maxLength || /[\u0000-\u001f]/.test(normalized)) {
+  if (
+    !normalized ||
+    normalized.length > maxLength ||
+    /[\u0000-\u001f]/.test(normalized)
+  ) {
     return null;
   }
   return normalized;
@@ -64,7 +68,11 @@ async function authorizedSession(
     await reply.code(401).send({ code: "AUTH_REQUIRED" });
     return null;
   }
-  const session = await getWorkspaceSessionForParticipant(db, sessionId, actor.id);
+  const session = await getWorkspaceSessionForParticipant(
+    db,
+    sessionId,
+    actor.id,
+  );
   if (!session) {
     await reply.code(404).send({ code: "SESSION_NOT_FOUND" });
     return null;
@@ -115,7 +123,9 @@ export function registerContextFabricRoutes(
           id:
             process.env.AKP_CONTEXT_FABRIC_NODE_ID?.trim() ||
             "local-context-node",
-          sharedDerivedState: deploymentMode === "TEAM_NODE" || deploymentMode === "FEDERATED_ORG",
+          sharedDerivedState:
+            deploymentMode === "TEAM_NODE" ||
+            deploymentMode === "FEDERATED_ORG",
         },
         capabilities: {
           workspaceCoordination: true,
@@ -138,7 +148,12 @@ export function registerContextFabricRoutes(
     "/v1/sessions/:id/external-refs",
     { preHandler: requirePermission("knowledge:read") },
     async (request, reply) => {
-      const session = await authorizedSession(db, request, reply, request.params.id);
+      const session = await authorizedSession(
+        db,
+        request,
+        reply,
+        request.params.id,
+      );
       if (!session) return;
       const actor = actorOf(request);
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
@@ -164,7 +179,12 @@ export function registerContextFabricRoutes(
     "/v1/sessions/:id/external-refs",
     { preHandler: requirePermission("knowledge:read") },
     async (request, reply) => {
-      const session = await authorizedSession(db, request, reply, request.params.id);
+      const session = await authorizedSession(
+        db,
+        request,
+        reply,
+        request.params.id,
+      );
       if (!session) return;
       const actor = actorOf(request);
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
@@ -193,7 +213,12 @@ export function registerContextFabricRoutes(
         "context_fabric.external_ref.upsert",
         "external_object_ref",
         ref.id,
-        { vaultId: session.vaultId, sessionId: session.id, provider, objectType },
+        {
+          vaultId: session.vaultId,
+          sessionId: session.id,
+          provider,
+          objectType,
+        },
         session.spaceId,
       );
       return reply.code(201).send(ref);
@@ -204,7 +229,12 @@ export function registerContextFabricRoutes(
     "/v1/sessions/:id/offline-drafts",
     { preHandler: requirePermission("knowledge:read") },
     async (request, reply) => {
-      const session = await authorizedSession(db, request, reply, request.params.id);
+      const session = await authorizedSession(
+        db,
+        request,
+        reply,
+        request.params.id,
+      );
       if (!session) return;
       const actor = actorOf(request);
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
@@ -226,12 +256,20 @@ export function registerContextFabricRoutes(
     "/v1/sessions/:id/offline-drafts",
     { preHandler: requirePermission("knowledge:read") },
     async (request, reply) => {
-      const session = await authorizedSession(db, request, reply, request.params.id);
+      const session = await authorizedSession(
+        db,
+        request,
+        reply,
+        request.params.id,
+      );
       if (!session) return;
       const actor = actorOf(request);
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
       const clientDraftId = safeText(request.body?.clientDraftId, 200);
-      const baseRevisionSetHash = safeText(request.body?.baseRevisionSetHash, 64);
+      const baseRevisionSetHash = safeText(
+        request.body?.baseRevisionSetHash,
+        64,
+      );
       const eventType = request.body?.eventType?.trim().toUpperCase();
       const payload = boundedObject(request.body?.payload ?? {});
       if (
@@ -250,10 +288,7 @@ export function registerContextFabricRoutes(
         clientDraftId,
         baseRevisionSetHash,
         eventType: eventType as
-          | "FINDING"
-          | "ARTIFACT"
-          | "DECISION_CANDIDATE"
-          | "NOTE",
+          "FINDING" | "ARTIFACT" | "DECISION_CANDIDATE" | "NOTE",
         payload,
       });
       await audit(
@@ -278,7 +313,12 @@ export function registerContextFabricRoutes(
     "/v1/sessions/:id/offline-drafts/:draftId/apply",
     { preHandler: requirePermission("knowledge:read") },
     async (request, reply) => {
-      const session = await authorizedSession(db, request, reply, request.params.id);
+      const session = await authorizedSession(
+        db,
+        request,
+        reply,
+        request.params.id,
+      );
       if (!session) return;
       const actor = actorOf(request);
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
@@ -295,25 +335,40 @@ export function registerContextFabricRoutes(
         "context_fabric.offline_draft.apply",
         "workspace_offline_draft",
         draft.id,
-        { vaultId: session.vaultId, sessionId: session.id, status: draft.status },
+        {
+          vaultId: session.vaultId,
+          sessionId: session.id,
+          status: draft.status,
+        },
         session.spaceId,
       );
       return reply.code(draft.status === "APPLIED" ? 200 : 409).send(draft);
     },
   );
 
-  app.post<{ Params: { id: string }; Body: { query?: string; intent?: string } }>(
+  app.post<{
+    Params: { id: string };
+    Body: { query?: string; intent?: string };
+  }>(
     "/v1/sessions/:id/offline-snapshot",
     { preHandler: requirePermission("knowledge:read") },
     async (request, reply) => {
-      const session = await authorizedSession(db, request, reply, request.params.id);
+      const session = await authorizedSession(
+        db,
+        request,
+        reply,
+        request.params.id,
+      );
       if (!session) return;
       const actor = actorOf(request);
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
       const state = await workspaceSessionSnapshot(db, session.id, actor.id);
       if (!state) return reply.code(404).send({ code: "SESSION_NOT_FOUND" });
       const capturedAt = new Date().toISOString();
-      if (state.contextRevision.status !== "CURRENT" || !state.contextRevision.pinned) {
+      if (
+        state.contextRevision.status !== "CURRENT" ||
+        !state.contextRevision.pinned
+      ) {
         return reply.code(409).send({
           schemaVersion: 1,
           capturedAt,
@@ -372,7 +427,10 @@ export function registerContextFabricRoutes(
     async (request, reply) => {
       const actor = actorOf(request);
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
-      const allowedSpaces = unrestrictedSpaceIdsForPermission(actor, "knowledge:read");
+      const allowedSpaces = unrestrictedSpaceIdsForPermission(
+        actor,
+        "knowledge:read",
+      );
       const requestedSpace = request.query.spaceId?.trim();
       const spaces = requestedSpace
         ? allowedSpaces.filter((spaceId) => spaceId === requestedSpace)
@@ -417,7 +475,10 @@ export function registerContextFabricRoutes(
       const displayName = safeText(request.body?.displayName, 200);
       const discoveryMode = request.body?.discoveryMode ?? "CATALOG_ONLY";
       const trustState = request.body?.trustState ?? "DISCOVERED";
-      const capabilities = boundedObject(request.body?.capabilities ?? {}, 32 * 1024);
+      const capabilities = boundedObject(
+        request.body?.capabilities ?? {},
+        32 * 1024,
+      );
       if (
         !spaceId ||
         !peerKey ||
@@ -428,7 +489,9 @@ export function registerContextFabricRoutes(
       ) {
         return reply.code(400).send({ code: "INVALID_CONTEXT_FABRIC_PEER" });
       }
-      if (!unrestrictedSpaceIdsForPermission(actor, "admin").includes(spaceId)) {
+      if (
+        !unrestrictedSpaceIdsForPermission(actor, "admin").includes(spaceId)
+      ) {
         return reply.code(403).send({ code: "SPACE_SCOPE_DENIED" });
       }
       const organization = await db.pool.query<{ organization_id: string }>(
@@ -446,9 +509,7 @@ export function registerContextFabricRoutes(
         displayName,
         endpoint: request.body?.endpoint ?? null,
         discoveryMode: discoveryMode as
-          | "CATALOG_ONLY"
-          | "REMOTE_QUERY"
-          | "MIRROR_BUNDLE",
+          "CATALOG_ONLY" | "REMOTE_QUERY" | "MIRROR_BUNDLE",
         trustState: trustState as "DISCOVERED" | "APPROVED" | "DISABLED",
         capabilities,
         revision: request.body?.revision ?? null,

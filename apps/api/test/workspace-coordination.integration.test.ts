@@ -673,9 +673,7 @@ describe("workspace coordination integration", () => {
       url: `/v1/sessions/${sessionId}/promotions`,
       headers: actorAHeaders,
       payload: {
-        evidenceEventIds: [
-          String(nonPromotableEvent.id),
-        ],
+        evidenceEventIds: [String(nonPromotableEvent.id)],
         changes: [
           {
             path: "knowledge/blocker.md",

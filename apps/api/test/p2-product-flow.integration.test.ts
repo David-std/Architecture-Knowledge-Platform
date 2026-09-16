@@ -142,9 +142,9 @@ describe("P2 governed product flow", () => {
       };
     };
     const sessionId = initialSession.id;
-    expect(initialSession.contextRevisionSet.dimensions.knowledgeGit.revision).toBe(
-      "p2-flow:r1",
-    );
+    expect(
+      initialSession.contextRevisionSet.dimensions.knowledgeGit.revision,
+    ).toBe("p2-flow:r1");
 
     const joined = await app.inject({
       method: "POST",
@@ -237,7 +237,10 @@ describe("P2 governed product flow", () => {
       },
     });
     expect(handoff.statusCode).toBe(200);
-    expect(handoff.json()).toMatchObject({ ownerId: actorBId, fencingToken: 2 });
+    expect(handoff.json()).toMatchObject({
+      ownerId: actorBId,
+      fencingToken: 2,
+    });
 
     const resumed = await app.inject({
       method: "GET",
@@ -263,7 +266,8 @@ describe("P2 governed product flow", () => {
             path: `knowledge/p2-compiler-boundary-${vaultId.slice(0, 8)}.md`,
             content:
               "---\ntype: claim\nstatus: proposed\nknowledge_layer: project\n---\n# Compiler publication boundary\n\nCanonical publication requires governed human review. This candidate is promoted from durable workspace evidence and must not become approved knowledge through agent agreement or session memory alone.\n",
-            reason: "Promote the shared finding through the existing review lifecycle",
+            reason:
+              "Promote the shared finding through the existing review lifecycle",
           },
         ],
       },
@@ -301,7 +305,9 @@ describe("P2 governed product flow", () => {
       },
     });
     expect(agentApproval.statusCode).toBe(403);
-    expect(agentApproval.json()).toMatchObject({ code: "PRINCIPAL_ROUTE_DENIED" });
+    expect(agentApproval.json()).toMatchObject({
+      code: "PRINCIPAL_ROUTE_DENIED",
+    });
 
     const humanApproval = await app.inject({
       method: "POST",
