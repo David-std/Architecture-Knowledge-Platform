@@ -11,20 +11,17 @@ const spaceId = "00000000-0000-0000-0000-000000000003";
 const actorAId = randomUUID();
 const actorBId = randomUUID();
 const outsiderId = randomUUID();
-const reviewerId = randomUUID();
 const vaultId = randomUUID();
 const actorAToken = `workspace-a-${randomUUID()}`;
 const actorBToken = `workspace-b-${randomUUID()}`;
 const actorBNarrowToken = `workspace-b-narrow-${randomUUID()}`;
 const outsiderToken = `workspace-outsider-${randomUUID()}`;
-const reviewerToken = `workspace-reviewer-${randomUUID()}`;
 const tokenHash = (token: string) =>
   createHash("sha256").update(token).digest("hex");
 const actorAHeaders = { authorization: `Bearer ${actorAToken}` };
 const actorBHeaders = { authorization: `Bearer ${actorBToken}` };
 const actorBNarrowHeaders = { authorization: `Bearer ${actorBNarrowToken}` };
 const outsiderHeaders = { authorization: `Bearer ${outsiderToken}` };
-const reviewerHeaders = { authorization: `Bearer ${reviewerToken}` };
 
 let app: FastifyInstance;
 let db: Postgres;
@@ -84,8 +81,7 @@ beforeAll(async () => {
     `insert into users(id,email,display_name) values
       ($1,$2,'Workspace Actor A'),
       ($3,$4,'Workspace Actor B'),
-      ($5,$6,'Workspace Outsider'),
-      ($7,$8,'Workspace Reviewer')`,
+      ($5,$6,'Workspace Outsider')`,
     [
       actorAId,
       `${actorAId}@example.test`,
@@ -93,17 +89,14 @@ beforeAll(async () => {
       `${actorBId}@example.test`,
       outsiderId,
       `${outsiderId}@example.test`,
-      reviewerId,
-      `${reviewerId}@example.test`,
     ],
   );
   await db.pool.query(
     `insert into memberships(user_id,space_id,role,path_prefix) values
-      ($1,$5,'VIEWER',null),
-      ($2,$5,'VIEWER',null),
-      ($3,$5,'VIEWER',null),
-      ($4,$5,'REVIEWER',null)`,
-    [actorAId, actorBId, outsiderId, reviewerId, spaceId],
+      ($1,$4,'VIEWER',null),
+      ($2,$4,'VIEWER',null),
+      ($3,$4,'VIEWER',null)`,
+    [actorAId, actorBId, outsiderId, spaceId],
   );
   for (const userId of [actorAId, actorBId]) {
     await grantVaultMembership(db, {
@@ -123,20 +116,6 @@ beforeAll(async () => {
     "docs",
   );
   await insertToken(outsiderId, outsiderToken, "workspace outsider");
-  await grantVaultMembership(db, {
-    userId: reviewerId,
-    vaultId,
-    role: "REVIEWER",
-    pathPrefix: null,
-    permissions: ["knowledge:read", "knowledge:review"],
-  });
-  await insertToken(
-    reviewerId,
-    reviewerToken,
-    "workspace reviewer",
-    null,
-    ["knowledge:read", "knowledge:review"],
-  );
   const module = await import("../src/server.js");
   app = module.buildServer();
 });
@@ -161,16 +140,15 @@ afterAll(async () => {
           tokenHash(actorBToken),
           tokenHash(actorBNarrowToken),
           tokenHash(outsiderToken),
-          tokenHash(reviewerToken),
         ],
       ],
     );
     await db.pool.query(
       "delete from memberships where user_id=any($1::uuid[]) and space_id=$2",
-      [[actorAId, actorBId, outsiderId, reviewerId], spaceId],
+      [[actorAId, actorBId, outsiderId], spaceId],
     );
     await db.pool.query("delete from users where id=any($1::uuid[])", [
-      [actorAId, actorBId, outsiderId, reviewerId],
+      [actorAId, actorBId, outsiderId],
     ]);
     await db.pool.query("delete from vaults where id=$1", [vaultId]);
     await db.close();
