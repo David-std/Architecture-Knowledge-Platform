@@ -666,9 +666,7 @@ describe("workspace coordination integration", () => {
       },
     });
 
-    const canonicalAfter = await db.pool.query<{
-      documents: number;
-    }>(
+    const canonicalAfter = await db.pool.query<{ documents: number }>(
       `select
          (select count(*)::int from knowledge_documents where vault_id=$1) documents`,
       [vaultId],
