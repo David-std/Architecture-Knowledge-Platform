@@ -502,7 +502,6 @@ export function registerSessionRoutes(
     },
   );
 
-
   app.post<{
     Params: { id: string };
     Body: {
@@ -548,9 +547,13 @@ export function registerSessionRoutes(
           ...(request.headers.authorization
             ? { authorization: request.headers.authorization }
             : {}),
-          ...(request.headers.cookie ? { cookie: request.headers.cookie } : {}),
+          ...(request.headers.cookie
+            ? { cookie: request.headers.cookie }
+            : {}),
           ...(request.headers["x-csrf-token"]
-            ? { "x-csrf-token": String(request.headers["x-csrf-token"]) }
+            ? {
+                "x-csrf-token": String(request.headers["x-csrf-token"]),
+              }
             : {}),
         },
         payload: {
