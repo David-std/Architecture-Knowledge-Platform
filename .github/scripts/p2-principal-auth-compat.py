@@ -56,8 +56,8 @@ if text.count(old_list) != 1:
     raise SystemExit(f"principal session-list compatibility anchor changed: {text.count(old_list)}")
 text = text.replace(old_list, new_list, 1)
 
-old_event = '    Body: { eventType: string; payload: Record<string, unknown> };\\n'
-new_event = '    Body: { eventType: string; payload?: Record<string, unknown> };\\n'
+old_event = '    Body: { eventType: string; payload: Record<string, unknown> };\n'
+new_event = '    Body: { eventType: string; payload?: Record<string, unknown> };\n'
 if text.count(old_event) != 1:
     raise SystemExit(f"principal event-payload compatibility anchor changed: {text.count(old_event)}")
 text = text.replace(old_event, new_event, 1)
