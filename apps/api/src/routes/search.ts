@@ -4,7 +4,10 @@ import {
   intersectVaultPathPrefixes,
   normalizeVaultPathPrefix,
   pathMatchesVaultPrefix,
+  PostgresAuthorizationPort,
   resolveAuthorizedVaultScope,
+  type AuthorizationPort,
+  type AuthorizedVaultScope,
   type Postgres,
 } from "@akp/postgres";
 import {
@@ -339,6 +342,8 @@ export interface RetrievalExecutionOptions {
   /** Runtime capability snapshot. Production callers must provide all fields. */
   plannerCapabilities?: Partial<QueryPlannerCapabilities>;
   graphPolicy?: Partial<GraphTraversalPolicy>;
+  /** SQL authorization scopes applied before bounded candidate selection. */
+  expansionScopes?: Array<{ vaultId: string; pathPrefix: string | null }>;
   graphScopes?: Array<{ vaultId: string; pathPrefix: string | null }>;
   allowVectorForBenchmark?: boolean;
   deterministicRerank?: boolean;
@@ -357,6 +362,8 @@ export interface RetrievalExecutionOptions {
 export interface SearchRouteDependencies {
   /** Active model/agent tokenizer when the runtime provides one. */
   contextTokenizer?: Tokenizer;
+  /** Central authorization boundary for retrieval expansion. */
+  authorizationPort?: AuthorizationPort;
 }
 
 interface StoredContextPacketRow {
@@ -943,15 +950,34 @@ export async function queryKnowledge(
     plan,
     input.limit,
   );
-  // A JavaScript path callback cannot safely participate in SQL ranking.  If a
-  // caller supplies one, require equivalent SQL scopes so unauthorized seeds
-  // or paths cannot consume bounded graph slots before the callback runs.
+  // Authorization participates in retrieval semantics rather than acting as
+  // a final redaction pass. Every bounded channel gets equivalent SQL scopes.
+  const expansionScopes = normalizeGraphScopes(
+    vaultIds,
+    options.pathAuthorizer !== undefined &&
+      options.expansionScopes === undefined
+      ? []
+      : options.expansionScopes,
+  );
   const graphScopes = normalizeGraphScopes(
     vaultIds,
-    options.pathAuthorizer !== undefined && options.graphScopes === undefined
-      ? []
-      : options.graphScopes,
+    options.graphScopes ??
+      options.expansionScopes ??
+      (options.pathAuthorizer !== undefined ? [] : undefined),
   );
+  const expansionScopeJson = JSON.stringify(expansionScopes);
+  const expansionScopeClause = (alias: string, parameter: string) => `
+    and exists (
+      select 1
+        from jsonb_to_recordset(${parameter}::jsonb)
+          as authorized_scope(vault_id uuid,path_prefix text)
+       where authorized_scope.vault_id=${alias}vault_id
+         and (
+           authorized_scope.path_prefix is null
+           or ${alias}path=authorized_scope.path_prefix
+           or starts_with(${alias}path,authorized_scope.path_prefix || '/')
+         )
+    )`;
   const requestedByPolicy = options.channels ?? plan.channels;
   const requestedChannels = requestedByPolicy.filter((channel) =>
     channelAllowedByCapabilities(channel, effectiveCapabilities),
@@ -1014,6 +1040,7 @@ export async function queryKnowledge(
           from knowledge_documents d
          where d.space_id=$1
            ${vaultFilter("d.")}
+           ${expansionScopeClause("d.", "$4")}
            and d.lifecycle ${lifecycleClause}
            and ${trustClause("d.")}
            and d.refresh_status not in ('STALE_BLOCKED','INVALID')
@@ -1040,7 +1067,12 @@ export async function queryKnowledge(
            d.id
          limit $3
         `,
-          [spaceId, input.query, Math.max(input.limit * 2, 20)],
+          [
+            spaceId,
+            input.query,
+            Math.max(input.limit * 2, 20),
+            expansionScopeJson,
+          ],
         ),
       )
     : { rows: [] as ExactSearchRow[] };
@@ -1066,6 +1098,7 @@ export async function queryKnowledge(
               cross join query
              where d.space_id=$1
                ${vaultFilter("d.")}
+               ${expansionScopeClause("d.", "$4")}
                and d.lifecycle ${lifecycleClause}
                and ${trustClause("d.")}
                and d.refresh_status not in ('STALE_BLOCKED','INVALID')
@@ -1130,7 +1163,12 @@ export async function queryKnowledge(
            order by score desc,id,unit_id nulls last
            limit $3
           `,
-            [spaceId, input.query, Math.max(input.limit * 3, 30)],
+            [
+              spaceId,
+              input.query,
+              Math.max(input.limit * 3, 30),
+              expansionScopeJson,
+            ],
           ),
         )
       : { rows: [] as LexicalSearchRow[] };
@@ -1208,6 +1246,7 @@ export async function queryKnowledge(
             join knowledge_units u on u.id=e.unit_id
             join knowledge_documents d on d.id=u.document_id
            where e.generation_id=$1 and u.space_id=$2 and u.vault_id=$4
+             ${expansionScopeClause("d.", "$6")}
              and e.embedding_dimensions=${dimensions}
              and e.content_hash=u.content_hash
              and u.embedding_eligible
@@ -1227,6 +1266,7 @@ export async function queryKnowledge(
               toPgVector(queryVector),
               generation.vaultId,
               Math.max(input.limit * 3, 30),
+              expansionScopeJson,
             ],
           ),
         );
@@ -1264,6 +1304,7 @@ export async function queryKnowledge(
             cross join query
            where d.space_id=$1
              ${vaultFilter("d.")}
+             ${expansionScopeClause("d.", "$4")}
              and d.lifecycle ${lifecycleClause}
              and ${trustClause("d.")}
              and d.refresh_status not in ('STALE_BLOCKED','INVALID')
@@ -1273,7 +1314,7 @@ export async function queryKnowledge(
                     d.path,d.id
            limit $3
           `,
-        [spaceId, input.query, Math.max(input.limit, 10)],
+        [spaceId, input.query, Math.max(input.limit, 10), expansionScopeJson],
       )
     : { rows: [] as DocumentChannelRow[] };
   if (channels.has("context-pack")) {
@@ -1289,6 +1330,7 @@ export async function queryKnowledge(
             cross join query
            where d.space_id=$1
              ${vaultFilter("d.")}
+             ${expansionScopeClause("d.", "$4")}
              and d.lifecycle ${lifecycleClause}
              and ${trustClause("d.")}
              and d.refresh_status not in ('STALE_BLOCKED','INVALID')
@@ -1299,7 +1341,7 @@ export async function queryKnowledge(
                     d.path,d.id
            limit $3
           `,
-        [spaceId, input.query, Math.max(input.limit, 10)],
+        [spaceId, input.query, Math.max(input.limit, 10), expansionScopeJson],
       )
     : { rows: [] as DocumentChannelRow[] };
   if (channels.has("raw")) options.availableChannelSink?.add("raw");
@@ -1313,6 +1355,7 @@ export async function queryKnowledge(
             cross join query
            where d.space_id=$1
              ${vaultFilter("d.")}
+             ${expansionScopeClause("d.", "$4")}
              and d.lifecycle ${lifecycleClause}
              and ${trustClause("d.")}
              and d.refresh_status not in ('STALE_BLOCKED','INVALID')
@@ -1323,7 +1366,7 @@ export async function queryKnowledge(
                     d.id
            limit $3
           `,
-        [spaceId, input.query, Math.max(input.limit, 10)],
+        [spaceId, input.query, Math.max(input.limit, 10), expansionScopeJson],
       )
     : { rows: [] as DocumentChannelRow[] };
   if (channels.has("code")) options.availableChannelSink?.add("code");
@@ -2021,6 +2064,8 @@ export function registerSearchRoutes(
   db: Postgres,
   dependencies: SearchRouteDependencies = {},
 ): void {
+  const authorizationPort =
+    dependencies.authorizationPort ?? new PostgresAuthorizationPort(db);
   app.post(
     "/v1/search",
     {
@@ -2059,11 +2104,10 @@ export function registerSearchRoutes(
         return reply.code(403).send({ code: "PRINCIPAL_VAULT_SCOPE_DENIED" });
       }
       let vaultIds: string[];
-      let accessByVault: Awaited<
-        ReturnType<typeof resolveAuthorizedVaultScope>
-      >["accessByVault"] = {};
+      let authorizationScope: AuthorizedVaultScope;
+      let accessByVault: AuthorizedVaultScope["accessByVault"] = {};
       try {
-        const scope = await resolveAuthorizedVaultScope(db, {
+        authorizationScope = await authorizationPort.resolveVaultScope({
           userId: actor.id,
           spaceId: requestedSpace,
           permission: "knowledge:read",
@@ -2077,8 +2121,8 @@ export function registerSearchRoutes(
             : parsed.data.vaultIds,
           federated: principalVaultId ? false : parsed.data.federated,
         });
-        vaultIds = scope.vaultIds;
-        accessByVault = scope.accessByVault;
+        vaultIds = authorizationScope.vaultIds;
+        accessByVault = authorizationScope.accessByVault;
       } catch (error) {
         const code =
           error instanceof Error ? error.message : "INVALID_VAULT_SCOPE";
@@ -2133,24 +2177,35 @@ export function registerSearchRoutes(
         requestedSpace,
         "knowledge:read",
       );
+      const expansionScopes = Object.entries(accessByVault).flatMap(
+        ([vaultId, access]) =>
+          actorPathPrefixes.flatMap((actorPathPrefix) => {
+            const pathPrefix = intersectVaultPathPrefixes(
+              actorPathPrefix,
+              access.pathPrefix,
+            );
+            return pathPrefix === undefined ? [] : [{ vaultId, pathPrefix }];
+          }),
+      );
       const hits = await queryKnowledge(db, scopedRequest, {
         plan,
         vaultIds,
-        graphScopes: Object.entries(accessByVault).flatMap(
-          ([vaultId, access]) =>
-            actorPathPrefixes.flatMap((actorPathPrefix) => {
-              const pathPrefix = intersectVaultPathPrefixes(
-                actorPathPrefix,
-                access.pathPrefix,
-              );
-              return pathPrefix === undefined ? [] : [{ vaultId, pathPrefix }];
-            }),
-        ),
+        expansionScopes,
+        graphScopes: expansionScopes,
         warningSink: retrievalWarnings,
         availableChannelSink: availableChannels,
         pathAuthorizer: (documentPath, vaultId) => {
-          const access = accessByVault[String(vaultId ?? "")];
-          if (!access) return false;
+          const authorizedVaultId = String(vaultId ?? "");
+          const access = accessByVault[authorizedVaultId];
+          if (
+            !access ||
+            !authorizationPort.canExpandResource(authorizationScope, {
+              vaultId: authorizedVaultId,
+              path: documentPath,
+            })
+          ) {
+            return false;
+          }
           return (
             pathMatchesVaultPrefix(documentPath, access.pathPrefix) &&
             hasPathAccess(actor, requestedSpace, "knowledge:read", documentPath)
