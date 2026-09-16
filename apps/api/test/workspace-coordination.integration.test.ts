@@ -123,6 +123,14 @@ beforeAll(async () => {
 afterAll(async () => {
   if (app) await app.close();
   if (db) {
+    await db.pool.query(
+      `delete from event_deliveries
+        where event_id in (select event_id from event_outbox where vault_id=$1)`,
+      [vaultId],
+    );
+    await db.pool.query("delete from event_outbox where vault_id=$1", [
+      vaultId,
+    ]);
     if (sessionId) {
       await db.pool.query(
         "delete from audit_events where resource_type='agent_session' and resource_id=$1",
@@ -178,6 +186,14 @@ describe("workspace coordination integration", () => {
     });
     expect(created.statusCode).toBe(201);
     sessionId = (created.json() as { id: string }).id;
+    const sessionOutbox = await db.pool.query<{ count: number }>(
+      `select count(*)::int count from event_outbox
+        where event_type='WorkspaceSessionCreated'
+          and vault_id=$1
+          and payload->>'sessionId'=$2`,
+      [vaultId, sessionId],
+    );
+    expect(sessionOutbox.rows[0]?.count).toBe(1);
 
     const ownerReadd = await app.inject({
       method: "POST",
@@ -452,6 +468,21 @@ describe("workspace coordination integration", () => {
       fencingToken: 2,
       status: "ACTIVE",
     });
+    const durableCoordinationEvents = await db.pool.query<{
+      event_type: string;
+    }>(
+      `select event_type from event_outbox
+        where vault_id=$1 and payload->>'sessionId'=$2
+        order by occurred_at,event_id`,
+      [vaultId, sessionId],
+    );
+    expect(durableCoordinationEvents.rows.map((row) => row.event_type)).toEqual(
+      expect.arrayContaining([
+        "WorkspaceSessionCreated",
+        "WorkspaceClaimUpdated",
+        "WorkspaceHandoffCreated",
+      ]),
+    );
 
     const staleOwner = await app.inject({
       method: "POST",
@@ -740,6 +771,17 @@ describe("workspace coordination integration", () => {
         },
       },
     });
+    const promotionOutbox = await db.pool.query<{
+      count: number;
+    }>(
+      `select count(*)::int count from event_outbox
+        where event_type='WorkspacePromotionRequested'
+          and vault_id=$1
+          and payload->>'sessionId'=$2
+          and payload->>'workspaceEventId'=$3`,
+      [vaultId, sessionId, promotionBody.promotionEventId],
+    );
+    expect(promotionOutbox.rows[0]?.count).toBe(1);
 
     const canonicalAfter = await db.pool.query<{ documents: number }>(
       `select

@@ -5,6 +5,7 @@ import {
   workspaceContextRevisionState,
   type ContextRevisionSet,
 } from "./context-revision-set.js";
+import { appendOutboxEvent, type IntegrationEventType } from "./outbox.js";
 
 export type WorkspaceParticipantRole = "OWNER" | "PARTICIPANT";
 export const PROMOTABLE_WORKSPACE_EVENT_TYPES = [
@@ -27,6 +28,24 @@ export type WorkspaceEventType =
   | "DECISION_CANDIDATE"
   | "PROMOTION_REQUESTED"
   | "NOTE";
+
+function workspaceIntegrationEventType(
+  eventType: WorkspaceEventType,
+): IntegrationEventType | null {
+  switch (eventType) {
+    case "SESSION_CREATED":
+      return "WorkspaceSessionCreated";
+    case "CLAIM_ACQUIRED":
+    case "CLAIM_HEARTBEAT":
+      return "WorkspaceClaimUpdated";
+    case "CLAIM_HANDOFF":
+      return "WorkspaceHandoffCreated";
+    case "PROMOTION_REQUESTED":
+      return "WorkspacePromotionRequested";
+    default:
+      return null;
+  }
+}
 
 export interface WorkspaceSessionAccess {
   id: string;
@@ -210,6 +229,35 @@ async function appendCoordinationEvent(
   );
   const row = inserted.rows[0];
   if (!row) throw workspaceError("WORKSPACE_EVENT_APPEND_FAILED", 500);
+  const integrationEventType = workspaceIntegrationEventType(input.eventType);
+  if (integrationEventType) {
+    const organization = await client.query<{ organization_id: string }>(
+      "select organization_id from spaces where id=$1",
+      [String(session.space_id)],
+    );
+    const organizationId = organization.rows[0]?.organization_id;
+    if (!organizationId) {
+      throw workspaceError("WORKSPACE_EVENT_ORGANIZATION_NOT_FOUND", 500);
+    }
+    await appendOutboxEvent(client, {
+      eventType: integrationEventType,
+      resourceId: `workspace-event:${String(row.id)}`,
+      organizationId,
+      spaceId: String(session.space_id),
+      vaultId: String(session.vault_id),
+      correlationId: input.sessionId,
+      causationId: input.claimId ?? null,
+      payload: {
+        sessionId: input.sessionId,
+        workspaceEventId: String(row.id),
+        sessionVersion: Number(row.session_version),
+        workspaceEventType: input.eventType,
+        actorId: input.actorId,
+        claimId: input.claimId ?? null,
+        data: input.payload,
+      },
+    });
+  }
   return row;
 }
 
