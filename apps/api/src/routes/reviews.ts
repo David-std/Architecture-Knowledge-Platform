@@ -606,10 +606,7 @@ async function reviewVaultAccess(
   actor: ReturnType<typeof actorOf>,
   review: Record<string, unknown>,
   permission:
-    | "knowledge:read"
-    | "knowledge:propose"
-    | "knowledge:review"
-    | "admin",
+    "knowledge:read" | "knowledge:propose" | "knowledge:review" | "admin",
 ): Promise<ReviewVaultAccess | null> {
   if (!actor) return null;
   const spaceId = String(review.space_id);
@@ -640,10 +637,7 @@ async function canAccessReview(
   actor: ReturnType<typeof actorOf>,
   review: Record<string, unknown>,
   permission:
-    | "knowledge:read"
-    | "knowledge:propose"
-    | "knowledge:review"
-    | "admin",
+    "knowledge:read" | "knowledge:propose" | "knowledge:review" | "admin",
 ): Promise<boolean> {
   const access = await reviewVaultAccess(db, actor, review, permission);
   if (!access) return false;
