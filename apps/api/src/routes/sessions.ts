@@ -371,7 +371,10 @@ export function registerSessionRoutes(
             contextRevision: {
               status: snapshot.contextRevision.status,
               pinned: snapshot.contextRevision.pinned
-                ? { revisionSetHash: snapshot.contextRevision.pinned.revisionSetHash }
+                ? {
+                    revisionSetHash:
+                      snapshot.contextRevision.pinned.revisionSetHash,
+                  }
                 : null,
               current: {
                 revisionSetHash:
@@ -405,7 +408,8 @@ export function registerSessionRoutes(
             allowedKnowledgeKinds:
               profile.retrievalPolicy.allowedKinds,
             mandatoryKinds,
-            progressiveDisclosure: profile.retrievalPolicy.progressiveDisclosure,
+            progressiveDisclosure:
+              profile.retrievalPolicy.progressiveDisclosure,
             promotion: {
               allowedTargetScopes:
                 profile.promotionPolicy.allowedTargetScopes,
