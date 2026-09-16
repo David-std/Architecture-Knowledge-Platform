@@ -45,7 +45,11 @@ async function insertToken(
           {
             spaceId,
             pathPrefix,
-            permissions: ["knowledge:read", "source:read"],
+            permissions: [
+              "knowledge:read",
+              "knowledge:propose",
+              "source:read",
+            ],
           },
         ],
       }),
@@ -99,7 +103,7 @@ beforeAll(async () => {
       vaultId,
       role: "VIEWER",
       pathPrefix: null,
-      permissions: ["knowledge:read", "source:read"],
+      permissions: ["knowledge:read", "knowledge:propose", "source:read"],
     });
   }
   await insertToken(actorAId, actorAToken, "workspace actor a");
@@ -154,11 +158,9 @@ describe("workspace coordination integration", () => {
   it("coordinates two authorized actors with durable fencing and handoff without publishing knowledge", async () => {
     const canonicalBefore = await db.pool.query<{
       documents: number;
-      reviews: number;
     }>(
       `select
-         (select count(*)::int from knowledge_documents where vault_id=$1) documents,
-         (select count(*)::int from reviews where vault_id=$1) reviews`,
+         (select count(*)::int from knowledge_documents where vault_id=$1) documents`,
       [vaultId],
     );
 
@@ -673,6 +675,18 @@ describe("workspace coordination integration", () => {
          (select count(*)::int from reviews where vault_id=$1) reviews`,
       [vaultId],
     );
-    expect(canonicalAfter.rows[0]).toEqual(canonicalBefore.rows[0]);
+    expect(canonicalAfter.rows[0].documents).toBe(
+      canonicalBefore.rows[0].documents,
+    );
+    expect(
+      Number(
+        (
+          await db.pool.query(
+            "select count(*)::int count from reviews where vault_id=$1",
+            [vaultId],
+          )
+        ).rows[0]?.count ?? 0,
+      ),
+    ).toBeGreaterThan(0);
   });
 });
