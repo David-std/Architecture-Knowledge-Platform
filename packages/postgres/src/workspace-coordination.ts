@@ -775,7 +775,10 @@ export async function workspacePromotionEvidence(
     throw workspaceError("PROMOTION_EVIDENCE_LIMIT_EXCEEDED", 413);
   }
   if (!uniqueIds.length || uniqueIds.length !== input.eventIds.length) {
-    throw workspaceError("PROMOTION_EVIDENCE_REQUIRED", 400);
+    throw workspaceError(
+      uniqueIds.length ? "PROMOTION_EVIDENCE_DUPLICATE" : "PROMOTION_EVIDENCE_REQUIRED",
+      400,
+    );
   }
   const client = await db.pool.connect();
   try {
