@@ -360,16 +360,16 @@ export async function listWorkspaceOfflineDrafts(
 
 export async function applyWorkspaceOfflineDraft(
   db: Postgres,
-  input: { draftId: string; actorId: string },
+  input: { draftId: string; sessionId: string; actorId: string },
 ): Promise<WorkspaceOfflineDraftRecord> {
   const client = await db.pool.connect();
   try {
     await client.query("begin");
     const draftResult = await client.query<Record<string, unknown>>(
       `select * from workspace_offline_drafts
-        where id=$1 and actor_id=$2
+        where id=$1 and session_id=$2 and actor_id=$3
         for update`,
-      [input.draftId, input.actorId],
+      [input.draftId, input.sessionId, input.actorId],
     );
     const draft = draftResult.rows[0];
     if (!draft) throw fabricError("OFFLINE_DRAFT_NOT_FOUND", 404);

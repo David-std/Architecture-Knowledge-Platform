@@ -13,6 +13,7 @@ const headers = { authorization: `Bearer ${token}` };
 let app: FastifyInstance;
 let db: Postgres;
 let sessionId = "";
+let secondSessionId = "";
 
 beforeAll(async () => {
   if (!process.env.DATABASE_URL) {
@@ -72,14 +73,12 @@ beforeAll(async () => {
 afterAll(async () => {
   if (app) await app.close();
   if (db) {
-    if (sessionId) {
+    for (const id of [sessionId, secondSessionId].filter(Boolean)) {
       await db.pool.query(
         "delete from audit_events where resource_id=$1 or metadata->>'sessionId'=$1",
-        [sessionId],
+        [id],
       );
-      await db.pool.query("delete from agent_sessions where id=$1", [
-        sessionId,
-      ]);
+      await db.pool.query("delete from agent_sessions where id=$1", [id]);
     }
     await db.pool.query("delete from api_tokens where token_hash=$1", [
       tokenHash,
@@ -205,6 +204,43 @@ describe("team context fabric integration", () => {
     expect(duplicate.json()).toMatchObject({
       id: queuedDraft.id,
       status: "QUEUED",
+    });
+
+    const secondSession = await app.inject({
+      method: "POST",
+      url: "/v1/sessions",
+      headers,
+      payload: {
+        spaceId,
+        vaultId,
+        purpose: "Cross-session offline draft scope fixture",
+        contextBudget: 2048,
+      },
+    });
+    expect(secondSession.statusCode).toBe(201);
+    secondSessionId = String(secondSession.json().id);
+
+    const crossSessionApply = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${secondSessionId}/offline-drafts/${queuedDraft.id}/apply`,
+      headers,
+    });
+    expect(crossSessionApply.statusCode).toBe(404);
+    expect(crossSessionApply.json()).toMatchObject({
+      code: "OFFLINE_DRAFT_NOT_FOUND",
+    });
+    const afterCrossSessionAttempt = await db.pool.query<{
+      status: string;
+      applied_event_id: string | null;
+    }>(
+      `select status,applied_event_id
+         from workspace_offline_drafts
+        where id=$1`,
+      [queuedDraft.id],
+    );
+    expect(afterCrossSessionAttempt.rows[0]).toMatchObject({
+      status: "QUEUED",
+      applied_event_id: null,
     });
 
     const applied = await app.inject({

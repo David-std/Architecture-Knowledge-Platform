@@ -324,12 +324,21 @@ export function registerContextFabricRoutes(
       if (!session) return;
       const actor = actorOf(request);
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
-      const draft = await applyWorkspaceOfflineDraft(db, {
-        draftId: request.params.draftId,
-        actorId: actor.id,
-      });
-      if (draft.sessionId !== session.id) {
-        return reply.code(404).send({ code: "OFFLINE_DRAFT_NOT_FOUND" });
+      let draft;
+      try {
+        draft = await applyWorkspaceOfflineDraft(db, {
+          draftId: request.params.draftId,
+          sessionId: session.id,
+          actorId: actor.id,
+        });
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message === "OFFLINE_DRAFT_NOT_FOUND"
+        ) {
+          return reply.code(404).send({ code: "OFFLINE_DRAFT_NOT_FOUND" });
+        }
+        throw error;
       }
       await audit(
         db,
