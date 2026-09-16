@@ -10,6 +10,7 @@ export * from "./knowledge-profile-governance.js";
 export * from "./workspace-coordination.js";
 export * from "./context-revision-set.js";
 export * from "./principals.js";
+export * from "./team-context-fabric.js";
 
 export interface PostgresOptions {
   onIdleClientError?: (error: Error) => void;
