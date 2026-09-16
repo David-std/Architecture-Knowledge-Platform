@@ -63,14 +63,6 @@ sessions_path.write_text(sessions)
 
 test_path = Path("apps/api/test/context-revision-set.integration.test.ts")
 test = test_path.read_text()
-# Temporary lateral-branch diagnostic: turn Fastify logging on so an unexpected
-# clean-DB 500 exposes the actual PostgreSQL/runtime error in Actions logs.
-if 'process.env.NODE_ENV = "test";' in test:
-    test = test.replace(
-        'process.env.NODE_ENV = "test";',
-        'process.env.NODE_ENV = "development";',
-        1,
-    )
 old_test = '''    const staleClaim = await app.inject({
       method: "POST",
       url: `/v1/sessions/${initial.id}/claims`,'''
