@@ -6,6 +6,7 @@ on:
     paths:
       - .github/scripts/p2-principal-auth.py
       - .github/scripts/p2-principal-auth-compat.py
+      - .github/scripts/p2-principal-vault-compat.py
       - .github/scripts/p2-principal-vault-hardening.py
       - .github/workflows/p2-principal-auth-preflight.yml
 
@@ -42,6 +43,7 @@ jobs:
         run: |
           python3 .github/scripts/p2-principal-auth-compat.py
           python3 .github/scripts/p2-principal-auth.py
+          python3 .github/scripts/p2-principal-vault-compat.py
           python3 .github/scripts/p2-principal-vault-hardening.py
 
       - name: Format touched TypeScript
