@@ -611,7 +611,17 @@ export function registerSessionRoutes(
         ],
       );
       if (provenanceUpdate.rowCount !== 1) {
-        return reply.code(409).send({ code: "PROMOTION_PROVENANCE_ATTACH_FAILED" });
+        await db.pool.query(
+          `update reviews
+              set status='REJECTED',
+                  last_error='PROMOTION_PROVENANCE_ATTACH_FAILED',
+                  updated_at=now()
+            where id=$1 and status='PENDING'`,
+          [created.reviewId],
+        );
+        return reply
+          .code(409)
+          .send({ code: "PROMOTION_PROVENANCE_ATTACH_FAILED" });
       }
       await audit(
         db,
