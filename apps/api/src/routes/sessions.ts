@@ -588,7 +588,7 @@ export function registerSessionRoutes(
           requestedPaths: changes.map((change) => change.path),
         },
       });
-      await db.pool.query(
+      const provenanceUpdate = await db.pool.query(
         `update reviews
             set impact_manifest =
               impact_manifest || $2::jsonb,
@@ -610,6 +610,9 @@ export function registerSessionRoutes(
           actor.id,
         ],
       );
+      if (provenanceUpdate.rowCount !== 1) {
+        return reply.code(409).send({ code: "PROMOTION_PROVENANCE_ATTACH_FAILED" });
+      }
       await audit(
         db,
         request,
