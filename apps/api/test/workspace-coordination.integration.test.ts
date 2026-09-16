@@ -625,7 +625,7 @@ describe("workspace coordination integration", () => {
           {
             path: "knowledge/compiler-boundary.md",
             content:
-              "---\\ntype: claim\\nstatus: proposed\\nknowledge_layer: project\\n---\\n# Compiler boundary\\n\\nCanonical publication requires governed review. This promoted claim preserves provenance to the durable workspace finding and remains pending until an authorized human reviewer completes the existing review lifecycle.\\n",
+              "---\ntype: claim\nstatus: proposed\nknowledge_layer: project\n---\n# Compiler boundary\n\nCanonical publication requires governed review. This promoted claim preserves provenance to the durable workspace finding and remains pending until an authorized human reviewer completes the existing review lifecycle.\n",
             reason: "Promote durable workspace evidence",
           },
         ],
