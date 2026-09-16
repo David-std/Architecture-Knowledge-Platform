@@ -7,6 +7,13 @@ import {
 } from "./context-revision-set.js";
 
 export type WorkspaceParticipantRole = "OWNER" | "PARTICIPANT";
+export const PROMOTABLE_WORKSPACE_EVENT_TYPES = [
+  "FINDING",
+  "ARTIFACT",
+  "DECISION_CANDIDATE",
+] as const;
+export type PromotableWorkspaceEventType =
+  (typeof PROMOTABLE_WORKSPACE_EVENT_TYPES)[number];
 export type WorkspaceEventType =
   | "SESSION_CREATED"
   | "PARTICIPANT_JOINED"
@@ -806,7 +813,7 @@ export async function workspacePromotionEvidence(
       [
         input.sessionId,
         uniqueIds,
-        ["FINDING", "ARTIFACT", "DECISION_CANDIDATE"],
+        PROMOTABLE_WORKSPACE_EVENT_TYPES,
       ],
     );
     if (events.rowCount !== uniqueIds.length) {
