@@ -1,0 +1,36 @@
+name: p2-workspace-format
+
+on:
+  pull_request:
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Format workspace coordination files
+        run: |
+          pnpm exec prettier --write \
+            apps/api/src/routes/sessions.ts \
+            apps/api/test/workspace-coordination.integration.test.ts \
+            packages/postgres/src/workspace-coordination.ts
+          pnpm exec prettier --check \
+            apps/api/src/routes/sessions.ts \
+            apps/api/test/workspace-coordination.integration.test.ts \
+            packages/postgres/src/workspace-coordination.ts
+      - uses: actions/upload-artifact@v7
+        with:
+          name: p2-workspace-formatted
+          path: |
+            apps/api/src/routes/sessions.ts
+            apps/api/test/workspace-coordination.integration.test.ts
+            packages/postgres/src/workspace-coordination.ts
+          if-no-files-found: error
+          retention-days: 1
