@@ -48,7 +48,9 @@ function workspaceError(code: string, statusCode: number): Error {
   return error;
 }
 
-function normalizeSession(row: Record<string, unknown>): WorkspaceSessionAccess {
+function normalizeSession(
+  row: Record<string, unknown>,
+): WorkspaceSessionAccess {
   return {
     id: String(row.id),
     spaceId: String(row.space_id),
@@ -429,7 +431,10 @@ export async function appendWorkspaceEvent(
     actorId: string;
     eventType: Exclude<
       WorkspaceEventType,
-      "SESSION_CREATED" | "PARTICIPANT_JOINED" | "CLAIM_ACQUIRED" | "CLAIM_HANDOFF"
+      | "SESSION_CREATED"
+      | "PARTICIPANT_JOINED"
+      | "CLAIM_ACQUIRED"
+      | "CLAIM_HANDOFF"
     >;
     payload: Record<string, unknown>;
   },
@@ -470,7 +475,11 @@ export async function workspaceSessionSnapshot(
   claims: WorkspaceClaim[];
   events: Record<string, unknown>[];
 } | null> {
-  const session = await getWorkspaceSessionForParticipant(db, sessionId, userId);
+  const session = await getWorkspaceSessionForParticipant(
+    db,
+    sessionId,
+    userId,
+  );
   if (!session) return null;
   const [participants, claims, events] = await Promise.all([
     db.pool.query<Record<string, unknown>>(

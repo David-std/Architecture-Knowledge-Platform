@@ -110,7 +110,9 @@ afterAll(async () => {
         "delete from audit_events where resource_type='agent_session' and resource_id=$1",
         [sessionId],
       );
-      await db.pool.query("delete from agent_sessions where id=$1", [sessionId]);
+      await db.pool.query("delete from agent_sessions where id=$1", [
+        sessionId,
+      ]);
     }
     await db.pool.query(
       "delete from api_tokens where token_hash=any($1::text[])",
@@ -126,10 +128,9 @@ afterAll(async () => {
       "delete from memberships where user_id=any($1::uuid[]) and space_id=$2",
       [[actorAId, actorBId, outsiderId], spaceId],
     );
-    await db.pool.query(
-      "delete from users where id=any($1::uuid[])",
-      [[actorAId, actorBId, outsiderId]],
-    );
+    await db.pool.query("delete from users where id=any($1::uuid[])", [
+      [actorAId, actorBId, outsiderId],
+    ]);
     await db.pool.query("delete from vaults where id=$1", [vaultId]);
     await db.close();
   }
@@ -221,7 +222,8 @@ describe("workspace coordination integration", () => {
       payload: {
         eventType: "FINDING",
         payload: {
-          summary: "The compiler boundary is isolated from canonical publication.",
+          summary:
+            "The compiler boundary is isolated from canonical publication.",
           evidence: "integration-fixture",
         },
       },

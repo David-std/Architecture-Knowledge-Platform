@@ -37,9 +37,7 @@ function boundedLeaseSeconds(value: unknown): number | null {
   return candidate;
 }
 
-function boundedEventPayload(
-  value: unknown,
-): Record<string, unknown> | null {
+function boundedEventPayload(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const encoded = JSON.stringify(value);
   if (Buffer.byteLength(encoded, "utf8") > 16 * 1024) return null;
@@ -236,15 +234,16 @@ export function registerSessionRoutes(
     "/v1/sessions/:id/state",
     { preHandler: requirePermission("knowledge:read") },
     async (request, reply) => {
-      const session = await authorizedSession(db, request, reply, request.params.id);
+      const session = await authorizedSession(
+        db,
+        request,
+        reply,
+        request.params.id,
+      );
       if (!session) return;
       const actor = actorOf(request);
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
-      const snapshot = await workspaceSessionSnapshot(
-        db,
-        session.id,
-        actor.id,
-      );
+      const snapshot = await workspaceSessionSnapshot(db, session.id, actor.id);
       if (!snapshot) return reply.code(404).send({ code: "SESSION_NOT_FOUND" });
       return snapshot;
     },
@@ -257,7 +256,12 @@ export function registerSessionRoutes(
     "/v1/sessions/:id/participants",
     { preHandler: requirePermission("knowledge:read") },
     async (request, reply) => {
-      const session = await authorizedSession(db, request, reply, request.params.id);
+      const session = await authorizedSession(
+        db,
+        request,
+        reply,
+        request.params.id,
+      );
       if (!session) return;
       if (session.role !== "OWNER") {
         return reply
@@ -271,9 +275,7 @@ export function registerSessionRoutes(
         return reply.code(400).send({ code: "PARTICIPANT_USER_REQUIRED" });
       }
       if (!(await userHasFullVaultRead(db, userId, session))) {
-        return reply
-          .code(422)
-          .send({ code: "PARTICIPANT_NOT_AUTHORIZED" });
+        return reply.code(422).send({ code: "PARTICIPANT_NOT_AUTHORIZED" });
       }
       await addWorkspaceParticipant(db, {
         sessionId: session.id,
@@ -300,7 +302,12 @@ export function registerSessionRoutes(
     "/v1/sessions/:id/claims",
     { preHandler: requirePermission("knowledge:read") },
     async (request, reply) => {
-      const session = await authorizedSession(db, request, reply, request.params.id);
+      const session = await authorizedSession(
+        db,
+        request,
+        reply,
+        request.params.id,
+      );
       if (!session) return;
       const actor = actorOf(request);
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
@@ -349,7 +356,12 @@ export function registerSessionRoutes(
     "/v1/sessions/:id/claims/handoff",
     { preHandler: requirePermission("knowledge:read") },
     async (request, reply) => {
-      const session = await authorizedSession(db, request, reply, request.params.id);
+      const session = await authorizedSession(
+        db,
+        request,
+        reply,
+        request.params.id,
+      );
       if (!session) return;
       const actor = actorOf(request);
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
@@ -405,7 +417,12 @@ export function registerSessionRoutes(
     "/v1/sessions/:id/events",
     { preHandler: requirePermission("knowledge:read") },
     async (request, reply) => {
-      const session = await authorizedSession(db, request, reply, request.params.id);
+      const session = await authorizedSession(
+        db,
+        request,
+        reply,
+        request.params.id,
+      );
       if (!session) return;
       const actor = actorOf(request);
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
@@ -415,7 +432,9 @@ export function registerSessionRoutes(
       }
       const payload = boundedEventPayload(request.body?.payload ?? {});
       if (!payload) {
-        return reply.code(413).send({ code: "WORKSPACE_EVENT_PAYLOAD_INVALID" });
+        return reply
+          .code(413)
+          .send({ code: "WORKSPACE_EVENT_PAYLOAD_INVALID" });
       }
       const event = await appendWorkspaceEvent(db, {
         sessionId: session.id,
