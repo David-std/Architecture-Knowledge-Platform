@@ -1,0 +1,339 @@
+from pathlib import Path
+
+path = Path("apps/api/src/routes/search.ts")
+text = path.read_text()
+
+
+def lines(*items: str) -> str:
+    return "\n".join(items)
+
+
+def replace_once(old: str, new: str, marker: str) -> None:
+    global text
+    if marker in text:
+        return
+    if old not in text:
+        raise SystemExit(f"search.ts shape changed before {marker}")
+    text = text.replace(old, new, 1)
+
+
+def patch_section(start: str, end: str, old: str, new: str, marker: str) -> None:
+    global text
+    start_at = text.find(start)
+    end_at = text.find(end, start_at)
+    if start_at < 0 or end_at < 0:
+        raise SystemExit(f"missing section {start}")
+    section = text[start_at:end_at]
+    if marker in section:
+        return
+    if old not in section:
+        raise SystemExit(f"{start} shape changed before {marker}")
+    section = section.replace(old, new, 1)
+    text = text[:start_at] + section + text[end_at:]
+
+
+replace_once(
+    lines(
+        "import {",
+        "  intersectVaultPathPrefixes,",
+        "  normalizeVaultPathPrefix,",
+        "  pathMatchesVaultPrefix,",
+        "  resolveAuthorizedVaultScope,",
+        "  type Postgres,",
+        '} from "@akp/postgres";',
+    ),
+    lines(
+        "import {",
+        "  intersectVaultPathPrefixes,",
+        "  normalizeVaultPathPrefix,",
+        "  pathMatchesVaultPrefix,",
+        "  PostgresAuthorizationPort,",
+        "  resolveAuthorizedVaultScope,",
+        "  type AuthorizationPort,",
+        "  type AuthorizedVaultScope,",
+        "  type Postgres,",
+        '} from "@akp/postgres";',
+    ),
+    "PostgresAuthorizationPort,",
+)
+
+replace_once(
+    lines(
+        "  graphPolicy?: Partial<GraphTraversalPolicy>;",
+        "  graphScopes?: Array<{ vaultId: string; pathPrefix: string | null }>;",
+    ),
+    lines(
+        "  graphPolicy?: Partial<GraphTraversalPolicy>;",
+        "  /** SQL authorization scopes applied before bounded candidate selection. */",
+        "  expansionScopes?: Array<{ vaultId: string; pathPrefix: string | null }>;",
+        "  graphScopes?: Array<{ vaultId: string; pathPrefix: string | null }>;",
+    ),
+    "expansionScopes?: Array<",
+)
+
+replace_once(
+    lines(
+        "export interface SearchRouteDependencies {",
+        "  /** Active model/agent tokenizer when the runtime provides one. */",
+        "  contextTokenizer?: Tokenizer;",
+        "}",
+    ),
+    lines(
+        "export interface SearchRouteDependencies {",
+        "  /** Active model/agent tokenizer when the runtime provides one. */",
+        "  contextTokenizer?: Tokenizer;",
+        "  /** Central authorization boundary for retrieval expansion. */",
+        "  authorizationPort?: AuthorizationPort;",
+        "}",
+    ),
+    "authorizationPort?: AuthorizationPort;",
+)
+
+replace_once(
+    lines(
+        "  // A JavaScript path callback cannot safely participate in SQL ranking.  If a",
+        "  // caller supplies one, require equivalent SQL scopes so unauthorized seeds",
+        "  // or paths cannot consume bounded graph slots before the callback runs.",
+        "  const graphScopes = normalizeGraphScopes(",
+        "    vaultIds,",
+        "    options.pathAuthorizer !== undefined && options.graphScopes === undefined",
+        "      ? []",
+        "      : options.graphScopes,",
+        "  );",
+    ),
+    lines(
+        "  // Authorization participates in retrieval semantics rather than acting as",
+        "  // a final redaction pass. Every bounded channel gets equivalent SQL scopes.",
+        "  const expansionScopes = normalizeGraphScopes(",
+        "    vaultIds,",
+        "    options.pathAuthorizer !== undefined && options.expansionScopes === undefined",
+        "      ? []",
+        "      : options.expansionScopes,",
+        "  );",
+        "  const graphScopes = normalizeGraphScopes(",
+        "    vaultIds,",
+        "    options.graphScopes ??",
+        "      options.expansionScopes ??",
+        "      (options.pathAuthorizer !== undefined ? [] : undefined),",
+        "  );",
+        "  const expansionScopeJson = JSON.stringify(",
+        "    expansionScopes.map((scope) => ({",
+        "      vault_id: scope.vaultId,",
+        "      path_prefix: scope.pathPrefix,",
+        "    })),",
+        "  );",
+        "  const expansionScopeClause = (alias: string, parameter: string) => `",
+        "    and exists (",
+        "      select 1",
+        "        from jsonb_to_recordset(${parameter}::jsonb)",
+        "          as authorized_scope(vault_id uuid,path_prefix text)",
+        "       where authorized_scope.vault_id=${alias}vault_id",
+        "         and (",
+        "           authorized_scope.path_prefix is null",
+        "           or ${alias}path=authorized_scope.path_prefix",
+        "           or starts_with(${alias}path,authorized_scope.path_prefix || '/')",
+        "         )",
+        "    )`;",
+    ),
+    "vault_id: scope.vaultId,",
+)
+
+patch_section(
+    '  const exact = channels.has("exact")',
+    '  recordRetrievalCandidates("exact"',
+    '${vaultFilter("d.")}\n           and d.lifecycle',
+    '${vaultFilter("d.")}\n           ${expansionScopeClause("d.", "$4")}\n           and d.lifecycle',
+    '${expansionScopeClause("d.", "$4")}',
+)
+patch_section(
+    '  const exact = channels.has("exact")',
+    '  recordRetrievalCandidates("exact"',
+    '[spaceId, input.query, Math.max(input.limit * 2, 20)]',
+    '[spaceId, input.query, Math.max(input.limit * 2, 20), expansionScopeJson]',
+    "expansionScopeJson]",
+)
+
+patch_section(
+    "  const lexical =",
+    '  recordRetrievalCandidates("lexical"',
+    '${vaultFilter("d.")}\n               and d.lifecycle',
+    '${vaultFilter("d.")}\n               ${expansionScopeClause("d.", "$4")}\n               and d.lifecycle',
+    '${expansionScopeClause("d.", "$4")}',
+)
+patch_section(
+    "  const lexical =",
+    '  recordRetrievalCandidates("lexical"',
+    '[spaceId, input.query, Math.max(input.limit * 3, 30)]',
+    '[spaceId, input.query, Math.max(input.limit * 3, 30), expansionScopeJson]',
+    "expansionScopeJson]",
+)
+
+patch_section(
+    "  const vector = { rows: [] as VectorSearchRow[] };",
+    '  recordRetrievalCandidates("vector"',
+    "where e.generation_id=$1 and u.space_id=$2 and u.vault_id=$4\n             and e.embedding_dimensions",
+    'where e.generation_id=$1 and u.space_id=$2 and u.vault_id=$4\n             ${expansionScopeClause("d.", "$6")}\n             and e.embedding_dimensions',
+    '${expansionScopeClause("d.", "$6")}',
+)
+patch_section(
+    "  const vector = { rows: [] as VectorSearchRow[] };",
+    '  recordRetrievalCandidates("vector"',
+    "generation.vaultId,\n              Math.max(input.limit * 3, 30),\n            ]",
+    "generation.vaultId,\n              Math.max(input.limit * 3, 30),\n              expansionScopeJson,\n            ]",
+    "expansionScopeJson,\n            ]",
+)
+
+for start, end in [
+    ('  const contextPack = channels.has("context-pack")', '  if (channels.has("context-pack"))'),
+    ('  const rawFallback = channels.has("raw")', '  if (channels.has("raw"))'),
+    ('  const codeFallback = channels.has("code")', '  if (channels.has("code"))'),
+]:
+    patch_section(
+        start,
+        end,
+        '${vaultFilter("d.")}\n             and d.lifecycle',
+        '${vaultFilter("d.")}\n             ${expansionScopeClause("d.", "$4")}\n             and d.lifecycle',
+        '${expansionScopeClause("d.", "$4")}',
+    )
+    patch_section(
+        start,
+        end,
+        "[spaceId, input.query, Math.max(input.limit, 10)]",
+        "[spaceId, input.query, Math.max(input.limit, 10), expansionScopeJson]",
+        "expansionScopeJson]",
+    )
+
+replace_once(
+    lines(
+        "export function registerSearchRoutes(",
+        "  app: FastifyInstance,",
+        "  db: Postgres,",
+        "  dependencies: SearchRouteDependencies = {},",
+        "): void {",
+        "  app.post(",
+    ),
+    lines(
+        "export function registerSearchRoutes(",
+        "  app: FastifyInstance,",
+        "  db: Postgres,",
+        "  dependencies: SearchRouteDependencies = {},",
+        "): void {",
+        "  const authorizationPort =",
+        "    dependencies.authorizationPort ?? new PostgresAuthorizationPort(db);",
+        "  app.post(",
+    ),
+    "dependencies.authorizationPort ?? new PostgresAuthorizationPort(db)",
+)
+
+route_start = text.find('    "/v1/search",')
+route_end = text.find('  app.get<{ Params: { id: string } }>', route_start)
+if route_start < 0 or route_end < 0:
+    raise SystemExit("search route boundaries changed")
+route = text[route_start:route_end]
+
+old = lines(
+    "      let vaultIds: string[];",
+    "      let accessByVault: Awaited<",
+    "        ReturnType<typeof resolveAuthorizedVaultScope>",
+    '      >["accessByVault"] = {};',
+    "      try {",
+    "        const scope = await resolveAuthorizedVaultScope(db, {",
+)
+new = lines(
+    "      let vaultIds: string[];",
+    "      let authorizationScope: AuthorizedVaultScope;",
+    '      let accessByVault: AuthorizedVaultScope["accessByVault"] = {};',
+    "      try {",
+    "        authorizationScope = await authorizationPort.resolveVaultScope({",
+)
+if "let authorizationScope: AuthorizedVaultScope;" not in route:
+    if old not in route:
+        raise SystemExit("search route authorization scope shape changed")
+    route = route.replace(old, new, 1)
+
+old = lines(
+    "        vaultIds = scope.vaultIds;",
+    "        accessByVault = scope.accessByVault;",
+)
+new = lines(
+    "        vaultIds = authorizationScope.vaultIds;",
+    "        accessByVault = authorizationScope.accessByVault;",
+)
+if "vaultIds = authorizationScope.vaultIds;" not in route:
+    if old not in route:
+        raise SystemExit("search route resolved scope assignment changed")
+    route = route.replace(old, new, 1)
+
+old = lines(
+    "      const hits = await queryKnowledge(db, scopedRequest, {",
+    "        plan,",
+    "        vaultIds,",
+    "        graphScopes: Object.entries(accessByVault).flatMap(",
+    "          ([vaultId, access]) =>",
+    "            actorPathPrefixes.flatMap((actorPathPrefix) => {",
+    "              const pathPrefix = intersectVaultPathPrefixes(",
+    "                actorPathPrefix,",
+    "                access.pathPrefix,",
+    "              );",
+    "              return pathPrefix === undefined ? [] : [{ vaultId, pathPrefix }];",
+    "            }),",
+    "        ),",
+)
+new = lines(
+    "      const expansionScopes = Object.entries(accessByVault).flatMap(",
+    "        ([vaultId, access]) =>",
+    "          actorPathPrefixes.flatMap((actorPathPrefix) => {",
+    "            const pathPrefix = intersectVaultPathPrefixes(",
+    "              actorPathPrefix,",
+    "              access.pathPrefix,",
+    "            );",
+    "            return pathPrefix === undefined ? [] : [{ vaultId, pathPrefix }];",
+    "          }),",
+    "      );",
+    "      const hits = await queryKnowledge(db, scopedRequest, {",
+    "        plan,",
+    "        vaultIds,",
+    "        expansionScopes,",
+    "        graphScopes: expansionScopes,",
+)
+if "const expansionScopes = Object.entries(accessByVault).flatMap(" not in route:
+    if old not in route:
+        raise SystemExit("search route candidate scope shape changed")
+    route = route.replace(old, new, 1)
+
+old = lines(
+    "        pathAuthorizer: (documentPath, vaultId) => {",
+    '          const access = accessByVault[String(vaultId ?? "")];',
+    "          if (!access) return false;",
+    "          return (",
+    "            pathMatchesVaultPrefix(documentPath, access.pathPrefix) &&",
+    '            hasPathAccess(actor, requestedSpace, "knowledge:read", documentPath)',
+    "          );",
+    "        },",
+)
+new = lines(
+    "        pathAuthorizer: (documentPath, vaultId) => {",
+    '          const authorizedVaultId = String(vaultId ?? "");',
+    "          const access = accessByVault[authorizedVaultId];",
+    "          if (",
+    "            !access ||",
+    "            !authorizationPort.canExpandResource(authorizationScope, {",
+    "              vaultId: authorizedVaultId,",
+    "              path: documentPath,",
+    "            })",
+    "          ) {",
+    "            return false;",
+    "          }",
+    "          return (",
+    "            pathMatchesVaultPrefix(documentPath, access.pathPrefix) &&",
+    '            hasPathAccess(actor, requestedSpace, "knowledge:read", documentPath)',
+    "          );",
+    "        },",
+)
+if "authorizationPort.canExpandResource(authorizationScope" not in route:
+    if old not in route:
+        raise SystemExit("search route path authorizer shape changed")
+    route = route.replace(old, new, 1)
+
+text = text[:route_start] + route + text[route_end:]
+path.write_text(text)
