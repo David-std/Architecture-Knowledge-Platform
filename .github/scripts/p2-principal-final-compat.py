@@ -70,4 +70,26 @@ text = replace_once(
 ''',
     "proposal-capable principal fixture",
 )
+
+# Session creation and participant administration are not merely missing
+# principal actions: they are absent from the AGENT_PROCESS HTTP allowlist.
+# Keep the stronger central deny-by-default contract explicit in regression.
+text = replace_once(
+    text,
+    '    expect(createDenied.json()).toMatchObject({ code: "PRINCIPAL_ACTION_DENIED" });\n',
+    '    expect(createDenied.json()).toMatchObject({ code: "PRINCIPAL_ROUTE_DENIED" });\n',
+    "session create central denial",
+)
+text = replace_once(
+    text,
+    '''    expect(participantsDenied.json()).toMatchObject({
+      code: "PRINCIPAL_ACTION_DENIED",
+    });
+''',
+    '''    expect(participantsDenied.json()).toMatchObject({
+      code: "PRINCIPAL_ROUTE_DENIED",
+    });
+''',
+    "participant administration central denial",
+)
 test.write_text(text)
