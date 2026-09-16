@@ -95,7 +95,7 @@ jobs:
         shell: bash
         run: |
           ! grep -R '@akp/contracts' packages/postgres/src/context-revision-set.ts
-          pnpm --filter @akp/postgres check
+          pnpm --filter @akp/postgres typecheck
       - name: Run monorepo checks
         run: pnpm check
       - name: Run focused context revision integration
