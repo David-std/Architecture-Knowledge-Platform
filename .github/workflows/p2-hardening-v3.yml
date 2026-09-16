@@ -1,0 +1,52 @@
+name: p2-hardening-v3
+# Temporary P2 branch harness. Remove before promoting this batch to PR #12.
+
+on:
+  push:
+    branches: [batch/p2-hardening-20260916]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: p2-hardening-v3-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  harden-and-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Apply retrieval authorization hardening
+        run: python .github/scripts/p2-harden-search.py
+      - name: Format generated source
+        run: pnpm exec prettier --write apps/api/src/routes/search.ts apps/api/test/health.test.ts
+      - name: Validate formatting
+        run: pnpm exec prettier --check .
+      - name: Validate workspace
+        run: pnpm check
+      - name: Validate build
+        run: pnpm build
+      - name: Validate patch hygiene
+        run: git diff --check
+      - name: Commit generated hardening
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No generated changes remain."
+            exit 0
+          fi
+          git config user.name "AKP P2 Hardening"
+          git config user.email "akp-p2-hardening@users.noreply.github.com"
+          git add apps/api/src/routes/search.ts apps/api/test/health.test.ts
+          git commit -m "fix(p2): authorize retrieval before expansion"
+          git push origin HEAD:batch/p2-hardening-20260916
