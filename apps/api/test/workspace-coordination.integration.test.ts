@@ -231,6 +231,42 @@ describe("workspace coordination integration", () => {
     expect(finding.statusCode).toBe(201);
     expect(finding.json()).toMatchObject({ event_type: "FINDING" });
 
+    await db.pool.query(
+      `update vault_memberships
+          set enabled=false
+        where user_id=$1 and vault_id=$2`,
+      [actorBId, vaultId],
+    );
+    const revokedState = await app.inject({
+      method: "GET",
+      url: `/v1/sessions/${sessionId}/state`,
+      headers: actorBHeaders,
+    });
+    expect(revokedState.statusCode).toBe(404);
+    expect(revokedState.json()).toMatchObject({ code: "SESSION_NOT_FOUND" });
+
+    const revokedHandoff = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/claims/handoff`,
+      headers: actorAHeaders,
+      payload: {
+        workKey: "profile:compiler-boundary",
+        toUserId: actorBId,
+        fencingToken: 1,
+        leaseSeconds: 120,
+      },
+    });
+    expect(revokedHandoff.statusCode).toBe(422);
+    expect(revokedHandoff.json()).toMatchObject({
+      code: "PARTICIPANT_NOT_AUTHORIZED",
+    });
+    await db.pool.query(
+      `update vault_memberships
+          set enabled=true
+        where user_id=$1 and vault_id=$2`,
+      [actorBId, vaultId],
+    );
+
     const handedOff = await app.inject({
       method: "POST",
       url: `/v1/sessions/${sessionId}/claims/handoff`,

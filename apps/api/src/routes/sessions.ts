@@ -213,7 +213,9 @@ export function registerSessionRoutes(
         spaceId,
         vaultId,
         actorId: actor.id,
-        projectId: request.body.projectId,
+        ...(request.body.projectId !== undefined
+          ? { projectId: request.body.projectId }
+          : {}),
         purpose: request.body.purpose.trim(),
         contextBudget: budget,
       });
@@ -381,6 +383,9 @@ export function registerSessionRoutes(
       const note = request.body.note?.trim();
       if (note && Buffer.byteLength(note, "utf8") > 2048) {
         return reply.code(413).send({ code: "HANDOFF_NOTE_TOO_LARGE" });
+      }
+      if (!(await userHasFullVaultRead(db, toUserId, session))) {
+        return reply.code(422).send({ code: "PARTICIPANT_NOT_AUTHORIZED" });
       }
       const claim = await handoffWorkspaceWork(db, {
         sessionId: session.id,
