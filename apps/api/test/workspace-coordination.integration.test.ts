@@ -607,6 +607,63 @@ describe("workspace coordination integration", () => {
       payload: { sequence: 505 },
     });
 
+    const findingEvent = snapshot.events.find(
+      (event) => event.event_type === "FINDING",
+    );
+    expect(findingEvent).toBeDefined();
+    const promotion = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/promotions`,
+      headers: actorAHeaders,
+      payload: {
+        evidenceEventIds: [String((findingEvent as { id: string }).id)],
+        summary: "Promote compiler boundary finding",
+        changes: [
+          {
+            path: "knowledge/compiler-boundary.md",
+            content:
+              "---\\ntype: note\\n---\\n# Compiler boundary\\n\\nCanonical publication requires governed review.\\n",
+            reason: "Promote durable workspace evidence",
+          },
+        ],
+      },
+    });
+    expect(promotion.statusCode).toBe(201);
+    const promotionBody = promotion.json() as {
+      reviewId: string;
+      promotionEventId: string;
+      evidenceEventIds: string[];
+      revisionSetHash: string;
+    };
+    expect(promotionBody.evidenceEventIds).toEqual([
+      String((findingEvent as { id: string }).id),
+    ]);
+    expect(promotionBody.revisionSetHash).toBeTruthy();
+    const promotedReview = await db.pool.query<{
+      status: string;
+      impact_manifest: {
+        promotionRequest?: {
+          sessionId?: string;
+          promotionEventId?: string;
+          evidenceEventIds?: string[];
+          revisionSetHash?: string;
+        };
+      };
+    }>("select status,impact_manifest from reviews where id=$1", [
+      promotionBody.reviewId,
+    ]);
+    expect(promotedReview.rows[0]).toMatchObject({
+      status: "PENDING",
+      impact_manifest: {
+        promotionRequest: {
+          sessionId,
+          promotionEventId: promotionBody.promotionEventId,
+          evidenceEventIds: [String((findingEvent as { id: string }).id)],
+          revisionSetHash: promotionBody.revisionSetHash,
+        },
+      },
+    });
+
     const canonicalAfter = await db.pool.query<{
       documents: number;
       reviews: number;
