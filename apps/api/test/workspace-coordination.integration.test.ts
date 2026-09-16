@@ -634,7 +634,7 @@ describe("workspace coordination integration", () => {
     });
     expect(duplicateEvidencePromotion.statusCode).toBe(400);
     expect(duplicateEvidencePromotion.json()).toMatchObject({
-      code: "PROMOTION_EVIDENCE_REQUIRED",
+      code: "PROMOTION_EVIDENCE_DUPLICATE",
     });
 
     const invalidPromotionEvidence = await app.inject({
