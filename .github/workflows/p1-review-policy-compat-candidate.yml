@@ -1,0 +1,130 @@
+name: p1-review-policy-compat-candidate
+
+on:
+  push:
+    branches: [feat/v0.4-enterprise-context-workspace]
+    paths: [.github/workflows/p1-review-policy-compat-candidate.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgres://akp:akp@localhost:55432/akp
+      AKP_INGEST_ROOTS: ${{ github.workspace }}/test/fixtures
+      AKP_PROJECT_ROOTS: ${{ github.workspace }}
+      AKP_MANAGED_REPO: /tmp/akp-managed-knowledge
+      AKP_EXTRACTOR_TOKEN: akp-ci-extractor-token-not-for-production
+      AKP_RAW_SECRET_KEY: akp-ci-minio-secret-not-for-production
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Patch candidate
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          policy = Path('apps/api/src/review-policy.ts')
+          text = policy.read_text()
+          old = '''export async function resolveProposalReviewPolicy(
+            db: Postgres,
+            spaceId: string,
+            vaultId: string,
+            kinds: readonly string[],
+          ): Promise<{ policy: EffectiveReviewPolicyType; pinned: boolean }> {
+            const binding = await resolveKnowledgeProfileBinding(db, spaceId, vaultId);
+            if (binding.source === "LEGACY_UNBOUND") {
+              return { policy: defaultReviewPolicy(), pinned: true };
+            }
+          '''
+          new = '''export async function resolveProposalReviewPolicy(
+            db: Postgres,
+            spaceId: string,
+            vaultId: string,
+            kinds: readonly string[],
+            options: { allowLegacyUnprofiledKinds?: boolean } = {},
+          ): Promise<{ policy: EffectiveReviewPolicyType; pinned: boolean }> {
+            const binding = await resolveKnowledgeProfileBinding(db, spaceId, vaultId);
+            if (binding.source === "LEGACY_UNBOUND") {
+              const context = defaultCompilerKnowledgeProfileContext();
+              try {
+                return {
+                  policy: effectiveReviewPolicyForKinds(context, kinds),
+                  pinned: true,
+                };
+              } catch (error) {
+                if (
+                  options.allowLegacyUnprofiledKinds &&
+                  error instanceof Error &&
+                  error.message.startsWith("COMPILER_PROFILE_KIND_NOT_DECLARED:")
+                ) {
+                  return { policy: defaultReviewPolicy(), pinned: false };
+                }
+                throw error;
+              }
+            }
+          '''
+          if old not in text:
+              raise SystemExit('review-policy target block not found')
+          policy.write_text(text.replace(old, new, 1))
+
+          routes = Path('apps/api/src/routes/reviews.ts')
+          text = routes.read_text()
+          old_import = '''  resolveProposalReviewPolicy,
+            reviewApprovalStatus,
+          } from "../review-policy.js";'''
+          new_import = '''  resolveProposalReviewPolicy,
+            reviewApprovalStatus,
+            reviewPolicyState,
+          } from "../review-policy.js";'''
+          if old_import not in text:
+              raise SystemExit('reviews import target not found')
+          text = text.replace(old_import, new_import, 1)
+          old_call = '''        revisedReviewPolicy = await resolveProposalReviewPolicy(
+                    db,
+                    String(review.space_id),
+                    String(review.vault_id),
+                    revisedReviewKinds as string[],
+                  );'''
+          new_call = '''        revisedReviewPolicy = await resolveProposalReviewPolicy(
+                    db,
+                    String(review.space_id),
+                    String(review.vault_id),
+                    revisedReviewKinds as string[],
+                    {
+                      allowLegacyUnprofiledKinds: !reviewPolicyState(review).pinned,
+                    },
+                  );'''
+          if old_call not in text:
+              raise SystemExit('reviews revise target not found')
+          routes.write_text(text.replace(old_call, new_call, 1))
+          PY
+          pnpm exec prettier --write apps/api/src/review-policy.ts apps/api/src/routes/reviews.ts
+      - run: docker compose up -d --wait postgres minio extractor
+      - run: |
+          git init -b main "$AKP_MANAGED_REPO"
+          git -C "$AKP_MANAGED_REPO" config user.name "AKP CI"
+          git -C "$AKP_MANAGED_REPO" config user.email "akp-ci@localhost"
+          git -C "$AKP_MANAGED_REPO" commit --allow-empty -m "chore: initialize managed knowledge for CI"
+      - run: pnpm db:migrate
+      - run: pnpm check
+      - name: Run review-policy integration
+        run: pnpm --filter @akp/api exec vitest run --config vitest.integration.config.ts test/review-policy.integration.test.ts
+      - name: Run product lifecycle regression
+        run: pnpm --filter @akp/api exec vitest run --config vitest.integration.config.ts test/product-lifecycle.integration.test.ts
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: p1-review-policy-compat-candidate-${{ github.run_id }}
+          path: |
+            apps/api/src/review-policy.ts
+            apps/api/src/routes/reviews.ts
