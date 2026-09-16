@@ -24,6 +24,7 @@ import {
   resolveAuthorizedVaultScope,
   revokeAgentProcessPrincipal,
   workspaceSessionSnapshot,
+  workspacePromotionEvidence,
   type Postgres,
   type WorkspaceSessionAccess,
 } from "@akp/postgres";
@@ -498,6 +499,133 @@ export function registerSessionRoutes(
         session.spaceId,
       );
       return result;
+    },
+  );
+
+
+  app.post<{
+    Params: { id: string };
+    Body: {
+      evidenceEventIds?: string[];
+      summary?: string;
+      changes?: Array<{ path: string; content: string; reason?: string }>;
+    };
+  }>(
+    "/v1/sessions/:id/promotions",
+    {
+      preHandler: [
+        requirePermission("knowledge:propose"),
+        requirePrincipalAction("knowledge:propose"),
+      ],
+    },
+    async (request, reply) => {
+      const session = await authorizedSession(
+        db,
+        request,
+        reply,
+        request.params.id,
+      );
+      if (!session) return;
+      const actor = actorOf(request);
+      if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
+      const evidenceEventIds = request.body?.evidenceEventIds ?? [];
+      const changes = request.body?.changes ?? [];
+      if (!evidenceEventIds.length) {
+        return reply.code(400).send({ code: "PROMOTION_EVIDENCE_REQUIRED" });
+      }
+      if (!changes.length) {
+        return reply.code(400).send({ code: "PROMOTION_CHANGES_REQUIRED" });
+      }
+      const evidence = await workspacePromotionEvidence(db, {
+        sessionId: session.id,
+        actorId: actor.id,
+        eventIds: evidenceEventIds,
+      });
+      const proposal = await app.inject({
+        method: "POST",
+        url: "/v1/proposals",
+        headers: {
+          ...(request.headers.authorization
+            ? { authorization: request.headers.authorization }
+            : {}),
+          ...(request.headers.cookie ? { cookie: request.headers.cookie } : {}),
+          ...(request.headers["x-csrf-token"]
+            ? { "x-csrf-token": String(request.headers["x-csrf-token"]) }
+            : {}),
+        },
+        payload: {
+          spaceId: session.spaceId,
+          vaultId: session.vaultId,
+          summary:
+            request.body?.summary ??
+            `workspace promotion from session ${session.id}`,
+          changes,
+        },
+      });
+      if (proposal.statusCode !== 201) {
+        return reply.code(proposal.statusCode).send(proposal.json());
+      }
+      const created = proposal.json() as {
+        reviewId: string;
+        status: string;
+        branchName: string;
+        headCommit: string;
+      };
+      const promotionEvent = await appendWorkspaceEvent(db, {
+        sessionId: session.id,
+        actorId: actor.id,
+        eventType: "PROMOTION_REQUESTED",
+        payload: {
+          reviewId: created.reviewId,
+          evidenceEventIds,
+          evidenceVersions: evidence.events.map((event) =>
+            Number(event.session_version),
+          ),
+          revisionSetHash: session.contextRevisionSetHash,
+          requestedPaths: changes.map((change) => change.path),
+        },
+      });
+      await db.pool.query(
+        `update reviews
+            set impact_manifest =
+              impact_manifest || $2::jsonb,
+                updated_at=now()
+          where id=$1 and author_id=$3`,
+        [
+          created.reviewId,
+          JSON.stringify({
+            promotionRequest: {
+              sessionId: session.id,
+              promotionEventId: String(promotionEvent.id),
+              evidenceEventIds,
+              evidenceVersions: evidence.events.map((event) =>
+                Number(event.session_version),
+              ),
+              revisionSetHash: session.contextRevisionSetHash,
+            },
+          }),
+          actor.id,
+        ],
+      );
+      await audit(
+        db,
+        request,
+        "workspace.promotion.request",
+        "review",
+        created.reviewId,
+        {
+          vaultId: session.vaultId,
+          sessionId: session.id,
+          evidenceEventIds,
+        },
+        session.spaceId,
+      );
+      return reply.code(201).send({
+        ...created,
+        promotionEventId: String(promotionEvent.id),
+        evidenceEventIds,
+        revisionSetHash: session.contextRevisionSetHash,
+      });
     },
   );
 
