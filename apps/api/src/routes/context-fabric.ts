@@ -57,6 +57,21 @@ function safeText(value: unknown, maxLength: number): string | null {
   return normalized;
 }
 
+function sendFabricError(reply: FastifyReply, error: unknown) {
+  if (error && typeof error === "object") {
+    const candidate = error as { code?: unknown; statusCode?: unknown };
+    if (
+      typeof candidate.code === "string" &&
+      typeof candidate.statusCode === "number" &&
+      candidate.statusCode >= 400 &&
+      candidate.statusCode < 600
+    ) {
+      return reply.code(candidate.statusCode).send({ code: candidate.code });
+    }
+  }
+  throw error;
+}
+
 async function authorizedSession(
   db: Postgres,
   request: FastifyRequest,
@@ -284,15 +299,23 @@ export function registerContextFabricRoutes(
       ) {
         return reply.code(400).send({ code: "INVALID_OFFLINE_DRAFT" });
       }
-      const draft = await queueWorkspaceOfflineDraft(db, {
-        sessionId: session.id,
-        actorId: actor.id,
-        clientDraftId,
-        baseRevisionSetHash,
-        eventType: eventType as
-          "FINDING" | "ARTIFACT" | "DECISION_CANDIDATE" | "NOTE",
-        payload,
-      });
+      let draft: Awaited<ReturnType<typeof queueWorkspaceOfflineDraft>>;
+      try {
+        draft = await queueWorkspaceOfflineDraft(db, {
+          sessionId: session.id,
+          actorId: actor.id,
+          clientDraftId,
+          baseRevisionSetHash,
+          eventType: eventType as
+            | "FINDING"
+            | "ARTIFACT"
+            | "DECISION_CANDIDATE"
+            | "NOTE",
+          payload,
+        });
+      } catch (error) {
+        return sendFabricError(reply, error);
+      }
       await audit(
         db,
         request,
@@ -324,12 +347,27 @@ export function registerContextFabricRoutes(
       if (!session) return;
       const actor = actorOf(request);
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
-      const draft = await applyWorkspaceOfflineDraft(db, {
-        draftId: request.params.draftId,
-        actorId: actor.id,
-      });
-      if (draft.sessionId !== session.id) {
+      let visibleDrafts: Awaited<ReturnType<typeof listWorkspaceOfflineDrafts>>;
+      try {
+        visibleDrafts = await listWorkspaceOfflineDrafts(
+          db,
+          session.id,
+          actor.id,
+        );
+      } catch (error) {
+        return sendFabricError(reply, error);
+      }
+      if (!visibleDrafts.some((draft) => draft.id === request.params.draftId)) {
         return reply.code(404).send({ code: "OFFLINE_DRAFT_NOT_FOUND" });
+      }
+      let draft: Awaited<ReturnType<typeof applyWorkspaceOfflineDraft>>;
+      try {
+        draft = await applyWorkspaceOfflineDraft(db, {
+          draftId: request.params.draftId,
+          actorId: actor.id,
+        });
+      } catch (error) {
+        return sendFabricError(reply, error);
       }
       await audit(
         db,
