@@ -1,5 +1,8 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { BootstrapContext } from "@akp/application";
+import { ContextPacketResponse, QueryIntent } from "@akp/contracts";
+import { DEFAULT_KNOWLEDGE_PROFILE_V1, KnowledgeProfileV1 } from "@akp/contracts/knowledge-profile";
 import {
   AGENT_PROCESS_ALLOWED_ACTIONS,
   DEFAULT_AGENT_PROCESS_ACTIONS,
@@ -12,6 +15,8 @@ import {
   handoffWorkspaceWork,
   heartbeatWorkspaceWork,
   isWorkspaceWorkKey,
+  getActiveKnowledgeProfileRevision,
+  assertWorkspaceContextRevisionCurrent,
   listWorkspaceSessionsForParticipant,
   resolveAuthorizedVaultScope,
   revokeAgentProcessPrincipal,
@@ -293,6 +298,154 @@ export function registerSessionRoutes(
       const snapshot = await workspaceSessionSnapshot(db, session.id, actor.id);
       if (!snapshot) return reply.code(404).send({ code: "SESSION_NOT_FOUND" });
       return snapshot;
+    },
+  );
+
+
+  app.post<{
+    Params: { id: string };
+    Body: { query?: string; intent?: string; packetMode?: "COMPACT_AGENT_PACKET" | "FULL_CONTEXT_PACKET" };
+  }>(
+    "/v1/sessions/:id/bootstrap",
+    {
+      preHandler: [
+        requirePermission("knowledge:read"),
+        requirePrincipalAction("workspace:read"),
+      ],
+    },
+    async (request, reply) => {
+      const session = await authorizedSession(db, request, reply, request.params.id);
+      if (!session) return;
+      const actor = actorOf(request);
+      if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
+
+      const intent = QueryIntent.safeParse(request.body?.intent ?? "WORKFLOW_EXECUTION");
+      if (!intent.success) {
+        return reply.code(400).send({ code: "INVALID_BOOTSTRAP_INTENT" });
+      }
+      const packetMode = request.body?.packetMode ?? "COMPACT_AGENT_PACKET";
+      if (!["COMPACT_AGENT_PACKET", "FULL_CONTEXT_PACKET"].includes(packetMode)) {
+        return reply.code(400).send({ code: "INVALID_BOOTSTRAP_PACKET_MODE" });
+      }
+      const query = request.body?.query?.trim();
+      if (query && Buffer.byteLength(query, "utf8") > 4096) {
+        return reply.code(413).send({ code: "BOOTSTRAP_QUERY_TOO_LARGE" });
+      }
+
+      const bootstrap = new BootstrapContext({
+        loadWorkContext: async (sessionId, actorId) => {
+          const snapshot = await workspaceSessionSnapshot(db, sessionId, actorId);
+          if (!snapshot) return null;
+          return {
+            session: {
+              id: snapshot.session.id,
+              spaceId: snapshot.session.spaceId,
+              vaultId: snapshot.session.vaultId,
+              purpose: snapshot.session.purpose,
+              contextBudget: snapshot.session.contextBudget,
+              coordinationVersion: snapshot.session.coordinationVersion,
+            },
+            claims: snapshot.claims,
+            events: snapshot.events,
+            snapshotVersion: snapshot.snapshotVersion,
+            eventWindow: snapshot.eventWindow,
+            contextRevision: {
+              status: snapshot.contextRevision.status,
+              pinned: snapshot.contextRevision.pinned
+                ? { revisionSetHash: snapshot.contextRevision.pinned.revisionSetHash }
+                : null,
+              current: { revisionSetHash: snapshot.contextRevision.current.revisionSetHash },
+              changedDimensions: snapshot.contextRevision.changedDimensions,
+            },
+          };
+        },
+        loadKnowledgeProfile: async (spaceId, vaultId, bootstrapIntent) => {
+          const active = await getActiveKnowledgeProfileRevision(db, spaceId, vaultId);
+          const profile = KnowledgeProfileV1.parse(active?.profile ?? DEFAULT_KNOWLEDGE_PROFILE_V1);
+          const revision = session.contextRevisionSet;
+          if (!revision) throw new Error("CONTEXT_REVISION_PIN_REQUIRED");
+          const mandatoryKinds = profile.retrievalPolicy.mandatoryKindsByIntent[bootstrapIntent] ?? [];
+          return {
+            source: active ? "DURABLE_REVISION" as const : "DEFAULT" as const,
+            revisionId: active?.id ?? null,
+            profileId: profile.profileId,
+            version: profile.version,
+            hash: active?.profileHash ?? revision.profile.hash,
+            policyRevision: revision.policy.revision,
+            allowedKnowledgeKinds: profile.retrievalPolicy.allowedKinds,
+            mandatoryKinds,
+            progressiveDisclosure: profile.retrievalPolicy.progressiveDisclosure,
+            promotion: {
+              allowedTargetScopes: profile.promotionPolicy.allowedTargetScopes,
+              reviewRequired: profile.promotionPolicy.reviewRequired,
+            },
+          };
+        },
+        buildAuthorizedContext: async (input) => {
+          const response = await app.inject({
+            method: "POST",
+            url: "/v1/context",
+            headers: {
+              ...(request.headers.authorization ? { authorization: request.headers.authorization } : {}),
+              ...(request.headers.cookie ? { cookie: request.headers.cookie } : {}),
+              ...(request.headers["x-csrf-token"]
+                ? { "x-csrf-token": String(request.headers["x-csrf-token"]) }
+                : {}),
+            },
+            payload: {
+              query: input.query,
+              intent: input.intent,
+              spaceId: input.spaceId,
+              vaultId: input.vaultId,
+              federated: false,
+              mode: "SOURCE_BACKED",
+              maxTokens: input.maxTokens,
+              packetMode: input.mode,
+            },
+          });
+          if (response.statusCode !== 200) {
+            const body = response.json() as { code?: string };
+            const error = new Error(body.code ?? "BOOTSTRAP_CONTEXT_BUILD_FAILED") as Error & { statusCode?: number; code?: string };
+            error.statusCode = response.statusCode;
+            error.code = body.code ?? "BOOTSTRAP_CONTEXT_BUILD_FAILED";
+            throw error;
+          }
+          return ContextPacketResponse.parse(response.json());
+        },
+        verifyRevisionCurrent: async (sessionId, spaceId, vaultId) =>
+          assertWorkspaceContextRevisionCurrent(db.pool, sessionId, spaceId, vaultId),
+      });
+
+      const result = await bootstrap.execute(
+        {
+          sessionId: session.id,
+          actorId: actor.id,
+          ...(query ? { query } : {}),
+          intent: intent.data,
+          mode: packetMode,
+        },
+        {
+          principalId: actor.principalId,
+          principalKind: actor.principalKind,
+          principalPolicyRevision: actor.principalPolicyRevision,
+          scopeFingerprint: actor.idempotencyScopeFingerprint,
+        },
+      );
+      await audit(
+        db,
+        request,
+        "workspace.bootstrap",
+        "agent_session",
+        session.id,
+        {
+          vaultId: session.vaultId,
+          revisionSetHash: result.revisionSetHash,
+          contextPacketHash: result.context.packetHash,
+          snapshotVersion: result.workContext.snapshotVersion,
+        },
+        session.spaceId,
+      );
+      return result;
     },
   );
 
