@@ -4,6 +4,7 @@ import pg from "pg";
 export type PostgresPoolClient = pg.PoolClient;
 
 export * from "./vault-registry.js";
+export * from "./authorization-port.js";
 export * from "./outbox.js";
 export * from "./knowledge-profile-registry.js";
 export * from "./knowledge-profile-governance.js";
