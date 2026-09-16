@@ -634,17 +634,24 @@ describe("workspace coordination integration", () => {
       code: "PROMOTION_EVIDENCE_INVALID",
     });
 
-    const nonPromotableEvent = snapshot.events.find(
-      (event) => event.event_type === "BLOCKER",
-    );
-    expect(nonPromotableEvent).toBeDefined();
+    const blocker = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/events`,
+      headers: actorAHeaders,
+      payload: {
+        eventType: "BLOCKER",
+        payload: { reason: "coordination-only blocker" },
+      },
+    });
+    expect(blocker.statusCode).toBe(200);
+    const nonPromotableEvent = blocker.json() as { id: string };
     const nonPromotable = await app.inject({
       method: "POST",
       url: `/v1/sessions/${sessionId}/promotions`,
       headers: actorAHeaders,
       payload: {
         evidenceEventIds: [
-          String((nonPromotableEvent as { id: string }).id),
+          String(nonPromotableEvent.id),
         ],
         changes: [
           {
