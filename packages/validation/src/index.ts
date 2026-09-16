@@ -33,6 +33,16 @@ export function unsafeGeneratedMarkup(markdownBody: string): string | null {
   return null;
 }
 
+export function parseKnowledgeDocumentMetadata(markdown: string) {
+  try {
+    const parsed = matter(markdown);
+    const result = Frontmatter.safeParse(parsed.data);
+    return result.success ? result.data : null;
+  } catch {
+    return null;
+  }
+}
+
 export function validateMarkdownDocument(markdown: string): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   let parsed: matter.GrayMatterFile<string>;

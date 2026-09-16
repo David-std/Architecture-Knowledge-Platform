@@ -118,7 +118,10 @@ describe("compilation stage", () => {
           },
         ],
       })
-      .mockResolvedValueOnce({ rows: [] });
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({
+        rows: [{ schema_profile: {}, current_revision: "managed:8" }],
+      });
     const compile = vi.fn(async (input) => ({
       identity: {
         classification: "DISTINCT" as const,

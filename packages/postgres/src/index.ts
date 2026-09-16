@@ -1,8 +1,12 @@
 import { metrics } from "@opentelemetry/api";
 import pg from "pg";
 
+export type PostgresPoolClient = pg.PoolClient;
+
 export * from "./vault-registry.js";
 export * from "./outbox.js";
+export * from "./knowledge-profile-registry.js";
+export * from "./knowledge-profile-governance.js";
 
 export interface PostgresOptions {
   onIdleClientError?: (error: Error) => void;

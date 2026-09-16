@@ -23,9 +23,73 @@ jobs:
           node-version: 24.20.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Fetch exact v0.3 baseline commit
+        shell: bash
+        run: |
+          git fetch --no-tags --depth=1 origin \
+            a6bdcc38fdf026d6c353db096799366865011022
+      - name: Generate v0.3 capability maturity baseline
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p reports/ci
+          AKP_CAPABILITY_BASELINE_REPORT=reports/ci/v0.3-capability-maturity-baseline.json \
+            pnpm benchmark:capability-baseline \
+            2>&1 | tee reports/ci/v0.3-capability-maturity-baseline.log
       - run: pnpm build
       - run: docker compose up -d --wait postgres
       - run: pnpm db:migrate
+      - name: Characterize filtered ANN recall under vault and path authorization
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p reports/ci
+          AKP_FILTERED_ANN_REPORT=reports/ci/filtered-ann-baseline.json \
+            pnpm benchmark:filtered-ann \
+            2>&1 | tee reports/ci/filtered-ann-baseline.log
+      - name: Validate filtered ANN evidence boundaries
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const report = JSON.parse(
+            readFileSync("reports/ci/filtered-ann-baseline.json", "utf8"),
+          );
+          if (report.status !== "PROVEN") {
+            throw new Error(`Filtered ANN measurement status is ${report.status}.`);
+          }
+          if (report.productionDefaultChanged !== false || report.productionIndexSelected !== false) {
+            throw new Error("Filtered ANN characterization must not change or select a production default.");
+          }
+          if (report.fixture?.duplicateIdentifiersAcrossVaults !== true || report.fixture?.duplicateTextAcrossVaults !== true) {
+            throw new Error("Filtered ANN fixture must include cross-vault identifier and text collisions.");
+          }
+          const measurements = Array.isArray(report.measurements) ? report.measurements : [];
+          for (const measurement of measurements) {
+            if (measurement.leakageCount !== 0) {
+              throw new Error(`Authorization leakage observed in ${measurement.scenario}/${measurement.mode}.`);
+            }
+            if (!Number.isFinite(measurement.meanRecallAtK) || !Number.isFinite(measurement.minimumRecallAtK)) {
+              throw new Error(`Missing recall evidence for ${measurement.scenario}/${measurement.mode}.`);
+            }
+          }
+          const modes = new Set(measurements.map((item) => item.mode));
+          for (const requiredMode of ["HNSW_FILTERED", "HNSW_PARTIAL"]) {
+            if (!modes.has(requiredMode)) {
+              throw new Error(`Filtered ANN baseline is missing ${requiredMode}.`);
+            }
+          }
+          if (report.iterativeScanSupported === true && !modes.has("HNSW_ITERATIVE")) {
+            throw new Error("pgvector supports iterative scan but the baseline did not measure it.");
+          }
+          console.log(JSON.stringify({
+            pgvectorVersion: report.pgvectorVersion,
+            iterativeScanSupported: report.iterativeScanSupported,
+            measurements,
+            alternatives: report.alternatives,
+          }, null, 2));
+          NODE
       - name: Execute pinned multilingual semantic retrieval end to end
         shell: bash
         run: |

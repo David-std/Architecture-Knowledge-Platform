@@ -14,6 +14,7 @@
 /graph                   typed graph
 /evals                   retrieval and grounding scorecards
 /admin/spaces            space and RBAC
+/admin/profiles          active/pending KnowledgeProfile governance
 /admin/health            jobs, index parity and backups
 /admin/audit             scoped audit-event viewer
 /login                   token-to-HttpOnly-session exchange

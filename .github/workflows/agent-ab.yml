@@ -29,6 +29,9 @@ jobs:
       AKP_LOCAL_AGENT_MODEL_REVISION: cc5cc01a65cc3ff17bdb73a7de33d879f62599b0
       AKP_LOCAL_AGENT_DTYPE: q4
       AKP_LOCAL_AGENT_PORT: "18081"
+      AKP_CONTEXT_TOKENIZER_MODEL: onnx-community/Qwen2.5-0.5B-Instruct
+      AKP_CONTEXT_TOKENIZER_REVISION: cc5cc01a65cc3ff17bdb73a7de33d879f62599b0
+      AKP_CONTEXT_TOKENIZER_REPORT: reports/ci/context-tokenizer-baseline.json
       PORT: "18080"
     steps:
       - uses: actions/checkout@v7
@@ -39,12 +42,29 @@ jobs:
           node-version: 24.20.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
-      - run: docker compose up -d --wait postgres
+      - name: Prepare Agent A/B evidence directory
+        run: mkdir -p reports/ci
+      - name: Start Postgres with bounded registry retry
+        shell: bash
+        run: |
+          set -o pipefail
+          for attempt in 1 2 3; do
+            if docker compose up -d --wait postgres \
+              2>&1 | tee -a reports/ci/agent-ab-postgres-startup.log; then
+              exit 0
+            fi
+            echo "Postgres startup attempt ${attempt}/3 failed" \
+              | tee -a reports/ci/agent-ab-postgres-startup.log
+            docker compose down --remove-orphans >/dev/null 2>&1 || true
+            if [ "$attempt" -lt 3 ]; then
+              sleep $((attempt * 5))
+            fi
+          done
+          exit 1
       - run: pnpm db:migrate
       - name: Provision registered public product corpus and least-privilege token
         shell: bash
         run: |
-          mkdir -p reports/ci
           pnpm exec tsx scripts/provision-agent-ab-fixture.ts \
             2>&1 | tee reports/ci/agent-ab-fixture.log
           pnpm auth:provision \
@@ -78,6 +98,12 @@ jobs:
           done
           cat reports/ci/local-agent-provider.log >&2
           exit 1
+      - name: Measure pinned tokenizer against serialized ContextPacket
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm benchmark:context-tokenization \
+            2>&1 | tee reports/ci/context-tokenizer-baseline.log
       - name: Execute live controlled Agent A/B comparison
         shell: bash
         run: |
@@ -102,6 +128,9 @@ jobs:
           const providerHealth = JSON.parse(
             readFileSync("reports/ci/local-agent-provider-health.json", "utf8"),
           );
+          const tokenizerBaseline = JSON.parse(
+            readFileSync("reports/ci/context-tokenizer-baseline.json", "utf8"),
+          );
           if (report.taskSet?.evidenceLevel !== "REGISTERED_PUBLIC_PRODUCT_CORPUS") {
             throw new Error("Agent A/B must use the registered public product corpus task set.");
           }
@@ -122,6 +151,39 @@ jobs:
           }
           if (providerHealth.revision !== "cc5cc01a65cc3ff17bdb73a7de33d879f62599b0" || providerHealth.dtype !== "q4") {
             throw new Error("Local provider did not execute the pinned model revision and dtype.");
+          }
+          if (tokenizerBaseline.status !== "PROVEN" || tokenizerBaseline.productionDefaultsChanged !== false) {
+            throw new Error("Tokenizer baseline must be proven without changing production defaults.");
+          }
+          if (
+            tokenizerBaseline.targetModel?.model !== "onnx-community/Qwen2.5-0.5B-Instruct" ||
+            tokenizerBaseline.targetModel?.revision !== "cc5cc01a65cc3ff17bdb73a7de33d879f62599b0" ||
+            tokenizerBaseline.targetModel?.exact !== true
+          ) {
+            throw new Error("Tokenizer baseline did not use the pinned exact model tokenizer.");
+          }
+          const tokenizerSamples = Array.isArray(tokenizerBaseline.samples)
+            ? tokenizerBaseline.samples
+            : [];
+          if (tokenizerSamples.length !== 3) {
+            throw new Error(`Expected three tokenizer baseline samples, got ${tokenizerSamples.length}.`);
+          }
+          const languages = new Set(tokenizerSamples.map((item) => item.language));
+          for (const requiredLanguage of ["english", "spanish", "code"]) {
+            if (!languages.has(requiredLanguage)) {
+              throw new Error(`Tokenizer baseline is missing ${requiredLanguage}.`);
+            }
+          }
+          for (const sample of tokenizerSamples) {
+            if (sample.tokenizer?.approximate !== false || sample.fallbackTokenizer?.approximate !== true) {
+              throw new Error(`Tokenizer baseline ${sample.language} did not preserve EXACT/APPROXIMATE evidence.`);
+            }
+            if (!Number.isFinite(sample.exactContentTokens) || !Number.isFinite(sample.exactSerializedPacketTokens)) {
+              throw new Error(`Tokenizer baseline ${sample.language} lacks exact token measurements.`);
+            }
+          }
+          if (!Array.isArray(tokenizerBaseline.identifiers) || tokenizerBaseline.identifiers.length === 0) {
+            throw new Error("Tokenizer baseline must measure exact code identifiers.");
           }
           if (report.winner !== null || report.claimPolicy?.superiorityClaimAllowed !== false) {
             throw new Error("The harness must report measurements without manufacturing a superiority claim.");
@@ -147,6 +209,12 @@ jobs:
             model: report.execution.provider.model,
             modelRevision: providerHealth.revision,
             dtype: providerHealth.dtype,
+            tokenizerBaseline: {
+              model: tokenizerBaseline.targetModel.model,
+              revision: tokenizerBaseline.targetModel.revision,
+              samples: tokenizerSamples,
+              identifiers: tokenizerBaseline.identifiers,
+            },
             observations: observations.length,
             aggregates: report.aggregates,
           }, null, 2));
@@ -156,6 +224,7 @@ jobs:
         shell: bash
         run: |
           set +e
+          mkdir -p reports/ci
           docker compose ps --all > reports/ci/agent-ab-docker-compose-ps.txt 2>&1
           docker compose logs --no-color --timestamps postgres \
             > reports/ci/agent-ab-postgres.log 2>&1

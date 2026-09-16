@@ -320,6 +320,168 @@ configureAuditExport(
   { allowOutput: false },
 );
 
+const profile = program
+  .command("profile")
+  .description("Versioned KnowledgeProfile governance");
+
+profile
+  .command("list")
+  .requiredOption("--space-id <uuid>", "Owning space UUID")
+  .requiredOption("--vault-id <uuid>", "Bound vault UUID")
+  .action(async (options: { spaceId: string; vaultId: string }) => {
+    const params = new URLSearchParams({
+      spaceId: options.spaceId,
+      vaultId: options.vaultId,
+    });
+    printJson(await api(`/v1/schema/profiles?${params.toString()}`));
+  });
+
+profile
+  .command("get")
+  .requiredOption("--space-id <uuid>", "Owning space UUID")
+  .requiredOption("--vault-id <uuid>", "Bound vault UUID")
+  .requiredOption("--revision-id <uuid>", "KnowledgeProfile revision UUID")
+  .action(
+    async (options: {
+      spaceId: string;
+      vaultId: string;
+      revisionId: string;
+    }) => {
+      const params = new URLSearchParams({
+        spaceId: options.spaceId,
+        vaultId: options.vaultId,
+      });
+      printJson(
+        await api(
+          `/v1/schema/profiles/${options.revisionId}?${params.toString()}`,
+        ),
+      );
+    },
+  );
+
+profile
+  .command("validate")
+  .requiredOption("--space-id <uuid>", "Owning space UUID")
+  .requiredOption("--vault-id <uuid>", "Bound vault UUID")
+  .requiredOption("--file <path>", "KnowledgeProfile JSON file")
+  .action(
+    async (options: { spaceId: string; vaultId: string; file: string }) => {
+      const profileValue = JSON.parse(
+        readFileSync(path.resolve(options.file), "utf8"),
+      ) as unknown;
+      printJson(
+        await api("/v1/schema/profiles/validate", {
+          method: "POST",
+          body: JSON.stringify({
+            spaceId: options.spaceId,
+            vaultId: options.vaultId,
+            profile: profileValue,
+          }),
+        }),
+      );
+    },
+  );
+
+profile
+  .command("diff")
+  .requiredOption("--space-id <uuid>", "Owning space UUID")
+  .requiredOption("--vault-id <uuid>", "Bound vault UUID")
+  .requiredOption("--file <path>", "Candidate KnowledgeProfile JSON file")
+  .option("--base-revision-id <uuid>", "Optional durable base revision")
+  .action(
+    async (options: {
+      spaceId: string;
+      vaultId: string;
+      file: string;
+      baseRevisionId?: string;
+    }) => {
+      const candidateProfile = JSON.parse(
+        readFileSync(path.resolve(options.file), "utf8"),
+      ) as unknown;
+      printJson(
+        await api("/v1/schema/profiles/diff", {
+          method: "POST",
+          body: JSON.stringify({
+            spaceId: options.spaceId,
+            vaultId: options.vaultId,
+            candidateProfile,
+            ...(options.baseRevisionId
+              ? { baseRevisionId: options.baseRevisionId }
+              : {}),
+          }),
+        }),
+      );
+    },
+  );
+
+profile
+  .command("dry-run")
+  .requiredOption("--space-id <uuid>", "Owning space UUID")
+  .requiredOption("--vault-id <uuid>", "Bound vault UUID")
+  .requiredOption("--file <path>", "Candidate KnowledgeProfile JSON file")
+  .option("--supersedes-revision-id <uuid>", "Revision explicitly superseded")
+  .action(
+    async (options: {
+      spaceId: string;
+      vaultId: string;
+      file: string;
+      supersedesRevisionId?: string;
+    }) => {
+      const profileValue = JSON.parse(
+        readFileSync(path.resolve(options.file), "utf8"),
+      ) as unknown;
+      printJson(
+        await api("/v1/schema/dry-run", {
+          method: "POST",
+          body: JSON.stringify({
+            spaceId: options.spaceId,
+            vaultId: options.vaultId,
+            profile: profileValue,
+            ...(options.supersedesRevisionId
+              ? { supersedesRevisionId: options.supersedesRevisionId }
+              : {}),
+          }),
+        }),
+      );
+    },
+  );
+
+profile
+  .command("activate")
+  .requiredOption("--space-id <uuid>", "Owning space UUID")
+  .requiredOption("--vault-id <uuid>", "Bound vault UUID")
+  .requiredOption("--revision-id <uuid>", "KnowledgeProfile revision UUID")
+  .requiredOption("--dry-run-id <uuid>", "Pinned dry-run UUID")
+  .requiredOption(
+    "--profile-hash <sha256>",
+    "Expected canonical profile SHA-256",
+  )
+  .requiredOption("--corpus-revision <revision>", "Expected corpus revision")
+  .action(
+    async (options: {
+      spaceId: string;
+      vaultId: string;
+      revisionId: string;
+      dryRunId: string;
+      profileHash: string;
+      corpusRevision: string;
+    }) => {
+      printJson(
+        await api("/v1/schema/activate", {
+          method: "POST",
+          body: JSON.stringify({
+            spaceId: options.spaceId,
+            vaultId: options.vaultId,
+            profileRevisionId: options.revisionId,
+            dryRunId: options.dryRunId,
+            expectedProfileHash: options.profileHash,
+            expectedCorpusRevision: options.corpusRevision,
+          }),
+        }),
+      );
+    },
+  );
+
 const vault = program
   .command("vault")
   .description("Read-only vault operations");
