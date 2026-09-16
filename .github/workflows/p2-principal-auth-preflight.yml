@@ -10,7 +10,6 @@ on:
       - .github/scripts/p2-principal-vault-hardening.py
       - .github/scripts/p2-principal-integration-fix.py
       - .github/scripts/p2-principal-final-compat.py
-      - .github/scripts/p2-principal-proposal-scope-compat.py
       - .github/workflows/p2-principal-auth-preflight.yml
 
 permissions:
@@ -50,7 +49,6 @@ jobs:
           python3 .github/scripts/p2-principal-vault-hardening.py
           python3 .github/scripts/p2-principal-integration-fix.py
           python3 .github/scripts/p2-principal-final-compat.py
-          python3 .github/scripts/p2-principal-proposal-scope-compat.py
 
       - name: Format touched TypeScript
         run: |
