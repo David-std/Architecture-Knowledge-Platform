@@ -1,0 +1,64 @@
+name: p2-bootstrap-hardening
+# Temporary focused P2 harness. Remove before cherry-picking into the PR batch.
+
+on:
+  push:
+    branches: [batch/p2-bootstrap-hardening-20260916]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: p2-bootstrap-hardening-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bootstrap-hardening:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgres://akp:akp@localhost:55432/akp
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - run: python .github/scripts/p2-harden-bootstrap-errors.py
+      - run: >-
+          pnpm exec prettier --write
+          apps/api/src/routes/sessions.ts
+          apps/api/test/context-revision-set.integration.test.ts
+      - run: pnpm exec prettier --check .
+      - run: pnpm check
+      - run: pnpm build
+      - run: docker compose up -d --wait postgres
+      - run: pnpm db:migrate
+      - name: Run stale-bootstrap regression
+        run: >-
+          pnpm --filter @akp/api exec vitest run
+          --config vitest.integration.config.ts
+          test/context-revision-set.integration.test.ts
+      - run: git diff --check
+      - name: Commit validated bootstrap hardening
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No generated changes remain."
+            exit 0
+          fi
+          git config user.name "AKP P2 Bootstrap Hardening"
+          git config user.email "akp-p2-bootstrap@users.noreply.github.com"
+          git add \
+            apps/api/src/routes/sessions.ts \
+            apps/api/test/context-revision-set.integration.test.ts
+          git commit -m "fix(p2): preserve bootstrap revision error semantics"
+          git push origin HEAD:batch/p2-bootstrap-hardening-20260916
+      - name: Stop disposable services
+        if: always()
+        run: docker compose down -v --remove-orphans
