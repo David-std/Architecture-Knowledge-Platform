@@ -752,7 +752,6 @@ export async function appendWorkspaceEvent(
   }
 }
 
-
 export async function workspacePromotionEvidence(
   db: Postgres,
   input: {
