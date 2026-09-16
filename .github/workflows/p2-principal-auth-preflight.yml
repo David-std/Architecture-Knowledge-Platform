@@ -1,0 +1,119 @@
+name: P2 Principal Identity Preflight
+
+on:
+  push:
+    branches: [feat/v0.4-enterprise-context-workspace]
+    paths:
+      - .github/scripts/p2-principal-auth.py
+      - .github/scripts/p2-principal-vault-hardening.py
+      - .github/workflows/p2-principal-auth-preflight.yml
+
+permissions:
+  contents: write
+
+env:
+  DATABASE_URL: postgresql://akp:akp@127.0.0.1:55432/akp
+  NODE_ENV: test
+
+jobs:
+  principal-preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.34.5 --activate
+          pnpm --version
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Materialize principal product patch
+        run: |
+          python3 .github/scripts/p2-principal-auth.py
+          python3 .github/scripts/p2-principal-vault-hardening.py
+
+      - name: Format touched TypeScript
+        run: |
+          pnpm exec prettier --write \
+            packages/postgres/src/principals.ts \
+            packages/postgres/src/index.ts \
+            apps/api/src/auth.ts \
+            apps/api/src/idempotency.ts \
+            apps/api/src/routes/web-auth.ts \
+            apps/api/src/routes/sessions.ts \
+            apps/api/src/routes/search.ts \
+            apps/api/src/routes/reviews.ts \
+            apps/api/test/principal-auth.integration.test.ts
+
+      - name: Capture candidate diff
+        run: git diff --binary > /tmp/p2-principal.patch
+
+      - name: Static gate
+        run: pnpm check
+
+      - name: Start disposable PostgreSQL
+        run: |
+          docker compose up -d postgres
+          for attempt in $(seq 1 40); do
+            if docker compose exec -T postgres pg_isready -U akp -d akp >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose logs postgres
+          exit 1
+
+      - name: Apply migrations
+        run: pnpm db:migrate
+
+      - name: Principal and workspace integration
+        run: >-
+          pnpm --filter @akp/api test:integration --
+          principal-auth.integration.test.ts
+          workspace-coordination.integration.test.ts
+
+      - name: Promote verified product patch
+        run: |
+          remote_head="$(git ls-remote origin refs/heads/feat/v0.4-enterprise-context-workspace | cut -f1)"
+          if [ "$remote_head" != "$GITHUB_SHA" ]; then
+            echo "Branch advanced concurrently: expected $GITHUB_SHA, found $remote_head" >&2
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            db/migrations/034_principal_identity.sql \
+            packages/postgres/src/principals.ts \
+            packages/postgres/src/index.ts \
+            apps/api/src/auth.ts \
+            apps/api/src/idempotency.ts \
+            apps/api/src/routes/web-auth.ts \
+            apps/api/src/routes/sessions.ts \
+            apps/api/src/routes/search.ts \
+            apps/api/src/routes/reviews.ts \
+            apps/api/test/principal-auth.integration.test.ts
+          git diff --cached --check
+          git commit -m "feat(p2): add scoped agent process principals"
+          git push origin HEAD:feat/v0.4-enterprise-context-workspace
+
+      - name: Upload candidate patch
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-principal-candidate
+          path: /tmp/p2-principal.patch
+          if-no-files-found: ignore
+
+      - name: Teardown
+        if: always()
+        run: docker compose down -v --remove-orphans
