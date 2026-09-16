@@ -59,13 +59,18 @@ jobs:
           elif new_ttl not in presence:
               raise SystemExit("workspace-presence ttl call shape changed unexpectedly")
           PY
-      - name: Format only the P2 delta
+      - name: Format P2 sources
         shell: bash
         run: |
-          mapfile -t files < <(
+          {
             git diff --name-only 2e93a0a1d4ed5b0a20b77cde4921fb23befb260f...HEAD \
               | grep -E '\.(ts|tsx|js|mjs|cjs|json|md|ya?ml)$' || true
-          )
+            printf '%s\n' \
+              apps/api/src/routes/sessions.ts \
+              packages/application/src/index.ts \
+              packages/postgres/src/workspace-coordination.ts
+          } | sort -u > /tmp/p2-prettier-files.txt
+          mapfile -t files < /tmp/p2-prettier-files.txt
           if [ "${#files[@]}" -gt 0 ]; then
             pnpm exec prettier --write "${files[@]}"
           fi
