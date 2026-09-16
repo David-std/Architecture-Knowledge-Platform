@@ -149,14 +149,20 @@ if "DEFAULT_KNOWLEDGE_PROFILE_V1" not in test:
     test = test.replace(marker, "  DEFAULT_KNOWLEDGE_PROFILE_V1,\n" + marker, 1)
 
 if "contextPolicyRevisionFromProfile" not in test:
-    marker = "  Postgres,\n"
-    if test.count(marker) != 1:
-        raise SystemExit(f"test postgres import anchor count={test.count(marker)}")
-    test = test.replace(
-        marker,
-        marker + "  contextPolicyRevisionFromProfile,\n",
+    postgres_import = re.search(
+        r'import\s*\{(?P<body>.*?)\}\s*from\s*"@akp/postgres";',
+        test,
+        re.DOTALL,
+    )
+    if not postgres_import:
+        raise SystemExit("test postgres import block not found")
+    original = postgres_import.group(0)
+    patched = original.replace(
+        "{",
+        "{\n  contextPolicyRevisionFromProfile,",
         1,
     )
+    test = test[: postgres_import.start()] + patched + test[postgres_import.end() :]
 
 old_type = "profile: { source: string; revisionId: string | null; profileId: string };"
 new_type = (
