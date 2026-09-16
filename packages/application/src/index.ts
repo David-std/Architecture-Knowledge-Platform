@@ -9,11 +9,31 @@ import type { JobId } from "@akp/domain";
 export type BootstrapContextMode = "COMPACT_AGENT_PACKET" | "FULL_CONTEXT_PACKET";
 
 export interface BootstrapWorkContextSnapshot {
-  session: { id: string; spaceId: string; vaultId: string; purpose: string; contextBudget: number; coordinationVersion: number };
-  claims: Array<{ id: string; workKey: string; ownerId: string; status: string; fencingToken: number; leaseExpiresAt: Date }>;
+  session: {
+    id: string;
+    spaceId: string;
+    vaultId: string;
+    purpose: string;
+    contextBudget: number;
+    coordinationVersion: number;
+  };
+  claims: Array<{
+    id: string;
+    workKey: string;
+    ownerId: string;
+    status: string;
+    fencingToken: number;
+    leaseExpiresAt: Date;
+  }>;
   events: Array<Record<string, unknown>>;
   snapshotVersion: number;
-  eventWindow: { total: number; returned: number; truncated: boolean; oldestVersion: number | null; latestVersion: number | null };
+  eventWindow: {
+    total: number;
+    returned: number;
+    truncated: boolean;
+    oldestVersion: number | null;
+    latestVersion: number | null;
+  };
   contextRevision: {
     status: "CURRENT" | "CHANGED" | "LEGACY_UNPINNED";
     pinned: { revisionSetHash: string } | null;
@@ -66,27 +86,64 @@ export interface BootstrapContextResult<TContextPacket = unknown> {
 }
 
 export interface BootstrapContextPorts<TContextPacket = unknown> {
-  loadWorkContext(sessionId: string, actorId: string): Promise<BootstrapWorkContextSnapshot | null>;
-  loadKnowledgeProfile(spaceId: string, vaultId: string, intent: string): Promise<BootstrapKnowledgeProfile>;
-  buildAuthorizedContext(input: { query: string; intent: string; spaceId: string; vaultId: string; maxTokens: number; mode: BootstrapContextMode }): Promise<TContextPacket>;
-  verifyRevisionCurrent(sessionId: string, spaceId: string, vaultId: string): Promise<void>;
+  loadWorkContext(
+    sessionId: string,
+    actorId: string,
+  ): Promise<BootstrapWorkContextSnapshot | null>;
+  loadKnowledgeProfile(
+    spaceId: string,
+    vaultId: string,
+    intent: string,
+  ): Promise<BootstrapKnowledgeProfile>;
+  buildAuthorizedContext(input: {
+    query: string;
+    intent: string;
+    spaceId: string;
+    vaultId: string;
+    maxTokens: number;
+    mode: BootstrapContextMode;
+  }): Promise<TContextPacket>;
+  verifyRevisionCurrent(
+    sessionId: string,
+    spaceId: string,
+    vaultId: string,
+  ): Promise<void>;
 }
 
-function workspaceEventsOfType(snapshot: BootstrapWorkContextSnapshot, eventType: string): Array<Record<string, unknown>> {
-  return snapshot.events.filter((event) => String(event.event_type ?? event.eventType ?? "") === eventType);
+function workspaceEventsOfType(
+  snapshot: BootstrapWorkContextSnapshot,
+  eventType: string,
+): Array<Record<string, unknown>> {
+  return snapshot.events.filter(
+    (event) => String(event.event_type ?? event.eventType ?? "") === eventType,
+  );
 }
 
 export class BootstrapContext<TContextPacket = unknown> {
   constructor(private readonly ports: BootstrapContextPorts<TContextPacket>) {}
 
-  async execute(request: BootstrapContextRequest, authorization: BootstrapAuthorizationSnapshot): Promise<BootstrapContextResult<TContextPacket>> {
-    const snapshot = await this.ports.loadWorkContext(request.sessionId, request.actorId);
+  async execute(
+    request: BootstrapContextRequest,
+    authorization: BootstrapAuthorizationSnapshot,
+  ): Promise<BootstrapContextResult<TContextPacket>> {
+    const snapshot = await this.ports.loadWorkContext(
+      request.sessionId,
+      request.actorId,
+    );
     if (!snapshot) throw new Error("SESSION_NOT_FOUND");
-    if (snapshot.contextRevision.status === "CHANGED") throw new Error("CONTEXT_REVISION_CHANGED");
-    if (!snapshot.contextRevision.pinned) throw new Error("CONTEXT_REVISION_PIN_REQUIRED");
+    if (snapshot.contextRevision.status === "CHANGED") {
+      throw new Error("CONTEXT_REVISION_CHANGED");
+    }
+    if (!snapshot.contextRevision.pinned) {
+      throw new Error("CONTEXT_REVISION_PIN_REQUIRED");
+    }
 
     const intent = request.intent?.trim() || "WORKFLOW_EXECUTION";
-    const profile = await this.ports.loadKnowledgeProfile(snapshot.session.spaceId, snapshot.session.vaultId, intent);
+    const profile = await this.ports.loadKnowledgeProfile(
+      snapshot.session.spaceId,
+      snapshot.session.vaultId,
+      intent,
+    );
     const context = await this.ports.buildAuthorizedContext({
       query: request.query?.trim() || snapshot.session.purpose,
       intent,
@@ -98,15 +155,23 @@ export class BootstrapContext<TContextPacket = unknown> {
 
     // Context assembly may cross asynchronous index/provider boundaries. Verify
     // the pinned truth set again before handing the packet to an agent.
-    await this.ports.verifyRevisionCurrent(snapshot.session.id, snapshot.session.spaceId, snapshot.session.vaultId);
+    await this.ports.verifyRevisionCurrent(
+      snapshot.session.id,
+      snapshot.session.spaceId,
+      snapshot.session.vaultId,
+    );
 
-    const openWork = snapshot.claims.filter((claim) => claim.status === "ACTIVE" && claim.leaseExpiresAt > new Date());
+    const openWork = snapshot.claims.filter(
+      (claim) => claim.status === "ACTIVE" && claim.leaseExpiresAt > new Date(),
+    );
     const handoffs = workspaceEventsOfType(snapshot, "CLAIM_HANDOFF");
     const findings = workspaceEventsOfType(snapshot, "FINDING");
     const blockers = workspaceEventsOfType(snapshot, "BLOCKER");
     const lifecycleGaps = [
       ...profile.mandatoryKinds.map((kind) => `MANDATORY_KIND:${kind}`),
-      ...(snapshot.eventWindow.truncated ? ["WORKSPACE_EVENT_WINDOW_TRUNCATED"] : []),
+      ...(snapshot.eventWindow.truncated
+        ? ["WORKSPACE_EVENT_WINDOW_TRUNCATED"]
+        : []),
     ];
     const suggestedActions = [
       ...(blockers.length ? ["RESOLVE_BLOCKERS"] : []),
