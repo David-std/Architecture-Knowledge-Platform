@@ -51,6 +51,9 @@ jobs:
       - name: Validate shared contracts
         run: pnpm contracts:validate
 
+      - name: Build MCP workspace dependency
+        run: pnpm --filter @akp/contracts build
+
       - name: MCP package gate
         run: pnpm --filter @akp/mcp check
 
