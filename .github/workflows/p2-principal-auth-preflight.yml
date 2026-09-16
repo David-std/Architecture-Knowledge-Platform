@@ -5,6 +5,7 @@ on:
     branches: [feat/v0.4-enterprise-context-workspace]
     paths:
       - .github/scripts/p2-principal-auth.py
+      - .github/scripts/p2-principal-auth-compat.py
       - .github/scripts/p2-principal-vault-hardening.py
       - .github/workflows/p2-principal-auth-preflight.yml
 
@@ -39,6 +40,7 @@ jobs:
 
       - name: Materialize principal product patch
         run: |
+          python3 .github/scripts/p2-principal-auth-compat.py
           python3 .github/scripts/p2-principal-auth.py
           python3 .github/scripts/p2-principal-vault-hardening.py
 
