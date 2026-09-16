@@ -1,0 +1,34 @@
+name: p2-check-diagnostics
+
+on:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Capture pnpm check diagnostics
+        shell: bash
+        run: |
+          set +e
+          pnpm check > p2-check.log 2>&1
+          status=$?
+          cat p2-check.log
+          echo "$status" > p2-check.exit
+          exit 0
+      - uses: actions/upload-artifact@v7
+        with:
+          name: p2-check-diagnostics
+          path: |
+            p2-check.log
+            p2-check.exit
+          if-no-files-found: error
+          retention-days: 1
