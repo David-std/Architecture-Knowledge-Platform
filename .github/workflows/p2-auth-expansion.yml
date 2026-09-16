@@ -1,0 +1,36 @@
+name: p2-auth-expansion
+# Temporary focused P2 integration gate. Remove before promoting this batch to PR #12.
+
+on:
+  push:
+    branches: [batch/p2-hardening-20260916]
+
+concurrency:
+  group: p2-auth-expansion-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  authorization-expansion:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgres://akp:akp@localhost:55432/akp
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - run: docker compose up -d --wait postgres
+      - run: pnpm db:migrate
+      - name: Run authorization-before-expansion regression
+        run: >-
+          pnpm --filter @akp/api exec vitest run
+          --config vitest.integration.config.ts
+          test/retrieval-authorization-expansion.integration.test.ts
+      - name: Stop disposable services
+        if: always()
+        run: docker compose down -v --remove-orphans
