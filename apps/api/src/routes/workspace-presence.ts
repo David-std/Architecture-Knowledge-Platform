@@ -77,7 +77,9 @@ export function registerWorkspacePresenceRoutes(
       const presence = await heartbeatWorkspacePresence(db, {
         sessionId: request.params.id,
         actorId: actor.id,
-        ttlSeconds: request.body?.ttlSeconds,
+        ...(request.body?.ttlSeconds !== undefined
+          ? { ttlSeconds: request.body.ttlSeconds }
+          : {}),
       });
       await audit(
         db,

@@ -204,7 +204,9 @@ export function registerContextFabricRoutes(
         canonicalUrl: request.body?.canonicalUrl ?? null,
         sourceRevision: request.body?.sourceRevision ?? null,
         title: request.body?.title ?? null,
-        authority: request.body?.authority,
+        ...(request.body?.authority
+          ? { authority: request.body.authority }
+          : {}),
         metadata,
       });
       await audit(
