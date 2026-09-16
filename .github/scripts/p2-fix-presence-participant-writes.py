@@ -91,3 +91,39 @@ if "const initialPresence = await app.inject" not in test:
         raise SystemExit("workspace presence test anchor changed")
     test = test.replace(anchor, insert, 1)
 test_path.write_text(test)
+
+fabric_path = Path("apps/api/src/routes/context-fabric.ts")
+fabric = fabric_path.read_text()
+old = '''        title: request.body?.title ?? null,
+        authority: request.body?.authority,
+        metadata,'''
+new = '''        title: request.body?.title ?? null,
+        ...(request.body?.authority
+          ? { authority: request.body.authority }
+          : {}),
+        metadata,'''
+if old in fabric:
+    fabric = fabric.replace(old, new, 1)
+elif "? { authority: request.body.authority }" not in fabric:
+    raise SystemExit("external ref authority optional shape changed")
+fabric_path.write_text(fabric)
+
+presence_route_path = Path("apps/api/src/routes/workspace-presence.ts")
+presence_route = presence_route_path.read_text()
+old = '''      const presence = await heartbeatWorkspacePresence(db, {
+        sessionId: request.params.id,
+        actorId: actor.id,
+        ttlSeconds: request.body?.ttlSeconds,
+      });'''
+new = '''      const presence = await heartbeatWorkspacePresence(db, {
+        sessionId: request.params.id,
+        actorId: actor.id,
+        ...(request.body?.ttlSeconds !== undefined
+          ? { ttlSeconds: request.body.ttlSeconds }
+          : {}),
+      });'''
+if old in presence_route:
+    presence_route = presence_route.replace(old, new, 1)
+elif "request.body?.ttlSeconds !== undefined" not in presence_route:
+    raise SystemExit("presence ttl optional shape changed")
+presence_route_path.write_text(presence_route)
