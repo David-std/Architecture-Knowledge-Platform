@@ -30,6 +30,10 @@ interface ProfileRollbackBody {
   expectedActiveRevisionId: string;
 }
 
+type ProfileMutationAuthorization =
+  | { ok: true }
+  | { ok: false; status: 401 | 403 | 404; code: string };
+
 function activationErrorStatus(code: string): number {
   if (code === "KNOWLEDGE_PROFILE_REVISION_NOT_FOUND") return 404;
   if (code === "VAULT_NOT_FOUND_OR_SCOPE_MISMATCH") return 404;
@@ -58,11 +62,13 @@ async function authorizeProfileMutation(
     spaceId: string;
     vaultId: string;
   },
-): Promise<"OK" | "AUTH_REQUIRED" | "PATH_SCOPE_DENIED" | string> {
+): Promise<ProfileMutationAuthorization> {
   if (!hasUnrestrictedPathAccess(input.actor, input.spaceId, "admin")) {
-    return "PATH_SCOPE_DENIED";
+    return { ok: false, status: 403, code: "PATH_SCOPE_DENIED" };
   }
-  if (!input.actor) return "AUTH_REQUIRED";
+  if (!input.actor) {
+    return { ok: false, status: 401, code: "AUTH_REQUIRED" };
+  }
   try {
     const scope = await resolveAuthorizedVaultScope(db, {
       userId: input.actor.id,
@@ -73,11 +79,18 @@ async function authorizeProfileMutation(
       federated: false,
     });
     const access = scope.accessByVault[input.vaultId];
-    if (!access || access.pathPrefix !== null) return "PATH_SCOPE_DENIED";
+    if (!access || access.pathPrefix !== null) {
+      return { ok: false, status: 403, code: "PATH_SCOPE_DENIED" };
+    }
   } catch (error) {
-    return error instanceof Error ? error.message : "VAULT_ACCESS_DENIED";
+    const code = error instanceof Error ? error.message : "VAULT_ACCESS_DENIED";
+    return {
+      ok: false,
+      status: code === "VAULT_SCOPE_NOT_FOUND" ? 404 : 403,
+      code,
+    };
   }
-  return "OK";
+  return { ok: true };
 }
 
 export function registerProfileActivationRoutes(
@@ -110,10 +123,10 @@ export function registerProfileActivationRoutes(
         spaceId: body.spaceId,
         vaultId: body.vaultId,
       });
-      if (authorization !== "OK") {
+      if (!authorization.ok) {
         return reply
-          .code(authorization === "AUTH_REQUIRED" ? 401 : 403)
-          .send({ code: authorization });
+          .code(authorization.status)
+          .send({ code: authorization.code });
       }
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
 
@@ -176,10 +189,10 @@ export function registerProfileActivationRoutes(
         spaceId: body.spaceId,
         vaultId: body.vaultId,
       });
-      if (authorization !== "OK") {
+      if (!authorization.ok) {
         return reply
-          .code(authorization === "AUTH_REQUIRED" ? 401 : 403)
-          .send({ code: authorization });
+          .code(authorization.status)
+          .send({ code: authorization.code });
       }
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
 
