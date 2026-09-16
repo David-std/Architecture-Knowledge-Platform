@@ -574,43 +574,82 @@ export function registerSessionRoutes(
         branchName: string;
         headCommit: string;
       };
-      const promotionEvent = await appendWorkspaceEvent(db, {
-        sessionId: session.id,
-        actorId: actor.id,
-        eventType: "PROMOTION_REQUESTED",
-        payload: {
-          reviewId: created.reviewId,
-          evidenceEventIds,
-          evidenceVersions: evidence.events.map((event) =>
-            Number(event.session_version),
-          ),
-          revisionSetHash: session.contextRevisionSetHash,
-          requestedPaths: changes.map((change) => change.path),
-        },
-      });
-      const provenanceUpdate = await db.pool.query(
-        `update reviews
-            set impact_manifest =
-              impact_manifest || $2::jsonb,
-                updated_at=now()
-          where id=$1 and author_id=$3`,
-        [
-          created.reviewId,
-          JSON.stringify({
-            promotionRequest: {
-              sessionId: session.id,
-              promotionEventId: String(promotionEvent.id),
-              evidenceEventIds,
-              evidenceVersions: evidence.events.map((event) =>
-                Number(event.session_version),
-              ),
-              revisionSetHash: session.contextRevisionSetHash,
-            },
-          }),
-          actor.id,
-        ],
+      const evidenceVersions = evidence.events.map((event) =>
+        Number(event.session_version),
       );
-      if (provenanceUpdate.rowCount !== 1) {
+      const promotionClient = await db.pool.connect();
+      let promotionEvent: Record<string, unknown>;
+      try {
+        await promotionClient.query("begin");
+        const lockedReview = await promotionClient.query(
+          "select id from reviews where id=$1 and author_id=$2 and status='PENDING' for update",
+          [created.reviewId, actor.id],
+        );
+        if (lockedReview.rowCount !== 1) {
+          throw new Error("PROMOTION_REVIEW_NOT_PENDING");
+        }
+        const eventResult = await promotionClient.query<Record<string, unknown>>(
+          `with locked as (
+             select id,coordination_version
+               from agent_sessions
+              where id=$1
+              for update
+           ),
+           bumped as (
+             update agent_sessions s
+                set coordination_version=locked.coordination_version+1,
+                    updated_at=now()
+               from locked
+              where s.id=locked.id
+              returning s.coordination_version
+           )
+           insert into workspace_events(
+             session_id,actor_id,event_type,payload,session_version
+           )
+           select $1,$2,'PROMOTION_REQUESTED',$3::jsonb,bumped.coordination_version
+             from bumped
+           returning *`,
+          [
+            session.id,
+            actor.id,
+            JSON.stringify({
+              reviewId: created.reviewId,
+              evidenceEventIds,
+              evidenceVersions,
+              revisionSetHash: session.contextRevisionSetHash,
+              requestedPaths: changes.map((change) => change.path),
+            }),
+          ],
+        );
+        const insertedEvent = eventResult.rows[0];
+        if (!insertedEvent) throw new Error("PROMOTION_EVENT_APPEND_FAILED");
+        const provenanceUpdate = await promotionClient.query(
+          `update reviews
+              set impact_manifest =
+                impact_manifest || $2::jsonb,
+                  updated_at=now()
+            where id=$1 and author_id=$3 and status='PENDING'`,
+          [
+            created.reviewId,
+            JSON.stringify({
+              promotionRequest: {
+                sessionId: session.id,
+                promotionEventId: String(insertedEvent.id),
+                evidenceEventIds,
+                evidenceVersions,
+                revisionSetHash: session.contextRevisionSetHash,
+              },
+            }),
+            actor.id,
+          ],
+        );
+        if (provenanceUpdate.rowCount !== 1) {
+          throw new Error("PROMOTION_PROVENANCE_ATTACH_FAILED");
+        }
+        await promotionClient.query("commit");
+        promotionEvent = insertedEvent;
+      } catch {
+        await promotionClient.query("rollback");
         await db.pool.query(
           `update reviews
               set status='REJECTED',
@@ -622,6 +661,8 @@ export function registerSessionRoutes(
         return reply
           .code(409)
           .send({ code: "PROMOTION_PROVENANCE_ATTACH_FAILED" });
+      } finally {
+        promotionClient.release();
       }
       await audit(
         db,
