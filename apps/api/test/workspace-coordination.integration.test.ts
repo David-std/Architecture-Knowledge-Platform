@@ -1,7 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
-import { Postgres, grantVaultMembership } from "@akp/postgres";
+import {
+  Postgres,
+  claimWorkspaceWork,
+  grantVaultMembership,
+} from "@akp/postgres";
 
 const spaceId = "00000000-0000-0000-0000-000000000003";
 const actorAId = randomUUID();
@@ -10,11 +14,13 @@ const outsiderId = randomUUID();
 const vaultId = randomUUID();
 const actorAToken = `workspace-a-${randomUUID()}`;
 const actorBToken = `workspace-b-${randomUUID()}`;
+const actorBNarrowToken = `workspace-b-narrow-${randomUUID()}`;
 const outsiderToken = `workspace-outsider-${randomUUID()}`;
 const tokenHash = (token: string) =>
   createHash("sha256").update(token).digest("hex");
 const actorAHeaders = { authorization: `Bearer ${actorAToken}` };
 const actorBHeaders = { authorization: `Bearer ${actorBToken}` };
+const actorBNarrowHeaders = { authorization: `Bearer ${actorBNarrowToken}` };
 const outsiderHeaders = { authorization: `Bearer ${outsiderToken}` };
 
 let app: FastifyInstance;
@@ -25,6 +31,7 @@ async function insertToken(
   userId: string,
   token: string,
   label: string,
+  pathPrefix: string | null = null,
 ): Promise<void> {
   await db.pool.query(
     `insert into api_tokens(user_id,token_hash,label,scopes)
@@ -37,7 +44,7 @@ async function insertToken(
         spaces: [
           {
             spaceId,
-            pathPrefix: null,
+            pathPrefix,
             permissions: ["knowledge:read", "source:read"],
           },
         ],
@@ -97,6 +104,12 @@ beforeAll(async () => {
   }
   await insertToken(actorAId, actorAToken, "workspace actor a");
   await insertToken(actorBId, actorBToken, "workspace actor b");
+  await insertToken(
+    actorBId,
+    actorBNarrowToken,
+    "workspace actor b narrow",
+    "docs",
+  );
   await insertToken(outsiderId, outsiderToken, "workspace outsider");
   const module = await import("../src/server.js");
   app = module.buildServer();
@@ -120,6 +133,7 @@ afterAll(async () => {
         [
           tokenHash(actorAToken),
           tokenHash(actorBToken),
+          tokenHash(actorBNarrowToken),
           tokenHash(outsiderToken),
         ],
       ],
@@ -162,6 +176,27 @@ describe("workspace coordination integration", () => {
     expect(created.statusCode).toBe(201);
     sessionId = (created.json() as { id: string }).id;
 
+    const ownerReadd = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/participants`,
+      headers: actorAHeaders,
+      payload: { userId: actorAId },
+    });
+    expect(ownerReadd.statusCode).toBe(200);
+    expect(ownerReadd.json()).toMatchObject({
+      joined: false,
+      role: "OWNER",
+    });
+    const ownerState = await app.inject({
+      method: "GET",
+      url: `/v1/sessions/${sessionId}/state`,
+      headers: actorAHeaders,
+    });
+    expect(ownerState.statusCode).toBe(200);
+    expect(ownerState.json()).toMatchObject({
+      session: { id: sessionId, role: "OWNER" },
+    });
+
     const joined = await app.inject({
       method: "POST",
       url: `/v1/sessions/${sessionId}/participants`,
@@ -181,6 +216,23 @@ describe("workspace coordination integration", () => {
         (session) => session.id === sessionId,
       ),
     ).toBe(true);
+
+    const hiddenFromNarrowCredential = await app.inject({
+      method: "GET",
+      url: `/v1/sessions/${sessionId}/state`,
+      headers: actorBNarrowHeaders,
+    });
+    expect(hiddenFromNarrowCredential.statusCode).toBe(404);
+    expect(hiddenFromNarrowCredential.json()).toMatchObject({
+      code: "SESSION_NOT_FOUND",
+    });
+    const narrowList = await app.inject({
+      method: "GET",
+      url: "/v1/sessions",
+      headers: actorBNarrowHeaders,
+    });
+    expect(narrowList.statusCode).toBe(403);
+    expect(narrowList.json()).toMatchObject({ code: "PATH_SCOPE_DENIED" });
 
     const hiddenFromOutsider = await app.inject({
       method: "GET",
@@ -204,6 +256,41 @@ describe("workspace coordination integration", () => {
       workKey: "profile:compiler-boundary",
       fencingToken: 1,
       status: "ACTIVE",
+    });
+
+    await expect(
+      claimWorkspaceWork(db, {
+        sessionId,
+        actorId: actorAId,
+        workKey: "invalid:lease",
+        leaseSeconds: 0,
+      }),
+    ).rejects.toThrow("INVALID_CLAIM_LEASE");
+
+    const duplicateClaim = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/claims`,
+      headers: actorAHeaders,
+      payload: { workKey: "profile:compiler-boundary", leaseSeconds: 120 },
+    });
+    expect(duplicateClaim.statusCode).toBe(409);
+    expect(duplicateClaim.json()).toMatchObject({ code: "WORK_CLAIM_HELD" });
+
+    const heartbeatA = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/claims/heartbeat`,
+      headers: actorAHeaders,
+      payload: {
+        workKey: "profile:compiler-boundary",
+        fencingToken: 1,
+        leaseSeconds: 120,
+      },
+    });
+    expect(heartbeatA.statusCode).toBe(200);
+    expect(heartbeatA.json()).toMatchObject({
+      ownerId: actorAId,
+      fencingToken: 1,
+      version: 2,
     });
 
     const blockedB = await app.inject({
@@ -303,6 +390,21 @@ describe("workspace coordination integration", () => {
       code: "WORK_CLAIM_FENCE_STALE",
     });
 
+    const staleHeartbeat = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/claims/heartbeat`,
+      headers: actorAHeaders,
+      payload: {
+        workKey: "profile:compiler-boundary",
+        fencingToken: 1,
+        leaseSeconds: 120,
+      },
+    });
+    expect(staleHeartbeat.statusCode).toBe(409);
+    expect(staleHeartbeat.json()).toMatchObject({
+      code: "WORK_CLAIM_FENCE_STALE",
+    });
+
     const resumedByB = await app.inject({
       method: "GET",
       url: `/v1/sessions/${sessionId}/state`,
@@ -310,14 +412,26 @@ describe("workspace coordination integration", () => {
     });
     expect(resumedByB.statusCode).toBe(200);
     const snapshot = resumedByB.json() as {
-      session: { id: string; role: string };
+      session: { id: string; role: string; coordinationVersion: number };
       participants: Array<{ user_id: string }>;
       claims: Array<{
         workKey: string;
         ownerId: string;
         fencingToken: number;
       }>;
-      events: Array<{ event_type: string; payload: Record<string, unknown> }>;
+      events: Array<{
+        event_type: string;
+        session_version: number;
+        payload: Record<string, unknown>;
+      }>;
+      snapshotVersion: number;
+      eventWindow: {
+        total: number;
+        returned: number;
+        truncated: boolean;
+        oldestVersion: number | null;
+        latestVersion: number | null;
+      };
     };
     expect(snapshot.session).toMatchObject({
       id: sessionId,
@@ -342,6 +456,80 @@ describe("workspace coordination integration", () => {
         "CLAIM_HANDOFF",
       ]),
     );
+    expect(
+      snapshot.events.filter(
+        (event) => event.event_type === "PARTICIPANT_JOINED",
+      ),
+    ).toHaveLength(1);
+    expect(snapshot.events.map((event) => event.event_type)).toContain(
+      "CLAIM_HEARTBEAT",
+    );
+    expect(snapshot.snapshotVersion).toBe(snapshot.session.coordinationVersion);
+    expect(snapshot.eventWindow.latestVersion).toBe(snapshot.snapshotVersion);
+
+    const stressClient = await db.pool.connect();
+    try {
+      await stressClient.query("begin");
+      const current = await stressClient.query<{
+        coordination_version: number;
+      }>(
+        "select coordination_version from agent_sessions where id=$1 for update",
+        [sessionId],
+      );
+      const baseVersion = Number(current.rows[0]?.coordination_version ?? 0);
+      await stressClient.query(
+        `insert into workspace_events(
+           session_id,space_id,vault_id,actor_id,event_type,payload,session_version
+         )
+         select $1,$2,$3,$4,'NOTE',jsonb_build_object('sequence',g),$5+g
+           from generate_series(1,505) g`,
+        [sessionId, spaceId, vaultId, actorBId, baseVersion],
+      );
+      await stressClient.query(
+        `update agent_sessions
+            set coordination_version=$2,updated_at=now()
+          where id=$1`,
+        [sessionId, baseVersion + 505],
+      );
+      await stressClient.query("commit");
+    } catch (error) {
+      await stressClient.query("rollback");
+      throw error;
+    } finally {
+      stressClient.release();
+    }
+
+    const tailed = await app.inject({
+      method: "GET",
+      url: `/v1/sessions/${sessionId}/state`,
+      headers: actorBHeaders,
+    });
+    expect(tailed.statusCode).toBe(200);
+    const tailSnapshot = tailed.json() as {
+      snapshotVersion: number;
+      events: Array<{ event_type: string; payload: { sequence?: number } }>;
+      eventWindow: {
+        total: number;
+        returned: number;
+        truncated: boolean;
+        oldestVersion: number | null;
+        latestVersion: number | null;
+      };
+    };
+    expect(tailSnapshot.eventWindow.returned).toBe(500);
+    expect(tailSnapshot.eventWindow.truncated).toBe(true);
+    expect(tailSnapshot.eventWindow.total).toBeGreaterThan(500);
+    expect(tailSnapshot.eventWindow.latestVersion).toBe(
+      tailSnapshot.snapshotVersion,
+    );
+    expect(tailSnapshot.events[0]).toMatchObject({
+      event_type: "NOTE",
+      payload: { sequence: 6 },
+    });
+    expect(tailSnapshot.events.at(-1)).toMatchObject({
+      event_type: "NOTE",
+      payload: { sequence: 505 },
+    });
 
     const canonicalAfter = await db.pool.query<{
       documents: number;

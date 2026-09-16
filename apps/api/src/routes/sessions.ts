@@ -6,6 +6,7 @@ import {
   createWorkspaceSession,
   getWorkspaceSessionForParticipant,
   handoffWorkspaceWork,
+  heartbeatWorkspaceWork,
   listWorkspaceSessionsForParticipant,
   resolveAuthorizedVaultScope,
   workspaceSessionSnapshot,
@@ -61,6 +62,14 @@ async function authorizedSession(
     actor.id,
   );
   if (!session) {
+    await reply.code(404).send({ code: "SESSION_NOT_FOUND" });
+    return null;
+  }
+  if (
+    !unrestrictedSpaceIdsForPermission(actor, "knowledge:read").includes(
+      session.spaceId,
+    )
+  ) {
     await reply.code(404).send({ code: "SESSION_NOT_FOUND" });
     return null;
   }
@@ -279,7 +288,7 @@ export function registerSessionRoutes(
       if (!(await userHasFullVaultRead(db, userId, session))) {
         return reply.code(422).send({ code: "PARTICIPANT_NOT_AUTHORIZED" });
       }
-      await addWorkspaceParticipant(db, {
+      const participant = await addWorkspaceParticipant(db, {
         sessionId: session.id,
         actorId: actor.id,
         userId,
@@ -293,7 +302,9 @@ export function registerSessionRoutes(
         { vaultId: session.vaultId, userId },
         session.spaceId,
       );
-      return reply.code(201).send({ sessionId: session.id, userId });
+      return reply
+        .code(participant.joined ? 201 : 200)
+        .send({ sessionId: session.id, userId, ...participant });
     },
   );
 
@@ -342,6 +353,63 @@ export function registerSessionRoutes(
         session.spaceId,
       );
       return reply.code(201).send(claim);
+    },
+  );
+
+  app.post<{
+    Params: { id: string };
+    Body: {
+      workKey: string;
+      fencingToken: number;
+      leaseSeconds?: number;
+    };
+  }>(
+    "/v1/sessions/:id/claims/heartbeat",
+    { preHandler: requirePermission("knowledge:read") },
+    async (request, reply) => {
+      const session = await authorizedSession(
+        db,
+        request,
+        reply,
+        request.params.id,
+      );
+      if (!session) return;
+      const actor = actorOf(request);
+      if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
+      const workKey = request.body?.workKey?.trim();
+      if (!workKey || !WORK_KEY_PATTERN.test(workKey)) {
+        return reply.code(400).send({ code: "INVALID_WORK_KEY" });
+      }
+      const fencingToken = Number(request.body.fencingToken);
+      if (!Number.isSafeInteger(fencingToken) || fencingToken < 1) {
+        return reply.code(400).send({ code: "INVALID_FENCING_TOKEN" });
+      }
+      const leaseSeconds = boundedLeaseSeconds(request.body.leaseSeconds);
+      if (!leaseSeconds) {
+        return reply.code(400).send({ code: "INVALID_CLAIM_LEASE" });
+      }
+      const claim = await heartbeatWorkspaceWork(db, {
+        sessionId: session.id,
+        actorId: actor.id,
+        workKey,
+        fencingToken,
+        leaseSeconds,
+      });
+      await audit(
+        db,
+        request,
+        "workspace.claim.heartbeat",
+        "agent_session",
+        session.id,
+        {
+          vaultId: session.vaultId,
+          claimId: claim.id,
+          workKey,
+          fencingToken: claim.fencingToken,
+        },
+        session.spaceId,
+      );
+      return claim;
     },
   );
 
