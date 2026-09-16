@@ -73,6 +73,14 @@ export const INTEGRATION_EVENT_TYPES = [
   "GraphIndexUpdateRequested",
   "ContextPackInvalidationRequested",
   "ImpactedEvalRunRequested",
+  "WorkspaceSessionCreated",
+  "WorkspaceClaimUpdated",
+  "WorkspaceHandoffCreated",
+  "WorkspacePromotionRequested",
+  "ExternalObjectRefUpserted",
+  "OfflineDraftQueued",
+  "OfflineDraftReconciled",
+  "ContextFabricPeerRegistered",
 ] as const;
 export type IntegrationEventType = (typeof INTEGRATION_EVENT_TYPES)[number];
 
@@ -86,6 +94,13 @@ export const VAULT_SCOPED_EVENT_TYPES: ReadonlySet<IntegrationEventType> =
     "GraphIndexUpdateRequested",
     "ContextPackInvalidationRequested",
     "ImpactedEvalRunRequested",
+    "WorkspaceSessionCreated",
+    "WorkspaceClaimUpdated",
+    "WorkspaceHandoffCreated",
+    "WorkspacePromotionRequested",
+    "ExternalObjectRefUpserted",
+    "OfflineDraftQueued",
+    "OfflineDraftReconciled",
   ]);
 
 export interface EventEnvelope {

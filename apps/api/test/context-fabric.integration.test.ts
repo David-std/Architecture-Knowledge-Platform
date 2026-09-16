@@ -1,7 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
-import { Postgres, grantVaultMembership } from "@akp/postgres";
+import {
+  Postgres,
+  grantVaultMembership,
+  upsertContextFabricPeer,
+} from "@akp/postgres";
 
 const spaceId = "00000000-0000-0000-0000-000000000003";
 const actorId = randomUUID();
@@ -13,6 +17,7 @@ const headers = { authorization: `Bearer ${token}` };
 let app: FastifyInstance;
 let db: Postgres;
 let sessionId = "";
+let peerId = "";
 
 beforeAll(async () => {
   if (!process.env.DATABASE_URL) {
@@ -72,6 +77,17 @@ beforeAll(async () => {
 afterAll(async () => {
   if (app) await app.close();
   if (db) {
+    await db.pool.query("delete from event_outbox where vault_id=$1", [
+      vaultId,
+    ]);
+    if (peerId) {
+      await db.pool.query("delete from event_outbox where resource_id=$1", [
+        peerId,
+      ]);
+      await db.pool.query("delete from context_fabric_peers where id=$1", [
+        peerId,
+      ]);
+    }
     if (sessionId) {
       await db.pool.query(
         "delete from audit_events where resource_id=$1 or metadata->>'sessionId'=$1",
@@ -147,11 +163,37 @@ describe("team context fabric integration", () => {
       },
     });
     expect(externalRef.statusCode).toBe(201);
-    expect(externalRef.json()).toMatchObject({
+    const externalRefBody = externalRef.json() as {
+      id: string;
+      provider: string;
+      objectType: string;
+      externalId: string;
+      authority: string;
+    };
+    expect(externalRefBody).toMatchObject({
       provider: "github",
       objectType: "issue",
       externalId: "GH-42",
       authority: "SYSTEM_OF_RECORD",
+    });
+    const externalRefOutbox = await db.pool.query<{
+      space_id: string;
+      vault_id: string;
+      payload: Record<string, unknown>;
+    }>(
+      `select space_id,vault_id,payload from event_outbox
+        where event_type='ExternalObjectRefUpserted' and resource_id=$1`,
+      [externalRefBody.id],
+    );
+    expect(externalRefOutbox.rows).toHaveLength(1);
+    expect(externalRefOutbox.rows[0]).toMatchObject({
+      space_id: spaceId,
+      vault_id: vaultId,
+      payload: {
+        sessionId,
+        externalId: "GH-42",
+        authority: "SYSTEM_OF_RECORD",
+      },
     });
 
     const listedRefs = await app.inject({
@@ -206,6 +248,12 @@ describe("team context fabric integration", () => {
       id: queuedDraft.id,
       status: "QUEUED",
     });
+    const queueOutbox = await db.pool.query<{ count: number }>(
+      `select count(*)::int count from event_outbox
+        where event_type='OfflineDraftQueued' and resource_id=$1`,
+      [queuedDraft.id],
+    );
+    expect(queueOutbox.rows[0]?.count).toBe(1);
 
     const applied = await app.inject({
       method: "POST",
@@ -230,6 +278,12 @@ describe("team context fabric integration", () => {
       [sessionId],
     );
     expect(appliedEvents.rows[0]?.count).toBe(1);
+    const reconciledOutbox = await db.pool.query<{ count: number }>(
+      `select count(*)::int count from event_outbox
+        where event_type='OfflineDraftReconciled' and resource_id=$1`,
+      [queuedDraft.id],
+    );
+    expect(reconciledOutbox.rows[0]?.count).toBe(1);
 
     await db.pool.query(
       "update vaults set current_revision='fabric:r2' where id=$1",
@@ -264,6 +318,52 @@ describe("team context fabric integration", () => {
       [sessionId],
     );
     expect(staleNote.rows[0]?.count).toBe(0);
+    const staleReconciledOutbox = await db.pool.query<{ count: number }>(
+      `select count(*)::int count from event_outbox
+        where event_type='OfflineDraftReconciled' and resource_id=$1`,
+      [staleDraft.id],
+    );
+    expect(staleReconciledOutbox.rows[0]?.count).toBe(0);
+
+    const organization = await db.pool.query<{ organization_id: string }>(
+      "select organization_id from spaces where id=$1",
+      [spaceId],
+    );
+    const organizationId = organization.rows[0]?.organization_id;
+    expect(organizationId).toBeTruthy();
+    const peer = await upsertContextFabricPeer(db, {
+      organizationId: organizationId!,
+      spaceId,
+      peerKey: `integration-peer-${vaultId.slice(0, 8)}`,
+      displayName: "Integration discovery peer",
+      discoveryMode: "CATALOG_ONLY",
+      trustState: "DISCOVERED",
+      capabilities: { discovery: true },
+      revision: "peer:r1",
+      lastSeenAt: new Date(),
+    });
+    peerId = peer.id;
+    const peerOutbox = await db.pool.query<{
+      organization_id: string;
+      space_id: string;
+      vault_id: string | null;
+      payload: Record<string, unknown>;
+    }>(
+      `select organization_id,space_id,vault_id,payload from event_outbox
+        where event_type='ContextFabricPeerRegistered' and resource_id=$1`,
+      [peerId],
+    );
+    expect(peerOutbox.rows).toHaveLength(1);
+    expect(peerOutbox.rows[0]).toMatchObject({
+      organization_id: organizationId,
+      space_id: spaceId,
+      vault_id: null,
+      payload: {
+        boundary: "DISCOVERY_METADATA_ONLY",
+        discoveryMode: "CATALOG_ONLY",
+        trustState: "DISCOVERED",
+      },
+    });
 
     const afterDocuments = await db.pool.query<{ count: number }>(
       "select count(*)::int count from knowledge_documents where vault_id=$1",

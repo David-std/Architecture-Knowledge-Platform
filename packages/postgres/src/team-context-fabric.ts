@@ -1,5 +1,6 @@
 import type { Postgres, PostgresPoolClient } from "./index.js";
 import { workspaceContextRevisionState } from "./context-revision-set.js";
+import { appendOutboxEvent } from "./outbox.js";
 
 export type ExternalObjectAuthority =
   "SYSTEM_OF_RECORD" | "REFERENCE" | "MIRRORED_PROJECTION";
@@ -148,10 +149,15 @@ async function requireSessionParticipant(
   client: PostgresPoolClient,
   sessionId: string,
   actorId: string,
-): Promise<{ spaceId: string; vaultId: string }> {
-  const result = await client.query<{ space_id: string; vault_id: string }>(
-    `select s.space_id,s.vault_id
+): Promise<{ organizationId: string; spaceId: string; vaultId: string }> {
+  const result = await client.query<{
+    organization_id: string;
+    space_id: string;
+    vault_id: string;
+  }>(
+    `select sp.organization_id,s.space_id,s.vault_id
        from agent_sessions s
+       join spaces sp on sp.id=s.space_id
        join workspace_session_participants p
          on p.session_id=s.id
         and p.user_id=$2
@@ -161,7 +167,11 @@ async function requireSessionParticipant(
   );
   const row = result.rows[0];
   if (!row) throw fabricError("SESSION_NOT_FOUND", 404);
-  return { spaceId: row.space_id, vaultId: row.vault_id };
+  return {
+    organizationId: row.organization_id,
+    spaceId: row.space_id,
+    vaultId: row.vault_id,
+  };
 }
 
 export async function upsertExternalObjectRef(
@@ -220,6 +230,24 @@ export async function upsertExternalObjectRef(
     );
     const row = result.rows[0];
     if (!row) throw fabricError("EXTERNAL_OBJECT_REF_WRITE_FAILED", 500);
+    await appendOutboxEvent(client, {
+      eventType: "ExternalObjectRefUpserted",
+      resourceId: String(row.id),
+      organizationId: scope.organizationId,
+      spaceId: scope.spaceId,
+      vaultId: scope.vaultId,
+      payload: {
+        sessionId: input.sessionId,
+        actorId: input.actorId,
+        provider: String(row.provider),
+        objectType: String(row.object_type),
+        externalId: String(row.external_id),
+        authority: String(row.authority),
+        sourceRevision: row.source_revision
+          ? String(row.source_revision)
+          : null,
+      },
+    });
     await client.query("commit");
     return normalizeExternalRef(row);
   } catch (error) {
@@ -307,6 +335,7 @@ export async function queueWorkspaceOfflineDraft(
       ],
     );
     let row = result.rows[0];
+    const inserted = Boolean(row);
     if (!row) {
       const existing = await client.query<Record<string, unknown>>(
         `select * from workspace_offline_drafts
@@ -322,6 +351,23 @@ export async function queueWorkspaceOfflineDraft(
           JSON.stringify(input.payload);
       if (!samePayload)
         throw fabricError("OFFLINE_DRAFT_IDEMPOTENCY_CONFLICT", 409);
+    }
+    if (inserted) {
+      await appendOutboxEvent(client, {
+        eventType: "OfflineDraftQueued",
+        resourceId: String(row.id),
+        organizationId: scope.organizationId,
+        spaceId: scope.spaceId,
+        vaultId: scope.vaultId,
+        payload: {
+          sessionId: input.sessionId,
+          actorId: input.actorId,
+          clientDraftId: input.clientDraftId,
+          baseRevisionSetHash: input.baseRevisionSetHash,
+          eventType: input.eventType,
+          status: String(row.status),
+        },
+      });
     }
     await client.query("commit");
     return normalizeOfflineDraft(row);
@@ -405,9 +451,9 @@ export async function applyWorkspaceOfflineDraft(
           returning *`,
         [input.draftId],
       );
-      await client.query("commit");
       const row = conflict.rows[0];
       if (!row) throw fabricError("OFFLINE_DRAFT_WRITE_FAILED", 500);
+      await client.query("commit");
       return normalizeOfflineDraft(row);
     }
 
@@ -442,9 +488,24 @@ export async function applyWorkspaceOfflineDraft(
         returning *`,
       [input.draftId, Number(event.id)],
     );
-    await client.query("commit");
     const row = applied.rows[0];
     if (!row) throw fabricError("OFFLINE_DRAFT_WRITE_FAILED", 500);
+    await appendOutboxEvent(client, {
+      eventType: "OfflineDraftReconciled",
+      resourceId: String(row.id),
+      organizationId: scope.organizationId,
+      spaceId: scope.spaceId,
+      vaultId: scope.vaultId,
+      payload: {
+        sessionId,
+        actorId: input.actorId,
+        clientDraftId: String(row.client_draft_id),
+        baseRevisionSetHash: String(row.base_revision_set_hash),
+        appliedEventId: Number(event.id),
+        status: "APPLIED",
+      },
+    });
+    await client.query("commit");
     return normalizeOfflineDraft(row);
   } catch (error) {
     await client.query("rollback");
@@ -469,38 +530,70 @@ export async function upsertContextFabricPeer(
     lastSeenAt?: Date | null;
   },
 ): Promise<ContextFabricPeerRecord> {
-  const result = await db.pool.query<Record<string, unknown>>(
-    `insert into context_fabric_peers(
-       organization_id,space_id,peer_key,display_name,endpoint,discovery_mode,
-       trust_state,capabilities,revision,last_seen_at
-     ) values($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10)
-     on conflict(organization_id,peer_key) do update
-       set space_id=excluded.space_id,
-           display_name=excluded.display_name,
-           endpoint=excluded.endpoint,
-           discovery_mode=excluded.discovery_mode,
-           trust_state=excluded.trust_state,
-           capabilities=excluded.capabilities,
-           revision=excluded.revision,
-           last_seen_at=excluded.last_seen_at,
-           updated_at=now()
-     returning *`,
-    [
-      input.organizationId,
-      input.spaceId ?? null,
-      input.peerKey,
-      input.displayName,
-      input.endpoint?.trim() || null,
-      input.discoveryMode ?? "CATALOG_ONLY",
-      input.trustState ?? "DISCOVERED",
-      JSON.stringify(input.capabilities ?? {}),
-      input.revision?.trim() || null,
-      input.lastSeenAt ?? null,
-    ],
-  );
-  const row = result.rows[0];
-  if (!row) throw fabricError("CONTEXT_FABRIC_PEER_WRITE_FAILED", 500);
-  return normalizePeer(row);
+  const client = await db.pool.connect();
+  try {
+    await client.query("begin");
+    if (input.spaceId) {
+      const scope = await client.query<{ id: string }>(
+        `select id from spaces where id=$1 and organization_id=$2`,
+        [input.spaceId, input.organizationId],
+      );
+      if (!scope.rows[0]) {
+        throw fabricError("CONTEXT_FABRIC_PEER_SCOPE_MISMATCH", 409);
+      }
+    }
+    const result = await client.query<Record<string, unknown>>(
+      `insert into context_fabric_peers(
+         organization_id,space_id,peer_key,display_name,endpoint,discovery_mode,
+         trust_state,capabilities,revision,last_seen_at
+       ) values($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10)
+       on conflict(organization_id,peer_key) do update
+         set space_id=excluded.space_id,
+             display_name=excluded.display_name,
+             endpoint=excluded.endpoint,
+             discovery_mode=excluded.discovery_mode,
+             trust_state=excluded.trust_state,
+             capabilities=excluded.capabilities,
+             revision=excluded.revision,
+             last_seen_at=excluded.last_seen_at,
+             updated_at=now()
+       returning *`,
+      [
+        input.organizationId,
+        input.spaceId ?? null,
+        input.peerKey,
+        input.displayName,
+        input.endpoint?.trim() || null,
+        input.discoveryMode ?? "CATALOG_ONLY",
+        input.trustState ?? "DISCOVERED",
+        JSON.stringify(input.capabilities ?? {}),
+        input.revision?.trim() || null,
+        input.lastSeenAt ?? null,
+      ],
+    );
+    const row = result.rows[0];
+    if (!row) throw fabricError("CONTEXT_FABRIC_PEER_WRITE_FAILED", 500);
+    await appendOutboxEvent(client, {
+      eventType: "ContextFabricPeerRegistered",
+      resourceId: String(row.id),
+      organizationId: input.organizationId,
+      spaceId: row.space_id ? String(row.space_id) : null,
+      payload: {
+        peerKey: String(row.peer_key),
+        discoveryMode: String(row.discovery_mode),
+        trustState: String(row.trust_state),
+        revision: row.revision ? String(row.revision) : null,
+        boundary: "DISCOVERY_METADATA_ONLY",
+      },
+    });
+    await client.query("commit");
+    return normalizePeer(row);
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function listContextFabricPeers(
