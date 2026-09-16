@@ -21,6 +21,7 @@ import { registerEvaluationRoutes } from "./routes/evaluation.js";
 import { registerProjectRoutes } from "./routes/projects.js";
 import { registerSessionRoutes } from "./routes/sessions.js";
 import { registerContextFabricRoutes } from "./routes/context-fabric.js";
+import { registerWorkspacePresenceRoutes } from "./routes/workspace-presence.js";
 import { registerGovernanceRoutes } from "./routes/governance.js";
 import { registerProviderTaskRoutes } from "./routes/provider-tasks.js";
 import { registerOperatorRoutes } from "./routes/operator.js";
@@ -232,6 +233,7 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
   registerProjectRoutes(app, db);
   registerSessionRoutes(app, db);
   registerContextFabricRoutes(app, db);
+  registerWorkspacePresenceRoutes(app, db);
   registerGovernanceRoutes(app, db);
 
   app.addHook("onClose", async () => db.close());
