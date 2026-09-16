@@ -28,6 +28,7 @@ import {
   hasSpaceAccess,
   hasUnrestrictedPathAccess,
   requirePermission,
+  requirePrincipalAction,
   spaceIdsForPermission,
 } from "../auth.js";
 import {
@@ -720,7 +721,12 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
     };
   }>(
     "/v1/proposals",
-    { preHandler: requirePermission("knowledge:propose") },
+    {
+      preHandler: [
+        requirePermission("knowledge:propose"),
+        requirePrincipalAction("knowledge:propose"),
+      ],
+    },
     async (request, reply) => {
       const changes = request.body?.changes ?? [];
       if (!changes.length)
@@ -757,6 +763,12 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
         return reply.code(403).send({ code: "SPACE_ACCESS_DENIED" });
       }
       const actor = actorOf(request);
+      if (
+        actor?.principalKind === "AGENT_PROCESS" &&
+        actor.principalVaultId !== vaultId
+      ) {
+        return reply.code(403).send({ code: "PRINCIPAL_VAULT_SCOPE_DENIED" });
+      }
       let vaultAccess: ReviewVaultAccess | null = null;
       try {
         const scope = await resolveAuthorizedVaultScope(db, {

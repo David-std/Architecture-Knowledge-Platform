@@ -1,7 +1,11 @@
+import { createHash, randomBytes } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
+  AGENT_PROCESS_ALLOWED_ACTIONS,
+  DEFAULT_AGENT_PROCESS_ACTIONS,
   addWorkspaceParticipant,
   appendWorkspaceEvent,
+  createAgentProcessPrincipalCredential,
   claimWorkspaceWork,
   createWorkspaceSession,
   getWorkspaceSessionForParticipant,
@@ -10,6 +14,7 @@ import {
   isWorkspaceWorkKey,
   listWorkspaceSessionsForParticipant,
   resolveAuthorizedVaultScope,
+  revokeAgentProcessPrincipal,
   workspaceSessionSnapshot,
   type Postgres,
   type WorkspaceSessionAccess,
@@ -18,6 +23,8 @@ import {
   actorOf,
   audit,
   requirePermission,
+  requirePrincipalAction,
+  serializeEffectiveScopes,
   unrestrictedSpaceIdsForPermission,
 } from "../auth.js";
 
@@ -62,6 +69,13 @@ async function authorizedSession(
     actor.id,
   );
   if (!session) {
+    await reply.code(404).send({ code: "SESSION_NOT_FOUND" });
+    return null;
+  }
+  if (
+    actor.principalKind === "AGENT_PROCESS" &&
+    actor.principalSessionId !== session.id
+  ) {
     await reply.code(404).send({ code: "SESSION_NOT_FOUND" });
     return null;
   }
@@ -119,7 +133,12 @@ export function registerSessionRoutes(
 ): void {
   app.get(
     "/v1/sessions",
-    { preHandler: requirePermission("knowledge:read") },
+    {
+      preHandler: [
+        requirePermission("knowledge:read"),
+        requirePrincipalAction("workspace:read"),
+      ],
+    },
     async (request, reply) => {
       const actor = actorOf(request);
       const spaces = unrestrictedSpaceIdsForPermission(actor, "knowledge:read");
@@ -154,7 +173,14 @@ export function registerSessionRoutes(
         spaces,
         [...new Set(vaultIds)],
       );
-      return { sessions };
+      return {
+        sessions:
+          actor.principalKind === "AGENT_PROCESS"
+            ? sessions.filter(
+                (session) => session.id === actor.principalSessionId,
+              )
+            : sessions,
+      };
     },
   );
 
@@ -168,7 +194,12 @@ export function registerSessionRoutes(
     };
   }>(
     "/v1/sessions",
-    { preHandler: requirePermission("knowledge:read") },
+    {
+      preHandler: [
+        requirePermission("knowledge:read"),
+        requirePrincipalAction("workspace:create"),
+      ],
+    },
     async (request, reply) => {
       if (!request.body?.purpose?.trim()) {
         return reply.code(400).send({ code: "SESSION_PURPOSE_REQUIRED" });
@@ -243,7 +274,12 @@ export function registerSessionRoutes(
 
   app.get<{ Params: { id: string } }>(
     "/v1/sessions/:id/state",
-    { preHandler: requirePermission("knowledge:read") },
+    {
+      preHandler: [
+        requirePermission("knowledge:read"),
+        requirePrincipalAction("workspace:read"),
+      ],
+    },
     async (request, reply) => {
       const session = await authorizedSession(
         db,
@@ -265,7 +301,12 @@ export function registerSessionRoutes(
     Body: { userId: string };
   }>(
     "/v1/sessions/:id/participants",
-    { preHandler: requirePermission("knowledge:read") },
+    {
+      preHandler: [
+        requirePermission("knowledge:read"),
+        requirePrincipalAction("workspace:manage-participants"),
+      ],
+    },
     async (request, reply) => {
       const session = await authorizedSession(
         db,
@@ -313,7 +354,12 @@ export function registerSessionRoutes(
     Body: { workKey: string; leaseSeconds?: number };
   }>(
     "/v1/sessions/:id/claims",
-    { preHandler: requirePermission("knowledge:read") },
+    {
+      preHandler: [
+        requirePermission("knowledge:read"),
+        requirePrincipalAction("workspace:claim"),
+      ],
+    },
     async (request, reply) => {
       const session = await authorizedSession(
         db,
@@ -365,7 +411,12 @@ export function registerSessionRoutes(
     };
   }>(
     "/v1/sessions/:id/claims/heartbeat",
-    { preHandler: requirePermission("knowledge:read") },
+    {
+      preHandler: [
+        requirePermission("knowledge:read"),
+        requirePrincipalAction("workspace:claim"),
+      ],
+    },
     async (request, reply) => {
       const session = await authorizedSession(
         db,
@@ -424,7 +475,12 @@ export function registerSessionRoutes(
     };
   }>(
     "/v1/sessions/:id/claims/handoff",
-    { preHandler: requirePermission("knowledge:read") },
+    {
+      preHandler: [
+        requirePermission("knowledge:read"),
+        requirePrincipalAction("workspace:handoff"),
+      ],
+    },
     async (request, reply) => {
       const session = await authorizedSession(
         db,
@@ -485,10 +541,141 @@ export function registerSessionRoutes(
 
   app.post<{
     Params: { id: string };
+    Body: {
+      label?: string;
+      durationMinutes?: number;
+      allowedActions?: string[];
+    };
+  }>(
+    "/v1/sessions/:id/agent-processes",
+    {
+      preHandler: [
+        requirePermission("knowledge:read"),
+        requirePrincipalAction("workspace:manage-agents"),
+      ],
+    },
+    async (request, reply) => {
+      const session = await authorizedSession(
+        db,
+        request,
+        reply,
+        request.params.id,
+      );
+      if (!session) return;
+      const actor = actorOf(request);
+      if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
+      if (actor.principalKind !== "HUMAN" || session.role !== "OWNER") {
+        return reply.code(403).send({ code: "AGENT_PROCESS_ISSUER_DENIED" });
+      }
+      const label = request.body?.label?.trim() || "Workspace agent";
+      if (label.length > 200) {
+        return reply.code(400).send({ code: "INVALID_AGENT_LABEL" });
+      }
+      const requestedActions = request.body?.allowedActions ?? [
+        ...DEFAULT_AGENT_PROCESS_ACTIONS,
+      ];
+      if (
+        !requestedActions.length ||
+        requestedActions.some(
+          (action) =>
+            typeof action !== "string" ||
+            !(AGENT_PROCESS_ALLOWED_ACTIONS as readonly string[]).includes(
+              action,
+            ),
+        )
+      ) {
+        return reply.code(400).send({ code: "INVALID_AGENT_ALLOWED_ACTIONS" });
+      }
+      const allowedActions = [...new Set(requestedActions)] as Array<
+        (typeof AGENT_PROCESS_ALLOWED_ACTIONS)[number]
+      >;
+      const durationMinutes = Math.max(
+        5,
+        Math.min(Number(request.body?.durationMinutes ?? 60), 720),
+      );
+      if (!Number.isFinite(durationMinutes)) {
+        return reply.code(400).send({ code: "INVALID_AGENT_DURATION" });
+      }
+      const effectiveScopes = serializeEffectiveScopes(actor);
+      const scopes = {
+        spaces: effectiveScopes.spaces
+          .map((scope) => ({
+            ...scope,
+            permissions: scope.permissions.filter((permission) =>
+              ["knowledge:read", "knowledge:propose"].includes(permission),
+            ),
+          }))
+          .filter((scope) => scope.permissions.length > 0),
+      };
+      const token = randomBytes(32).toString("base64url");
+      const tokenHash = createHash("sha256").update(token).digest("hex");
+      const principal = await createAgentProcessPrincipalCredential(db, {
+        parentPrincipalId: actor.principalId,
+        userId: actor.id,
+        sessionId: session.id,
+        displayName: label,
+        allowedActions,
+        tokenHash,
+        scopes,
+        expiresAt: new Date(Date.now() + durationMinutes * 60_000),
+      });
+      await audit(
+        db,
+        request,
+        "agent_process.create",
+        "principal",
+        principal.id,
+        { vaultId: session.vaultId, sessionId: session.id },
+        session.spaceId,
+      );
+      return reply.code(201).send({
+        principal,
+        token,
+        authenticationKind: "PRINCIPAL_TOKEN",
+      });
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    "/v1/agent-processes/:id/revoke",
+    {
+      preHandler: [
+        requirePermission("knowledge:read"),
+        requirePrincipalAction("workspace:manage-agents"),
+      ],
+    },
+    async (request, reply) => {
+      const actor = actorOf(request);
+      if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
+      if (actor.principalKind !== "HUMAN") {
+        return reply.code(403).send({ code: "AGENT_PROCESS_ISSUER_DENIED" });
+      }
+      const principal = await revokeAgentProcessPrincipal(db, {
+        principalId: request.params.id,
+        parentPrincipalId: actor.principalId,
+      });
+      await audit(
+        db,
+        request,
+        "agent_process.revoke",
+        "principal",
+        principal.id,
+      );
+      return { principal };
+    },
+  );
+
+  app.post<{
+    Params: { id: string };
     Body: { eventType: string; payload?: Record<string, unknown> };
   }>(
     "/v1/sessions/:id/events",
-    { preHandler: requirePermission("knowledge:read") },
+    {
+      preHandler: [
+        requirePermission("knowledge:read"),
+        requirePrincipalAction("workspace:event:append"),
+      ],
+    },
     async (request, reply) => {
       const session = await authorizedSession(
         db,

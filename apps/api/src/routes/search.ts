@@ -45,6 +45,7 @@ import {
   hasSpaceAccess,
   pathPrefixesForPermission,
   requirePermission,
+  requirePrincipalAction,
 } from "../auth.js";
 
 const telemetry = new OpenTelemetryBridge();
@@ -2022,7 +2023,12 @@ export function registerSearchRoutes(
 ): void {
   app.post(
     "/v1/search",
-    { preHandler: requirePermission("knowledge:read") },
+    {
+      preHandler: [
+        requirePermission("knowledge:read"),
+        requirePrincipalAction("knowledge:read"),
+      ],
+    },
     async (request, reply) => {
       const parsed = SearchRequest.safeParse(request.body);
       if (!parsed.success) {
@@ -2037,6 +2043,21 @@ export function registerSearchRoutes(
       if (!hasSpaceAccess(actor, requestedSpace, "knowledge:read")) {
         return reply.code(403).send({ code: "SPACE_ACCESS_DENIED" });
       }
+      const principalVaultId =
+        actor.principalKind === "AGENT_PROCESS" ? actor.principalVaultId : null;
+      const explicitlyRequestedVaults = [
+        ...(parsed.data.vaultId ? [parsed.data.vaultId] : []),
+        ...parsed.data.vaultIds,
+      ];
+      if (
+        principalVaultId &&
+        (parsed.data.federated ||
+          explicitlyRequestedVaults.some(
+            (vaultId) => vaultId !== principalVaultId,
+          ))
+      ) {
+        return reply.code(403).send({ code: "PRINCIPAL_VAULT_SCOPE_DENIED" });
+      }
       let vaultIds: string[];
       let accessByVault: Awaited<
         ReturnType<typeof resolveAuthorizedVaultScope>
@@ -2046,9 +2067,15 @@ export function registerSearchRoutes(
           userId: actor.id,
           spaceId: requestedSpace,
           permission: "knowledge:read",
-          ...(parsed.data.vaultId ? { vaultId: parsed.data.vaultId } : {}),
-          vaultIds: parsed.data.vaultIds,
-          federated: parsed.data.federated,
+          ...(principalVaultId
+            ? { vaultId: principalVaultId }
+            : parsed.data.vaultId
+              ? { vaultId: parsed.data.vaultId }
+              : {}),
+          vaultIds: principalVaultId
+            ? [principalVaultId]
+            : parsed.data.vaultIds,
+          federated: principalVaultId ? false : parsed.data.federated,
         });
         vaultIds = scope.vaultIds;
         accessByVault = scope.accessByVault;
@@ -2289,7 +2316,12 @@ export function registerSearchRoutes(
 
   app.post(
     "/v1/context",
-    { preHandler: requirePermission("knowledge:read") },
+    {
+      preHandler: [
+        requirePermission("knowledge:read"),
+        requirePrincipalAction("knowledge:read"),
+      ],
+    },
     async (request, reply) => {
       const body = request.body as Record<string, unknown>;
       const parsed = ContextRequest.safeParse(body);
@@ -2306,6 +2338,21 @@ export function registerSearchRoutes(
       }
       const actor = actorOf(request);
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
+      const principalVaultId =
+        actor.principalKind === "AGENT_PROCESS" ? actor.principalVaultId : null;
+      const explicitlyRequestedVaults = [
+        ...(parsed.data.vaultId ? [parsed.data.vaultId] : []),
+        ...parsed.data.vaultIds,
+      ];
+      if (
+        principalVaultId &&
+        (parsed.data.federated ||
+          explicitlyRequestedVaults.some(
+            (vaultId) => vaultId !== principalVaultId,
+          ))
+      ) {
+        return reply.code(403).send({ code: "PRINCIPAL_VAULT_SCOPE_DENIED" });
+      }
       let vaultIds: string[];
       let accessByVault: Awaited<
         ReturnType<typeof resolveAuthorizedVaultScope>
@@ -2315,9 +2362,15 @@ export function registerSearchRoutes(
           userId: actor.id,
           spaceId: requestedSpace,
           permission: "knowledge:read",
-          ...(parsed.data.vaultId ? { vaultId: parsed.data.vaultId } : {}),
-          vaultIds: parsed.data.vaultIds,
-          federated: parsed.data.federated,
+          ...(principalVaultId
+            ? { vaultId: principalVaultId }
+            : parsed.data.vaultId
+              ? { vaultId: parsed.data.vaultId }
+              : {}),
+          vaultIds: principalVaultId
+            ? [principalVaultId]
+            : parsed.data.vaultIds,
+          federated: principalVaultId ? false : parsed.data.federated,
         });
         vaultIds = scope.vaultIds;
         accessByVault = scope.accessByVault;

@@ -22,7 +22,19 @@ export interface Actor {
     pathPrefix: string | null;
     permissions?: Permission[];
   }>;
-  authenticationKind: "API_TOKEN" | "WEB_SESSION";
+  authenticationKind: "API_TOKEN" | "WEB_SESSION" | "PRINCIPAL_TOKEN";
+  principalId: string;
+  principalKind:
+    | "HUMAN"
+    | "AGENT_PROCESS"
+    | "SERVICE_ACCOUNT"
+    | "CONNECTOR"
+    | "MAINTENANCE_JOB";
+  parentPrincipalId: string | null;
+  principalSessionId: string | null;
+  principalVaultId: string | null;
+  principalAllowedActions: string[];
+  principalPolicyRevision: number;
   /**
    * Stable only for the currently authenticated credential and its effective
    * authorization tuples. It is intentionally a hash rather than a raw token
@@ -45,6 +57,9 @@ interface AuthenticationRow {
   authentication_kind: string;
   token_id: string | null;
   token_scopes: unknown;
+  principal_id: string | null;
+  credential_policy_revision: number | null;
+  credential_allowed_actions: string[] | null;
   id: string;
   email: string;
   roles: string[];
@@ -253,6 +268,13 @@ function idempotencyScopeFingerprint(
   memberships: Actor["memberships"],
   tokenScopes: unknown,
   vaultAuthorizationState: readonly Record<string, unknown>[],
+  principal: {
+    id: string;
+    kind: string;
+    vaultId: string | null;
+    policyRevision: number;
+    allowedActions: string[];
+  },
 ): string {
   const canonicalMemberships = memberships
     .map((membership) => ({
@@ -274,6 +296,10 @@ function idempotencyScopeFingerprint(
         // credential's persisted token/session scope so an idempotency replay
         // cannot survive a vault revocation or scope narrowing.
         tokenScopes,
+        principal: {
+          ...principal,
+          allowedActions: [...principal.allowedActions].sort(),
+        },
         vaultAuthorizationState: vaultAuthorizationState
           .map((membership) => ({
             vaultId: String(membership.vault_id ?? ""),
@@ -474,6 +500,32 @@ export function unrestrictedSpaceIdsForPermission(
   );
 }
 
+export function hasPrincipalAction(
+  actor: Actor | null,
+  action: string,
+): boolean {
+  return Boolean(
+    actor &&
+    (actor.principalAllowedActions.includes("*") ||
+      actor.principalAllowedActions.includes(action)),
+  );
+}
+
+export function requirePrincipalAction(
+  action: string,
+): (request: FastifyRequest, reply: FastifyReply) => Promise<void> {
+  return async (request, reply) => {
+    const actor = actorOf(request);
+    if (!actor) {
+      await reply.code(401).send({ code: "AUTHENTICATION_REQUIRED" });
+      return;
+    }
+    if (!hasPrincipalAction(actor, action)) {
+      await reply.code(403).send({ code: "PRINCIPAL_ACTION_DENIED", action });
+    }
+  };
+}
+
 export function requirePermission(
   permission: Permission,
 ): (request: FastifyRequest, reply: FastifyReply) => Promise<void> {
@@ -487,6 +539,55 @@ export function requirePermission(
       await reply.code(403).send({ code: "PERMISSION_DENIED", permission });
     }
   };
+}
+
+function agentProcessRouteAction(
+  method: string,
+  requestPath: string,
+): string | null {
+  if (requestPath === "/v1/auth/session" && ["GET", "POST"].includes(method)) {
+    return "workspace:read";
+  }
+  if (requestPath === "/v1/sessions" && method === "GET") {
+    return "workspace:read";
+  }
+  if (/^\/v1\/sessions\/[^/]+\/state$/.test(requestPath) && method === "GET") {
+    return "workspace:read";
+  }
+  if (
+    /^\/v1\/sessions\/[^/]+\/claims$/.test(requestPath) &&
+    method === "POST"
+  ) {
+    return "workspace:claim";
+  }
+  if (
+    /^\/v1\/sessions\/[^/]+\/claims\/heartbeat$/.test(requestPath) &&
+    method === "POST"
+  ) {
+    return "workspace:claim";
+  }
+  if (
+    /^\/v1\/sessions\/[^/]+\/claims\/handoff$/.test(requestPath) &&
+    method === "POST"
+  ) {
+    return "workspace:handoff";
+  }
+  if (
+    /^\/v1\/sessions\/[^/]+\/events$/.test(requestPath) &&
+    method === "POST"
+  ) {
+    return "workspace:event:append";
+  }
+  if (
+    ["/v1/search", "/v1/context"].includes(requestPath) &&
+    method === "POST"
+  ) {
+    return "knowledge:read";
+  }
+  if (requestPath === "/v1/proposals" && method === "POST") {
+    return "knowledge:propose";
+  }
+  return null;
 }
 
 export function registerAuthentication(
@@ -510,18 +611,26 @@ export function registerAuthentication(
       `
       with credential as (
         select id token_id,user_id,token_hash credential_hash,null::text csrf_hash,
-               null::uuid session_id,'API_TOKEN'::text authentication_kind,scopes token_scopes
+               null::uuid session_id,'API_TOKEN'::text authentication_kind,scopes token_scopes,
+               null::uuid principal_id,null::bigint credential_policy_revision,
+               array['*']::text[] credential_allowed_actions
           from api_tokens
          where revoked_at is null
            and (expires_at is null or expires_at > now())
            and token_hash=$1
         union all
         select null::uuid token_id,user_id,token_hash,csrf_hash,id,'WEB_SESSION'::text,
-               scopes token_scopes
+               scopes token_scopes,null::uuid,null::bigint,array['*']::text[]
           from web_sessions
+         where revoked_at is null and expires_at > now() and token_hash=$1
+        union all
+        select id token_id,user_id,token_hash,null::text,null::uuid,
+               'PRINCIPAL_TOKEN'::text,scopes,principal_id,policy_revision,allowed_actions
+          from principal_credentials
          where revoked_at is null and expires_at > now() and token_hash=$1
       )
       select c.credential_hash,c.csrf_hash,c.session_id,c.authentication_kind,c.token_id,c.token_scopes,
+             c.principal_id,c.credential_policy_revision,c.credential_allowed_actions,
              u.id, u.email,
              array_remove(array_agg(distinct m.role), null) roles,
              array_remove(array_agg(distinct m.space_id::text), null) space_ids,
@@ -536,7 +645,8 @@ export function registerAuthentication(
         from credential c
         join users u on u.id = c.user_id
         left join memberships m on m.user_id = u.id
-       group by c.credential_hash,c.csrf_hash,c.session_id,c.authentication_kind,c.token_id,c.token_scopes,u.id,u.email
+       group by c.credential_hash,c.csrf_hash,c.session_id,c.authentication_kind,c.token_id,c.token_scopes,
+                c.principal_id,c.credential_policy_revision,c.credential_allowed_actions,u.id,u.email
        limit 1
       `,
       [hash],
@@ -561,6 +671,40 @@ export function registerAuthentication(
         return;
       }
     }
+    const principalResult = await db.pool.query<Record<string, unknown>>(
+      `select p.id,p.kind,p.parent_principal_id,p.session_id,p.vault_id,p.allowed_actions,
+              p.policy_revision,p.state
+         from principals p
+        where p.id=coalesce(
+          $1::uuid,
+          (select id from principals where kind='HUMAN' and user_id=$2 limit 1)
+        )
+        limit 1`,
+      [row.principal_id, row.id],
+    );
+    const principal = principalResult.rows[0];
+    if (!principal || principal.state !== "ACTIVE") {
+      await reply.code(401).send({ code: "INVALID_TOKEN" });
+      return;
+    }
+    if (
+      String(row.authentication_kind) === "PRINCIPAL_TOKEN" &&
+      Number(row.credential_policy_revision) !==
+        Number(principal.policy_revision)
+    ) {
+      await reply.code(401).send({ code: "PRINCIPAL_POLICY_CHANGED" });
+      return;
+    }
+    const principalActions = Array.isArray(principal.allowed_actions)
+      ? principal.allowed_actions.map(String)
+      : [];
+    const credentialActions = Array.isArray(row.credential_allowed_actions)
+      ? row.credential_allowed_actions.map(String)
+      : [];
+    const principalAllowedActions = principalActions.includes("*")
+      ? credentialActions
+      : credentialActions.filter((action) => principalActions.includes(action));
+
     const databaseMemberships = (row.memberships ?? []).flatMap(
       (membership: Record<string, unknown>) => {
         const pathPrefix =
@@ -612,16 +756,52 @@ export function registerAuthentication(
       ],
       memberships,
       authenticationKind,
+      principalId: String(principal.id),
+      principalKind: String(principal.kind) as Actor["principalKind"],
+      parentPrincipalId: principal.parent_principal_id
+        ? String(principal.parent_principal_id)
+        : null,
+      principalSessionId: principal.session_id
+        ? String(principal.session_id)
+        : null,
+      principalVaultId: principal.vault_id ? String(principal.vault_id) : null,
+      principalAllowedActions,
+      principalPolicyRevision: Number(principal.policy_revision),
       idempotencyScopeFingerprint: idempotencyScopeFingerprint(
         authenticationKind,
         credentialId,
         memberships,
         row.token_scopes,
         vaultAuthorizationState.rows as Array<Record<string, unknown>>,
+        {
+          id: String(principal.id),
+          kind: String(principal.kind),
+          vaultId: principal.vault_id ? String(principal.vault_id) : null,
+          policyRevision: Number(principal.policy_revision),
+          allowedActions: principalAllowedActions,
+        },
       ),
       ...(row.session_id ? { sessionId: String(row.session_id) } : {}),
     };
     (request as FastifyRequest & { actor: Actor }).actor = actor;
+    if (actor.principalKind === "AGENT_PROCESS") {
+      if (!actor.principalSessionId || !actor.principalVaultId) {
+        await reply.code(401).send({ code: "PRINCIPAL_SCOPE_INVALID" });
+        return;
+      }
+      const requestPath = request.url.split("?")[0] ?? request.url;
+      const requiredAction = agentProcessRouteAction(
+        request.method,
+        requestPath,
+      );
+      if (!requiredAction || !hasPrincipalAction(actor, requiredAction)) {
+        await reply.code(403).send({
+          code: "PRINCIPAL_ROUTE_DENIED",
+          ...(requiredAction ? { action: requiredAction } : {}),
+        });
+        return;
+      }
+    }
     if (actor.sessionId) {
       await db.pool.query(
         "update web_sessions set last_seen_at=now() where id=$1",
@@ -672,18 +852,19 @@ export async function audit(
        where m.user_id=$2
       order by priority limit 1
     )
-    insert into audit_events(organization_id, space_id, actor_id, action, resource_type,
+    insert into audit_events(organization_id, space_id, actor_id, principal_id, action, resource_type,
                              resource_id, metadata, trace_id, vault_id)
-    select organization_id,$1,$2,$3,$4,$5,$6::jsonb,$7,
+    select organization_id,$1,$2,$3,$4,$5,$6,$7::jsonb,$8,
            case when exists(
-             select 1 from vaults where id=$8::uuid and space_id=$1
-           ) then $8::uuid else null end
+             select 1 from vaults where id=$9::uuid and space_id=$1
+           ) then $9::uuid else null end
       from resolved_organization
     returning id
     `,
     [
       resolvedSpace,
       actor?.id ?? null,
+      actor?.principalId ?? null,
       action,
       resourceType,
       resourceId ?? null,
