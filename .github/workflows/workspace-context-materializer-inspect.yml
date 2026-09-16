@@ -1,0 +1,39 @@
+name: workspace-context-materializer-inspect
+
+on:
+  push:
+    branches: [feat/v0.4-enterprise-context-workspace]
+    paths:
+      - .github/workflows/workspace-context-materializer-inspect.yml
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/v0.4-enterprise-context-workspace
+      - name: Inspect embedded materializer
+        shell: bash
+        run: |
+          python - <<'PY'
+          import base64, re, zlib
+          from pathlib import Path
+          workflow = Path('.github/workflows/workspace-context-preflight.yml').read_text()
+          match = re.search(r'payload = "([A-Za-z0-9+/=]+)"', workflow)
+          if not match:
+              raise SystemExit('payload not found')
+          script = zlib.decompress(base64.b64decode(match.group(1))).decode()
+          lines = script.splitlines()
+          for i, line in enumerate(lines):
+              if 'workspace-coordination.ts' in line or 'anchor not found' in line or 'replace_once' in line:
+                  lo = max(0, i - 8)
+                  hi = min(len(lines), i + 18)
+                  print(f'--- lines {lo+1}-{hi} ---')
+                  for n in range(lo, hi):
+                      print(f'{n+1:04d}: {lines[n]}')
+          PY
