@@ -231,44 +231,34 @@ jobs:
 
           if "let authorizationScope: AuthorizedVaultScope;" not in route:
               old = '''      let vaultIds: string[];
-            let accessByVault: Awaited<
-              ReturnType<typeof resolveAuthorizedVaultScope>
-            >["accessByVault"] = {};
-            try {
-              const scope = await resolveAuthorizedVaultScope(db, {'''
+          let accessByVault: Awaited<
+            ReturnType<typeof resolveAuthorizedVaultScope>
+          >["accessByVault"] = {};
+          try {
+            const scope = await resolveAuthorizedVaultScope(db, {'''
               new = '''      let vaultIds: string[];
-            let authorizationScope: AuthorizedVaultScope;
-            let accessByVault: AuthorizedVaultScope["accessByVault"] = {};
-            try {
-              authorizationScope = await authorizationPort.resolveVaultScope({'''
+          let authorizationScope: AuthorizedVaultScope;
+          let accessByVault: AuthorizedVaultScope["accessByVault"] = {};
+          try {
+            authorizationScope = await authorizationPort.resolveVaultScope({'''
               if old not in route:
                   raise SystemExit("search route authorization scope shape changed")
               route = route.replace(old, new, 1)
 
           if "vaultIds = authorizationScope.vaultIds;" not in route:
               old = '''        vaultIds = scope.vaultIds;
-            accessByVault = scope.accessByVault;'''
+          accessByVault = scope.accessByVault;'''
               new = '''        vaultIds = authorizationScope.vaultIds;
-            accessByVault = authorizationScope.accessByVault;'''
+          accessByVault = authorizationScope.accessByVault;'''
               if old not in route:
                   raise SystemExit("search route resolved scope assignment changed")
               route = route.replace(old, new, 1)
 
           if "const expansionScopes = Object.entries(accessByVault)" not in route:
               old = '''      const hits = await queryKnowledge(db, scopedRequest, {
-            plan,
-            vaultIds,
-            graphScopes: Object.entries(accessByVault).flatMap(
-              ([vaultId, access]) =>
-                actorPathPrefixes.flatMap((actorPathPrefix) => {
-                  const pathPrefix = intersectVaultPathPrefixes(
-                    actorPathPrefix,
-                    access.pathPrefix,
-                  );
-                  return pathPrefix === undefined ? [] : [{ vaultId, pathPrefix }];
-                }),
-            ),'''
-              new = '''      const expansionScopes = Object.entries(accessByVault).flatMap(
+          plan,
+          vaultIds,
+          graphScopes: Object.entries(accessByVault).flatMap(
             ([vaultId, access]) =>
               actorPathPrefixes.flatMap((actorPathPrefix) => {
                 const pathPrefix = intersectVaultPathPrefixes(
@@ -277,42 +267,52 @@ jobs:
                 );
                 return pathPrefix === undefined ? [] : [{ vaultId, pathPrefix }];
               }),
-          );
-          const hits = await queryKnowledge(db, scopedRequest, {
-            plan,
-            vaultIds,
-            expansionScopes,
-            graphScopes: expansionScopes,'''
+          ),'''
+              new = '''      const expansionScopes = Object.entries(accessByVault).flatMap(
+          ([vaultId, access]) =>
+            actorPathPrefixes.flatMap((actorPathPrefix) => {
+              const pathPrefix = intersectVaultPathPrefixes(
+                actorPathPrefix,
+                access.pathPrefix,
+              );
+              return pathPrefix === undefined ? [] : [{ vaultId, pathPrefix }];
+            }),
+        );
+        const hits = await queryKnowledge(db, scopedRequest, {
+          plan,
+          vaultIds,
+          expansionScopes,
+          graphScopes: expansionScopes,'''
               if old not in route:
                   raise SystemExit("search route candidate scope shape changed")
               route = route.replace(old, new, 1)
 
           if "authorizationPort.canExpandResource(authorizationScope" not in route:
               old = '''        pathAuthorizer: (documentPath, vaultId) => {
-              const access = accessByVault[String(vaultId ?? "")];
-              if (!access) return false;
-              return (
-                pathMatchesVaultPrefix(documentPath, access.pathPrefix) &&
-                hasPathAccess(actor, requestedSpace, "knowledge:read", documentPath)
-              );
-            },'''
+            const access = accessByVault[String(vaultId ?? "")];
+            if (!access) return false;
+            return (
+              pathMatchesVaultPrefix(documentPath, access.pathPrefix) &&
+              hasPathAccess(actor, requestedSpace, "knowledge:read", documentPath)
+            );
+          },'''
               new = '''        pathAuthorizer: (documentPath, vaultId) => {
-              const authorizedVaultId = String(vaultId ?? "");
-              const access = accessByVault[authorizedVaultId];
-              if (
-                !access ||
-                !authorizationPort.canExpandResource(authorizationScope, {
-                  vaultId: authorizedVaultId,
-                  path: documentPath,
-                })
-              ) {
-                return false;
-              }
-              return (
-                pathMatchesVaultPrefix(documentPath, access.pathPrefix) &&
-                hasPathAccess(actor, requestedSpace, "knowledge:read", documentPath)
-              );
-            },'''
+            const authorizedVaultId = String(vaultId ?? "");
+            const access = accessByVault[authorizedVaultId];
+            if (
+              !access ||
+              !authorizationPort.canExpandResource(authorizationScope, {
+                vaultId: authorizedVaultId,
+                path: documentPath,
+              })
+            ) {
+              return false;
+            }
+            return (
+              pathMatchesVaultPrefix(documentPath, access.pathPrefix) &&
+              hasPathAccess(actor, requestedSpace, "knowledge:read", documentPath)
+            );
+          },'''
               if old not in route:
                   raise SystemExit("search route path authorizer shape changed")
               route = route.replace(old, new, 1)
