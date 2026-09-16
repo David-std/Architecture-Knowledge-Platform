@@ -62,9 +62,8 @@ jobs:
       - name: Format only the P2 delta
         shell: bash
         run: |
-          git fetch origin feat/v0.4-knowledge-profiles --quiet
           mapfile -t files < <(
-            git diff --name-only origin/feat/v0.4-knowledge-profiles...HEAD \
+            git diff --name-only 2e93a0a1d4ed5b0a20b77cde4921fb23befb260f...HEAD \
               | grep -E '\.(ts|tsx|js|mjs|cjs|json|md|ya?ml|sql)$' || true
           )
           if [ "${#files[@]}" -gt 0 ]; then
