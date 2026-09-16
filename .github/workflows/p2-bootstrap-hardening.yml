@@ -34,6 +34,7 @@ jobs:
           pnpm exec prettier --write
           apps/api/src/routes/sessions.ts
           apps/api/test/context-revision-set.integration.test.ts
+          apps/api/test/retrieval-authorization-expansion.integration.test.ts
       - run: pnpm exec prettier --check .
       - run: pnpm check
       - run: pnpm build
