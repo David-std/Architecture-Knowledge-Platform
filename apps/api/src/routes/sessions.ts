@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { OpenTelemetryBridge } from "@akp/observability";
 import { BootstrapContext } from "@akp/application";
 import { ContextPacketResponse, QueryIntent } from "@akp/contracts";
 import {
@@ -484,6 +485,10 @@ export function registerSessionRoutes(
           scopeFingerprint: actor.idempotencyScopeFingerprint,
         },
       );
+      workspaceTelemetry.counter("akp.workspace.bootstrap_total", 1, {
+        mode: packetMode,
+        profileSource: result.knowledgeProfile.source,
+      });
       await audit(
         db,
         request,
@@ -680,6 +685,9 @@ export function registerSessionRoutes(
       } finally {
         promotionClient.release();
       }
+      workspaceTelemetry.counter("akp.workspace.promotions_total", 1, {
+        outcome: "PENDING_REVIEW",
+      });
       await audit(
         db,
         request,
