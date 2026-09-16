@@ -965,7 +965,12 @@ export async function queryKnowledge(
       options.expansionScopes ??
       (options.pathAuthorizer !== undefined ? [] : undefined),
   );
-  const expansionScopeJson = JSON.stringify(expansionScopes);
+  const expansionScopeJson = JSON.stringify(
+    expansionScopes.map((scope) => ({
+      vault_id: scope.vaultId,
+      path_prefix: scope.pathPrefix,
+    })),
+  );
   const expansionScopeClause = (alias: string, parameter: string) => `
     and exists (
       select 1
