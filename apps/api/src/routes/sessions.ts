@@ -19,6 +19,7 @@ import {
   getWorkspaceSessionForParticipant,
   handoffWorkspaceWork,
   heartbeatWorkspaceWork,
+  releaseWorkspaceWork,
   getActiveKnowledgeProfileRevision,
   assertWorkspaceContextRevisionCurrent,
   isWorkspaceWorkKey,
@@ -841,6 +842,59 @@ export function registerSessionRoutes(
         db,
         request,
         "workspace.claim.heartbeat",
+        "agent_session",
+        session.id,
+        {
+          vaultId: session.vaultId,
+          claimId: claim.id,
+          workKey,
+          fencingToken: claim.fencingToken,
+        },
+        session.spaceId,
+      );
+      return claim;
+    },
+  );
+
+  app.post<{
+    Params: { id: string };
+    Body: { workKey: string; fencingToken: number };
+  }>(
+    "/v1/sessions/:id/claims/release",
+    {
+      preHandler: [
+        requirePermission("knowledge:read"),
+        requirePrincipalAction("workspace:claim"),
+      ],
+    },
+    async (request, reply) => {
+      const session = await authorizedSession(
+        db,
+        request,
+        reply,
+        request.params.id,
+      );
+      if (!session) return;
+      const actor = actorOf(request);
+      if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
+      const workKey = request.body?.workKey?.trim();
+      if (!workKey || !isWorkspaceWorkKey(workKey)) {
+        return reply.code(400).send({ code: "INVALID_WORK_KEY" });
+      }
+      const fencingToken = Number(request.body.fencingToken);
+      if (!Number.isSafeInteger(fencingToken) || fencingToken < 1) {
+        return reply.code(400).send({ code: "INVALID_FENCING_TOKEN" });
+      }
+      const claim = await releaseWorkspaceWork(db, {
+        sessionId: session.id,
+        actorId: actor.id,
+        workKey,
+        fencingToken,
+      });
+      await audit(
+        db,
+        request,
+        "workspace.claim.release",
         "agent_session",
         session.id,
         {

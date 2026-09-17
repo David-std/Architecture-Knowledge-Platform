@@ -2,7 +2,7 @@ import "./instrumentation.js";
 import { config } from "dotenv";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { SearchRequest } from "@akp/contracts";
+import { QueryIntent, SearchRequest } from "@akp/contracts";
 import { McpContextRequest } from "./context-request.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -127,6 +127,29 @@ export function createMcpServer(): McpServer {
   );
 
   server.registerTool(
+    "akp_bootstrap_session_context",
+    {
+      description:
+        "Bootstrap a workspace session with its pinned revision, durable work context, knowledge profile, and authorized context packet.",
+      inputSchema: {
+        sessionId: z.string().uuid(),
+        query: z.string().max(4096).optional(),
+        intent: QueryIntent.default("WORKFLOW_EXECUTION"),
+        packetMode: z
+          .enum(["COMPACT_AGENT_PACKET", "FULL_CONTEXT_PACKET"])
+          .default("COMPACT_AGENT_PACKET"),
+      },
+    },
+    async ({ sessionId, ...body }) =>
+      textResult(
+        await api(`/v1/sessions/${encodeURIComponent(sessionId)}/bootstrap`, {
+          method: "POST",
+          body: JSON.stringify(body),
+        }),
+      ),
+  );
+
+  server.registerTool(
     "akp_claim_workspace_work",
     {
       description:
@@ -165,6 +188,28 @@ export function createMcpServer(): McpServer {
       textResult(
         await writeApi(
           `/v1/sessions/${encodeURIComponent(sessionId)}/claims/heartbeat`,
+          idempotencyKey,
+          body,
+        ),
+      ),
+  );
+
+  server.registerTool(
+    "akp_release_workspace_claim",
+    {
+      description:
+        "Release an owned live workspace claim and advance its fencing token so stale writers cannot continue.",
+      inputSchema: {
+        sessionId: z.string().uuid(),
+        workKey: z.string().min(1).max(200),
+        fencingToken: z.number().int().min(1),
+        idempotencyKey: z.string().min(8).max(200),
+      },
+    },
+    async ({ sessionId, idempotencyKey, ...body }) =>
+      textResult(
+        await writeApi(
+          `/v1/sessions/${encodeURIComponent(sessionId)}/claims/release`,
           idempotencyKey,
           body,
         ),
@@ -219,6 +264,41 @@ export function createMcpServer(): McpServer {
       textResult(
         await writeApi(
           `/v1/sessions/${encodeURIComponent(sessionId)}/events`,
+          idempotencyKey,
+          body,
+        ),
+      ),
+  );
+
+  server.registerTool(
+    "akp_request_workspace_promotion",
+    {
+      description:
+        "Request governed promotion of durable workspace evidence into Git-backed review; this never bypasses human review policy.",
+      inputSchema: {
+        sessionId: z.string().uuid(),
+        evidenceEventIds: z
+          .array(z.string().regex(/^[1-9][0-9]*$/))
+          .min(1)
+          .max(100),
+        summary: z.string().min(1).max(2000).optional(),
+        changes: z
+          .array(
+            z.object({
+              path: z.string().min(1),
+              content: z.string().min(1),
+              reason: z.string().min(1).optional(),
+            }),
+          )
+          .min(1)
+          .max(100),
+        idempotencyKey: z.string().min(8).max(200),
+      },
+    },
+    async ({ sessionId, idempotencyKey, ...body }) =>
+      textResult(
+        await writeApi(
+          `/v1/sessions/${encodeURIComponent(sessionId)}/promotions`,
           idempotencyKey,
           body,
         ),

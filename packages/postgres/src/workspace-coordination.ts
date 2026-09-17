@@ -20,6 +20,7 @@ export type WorkspaceEventType =
   | "PARTICIPANT_JOINED"
   | "CLAIM_ACQUIRED"
   | "CLAIM_HEARTBEAT"
+  | "CLAIM_RELEASED"
   | "CLAIM_HANDOFF"
   | "FINDING"
   | "BLOCKER"
@@ -35,6 +36,7 @@ export type WorkspaceUserEventType = Exclude<
   | "PARTICIPANT_JOINED"
   | "CLAIM_ACQUIRED"
   | "CLAIM_HEARTBEAT"
+  | "CLAIM_RELEASED"
   | "CLAIM_HANDOFF"
 >;
 
@@ -46,6 +48,7 @@ function workspaceIntegrationEventType(
       return "WorkspaceSessionCreated";
     case "CLAIM_ACQUIRED":
     case "CLAIM_HEARTBEAT":
+    case "CLAIM_RELEASED":
       return "WorkspaceClaimUpdated";
     case "CLAIM_HANDOFF":
       return "WorkspaceHandoffCreated";
@@ -631,6 +634,80 @@ export async function heartbeatWorkspaceWork(
         workKey: input.workKey,
         fencingToken: Number(row.fencing_token),
         leaseExpiresAt: row.lease_expires_at,
+      },
+    });
+    await client.query("commit");
+    return normalizeClaim(row);
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function releaseWorkspaceWork(
+  db: Postgres,
+  input: {
+    sessionId: string;
+    actorId: string;
+    workKey: string;
+    fencingToken: number;
+  },
+): Promise<WorkspaceClaim> {
+  requiredWorkScope(input.workKey);
+  const client = await db.pool.connect();
+  try {
+    await client.query("begin");
+    const participant = await client.query(
+      `select 1
+         from workspace_session_participants
+        where session_id=$1 and user_id=$2 and left_at is null`,
+      [input.sessionId, input.actorId],
+    );
+    if (!participant.rowCount) throw workspaceError("SESSION_NOT_FOUND", 404);
+    const sessionScope = await client.query<{
+      space_id: string;
+      vault_id: string;
+    }>("select space_id,vault_id from agent_sessions where id=$1", [
+      input.sessionId,
+    ]);
+    const scope = sessionScope.rows[0];
+    if (!scope?.vault_id) throw workspaceError("SESSION_NOT_FOUND", 404);
+    await assertWorkspaceContextRevisionCurrent(
+      client,
+      input.sessionId,
+      scope.space_id,
+      scope.vault_id,
+    );
+    const updated = await client.query<Record<string, unknown>>(
+      `update workspace_claims
+          set status='RELEASED',
+              fencing_token=fencing_token+1,
+              lease_expires_at=now(),
+              version=version+1,
+              updated_at=now()
+        where session_id=$1
+          and work_key=$2
+          and owner_id=$3
+          and fencing_token=$4
+          and status='ACTIVE'
+          and lease_expires_at>now()
+        returning *`,
+      [input.sessionId, input.workKey, input.actorId, input.fencingToken],
+    );
+    const row = updated.rows[0];
+    if (!row) throw workspaceError("WORK_CLAIM_FENCE_STALE", 409);
+    await appendCoordinationEvent(client, {
+      sessionId: input.sessionId,
+      actorId: input.actorId,
+      claimId: String(row.id),
+      eventType: "CLAIM_RELEASED",
+      payload: {
+        workKey: input.workKey,
+        previousFencingToken: input.fencingToken,
+        fencingToken: Number(row.fencing_token),
+        releasedBy: input.actorId,
       },
     });
     await client.query("commit");
