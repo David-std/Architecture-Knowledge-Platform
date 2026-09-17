@@ -193,7 +193,7 @@ describe("offline context snapshot reconnect semantics", () => {
     expect(staleBody.currentRevisionSetHash).not.toBe(
       r1Session.contextRevisionSetHash,
     );
-    expect(staleBody.changedDimensions).toContain("truth");
+    expect(staleBody.changedDimensions).toContain("knowledgeGit");
 
     const r2Session = await createSession("Offline work revalidated at R2");
     expect(r2Session.contextRevisionSetHash).not.toBe(
