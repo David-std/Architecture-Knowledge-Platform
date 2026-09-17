@@ -169,13 +169,6 @@ jobs:
               '  heartbeatWorkspaceWork,\n  getActiveKnowledgeProfileRevision,',
               '  heartbeatWorkspaceWork,\n  releaseWorkspaceWork,\n  getActiveKnowledgeProfileRevision,',
           )
-          handoff_route_anchor = '''  app.post<{
-            Params: { id: string };
-            Body: {
-              workKey: string;
-              toUserId: string;
-              fencingToken: number;
-          '''
           release_route = '''  app.post<{
             Params: { id: string };
             Body: { workKey: string; fencingToken: number };
@@ -230,7 +223,20 @@ jobs:
           );
 
           '''
-          replace_once(sessions, handoff_route_anchor, release_route + handoff_route_anchor)
+          sessions_path = Path(sessions)
+          sessions_text = sessions_path.read_text()
+          handoff_url = '    "/v1/sessions/:id/claims/handoff",'
+          handoff_url_at = sessions_text.find(handoff_url)
+          if handoff_url_at < 0:
+              raise SystemExit("handoff endpoint anchor not found")
+          handoff_route_at = sessions_text.rfind("  app.post<{", 0, handoff_url_at)
+          if handoff_route_at < 0:
+              raise SystemExit("handoff route start not found")
+          sessions_path.write_text(
+              sessions_text[:handoff_route_at]
+              + release_route
+              + sessions_text[handoff_route_at:]
+          )
 
           mcp = "apps/mcp/src/server.ts"
           replace_once(
