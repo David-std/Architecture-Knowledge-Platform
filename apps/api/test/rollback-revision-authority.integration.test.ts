@@ -205,6 +205,18 @@ describe("rollback canonical revision authority", () => {
     );
     expect(await vaultRevision()).toBe(rolledBack.revision);
 
+    const rollbackEvent = await db.pool.query<{ revision: string | null }>(
+      `select payload->>'revision' revision
+         from event_outbox
+        where resource_id=$1
+          and event_type='CorpusRevisionPublished'
+          and payload->>'operation'='ROLLBACK'
+        order by created_at desc
+        limit 1`,
+      [proposal.reviewId],
+    );
+    expect(rollbackEvent.rows[0]?.revision).toBe(rolledBack.revision);
+
     const persisted = await db.pool.query<{
       status: string;
       merged_commit: string;
