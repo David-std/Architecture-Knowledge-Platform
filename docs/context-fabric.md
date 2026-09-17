@@ -55,7 +55,7 @@ The current server intentionally applies only coordination event types (`FINDING
 
 ## Federation discovery boundary
 
-`context_fabric_peers` and `/v1/context-fabric/peers` are discovery metadata only. Registering a peer performs no network request. A peer can declare a discovery mode and capability manifest, but P2 does not allow a discovered endpoint to become an authorization bypass, remote retrieval source, write boundary, or trust upgrade.
+`context_fabric_peers` and `/v1/context-fabric/peers` are discovery metadata only. Registering a peer performs no network request. A peer can declare a discovery mode and capability manifest, but the current Team Context Fabric contract does not allow a discovered endpoint to become an authorization bypass, remote retrieval source, write boundary, or trust upgrade.
 
 The API returns `boundary: DISCOVERY_METADATA_ONLY` and `networkContactPerformed: false` for peer registration. Actual remote query/import policy belongs to the federation phase and must preserve remote provenance, trust and local authorization.
 
