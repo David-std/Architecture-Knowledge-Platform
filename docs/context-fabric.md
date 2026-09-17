@@ -54,7 +54,7 @@ Promotion remains:
 
 `finding/evidence -> promotion request -> review -> human approval -> managed Git publication`
 
-Normal `AGENT_PROCESS` credentials can read/coordinate and may receive `knowledge:propose`; they do not receive `knowledge:review`, publication, or administrative authority.
+Normal `AGENT_PROCESS` credentials can read/coordinate and may receive `knowledge:propose`; they do not receive `knowledge:review`, publication, or administrative authority. Their bearer credential is bounded by its own expiry and policy revision. A derived agent also remains subordinate to its recorded human authority root: once that parent principal is no longer active, the child credential is invalid even if the child principal row itself has not yet been revoked. Expired credentials and credentials whose parent authority has been revoked must fail closed on the next request rather than retaining ambient session authority.
 
 ## External system-of-record references
 
@@ -93,9 +93,10 @@ Before treating Team Context Fabric as proven, execute the maintained integratio
 - revision-pinned bootstrap and R1 -> R2 drift detection;
 - promotion provenance and denial of agent self-approval;
 - human-governed publication;
+- agent credential expiry/replay rejection and parent-principal revocation invalidation;
 - offline idempotency and stale reconnect reconciliation;
 - external-reference separation from canonical knowledge;
 - explicit claim release advancing the fence, locking out stale writers and freeing the scope for reacquisition;
 - backup/restore of the new PostgreSQL tables and migration upgrade from the validated v0.3 baseline.
 
-For `TEAM_NODE` specifically, configuration evidence is not enough: the guarantees are about a running topology. `scripts/verify-team-node.mjs` probes a live node for readiness, its database claim, single-authority revision agreement across two clients, and its web surface. The `team-node` workflow runs it against a node it builds and starts, and additionally proves that a second node with a different identity is refused while a replica of the same node is admitted.
+For `TEAM_NODE` specifically, configuration evidence is not enough: the guarantees are about a running topology. `scripts/verify-team-node.mjs` probes a live node for readiness, its database claim, single-authority revision agreement across two clients, and its web surface. The `team-node` workflow builds and starts the topology, fails unless API, worker and web remain running, and additionally proves that a second node with a different identity is refused while a replica of the same node is admitted.
