@@ -307,10 +307,7 @@ export function registerContextFabricRoutes(
           clientDraftId,
           baseRevisionSetHash,
           eventType: eventType as
-            | "FINDING"
-            | "ARTIFACT"
-            | "DECISION_CANDIDATE"
-            | "NOTE",
+            "FINDING" | "ARTIFACT" | "DECISION_CANDIDATE" | "NOTE",
           payload,
         });
       } catch (error) {

@@ -91,15 +91,21 @@ beforeAll(async () => {
 afterAll(async () => {
   if (app) await app.close();
   if (db) {
-    await db.pool.query("delete from event_outbox where vault_id=$1", [vaultId]);
+    await db.pool.query("delete from event_outbox where vault_id=$1", [
+      vaultId,
+    ]);
     for (const sessionId of sessionIds) {
       await db.pool.query(
         "delete from audit_events where resource_id=$1 or metadata->>'sessionId'=$1",
         [sessionId],
       );
-      await db.pool.query("delete from agent_sessions where id=$1", [sessionId]);
+      await db.pool.query("delete from agent_sessions where id=$1", [
+        sessionId,
+      ]);
     }
-    await db.pool.query("delete from api_tokens where token_hash=$1", [tokenHash]);
+    await db.pool.query("delete from api_tokens where token_hash=$1", [
+      tokenHash,
+    ]);
     await db.pool.query(
       "delete from memberships where user_id=$1 and space_id=$2",
       [actorId, spaceId],
