@@ -1,6 +1,7 @@
 import type { Postgres, PostgresPoolClient } from "./index.js";
 import { workspaceContextRevisionState } from "./context-revision-set.js";
 import { appendOutboxEvent } from "./outbox.js";
+import { appendWorkspaceEventInTransaction } from "./workspace-coordination.js";
 
 export type ExternalObjectAuthority =
   "SYSTEM_OF_RECORD" | "REFERENCE" | "MIRRORED_PROJECTION";
@@ -457,30 +458,12 @@ export async function applyWorkspaceOfflineDraft(
       return normalizeOfflineDraft(row);
     }
 
-    const eventResult = await client.query<Record<string, unknown>>(
-      `with bumped as (
-         update agent_sessions
-            set coordination_version=coordination_version+1,
-                updated_at=now()
-          where id=$1
-          returning space_id,vault_id,coordination_version
-       )
-       insert into workspace_events(
-         session_id,space_id,vault_id,actor_id,event_type,payload,session_version
-       )
-       select $1,bumped.space_id,bumped.vault_id,$2,$3,$4::jsonb,
-              bumped.coordination_version
-         from bumped
-       returning *`,
-      [
-        sessionId,
-        input.actorId,
-        String(draft.event_type),
-        JSON.stringify(recordObject(draft.payload)),
-      ],
-    );
-    const event = eventResult.rows[0];
-    if (!event) throw fabricError("WORKSPACE_EVENT_APPEND_FAILED", 500);
+    const event = await appendWorkspaceEventInTransaction(client, {
+      sessionId,
+      actorId: input.actorId,
+      eventType: String(draft.event_type) as OfflineDraftEventType,
+      payload: recordObject(draft.payload),
+    });
     const applied = await client.query<Record<string, unknown>>(
       `update workspace_offline_drafts
           set status='APPLIED',reconciled_at=now(),applied_event_id=$2
