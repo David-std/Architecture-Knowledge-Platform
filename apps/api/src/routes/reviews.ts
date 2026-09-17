@@ -1503,21 +1503,72 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
             }
           }
           if (compensationSucceeded) {
-            await db.pool.query(
-              `
-              update reviews
-                 set status='CHANGES_REQUESTED',merged_commit=null,
-                     base_commit=coalesce($2,base_commit),
-                     decision_by=null,decision_at=null,
-                     decision_reason=$3,updated_at=now()
-               where id=$1 and status='PUBLISHING'
-              `,
-              [
-                request.params.id,
-                compensatingRevision,
-                "Publication failed safely; retry from the compensated Git revision.",
-              ],
-            );
+            const canonicalRevision =
+              compensatingRevision ?? observedMainRevision ?? null;
+            if (!canonicalRevision) {
+              throw new Error("PUBLICATION_COMPENSATION_REVISION_REQUIRED");
+            }
+            const compensationClient = await db.pool.connect();
+            try {
+              await compensationClient.query("begin");
+              const compensated = await compensationClient.query(
+                `
+                update reviews
+                   set status='CHANGES_REQUESTED',merged_commit=null,
+                       base_commit=$2,
+                       decision_by=null,decision_at=null,
+                       decision_reason=$3,updated_at=now()
+                 where id=$1 and status='PUBLISHING'
+                 returning id
+                `,
+                [
+                  request.params.id,
+                  canonicalRevision,
+                  "Publication failed safely; retry from the compensated Git revision.",
+                ],
+              );
+              if (!compensated.rowCount) {
+                throw new Error("PUBLICATION_COMPENSATION_STATE_LOST");
+              }
+              const advanced = await compensationClient.query(
+                `update vaults
+                    set current_revision=$3
+                  where id=$1 and space_id=$2 and enabled
+                  returning id`,
+                [review.vault_id, review.space_id, canonicalRevision],
+              );
+              if (!advanced.rowCount) {
+                throw new Error("PUBLICATION_COMPENSATION_VAULT_UNAVAILABLE");
+              }
+              await compensationClient.query("commit");
+            } catch (compensationStateError) {
+              await compensationClient.query("rollback");
+              await recordPublicationFailure(
+                db,
+                String(review.space_id),
+                "Publication compensation state persistence failed",
+                {
+                  reviewId: request.params.id,
+                  canonicalRevision,
+                  error:
+                    compensationStateError instanceof Error
+                      ? compensationStateError.message
+                      : String(compensationStateError),
+                },
+              );
+              await db.pool.query(
+                `update reviews
+                    set status='PUBLICATION_RECOVERY_REQUIRED',
+                        decision_reason=$2,updated_at=now()
+                  where id=$1 and status='PUBLISHING'`,
+                [
+                  request.params.id,
+                  "Canonical Git was compensated but revision authority requires manual reconciliation.",
+                ],
+              );
+            } finally {
+              compensationClient.release();
+            }
           } else {
             await db.pool.query(
               `
@@ -1719,6 +1770,16 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
           if (!completed.rowCount) {
             throw new Error("ROLLBACK_STATE_CONFLICT");
           }
+          const advanced = await rollbackClient.query(
+            `update vaults
+                set current_revision=$3
+              where id=$1 and space_id=$2 and enabled
+              returning id`,
+            [review.vault_id, review.space_id, revision],
+          );
+          if (!advanced.rowCount) {
+            throw new Error("ROLLBACK_VAULT_UNAVAILABLE");
+          }
           await appendRollbackLifecycle(rollbackClient, {
             reviewId: request.params.id,
             ...(typeof jobId === "string" ? { jobId } : {}),
@@ -1785,20 +1846,76 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
             );
           }
         }
-        await db.pool.query(
-          `
-          update reviews
-             set status=$2,decision_reason=$3,updated_at=now()
-           where id=$1 and status='ROLLING_BACK'
-          `,
-          [
-            request.params.id,
-            recoverySucceeded ? "APPROVED" : "ROLLBACK_RECOVERY_REQUIRED",
-            recoverySucceeded
-              ? "Rollback failed and canonical Git was restored; inspect the Error Book."
-              : "Rollback recovery requires operator intervention; inspect the Error Book.",
-          ],
-        );
+        if (recoverySucceeded) {
+          const canonicalRevision =
+            recoveryRevision ?? String(review.merged_commit ?? "");
+          if (!canonicalRevision) {
+            recoverySucceeded = false;
+          } else {
+            const recoveryClient = await db.pool.connect();
+            try {
+              await recoveryClient.query("begin");
+              const restored = await recoveryClient.query(
+                `
+                update reviews
+                   set status='APPROVED',decision_reason=$2,updated_at=now()
+                 where id=$1 and status='ROLLING_BACK'
+                 returning id
+                `,
+                [
+                  request.params.id,
+                  "Rollback failed and canonical Git was restored; inspect the Error Book.",
+                ],
+              );
+              if (!restored.rowCount) {
+                throw new Error("ROLLBACK_RECOVERY_STATE_LOST");
+              }
+              const advanced = await recoveryClient.query(
+                `update vaults
+                    set current_revision=$3
+                  where id=$1 and space_id=$2 and enabled
+                  returning id`,
+                [review.vault_id, review.space_id, canonicalRevision],
+              );
+              if (!advanced.rowCount) {
+                throw new Error("ROLLBACK_RECOVERY_VAULT_UNAVAILABLE");
+              }
+              await recoveryClient.query("commit");
+            } catch (recoveryStateError) {
+              await recoveryClient.query("rollback");
+              recoverySucceeded = false;
+              await recordPublicationFailure(
+                db,
+                String(review.space_id),
+                "Rollback recovery state persistence failed",
+                {
+                  reviewId: request.params.id,
+                  canonicalRevision,
+                  error:
+                    recoveryStateError instanceof Error
+                      ? recoveryStateError.message
+                      : String(recoveryStateError),
+                },
+              );
+            } finally {
+              recoveryClient.release();
+            }
+          }
+        }
+        if (!recoverySucceeded) {
+          await db.pool.query(
+            `
+            update reviews
+               set status='ROLLBACK_RECOVERY_REQUIRED',
+                   decision_reason=$2,updated_at=now()
+             where id=$1 and status='ROLLING_BACK'
+            `,
+            [
+              request.params.id,
+              "Rollback recovery requires operator intervention; inspect the Error Book.",
+            ],
+          );
+        }
         await recordPublicationFailure(
           db,
           String(review.space_id),
