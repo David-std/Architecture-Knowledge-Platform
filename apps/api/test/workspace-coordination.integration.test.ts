@@ -93,8 +93,8 @@ beforeAll(async () => {
   );
   await db.pool.query(
     `insert into memberships(user_id,space_id,role,path_prefix) values
-      ($1,$4,'VIEWER',null),
-      ($2,$4,'VIEWER',null),
+      ($1,$4,'CONTRIBUTOR',null),
+      ($2,$4,'CONTRIBUTOR',null),
       ($3,$4,'VIEWER',null)`,
     [actorAId, actorBId, outsiderId, spaceId],
   );
@@ -123,14 +123,6 @@ beforeAll(async () => {
 afterAll(async () => {
   if (app) await app.close();
   if (db) {
-    await db.pool.query(
-      `delete from event_deliveries
-        where event_id in (select event_id from event_outbox where vault_id=$1)`,
-      [vaultId],
-    );
-    await db.pool.query("delete from event_outbox where vault_id=$1", [
-      vaultId,
-    ]);
     if (sessionId) {
       await db.pool.query(
         "delete from audit_events where resource_type='agent_session' and resource_id=$1",
@@ -158,7 +150,9 @@ afterAll(async () => {
     await db.pool.query("delete from users where id=any($1::uuid[])", [
       [actorAId, actorBId, outsiderId],
     ]);
-    await db.pool.query("delete from vaults where id=$1", [vaultId]);
+    await db.pool.query("update vaults set enabled=false where id=$1", [
+      vaultId,
+    ]);
     await db.close();
   }
 });

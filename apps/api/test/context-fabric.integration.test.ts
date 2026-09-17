@@ -77,13 +77,7 @@ beforeAll(async () => {
 afterAll(async () => {
   if (app) await app.close();
   if (db) {
-    await db.pool.query("delete from event_outbox where vault_id=$1", [
-      vaultId,
-    ]);
     if (peerId) {
-      await db.pool.query("delete from event_outbox where resource_id=$1", [
-        peerId,
-      ]);
       await db.pool.query("delete from context_fabric_peers where id=$1", [
         peerId,
       ]);
@@ -105,7 +99,9 @@ afterAll(async () => {
       [actorId, spaceId],
     );
     await db.pool.query("delete from users where id=$1", [actorId]);
-    await db.pool.query("delete from vaults where id=$1", [vaultId]);
+    await db.pool.query("update vaults set enabled=false where id=$1", [
+      vaultId,
+    ]);
     await db.close();
   }
 });

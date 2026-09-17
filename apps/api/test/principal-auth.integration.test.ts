@@ -139,11 +139,10 @@ run("P2 principal identity", () => {
     ]);
     await db.pool.query("delete from memberships where user_id=$1", [userId]);
     await db.pool.query("delete from users where id=$1", [userId]);
-    await db.pool.query("delete from vaults where id=any($1::uuid[])", [
-      [vaultId, siblingVaultId],
-    ]);
-    await db.pool.query("delete from spaces where id=$1", [spaceId]);
-    await db.pool.query("delete from organizations where id=$1", [orgId]);
+    await db.pool.query(
+      "update vaults set enabled=false where id=any($1::uuid[])",
+      [[vaultId, siblingVaultId]],
+    );
     await db.close();
   });
 
