@@ -1233,7 +1233,9 @@ describe("API security boundaries", () => {
         "delete from idempotency_records where idempotency_key=$1",
         [key],
       );
-      await db.pool.query("delete from vaults where id=$1", [vaultId]);
+      await db.pool.query("update vaults set enabled=false where id=$1", [
+        vaultId,
+      ]);
     }
   });
 

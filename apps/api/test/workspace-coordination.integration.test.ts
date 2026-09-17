@@ -147,9 +147,6 @@ afterAll(async () => {
       "delete from memberships where user_id=any($1::uuid[]) and space_id=$2",
       [[actorAId, actorBId, outsiderId], spaceId],
     );
-    await db.pool.query("delete from users where id=any($1::uuid[])", [
-      [actorAId, actorBId, outsiderId],
-    ]);
     await db.pool.query("update vaults set enabled=false where id=$1", [
       vaultId,
     ]);

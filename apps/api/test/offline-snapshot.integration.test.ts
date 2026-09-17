@@ -88,7 +88,6 @@ afterAll(async () => {
       "delete from memberships where user_id=$1 and space_id=$2",
       [actorId, spaceId],
     );
-    await db.pool.query("delete from users where id=$1", [actorId]);
     await db.pool.query("update vaults set enabled=false where id=$1", [
       vaultId,
     ]);
