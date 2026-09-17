@@ -1,0 +1,166 @@
+name: one-shot-test-fixture-sanitize
+
+on:
+  push:
+    branches:
+      - feat/v0.4-enterprise-context-workspace
+
+permissions:
+  contents: write
+
+jobs:
+  sanitize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/v0.4-enterprise-context-workspace
+          fetch-depth: 0
+      - name: Align integration fixtures with immutable outbox semantics
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text()
+              if old not in text:
+                  raise SystemExit(f"expected fixture block not found in {path}")
+              file.write_text(text.replace(old, new, 1))
+
+          replace(
+              "apps/api/test/workspace-coordination.integration.test.ts",
+              """    `insert into memberships(user_id,space_id,role,path_prefix) values
+                ($1,$4,'VIEWER',null),
+                ($2,$4,'VIEWER',null),
+                ($3,$4,'VIEWER',null)`,""",
+              """    `insert into memberships(user_id,space_id,role,path_prefix) values
+                ($1,$4,'CONTRIBUTOR',null),
+                ($2,$4,'CONTRIBUTOR',null),
+                ($3,$4,'VIEWER',null)`,""",
+          )
+          replace(
+              "apps/api/test/workspace-coordination.integration.test.ts",
+              """    await db.pool.query(
+                `delete from event_deliveries
+                  where event_id in (select event_id from event_outbox where vault_id=$1)`,
+                [vaultId],
+              );
+              await db.pool.query(\"delete from event_outbox where vault_id=$1\", [
+                vaultId,
+              ]);
+          """,
+              """""",
+          )
+          replace(
+              "apps/api/test/workspace-coordination.integration.test.ts",
+              """    await db.pool.query(\"delete from vaults where id=$1\", [vaultId]);""",
+              """    await db.pool.query(\"update vaults set enabled=false where id=$1\", [
+                vaultId,
+              ]);""",
+          )
+
+          replace(
+              "apps/api/test/context-fabric-session-isolation.integration.test.ts",
+              """    await db.pool.query(\"delete from event_outbox where vault_id=$1\", [
+                vaultId,
+              ]);
+          """,
+              """""",
+          )
+          replace(
+              "apps/api/test/context-fabric-session-isolation.integration.test.ts",
+              """    await db.pool.query(\"delete from vaults where id=$1\", [vaultId]);""",
+              """    await db.pool.query(\"update vaults set enabled=false where id=$1\", [
+                vaultId,
+              ]);""",
+          )
+
+          replace(
+              "apps/api/test/context-fabric.integration.test.ts",
+              """    await db.pool.query(\"delete from event_outbox where vault_id=$1\", [
+                vaultId,
+              ]);
+          """,
+              """""",
+          )
+          replace(
+              "apps/api/test/context-fabric.integration.test.ts",
+              """      await db.pool.query(\"delete from event_outbox where resource_id=$1\", [
+                  peerId,
+                ]);
+          """,
+              """""",
+          )
+          replace(
+              "apps/api/test/context-fabric.integration.test.ts",
+              """    await db.pool.query(\"delete from vaults where id=$1\", [vaultId]);""",
+              """    await db.pool.query(\"update vaults set enabled=false where id=$1\", [
+                vaultId,
+              ]);""",
+          )
+
+          replace(
+              "apps/api/test/context-revision-set.integration.test.ts",
+              """    await db.pool.query(\"delete from vaults where id=$1\", [vaultId]);""",
+              """    await db.pool.query(\"update vaults set enabled=false where id=$1\", [
+                vaultId,
+              ]);""",
+          )
+
+          replace(
+              "apps/api/test/principal-auth.integration.test.ts",
+              """    await db.pool.query(\"delete from vaults where id=any($1::uuid[])\", [
+                [vaultId, siblingVaultId],
+              ]);
+              await db.pool.query(\"delete from spaces where id=$1\", [spaceId]);
+              await db.pool.query(\"delete from organizations where id=$1\", [orgId]);""",
+              """    await db.pool.query(
+                \"update vaults set enabled=false where id=any($1::uuid[])\",
+                [[vaultId, siblingVaultId]],
+              );""",
+          )
+
+          replace(
+              "apps/api/test/security.integration.test.ts",
+              """      await db.pool.query(\"delete from vaults where id=$1\", [vaultId]);""",
+              """      await db.pool.query(\"update vaults set enabled=false where id=$1\", [
+                vaultId,
+              ]);""",
+          )
+
+          replace(
+              "apps/api/test/bootstrap-context.integration.test.ts",
+              """    await db.pool.query(
+                `delete from event_deliveries
+                  where event_id in (select event_id from event_outbox where vault_id=$1)`,
+                [vaultId],
+              );
+              await db.pool.query(\"delete from event_outbox where vault_id=$1\", [vaultId]);
+          """,
+              """""",
+          )
+          replace(
+              "apps/api/test/bootstrap-context.integration.test.ts",
+              """    await db.pool.query(\"delete from vaults where id=$1\", [vaultId]);""",
+              """    await db.pool.query(\"update vaults set enabled=false where id=$1\", [
+                vaultId,
+              ]);""",
+          )
+          PY
+          git rm .github/workflows/test-fixture-sanitize.yml
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            apps/api/test/workspace-coordination.integration.test.ts \
+            apps/api/test/context-fabric-session-isolation.integration.test.ts \
+            apps/api/test/context-fabric.integration.test.ts \
+            apps/api/test/context-revision-set.integration.test.ts \
+            apps/api/test/principal-auth.integration.test.ts \
+            apps/api/test/security.integration.test.ts \
+            apps/api/test/bootstrap-context.integration.test.ts
+          git commit -m "test(workspace): preserve immutable outbox fixtures"
+          git push origin HEAD:feat/v0.4-enterprise-context-workspace
