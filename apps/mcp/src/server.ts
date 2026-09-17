@@ -77,6 +77,16 @@ export function createMcpServer(): McpServer {
   );
 
   server.registerTool(
+    "akp_get_current_identity",
+    {
+      description:
+        "Read the effective authenticated principal identity, parent/session binding, allowed actions, and policy revision without exposing credential secrets.",
+      inputSchema: {},
+    },
+    async () => textResult(await api("/v1/auth/session")),
+  );
+
+  server.registerTool(
     "akp_list_vaults",
     {
       description:

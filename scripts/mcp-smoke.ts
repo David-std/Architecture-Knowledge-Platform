@@ -45,6 +45,7 @@ try {
   const tools = await client.listTools();
   const required = [
     "akp_status",
+    "akp_get_current_identity",
     "akp_list_vaults",
     "akp_start_session",
     "akp_list_sessions",
@@ -84,6 +85,32 @@ try {
   if (statusPayload.status !== "UP") {
     throw new Error(
       `Unexpected platform status: ${JSON.stringify(statusPayload)}`,
+    );
+  }
+  const identity = await client.callTool({
+    name: "akp_get_current_identity",
+    arguments: {},
+  });
+  const identityPayload = structuredToolResult(identity);
+  const identityActor = identityPayload.actor as
+    | Record<string, unknown>
+    | null
+    | undefined;
+  const secretKeys = ["token", "tokenHash", "credentialHash", "csrfHash"];
+  if (
+    identityPayload.authenticated !== true ||
+    !identityActor ||
+    typeof identityActor.principalId !== "string" ||
+    typeof identityActor.principalKind !== "string" ||
+    typeof identityActor.authenticationKind !== "string" ||
+    !Array.isArray(identityActor.principalAllowedActions) ||
+    typeof identityActor.principalPolicyRevision !== "number" ||
+    secretKeys.some(
+      (key) => key in identityPayload || key in identityActor,
+    )
+  ) {
+    throw new Error(
+      `Unexpected MCP identity payload: ${JSON.stringify(identityPayload)}`,
     );
   }
   const listed = await client.callTool({
@@ -154,6 +181,8 @@ try {
         toolCount: tools.tools.length,
         requiredTools: required.length,
         platformStatus: statusPayload.status,
+        principalKind: identityActor.principalKind,
+        authenticationKind: identityActor.authenticationKind,
         visibleVaultCount: vaults.length,
         scopedVaultId: vaultId,
         searchHitCount: searchPayload.hits.length,
