@@ -77,15 +77,21 @@ afterAll(async () => {
         "delete from audit_events where resource_id=$1 or metadata->>'sessionId'=$1",
         [sessionId],
       );
-      await db.pool.query("delete from agent_sessions where id=$1", [sessionId]);
+      await db.pool.query("delete from agent_sessions where id=$1", [
+        sessionId,
+      ]);
     }
-    await db.pool.query("delete from api_tokens where token_hash=$1", [tokenHash]);
+    await db.pool.query("delete from api_tokens where token_hash=$1", [
+      tokenHash,
+    ]);
     await db.pool.query(
       "delete from memberships where user_id=$1 and space_id=$2",
       [actorId, spaceId],
     );
     await db.pool.query("delete from users where id=$1", [actorId]);
-    await db.pool.query("update vaults set enabled=false where id=$1", [vaultId]);
+    await db.pool.query("update vaults set enabled=false where id=$1", [
+      vaultId,
+    ]);
     await db.close();
   }
 });

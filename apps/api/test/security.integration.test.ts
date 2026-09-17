@@ -338,8 +338,8 @@ describe("API security boundaries", () => {
         vaultId,
       ]);
       await db.pool.query("update vaults set enabled=false where id=$1", [
-      vaultId,
-    ]);
+        vaultId,
+      ]);
     }
   });
 

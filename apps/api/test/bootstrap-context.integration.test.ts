@@ -75,8 +75,12 @@ afterAll(async () => {
       "delete from audit_events where space_id=$1 and vault_id=$2",
       [spaceId, vaultId],
     );
-    await db.pool.query("delete from agent_sessions where vault_id=$1", [vaultId]);
-    await db.pool.query("delete from api_tokens where token_hash=$1", [tokenHash]);
+    await db.pool.query("delete from agent_sessions where vault_id=$1", [
+      vaultId,
+    ]);
+    await db.pool.query("delete from api_tokens where token_hash=$1", [
+      tokenHash,
+    ]);
     await db.pool.query(
       "delete from memberships where user_id=$1 and space_id=$2",
       [actorId, spaceId],
