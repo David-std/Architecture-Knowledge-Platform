@@ -105,9 +105,7 @@ try {
     typeof identityActor.authenticationKind !== "string" ||
     !Array.isArray(identityActor.principalAllowedActions) ||
     typeof identityActor.principalPolicyRevision !== "number" ||
-    secretKeys.some(
-      (key) => key in identityPayload || key in identityActor,
-    )
+    secretKeys.some((key) => key in identityPayload || key in identityActor)
   ) {
     throw new Error(
       `Unexpected MCP identity payload: ${JSON.stringify(identityPayload)}`,
