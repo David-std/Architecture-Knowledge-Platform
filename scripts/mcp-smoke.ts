@@ -87,6 +87,7 @@ try {
       `Unexpected platform status: ${JSON.stringify(statusPayload)}`,
     );
   }
+  // Resolve identity live so revocation or expiry cannot be hidden by cached MCP state.
   const identity = await client.callTool({
     name: "akp_get_current_identity",
     arguments: {},
