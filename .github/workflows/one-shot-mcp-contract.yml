@@ -1,0 +1,62 @@
+name: one-shot-mcp-identity-contract
+
+on:
+  push:
+    branches:
+      - feat/v0.4-enterprise-context-workspace
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/v0.4-enterprise-context-workspace
+          fetch-depth: 0
+      - name: Declare current identity MCP tool
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("contracts/mcp-tools.json")
+          text = path.read_text()
+          anchor = '''    {
+              "name": "akp_status",
+              "version": "1.0.0",
+              "permission": "knowledge:read",
+              "mutates": false,
+              "http": { "method": "GET", "path": "/v1/status" }
+            },'''.replace("          ", "")
+          entry = '''    {
+              "name": "akp_get_current_identity",
+              "version": "1.0.0",
+              "permission": "knowledge:read",
+              "mutates": false,
+              "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {}
+              },
+              "http": { "method": "GET", "path": "/v1/auth/session" }
+            },'''.replace("          ", "")
+          if "\"name\": \"akp_get_current_identity\"" in text:
+              raise SystemExit("identity contract already exists")
+          if anchor not in text:
+              raise SystemExit("akp_status contract anchor not found")
+          text = text.replace(anchor, anchor + "\n" + entry, 1)
+          path.write_text(text)
+          json.loads(text)
+          PY
+      - name: Commit contract and remove one-shot workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/one-shot-mcp-contract.yml
+          git add contracts/mcp-tools.json
+          git diff --cached --check
+          git commit -m "fix(mcp): declare current identity tool contract"
+          git push origin HEAD:feat/v0.4-enterprise-context-workspace
