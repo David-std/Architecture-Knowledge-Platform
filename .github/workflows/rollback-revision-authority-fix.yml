@@ -1,0 +1,242 @@
+name: one-shot-rollback-revision-authority-fix
+
+on:
+  push:
+    branches:
+      - feat/v0.4-enterprise-context-workspace
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/v0.4-enterprise-context-workspace
+          fetch-depth: 0
+      - name: Keep canonical revision authority aligned with Git compensation
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("apps/api/src/routes/reviews.ts")
+          text = path.read_text()
+
+          old = '''          if (compensationSucceeded) {
+            await db.pool.query(
+              `
+              update reviews
+                 set status='CHANGES_REQUESTED',merged_commit=null,
+                     base_commit=coalesce($2,base_commit),
+                     decision_by=null,decision_at=null,
+                     decision_reason=$3,updated_at=now()
+               where id=$1 and status='PUBLISHING'
+              `,
+              [
+                request.params.id,
+                compensatingRevision,
+                "Publication failed safely; retry from the compensated Git revision.",
+              ],
+            );
+          } else {
+'''
+          new = '''          if (compensationSucceeded) {
+            const canonicalRevision =
+              compensatingRevision ?? observedMainRevision ?? null;
+            if (!canonicalRevision) {
+              throw new Error("PUBLICATION_COMPENSATION_REVISION_REQUIRED");
+            }
+            const compensationClient = await db.pool.connect();
+            try {
+              await compensationClient.query("begin");
+              const compensated = await compensationClient.query(
+                `
+                update reviews
+                   set status='CHANGES_REQUESTED',merged_commit=null,
+                       base_commit=$2,
+                       decision_by=null,decision_at=null,
+                       decision_reason=$3,updated_at=now()
+                 where id=$1 and status='PUBLISHING'
+                 returning id
+                `,
+                [
+                  request.params.id,
+                  canonicalRevision,
+                  "Publication failed safely; retry from the compensated Git revision.",
+                ],
+              );
+              if (!compensated.rowCount) {
+                throw new Error("PUBLICATION_COMPENSATION_STATE_LOST");
+              }
+              const advanced = await compensationClient.query(
+                `update vaults
+                    set current_revision=$3
+                  where id=$1 and space_id=$2 and enabled
+                  returning id`,
+                [review.vault_id, review.space_id, canonicalRevision],
+              );
+              if (!advanced.rowCount) {
+                throw new Error("PUBLICATION_COMPENSATION_VAULT_UNAVAILABLE");
+              }
+              await compensationClient.query("commit");
+            } catch (compensationStateError) {
+              await compensationClient.query("rollback");
+              await recordPublicationFailure(
+                db,
+                String(review.space_id),
+                "Publication compensation state persistence failed",
+                {
+                  reviewId: request.params.id,
+                  canonicalRevision,
+                  error:
+                    compensationStateError instanceof Error
+                      ? compensationStateError.message
+                      : String(compensationStateError),
+                },
+              );
+              await db.pool.query(
+                `update reviews
+                    set status='PUBLICATION_RECOVERY_REQUIRED',
+                        decision_reason=$2,updated_at=now()
+                  where id=$1 and status='PUBLISHING'`,
+                [
+                  request.params.id,
+                  "Canonical Git was compensated but revision authority requires manual reconciliation.",
+                ],
+              );
+            } finally {
+              compensationClient.release();
+            }
+          } else {
+'''
+          if old not in text:
+              raise SystemExit("approval compensation block not found")
+          text = text.replace(old, new, 1)
+
+          old = '''          if (!completed.rowCount) {
+            throw new Error("ROLLBACK_STATE_CONFLICT");
+          }
+          await appendRollbackLifecycle(rollbackClient, {
+'''
+          new = '''          if (!completed.rowCount) {
+            throw new Error("ROLLBACK_STATE_CONFLICT");
+          }
+          const advanced = await rollbackClient.query(
+            `update vaults
+                set current_revision=$3
+              where id=$1 and space_id=$2 and enabled
+              returning id`,
+            [review.vault_id, review.space_id, revision],
+          );
+          if (!advanced.rowCount) {
+            throw new Error("ROLLBACK_VAULT_UNAVAILABLE");
+          }
+          await appendRollbackLifecycle(rollbackClient, {
+'''
+          if old not in text:
+              raise SystemExit("rollback finalization block not found")
+          text = text.replace(old, new, 1)
+
+          old = '''        await db.pool.query(
+          `
+          update reviews
+             set status=$2,decision_reason=$3,updated_at=now()
+           where id=$1 and status='ROLLING_BACK'
+          `,
+          [
+            request.params.id,
+            recoverySucceeded ? "APPROVED" : "ROLLBACK_RECOVERY_REQUIRED",
+            recoverySucceeded
+              ? "Rollback failed and canonical Git was restored; inspect the Error Book."
+              : "Rollback recovery requires operator intervention; inspect the Error Book.",
+          ],
+        );
+'''
+          new = '''        if (recoverySucceeded) {
+          const canonicalRevision =
+            recoveryRevision ?? String(review.merged_commit ?? "");
+          if (!canonicalRevision) {
+            recoverySucceeded = false;
+          } else {
+            const recoveryClient = await db.pool.connect();
+            try {
+              await recoveryClient.query("begin");
+              const restored = await recoveryClient.query(
+                `
+                update reviews
+                   set status='APPROVED',decision_reason=$2,updated_at=now()
+                 where id=$1 and status='ROLLING_BACK'
+                 returning id
+                `,
+                [
+                  request.params.id,
+                  "Rollback failed and canonical Git was restored; inspect the Error Book.",
+                ],
+              );
+              if (!restored.rowCount) {
+                throw new Error("ROLLBACK_RECOVERY_STATE_LOST");
+              }
+              const advanced = await recoveryClient.query(
+                `update vaults
+                    set current_revision=$3
+                  where id=$1 and space_id=$2 and enabled
+                  returning id`,
+                [review.vault_id, review.space_id, canonicalRevision],
+              );
+              if (!advanced.rowCount) {
+                throw new Error("ROLLBACK_RECOVERY_VAULT_UNAVAILABLE");
+              }
+              await recoveryClient.query("commit");
+            } catch (recoveryStateError) {
+              await recoveryClient.query("rollback");
+              recoverySucceeded = false;
+              await recordPublicationFailure(
+                db,
+                String(review.space_id),
+                "Rollback recovery state persistence failed",
+                {
+                  reviewId: request.params.id,
+                  canonicalRevision,
+                  error:
+                    recoveryStateError instanceof Error
+                      ? recoveryStateError.message
+                      : String(recoveryStateError),
+                },
+              );
+            } finally {
+              recoveryClient.release();
+            }
+          }
+        }
+        if (!recoverySucceeded) {
+          await db.pool.query(
+            `
+            update reviews
+               set status='ROLLBACK_RECOVERY_REQUIRED',
+                   decision_reason=$2,updated_at=now()
+             where id=$1 and status='ROLLING_BACK'
+            `,
+            [
+              request.params.id,
+              "Rollback recovery requires operator intervention; inspect the Error Book.",
+            ],
+          );
+        }
+'''
+          if old not in text:
+              raise SystemExit("rollback recovery state block not found")
+          text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          PY
+          git diff --check
+          git rm .github/workflows/rollback-revision-authority-fix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/api/src/routes/reviews.ts
+          git commit -m "fix(reviews): align canonical revision through recovery"
+          git push origin HEAD:feat/v0.4-enterprise-context-workspace
