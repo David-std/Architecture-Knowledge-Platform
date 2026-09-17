@@ -128,17 +128,17 @@
       "http": { "method": "GET", "path": "/v1/status" }
     },
     {
-  "name": "akp_get_current_identity",
-  "version": "1.0.0",
-  "permission": "knowledge:read",
-  "mutates": false,
-  "inputSchema": {
-    "type": "object",
-    "additionalProperties": false,
-    "properties": {}
-  },
-  "http": { "method": "GET", "path": "/v1/auth/session" }
-},
+      "name": "akp_get_current_identity",
+      "version": "1.0.0",
+      "permission": "knowledge:read",
+      "mutates": false,
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "http": { "method": "GET", "path": "/v1/auth/session" }
+    },
     {
       "name": "akp_list_vaults",
       "version": "1.0.0",
