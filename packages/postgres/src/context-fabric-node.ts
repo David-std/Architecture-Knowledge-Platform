@@ -102,21 +102,11 @@ export async function claimContextFabricNode(
   const client = await db.pool.connect();
   try {
     await client.query("begin");
-    const existing = await client.query<{
-      node_id: string;
-      deployment_mode: ContextFabricDeploymentMode;
-    }>(
-      "select node_id,deployment_mode from context_fabric_node_claim where singleton limit 1 for update",
-    );
-    const current = existing.rows[0];
-    if (current && current.node_id !== input.nodeId && !input.adopt) {
-      throw new ContextFabricNodeError(
-        "CONTEXT_FABRIC_NODE_CONFLICT",
-        `This database is already claimed by context-fabric node "${current.node_id}" (${current.deployment_mode}); ` +
-          `refusing to serve it as "${input.nodeId}". Shared derived state belongs to one node. ` +
-          "If this rename is intentional, restart once with AKP_CONTEXT_FABRIC_NODE_ADOPT=true.",
-      );
-    }
+    // The singleton unique key is the serialization point. A pre-read with
+    // SELECT ... FOR UPDATE is insufficient while the table is empty because
+    // there is no row to lock; two first-starting nodes can both observe
+    // "unclaimed" and race into the upsert. The conditional conflict update
+    // below makes PostgreSQL arbitrate that race atomically.
     const claimed = await client.query<Record<string, unknown>>(
       `insert into context_fabric_node_claim(
          singleton,node_id,deployment_mode,adopted_from
@@ -135,17 +125,37 @@ export async function claimContextFabricNode(
              then context_fabric_node_claim.claimed_at
            else now()
          end
+       where context_fabric_node_claim.node_id=excluded.node_id
+          or $3::boolean
        returning *`,
-      [input.nodeId, input.deploymentMode],
+      [input.nodeId, input.deploymentMode, input.adopt === true],
     );
-    await client.query("commit");
     const row = claimed.rows[0];
     if (!row) {
+      // A conflicting insert may have committed while this statement waited
+      // on the singleton key. Read the authoritative owner only to make the
+      // refusal diagnosable; the conditional upsert already prevented takeover.
+      const existing = await client.query<{
+        node_id: string;
+        deployment_mode: ContextFabricDeploymentMode;
+      }>(
+        "select node_id,deployment_mode from context_fabric_node_claim where singleton limit 1",
+      );
+      const current = existing.rows[0];
+      if (current && current.node_id !== input.nodeId && !input.adopt) {
+        throw new ContextFabricNodeError(
+          "CONTEXT_FABRIC_NODE_CONFLICT",
+          `This database is already claimed by context-fabric node "${current.node_id}" (${current.deployment_mode}); ` +
+            `refusing to serve it as "${input.nodeId}". Shared derived state belongs to one node. ` +
+            "If this rename is intentional, restart once with AKP_CONTEXT_FABRIC_NODE_ADOPT=true.",
+        );
+      }
       throw new ContextFabricNodeError(
         "CONTEXT_FABRIC_NODE_CLAIM_FAILED",
         "The context-fabric node claim did not return a row.",
       );
     }
+    await client.query("commit");
     return normalizeClaim(row);
   } catch (error) {
     await client.query("rollback");

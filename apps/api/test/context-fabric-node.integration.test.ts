@@ -209,6 +209,47 @@ describe("context fabric node identity", () => {
     ).rejects.toThrow(/CONTEXT_FABRIC_NODE_CONFLICT|already claimed/);
   });
 
+  it("atomically arbitrates simultaneous first claims so an empty database gets one owner", async () => {
+    // Repeat the empty-database race to exercise the window that a
+    // SELECT ... FOR UPDATE pre-read cannot protect: no singleton row
+    // exists yet, so contenders may reach the insert concurrently.
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      await db.pool.query("delete from context_fabric_node_claim");
+      const contenders = [
+        `team-node-race-a-${attempt}`,
+        `team-node-race-b-${attempt}`,
+      ];
+      const results = await Promise.allSettled(
+        contenders.map((nodeId) =>
+          claimContextFabricNode(db, {
+            nodeId,
+            deploymentMode: "TEAM_NODE",
+          }),
+        ),
+      );
+      const fulfilled = results.filter(
+        (result) => result.status === "fulfilled",
+      );
+      const rejected = results.filter((result) => result.status === "rejected");
+      expect(fulfilled).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+      const failure = rejected[0] as PromiseRejectedResult;
+      expect(failure.reason).toBeInstanceOf(ContextFabricNodeError);
+      expect((failure.reason as ContextFabricNodeError).code).toBe(
+        "CONTEXT_FABRIC_NODE_CONFLICT",
+      );
+
+      const success = fulfilled[0] as PromiseFulfilledResult<
+        Awaited<ReturnType<typeof claimContextFabricNode>>
+      >;
+      expect(contenders).toContain(success.value.nodeId);
+      expect(await readContextFabricNodeClaim(db)).toMatchObject({
+        nodeId: success.value.nodeId,
+        deploymentMode: "TEAM_NODE",
+      });
+    }
+  });
+
   it("records an intentional rename as an adoption rather than a silent takeover", async () => {
     const original = await claimContextFabricNode(db, {
       nodeId: "team-node-1",
