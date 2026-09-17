@@ -1,0 +1,32 @@
+name: contract-format-diagnostic
+
+on:
+  push:
+    branches:
+      - feat/v0.4-enterprise-context-workspace
+    paths:
+      - .github/workflows/contract-format-diagnostic.yml
+
+permissions:
+  contents: read
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - run: pnpm exec prettier --write contracts/openapi.yaml scripts/validate-contracts.mjs
+      - uses: actions/upload-artifact@v7
+        with:
+          name: contract-format
+          path: |
+            contracts/openapi.yaml
+            scripts/validate-contracts.mjs
