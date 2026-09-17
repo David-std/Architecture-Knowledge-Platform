@@ -39,7 +39,20 @@ jobs:
           docker compose $COMPOSE config --quiet
 
       - name: Build and start the Team Context Node
-        run: docker compose $COMPOSE up -d --build --wait api web
+        run: docker compose $COMPOSE up -d --build --wait api worker web
+
+      - name: Verify all Team Context Node runtime surfaces are running
+        shell: bash
+        run: |
+          set -euo pipefail
+          running="$(docker compose $COMPOSE ps --status running --services)"
+          for service in api worker web; do
+            if ! grep -qx "$service" <<<"$running"; then
+              echo "TEAM_NODE runtime service '$service' is not running." >&2
+              docker compose $COMPOSE ps -a >&2
+              exit 1
+            fi
+          done
 
       # The node owns its own database, so the node provisions the credential
       # and imports the corpus — not a client reaching around it.
