@@ -7,7 +7,8 @@ import type {
 import type { JobId } from "@akp/domain";
 
 export type BootstrapContextMode =
-  "COMPACT_AGENT_PACKET" | "FULL_CONTEXT_PACKET";
+  | "COMPACT_AGENT_PACKET"
+  | "FULL_CONTEXT_PACKET";
 
 export interface BootstrapWorkContextSnapshot {
   session: {
@@ -118,6 +119,22 @@ export interface BootstrapContextPorts<TContextPacket = unknown> {
   ): Promise<void>;
 }
 
+export class BootstrapContextError extends Error {
+  readonly code: string;
+  readonly statusCode: number;
+
+  constructor(code: string, statusCode: number) {
+    super(code);
+    this.name = "BootstrapContextError";
+    this.code = code;
+    this.statusCode = statusCode;
+  }
+}
+
+function bootstrapContextError(code: string, statusCode: number): Error {
+  return new BootstrapContextError(code, statusCode);
+}
+
 function workspaceEventsOfType(
   snapshot: BootstrapWorkContextSnapshot,
   eventType: string,
@@ -138,12 +155,12 @@ export class BootstrapContext<TContextPacket = unknown> {
       request.sessionId,
       request.actorId,
     );
-    if (!snapshot) throw new Error("SESSION_NOT_FOUND");
+    if (!snapshot) throw bootstrapContextError("SESSION_NOT_FOUND", 404);
     if (snapshot.contextRevision.status === "CHANGED") {
-      throw new Error("CONTEXT_REVISION_CHANGED");
+      throw bootstrapContextError("CONTEXT_REVISION_CHANGED", 409);
     }
     if (!snapshot.contextRevision.pinned) {
-      throw new Error("CONTEXT_REVISION_PIN_REQUIRED");
+      throw bootstrapContextError("CONTEXT_REVISION_PIN_REQUIRED", 409);
     }
 
     const intent = request.intent?.trim() || "WORKFLOW_EXECUTION";
