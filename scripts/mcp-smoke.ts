@@ -92,24 +92,24 @@ try {
     arguments: {},
   });
   const identityPayload = structuredToolResult(identity);
-  const identityActor = identityPayload.actor as
-    | Record<string, unknown>
-    | null
-    | undefined;
-  const secretKeys = ["token", "tokenHash", "credentialHash", "csrfHash"];
-  if (
-    identityPayload.authenticated !== true ||
-    !identityActor ||
-    typeof identityActor.principalId !== "string" ||
-    typeof identityActor.principalKind !== "string" ||
-    typeof identityActor.authenticationKind !== "string" ||
-    !Array.isArray(identityActor.principalAllowedActions) ||
-    typeof identityActor.principalPolicyRevision !== "number" ||
-    secretKeys.some((key) => key in identityPayload || key in identityActor)
-  ) {
+  const identityActor = identityPayload.actor;
+  if (!identityActor || typeof identityActor !== "object") {
     throw new Error(
       `Unexpected MCP identity payload: ${JSON.stringify(identityPayload)}`,
     );
+  }
+  const identityRecord = identityActor as Record<string, unknown>;
+  const identityJson = JSON.stringify(identityPayload);
+  if (
+    identityPayload.authenticated !== true ||
+    typeof identityRecord.principalId !== "string" ||
+    typeof identityRecord.principalKind !== "string" ||
+    typeof identityRecord.authenticationKind !== "string" ||
+    !Array.isArray(identityRecord.principalAllowedActions) ||
+    typeof identityRecord.principalPolicyRevision !== "number" ||
+    /"(?:token|tokenHash|credentialHash|csrfHash)"\s*:/.test(identityJson)
+  ) {
+    throw new Error(`Unexpected MCP identity payload: ${identityJson}`);
   }
   const listed = await client.callTool({
     name: "akp_list_vaults",
@@ -179,8 +179,8 @@ try {
         toolCount: tools.tools.length,
         requiredTools: required.length,
         platformStatus: statusPayload.status,
-        principalKind: identityActor.principalKind,
-        authenticationKind: identityActor.authenticationKind,
+        principalKind: identityRecord.principalKind,
+        authenticationKind: identityRecord.authenticationKind,
         visibleVaultCount: vaults.length,
         scopedVaultId: vaultId,
         searchHitCount: searchPayload.hits.length,
