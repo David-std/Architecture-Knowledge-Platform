@@ -2511,8 +2511,6 @@ paths:
       tags: [Governance]
       operationId: validateKnowledgeProfile
       x-akp-permission: admin
-      parameters:
-        - { $ref: "#/components/parameters/IdempotencyKey" }
       requestBody:
         required: true
         content:
@@ -2536,8 +2534,6 @@ paths:
       tags: [Governance]
       operationId: diffKnowledgeProfiles
       x-akp-permission: admin
-      parameters:
-        - { $ref: "#/components/parameters/IdempotencyKey" }
       requestBody:
         required: true
         content:
@@ -2567,8 +2563,6 @@ paths:
       tags: [Knowledge]
       operationId: exportInteroperabilityBundle
       x-akp-permission: knowledge:read
-      parameters:
-        - { $ref: "#/components/parameters/IdempotencyKey" }
       requestBody:
         required: true
         content:
