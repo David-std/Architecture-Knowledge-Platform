@@ -327,6 +327,120 @@ paths:
         "422":
           description: Target participant is not authorized for the full session vault.
 
+  /v1/sessions/{id}/activity:
+    get:
+      tags: [Sessions]
+      operationId: listWorkActivity
+      x-akp-permission: knowledge:read
+      description: >
+        Activity recorded against the work objects this session's vault
+        projects, newest first. Scoped through session participation, so an
+        actor cannot page through another vault's work history.
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - name: objectRefId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+      responses:
+        "200":
+          description: Activity events for the authorized scope.
+          content:
+            application/json:
+              schema: { type: object }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [Sessions]
+      operationId: recordWorkActivity
+      x-akp-permission: knowledge:read
+      description: >
+        Record one observation about a work object. Append-only: correcting an
+        earlier observation means recording a later one. `derivation` states how
+        the assertion is known, and a `CAUSED` action may only rest on
+        SOURCE_EXPLICIT, HUMAN_ASSERTED or DYNAMICALLY_PROVEN — an observed
+        ordering never becomes a causal claim however often it recurs.
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                [objectRefId, action, occurredAt, sourceSystem, derivation]
+              properties:
+                objectRefId: { type: string, format: uuid }
+                targetRefId: { type: string, format: uuid }
+                action:
+                  type: string
+                  enum:
+                    - CREATED
+                    - UPDATED
+                    - COMMENTED
+                    - REVIEWED
+                    - APPROVED
+                    - REJECTED
+                    - MERGED
+                    - CLOSED
+                    - REOPENED
+                    - ASSIGNED
+                    - ESCALATED
+                    - DEPLOYED
+                    - ROLLED_BACK
+                    - RESOLVED
+                    - LINKED
+                    - REFERENCED
+                    - CAUSED
+                occurredAt: { type: string, format: date-time }
+                sourceSystem: { type: string, minLength: 1, maxLength: 80 }
+                derivation:
+                  type: string
+                  enum:
+                    - SOURCE_EXPLICIT
+                    - OBSERVED_CORRELATION
+                    - MODEL_INFERRED
+                    - HUMAN_ASSERTED
+                    - DYNAMICALLY_PROVEN
+                actorExternalId: { type: string, minLength: 1, maxLength: 512 }
+                evidenceRefs:
+                  type: array
+                  maxItems: 50
+                  items: { type: string, minLength: 1 }
+                payload: { type: object }
+      responses:
+        "201":
+          description: The recorded, immutable activity event.
+          content:
+            application/json:
+              schema: { type: object }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: >-
+            The session, or one of the referenced work objects, is not visible
+            in this scope.
+          content:
+            application/json:
+              schema: { type: object }
+        "422":
+          description: >-
+            WORK_ACTIVITY_CAUSALITY_UNSUPPORTED - a causal claim was asserted on
+            a derivation that cannot support one.
+          content:
+            application/json:
+              schema: { type: object }
+
   /v1/sessions/{id}/bootstrap:
     post:
       tags: [Sessions]

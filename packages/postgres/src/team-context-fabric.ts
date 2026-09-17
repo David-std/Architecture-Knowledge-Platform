@@ -18,6 +18,7 @@ export interface ExternalObjectRefRecord {
   sourceRevision: string | null;
   title: string | null;
   authority: ExternalObjectAuthority;
+  workObjectClass: WorkObjectClass | null;
   metadata: Record<string, unknown>;
   observedAt: Date;
   updatedAt: Date;
@@ -97,6 +98,10 @@ function normalizeExternalRef(
     sourceRevision: row.source_revision ? String(row.source_revision) : null,
     title: row.title ? String(row.title) : null,
     authority: String(row.authority) as ExternalObjectAuthority,
+    workObjectClass:
+      row.work_object_class === null || row.work_object_class === undefined
+        ? null
+        : (String(row.work_object_class) as WorkObjectClass),
     metadata: recordObject(row.metadata),
     observedAt: new Date(String(row.observed_at)),
     updatedAt: new Date(String(row.updated_at)),
@@ -187,6 +192,7 @@ export async function upsertExternalObjectRef(
     sourceRevision?: string | null;
     title?: string | null;
     authority?: ExternalObjectAuthority;
+    workObjectClass?: WorkObjectClass | null;
     metadata?: Record<string, unknown>;
     observedAt?: Date;
   },
@@ -202,14 +208,16 @@ export async function upsertExternalObjectRef(
     const result = await client.query<Record<string, unknown>>(
       `insert into external_object_refs(
          space_id,vault_id,session_id,provider,object_type,external_id,
-         canonical_url,source_revision,title,authority,metadata,observed_at
-       ) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12)
+         canonical_url,source_revision,title,authority,metadata,observed_at,
+         work_object_class
+       ) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,$13)
        on conflict(vault_id,provider,object_type,external_id) do update
          set session_id=excluded.session_id,
              canonical_url=excluded.canonical_url,
              source_revision=excluded.source_revision,
              title=excluded.title,
              authority=excluded.authority,
+             work_object_class=excluded.work_object_class,
              metadata=excluded.metadata,
              observed_at=excluded.observed_at,
              updated_at=now()
@@ -227,6 +235,7 @@ export async function upsertExternalObjectRef(
         input.authority ?? "SYSTEM_OF_RECORD",
         JSON.stringify(input.metadata ?? {}),
         input.observedAt ?? new Date(),
+        input.workObjectClass ?? null,
       ],
     );
     const row = result.rows[0];
@@ -244,6 +253,9 @@ export async function upsertExternalObjectRef(
         objectType: String(row.object_type),
         externalId: String(row.external_id),
         authority: String(row.authority),
+        workObjectClass: row.work_object_class
+          ? String(row.work_object_class)
+          : null,
         sourceRevision: row.source_revision
           ? String(row.source_revision)
           : null,
@@ -592,4 +604,344 @@ export async function listContextFabricPeers(
     [organizationId, spaceIds],
   );
   return result.rows.map(normalizePeer);
+}
+
+export type WorkObjectClass =
+  | "GOAL"
+  | "PROJECT"
+  | "WORK_ITEM"
+  | "PULL_REQUEST"
+  | "CODE_REVIEW"
+  | "INCIDENT"
+  | "CHANGE"
+  | "BUILD"
+  | "DEPLOYMENT"
+  | "ENVIRONMENT"
+  | "TEST_RUN"
+  | "MEETING"
+  | "MESSAGE"
+  | "DOCUMENT"
+  | "REPOSITORY"
+  | "SERVICE";
+
+const WORK_OBJECT_CLASSES: readonly WorkObjectClass[] = [
+  "GOAL",
+  "PROJECT",
+  "WORK_ITEM",
+  "PULL_REQUEST",
+  "CODE_REVIEW",
+  "INCIDENT",
+  "CHANGE",
+  "BUILD",
+  "DEPLOYMENT",
+  "ENVIRONMENT",
+  "TEST_RUN",
+  "MEETING",
+  "MESSAGE",
+  "DOCUMENT",
+  "REPOSITORY",
+  "SERVICE",
+];
+
+export type WorkActivityAction =
+  | "CREATED"
+  | "UPDATED"
+  | "COMMENTED"
+  | "REVIEWED"
+  | "APPROVED"
+  | "REJECTED"
+  | "MERGED"
+  | "CLOSED"
+  | "REOPENED"
+  | "ASSIGNED"
+  | "ESCALATED"
+  | "DEPLOYED"
+  | "ROLLED_BACK"
+  | "RESOLVED"
+  | "LINKED"
+  | "REFERENCED"
+  | "CAUSED";
+
+const WORK_ACTIVITY_ACTIONS: readonly WorkActivityAction[] = [
+  "CREATED",
+  "UPDATED",
+  "COMMENTED",
+  "REVIEWED",
+  "APPROVED",
+  "REJECTED",
+  "MERGED",
+  "CLOSED",
+  "REOPENED",
+  "ASSIGNED",
+  "ESCALATED",
+  "DEPLOYED",
+  "ROLLED_BACK",
+  "RESOLVED",
+  "LINKED",
+  "REFERENCED",
+  "CAUSED",
+];
+
+/**
+ * How an activity assertion is known.
+ *
+ * These are different epistemic claims, not confidence levels on one claim.
+ * "The deploy log says this deployment happened" and "these two things tend to
+ * co-occur" are not the same statement, and collapsing them is how a
+ * correlation quietly becomes an architectural fact.
+ */
+export type WorkActivityDerivation =
+  | "SOURCE_EXPLICIT"
+  | "OBSERVED_CORRELATION"
+  | "MODEL_INFERRED"
+  | "HUMAN_ASSERTED"
+  | "DYNAMICALLY_PROVEN";
+
+const WORK_ACTIVITY_DERIVATIONS: readonly WorkActivityDerivation[] = [
+  "SOURCE_EXPLICIT",
+  "OBSERVED_CORRELATION",
+  "MODEL_INFERRED",
+  "HUMAN_ASSERTED",
+  "DYNAMICALLY_PROVEN",
+];
+
+/** Actions that assert a relationship, so they need something to relate to. */
+const RELATIONAL_ACTIONS: readonly WorkActivityAction[] = [
+  "LINKED",
+  "REFERENCED",
+  "CAUSED",
+  "RESOLVED",
+];
+
+/**
+ * Only these support a causal claim.
+ *
+ * An observation of ordering and a model's guess are evidence that something
+ * might be worth investigating; neither is evidence that one thing brought
+ * about another. The database enforces this too, but rejecting it here gives
+ * the caller a usable error instead of a constraint violation.
+ */
+const CAUSALITY_SUPPORTING_DERIVATIONS: readonly WorkActivityDerivation[] = [
+  "SOURCE_EXPLICIT",
+  "HUMAN_ASSERTED",
+  "DYNAMICALLY_PROVEN",
+];
+
+export interface WorkActivityEventRecord {
+  id: string;
+  spaceId: string;
+  vaultId: string;
+  objectRefId: string;
+  targetRefId: string | null;
+  sessionId: string | null;
+  actorPrincipalId: string | null;
+  actorExternalId: string | null;
+  action: WorkActivityAction;
+  occurredAt: Date;
+  recordedAt: Date;
+  sourceSystem: string;
+  derivation: WorkActivityDerivation;
+  evidenceRefs: string[];
+  payload: Record<string, unknown>;
+}
+
+export function isWorkObjectClass(value: string): value is WorkObjectClass {
+  return (WORK_OBJECT_CLASSES as readonly string[]).includes(value);
+}
+
+export function isWorkActivityAction(
+  value: string,
+): value is WorkActivityAction {
+  return (WORK_ACTIVITY_ACTIONS as readonly string[]).includes(value);
+}
+
+export function isWorkActivityDerivation(
+  value: string,
+): value is WorkActivityDerivation {
+  return (WORK_ACTIVITY_DERIVATIONS as readonly string[]).includes(value);
+}
+
+function normalizeActivity(
+  row: Record<string, unknown>,
+): WorkActivityEventRecord {
+  return {
+    id: String(row.id),
+    spaceId: String(row.space_id),
+    vaultId: String(row.vault_id),
+    objectRefId: String(row.object_ref_id),
+    targetRefId: row.target_ref_id === null ? null : String(row.target_ref_id),
+    sessionId: row.session_id === null ? null : String(row.session_id),
+    actorPrincipalId:
+      row.actor_principal_id === null ? null : String(row.actor_principal_id),
+    actorExternalId:
+      row.actor_external_id === null ? null : String(row.actor_external_id),
+    action: String(row.action) as WorkActivityAction,
+    occurredAt: new Date(String(row.occurred_at)),
+    recordedAt: new Date(String(row.recorded_at)),
+    sourceSystem: String(row.source_system),
+    derivation: String(row.derivation) as WorkActivityDerivation,
+    evidenceRefs: Array.isArray(row.evidence_refs)
+      ? (row.evidence_refs as unknown[]).map(String)
+      : [],
+    payload:
+      row.payload && typeof row.payload === "object"
+        ? (row.payload as Record<string, unknown>)
+        : {},
+  };
+}
+
+/**
+ * Record one observation about a work object.
+ *
+ * Activity is history, so this only ever appends. Correcting an earlier
+ * observation means recording a later one that says so, which keeps the record
+ * of what was believed when.
+ */
+export async function recordWorkActivity(
+  db: Postgres,
+  input: {
+    sessionId: string;
+    actorId: string;
+    objectRefId: string;
+    targetRefId?: string | null;
+    action: WorkActivityAction;
+    occurredAt: Date;
+    sourceSystem: string;
+    derivation: WorkActivityDerivation;
+    actorPrincipalId?: string | null;
+    actorExternalId?: string | null;
+    evidenceRefs?: string[];
+    payload?: Record<string, unknown>;
+  },
+): Promise<WorkActivityEventRecord> {
+  if (!isWorkActivityAction(input.action)) {
+    throw fabricError("INVALID_WORK_ACTIVITY_ACTION", 400);
+  }
+  if (!isWorkActivityDerivation(input.derivation)) {
+    throw fabricError("INVALID_WORK_ACTIVITY_DERIVATION", 400);
+  }
+  if (
+    input.action === "CAUSED" &&
+    !CAUSALITY_SUPPORTING_DERIVATIONS.includes(input.derivation)
+  ) {
+    throw fabricError("WORK_ACTIVITY_CAUSALITY_UNSUPPORTED", 422);
+  }
+  if (RELATIONAL_ACTIONS.includes(input.action) && !input.targetRefId) {
+    throw fabricError("WORK_ACTIVITY_TARGET_REQUIRED", 400);
+  }
+  if (!input.actorPrincipalId && !input.actorExternalId) {
+    throw fabricError("WORK_ACTIVITY_ACTOR_REQUIRED", 400);
+  }
+  const sourceSystem = input.sourceSystem.trim();
+  if (!sourceSystem || sourceSystem.length > 80) {
+    throw fabricError("INVALID_WORK_ACTIVITY_SOURCE_SYSTEM", 400);
+  }
+  if (Number.isNaN(input.occurredAt.getTime())) {
+    throw fabricError("INVALID_WORK_ACTIVITY_TIMESTAMP", 400);
+  }
+
+  const client = await db.pool.connect();
+  try {
+    await client.query("begin");
+    const scope = await requireSessionParticipant(
+      client,
+      input.sessionId,
+      input.actorId,
+    );
+    // Both endpoints of the assertion must be objects this session's vault
+    // already projects. Activity cannot introduce a reference to something the
+    // caller was never authorized to see.
+    const refIds = [input.objectRefId, input.targetRefId].filter(
+      (value): value is string => Boolean(value),
+    );
+    const refs = await client.query<{ id: string }>(
+      `select id from external_object_refs
+        where vault_id=$1 and id = any($2::uuid[])`,
+      [scope.vaultId, refIds],
+    );
+    if (refs.rowCount !== new Set(refIds).size) {
+      throw fabricError("EXTERNAL_OBJECT_REF_NOT_FOUND", 404);
+    }
+
+    const inserted = await client.query<Record<string, unknown>>(
+      `insert into work_activity_events(
+         space_id,vault_id,object_ref_id,target_ref_id,session_id,
+         actor_principal_id,actor_external_id,action,occurred_at,
+         source_system,derivation,evidence_refs,payload
+       ) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13::jsonb)
+       returning *`,
+      [
+        scope.spaceId,
+        scope.vaultId,
+        input.objectRefId,
+        input.targetRefId ?? null,
+        input.sessionId,
+        input.actorPrincipalId ?? null,
+        input.actorExternalId?.trim() || null,
+        input.action,
+        input.occurredAt,
+        sourceSystem,
+        input.derivation,
+        JSON.stringify(input.evidenceRefs ?? []),
+        JSON.stringify(input.payload ?? {}),
+      ],
+    );
+    const row = inserted.rows[0];
+    if (!row) throw fabricError("WORK_ACTIVITY_WRITE_FAILED", 500);
+    // No integration event. Activity is an observation log, and nothing
+    // downstream reacts to a single observation; inventing an event family
+    // with no consumer would add a durable contract we would then have to
+    // keep. The durable record is the row itself.
+    await client.query("commit");
+    return normalizeActivity(row);
+  } catch (error) {
+    await client.query("rollback").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * The activity a session may see, newest first.
+ *
+ * Scoped through session participation like every other workspace read, so an
+ * actor cannot page through another vault's work history.
+ */
+export async function listWorkActivityForSession(
+  db: Postgres,
+  input: {
+    sessionId: string;
+    actorId: string;
+    objectRefId?: string;
+    limit?: number;
+  },
+): Promise<WorkActivityEventRecord[]> {
+  const limit = Math.min(Math.max(input.limit ?? 100, 1), 500);
+  const client = await db.pool.connect();
+  try {
+    await client.query("begin read only");
+    const scope = await requireSessionParticipant(
+      client,
+      input.sessionId,
+      input.actorId,
+    );
+    const result = await client.query<Record<string, unknown>>(
+      `select * from work_activity_events
+        where vault_id=$1
+          and ($2::uuid is null
+               or object_ref_id=$2::uuid
+               or target_ref_id=$2::uuid)
+        order by occurred_at desc, id desc
+        limit $3`,
+      [scope.vaultId, input.objectRefId ?? null, limit],
+    );
+    await client.query("commit");
+    return result.rows.map(normalizeActivity);
+  } catch (error) {
+    await client.query("rollback").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
