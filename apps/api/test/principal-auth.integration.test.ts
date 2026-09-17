@@ -407,5 +407,45 @@ run("P2 principal identity", () => {
     });
     expect(afterRevocation.statusCode).toBe(401);
     expect(afterRevocation.json()).toMatchObject({ code: "INVALID_TOKEN" });
+
+    const siblingIssued = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/agent-processes`,
+      headers: humanHeaders,
+      payload: {
+        label: "Parent revocation child",
+        allowedActions: ["workspace:read", "knowledge:read"],
+      },
+    });
+    expect(siblingIssued.statusCode).toBe(201);
+    const siblingCredential = siblingIssued.json() as {
+      token: string;
+      principal: { id: string };
+    };
+
+    // Revoke only the HUMAN authority root. The child row intentionally remains
+    // ACTIVE so this proves authentication follows the parent edge rather than
+    // relying on a cascade that may be delayed or absent.
+    await db.pool.query(
+      `update principals
+          set state='REVOKED',revoked_at=now(),policy_revision=policy_revision+1
+        where id=$1 and kind='HUMAN'`,
+      [humanPrincipal.rows[0]?.id],
+    );
+    const childState = await db.pool.query<{ state: string }>(
+      "select state from principals where id=$1",
+      [siblingCredential.principal.id],
+    );
+    expect(childState.rows[0]?.state).toBe("ACTIVE");
+
+    const afterParentRevocation = await app.inject({
+      method: "GET",
+      url: `/v1/sessions/${sessionId}/state`,
+      headers: { authorization: `Bearer ${siblingCredential.token}` },
+    });
+    expect(afterParentRevocation.statusCode).toBe(401);
+    expect(afterParentRevocation.json()).toMatchObject({
+      code: "INVALID_TOKEN",
+    });
   });
 });

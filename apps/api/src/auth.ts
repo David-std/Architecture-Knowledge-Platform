@@ -685,8 +685,9 @@ export function registerAuthentication(
     }
     const principalResult = await db.pool.query<Record<string, unknown>>(
       `select p.id,p.kind,p.parent_principal_id,p.session_id,p.vault_id,p.allowed_actions,
-              p.policy_revision,p.state
+              p.policy_revision,p.state,parent.state parent_state
          from principals p
+         left join principals parent on parent.id=p.parent_principal_id
         where p.id=coalesce(
           $1::uuid,
           (select id from principals where kind='HUMAN' and user_id=$2 limit 1)
@@ -695,7 +696,15 @@ export function registerAuthentication(
       [row.principal_id, row.id],
     );
     const principal = principalResult.rows[0];
-    if (!principal || principal.state !== "ACTIVE") {
+    // Derived principals never outlive their authority root. Checking only the
+    // child state would let an issued AGENT_PROCESS continue after its parent
+    // human principal was revoked. Fail closed as an invalid credential when
+    // the recorded parent is missing or no longer active.
+    if (
+      !principal ||
+      principal.state !== "ACTIVE" ||
+      (principal.parent_principal_id && principal.parent_state !== "ACTIVE")
+    ) {
       await reply.code(401).send({ code: "INVALID_TOKEN" });
       return;
     }
