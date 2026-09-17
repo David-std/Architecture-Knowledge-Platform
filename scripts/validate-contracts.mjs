@@ -460,9 +460,7 @@ for (const sourcePath of httpSourceFiles) {
   const source = await readFile(sourcePath, "utf8");
   const displayPath = path.relative(root, sourcePath).split(path.sep).join("/");
   for (const route of registeredFastifyRoutes(source, displayPath)) {
-    registeredHttpRouteKeys.add(
-      `${route.method.toUpperCase()} ${route.path}`,
-    );
+    registeredHttpRouteKeys.add(`${route.method.toUpperCase()} ${route.path}`);
   }
 }
 if (registeredHttpRouteKeys.size === 0) {
