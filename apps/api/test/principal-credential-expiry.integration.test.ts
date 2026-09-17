@@ -190,21 +190,16 @@ run("P2 principal credential expiry", () => {
         where token_hash=$1`,
       [replayTokenHash],
     );
-    const credentialState = await db.pool.query<{
-      expired: boolean;
-      principal_state: string;
-    }>(
-      `select c.expires_at <= clock_timestamp() expired,
-              p.state principal_state
+    const expiredWhileActive = await db.pool.query(
+      `select 1
          from principal_credentials c
          join principals p on p.id=c.principal_id
-        where c.token_hash=$1`,
+        where c.token_hash=$1
+          and c.expires_at <= clock_timestamp()
+          and p.state='ACTIVE'`,
       [replayTokenHash],
     );
-    expect(credentialState.rows[0]).toMatchObject({
-      expired: true,
-      principal_state: "ACTIVE",
-    });
+    expect(expiredWhileActive.rowCount).toBe(1);
 
     const replayAfterExpiry = await app.inject({
       method: "GET",
