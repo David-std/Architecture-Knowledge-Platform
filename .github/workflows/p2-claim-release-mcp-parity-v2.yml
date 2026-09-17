@@ -1,0 +1,363 @@
+name: one-shot-p2-claim-release-mcp-parity-v2
+
+on:
+  push:
+    branches:
+      - feat/v0.4-enterprise-context-workspace
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/v0.4-enterprise-context-workspace
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - name: Apply claim release and MCP parity
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"anchor not found in {path}: {old[:100]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          def insert_before_tool(path: str, tool_name: str, block: str) -> None:
+              p = Path(path)
+              text = p.read_text()
+              marker = f'"{tool_name}"'
+              marker_at = text.find(marker)
+              if marker_at < 0:
+                  raise SystemExit(f"tool not found in {path}: {tool_name}")
+              tool_at = text.rfind("server.registerTool(", 0, marker_at)
+              if tool_at < 0:
+                  raise SystemExit(f"registerTool boundary not found in {path}: {tool_name}")
+              line_at = text.rfind("\n", 0, tool_at) + 1
+              p.write_text(text[:line_at] + block + text[line_at:])
+
+          Path("db/migrations/040_workspace_claim_release.sql").write_text("""-- P2.17/P2.18 explicit claim release. Claims already support RELEASED;
+          -- this migration extends the append-only workspace event vocabulary without
+          -- rewriting prior coordination history.
+          alter table workspace_events
+            drop constraint if exists workspace_events_event_type_check;
+          alter table workspace_events
+            add constraint workspace_events_event_type_check
+            check (
+              event_type in (
+                'SESSION_CREATED',
+                'PARTICIPANT_JOINED',
+                'CLAIM_ACQUIRED',
+                'CLAIM_HEARTBEAT',
+                'CLAIM_RELEASED',
+                'CLAIM_HANDOFF',
+                'FINDING',
+                'BLOCKER',
+                'QUESTION',
+                'ARTIFACT',
+                'DECISION_CANDIDATE',
+                'PROMOTION_REQUESTED',
+                'NOTE'
+              )
+            );
+          """)
+
+          wc = "packages/postgres/src/workspace-coordination.ts"
+          replace_once(
+              wc,
+              '  | "CLAIM_HEARTBEAT"\n  | "CLAIM_HANDOFF"',
+              '  | "CLAIM_HEARTBEAT"\n  | "CLAIM_RELEASED"\n  | "CLAIM_HANDOFF"',
+          )
+          replace_once(
+              wc,
+              '  | "CLAIM_HEARTBEAT"\n  | "CLAIM_HANDOFF"\n>;',
+              '  | "CLAIM_HEARTBEAT"\n  | "CLAIM_RELEASED"\n  | "CLAIM_HANDOFF"\n>;',
+          )
+          replace_once(
+              wc,
+              '    case "CLAIM_ACQUIRED":\n    case "CLAIM_HEARTBEAT":\n      return "WorkspaceClaimUpdated";',
+              '    case "CLAIM_ACQUIRED":\n    case "CLAIM_HEARTBEAT":\n    case "CLAIM_RELEASED":\n      return "WorkspaceClaimUpdated";',
+          )
+          handoff_anchor = '''export async function handoffWorkspaceWork(
+            db: Postgres,
+          '''
+          release_impl = '''export async function releaseWorkspaceWork(
+            db: Postgres,
+            input: {
+              sessionId: string;
+              actorId: string;
+              workKey: string;
+              fencingToken: number;
+            },
+          ): Promise<WorkspaceClaim> {
+            requiredWorkScope(input.workKey);
+            const client = await db.pool.connect();
+            try {
+              await client.query("begin");
+              const participant = await client.query(
+                `select 1
+                   from workspace_session_participants
+                  where session_id=$1 and user_id=$2 and left_at is null`,
+                [input.sessionId, input.actorId],
+              );
+              if (!participant.rowCount) throw workspaceError("SESSION_NOT_FOUND", 404);
+              const sessionScope = await client.query<{
+                space_id: string;
+                vault_id: string;
+              }>("select space_id,vault_id from agent_sessions where id=$1", [
+                input.sessionId,
+              ]);
+              const scope = sessionScope.rows[0];
+              if (!scope?.vault_id) throw workspaceError("SESSION_NOT_FOUND", 404);
+              await assertWorkspaceContextRevisionCurrent(
+                client,
+                input.sessionId,
+                scope.space_id,
+                scope.vault_id,
+              );
+              const updated = await client.query<Record<string, unknown>>(
+                `update workspace_claims
+                    set status='RELEASED',
+                        fencing_token=fencing_token+1,
+                        lease_expires_at=now(),
+                        version=version+1,
+                        updated_at=now()
+                  where session_id=$1
+                    and work_key=$2
+                    and owner_id=$3
+                    and fencing_token=$4
+                    and status='ACTIVE'
+                    and lease_expires_at>now()
+                  returning *`,
+                [
+                  input.sessionId,
+                  input.workKey,
+                  input.actorId,
+                  input.fencingToken,
+                ],
+              );
+              const row = updated.rows[0];
+              if (!row) throw workspaceError("WORK_CLAIM_FENCE_STALE", 409);
+              await appendCoordinationEvent(client, {
+                sessionId: input.sessionId,
+                actorId: input.actorId,
+                claimId: String(row.id),
+                eventType: "CLAIM_RELEASED",
+                payload: {
+                  workKey: input.workKey,
+                  previousFencingToken: input.fencingToken,
+                  fencingToken: Number(row.fencing_token),
+                  releasedBy: input.actorId,
+                },
+              });
+              await client.query("commit");
+              return normalizeClaim(row);
+            } catch (error) {
+              await client.query("rollback");
+              throw error;
+            } finally {
+              client.release();
+            }
+          }
+
+          '''
+          replace_once(wc, handoff_anchor, release_impl + handoff_anchor)
+
+          sessions = "apps/api/src/routes/sessions.ts"
+          replace_once(
+              sessions,
+              '  heartbeatWorkspaceWork,\n  getActiveKnowledgeProfileRevision,',
+              '  heartbeatWorkspaceWork,\n  releaseWorkspaceWork,\n  getActiveKnowledgeProfileRevision,',
+          )
+          release_route = '''  app.post<{
+            Params: { id: string };
+            Body: { workKey: string; fencingToken: number };
+          }>(
+            "/v1/sessions/:id/claims/release",
+            {
+              preHandler: [
+                requirePermission("knowledge:read"),
+                requirePrincipalAction("workspace:claim"),
+              ],
+            },
+            async (request, reply) => {
+              const session = await authorizedSession(
+                db,
+                request,
+                reply,
+                request.params.id,
+              );
+              if (!session) return;
+              const actor = actorOf(request);
+              if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
+              const workKey = request.body?.workKey?.trim();
+              if (!workKey || !isWorkspaceWorkKey(workKey)) {
+                return reply.code(400).send({ code: "INVALID_WORK_KEY" });
+              }
+              const fencingToken = Number(request.body.fencingToken);
+              if (!Number.isSafeInteger(fencingToken) || fencingToken < 1) {
+                return reply.code(400).send({ code: "INVALID_FENCING_TOKEN" });
+              }
+              const claim = await releaseWorkspaceWork(db, {
+                sessionId: session.id,
+                actorId: actor.id,
+                workKey,
+                fencingToken,
+              });
+              await audit(
+                db,
+                request,
+                "workspace.claim.release",
+                "agent_session",
+                session.id,
+                {
+                  vaultId: session.vaultId,
+                  claimId: claim.id,
+                  workKey,
+                  fencingToken: claim.fencingToken,
+                },
+                session.spaceId,
+              );
+              return claim;
+            },
+          );
+
+          '''
+          sessions_path = Path(sessions)
+          sessions_text = sessions_path.read_text()
+          handoff_url = '    "/v1/sessions/:id/claims/handoff",'
+          handoff_url_at = sessions_text.find(handoff_url)
+          if handoff_url_at < 0:
+              raise SystemExit("handoff endpoint anchor not found")
+          handoff_route_at = sessions_text.rfind("  app.post<{", 0, handoff_url_at)
+          if handoff_route_at < 0:
+              raise SystemExit("handoff route start not found")
+          sessions_path.write_text(
+              sessions_text[:handoff_route_at]
+              + release_route
+              + sessions_text[handoff_route_at:]
+          )
+
+          mcp = "apps/mcp/src/server.ts"
+          replace_once(
+              mcp,
+              'import { SearchRequest } from "@akp/contracts";',
+              'import { QueryIntent, SearchRequest } from "@akp/contracts";',
+          )
+          bootstrap_tool = '''  server.registerTool(
+            "akp_bootstrap_session_context",
+            {
+              description:
+                "Bootstrap a workspace session with its pinned revision, durable work context, knowledge profile, and authorized context packet.",
+              inputSchema: {
+                sessionId: z.string().uuid(),
+                query: z.string().max(4096).optional(),
+                intent: QueryIntent.default("WORKFLOW_EXECUTION"),
+                packetMode: z
+                  .enum(["COMPACT_AGENT_PACKET", "FULL_CONTEXT_PACKET"])
+                  .default("COMPACT_AGENT_PACKET"),
+              },
+            },
+            async ({ sessionId, ...body }) =>
+              textResult(
+                await api(`/v1/sessions/${encodeURIComponent(sessionId)}/bootstrap`, {
+                  method: "POST",
+                  body: JSON.stringify(body),
+                }),
+              ),
+          );
+
+          '''
+          insert_before_tool(mcp, "akp_claim_workspace_work", bootstrap_tool)
+          release_tool = '''  server.registerTool(
+            "akp_release_workspace_claim",
+            {
+              description:
+                "Release an owned live workspace claim and advance its fencing token so stale writers cannot continue.",
+              inputSchema: {
+                sessionId: z.string().uuid(),
+                workKey: z.string().min(1).max(200),
+                fencingToken: z.number().int().min(1),
+                idempotencyKey: z.string().min(8).max(200),
+              },
+            },
+            async ({ sessionId, idempotencyKey, ...body }) =>
+              textResult(
+                await writeApi(
+                  `/v1/sessions/${encodeURIComponent(sessionId)}/claims/release`,
+                  idempotencyKey,
+                  body,
+                ),
+              ),
+          );
+
+          '''
+          insert_before_tool(mcp, "akp_handoff_workspace_claim", release_tool)
+          promotion_tool = '''  server.registerTool(
+            "akp_request_workspace_promotion",
+            {
+              description:
+                "Request governed promotion of durable workspace evidence into Git-backed review; this never bypasses human review policy.",
+              inputSchema: {
+                sessionId: z.string().uuid(),
+                evidenceEventIds: z
+                  .array(z.string().regex(/^[1-9][0-9]*$/))
+                  .min(1)
+                  .max(100),
+                summary: z.string().min(1).max(2000).optional(),
+                changes: z
+                  .array(
+                    z.object({
+                      path: z.string().min(1),
+                      content: z.string().min(1),
+                      reason: z.string().min(1).optional(),
+                    }),
+                  )
+                  .min(1)
+                  .max(100),
+                idempotencyKey: z.string().min(8).max(200),
+              },
+            },
+            async ({ sessionId, idempotencyKey, ...body }) =>
+              textResult(
+                await writeApi(
+                  `/v1/sessions/${encodeURIComponent(sessionId)}/promotions`,
+                  idempotencyKey,
+                  body,
+                ),
+              ),
+          );
+
+          '''
+          insert_before_tool(mcp, "akp_search", promotion_tool)
+          PY
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Format changed TypeScript
+        run: pnpm exec prettier --write packages/postgres/src/workspace-coordination.ts apps/api/src/routes/sessions.ts apps/mcp/src/server.ts
+      - name: Validate static contracts
+        run: pnpm check
+      - name: Commit implementation and consume workflows
+        shell: bash
+        run: |
+          git rm .github/workflows/p2-claim-release-mcp-parity.yml
+          git rm .github/workflows/p2-claim-release-mcp-parity-v2.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add db/migrations/040_workspace_claim_release.sql packages/postgres/src/workspace-coordination.ts apps/api/src/routes/sessions.ts apps/mcp/src/server.ts
+          git diff --cached --check
+          git commit -m "feat(p2): add fenced claim release and MCP parity"
+          git push origin HEAD:feat/v0.4-enterprise-context-workspace
