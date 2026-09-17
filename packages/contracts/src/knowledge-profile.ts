@@ -718,3 +718,372 @@ export const NEUTRAL_KNOWLEDGE_PROFILE_V1 = KnowledgeProfileV1.parse({
     staleAfterDays: 180,
   },
 });
+
+const softwareDeliveryKinds = [
+  "architecture-decision",
+  "architecture-rule",
+  "service-contract",
+  "runbook",
+  "incident-retrospective",
+] as const;
+
+const softwareDeliveryAllKinds = [
+  ...v03Kinds,
+  ...softwareDeliveryKinds,
+] as const;
+
+function softwareDeliveryRelation(
+  from: readonly string[],
+  to: readonly string[],
+  options: { symmetric?: boolean; evidenceRequired?: boolean } = {},
+) {
+  return {
+    from: [...from],
+    to: [...to],
+    symmetric: options.symmetric ?? false,
+    evidenceRequired: options.evidenceRequired ?? false,
+  };
+}
+
+const softwareDeliveryKindDefinition = (
+  fields: Record<string, unknown>,
+  reviewPolicy = "human-delivery-review",
+) => ({
+  fields: {
+    statement: { type: "markdown", required: true },
+    scope: { type: "string", required: true },
+    ...fields,
+  },
+  lifecycle: "delivery-flow",
+  evidencePolicy: "grounded-delivery",
+  reviewPolicy,
+  artifactContract: "markdown-v03",
+});
+
+/**
+ * First-party profile for software-delivery organizations.
+ *
+ * It *extends* the v0.3 baseline rather than replacing it. A team adopting this
+ * profile keeps every claim, rule and decision it already compiled — removing
+ * those kinds would be a RECOMPILE_REQUIRED change that the governance gate
+ * rightly blocks, and silently reinterpreting an existing corpus is exactly
+ * what the profile lifecycle exists to prevent.
+ *
+ * It declares the *knowledge* a delivery organization compiles, not the work it
+ * tracks. Tickets, pull requests, builds and deployments stay in the systems
+ * that own them; the workspace references those objects and links them to the
+ * decisions and rules compiled here. Declaring a pull request as a knowledge
+ * kind would make it a reviewed Markdown artifact in managed Git, which is the
+ * take-over of a system of record that the workspace boundary forbids.
+ *
+ * The decision kind carries the fields industrial studies report as routinely
+ * missing — drivers, alternatives considered, consequences, decision authority
+ * — as profile-enforced structure rather than template sections an author may
+ * silently leave empty. A model may propose them; it may never invent an
+ * alternative or a consensus no evidence supports, and it may never approve.
+ */
+export const SOFTWARE_DELIVERY_KNOWLEDGE_PROFILE_V1 = KnowledgeProfileV1.parse({
+  schemaVersion: 1,
+  profileId: "software-delivery",
+  version: "0.4.0",
+  displayName: "Software delivery workspace",
+  knowledgeKinds: {
+    ...v03KindDefinitions,
+    "architecture-decision": softwareDeliveryKindDefinition(
+      {
+        question: {
+          type: "markdown",
+          required: true,
+          description: "The problem the decision resolves.",
+        },
+        drivers: {
+          type: "markdown",
+          required: true,
+          description:
+            "Forces that constrained the decision: quality attributes, cost, compliance, deadlines.",
+        },
+        alternatives: {
+          type: "markdown",
+          required: true,
+          description:
+            "Options genuinely considered, with their trade-offs. Never fabricated to fill the field.",
+        },
+        consequences: {
+          type: "markdown",
+          required: true,
+          description: "What this decision commits the organization to.",
+        },
+        decisionAuthority: {
+          type: "string",
+          required: true,
+          description: "The human or role accountable for the decision.",
+        },
+        affectedSystems: { type: "string", required: false },
+        validFrom: { type: "datetime", required: false },
+        validTo: { type: "datetime", required: false },
+      },
+      "human-decision-review",
+    ),
+    "architecture-rule": softwareDeliveryKindDefinition({
+      rationale: { type: "markdown", required: true },
+      enforcement: {
+        type: "enum",
+        required: true,
+        enumValues: ["ADVISORY", "REVIEW_GATE", "AUTOMATED_CHECK"],
+        description:
+          "How the rule is actually enforced. ADVISORY is honest about a rule nothing checks.",
+      },
+    }),
+    "service-contract": softwareDeliveryKindDefinition({
+      owner: { type: "string", required: true },
+      stability: {
+        type: "enum",
+        required: true,
+        enumValues: ["EXPERIMENTAL", "STABLE", "DEPRECATED"],
+      },
+    }),
+    runbook: softwareDeliveryKindDefinition({
+      owner: { type: "string", required: true },
+      lastRehearsedAt: {
+        type: "datetime",
+        required: false,
+        description:
+          "When the procedure was last actually executed. An unrehearsed runbook is a hypothesis.",
+      },
+    }),
+    "incident-retrospective": softwareDeliveryKindDefinition({
+      contributingFactors: {
+        type: "markdown",
+        required: true,
+        description:
+          "Contributing factors, not a single root cause, and never a person.",
+      },
+      correctiveActions: { type: "markdown", required: false },
+    }),
+  },
+  relationTypes: {
+    // Every v0.3 relation keeps working, widened to reach the new kinds so a
+    // delivery artifact can participate in existing reasoning.
+    derives_from: softwareDeliveryRelation(
+      softwareDeliveryAllKinds,
+      softwareDeliveryAllKinds,
+    ),
+    supports: softwareDeliveryRelation(
+      softwareDeliveryAllKinds,
+      softwareDeliveryAllKinds,
+      { evidenceRequired: true },
+    ),
+    contradicts: softwareDeliveryRelation(
+      softwareDeliveryAllKinds,
+      softwareDeliveryAllKinds,
+      { symmetric: true },
+    ),
+    supersedes: softwareDeliveryRelation(
+      softwareDeliveryAllKinds,
+      softwareDeliveryAllKinds,
+    ),
+    implements: softwareDeliveryRelation(
+      softwareDeliveryAllKinds,
+      softwareDeliveryAllKinds,
+    ),
+    applies_to: softwareDeliveryRelation(
+      softwareDeliveryAllKinds,
+      softwareDeliveryAllKinds,
+    ),
+    example_of: softwareDeliveryRelation(
+      softwareDeliveryAllKinds,
+      softwareDeliveryAllKinds,
+    ),
+    counterexample_of: softwareDeliveryRelation(
+      softwareDeliveryAllKinds,
+      softwareDeliveryAllKinds,
+    ),
+    uses: softwareDeliveryRelation(
+      softwareDeliveryAllKinds,
+      softwareDeliveryAllKinds,
+    ),
+    requires: softwareDeliveryRelation(
+      softwareDeliveryAllKinds,
+      softwareDeliveryAllKinds,
+    ),
+    validated_by: softwareDeliveryRelation(
+      softwareDeliveryAllKinds,
+      softwareDeliveryAllKinds,
+    ),
+    produces: softwareDeliveryRelation(
+      softwareDeliveryAllKinds,
+      softwareDeliveryAllKinds,
+    ),
+    consumed_by: softwareDeliveryRelation(
+      softwareDeliveryAllKinds,
+      softwareDeliveryAllKinds,
+    ),
+    related_to: softwareDeliveryRelation(
+      softwareDeliveryAllKinds,
+      softwareDeliveryAllKinds,
+      { symmetric: true },
+    ),
+    // Delivery-specific direction. A decision that motivated a rule is a
+    // different claim from a rule that merely mentions a decision, so the
+    // direction is part of the type rather than a property on an edge.
+    motivates: softwareDeliveryRelation(
+      ["architecture-decision"],
+      ["architecture-rule", "service-contract"],
+    ),
+    constrains: softwareDeliveryRelation(
+      ["architecture-rule"],
+      ["service-contract", "runbook"],
+    ),
+    governs: softwareDeliveryRelation(
+      ["architecture-decision", "architecture-rule"],
+      ["service-contract"],
+    ),
+    remediated_by: softwareDeliveryRelation(
+      ["incident-retrospective"],
+      ["architecture-decision", "architecture-rule", "runbook"],
+    ),
+    operated_by: softwareDeliveryRelation(["service-contract"], ["runbook"]),
+  },
+  lifecycles: {
+    // The v0.3 lifecycle is preserved verbatim for the kinds that used it.
+    ...DEFAULT_KNOWLEDGE_PROFILE_V1.lifecycles,
+    "delivery-flow": {
+      states: [
+        "DRAFT",
+        "PROPOSED",
+        "ACTIVE",
+        "DISPUTED",
+        "SUPERSEDED",
+        "ARCHIVED",
+      ],
+      initial: "DRAFT",
+      terminal: ["ARCHIVED"],
+      transitions: [
+        // Proposing costs nothing and makes a candidate visible for
+        // consultation, which is how decisions are actually made.
+        v03Transition("DRAFT", "PROPOSED", [
+          "CONTRIBUTOR",
+          "REVIEWER",
+          "ARCHITECT",
+          "ADMIN",
+        ]),
+        // Reaching ACTIVE is publication, so it always costs evidence and a
+        // human reviewer. This is what stops an agent promoting its own
+        // proposal into an architectural fact.
+        v03Transition(
+          "PROPOSED",
+          "ACTIVE",
+          ["REVIEWER", "ARCHITECT", "ADMIN"],
+          {
+            requiredEvidence: true,
+            requiredReview: true,
+          },
+        ),
+        v03Transition(
+          "PROPOSED",
+          "ARCHIVED",
+          ["REVIEWER", "ARCHITECT", "ADMIN"],
+          { requiredReview: true },
+        ),
+        // Raising a dispute is deliberately cheap: contradicting evidence
+        // should surface immediately rather than wait for a review slot.
+        v03Transition(
+          "ACTIVE",
+          "DISPUTED",
+          ["CONTRIBUTOR", "REVIEWER", "ARCHITECT", "ADMIN"],
+          { requiredEvidence: true },
+        ),
+        v03Transition(
+          "DISPUTED",
+          "ACTIVE",
+          ["REVIEWER", "ARCHITECT", "ADMIN"],
+          {
+            requiredEvidence: true,
+            requiredReview: true,
+          },
+        ),
+        v03Transition(
+          "ACTIVE",
+          "SUPERSEDED",
+          ["REVIEWER", "ARCHITECT", "ADMIN"],
+          { requiredEvidence: true, requiredReview: true },
+        ),
+        v03Transition(
+          "DISPUTED",
+          "SUPERSEDED",
+          ["REVIEWER", "ARCHITECT", "ADMIN"],
+          { requiredEvidence: true, requiredReview: true },
+        ),
+        v03Transition("SUPERSEDED", "ARCHIVED", [
+          "REVIEWER",
+          "ARCHITECT",
+          "ADMIN",
+        ]),
+        v03Transition("ACTIVE", "ARCHIVED", ["ARCHITECT", "ADMIN"], {
+          requiredReview: true,
+        }),
+      ],
+    },
+  },
+  evidencePolicies: {
+    ...DEFAULT_KNOWLEDGE_PROFILE_V1.evidencePolicies,
+    "grounded-delivery": {
+      minimumEvidence: 1,
+      requireSourceLocator: true,
+      minimumTrust: "MACHINE_SUPPORTED",
+    },
+  },
+  reviewPolicies: {
+    ...DEFAULT_KNOWLEDGE_PROFILE_V1.reviewPolicies,
+    // AGENT_PROCESS appears in no allowedRoles list on purpose: an agent may
+    // draft and propose, and approval is not a role it can hold.
+    "human-delivery-review": {
+      required: true,
+      minimumApprovals: 1,
+      allowedRoles: ["REVIEWER", "ARCHITECT", "ADMIN"],
+    },
+    // Architecture decisions are consultative in practice, so a single
+    // approver is not enough.
+    "human-decision-review": {
+      required: true,
+      minimumApprovals: 2,
+      allowedRoles: ["REVIEWER", "ARCHITECT", "ADMIN"],
+    },
+  },
+  artifactContracts: { ...DEFAULT_KNOWLEDGE_PROFILE_V1.artifactContracts },
+  retrievalPolicy: {
+    allowedKinds: [...softwareDeliveryAllKinds],
+    relationAllowlist: [
+      ...DEFAULT_KNOWLEDGE_PROFILE_V1.retrievalPolicy.relationAllowlist,
+      "motivates",
+      "constrains",
+      "governs",
+      "remediated_by",
+      "operated_by",
+    ],
+    // Some questions are unsafe to answer without the constraints that bind
+    // them, so those kinds are retrieved whether or not they rank well.
+    mandatoryKindsByIntent: {
+      WORKFLOW_EXECUTION: ["architecture-rule", "runbook"],
+      IMPACT_ANALYSIS: ["architecture-decision", "architecture-rule"],
+      PROJECT_CODE: ["architecture-rule", "service-contract"],
+      COMPARISON: ["architecture-decision"],
+    },
+    progressiveDisclosure: ["L0", "L1", "L2", "L3"],
+  },
+  promotionPolicy: {
+    allowedTargetScopes: ["PROJECT", "TEAM", "ORGANIZATION"],
+    reviewRequired: true,
+  },
+  freshnessPolicy: {
+    sourceChangeAction: "REVIEW_REQUIRED",
+    staleAfterDays: 365,
+  },
+  connectorPolicy: {
+    // A delivery workspace projects systems of record it does not own, so a
+    // connector that cannot reproduce the source's permissions is not treated
+    // as equivalent to one that can.
+    allowedAccessModes: ["MIRROR_INDEXED", "REFERENCE_LIVE"],
+    requirePermissionFidelity: true,
+  },
+});

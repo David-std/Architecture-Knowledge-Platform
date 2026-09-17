@@ -660,3 +660,286 @@ export async function rollbackKnowledgeProfile(
     alreadyActive,
   };
 }
+
+export interface AdoptKnowledgeProfileInput {
+  spaceId: string;
+  vaultId: string;
+  revisionId: string;
+  dryRunId: string;
+  expectedProfileHash: string;
+  expectedCorpusRevision: string;
+  actorId: string;
+  traceId: string;
+}
+
+export interface AdoptedKnowledgeProfile {
+  revision: KnowledgeProfileRevisionRecord;
+  previousProfileId: string | null;
+  previousRevisionId: string | null;
+  corpusRevision: string;
+  dryRunId: string;
+}
+
+interface CompatibilityReportIssue {
+  code?: string;
+  path?: string;
+  usageCount?: number;
+  compatibilityClass?: string;
+  detail?: string;
+}
+
+/**
+ * Decide whether a corpus can move to a differently-identified profile.
+ *
+ * Activation is the wrong operation for this: it governs successive revisions
+ * of one profile, and it treats a changed profile id as UNSAFE precisely so a
+ * revision cannot smuggle in a new identity. Adoption is the explicit,
+ * separately-authorized counterpart.
+ *
+ * What makes an adoption safe is not that the change is small. It is that no
+ * compiled knowledge is reinterpreted by it: every incompatibility the
+ * classifier found must apply to zero existing documents. A vault that has
+ * never compiled a `rule` loses nothing when `rule` disappears; a vault with
+ * four hundred of them is being silently rewritten, and that is refused.
+ */
+function adoptionBlockers(
+  report: unknown,
+): { code: string; path: string; usageCount: number }[] {
+  const issues = Array.isArray((report as { issues?: unknown })?.issues)
+    ? ((report as { issues: CompatibilityReportIssue[] }).issues ?? [])
+    : [];
+  return issues
+    .filter((issue) => {
+      // Changing the profile id is the definition of adoption, not a reason
+      // to refuse it.
+      if (issue.code === "PROFILE_ID_CHANGED") return false;
+      return (issue.usageCount ?? 0) > 0;
+    })
+    .map((issue) => ({
+      code: String(issue.code ?? "UNKNOWN"),
+      path: String(issue.path ?? ""),
+      usageCount: Number(issue.usageCount ?? 0),
+    }));
+}
+
+/**
+ * Bind a vault to a different KnowledgeProfile.
+ *
+ * Shares activation's concurrency contract: one serializable transaction, the
+ * corpus fingerprint pinned across the dry run, and the vault row locked, so a
+ * document written while an operator was deciding invalidates the decision
+ * rather than slipping underneath it.
+ */
+export async function adoptKnowledgeProfile(
+  db: Postgres,
+  input: AdoptKnowledgeProfileInput,
+): Promise<AdoptedKnowledgeProfile> {
+  const client = await db.pool.connect();
+  let previousRevisionId: string | null = null;
+  let previousProfileId: string | null = null;
+  try {
+    await client.query("begin isolation level serializable");
+    const vaultResult = await client.query<{
+      active_revision_id: string | null;
+      corpus_revision: string;
+    }>(
+      `
+      select v.active_knowledge_profile_revision_id active_revision_id,
+             coalesce(r.corpus_revision,v.current_revision,'unknown') corpus_revision
+        from vaults v
+        left join vault_index_revisions r
+          on r.space_id=v.space_id and r.vault_id=v.id
+       where v.space_id=$1 and v.id=$2
+       for update of v
+      `,
+      [input.spaceId, input.vaultId],
+    );
+    const vault = vaultResult.rows[0];
+    if (!vault) throw new Error("VAULT_NOT_FOUND_OR_SCOPE_MISMATCH");
+    if (vault.corpus_revision !== input.expectedCorpusRevision) {
+      throw new Error("CONTEXT_REVISION_CHANGED");
+    }
+    previousRevisionId = vault.active_revision_id;
+
+    const fingerprintResult = await client.query<{ fingerprint: string }>(
+      `
+      select encode(digest(coalesce(string_agg(
+        id::text||':'||coalesce(content_hash,'')||':'||current_revision,
+        '|' order by id
+      ),''),'sha256'),'hex') fingerprint
+        from knowledge_documents where space_id=$1 and vault_id=$2
+      `,
+      [input.spaceId, input.vaultId],
+    );
+    const currentFingerprint = String(
+      fingerprintResult.rows[0]?.fingerprint ?? "",
+    );
+
+    const candidateResult = await client.query<{
+      id: string;
+      profile_id: string;
+      profile_hash: string;
+      status: KnowledgeProfileRevisionStatus;
+    }>(
+      `
+      select id,profile_id,profile_hash,status
+        from knowledge_profile_revisions
+       where id=$3 and space_id=$1 and vault_id=$2
+       for update
+      `,
+      [input.spaceId, input.vaultId, input.revisionId],
+    );
+    const candidate = candidateResult.rows[0];
+    if (!candidate) throw new Error("KNOWLEDGE_PROFILE_REVISION_NOT_FOUND");
+    if (candidate.profile_hash !== input.expectedProfileHash) {
+      throw new Error("CONTEXT_REVISION_CHANGED");
+    }
+
+    const dryRunResult = await client.query<{
+      id: string;
+      candidate_hash: string;
+      corpus_revision: string;
+      report: unknown;
+      corpus_fingerprint_before: string;
+      corpus_fingerprint_after: string;
+    }>(
+      `
+      select id,candidate_hash,corpus_revision,report,
+             corpus_fingerprint_before,corpus_fingerprint_after
+        from schema_dry_runs
+       where id=$3 and space_id=$1 and vault_id=$2 and profile_revision_id=$4
+       for share
+      `,
+      [input.spaceId, input.vaultId, input.dryRunId, input.revisionId],
+    );
+    const dryRun = dryRunResult.rows[0];
+    if (!dryRun) throw new Error("KNOWLEDGE_PROFILE_DRY_RUN_REQUIRED");
+    if (
+      dryRun.candidate_hash !== candidate.profile_hash ||
+      dryRun.corpus_revision !== input.expectedCorpusRevision ||
+      dryRun.corpus_fingerprint_before !== dryRun.corpus_fingerprint_after ||
+      dryRun.corpus_fingerprint_after !== currentFingerprint
+    ) {
+      throw new Error("CONTEXT_REVISION_CHANGED");
+    }
+
+    if (previousRevisionId) {
+      const previous = await client.query<{
+        profile_id: string;
+        status: string;
+      }>(
+        `
+        select profile_id,status from knowledge_profile_revisions
+         where id=$3 and space_id=$1 and vault_id=$2
+         for update
+        `,
+        [input.spaceId, input.vaultId, previousRevisionId],
+      );
+      const previousRow = previous.rows[0];
+      if (previousRow?.status !== "ACTIVE") {
+        throw new Error("ACTIVE_KNOWLEDGE_PROFILE_BINDING_INVALID");
+      }
+      previousProfileId = previousRow.profile_id;
+      if (previousProfileId === candidate.profile_id) {
+        // Same identity: this is a revision, and revisions go through the
+        // activation gate that checks supersession and compatibility.
+        throw new Error("KNOWLEDGE_PROFILE_ADOPTION_NOT_REQUIRED");
+      }
+    }
+
+    const blockers = adoptionBlockers(dryRun.report);
+    if (blockers.length) {
+      const error = new Error("KNOWLEDGE_PROFILE_ADOPTION_WOULD_REINTERPRET");
+      (error as Error & { blockers?: unknown }).blockers = blockers;
+      throw error;
+    }
+
+    // Supersede before activating. A partial unique index allows one ACTIVE
+    // revision per vault, so activating first would collide with the outgoing
+    // profile instead of replacing it.
+    if (previousRevisionId) {
+      await client.query(
+        `
+        update knowledge_profile_revisions
+           set status='SUPERSEDED',superseded_at=now(),updated_at=now()
+         where id=$3 and space_id=$1 and vault_id=$2 and status='ACTIVE'
+        `,
+        [input.spaceId, input.vaultId, previousRevisionId],
+      );
+    }
+    const adopted = await client.query(
+      `
+      update knowledge_profile_revisions
+         set status='ACTIVE',activated_at=now(),updated_at=now()
+       where id=$3 and space_id=$1 and vault_id=$2
+         and status in ('VALIDATED','REVIEW_REQUIRED')
+       returning id
+      `,
+      [input.spaceId, input.vaultId, input.revisionId],
+    );
+    if (!adopted.rowCount) {
+      throw new Error("KNOWLEDGE_PROFILE_ACTIVATION_CONFLICT");
+    }
+    await client.query(
+      `
+      update vaults
+         set active_knowledge_profile_revision_id=$3
+       where space_id=$1 and id=$2
+      `,
+      [input.spaceId, input.vaultId, input.revisionId],
+    );
+    const audit = await client.query(
+      `
+      insert into audit_events(
+        organization_id,space_id,actor_id,action,resource_type,resource_id,
+        metadata,trace_id,vault_id
+      )
+      select s.organization_id,s.id,$3,'schema.profile_adopt',
+             'knowledge_profile_revision',$4,$5::jsonb,$6,$2
+        from spaces s where s.id=$1
+      returning id
+      `,
+      [
+        input.spaceId,
+        input.vaultId,
+        input.actorId,
+        input.revisionId,
+        JSON.stringify({
+          vaultId: input.vaultId,
+          profileRevisionId: input.revisionId,
+          profileId: candidate.profile_id,
+          previousProfileId,
+          previousRevisionId,
+          profileHash: candidate.profile_hash,
+          corpusRevision: input.expectedCorpusRevision,
+          dryRunId: input.dryRunId,
+        }),
+        input.traceId,
+      ],
+    );
+    if (!audit.rowCount) throw new Error("AUDIT_ORGANIZATION_UNRESOLVED");
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  const revision = await getKnowledgeProfileRevision(
+    db,
+    input.spaceId,
+    input.vaultId,
+    input.revisionId,
+  );
+  if (!revision || revision.status !== "ACTIVE") {
+    throw new Error("ACTIVE_KNOWLEDGE_PROFILE_BINDING_INVALID");
+  }
+  return {
+    revision,
+    previousProfileId,
+    previousRevisionId,
+    corpusRevision: input.expectedCorpusRevision,
+    dryRunId: input.dryRunId,
+  };
+}

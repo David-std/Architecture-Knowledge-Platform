@@ -1418,6 +1418,64 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "409": { $ref: "#/components/responses/Conflict" }
+  /v1/schema/adopt:
+    post:
+      tags: [Governance]
+      operationId: adoptKnowledgeProfile
+      x-akp-permission: admin
+      x-akp-requires-unrestricted-space: true
+      x-akp-requires-vault-scope: true
+      description: >
+        Binds a vault to a differently-identified KnowledgeProfile. Activation
+        governs successive revisions of one profile and treats a changed
+        profile id as UNSAFE, so moving between profiles is this separate,
+        separately-authorized act. It is permitted only when no compiled
+        knowledge would be reinterpreted: every incompatibility the classifier
+        found must apply to zero existing documents. Otherwise it refuses with
+        the blocking kinds and their usage counts.
+      parameters:
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                [
+                  spaceId,
+                  vaultId,
+                  profileRevisionId,
+                  dryRunId,
+                  expectedProfileHash,
+                  expectedCorpusRevision,
+                ]
+              properties:
+                spaceId: { type: string, format: uuid }
+                vaultId: { type: string, format: uuid }
+                profileRevisionId: { type: string, format: uuid }
+                dryRunId: { type: string, format: uuid }
+                expectedProfileHash: { type: string, pattern: "^[a-f0-9]{64}$" }
+                expectedCorpusRevision: { type: string, minLength: 1 }
+      responses:
+        "200":
+          description: The vault now runs the adopted profile.
+          content:
+            application/json:
+              schema: { type: object }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: >-
+            The adoption was refused. KNOWLEDGE_PROFILE_ADOPTION_WOULD_REINTERPRET
+            carries the blocking kinds and how many documents use each.
+          content:
+            application/json:
+              schema: { type: object }
+
   /v1/schema/activate:
     post:
       tags: [Governance]

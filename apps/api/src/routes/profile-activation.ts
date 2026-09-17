@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import {
   activateKnowledgeProfile,
+  adoptKnowledgeProfile,
   rollbackKnowledgeProfile,
   resolveAuthorizedVaultScope,
   type Postgres,
@@ -44,6 +45,8 @@ function activationErrorStatus(code: string): number {
     code === "KNOWLEDGE_PROFILE_NOT_VALIDATED" ||
     code === "KNOWLEDGE_PROFILE_SUPERSESSION_REQUIRED" ||
     code === "KNOWLEDGE_PROFILE_ACTIVATION_CONFLICT" ||
+    code === "KNOWLEDGE_PROFILE_ADOPTION_WOULD_REINTERPRET" ||
+    code === "KNOWLEDGE_PROFILE_ADOPTION_NOT_REQUIRED" ||
     code === "KNOWLEDGE_PROFILE_ROLLBACK_TARGET_INVALID" ||
     code === "KNOWLEDGE_PROFILE_ROLLBACK_TARGET_NOT_PREDECESSOR" ||
     code === "KNOWLEDGE_PROFILE_ROLLBACK_CONFLICT" ||
@@ -156,6 +159,83 @@ export function registerProfileActivationRoutes(
           error instanceof Error ? error.message : "PROFILE_ACTIVATION_FAILED";
         const status = activationErrorStatus(code);
         if (status < 500) return reply.code(status).send({ code });
+        throw error;
+      }
+    },
+  );
+
+  // Adoption is deliberately a different endpoint from activation. Activation
+  // governs successive revisions of one profile and treats a changed profile id
+  // as UNSAFE, which is what stops a revision smuggling in a new identity.
+  // Moving a vault to a different profile is a separate, separately-authorized
+  // act, and it is permitted only when no compiled knowledge is reinterpreted.
+  app.post<{ Body: ProfileActivationBody }>(
+    "/v1/schema/adopt",
+    { preHandler: requirePermission("admin") },
+    async (request, reply) => {
+      const actor = actorOf(request);
+      const body = request.body;
+      if (
+        !body?.spaceId ||
+        !body.vaultId ||
+        !body.profileRevisionId ||
+        !body.dryRunId ||
+        !body.expectedProfileHash ||
+        !body.expectedCorpusRevision
+      ) {
+        return reply
+          .code(400)
+          .send({ code: "PROFILE_ADOPTION_INPUT_REQUIRED" });
+      }
+      if (!/^[a-f0-9]{64}$/.test(body.expectedProfileHash)) {
+        return reply.code(400).send({ code: "INVALID_PROFILE_HASH" });
+      }
+      const authorization = await authorizeProfileMutation(db, {
+        actor,
+        spaceId: body.spaceId,
+        vaultId: body.vaultId,
+      });
+      if (!authorization.ok) {
+        return reply
+          .code(authorization.status)
+          .send({ code: authorization.code });
+      }
+      if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
+
+      try {
+        const adopted = await adoptKnowledgeProfile(db, {
+          spaceId: body.spaceId,
+          vaultId: body.vaultId,
+          revisionId: body.profileRevisionId,
+          dryRunId: body.dryRunId,
+          expectedProfileHash: body.expectedProfileHash,
+          expectedCorpusRevision: body.expectedCorpusRevision,
+          actorId: actor.id,
+          traceId: request.id,
+        });
+        return {
+          profileRevisionId: adopted.revision.id,
+          profileId: adopted.revision.profileId,
+          version: adopted.revision.version,
+          profileHash: adopted.revision.profileHash,
+          status: adopted.revision.status,
+          previousProfileId: adopted.previousProfileId,
+          previousRevisionId: adopted.previousRevisionId,
+          corpusRevision: adopted.corpusRevision,
+          dryRunId: adopted.dryRunId,
+        };
+      } catch (error) {
+        const code =
+          error instanceof Error ? error.message : "PROFILE_ADOPTION_FAILED";
+        const status = activationErrorStatus(code);
+        if (status < 500) {
+          // The refusal names the documents that would have been reinterpreted,
+          // because "unsafe" without that list is not actionable.
+          const blockers = (error as Error & { blockers?: unknown }).blockers;
+          return reply
+            .code(status)
+            .send(blockers ? { code, blockers } : { code });
+        }
         throw error;
       }
     },
