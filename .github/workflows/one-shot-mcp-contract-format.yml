@@ -1,10 +1,13 @@
 name: one-shot-mcp-contract-format
+
 on:
   push:
     branches:
       - feat/v0.4-enterprise-context-workspace
+
 permissions:
   contents: write
+
 jobs:
   patch:
     runs-on: ubuntu-latest
@@ -13,8 +16,18 @@ jobs:
         with:
           ref: feat/v0.4-enterprise-context-workspace
           fetch-depth: 0
-      - name: Normalize contract block
-        run: echo 'ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCmltcG9ydCByZQoKcGF0aCA9IFBhdGgoImNvbnRyYWN0cy9tY3AtdG9vbHMuanNvbiIpCnRleHQgPSBwYXRoLnJlYWRfdGV4dCgpCnJlcGxhY2VtZW50ID0gIiIiICAgIHsKICAgICAgIm5hbWUiOiAiYWtwX2dldF9jdXJyZW50X2lkZW50aXR5IiwKICAgICAgInZlcnNpb24iOiAiMS4wLjAiLAogICAgICAicGVybWlzc2lvbiI6ICJrbm93bGVkZ2U6cmVhZCIsCiAgICAgICJtdXRhdGVzIjogZmFsc2UsCiAgICAgICJpbnB1dFNjaGVtYSI6IHsKICAgICAgICAidHlwZSI6ICJvYmplY3QiLAogICAgICAgICJhZGRpdGlvbmFsUHJvcGVydGllcyI6IGZhbHNlLAogICAgICAgICJwcm9wZXJ0aWVzIjoge30KICAgICAgfSwKICAgICAgImh0dHAiOiB7ICJtZXRob2QiOiAiR0VUIiwgInBhdGgiOiAiL3YxL2F1dGgvc2Vzc2lvbiIgfQogICAgfSwiIiIKcGF0dGVybiA9IHJlLmNvbXBpbGUoCiAgICByJyAgICBce1xuXHMrIm5hbWUiOiAiYWtwX2dldF9jdXJyZW50X2lkZW50aXR5IixcbicKICAgIHInXHMrInZlcnNpb24iOiAiMVwuMFwuMCIsXG4nCiAgICByJ1xzKyJwZXJtaXNzaW9uIjogImtub3dsZWRnZTpyZWFkIixcbicKICAgIHInXHMrIm11dGF0ZXMiOiBmYWxzZSxcbicKICAgIHInXHMrImlucHV0U2NoZW1hIjogXHtcbicKICAgIHInXHMrInR5cGUiOiAib2JqZWN0IixcbicKICAgIHInXHMrImFkZGl0aW9uYWxQcm9wZXJ0aWVzIjogZmFsc2UsXG4nCiAgICByJ1xzKyJwcm9wZXJ0aWVzIjogXHtcfVxuJwogICAgcidccytcfSxcbicKICAgIHInXHMrImh0dHAiOiBceyAibWV0aG9kIjogIkdFVCIsICJwYXRoIjogIi92MS9hdXRoL3Nlc3Npb24iIFx9XG4nCiAgICByJ1xzK1x9LCcKKQp1cGRhdGVkLCBjb3VudCA9IHBhdHRlcm4uc3VibihyZXBsYWNlbWVudCwgdGV4dCwgY291bnQ9MSkKaWYgY291bnQgIT0gMToKICAgIHJhaXNlIFN5c3RlbUV4aXQoZiJleHBlY3RlZCBvbmUgaWRlbnRpdHkgY29udHJhY3QgYmxvY2ssIHJlcGxhY2VkIHtjb3VudH0iKQpwYXRoLndyaXRlX3RleHQodXBkYXRlZCkK' | base64 -d | python
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.5
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Format MCP contract
+        run: pnpm exec prettier --write contracts/mcp-tools.json
       - name: Commit normalized contract
         run: |
           git config user.name "github-actions[bot]"
