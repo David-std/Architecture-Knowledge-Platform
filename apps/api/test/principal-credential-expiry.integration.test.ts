@@ -112,7 +112,9 @@ run("P2 principal credential expiry", () => {
     ]);
     await db.pool.query("delete from memberships where user_id=$1", [userId]);
     await db.pool.query("delete from users where id=$1", [userId]);
-    await db.pool.query("update vaults set enabled=false where id=$1", [vaultId]);
+    await db.pool.query("update vaults set enabled=false where id=$1", [
+      vaultId,
+    ]);
     await db.close();
   });
 
@@ -122,7 +124,8 @@ run("P2 principal credential expiry", () => {
       url: "/v1/sessions",
       headers: humanHeaders,
       payload: {
-        purpose: "Prove principal credential expiry is enforced on every request",
+        purpose:
+          "Prove principal credential expiry is enforced on every request",
         contextBudget: 2048,
         spaceId,
         vaultId,
