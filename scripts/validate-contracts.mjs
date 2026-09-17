@@ -1,6 +1,7 @@
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import YAML from "yaml";
+import * as ts from "typescript";
 
 const root = process.cwd();
 const failures = [];
@@ -35,6 +36,54 @@ function hasIdempotencyKey(operation) {
   return (operation?.parameters ?? []).some(
     (parameter) => parameter?.$ref === "#/components/parameters/IdempotencyKey",
   );
+}
+
+const HTTP_ROUTE_METHODS = new Set(["get", "post", "put", "delete", "patch"]);
+
+function normalizeFastifyPath(routePath) {
+  return routePath.replace(/:([A-Za-z0-9_]+)/g, "{$1}");
+}
+
+function registeredFastifyRoutes(source, fileName) {
+  const sourceFile = ts.createSourceFile(
+    fileName,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
+  const routes = [];
+
+  function visit(node) {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      ts.isIdentifier(node.expression.expression) &&
+      node.expression.expression.text === "app"
+    ) {
+      const method = node.expression.name.text.toLowerCase();
+      if (HTTP_ROUTE_METHODS.has(method)) {
+        const routeArgument = node.arguments[0];
+        if (routeArgument && ts.isStringLiteralLike(routeArgument)) {
+          routes.push({
+            method,
+            path: normalizeFastifyPath(routeArgument.text),
+          });
+        } else {
+          const { line } = sourceFile.getLineAndCharacterOfPosition(
+            node.getStart(sourceFile),
+          );
+          failures.push(
+            `${fileName}:${line + 1}: Fastify ${method.toUpperCase()} route path must be a static string for contract validation`,
+          );
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+
+  visit(sourceFile);
+  return routes;
 }
 
 const openapi = await yaml("contracts/openapi.yaml");
@@ -383,6 +432,48 @@ if (
   failures.push(
     "contracts/mcp-tools.json: one-time agent credential issuance must remain outside MCP",
   );
+}
+
+// HTTP has the same drift risk as MCP: a Fastify route that is reachable but
+// absent from OpenAPI bypasses the reviewed/versioned contract surface. Parse
+// TypeScript rather than regex so generic route signatures and formatting do
+// not create blind spots.
+const declaredHttpRoutes = new Set();
+for (const [routePath, pathItem] of Object.entries(openapi?.paths ?? {})) {
+  for (const method of HTTP_ROUTE_METHODS) {
+    if (pathItem?.[method]) {
+      declaredHttpRoutes.add(`${method.toUpperCase()} ${routePath}`);
+    }
+  }
+}
+
+const routeDirectory = path.join(root, "apps/api/src/routes");
+const routeEntries = await readdir(routeDirectory, { recursive: true });
+const httpSourceFiles = [
+  path.join(root, "apps/api/src/server.ts"),
+  ...routeEntries
+    .filter((entry) => entry.endsWith(".ts"))
+    .map((entry) => path.join(routeDirectory, entry)),
+];
+const registeredHttpRouteKeys = new Set();
+for (const sourcePath of httpSourceFiles) {
+  const source = await readFile(sourcePath, "utf8");
+  const displayPath = path.relative(root, sourcePath).split(path.sep).join("/");
+  for (const route of registeredFastifyRoutes(source, displayPath)) {
+    registeredHttpRouteKeys.add(
+      `${route.method.toUpperCase()} ${route.path}`,
+    );
+  }
+}
+if (registeredHttpRouteKeys.size === 0) {
+  failures.push(
+    "apps/api/src: no Fastify HTTP routes found; the OpenAPI parity check cannot run",
+  );
+}
+for (const route of registeredHttpRouteKeys) {
+  if (!declaredHttpRoutes.has(route)) {
+    failures.push(`contracts/openapi.yaml: undeclared HTTP route ${route}`);
+  }
 }
 
 console.log(
