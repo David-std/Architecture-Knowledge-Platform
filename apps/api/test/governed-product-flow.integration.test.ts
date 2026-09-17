@@ -201,6 +201,52 @@ describe("P2 governed product flow", () => {
     expect(overlap.statusCode).toBe(409);
     expect(overlap.json()).toMatchObject({ code: "WORK_CLAIM_OVERLAP" });
 
+    // A finishes its compiler work and explicitly releases the scope instead of
+    // waiting for the lease to lapse. That release, not a timeout, is what
+    // unblocks the overlapping claim B was denied above.
+    const compilerRelease = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/claims/release`,
+      headers: actorAHeaders,
+      payload: { workKey: "packages/compiler/**", fencingToken: 1 },
+    });
+    expect(compilerRelease.statusCode).toBe(200);
+    expect(compilerRelease.json()).toMatchObject({
+      ownerId: actorAId,
+      workKey: "packages/compiler/**",
+      status: "RELEASED",
+      fencingToken: 2,
+    });
+
+    const overlapAfterRelease = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/claims`,
+      headers: actorBHeaders,
+      payload: { workKey: "packages/compiler/src/**", leaseSeconds: 120 },
+    });
+    expect(overlapAfterRelease.statusCode).toBe(201);
+    expect(overlapAfterRelease.json()).toMatchObject({
+      ownerId: actorBId,
+      workKey: "packages/compiler/src/**",
+      status: "ACTIVE",
+    });
+
+    // A cannot keep writing under the fence it just gave up.
+    const staleCompilerWriter = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/claims/heartbeat`,
+      headers: actorAHeaders,
+      payload: {
+        workKey: "packages/compiler/**",
+        fencingToken: 1,
+        leaseSeconds: 120,
+      },
+    });
+    expect(staleCompilerWriter.statusCode).toBe(409);
+    expect(staleCompilerWriter.json()).toMatchObject({
+      code: "WORK_CLAIM_FENCE_STALE",
+    });
+
     const promotableClaim = await app.inject({
       method: "POST",
       url: `/v1/sessions/${sessionId}/claims`,
@@ -252,7 +298,9 @@ describe("P2 governed product flow", () => {
       (resumed.json() as { events: Array<{ event_type: string }> }).events.map(
         (event) => event.event_type,
       ),
-    ).toEqual(expect.arrayContaining(["FINDING", "CLAIM_HANDOFF"]));
+    ).toEqual(
+      expect.arrayContaining(["FINDING", "CLAIM_RELEASED", "CLAIM_HANDOFF"]),
+    );
 
     const promotion = await app.inject({
       method: "POST",

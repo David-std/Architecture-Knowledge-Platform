@@ -26,6 +26,7 @@ const outsiderHeaders = { authorization: `Bearer ${outsiderToken}` };
 let app: FastifyInstance;
 let db: Postgres;
 let sessionId = "";
+let releaseSessionId = "";
 
 async function insertToken(
   userId: string,
@@ -123,14 +124,12 @@ beforeAll(async () => {
 afterAll(async () => {
   if (app) await app.close();
   if (db) {
-    if (sessionId) {
+    for (const id of [sessionId, releaseSessionId].filter(Boolean)) {
       await db.pool.query(
         "delete from audit_events where resource_type='agent_session' and resource_id=$1",
-        [sessionId],
+        [id],
       );
-      await db.pool.query("delete from agent_sessions where id=$1", [
-        sessionId,
-      ]);
+      await db.pool.query("delete from agent_sessions where id=$1", [id]);
     }
     await db.pool.query(
       "delete from api_tokens where token_hash=any($1::text[])",
@@ -800,5 +799,326 @@ describe("workspace coordination integration", () => {
         ).rows[0]?.count ?? 0,
       ),
     ).toBeGreaterThan(0);
+  });
+
+  it("releases an owned claim with an advancing fence that locks out stale writers and frees the scope", async () => {
+    const canonicalBefore = await db.pool.query<{ documents: number }>(
+      `select
+         (select count(*)::int from knowledge_documents where vault_id=$1) documents`,
+      [vaultId],
+    );
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/sessions",
+      headers: actorAHeaders,
+      payload: {
+        spaceId,
+        vaultId,
+        purpose: "Prove explicit claim release advances the durable fence",
+        contextBudget: 4096,
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    releaseSessionId = (created.json() as { id: string }).id;
+    const joined = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${releaseSessionId}/participants`,
+      headers: actorAHeaders,
+      payload: { userId: actorBId },
+    });
+    expect(joined.statusCode).toBe(201);
+
+    const workKey = "release:fenced-scope";
+    const acquired = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${releaseSessionId}/claims`,
+      headers: actorAHeaders,
+      payload: { workKey, leaseSeconds: 120 },
+    });
+    expect(acquired.statusCode).toBe(201);
+    expect(acquired.json()).toMatchObject({
+      ownerId: actorAId,
+      workKey,
+      status: "ACTIVE",
+      fencingToken: 1,
+    });
+
+    // A malformed scope is rejected at the boundary, before the claim is touched.
+    const malformedScope = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${releaseSessionId}/claims/release`,
+      headers: actorAHeaders,
+      payload: { workKey: "packages/**/compiler", fencingToken: 1 },
+    });
+    expect(malformedScope.statusCode).toBe(400);
+    expect(malformedScope.json()).toMatchObject({ code: "INVALID_WORK_KEY" });
+
+    const malformedFence = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${releaseSessionId}/claims/release`,
+      headers: actorAHeaders,
+      payload: { workKey, fencingToken: 0 },
+    });
+    expect(malformedFence.statusCode).toBe(400);
+    expect(malformedFence.json()).toMatchObject({
+      code: "INVALID_FENCING_TOKEN",
+    });
+
+    // A participant who does not own the claim cannot release it out from under
+    // the owner, even with the correct current fence.
+    const nonOwnerRelease = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${releaseSessionId}/claims/release`,
+      headers: actorBHeaders,
+      payload: { workKey, fencingToken: 1 },
+    });
+    expect(nonOwnerRelease.statusCode).toBe(409);
+    expect(nonOwnerRelease.json()).toMatchObject({
+      code: "WORK_CLAIM_FENCE_STALE",
+    });
+
+    // A non-participant cannot even learn that the session exists.
+    const outsiderRelease = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${releaseSessionId}/claims/release`,
+      headers: outsiderHeaders,
+      payload: { workKey, fencingToken: 1 },
+    });
+    expect(outsiderRelease.statusCode).toBe(404);
+    expect(outsiderRelease.json()).toMatchObject({ code: "SESSION_NOT_FOUND" });
+
+    const wrongFence = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${releaseSessionId}/claims/release`,
+      headers: actorAHeaders,
+      payload: { workKey, fencingToken: 99 },
+    });
+    expect(wrongFence.statusCode).toBe(409);
+    expect(wrongFence.json()).toMatchObject({
+      code: "WORK_CLAIM_FENCE_STALE",
+    });
+
+    // None of the rejected attempts disturbed the live claim.
+    const stillOwnedByA = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${releaseSessionId}/claims/heartbeat`,
+      headers: actorAHeaders,
+      payload: { workKey, fencingToken: 1, leaseSeconds: 120 },
+    });
+    expect(stillOwnedByA.statusCode).toBe(200);
+    expect(stillOwnedByA.json()).toMatchObject({
+      ownerId: actorAId,
+      status: "ACTIVE",
+      fencingToken: 1,
+    });
+
+    const released = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${releaseSessionId}/claims/release`,
+      headers: actorAHeaders,
+      payload: { workKey, fencingToken: 1 },
+    });
+    expect(released.statusCode).toBe(200);
+    const releasedClaim = released.json() as {
+      id: string;
+      status: string;
+      fencingToken: number;
+      leaseExpiresAt: string;
+    };
+    expect(releasedClaim).toMatchObject({
+      ownerId: actorAId,
+      workKey,
+      status: "RELEASED",
+      fencingToken: 2,
+    });
+    expect(
+      new Date(releasedClaim.leaseExpiresAt).getTime(),
+    ).toBeLessThanOrEqual(Date.now() + 1000);
+
+    // Every writer still holding the pre-release fence is locked out, whichever
+    // coordination operation it attempts.
+    for (const stale of [
+      {
+        url: `/v1/sessions/${releaseSessionId}/claims/heartbeat`,
+        payload: { workKey, fencingToken: 1, leaseSeconds: 120 },
+      },
+      {
+        url: `/v1/sessions/${releaseSessionId}/claims/handoff`,
+        payload: {
+          workKey,
+          toUserId: actorBId,
+          fencingToken: 1,
+          leaseSeconds: 120,
+        },
+      },
+      {
+        url: `/v1/sessions/${releaseSessionId}/claims/release`,
+        payload: { workKey, fencingToken: 1 },
+      },
+    ]) {
+      const response = await app.inject({
+        method: "POST",
+        url: stale.url,
+        headers: actorAHeaders,
+        payload: stale.payload,
+      });
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toMatchObject({
+        code: "WORK_CLAIM_FENCE_STALE",
+      });
+    }
+
+    // Release is terminal for this generation: not even the advanced fence can
+    // resurrect the claim, because it is no longer ACTIVE.
+    const releaseAgainWithNewFence = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${releaseSessionId}/claims/release`,
+      headers: actorAHeaders,
+      payload: { workKey, fencingToken: 2 },
+    });
+    expect(releaseAgainWithNewFence.statusCode).toBe(409);
+    expect(releaseAgainWithNewFence.json()).toMatchObject({
+      code: "WORK_CLAIM_FENCE_STALE",
+    });
+
+    const heartbeatWithNewFence = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${releaseSessionId}/claims/heartbeat`,
+      headers: actorAHeaders,
+      payload: { workKey, fencingToken: 2, leaseSeconds: 120 },
+    });
+    expect(heartbeatWithNewFence.statusCode).toBe(409);
+    expect(heartbeatWithNewFence.json()).toMatchObject({
+      code: "WORK_CLAIM_FENCE_STALE",
+    });
+
+    // The scope is genuinely free: another actor takes it without waiting for the
+    // original lease to expire, and receives a strictly higher generation.
+    const reacquired = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${releaseSessionId}/claims`,
+      headers: actorBHeaders,
+      payload: { workKey, leaseSeconds: 120 },
+    });
+    expect(reacquired.statusCode).toBe(201);
+    const reacquiredClaim = reacquired.json() as {
+      id: string;
+      fencingToken: number;
+    };
+    expect(reacquiredClaim).toMatchObject({
+      ownerId: actorBId,
+      workKey,
+      status: "ACTIVE",
+    });
+    expect(reacquiredClaim.fencingToken).toBeGreaterThan(
+      releasedClaim.fencingToken,
+    );
+    expect(reacquiredClaim.id).toBe(releasedClaim.id);
+
+    const staleAfterReacquire = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${releaseSessionId}/claims/heartbeat`,
+      headers: actorAHeaders,
+      payload: { workKey, fencingToken: 1, leaseSeconds: 120 },
+    });
+    expect(staleAfterReacquire.statusCode).toBe(409);
+    expect(staleAfterReacquire.json()).toMatchObject({
+      code: "WORK_CLAIM_FENCE_STALE",
+    });
+
+    const state = await app.inject({
+      method: "GET",
+      url: `/v1/sessions/${releaseSessionId}/state`,
+      headers: actorAHeaders,
+    });
+    expect(state.statusCode).toBe(200);
+    const snapshot = state.json() as {
+      claims: Array<{
+        workKey: string;
+        ownerId: string;
+        status: string;
+        fencingToken: number;
+      }>;
+      events: Array<{
+        event_type: string;
+        actor_id: string | null;
+        claim_id: string | null;
+        payload: Record<string, unknown>;
+      }>;
+    };
+    expect(snapshot.claims).toContainEqual(
+      expect.objectContaining({
+        workKey,
+        ownerId: actorBId,
+        status: "ACTIVE",
+        fencingToken: reacquiredClaim.fencingToken,
+      }),
+    );
+    const releaseEvents = snapshot.events.filter(
+      (event) => event.event_type === "CLAIM_RELEASED",
+    );
+    expect(releaseEvents).toHaveLength(1);
+    expect(releaseEvents[0]).toMatchObject({
+      actor_id: actorAId,
+      claim_id: releasedClaim.id,
+      payload: {
+        workKey,
+        previousFencingToken: 1,
+        fencingToken: 2,
+        releasedBy: actorAId,
+      },
+    });
+    // The append-only log keeps the whole generation history, not only the last state.
+    expect(snapshot.events.map((event) => event.event_type)).toEqual(
+      expect.arrayContaining([
+        "CLAIM_ACQUIRED",
+        "CLAIM_HEARTBEAT",
+        "CLAIM_RELEASED",
+      ]),
+    );
+
+    const releaseOutbox = await db.pool.query<{
+      event_type: string;
+      payload: {
+        workspaceEventType?: string;
+        actorId?: string;
+        data?: Record<string, unknown>;
+      };
+    }>(
+      `select event_type,payload from event_outbox
+        where vault_id=$1
+          and payload->>'sessionId'=$2
+          and payload->>'workspaceEventType'='CLAIM_RELEASED'`,
+      [vaultId, releaseSessionId],
+    );
+    expect(releaseOutbox.rowCount).toBe(1);
+    expect(releaseOutbox.rows[0]).toMatchObject({
+      event_type: "WorkspaceClaimUpdated",
+      payload: {
+        actorId: actorAId,
+        data: { workKey, previousFencingToken: 1, fencingToken: 2 },
+      },
+    });
+
+    const releaseAudit = await db.pool.query<{ count: number }>(
+      `select count(*)::int count from audit_events
+        where action='workspace.claim.release'
+          and resource_type='agent_session'
+          and resource_id=$1`,
+      [releaseSessionId],
+    );
+    expect(releaseAudit.rows[0]?.count).toBe(1);
+
+    // Coordination churn is not knowledge: releasing and reacquiring a scope
+    // must never publish anything canonical.
+    const canonicalAfter = await db.pool.query<{ documents: number }>(
+      `select
+         (select count(*)::int from knowledge_documents where vault_id=$1) documents`,
+      [vaultId],
+    );
+    expect(canonicalAfter.rows[0].documents).toBe(
+      canonicalBefore.rows[0].documents,
+    );
   });
 });
