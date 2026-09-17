@@ -345,6 +345,36 @@ for (const name of requiredWorkspaceMcpTools) {
     );
   }
 }
+// A required-minimum list cannot catch a tool that ships without a contract.
+// Every tool the MCP server actually registers must be declared, or agents get
+// a surface the platform never described, reviewed or versioned.
+const mcpServerSource = await readFile(
+  path.join(root, "apps/mcp/src/server.ts"),
+  "utf8",
+);
+const registeredMcpNames = new Set(
+  [
+    ...mcpServerSource.matchAll(/server\.registerTool\(\s*"([A-Za-z0-9_]+)"/g),
+  ].map((match) => match[1]),
+);
+if (registeredMcpNames.size === 0) {
+  failures.push(
+    "apps/mcp/src/server.ts: no registered MCP tools found; the parity check cannot run",
+  );
+}
+for (const name of registeredMcpNames) {
+  if (!declaredMcpNames.has(name)) {
+    failures.push(`contracts/mcp-tools.json: undeclared MCP tool ${name}`);
+  }
+}
+for (const name of declaredMcpNames) {
+  if (!registeredMcpNames.has(name)) {
+    failures.push(
+      `contracts/mcp-tools.json: declares ${name}, which the MCP server does not register`,
+    );
+  }
+}
+
 if (
   (mcp.tools ?? []).some(
     (tool) => tool?.http?.path === "/v1/sessions/{id}/agent-processes",

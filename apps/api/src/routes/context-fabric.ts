@@ -7,6 +7,7 @@ import {
   listExternalObjectRefsForSession,
   listWorkspaceOfflineDrafts,
   queueWorkspaceOfflineDraft,
+  readContextFabricNodeClaim,
   resolveAuthorizedVaultScope,
   upsertContextFabricPeer,
   upsertExternalObjectRef,
@@ -129,18 +130,28 @@ export function registerContextFabricRoutes(
     { preHandler: requirePermission("knowledge:read") },
     async (request) => {
       const actor = actorOf(request);
-      const deploymentMode =
+      // Report the claim this database actually carries, not the environment
+      // this process happens to have been handed. A node that never completed
+      // its claim must not describe itself as the owner of shared state.
+      const claim = await readContextFabricNodeClaim(db);
+      const configuredMode =
         process.env.AKP_CONTEXT_FABRIC_MODE?.trim() || "SOLO_LOCAL";
+      const deploymentMode = claim?.deploymentMode ?? configuredMode;
       return {
         schemaVersion: 1,
         deploymentMode,
         node: {
           id:
-            process.env.AKP_CONTEXT_FABRIC_NODE_ID?.trim() ||
-            "local-context-node",
+            claim?.nodeId ??
+            (process.env.AKP_CONTEXT_FABRIC_NODE_ID?.trim() ||
+              "local-context-node"),
+          claimed: claim !== null,
+          claimedAt: claim?.claimedAt.toISOString() ?? null,
+          adoptedFrom: claim?.adoptedFrom ?? null,
           sharedDerivedState:
-            deploymentMode === "TEAM_NODE" ||
-            deploymentMode === "FEDERATED_ORG",
+            claim !== null &&
+            (claim.deploymentMode === "TEAM_NODE" ||
+              claim.deploymentMode === "FEDERATED_ORG"),
         },
         capabilities: {
           workspaceCoordination: true,

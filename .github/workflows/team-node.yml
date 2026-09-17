@@ -1,0 +1,131 @@
+name: team-node
+
+on:
+  pull_request:
+
+jobs:
+  # Prove the TEAM_NODE deployment mode is an executable topology, not a
+  # declared one: build the node's images, run them against one infrastructure,
+  # and probe the live node for the guarantees the mode promises.
+  executable-topology:
+    runs-on: ubuntu-latest
+    env:
+      AKP_CONTEXT_FABRIC_NODE_ID: team-node-ci
+      AKP_API_TOKEN: akp-ci-integration-token-not-for-production
+      AKP_API_TOKEN_SCOPES: >-
+        {"spaces":[{"spaceId":"00000000-0000-0000-0000-000000000003","pathPrefix":null,"permissions":["knowledge:read","source:read","source:write","knowledge:propose","knowledge:review","eval:run","admin"]}]}
+      AKP_EXTRACTOR_TOKEN: akp-ci-extractor-token-not-for-production
+      AKP_RAW_SECRET_KEY: akp-ci-minio-secret-not-for-production
+      AKP_API_PORT: 8080
+      AKP_WEB_PORT: 3000
+      COMPOSE: -f docker-compose.yml -f docker-compose.team-node.yml
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+
+      - name: Reject a TEAM_NODE topology with no explicit node identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          if AKP_CONTEXT_FABRIC_NODE_ID= docker compose $COMPOSE config --quiet 2>/dev/null; then
+            echo "A TEAM_NODE topology must not resolve without a node id." >&2
+            exit 1
+          fi
+          docker compose $COMPOSE config --quiet
+
+      - name: Build and start the Team Context Node
+        run: docker compose $COMPOSE up -d --build --wait api web
+
+      # The node owns its own database, so the node provisions the credential
+      # and imports the corpus — not a client reaching around it.
+      - name: Provision a node credential and import a corpus
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose $COMPOSE exec -T \
+            -e AKP_API_TOKEN="$AKP_API_TOKEN" \
+            -e AKP_API_TOKEN_SCOPES="$AKP_API_TOKEN_SCOPES" \
+            api node_modules/.bin/tsx scripts/provision-local-token.ts
+          docker compose $COMPOSE exec -T \
+            -e AKP_INGEST_ROOTS=/app/test/fixtures \
+            -e AKP_PROJECT_ROOTS=/app \
+            api node_modules/.bin/tsx apps/cli/src/main.ts vault import \
+              --vault-path test/fixtures/vault \
+              --space-id 00000000-0000-0000-0000-000000000003 \
+              --read-only
+          # Importing a vault grants nobody access to it. The node operator
+          # grants that separately, which is what makes the corpus reachable.
+          vault_id=$(docker compose $COMPOSE exec -T postgres \
+            psql -U akp -d akp -tAc \
+            "select id from vaults where enabled order by created_at limit 1" \
+            | tr -d '[:space:]')
+          docker compose $COMPOSE exec -T api \
+            node_modules/.bin/tsx apps/cli/src/main.ts vault grant-access \
+              --user-id 00000000-0000-0000-0000-000000000002 \
+              --vault-id "$vault_id" \
+              --role ADMIN
+
+      - name: Verify the live node
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p reports/ci
+          AKP_API_URL=http://127.0.0.1:${AKP_API_PORT} \
+          AKP_WEB_URL=http://127.0.0.1:${AKP_WEB_PORT} \
+            node scripts/verify-team-node.mjs \
+            | tee reports/ci/team-node-verification.json
+
+      - name: Refuse a second node claiming the same shared derived state
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          output=$(docker compose $COMPOSE run --rm --no-deps \
+            -e AKP_CONTEXT_FABRIC_NODE_ID=rogue-second-node \
+            api 2>&1)
+          status=$?
+          set -e
+          echo "$output"
+          if [ "$status" -eq 0 ]; then
+            echo "A second node must not start against a claimed database." >&2
+            exit 1
+          fi
+          grep -q "CONTEXT_FABRIC_NODE_CONFLICT" <<<"$output"
+
+      - name: Accept a replica of the same node
+        shell: bash
+        run: |
+          set -euo pipefail
+          output=$(timeout 60 docker compose $COMPOSE run --rm --no-deps api 2>&1 || true)
+          echo "$output"
+          if grep -q "CONTEXT_FABRIC_NODE_CONFLICT" <<<"$output"; then
+            echo "A replica of the same node must be allowed to serve." >&2
+            exit 1
+          fi
+          grep -q "Server listening" <<<"$output"
+
+      - name: Capture node diagnostics
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p reports/ci
+          docker compose $COMPOSE ps -a > reports/ci/team-node-services.txt 2>&1 || true
+          docker compose $COMPOSE logs --no-color --tail 200 \
+            > reports/ci/team-node-logs.txt 2>&1 || true
+
+      - name: Upload node evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: team-node-${{ github.run_id }}
+          path: reports/ci
+          if-no-files-found: ignore
+
+      - name: Stop the node
+        if: always()
+        run: docker compose $COMPOSE down -v

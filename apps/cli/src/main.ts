@@ -6,7 +6,12 @@ import { tmpdir } from "node:os";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { Command } from "commander";
-import { Postgres, listVaults, registerVault } from "@akp/postgres";
+import {
+  Postgres,
+  grantVaultMembership,
+  listVaults,
+  registerVault,
+} from "@akp/postgres";
 import {
   importVaultReadOnly,
   inspectVault,
@@ -545,6 +550,52 @@ vault
             issueCount: result.issues.length,
             reportPath,
             reportPersisted,
+          },
+          null,
+          2,
+        ),
+      );
+    },
+  );
+
+vault
+  .command("grant-access")
+  .description("Grant a principal access to a vault on this node")
+  .requiredOption("--user-id <uuid>", "Principal receiving access")
+  .requiredOption("--vault-id <uuid>", "Vault the principal may reach")
+  .option("--role <role>", "Vault role whose permissions are granted", "VIEWER")
+  .option(
+    "--path-prefix <path>",
+    "Restrict access to a subtree; omit for the whole vault",
+  )
+  .action(
+    async (options: {
+      userId: string;
+      vaultId: string;
+      role: string;
+      pathPrefix?: string;
+    }) => {
+      // Importing a vault does not grant anyone access to it: vault membership
+      // is deliberately separate from space membership. A node serving a team
+      // needs an operator surface for that, or a freshly imported corpus stays
+      // unreachable through every authorized surface, including its own web app.
+      const membership = await withDatabase((db) =>
+        grantVaultMembership(db, {
+          userId: options.userId,
+          vaultId: options.vaultId,
+          role: options.role,
+          pathPrefix: options.pathPrefix ?? null,
+        }),
+      );
+      console.log(
+        JSON.stringify(
+          {
+            status: "GRANTED",
+            userId: membership.userId,
+            vaultId: membership.vaultId,
+            role: membership.role,
+            pathPrefix: membership.pathPrefix,
+            permissions: membership.permissions,
           },
           null,
           2,

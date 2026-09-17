@@ -11,7 +11,9 @@ import { pipeline } from "node:stream/promises";
 import {
   Postgres,
   appendOutboxEvent,
+  claimContextFabricNode,
   claimNextIngestJob,
+  resolveContextFabricIdentity,
   runKnowledgeLint,
 } from "@akp/postgres";
 import { transitionIngest, type IngestState } from "@akp/domain";
@@ -907,6 +909,13 @@ async function runClaimedJob(job: Record<string, unknown>): Promise<void> {
 
 async function loop(): Promise<WorkerDrainSummary | undefined> {
   const drain = process.env.AKP_WORKER_DRAIN === "true";
+  // The worker writes the shared derived state a Team Context Node owns, so it
+  // claims the node identity before draining anything rather than after.
+  const identity = resolveContextFabricIdentity();
+  await claimContextFabricNode(db, {
+    ...identity,
+    adopt: process.env.AKP_CONTEXT_FABRIC_NODE_ADOPT === "true",
+  });
   await eventWorker.register();
   await runScheduledLintIfDue(process.env.AKP_LINT_RUN_ONCE === "true");
   if (drain) {

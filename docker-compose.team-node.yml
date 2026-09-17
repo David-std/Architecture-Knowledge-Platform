@@ -1,0 +1,123 @@
+# Mode C — TEAM_NODE, as an executable topology rather than a diagram.
+#
+# docker-compose.yml supplies the infrastructure a node runs on (PostgreSQL +
+# pgvector, raw object storage, the extractor). This overlay adds the services
+# that actually constitute the node: one API, one worker and one web surface,
+# all built from the same revision and all pointed at that one infrastructure.
+#
+#   export AKP_CONTEXT_FABRIC_NODE_ID=team-node-1
+#   docker compose -f docker-compose.yml -f docker-compose.team-node.yml \
+#     up -d --build
+#
+# The point of the mode is single authority over shared derived state. Every
+# developer and agent reaches this node over HTTP/MCP; none of them runs a
+# competing writable copy of the database, the vector index or the derived
+# graph. See docs/context-fabric.md.
+
+services:
+  # One-shot schema owner. A Team Context Node applies migrations once, from
+  # the node itself, rather than leaving each client to migrate a database it
+  # does not own. api and worker wait for it to complete successfully.
+  migrate:
+    build:
+      context: .
+      target: api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://akp:akp@postgres:5432/akp
+    command: ["node_modules/.bin/tsx", "scripts/migrate.ts"]
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      target: api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      extractor:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://akp:akp@postgres:5432/akp
+      AKP_API_HOST: 0.0.0.0
+      PORT: 8080
+      AKP_CONTEXT_FABRIC_MODE: TEAM_NODE
+      AKP_CONTEXT_FABRIC_NODE_ID: ${AKP_CONTEXT_FABRIC_NODE_ID:?set a stable node id for TEAM_NODE}
+      AKP_RAW_ENDPOINT: http://minio:9000
+      AKP_RAW_SECRET_KEY: ${AKP_RAW_SECRET_KEY:-local-development-only-change-me}
+      AKP_EXTRACTOR_URL: http://extractor:8090
+      AKP_EXTRACTOR_TOKEN: ${AKP_EXTRACTOR_TOKEN:-local-extractor-development-token}
+      AKP_MANAGED_REPO: /var/lib/akp/managed-knowledge
+      AKP_CORS_ORIGINS: http://127.0.0.1:${AKP_WEB_PORT:-3000},http://localhost:${AKP_WEB_PORT:-3000}
+    volumes:
+      - akp_managed_knowledge:/var/lib/akp/managed-knowledge
+    ports:
+      - "127.0.0.1:${AKP_API_PORT:-8080}:8080"
+    healthcheck:
+      # Readiness, not liveness: a node that cannot reach its database, raw
+      # object store or extractor is not serving authoritative shared context,
+      # and dependents should not be told otherwise.
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8080/health/readiness').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+
+  worker:
+    build:
+      context: .
+      target: worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      extractor:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://akp:akp@postgres:5432/akp
+      AKP_CONTEXT_FABRIC_MODE: TEAM_NODE
+      AKP_CONTEXT_FABRIC_NODE_ID: ${AKP_CONTEXT_FABRIC_NODE_ID:?set a stable node id for TEAM_NODE}
+      AKP_RAW_ENDPOINT: http://minio:9000
+      AKP_RAW_SECRET_KEY: ${AKP_RAW_SECRET_KEY:-local-development-only-change-me}
+      AKP_EXTRACTOR_URL: http://extractor:8090
+      AKP_EXTRACTOR_TOKEN: ${AKP_EXTRACTOR_TOKEN:-local-extractor-development-token}
+      AKP_MANAGED_REPO: /var/lib/akp/managed-knowledge
+    volumes:
+      - akp_managed_knowledge:/var/lib/akp/managed-knowledge
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      target: web
+      args:
+        NEXT_PUBLIC_AKP_API_URL: http://127.0.0.1:${AKP_API_PORT:-8080}
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      # Server-side rendering calls the API over the compose network; the
+      # browser bundle uses the published address baked in at build time.
+      AKP_API_URL: http://api:8080
+      AKP_API_TOKEN: ${AKP_API_TOKEN:?set the web surface service credential}
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+    ports:
+      - "127.0.0.1:${AKP_WEB_PORT:-3000}:3000"
+
+volumes:
+  akp_managed_knowledge:

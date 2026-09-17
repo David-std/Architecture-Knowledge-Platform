@@ -13,6 +13,7 @@ export * from "./workspace-presence.js";
 export * from "./context-revision-set.js";
 export * from "./principals.js";
 export * from "./team-context-fabric.js";
+export * from "./context-fabric-node.js";
 
 export interface PostgresOptions {
   onIdleClientError?: (error: Error) => void;

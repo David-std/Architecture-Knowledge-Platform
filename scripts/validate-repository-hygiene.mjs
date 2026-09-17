@@ -30,7 +30,10 @@ const allowedRootFiles = new Set([
   "LICENSE",
   "LICENSE.md",
   "README.md",
+  ".dockerignore",
+  "Dockerfile",
   "dependency-cruiser.cjs",
+  "docker-compose.team-node.yml",
   "docker-compose.yml",
   "package.json",
   "pnpm-lock.yaml",
@@ -108,14 +111,14 @@ function classify(file) {
   }
   if (
     /^(?:apps|packages|scripts)\//.test(file) ||
-    /^(?:dependency-cruiser\.cjs|docker-compose\.yml|turbo\.json|tsconfig\.base\.json)$/.test(
+    /^(?:dependency-cruiser\.cjs|Dockerfile|docker-compose(?:\.[A-Za-z0-9-]+)?\.yml|turbo\.json|tsconfig\.base\.json)$/.test(
       file,
     )
   ) {
     return ["PRODUCT_CODE", "runtime, build or operational code"];
   }
   if (
-    /^(?:ops\/|policies\/|\.github\/|\.env\.example$|\.gitattributes$|\.gitignore$|\.prettierignore$|\.prettierrc\.json$|package\.json$|pnpm-workspace\.yaml$|LICENSE(?:\.md)?$)/.test(
+    /^(?:ops\/|policies\/|\.github\/|\.env\.example$|\.dockerignore$|\.gitattributes$|\.gitignore$|\.prettierignore$|\.prettierrc\.json$|package\.json$|pnpm-workspace\.yaml$|LICENSE(?:\.md)?$)/.test(
       file,
     )
   ) {

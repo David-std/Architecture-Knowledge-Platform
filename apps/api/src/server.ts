@@ -5,7 +5,11 @@ import { fileURLToPath } from "node:url";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
-import { Postgres } from "@akp/postgres";
+import {
+  Postgres,
+  claimContextFabricNode,
+  resolveContextFabricIdentity,
+} from "@akp/postgres";
 import { MinioObjectStore } from "@akp/object-store";
 import {
   OpenTelemetryBridge,
@@ -243,11 +247,30 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
 if (process.env.NODE_ENV !== "test") {
   const app = buildServer();
   const port = Number(process.env.PORT ?? 8080);
+  // A loopback bind is the right default for SOLO_LOCAL: the API stays
+  // unreachable from the network unless an operator opts in. A Team Context
+  // Node runs inside a container whose loopback its peers cannot reach, so the
+  // bind address is configurable rather than hardcoded.
+  const host = process.env.AKP_API_HOST?.trim() || "127.0.0.1";
+  // Fail closed before accepting traffic. A node that cannot legitimately claim
+  // this database must not start serving context from it as if it owned it.
+  // This runs on its own short-lived pool so a refused claim never leaves the
+  // serving pool half-initialised.
+  const identity = resolveContextFabricIdentity();
+  const claimDb = new Postgres(process.env.DATABASE_URL ?? "");
+  try {
+    await claimContextFabricNode(claimDb, {
+      ...identity,
+      adopt: process.env.AKP_CONTEXT_FABRIC_NODE_ADOPT === "true",
+    });
+  } finally {
+    await claimDb.close();
+  }
   const close = async () => {
     await app.close();
     await shutdownOpenTelemetry();
   };
   process.once("SIGTERM", () => void close());
   process.once("SIGINT", () => void close());
-  await app.listen({ port, host: "127.0.0.1" });
+  await app.listen({ port, host });
 }

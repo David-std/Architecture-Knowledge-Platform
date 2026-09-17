@@ -19,6 +19,31 @@ Set `AKP_CONTEXT_FABRIC_NODE_ID` to a stable operator-visible node identifier. T
 
 Do **not** synchronize a writable PostgreSQL data directory, pgvector database, cache, or derived graph through Git, OneDrive, Syncthing, Dropbox, or another file-synchronization mechanism. Shared derived state belongs to the Team Context Node. Approved knowledge can be reconstructed from governed Git and raw/source records according to the existing backup/recovery contract.
 
+### Running a Team Context Node
+
+`TEAM_NODE` is an executable topology, not only a declared mode. `docker-compose.yml` provides the infrastructure a node runs on; `docker-compose.team-node.yml` adds the services that constitute the node itself — one API, one worker and one web surface, built from the same revision by the root `Dockerfile` and pointed at that one infrastructure:
+
+```bash
+export AKP_CONTEXT_FABRIC_NODE_ID=team-node-1
+export AKP_API_TOKEN=<the web surface service credential>
+docker compose -f docker-compose.yml -f docker-compose.team-node.yml up -d --build
+```
+
+A one-shot `migrate` service applies the schema before the API and worker start, so the node — not each client — owns its database. The API publishes on `127.0.0.1:8080` and the web surface on `127.0.0.1:3000` by default; override with `AKP_API_PORT` and `AKP_WEB_PORT`, and publish on a routable interface only behind your own transport security.
+
+`AKP_API_HOST` controls the API bind address. It defaults to `127.0.0.1`, so a workstation stays loopback-only unless an operator opts in; the container image sets `0.0.0.0` because its peers cannot reach its loopback.
+
+### Node identity is enforced, not declared
+
+Shared derived state belongs to exactly one node. Because a mode that exists only as an environment variable cannot prevent two writable nodes from interleaving their writes, the node identity is claimed in the database.
+
+- `TEAM_NODE` and `FEDERATED_ORG` require an explicit `AKP_CONTEXT_FABRIC_NODE_ID`. A node that owns other people's derived state is named deliberately; there is no implicit default.
+- On startup, the API and the worker claim the database for that identity. Replicas of the same node re-claim freely — identity, not process count, is what the mode constrains.
+- A **different** identity is refused with `CONTEXT_FABRIC_NODE_CONFLICT`, and the process does not start. This is what a second node pointed at a shared database looks like, and what restoring a copy of someone else's database and running it as your own looks like.
+- Renaming a node is legitimate but deliberate: restart once with `AKP_CONTEXT_FABRIC_NODE_ADOPT=true`. The adoption is recorded, so the previous identity stays visible rather than being silently overwritten.
+
+`GET /v1/context-fabric/capabilities` reports the claim the database carries, not the environment the answering process happens to hold. A node that has not completed its claim reports `node.claimed: false` and `node.sharedDerivedState: false` even when its environment declares `TEAM_NODE`.
+
 ## Work context and revision pinning
 
 A workspace session pins a `ContextRevisionSet` at creation. Bootstrap resolves authorized context against that pin and verifies the revision again before returning the packet. Strict coordination writes fail with `CONTEXT_REVISION_CHANGED` after an authority changes instead of silently mixing R1 and R2.
@@ -70,4 +95,7 @@ Before treating Team Context Fabric as proven, execute the maintained integratio
 - human-governed publication;
 - offline idempotency and stale reconnect reconciliation;
 - external-reference separation from canonical knowledge;
+- explicit claim release advancing the fence, locking out stale writers and freeing the scope for reacquisition;
 - backup/restore of the new PostgreSQL tables and migration upgrade from the validated v0.3 baseline.
+
+For `TEAM_NODE` specifically, configuration evidence is not enough: the guarantees are about a running topology. `scripts/verify-team-node.mjs` probes a live node for readiness, its database claim, single-authority revision agreement across two clients, and its web surface. The `team-node` workflow runs it against a node it builds and starts, and additionally proves that a second node with a different identity is refused while a replica of the same node is admitted.
