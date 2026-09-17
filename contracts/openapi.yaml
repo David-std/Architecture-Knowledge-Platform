@@ -1944,7 +1944,6 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
-
   /v1/context-fabric/capabilities:
     get:
       tags: [Governance]
@@ -2282,7 +2281,6 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
-
 
   /v1/operator/publications/reconcile:
     post:
