@@ -1944,6 +1944,345 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+
+  /v1/context-fabric/capabilities:
+    get:
+      tags: [Governance]
+      operationId: getContextFabricCapabilities
+      x-akp-permission: knowledge:read
+      responses:
+        "200":
+          description: Claimed context-fabric node identity, deployment mode and supported boundaries.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/context-fabric/peers:
+    get:
+      tags: [Governance]
+      operationId: listContextFabricPeers
+      x-akp-permission: knowledge:read
+      parameters:
+        - name: spaceId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Authorized federation discovery metadata. No remote query is performed.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [Governance]
+      operationId: upsertContextFabricPeer
+      x-akp-permission: admin
+      parameters:
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [spaceId, peerKey, displayName]
+              properties:
+                spaceId: { type: string, format: uuid }
+                peerKey: { type: string, minLength: 1, maxLength: 128 }
+                displayName: { type: string, minLength: 1, maxLength: 200 }
+                endpoint: { type: string }
+                discoveryMode:
+                  type: string
+                  enum: [CATALOG_ONLY, REMOTE_QUERY, MIRROR_BUNDLE]
+                  default: CATALOG_ONLY
+                trustState:
+                  type: string
+                  enum: [DISCOVERED, APPROVED, DISABLED]
+                  default: DISCOVERED
+                capabilities: { type: object, additionalProperties: true }
+                revision: { type: string }
+      responses:
+        "201":
+          description: Peer discovery metadata recorded without network contact.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/sessions/{id}/external-refs:
+    get:
+      tags: [Sessions]
+      operationId: listSessionExternalObjectRefs
+      x-akp-permission: knowledge:read
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+      responses:
+        "200":
+          description: External system-of-record references visible to the authorized session.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [Sessions]
+      operationId: upsertSessionExternalObjectRef
+      x-akp-permission: knowledge:read
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [provider, objectType, externalId]
+              properties:
+                provider: { type: string, minLength: 1, maxLength: 80 }
+                objectType: { type: string, minLength: 1, maxLength: 80 }
+                externalId: { type: string, minLength: 1, maxLength: 512 }
+                canonicalUrl: { type: string }
+                sourceRevision: { type: string }
+                title: { type: string }
+                authority:
+                  type: string
+                  enum: [SYSTEM_OF_RECORD, REFERENCE, MIRRORED_PROJECTION]
+                workObjectClass:
+                  type: string
+                  enum:
+                    [
+                      GOAL,
+                      PROJECT,
+                      WORK_ITEM,
+                      PULL_REQUEST,
+                      CODE_REVIEW,
+                      INCIDENT,
+                      CHANGE,
+                      BUILD,
+                      DEPLOYMENT,
+                      ENVIRONMENT,
+                      TEST_RUN,
+                      MEETING,
+                      MESSAGE,
+                      DOCUMENT,
+                      REPOSITORY,
+                      SERVICE,
+                    ]
+                metadata: { type: object, additionalProperties: true }
+      responses:
+        "201":
+          description: External reference recorded in the authorized vault projection.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/sessions/{id}/offline-drafts:
+    get:
+      tags: [Sessions]
+      operationId: listSessionOfflineDrafts
+      x-akp-permission: knowledge:read
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+      responses:
+        "200":
+          description: Offline drafts visible to the authorized session participant.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [Sessions]
+      operationId: queueSessionOfflineDraft
+      x-akp-permission: knowledge:read
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [clientDraftId, baseRevisionSetHash, eventType]
+              properties:
+                clientDraftId: { type: string, minLength: 1, maxLength: 200 }
+                baseRevisionSetHash:
+                  type: string
+                  pattern: "^[a-f0-9]{64}$"
+                eventType:
+                  type: string
+                  enum: [FINDING, ARTIFACT, DECISION_CANDIDATE, NOTE]
+                payload: { type: object, additionalProperties: true }
+      responses:
+        "201":
+          description: Draft queued against the pinned revision.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/sessions/{id}/offline-drafts/{draftId}/apply:
+    post:
+      tags: [Sessions]
+      operationId: applySessionOfflineDraft
+      x-akp-permission: knowledge:read
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - name: draftId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      responses:
+        "200":
+          description: Queued draft applied to the live workspace journal.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/sessions/{id}/offline-snapshot:
+    post:
+      tags: [Sessions]
+      operationId: captureSessionOfflineSnapshot
+      x-akp-permission: knowledge:read
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                query: { type: string, maxLength: 4096 }
+                intent: { type: string }
+      responses:
+        "200":
+          description: Approved, revision-pinned bootstrap snapshot for offline use.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+
+  /v1/sessions/{id}/presence:
+    get:
+      tags: [Sessions]
+      operationId: listSessionPresence
+      x-akp-permission: knowledge:read
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+      responses:
+        "200":
+          description: Current presence projection for authorized session participants.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/sessions/{id}/presence/heartbeat:
+    post:
+      tags: [Sessions]
+      operationId: heartbeatSessionPresence
+      x-akp-permission: knowledge:read
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                ttlSeconds: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: Presence heartbeat recorded for the authorized participant.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/generated-context-packets/{id}:
+    get:
+      tags: [Retrieval]
+      operationId: getGeneratedContextPacket
+      x-akp-permission: knowledge:read
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+      responses:
+        "200":
+          description: Stored ContextPacket after current authorization and scope revalidation.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/generated-context-packets/{id}/continuations/{handle}:
+    get:
+      tags: [Retrieval]
+      operationId: getGeneratedContextContinuation
+      x-akp-permission: knowledge:read
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - name: handle
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[a-f0-9]{64}$"
+      responses:
+        "200":
+          description: Authorized continuation sections for a stored ContextPacket.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
 components:
   securitySchemes:
     bearerAuth:
