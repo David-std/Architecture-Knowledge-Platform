@@ -1,0 +1,162 @@
+name: one-shot-p2-context-fabric-claim-race-fix
+
+on:
+  push:
+    branches:
+      - feat/v0.4-enterprise-context-workspace
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/v0.4-enterprise-context-workspace
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - name: Apply atomic first-claim fix and regression
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          source = Path("packages/postgres/src/context-fabric-node.ts")
+          text = source.read_text()
+          start = text.index('    const existing = await client.query<{')
+          end_marker = '    await client.query("commit");\n'
+          end = text.index(end_marker, start) + len(end_marker)
+          replacement = '''    // The singleton unique key is the serialization point. A pre-read with
+              // SELECT ... FOR UPDATE is insufficient while the table is empty because
+              // there is no row to lock; two first-starting nodes can both observe
+              // "unclaimed" and race into the upsert. The conditional conflict update
+              // below makes PostgreSQL arbitrate that race atomically.
+              const claimed = await client.query<Record<string, unknown>>(
+                `insert into context_fabric_node_claim(
+                   singleton,node_id,deployment_mode,adopted_from
+                 ) values(true,$1,$2,null)
+                 on conflict(singleton) do update set
+                   node_id=excluded.node_id,
+                   deployment_mode=excluded.deployment_mode,
+                   last_seen_at=now(),
+                   adopted_from=case
+                     when context_fabric_node_claim.node_id=excluded.node_id
+                       then context_fabric_node_claim.adopted_from
+                     else context_fabric_node_claim.node_id
+                   end,
+                   claimed_at=case
+                     when context_fabric_node_claim.node_id=excluded.node_id
+                       then context_fabric_node_claim.claimed_at
+                     else now()
+                   end
+                 where context_fabric_node_claim.node_id=excluded.node_id
+                    or $3::boolean
+                 returning *`,
+                [input.nodeId, input.deploymentMode, input.adopt === true],
+              );
+              const row = claimed.rows[0];
+              if (!row) {
+                // A conflicting insert may have committed while this statement waited
+                // on the singleton key. Read the now-authoritative owner only to make
+                // the refusal diagnosable; the conditional upsert already prevented
+                // any takeover.
+                const existing = await client.query<{
+                  node_id: string;
+                  deployment_mode: ContextFabricDeploymentMode;
+                }>(
+                  "select node_id,deployment_mode from context_fabric_node_claim where singleton limit 1",
+                );
+                const current = existing.rows[0];
+                if (current && current.node_id !== input.nodeId && !input.adopt) {
+                  throw new ContextFabricNodeError(
+                    "CONTEXT_FABRIC_NODE_CONFLICT",
+                    `This database is already claimed by context-fabric node "${current.node_id}" (${current.deployment_mode}); ` +
+                      `refusing to serve it as "${input.nodeId}". Shared derived state belongs to one node. ` +
+                      "If this rename is intentional, restart once with AKP_CONTEXT_FABRIC_NODE_ADOPT=true.",
+                  );
+                }
+                throw new ContextFabricNodeError(
+                  "CONTEXT_FABRIC_NODE_CLAIM_FAILED",
+                  "The context-fabric node claim did not return a row.",
+                );
+              }
+              await client.query("commit");
+              return normalizeClaim(row);
+          '''
+          source.write_text(text[:start] + replacement + text[end:])
+
+          test = Path("apps/api/test/context-fabric-node.integration.test.ts")
+          text = test.read_text()
+          anchor = '  it("records an intentional rename as an adoption rather than a silent takeover", async () => {'
+          if anchor not in text:
+              raise SystemExit("context-fabric node adoption test anchor not found")
+          regression = '''  it("atomically arbitrates simultaneous first claims so an empty database gets one owner", async () => {
+              // Repeat the empty-database race to exercise the exact window that a
+              // SELECT ... FOR UPDATE pre-read cannot protect: there is no singleton
+              // row yet, so both contenders may reach the insert concurrently.
+              for (let attempt = 0; attempt < 10; attempt += 1) {
+                await db.pool.query("delete from context_fabric_node_claim");
+                const contenders = [
+                  `team-node-race-a-${attempt}`,
+                  `team-node-race-b-${attempt}`,
+                ];
+                const results = await Promise.allSettled(
+                  contenders.map((nodeId) =>
+                    claimContextFabricNode(db, {
+                      nodeId,
+                      deploymentMode: "TEAM_NODE",
+                    }),
+                  ),
+                );
+                const fulfilled = results.filter(
+                  (result): result is PromiseFulfilledResult<Awaited<ReturnType<typeof claimContextFabricNode>>> =>
+                    result.status === "fulfilled",
+                );
+                const rejected = results.filter(
+                  (result): result is PromiseRejectedResult =>
+                    result.status === "rejected",
+                );
+                expect(fulfilled).toHaveLength(1);
+                expect(rejected).toHaveLength(1);
+                expect(rejected[0]?.reason).toBeInstanceOf(ContextFabricNodeError);
+                expect((rejected[0]?.reason as ContextFabricNodeError).code).toBe(
+                  "CONTEXT_FABRIC_NODE_CONFLICT",
+                );
+
+                const winner = fulfilled[0]?.value;
+                expect(winner).toBeDefined();
+                expect(contenders).toContain(winner?.nodeId);
+                expect(await readContextFabricNodeClaim(db)).toMatchObject({
+                  nodeId: winner?.nodeId,
+                  deploymentMode: "TEAM_NODE",
+                });
+              }
+            });
+
+          '''
+          test.write_text(text.replace(anchor, regression + anchor, 1))
+          PY
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Format changed TypeScript
+        run: pnpm exec prettier --write packages/postgres/src/context-fabric-node.ts apps/api/test/context-fabric-node.integration.test.ts
+      - name: Validate static contracts
+        run: pnpm check
+      - name: Commit fix and consume workflow
+        shell: bash
+        run: |
+          git rm .github/workflows/p2-context-fabric-claim-race-fix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add packages/postgres/src/context-fabric-node.ts apps/api/test/context-fabric-node.integration.test.ts
+          git diff --cached --check
+          git commit -m "fix(p2): make context fabric node claim race-safe"
+          git push origin HEAD:feat/v0.4-enterprise-context-workspace
