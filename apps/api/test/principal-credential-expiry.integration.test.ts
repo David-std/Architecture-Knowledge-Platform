@@ -146,10 +146,31 @@ run("P2 principal credential expiry", () => {
     });
     expect(issued.statusCode).toBe(201);
     const issuance = issued.json() as {
-      token: string;
       principal: { id: string; state: string };
     };
-    const agentHeaders = { authorization: `Bearer ${issuance.token}` };
+
+    // expires_at is part of the immutable credential scope. Create a second,
+    // deliberately short-lived credential for the same principal instead of
+    // mutating the credential that the API issued.
+    const replayToken = `principal-expiry-replay-${randomUUID()}`;
+    const replayTokenHash = tokenHash(replayToken);
+    const inserted = await db.pool.query(
+      `insert into principal_credentials(
+         principal_id,user_id,token_hash,label,scopes,allowed_actions,
+         policy_revision,expires_at
+       )
+       select principal_id,user_id,$2,'short-lived expiry replay',scopes,
+              allowed_actions,policy_revision,
+              clock_timestamp()+interval '2 seconds'
+         from principal_credentials
+        where principal_id=$1 and revoked_at is null
+        order by created_at desc
+        limit 1
+       returning id`,
+      [issuance.principal.id, replayTokenHash],
+    );
+    expect(inserted.rowCount).toBe(1);
+    const agentHeaders = { authorization: `Bearer ${replayToken}` };
 
     const beforeExpiry = await app.inject({
       method: "GET",
@@ -158,17 +179,32 @@ run("P2 principal credential expiry", () => {
     });
     expect(beforeExpiry.statusCode).toBe(200);
 
+    // Let PostgreSQL's own clock cross the persisted expiry boundary. This
+    // keeps the test deterministic without weakening the immutable-scope
+    // trigger or relying on a JavaScript clock shim that the SQL cannot see.
     await db.pool.query(
-      `update principal_credentials
-          set expires_at=now()-interval '1 second'
-        where principal_id=$1 and revoked_at is null`,
-      [issuance.principal.id],
+      `select pg_sleep(
+         greatest(0,extract(epoch from expires_at-clock_timestamp()))+0.05
+       )
+         from principal_credentials
+        where token_hash=$1`,
+      [replayTokenHash],
     );
-    const principalState = await db.pool.query<{ state: string }>(
-      "select state from principals where id=$1",
-      [issuance.principal.id],
+    const credentialState = await db.pool.query<{
+      expired: boolean;
+      principal_state: string;
+    }>(
+      `select c.expires_at <= clock_timestamp() expired,
+              p.state principal_state
+         from principal_credentials c
+         join principals p on p.id=c.principal_id
+        where c.token_hash=$1`,
+      [replayTokenHash],
     );
-    expect(principalState.rows[0]?.state).toBe("ACTIVE");
+    expect(credentialState.rows[0]).toMatchObject({
+      expired: true,
+      principal_state: "ACTIVE",
+    });
 
     const replayAfterExpiry = await app.inject({
       method: "GET",
