@@ -480,6 +480,7 @@ console.log(
     openapiPaths: Object.keys(openapi?.paths ?? {}).length,
     asyncChannels: Object.keys(asyncapi.channels ?? {}).length,
     mcpTools: mcp.tools?.length ?? 0,
+    httpRoutes: registeredHttpRouteKeys.size,
     failures,
   }),
 );
