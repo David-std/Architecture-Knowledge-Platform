@@ -11,7 +11,6 @@
     "node": ">=24 <25"
   },
   "scripts": {
-    "postinstall": "mkdir -p reports/ci && prettier --write apps/api/test/principal-credential-expiry.integration.test.ts && git diff -- apps/api/test/principal-credential-expiry.integration.test.ts > reports/ci/prettier-fix.diff",
     "build": "npm run build --workspaces --if-present",
     "dev": "turbo run dev --parallel",
     "lint": "npm run lint --workspaces --if-present",
