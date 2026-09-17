@@ -408,6 +408,47 @@ run("P2 principal identity", () => {
     expect(afterRevocation.statusCode).toBe(401);
     expect(afterRevocation.json()).toMatchObject({ code: "INVALID_TOKEN" });
 
+    const expiringIssued = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/agent-processes`,
+      headers: humanHeaders,
+      payload: {
+        label: "Expiring credential child",
+        allowedActions: ["workspace:read", "knowledge:read"],
+      },
+    });
+    expect(expiringIssued.statusCode).toBe(201);
+    const expiringCredential = expiringIssued.json() as {
+      token: string;
+      principal: { id: string };
+    };
+    const beforeExpiry = await app.inject({
+      method: "GET",
+      url: `/v1/sessions/${sessionId}/state`,
+      headers: { authorization: `Bearer ${expiringCredential.token}` },
+    });
+    expect(beforeExpiry.statusCode).toBe(200);
+
+    await db.pool.query(
+      `update principal_credentials
+          set expires_at=now()-interval '1 second'
+        where principal_id=$1`,
+      [expiringCredential.principal.id],
+    );
+    const expiringPrincipalState = await db.pool.query<{ state: string }>(
+      "select state from principals where id=$1",
+      [expiringCredential.principal.id],
+    );
+    expect(expiringPrincipalState.rows[0]?.state).toBe("ACTIVE");
+
+    const replayAfterExpiry = await app.inject({
+      method: "GET",
+      url: `/v1/sessions/${sessionId}/state`,
+      headers: { authorization: `Bearer ${expiringCredential.token}` },
+    });
+    expect(replayAfterExpiry.statusCode).toBe(401);
+    expect(replayAfterExpiry.json()).toMatchObject({ code: "INVALID_TOKEN" });
+
     const siblingIssued = await app.inject({
       method: "POST",
       url: `/v1/sessions/${sessionId}/agent-processes`,
