@@ -697,7 +697,7 @@ describe("workspace coordination integration", () => {
         payload: { reason: "coordination-only blocker" },
       },
     });
-    expect(blocker.statusCode).toBe(200);
+    expect(blocker.statusCode).toBe(201);
     const nonPromotableEvent = blocker.json() as { id: string };
     const nonPromotable = await app.inject({
       method: "POST",
