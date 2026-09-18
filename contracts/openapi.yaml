@@ -2633,6 +2633,379 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+
+  /v1/sessions/{id}/decisions:
+    get:
+      tags: [Sessions]
+      operationId: listWorkspaceDecisions
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:read
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [Sessions]
+      operationId: createWorkspaceDecision
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:event:append
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                [
+                  decisionAuthorityPrincipalId,
+                  title,
+                  problem,
+                  drivers,
+                  evidenceRefs,
+                  verificationPlan,
+                ]
+              properties:
+                decisionAuthorityPrincipalId: { type: string, format: uuid }
+                title: { type: string, minLength: 1, maxLength: 200 }
+                problem: { type: string, minLength: 1, maxLength: 12000 }
+                drivers:
+                  type: array
+                  minItems: 1
+                  maxItems: 50
+                  items: { type: string, minLength: 1, maxLength: 2000 }
+                affectedRefs:
+                  type: array
+                  maxItems: 100
+                  items: { type: string, minLength: 1, maxLength: 1000 }
+                evidenceRefs:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items: { type: string, minLength: 1, maxLength: 1000 }
+                verificationPlan:
+                  type: string
+                  minLength: 1
+                  maxLength: 12000
+                verificationDueAt:
+                  type: [string, "null"]
+                  format: date-time
+                decisionDeadline:
+                  type: [string, "null"]
+                  format: date-time
+                supersedesCandidateId:
+                  type: [string, "null"]
+                  format: uuid
+      responses:
+        "201": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /v1/sessions/{id}/decisions/{decisionId}:
+    get:
+      tags: [Sessions]
+      operationId: getWorkspaceDecision
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:read
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - name: decisionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/sessions/{id}/decisions/{decisionId}/alternatives:
+    post:
+      tags: [Sessions]
+      operationId: addWorkspaceDecisionAlternative
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:event:append
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - name: decisionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [title, description, tradeoffs]
+              properties:
+                title: { type: string, minLength: 1, maxLength: 240 }
+                description: { type: string, minLength: 1, maxLength: 12000 }
+                tradeoffs: { type: string, minLength: 1, maxLength: 12000 }
+                evidenceRefs:
+                  type: array
+                  maxItems: 100
+                  items: { type: string, minLength: 1, maxLength: 1000 }
+      responses:
+        "201": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/sessions/{id}/decisions/{decisionId}/alternatives/{alternativeId}/decision:
+    post:
+      tags: [Sessions]
+      operationId: decideWorkspaceDecisionAlternative
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:event:append
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - name: decisionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: alternativeId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [decision]
+              properties:
+                decision:
+                  type: string
+                  enum: [CONSIDER, REJECT]
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/sessions/{id}/decisions/{decisionId}/objections:
+    post:
+      tags: [Sessions]
+      operationId: addWorkspaceDecisionObjection
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:event:append
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - name: decisionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [statement]
+              properties:
+                alternativeId:
+                  type: [string, "null"]
+                  format: uuid
+                statement: { type: string, minLength: 1, maxLength: 12000 }
+                evidenceRefs:
+                  type: array
+                  maxItems: 100
+                  items: { type: string, minLength: 1, maxLength: 1000 }
+      responses:
+        "201": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/sessions/{id}/decisions/{decisionId}/objections/{objectionId}/resolve:
+    post:
+      tags: [Sessions]
+      operationId: resolveWorkspaceDecisionObjection
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:event:append
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - name: decisionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: objectionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [resolution]
+              properties:
+                resolution:
+                  type: string
+                  minLength: 1
+                  maxLength: 12000
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/sessions/{id}/decisions/{decisionId}/consultations:
+    post:
+      tags: [Sessions]
+      operationId: requestWorkspaceDecisionConsultation
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:event:append
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - name: decisionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reviewerPrincipalId, question]
+              properties:
+                reviewerPrincipalId: { type: string, format: uuid }
+                question: { type: string, minLength: 1, maxLength: 8000 }
+      responses:
+        "201": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /v1/sessions/{id}/decisions/{decisionId}/consultations/{consultationId}/respond:
+    post:
+      tags: [Sessions]
+      operationId: respondWorkspaceDecisionConsultation
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:event:append
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - name: decisionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: consultationId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [position, response]
+              properties:
+                position:
+                  type: string
+                  enum: [SUPPORT, OPPOSE, NEUTRAL]
+                response:
+                  type: string
+                  minLength: 1
+                  maxLength: 12000
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/sessions/{id}/decisions/{decisionId}/selection:
+    post:
+      tags: [Sessions]
+      operationId: selectWorkspaceDecisionAlternative
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:event:append
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - name: decisionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [alternativeId]
+              properties:
+                alternativeId: { type: string, format: uuid }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/sessions/{id}/decisions/{decisionId}/capture:
+    post:
+      tags: [Sessions]
+      operationId: captureWorkspaceDecisionCandidate
+      x-akp-permission: knowledge:propose
+      x-akp-principal-action: knowledge:propose
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - name: decisionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      responses:
+        "201": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
 components:
   securitySchemes:
     bearerAuth:
