@@ -108,7 +108,8 @@ Before treating Team Context Fabric as proven, execute the maintained integratio
 
 - multi-vault and path-scope isolation, including a private vault that cannot leak into team-wide search without an explicit grant;
 - two distinct AGENT_PROCESS principals bootstrapping the same shared revision, disjoint claims, overlap denial, principal-bound fencing and durable structured handoff;
-- revision-pinned bootstrap and R1 -> R2 drift detection;
+- revision-pinned bootstrap and R1 -> R2 drift detection, including related decisions and the revision/principal-bound `agentInstructionDigest`;
+- offline snapshots that disclose `offline: true`, shared-revision age and stale reconnect state instead of presenting cached state as central truth;
 - promotion provenance, denial of agent self-approval and rejection of proposal-authored `ATTESTED` trust escalation;
 - human-governed publication;
 - agent credential expiry/replay rejection and parent-principal revocation invalidation;
