@@ -117,11 +117,26 @@ describe("team context fabric integration", () => {
     });
     expect(capabilities.statusCode).toBe(200);
     expect(capabilities.json()).toMatchObject({
+      manifest: {
+        contextApiVersion: "v1",
+        requiredAuthenticationModes: ["BEARER_TOKEN", "WEB_SESSION"],
+        supportedExchangeFormats: [
+          { format: "OKF_0_2", import: true, export: true },
+          { format: "JSON_LD", import: false, export: true },
+          { format: "GRAPHML", import: false, export: true },
+        ],
+        graphCapabilities: {
+          domains: ["EPISTEMIC", "WORK"],
+          authorizationBeforeTraversal: true,
+        },
+        federationModes: ["CATALOG_ONLY"],
+      },
       capabilities: {
         externalObjectRefs: true,
         queuedOfflineDrafts: true,
         staleReconnectDisclosure: true,
         lastWriteWinsApprovedKnowledge: false,
+        federationRemoteQuery: false,
         writableDatabaseFileSync: false,
       },
     });
