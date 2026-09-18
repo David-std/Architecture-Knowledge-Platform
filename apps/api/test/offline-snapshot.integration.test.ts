@@ -123,6 +123,12 @@ async function createSession(purpose: string): Promise<{
 describe("offline context snapshot reconnect semantics", () => {
   it("captures one coherent revision, rejects stale reconnect, and revalidates through a new session", async () => {
     const r1Session = await createSession("Offline work pinned to R1");
+    await db.pool.query(
+      `update workspace_context_revision_sets
+          set pinned_at=now()-interval '2 hours'
+        where session_id=$1`,
+      [r1Session.id],
+    );
 
     const capturedR1 = await app.inject({
       method: "POST",
@@ -141,6 +147,7 @@ describe("offline context snapshot reconnect semantics", () => {
       pinnedRevisionSetHash: string;
       currentRevisionSetHash: string;
       snapshotHash: string;
+      ageSeconds: number;
       mustRevalidateOnReconnect: boolean;
       context: Record<string, unknown>;
     };
@@ -157,6 +164,8 @@ describe("offline context snapshot reconnect semantics", () => {
         .update(JSON.stringify(r1Snapshot.context))
         .digest("hex"),
     );
+    expect(r1Snapshot.ageSeconds).toBeGreaterThanOrEqual(7_190);
+    expect(r1Snapshot.ageSeconds).toBeLessThan(7_300);
 
     await db.pool.query(
       "update vaults set current_revision='offline:r2' where id=$1",
@@ -178,6 +187,7 @@ describe("offline context snapshot reconnect semantics", () => {
       status: string;
       pinnedRevisionSetHash: string;
       currentRevisionSetHash: string;
+      ageSeconds: number;
       mustRevalidateOnReconnect: boolean;
       changedDimensions: string[];
       context: unknown;
@@ -192,6 +202,8 @@ describe("offline context snapshot reconnect semantics", () => {
     expect(staleBody.currentRevisionSetHash).not.toBe(
       r1Session.contextRevisionSetHash,
     );
+    expect(staleBody.ageSeconds).toBeGreaterThanOrEqual(r1Snapshot.ageSeconds);
+    expect(staleBody.ageSeconds).toBeLessThan(7_300);
     expect(staleBody.changedDimensions).toContain("knowledgeGit");
 
     const r2Session = await createSession("Offline work revalidated at R2");
