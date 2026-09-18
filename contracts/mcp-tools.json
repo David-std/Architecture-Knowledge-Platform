@@ -423,6 +423,16 @@
               "NOTE"
             ]
           },
+          "claimId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Optional owning claim; requires the matching fencingToken."
+          },
+          "fencingToken": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Required together with claimId."
+          },
           "payload": { "type": "object", "additionalProperties": true },
           "idempotencyKey": {
             "type": "string",
