@@ -982,6 +982,7 @@ export async function captureDecisionCandidate(
     const event = await appendWorkspaceEventInTransaction(client, {
       sessionId: input.sessionId,
       actorId: input.actorUserId,
+      actorPrincipalId: input.actorPrincipalId,
       eventType: "DECISION_CANDIDATE",
       payload: {
         decisionWorkflowCandidateId: snapshot.candidate.id,
