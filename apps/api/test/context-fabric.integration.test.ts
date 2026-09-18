@@ -415,7 +415,10 @@ describe("team context fabric integration", () => {
     const remoteRegistration = await app.inject({
       method: "POST",
       url: "/v1/context-fabric/peers",
-      headers: adminHeaders,
+      headers: {
+        ...adminHeaders,
+        "idempotency-key": "p2-hostile-remote-peer",
+      },
       payload: {
         spaceId,
         peerKey: `integration-hostile-remote-${vaultId.slice(0, 8)}`,
