@@ -1,4 +1,13 @@
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  access,
+  appendFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -52,12 +61,14 @@ async function fakeGraphify(
   await writeFile(
     script,
     [
-      'import { mkdir, writeFile } from "node:fs/promises";',
+      'import { access, appendFile, mkdir, writeFile } from "node:fs/promises";',
       'import path from "node:path";',
       "const args = process.argv.slice(2);",
       "if (process.env.OPENAI_API_KEY) process.exit(42);",
       'if (args.includes("--version")) { console.log("graphify 0.9.99"); process.exit(0); }',
-      'if (args[0] !== "extract") process.exit(43);',
+      'if (args[0] !== "extract" && args[0] !== "update") process.exit(43);',
+      'await appendFile(new URL("./provider-command.log", import.meta.url), args[0] + "\\n");',
+      'if (args[0] === "update") { try { await access(path.join(process.cwd(), "graphify-out", "graph.json")); } catch { process.exit(44); } }',
       'await mkdir(path.join(process.cwd(), "graphify-out"), { recursive: true });',
       `await writeFile(path.join(process.cwd(), "graphify-out", "graph.json"), ${JSON.stringify(
         JSON.stringify(graph),
@@ -161,6 +172,96 @@ describe("GraphifyCodeGraphAdapter", () => {
         path: "generated/ignored.ts",
       }),
     );
+  });
+
+  it("uses Graphify update only after a validated prior provider state", async () => {
+    const { root, commit } = await gitRepository();
+    const firstSnapshot = await createCodeSnapshot({
+      repositoryPath: root,
+      commit,
+    });
+    const graph = {
+      directed: true,
+      multigraph: true,
+      nodes: [
+        {
+          id: "provider-a",
+          label: "a",
+          node_type: "function",
+          source_file: "src/a.ts",
+          source_location: "L1",
+          language: "TypeScript",
+        },
+        {
+          id: "provider-b",
+          label: "b",
+          node_type: "function",
+          source_file: "src/b.ts",
+          source_location: "L1",
+          language: "TypeScript",
+        },
+      ],
+      edges: [
+        {
+          id: "provider-edge",
+          source: "provider-a",
+          target: "provider-b",
+          relation: "calls",
+          confidence: "STATICALLY_RESOLVED",
+          source_file: "src/a.ts",
+          source_location: "L1",
+        },
+      ],
+    };
+    const script = await fakeGraphify(root, graph);
+    const adapter = new GraphifyCodeGraphAdapter({
+      executable: process.execPath,
+      executableArgs: [script],
+      incremental: true,
+    });
+
+    const first = await adapter.analyze(
+      firstSnapshot,
+      defaultCodeGraphOptions(),
+    );
+    expect(
+      (first.extensions?.graphify as Record<string, unknown>).executionMode,
+    ).toBe("FULL");
+
+    await writeFile(
+      path.join(root, "src", "b.ts"),
+      "export function b() { return 2; }\n",
+    );
+    const run = (...args: string[]) =>
+      spawnSync("git", ["-C", root, ...args], {
+        encoding: "utf8",
+        windowsHide: true,
+      });
+    expect(run("add", "src/b.ts").status).toBe(0);
+    expect(run("commit", "-m", "second fixture").status).toBe(0);
+    const nextCommit = run("rev-parse", "HEAD").stdout.trim();
+    const nextSnapshot = await createCodeSnapshot({
+      repositoryPath: root,
+      commit: nextCommit,
+    });
+
+    const second = await adapter.analyze(
+      nextSnapshot,
+      defaultCodeGraphOptions(),
+    );
+    expect(
+      (second.extensions?.graphify as Record<string, unknown>).executionMode,
+    ).toBe("INCREMENTAL");
+    expect(
+      (second.extensions?.graphify as Record<string, unknown>)
+        .previousCommitSha,
+    ).toBe(commit);
+    expect(second.commitSha).toBe(nextCommit);
+    expect(
+      (await readFile(path.join(root, "provider-command.log"), "utf8"))
+        .trim()
+        .split(/\r?\n/),
+    ).toEqual(["extract", "update"]);
   });
 
   it("rejects provider paths outside the verified snapshot", async () => {

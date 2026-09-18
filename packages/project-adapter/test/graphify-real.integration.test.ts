@@ -81,7 +81,10 @@ describe("GraphifyCodeGraphAdapter real provider", () => {
         commit,
       });
 
-      const adapter = new GraphifyCodeGraphAdapter({ executable });
+      const adapter = new GraphifyCodeGraphAdapter({
+        executable,
+        incremental: true,
+      });
       const artifact = await adapter.analyze(snapshot, {
         ...defaultCodeGraphOptions(),
         timeoutMs: 180_000,
@@ -121,6 +124,58 @@ describe("GraphifyCodeGraphAdapter real provider", () => {
       expect(
         artifact.nodes.some((node) => node.path === "generated/ignored.ts"),
       ).toBe(false);
+      expect(
+        (artifact.extensions?.graphify as Record<string, unknown>)
+          .executionMode,
+      ).toBe("FULL");
+
+      await writeFile(
+        path.join(root, "src", "math.ts"),
+        [
+          "export function add(left: number, right: number): number {",
+          "  return left + right;",
+          "}",
+          "",
+          "export function multiply(left: number, right: number): number {",
+          "  return left * right;",
+          "}",
+          "",
+        ].join("\n"),
+      );
+      const git = (...args: string[]) =>
+        spawnSync("git", ["-C", root, ...args], {
+          encoding: "utf8",
+          windowsHide: true,
+        });
+      expect(git("add", "src/math.ts").status).toBe(0);
+      expect(git("commit", "-m", "incremental graphify fixture").status).toBe(
+        0,
+      );
+      const nextCommit = git("rev-parse", "HEAD").stdout.trim();
+      const nextSnapshot = await createCodeSnapshot({
+        repositoryPath: root,
+        commit: nextCommit,
+      });
+      const updated = await adapter.analyze(nextSnapshot, {
+        ...defaultCodeGraphOptions(),
+        timeoutMs: 180_000,
+      });
+
+      expect(updated.commitSha).toBe(nextCommit);
+      expect(
+        (updated.extensions?.graphify as Record<string, unknown>).executionMode,
+      ).toBe("INCREMENTAL");
+      expect(
+        (updated.extensions?.graphify as Record<string, unknown>)
+          .previousCommitSha,
+      ).toBe(commit);
+      expect(
+        updated.nodes.some(
+          (node) =>
+            node.name === "multiply" ||
+            node.qualifiedName?.includes("multiply") === true,
+        ),
+      ).toBe(true);
     },
     240_000,
   );

@@ -13,7 +13,7 @@ Allowed statuses are exactly `IMPLEMENTED`, `ADAPTER_PROVIDED`, `BENCHMARKED_NOT
 | Calls/imports/inheritance        | IMPLEMENTED          | Normalization maps provider relations to `CALLS`, `IMPORTS`, `INHERITS`, `IMPLEMENTS`, and `REFERENCES`; API/MCP queries traverse the corresponding lower-case graph relations.                                                                                                                        |
 | Extracted vs inferred state      | IMPLEMENTED          | Provider derivation is preserved. `INFERRED` and `AMBIGUOUS` edges remain candidates and are excluded from the authoritative static projection instead of being upgraded to extracted/static evidence.                                                                                                 |
 | Ambiguity representation         | IMPLEMENTED          | Ambiguous provider edges remain explicit candidates; symbol queries fail closed with `CODE_SYMBOL_AMBIGUOUS` when a selector is not unique.                                                                                                                                                            |
-| Incremental refresh              | DEFERRED_WITH_REASON | The extraction port reserves an optional `update` operation, but the current Graphify adapter rebuilds from an immutable snapshot. Revision lifecycle marks the old projection stale before replacement and preserves stale fallback on failed rebuild. AKP therefore does not claim delta extraction. |
+| Incremental refresh              | IMPLEMENTED          | A warm `GraphifyCodeGraphAdapter` preserves only its last validated provider state for the same repository/provider/configuration, materializes the next immutable SHA in a fresh workspace, restores that derived state and executes Graphify `update`. CI proves this with pinned `graphifyy==0.9.63` across two real commits. Provider restart or missing state safely falls back to full extraction; failed update never replaces the prior state before a validated full fallback/replacement exists. |
 | Stale detection                  | IMPLEMENTED          | CODE projections are revision/freshness aware. Project query fencing requires the active CODE `sourceRevision` to match the project's current immutable commit for `FRESH_ONLY`; stale fallback is explicit under `ALLOW_STALE`.                                                                       |
 | Path/explain                     | IMPLEMENTED          | `/v1/code/path`, `/v1/code/explain` and their MCP equivalents execute bounded graph traversal with provenance.                                                                                                                                                                                         |
 | Callers/callees                  | IMPLEMENTED          | Direct incoming/outgoing `calls` queries are exposed through API and MCP and tested against PostgreSQL graph projections.                                                                                                                                                                              |
@@ -32,7 +32,7 @@ Allowed statuses are exactly `IMPLEMENTED`, `ADAPTER_PROVIDED`, `BENCHMARKED_NOT
 
 Upstream: https://github.com/Graphify-Labs/graphify
 
-Graphify provides local tree-sitter AST extraction for code, cross-file `calls`/`imports`/`inherits` resolution, explicit `EXTRACTED` versus `INFERRED` edges, query/path/explain, communities and incremental `update`. AKP adopts Graphify through a bounded provider adapter, pins a reviewed version in CI, disables clustering for the release production proof, sanitizes the provider environment, materializes only the verified Git snapshot, and normalizes results into the federated graph. Upstream clustering/incremental behavior is not silently claimed as native AKP functionality.
+Graphify provides local tree-sitter AST extraction for code, cross-file `calls`/`imports`/`inherits` resolution, explicit `EXTRACTED` versus `INFERRED` edges, query/path/explain, communities and incremental `update`. AKP adopts Graphify through a bounded provider adapter, pins a reviewed version in CI, disables clustering for the release production proof, sanitizes the provider environment, materializes only the verified Git snapshot, and normalizes results into the federated graph. Warm consecutive refreshes use Graphify's incremental code update from the last validated provider state; clustering remains deliberately unadopted.
 
 ### GitNexus
 
@@ -63,7 +63,7 @@ For malicious comments/docstrings, the Code Graph path deliberately has no LLM p
 ## Deliberate non-claims
 
 - Graphify/GitNexus community detection is not an active AKP product capability.
-- Provider support for incremental update does not mean AKP performs delta extraction today.
+- Incremental provider state is a derived warm-process optimization, not canonical truth; after worker restart AKP may rebuild the same immutable SHA from source.
 - `code.changeImpact` is change-set impact, not automatic GitHub PR ingestion.
 - Multi-vault federation does not manufacture cross-repository edges.
 - Static evidence never implies runtime coverage, and reviewed rationale never converts an inferred code relation into an extracted one.

@@ -359,6 +359,8 @@ export function normalizeGraphifyArtifact(input: {
   configurationHash: string;
   outputHash: string;
   warnings: CodeGraphWarning[];
+  executionMode: "FULL" | "INCREMENTAL" | "FULL_FALLBACK";
+  previousCommitSha?: string;
 }): CodeGraphArtifact {
   const rawNodes = input.raw.nodes as GraphifyNode[];
   const rawEdges = (
@@ -552,6 +554,10 @@ export function normalizeGraphifyArtifact(input: {
             ? input.raw.multigraph
             : null,
         outputSha256: input.outputHash,
+        executionMode: input.executionMode,
+        ...(input.previousCommitSha
+          ? { previousCommitSha: input.previousCommitSha }
+          : {}),
         nodeCount: nodes.length,
         edgeCount: edges.length,
       },

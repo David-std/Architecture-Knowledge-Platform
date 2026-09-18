@@ -131,6 +131,14 @@ async function projectStillCurrent(
 export function createCodeGraphRefreshHandlers(
   db: Postgres,
 ): Pick<EventHandlers, "CodeGraphRefreshRequested"> {
+  let graphify: GraphifyCodeGraphAdapter | undefined;
+  const extraction = (): GraphifyCodeGraphAdapter => {
+    graphify ??= new GraphifyCodeGraphAdapter({
+      ...graphifyConfiguration(),
+      incremental: true,
+    });
+    return graphify;
+  };
   return {
     CodeGraphRefreshRequested: async (event) => {
       if (process.env.AKP_CODE_GRAPH_ENABLED !== "true") {
@@ -207,7 +215,7 @@ export function createCodeGraphRefreshHandlers(
           commit: sourceRevision,
         });
         const coordinator = new CodeGraphLifecycleCoordinator(
-          new GraphifyCodeGraphAdapter(graphifyConfiguration()),
+          extraction(),
           store,
         );
         const refreshed = await coordinator.refresh({
@@ -233,6 +241,13 @@ export function createCodeGraphRefreshHandlers(
           previousNodes,
           refreshed.artifact,
         );
+        const graphifyExtension = refreshed.artifact.extensions?.graphify;
+        const providerExecution =
+          graphifyExtension &&
+          typeof graphifyExtension === "object" &&
+          !Array.isArray(graphifyExtension)
+            ? (graphifyExtension as Record<string, unknown>)
+            : null;
         await updateCodeGraphStatus(db, projectId, sourceRevision, {
           ...identity,
           status: "ACTIVE",
@@ -241,6 +256,12 @@ export function createCodeGraphRefreshHandlers(
           freshness: refreshed.active.freshness,
           provider: refreshed.artifact.provider,
           providerVersion: refreshed.artifact.providerVersion,
+          ...(typeof providerExecution?.executionMode === "string"
+            ? { providerExecutionMode: providerExecution.executionMode }
+            : {}),
+          ...(typeof providerExecution?.previousCommitSha === "string"
+            ? { providerPreviousCommitSha: providerExecution.previousCommitSha }
+            : {}),
           nodeCount: refreshed.artifact.nodes.length,
           edgeCount: refreshed.artifact.edges.length,
           skippedCandidateEdgeCount:
