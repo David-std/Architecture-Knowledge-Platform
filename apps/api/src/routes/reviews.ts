@@ -4,7 +4,6 @@ import path from "node:path";
 import type { FastifyInstance } from "fastify";
 import {
   finalizeDecisionCandidatePublicationInTransaction,
-  markDecisionCandidateReviewRejected,
   pathMatchesVaultPrefix,
   resolveAuthorizedVaultScope,
   type AppendOutboxEventInput,
@@ -1620,12 +1619,24 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
         decision === "REJECT" ? "REJECTED" : "CHANGES_REQUESTED";
       const transitioned = await db.pool.query(
         `
-        update reviews set status=$2,decision_by=$3,decision_at=now(),
-               decision_reason=$4,
-               review_round=case when $2='CHANGES_REQUESTED' then review_round+1 else review_round end,
-               updated_at=now()
-         where id=$1 and space_id=$5 and status in ('PENDING','CHANGES_REQUESTED')
-         returning id,status
+        with transitioned as (
+          update reviews
+             set status=$2,decision_by=$3,decision_at=now(),
+                 decision_reason=$4,
+                 review_round=case when $2='CHANGES_REQUESTED' then review_round+1 else review_round end,
+                 updated_at=now()
+           where id=$1 and space_id=$5 and status in ('PENDING','CHANGES_REQUESTED')
+           returning id,status
+        ),
+        rejected_decision as (
+          update workspace_decision_candidates
+             set status='REJECTED',version=version+1,updated_at=now()
+           where review_id in (select id from transitioned)
+             and $2='REJECTED'
+             and status='PENDING_REVIEW'
+           returning id
+        )
+        select id,status from transitioned
         `,
         [
           request.params.id,
@@ -1670,7 +1681,6 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
         String(review.space_id),
       );
       if (decision === "REJECT") {
-        await markDecisionCandidateReviewRejected(db, request.params.id);
         await new GitKnowledgeStore(repositoryPath())
           .cleanupDraft(String(review.branch_name))
           .catch(async (cleanupError) => {
