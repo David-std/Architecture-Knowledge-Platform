@@ -124,6 +124,172 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "409": { $ref: "#/components/responses/Conflict" }
 
+  /v1/code/symbol:
+    post:
+      tags: [Code]
+      operationId: findCodeSymbol
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: knowledge:read
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CodeScopedSelectorRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/code/callers:
+    post:
+      tags: [Code]
+      operationId: findCodeCallers
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: knowledge:read
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CodeScopedSelectorRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/code/callees:
+    post:
+      tags: [Code]
+      operationId: findCodeCallees
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: knowledge:read
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CodeScopedSelectorRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/code/path:
+    post:
+      tags: [Code]
+      operationId: findCodeDependencyPath
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: knowledge:read
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CodeScopedPathRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "408":
+          description: Bounded graph query exceeded its time budget.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/code/impact:
+    post:
+      tags: [Code]
+      operationId: analyzeCodeImpact
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: knowledge:read
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CodeScopedImpactRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "408":
+          description: Bounded graph query exceeded its time budget.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/code/change-impact:
+    post:
+      tags: [Code]
+      operationId: analyzeCodeChangeImpact
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: knowledge:read
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              { $ref: "#/components/schemas/CodeScopedChangeImpactRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "408":
+          description: Bounded graph query exceeded its time budget.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/code/tests:
+    post:
+      tags: [Code]
+      operationId: findCodeTests
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: knowledge:read
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CodeScopedSelectorRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/code/explain:
+    post:
+      tags: [Code]
+      operationId: explainCodePath
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: knowledge:read
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CodeScopedPathRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "408":
+          description: Bounded graph query exceeded its time budget.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
   /v1/search:
     post:
       tags: [Retrieval]
@@ -3334,6 +3500,129 @@ components:
         health:
           type: string
           enum: [HEALTHY, DEGRADED, STALE, UNAVAILABLE]
+    CodeSymbolSelector:
+      type: object
+      additionalProperties: false
+      required: [repository]
+      properties:
+        repository: { type: string, minLength: 1, maxLength: 2048 }
+        commitSha:
+          type: string
+          pattern: "^[a-fA-F0-9]{40}$"
+        path: { type: string, minLength: 1, maxLength: 4096 }
+        qualifiedName: { type: string, minLength: 1, maxLength: 2048 }
+        name: { type: string, minLength: 1, maxLength: 1024 }
+        kind: { type: string, minLength: 1, maxLength: 120 }
+        signature: { type: string, minLength: 1, maxLength: 4096 }
+      anyOf:
+        - required: [path]
+        - required: [qualifiedName]
+        - required: [name]
+        - required: [signature]
+    CodePathOptions:
+      type: object
+      additionalProperties: false
+      properties:
+        relationTypes:
+          type: array
+          maxItems: 100
+          items: { type: string, minLength: 1, maxLength: 160 }
+        maxHops: { type: integer, minimum: 1, maximum: 16 }
+        maxFanout: { type: integer, minimum: 1, maximum: 1000 }
+        maxCandidates: { type: integer, minimum: 1, maximum: 10000 }
+        timeBudgetMs: { type: integer, minimum: 1, maximum: 60000 }
+    CodeImpactOptions:
+      allOf:
+        - { $ref: "#/components/schemas/CodePathOptions" }
+        - type: object
+          properties:
+            direction:
+              type: string
+              enum: [outgoing, incoming, both]
+            includeTests: { type: boolean }
+            includeCatalogBridges: { type: boolean }
+            includeRulesDecisions: { type: boolean }
+            includeRuntimeObservations: { type: boolean }
+    CodeScopedSelectorRequest:
+      type: object
+      additionalProperties: false
+      required: [spaceId, selector]
+      properties:
+        spaceId: { type: string, format: uuid }
+        vaultId: { type: string, format: uuid }
+        vaultIds:
+          type: array
+          maxItems: 100
+          items: { type: string, format: uuid }
+        federated: { type: boolean, default: false }
+        freshnessPolicy:
+          type: string
+          enum: [FRESH_ONLY, ALLOW_STALE]
+          default: FRESH_ONLY
+        selector: { $ref: "#/components/schemas/CodeSymbolSelector" }
+    CodeScopedPathRequest:
+      type: object
+      additionalProperties: false
+      required: [spaceId, source, target]
+      properties:
+        spaceId: { type: string, format: uuid }
+        vaultId: { type: string, format: uuid }
+        vaultIds:
+          type: array
+          maxItems: 100
+          items: { type: string, format: uuid }
+        federated: { type: boolean, default: false }
+        freshnessPolicy:
+          type: string
+          enum: [FRESH_ONLY, ALLOW_STALE]
+          default: FRESH_ONLY
+        source: { $ref: "#/components/schemas/CodeSymbolSelector" }
+        target: { $ref: "#/components/schemas/CodeSymbolSelector" }
+        options: { $ref: "#/components/schemas/CodePathOptions" }
+    CodeScopedImpactRequest:
+      type: object
+      additionalProperties: false
+      required: [spaceId, selector]
+      properties:
+        spaceId: { type: string, format: uuid }
+        vaultId: { type: string, format: uuid }
+        vaultIds:
+          type: array
+          maxItems: 100
+          items: { type: string, format: uuid }
+        federated: { type: boolean, default: false }
+        freshnessPolicy:
+          type: string
+          enum: [FRESH_ONLY, ALLOW_STALE]
+          default: FRESH_ONLY
+        selector: { $ref: "#/components/schemas/CodeSymbolSelector" }
+        options: { $ref: "#/components/schemas/CodeImpactOptions" }
+    CodeScopedChangeImpactRequest:
+      type: object
+      additionalProperties: false
+      required: [spaceId, repository, commitSha, changedPaths]
+      properties:
+        spaceId: { type: string, format: uuid }
+        vaultId: { type: string, format: uuid }
+        vaultIds:
+          type: array
+          maxItems: 100
+          items: { type: string, format: uuid }
+        federated: { type: boolean, default: false }
+        freshnessPolicy:
+          type: string
+          enum: [FRESH_ONLY, ALLOW_STALE]
+          default: FRESH_ONLY
+        repository: { type: string, minLength: 1, maxLength: 2048 }
+        commitSha:
+          type: string
+          pattern: "^[a-fA-F0-9]{40}$"
+        changedPaths:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items: { type: string, minLength: 1, maxLength: 4096 }
+        options: { $ref: "#/components/schemas/CodeImpactOptions" }
     Error:
       type: object
       required: [code]
