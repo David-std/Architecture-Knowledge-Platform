@@ -252,4 +252,5 @@ export class DeterministicProjectAdapter implements ProjectAdapter {
   }
 }
 
+export * from "./graphify.js";
 export * from "./snapshot.js";
