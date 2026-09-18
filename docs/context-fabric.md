@@ -98,6 +98,18 @@ Offline coordination changes are queued with a client-generated idempotency key 
 
 The current server intentionally applies only coordination event types (`FINDING`, `ARTIFACT`, `DECISION_CANDIDATE`, `NOTE`) from offline drafts. Publication still uses the review lifecycle.
 
+## Federated multi-graph substrate
+
+The graph substrate is derived, rebuildable context state; it is not a replacement for governed Markdown, source records or system-of-record objects. It keeps the graph domains distinct: `EPISTEMIC`, `SOFTWARE_CATALOG`, `CODE`, `RUNTIME`, `TEMPORAL`, `WORK` and `COMMUNITY`. Support in the storage contract does not imply that every domain already has a product-facing producer or query experience. In particular, community/PPR production belongs to the later retrieval phase and is not advertised by the current Context Fabric discovery manifest.
+
+Node identity is revision-aware and namespaced by graph domain, scope, kind, canonical key and revision. Display names are not global identifiers. Cross-domain edges retain their own derivation, source/evidence locators, provenance revision, optional support set/confidence and valid-time metadata, so declared catalog structure, static code structure and observed runtime behavior can disagree without being flattened into one generic fact.
+
+Projection revisions follow the durable lifecycle `REQUESTED -> BUILT -> ACTIVE`, with `STALE` and `FAILED` states for degraded or unsuccessful revisions. Activation is atomic per graph domain and scope. A failed replacement build is recorded as `FAILED/STALE` and does not retire the previously active fresh revision. Explicit staleness marks the active projection stale without deleting it, allowing callers that deliberately choose `ALLOW_STALE` to distinguish degraded fallback from a fresh read. Revision build, activation and staleness transitions emit causal outbox events.
+
+Graph query callers resolve their authorized vault/path scope before invoking traversal. The store removes unauthorized nodes and edges before path expansion, so a hidden intermediate node or edge cannot act as an invisible bridge. Seed resolution fails closed with `GRAPH_NODE_NOT_FOUND_OR_UNAUTHORIZED` when the requested identity is outside that authorized graph. Traversal is additionally bounded by relation allowlists, direction, maximum hops, fanout, candidate count, cycle protection and an explicit wall-time budget. `FRESH_ONLY` excludes stale projections; `ALLOW_STALE` exposes their freshness in the returned projection metadata.
+
+The maintained integration fixture preserves domain disagreement explicitly: the software catalog may declare that Service A depends on Service B, the code graph may show an import of the corresponding client, and the runtime graph may contain no observed call for the current window. Each observation keeps its own provenance, revision and temporal metadata rather than becoming an unqualified `RELATED_TO` assertion.
+
 ## Federation discovery boundary
 
 `context_fabric_peers` and `/v1/context-fabric/peers` are discovery metadata only. Registering a peer performs no network request. A peer can declare a discovery mode and capability manifest, but the current Team Context Fabric contract does not allow a discovered endpoint to become an authorization bypass, remote retrieval source, write boundary, or trust upgrade.
