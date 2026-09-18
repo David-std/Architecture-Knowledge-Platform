@@ -399,6 +399,18 @@ interface SupportSetRow {
   created_at: Date | string;
 }
 
+interface SourceEpisodeRow {
+  id: string;
+  space_id: string;
+  vault_id: string;
+  source_id: string;
+  source_artifact_id: string;
+  source_hash: string;
+  observed_at: Date | string | null;
+  ingested_at: Date | string;
+  locator_refs: unknown;
+}
+
 interface FactRow {
   id: string;
   space_id: string;
@@ -441,7 +453,7 @@ function normalizeRevision(row: RevisionRow): TruthRevision {
 
 function normalizeSupportSet(row: SupportSetRow): TruthSupportSet {
   return {
-    schemaVersion: row.schema_version,
+    schemaVersion: 1,
     id: row.id,
     spaceId: row.space_id,
     vaultId: row.vault_id,
@@ -617,7 +629,7 @@ export class PostgresTemporalTruthStore {
       throw new Error("TRUTH_SOURCE_EPISODE_SCOPE_MISMATCH");
     const id = randomUUID();
     const ingestedAt = input.ingestedAt ?? new Date().toISOString();
-    const result = await this.db.pool.query(
+    const result = await this.db.pool.query<SourceEpisodeRow>(
       `insert into source_episodes(
          id,space_id,vault_id,source_id,source_artifact_id,source_hash,
          observed_at,ingested_at,locator_refs
@@ -635,7 +647,8 @@ export class PostgresTemporalTruthStore {
         JSON.stringify(input.locatorRefs),
       ],
     );
-    const row = result.rows[0] as Record<string, unknown>;
+    const row = result.rows[0];
+    if (!row) throw new Error("TRUTH_SOURCE_EPISODE_PERSISTENCE_FAILED");
     return {
       id: row.id,
       spaceId: row.space_id,
