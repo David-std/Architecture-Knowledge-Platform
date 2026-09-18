@@ -214,9 +214,6 @@ beforeAll(async () => {
 afterAll(async () => {
   if (app) await app.close();
   if (db) {
-    await db.pool.query("delete from event_outbox where vault_id=$1", [
-      vaultId,
-    ]);
     await db.pool.query(
       "delete from federated_graph_projection_revisions where vault_id=$1",
       [vaultId],
