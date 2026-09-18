@@ -50,12 +50,12 @@ export async function runBoundedProcess(
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
     });
-    let timer: NodeJS.Timeout;
+    let timer: NodeJS.Timeout | undefined;
 
     const fail = (cause: unknown, code: string) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
+      if (timer) clearTimeout(timer);
       child.kill("SIGKILL");
       const wrapped = graphifyError(code);
       (wrapped as Error & { cause?: unknown }).cause = cause;
@@ -84,7 +84,7 @@ export async function runBoundedProcess(
     child.once("close", (status, signal) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
+      if (timer) clearTimeout(timer);
       if (status !== 0) {
         const failure = graphifyError("GRAPHIFY_PROCESS_FAILED") as Error & {
           status?: number | null;
