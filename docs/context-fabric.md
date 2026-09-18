@@ -50,6 +50,8 @@ A workspace session pins a `ContextRevisionSet` at creation. Bootstrap resolves 
 
 Workspace findings, artifacts, notes, blockers, claims, handoffs, external references and offline drafts are operational state. They are not approved knowledge.
 
+A claim handoff may carry bounded structured state: summary, completed work, remaining work, blockers, changed resource references, evidence references and open questions. The server attaches the session's pinned `ContextRevisionSet`, its hash and the resolved principal identities to the durable `CLAIM_HANDOFF` event; clients do not supply or override that revision metadata. The legacy `note` field remains accepted for compatibility, but the structured fields are the resumable machine-readable contract for agents that must continue without the previous chat transcript.
+
 Promotion remains:
 
 `finding/evidence -> promotion request -> review -> human approval -> managed Git publication`
