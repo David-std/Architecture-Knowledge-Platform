@@ -38,6 +38,7 @@ interface GraphifyNode {
   qualified_name?: unknown;
   qualifiedName?: unknown;
   symbol?: unknown;
+  signature?: unknown;
   community?: unknown;
 }
 
@@ -293,6 +294,7 @@ function canonicalNodeId(input: {
   path: string;
   kind: CodeGraphNodeKind;
   qualifiedName: string;
+  signature?: string;
   lineStart?: number;
 }): string {
   const digest = sha256(
@@ -302,6 +304,7 @@ function canonicalNodeId(input: {
       input.path,
       input.kind,
       input.qualifiedName,
+      input.signature ?? "",
       String(input.lineStart ?? 0),
     ].join("\0"),
   );
@@ -392,12 +395,17 @@ export function normalizeGraphifyArtifact(input: {
         rawNode.id,
       2048,
     );
+    const signature =
+      typeof rawNode.signature === "string" && rawNode.signature.trim()
+        ? cleanString(rawNode.signature, 4096)
+        : undefined;
     const id = canonicalNodeId({
       repository: input.snapshot.repository,
       commitSha: input.snapshot.commitSha,
       path: relativePath,
       kind,
       qualifiedName,
+      ...(signature ? { signature } : {}),
       ...lines,
     });
     if (canonicalIds.has(id)) {
@@ -415,6 +423,7 @@ export function normalizeGraphifyArtifact(input: {
       kind,
       name,
       qualifiedName,
+      ...(signature ? { signature } : {}),
       ...(language ? { language } : {}),
       path: relativePath,
       ...lines,
