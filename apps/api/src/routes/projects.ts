@@ -299,7 +299,8 @@ export function registerProjectRoutes(
           `
           insert into projects(space_id,vault_id,slug,root_path,metadata)
           values($1,$2,$3,$4,$5::jsonb)
-          on conflict(vault_id,slug) do update set root_path=excluded.root_path,metadata=excluded.metadata
+          on conflict(vault_id,slug) where vault_id is not null do update
+            set root_path=excluded.root_path,metadata=excluded.metadata
           returning *
           `,
           [
