@@ -6,9 +6,7 @@ import type {
 } from "@akp/contracts";
 
 export type CodeReconciliationRelationship =
-  | "MOVED_FROM"
-  | "RENAMED_FROM"
-  | "MOVED_AND_RENAMED_FROM";
+  "MOVED_FROM" | "RENAMED_FROM" | "MOVED_AND_RENAMED_FROM";
 
 export type CodeReconciliationState = "CANDIDATE" | "AMBIGUOUS";
 
@@ -51,19 +49,14 @@ interface CandidateMatch {
   confidence: number;
 }
 
-function optionalString(
-  value: unknown,
-  maximum: number,
-): string | undefined {
+function optionalString(value: unknown, maximum: number): string | undefined {
   if (typeof value !== "string") return undefined;
   const normalized = value.trim();
   return normalized ? normalized.slice(0, maximum) : undefined;
 }
 
 function optionalPositiveInteger(value: unknown): number | undefined {
-  return typeof value === "number" &&
-    Number.isInteger(value) &&
-    value > 0
+  return typeof value === "number" && Number.isInteger(value) && value > 0
     ? value
     : undefined;
 }
@@ -90,8 +83,7 @@ function previousEndpoint(
     repository,
     commitSha: commitSha.toLowerCase(),
     nodeId:
-      optionalString(payload.codeNodeId, 256) ??
-      node.identity.canonicalKey,
+      optionalString(payload.codeNodeId, 256) ?? node.identity.canonicalKey,
     kind: optionalString(payload.kind, 120) ?? node.identity.kind,
     path,
     name,
@@ -129,7 +121,9 @@ function currentEndpoint(
     ...(node.signature ? { signature: node.signature } : {}),
     ...(node.lineStart !== undefined ? { lineStart: node.lineStart } : {}),
     ...(node.lineEnd !== undefined ? { lineEnd: node.lineEnd } : {}),
-    ...(node.contentHash ? { contentHash: node.contentHash.toLowerCase() } : {}),
+    ...(node.contentHash
+      ? { contentHash: node.contentHash.toLowerCase() }
+      : {}),
   };
 }
 
@@ -177,7 +171,12 @@ function evaluateMatch(
   if (pathChanged && !(sameSignature || sameQualifiedName || sameName)) {
     return null;
   }
-  if (!pathChanged && (nameChanged || qualifiedChanged) && !sameSignature && !samePosition) {
+  if (
+    !pathChanged &&
+    (nameChanged || qualifiedChanged) &&
+    !sameSignature &&
+    !samePosition
+  ) {
     return null;
   }
 
@@ -255,17 +254,9 @@ export function reconcileCodeGraphCandidates(
   }
   const previous = previousNodes
     .map(previousEndpoint)
-    .filter(
-      (value): value is CodeReconciliationEndpoint => value !== null,
-    )
+    .filter((value): value is CodeReconciliationEndpoint => value !== null)
     .sort((left, right) =>
-      [
-        left.repository,
-        left.commitSha,
-        left.path,
-        left.kind,
-        left.nodeId,
-      ]
+      [left.repository, left.commitSha, left.path, left.kind, left.nodeId]
         .join("|")
         .localeCompare(
           [
@@ -308,7 +299,9 @@ export function reconcileCodeGraphCandidates(
         to: current,
       });
       if (candidates.length >= limit) {
-        return candidates.sort((left, right) => left.id.localeCompare(right.id));
+        return candidates.sort((left, right) =>
+          left.id.localeCompare(right.id),
+        );
       }
     }
   }

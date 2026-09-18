@@ -28,9 +28,7 @@ function previousNode(input: {
       commitSha: "1".repeat(40),
       kind: "FUNCTION",
       name: input.name,
-      ...(input.qualifiedName
-        ? { qualifiedName: input.qualifiedName }
-        : {}),
+      ...(input.qualifiedName ? { qualifiedName: input.qualifiedName } : {}),
       path: input.path,
       ...(input.lineStart ? { lineStart: input.lineStart } : {}),
       ...(input.contentHash ? { contentHash: input.contentHash } : {}),
@@ -44,9 +42,7 @@ function previousNode(input: {
   };
 }
 
-function artifact(
-  node: CodeGraphArtifact["nodes"][number],
-): CodeGraphArtifact {
+function artifact(node: CodeGraphArtifact["nodes"][number]): CodeGraphArtifact {
   return {
     schemaVersion: 1,
     repository: "fixture",
@@ -140,9 +136,9 @@ describe("code graph reconciliation candidates", () => {
     );
 
     expect(candidates).toHaveLength(2);
-    expect(candidates.every((candidate) => candidate.state === "AMBIGUOUS")).toBe(
-      true,
-    );
+    expect(
+      candidates.every((candidate) => candidate.state === "AMBIGUOUS"),
+    ).toBe(true);
   });
 
   it("represents a same-position symbol rename only as a low-confidence candidate", () => {
