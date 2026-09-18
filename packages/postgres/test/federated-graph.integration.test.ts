@@ -841,6 +841,55 @@ describe("federated multi-graph substrate integration", () => {
             nodes: [node(staleV1, fixture.vaultA, "allowed/stale")],
           }),
         );
+        const explicitlyStale = await store.markStale(
+          "CODE",
+          fixture.spaceId,
+          staleScope,
+          "new immutable repository commit observed",
+        );
+        expect(explicitlyStale).toMatchObject({
+          revision: "stale-r1",
+          lifecycle: "ACTIVE",
+          freshness: "STALE",
+        });
+        await expect(
+          store.impact({
+            ...queryBase(fixture, {
+              domains: ["CODE"],
+              freshnessPolicy: "FRESH_ONLY",
+            }),
+            seed: { identity: staleV1 },
+          }),
+        ).rejects.toThrow("GRAPH_NODE_NOT_FOUND_OR_UNAUTHORIZED");
+        const staleFallback = await store.impact({
+          ...queryBase(fixture, {
+            domains: ["CODE"],
+            freshnessPolicy: "ALLOW_STALE",
+          }),
+          seed: { identity: staleV1 },
+        });
+        expect(staleFallback.seed.projection).toMatchObject({
+          revision: "stale-r1",
+          lifecycle: "ACTIVE",
+          freshness: "STALE",
+        });
+        const staleEvents = await db.pool.query<{
+          event_type: string;
+          payload: Record<string, unknown>;
+        }>(
+          `select event_type,payload
+             from event_outbox
+            where resource_id=$1 and event_type='GraphRevisionStale'`,
+          [explicitlyStale?.id],
+        );
+        expect(staleEvents.rows).toHaveLength(1);
+        expect(staleEvents.rows[0]?.payload).toMatchObject({
+          graphDomain: "CODE",
+          scopeId: staleScope,
+          revision: "stale-r1",
+          freshness: "STALE",
+        });
+
         const staleV2 = identity(
           "CODE",
           staleScope,
