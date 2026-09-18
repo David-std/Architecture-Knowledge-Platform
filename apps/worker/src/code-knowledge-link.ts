@@ -1,8 +1,7 @@
-import {
-  GraphNodeIdentity,
-  type GraphProjectionArtifact,
-} from "@akp/contracts";
+import { GraphNodeIdentity } from "@akp/contracts";
 import { PostgresFederatedGraphStore, type Postgres } from "@akp/postgres";
+
+type GraphBuildArtifact = Parameters<PostgresFederatedGraphStore["build"]>[0];
 import type { EventHandlers } from "./event-worker.js";
 
 interface LinkRow {
@@ -109,7 +108,7 @@ export function createCodeKnowledgeLinkHandlers(
         canonicalKey: link.document_id,
         revision,
       };
-      const artifact: GraphProjectionArtifact = {
+      const artifact: GraphBuildArtifact = {
         graphDomain: "EPISTEMIC",
         spaceId: link.space_id,
         vaultId: link.vault_id,

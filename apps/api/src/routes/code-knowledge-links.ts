@@ -246,10 +246,17 @@ export function registerCodeKnowledgeLinkRoutes(
           .send({ code: "CODE_GRAPH_SOURCE_REVISION_STALE" });
       }
 
+      const rawSelector = parsed.data.selector;
       const selector: CodeSymbolSelector = {
         repository: identity.repository,
         commitSha: commit,
-        ...parsed.data.selector,
+        ...(rawSelector.path ? { path: rawSelector.path } : {}),
+        ...(rawSelector.qualifiedName
+          ? { qualifiedName: rawSelector.qualifiedName }
+          : {}),
+        ...(rawSelector.name ? { name: rawSelector.name } : {}),
+        ...(rawSelector.kind ? { kind: rawSelector.kind } : {}),
+        ...(rawSelector.signature ? { signature: rawSelector.signature } : {}),
       };
       const symbols = await new CodeGraphQueryService(graph).symbol(
         {
