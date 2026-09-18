@@ -1111,6 +1111,16 @@ describe("federated multi-graph substrate integration", () => {
         });
         expect(orderedTargets(oneFanout)).toEqual(["tie-a"]);
 
+        const oneCandidate = await store.neighbors({
+          ...queryBase(fixture, {
+            domains: ["CODE"],
+            relations: ["related"],
+            maxCandidates: 1,
+          }),
+          seed: { identity: seed },
+        });
+        expect(orderedTargets(oneCandidate)).toEqual(["tie-a"]);
+
         const blockedByRelationPolicy = await store.neighbors({
           ...queryBase(fixture, {
             domains: ["CODE"],
