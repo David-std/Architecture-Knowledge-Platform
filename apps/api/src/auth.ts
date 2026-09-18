@@ -266,7 +266,6 @@ export function authorizationPolicyFingerprint(actor: Actor): string {
   const canonicalMemberships = actor.memberships
     .map((membership) => ({
       spaceId: membership.spaceId,
-      role: membership.role,
       pathPrefix: normalizePath(membership.pathPrefix),
       permissions: [...permissionsForMembership(membership)].sort(),
     }))
