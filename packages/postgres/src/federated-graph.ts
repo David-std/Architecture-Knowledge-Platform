@@ -1,40 +1,422 @@
 import { createHash } from "node:crypto";
 import {
-  GraphDirection as GraphDirectionSchema,
-  GraphDomain as GraphDomainSchema,
-  GraphFreshnessPolicy as GraphFreshnessPolicySchema,
-  GraphNodeIdentity as GraphNodeIdentitySchema,
-  GraphPathResult as GraphPathResultSchema,
-  GraphProjectionRevision as GraphProjectionRevisionSchema,
-  GraphProvenanceEnvelope as GraphProvenanceEnvelopeSchema,
-  GraphTraversalBounds as GraphTraversalBoundsSchema,
-  graphNodeIdentityKey,
-  type GraphAuthorizationScope,
-  type GraphDirection,
-  type GraphDomain,
-  type GraphImpactQuery,
-  type GraphImpactResult,
-  type GraphNeighborQuery,
-  type GraphNodeIdentity,
-  type GraphNodeRef,
-  type GraphNodeSelector,
-  type GraphPathQuery,
-  type GraphPathResult,
-  type GraphPathStep,
-  type GraphProjectionArtifact,
-  type GraphProjectionEdgeInput,
-  type GraphProjectionPort,
-  type GraphProjectionRevision,
-  type GraphProjectionRevisionState,
-  type GraphQueryBase,
-  type GraphQueryPort,
-} from "@akp/contracts";
-import {
   intersectVaultPathPrefixes,
   normalizeVaultPathPrefix,
   pathMatchesVaultPrefix,
 } from "./vault-registry.js";
 import type { Postgres, PostgresPoolClient } from "./index.js";
+
+// Keep the persistence adapter structurally compatible with @akp/contracts
+// without importing contract source into this package's rootDir. Public/API
+// boundaries validate the canonical contract; this adapter enforces the same
+// invariants needed for durable storage and traversal.
+const GRAPH_DOMAINS = [
+  "EPISTEMIC",
+  "SOFTWARE_CATALOG",
+  "CODE",
+  "RUNTIME",
+  "TEMPORAL",
+  "WORK",
+  "COMMUNITY",
+] as const;
+type GraphDomain = (typeof GRAPH_DOMAINS)[number];
+
+const GRAPH_DERIVATIONS = [
+  "SOURCE_EXPLICIT",
+  "DETERMINISTIC_EXTRACTED",
+  "STATICALLY_RESOLVED",
+  "MODEL_INFERRED",
+  "HUMAN_ASSERTED",
+  "RUNTIME_OBSERVED",
+  "DYNAMICALLY_PROVEN",
+  "DERIVED_SUMMARY",
+] as const;
+type GraphDerivation = (typeof GRAPH_DERIVATIONS)[number];
+
+type GraphDirection = "outgoing" | "incoming" | "both";
+type GraphFreshnessPolicy = "FRESH_ONLY" | "ALLOW_STALE";
+type GraphProjectionLifecycle =
+  | "REQUESTED"
+  | "BUILT"
+  | "ACTIVE"
+  | "STALE"
+  | "FAILED";
+type GraphProjectionFreshness = "FRESH" | "STALE";
+
+interface GraphNodeIdentity {
+  graphDomain: GraphDomain;
+  scopeId: string;
+  kind: string;
+  canonicalKey: string;
+  revision: string;
+}
+
+interface GraphProvenanceEnvelope {
+  derivation: GraphDerivation;
+  sourceIds: string[];
+  evidenceIds: string[];
+  locatorRefs: string[];
+  revision: string;
+  supportSetId?: string;
+  confidence?: number;
+  validFrom?: string;
+  validTo?: string;
+  recordedAt: string;
+}
+
+interface GraphProjectionRevision {
+  id: string;
+  graphDomain: GraphDomain;
+  spaceId: string;
+  vaultId: string | null;
+  scopeId: string;
+  revision: string;
+  sourceRevision: string;
+  sourceHash: string | null;
+  provider: string;
+  providerVersion: string | null;
+  configurationVersion: string;
+  lifecycle: GraphProjectionLifecycle;
+  freshness: GraphProjectionFreshness;
+  requestedAt: string;
+  builtAt: string | null;
+  activatedAt: string | null;
+  lastSuccessfulUpdate: string | null;
+}
+
+interface GraphNodeRef {
+  id: string;
+  spaceId: string;
+  vaultId: string | null;
+  authorizationPath: string | null;
+  identity: GraphNodeIdentity;
+  payload: Record<string, unknown>;
+  projection: Pick<
+    GraphProjectionRevision,
+    "id" | "revision" | "lifecycle" | "freshness"
+  >;
+}
+
+interface GraphPathStep {
+  from: GraphNodeRef;
+  relation: string;
+  direction: "outgoing" | "incoming";
+  to: GraphNodeRef;
+  provenance: GraphProvenanceEnvelope;
+}
+
+interface GraphPathResult {
+  seed: GraphNodeRef;
+  target: GraphNodeRef;
+  steps: GraphPathStep[];
+  score?: number;
+  revisionSet: Partial<Record<GraphDomain, string>>;
+}
+
+interface GraphTraversalBounds {
+  maxHops: number;
+  maxFanout: number;
+  maxCandidates: number;
+  timeBudgetMs: number;
+}
+
+interface GraphAuthorizationScope {
+  spaceId: string;
+  vaults: readonly { vaultId: string; pathPrefix: string | null }[];
+  allowSpaceScoped?: boolean;
+}
+
+interface GraphNodeSelector {
+  nodeId?: string;
+  identity?: GraphNodeIdentity;
+}
+
+interface GraphQueryBase {
+  authorization: GraphAuthorizationScope;
+  domains?: readonly GraphDomain[];
+  relationAllowlist: readonly string[];
+  direction: GraphDirection;
+  freshnessPolicy: GraphFreshnessPolicy;
+  bounds: GraphTraversalBounds;
+}
+
+interface GraphNeighborQuery extends GraphQueryBase {
+  seed: GraphNodeSelector;
+}
+
+interface GraphPathQuery extends GraphQueryBase {
+  seed: GraphNodeSelector;
+  target?: GraphNodeSelector;
+}
+
+interface GraphImpactQuery extends GraphQueryBase {
+  seed: GraphNodeSelector;
+}
+
+interface GraphImpactResult {
+  seed: GraphNodeRef;
+  affected: GraphPathResult[];
+  revisionSet: Partial<Record<GraphDomain, string>>;
+}
+
+interface GraphProjectionRevisionState {
+  graphDomain: GraphDomain;
+  spaceId: string;
+  vaultId: string | null;
+  scopeId: string;
+  requestedRevision: string | null;
+  builtRevision: string | null;
+  activeRevision: string | null;
+  activeFreshness: GraphProjectionFreshness | null;
+  lastSuccessfulUpdate: string | null;
+}
+
+interface GraphProjectionNodeInput {
+  identity: GraphNodeIdentity;
+  vaultId: string | null;
+  authorizationPath: string | null;
+  payload: Record<string, unknown>;
+}
+
+interface GraphProjectionEdgeInput {
+  from: GraphNodeIdentity;
+  relation: string;
+  to: GraphNodeIdentity;
+  authorizationPath?: string | null;
+  provenance: GraphProvenanceEnvelope;
+}
+
+interface GraphProjectionArtifact {
+  graphDomain: GraphDomain;
+  spaceId: string;
+  vaultId: string | null;
+  scopeId: string;
+  revision: string;
+  sourceRevision: string;
+  sourceHash: string | null;
+  provider: string;
+  providerVersion: string | null;
+  configurationVersion: string;
+  nodes: readonly GraphProjectionNodeInput[];
+  edges: readonly GraphProjectionEdgeInput[];
+}
+
+interface GraphQueryPort {
+  neighbors(input: GraphNeighborQuery): Promise<GraphPathResult[]>;
+  paths(input: GraphPathQuery): Promise<GraphPathResult[]>;
+  impact(input: GraphImpactQuery): Promise<GraphImpactResult>;
+  revisionState(
+    domain: GraphDomain,
+    spaceId: string,
+    scopeId: string,
+  ): Promise<GraphProjectionRevisionState>;
+}
+
+interface GraphProjectionPort<TArtifact = GraphProjectionArtifact> {
+  build(input: TArtifact): Promise<GraphProjectionRevision>;
+  update?(input: {
+    baseRevision: string;
+    next: TArtifact;
+  }): Promise<GraphProjectionRevision>;
+}
+
+const UUID_SHAPE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function requiredString(
+  value: unknown,
+  maxLength: number,
+  code: string,
+): string {
+  if (typeof value !== "string") throw graphError(code);
+  const normalized = value.trim();
+  if (!normalized || normalized.length > maxLength) throw graphError(code);
+  return normalized;
+}
+
+function parseGraphDomain(value: unknown): GraphDomain {
+  if (
+    typeof value !== "string" ||
+    !(GRAPH_DOMAINS as readonly string[]).includes(value)
+  ) {
+    throw graphError("GRAPH_DOMAIN_INVALID");
+  }
+  return value as GraphDomain;
+}
+
+function parseGraphDirection(value: unknown): GraphDirection {
+  if (value !== "outgoing" && value !== "incoming" && value !== "both") {
+    throw graphError("GRAPH_DIRECTION_INVALID");
+  }
+  return value;
+}
+
+function parseGraphFreshnessPolicy(value: unknown): GraphFreshnessPolicy {
+  if (value !== "FRESH_ONLY" && value !== "ALLOW_STALE") {
+    throw graphError("GRAPH_FRESHNESS_POLICY_INVALID");
+  }
+  return value;
+}
+
+function parseGraphNodeIdentity(value: GraphNodeIdentity): GraphNodeIdentity {
+  return {
+    graphDomain: parseGraphDomain(value.graphDomain),
+    scopeId: requiredString(value.scopeId, 512, "GRAPH_SCOPE_REQUIRED"),
+    kind: requiredString(value.kind, 120, "GRAPH_NODE_KIND_INVALID"),
+    canonicalKey: requiredString(
+      value.canonicalKey,
+      2048,
+      "GRAPH_CANONICAL_KEY_INVALID",
+    ),
+    revision: requiredString(value.revision, 512, "GRAPH_REVISION_REQUIRED"),
+  };
+}
+
+function parseGraphProvenanceEnvelope(
+  value: GraphProvenanceEnvelope,
+): GraphProvenanceEnvelope {
+  if (
+    !(GRAPH_DERIVATIONS as readonly string[]).includes(value.derivation)
+  ) {
+    throw graphError("GRAPH_PROVENANCE_DERIVATION_INVALID");
+  }
+  const boundedList = (
+    entries: readonly string[],
+    maxItems: number,
+    maxLength: number,
+    code: string,
+  ): string[] => {
+    if (!Array.isArray(entries) || entries.length > maxItems) {
+      throw graphError(code);
+    }
+    return entries.map((entry) => requiredString(entry, maxLength, code));
+  };
+  const revision = requiredString(
+    value.revision,
+    512,
+    "GRAPH_PROVENANCE_REVISION_REQUIRED",
+  );
+  const recordedAt = requiredString(
+    value.recordedAt,
+    128,
+    "GRAPH_PROVENANCE_RECORDED_AT_INVALID",
+  );
+  if (Number.isNaN(Date.parse(recordedAt))) {
+    throw graphError("GRAPH_PROVENANCE_RECORDED_AT_INVALID");
+  }
+  const validFrom = value.validFrom
+    ? requiredString(
+        value.validFrom,
+        128,
+        "GRAPH_PROVENANCE_VALID_FROM_INVALID",
+      )
+    : undefined;
+  const validTo = value.validTo
+    ? requiredString(value.validTo, 128, "GRAPH_PROVENANCE_VALID_TO_INVALID")
+    : undefined;
+  if (validFrom && Number.isNaN(Date.parse(validFrom))) {
+    throw graphError("GRAPH_PROVENANCE_VALID_FROM_INVALID");
+  }
+  if (validTo && Number.isNaN(Date.parse(validTo))) {
+    throw graphError("GRAPH_PROVENANCE_VALID_TO_INVALID");
+  }
+  if (validFrom && validTo && Date.parse(validTo) <= Date.parse(validFrom)) {
+    throw graphError("GRAPH_PROVENANCE_VALID_TO_INVALID");
+  }
+  if (
+    value.confidence !== undefined &&
+    (!Number.isFinite(value.confidence) ||
+      value.confidence < 0 ||
+      value.confidence > 1)
+  ) {
+    throw graphError("GRAPH_PROVENANCE_CONFIDENCE_INVALID");
+  }
+  return {
+    derivation: value.derivation,
+    sourceIds: boundedList(
+      value.sourceIds,
+      256,
+      1024,
+      "GRAPH_PROVENANCE_SOURCE_IDS_INVALID",
+    ),
+    evidenceIds: boundedList(
+      value.evidenceIds,
+      256,
+      1024,
+      "GRAPH_PROVENANCE_EVIDENCE_IDS_INVALID",
+    ),
+    locatorRefs: boundedList(
+      value.locatorRefs,
+      256,
+      2048,
+      "GRAPH_PROVENANCE_LOCATORS_INVALID",
+    ),
+    revision,
+    ...(value.supportSetId
+      ? {
+          supportSetId: requiredString(
+            value.supportSetId,
+            1024,
+            "GRAPH_PROVENANCE_SUPPORT_SET_INVALID",
+          ),
+        }
+      : {}),
+    ...(value.confidence === undefined
+      ? {}
+      : { confidence: value.confidence }),
+    ...(validFrom ? { validFrom } : {}),
+    ...(validTo ? { validTo } : {}),
+    recordedAt: new Date(recordedAt).toISOString(),
+  };
+}
+
+function parseGraphTraversalBounds(
+  value: GraphTraversalBounds,
+): GraphTraversalBounds {
+  const boundedInteger = (
+    candidate: number,
+    min: number,
+    max: number,
+    code: string,
+  ): number => {
+    if (!Number.isInteger(candidate) || candidate < min || candidate > max) {
+      throw graphError(code);
+    }
+    return candidate;
+  };
+  return {
+    maxHops: boundedInteger(value.maxHops, 1, 16, "GRAPH_MAX_HOPS_INVALID"),
+    maxFanout: boundedInteger(
+      value.maxFanout,
+      1,
+      1000,
+      "GRAPH_MAX_FANOUT_INVALID",
+    ),
+    maxCandidates: boundedInteger(
+      value.maxCandidates,
+      1,
+      10000,
+      "GRAPH_MAX_CANDIDATES_INVALID",
+    ),
+    timeBudgetMs: boundedInteger(
+      value.timeBudgetMs,
+      1,
+      60000,
+      "GRAPH_TIME_BUDGET_INVALID",
+    ),
+  };
+}
+
+function graphNodeIdentityKey(identity: GraphNodeIdentity): string {
+  const value = parseGraphNodeIdentity(identity);
+  return JSON.stringify([
+    value.graphDomain,
+    value.scopeId,
+    value.kind,
+    value.canonicalKey,
+    value.revision,
+  ]);
+}
 
 interface ProjectionRow {
   id: string;
@@ -143,25 +525,34 @@ function iso(value: Date | string | null): string | null {
 }
 
 function mapProjection(row: ProjectionRow): GraphProjectionRevision {
-  return GraphProjectionRevisionSchema.parse({
+  if (!UUID_SHAPE.test(row.id)) throw graphError("GRAPH_PROJECTION_ID_INVALID");
+  return {
     id: row.id,
-    graphDomain: row.graph_domain,
+    graphDomain: parseGraphDomain(row.graph_domain),
     spaceId: row.space_id,
     vaultId: row.vault_id,
-    scopeId: row.scope_id,
-    revision: row.revision,
-    sourceRevision: row.source_revision,
+    scopeId: requiredString(row.scope_id, 512, "GRAPH_SCOPE_REQUIRED"),
+    revision: requiredString(row.revision, 512, "GRAPH_REVISION_REQUIRED"),
+    sourceRevision: requiredString(
+      row.source_revision,
+      1024,
+      "GRAPH_SOURCE_REVISION_REQUIRED",
+    ),
     sourceHash: row.source_hash,
-    provider: row.provider,
+    provider: requiredString(row.provider, 160, "GRAPH_PROVIDER_REQUIRED"),
     providerVersion: row.provider_version,
-    configurationVersion: row.configuration_version,
+    configurationVersion: requiredString(
+      row.configuration_version,
+      512,
+      "GRAPH_CONFIGURATION_VERSION_REQUIRED",
+    ),
     lifecycle: row.lifecycle,
     freshness: row.freshness,
-    requestedAt: iso(row.requested_at),
+    requestedAt: iso(row.requested_at)!,
     builtAt: iso(row.built_at),
     activatedAt: iso(row.activated_at),
     lastSuccessfulUpdate: iso(row.last_successful_update),
-  });
+  };
 }
 
 function normalizeAuthorizationScope(
@@ -228,7 +619,7 @@ function edgeAllowed(
 }
 
 function validateProjectionArtifact(input: GraphProjectionArtifact): void {
-  GraphDomainSchema.parse(input.graphDomain);
+  parseGraphDomain(input.graphDomain);
   if (!input.scopeId.trim()) throw graphError("GRAPH_SCOPE_REQUIRED");
   if (!input.revision.trim()) throw graphError("GRAPH_REVISION_REQUIRED");
   if (!input.sourceRevision.trim())
@@ -242,7 +633,7 @@ function validateProjectionArtifact(input: GraphProjectionArtifact): void {
 
   const identities = new Set<string>();
   for (const node of input.nodes) {
-    const identity = GraphNodeIdentitySchema.parse(node.identity);
+    const identity = parseGraphNodeIdentity(node.identity);
     if (
       identity.graphDomain !== input.graphDomain ||
       identity.scopeId !== input.scopeId
@@ -261,9 +652,9 @@ function validateProjectionArtifact(input: GraphProjectionArtifact): void {
   }
 
   for (const edge of input.edges) {
-    const from = GraphNodeIdentitySchema.parse(edge.from);
-    GraphNodeIdentitySchema.parse(edge.to);
-    GraphProvenanceEnvelopeSchema.parse(edge.provenance);
+    const from = parseGraphNodeIdentity(edge.from);
+    parseGraphNodeIdentity(edge.to);
+    parseGraphProvenanceEnvelope(edge.provenance);
     if (
       from.graphDomain !== input.graphDomain ||
       from.scopeId !== input.scopeId
@@ -381,7 +772,7 @@ function activeNodeRef(row: ActiveNodeRow): GraphNodeRef {
 }
 
 function edgeProvenance(edge: ActiveEdgeRow) {
-  return GraphProvenanceEnvelopeSchema.parse({
+  return parseGraphProvenanceEnvelope({
     derivation: edge.derivation,
     sourceIds: edge.source_ids ?? [],
     evidenceIds: edge.evidence_ids ?? [],
@@ -405,8 +796,8 @@ function relationAllowlist(values: readonly string[]): string[] {
 }
 
 function domainAllowlist(values: readonly GraphDomain[] | undefined): GraphDomain[] {
-  if (!values?.length) return [...GraphDomainSchema.options];
-  return [...new Set(values.map((value) => GraphDomainSchema.parse(value)))];
+  if (!values?.length) return [...GRAPH_DOMAINS];
+  return [...new Set(values.map((value) => parseGraphDomain(value)))];
 }
 
 function compositeRevision(values: Array<{ scopeId: string; revision: string }>): string {
@@ -538,7 +929,7 @@ export class PostgresFederatedGraphStore
 
         const nodeIds = new Map<string, string>();
         for (const node of input.nodes) {
-          const identity = GraphNodeIdentitySchema.parse(node.identity);
+          const identity = parseGraphNodeIdentity(node.identity);
           const normalizedPath = authorizationPath(node.authorizationPath);
           const payloadHash = sha256(stableJson(node.payload));
           const inserted = await client.query<{
@@ -609,9 +1000,9 @@ export class PostgresFederatedGraphStore
         }
 
         for (const edge of input.edges) {
-          const fromIdentity = GraphNodeIdentitySchema.parse(edge.from);
-          const toIdentity = GraphNodeIdentitySchema.parse(edge.to);
-          const provenance = GraphProvenanceEnvelopeSchema.parse(edge.provenance);
+          const fromIdentity = parseGraphNodeIdentity(edge.from);
+          const toIdentity = parseGraphNodeIdentity(edge.to);
+          const provenance = parseGraphProvenanceEnvelope(edge.provenance);
           const fromId = await resolveNodeId(
             client,
             input.spaceId,
@@ -767,7 +1158,7 @@ export class PostgresFederatedGraphStore
     spaceId: string,
     scopeId: string,
   ): Promise<GraphProjectionRevisionState> {
-    GraphDomainSchema.parse(domain);
+    parseGraphDomain(domain);
     const result = await this.db.pool.query<{
       requested_revision: string | null;
       built_revision: string | null;
@@ -892,10 +1283,10 @@ export class PostgresFederatedGraphStore
   }
 
   private async loadGraph(input: GraphQueryBase): Promise<LoadedGraph> {
-    const bounds = GraphTraversalBoundsSchema.parse(input.bounds);
+    const bounds = parseGraphTraversalBounds(input.bounds);
     void bounds;
-    GraphDirectionSchema.parse(input.direction);
-    GraphFreshnessPolicySchema.parse(input.freshnessPolicy);
+    parseGraphDirection(input.direction);
+    parseGraphFreshnessPolicy(input.freshnessPolicy);
     const domains = domainAllowlist(input.domains);
     const prefixes = normalizeAuthorizationScope(input.authorization);
     const freshnessClause =
@@ -1027,7 +1418,7 @@ export class PostgresFederatedGraphStore
     const byId = selector.nodeId?.trim();
     const byIdentity = selector.identity
       ? graph.identityToNodeId.get(
-          graphNodeIdentityKey(GraphNodeIdentitySchema.parse(selector.identity)),
+          graphNodeIdentityKey(parseGraphNodeIdentity(selector.identity)),
         )
       : undefined;
     if (byId && byIdentity && byId !== byIdentity) {
@@ -1090,7 +1481,7 @@ export class PostgresFederatedGraphStore
     seed: GraphNodeRef,
     target: GraphNodeRef | undefined,
   ): Promise<GraphPathResult[]> {
-    const bounds = GraphTraversalBoundsSchema.parse(input.bounds);
+    const bounds = parseGraphTraversalBounds(input.bounds);
     const deadline = Date.now() + bounds.timeBudgetMs;
     const frontier: TraversalState[] = [
       { nodeId: seed.id, visited: [seed.id], steps: [] },
@@ -1122,12 +1513,12 @@ export class PostgresFederatedGraphStore
           provenance: edgeProvenance(oriented.edge),
         };
         const steps = [...current.steps, step];
-        const result = GraphPathResultSchema.parse({
+        const result: GraphPathResult = {
           seed,
           target: to,
           steps,
           revisionSet: revisionSetForPath(seed, steps),
-        });
+        };
         if (!target || target.id === to.id) {
           const existing = bestByTarget.get(to.id);
           if (!existing || pathSignature(result) < pathSignature(existing)) {
