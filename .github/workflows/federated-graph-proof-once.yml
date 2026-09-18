@@ -1,0 +1,50 @@
+name: federated-graph-proof-once
+
+on:
+  push:
+    branches:
+      - feat/v0.4-enterprise-context-workspace
+
+permissions:
+  contents: write
+
+jobs:
+  proof:
+    runs-on: ubuntu-24.04
+    env:
+      DATABASE_URL: postgres://akp:akp@localhost:55432/akp
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/v0.4-enterprise-context-workspace
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - run: docker compose up -d --wait postgres
+      - run: pnpm db:migrate
+      - name: Run federated graph integration proof and self-remove
+        shell: bash
+        run: |
+          set +e
+          pnpm --filter @akp/postgres exec vitest run test/federated-graph.integration.test.ts
+          status=$?
+          set -e
+          git pull --ff-only origin feat/v0.4-enterprise-context-workspace
+          rm .github/workflows/federated-graph-proof-once.yml
+          git add -A
+          if ! git diff --cached --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "ci: remove federated graph proof workflow"
+            git push origin HEAD:feat/v0.4-enterprise-context-workspace
+          fi
+          exit "$status"
+      - name: Stop disposable services
+        if: always()
+        run: docker compose down -v --remove-orphans
