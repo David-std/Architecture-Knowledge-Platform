@@ -114,6 +114,7 @@ const workspaceCoordinationPaths = {
   "/v1/sessions/{id}/participants": {
     post: "workspace:manage-participants",
   },
+  "/v1/sessions/{id}/work-context": { post: "workspace:event:append" },
   "/v1/sessions/{id}/claims": { post: "workspace:claim" },
   "/v1/sessions/{id}/claims/heartbeat": { post: "workspace:claim" },
   "/v1/sessions/{id}/claims/handoff": { post: "workspace:handoff" },
@@ -264,6 +265,7 @@ for (const field of ["purpose", "spaceId", "vaultId"]) {
 for (const route of [
   "/v1/sessions",
   "/v1/sessions/{id}/participants",
+  "/v1/sessions/{id}/work-context",
   "/v1/sessions/{id}/claims",
   "/v1/sessions/{id}/claims/heartbeat",
   "/v1/sessions/{id}/claims/handoff",
@@ -486,6 +488,7 @@ for (const tool of mcp.tools ?? []) {
 const requiredWorkspaceMcpTools = [
   "akp_list_sessions",
   "akp_get_session_state",
+  "akp_update_work_context",
   "akp_claim_workspace_work",
   "akp_heartbeat_workspace_claim",
   "akp_handoff_workspace_claim",
