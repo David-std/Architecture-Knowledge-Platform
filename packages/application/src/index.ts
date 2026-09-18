@@ -22,6 +22,7 @@ export interface BootstrapWorkContextSnapshot {
     id: string;
     workKey: string;
     ownerId: string;
+    ownerPrincipalId: string;
     status: string;
     fencingToken: number;
     leaseExpiresAt: Date;
@@ -60,6 +61,7 @@ export interface BootstrapAuthorizationSnapshot {
   principalId: string;
   principalKind: string;
   principalPolicyRevision: number;
+  allowedActions: string[];
   scopeFingerprint: string;
   policyRevision: string;
 }
