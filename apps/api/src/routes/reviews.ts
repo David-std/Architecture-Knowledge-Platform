@@ -13,6 +13,7 @@ import { GitKnowledgeStore } from "@akp/git-store";
 import { assertSafeKnowledgePath } from "@akp/compiler";
 import {
   parseKnowledgeDocumentMetadata,
+  validateGovernedTrustBoundary,
   validateMarkdownDocument,
 } from "@akp/validation";
 import { withSpan } from "@akp/observability";
@@ -806,7 +807,10 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
           .send({ code: "PATH_SCOPE_DENIED", path: deniedPath.path });
       }
       const issues = changes.flatMap((change) =>
-        validateMarkdownDocument(change.content).map((issue) => ({
+        [
+          ...validateMarkdownDocument(change.content),
+          ...validateGovernedTrustBoundary(change.content),
+        ].map((issue) => ({
           ...issue,
           path: change.path,
         })),
@@ -1066,7 +1070,10 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
           .send({ code: "PATH_SCOPE_DENIED", path: deniedPath.path });
       }
       const issues = changes.flatMap((change) =>
-        validateMarkdownDocument(change.content).map((issue) => ({
+        [
+          ...validateMarkdownDocument(change.content),
+          ...validateGovernedTrustBoundary(change.content),
+        ].map((issue) => ({
           ...issue,
           path: change.path,
         })),
