@@ -26,12 +26,18 @@ export interface DecisionCandidateRecord {
   decisionAuthorityPrincipalId: string;
   title: string;
   problem: string;
+  context: string;
   drivers: string[];
+  qualityAttributes: string[];
   affectedRefs: string[];
   evidenceRefs: string[];
+  consequences: string | null;
+  followUpActions: string[];
   verificationPlan: string;
   verificationDueAt: Date | null;
   decisionDeadline: Date | null;
+  effectiveFrom: Date | null;
+  effectiveUntil: Date | null;
   status: DecisionCandidateStatus;
   selectedAlternativeId: string | null;
   capturedEventId: string | null;
@@ -120,15 +126,25 @@ function candidateRecord(row: Record<string, unknown>): DecisionCandidateRecord 
     decisionAuthorityPrincipalId: String(row.decision_authority_principal_id),
     title: String(row.title),
     problem: String(row.problem),
+    context: String(row.context),
     drivers: stringArray(row.drivers),
+    qualityAttributes: stringArray(row.quality_attributes),
     affectedRefs: stringArray(row.affected_refs),
     evidenceRefs: stringArray(row.evidence_refs),
+    consequences: row.consequences ? String(row.consequences) : null,
+    followUpActions: stringArray(row.follow_up_actions),
     verificationPlan: String(row.verification_plan),
     verificationDueAt: row.verification_due_at
       ? new Date(String(row.verification_due_at))
       : null,
     decisionDeadline: row.decision_deadline
       ? new Date(String(row.decision_deadline))
+      : null,
+    effectiveFrom: row.effective_from
+      ? new Date(String(row.effective_from))
+      : null,
+    effectiveUntil: row.effective_until
+      ? new Date(String(row.effective_until))
       : null,
     status: String(row.status) as DecisionCandidateStatus,
     selectedAlternativeId: row.selected_alternative_id
@@ -360,7 +376,9 @@ export async function createDecisionCandidate(
     decisionAuthorityPrincipalId: string;
     title: string;
     problem: string;
+    context: string;
     drivers: string[];
+    qualityAttributes: string[];
     affectedRefs: string[];
     evidenceRefs: string[];
     verificationPlan: string;
@@ -396,10 +414,10 @@ export async function createDecisionCandidate(
     const inserted = await client.query<Record<string, unknown>>(
       `insert into workspace_decision_candidates(
          session_id,space_id,vault_id,created_by_principal_id,
-         decision_authority_principal_id,title,problem,drivers,affected_refs,
-         evidence_refs,verification_plan,verification_due_at,decision_deadline,
-         supersedes_candidate_id
-       ) values($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10::jsonb,$11,$12,$13,$14)
+         decision_authority_principal_id,title,problem,context,drivers,
+         quality_attributes,affected_refs,evidence_refs,verification_plan,
+         verification_due_at,decision_deadline,supersedes_candidate_id
+       ) values($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11::jsonb,$12::jsonb,$13,$14,$15,$16)
        returning *,null::text review_status`,
       [
         input.sessionId,
@@ -409,7 +427,9 @@ export async function createDecisionCandidate(
         input.decisionAuthorityPrincipalId,
         input.title,
         input.problem,
+        input.context,
         JSON.stringify(input.drivers),
+        JSON.stringify(input.qualityAttributes),
         JSON.stringify(input.affectedRefs),
         JSON.stringify(input.evidenceRefs),
         input.verificationPlan,
@@ -847,6 +867,10 @@ export async function selectDecisionAlternative(
     alternativeId: string;
     actorUserId: string;
     actorPrincipalId: string;
+    consequences: string;
+    followUpActions: string[];
+    effectiveFrom?: Date | null;
+    effectiveUntil?: Date | null;
   },
 ): Promise<DecisionCandidateRecord> {
   const client = await db.pool.connect();
@@ -893,11 +917,19 @@ export async function selectDecisionAlternative(
     }
     const updated = await client.query<Record<string, unknown>>(
       `update workspace_decision_candidates
-          set selected_alternative_id=$2,status='READY_FOR_REVIEW',
-              version=version+1,updated_at=now()
+          set selected_alternative_id=$2,consequences=$3,
+              follow_up_actions=$4::jsonb,effective_from=$5,effective_until=$6,
+              status='READY_FOR_REVIEW',version=version+1,updated_at=now()
         where id=$1
         returning *,null::text review_status`,
-      [input.candidateId, input.alternativeId],
+      [
+        input.candidateId,
+        input.alternativeId,
+        input.consequences,
+        JSON.stringify(input.followUpActions),
+        input.effectiveFrom ?? null,
+        input.effectiveUntil ?? null,
+      ],
     );
     const row = updated.rows[0];
     if (!row) throw decisionError("DECISION_CANDIDATE_WRITE_FAILED", 500);
@@ -955,7 +987,9 @@ export async function captureDecisionCandidate(
         workflowVersion: 1,
         title: snapshot.candidate.title,
         problem: snapshot.candidate.problem,
+        context: snapshot.candidate.context,
         drivers: snapshot.candidate.drivers,
+        qualityAttributes: snapshot.candidate.qualityAttributes,
         decisionAuthorityPrincipalId:
           snapshot.candidate.decisionAuthorityPrincipalId,
         selectedAlternative: selected,
@@ -964,11 +998,16 @@ export async function captureDecisionCandidate(
         consultations: snapshot.consultations,
         evidenceRefs: snapshot.candidate.evidenceRefs,
         affectedRefs: snapshot.candidate.affectedRefs,
+        consequences: snapshot.candidate.consequences,
+        followUpActions: snapshot.candidate.followUpActions,
         verificationPlan: snapshot.candidate.verificationPlan,
         verificationDueAt:
           snapshot.candidate.verificationDueAt?.toISOString() ?? null,
         decisionDeadline:
           snapshot.candidate.decisionDeadline?.toISOString() ?? null,
+        effectiveFrom: snapshot.candidate.effectiveFrom?.toISOString() ?? null,
+        effectiveUntil:
+          snapshot.candidate.effectiveUntil?.toISOString() ?? null,
         supersedesCandidateId: snapshot.candidate.supersedesCandidateId,
       },
     });
