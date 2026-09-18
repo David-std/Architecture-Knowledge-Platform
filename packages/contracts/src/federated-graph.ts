@@ -142,7 +142,15 @@ export const GraphPathStep = z.object({
 });
 export type GraphPathStep = z.infer<typeof GraphPathStep>;
 
-const revisionSetShape = z.record(GraphDomain, z.string().min(1)).partial();
+const revisionSetShape = z.object({
+  EPISTEMIC: z.string().min(1).optional(),
+  SOFTWARE_CATALOG: z.string().min(1).optional(),
+  CODE: z.string().min(1).optional(),
+  RUNTIME: z.string().min(1).optional(),
+  TEMPORAL: z.string().min(1).optional(),
+  WORK: z.string().min(1).optional(),
+  COMMUNITY: z.string().min(1).optional(),
+});
 
 export const GraphPathResult = z.object({
   seed: GraphNodeRef,
