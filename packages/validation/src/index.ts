@@ -43,6 +43,47 @@ export function parseKnowledgeDocumentMetadata(markdown: string) {
   }
 }
 
+/**
+ * Governed proposal/revision content may be human reviewed, but it cannot
+ * manufacture the stronger ATTESTED authority by writing importer-recognized
+ * trust fields into Markdown frontmatter. Legacy/admin vault import remains a
+ * separate boundary and may still carry pre-existing attestation metadata.
+ */
+export function validateGovernedTrustBoundary(
+  markdown: string,
+): ValidationIssue[] {
+  let parsed: matter.GrayMatterFile<string>;
+  try {
+    parsed = matter(markdown);
+  } catch {
+    // The canonical Markdown validator reports parse failures.
+    return [];
+  }
+  const frontmatter = parsed.data as Record<string, unknown>;
+  const authorityFields = [
+    "trust_tier",
+    "verification_status",
+    "status",
+  ] as const;
+  const escalated = authorityFields.filter((field) =>
+    String(frontmatter[field] ?? "")
+      .trim()
+      .toLowerCase()
+      .includes("attested"),
+  );
+  if (!escalated.length) return [];
+  return [
+    {
+      code: "TRUST_ESCALATION_FORBIDDEN",
+      severity: "ERROR",
+      message:
+        "Governed proposals cannot self-declare ATTESTED trust through " +
+        escalated.join(", ") +
+        "; attestation must come from an authority outside proposal content.",
+    },
+  ];
+}
+
 export function validateMarkdownDocument(markdown: string): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   let parsed: matter.GrayMatterFile<string>;
