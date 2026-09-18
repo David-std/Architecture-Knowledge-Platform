@@ -1151,6 +1151,8 @@ export async function workspaceSessionSnapshot(
 ): Promise<{
   session: WorkspaceSessionAccess;
   participants: Record<string, unknown>[];
+  principals: Record<string, unknown>[];
+  assignedPrincipals: string[];
   claims: WorkspaceClaim[];
   events: Record<string, unknown>[];
   snapshotVersion: number;
@@ -1184,6 +1186,27 @@ export async function workspaceSessionSnapshot(
          from workspace_session_participants
         where session_id=$1 and left_at is null
         order by joined_at,user_id`,
+      [sessionId],
+    );
+    const principals = await client.query<Record<string, unknown>>(
+      `select principal.id,principal.kind,principal.user_id,
+              principal.parent_principal_id,principal.policy_revision,
+              principal.state,principal.created_at
+         from principals principal
+        where (
+          principal.kind='HUMAN'
+          and exists(
+            select 1
+              from workspace_session_participants participant
+             where participant.session_id=$1
+               and participant.user_id=principal.user_id
+               and participant.left_at is null
+          )
+        ) or (
+          principal.kind='AGENT_PROCESS'
+          and principal.session_id=$1
+        )
+        order by principal.kind,principal.created_at,principal.id`,
       [sessionId],
     );
     const claims = await client.query<Record<string, unknown>>(
@@ -1224,6 +1247,10 @@ export async function workspaceSessionSnapshot(
     return {
       session,
       participants: participants.rows,
+      principals: principals.rows,
+      assignedPrincipals: principals.rows
+        .filter((principal) => String(principal.state) === "ACTIVE")
+        .map((principal) => String(principal.id)),
       claims: claims.rows.map(normalizeClaim),
       events: cleanEvents,
       snapshotVersion: session.coordinationVersion,
