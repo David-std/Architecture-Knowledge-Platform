@@ -140,6 +140,7 @@ export type GraphNodeRef = z.infer<typeof GraphNodeRef>;
 export const GraphPathStep = z.object({
   from: GraphNodeRef,
   relation: z.string().min(1).max(160),
+  direction: z.enum(["outgoing", "incoming"]),
   to: GraphNodeRef,
   provenance: GraphProvenanceEnvelope,
 });
