@@ -782,7 +782,7 @@ function edgeProvenance(edge: ActiveEdgeRow) {
     ...(edge.confidence === null ? {} : { confidence: edge.confidence }),
     ...(edge.valid_from ? { validFrom: iso(edge.valid_from) } : {}),
     ...(edge.valid_to ? { validTo: iso(edge.valid_to) } : {}),
-    recordedAt: iso(edge.recorded_at),
+    recordedAt: iso(edge.recorded_at)!,
   });
 }
 
