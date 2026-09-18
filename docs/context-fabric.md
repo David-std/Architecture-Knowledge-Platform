@@ -119,3 +119,18 @@ The access modes have different runtime behavior:
 A KnowledgeProfile remains the policy authority. `ConnectorCapabilities` says what the connector can guarantee; `connectorPolicy` says what a vault accepts. In particular, a connector with `WORKSPACE_WIDE` or `NONE` permission fidelity is denied when the profile requires permission fidelity. `SOURCE_ACL_MAPPED` is accepted only when the connector also declares an identity mapping.
 
 `context_fabric_peers` is the first consumer of this shared contract. It is not the definition of the contract: later source connectors reuse the same schema. Registration persists the declared capability set and performs no network contact. Listing peers exposes the derived read plan. Supplying `vaultId` additionally evaluates each peer against that vault's active KnowledgeProfile without changing the peer or upgrading its trust.
+
+
+## Consultative decision workflow
+
+Architecture decisions use workspace coordination state before they become governed knowledge. The durable flow is:
+
+`candidate → alternatives / objections → human consultation → selection → captured DECISION_CANDIDATE → governed promotion/review → publication → approved or superseded`.
+
+The candidate records the problem, drivers, affected references, evidence, decision authority, deadlines and a verification plan. Alternatives preserve authorship at principal level. A human-authored alternative enters consultation as `HUMAN_SUBMITTED`; an agent-authored alternative is `AGENT_SUGGESTED` and remains `SUGGESTED` until the human decision authority explicitly marks it considered. The platform therefore never rewrites model output as a human option or infers consensus from co-occurrence.
+
+Selection is fail-closed. The decision authority cannot select an alternative until at least two alternatives are considered, at least one independent human consultation has responded, and every open objection has been resolved. Consultation responses preserve the reviewer principal and position; objections preserve their author, evidence and resolution provenance.
+
+`capture` does not publish a decision. It freezes the consultative snapshot into the existing promotable `DECISION_CANDIDATE` workspace event. Promotion then creates the ordinary governed review and links the candidate to that review. Discussion rows remain coordination/provenance state and are never compiled directly into canonical knowledge.
+
+Approval authority remains the existing review lifecycle. Agent-process credentials may prepare candidates, suggest alternatives, capture the ready snapshot and request promotion when explicitly delegated `knowledge:propose`; they cannot approve publication. The candidate becomes `APPROVED` only inside the same database transaction that finalizes the canonical review publication. A replacement decision marks its approved predecessor `SUPERSEDED` in that transaction as well, so canonical Git revision authority and decision lifecycle cannot diverge silently.
