@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
 import {
+  finalizeDecisionCandidatePublicationInTransaction,
+  markDecisionCandidateReviewRejected,
   pathMatchesVaultPrefix,
   resolveAuthorizedVaultScope,
   type AppendOutboxEventInput,
@@ -273,6 +275,11 @@ async function finalizePublicationTransaction(
   );
   if (!approved.rowCount) return false;
   const manifest = (review.impact_manifest ?? {}) as Record<string, unknown>;
+  await finalizeDecisionCandidatePublicationInTransaction(client, {
+    reviewId: String(review.id),
+    revision,
+    impactManifest: manifest,
+  });
   const jobId = manifest.jobId;
   if (typeof jobId === "string") {
     await client.query(
@@ -1663,6 +1670,7 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
         String(review.space_id),
       );
       if (decision === "REJECT") {
+        await markDecisionCandidateReviewRejected(db, request.params.id);
         await new GitKnowledgeStore(repositoryPath())
           .cleanupDraft(String(review.branch_name))
           .catch(async (cleanupError) => {
