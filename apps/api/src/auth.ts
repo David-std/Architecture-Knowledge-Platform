@@ -607,6 +607,12 @@ function agentProcessRouteAction(
     return "workspace:claim";
   }
   if (
+    /^\/v1\/sessions\/[^/]+\/claims\/release$/.test(requestPath) &&
+    method === "POST"
+  ) {
+    return "workspace:claim";
+  }
+  if (
     /^\/v1\/sessions\/[^/]+\/claims\/handoff$/.test(requestPath) &&
     method === "POST"
   ) {
@@ -617,6 +623,42 @@ function agentProcessRouteAction(
     method === "POST"
   ) {
     return "workspace:event:append";
+  }
+  if (
+    /^\/v1\/sessions\/[^/]+\/decisions(?:\/[^/]+)?$/.test(requestPath) &&
+    method === "GET"
+  ) {
+    return "workspace:read";
+  }
+  if (
+    /^\/v1\/sessions\/[^/]+\/decisions$/.test(requestPath) &&
+    method === "POST"
+  ) {
+    return "workspace:event:append";
+  }
+  if (
+    /^\/v1\/sessions\/[^/]+\/decisions\/[^/]+\/(?:alternatives|objections|consultations|selection)$/.test(
+      requestPath,
+    ) &&
+    method === "POST"
+  ) {
+    return "workspace:event:append";
+  }
+  if (
+    /^\/v1\/sessions\/[^/]+\/decisions\/[^/]+\/(?:alternatives\/[^/]+\/decision|objections\/[^/]+\/resolve|consultations\/[^/]+\/respond)$/.test(
+      requestPath,
+    ) &&
+    method === "POST"
+  ) {
+    return "workspace:event:append";
+  }
+  if (
+    /^\/v1\/sessions\/[^/]+\/decisions\/[^/]+\/capture$/.test(
+      requestPath,
+    ) &&
+    method === "POST"
+  ) {
+    return "knowledge:propose";
   }
   if (
     ["/v1/search", "/v1/context"].includes(requestPath) &&
