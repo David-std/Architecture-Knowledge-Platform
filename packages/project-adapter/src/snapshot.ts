@@ -121,12 +121,26 @@ function resolveRelativeImport(
   );
   const candidates = [
     unresolved,
-    ...[".ts", ".tsx", ".vue", ".java", ".cs"].map(
-      (extension) => `${unresolved}${extension}`,
-    ),
-    ...["index.ts", "index.tsx", "index.vue"].map(
-      (name) => `${unresolved}/${name}`,
-    ),
+    ...[
+      ".ts",
+      ".tsx",
+      ".js",
+      ".jsx",
+      ".mjs",
+      ".cjs",
+      ".vue",
+      ".java",
+      ".cs",
+    ].map((extension) => `${unresolved}${extension}`),
+    ...[
+      "index.ts",
+      "index.tsx",
+      "index.js",
+      "index.jsx",
+      "index.mjs",
+      "index.cjs",
+      "index.vue",
+    ].map((name) => `${unresolved}/${name}`),
   ];
   return candidates.find((candidate) => files.has(candidate)) ?? null;
 }
@@ -184,7 +198,7 @@ export async function buildProjectSnapshot(input: {
   const allFiles = listed.stdout
     .split(/\r?\n/)
     .filter((file) =>
-      /(^|\/)(package\.json|pom\.xml|build\.gradle(?:\.kts)?|[^/]+\.csproj)$|\.(java|cs|ts|tsx|vue)$/i.test(
+      /(^|\/)(package\.json|pom\.xml|build\.gradle(?:\.kts)?|[^/]+\.csproj)$|\.(java|cs|ts|tsx|js|jsx|mjs|cjs|vue)$/i.test(
         file,
       ),
     )
