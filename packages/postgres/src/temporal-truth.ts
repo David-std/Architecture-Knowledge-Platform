@@ -1,23 +1,378 @@
 import { createHash, randomUUID } from "node:crypto";
-import {
-  CreateSourceEpisodeInput,
-  CreateTruthSupportSetInput,
-  RecordTemporalFactInput,
-  SourceEpisode,
-  TemporalFact,
-  TemporalFactView,
-  TemporalTruthQuery,
-  TruthRevision,
-  TruthSupportSet,
-  type CreateSourceEpisodeInput as CreateSourceEpisodeInputType,
-  type CreateTruthSupportSetInput as CreateTruthSupportSetInputType,
-  type RecordTemporalFactInput as RecordTemporalFactInputType,
-  type TemporalFactView as TemporalFactViewType,
-  type TemporalTruthQuery as TemporalTruthQueryType,
-  type TruthRevision as TruthRevisionType,
-  type TruthSupportEvaluation,
-  type TruthSupportSet as TruthSupportSetType,
-} from "@akp/contracts";
+export type TruthSupportEvaluation =
+  | "SUPPORTED"
+  | "DISPUTED"
+  | "UNSUPPORTED";
+
+export interface SourceEpisode {
+  id: string;
+  spaceId: string;
+  vaultId: string;
+  sourceId: string;
+  sourceArtifactId: string;
+  sourceHash: string;
+  observedAt: string | null;
+  ingestedAt: string;
+  locatorRefs: string[];
+}
+
+export interface TruthSupportSet {
+  schemaVersion: 1;
+  id: string;
+  spaceId: string;
+  vaultId: string;
+  state: "SUPPORTED" | "DISPUTED";
+  factIds: string[];
+  evidenceIds: string[];
+  sourceArtifactIds: string[];
+  sourceRevisionHashes: string[];
+  sourceEpisodeIds: string[];
+  alternativeSupportGroups: string[][];
+  createdAt: string;
+}
+
+export interface TruthRevision {
+  id: string;
+  spaceId: string;
+  vaultId: string;
+  revisionSeq: number;
+  revisionHash: string;
+  parentRevisionHash: string | null;
+  reason: string;
+  resourceType: string;
+  resourceId: string;
+  createdAt: string;
+}
+
+export interface TemporalFact {
+  id: string;
+  spaceId: string;
+  vaultId: string;
+  scopeId: string;
+  authorizationPath: string;
+  subjectRef: string;
+  predicate: string;
+  object: unknown;
+  validFrom: string;
+  validTo: string | null;
+  recordedAt: string;
+  sourceEpisodeId: string | null;
+  supportSetId: string;
+  lifecycle: "ACTIVE" | "DISPUTED";
+  truthRevisionHash: string;
+  truthRevisionSeq: number;
+}
+
+export interface TemporalFactView extends TemporalFact {
+  supportState: TruthSupportEvaluation;
+  queryRevisionHash: string | null;
+  queryRevisionSeq: number;
+}
+
+export interface CreateSourceEpisodeInput {
+  spaceId: string;
+  vaultId: string;
+  sourceId: string;
+  sourceArtifactId: string;
+  sourceHash: string;
+  observedAt?: string | null;
+  ingestedAt?: string;
+  locatorRefs?: string[];
+}
+
+export interface CreateTruthSupportSetInput {
+  spaceId: string;
+  vaultId: string;
+  state?: "SUPPORTED" | "DISPUTED";
+  factIds?: string[];
+  evidenceIds?: string[];
+  sourceArtifactIds?: string[];
+  sourceRevisionHashes?: string[];
+  sourceEpisodeIds?: string[];
+  alternativeSupportGroups?: string[][];
+}
+
+export interface RecordTemporalFactInput {
+  spaceId: string;
+  vaultId: string;
+  scopeId: string;
+  authorizationPath: string;
+  subjectRef: string;
+  predicate: string;
+  object: unknown;
+  validFrom: string;
+  validTo?: string | null;
+  recordedAt?: string;
+  sourceEpisodeId?: string | null;
+  supportSetId: string;
+  lifecycle?: "ACTIVE" | "DISPUTED";
+  supersedesFactId?: string;
+}
+
+export interface TemporalTruthQuery {
+  spaceId: string;
+  vaultId: string;
+  subjectRef?: string;
+  predicate?: string;
+  mode?: "CURRENT" | "HISTORY";
+  validAt?: string;
+  recordedAtOrBefore?: string;
+  truthRevisionHash?: string;
+  changedSince?: string;
+  authorizationPathPrefixes?: Array<string | null>;
+  limit?: number;
+}
+
+const UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const HASH64 = /^[a-f0-9]{64}$/;
+
+function requiredUuid(value: string, code: string): string {
+  if (!UUID.test(value)) throw new Error(code);
+  return value;
+}
+
+function requiredHash(value: string, code: string): string {
+  if (!HASH64.test(value)) throw new Error(code);
+  return value;
+}
+
+function requiredText(
+  value: string,
+  code: string,
+  maximum: number,
+): string {
+  const normalized = value.trim();
+  if (!normalized || normalized.length > maximum) throw new Error(code);
+  return normalized;
+}
+
+function requiredDate(value: string, code: string): string {
+  const time = Date.parse(value);
+  if (!Number.isFinite(time)) throw new Error(code);
+  return new Date(time).toISOString();
+}
+
+function optionalDate(
+  value: string | null | undefined,
+  code: string,
+): string | null | undefined {
+  if (value === undefined || value === null) return value;
+  return requiredDate(value, code);
+}
+
+function boundedStrings(
+  values: readonly string[] | undefined,
+  code: string,
+  maximumItems: number,
+  maximumLength: number,
+): string[] {
+  const result = [...(values ?? [])];
+  if (result.length > maximumItems) throw new Error(code);
+  for (const value of result) {
+    if (!value.trim() || value.length > maximumLength) throw new Error(code);
+  }
+  return result;
+}
+
+function boundedUuids(
+  values: readonly string[] | undefined,
+  code: string,
+): string[] {
+  const result = [...(values ?? [])];
+  if (result.length > 500 || result.some((value) => !UUID.test(value))) {
+    throw new Error(code);
+  }
+  return result;
+}
+
+function normalizeSourceEpisodeInput(
+  input: CreateSourceEpisodeInput,
+): Required<Omit<CreateSourceEpisodeInput, "observedAt">> & {
+  observedAt: string | null;
+} {
+  return {
+    spaceId: requiredUuid(input.spaceId, "TRUTH_SPACE_ID_INVALID"),
+    vaultId: requiredUuid(input.vaultId, "TRUTH_VAULT_ID_INVALID"),
+    sourceId: requiredUuid(input.sourceId, "TRUTH_SOURCE_ID_INVALID"),
+    sourceArtifactId: requiredUuid(
+      input.sourceArtifactId,
+      "TRUTH_SOURCE_ARTIFACT_ID_INVALID",
+    ),
+    sourceHash: requiredHash(input.sourceHash, "TRUTH_SOURCE_HASH_INVALID"),
+    observedAt:
+      optionalDate(input.observedAt, "TRUTH_OBSERVED_AT_INVALID") ?? null,
+    ingestedAt:
+      optionalDate(input.ingestedAt, "TRUTH_INGESTED_AT_INVALID") ??
+      new Date().toISOString(),
+    locatorRefs: boundedStrings(
+      input.locatorRefs,
+      "TRUTH_LOCATOR_REFS_INVALID",
+      500,
+      2048,
+    ),
+  };
+}
+
+function normalizeSupportSetInput(input: CreateTruthSupportSetInput) {
+  const sourceRevisionHashes = [...(input.sourceRevisionHashes ?? [])];
+  if (
+    sourceRevisionHashes.length > 500 ||
+    sourceRevisionHashes.some((value) => !HASH64.test(value))
+  ) {
+    throw new Error("TRUTH_SOURCE_REVISION_HASHES_INVALID");
+  }
+  const alternativeSupportGroups = (input.alternativeSupportGroups ?? []).map(
+    (group) => boundedStrings(group, "TRUTH_SUPPORT_GROUP_INVALID", 100, 2200),
+  );
+  if (alternativeSupportGroups.length > 100) {
+    throw new Error("TRUTH_SUPPORT_GROUP_INVALID");
+  }
+  return {
+    spaceId: requiredUuid(input.spaceId, "TRUTH_SPACE_ID_INVALID"),
+    vaultId: requiredUuid(input.vaultId, "TRUTH_VAULT_ID_INVALID"),
+    state: input.state ?? ("SUPPORTED" as const),
+    factIds: boundedUuids(input.factIds, "TRUTH_FACT_IDS_INVALID"),
+    evidenceIds: boundedUuids(input.evidenceIds, "TRUTH_EVIDENCE_IDS_INVALID"),
+    sourceArtifactIds: boundedUuids(
+      input.sourceArtifactIds,
+      "TRUTH_SOURCE_ARTIFACT_IDS_INVALID",
+    ),
+    sourceRevisionHashes,
+    sourceEpisodeIds: boundedUuids(
+      input.sourceEpisodeIds,
+      "TRUTH_SOURCE_EPISODE_IDS_INVALID",
+    ),
+    alternativeSupportGroups,
+  };
+}
+
+function normalizeFactInput(input: RecordTemporalFactInput) {
+  const validFrom = requiredDate(input.validFrom, "TRUTH_VALID_FROM_INVALID");
+  const validTo = optionalDate(input.validTo, "TRUTH_VALID_TO_INVALID") ?? null;
+  if (
+    validTo &&
+    new Date(validTo).getTime() <= new Date(validFrom).getTime()
+  ) {
+    throw new Error("TRUTH_VALID_INTERVAL_INVALID");
+  }
+  return {
+    spaceId: requiredUuid(input.spaceId, "TRUTH_SPACE_ID_INVALID"),
+    vaultId: requiredUuid(input.vaultId, "TRUTH_VAULT_ID_INVALID"),
+    scopeId: requiredText(input.scopeId, "TRUTH_SCOPE_ID_INVALID", 512),
+    authorizationPath: requiredText(
+      input.authorizationPath,
+      "TRUTH_AUTHORIZATION_PATH_INVALID",
+      4096,
+    ),
+    subjectRef: requiredText(
+      input.subjectRef,
+      "TRUTH_SUBJECT_REF_INVALID",
+      2048,
+    ),
+    predicate: requiredText(input.predicate, "TRUTH_PREDICATE_INVALID", 512),
+    object: input.object,
+    validFrom,
+    validTo,
+    ...(input.recordedAt
+      ? { recordedAt: requiredDate(input.recordedAt, "TRUTH_RECORDED_AT_INVALID") }
+      : {}),
+    ...(input.sourceEpisodeId !== undefined
+      ? {
+          sourceEpisodeId:
+            input.sourceEpisodeId === null
+              ? null
+              : requiredUuid(
+                  input.sourceEpisodeId,
+                  "TRUTH_SOURCE_EPISODE_ID_INVALID",
+                ),
+        }
+      : {}),
+    supportSetId: requiredUuid(
+      input.supportSetId,
+      "TRUTH_SUPPORT_SET_ID_INVALID",
+    ),
+    lifecycle: input.lifecycle ?? ("ACTIVE" as const),
+    ...(input.supersedesFactId
+      ? {
+          supersedesFactId: requiredUuid(
+            input.supersedesFactId,
+            "TRUTH_SUPERSEDES_FACT_ID_INVALID",
+          ),
+        }
+      : {}),
+  };
+}
+
+function normalizeTruthQuery(input: TemporalTruthQuery) {
+  const limit = input.limit ?? 100;
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000) {
+    throw new Error("TRUTH_QUERY_LIMIT_INVALID");
+  }
+  return {
+    spaceId: requiredUuid(input.spaceId, "TRUTH_SPACE_ID_INVALID"),
+    vaultId: requiredUuid(input.vaultId, "TRUTH_VAULT_ID_INVALID"),
+    ...(input.subjectRef
+      ? {
+          subjectRef: requiredText(
+            input.subjectRef,
+            "TRUTH_SUBJECT_REF_INVALID",
+            2048,
+          ),
+        }
+      : {}),
+    ...(input.predicate
+      ? {
+          predicate: requiredText(
+            input.predicate,
+            "TRUTH_PREDICATE_INVALID",
+            512,
+          ),
+        }
+      : {}),
+    mode: input.mode ?? ("CURRENT" as const),
+    ...(input.validAt
+      ? { validAt: requiredDate(input.validAt, "TRUTH_VALID_AT_INVALID") }
+      : {}),
+    ...(input.recordedAtOrBefore
+      ? {
+          recordedAtOrBefore: requiredDate(
+            input.recordedAtOrBefore,
+            "TRUTH_RECORDED_CUTOFF_INVALID",
+          ),
+        }
+      : {}),
+    ...(input.truthRevisionHash
+      ? {
+          truthRevisionHash: requiredHash(
+            input.truthRevisionHash,
+            "TRUTH_REVISION_HASH_INVALID",
+          ),
+        }
+      : {}),
+    ...(input.changedSince
+      ? {
+          changedSince: requiredDate(
+            input.changedSince,
+            "TRUTH_CHANGED_SINCE_INVALID",
+          ),
+        }
+      : {}),
+    authorizationPathPrefixes: [...(input.authorizationPathPrefixes ?? [])],
+    limit,
+  };
+}
+
+function asAlternativeGroups(value: unknown): string[][] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((group) =>
+    Array.isArray(group) &&
+    group.every((entry) => typeof entry === "string")
+      ? [group as string[]]
+      : [],
+  );
+}
+
 import type { PoolClient } from "pg";
 import type { Postgres } from "./index.js";
 import { appendOutboxEvent } from "./outbox.js";
@@ -75,8 +430,8 @@ function iso(value: Date | string): string {
     : new Date(value).toISOString();
 }
 
-function normalizeRevision(row: RevisionRow): TruthRevisionType {
-  return TruthRevision.parse({
+function normalizeRevision(row: RevisionRow): TruthRevision {
+  return {
     id: row.id,
     spaceId: row.space_id,
     vaultId: row.vault_id,
@@ -87,11 +442,11 @@ function normalizeRevision(row: RevisionRow): TruthRevisionType {
     resourceType: row.resource_type,
     resourceId: row.resource_id,
     createdAt: iso(row.created_at),
-  });
+  };
 }
 
-function normalizeSupportSet(row: SupportSetRow): TruthSupportSetType {
-  return TruthSupportSet.parse({
+function normalizeSupportSet(row: SupportSetRow): TruthSupportSet {
+  return {
     schemaVersion: row.schema_version,
     id: row.id,
     spaceId: row.space_id,
@@ -102,13 +457,15 @@ function normalizeSupportSet(row: SupportSetRow): TruthSupportSetType {
     sourceArtifactIds: row.source_artifact_ids ?? [],
     sourceRevisionHashes: row.source_revision_hashes ?? [],
     sourceEpisodeIds: row.source_episode_ids ?? [],
-    alternativeSupportGroups: row.alternative_support_groups ?? [],
+    alternativeSupportGroups: asAlternativeGroups(
+      row.alternative_support_groups,
+    ),
     createdAt: iso(row.created_at),
-  });
+  };
 }
 
-function normalizeFact(row: FactRow) {
-  return TemporalFact.parse({
+function normalizeFact(row: FactRow): TemporalFact {
+  return {
     id: row.id,
     spaceId: row.space_id,
     vaultId: row.vault_id,
@@ -125,7 +482,7 @@ function normalizeFact(row: FactRow) {
     lifecycle: row.lifecycle,
     truthRevisionHash: row.truth_revision_hash,
     truthRevisionSeq: Number(row.truth_revision_seq),
-  });
+  };
 }
 
 function normalizedPath(path: string): string {
@@ -167,7 +524,7 @@ export class PostgresTemporalTruthStore {
       correlationId?: string | null;
       causationId?: string | null;
     },
-  ): Promise<TruthRevisionType> {
+  ): Promise<TruthRevision> {
     await client.query(
       `insert into truth_revision_heads(vault_id,space_id)
        values($1,$2)
@@ -244,9 +601,9 @@ export class PostgresTemporalTruthStore {
   }
 
   async createSourceEpisode(
-    rawInput: CreateSourceEpisodeInputType,
+    rawInput: CreateSourceEpisodeInput,
   ): Promise<SourceEpisode> {
-    const input = CreateSourceEpisodeInput.parse(rawInput);
+    const input = normalizeSourceEpisodeInput(rawInput);
     const source = await this.db.pool.query(
       `select s.id
          from sources s
@@ -285,7 +642,7 @@ export class PostgresTemporalTruthStore {
       ],
     );
     const row = result.rows[0] as Record<string, unknown>;
-    return SourceEpisode.parse({
+    return {
       id: row.id,
       spaceId: row.space_id,
       vaultId: row.vault_id,
@@ -296,8 +653,12 @@ export class PostgresTemporalTruthStore {
         ? iso(row.observed_at as Date | string)
         : null,
       ingestedAt: iso(row.ingested_at as Date | string),
-      locatorRefs: row.locator_refs,
-    });
+      locatorRefs: Array.isArray(row.locator_refs)
+        ? row.locator_refs.filter(
+            (value): value is string => typeof value === "string",
+          )
+        : [],
+    };
   }
 
   private async validateIds(
@@ -327,9 +688,9 @@ export class PostgresTemporalTruthStore {
   }
 
   async createSupportSet(
-    rawInput: CreateTruthSupportSetInputType,
-  ): Promise<TruthSupportSetType> {
-    const input = CreateTruthSupportSetInput.parse(rawInput);
+    rawInput: CreateTruthSupportSetInput,
+  ): Promise<TruthSupportSet> {
+    const input = normalizeSupportSetInput(rawInput);
     const total =
       input.factIds.length +
       input.evidenceIds.length +
@@ -415,16 +776,16 @@ export class PostgresTemporalTruthStore {
   }
 
   async recordFact(
-    rawInput: RecordTemporalFactInputType,
+    rawInput: RecordTemporalFactInput,
     metadata: {
       correlationId?: string | null;
       causationId?: string | null;
     } = {},
   ): Promise<{
     fact: ReturnType<typeof normalizeFact>;
-    revision: TruthRevisionType;
+    revision: TruthRevision;
   }> {
-    const input = RecordTemporalFactInput.parse(rawInput);
+    const input = normalizeFactInput(rawInput);
     const authorizationPath = normalizedPath(input.authorizationPath);
     const client = await this.db.pool.connect();
     try {
@@ -569,7 +930,7 @@ export class PostgresTemporalTruthStore {
     recordedAt?: string;
     correlationId?: string | null;
     causationId?: string | null;
-  }): Promise<TruthRevisionType> {
+  }): Promise<TruthRevision> {
     if (!input.reason.trim())
       throw new Error("TRUTH_WITHDRAWAL_REASON_REQUIRED");
     const client = await this.db.pool.connect();
@@ -666,7 +1027,7 @@ export class PostgresTemporalTruthStore {
     reason: string;
     correlationId?: string | null;
     causationId?: string | null;
-  }): Promise<TruthRevisionType> {
+  }): Promise<TruthRevision> {
     if (!input.reason.trim())
       throw new Error("TRUTH_INVALIDATION_REASON_REQUIRED");
     const client = await this.db.pool.connect();
@@ -759,7 +1120,7 @@ export class PostgresTemporalTruthStore {
   async currentRevision(
     spaceId: string,
     vaultId: string,
-  ): Promise<TruthRevisionType | null> {
+  ): Promise<TruthRevision | null> {
     const result = await this.db.pool.query<RevisionRow>(
       `select r.*
          from truth_revision_heads h
@@ -772,7 +1133,7 @@ export class PostgresTemporalTruthStore {
   }
 
   private async revisionCutoff(
-    query: TemporalTruthQueryType,
+    query: TemporalTruthQuery,
   ): Promise<{ seq: number; hash: string | null }> {
     if (query.truthRevisionHash) {
       const revision = await this.db.pool.query<{
@@ -795,7 +1156,7 @@ export class PostgresTemporalTruthStore {
   }
 
   private async supportEvaluation(
-    support: TruthSupportSetType,
+    support: TruthSupportSet,
     validAt: string,
     revisionSeq: number,
   ): Promise<TruthSupportEvaluation> {
@@ -852,9 +1213,9 @@ export class PostgresTemporalTruthStore {
   }
 
   async listFacts(
-    rawQuery: TemporalTruthQueryType,
-  ): Promise<TemporalFactViewType[]> {
-    const query = TemporalTruthQuery.parse(rawQuery);
+    rawQuery: TemporalTruthQuery,
+  ): Promise<TemporalFactView[]> {
+    const query = normalizeTruthQuery(rawQuery);
     const cutoff = await this.revisionCutoff(query);
     if (cutoff.seq === 0) return [];
     const validAt = query.validAt ?? new Date().toISOString();
@@ -911,7 +1272,7 @@ export class PostgresTemporalTruthStore {
         limit $4`,
       values,
     );
-    const output: TemporalFactViewType[] = [];
+    const output: TemporalFactView[] = [];
     for (const row of result.rows) {
       const fact = normalizeFact(row);
       if (
@@ -930,21 +1291,19 @@ export class PostgresTemporalTruthStore {
         ? await this.supportEvaluation(support, validAt, cutoff.seq)
         : "UNSUPPORTED";
       if (query.mode === "CURRENT" && supportState === "UNSUPPORTED") continue;
-      output.push(
-        TemporalFactView.parse({
-          ...fact,
-          supportState,
-          queryRevisionHash: cutoff.hash,
-          queryRevisionSeq: cutoff.seq,
-        }),
-      );
+      output.push({
+        ...fact,
+        supportState,
+        queryRevisionHash: cutoff.hash,
+        queryRevisionSeq: cutoff.seq,
+      });
     }
     return output;
   }
 
   async supportHistory(factId: string): Promise<{
     fact: ReturnType<typeof normalizeFact>;
-    supportSet: TruthSupportSetType;
+    supportSet: TruthSupportSet;
     sourceWithdrawals: Array<Record<string, unknown>>;
     evidenceInvalidations: Array<Record<string, unknown>>;
     supersessions: Array<Record<string, unknown>>;
