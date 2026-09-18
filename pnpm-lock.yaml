@@ -242,6 +242,9 @@ importers:
       "@akp/postgres":
         specifier: "*"
         version: link:../../packages/postgres
+      "@akp/project-adapter":
+        specifier: "*"
+        version: link:../../packages/project-adapter
       "@akp/validation":
         specifier: "*"
         version: link:../../packages/validation
