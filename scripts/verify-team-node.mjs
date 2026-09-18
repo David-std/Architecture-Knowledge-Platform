@@ -79,7 +79,7 @@ record(
 );
 const manifest = capabilities.body?.manifest;
 record(
-  "node publishes the P2 safe discovery manifest",
+  "node publishes the safe discovery manifest",
   manifest?.nodeId === expectedNodeId &&
     manifest?.contextApiVersion === "v1" &&
     Array.isArray(manifest?.requiredAuthenticationModes) &&

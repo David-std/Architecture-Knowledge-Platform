@@ -314,7 +314,7 @@ for (const eventType of [
 ]) {
   if (!integrationEventEnum.has(eventType)) {
     failures.push(
-      `contracts/asyncapi.yaml: missing durable P2 integration event ${eventType}`,
+      `contracts/asyncapi.yaml: missing durable workspace integration event ${eventType}`,
     );
   }
 }

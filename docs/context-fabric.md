@@ -52,7 +52,7 @@ The session pin contains shared truth/profile/index authorities and is safe to h
 
 Bootstrap also returns the durable work snapshot, open claims, handoffs, findings, related `DECISION_CANDIDATE` events and an `agentInstructionDigest` bound to the pinned revision, effective principal actions and active KnowledgeProfile. Context gaps, conflicts and continuation handles remain inside the returned ContextPacket rather than being copied into a second truth structure.
 
-P2 deliberately keeps the built-in authorization adapter as the deployed implementation behind `AuthorizationPort`. An OpenFGA-compatible adapter is deferred rather than silently assumed: the current product has no external ReBAC control plane dependency, while the port already exposes the fail-closed scope/filter semantics and revision fingerprint needed by retrieval. A later enterprise deployment may add OpenFGA behind the same boundary without changing retrieval ordering or the pinned authorization-revision contract.
+The current deployment deliberately keeps the built-in authorization adapter as the deployed implementation behind `AuthorizationPort`. An OpenFGA-compatible adapter is deferred rather than silently assumed: the current product has no external ReBAC control plane dependency, while the port already exposes the fail-closed scope/filter semantics and revision fingerprint needed by retrieval. A later enterprise deployment may add OpenFGA behind the same boundary without changing retrieval ordering or the pinned authorization-revision contract.
 
 Workspace findings, artifacts, notes, blockers, claims, handoffs, external references and offline drafts are operational state. They are not approved knowledge.
 
@@ -100,7 +100,7 @@ The current server intentionally applies only coordination event types (`FINDING
 
 `context_fabric_peers` and `/v1/context-fabric/peers` are discovery metadata only. Registering a peer performs no network request. A peer can declare a discovery mode and capability manifest, but the current Team Context Fabric contract does not allow a discovered endpoint to become an authorization bypass, remote retrieval source, write boundary, or trust upgrade.
 
-The API returns `boundary: DISCOVERY_METADATA_ONLY` and `networkContactPerformed: false` for peer registration. The node discovery manifest advertises only `CATALOG_ONLY` federation in P2 and the capability flag `federationRemoteQuery` remains false. Therefore peer metadata cannot return or materialize remote knowledge objects in this phase; remote query/import policy belongs to the federation phase and must preserve remote provenance, trust and local authorization.
+The API returns `boundary: DISCOVERY_METADATA_ONLY` and `networkContactPerformed: false` for peer registration. The node discovery manifest advertises only `CATALOG_ONLY` federation in the current Team Context Fabric contract and the capability flag `federationRemoteQuery` remains false. Therefore peer metadata cannot return or materialize remote knowledge objects in this phase; remote query/import policy belongs to the federation phase and must preserve remote provenance, trust and local authorization.
 
 ## Operational verification
 
