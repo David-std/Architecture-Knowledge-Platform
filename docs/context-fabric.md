@@ -48,6 +48,8 @@ Shared derived state belongs to exactly one node. Because a mode that exists onl
 
 A workspace session pins a `ContextRevisionSet` at creation. Bootstrap resolves authorized context against that pin and verifies the revision again before returning the packet. Strict coordination writes fail with `CONTEXT_REVISION_CHANGED` after an authority changes instead of silently mixing R1 and R2.
 
+The session pin contains shared truth/profile/index authorities and is safe to hand from A to B. Bootstrap additionally returns a principal-aware effective `contextRevisionSet.authorization`: it combines the effective actor policy (scoped memberships plus principal actions/policy revision, independent of credential identity) with the vault-grant decision from `AuthorizationPort`. `sharedRevisionSetHash` remains the collaborative session pin; `effectiveRevisionSetHash` binds that pin to the current principal authorization revision. A real authorization-policy change therefore produces a different effective revision without making a simple credential rotation look like truth drift.
+
 Workspace findings, artifacts, notes, blockers, claims, handoffs, external references and offline drafts are operational state. They are not approved knowledge.
 
 A claim handoff may carry bounded structured state: summary, completed work, remaining work, blockers, changed resource references, evidence references and open questions. The server attaches the session's pinned `ContextRevisionSet`, its hash and the resolved principal identities to the durable `CLAIM_HANDOFF` event; clients do not supply or override that revision metadata. The legacy `note` field remains accepted for compatibility, but the structured fields are the resumable machine-readable contract for agents that must continue without the previous chat transcript.
@@ -56,9 +58,13 @@ Promotion remains:
 
 `finding/evidence -> promotion request -> review -> human approval -> managed Git publication`
 
+A workspace promotion persists its governance semantics in the durable promotion event and review manifest: source session/space/vault and shared revision, target space/vault/knowledge layers, validated candidate paths/kinds/lifecycle metadata, evidence event versions, lifecycle/trust implications, and conflict-evaluation status. If contradiction/dedupe analysis was not run, the manifest says `NOT_EVALUATED`; it does not silently equate an empty list with proof that no conflict exists.
+
 Governed proposal content cannot manufacture a stronger trust authority through frontmatter. In particular, `trust_tier: attested`, `verification_status: attested` or `status: attested` is rejected before a review draft is created. Existing administrative/legacy vault import remains a separate compatibility boundary; attestation must come from an authority outside proposal content, not from the candidate being reviewed.
 
 Normal `AGENT_PROCESS` credentials can read/coordinate and may receive `knowledge:propose`; they do not receive `knowledge:review`, publication, or administrative authority. Their bearer credential is bounded by its own expiry and policy revision. A derived agent also remains subordinate to its recorded human authority root: once that parent principal is no longer active, the child credential is invalid even if the child principal row itself has not yet been revoked. Expired credentials and credentials whose parent authority has been revoked must fail closed on the next request rather than retaining ambient session authority.
+
+Revoking an `AGENT_PROCESS` updates its principal and credentials and appends `PrincipalRevoked` to the causal outbox in the same database transaction, including session, vault and new principal policy revision. Downstream coordination can therefore react to revocation without polling a partially updated authority state.
 
 ## External system-of-record references
 
