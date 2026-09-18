@@ -93,6 +93,8 @@ components:
             - LexicalIndexUpdateRequested
             - VectorIndexUpdateRequested
             - GraphIndexUpdateRequested
+            - GraphRevisionBuilt
+            - GraphRevisionActivated
             - ContextPackInvalidationRequested
             - ImpactedEvalRunRequested
             - WorkspaceSessionCreated
