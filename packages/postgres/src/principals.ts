@@ -1,4 +1,5 @@
 import type { Postgres } from "./index.js";
+import { appendOutboxEvent } from "./outbox.js";
 
 export type PrincipalKind =
   | "HUMAN"
@@ -200,6 +201,36 @@ export async function revokeAgentProcessPrincipal(
         where principal_id=$1 and revoked_at is null`,
       [input.principalId],
     );
+    const scope = await client.query<{
+      space_id: string;
+      vault_id: string;
+    }>(
+      `select space_id,vault_id
+         from agent_sessions
+        where id=$1 and vault_id=$2`,
+      [row.session_id, row.vault_id],
+    );
+    const sessionScope = scope.rows[0];
+    if (!sessionScope) {
+      throw principalError("AGENT_PROCESS_SESSION_SCOPE_MISSING", 409);
+    }
+    await appendOutboxEvent(client, {
+      eventType: "PrincipalRevoked",
+      resourceId: String(row.id),
+      spaceId: sessionScope.space_id,
+      vaultId: sessionScope.vault_id,
+      correlationId: row.session_id ? String(row.session_id) : null,
+      payload: {
+        principalId: String(row.id),
+        parentPrincipalId: String(row.parent_principal_id),
+        sessionId: String(row.session_id),
+        kind: "AGENT_PROCESS",
+        policyRevision: Number(row.policy_revision),
+        revokedAt: row.revoked_at
+          ? new Date(String(row.revoked_at)).toISOString()
+          : new Date().toISOString(),
+      },
+    });
     await client.query("commit");
     return normalizePrincipal(row);
   } catch (error) {
