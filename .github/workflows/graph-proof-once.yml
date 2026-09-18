@@ -32,6 +32,7 @@ jobs:
       - run: docker compose up -d --wait postgres
       - run: pnpm db:migrate
       - run: pnpm contracts:validate
+      - run: pnpm --filter @akp/contracts build
       - name: Run federated graph integration proof
         run: |
           pnpm --filter @akp/postgres exec vitest run             test/federated-graph.integration.test.ts
