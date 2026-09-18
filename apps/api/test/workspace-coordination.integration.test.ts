@@ -1215,5 +1215,45 @@ describe("workspace coordination integration", () => {
     expect(canonicalAfter.rows[0].documents).toBe(
       canonicalBefore.rows[0].documents,
     );
+
+    // Expiry is a fencing transition too. Simulate the clock crossing the lease
+    // boundary without sleeping the suite, then prove the old owner cannot write
+    // and a new owner receives a strictly newer generation.
+    await db.pool.query(
+      `update workspace_claims
+          set lease_expires_at=now()-interval '1 second'
+        where id=$1`,
+      [reacquiredClaim.id],
+    );
+    const expiredOwnerHeartbeat = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${releaseSessionId}/claims/heartbeat`,
+      headers: actorBHeaders,
+      payload: {
+        workKey,
+        fencingToken: reacquiredClaim.fencingToken,
+        leaseSeconds: 120,
+      },
+    });
+    expect(expiredOwnerHeartbeat.statusCode).toBe(409);
+    expect(expiredOwnerHeartbeat.json()).toMatchObject({
+      code: "WORK_CLAIM_FENCE_STALE",
+    });
+
+    const afterExpiry = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${releaseSessionId}/claims`,
+      headers: actorAHeaders,
+      payload: { workKey, leaseSeconds: 120 },
+    });
+    expect(afterExpiry.statusCode).toBe(201);
+    expect(afterExpiry.json()).toMatchObject({
+      ownerId: actorAId,
+      workKey,
+      status: "ACTIVE",
+    });
+    expect(
+      Number((afterExpiry.json() as { fencingToken: number }).fencingToken),
+    ).toBeGreaterThan(reacquiredClaim.fencingToken);
   });
 });
