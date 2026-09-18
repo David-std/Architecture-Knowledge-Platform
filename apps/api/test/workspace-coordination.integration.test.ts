@@ -794,6 +794,11 @@ describe("workspace coordination integration", () => {
           promotionEventId?: string;
           evidenceEventIds?: string[];
           revisionSetHash?: string;
+          sourceScope?: Record<string, unknown>;
+          targetScope?: Record<string, unknown>;
+          knowledgeCandidates?: Array<Record<string, unknown>>;
+          conflicts?: Record<string, unknown>;
+          implications?: Record<string, unknown>;
         };
       };
     }>("select status,impact_manifest from reviews where id=$1", [
@@ -807,6 +812,47 @@ describe("workspace coordination integration", () => {
           promotionEventId: promotionBody.promotionEventId,
           evidenceEventIds: [String((findingEvent as { id: string }).id)],
           revisionSetHash: promotionBody.revisionSetHash,
+          sourceScope: {
+            sessionId,
+            spaceId,
+            vaultId,
+            revisionSetHash: promotionBody.revisionSetHash,
+          },
+          targetScope: {
+            spaceId,
+            vaultId,
+            knowledgeLayers: ["project"],
+          },
+          knowledgeCandidates: [
+            {
+              path: "knowledge/compiler-boundary.md",
+              kind: "claim",
+              knowledgeLayer: "project",
+              lifecycle: "proposed",
+              trustTier: null,
+            },
+          ],
+          conflicts: {
+            status: "NOT_EVALUATED",
+            items: [],
+          },
+          implications: {
+            lifecycle: [
+              {
+                path: "knowledge/compiler-boundary.md",
+                requestedStatus: "proposed",
+                publicationRequired: true,
+              },
+            ],
+            trust: [
+              {
+                path: "knowledge/compiler-boundary.md",
+                requestedTier: null,
+                selfAttestationAllowed: false,
+                authority: "GOVERNED_REVIEW",
+              },
+            ],
+          },
         },
       },
     });
