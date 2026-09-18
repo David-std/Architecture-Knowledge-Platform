@@ -33,6 +33,7 @@ export interface RefreshCodeGraphInput {
   spaceId: string;
   vaultId: string | null;
   scopeId: string;
+  authorizationPathPrefix?: string;
 }
 
 export interface RefreshCodeGraphResult {
@@ -88,6 +89,9 @@ export class CodeGraphLifecycleCoordinator {
       spaceId: input.spaceId,
       vaultId: input.vaultId,
       scopeId: input.scopeId,
+      ...(input.authorizationPathPrefix
+        ? { authorizationPathPrefix: input.authorizationPathPrefix }
+        : {}),
     });
 
     const current = await this.projections.revisionState(
