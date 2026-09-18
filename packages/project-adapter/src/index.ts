@@ -256,5 +256,6 @@ export * from "./code-graph-projection.js";
 export * from "./code-graph-lifecycle.js";
 export * from "./code-query.js";
 export * from "./graphify.js";
+export * from "./project-code-graph.js";
 export * from "./runtime-coverage.js";
 export * from "./snapshot.js";
