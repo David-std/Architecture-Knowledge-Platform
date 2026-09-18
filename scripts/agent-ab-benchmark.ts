@@ -120,6 +120,7 @@ function benchmarkPrerequisites(): {
   providerModel: string;
   temperature: number;
   maxOutputTokens: number;
+  providerTimeoutMs: number;
 } {
   const reasons: string[] = [];
   const apiUrl = (process.env.AKP_API_URL ?? "").replace(/\/$/u, "");
@@ -138,6 +139,9 @@ function benchmarkPrerequisites(): {
   const temperature = Number(process.env.AKP_AGENT_AB_TEMPERATURE ?? "0");
   const maxOutputTokens = Number(
     process.env.AKP_AGENT_AB_MAX_OUTPUT_TOKENS ?? "800",
+  );
+  const providerTimeoutMs = Number(
+    process.env.AKP_AGENT_AB_PROVIDER_TIMEOUT_MS ?? "120000",
   );
 
   if (process.env.AKP_AGENT_AB_ENABLE !== "1") {
@@ -168,6 +172,15 @@ function benchmarkPrerequisites(): {
       "AKP_AGENT_AB_MAX_OUTPUT_TOKENS must be an integer from 64 to 8192.",
     );
   }
+  if (
+    !Number.isInteger(providerTimeoutMs) ||
+    providerTimeoutMs < 30_000 ||
+    providerTimeoutMs > 600_000
+  ) {
+    reasons.push(
+      "AKP_AGENT_AB_PROVIDER_TIMEOUT_MS must be an integer from 30000 to 600000.",
+    );
+  }
   return {
     ready: reasons.length === 0,
     reasons,
@@ -180,6 +193,7 @@ function benchmarkPrerequisites(): {
     providerModel,
     temperature,
     maxOutputTokens,
+    providerTimeoutMs,
   };
 }
 
@@ -444,7 +458,7 @@ async function invokeProvider(
           { role: "user", content: prompt },
         ],
       }),
-      signal: AbortSignal.timeout(120_000),
+      signal: AbortSignal.timeout(config.providerTimeoutMs),
     });
     totalLatencyMs += performance.now() - started;
     const responseText = await response.text();
@@ -656,6 +670,7 @@ async function main(): Promise<void> {
           operatorAssertedRealModel: true,
           temperature: config.temperature,
           maxOutputTokens: config.maxOutputTokens,
+          requestTimeoutMs: config.providerTimeoutMs,
         },
       },
       aggregates: [aggregateAgentAbArm(armA), aggregateAgentAbArm(armB)],
@@ -668,6 +683,7 @@ async function main(): Promise<void> {
       status: "FAILED",
       error: error instanceof Error ? error.message : String(error),
       completedObservations: observations.length,
+      providerRequestTimeoutMs: config.providerTimeoutMs,
     });
     process.exitCode = 1;
   }
