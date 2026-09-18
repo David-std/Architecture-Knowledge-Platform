@@ -24,10 +24,12 @@ import {
   assertWorkspaceContextRevisionCurrent,
   isWorkspaceWorkKey,
   listWorkspaceSessionsForParticipant,
+  linkDecisionCandidateReviewInTransaction,
   resolveAuthorizedVaultScope,
   revokeAgentProcessPrincipal,
   workspaceSessionSnapshot,
   workspacePromotionEvidence,
+  validateDecisionPromotionCandidate,
   type Postgres,
   type WorkspaceSessionAccess,
 } from "@akp/postgres";
@@ -561,6 +563,54 @@ export function registerSessionRoutes(
         actorId: actor.id,
         eventIds: evidenceEventIds,
       });
+      const structuredDecisionEvents = evidence.events.flatMap((event) => {
+        if (String(event.event_type) !== "DECISION_CANDIDATE") return [];
+        const payload =
+          event.payload && typeof event.payload === "object"
+            ? (event.payload as Record<string, unknown>)
+            : null;
+        const candidateId = payload?.decisionWorkflowCandidateId;
+        return typeof candidateId === "string" && candidateId
+          ? [{ event, candidateId }]
+          : [];
+      });
+      if (structuredDecisionEvents.length > 1) {
+        return reply
+          .code(400)
+          .send({ code: "DECISION_PROMOTION_SINGLE_CANDIDATE_REQUIRED" });
+      }
+      let decisionCandidate:
+        | Awaited<ReturnType<typeof validateDecisionPromotionCandidate>>
+        | null = null;
+      let decisionCapturedEventId: string | null = null;
+      if (structuredDecisionEvents[0]) {
+        decisionCapturedEventId = String(structuredDecisionEvents[0].event.id);
+        try {
+          decisionCandidate = await validateDecisionPromotionCandidate(db, {
+            sessionId: session.id,
+            candidateId: structuredDecisionEvents[0].candidateId,
+            capturedEventId: decisionCapturedEventId,
+            actorUserId: actor.id,
+            actorPrincipalId: actor.principalId,
+          });
+        } catch (error) {
+          if (error && typeof error === "object") {
+            const candidate = error as {
+              code?: unknown;
+              statusCode?: unknown;
+            };
+            if (
+              typeof candidate.code === "string" &&
+              typeof candidate.statusCode === "number"
+            ) {
+              return reply
+                .code(candidate.statusCode)
+                .send({ code: candidate.code });
+            }
+          }
+          throw error;
+        }
+      }
       const proposal = await app.inject({
         method: "POST",
         url: "/v1/proposals",
@@ -607,6 +657,14 @@ export function registerSessionRoutes(
         if (lockedReview.rowCount !== 1) {
           throw new Error("PROMOTION_REVIEW_NOT_PENDING");
         }
+        if (decisionCandidate && decisionCapturedEventId) {
+          await linkDecisionCandidateReviewInTransaction(promotionClient, {
+            candidateId: decisionCandidate.id,
+            sessionId: session.id,
+            capturedEventId: decisionCapturedEventId,
+            reviewId: created.reviewId,
+          });
+        }
         const insertedEvent = await appendWorkspaceEventInTransaction(
           promotionClient,
           {
@@ -638,6 +696,16 @@ export function registerSessionRoutes(
                 evidenceVersions,
                 revisionSetHash: session.contextRevisionSetHash,
               },
+              ...(decisionCandidate && decisionCapturedEventId
+                ? {
+                    decisionWorkflow: {
+                      candidateId: decisionCandidate.id,
+                      capturedEventId: decisionCapturedEventId,
+                      decisionAuthorityPrincipalId:
+                        decisionCandidate.decisionAuthorityPrincipalId,
+                    },
+                  }
+                : {}),
             }),
             actor.id,
           ],
@@ -684,6 +752,9 @@ export function registerSessionRoutes(
         promotionEventId: String(promotionEvent.id),
         evidenceEventIds,
         revisionSetHash: session.contextRevisionSetHash,
+        ...(decisionCandidate
+          ? { decisionCandidateId: decisionCandidate.id }
+          : {}),
       });
     },
   );
