@@ -322,4 +322,128 @@ describe.skipIf(!databaseUrl)("temporal truth store", () => {
       ),
     ).rejects.toThrow("TEMPORAL_TRUTH_IMMUTABLE");
   });
+
+  it("validates immutable derived dependencies against a captured truth revision", async () => {
+    const episode = await store.createSourceEpisode({
+      spaceId,
+      vaultId,
+      sourceId: sourceA,
+      sourceArtifactId: artifactA,
+      sourceHash: "a".repeat(64),
+      locatorRefs: ["source:a#derived-vector"],
+    });
+    const support = await store.createSupportSet({
+      spaceId,
+      vaultId,
+      sourceEpisodeIds: [episode.id],
+      sourceRevisionHashes: ["d".repeat(64)],
+    });
+    const recorded = await store.recordFact({
+      spaceId,
+      vaultId,
+      scopeId: "security:derived",
+      authorizationPath: "security/derived.md",
+      subjectRef: "policy:derived-vector",
+      predicate: "setting",
+      object: { enabled: true },
+      validFrom: "2025-01-01T00:00:00.000Z",
+      supportSetId: support.id,
+      sourceEpisodeId: episode.id,
+    });
+    const dependency = await store.registerDerivedDependency({
+      spaceId,
+      vaultId,
+      derivedStoreKind: "VECTOR",
+      derivedItemRef: "vector:generation-a:unit-a",
+      supportSetId: support.id,
+      sourceRevisionHashes: ["d".repeat(64)],
+      truthRevisionHash: recorded.revision.revisionHash,
+      projectionRevision: "vector:r1",
+    });
+    expect(dependency).toMatchObject({
+      derivedStoreKind: "VECTOR",
+      derivedItemRef: "vector:generation-a:unit-a",
+      supportSetId: support.id,
+      truthRevisionHash: recorded.revision.revisionHash,
+    });
+
+    const snapshot = await store.captureSnapshot(spaceId, [vaultId]);
+    expect(snapshot.vaults).toEqual([
+      {
+        vaultId,
+        revisionHash: recorded.revision.revisionHash,
+        revisionSeq: recorded.revision.revisionSeq,
+      },
+    ]);
+    expect(await store.snapshotUnchanged(snapshot)).toBe(true);
+    expect(
+      await store.validateDerivedItems({
+        spaceId,
+        vaultId,
+        derivedStoreKind: "VECTOR",
+        derivedItemRefs: [
+          "vector:generation-a:unit-a",
+          "vector:generation-a:unit-unannotated",
+        ],
+        truthRevisionHash: recorded.revision.revisionHash,
+        validAt: "2026-01-01T00:00:00.000Z",
+      }),
+    ).toMatchObject([
+      {
+        derivedItemRef: "vector:generation-a:unit-a",
+        state: "SUPPORTED",
+        valid: true,
+      },
+      {
+        derivedItemRef: "vector:generation-a:unit-unannotated",
+        state: "UNANNOTATED",
+        valid: true,
+      },
+    ]);
+
+    const withdrawn = await store.withdrawSourceEpisode({
+      spaceId,
+      vaultId,
+      sourceEpisodeId: episode.id,
+      reason: "Derived vector support withdrawn",
+    });
+    expect(await store.snapshotUnchanged(snapshot)).toBe(false);
+    expect(
+      await store.validateDerivedItems({
+        spaceId,
+        vaultId,
+        derivedStoreKind: "VECTOR",
+        derivedItemRefs: ["vector:generation-a:unit-a"],
+        truthRevisionHash: withdrawn.revisionHash,
+        validAt: "2026-01-01T00:00:00.000Z",
+      }),
+    ).toMatchObject([
+      {
+        derivedItemRef: "vector:generation-a:unit-a",
+        state: "UNSUPPORTED",
+        valid: false,
+        dependency: {
+          id: dependency.id,
+          supportSetId: support.id,
+        },
+        queryRevisionHash: withdrawn.revisionHash,
+      },
+    ]);
+    expect(
+      await store.validateDerivedItems({
+        spaceId,
+        vaultId,
+        derivedStoreKind: "VECTOR",
+        derivedItemRefs: ["vector:generation-a:unit-a"],
+        truthRevisionHash: recorded.revision.revisionHash,
+        validAt: "2026-01-01T00:00:00.000Z",
+      }),
+    ).toMatchObject([
+      {
+        state: "SUPPORTED",
+        valid: true,
+        queryRevisionHash: recorded.revision.revisionHash,
+      },
+    ]);
+  });
 });

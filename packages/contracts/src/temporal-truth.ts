@@ -175,3 +175,80 @@ export const TemporalTruthQuery = z.object({
   limit: z.number().int().min(1).max(1000).default(100),
 });
 export type TemporalTruthQuery = z.infer<typeof TemporalTruthQuery>;
+
+export const DerivedTruthStoreKind = z.enum([
+  "VECTOR",
+  "GRAPH_SUMMARY",
+  "COMMUNITY_REPORT",
+  "CACHED_SYNTHESIS",
+  "CONTEXT_FRAGMENT",
+  "TASK_ARTIFACT",
+]);
+export type DerivedTruthStoreKind = z.infer<typeof DerivedTruthStoreKind>;
+
+export const DerivedTruthDependency = z.object({
+  id: z.string().uuid(),
+  spaceId: z.string().uuid(),
+  vaultId: z.string().uuid(),
+  derivedStoreKind: DerivedTruthStoreKind,
+  derivedItemRef: z.string().min(1).max(4096),
+  supportSetId: z.string().uuid(),
+  sourceRevisionHashes: z
+    .array(z.string().regex(/^[a-f0-9]{64}$/))
+    .max(500),
+  truthRevisionHash: z.string().regex(/^[a-f0-9]{64}$/),
+  projectionRevision: z.string().min(1).max(2048).nullable(),
+  createdAt: z.string().datetime(),
+});
+export type DerivedTruthDependency = z.infer<typeof DerivedTruthDependency>;
+
+export const RegisterDerivedTruthDependencyInput = z.object({
+  spaceId: z.string().uuid(),
+  vaultId: z.string().uuid(),
+  derivedStoreKind: DerivedTruthStoreKind,
+  derivedItemRef: z.string().trim().min(1).max(4096),
+  supportSetId: z.string().uuid(),
+  sourceRevisionHashes: z
+    .array(z.string().regex(/^[a-f0-9]{64}$/))
+    .max(500)
+    .default([]),
+  truthRevisionHash: z.string().regex(/^[a-f0-9]{64}$/),
+  projectionRevision: z.string().trim().min(1).max(2048).nullable().optional(),
+});
+export type RegisterDerivedTruthDependencyInput = z.infer<
+  typeof RegisterDerivedTruthDependencyInput
+>;
+
+export const TruthSnapshotEntry = z.object({
+  vaultId: z.string().uuid(),
+  revisionHash: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
+  revisionSeq: z.number().int().nonnegative(),
+});
+export type TruthSnapshotEntry = z.infer<typeof TruthSnapshotEntry>;
+
+export const TruthSnapshot = z.object({
+  spaceId: z.string().uuid(),
+  capturedAt: z.string().datetime(),
+  vaults: z.array(TruthSnapshotEntry).max(100),
+});
+export type TruthSnapshot = z.infer<typeof TruthSnapshot>;
+
+export const DerivedTruthValidationState = z.enum([
+  "SUPPORTED",
+  "DISPUTED",
+  "UNSUPPORTED",
+  "UNANNOTATED",
+]);
+export type DerivedTruthValidationState = z.infer<
+  typeof DerivedTruthValidationState
+>;
+
+export const DerivedTruthValidation = z.object({
+  derivedItemRef: z.string().min(1).max(4096),
+  state: DerivedTruthValidationState,
+  valid: z.boolean(),
+  dependency: DerivedTruthDependency.nullable(),
+  queryRevisionHash: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
+  queryRevisionSeq: z.number().int().nonnegative(),
+});
+export type DerivedTruthValidation = z.infer<typeof DerivedTruthValidation>;

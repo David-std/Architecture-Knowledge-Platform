@@ -120,6 +120,74 @@ export interface TemporalTruthQuery {
   limit?: number;
 }
 
+export type DerivedTruthStoreKind =
+  | "VECTOR"
+  | "GRAPH_SUMMARY"
+  | "COMMUNITY_REPORT"
+  | "CACHED_SYNTHESIS"
+  | "CONTEXT_FRAGMENT"
+  | "TASK_ARTIFACT";
+
+export interface DerivedTruthDependency {
+  id: string;
+  spaceId: string;
+  vaultId: string;
+  derivedStoreKind: DerivedTruthStoreKind;
+  derivedItemRef: string;
+  supportSetId: string;
+  sourceRevisionHashes: string[];
+  truthRevisionHash: string;
+  projectionRevision: string | null;
+  createdAt: string;
+}
+
+export interface RegisterDerivedTruthDependencyInput {
+  spaceId: string;
+  vaultId: string;
+  derivedStoreKind: DerivedTruthStoreKind;
+  derivedItemRef: string;
+  supportSetId: string;
+  sourceRevisionHashes?: string[];
+  truthRevisionHash: string;
+  projectionRevision?: string | null;
+}
+
+export interface TruthSnapshotEntry {
+  vaultId: string;
+  revisionHash: string | null;
+  revisionSeq: number;
+}
+
+export interface TruthSnapshot {
+  spaceId: string;
+  capturedAt: string;
+  vaults: TruthSnapshotEntry[];
+}
+
+export type DerivedTruthValidationState =
+  | "SUPPORTED"
+  | "DISPUTED"
+  | "UNSUPPORTED"
+  | "UNANNOTATED";
+
+export interface DerivedTruthValidation {
+  derivedItemRef: string;
+  state: DerivedTruthValidationState;
+  valid: boolean;
+  dependency: DerivedTruthDependency | null;
+  queryRevisionHash: string | null;
+  queryRevisionSeq: number;
+}
+
+export interface ValidateDerivedTruthInput {
+  spaceId: string;
+  vaultId: string;
+  derivedStoreKind: DerivedTruthStoreKind;
+  derivedItemRefs: string[];
+  truthRevisionHash?: string;
+  validAt?: string;
+}
+
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const HASH64 = /^[a-f0-9]{64}$/;
@@ -409,6 +477,37 @@ interface SourceEpisodeRow {
   observed_at: Date | string | null;
   ingested_at: Date | string;
   locator_refs: unknown;
+}
+
+interface DerivedDependencyRow {
+  id: string;
+  space_id: string;
+  vault_id: string;
+  derived_store_kind: DerivedTruthStoreKind;
+  derived_item_ref: string;
+  support_set_id: string;
+  source_revision_hashes: string[];
+  truth_revision_hash: string;
+  projection_revision: string | null;
+  created_at: Date | string;
+  revision_seq?: string | number;
+}
+
+function normalizeDerivedDependency(
+  row: DerivedDependencyRow,
+): DerivedTruthDependency {
+  return {
+    id: row.id,
+    spaceId: row.space_id,
+    vaultId: row.vault_id,
+    derivedStoreKind: row.derived_store_kind,
+    derivedItemRef: row.derived_item_ref,
+    supportSetId: row.support_set_id,
+    sourceRevisionHashes: row.source_revision_hashes ?? [],
+    truthRevisionHash: row.truth_revision_hash,
+    projectionRevision: row.projection_revision,
+    createdAt: iso(row.created_at),
+  };
 }
 
 interface FactRow {
@@ -1358,5 +1457,259 @@ export class PostgresTemporalTruthStore {
       evidenceInvalidations: evidenceInvalidations.rows,
       supersessions: supersessions.rows,
     };
+  }
+
+  async captureSnapshot(
+    spaceId: string,
+    vaultIds: readonly string[],
+  ): Promise<TruthSnapshot> {
+    const normalizedSpaceId = requiredUuid(spaceId, "TRUTH_SPACE_ID_INVALID");
+    const normalizedVaultIds = [...new Set(vaultIds)].map((vaultId) =>
+      requiredUuid(vaultId, "TRUTH_VAULT_ID_INVALID"),
+    );
+    if (normalizedVaultIds.length > 100) {
+      throw new Error("TRUTH_SNAPSHOT_VAULT_LIMIT_EXCEEDED");
+    }
+    const revisions = await Promise.all(
+      normalizedVaultIds.map(async (vaultId): Promise<TruthSnapshotEntry> => {
+        const revision = await this.currentRevision(normalizedSpaceId, vaultId);
+        return revision
+          ? {
+              vaultId,
+              revisionHash: revision.revisionHash,
+              revisionSeq: revision.revisionSeq,
+            }
+          : { vaultId, revisionHash: null, revisionSeq: 0 };
+      }),
+    );
+    return {
+      spaceId: normalizedSpaceId,
+      capturedAt: new Date().toISOString(),
+      vaults: revisions.sort((left, right) =>
+        left.vaultId.localeCompare(right.vaultId),
+      ),
+    };
+  }
+
+  async snapshotUnchanged(snapshot: TruthSnapshot): Promise<boolean> {
+    const current = await this.captureSnapshot(
+      snapshot.spaceId,
+      snapshot.vaults.map((entry) => entry.vaultId),
+    );
+    if (current.vaults.length !== snapshot.vaults.length) return false;
+    return current.vaults.every((entry, index) => {
+      const expected = snapshot.vaults[index];
+      return (
+        expected !== undefined &&
+        entry.vaultId === expected.vaultId &&
+        entry.revisionSeq === expected.revisionSeq &&
+        entry.revisionHash === expected.revisionHash
+      );
+    });
+  }
+
+  async registerDerivedDependency(
+    rawInput: RegisterDerivedTruthDependencyInput,
+  ): Promise<DerivedTruthDependency> {
+    const input = {
+      spaceId: requiredUuid(rawInput.spaceId, "TRUTH_SPACE_ID_INVALID"),
+      vaultId: requiredUuid(rawInput.vaultId, "TRUTH_VAULT_ID_INVALID"),
+      derivedStoreKind: rawInput.derivedStoreKind,
+      derivedItemRef: requiredText(
+        rawInput.derivedItemRef,
+        "TRUTH_DERIVED_ITEM_REF_INVALID",
+        4096,
+      ),
+      supportSetId: requiredUuid(
+        rawInput.supportSetId,
+        "TRUTH_SUPPORT_SET_ID_INVALID",
+      ),
+      sourceRevisionHashes: [...(rawInput.sourceRevisionHashes ?? [])],
+      truthRevisionHash: requiredHash(
+        rawInput.truthRevisionHash,
+        "TRUTH_REVISION_HASH_INVALID",
+      ),
+      projectionRevision:
+        rawInput.projectionRevision === undefined ||
+        rawInput.projectionRevision === null
+          ? null
+          : requiredText(
+              rawInput.projectionRevision,
+              "TRUTH_PROJECTION_REVISION_INVALID",
+              2048,
+            ),
+    };
+    const allowedKinds = new Set<DerivedTruthStoreKind>([
+      "VECTOR",
+      "GRAPH_SUMMARY",
+      "COMMUNITY_REPORT",
+      "CACHED_SYNTHESIS",
+      "CONTEXT_FRAGMENT",
+      "TASK_ARTIFACT",
+    ]);
+    if (!allowedKinds.has(input.derivedStoreKind)) {
+      throw new Error("TRUTH_DERIVED_STORE_KIND_INVALID");
+    }
+    if (
+      input.sourceRevisionHashes.length > 500 ||
+      input.sourceRevisionHashes.some((hash) => !HASH64.test(hash))
+    ) {
+      throw new Error("TRUTH_SOURCE_REVISION_HASHES_INVALID");
+    }
+    const [support, revision] = await Promise.all([
+      this.db.pool.query<SupportSetRow>(
+        `select * from truth_support_sets
+          where id=$1 and space_id=$2 and vault_id=$3
+          limit 1`,
+        [input.supportSetId, input.spaceId, input.vaultId],
+      ),
+      this.db.pool.query<{ revision_hash: string }>(
+        `select revision_hash from truth_revisions
+          where revision_hash=$1 and space_id=$2 and vault_id=$3
+          limit 1`,
+        [input.truthRevisionHash, input.spaceId, input.vaultId],
+      ),
+    ]);
+    if (!support.rows[0]) throw new Error("TRUTH_SUPPORT_SET_NOT_FOUND");
+    if (!revision.rows[0]) throw new Error("TRUTH_REVISION_NOT_FOUND");
+
+    const id = randomUUID();
+    const inserted = await this.db.pool.query<DerivedDependencyRow>(
+      `insert into derived_truth_dependencies(
+         id,space_id,vault_id,derived_store_kind,derived_item_ref,
+         support_set_id,source_revision_hashes,truth_revision_hash,
+         projection_revision
+       ) values($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       on conflict(vault_id,derived_store_kind,derived_item_ref,truth_revision_hash)
+       do nothing
+       returning *`,
+      [
+        id,
+        input.spaceId,
+        input.vaultId,
+        input.derivedStoreKind,
+        input.derivedItemRef,
+        input.supportSetId,
+        input.sourceRevisionHashes,
+        input.truthRevisionHash,
+        input.projectionRevision,
+      ],
+    );
+    if (inserted.rows[0]) return normalizeDerivedDependency(inserted.rows[0]);
+
+    const existing = await this.db.pool.query<DerivedDependencyRow>(
+      `select * from derived_truth_dependencies
+        where vault_id=$1 and derived_store_kind=$2 and derived_item_ref=$3
+          and truth_revision_hash=$4
+        limit 1`,
+      [
+        input.vaultId,
+        input.derivedStoreKind,
+        input.derivedItemRef,
+        input.truthRevisionHash,
+      ],
+    );
+    const row = existing.rows[0];
+    if (!row) throw new Error("TRUTH_DERIVED_DEPENDENCY_NOT_FOUND");
+    if (
+      row.space_id !== input.spaceId ||
+      row.support_set_id !== input.supportSetId ||
+      JSON.stringify(row.source_revision_hashes ?? []) !==
+        JSON.stringify(input.sourceRevisionHashes) ||
+      row.projection_revision !== input.projectionRevision
+    ) {
+      throw new Error("TRUTH_DERIVED_DEPENDENCY_CONFLICT");
+    }
+    return normalizeDerivedDependency(row);
+  }
+
+  async validateDerivedItems(
+    rawInput: ValidateDerivedTruthInput,
+  ): Promise<DerivedTruthValidation[]> {
+    const spaceId = requiredUuid(rawInput.spaceId, "TRUTH_SPACE_ID_INVALID");
+    const vaultId = requiredUuid(rawInput.vaultId, "TRUTH_VAULT_ID_INVALID");
+    const refs = [...new Set(rawInput.derivedItemRefs)].map((ref) =>
+      requiredText(ref, "TRUTH_DERIVED_ITEM_REF_INVALID", 4096),
+    );
+    if (refs.length > 5000) {
+      throw new Error("TRUTH_DERIVED_ITEM_LIMIT_EXCEEDED");
+    }
+    if (refs.length === 0) return [];
+    const validAt = rawInput.validAt
+      ? requiredDate(rawInput.validAt, "TRUTH_VALID_AT_INVALID")
+      : new Date().toISOString();
+    const cutoff = await this.revisionCutoff({
+      spaceId,
+      vaultId,
+      ...(rawInput.truthRevisionHash
+        ? { truthRevisionHash: rawInput.truthRevisionHash }
+        : {}),
+      authorizationPathPrefixes: [],
+    });
+    if (cutoff.seq === 0) {
+      return refs.map((derivedItemRef) => ({
+        derivedItemRef,
+        state: "UNANNOTATED",
+        valid: true,
+        dependency: null,
+        queryRevisionHash: null,
+        queryRevisionSeq: 0,
+      }));
+    }
+
+    const rows = await this.db.pool.query<DerivedDependencyRow>(
+      `select d.*,r.revision_seq
+         from derived_truth_dependencies d
+         join truth_revisions r on r.revision_hash=d.truth_revision_hash
+        where d.space_id=$1 and d.vault_id=$2
+          and d.derived_store_kind=$3
+          and d.derived_item_ref=any($4::text[])
+          and r.revision_seq<=$5
+        order by d.derived_item_ref,r.revision_seq desc,d.created_at desc,d.id`,
+      [spaceId, vaultId, rawInput.derivedStoreKind, refs, cutoff.seq],
+    );
+    const latest = new Map<string, DerivedDependencyRow>();
+    for (const row of rows.rows) {
+      if (!latest.has(row.derived_item_ref)) {
+        latest.set(row.derived_item_ref, row);
+      }
+    }
+
+    const output: DerivedTruthValidation[] = [];
+    for (const derivedItemRef of refs) {
+      const row = latest.get(derivedItemRef);
+      if (!row) {
+        output.push({
+          derivedItemRef,
+          state: "UNANNOTATED",
+          valid: true,
+          dependency: null,
+          queryRevisionHash: cutoff.hash,
+          queryRevisionSeq: cutoff.seq,
+        });
+        continue;
+      }
+      const supportRow = await this.db.pool.query<SupportSetRow>(
+        `select * from truth_support_sets
+          where id=$1 and space_id=$2 and vault_id=$3
+          limit 1`,
+        [row.support_set_id, spaceId, vaultId],
+      );
+      const support = supportRow.rows[0]
+        ? normalizeSupportSet(supportRow.rows[0])
+        : null;
+      const state = support
+        ? await this.supportEvaluation(support, validAt, cutoff.seq)
+        : "UNSUPPORTED";
+      output.push({
+        derivedItemRef,
+        state,
+        valid: state !== "UNSUPPORTED",
+        dependency: normalizeDerivedDependency(row),
+        queryRevisionHash: cutoff.hash,
+        queryRevisionSeq: cutoff.seq,
+      });
+    }
+    return output;
   }
 }
