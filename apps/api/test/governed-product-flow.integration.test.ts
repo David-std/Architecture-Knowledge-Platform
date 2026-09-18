@@ -453,8 +453,8 @@ describe("P2 governed product flow", () => {
       id: string;
       user_id: string;
     }>(
-      \`select id,user_id from principals
-        where kind='HUMAN' and user_id=any($1::uuid[])\`,
+      `select id,user_id from principals
+        where kind='HUMAN' and user_id=any($1::uuid[])`,
       [[actorAId, actorBId, reviewerId]],
     );
     const principalByUser = new Map(
@@ -484,7 +484,7 @@ describe("P2 governed product flow", () => {
     for (const userId of [actorBId, reviewerId]) {
       const joined = await app.inject({
         method: "POST",
-        url: \`/v1/sessions/\${sessionId}/participants\`,
+        url: `/v1/sessions/${sessionId}/participants`,
         headers: actorAHeaders,
         payload: { userId },
       });
@@ -493,7 +493,7 @@ describe("P2 governed product flow", () => {
 
     const agentCredential = await app.inject({
       method: "POST",
-      url: \`/v1/sessions/\${sessionId}/agent-processes\`,
+      url: `/v1/sessions/${sessionId}/agent-processes`,
       headers: actorAHeaders,
       payload: {
         label: "P2 decision-preparation agent",
@@ -511,11 +511,11 @@ describe("P2 governed product flow", () => {
       token: string;
       principal: { id: string };
     };
-    const agentHeaders = { authorization: \`Bearer \${agent.token}\` };
+    const agentHeaders = { authorization: `Bearer ${agent.token}` };
 
     const createdDecision = await app.inject({
       method: "POST",
-      url: \`/v1/sessions/\${sessionId}/decisions\`,
+      url: `/v1/sessions/${sessionId}/decisions`,
       headers: agentHeaders,
       payload: {
         decisionAuthorityPrincipalId: reviewerPrincipalId,
@@ -549,7 +549,7 @@ describe("P2 governed product flow", () => {
 
     const agentAlternative = await app.inject({
       method: "POST",
-      url: \`/v1/sessions/\${sessionId}/decisions/\${firstDecision.id}/alternatives\`,
+      url: `/v1/sessions/${sessionId}/decisions/${firstDecision.id}/alternatives`,
       headers: agentHeaders,
       payload: {
         title: "Mirror the governed projection",
@@ -573,7 +573,7 @@ describe("P2 governed product flow", () => {
 
     const humanAlternative = await app.inject({
       method: "POST",
-      url: \`/v1/sessions/\${sessionId}/decisions/\${firstDecision.id}/alternatives\`,
+      url: `/v1/sessions/${sessionId}/decisions/${firstDecision.id}/alternatives`,
       headers: actorAHeaders,
       payload: {
         title: "Resolve every reference live",
@@ -597,7 +597,7 @@ describe("P2 governed product flow", () => {
 
     const prematureSelection = await app.inject({
       method: "POST",
-      url: \`/v1/sessions/\${sessionId}/decisions/\${firstDecision.id}/selection\`,
+      url: `/v1/sessions/${sessionId}/decisions/${firstDecision.id}/selection`,
       headers: reviewerHeaders,
       payload: { alternativeId: suggested.id },
     });
@@ -608,7 +608,7 @@ describe("P2 governed product flow", () => {
 
     const acceptSuggestion = await app.inject({
       method: "POST",
-      url: \`/v1/sessions/\${sessionId}/decisions/\${firstDecision.id}/alternatives/\${suggested.id}/decision\`,
+      url: `/v1/sessions/${sessionId}/decisions/${firstDecision.id}/alternatives/${suggested.id}/decision`,
       headers: reviewerHeaders,
       payload: { decision: "CONSIDER" },
     });
@@ -622,7 +622,7 @@ describe("P2 governed product flow", () => {
 
     const consultation = await app.inject({
       method: "POST",
-      url: \`/v1/sessions/\${sessionId}/decisions/\${firstDecision.id}/consultations\`,
+      url: `/v1/sessions/${sessionId}/decisions/${firstDecision.id}/consultations`,
       headers: reviewerHeaders,
       payload: {
         reviewerPrincipalId: actorBPrincipalId,
@@ -635,7 +635,7 @@ describe("P2 governed product flow", () => {
 
     const consultationResponse = await app.inject({
       method: "POST",
-      url: \`/v1/sessions/\${sessionId}/decisions/\${firstDecision.id}/consultations/\${consultationBody.id}/respond\`,
+      url: `/v1/sessions/${sessionId}/decisions/${firstDecision.id}/consultations/${consultationBody.id}/respond`,
       headers: actorBHeaders,
       payload: {
         position: "SUPPORT",
@@ -652,7 +652,7 @@ describe("P2 governed product flow", () => {
 
     const objection = await app.inject({
       method: "POST",
-      url: \`/v1/sessions/\${sessionId}/decisions/\${firstDecision.id}/objections\`,
+      url: `/v1/sessions/${sessionId}/decisions/${firstDecision.id}/objections`,
       headers: agentHeaders,
       payload: {
         alternativeId: suggested.id,
@@ -670,7 +670,7 @@ describe("P2 governed product flow", () => {
 
     const blockedByObjection = await app.inject({
       method: "POST",
-      url: \`/v1/sessions/\${sessionId}/decisions/\${firstDecision.id}/selection\`,
+      url: `/v1/sessions/${sessionId}/decisions/${firstDecision.id}/selection`,
       headers: reviewerHeaders,
       payload: { alternativeId: suggested.id },
     });
@@ -681,7 +681,7 @@ describe("P2 governed product flow", () => {
 
     const resolved = await app.inject({
       method: "POST",
-      url: \`/v1/sessions/\${sessionId}/decisions/\${firstDecision.id}/objections/\${objectionBody.id}/resolve\`,
+      url: `/v1/sessions/${sessionId}/decisions/${firstDecision.id}/objections/${objectionBody.id}/resolve`,
       headers: reviewerHeaders,
       payload: {
         resolution:
@@ -696,7 +696,7 @@ describe("P2 governed product flow", () => {
 
     const selected = await app.inject({
       method: "POST",
-      url: \`/v1/sessions/\${sessionId}/decisions/\${firstDecision.id}/selection\`,
+      url: `/v1/sessions/${sessionId}/decisions/${firstDecision.id}/selection`,
       headers: reviewerHeaders,
       payload: { alternativeId: suggested.id },
     });
@@ -708,7 +708,7 @@ describe("P2 governed product flow", () => {
 
     const captured = await app.inject({
       method: "POST",
-      url: \`/v1/sessions/\${sessionId}/decisions/\${firstDecision.id}/capture\`,
+      url: `/v1/sessions/${sessionId}/decisions/${firstDecision.id}/capture`,
       headers: agentHeaders,
     });
     expect(captured.statusCode).toBe(201);
@@ -723,7 +723,7 @@ describe("P2 governed product flow", () => {
 
     const capturedAgain = await app.inject({
       method: "POST",
-      url: \`/v1/sessions/\${sessionId}/decisions/\${firstDecision.id}/capture\`,
+      url: `/v1/sessions/${sessionId}/decisions/${firstDecision.id}/capture`,
       headers: agentHeaders,
     });
     expect(capturedAgain.statusCode).toBe(201);
@@ -733,14 +733,14 @@ describe("P2 governed product flow", () => {
 
     const firstPromotion = await app.inject({
       method: "POST",
-      url: \`/v1/sessions/\${sessionId}/promotions\`,
+      url: `/v1/sessions/${sessionId}/promotions`,
       headers: agentHeaders,
       payload: {
         evidenceEventIds: [capturedBody.eventId],
         summary: "Promote consulted context delivery decision",
         changes: [
           {
-            path: \`20-knowledge/generated/decision/context-delivery-\${vaultId.slice(0, 8)}.md\`,
+            path: `20-knowledge/generated/decision/context-delivery-${vaultId.slice(0, 8)}.md`,
             content:
               "---\\nid: P2-CONTEXT-DELIVERY\\ntype: decision\\nstatus: proposed\\nknowledge_layer: project\\n---\\n# Context delivery mode\\n\\nUse an indexed governed projection only when connector capabilities preserve the source authorization boundary. The alternative originated as an agent suggestion, was explicitly considered by the human decision authority, received independent consultation, and resolved its open objection before entering governed review.\\n",
             reason:
@@ -758,7 +758,7 @@ describe("P2 governed product flow", () => {
 
     const pendingSnapshot = await app.inject({
       method: "GET",
-      url: \`/v1/sessions/\${sessionId}/decisions/\${firstDecision.id}\`,
+      url: `/v1/sessions/${sessionId}/decisions/${firstDecision.id}`,
       headers: reviewerHeaders,
     });
     expect(pendingSnapshot.statusCode).toBe(200);
@@ -773,7 +773,7 @@ describe("P2 governed product flow", () => {
 
     const agentApproval = await app.inject({
       method: "POST",
-      url: \`/v1/reviews/\${firstPromotionBody.reviewId}/decision\`,
+      url: `/v1/reviews/${firstPromotionBody.reviewId}/decision`,
       headers: agentHeaders,
       payload: {
         decision: "APPROVE",
@@ -788,7 +788,7 @@ describe("P2 governed product flow", () => {
 
     const firstApproval = await app.inject({
       method: "POST",
-      url: \`/v1/reviews/\${firstPromotionBody.reviewId}/decision\`,
+      url: `/v1/reviews/${firstPromotionBody.reviewId}/decision`,
       headers: reviewerHeaders,
       payload: {
         decision: "APPROVE",
@@ -805,7 +805,7 @@ describe("P2 governed product flow", () => {
 
     const approvedSnapshot = await app.inject({
       method: "GET",
-      url: \`/v1/sessions/\${sessionId}/decisions/\${firstDecision.id}\`,
+      url: `/v1/sessions/${sessionId}/decisions/${firstDecision.id}`,
       headers: reviewerHeaders,
     });
     expect(approvedSnapshot.statusCode).toBe(200);
@@ -833,7 +833,7 @@ describe("P2 governed product flow", () => {
     for (const userId of [actorBId, reviewerId]) {
       const joined = await app.inject({
         method: "POST",
-        url: \`/v1/sessions/\${secondSessionId}/participants\`,
+        url: `/v1/sessions/${secondSessionId}/participants`,
         headers: actorAHeaders,
         payload: { userId },
       });
@@ -842,7 +842,7 @@ describe("P2 governed product flow", () => {
 
     const replacement = await app.inject({
       method: "POST",
-      url: \`/v1/sessions/\${secondSessionId}/decisions\`,
+      url: `/v1/sessions/${secondSessionId}/decisions`,
       headers: actorAHeaders,
       payload: {
         decisionAuthorityPrincipalId: reviewerPrincipalId,
@@ -862,7 +862,7 @@ describe("P2 governed product flow", () => {
 
     const replacementAltA = await app.inject({
       method: "POST",
-      url: \`/v1/sessions/\${secondSessionId}/decisions/\${replacementBody.id}/alternatives\`,
+      url: `/v1/sessions/${secondSessionId}/decisions/${replacementBody.id}/alternatives`,
       headers: actorAHeaders,
       payload: {
         title: "Hybrid bounded cache",
@@ -877,7 +877,7 @@ describe("P2 governed product flow", () => {
 
     const replacementAltB = await app.inject({
       method: "POST",
-      url: \`/v1/sessions/\${secondSessionId}/decisions/\${replacementBody.id}/alternatives\`,
+      url: `/v1/sessions/${secondSessionId}/decisions/${replacementBody.id}/alternatives`,
       headers: actorBHeaders,
       payload: {
         title: "Live reference only",
@@ -891,7 +891,7 @@ describe("P2 governed product flow", () => {
 
     const replacementConsultation = await app.inject({
       method: "POST",
-      url: \`/v1/sessions/\${secondSessionId}/decisions/\${replacementBody.id}/consultations\`,
+      url: `/v1/sessions/${secondSessionId}/decisions/${replacementBody.id}/consultations`,
       headers: reviewerHeaders,
       payload: {
         reviewerPrincipalId: actorBPrincipalId,
@@ -906,7 +906,7 @@ describe("P2 governed product flow", () => {
 
     const replacementResponse = await app.inject({
       method: "POST",
-      url: \`/v1/sessions/\${secondSessionId}/decisions/\${replacementBody.id}/consultations/\${replacementConsultationId}/respond\`,
+      url: `/v1/sessions/${secondSessionId}/decisions/${replacementBody.id}/consultations/${replacementConsultationId}/respond`,
       headers: actorBHeaders,
       payload: {
         position: "SUPPORT",
@@ -918,7 +918,7 @@ describe("P2 governed product flow", () => {
 
     const replacementSelection = await app.inject({
       method: "POST",
-      url: \`/v1/sessions/\${secondSessionId}/decisions/\${replacementBody.id}/selection\`,
+      url: `/v1/sessions/${secondSessionId}/decisions/${replacementBody.id}/selection`,
       headers: reviewerHeaders,
       payload: { alternativeId: replacementAltAId },
     });
@@ -929,7 +929,7 @@ describe("P2 governed product flow", () => {
 
     const replacementCapture = await app.inject({
       method: "POST",
-      url: \`/v1/sessions/\${secondSessionId}/decisions/\${replacementBody.id}/capture\`,
+      url: `/v1/sessions/${secondSessionId}/decisions/${replacementBody.id}/capture`,
       headers: actorAHeaders,
     });
     expect(replacementCapture.statusCode).toBe(201);
@@ -939,14 +939,14 @@ describe("P2 governed product flow", () => {
 
     const replacementPromotion = await app.inject({
       method: "POST",
-      url: \`/v1/sessions/\${secondSessionId}/promotions\`,
+      url: `/v1/sessions/${secondSessionId}/promotions`,
       headers: actorAHeaders,
       payload: {
         evidenceEventIds: [replacementEventId],
         summary: "Supersede context delivery decision",
         changes: [
           {
-            path: \`20-knowledge/generated/decision/context-delivery-v2-\${vaultId.slice(0, 8)}.md\`,
+            path: `20-knowledge/generated/decision/context-delivery-v2-${vaultId.slice(0, 8)}.md`,
             content:
               "---\\nid: P2-CONTEXT-DELIVERY-V2\\ntype: decision\\nstatus: proposed\\nknowledge_layer: project\\n---\\n# Context delivery mode v2\\n\\nUse a bounded hybrid cache only where permission fidelity is preserved and stale state is explicitly disclosed. This replacement was consulted independently and is not authoritative until the governed human review publishes it.\\n",
             reason:
@@ -962,7 +962,7 @@ describe("P2 governed product flow", () => {
 
     const replacementApproval = await app.inject({
       method: "POST",
-      url: \`/v1/reviews/\${replacementReviewId}/decision\`,
+      url: `/v1/reviews/${replacementReviewId}/decision`,
       headers: reviewerHeaders,
       payload: {
         decision: "APPROVE",
@@ -982,11 +982,11 @@ describe("P2 governed product flow", () => {
       superseded_by_candidate_id: string | null;
       published_revision: string | null;
     }>(
-      \`select id,status,supersedes_candidate_id,
+      `select id,status,supersedes_candidate_id,
               superseded_by_candidate_id,published_revision
          from workspace_decision_candidates
         where id=any($1::uuid[])
-        order by id\`,
+        order by id`,
       [[firstDecision.id, replacementBody.id]],
     );
     const predecessor = supersessionState.rows.find(
