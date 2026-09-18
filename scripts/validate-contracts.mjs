@@ -344,6 +344,70 @@ if (!workspaceEventSchema?.properties?.actorPrincipalId) {
   );
 }
 
+const outboxSource = await readFile(
+  path.join(root, "packages/postgres/src/outbox.ts"),
+  "utf8",
+);
+const integrationTypeBlock =
+  /export const INTEGRATION_EVENT_TYPES = \[([\s\S]*?)\] as const;/.exec(
+    outboxSource,
+  )?.[1] ?? "";
+const runtimeIntegrationEventTypes = new Set(
+  [...integrationTypeBlock.matchAll(/"([^"]+)"/g)].map((match) => match[1]),
+);
+if (runtimeIntegrationEventTypes.size === 0) {
+  failures.push(
+    "packages/postgres/src/outbox.ts: could not resolve runtime integration event types",
+  );
+} else {
+  for (const eventType of runtimeIntegrationEventTypes) {
+    if (!integrationEventEnum.has(eventType)) {
+      failures.push(
+        `contracts/asyncapi.yaml: runtime integration event ${eventType} is undeclared`,
+      );
+    }
+  }
+  for (const eventType of integrationEventEnum) {
+    if (!runtimeIntegrationEventTypes.has(eventType)) {
+      failures.push(
+        `contracts/asyncapi.yaml: declares integration event ${eventType} absent from runtime`,
+      );
+    }
+  }
+}
+
+const workspaceCoordinationSource = await readFile(
+  path.join(root, "packages/postgres/src/workspace-coordination.ts"),
+  "utf8",
+);
+const workspaceTypeBlock =
+  /export type WorkspaceEventType =([\s\S]*?);/.exec(
+    workspaceCoordinationSource,
+  )?.[1] ?? "";
+const runtimeWorkspaceEventTypes = new Set(
+  [...workspaceTypeBlock.matchAll(/"([^"]+)"/g)].map((match) => match[1]),
+);
+if (runtimeWorkspaceEventTypes.size === 0) {
+  failures.push(
+    "packages/postgres/src/workspace-coordination.ts: could not resolve runtime workspace event types",
+  );
+} else {
+  for (const eventType of runtimeWorkspaceEventTypes) {
+    if (!workspaceEventEnum.has(eventType)) {
+      failures.push(
+        `contracts/asyncapi.yaml: runtime workspace event ${eventType} is undeclared`,
+      );
+    }
+  }
+  for (const eventType of workspaceEventEnum) {
+    if (!runtimeWorkspaceEventTypes.has(eventType)) {
+      failures.push(
+        `contracts/asyncapi.yaml: declares workspace event ${eventType} absent from runtime`,
+      );
+    }
+  }
+}
+
 const workspaceEvent = asyncapi?.components?.schemas?.WorkspaceEventPayload;
 const workspaceEventRequired = requiredSet(workspaceEvent);
 for (const field of [
