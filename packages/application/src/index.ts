@@ -83,6 +83,21 @@ export interface PromotionRequestDraft {
   changes: Array<{ path: string; content: string; reason?: string }>;
 }
 
+export interface BootstrapAgentInstructionDigest {
+  revisionSetHash: string;
+  principalId: string;
+  principalKind: string;
+  allowedActions: string[];
+  profile: {
+    profileId: string;
+    version: string;
+    policyRevision: string;
+  };
+  mandatoryKnowledgeKinds: string[];
+  promotionReviewRequired: boolean;
+  directives: string[];
+}
+
 export interface BootstrapContextResult<TContextPacket = unknown> {
   schemaVersion: 1;
   workContext: BootstrapWorkContextSnapshot;
@@ -93,9 +108,11 @@ export interface BootstrapContextResult<TContextPacket = unknown> {
   openWork: BootstrapWorkContextSnapshot["claims"];
   handoffs: Array<Record<string, unknown>>;
   findings: Array<Record<string, unknown>>;
+  decisions: Array<Record<string, unknown>>;
   blockers: Array<Record<string, unknown>>;
   lifecycleGaps: string[];
   suggestedActions: string[];
+  agentInstructionDigest: BootstrapAgentInstructionDigest;
 }
 
 export interface BootstrapContextPorts<TContextPacket = unknown> {
@@ -195,6 +212,7 @@ export class BootstrapContext<TContextPacket = unknown> {
     );
     const handoffs = workspaceEventsOfType(snapshot, "CLAIM_HANDOFF");
     const findings = workspaceEventsOfType(snapshot, "FINDING");
+    const decisions = workspaceEventsOfType(snapshot, "DECISION_CANDIDATE");
     const blockers = workspaceEventsOfType(snapshot, "BLOCKER");
     const lifecycleGaps = [
       ...profile.mandatoryKinds.map((kind) => `MANDATORY_KIND:${kind}`),
@@ -206,7 +224,18 @@ export class BootstrapContext<TContextPacket = unknown> {
       ...(blockers.length ? ["RESOLVE_BLOCKERS"] : []),
       ...(openWork.length ? ["CONTINUE_OPEN_WORK"] : ["CLAIM_WORK"]),
       ...(findings.length ? ["REVIEW_FINDINGS"] : []),
+      ...(decisions.length ? ["REVIEW_DECISIONS"] : []),
       ...(lifecycleGaps.length ? ["RESOLVE_CONTEXT_GAPS"] : []),
+    ];
+    const directives = [
+      "USE_PINNED_CONTEXT_REVISION",
+      "DO_NOT_TREAT_WORKSPACE_COORDINATION_AS_CANONICAL_KNOWLEDGE",
+      ...(profile.promotion.reviewRequired
+        ? ["PROMOTION_REQUIRES_GOVERNED_REVIEW"]
+        : []),
+      ...(lifecycleGaps.length
+        ? ["RESOLVE_CONTEXT_GAPS_BEFORE_CLAIMING_COMPLETENESS"]
+        : []),
     ];
 
     return {
@@ -219,9 +248,24 @@ export class BootstrapContext<TContextPacket = unknown> {
       openWork,
       handoffs,
       findings,
+      decisions,
       blockers,
       lifecycleGaps,
       suggestedActions: [...new Set(suggestedActions)],
+      agentInstructionDigest: {
+        revisionSetHash: snapshot.contextRevision.pinned.revisionSetHash,
+        principalId: authorization.principalId,
+        principalKind: authorization.principalKind,
+        allowedActions: [...authorization.allowedActions],
+        profile: {
+          profileId: profile.profileId,
+          version: profile.version,
+          policyRevision: profile.policyRevision,
+        },
+        mandatoryKnowledgeKinds: [...profile.mandatoryKinds],
+        promotionReviewRequired: profile.promotion.reviewRequired,
+        directives: [...new Set(directives)],
+      },
     };
   }
 }
