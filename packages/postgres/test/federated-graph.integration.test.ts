@@ -86,6 +86,10 @@ async function createFixture(db: Postgres): Promise<Fixture> {
 async function cleanupFixture(db: Postgres, fixture: Fixture): Promise<void> {
   const spaces = [fixture.spaceId, fixture.otherSpaceId];
   await db.pool.query(
+    "delete from event_outbox where space_id=any($1::uuid[])",
+    [spaces],
+  );
+  await db.pool.query(
     "delete from federated_graph_projection_revisions where space_id=any($1::uuid[])",
     [spaces],
   );
@@ -477,6 +481,49 @@ describe("federated multi-graph substrate integration", () => {
         const repeatedCatalogBuild =
           await projectionPort.build(catalogProjection);
         expect(repeatedCatalogBuild).toEqual(firstCatalogBuild);
+        const lifecycleEvents = await db.pool.query<{
+          event_id: string;
+          event_type: string;
+          causation_id: string | null;
+          payload: Record<string, unknown>;
+        }>(
+          `select event_id::text,event_type,causation_id,payload
+             from event_outbox
+            where resource_id=$1
+              and event_type=any($2::text[])
+            order by created_at,event_id`,
+          [
+            firstCatalogBuild.id,
+            ["GraphRevisionBuilt", "GraphRevisionActivated"],
+          ],
+        );
+        expect(lifecycleEvents.rows.map((event) => event.event_type)).toEqual([
+          "GraphRevisionBuilt",
+          "GraphRevisionActivated",
+        ]);
+        expect(lifecycleEvents.rows[0]?.payload).toMatchObject({
+          projectionRevisionId: firstCatalogBuild.id,
+          graphDomain: "SOFTWARE_CATALOG",
+          scopeId: catalogScope,
+          revision: "catalog-r1",
+          sourceRevision: "source:catalog-r1",
+          provider: "integration-fixture",
+          configurationVersion: "graph-config-v1",
+          lifecycle: "BUILT",
+          freshness: "FRESH",
+        });
+        expect(lifecycleEvents.rows[1]?.causation_id).toBe(
+          lifecycleEvents.rows[0]?.event_id,
+        );
+        expect(lifecycleEvents.rows[1]?.payload).toMatchObject({
+          projectionRevisionId: firstCatalogBuild.id,
+          graphDomain: "SOFTWARE_CATALOG",
+          scopeId: catalogScope,
+          revision: "catalog-r1",
+          lifecycle: "ACTIVE",
+          freshness: "FRESH",
+          superseded: [],
+        });
         const catalogRevisionState = await queryPort.revisionState(
           "SOFTWARE_CATALOG",
           fixture.spaceId,
