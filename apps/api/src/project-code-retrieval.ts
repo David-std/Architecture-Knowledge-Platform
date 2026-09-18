@@ -243,7 +243,7 @@ export async function resolveProjectCodeRetrieval(
   }
 
   const identifiers = queryIdentifiers(input.query);
-  const selectors: Array<{ path: string; name?: string }> = [
+  const selectorCandidates: Array<{ path: string; name?: string }> = [
     ...snapshotSymbols(project.metadata)
       .filter((symbol) => identifiers.has(symbol.name.toLowerCase()))
       .map((symbol) => ({ name: symbol.name, path: symbol.path })),
@@ -252,7 +252,8 @@ export async function resolveProjectCodeRetrieval(
         input.query.toLowerCase().includes(file.path.toLowerCase()),
       )
       .map((file) => ({ path: file.path })),
-  ]
+  ];
+  const selectors = selectorCandidates
     .filter(
       (selector, index, values) =>
         values.findIndex(
