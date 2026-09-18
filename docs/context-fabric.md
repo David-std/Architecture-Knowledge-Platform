@@ -54,6 +54,8 @@ Promotion remains:
 
 `finding/evidence -> promotion request -> review -> human approval -> managed Git publication`
 
+Governed proposal content cannot manufacture a stronger trust authority through frontmatter. In particular, `trust_tier: attested`, `verification_status: attested` or `status: attested` is rejected before a review draft is created. Existing administrative/legacy vault import remains a separate compatibility boundary; attestation must come from an authority outside proposal content, not from the candidate being reviewed.
+
 Normal `AGENT_PROCESS` credentials can read/coordinate and may receive `knowledge:propose`; they do not receive `knowledge:review`, publication, or administrative authority. Their bearer credential is bounded by its own expiry and policy revision. A derived agent also remains subordinate to its recorded human authority root: once that parent principal is no longer active, the child credential is invalid even if the child principal row itself has not yet been revoked. Expired credentials and credentials whose parent authority has been revoked must fail closed on the next request rather than retaining ambient session authority.
 
 ## External system-of-record references
@@ -68,7 +70,7 @@ An external reference never becomes a source, evidence, claim, rule, or canonica
 
 ## Offline snapshots and drafts
 
-`POST /v1/sessions/:id/offline-snapshot` captures an authorized compact bootstrap packet together with its pinned revision hash and an integrity hash. A client must retain the capture time and revalidate on reconnect.
+`POST /v1/sessions/:id/offline-snapshot` captures an authorized compact bootstrap packet together with its pinned revision hash, an integrity hash and `ageSeconds` derived from the pinned shared `ContextRevisionSet` timestamp rather than from the instant the HTTP response is created. A client must retain the capture time and revalidate on reconnect. When that pin later becomes stale, the server reports the age of the same pinned shared revision instead of resetting freshness to zero.
 
 Offline coordination changes are queued with a client-generated idempotency key and the exact `baseRevisionSetHash`. On reconnect:
 
@@ -82,16 +84,16 @@ The current server intentionally applies only coordination event types (`FINDING
 
 `context_fabric_peers` and `/v1/context-fabric/peers` are discovery metadata only. Registering a peer performs no network request. A peer can declare a discovery mode and capability manifest, but the current Team Context Fabric contract does not allow a discovered endpoint to become an authorization bypass, remote retrieval source, write boundary, or trust upgrade.
 
-The API returns `boundary: DISCOVERY_METADATA_ONLY` and `networkContactPerformed: false` for peer registration. Actual remote query/import policy belongs to the federation phase and must preserve remote provenance, trust and local authorization.
+The API returns `boundary: DISCOVERY_METADATA_ONLY` and `networkContactPerformed: false` for peer registration. The node discovery manifest advertises only `CATALOG_ONLY` federation in P2 and the capability flag `federationRemoteQuery` remains false. Therefore peer metadata cannot return or materialize remote knowledge objects in this phase; remote query/import policy belongs to the federation phase and must preserve remote provenance, trust and local authorization.
 
 ## Operational verification
 
 Before treating Team Context Fabric as proven, execute the maintained integration suite and remote CI matrix. Evidence must cover at least:
 
-- multi-vault and path-scope isolation;
+- multi-vault and path-scope isolation, including a private vault that cannot leak into team-wide search without an explicit grant;
 - two-agent claim overlap, fencing and durable handoff;
 - revision-pinned bootstrap and R1 -> R2 drift detection;
-- promotion provenance and denial of agent self-approval;
+- promotion provenance, denial of agent self-approval and rejection of proposal-authored `ATTESTED` trust escalation;
 - human-governed publication;
 - agent credential expiry/replay rejection and parent-principal revocation invalidation;
 - offline idempotency and stale reconnect reconciliation;
