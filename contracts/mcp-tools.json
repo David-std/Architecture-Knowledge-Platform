@@ -208,6 +208,46 @@
       "http": { "method": "GET", "path": "/v1/sessions/{id}/state" }
     },
     {
+      "name": "akp_update_work_context",
+      "version": "1.0.0",
+      "permission": "knowledge:read",
+      "mutates": true,
+      "requiresIdempotencyKey": true,
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sessionId", "status", "idempotencyKey"],
+        "properties": {
+          "sessionId": { "type": "string", "format": "uuid" },
+          "status": {
+            "type": "string",
+            "enum": ["OPEN", "BLOCKED", "COMPLETED", "ABANDONED"]
+          },
+          "outcome": {
+            "type": ["string", "null"],
+            "minLength": 1,
+            "maxLength": 12000
+          },
+          "followUps": {
+            "type": "array",
+            "maxItems": 50,
+            "items": { "type": "string", "minLength": 1, "maxLength": 2000 }
+          },
+          "touchedResources": {
+            "type": "array",
+            "maxItems": 100,
+            "items": { "type": "string", "minLength": 1, "maxLength": 1000 }
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 200
+          }
+        }
+      },
+      "http": { "method": "POST", "path": "/v1/sessions/{id}/work-context" }
+    },
+    {
       "name": "akp_bootstrap_session_context",
       "version": "1.0.0",
       "permission": "knowledge:read",
