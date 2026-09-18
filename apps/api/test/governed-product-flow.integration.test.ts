@@ -874,6 +874,165 @@ describe("P2 governed product flow", () => {
       expect(joined.statusCode).toBe(201);
     }
 
+    const rejectedCandidateResponse = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${secondSessionId}/decisions`,
+      headers: actorAHeaders,
+      payload: {
+        decisionAuthorityPrincipalId: reviewerPrincipalId,
+        title: "Rejected candidate keeps lifecycle atomic",
+        problem:
+          "Verify that rejecting a governed review cannot leave its structured decision candidate pending.",
+        context:
+          "Decision workflow and review publication share one governance boundary; their terminal rejection state must not diverge.",
+        drivers: ["atomic lifecycle", "auditability"],
+        qualityAttributes: ["consistency", "auditability"],
+        affectedRefs: ["service:review-api"],
+        evidenceRefs: ["fixture:decision-rejection"],
+        verificationPlan:
+          "Reject the governed review and read both durable states from PostgreSQL in the same integration flow.",
+      },
+    });
+    expect(rejectedCandidateResponse.statusCode).toBe(201);
+    const rejectedCandidate = rejectedCandidateResponse.json() as {
+      id: string;
+    };
+
+    const rejectedAltAResponse = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${secondSessionId}/decisions/${rejectedCandidate.id}/alternatives`,
+      headers: actorAHeaders,
+      payload: {
+        title: "Reject candidate atomically",
+        description:
+          "Transition the linked review and structured decision candidate to rejected together.",
+        tradeoffs:
+          "Requires the review transition to own the decision rejection boundary.",
+      },
+    });
+    expect(rejectedAltAResponse.statusCode).toBe(201);
+    const rejectedAltAId = (
+      rejectedAltAResponse.json() as { id: string }
+    ).id;
+
+    const rejectedAltBResponse = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${secondSessionId}/decisions/${rejectedCandidate.id}/alternatives`,
+      headers: actorBHeaders,
+      payload: {
+        title: "Reject review only",
+        description:
+          "Keep decision state independent and reconcile it after the review transition.",
+        tradeoffs:
+          "Creates a divergence window and is therefore retained only as the considered alternative that must not be selected.",
+      },
+    });
+    expect(rejectedAltBResponse.statusCode).toBe(201);
+
+    const rejectedConsultationResponse = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${secondSessionId}/decisions/${rejectedCandidate.id}/consultations`,
+      headers: reviewerHeaders,
+      payload: {
+        reviewerPrincipalId: actorBPrincipalId,
+        question:
+          "Should review rejection and structured decision rejection share one atomic database transition?",
+      },
+    });
+    expect(rejectedConsultationResponse.statusCode).toBe(201);
+    const rejectedConsultationId = (
+      rejectedConsultationResponse.json() as { id: string }
+    ).id;
+
+    const rejectedConsultationAnswer = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${secondSessionId}/decisions/${rejectedCandidate.id}/consultations/${rejectedConsultationId}/respond`,
+      headers: actorBHeaders,
+      payload: {
+        position: "SUPPORT",
+        response:
+          "Yes. A rejected review must never expose a linked decision candidate as still pending governance.",
+      },
+    });
+    expect(rejectedConsultationAnswer.statusCode).toBe(200);
+
+    const rejectedSelection = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${secondSessionId}/decisions/${rejectedCandidate.id}/selection`,
+      headers: reviewerHeaders,
+      payload: {
+        alternativeId: rejectedAltAId,
+        consequences:
+          "Review rejection becomes a single durable state transition with the structured candidate, eliminating a partial-state window.",
+        followUpActions: [
+          "Keep the rejection invariant covered by the governed product-flow integration suite.",
+        ],
+      },
+    });
+    expect(rejectedSelection.statusCode).toBe(200);
+
+    const rejectedCapture = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${secondSessionId}/decisions/${rejectedCandidate.id}/capture`,
+      headers: actorAHeaders,
+    });
+    expect(rejectedCapture.statusCode).toBe(201);
+    const rejectedEventId = (
+      rejectedCapture.json() as { eventId: string }
+    ).eventId;
+
+    const rejectedPromotion = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${secondSessionId}/promotions`,
+      headers: actorAHeaders,
+      payload: {
+        evidenceEventIds: [rejectedEventId],
+        summary: "Exercise atomic decision rejection",
+        changes: [
+          {
+            path: `20-knowledge/generated/decision/rejected-lifecycle-${vaultId.slice(0, 8)}.md`,
+            content:
+              "---\\nid: P2-REJECTED-LIFECYCLE\\ntype: decision\\nstatus: proposed\\nknowledge_layer: project\\n---\\n# Rejected lifecycle candidate\\n\\nThis candidate exists only to prove that review rejection and structured decision rejection remain one durable transition.\\n",
+            reason:
+              "Exercise the negative governance path without publishing canonical knowledge.",
+          },
+        ],
+      },
+    });
+    expect(rejectedPromotion.statusCode).toBe(201);
+    const rejectedReviewId = (
+      rejectedPromotion.json() as { reviewId: string }
+    ).reviewId;
+
+    const rejectedReview = await app.inject({
+      method: "POST",
+      url: `/v1/reviews/${rejectedReviewId}/decision`,
+      headers: reviewerHeaders,
+      payload: {
+        decision: "REJECT",
+        reason:
+          "Intentional negative-path proof: this candidate must never publish.",
+      },
+    });
+    expect(rejectedReview.statusCode).toBe(200);
+    expect(rejectedReview.json()).toMatchObject({ status: "REJECTED" });
+
+    const rejectedState = await db.pool.query<{
+      review_status: string;
+      candidate_status: string;
+    }>(
+      `select review.status review_status,candidate.status candidate_status
+         from reviews review
+         join workspace_decision_candidates candidate
+           on candidate.review_id=review.id
+        where review.id=$1`,
+      [rejectedReviewId],
+    );
+    expect(rejectedState.rows[0]).toEqual({
+      review_status: "REJECTED",
+      candidate_status: "REJECTED",
+    });
+
     const replacement = await app.inject({
       method: "POST",
       url: `/v1/sessions/${secondSessionId}/decisions`,
