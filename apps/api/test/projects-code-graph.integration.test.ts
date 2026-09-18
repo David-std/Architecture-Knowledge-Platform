@@ -148,7 +148,9 @@ afterAll(async () => {
       "delete from memberships where user_id=$1 and space_id=$2",
       [actorId, spaceId],
     );
-    await db.pool.query("delete from users where id=$1", [actorId]);
+    // ContextPacket and audit history retain the actor identity that produced
+    // the evidence. Remove credentials and memberships above, but keep the
+    // referenced user row just as the durable outbox keeps its vault metadata.
     await db.pool.query("update vaults set enabled=false where id=$1", [
       vaultId,
     ]);
