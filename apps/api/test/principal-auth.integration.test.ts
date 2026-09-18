@@ -125,14 +125,13 @@ run("P2 principal identity", () => {
       "delete from audit_events where actor_id=$1 or principal_id in (select id from principals where user_id=$1)",
       [userId],
     );
-    await db.pool.query(
-      "delete from principals where user_id=$1 and kind='AGENT_PROCESS'",
-      [userId],
-    );
-    await db.pool.query("delete from principals where user_id=$1", [userId]);
+    // Sessions own claims and AGENT_PROCESS principals. Delete that durable
+    // workspace state first so principal cleanup cannot violate claim fencing
+    // foreign keys introduced by the principal-bound coordination schema.
     await db.pool.query("delete from agent_sessions where actor_id=$1", [
       userId,
     ]);
+    await db.pool.query("delete from principals where user_id=$1", [userId]);
     await db.pool.query("delete from api_tokens where user_id=$1", [userId]);
     await db.pool.query("delete from vault_memberships where user_id=$1", [
       userId,
