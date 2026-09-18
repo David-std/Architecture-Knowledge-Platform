@@ -81,6 +81,7 @@ export const INTEGRATION_EVENT_TYPES = [
   "OfflineDraftQueued",
   "OfflineDraftReconciled",
   "ContextFabricPeerRegistered",
+  "PrincipalRevoked",
 ] as const;
 export type IntegrationEventType = (typeof INTEGRATION_EVENT_TYPES)[number];
 
@@ -101,6 +102,7 @@ export const VAULT_SCOPED_EVENT_TYPES: ReadonlySet<IntegrationEventType> =
     "ExternalObjectRefUpserted",
     "OfflineDraftQueued",
     "OfflineDraftReconciled",
+    "PrincipalRevoked",
   ]);
 
 export interface EventEnvelope {
