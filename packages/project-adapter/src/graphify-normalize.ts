@@ -202,7 +202,10 @@ function extensionLanguage(relativePath: string): string | undefined {
   }[extension];
 }
 
-function nodeKind(value: GraphifyNode, relativePath: string): CodeGraphNodeKind {
+function nodeKind(
+  value: GraphifyNode,
+  relativePath: string,
+): CodeGraphNodeKind {
   const raw = [value.node_type, value.kind, value.type, value.category]
     .find((candidate) => typeof candidate === "string")
     ?.toString()
@@ -241,7 +244,9 @@ function relation(value: unknown): {
   if (/^(calls|call|invokes|invocation)$/.test(providerRelation)) {
     return { canonical: "CALLS", providerRelation };
   }
-  if (/^(imports|import|uses_module|depends_on_module)$/.test(providerRelation)) {
+  if (
+    /^(imports|import|uses_module|depends_on_module)$/.test(providerRelation)
+  ) {
     return { canonical: "IMPORTS", providerRelation };
   }
   if (/^(inherits|extends|subclasses)$/.test(providerRelation)) {
@@ -356,14 +361,11 @@ export function normalizeGraphifyArtifact(input: {
   warnings: CodeGraphWarning[];
 }): CodeGraphArtifact {
   const rawNodes = input.raw.nodes as GraphifyNode[];
-  const rawEdges = (Array.isArray(input.raw.edges)
-    ? input.raw.edges
-    : input.raw.links) as GraphifyEdge[];
+  const rawEdges = (
+    Array.isArray(input.raw.edges) ? input.raw.edges : input.raw.links
+  ) as GraphifyEdge[];
   const snapshotFiles = new Map(
-    input.snapshot.files.map((file) => [
-      file.path.replaceAll("\\", "/"),
-      file,
-    ]),
+    input.snapshot.files.map((file) => [file.path.replaceAll("\\", "/"), file]),
   );
   const providerToCanonical = new Map<string, string>();
   const canonicalIds = new Set<string>();
@@ -383,7 +385,9 @@ export function normalizeGraphifyArtifact(input: {
     );
     const file = snapshotFiles.get(relativePath);
     if (!file) throw graphifyError("GRAPHIFY_NODE_OUTSIDE_SNAPSHOT");
-    const lines = sourceLines(rawNode.source_location ?? rawNode.sourceLocation);
+    const lines = sourceLines(
+      rawNode.source_location ?? rawNode.sourceLocation,
+    );
     const name = cleanString(rawNode.label ?? rawNode.name ?? rawNode.id, 1024);
     const kind = nodeKind(rawNode, relativePath);
     const qualifiedName = cleanString(
@@ -497,8 +501,7 @@ export function normalizeGraphifyArtifact(input: {
       targetId,
       relation: mappedRelation.canonical,
       derivation: mappedDerivation,
-      ...(mappedDerivation === "INFERRED" ||
-      mappedDerivation === "AMBIGUOUS"
+      ...(mappedDerivation === "INFERRED" || mappedDerivation === "AMBIGUOUS"
         ? confidence === undefined
           ? {}
           : { confidence }
@@ -512,9 +515,7 @@ export function normalizeGraphifyArtifact(input: {
               : null,
           relation: mappedRelation.providerRelation,
           confidence:
-            typeof rawEdge.confidence === "string"
-              ? rawEdge.confidence
-              : null,
+            typeof rawEdge.confidence === "string" ? rawEdge.confidence : null,
           confidenceScore: confidence ?? null,
         },
       },

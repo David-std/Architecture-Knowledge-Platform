@@ -85,9 +85,7 @@ function pathInside(root: string, candidate: string): boolean {
 }
 
 function escapeRegexCharacter(character: string): string {
-  return "\\^$.*+?()[]{}|".includes(character)
-    ? "\\" + character
-    : character;
+  return "\\^$.*+?()[]{}|".includes(character) ? "\\" + character : character;
 }
 
 function globPattern(pattern: string): RegExp {

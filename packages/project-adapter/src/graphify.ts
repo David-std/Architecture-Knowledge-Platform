@@ -1,11 +1,5 @@
 import { createHash } from "node:crypto";
-import {
-  mkdir,
-  mkdtemp,
-  readFile,
-  rm,
-  stat,
-} from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -111,10 +105,7 @@ export class GraphifyCodeGraphAdapter implements CodeGraphExtractionPort {
           cwd: workspace,
           env,
           timeoutMs: Math.min(options.timeoutMs, 30_000),
-          maxOutputBytes: Math.min(
-            options.maxProcessOutputBytes,
-            1024 * 1024,
-          ),
+          maxOutputBytes: Math.min(options.maxProcessOutputBytes, 1024 * 1024),
         },
       );
       const providerVersion = parseGraphifyVersion(

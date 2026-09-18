@@ -54,8 +54,8 @@ async function fakeGraphify(
     [
       'import { mkdir, writeFile } from "node:fs/promises";',
       'import path from "node:path";',
-      'const args = process.argv.slice(2);',
-      'if (process.env.OPENAI_API_KEY) process.exit(42);',
+      "const args = process.argv.slice(2);",
+      "if (process.env.OPENAI_API_KEY) process.exit(42);",
       'if (args.includes("--version")) { console.log("graphify 0.9.99"); process.exit(0); }',
       'if (args[0] !== "extract") process.exit(43);',
       'await mkdir(path.join(process.cwd(), "graphify-out"), { recursive: true });',
@@ -70,9 +70,11 @@ async function fakeGraphify(
 afterEach(async () => {
   delete process.env.OPENAI_API_KEY;
   await Promise.all(
-    roots.splice(0).map((root) =>
-      rm(root, { recursive: true, force: true }).catch(() => undefined),
-    ),
+    roots
+      .splice(0)
+      .map((root) =>
+        rm(root, { recursive: true, force: true }).catch(() => undefined),
+      ),
   );
 });
 
@@ -199,7 +201,7 @@ describe("GraphifyCodeGraphAdapter", () => {
     await writeFile(
       script,
       [
-        'const args = process.argv.slice(2);',
+        "const args = process.argv.slice(2);",
         'if (args.includes("--version")) { console.log("graphify 0.9.99"); process.exit(0); }',
         'console.error("synthetic extraction failure");',
         "process.exit(23);",

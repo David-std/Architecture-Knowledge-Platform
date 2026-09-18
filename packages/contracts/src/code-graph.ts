@@ -147,15 +147,31 @@ export type CodeSnapshot = z.infer<typeof CodeSnapshot>;
 
 export const CodeGraphExclusionPolicy = z.object({
   patterns: z.array(z.string().min(1).max(1024)).max(512),
-  maxFileBytes: z.number().int().positive().max(128 * 1024 * 1024),
+  maxFileBytes: z
+    .number()
+    .int()
+    .positive()
+    .max(128 * 1024 * 1024),
 });
 export type CodeGraphExclusionPolicy = z.infer<typeof CodeGraphExclusionPolicy>;
 
 export const CodeGraphOptions = z.object({
   exclusions: CodeGraphExclusionPolicy,
-  timeoutMs: z.number().int().min(1000).max(60 * 60 * 1000),
-  maxProcessOutputBytes: z.number().int().positive().max(128 * 1024 * 1024),
-  maxGraphBytes: z.number().int().positive().max(512 * 1024 * 1024),
+  timeoutMs: z
+    .number()
+    .int()
+    .min(1000)
+    .max(60 * 60 * 1000),
+  maxProcessOutputBytes: z
+    .number()
+    .int()
+    .positive()
+    .max(128 * 1024 * 1024),
+  maxGraphBytes: z
+    .number()
+    .int()
+    .positive()
+    .max(512 * 1024 * 1024),
   providerConfiguration: z.record(z.string(), z.unknown()).default({}),
 });
 export type CodeGraphOptions = z.infer<typeof CodeGraphOptions>;
@@ -220,9 +236,7 @@ export const CodeRuntimeCoverageLink = z.object({
   executedTest: CodeLocator,
   executionCount: z.number().int().positive(),
 });
-export type CodeRuntimeCoverageLink = z.infer<
-  typeof CodeRuntimeCoverageLink
->;
+export type CodeRuntimeCoverageLink = z.infer<typeof CodeRuntimeCoverageLink>;
 
 export interface CodeGraphExtractionPort {
   analyze(

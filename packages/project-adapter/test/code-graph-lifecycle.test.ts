@@ -40,7 +40,9 @@ function revision(input: {
   };
 }
 
-function state(active: GraphProjectionRevision | null): GraphProjectionRevisionState {
+function state(
+  active: GraphProjectionRevision | null,
+): GraphProjectionRevisionState {
   return {
     graphDomain: "CODE",
     spaceId: "00000000-0000-0000-0000-000000000003",
@@ -113,7 +115,9 @@ class FakeProjectionPort implements CodeGraphLifecyclePort {
     return this.current;
   }
 
-  async build(input: GraphProjectionArtifact): Promise<GraphProjectionRevision> {
+  async build(
+    input: GraphProjectionArtifact,
+  ): Promise<GraphProjectionRevision> {
     this.calls.push("build");
     this.current = revision({
       revision: input.revision,

@@ -106,9 +106,10 @@ export async function runBoundedProcess(
 }
 
 export function parseGraphifyVersion(output: string): string {
-  const match = /(?:graphify(?:y)?\s*)?v?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)/i.exec(
-    output,
-  );
+  const match =
+    /(?:graphify(?:y)?\s*)?v?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)/i.exec(
+      output,
+    );
   if (!match?.[1]) throw graphifyError("GRAPHIFY_VERSION_UNRECOGNIZED");
   return match[1];
 }

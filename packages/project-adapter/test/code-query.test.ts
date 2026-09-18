@@ -134,7 +134,9 @@ describe("CodeGraphQueryService", () => {
       qualifiedName: "parse",
     });
 
-    const traversals = graph.calls.filter((call) => call.method === "neighbors");
+    const traversals = graph.calls.filter(
+      (call) => call.method === "neighbors",
+    );
     expect(traversals).toHaveLength(2);
     expect(traversals[0]?.input).toMatchObject({
       domains: ["CODE"],

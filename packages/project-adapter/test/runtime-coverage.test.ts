@@ -65,9 +65,11 @@ async function runtimeFixture() {
 
 afterEach(async () => {
   await Promise.all(
-    roots.splice(0).map((root) =>
-      rm(root, { recursive: true, force: true }).catch(() => undefined),
-    ),
+    roots
+      .splice(0)
+      .map((root) =>
+        rm(root, { recursive: true, force: true }).catch(() => undefined),
+      ),
   );
 });
 
@@ -140,10 +142,7 @@ describe("runtime coverage evidence", () => {
     expect(linked.links[0]!.executionCount).toBeGreaterThan(0);
 
     expect(() =>
-      linkRuntimeCoverage(
-        { ...graph, commitSha: "f".repeat(40) },
-        coverage,
-      ),
+      linkRuntimeCoverage({ ...graph, commitSha: "f".repeat(40) }, coverage),
     ).toThrow("CODE_RUNTIME_REVISION_MISMATCH");
   });
 

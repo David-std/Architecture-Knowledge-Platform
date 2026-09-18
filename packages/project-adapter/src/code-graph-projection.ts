@@ -53,7 +53,9 @@ function locatorRef(input: {
           ? "-" + String(input.lineEnd)
           : "");
   const symbol = input.symbol ? "#" + input.symbol : "";
-  return input.repository + "@" + input.commitSha + ":" + input.path + line + symbol;
+  return (
+    input.repository + "@" + input.commitSha + ":" + input.path + line + symbol
+  );
 }
 
 export function codeGraphProjectionRevision(
@@ -67,33 +69,35 @@ export function planCodeGraphProjection(
 ): CodeGraphProjectionPlan {
   const revision = codeGraphProjectionRevision(input.artifact);
   const nodeById = new Map(input.artifact.nodes.map((node) => [node.id, node]));
-  const nodes: GraphProjectionNodeInput[] = input.artifact.nodes.map((node) => ({
-    identity: {
-      graphDomain: "CODE",
-      scopeId: input.scopeId,
-      kind: node.kind,
-      canonicalKey: node.id,
-      revision,
-    },
-    vaultId: input.vaultId,
-    authorizationPath: node.path,
-    payload: {
-      codeNodeId: node.id,
-      repository: input.artifact.repository,
-      commitSha: input.artifact.commitSha,
-      kind: node.kind,
-      name: node.name,
-      ...(node.qualifiedName ? { qualifiedName: node.qualifiedName } : {}),
-      ...(node.signature ? { signature: node.signature } : {}),
-      ...(node.language ? { language: node.language } : {}),
-      path: node.path,
-      ...(node.lineStart !== undefined ? { lineStart: node.lineStart } : {}),
-      ...(node.lineEnd !== undefined ? { lineEnd: node.lineEnd } : {}),
-      ...(node.contentHash ? { contentHash: node.contentHash } : {}),
-      provider: input.artifact.provider,
-      providerVersion: input.artifact.providerVersion,
-    },
-  }));
+  const nodes: GraphProjectionNodeInput[] = input.artifact.nodes.map(
+    (node) => ({
+      identity: {
+        graphDomain: "CODE",
+        scopeId: input.scopeId,
+        kind: node.kind,
+        canonicalKey: node.id,
+        revision,
+      },
+      vaultId: input.vaultId,
+      authorizationPath: node.path,
+      payload: {
+        codeNodeId: node.id,
+        repository: input.artifact.repository,
+        commitSha: input.artifact.commitSha,
+        kind: node.kind,
+        name: node.name,
+        ...(node.qualifiedName ? { qualifiedName: node.qualifiedName } : {}),
+        ...(node.signature ? { signature: node.signature } : {}),
+        ...(node.language ? { language: node.language } : {}),
+        path: node.path,
+        ...(node.lineStart !== undefined ? { lineStart: node.lineStart } : {}),
+        ...(node.lineEnd !== undefined ? { lineEnd: node.lineEnd } : {}),
+        ...(node.contentHash ? { contentHash: node.contentHash } : {}),
+        provider: input.artifact.provider,
+        providerVersion: input.artifact.providerVersion,
+      },
+    }),
+  );
 
   const skippedCandidateEdgeIds: string[] = [];
   const edges: GraphProjectionEdgeInput[] = [];
@@ -127,7 +131,9 @@ export function planCodeGraphProjection(
           repository: input.artifact.repository,
           commitSha: input.artifact.commitSha,
           path: from.path,
-          ...(from.lineStart !== undefined ? { lineStart: from.lineStart } : {}),
+          ...(from.lineStart !== undefined
+            ? { lineStart: from.lineStart }
+            : {}),
           ...(from.lineEnd !== undefined ? { lineEnd: from.lineEnd } : {}),
           ...(from.qualifiedName ? { symbol: from.qualifiedName } : {}),
         });
@@ -154,10 +160,7 @@ export function planCodeGraphProjection(
             ? "DETERMINISTIC_EXTRACTED"
             : "STATICALLY_RESOLVED",
         sourceIds: [
-          "code:" +
-            input.artifact.repository +
-            "@" +
-            input.artifact.commitSha,
+          "code:" + input.artifact.repository + "@" + input.artifact.commitSha,
         ],
         evidenceIds: [],
         locatorRefs: [sourceLocator],

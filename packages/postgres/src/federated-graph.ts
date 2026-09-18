@@ -1379,7 +1379,11 @@ export class PostgresFederatedGraphStore
 
   async findNodes(input: GraphNodeLookupQuery): Promise<GraphNodeRef[]> {
     parseGraphFreshnessPolicy(input.freshnessPolicy);
-    if (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 1000) {
+    if (
+      !Number.isInteger(input.limit) ||
+      input.limit < 1 ||
+      input.limit > 1000
+    ) {
       throw graphError("GRAPH_LOOKUP_LIMIT_INVALID");
     }
     const domains = domainAllowlist(input.domains);

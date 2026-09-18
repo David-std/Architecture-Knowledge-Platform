@@ -82,9 +82,8 @@ function parseCoverageFile(value: unknown): V8Script[] {
   if (!Array.isArray(result)) {
     throw coverageError("CODE_RUNTIME_COVERAGE_RESULT_INVALID");
   }
-  return result.filter(
-    (entry): entry is V8Script =>
-      Boolean(entry && typeof entry === "object" && !Array.isArray(entry)),
+  return result.filter((entry): entry is V8Script =>
+    Boolean(entry && typeof entry === "object" && !Array.isArray(entry)),
   );
 }
 
@@ -143,7 +142,7 @@ export async function readNodeV8Coverage(
       executionCount: number;
       coveredRanges: number;
     }
-  >;
+  >();
   const warnings: CodeGraphWarning[] = [];
 
   for (const filePath of jsonFiles) {
@@ -213,10 +212,8 @@ export async function readNodeV8Coverage(
           path: relativePath,
           contentHash: snapshotFile.contentHash,
           functionName,
-          executionCount:
-            (previous?.executionCount ?? 0) + executionCount,
-          coveredRanges:
-            (previous?.coveredRanges ?? 0) + executedRanges.length,
+          executionCount: (previous?.executionCount ?? 0) + executionCount,
+          coveredRanges: (previous?.coveredRanges ?? 0) + executedRanges.length,
         });
       }
     }
