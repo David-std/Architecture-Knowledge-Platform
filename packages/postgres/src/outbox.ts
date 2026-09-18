@@ -71,6 +71,8 @@ export const INTEGRATION_EVENT_TYPES = [
   "LexicalIndexUpdateRequested",
   "VectorIndexUpdateRequested",
   "GraphIndexUpdateRequested",
+  "GraphRevisionBuilt",
+  "GraphRevisionActivated",
   "ContextPackInvalidationRequested",
   "ImpactedEvalRunRequested",
   "WorkspaceSessionCreated",
