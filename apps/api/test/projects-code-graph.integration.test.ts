@@ -255,8 +255,25 @@ describe("project scan Code Graph request", () => {
           lineStart: 1,
           lineEnd: 1,
         },
+        {
+          id: "function:helper",
+          kind: "FUNCTION",
+          name: "helper",
+          qualifiedName: "helper",
+          path: "helper.ts",
+          lineStart: 1,
+          lineEnd: 1,
+        },
       ],
-      edges: [],
+      edges: [
+        {
+          id: "edge:projectEntry-helper",
+          sourceId: "function:projectEntry",
+          targetId: "function:helper",
+          relation: "CALLS",
+          derivation: "STATICALLY_RESOLVED",
+        },
+      ],
       warnings: [],
     });
 
@@ -364,5 +381,50 @@ describe("project scan Code Graph request", () => {
         },
       ],
     });
+
+    const context = await app.inject({
+      method: "POST",
+      url: "/v1/context",
+      headers: { authorization: headers.authorization },
+      payload: {
+        query: "What does projectEntry call?",
+        intent: "PROJECT_CODE",
+        projectId,
+        spaceId,
+        vaultId,
+        mode: "PROJECT_CODE",
+        maxTokens: 4096,
+      },
+    });
+    expect(context.statusCode, context.body).toBe(200);
+    const packet = context.json() as {
+      searchedChannels: string[];
+      indexRevisions: Record<string, string | null>;
+      retrievalConfiguration: Record<string, unknown>;
+      sections: Array<{
+        selectionReason: string;
+        sourceOrEvidenceIds: string[];
+      }>;
+    };
+    expect(packet.searchedChannels).toContain("code");
+    expect(packet.indexRevisions.codeGraph).toEqual(expect.any(String));
+    expect(packet.retrievalConfiguration).toMatchObject({
+      codeGraph: {
+        projectId,
+        available: true,
+        sourceRevision: commit,
+      },
+    });
+    expect(
+      packet.sections.some(
+        (section) =>
+          section.selectionReason.includes(
+            "code:path projectEntry --calls[STATICALLY_RESOLVED]--> helper",
+          ) &&
+          section.sourceOrEvidenceIds.some((citation) =>
+            citation.startsWith(`code:${identity.repository}@${commit}:`),
+          ),
+      ),
+    ).toBe(true);
   });
 });

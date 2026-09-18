@@ -48,6 +48,10 @@ import {
   requirePermission,
   requirePrincipalAction,
 } from "../auth.js";
+import {
+  resolveProjectCodeRetrieval,
+  type CodeChannelCandidate,
+} from "../project-code-retrieval.js";
 
 const telemetry = new OpenTelemetryBridge();
 
@@ -165,6 +169,11 @@ interface LexicalSearchRow {
 interface DocumentChannelRow {
   id: string;
   document_revision: string;
+}
+
+interface CodeChannelRow extends DocumentChannelRow {
+  match_reason?: string;
+  code_citations?: string[];
 }
 
 const ALL_GRAPH_RELATION_TYPES: readonly GraphRelationType[] =
@@ -350,6 +359,8 @@ export interface RetrievalExecutionOptions {
   /** Channels that reached their provider/index successfully for this request. */
   availableChannelSink?: Set<RetrievalChannel>;
   vaultIds?: string[];
+  /** Exact, authorized Code Graph candidates resolved by the HTTP boundary. */
+  codeCandidates?: CodeChannelCandidate[];
   /** Applied after policy/trust filtering so a scoped caller never receives a
    * path it is not allowed to read. */
   pathAuthorizer?: (path: string, vaultId?: string) => boolean;
@@ -1305,9 +1316,18 @@ export async function queryKnowledge(
     : { rows: [] as DocumentChannelRow[] };
   if (channels.has("raw")) options.availableChannelSink?.add("raw");
 
-  const codeFallback = channels.has("code")
-    ? await db.pool.query<DocumentChannelRow>(
-        `
+  const codeFallback: { rows: CodeChannelRow[] } = channels.has("code")
+    ? options.codeCandidates !== undefined
+      ? {
+          rows: options.codeCandidates.map((candidate) => ({
+            id: candidate.id,
+            document_revision: candidate.documentRevision,
+            match_reason: candidate.reason,
+            code_citations: candidate.citations,
+          })),
+        }
+      : await db.pool.query<CodeChannelRow>(
+          `
           with query as (select plainto_tsquery('simple',$2) terms)
           select d.id,d.current_revision document_revision
             from knowledge_documents d
@@ -1324,10 +1344,13 @@ export async function queryKnowledge(
                     d.id
            limit $3
           `,
-        [spaceId, input.query, Math.max(input.limit, 10)],
-      )
-    : { rows: [] as DocumentChannelRow[] };
+          [spaceId, input.query, Math.max(input.limit, 10)],
+        )
+    : { rows: [] };
   if (channels.has("code")) options.availableChannelSink?.add("code");
+  const codeCitationsByCandidate = new Map(
+    codeFallback.rows.map((row) => [String(row.id), row.code_citations ?? []]),
+  );
 
   const candidateSeedIds = seedIds.filter((id) => UUID_PATTERN.test(id));
   const graphRows =
@@ -1787,7 +1810,7 @@ export async function queryKnowledge(
       items: codeFallback.rows.map((row, index) => ({
         id: String(row.id),
         rank: index + 1,
-        reason: "code:project-match",
+        reason: row.match_reason ?? "code:project-match",
         candidateRevision: String(row.document_revision),
       })),
     },
@@ -1949,15 +1972,18 @@ export async function queryKnowledge(
             options.pathAuthorizer!(value, String(row.vault_id))
         : undefined;
       const citations = [
-        ...documentCitations,
-        ...((row.evidence_locators ?? []) as Array<Record<string, unknown>>)
-          .filter((locator) =>
-            evidenceLocatorAllowed(locator, rowPathAuthorizer),
-          )
-          .map(
-            (locator) =>
-              `evidence:${JSON.stringify(sanitizeEvidenceLocator(locator))}`,
-          ),
+        ...new Set([
+          ...documentCitations,
+          ...((row.evidence_locators ?? []) as Array<Record<string, unknown>>)
+            .filter((locator) =>
+              evidenceLocatorAllowed(locator, rowPathAuthorizer),
+            )
+            .map(
+              (locator) =>
+                `evidence:${JSON.stringify(sanitizeEvidenceLocator(locator))}`,
+            ),
+          ...(codeCitationsByCandidate.get(item.id) ?? []),
+        ]),
       ];
       const matchedUnit = bestUnitByDocument.get(item.id);
       const structuralContext = matchedUnit
@@ -2098,6 +2124,46 @@ export function registerSearchRoutes(
         vaultIds,
         ...(vaultIds.length === 1 ? { vaultId: vaultIds[0] } : {}),
       };
+      const actorPathPrefixes = pathPrefixesForPermission(
+        actor,
+        requestedSpace,
+        "knowledge:read",
+      );
+      const graphScopes = Object.entries(accessByVault).flatMap(
+        ([vaultId, access]) =>
+          actorPathPrefixes.flatMap((actorPathPrefix) => {
+            const pathPrefix = intersectVaultPathPrefixes(
+              actorPathPrefix,
+              access.pathPrefix,
+            );
+            return pathPrefix === undefined ? [] : [{ vaultId, pathPrefix }];
+          }),
+      );
+      const pathAuthorizer = (documentPath: string, vaultId?: string) => {
+        const access = accessByVault[String(vaultId ?? "")];
+        if (!access) return false;
+        return (
+          pathMatchesVaultPrefix(documentPath, access.pathPrefix) &&
+          hasPathAccess(actor, requestedSpace, "knowledge:read", documentPath)
+        );
+      };
+      let projectCode;
+      try {
+        projectCode = await resolveProjectCodeRetrieval(db, {
+          spaceId: requestedSpace,
+          vaultIds,
+          projectId: parsed.data.projectId,
+          query: parsed.data.query,
+          graphScopes,
+          pathAuthorizer,
+        });
+      } catch (error) {
+        const code =
+          error instanceof Error
+            ? error.message
+            : "PROJECT_CODE_NOT_FOUND_OR_UNAUTHORIZED";
+        return reply.code(404).send({ code });
+      }
       const indexRows = await db.pool.query(
         `select vault_id,corpus_revision,lexical_revision,vector_revision,
                 graph_revision,context_pack_revision,status,warnings,
@@ -2118,45 +2184,28 @@ export function registerSearchRoutes(
           parsed.data.mode !== "COMPILED_ONLY" &&
           hasSpaceAccess(actor, requestedSpace, "source:read"),
         // No project code adapter is registered in the current runtime.
-        codeAdapterAvailable: false,
+        codeAdapterAvailable: projectCode?.available ?? false,
       });
       const plan = planQuery(
         parsed.data.query,
         parsed.data.intent,
         capabilities,
       );
-      const retrievalWarnings: string[] = plan.omittedChannels.map(
-        (channel) => `PLAN_CHANNEL_OMITTED:${channel}`,
-      );
+      const retrievalWarnings: string[] = [
+        ...plan.omittedChannels.map(
+          (channel) => `PLAN_CHANNEL_OMITTED:${channel}`,
+        ),
+        ...(projectCode?.warnings ?? []),
+      ];
       const availableChannels = new Set<RetrievalChannel>();
-      const actorPathPrefixes = pathPrefixesForPermission(
-        actor,
-        requestedSpace,
-        "knowledge:read",
-      );
       const hits = await queryKnowledge(db, scopedRequest, {
         plan,
         vaultIds,
-        graphScopes: Object.entries(accessByVault).flatMap(
-          ([vaultId, access]) =>
-            actorPathPrefixes.flatMap((actorPathPrefix) => {
-              const pathPrefix = intersectVaultPathPrefixes(
-                actorPathPrefix,
-                access.pathPrefix,
-              );
-              return pathPrefix === undefined ? [] : [{ vaultId, pathPrefix }];
-            }),
-        ),
+        graphScopes,
+        ...(projectCode ? { codeCandidates: projectCode.candidates } : {}),
         warningSink: retrievalWarnings,
         availableChannelSink: availableChannels,
-        pathAuthorizer: (documentPath, vaultId) => {
-          const access = accessByVault[String(vaultId ?? "")];
-          if (!access) return false;
-          return (
-            pathMatchesVaultPrefix(documentPath, access.pathPrefix) &&
-            hasPathAccess(actor, requestedSpace, "knowledge:read", documentPath)
-          );
-        },
+        pathAuthorizer,
       });
       const channelState = channelsConsistentWithIndex(
         plan.channels,
@@ -2398,6 +2447,46 @@ export function registerSearchRoutes(
         vaultIds,
         ...(vaultIds.length === 1 ? { vaultId: vaultIds[0] } : {}),
       };
+      const actorPathPrefixes = pathPrefixesForPermission(
+        actor,
+        requestedSpace,
+        "knowledge:read",
+      );
+      const graphScopes = Object.entries(accessByVault).flatMap(
+        ([vaultId, access]) =>
+          actorPathPrefixes.flatMap((actorPathPrefix) => {
+            const pathPrefix = intersectVaultPathPrefixes(
+              actorPathPrefix,
+              access.pathPrefix,
+            );
+            return pathPrefix === undefined ? [] : [{ vaultId, pathPrefix }];
+          }),
+      );
+      const pathAuthorizer = (documentPath: string, vaultId?: string) => {
+        const access = accessByVault[String(vaultId ?? "")];
+        if (!access) return false;
+        return (
+          pathMatchesVaultPrefix(documentPath, access.pathPrefix) &&
+          hasPathAccess(actor, requestedSpace, "knowledge:read", documentPath)
+        );
+      };
+      let projectCode;
+      try {
+        projectCode = await resolveProjectCodeRetrieval(db, {
+          spaceId: requestedSpace,
+          vaultIds,
+          projectId: parsed.data.projectId,
+          query: parsed.data.query,
+          graphScopes,
+          pathAuthorizer,
+        });
+      } catch (error) {
+        const code =
+          error instanceof Error
+            ? error.message
+            : "PROJECT_CODE_NOT_FOUND_OR_UNAUTHORIZED";
+        return reply.code(404).send({ code });
+      }
       const indexRows = await db.pool.query(
         `
         select vault_id,corpus_revision,lexical_revision,vector_revision,
@@ -2419,7 +2508,7 @@ export function registerSearchRoutes(
         rawAllowed:
           parsed.data.mode !== "COMPILED_ONLY" &&
           hasSpaceAccess(actor, requestedSpace, "source:read"),
-        codeAdapterAvailable: false,
+        codeAdapterAvailable: projectCode?.available ?? false,
       });
       const plan = planQuery(
         parsed.data.query,
@@ -2428,38 +2517,21 @@ export function registerSearchRoutes(
       );
       const intent = plan.intent;
       const maxTokens = contextBudgetForIntent(intent, requestedMaxTokens);
-      const retrievalWarnings: string[] = plan.omittedChannels.map(
-        (channel) => `PLAN_CHANNEL_OMITTED:${channel}`,
-      );
+      const retrievalWarnings: string[] = [
+        ...plan.omittedChannels.map(
+          (channel) => `PLAN_CHANNEL_OMITTED:${channel}`,
+        ),
+        ...(projectCode?.warnings ?? []),
+      ];
       const availableChannels = new Set<RetrievalChannel>();
-      const actorPathPrefixes = pathPrefixesForPermission(
-        actor,
-        requestedSpace,
-        "knowledge:read",
-      );
       const hits = await queryKnowledge(db, scopedRequest, {
         plan,
         vaultIds,
-        graphScopes: Object.entries(accessByVault).flatMap(
-          ([vaultId, access]) =>
-            actorPathPrefixes.flatMap((actorPathPrefix) => {
-              const pathPrefix = intersectVaultPathPrefixes(
-                actorPathPrefix,
-                access.pathPrefix,
-              );
-              return pathPrefix === undefined ? [] : [{ vaultId, pathPrefix }];
-            }),
-        ),
+        graphScopes,
+        ...(projectCode ? { codeCandidates: projectCode.candidates } : {}),
         warningSink: retrievalWarnings,
         availableChannelSink: availableChannels,
-        pathAuthorizer: (documentPath, vaultId) => {
-          const access = accessByVault[String(vaultId ?? "")];
-          if (!access) return false;
-          return (
-            pathMatchesVaultPrefix(documentPath, access.pathPrefix) &&
-            hasPathAccess(actor, requestedSpace, "knowledge:read", documentPath)
-          );
-        },
+        pathAuthorizer,
       });
       const details =
         hits.length === 0
@@ -2526,6 +2598,7 @@ export function registerSearchRoutes(
             contextPack: indexRow.context_pack_revision
               ? String(indexRow.context_pack_revision)
               : null,
+            codeGraph: projectCode?.revision ?? null,
           },
           retrievalConfiguration: {
             version: String(
@@ -2534,6 +2607,14 @@ export function registerSearchRoutes(
             indexStatus: String(indexRow.status ?? "DEGRADED"),
             channels: effectiveChannelState.channels,
             vectorEnabled: capabilities.vectorAvailable,
+            codeGraph: projectCode
+              ? {
+                  projectId: projectCode.projectId,
+                  available: projectCode.available,
+                  revision: projectCode.revision,
+                  sourceRevision: projectCode.sourceRevision,
+                }
+              : null,
             warnings: effectiveChannelState.warnings,
           },
           candidates: hits.map((hit) => {
