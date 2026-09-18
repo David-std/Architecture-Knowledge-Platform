@@ -186,6 +186,44 @@ export const CodeChangeSet = z.object({
 });
 export type CodeChangeSet = z.infer<typeof CodeChangeSet>;
 
+export const CodeRuntimeCoverageFunction = z.object({
+  path: z.string().min(1).max(4096),
+  contentHash: z.string().regex(/^[a-f0-9]{64}$/),
+  functionName: z.string().min(1).max(2048),
+  executionCount: z.number().int().positive(),
+  coveredRanges: z.number().int().positive(),
+});
+export type CodeRuntimeCoverageFunction = z.infer<
+  typeof CodeRuntimeCoverageFunction
+>;
+
+export const CodeRuntimeCoverageArtifact = z.object({
+  schemaVersion: z.literal(1),
+  repository: z.string().min(1).max(2048),
+  commitSha: z.string().regex(/^[a-f0-9]{40}$/i),
+  provider: z.literal("node-v8"),
+  providerVersion: z.string().min(1).max(160),
+  generatedAt: z.string().datetime(),
+  executedTest: CodeLocator,
+  functions: z.array(CodeRuntimeCoverageFunction),
+  warnings: z.array(CodeGraphWarning),
+});
+export type CodeRuntimeCoverageArtifact = z.infer<
+  typeof CodeRuntimeCoverageArtifact
+>;
+
+export const CodeRuntimeCoverageLink = z.object({
+  nodeId: z.string().min(1).max(256),
+  tier: z.literal("RUNTIME_COVERED"),
+  repository: z.string().min(1).max(2048),
+  commitSha: z.string().regex(/^[a-f0-9]{40}$/i),
+  executedTest: CodeLocator,
+  executionCount: z.number().int().positive(),
+});
+export type CodeRuntimeCoverageLink = z.infer<
+  typeof CodeRuntimeCoverageLink
+>;
+
 export interface CodeGraphExtractionPort {
   analyze(
     snapshot: CodeSnapshot,
