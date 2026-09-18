@@ -171,6 +171,8 @@ jobs:
           version: 0.12.7
           enable-cache: true
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Build Code Graph contract dependency
+        run: pnpm --filter @akp/contracts build
       - name: Install pinned real Graphify provider
         run: uv tool install graphifyy==0.9.63
       - name: Verify real Graphify adapter
