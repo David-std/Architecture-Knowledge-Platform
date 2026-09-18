@@ -182,7 +182,9 @@ export function registerDecisionWorkflowRoutes(
       decisionAuthorityPrincipalId?: string;
       title?: string;
       problem?: string;
+      context?: string;
       drivers?: string[];
+      qualityAttributes?: string[];
       affectedRefs?: string[];
       evidenceRefs?: string[];
       verificationPlan?: string;
@@ -215,10 +217,16 @@ export function registerDecisionWorkflowRoutes(
         ?.decisionAuthorityPrincipalId;
       const title = safeText(request.body?.title, 200);
       const problem = safeText(request.body?.problem, 12_000);
+      const context = safeText(request.body?.context, 12_000);
       const drivers = stringList(request.body?.drivers, {
         min: 1,
         max: 50,
         itemMax: 2_000,
+      });
+      const qualityAttributes = stringList(request.body?.qualityAttributes, {
+        min: 1,
+        max: 50,
+        itemMax: 500,
       });
       const affectedRefs = stringList(request.body?.affectedRefs ?? [], {
         min: 0,
@@ -240,7 +248,9 @@ export function registerDecisionWorkflowRoutes(
         !UUID_PATTERN.test(decisionAuthorityPrincipalId) ||
         !title ||
         !problem ||
+        !context ||
         !drivers ||
+        !qualityAttributes ||
         !affectedRefs ||
         !evidenceRefs ||
         !verificationPlan ||
@@ -259,7 +269,9 @@ export function registerDecisionWorkflowRoutes(
           decisionAuthorityPrincipalId,
           title,
           problem,
+          context,
           drivers,
+          qualityAttributes,
           affectedRefs,
           evidenceRefs,
           verificationPlan,
@@ -720,7 +732,13 @@ export function registerDecisionWorkflowRoutes(
 
   app.post<{
     Params: { id: string; decisionId: string };
-    Body: { alternativeId?: string };
+    Body: {
+      alternativeId?: string;
+      consequences?: string;
+      followUpActions?: string[];
+      effectiveFrom?: string | null;
+      effectiveUntil?: string | null;
+    };
   }>(
     "/v1/sessions/:id/decisions/:decisionId/selection",
     {
@@ -740,10 +758,23 @@ export function registerDecisionWorkflowRoutes(
       const actor = actorOf(request);
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
       const alternativeId = request.body?.alternativeId;
+      const consequences = safeText(request.body?.consequences, 12_000);
+      const followUpActions = stringList(
+        request.body?.followUpActions ?? [],
+        { min: 0, max: 100, itemMax: 2_000 },
+      );
+      const effectiveFrom = optionalDate(request.body?.effectiveFrom);
+      const effectiveUntil = optionalDate(request.body?.effectiveUntil);
       if (
         !UUID_PATTERN.test(request.params.decisionId) ||
         !alternativeId ||
-        !UUID_PATTERN.test(alternativeId)
+        !UUID_PATTERN.test(alternativeId) ||
+        !consequences ||
+        !followUpActions ||
+        effectiveFrom === undefined ||
+        effectiveUntil === undefined ||
+        (effectiveUntil !== null &&
+          (effectiveFrom === null || effectiveUntil <= effectiveFrom))
       ) {
         return reply.code(400).send({ code: "INVALID_DECISION_SELECTION" });
       }
@@ -754,6 +785,10 @@ export function registerDecisionWorkflowRoutes(
           alternativeId,
           actorUserId: actor.id,
           actorPrincipalId: actor.principalId,
+          consequences,
+          followUpActions,
+          effectiveFrom,
+          effectiveUntil,
         });
         await audit(
           db,
@@ -764,6 +799,8 @@ export function registerDecisionWorkflowRoutes(
           {
             vaultId: session.vaultId,
             alternativeId,
+            effectiveFrom: effectiveFrom?.toISOString() ?? null,
+            effectiveUntil: effectiveUntil?.toISOString() ?? null,
           },
           session.spaceId,
         );
