@@ -1,8 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-export type TruthSupportEvaluation =
-  | "SUPPORTED"
-  | "DISPUTED"
-  | "UNSUPPORTED";
+export type TruthSupportEvaluation = "SUPPORTED" | "DISPUTED" | "UNSUPPORTED";
 
 export interface SourceEpisode {
   id: string;
@@ -137,11 +134,7 @@ function requiredHash(value: string, code: string): string {
   return value;
 }
 
-function requiredText(
-  value: string,
-  code: string,
-  maximum: number,
-): string {
+function requiredText(value: string, code: string, maximum: number): string {
   const normalized = value.trim();
   if (!normalized || normalized.length > maximum) throw new Error(code);
   return normalized;
@@ -186,9 +179,9 @@ function boundedUuids(
   return result;
 }
 
-function normalizeSourceEpisodeInput(
-  input: CreateSourceEpisodeInput,
-): Required<Omit<CreateSourceEpisodeInput, "observedAt">> & {
+function normalizeSourceEpisodeInput(input: CreateSourceEpisodeInput): Required<
+  Omit<CreateSourceEpisodeInput, "observedAt">
+> & {
   observedAt: string | null;
 } {
   return {
@@ -250,10 +243,7 @@ function normalizeSupportSetInput(input: CreateTruthSupportSetInput) {
 function normalizeFactInput(input: RecordTemporalFactInput) {
   const validFrom = requiredDate(input.validFrom, "TRUTH_VALID_FROM_INVALID");
   const validTo = optionalDate(input.validTo, "TRUTH_VALID_TO_INVALID") ?? null;
-  if (
-    validTo &&
-    new Date(validTo).getTime() <= new Date(validFrom).getTime()
-  ) {
+  if (validTo && new Date(validTo).getTime() <= new Date(validFrom).getTime()) {
     throw new Error("TRUTH_VALID_INTERVAL_INVALID");
   }
   return {
@@ -275,7 +265,12 @@ function normalizeFactInput(input: RecordTemporalFactInput) {
     validFrom,
     validTo,
     ...(input.recordedAt
-      ? { recordedAt: requiredDate(input.recordedAt, "TRUTH_RECORDED_AT_INVALID") }
+      ? {
+          recordedAt: requiredDate(
+            input.recordedAt,
+            "TRUTH_RECORDED_AT_INVALID",
+          ),
+        }
       : {}),
     ...(input.sourceEpisodeId !== undefined
       ? {
@@ -366,8 +361,7 @@ function normalizeTruthQuery(input: TemporalTruthQuery) {
 function asAlternativeGroups(value: unknown): string[][] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((group) =>
-    Array.isArray(group) &&
-    group.every((entry) => typeof entry === "string")
+    Array.isArray(group) && group.every((entry) => typeof entry === "string")
       ? [group as string[]]
       : [],
   );
@@ -1212,9 +1206,7 @@ export class PostgresTemporalTruthStore {
     return support.state === "DISPUTED" ? "DISPUTED" : "SUPPORTED";
   }
 
-  async listFacts(
-    rawQuery: TemporalTruthQuery,
-  ): Promise<TemporalFactView[]> {
+  async listFacts(rawQuery: TemporalTruthQuery): Promise<TemporalFactView[]> {
     const query = normalizeTruthQuery(rawQuery);
     const cutoff = await this.revisionCutoff(query);
     if (cutoff.seq === 0) return [];
