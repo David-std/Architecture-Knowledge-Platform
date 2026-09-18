@@ -1,3 +1,4 @@
+# rerun after decision-workflow syntax and contract completion
 name: decision-workflow-format-once
 
 on:
