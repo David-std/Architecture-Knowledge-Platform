@@ -104,11 +104,13 @@ afterAll(async () => {
         [peerIds],
       );
     }
+    await db.pool.query(
+      `delete from audit_events
+        where actor_id=any($1::uuid[])
+           or ($2::text<>'' and (resource_id=$2 or metadata->>'sessionId'=$2))`,
+      [[actorId, adminId], sessionId],
+    );
     if (sessionId) {
-      await db.pool.query(
-        "delete from audit_events where resource_id=$1 or metadata->>'sessionId'=$1",
-        [sessionId],
-      );
       await db.pool.query("delete from agent_sessions where id=$1", [
         sessionId,
       ]);
