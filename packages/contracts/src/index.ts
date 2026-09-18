@@ -620,3 +620,5 @@ export const DocumentArtifact = z
     }
   });
 export type DocumentArtifact = z.infer<typeof DocumentArtifact>;
+
+export * from "./federated-graph.js";
