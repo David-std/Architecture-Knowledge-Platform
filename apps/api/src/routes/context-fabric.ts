@@ -478,6 +478,7 @@ export function registerContextFabricRoutes(
       ) {
         return reply.code(409).send({
           schemaVersion: 1,
+          offline: true,
           capturedAt: capturedAt.toISOString(),
           stale: true,
           ageSeconds: sharedRevisionAgeSeconds,
@@ -515,6 +516,7 @@ export function registerContextFabricRoutes(
       const serialized = JSON.stringify(context);
       return {
         schemaVersion: 1,
+        offline: true,
         capturedAt: capturedAt.toISOString(),
         stale: false,
         ageSeconds: sharedRevisionAgeSeconds,
