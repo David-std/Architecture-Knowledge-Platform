@@ -160,6 +160,9 @@ interface GraphProjectionRevisionState {
   spaceId: string;
   vaultId: string | null;
   scopeId: string;
+  requested: GraphProjectionRevision | null;
+  built: GraphProjectionRevision | null;
+  active: GraphProjectionRevision | null;
   requestedRevision: string | null;
   builtRevision: string | null;
   activeRevision: string | null;
@@ -1159,74 +1162,66 @@ export class PostgresFederatedGraphStore
     scopeId: string,
   ): Promise<GraphProjectionRevisionState> {
     parseGraphDomain(domain);
-    const result = await this.db.pool.query<{
-      requested_revision: string | null;
-      built_revision: string | null;
-      active_revision: string | null;
-      active_freshness: GraphProjectionRevision["freshness"] | null;
-      last_successful_update: Date | string | null;
-      vault_id: string | null;
-    }>(
-      `select
-         (
-           select revision
+    const args = [spaceId, domain, scopeId];
+    const [requestedResult, builtResult, activeResult, successResult] =
+      await Promise.all([
+        this.db.pool.query<ProjectionRow>(
+          `select *
              from federated_graph_projection_revisions
             where space_id=$1 and graph_domain=$2 and scope_id=$3
             order by requested_at desc,id desc
-            limit 1
-         ) requested_revision,
-         (
-           select revision
+            limit 1`,
+          args,
+        ),
+        this.db.pool.query<ProjectionRow>(
+          `select *
              from federated_graph_projection_revisions
             where space_id=$1 and graph_domain=$2 and scope_id=$3
               and built_at is not null
             order by built_at desc,id desc
-            limit 1
-         ) built_revision,
-         (
-           select revision
+            limit 1`,
+          args,
+        ),
+        this.db.pool.query<ProjectionRow>(
+          `select *
              from federated_graph_projection_revisions
             where space_id=$1 and graph_domain=$2 and scope_id=$3
               and lifecycle='ACTIVE'
             order by activated_at desc nulls last,id desc
-            limit 1
-         ) active_revision,
-         (
-           select freshness
+            limit 1`,
+          args,
+        ),
+        this.db.pool.query<{ last_successful_update: Date | string | null }>(
+          `select max(last_successful_update) last_successful_update
              from federated_graph_projection_revisions
-            where space_id=$1 and graph_domain=$2 and scope_id=$3
-              and lifecycle='ACTIVE'
-            order by activated_at desc nulls last,id desc
-            limit 1
-         ) active_freshness,
-         (
-           select last_successful_update
-             from federated_graph_projection_revisions
-            where space_id=$1 and graph_domain=$2 and scope_id=$3
-              and last_successful_update is not null
-            order by last_successful_update desc,id desc
-            limit 1
-         ) last_successful_update,
-         (
-           select vault_id
-             from federated_graph_projection_revisions
-            where space_id=$1 and graph_domain=$2 and scope_id=$3
-            order by requested_at desc,id desc
-            limit 1
-         ) vault_id`,
-      [spaceId, domain, scopeId],
+            where space_id=$1 and graph_domain=$2 and scope_id=$3`,
+          args,
+        ),
+      ]);
+    const requested = requestedResult.rows[0]
+      ? mapProjection(requestedResult.rows[0])
+      : null;
+    const built = builtResult.rows[0] ? mapProjection(builtResult.rows[0]) : null;
+    const active = activeResult.rows[0]
+      ? mapProjection(activeResult.rows[0])
+      : null;
+    const lastSuccessfulUpdate = iso(
+      successResult.rows[0]?.last_successful_update ?? null,
     );
-    const row = result.rows[0];
     return {
       graphDomain: domain,
       spaceId,
-      vaultId: row?.vault_id ?? null,
+      vaultId:
+        requested?.vaultId ?? built?.vaultId ?? active?.vaultId ?? null,
       scopeId,
-      requestedRevision: row?.requested_revision ?? null,
-      builtRevision: row?.built_revision ?? null,
-      activeRevision: row?.active_revision ?? null,
-      activeFreshness: row?.active_freshness ?? null,
-      lastSuccessfulUpdate: iso(row?.last_successful_update ?? null),
+      requested,
+      built,
+      active,
+      requestedRevision: requested?.revision ?? null,
+      builtRevision: built?.revision ?? null,
+      activeRevision: active?.revision ?? null,
+      activeFreshness: active?.freshness ?? null,
+      lastSuccessfulUpdate,
     };
   }
 
