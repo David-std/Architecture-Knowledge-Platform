@@ -1,4 +1,5 @@
 import type { Postgres, PostgresPoolClient } from "./index.js";
+import type { SqlExecutor } from "./outbox.js";
 import { assertWorkspaceContextRevisionCurrent } from "./context-revision-set.js";
 import { appendWorkspaceEventInTransaction } from "./workspace-coordination.js";
 
@@ -1132,7 +1133,7 @@ function decisionWorkflowManifest(
 }
 
 export async function finalizeDecisionCandidatePublicationInTransaction(
-  client: PostgresPoolClient,
+  client: SqlExecutor,
   input: {
     reviewId: string;
     revision: string;
