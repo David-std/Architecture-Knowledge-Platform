@@ -93,6 +93,7 @@ components:
             - LexicalIndexUpdateRequested
             - VectorIndexUpdateRequested
             - GraphIndexUpdateRequested
+            - CodeGraphRefreshRequested
             - GraphRevisionBuilt
             - GraphRevisionActivated
             - GraphRevisionStale
