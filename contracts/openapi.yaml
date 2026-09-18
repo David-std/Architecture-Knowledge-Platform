@@ -1968,6 +1968,11 @@ paths:
           in: query
           required: false
           schema: { type: string, format: uuid }
+        - name: vaultId
+          in: query
+          required: false
+          description: Optional vault whose active KnowledgeProfile connector policy should be evaluated.
+          schema: { type: string, format: uuid }
       responses:
         "200":
           description: Authorized federation discovery metadata. No remote query is performed.
@@ -1990,7 +1995,7 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [spaceId, peerKey, displayName]
+              required: [spaceId, peerKey, displayName, capabilities]
               properties:
                 spaceId: { type: string, format: uuid }
                 peerKey: { type: string, minLength: 1, maxLength: 128 }
@@ -2004,7 +2009,7 @@ paths:
                   type: string
                   enum: [DISCOVERED, APPROVED, DISABLED]
                   default: DISCOVERED
-                capabilities: { type: object, additionalProperties: true }
+                capabilities: { $ref: "#/components/schemas/ConnectorCapabilities" }
                 revision: { type: string }
       responses:
         "201":
@@ -2759,6 +2764,90 @@ components:
                 type: string
                 enum: [REBUILD_DERIVED_PROJECTIONS, REIMPORT_AND_REBUILD]
   schemas:
+    ConnectorCapabilities:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          schemaVersion,
+          accessMode,
+          permissionFidelity,
+          syncFidelity,
+          incrementalSync,
+          deletionPropagation,
+          cursorOrWebhook,
+          sourceAuthority,
+          writeBack,
+          identityMapping,
+          dataResidency,
+          replayable,
+          auditTrail,
+          rateLimit,
+          degradation,
+          health,
+        ]
+      properties:
+        schemaVersion: { type: integer, enum: [1] }
+        accessMode:
+          type: string
+          enum: [MIRROR_INDEXED, REMOTE_FEDERATED, REFERENCE_LIVE, HYBRID_CACHE]
+        permissionFidelity:
+          type: string
+          enum: [SOURCE_ACL_EXACT, SOURCE_ACL_MAPPED, WORKSPACE_WIDE, NONE]
+        syncFidelity:
+          type: string
+          enum: [APPEND, UPSERT, MIRROR]
+        incrementalSync: { type: boolean }
+        deletionPropagation:
+          type: string
+          enum: [IMMEDIATE, EVENTUAL, NONE]
+        freshnessSlaSeconds: { type: integer, minimum: 1 }
+        cursorOrWebhook: { type: boolean }
+        sourceAuthority:
+          type: string
+          enum: [SYSTEM_OF_RECORD, REFERENCE, DERIVED]
+        writeBack:
+          type: string
+          enum: [NONE, BOUNDED_ACTIONS, FULL]
+        identityMapping:
+          type: string
+          enum: [EXACT, MAPPED, NONE]
+        dataResidency:
+          type: string
+          enum: [LOCAL, ORG, EXTERNAL]
+        replayable: { type: boolean }
+        auditTrail:
+          type: string
+          enum: [FULL, METADATA_ONLY, NONE]
+        rateLimit:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [kind]
+              properties:
+                kind: { type: string, enum: [NONE] }
+            - type: object
+              additionalProperties: false
+              required: [kind, requestsPerMinute, onExceeded]
+              properties:
+                kind: { type: string, enum: [DECLARED] }
+                requestsPerMinute: { type: integer, minimum: 1 }
+                burst: { type: integer, minimum: 1 }
+                onExceeded:
+                  type: string
+                  enum: [BACKOFF, QUEUE, FAIL_CLOSED]
+        degradation:
+          type: object
+          additionalProperties: false
+          required: [onUnavailable]
+          properties:
+            onUnavailable:
+              type: string
+              enum: [FAIL_CLOSED, STALE_READ]
+            maxStaleSeconds: { type: integer, minimum: 0 }
+        health:
+          type: string
+          enum: [HEALTHY, DEGRADED, STALE, UNAVAILABLE]
     Error:
       type: object
       required: [code]

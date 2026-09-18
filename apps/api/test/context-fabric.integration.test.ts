@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
+import { ConnectorCapabilities } from "@akp/contracts/connector-capabilities";
 import {
   Postgres,
   grantVaultMembership,
@@ -17,7 +18,7 @@ const headers = { authorization: `Bearer ${token}` };
 let app: FastifyInstance;
 let db: Postgres;
 let sessionId = "";
-let peerId = "";
+let peerIds: string[] = [];
 
 beforeAll(async () => {
   if (!process.env.DATABASE_URL) {
@@ -77,10 +78,11 @@ beforeAll(async () => {
 afterAll(async () => {
   if (app) await app.close();
   if (db) {
-    if (peerId) {
-      await db.pool.query("delete from context_fabric_peers where id=$1", [
-        peerId,
-      ]);
+    if (peerIds.length) {
+      await db.pool.query(
+        "delete from context_fabric_peers where id=any($1::uuid[])",
+        [peerIds],
+      );
     }
     if (sessionId) {
       await db.pool.query(
@@ -327,18 +329,74 @@ describe("team context fabric integration", () => {
     );
     const organizationId = organization.rows[0]?.organization_id;
     expect(organizationId).toBeTruthy();
-    const peer = await upsertContextFabricPeer(db, {
+    const mirrorCapabilities = ConnectorCapabilities.parse({
+      schemaVersion: 1,
+      accessMode: "MIRROR_INDEXED",
+      permissionFidelity: "SOURCE_ACL_EXACT",
+      syncFidelity: "MIRROR",
+      incrementalSync: true,
+      deletionPropagation: "IMMEDIATE",
+      freshnessSlaSeconds: 60,
+      cursorOrWebhook: true,
+      sourceAuthority: "SYSTEM_OF_RECORD",
+      writeBack: "NONE",
+      identityMapping: "EXACT",
+      dataResidency: "ORG",
+      replayable: true,
+      auditTrail: "FULL",
+      rateLimit: {
+        kind: "DECLARED",
+        requestsPerMinute: 600,
+        onExceeded: "BACKOFF",
+      },
+      degradation: { onUnavailable: "STALE_READ", maxStaleSeconds: 900 },
+      health: "HEALTHY",
+    });
+    const liveCapabilities = ConnectorCapabilities.parse({
+      schemaVersion: 1,
+      accessMode: "REFERENCE_LIVE",
+      permissionFidelity: "NONE",
+      syncFidelity: "APPEND",
+      incrementalSync: false,
+      deletionPropagation: "NONE",
+      cursorOrWebhook: false,
+      sourceAuthority: "REFERENCE",
+      writeBack: "NONE",
+      identityMapping: "NONE",
+      dataResidency: "EXTERNAL",
+      replayable: false,
+      auditTrail: "METADATA_ONLY",
+      rateLimit: {
+        kind: "DECLARED",
+        requestsPerMinute: 120,
+        onExceeded: "FAIL_CLOSED",
+      },
+      degradation: { onUnavailable: "FAIL_CLOSED" },
+      health: "HEALTHY",
+    });
+    const mirrorPeer = await upsertContextFabricPeer(db, {
       organizationId: organizationId!,
       spaceId,
-      peerKey: `integration-peer-${vaultId.slice(0, 8)}`,
-      displayName: "Integration discovery peer",
-      discoveryMode: "CATALOG_ONLY",
+      peerKey: `integration-mirror-${vaultId.slice(0, 8)}`,
+      displayName: "Integration mirrored connector",
+      discoveryMode: "MIRROR_BUNDLE",
       trustState: "DISCOVERED",
-      capabilities: { discovery: true },
-      revision: "peer:r1",
+      capabilities: mirrorCapabilities,
+      revision: "peer:mirror:r1",
       lastSeenAt: new Date(),
     });
-    peerId = peer.id;
+    const livePeer = await upsertContextFabricPeer(db, {
+      organizationId: organizationId!,
+      spaceId,
+      peerKey: `integration-live-${vaultId.slice(0, 8)}`,
+      displayName: "Integration live-reference connector",
+      discoveryMode: "CATALOG_ONLY",
+      trustState: "DISCOVERED",
+      capabilities: liveCapabilities,
+      revision: "peer:live:r1",
+      lastSeenAt: new Date(),
+    });
+    peerIds = [mirrorPeer.id, livePeer.id];
     const peerOutbox = await db.pool.query<{
       organization_id: string;
       space_id: string;
@@ -347,7 +405,7 @@ describe("team context fabric integration", () => {
     }>(
       `select organization_id,space_id,vault_id,payload from event_outbox
         where event_type='ContextFabricPeerRegistered' and resource_id=$1`,
-      [peerId],
+      [mirrorPeer.id],
     );
     expect(peerOutbox.rows).toHaveLength(1);
     expect(peerOutbox.rows[0]).toMatchObject({
@@ -356,9 +414,42 @@ describe("team context fabric integration", () => {
       vault_id: null,
       payload: {
         boundary: "DISCOVERY_METADATA_ONLY",
-        discoveryMode: "CATALOG_ONLY",
+        discoveryMode: "MIRROR_BUNDLE",
         trustState: "DISCOVERED",
       },
+    });
+
+    const listedPeers = await app.inject({
+      method: "GET",
+      url: `/v1/context-fabric/peers?spaceId=${spaceId}`,
+      headers,
+    });
+    expect(listedPeers.statusCode).toBe(200);
+    const listedPeerBody = listedPeers.json() as {
+      peers: Array<{
+        id: string;
+        readPlan: {
+          primaryRead: string;
+          requiresLiveProvider: boolean;
+          supportsOfflineRead: boolean;
+        };
+      }>;
+    };
+    expect(
+      listedPeerBody.peers.find((candidate) => candidate.id === mirrorPeer.id)
+        ?.readPlan,
+    ).toMatchObject({
+      primaryRead: "LOCAL_INDEX",
+      requiresLiveProvider: false,
+      supportsOfflineRead: true,
+    });
+    expect(
+      listedPeerBody.peers.find((candidate) => candidate.id === livePeer.id)
+        ?.readPlan,
+    ).toMatchObject({
+      primaryRead: "LIVE_REFERENCE",
+      requiresLiveProvider: true,
+      supportsOfflineRead: false,
     });
 
     const afterDocuments = await db.pool.query<{ count: number }>(

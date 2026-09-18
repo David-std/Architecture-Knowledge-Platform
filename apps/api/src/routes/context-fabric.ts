@@ -1,8 +1,18 @@
 import { createHash } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
+  ConnectorCapabilities,
+  connectorReadPlan,
+  evaluateConnectorCapabilities,
+} from "@akp/contracts/connector-capabilities";
+import {
+  DEFAULT_KNOWLEDGE_PROFILE_V1,
+  KnowledgeProfileV1,
+} from "@akp/contracts/knowledge-profile";
+import {
   applyWorkspaceOfflineDraft,
   getWorkspaceSessionForParticipant,
+  getActiveKnowledgeProfileRevision,
   listContextFabricPeers,
   listExternalObjectRefsForSession,
   isWorkActivityAction,
@@ -642,7 +652,7 @@ export function registerContextFabricRoutes(
     },
   );
 
-  app.get<{ Querystring: { spaceId?: string } }>(
+  app.get<{ Querystring: { spaceId?: string; vaultId?: string } }>(
     "/v1/context-fabric/peers",
     { preHandler: requirePermission("knowledge:read") },
     async (request, reply) => {
@@ -667,8 +677,67 @@ export function registerContextFabricRoutes(
       if (!organizationId) {
         return reply.code(404).send({ code: "ORGANIZATION_NOT_FOUND" });
       }
+      const peers = await listContextFabricPeers(db, organizationId, spaces);
+      const vaultId = request.query.vaultId?.trim();
+      let policy:
+        | {
+            vaultId: string;
+            profileId: string;
+            version: string;
+            revisionId: string | null;
+            connectorPolicy:
+              | typeof DEFAULT_KNOWLEDGE_PROFILE_V1.connectorPolicy
+              | undefined;
+          }
+        | null = null;
+      if (vaultId) {
+        if (!UUID_PATTERN.test(vaultId)) {
+          return reply.code(400).send({ code: "INVALID_VAULT_ID" });
+        }
+        const vault = await db.pool.query<{ space_id: string }>(
+          "select space_id from vaults where id=$1 and enabled=true",
+          [vaultId],
+        );
+        const vaultSpaceId = vault.rows[0]?.space_id;
+        if (!vaultSpaceId || !spaces.includes(vaultSpaceId)) {
+          return reply.code(404).send({ code: "VAULT_NOT_FOUND" });
+        }
+        const active = await getActiveKnowledgeProfileRevision(
+          db,
+          vaultSpaceId,
+          vaultId,
+        );
+        const profile = active
+          ? KnowledgeProfileV1.parse(active.profile)
+          : DEFAULT_KNOWLEDGE_PROFILE_V1;
+        policy = {
+          vaultId,
+          profileId: profile.profileId,
+          version: profile.version,
+          revisionId: active?.id ?? null,
+          connectorPolicy: profile.connectorPolicy,
+        };
+      }
       return {
-        peers: await listContextFabricPeers(db, organizationId, spaces),
+        peers: peers.map((peer) => ({
+          ...peer,
+          readPlan: connectorReadPlan(peer.capabilities),
+          compatibility: policy?.connectorPolicy
+            ? evaluateConnectorCapabilities(
+                peer.capabilities,
+                policy.connectorPolicy,
+              )
+            : null,
+        })),
+        policy: policy
+          ? {
+              vaultId: policy.vaultId,
+              profileId: policy.profileId,
+              version: policy.version,
+              revisionId: policy.revisionId,
+              evaluated: policy.connectorPolicy !== undefined,
+            }
+          : null,
         boundary: "DISCOVERY_METADATA_ONLY",
       };
     },
@@ -682,7 +751,7 @@ export function registerContextFabricRoutes(
       endpoint?: string;
       discoveryMode?: string;
       trustState?: string;
-      capabilities?: Record<string, unknown>;
+      capabilities?: unknown;
       revision?: string;
     };
   }>(
@@ -696,20 +765,28 @@ export function registerContextFabricRoutes(
       const displayName = safeText(request.body?.displayName, 200);
       const discoveryMode = request.body?.discoveryMode ?? "CATALOG_ONLY";
       const trustState = request.body?.trustState ?? "DISCOVERED";
-      const capabilities = boundedObject(
-        request.body?.capabilities ?? {},
+      const rawCapabilities = boundedObject(
+        request.body?.capabilities,
         32 * 1024,
       );
+      const parsedCapabilities = rawCapabilities
+        ? ConnectorCapabilities.safeParse(rawCapabilities)
+        : null;
       if (
         !spaceId ||
         !peerKey ||
         !displayName ||
         !DISCOVERY_MODES.has(discoveryMode) ||
         !PEER_TRUST_STATES.has(trustState) ||
-        !capabilities
+        !parsedCapabilities?.success
       ) {
-        return reply.code(400).send({ code: "INVALID_CONTEXT_FABRIC_PEER" });
+        return reply.code(400).send({
+          code: parsedCapabilities?.success === false
+            ? "INVALID_CONNECTOR_CAPABILITIES"
+            : "INVALID_CONTEXT_FABRIC_PEER",
+        });
       }
+      const capabilities = parsedCapabilities.data;
       if (
         !unrestrictedSpaceIdsForPermission(actor, "admin").includes(spaceId)
       ) {
@@ -747,6 +824,7 @@ export function registerContextFabricRoutes(
       );
       return reply.code(201).send({
         peer,
+        readPlan: connectorReadPlan(peer.capabilities),
         boundary: "DISCOVERY_METADATA_ONLY",
         networkContactPerformed: false,
       });

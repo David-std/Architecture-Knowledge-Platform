@@ -1,3 +1,5 @@
+import { ConnectorCapabilities } from "@akp/contracts/connector-capabilities";
+import type { ConnectorCapabilities as ConnectorCapabilitiesContract } from "@akp/contracts/connector-capabilities";
 import type { Postgres, PostgresPoolClient } from "./index.js";
 import { workspaceContextRevisionState } from "./context-revision-set.js";
 import { appendOutboxEvent } from "./outbox.js";
@@ -60,7 +62,7 @@ export interface ContextFabricPeerRecord {
   endpoint: string | null;
   discoveryMode: FederationDiscoveryMode;
   trustState: FederationPeerTrustState;
-  capabilities: Record<string, unknown>;
+  capabilities: ConnectorCapabilitiesContract;
   revision: string | null;
   lastSeenAt: Date | null;
   createdAt: Date;
@@ -143,7 +145,7 @@ function normalizePeer(row: Record<string, unknown>): ContextFabricPeerRecord {
     endpoint: row.endpoint ? String(row.endpoint) : null,
     discoveryMode: String(row.discovery_mode) as FederationDiscoveryMode,
     trustState: String(row.trust_state) as FederationPeerTrustState,
-    capabilities: recordObject(row.capabilities),
+    capabilities: ConnectorCapabilities.parse(recordObject(row.capabilities)),
     revision: row.revision ? String(row.revision) : null,
     lastSeenAt: row.last_seen_at ? new Date(String(row.last_seen_at)) : null,
     createdAt: new Date(String(row.created_at)),
@@ -520,7 +522,7 @@ export async function upsertContextFabricPeer(
     endpoint?: string | null;
     discoveryMode?: FederationDiscoveryMode;
     trustState?: FederationPeerTrustState;
-    capabilities?: Record<string, unknown>;
+    capabilities: ConnectorCapabilitiesContract;
     revision?: string | null;
     lastSeenAt?: Date | null;
   },
@@ -561,7 +563,7 @@ export async function upsertContextFabricPeer(
         input.endpoint?.trim() || null,
         input.discoveryMode ?? "CATALOG_ONLY",
         input.trustState ?? "DISCOVERED",
-        JSON.stringify(input.capabilities ?? {}),
+        JSON.stringify(ConnectorCapabilities.parse(input.capabilities)),
         input.revision?.trim() || null,
         input.lastSeenAt ?? null,
       ],
