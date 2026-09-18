@@ -25,6 +25,7 @@ import { registerEvaluationRoutes } from "./routes/evaluation.js";
 import { registerProjectRoutes } from "./routes/projects.js";
 import { registerSessionRoutes } from "./routes/sessions.js";
 import { registerContextFabricRoutes } from "./routes/context-fabric.js";
+import { registerDecisionWorkflowRoutes } from "./routes/decision-workflow.js";
 import { registerWorkspacePresenceRoutes } from "./routes/workspace-presence.js";
 import { registerGovernanceRoutes } from "./routes/governance.js";
 import { registerProviderTaskRoutes } from "./routes/provider-tasks.js";
@@ -237,6 +238,7 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
   registerProjectRoutes(app, db);
   registerSessionRoutes(app, db);
   registerContextFabricRoutes(app, db);
+  registerDecisionWorkflowRoutes(app, db);
   registerWorkspacePresenceRoutes(app, db);
   registerGovernanceRoutes(app, db);
 
