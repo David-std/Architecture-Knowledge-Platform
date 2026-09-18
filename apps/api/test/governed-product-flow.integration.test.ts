@@ -350,6 +350,7 @@ describe("P2 governed product flow", () => {
       workKey: "finding:compiler-boundary",
       fencingToken: 1,
     });
+    const promotableClaimId = (promotableClaim.json() as { id: string }).id;
 
     const finding = await app.inject({
       method: "POST",
@@ -357,6 +358,8 @@ describe("P2 governed product flow", () => {
       headers: agentAHeaders,
       payload: {
         eventType: "FINDING",
+        claimId: promotableClaimId,
+        fencingToken: 1,
         payload: {
           summary: "Compiler publication boundary requires governed review.",
           evidence: "p2-product-flow-fixture",
@@ -413,6 +416,45 @@ describe("P2 governed product flow", () => {
       ownerId: actorBId,
       ownerPrincipalId: agentB.principal.id,
       fencingToken: 2,
+    });
+
+    const staleFindingWrite = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/events`,
+      headers: agentAHeaders,
+      payload: {
+        eventType: "NOTE",
+        claimId: promotableClaimId,
+        fencingToken: 1,
+        payload: {
+          summary:
+            "A fenced-out agent must not append claim-owned coordination state.",
+        },
+      },
+    });
+    expect(staleFindingWrite.statusCode).toBe(409);
+    expect(staleFindingWrite.json()).toMatchObject({
+      code: "WORK_CLAIM_FENCE_STALE",
+    });
+
+    const resumedWrite = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/events`,
+      headers: agentBHeaders,
+      payload: {
+        eventType: "NOTE",
+        claimId: promotableClaimId,
+        fencingToken: 2,
+        payload: {
+          summary:
+            "Agent B resumed from the structured handoff with the new fence.",
+        },
+      },
+    });
+    expect(resumedWrite.statusCode).toBe(201);
+    expect(resumedWrite.json()).toMatchObject({
+      claim_id: promotableClaimId,
+      actor_principal_id: agentB.principal.id,
     });
 
     const resumed = await app.inject({
