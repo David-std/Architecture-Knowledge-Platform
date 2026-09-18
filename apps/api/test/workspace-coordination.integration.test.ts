@@ -236,6 +236,35 @@ describe("workspace coordination integration", () => {
     );
     expect(sessionOutbox.rows[0]?.count).toBe(1);
 
+    const workContextUpdate = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/work-context`,
+      headers: {
+        ...actorAHeaders,
+        "idempotency-key": "workspace-context-outbox-proof",
+      },
+      payload: {
+        status: "OPEN",
+        followUps: ["continue bounded coordination"],
+        touchedResources: ["packages/compiler/**"],
+      },
+    });
+    expect(workContextUpdate.statusCode).toBe(200);
+    expect(workContextUpdate.json()).toMatchObject({
+      workStatus: "OPEN",
+      followUps: ["continue bounded coordination"],
+      touchedResources: ["packages/compiler/**"],
+    });
+    const workContextOutbox = await db.pool.query<{ count: number }>(
+      `select count(*)::int count from event_outbox
+        where event_type='WorkspaceSessionUpdated'
+          and vault_id=$1
+          and correlation_id=$2
+          and payload->>'workspaceEventType'='WORK_CONTEXT_UPDATED'`,
+      [vaultId, sessionId],
+    );
+    expect(workContextOutbox.rows[0]?.count).toBe(1);
+
     const ownerReadd = await app.inject({
       method: "POST",
       url: `/v1/sessions/${sessionId}/participants`,
