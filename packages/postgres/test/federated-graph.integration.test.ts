@@ -9,7 +9,9 @@ import {
   type GraphProjectionArtifact,
   type GraphProjectionEdgeInput,
   type GraphProjectionNodeInput,
+  type GraphProjectionPort,
   type GraphProvenanceEnvelope,
+  type GraphQueryPort,
 } from "@akp/contracts";
 import { Postgres, PostgresFederatedGraphStore } from "../src/index.js";
 
@@ -242,6 +244,9 @@ describe("federated multi-graph substrate integration", () => {
       const db = new Postgres(databaseUrl);
       const fixture = await createFixture(db);
       const store = new PostgresFederatedGraphStore(db);
+      const queryPort: GraphQueryPort = store;
+      const projectionPort: GraphProjectionPort<GraphProjectionArtifact> =
+        store;
       try {
         const epistemicScope = "epistemic:primary";
         const codeScope = "code:primary";
@@ -390,8 +395,9 @@ describe("federated multi-graph substrate integration", () => {
           }),
         ]) {
           expect(
-            GraphProjectionRevision.safeParse(await store.build(projection))
-              .success,
+            GraphProjectionRevision.safeParse(
+              await projectionPort.build(projection),
+            ).success,
           ).toBe(true);
         }
 
@@ -464,14 +470,46 @@ describe("federated multi-graph substrate integration", () => {
             ),
           ],
         });
-        const firstCatalogBuild = await store.build(catalogProjection);
+        const firstCatalogBuild =
+          await projectionPort.build(catalogProjection);
         expect(
           GraphProjectionRevision.safeParse(firstCatalogBuild).success,
         ).toBe(true);
-        const repeatedCatalogBuild = await store.build(catalogProjection);
+        const repeatedCatalogBuild =
+          await projectionPort.build(catalogProjection);
         expect(repeatedCatalogBuild).toEqual(firstCatalogBuild);
+        const catalogRevisionState = await queryPort.revisionState(
+          "SOFTWARE_CATALOG",
+          fixture.spaceId,
+          catalogScope,
+        );
+        expect(catalogRevisionState).toMatchObject({
+          requestedRevision: "catalog-r1",
+          builtRevision: "catalog-r1",
+          activeRevision: "catalog-r1",
+          activeFreshness: "FRESH",
+          requested: {
+            sourceRevision: "source:catalog-r1",
+            sourceHash: null,
+            provider: "integration-fixture",
+            providerVersion: "1",
+            configurationVersion: "graph-config-v1",
+          },
+          built: {
+            revision: "catalog-r1",
+            sourceRevision: "source:catalog-r1",
+            provider: "integration-fixture",
+          },
+          active: {
+            revision: "catalog-r1",
+            freshness: "FRESH",
+            sourceRevision: "source:catalog-r1",
+            provider: "integration-fixture",
+            configurationVersion: "graph-config-v1",
+          },
+        });
 
-        const direct = await store.neighbors({
+        const direct = await queryPort.neighbors({
           ...queryBase(fixture, {
             domains: [
               "EPISTEMIC",
@@ -523,7 +561,7 @@ describe("federated multi-graph substrate integration", () => {
           CODE: "code-r1",
         });
 
-        const allPaths = await store.paths({
+        const allPaths = await queryPort.paths({
           ...queryBase(fixture, {
             domains: [
               "EPISTEMIC",
