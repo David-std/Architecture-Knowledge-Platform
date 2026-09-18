@@ -79,6 +79,15 @@ function previousEndpoint(
   ) {
     return null;
   }
+  const qualifiedName = optionalString(payload.qualifiedName, 2048);
+  const signature = optionalString(payload.signature, 4096);
+  const lineStart = optionalPositiveInteger(payload.lineStart);
+  const lineEnd = optionalPositiveInteger(payload.lineEnd);
+  const contentHash =
+    typeof payload.contentHash === "string" &&
+    /^[a-f0-9]{64}$/i.test(payload.contentHash)
+      ? payload.contentHash.toLowerCase()
+      : undefined;
   return {
     repository,
     commitSha: commitSha.toLowerCase(),
@@ -87,22 +96,11 @@ function previousEndpoint(
     kind: optionalString(payload.kind, 120) ?? node.identity.kind,
     path,
     name,
-    ...(optionalString(payload.qualifiedName, 2048)
-      ? { qualifiedName: optionalString(payload.qualifiedName, 2048) }
-      : {}),
-    ...(optionalString(payload.signature, 4096)
-      ? { signature: optionalString(payload.signature, 4096) }
-      : {}),
-    ...(optionalPositiveInteger(payload.lineStart)
-      ? { lineStart: optionalPositiveInteger(payload.lineStart) }
-      : {}),
-    ...(optionalPositiveInteger(payload.lineEnd)
-      ? { lineEnd: optionalPositiveInteger(payload.lineEnd) }
-      : {}),
-    ...(typeof payload.contentHash === "string" &&
-    /^[a-f0-9]{64}$/i.test(payload.contentHash)
-      ? { contentHash: payload.contentHash.toLowerCase() }
-      : {}),
+    ...(qualifiedName ? { qualifiedName } : {}),
+    ...(signature ? { signature } : {}),
+    ...(lineStart !== undefined ? { lineStart } : {}),
+    ...(lineEnd !== undefined ? { lineEnd } : {}),
+    ...(contentHash ? { contentHash } : {}),
   };
 }
 
