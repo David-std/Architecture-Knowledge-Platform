@@ -376,6 +376,38 @@ if (runtimeIntegrationEventTypes.size === 0) {
   }
 }
 
+const outboxConstraintMigration = await readFile(
+  path.join(root, "db/migrations/046_outbox_workspace_authority_events.sql"),
+  "utf8",
+);
+const outboxConstraintBlock =
+  /add constraint event_outbox_event_type_check[\s\S]*?event_type in \(([\s\S]*?)\)\s*\);/.exec(
+    outboxConstraintMigration,
+  )?.[1] ?? "";
+const databaseIntegrationEventTypes = new Set(
+  [...outboxConstraintBlock.matchAll(/'([^']+)'/g)].map((match) => match[1]),
+);
+if (databaseIntegrationEventTypes.size === 0) {
+  failures.push(
+    "db/migrations/046_outbox_workspace_authority_events.sql: could not resolve event_outbox event types",
+  );
+} else {
+  for (const eventType of runtimeIntegrationEventTypes) {
+    if (!databaseIntegrationEventTypes.has(eventType)) {
+      failures.push(
+        `event_outbox constraint: runtime integration event ${eventType} is not accepted by the database`,
+      );
+    }
+  }
+  for (const eventType of databaseIntegrationEventTypes) {
+    if (!runtimeIntegrationEventTypes.has(eventType)) {
+      failures.push(
+        `event_outbox constraint: database event ${eventType} is absent from runtime`,
+      );
+    }
+  }
+}
+
 const workspaceCoordinationSource = await readFile(
   path.join(root, "packages/postgres/src/workspace-coordination.ts"),
   "utf8",
