@@ -142,6 +142,7 @@ describe("offline context snapshot reconnect semantics", () => {
     expect(capturedR1.statusCode).toBe(200);
     const r1Snapshot = capturedR1.json() as {
       schemaVersion: number;
+      offline: boolean;
       stale: boolean;
       status: string;
       pinnedRevisionSetHash: string;
@@ -153,6 +154,7 @@ describe("offline context snapshot reconnect semantics", () => {
     };
     expect(r1Snapshot).toMatchObject({
       schemaVersion: 1,
+      offline: true,
       stale: false,
       status: "CURRENT",
       pinnedRevisionSetHash: r1Session.contextRevisionSetHash,
@@ -183,6 +185,7 @@ describe("offline context snapshot reconnect semantics", () => {
     });
     expect(staleReconnect.statusCode).toBe(409);
     const staleBody = staleReconnect.json() as {
+      offline: boolean;
       stale: boolean;
       status: string;
       pinnedRevisionSetHash: string;
@@ -193,6 +196,7 @@ describe("offline context snapshot reconnect semantics", () => {
       context: unknown;
     };
     expect(staleBody).toMatchObject({
+      offline: true,
       stale: true,
       status: "CHANGED",
       pinnedRevisionSetHash: r1Session.contextRevisionSetHash,
