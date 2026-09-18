@@ -2152,7 +2152,9 @@ export function registerSearchRoutes(
         projectCode = await resolveProjectCodeRetrieval(db, {
           spaceId: requestedSpace,
           vaultIds,
-          projectId: parsed.data.projectId,
+          ...(parsed.data.projectId
+            ? { projectId: parsed.data.projectId }
+            : {}),
           query: parsed.data.query,
           graphScopes,
           pathAuthorizer,
@@ -2475,7 +2477,9 @@ export function registerSearchRoutes(
         projectCode = await resolveProjectCodeRetrieval(db, {
           spaceId: requestedSpace,
           vaultIds,
-          projectId: parsed.data.projectId,
+          ...(parsed.data.projectId
+            ? { projectId: parsed.data.projectId }
+            : {}),
           query: parsed.data.query,
           graphScopes,
           pathAuthorizer,

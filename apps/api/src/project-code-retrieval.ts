@@ -247,7 +247,7 @@ export async function resolveProjectCodeRetrieval(
   }
 
   const identifiers = queryIdentifiers(input.query);
-  const selectors = [
+  const selectors: Array<{ path: string; name?: string }> = [
     ...snapshotSymbols(project.metadata)
       .filter((symbol) => identifiers.has(symbol.name.toLowerCase()))
       .map((symbol) => ({ name: symbol.name, path: symbol.path })),
@@ -262,8 +262,7 @@ export async function resolveProjectCodeRetrieval(
         values.findIndex(
           (candidate) =>
             candidate.path === selector.path &&
-            ("name" in candidate ? candidate.name : undefined) ===
-              ("name" in selector ? selector.name : undefined),
+            candidate.name === selector.name,
         ) === index,
     )
     .slice(0, 12);
@@ -292,9 +291,7 @@ export async function resolveProjectCodeRetrieval(
         repository: identity.repository,
         commitSha: sourceRevision,
         path: selector.path,
-        ...("name" in selector && selector.name
-          ? { name: selector.name }
-          : {}),
+        ...(selector.name ? { name: selector.name } : {}),
       },
       freshnessPolicy: "FRESH_ONLY",
       limit: 25,
