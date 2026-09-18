@@ -1297,6 +1297,25 @@ describe("workspace coordination integration", () => {
       code: "WORK_CLAIM_FENCE_STALE",
     });
 
+    const expiredOwnerEvent = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${releaseSessionId}/events`,
+      headers: actorBHeaders,
+      payload: {
+        eventType: "NOTE",
+        claimId: reacquiredClaim.id,
+        fencingToken: reacquiredClaim.fencingToken,
+        payload: {
+          summary:
+            "An expired claim must not authorize new claim-owned coordination state.",
+        },
+      },
+    });
+    expect(expiredOwnerEvent.statusCode).toBe(409);
+    expect(expiredOwnerEvent.json()).toMatchObject({
+      code: "WORK_CLAIM_FENCE_STALE",
+    });
+
     const afterExpiry = await app.inject({
       method: "POST",
       url: `/v1/sessions/${releaseSessionId}/claims`,
