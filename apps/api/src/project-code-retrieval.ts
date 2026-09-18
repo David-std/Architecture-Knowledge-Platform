@@ -228,11 +228,7 @@ export async function resolveProjectCodeRetrieval(
   );
   const active = state.active;
   if (!active) {
-    return unavailable(
-      input.projectId,
-      "CODE_GRAPH_NOT_READY",
-      sourceRevision,
-    );
+    return unavailable(input.projectId, "CODE_GRAPH_NOT_READY", sourceRevision);
   }
   if (
     active.freshness !== "FRESH" ||
