@@ -124,6 +124,51 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "409": { $ref: "#/components/responses/Conflict" }
 
+  /v1/code/knowledge-links:
+    post:
+      tags: [Code]
+      operationId: approveCodeKnowledgeLink
+      x-akp-permission: knowledge:review
+      parameters:
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [projectId, documentId, reviewId, relationType, selector]
+              properties:
+                projectId: { type: string, format: uuid }
+                documentId: { type: string, format: uuid }
+                reviewId: { type: string, format: uuid }
+                relationType:
+                  type: string
+                  enum: [rationale_ref, governed_by, applies_to]
+                selector:
+                  type: object
+                  additionalProperties: false
+                  properties:
+                    path: { type: string, minLength: 1, maxLength: 4096 }
+                    qualifiedName: { type: string, minLength: 1, maxLength: 2048 }
+                    name: { type: string, minLength: 1, maxLength: 1024 }
+                    kind: { type: string, minLength: 1, maxLength: 120 }
+                    signature: { type: string, minLength: 1, maxLength: 4096 }
+                  anyOf:
+                    - required: [path]
+                    - required: [qualifiedName]
+                    - required: [name]
+                    - required: [signature]
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "202": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
   /v1/code/symbol:
     post:
       tags: [Code]

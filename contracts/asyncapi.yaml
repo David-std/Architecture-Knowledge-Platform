@@ -94,6 +94,7 @@ components:
             - VectorIndexUpdateRequested
             - GraphIndexUpdateRequested
             - CodeGraphRefreshRequested
+            - CodeKnowledgeLinkApproved
             - GraphRevisionBuilt
             - GraphRevisionActivated
             - GraphRevisionStale

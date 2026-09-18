@@ -32,6 +32,7 @@ import mime from "mime-types";
 import { DurableEventWorker } from "./event-worker.js";
 import { createIndexEventHandlers } from "./event-handlers.js";
 import { createCodeGraphRefreshHandlers } from "./code-graph-refresh.js";
+import { createCodeKnowledgeLinkHandlers } from "./code-knowledge-link.js";
 import { lifecycleEventForState } from "./lifecycle.js";
 import {
   DEFAULT_WORKER_DRAIN_DEADLINE_MS,
@@ -77,6 +78,7 @@ const eventWorker = new DurableEventWorker(db, {
   handlers: {
     ...createIndexEventHandlers(db, git),
     ...createCodeGraphRefreshHandlers(db),
+    ...createCodeKnowledgeLinkHandlers(db),
     // The ingest job remains the durable work record.  This handler turns the
     // event into a prompt for the existing claim loop while preserving the
     // event's idempotent delivery semantics.

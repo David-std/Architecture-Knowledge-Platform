@@ -41,6 +41,7 @@ import { registerAuditRoutes } from "./routes/audit.js";
 import { registerAuditExportRoutes } from "./routes/audit-export.js";
 import { registerInteroperabilityRoutes } from "./routes/interoperability.js";
 import { registerCodeGraphRoutes } from "./routes/code-graph.js";
+import { registerCodeKnowledgeLinkRoutes } from "./routes/code-knowledge-links.js";
 
 config({
   path: path.resolve(
@@ -224,6 +225,7 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
   registerAuditExportRoutes(app, db, rawObjectStore);
   registerInteroperabilityRoutes(app, db);
   registerCodeGraphRoutes(app, db);
+  registerCodeKnowledgeLinkRoutes(app, db);
   registerProviderTaskRoutes(app, db);
   registerOperatorRoutes(app, db);
   registerSearchRoutes(
