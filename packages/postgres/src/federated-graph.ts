@@ -4,6 +4,7 @@ import {
   normalizeVaultPathPrefix,
   pathMatchesVaultPrefix,
 } from "./vault-registry.js";
+import { appendOutboxEvent } from "./outbox.js";
 import type { Postgres, PostgresPoolClient } from "./index.js";
 
 // Keep the persistence adapter structurally compatible with @akp/contracts
@@ -1096,12 +1097,58 @@ export class PostgresFederatedGraphStore
           );
         }
 
-        await client.query(
+        const organization = await client.query<{
+          organization_id: string;
+        }>("select organization_id from spaces where id=$1", [input.spaceId]);
+        const organizationId = organization.rows[0]?.organization_id;
+        if (!organizationId) {
+          throw graphError("GRAPH_SPACE_ORGANIZATION_NOT_FOUND");
+        }
+
+        const built = await client.query<ProjectionRow>(
           `update federated_graph_projection_revisions
               set lifecycle='BUILT',freshness='FRESH',built_at=now(),
                   last_successful_update=now(),error=null,updated_at=now()
-            where id=$1`,
+            where id=$1
+            returning *`,
           [locked.id],
+        );
+        const builtRow = built.rows[0];
+        if (!builtRow) throw graphError("GRAPH_PROJECTION_BUILD_FAILED");
+        const builtProjection = mapProjection(builtRow);
+        const builtEvent = await appendOutboxEvent(client, {
+          eventType: "GraphRevisionBuilt",
+          resourceId: builtProjection.id,
+          organizationId,
+          spaceId: input.spaceId,
+          vaultId: input.vaultId,
+          correlationId: `graph:${input.graphDomain}:${input.scopeId}`,
+          payload: {
+            projectionRevisionId: builtProjection.id,
+            graphDomain: input.graphDomain,
+            scopeId: input.scopeId,
+            revision: input.revision,
+            sourceRevision: input.sourceRevision,
+            sourceHash: input.sourceHash,
+            provider: input.provider,
+            providerVersion: input.providerVersion,
+            configurationVersion: input.configurationVersion,
+            lifecycle: builtProjection.lifecycle,
+            freshness: builtProjection.freshness,
+            builtAt: builtProjection.builtAt,
+          },
+        });
+
+        const previousActive = await client.query<{
+          id: string;
+          revision: string;
+        }>(
+          `select id,revision
+             from federated_graph_projection_revisions
+            where space_id=$1 and graph_domain=$2 and scope_id=$3
+              and lifecycle='ACTIVE' and id<>$4
+            order by activated_at desc nulls last,id`,
+          [input.spaceId, input.graphDomain, input.scopeId, locked.id],
         );
         await client.query(
           `update federated_graph_projection_revisions
@@ -1120,7 +1167,35 @@ export class PostgresFederatedGraphStore
         );
         const row = activated.rows[0];
         if (!row) throw graphError("GRAPH_PROJECTION_ACTIVATION_FAILED");
-        return mapProjection(row);
+        const activeProjection = mapProjection(row);
+        await appendOutboxEvent(client, {
+          eventType: "GraphRevisionActivated",
+          resourceId: activeProjection.id,
+          organizationId,
+          spaceId: input.spaceId,
+          vaultId: input.vaultId,
+          correlationId: `graph:${input.graphDomain}:${input.scopeId}`,
+          causationId: builtEvent.eventId,
+          payload: {
+            projectionRevisionId: activeProjection.id,
+            graphDomain: input.graphDomain,
+            scopeId: input.scopeId,
+            revision: input.revision,
+            sourceRevision: input.sourceRevision,
+            sourceHash: input.sourceHash,
+            provider: input.provider,
+            providerVersion: input.providerVersion,
+            configurationVersion: input.configurationVersion,
+            lifecycle: activeProjection.lifecycle,
+            freshness: activeProjection.freshness,
+            activatedAt: activeProjection.activatedAt,
+            superseded: previousActive.rows.map((previous) => ({
+              projectionRevisionId: previous.id,
+              revision: previous.revision,
+            })),
+          },
+        });
+        return activeProjection;
       });
     } catch (error) {
       await this.db.pool
