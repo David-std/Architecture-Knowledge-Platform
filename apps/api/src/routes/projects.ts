@@ -368,8 +368,7 @@ export function registerProjectRoutes(
               commit: snapshot.commit,
               repository: graphIdentity.repository,
               scopeId: graphIdentity.scopeId,
-              authorizationPathPrefix:
-                graphIdentity.authorizationPathPrefix,
+              authorizationPathPrefix: graphIdentity.authorizationPathPrefix,
             },
           });
         }

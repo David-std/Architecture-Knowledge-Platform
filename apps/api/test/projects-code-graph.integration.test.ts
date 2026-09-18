@@ -138,10 +138,9 @@ afterAll(async () => {
       vaultId,
       slug,
     ]);
-    await db.pool.query(
-      "delete from idempotency_records where actor_id=$1",
-      [actorId],
-    );
+    await db.pool.query("delete from idempotency_records where actor_id=$1", [
+      actorId,
+    ]);
     await db.pool.query("delete from api_tokens where token_hash=$1", [
       tokenHash,
     ]);

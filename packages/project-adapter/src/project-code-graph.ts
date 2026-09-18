@@ -27,8 +27,7 @@ export function projectCodeGraphIdentity(
   };
 }
 
-export interface ParsedProjectCodeGraphRepository
-  extends ProjectCodeGraphIdentity {
+export interface ParsedProjectCodeGraphRepository extends ProjectCodeGraphIdentity {
   vaultId: string;
   slug: string;
 }

@@ -1,9 +1,6 @@
 import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
-import {
-  PostgresFederatedGraphStore,
-  type Postgres,
-} from "@akp/postgres";
+import { PostgresFederatedGraphStore, type Postgres } from "@akp/postgres";
 import {
   CodeGraphLifecycleCoordinator,
   GraphifyCodeGraphAdapter,
@@ -42,7 +39,9 @@ async function authorizedProjectRoot(rootPath: string): Promise<string> {
     await Promise.all(
       configuredProjectRoots().map(async (root) => {
         const resolved = await realpath(root).catch(() => null);
-        const rootInfo = resolved ? await stat(resolved).catch(() => null) : null;
+        const rootInfo = resolved
+          ? await stat(resolved).catch(() => null)
+          : null;
         return resolved && rootInfo?.isDirectory() ? resolved : null;
       }),
     )
@@ -216,7 +215,8 @@ export function createCodeGraphRefreshHandlers(
           providerVersion: refreshed.artifact.providerVersion,
           nodeCount: refreshed.artifact.nodes.length,
           edgeCount: refreshed.artifact.edges.length,
-          skippedCandidateEdgeCount: refreshed.plan.skippedCandidateEdgeIds.length,
+          skippedCandidateEdgeCount:
+            refreshed.plan.skippedCandidateEdgeIds.length,
           degradedDuringRefresh: refreshed.degradedDuringRefresh,
           completedAt: new Date().toISOString(),
         });

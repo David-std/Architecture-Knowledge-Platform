@@ -232,15 +232,13 @@ async function projectFencedCommit(
        from projects
       where space_id=$1 and vault_id=$2 and slug=$3
       limit 1`,
-    [
-      context.authorization.spaceId,
-      parsed.vaultId,
-      parsed.slug,
-    ],
+    [context.authorization.spaceId, parsed.vaultId, parsed.slug],
   );
   const metadata = result.rows[0]?.metadata;
   const projectCommit =
-    metadata && typeof metadata.commit === "string" && CODE_COMMIT.test(metadata.commit)
+    metadata &&
+    typeof metadata.commit === "string" &&
+    CODE_COMMIT.test(metadata.commit)
       ? metadata.commit.toLowerCase()
       : null;
   if (!projectCommit) {

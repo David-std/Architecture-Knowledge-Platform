@@ -57,12 +57,12 @@ async function fixtureRepository(): Promise<{
       'if (args.includes("--version")) { console.log("graphify 0.9.63"); process.exit(0); }',
       'if (args[0] !== "extract") process.exit(17);',
       'await mkdir(path.join(process.cwd(), "graphify-out"), { recursive: true });',
-      'const graph = { nodes: [',
+      "const graph = { nodes: [",
       '  { id: "entry", label: "entry", node_type: "function", source_file: "src/entry.ts", source_location: "L2", language: "TypeScript" },',
       '  { id: "helper", label: "helper", node_type: "function", source_file: "src/helper.ts", source_location: "L1", language: "TypeScript" }',
-      '], edges: [',
+      "], edges: [",
       '  { id: "call", source: "entry", target: "helper", relation: "calls", confidence: "STATICALLY_RESOLVED", source_file: "src/entry.ts", source_location: "L2" }',
-      '] };',
+      "] };",
       'await writeFile(path.join(process.cwd(), "graphify-out", "graph.json"), JSON.stringify(graph));',
     ].join("\n"),
   );
@@ -149,124 +149,126 @@ afterAll(async () => {
   await db.close();
 });
 
-describe.skipIf(!process.env.DATABASE_URL)("project code graph refresh worker", () => {
-  it("turns a durable refresh event into an authorized active CODE projection", async () => {
-    const fixture = await fixtureRepository();
-    const identity = projectCodeGraphIdentity(vaultId, slug);
-    await db.pool.query(
-      `insert into projects(id,space_id,vault_id,slug,root_path,metadata)
+describe.skipIf(!process.env.DATABASE_URL)(
+  "project code graph refresh worker",
+  () => {
+    it("turns a durable refresh event into an authorized active CODE projection", async () => {
+      const fixture = await fixtureRepository();
+      const identity = projectCodeGraphIdentity(vaultId, slug);
+      await db.pool.query(
+        `insert into projects(id,space_id,vault_id,slug,root_path,metadata)
        values($1,$2,$3,$4,$5,$6::jsonb)`,
-      [
-        projectId,
-        spaceId,
-        vaultId,
-        slug,
-        fixture.root,
-        JSON.stringify({
-          commit: fixture.commit,
-          codeGraph: {
-            ...identity,
-            sourceRevision: fixture.commit,
-            status: "REQUESTED",
-          },
-        }),
-      ],
-    );
-    process.env.AKP_CODE_GRAPH_ENABLED = "true";
-    process.env.AKP_PROJECT_ROOTS = fixture.root;
-    process.env.AKP_GRAPHIFY_EXECUTABLE = process.execPath;
-    process.env.AKP_GRAPHIFY_EXECUTABLE_ARGS = JSON.stringify([
-      fixture.providerScript,
-    ]);
+        [
+          projectId,
+          spaceId,
+          vaultId,
+          slug,
+          fixture.root,
+          JSON.stringify({
+            commit: fixture.commit,
+            codeGraph: {
+              ...identity,
+              sourceRevision: fixture.commit,
+              status: "REQUESTED",
+            },
+          }),
+        ],
+      );
+      process.env.AKP_CODE_GRAPH_ENABLED = "true";
+      process.env.AKP_PROJECT_ROOTS = fixture.root;
+      process.env.AKP_GRAPHIFY_EXECUTABLE = process.execPath;
+      process.env.AKP_GRAPHIFY_EXECUTABLE_ARGS = JSON.stringify([
+        fixture.providerScript,
+      ]);
 
-    const handlers = createCodeGraphRefreshHandlers(db);
-    await handlers.CodeGraphRefreshRequested!(event(fixture.commit));
+      const handlers = createCodeGraphRefreshHandlers(db);
+      await handlers.CodeGraphRefreshRequested!(event(fixture.commit));
 
-    const project = await db.pool.query<{ metadata: Record<string, unknown> }>(
-      "select metadata from projects where id=$1",
-      [projectId],
-    );
-    const metadataJson = JSON.stringify(project.rows[0]?.metadata ?? {});
-    expect(metadataJson).not.toContain(fixture.root);
-    expect(project.rows[0]?.metadata).toMatchObject({
-      codeGraph: {
-        ...identity,
-        status: "ACTIVE",
-        sourceRevision: fixture.commit,
-        provider: "graphify",
-        providerVersion: "0.9.63",
-        nodeCount: 2,
-        edgeCount: 1,
-      },
+      const project = await db.pool.query<{
+        metadata: Record<string, unknown>;
+      }>("select metadata from projects where id=$1", [projectId]);
+      const metadataJson = JSON.stringify(project.rows[0]?.metadata ?? {});
+      expect(metadataJson).not.toContain(fixture.root);
+      expect(project.rows[0]?.metadata).toMatchObject({
+        codeGraph: {
+          ...identity,
+          status: "ACTIVE",
+          sourceRevision: fixture.commit,
+          provider: "graphify",
+          providerVersion: "0.9.63",
+          nodeCount: 2,
+          edgeCount: 1,
+        },
+      });
+
+      const store = new PostgresFederatedGraphStore(db);
+      const nodes = await store.findNodes({
+        authorization: {
+          spaceId,
+          vaults: [{ vaultId, pathPrefix: `projects/${slug}` }],
+        },
+        domains: ["CODE"],
+        payloadContains: {
+          repository: identity.repository,
+          commitSha: fixture.commit,
+          qualifiedName: "entry",
+        },
+        freshnessPolicy: "FRESH_ONLY",
+        limit: 10,
+      });
+      expect(nodes).toHaveLength(1);
+      expect(nodes[0]).toMatchObject({
+        authorizationPath: `projects/${slug}/src/entry.ts`,
+        payload: {
+          path: "src/entry.ts",
+          repository: identity.repository,
+          commitSha: fixture.commit,
+        },
+        projection: {
+          lifecycle: "ACTIVE",
+          freshness: "FRESH",
+        },
+      });
     });
 
-    const store = new PostgresFederatedGraphStore(db);
-    const nodes = await store.findNodes({
-      authorization: {
-        spaceId,
-        vaults: [{ vaultId, pathPrefix: `projects/${slug}` }],
-      },
-      domains: ["CODE"],
-      payloadContains: {
-        repository: identity.repository,
-        commitSha: fixture.commit,
-        qualifiedName: "entry",
-      },
-      freshnessPolicy: "FRESH_ONLY",
-      limit: 10,
-    });
-    expect(nodes).toHaveLength(1);
-    expect(nodes[0]).toMatchObject({
-      authorizationPath: `projects/${slug}/src/entry.ts`,
-      payload: {
-        path: "src/entry.ts",
-        repository: identity.repository,
-        commitSha: fixture.commit,
-      },
-      projection: {
-        lifecycle: "ACTIVE",
-        freshness: "FRESH",
-      },
-    });
-  });
-
-  it("acknowledges an obsolete refresh request without rebuilding an older commit", async () => {
-    const fixture = await fixtureRepository();
-    const identity = projectCodeGraphIdentity(vaultId, slug);
-    await db.pool.query(
-      `insert into projects(id,space_id,vault_id,slug,root_path,metadata)
+    it("acknowledges an obsolete refresh request without rebuilding an older commit", async () => {
+      const fixture = await fixtureRepository();
+      const identity = projectCodeGraphIdentity(vaultId, slug);
+      await db.pool.query(
+        `insert into projects(id,space_id,vault_id,slug,root_path,metadata)
        values($1,$2,$3,$4,$5,$6::jsonb)`,
-      [
-        projectId,
+        [
+          projectId,
+          spaceId,
+          vaultId,
+          slug,
+          fixture.root,
+          JSON.stringify({
+            commit: "f".repeat(40),
+            codeGraph: {
+              ...identity,
+              sourceRevision: "f".repeat(40),
+              status: "REQUESTED",
+            },
+          }),
+        ],
+      );
+      process.env.AKP_CODE_GRAPH_ENABLED = "true";
+      process.env.AKP_PROJECT_ROOTS = fixture.root;
+      process.env.AKP_GRAPHIFY_EXECUTABLE = process.execPath;
+      process.env.AKP_GRAPHIFY_EXECUTABLE_ARGS = JSON.stringify([
+        fixture.providerScript,
+      ]);
+
+      const handlers = createCodeGraphRefreshHandlers(db);
+      await handlers.CodeGraphRefreshRequested!(event(fixture.commit));
+
+      const state = await new PostgresFederatedGraphStore(db).revisionState(
+        "CODE",
         spaceId,
-        vaultId,
-        slug,
-        fixture.root,
-        JSON.stringify({
-          commit: "f".repeat(40),
-          codeGraph: {
-            ...identity,
-            sourceRevision: "f".repeat(40),
-            status: "REQUESTED",
-          },
-        }),
-      ],
-    );
-    process.env.AKP_CODE_GRAPH_ENABLED = "true";
-    process.env.AKP_PROJECT_ROOTS = fixture.root;
-    process.env.AKP_GRAPHIFY_EXECUTABLE = process.execPath;
-    process.env.AKP_GRAPHIFY_EXECUTABLE_ARGS = JSON.stringify([
-      fixture.providerScript,
-    ]);
-
-    const handlers = createCodeGraphRefreshHandlers(db);
-    await handlers.CodeGraphRefreshRequested!(event(fixture.commit));
-
-    const state = await new PostgresFederatedGraphStore(db).revisionState(
-      "CODE",
-      spaceId,
-      identity.scopeId,
-    );
-    expect(state.active).toBeNull();
-  });
-});
+        identity.scopeId,
+      );
+      expect(state.active).toBeNull();
+    });
+  },
+);
