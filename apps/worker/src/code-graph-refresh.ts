@@ -7,6 +7,7 @@ import {
   createCodeSnapshot,
   defaultCodeGraphOptions,
   projectCodeGraphIdentity,
+  reconcileCodeGraphCandidates,
 } from "@akp/project-adapter";
 import type { EventHandlers } from "./event-worker.js";
 
@@ -177,6 +178,29 @@ export function createCodeGraphRefreshHandlers(
 
       const store = new PostgresFederatedGraphStore(db);
       try {
+        const previousState = await store.revisionState(
+          "CODE",
+          project.space_id,
+          identity.scopeId,
+        );
+        const previousNodes =
+          previousState.active &&
+          /^[a-f0-9]{40}$/i.test(previousState.active.sourceRevision)
+            ? await store.findNodes({
+                authorization: {
+                  spaceId: project.space_id,
+                  vaults: [{ vaultId: project.vault_id, pathPrefix: null }],
+                  allowSpaceScoped: false,
+                },
+                domains: ["CODE"],
+                payloadContains: {
+                  repository: identity.repository,
+                  commitSha: previousState.active.sourceRevision,
+                },
+                freshnessPolicy: "ALLOW_STALE",
+                limit: 10_000,
+              })
+            : [];
         const repositoryPath = await authorizedProjectRoot(project.root_path);
         const snapshot = await createCodeSnapshot({
           repositoryPath,
@@ -205,6 +229,10 @@ export function createCodeGraphRefreshHandlers(
           throw new Error("CODE_GRAPH_SOURCE_REVISION_CHANGED");
         }
 
+        const reconciliationCandidates = reconcileCodeGraphCandidates(
+          previousNodes,
+          refreshed.artifact,
+        );
         await updateCodeGraphStatus(db, projectId, sourceRevision, {
           ...identity,
           status: "ACTIVE",
@@ -218,6 +246,13 @@ export function createCodeGraphRefreshHandlers(
           skippedCandidateEdgeCount:
             refreshed.plan.skippedCandidateEdgeIds.length,
           degradedDuringRefresh: refreshed.degradedDuringRefresh,
+          reconciliation: {
+            candidateCount: reconciliationCandidates.length,
+            ambiguousCount: reconciliationCandidates.filter(
+              (candidate) => candidate.state === "AMBIGUOUS",
+            ).length,
+            candidates: reconciliationCandidates,
+          },
           completedAt: new Date().toISOString(),
         });
       } catch (error) {

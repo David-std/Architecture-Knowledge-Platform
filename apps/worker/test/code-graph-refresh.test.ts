@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -9,7 +9,10 @@ import {
   PostgresFederatedGraphStore,
   type OutboxEventRecord,
 } from "@akp/postgres";
-import { projectCodeGraphIdentity } from "@akp/project-adapter";
+import {
+  planCodeGraphProjection,
+  projectCodeGraphIdentity,
+} from "@akp/project-adapter";
 import { createCodeGraphRefreshHandlers } from "../src/code-graph-refresh.js";
 
 const spaceId = "00000000-0000-0000-0000-000000000003";
@@ -181,6 +184,44 @@ describe.skipIf(!process.env.DATABASE_URL)(
         fixture.providerScript,
       ]);
 
+      const oldCommit = "1".repeat(40);
+      const entryContent =
+        'import { helper } from "./helper.js";\nexport function entry() { return helper(); }\n';
+      await new PostgresFederatedGraphStore(db).build(
+        planCodeGraphProjection({
+          artifact: {
+            schemaVersion: 1,
+            repository: identity.repository,
+            commitSha: oldCommit,
+            provider: "previous-fixture",
+            providerVersion: "1",
+            configurationHash: "2".repeat(64),
+            generatedAt: "2026-09-17T00:00:00.000Z",
+            languages: ["TypeScript"],
+            nodes: [
+              {
+                id: "old-entry",
+                kind: "FUNCTION",
+                name: "entry",
+                qualifiedName: "entry",
+                path: "src/legacy-entry.ts",
+                lineStart: 2,
+                lineEnd: 2,
+                contentHash: createHash("sha256")
+                  .update(entryContent)
+                  .digest("hex"),
+              },
+            ],
+            edges: [],
+            warnings: [],
+          },
+          spaceId,
+          vaultId,
+          scopeId: identity.scopeId,
+          authorizationPathPrefix: identity.authorizationPathPrefix,
+        }).projection,
+      );
+
       const handlers = createCodeGraphRefreshHandlers(db);
       await handlers.CodeGraphRefreshRequested!(event(fixture.commit));
 
@@ -198,6 +239,24 @@ describe.skipIf(!process.env.DATABASE_URL)(
           providerVersion: "0.9.63",
           nodeCount: 2,
           edgeCount: 1,
+          reconciliation: {
+            candidateCount: 1,
+            ambiguousCount: 0,
+            candidates: [
+              {
+                relationship: "MOVED_FROM",
+                state: "CANDIDATE",
+                from: {
+                  commitSha: oldCommit,
+                  path: "src/legacy-entry.ts",
+                },
+                to: {
+                  commitSha: fixture.commit,
+                  path: "src/entry.ts",
+                },
+              },
+            ],
+          },
         },
       });
 

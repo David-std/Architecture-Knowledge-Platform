@@ -252,6 +252,7 @@ export class DeterministicProjectAdapter implements ProjectAdapter {
   }
 }
 
+export * from "./code-reconciliation.js";
 export * from "./code-graph-projection.js";
 export * from "./code-graph-lifecycle.js";
 export * from "./code-query.js";
