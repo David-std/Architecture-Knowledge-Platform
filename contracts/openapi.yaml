@@ -674,7 +674,35 @@ paths:
                 fencingToken: { type: integer, minimum: 1 }
                 leaseSeconds:
                   { type: integer, minimum: 15, maximum: 900, default: 120 }
-                note: { type: string, maxLength: 2048 }
+                summary: { type: string, minLength: 1, maxLength: 4096 }
+                completed:
+                  type: array
+                  maxItems: 50
+                  items: { type: string, minLength: 1, maxLength: 2000 }
+                remaining:
+                  type: array
+                  maxItems: 50
+                  items: { type: string, minLength: 1, maxLength: 2000 }
+                blockers:
+                  type: array
+                  maxItems: 50
+                  items: { type: string, minLength: 1, maxLength: 2000 }
+                changedResourceRefs:
+                  type: array
+                  maxItems: 100
+                  items: { type: string, minLength: 1, maxLength: 1000 }
+                evidenceRefs:
+                  type: array
+                  maxItems: 100
+                  items: { type: string, minLength: 1, maxLength: 1000 }
+                questions:
+                  type: array
+                  maxItems: 50
+                  items: { type: string, minLength: 1, maxLength: 2000 }
+                note:
+                  type: string
+                  maxLength: 2048
+                  description: Legacy compatibility note; prefer structured handoff fields.
       responses:
         "200": { $ref: "#/components/responses/ObjectResponse" }
         "400": { $ref: "#/components/responses/BadRequest" }
