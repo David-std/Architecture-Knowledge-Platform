@@ -26,3 +26,26 @@ export function projectCodeGraphIdentity(
     authorizationPathPrefix: `projects/${normalizedSlug}`,
   };
 }
+
+export interface ParsedProjectCodeGraphRepository
+  extends ProjectCodeGraphIdentity {
+  vaultId: string;
+  slug: string;
+}
+
+export function parseProjectCodeGraphRepository(
+  repository: string,
+): ParsedProjectCodeGraphRepository | null {
+  const match =
+    /^akp-project:([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}):([a-z0-9][a-z0-9-]{0,79})$/i.exec(
+      repository.trim(),
+    );
+  if (!match) return null;
+  const vaultId = match[1]!.toLowerCase();
+  const slug = match[2]!.toLowerCase();
+  return {
+    vaultId,
+    slug,
+    ...projectCodeGraphIdentity(vaultId, slug),
+  };
+}

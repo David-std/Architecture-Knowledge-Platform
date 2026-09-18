@@ -7,6 +7,7 @@ import {
 } from "@akp/postgres";
 import {
   CodeGraphQueryService,
+  parseProjectCodeGraphRepository,
   type CodeImpactOptions,
   type CodePathOptions,
   type CodeQueryContext,
@@ -108,6 +109,7 @@ function normalizedCodeSelector(
 function codeQueryStatus(code: string): number {
   if (
     code === "CODE_SYMBOL_NOT_FOUND" ||
+    code === "CODE_PROJECT_NOT_FOUND_OR_UNAUTHORIZED" ||
     code === "GRAPH_NODE_NOT_FOUND_OR_UNAUTHORIZED" ||
     code === "VAULT_SCOPE_NOT_FOUND"
   ) {
@@ -116,7 +118,9 @@ function codeQueryStatus(code: string): number {
   if (
     code === "CODE_SYMBOL_AMBIGUOUS" ||
     code === "GRAPH_PROJECTION_REVISION_CONFLICT" ||
-    code === "GRAPH_PROJECTION_BASE_REVISION_CHANGED"
+    code === "GRAPH_PROJECTION_BASE_REVISION_CHANGED" ||
+    code === "CODE_GRAPH_NOT_READY" ||
+    code === "CODE_GRAPH_SOURCE_REVISION_STALE"
   ) {
     return 409;
   }
@@ -206,13 +210,108 @@ async function authorizedCodeContext(
   };
 }
 
+async function projectFencedCommit(
+  db: Postgres,
+  graph: PostgresFederatedGraphStore,
+  context: CodeQueryContext,
+  repository: string,
+  requestedCommit?: string,
+): Promise<string | undefined> {
+  const parsed = parseProjectCodeGraphRepository(repository);
+  if (!parsed) return requestedCommit;
+  if (
+    !context.authorization.vaults.some(
+      (scope) => scope.vaultId === parsed.vaultId,
+    )
+  ) {
+    throw new Error("CODE_PROJECT_NOT_FOUND_OR_UNAUTHORIZED");
+  }
+
+  const result = await db.pool.query<{ metadata: Record<string, unknown> }>(
+    `select metadata
+       from projects
+      where space_id=$1 and vault_id=$2 and slug=$3
+      limit 1`,
+    [
+      context.authorization.spaceId,
+      parsed.vaultId,
+      parsed.slug,
+    ],
+  );
+  const metadata = result.rows[0]?.metadata;
+  const projectCommit =
+    metadata && typeof metadata.commit === "string" && CODE_COMMIT.test(metadata.commit)
+      ? metadata.commit.toLowerCase()
+      : null;
+  if (!projectCommit) {
+    throw new Error("CODE_GRAPH_NOT_READY");
+  }
+
+  const state = await graph.revisionState(
+    "CODE",
+    context.authorization.spaceId,
+    parsed.scopeId,
+  );
+  const active = state.active;
+  if (!active) {
+    throw new Error("CODE_GRAPH_NOT_READY");
+  }
+
+  const requested = requestedCommit?.toLowerCase();
+  const currentFresh =
+    active.sourceRevision.toLowerCase() === projectCommit &&
+    active.freshness === "FRESH";
+  if ((context.freshnessPolicy ?? "FRESH_ONLY") === "FRESH_ONLY") {
+    if (
+      !currentFresh ||
+      (requested !== undefined && requested !== projectCommit)
+    ) {
+      throw new Error("CODE_GRAPH_SOURCE_REVISION_STALE");
+    }
+    return projectCommit;
+  }
+
+  if (currentFresh) {
+    if (requested !== undefined && requested !== projectCommit) {
+      throw new Error("CODE_GRAPH_SOURCE_REVISION_STALE");
+    }
+    return projectCommit;
+  }
+  if (active.freshness !== "STALE") {
+    throw new Error("CODE_GRAPH_SOURCE_REVISION_STALE");
+  }
+  const activeCommit = active.sourceRevision.toLowerCase();
+  if (requested !== undefined && requested !== activeCommit) {
+    throw new Error("CODE_GRAPH_SOURCE_REVISION_STALE");
+  }
+  return activeCommit;
+}
+
+async function projectFencedSelector(
+  db: Postgres,
+  graph: PostgresFederatedGraphStore,
+  context: CodeQueryContext,
+  selector: CodeSymbolSelector,
+): Promise<CodeSymbolSelector> {
+  const commitSha = await projectFencedCommit(
+    db,
+    graph,
+    context,
+    selector.repository,
+    selector.commitSha,
+  );
+  return {
+    ...selector,
+    ...(commitSha ? { commitSha } : {}),
+  };
+}
+
 export function registerCodeGraphRoutes(
   app: FastifyInstance,
   db: Postgres,
 ): void {
-  const service = new CodeGraphQueryService(
-    new PostgresFederatedGraphStore(db),
-  );
+  const graph = new PostgresFederatedGraphStore(db);
+  const service = new CodeGraphQueryService(graph);
   const guards = [
     requirePermission("knowledge:read"),
     requirePrincipalAction("knowledge:read"),
@@ -234,7 +333,12 @@ export function registerCodeGraphRoutes(
         return {
           symbols: await service.symbol(
             context,
-            normalizedCodeSelector(parsed.data.selector),
+            await projectFencedSelector(
+              db,
+              graph,
+              context,
+              normalizedCodeSelector(parsed.data.selector),
+            ),
           ),
         };
       } catch (error) {
@@ -259,7 +363,12 @@ export function registerCodeGraphRoutes(
         return {
           paths: await service.callers(
             context,
-            normalizedCodeSelector(parsed.data.selector),
+            await projectFencedSelector(
+              db,
+              graph,
+              context,
+              normalizedCodeSelector(parsed.data.selector),
+            ),
           ),
         };
       } catch (error) {
@@ -284,7 +393,12 @@ export function registerCodeGraphRoutes(
         return {
           paths: await service.callees(
             context,
-            normalizedCodeSelector(parsed.data.selector),
+            await projectFencedSelector(
+              db,
+              graph,
+              context,
+              normalizedCodeSelector(parsed.data.selector),
+            ),
           ),
         };
       } catch (error) {
@@ -306,8 +420,18 @@ export function registerCodeGraphRoutes(
       return {
         paths: await service.path(
           context,
-          normalizedCodeSelector(parsed.data.source),
-          normalizedCodeSelector(parsed.data.target),
+          await projectFencedSelector(
+            db,
+            graph,
+            context,
+            normalizedCodeSelector(parsed.data.source),
+          ),
+          await projectFencedSelector(
+            db,
+            graph,
+            context,
+            normalizedCodeSelector(parsed.data.target),
+          ),
           (parsed.data.options ?? {}) as CodePathOptions,
         ),
       };
@@ -332,7 +456,12 @@ export function registerCodeGraphRoutes(
         return {
           impact: await service.impact(
             context,
-            normalizedCodeSelector(parsed.data.selector),
+            await projectFencedSelector(
+              db,
+              graph,
+              context,
+              normalizedCodeSelector(parsed.data.selector),
+            ),
             (parsed.data.options ?? {}) as CodeImpactOptions,
           ),
         };
@@ -355,9 +484,16 @@ export function registerCodeGraphRoutes(
       }
       try {
         const context = await authorizedCodeContext(db, request, parsed.data);
+        const commitSha = await projectFencedCommit(
+          db,
+          graph,
+          context,
+          parsed.data.repository,
+          parsed.data.commitSha,
+        );
         return await service.changeImpact(context, {
           repository: parsed.data.repository,
-          commitSha: parsed.data.commitSha,
+          commitSha: commitSha ?? parsed.data.commitSha,
           changedPaths: parsed.data.changedPaths,
           ...(parsed.data.options
             ? { options: parsed.data.options as CodeImpactOptions }
@@ -382,7 +518,12 @@ export function registerCodeGraphRoutes(
       return {
         paths: await service.tests(
           context,
-          normalizedCodeSelector(parsed.data.selector),
+          await projectFencedSelector(
+            db,
+            graph,
+            context,
+            normalizedCodeSelector(parsed.data.selector),
+          ),
         ),
       };
     } catch (error) {
@@ -406,8 +547,18 @@ export function registerCodeGraphRoutes(
         return {
           paths: await service.explain(
             context,
-            normalizedCodeSelector(parsed.data.source),
-            normalizedCodeSelector(parsed.data.target),
+            await projectFencedSelector(
+              db,
+              graph,
+              context,
+              normalizedCodeSelector(parsed.data.source),
+            ),
+            await projectFencedSelector(
+              db,
+              graph,
+              context,
+              normalizedCodeSelector(parsed.data.target),
+            ),
             (parsed.data.options ?? {}) as CodePathOptions,
           ),
         };

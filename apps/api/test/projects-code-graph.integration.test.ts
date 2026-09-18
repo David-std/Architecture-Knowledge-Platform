@@ -5,8 +5,16 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
-import { Postgres, grantVaultMembership } from "@akp/postgres";
-import { projectCodeGraphIdentity } from "@akp/project-adapter";
+import {
+  Postgres,
+  PostgresFederatedGraphStore,
+  grantVaultMembership,
+} from "@akp/postgres";
+import type { CodeGraphArtifact } from "@akp/contracts";
+import {
+  planCodeGraphProjection,
+  projectCodeGraphIdentity,
+} from "@akp/project-adapter";
 
 const spaceId = "00000000-0000-0000-0000-000000000003";
 const vaultId = randomUUID();
@@ -22,6 +30,7 @@ let app: FastifyInstance;
 let db: Postgres;
 let root = "";
 let commit = "";
+let projectId = "";
 
 beforeAll(async () => {
   if (!process.env.DATABASE_URL) {
@@ -105,6 +114,23 @@ afterAll(async () => {
   delete process.env.AKP_PROJECT_ROOTS;
   if (db) {
     await db.pool.query(
+      "delete from federated_graph_projection_revisions where vault_id=$1",
+      [vaultId],
+    );
+    await db.pool.query(
+      `delete from federated_graph_edges
+        where from_node_id in (
+          select id from federated_graph_nodes where vault_id=$1
+        )
+           or to_node_id in (
+             select id from federated_graph_nodes where vault_id=$1
+           )`,
+      [vaultId],
+    );
+    await db.pool.query("delete from federated_graph_nodes where vault_id=$1", [
+      vaultId,
+    ]);
+    await db.pool.query(
       "delete from knowledge_documents where vault_id=$1 and path=$2",
       [vaultId, `projects/${slug}/snapshot.md`],
     );
@@ -152,6 +178,7 @@ describe("project scan Code Graph request", () => {
       id: string;
       codeGraph: Record<string, unknown>;
     };
+    projectId = firstBody.id;
     const identity = projectCodeGraphIdentity(vaultId, slug);
     expect(firstBody.codeGraph).toMatchObject({
       ...identity,
@@ -203,6 +230,140 @@ describe("project scan Code Graph request", () => {
         sourceRevision: commit,
         status: "REQUESTED",
       },
+    });
+  });
+
+  it("fences project queries to the current immutable project revision", async () => {
+    expect(projectId).not.toBe("");
+    const identity = projectCodeGraphIdentity(vaultId, slug);
+    const graph = new PostgresFederatedGraphStore(db);
+    const artifact = (commitSha: string): CodeGraphArtifact => ({
+      schemaVersion: 1,
+      repository: identity.repository,
+      commitSha,
+      provider: "query-fence-fixture",
+      providerVersion: "1",
+      configurationHash: "9".repeat(64),
+      generatedAt: "2026-09-18T00:00:00.000Z",
+      languages: ["TypeScript"],
+      nodes: [
+        {
+          id: "function:projectEntry",
+          kind: "FUNCTION",
+          name: "projectEntry",
+          qualifiedName: "projectEntry",
+          path: "index.ts",
+          lineStart: 1,
+          lineEnd: 1,
+        },
+      ],
+      edges: [],
+      warnings: [],
+    });
+
+    const oldCommit = "e".repeat(40);
+    await graph.build(
+      planCodeGraphProjection({
+        artifact: artifact(oldCommit),
+        spaceId,
+        vaultId,
+        scopeId: identity.scopeId,
+        authorizationPathPrefix: identity.authorizationPathPrefix,
+      }).projection,
+    );
+
+    const staleAsFresh = await app.inject({
+      method: "POST",
+      url: "/v1/code/symbol",
+      headers: { authorization: headers.authorization },
+      payload: {
+        spaceId,
+        vaultId,
+        freshnessPolicy: "FRESH_ONLY",
+        selector: {
+          repository: identity.repository,
+          qualifiedName: "projectEntry",
+        },
+      },
+    });
+    expect(staleAsFresh.statusCode, staleAsFresh.body).toBe(409);
+    expect(staleAsFresh.json()).toEqual({
+      code: "CODE_GRAPH_SOURCE_REVISION_STALE",
+    });
+
+    await graph.markStale(
+      "CODE",
+      spaceId,
+      identity.scopeId,
+      "project revision advanced",
+    );
+    const allowedStale = await app.inject({
+      method: "POST",
+      url: "/v1/code/symbol",
+      headers: { authorization: headers.authorization },
+      payload: {
+        spaceId,
+        vaultId,
+        freshnessPolicy: "ALLOW_STALE",
+        selector: {
+          repository: identity.repository,
+          qualifiedName: "projectEntry",
+        },
+      },
+    });
+    expect(allowedStale.statusCode, allowedStale.body).toBe(200);
+    expect(allowedStale.json()).toMatchObject({
+      symbols: [
+        {
+          payload: {
+            repository: identity.repository,
+            commitSha: oldCommit,
+            qualifiedName: "projectEntry",
+          },
+          projection: {
+            freshness: "STALE",
+          },
+        },
+      ],
+    });
+
+    await graph.build(
+      planCodeGraphProjection({
+        artifact: artifact(commit),
+        spaceId,
+        vaultId,
+        scopeId: identity.scopeId,
+        authorizationPathPrefix: identity.authorizationPathPrefix,
+      }).projection,
+    );
+    const current = await app.inject({
+      method: "POST",
+      url: "/v1/code/symbol",
+      headers: { authorization: headers.authorization },
+      payload: {
+        spaceId,
+        vaultId,
+        freshnessPolicy: "FRESH_ONLY",
+        selector: {
+          repository: identity.repository,
+          qualifiedName: "projectEntry",
+        },
+      },
+    });
+    expect(current.statusCode, current.body).toBe(200);
+    expect(current.json()).toMatchObject({
+      symbols: [
+        {
+          payload: {
+            repository: identity.repository,
+            commitSha: commit,
+            qualifiedName: "projectEntry",
+          },
+          projection: {
+            freshness: "FRESH",
+          },
+        },
+      ],
     });
   });
 });
