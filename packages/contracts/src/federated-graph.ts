@@ -214,6 +214,9 @@ export interface GraphProjectionRevisionState {
   spaceId: string;
   vaultId: string | null;
   scopeId: string;
+  requested: GraphProjectionRevision | null;
+  built: GraphProjectionRevision | null;
+  active: GraphProjectionRevision | null;
   requestedRevision: string | null;
   builtRevision: string | null;
   activeRevision: string | null;
