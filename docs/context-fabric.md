@@ -50,6 +50,8 @@ A workspace session pins a `ContextRevisionSet` at creation. Bootstrap resolves 
 
 The session pin contains shared truth/profile/index authorities and is safe to hand from A to B. Bootstrap additionally returns a principal-aware effective `contextRevisionSet.authorization`: it combines the effective actor policy (scoped memberships plus principal actions/policy revision, independent of credential identity) with the vault-grant decision from `AuthorizationPort`. `sharedRevisionSetHash` remains the collaborative session pin; `effectiveRevisionSetHash` binds that pin to the current principal authorization revision. A real authorization-policy change therefore produces a different effective revision without making a simple credential rotation look like truth drift.
 
+Bootstrap also returns the durable work snapshot, open claims, handoffs, findings, related `DECISION_CANDIDATE` events and an `agentInstructionDigest` bound to the pinned revision, effective principal actions and active KnowledgeProfile. Context gaps, conflicts and continuation handles remain inside the returned ContextPacket rather than being copied into a second truth structure.
+
 P2 deliberately keeps the built-in authorization adapter as the deployed implementation behind `AuthorizationPort`. An OpenFGA-compatible adapter is deferred rather than silently assumed: the current product has no external ReBAC control plane dependency, while the port already exposes the fail-closed scope/filter semantics and revision fingerprint needed by retrieval. A later enterprise deployment may add OpenFGA behind the same boundary without changing retrieval ordering or the pinned authorization-revision contract.
 
 Workspace findings, artifacts, notes, blockers, claims, handoffs, external references and offline drafts are operational state. They are not approved knowledge.
@@ -84,7 +86,7 @@ An external reference never becomes a source, evidence, claim, rule, or canonica
 
 ## Offline snapshots and drafts
 
-`POST /v1/sessions/:id/offline-snapshot` captures an authorized compact bootstrap packet together with its pinned revision hash, an integrity hash and `ageSeconds` derived from the pinned shared `ContextRevisionSet` timestamp rather than from the instant the HTTP response is created. A client must retain the capture time and revalidate on reconnect. When that pin later becomes stale, the server reports the age of the same pinned shared revision instead of resetting freshness to zero.
+`POST /v1/sessions/:id/offline-snapshot` captures an authorized compact bootstrap packet together with its pinned revision hash, an integrity hash and `ageSeconds` derived from the pinned shared `ContextRevisionSet` timestamp rather than from the instant the HTTP response is created. Both current and stale responses carry `offline: true`; the stale path returns no context payload. A client must retain the capture time and revalidate on reconnect. When that pin later becomes stale, the server reports the age of the same pinned shared revision instead of resetting freshness to zero.
 
 Offline coordination changes are queued with a client-generated idempotency key and the exact `baseRevisionSetHash`. On reconnect:
 
