@@ -1,3 +1,4 @@
+export * from "./code-graph.js";
 export * from "./connector-capabilities.js";
 import { z } from "zod";
 
