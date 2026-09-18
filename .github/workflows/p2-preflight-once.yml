@@ -1,0 +1,65 @@
+name: p2-preflight-once
+
+on:
+  push:
+    branches:
+      - feat/v0.4-enterprise-context-workspace
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    env:
+      DATABASE_URL: postgres://akp:akp@localhost:55432/akp
+      AKP_API_TOKEN: akp-ci-integration-token-not-for-production
+      AKP_API_TOKEN_SCOPES: >-
+        {"spaces":[{"spaceId":"00000000-0000-0000-0000-000000000003","pathPrefix":null,"permissions":["knowledge:read","source:read","source:write","knowledge:propose","knowledge:review","eval:run","admin"]}]}
+      AKP_API_URL: http://127.0.0.1:8080
+      PORT: 8080
+      AKP_INGEST_ROOTS: ${{ github.workspace }}/test/fixtures
+      AKP_PROJECT_ROOTS: ${{ github.workspace }}
+      AKP_MANAGED_REPO: /tmp/akp-managed-knowledge
+      AKP_EXTRACTOR_TOKEN: akp-ci-extractor-token-not-for-production
+      AKP_RAW_SECRET_KEY: akp-ci-minio-secret-not-for-production
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/v0.4-enterprise-context-workspace
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - run: pnpm exec prettier --check .
+      - run: docker compose config --quiet
+      - run: docker compose up -d --wait postgres minio extractor
+      - run: |
+          git init -b main "$AKP_MANAGED_REPO"
+          git -C "$AKP_MANAGED_REPO" config user.name "AKP P2 Preflight"
+          git -C "$AKP_MANAGED_REPO" config user.email "akp-p2-preflight@localhost"
+          git -C "$AKP_MANAGED_REPO" commit --allow-empty -m "chore: initialize managed knowledge for P2 preflight"
+      - run: pnpm db:migrate
+      - run: pnpm auth:provision
+      - run: pnpm check
+      - run: pnpm contracts:validate
+      - run: pnpm docs:validate
+      - run: pnpm hygiene:validate
+      - run: pnpm build
+      - run: pnpm security:secrets
+      - name: Run focused P2 API integration proof
+        run: |
+          pnpm --filter @akp/api exec vitest run \
+            --config vitest.integration.config.ts \
+            test/bootstrap-context.integration.test.ts \
+            test/context-fabric.integration.test.ts \
+            test/workspace-coordination.integration.test.ts \
+            test/governed-product-flow.integration.test.ts
+      - name: Stop disposable services
+        if: always()
+        run: docker compose down -v --remove-orphans
