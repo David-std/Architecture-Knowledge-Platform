@@ -1,8 +1,4 @@
-import type {
-  FastifyInstance,
-  FastifyReply,
-  FastifyRequest,
-} from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
   PostgresAuthorizationPort,
@@ -198,29 +194,35 @@ export function registerCodeGraphRoutes(
   app: FastifyInstance,
   db: Postgres,
 ): void {
-  const service = new CodeGraphQueryService(new PostgresFederatedGraphStore(db));
+  const service = new CodeGraphQueryService(
+    new PostgresFederatedGraphStore(db),
+  );
   const guards = [
     requirePermission("knowledge:read"),
     requirePrincipalAction("knowledge:read"),
   ];
 
-  app.post("/v1/code/symbol", { preHandler: guards }, async (request, reply) => {
-    const parsed = ScopedSelector.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        code: "INVALID_CODE_SYMBOL_QUERY",
-        issues: parsed.error.issues,
-      });
-    }
-    try {
-      const context = await authorizedCodeContext(db, request, parsed.data);
-      return {
-        symbols: await service.symbol(context, parsed.data.selector),
-      };
-    } catch (error) {
-      return sendCodeQueryError(reply, error);
-    }
-  });
+  app.post(
+    "/v1/code/symbol",
+    { preHandler: guards },
+    async (request, reply) => {
+      const parsed = ScopedSelector.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          code: "INVALID_CODE_SYMBOL_QUERY",
+          issues: parsed.error.issues,
+        });
+      }
+      try {
+        const context = await authorizedCodeContext(db, request, parsed.data);
+        return {
+          symbols: await service.symbol(context, parsed.data.selector),
+        };
+      } catch (error) {
+        return sendCodeQueryError(reply, error);
+      }
+    },
+  );
 
   app.post(
     "/v1/code/callers",
@@ -289,27 +291,31 @@ export function registerCodeGraphRoutes(
     }
   });
 
-  app.post("/v1/code/impact", { preHandler: guards }, async (request, reply) => {
-    const parsed = ScopedImpact.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        code: "INVALID_CODE_IMPACT_QUERY",
-        issues: parsed.error.issues,
-      });
-    }
-    try {
-      const context = await authorizedCodeContext(db, request, parsed.data);
-      return {
-        impact: await service.impact(
-          context,
-          parsed.data.selector,
-          (parsed.data.options ?? {}) as CodeImpactOptions,
-        ),
-      };
-    } catch (error) {
-      return sendCodeQueryError(reply, error);
-    }
-  });
+  app.post(
+    "/v1/code/impact",
+    { preHandler: guards },
+    async (request, reply) => {
+      const parsed = ScopedImpact.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          code: "INVALID_CODE_IMPACT_QUERY",
+          issues: parsed.error.issues,
+        });
+      }
+      try {
+        const context = await authorizedCodeContext(db, request, parsed.data);
+        return {
+          impact: await service.impact(
+            context,
+            parsed.data.selector,
+            (parsed.data.options ?? {}) as CodeImpactOptions,
+          ),
+        };
+      } catch (error) {
+        return sendCodeQueryError(reply, error);
+      }
+    },
+  );
 
   app.post(
     "/v1/code/change-impact",

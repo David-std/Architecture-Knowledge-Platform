@@ -214,7 +214,9 @@ beforeAll(async () => {
 afterAll(async () => {
   if (app) await app.close();
   if (db) {
-    await db.pool.query("delete from event_outbox where vault_id=$1", [vaultId]);
+    await db.pool.query("delete from event_outbox where vault_id=$1", [
+      vaultId,
+    ]);
     await db.pool.query(
       "delete from federated_graph_projection_revisions where vault_id=$1",
       [vaultId],
@@ -222,10 +224,9 @@ afterAll(async () => {
     await db.pool.query("delete from federated_graph_edges where space_id=$1", [
       spaceId,
     ]);
-    await db.pool.query(
-      "delete from federated_graph_nodes where vault_id=$1",
-      [vaultId],
-    );
+    await db.pool.query("delete from federated_graph_nodes where vault_id=$1", [
+      vaultId,
+    ]);
     await db.pool.query(
       "delete from api_tokens where token_hash=any($1::text[])",
       [[tokenHash, narrowTokenHash]],
@@ -386,7 +387,8 @@ describe("code graph query API", () => {
     });
     expect(tests.statusCode, tests.body).toBe(200);
     expect(
-      (tests.json() as { paths: Array<{ target: { payload: unknown } }> }).paths,
+      (tests.json() as { paths: Array<{ target: { payload: unknown } }> })
+        .paths,
     ).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
