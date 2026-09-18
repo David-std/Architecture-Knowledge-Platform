@@ -1392,7 +1392,9 @@ describe("P2 governed product flow", () => {
         ],
       },
     });
-    expect(replacementPromotion.statusCode, replacementPromotion.body).toBe(201);
+    expect(replacementPromotion.statusCode, replacementPromotion.body).toBe(
+      201,
+    );
     const replacementReviewId = (
       replacementPromotion.json() as { reviewId: string }
     ).reviewId;
