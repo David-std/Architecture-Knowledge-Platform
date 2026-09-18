@@ -5,29 +5,66 @@
     "moduleResolution": "NodeNext",
     "baseUrl": ".",
     "paths": {
-      "@akp/application": ["packages/application/src/index.ts"],
-      "@akp/audit-export": ["packages/audit-export/src/index.ts"],
-      "@akp/compiler": ["packages/compiler/src/index.ts"],
-      "@akp/contracts": ["packages/contracts/src/index.ts"],
+      "@akp/application": [
+        "packages/application/src/index.ts"
+      ],
+      "@akp/audit-export": [
+        "packages/audit-export/src/index.ts"
+      ],
+      "@akp/compiler": [
+        "packages/compiler/src/index.ts"
+      ],
+      "@akp/contracts": [
+        "packages/contracts/src/index.ts"
+      ],
       "@akp/contracts/knowledge-profile": [
         "packages/contracts/src/knowledge-profile.ts"
       ],
       "@akp/contracts/knowledge-profile-compatibility": [
         "packages/contracts/src/knowledge-profile-compatibility.ts"
       ],
-      "@akp/domain": ["packages/domain/src/index.ts"],
-      "@akp/evaluation": ["packages/evaluation/src/index.ts"],
-      "@akp/git-store": ["packages/git-store/src/index.ts"],
-      "@akp/graph": ["packages/graph/src/index.ts"],
-      "@akp/indexing": ["packages/indexing/src/index.ts"],
-      "@akp/object-store": ["packages/object-store/src/index.ts"],
-      "@akp/observability": ["packages/observability/src/index.ts"],
-      "@akp/policy": ["packages/policy/src/index.ts"],
-      "@akp/postgres": ["packages/postgres/src/index.ts"],
-      "@akp/project-adapter": ["packages/project-adapter/src/index.ts"],
-      "@akp/retrieval": ["packages/retrieval/src/index.ts"],
-      "@akp/validation": ["packages/validation/src/index.ts"],
-      "@akp/vault-importer": ["packages/vault-importer/src/index.ts"]
+      "@akp/domain": [
+        "packages/domain/src/index.ts"
+      ],
+      "@akp/evaluation": [
+        "packages/evaluation/src/index.ts"
+      ],
+      "@akp/git-store": [
+        "packages/git-store/src/index.ts"
+      ],
+      "@akp/graph": [
+        "packages/graph/src/index.ts"
+      ],
+      "@akp/indexing": [
+        "packages/indexing/src/index.ts"
+      ],
+      "@akp/object-store": [
+        "packages/object-store/src/index.ts"
+      ],
+      "@akp/observability": [
+        "packages/observability/src/index.ts"
+      ],
+      "@akp/policy": [
+        "packages/policy/src/index.ts"
+      ],
+      "@akp/postgres": [
+        "packages/postgres/src/index.ts"
+      ],
+      "@akp/project-adapter": [
+        "packages/project-adapter/src/index.ts"
+      ],
+      "@akp/retrieval": [
+        "packages/retrieval/src/index.ts"
+      ],
+      "@akp/validation": [
+        "packages/validation/src/index.ts"
+      ],
+      "@akp/vault-importer": [
+        "packages/vault-importer/src/index.ts"
+      ],
+      "@akp/contracts/connector-capabilities": [
+        "packages/contracts/src/connector-capabilities.ts"
+      ]
     },
     "strict": true,
     "noUncheckedIndexedAccess": true,
