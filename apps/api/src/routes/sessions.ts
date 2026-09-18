@@ -21,6 +21,7 @@ import {
   handoffWorkspaceWork,
   heartbeatWorkspaceWork,
   releaseWorkspaceWork,
+  updateWorkspaceWorkContext,
   getActiveKnowledgeProfileRevision,
   assertWorkspaceContextRevisionCurrent,
   isWorkspaceWorkKey,
@@ -47,6 +48,13 @@ import {
 
 const PRINCIPAL_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const WORK_CONTEXT_STATUSES = new Set([
+  "OPEN",
+  "BLOCKED",
+  "COMPLETED",
+  "ABANDONED",
+]);
 
 const USER_EVENT_TYPES = new Set([
   "FINDING",
@@ -898,6 +906,83 @@ export function registerSessionRoutes(
           ? { decisionCandidateId: decisionCandidate.id }
           : {}),
       });
+    },
+  );
+
+  app.post<{
+    Params: { id: string };
+    Body: {
+      status?: string;
+      outcome?: string | null;
+      followUps?: string[];
+      touchedResources?: string[];
+    };
+  }>(
+    "/v1/sessions/:id/work-context",
+    {
+      preHandler: [
+        requirePermission("knowledge:read"),
+        requirePrincipalAction("workspace:event:append"),
+      ],
+    },
+    async (request, reply) => {
+      const session = await authorizedSession(
+        db,
+        request,
+        reply,
+        request.params.id,
+      );
+      if (!session) return;
+      const actor = actorOf(request);
+      if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
+      const status = request.body?.status?.trim().toUpperCase();
+      const outcome =
+        request.body?.outcome === null || request.body?.outcome === undefined
+          ? null
+          : boundedHandoffText(request.body.outcome, 12_000);
+      const followUps = boundedHandoffList(
+        request.body?.followUps,
+        50,
+        2_000,
+      );
+      const touchedResources = boundedHandoffList(
+        request.body?.touchedResources,
+        100,
+        1_000,
+      );
+      if (
+        !status ||
+        !WORK_CONTEXT_STATUSES.has(status) ||
+        (request.body?.outcome !== null &&
+          request.body?.outcome !== undefined &&
+          !outcome) ||
+        !followUps ||
+        !touchedResources
+      ) {
+        return reply.code(400).send({ code: "INVALID_WORK_CONTEXT_UPDATE" });
+      }
+      const updated = await updateWorkspaceWorkContext(db, {
+        sessionId: session.id,
+        actorId: actor.id,
+        actorPrincipalId: actor.principalId,
+        status: status as "OPEN" | "BLOCKED" | "COMPLETED" | "ABANDONED",
+        outcome,
+        followUps,
+        touchedResources,
+      });
+      await audit(
+        db,
+        request,
+        "workspace.context.update",
+        "agent_session",
+        session.id,
+        {
+          vaultId: session.vaultId,
+          workStatus: updated.workStatus,
+        },
+        session.spaceId,
+      );
+      return updated;
     },
   );
 
