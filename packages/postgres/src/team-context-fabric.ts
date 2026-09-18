@@ -1,5 +1,7 @@
-import { ConnectorCapabilities } from "@akp/contracts/connector-capabilities";
-import type { ConnectorCapabilities as ConnectorCapabilitiesContract } from "@akp/contracts/connector-capabilities";
+import {
+  ConnectorCapabilities,
+  type ConnectorCapabilities as ConnectorCapabilitiesContract,
+} from "@akp/contracts";
 import type { Postgres, PostgresPoolClient } from "./index.js";
 import { workspaceContextRevisionState } from "./context-revision-set.js";
 import { appendOutboxEvent } from "./outbox.js";
