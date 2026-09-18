@@ -671,6 +671,12 @@ paths:
               properties:
                 workKey: { type: string, minLength: 1, maxLength: 200 }
                 toUserId: { type: string, format: uuid }
+                toPrincipalId:
+                  type: string
+                  format: uuid
+                  description: >-
+                    Optional exact target principal. When omitted, the target
+                    participant's HUMAN principal owns the transferred claim.
                 fencingToken: { type: integer, minimum: 1 }
                 leaseSeconds:
                   { type: integer, minimum: 15, maximum: 900, default: 120 }
@@ -769,11 +775,12 @@ paths:
       parameters:
         - { $ref: "#/components/parameters/UuidId" }
       description: >
-        OWNER-only human operation that creates a session- and vault-bound
-        AGENT_PROCESS principal. The raw bearer token is returned exactly once;
-        only its SHA-256 hash is persisted, so this operation is deliberately
-        not replayed through the idempotency journal and is not exposed as an
-        MCP tool.
+        HUMAN-participant operation that creates a session- and vault-bound
+        AGENT_PROCESS child of the authenticated human principal. A participant
+        cannot issue a child under another user or parent principal. The raw
+        bearer token is returned exactly once; only its SHA-256 hash is
+        persisted, so this operation is deliberately not replayed through the
+        idempotency journal and is not exposed as an MCP tool.
       requestBody:
         content:
           application/json:
