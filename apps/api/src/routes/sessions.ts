@@ -66,6 +66,33 @@ function boundedEventPayload(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
+function boundedHandoffText(value: unknown, maxBytes: number): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  if (
+    !normalized ||
+    Buffer.byteLength(normalized, "utf8") > maxBytes ||
+    /[\u0000-\u001f]/.test(normalized)
+  ) {
+    return null;
+  }
+  return normalized;
+}
+
+function boundedHandoffList(
+  value: unknown,
+  maxItems: number,
+  maxItemBytes: number,
+): string[] | null {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > maxItems) return null;
+  const normalized = value.map((entry) =>
+    boundedHandoffText(entry, maxItemBytes),
+  );
+  if (normalized.some((entry) => entry === null)) return null;
+  return [...new Set(normalized as string[])];
+}
+
 async function authorizedSession(
   db: Postgres,
   request: FastifyRequest,
@@ -987,6 +1014,13 @@ export function registerSessionRoutes(
       toUserId: string;
       fencingToken: number;
       leaseSeconds?: number;
+      summary?: string;
+      completed?: string[];
+      remaining?: string[];
+      blockers?: string[];
+      changedResourceRefs?: string[];
+      evidenceRefs?: string[];
+      questions?: string[];
       note?: string;
     };
   }>(
@@ -1024,6 +1058,58 @@ export function registerSessionRoutes(
       if (note && Buffer.byteLength(note, "utf8") > 2048) {
         return reply.code(413).send({ code: "HANDOFF_NOTE_TOO_LARGE" });
       }
+      const structuredRequested = [
+        request.body.summary,
+        request.body.completed,
+        request.body.remaining,
+        request.body.blockers,
+        request.body.changedResourceRefs,
+        request.body.evidenceRefs,
+        request.body.questions,
+      ].some((value) => value !== undefined);
+      const summary = structuredRequested
+        ? boundedHandoffText(request.body.summary, 4_096)
+        : null;
+      const completed = boundedHandoffList(request.body.completed, 50, 2_000);
+      const remaining = boundedHandoffList(request.body.remaining, 50, 2_000);
+      const blockers = boundedHandoffList(request.body.blockers, 50, 2_000);
+      const changedResourceRefs = boundedHandoffList(
+        request.body.changedResourceRefs,
+        100,
+        1_000,
+      );
+      const evidenceRefs = boundedHandoffList(
+        request.body.evidenceRefs,
+        100,
+        1_000,
+      );
+      const questions = boundedHandoffList(request.body.questions, 50, 2_000);
+      const handoff =
+        structuredRequested &&
+        summary &&
+        completed &&
+        remaining &&
+        blockers &&
+        changedResourceRefs &&
+        evidenceRefs &&
+        questions
+          ? {
+              summary,
+              completed,
+              remaining,
+              blockers,
+              changedResourceRefs,
+              evidenceRefs,
+              questions,
+            }
+          : null;
+      if (
+        structuredRequested &&
+        (!handoff ||
+          Buffer.byteLength(JSON.stringify(handoff), "utf8") > 16 * 1024)
+      ) {
+        return reply.code(400).send({ code: "INVALID_STRUCTURED_HANDOFF" });
+      }
       if (!(await userHasFullVaultRead(db, toUserId, session))) {
         return reply.code(422).send({ code: "PARTICIPANT_NOT_AUTHORIZED" });
       }
@@ -1034,6 +1120,8 @@ export function registerSessionRoutes(
         toUserId,
         fencingToken,
         leaseSeconds,
+        actorPrincipalId: actor.principalId,
+        ...(handoff ? { handoff } : {}),
         ...(note ? { note } : {}),
       });
       await audit(
