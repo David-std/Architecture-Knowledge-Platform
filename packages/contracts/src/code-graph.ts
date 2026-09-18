@@ -80,6 +80,7 @@ export const CodeGraphNode = z.object({
   kind: CodeGraphNodeKind,
   name: z.string().min(1).max(1024),
   qualifiedName: z.string().min(1).max(2048).optional(),
+  signature: z.string().min(1).max(4096).optional(),
   language: z.string().min(1).max(120).optional(),
   path: z.string().min(1).max(4096),
   lineStart: z.number().int().positive().optional(),
