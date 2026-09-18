@@ -522,10 +522,18 @@ describe("P2 governed product flow", () => {
         title: "Context delivery mode",
         problem:
           "Choose how the workspace should expose an approved context projection without allowing coordination state to become canonical knowledge.",
+        context:
+          "The team needs local-first context that can remain useful offline while preserving source authorization, provenance, and a single governed publication authority.",
         drivers: [
           "permission fidelity",
           "offline behavior",
           "revision correctness",
+        ],
+        qualityAttributes: [
+          "security",
+          "availability",
+          "consistency",
+          "auditability",
         ],
         affectedRefs: ["service:context-api", "work:connector-runtime"],
         evidenceRefs: ["fixture:connector-capabilities", "fixture:p2-flow"],
@@ -599,7 +607,11 @@ describe("P2 governed product flow", () => {
       method: "POST",
       url: `/v1/sessions/${sessionId}/decisions/${firstDecision.id}/selection`,
       headers: reviewerHeaders,
-      payload: { alternativeId: suggested.id },
+      payload: {
+        alternativeId: suggested.id,
+        consequences:
+          "If selected, the mirrored projection must carry explicit freshness and authorization guarantees.",
+      },
     });
     expect(prematureSelection.statusCode).toBe(409);
     expect(prematureSelection.json()).toMatchObject({
@@ -672,7 +684,11 @@ describe("P2 governed product flow", () => {
       method: "POST",
       url: `/v1/sessions/${sessionId}/decisions/${firstDecision.id}/selection`,
       headers: reviewerHeaders,
-      payload: { alternativeId: suggested.id },
+      payload: {
+        alternativeId: suggested.id,
+        consequences:
+          "A mirrored projection improves local availability but becomes unsafe if permission fidelity drifts.",
+      },
     });
     expect(blockedByObjection.statusCode).toBe(409);
     expect(blockedByObjection.json()).toMatchObject({
@@ -698,12 +714,30 @@ describe("P2 governed product flow", () => {
       method: "POST",
       url: `/v1/sessions/${sessionId}/decisions/${firstDecision.id}/selection`,
       headers: reviewerHeaders,
-      payload: { alternativeId: suggested.id },
+      payload: {
+        alternativeId: suggested.id,
+        consequences:
+          "The workspace gains bounded offline availability, while connector permission fidelity, freshness, and deletion propagation become explicit runtime obligations.",
+        followUpActions: [
+          "Run the two-agent governed flow after connector-policy changes.",
+          "Verify stale mirrored state is disclosed and denied when policy fidelity is lost.",
+        ],
+        effectiveFrom: "2026-09-17T00:00:00.000Z",
+        effectiveUntil: "2027-09-17T00:00:00.000Z",
+      },
     });
     expect(selected.statusCode).toBe(200);
     expect(selected.json()).toMatchObject({
       status: "READY_FOR_REVIEW",
       selectedAlternativeId: suggested.id,
+      consequences:
+        "The workspace gains bounded offline availability, while connector permission fidelity, freshness, and deletion propagation become explicit runtime obligations.",
+      followUpActions: [
+        "Run the two-agent governed flow after connector-policy changes.",
+        "Verify stale mirrored state is disclosed and denied when policy fidelity is lost.",
+      ],
+      effectiveFrom: "2026-09-17T00:00:00.000Z",
+      effectiveUntil: "2027-09-17T00:00:00.000Z",
     });
 
     const captured = await app.inject({
@@ -849,7 +883,10 @@ describe("P2 governed product flow", () => {
         title: "Context delivery mode v2",
         problem:
           "Supersede the original choice after operational evidence requires live revalidation for a subset of sources.",
+        context:
+          "Operational evidence shows that one provider cannot sustain the original mirrored freshness assumptions, so the replacement must narrow caching without weakening authorization.",
         drivers: ["freshness", "permission fidelity", "provider availability"],
+        qualityAttributes: ["security", "freshness", "resilience"],
         affectedRefs: ["service:context-api"],
         evidenceRefs: ["fixture:first-decision", "fixture:operational-change"],
         verificationPlan:
@@ -920,7 +957,15 @@ describe("P2 governed product flow", () => {
       method: "POST",
       url: `/v1/sessions/${secondSessionId}/decisions/${replacementBody.id}/selection`,
       headers: reviewerHeaders,
-      payload: { alternativeId: replacementAltAId },
+      payload: {
+        alternativeId: replacementAltAId,
+        consequences:
+          "The affected provider uses a bounded hybrid cache, trading some offline continuity for mandatory live revalidation at the declared freshness boundary.",
+        followUpActions: [
+          "Measure stale-window violations for the changed provider.",
+          "Re-run permission-fidelity checks after provider capability changes.",
+        ],
+      },
     });
     expect(replacementSelection.statusCode).toBe(200);
     expect(replacementSelection.json()).toMatchObject({
