@@ -36,11 +36,7 @@ type GraphDerivation = (typeof GRAPH_DERIVATIONS)[number];
 type GraphDirection = "outgoing" | "incoming" | "both";
 type GraphFreshnessPolicy = "FRESH_ONLY" | "ALLOW_STALE";
 type GraphProjectionLifecycle =
-  | "REQUESTED"
-  | "BUILT"
-  | "ACTIVE"
-  | "STALE"
-  | "FAILED";
+  "REQUESTED" | "BUILT" | "ACTIVE" | "STALE" | "FAILED";
 type GraphProjectionFreshness = "FRESH" | "STALE";
 
 interface GraphNodeIdentity {
@@ -275,9 +271,7 @@ function parseGraphNodeIdentity(value: GraphNodeIdentity): GraphNodeIdentity {
 function parseGraphProvenanceEnvelope(
   value: GraphProvenanceEnvelope,
 ): GraphProvenanceEnvelope {
-  if (
-    !(GRAPH_DERIVATIONS as readonly string[]).includes(value.derivation)
-  ) {
+  if (!(GRAPH_DERIVATIONS as readonly string[]).includes(value.derivation)) {
     throw graphError("GRAPH_PROVENANCE_DERIVATION_INVALID");
   }
   const boundedList = (
@@ -361,9 +355,7 @@ function parseGraphProvenanceEnvelope(
           ),
         }
       : {}),
-    ...(value.confidence === undefined
-      ? {}
-      : { confidence: value.confidence }),
+    ...(value.confidence === undefined ? {} : { confidence: value.confidence }),
     ...(validFrom ? { validFrom } : {}),
     ...(validTo ? { validTo } : {}),
     recordedAt: new Date(recordedAt).toISOString(),
@@ -577,9 +569,7 @@ function normalizeAuthorizationScope(
   return byVault;
 }
 
-function authorizationPath(
-  value: string | null | undefined,
-): string | null {
+function authorizationPath(value: string | null | undefined): string | null {
   const normalized = normalizeVaultPathPrefix(value);
   if (normalized === undefined) {
     throw graphError("GRAPH_AUTHORIZATION_PATH_INVALID");
@@ -787,7 +777,8 @@ function edgeProvenance(edge: ActiveEdgeRow) {
 }
 
 function relationAllowlist(values: readonly string[]): string[] {
-  if (values.length > 256) throw graphError("GRAPH_RELATION_ALLOWLIST_TOO_LARGE");
+  if (values.length > 256)
+    throw graphError("GRAPH_RELATION_ALLOWLIST_TOO_LARGE");
   return [
     ...new Set(
       values.map((value) => value.trim()).filter((value) => value.length > 0),
@@ -795,12 +786,16 @@ function relationAllowlist(values: readonly string[]): string[] {
   ].sort();
 }
 
-function domainAllowlist(values: readonly GraphDomain[] | undefined): GraphDomain[] {
+function domainAllowlist(
+  values: readonly GraphDomain[] | undefined,
+): GraphDomain[] {
   if (!values?.length) return [...GRAPH_DOMAINS];
   return [...new Set(values.map((value) => parseGraphDomain(value)))];
 }
 
-function compositeRevision(values: Array<{ scopeId: string; revision: string }>): string {
+function compositeRevision(
+  values: Array<{ scopeId: string; revision: string }>,
+): string {
   const sorted = values
     .map((value) => ({ scopeId: value.scopeId, revision: value.revision }))
     .sort(
@@ -822,7 +817,10 @@ function revisionSetForPath(
   seed: GraphNodeRef,
   steps: readonly GraphPathStep[],
 ): Partial<Record<GraphDomain, string>> {
-  const byDomain = new Map<GraphDomain, Array<{ scopeId: string; revision: string }>>();
+  const byDomain = new Map<
+    GraphDomain,
+    Array<{ scopeId: string; revision: string }>
+  >();
   const nodes = [seed, ...steps.map((step) => step.to)];
   for (const node of nodes) {
     const entries = byDomain.get(node.identity.graphDomain) ?? [];
@@ -856,7 +854,9 @@ export class PostgresFederatedGraphStore
 {
   constructor(private readonly db: Postgres) {}
 
-  async build(input: GraphProjectionArtifact): Promise<GraphProjectionRevision> {
+  async build(
+    input: GraphProjectionArtifact,
+  ): Promise<GraphProjectionRevision> {
     validateProjectionArtifact(input);
     const requested = await this.db.pool.query<ProjectionRow>(
       `insert into federated_graph_projection_revisions(
@@ -1247,9 +1247,9 @@ export class PostgresFederatedGraphStore
     const affected = await this.traverseLoaded(graph, input, seed, undefined);
     const revisions = new Map<GraphDomain, string[]>();
     for (const path of affected) {
-      for (const [domain, revision] of Object.entries(path.revisionSet) as Array<
-        [GraphDomain, string | undefined]
-      >) {
+      for (const [domain, revision] of Object.entries(
+        path.revisionSet,
+      ) as Array<[GraphDomain, string | undefined]>) {
         if (!revision) continue;
         const values = revisions.get(domain) ?? [];
         values.push(revision);
@@ -1290,9 +1290,7 @@ export class PostgresFederatedGraphStore
     const domains = domainAllowlist(input.domains);
     const prefixes = normalizeAuthorizationScope(input.authorization);
     const freshnessClause =
-      input.freshnessPolicy === "FRESH_ONLY"
-        ? "and pr.freshness='FRESH'"
-        : "";
+      input.freshnessPolicy === "FRESH_ONLY" ? "and pr.freshness='FRESH'" : "";
 
     const nodesResult = await this.db.pool.query<ActiveNodeRow>(
       `select distinct on (n.id)
@@ -1525,10 +1523,7 @@ export class PostgresFederatedGraphStore
             bestByTarget.set(to.id, result);
           }
         }
-        if (
-          (!target || target.id !== to.id) &&
-          steps.length < bounds.maxHops
-        ) {
+        if ((!target || target.id !== to.id) && steps.length < bounds.maxHops) {
           frontier.push({
             nodeId: to.id,
             visited: [...current.visited, to.id],
@@ -1542,7 +1537,9 @@ export class PostgresFederatedGraphStore
     }
 
     return [...bestByTarget.values()]
-      .sort((left, right) => pathSignature(left).localeCompare(pathSignature(right)))
+      .sort((left, right) =>
+        pathSignature(left).localeCompare(pathSignature(right)),
+      )
       .slice(0, bounds.maxCandidates);
   }
 }

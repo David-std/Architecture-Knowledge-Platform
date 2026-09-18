@@ -36,14 +36,10 @@ export const GraphProjectionLifecycle = z.enum([
   "STALE",
   "FAILED",
 ]);
-export type GraphProjectionLifecycle = z.infer<
-  typeof GraphProjectionLifecycle
->;
+export type GraphProjectionLifecycle = z.infer<typeof GraphProjectionLifecycle>;
 
 export const GraphProjectionFreshness = z.enum(["FRESH", "STALE"]);
-export type GraphProjectionFreshness = z.infer<
-  typeof GraphProjectionFreshness
->;
+export type GraphProjectionFreshness = z.infer<typeof GraphProjectionFreshness>;
 
 export const GraphNodeIdentity = z.object({
   graphDomain: GraphDomain,
@@ -91,9 +87,7 @@ export const GraphProvenanceEnvelope = z
       });
     }
   });
-export type GraphProvenanceEnvelope = z.infer<
-  typeof GraphProvenanceEnvelope
->;
+export type GraphProvenanceEnvelope = z.infer<typeof GraphProvenanceEnvelope>;
 
 export const GraphProjectionRevision = z.object({
   id: z.string().uuid(),
@@ -117,9 +111,7 @@ export const GraphProjectionRevision = z.object({
   activatedAt: z.string().datetime().nullable(),
   lastSuccessfulUpdate: z.string().datetime().nullable(),
 });
-export type GraphProjectionRevision = z.infer<
-  typeof GraphProjectionRevision
->;
+export type GraphProjectionRevision = z.infer<typeof GraphProjectionRevision>;
 
 export const GraphNodeRef = z.object({
   id: z.string().uuid(),

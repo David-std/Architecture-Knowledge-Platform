@@ -95,10 +95,9 @@ async function cleanupFixture(db: Postgres, fixture: Fixture): Promise<void> {
     "delete from federated_graph_nodes where space_id=any($1::uuid[])",
     [spaces],
   );
-  await db.pool.query(
-    "delete from vaults where id=any($1::uuid[])",
-    [[fixture.vaultA, fixture.vaultB, fixture.otherVault]],
-  );
+  await db.pool.query("delete from vaults where id=any($1::uuid[])", [
+    [fixture.vaultA, fixture.vaultB, fixture.otherVault],
+  ]);
   await db.pool.query("delete from spaces where id=any($1::uuid[])", [spaces]);
   await db.pool.query("delete from organizations where id=$1", [
     fixture.organizationId,
@@ -219,8 +218,7 @@ function queryBase(
   return {
     authorization: {
       spaceId: fixture.spaceId,
-      vaults:
-        options.vaults ?? [{ vaultId: fixture.vaultA, pathPrefix: null }],
+      vaults: options.vaults ?? [{ vaultId: fixture.vaultA, pathPrefix: null }],
       allowSpaceScoped: false,
     },
     domains: options.domains,
@@ -391,8 +389,10 @@ describe("federated multi-graph substrate integration", () => {
             ],
           }),
         ]) {
-          expect(GraphProjectionRevision.safeParse(await store.build(projection)).success)
-            .toBe(true);
+          expect(
+            GraphProjectionRevision.safeParse(await store.build(projection))
+              .success,
+          ).toBe(true);
         }
 
         const catalogProjection = artifact({
@@ -465,8 +465,9 @@ describe("federated multi-graph substrate integration", () => {
           ],
         });
         expect(
-          GraphProjectionRevision.safeParse(await store.build(catalogProjection))
-            .success,
+          GraphProjectionRevision.safeParse(
+            await store.build(catalogProjection),
+          ).success,
         ).toBe(true);
 
         const direct = await store.neighbors({
@@ -494,7 +495,11 @@ describe("federated multi-graph substrate integration", () => {
           expect(GraphPathResult.safeParse(result).success).toBe(true);
         }
         expect(
-          [...new Set(direct.map((result) => result.target.identity.graphDomain))].sort(),
+          [
+            ...new Set(
+              direct.map((result) => result.target.identity.graphDomain),
+            ),
+          ].sort(),
         ).toEqual(
           [
             "CODE",
@@ -663,11 +668,7 @@ describe("federated multi-graph substrate integration", () => {
             scopeId: collisionScope,
             revision: "collision-r1",
             nodes: [
-              node(
-                collisionIdentity,
-                fixture.vaultA,
-                "allowed/collision-a",
-              ),
+              node(collisionIdentity, fixture.vaultA, "allowed/collision-a"),
             ],
           }),
         );
@@ -680,11 +681,7 @@ describe("federated multi-graph substrate integration", () => {
               scopeId: collisionScope,
               revision: "collision-r1",
               nodes: [
-                node(
-                  collisionIdentity,
-                  fixture.vaultB,
-                  "allowed/collision-b",
-                ),
+                node(collisionIdentity, fixture.vaultB, "allowed/collision-b"),
               ],
             }),
           ),
@@ -876,8 +873,20 @@ describe("federated multi-graph substrate integration", () => {
         const scopeId = "code:bounded";
         const revision = "bounded-r1";
         const seed = identity("CODE", scopeId, "function", "seed", revision);
-        const hidden = identity("CODE", scopeId, "function", "hidden", revision);
-        const target = identity("CODE", scopeId, "function", "target", revision);
+        const hidden = identity(
+          "CODE",
+          scopeId,
+          "function",
+          "hidden",
+          revision,
+        );
+        const target = identity(
+          "CODE",
+          scopeId,
+          "function",
+          "target",
+          revision,
+        );
         const tieA = identity("CODE", scopeId, "function", "tie-a", revision);
         const tieB = identity("CODE", scopeId, "function", "tie-b", revision);
         await store.build(
@@ -927,13 +936,11 @@ describe("federated multi-graph substrate integration", () => {
         const targetPath = full.find(
           (result) => result.target.identity.canonicalKey === "target",
         );
-        expect(targetPath?.steps.map((step) => step.to.identity.canonicalKey))
-          .toEqual(["hidden", "target"]);
+        expect(
+          targetPath?.steps.map((step) => step.to.identity.canonicalKey),
+        ).toEqual(["hidden", "target"]);
         for (const path of full) {
-          const ids = [
-            path.seed.id,
-            ...path.steps.map((step) => step.to.id),
-          ];
+          const ids = [path.seed.id, ...path.steps.map((step) => step.to.id)];
           expect(new Set(ids).size).toBe(ids.length);
           expect(path.steps.length).toBeLessThanOrEqual(5);
         }
