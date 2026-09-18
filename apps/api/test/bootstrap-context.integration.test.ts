@@ -112,6 +112,23 @@ describe("workspace bootstrap conflict mapping", () => {
       contextRevisionSetHash: string;
     };
 
+    const relatedDecision = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${createdBody.id}/events`,
+      headers: {
+        ...headers,
+        "idempotency-key": "bootstrap-related-decision",
+      },
+      payload: {
+        eventType: "DECISION_CANDIDATE",
+        payload: {
+          title: "Bootstrap related decision",
+          status: "DRAFT",
+        },
+      },
+    });
+    expect(relatedDecision.statusCode).toBe(201);
+
     const first = await app.inject({
       method: "POST",
       url: `/v1/sessions/${createdBody.id}/bootstrap`,
@@ -131,6 +148,18 @@ describe("workspace bootstrap conflict mapping", () => {
         principalPolicyRevision: number;
         policyRevision: string;
       };
+      decisions: Array<{
+        event_type: string;
+        payload: { title?: string; status?: string };
+      }>;
+      agentInstructionDigest: {
+        revisionSetHash: string;
+        principalId: string;
+        principalKind: string;
+        allowedActions: string[];
+        promotionReviewRequired: boolean;
+        directives: string[];
+      };
       contextRevisionSet: {
         authorization: {
           principalId: string;
@@ -148,6 +177,26 @@ describe("workspace bootstrap conflict mapping", () => {
       createdBody.contextRevisionSetHash,
     );
     expect(firstBody.authorization.policyRevision).toMatch(/^[a-f0-9]{64}$/);
+    expect(firstBody.decisions).toContainEqual(
+      expect.objectContaining({
+        event_type: "DECISION_CANDIDATE",
+        payload: expect.objectContaining({
+          title: "Bootstrap related decision",
+          status: "DRAFT",
+        }),
+      }),
+    );
+    expect(firstBody.agentInstructionDigest).toMatchObject({
+      revisionSetHash: createdBody.contextRevisionSetHash,
+      principalId: firstBody.authorization.principalId,
+      principalKind: "HUMAN",
+      allowedActions: expect.any(Array),
+      promotionReviewRequired: expect.any(Boolean),
+      directives: expect.arrayContaining([
+        "USE_PINNED_CONTEXT_REVISION",
+        "DO_NOT_TREAT_WORKSPACE_COORDINATION_AS_CANONICAL_KNOWLEDGE",
+      ]),
+    });
     expect(firstBody.contextRevisionSet.authorization).toMatchObject({
       principalId: firstBody.authorization.principalId,
       principalPolicyRevision: firstBody.authorization.principalPolicyRevision,
