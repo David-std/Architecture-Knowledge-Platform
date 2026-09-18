@@ -94,6 +94,103 @@ afterAll(async () => {
 });
 
 describe("workspace bootstrap conflict mapping", () => {
+  it("returns a principal-aware authorization revision and detects policy drift without changing the shared context pin", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/sessions",
+      headers,
+      payload: {
+        spaceId,
+        vaultId,
+        purpose: "Bootstrap with one principal-aware authorization revision",
+        contextBudget: 2048,
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    const createdBody = created.json() as {
+      id: string;
+      contextRevisionSetHash: string;
+    };
+
+    const first = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${createdBody.id}/bootstrap`,
+      headers,
+      payload: {
+        query: "authorization revision",
+        intent: "WORKFLOW_EXECUTION",
+      },
+    });
+    expect(first.statusCode).toBe(200);
+    const firstBody = first.json() as {
+      revisionSetHash: string;
+      sharedRevisionSetHash: string;
+      effectiveRevisionSetHash: string;
+      authorization: {
+        principalId: string;
+        principalPolicyRevision: number;
+        policyRevision: string;
+      };
+      contextRevisionSet: {
+        authorization: {
+          principalId: string;
+          principalPolicyRevision: number;
+          revision: string;
+        };
+      };
+    };
+    expect(firstBody.revisionSetHash).toBe(createdBody.contextRevisionSetHash);
+    expect(firstBody.sharedRevisionSetHash).toBe(
+      createdBody.contextRevisionSetHash,
+    );
+    expect(firstBody.effectiveRevisionSetHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(firstBody.effectiveRevisionSetHash).not.toBe(
+      createdBody.contextRevisionSetHash,
+    );
+    expect(firstBody.authorization.policyRevision).toMatch(/^[a-f0-9]{64}$/);
+    expect(firstBody.contextRevisionSet.authorization).toMatchObject({
+      principalId: firstBody.authorization.principalId,
+      principalPolicyRevision: firstBody.authorization.principalPolicyRevision,
+      revision: firstBody.authorization.policyRevision,
+    });
+
+    await db.pool.query(
+      `update principals
+          set policy_revision=policy_revision+1
+        where kind='HUMAN' and user_id=$1 and state='ACTIVE'`,
+      [actorId],
+    );
+
+    const second = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${createdBody.id}/bootstrap`,
+      headers,
+      payload: {
+        query: "authorization revision",
+        intent: "WORKFLOW_EXECUTION",
+      },
+    });
+    expect(second.statusCode).toBe(200);
+    const secondBody = second.json() as {
+      revisionSetHash: string;
+      effectiveRevisionSetHash: string;
+      authorization: {
+        principalPolicyRevision: number;
+        policyRevision: string;
+      };
+    };
+    expect(secondBody.revisionSetHash).toBe(createdBody.contextRevisionSetHash);
+    expect(secondBody.authorization.principalPolicyRevision).toBe(
+      firstBody.authorization.principalPolicyRevision + 1,
+    );
+    expect(secondBody.authorization.policyRevision).not.toBe(
+      firstBody.authorization.policyRevision,
+    );
+    expect(secondBody.effectiveRevisionSetHash).not.toBe(
+      firstBody.effectiveRevisionSetHash,
+    );
+  });
+
   it("returns a typed conflict when the pinned context revision has drifted", async () => {
     const created = await app.inject({
       method: "POST",
