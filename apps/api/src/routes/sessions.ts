@@ -434,6 +434,8 @@ export function registerSessionRoutes(
               contextBudget: snapshot.session.contextBudget,
               coordinationVersion: snapshot.session.coordinationVersion,
             },
+            principals: snapshot.principals,
+            assignedPrincipals: snapshot.assignedPrincipals,
             claims: snapshot.claims,
             events: snapshot.events,
             snapshotVersion: snapshot.snapshotVersion,
