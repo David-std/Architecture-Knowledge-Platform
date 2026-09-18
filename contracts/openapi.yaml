@@ -1274,17 +1274,20 @@ paths:
       tags: [Projects]
       operationId: scanProject
       x-akp-permission: knowledge:propose
+      parameters:
+        - { $ref: "#/components/parameters/IdempotencyKey" }
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [slug, rootPath]
+              required: [slug, rootPath, spaceId, vaultId]
               properties:
                 slug: { type: string, minLength: 1 }
                 rootPath: { type: string, minLength: 1 }
                 spaceId: { type: string, format: uuid }
+                vaultId: { type: string, format: uuid }
                 commit: { type: string, pattern: "^[a-fA-F0-9]{40}$" }
                 changedSince: { type: string, minLength: 1 }
       responses:
