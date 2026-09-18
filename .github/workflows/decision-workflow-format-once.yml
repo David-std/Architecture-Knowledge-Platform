@@ -1,0 +1,41 @@
+name: decision-workflow-format-once
+
+on:
+  push:
+    branches:
+      - feat/v0.4-enterprise-context-workspace
+    paths:
+      - .github/workflows/decision-workflow-format-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Apply canonical decision-workflow formatting and consume staging
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin "${GITHUB_REF_NAME}"
+          test "$(git rev-parse "origin/${GITHUB_REF_NAME}")" = "$GITHUB_SHA"
+          pnpm exec prettier --write             apps/api/src/routes/decision-workflow.ts             apps/api/src/routes/sessions.ts             apps/api/src/routes/reviews.ts             apps/api/src/server.ts             apps/api/test/governed-product-flow.integration.test.ts             packages/postgres/src/decision-workflow.ts             packages/postgres/src/index.ts             contracts/openapi.yaml             scripts/validate-contracts.mjs             docs/context-fabric.md
+          rm -f .github/workflows/decision-workflow-format-once.yml
+          git add             apps/api/src/routes/decision-workflow.ts             apps/api/src/routes/sessions.ts             apps/api/src/routes/reviews.ts             apps/api/src/server.ts             apps/api/test/governed-product-flow.integration.test.ts             packages/postgres/src/decision-workflow.ts             packages/postgres/src/index.ts             contracts/openapi.yaml             scripts/validate-contracts.mjs             docs/context-fabric.md             .github/workflows
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "style(p2): format consultative decision workflow"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
