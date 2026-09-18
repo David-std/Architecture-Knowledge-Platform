@@ -17,6 +17,10 @@
     "./knowledge-profile-compatibility": {
       "types": "./dist/knowledge-profile-compatibility.d.ts",
       "default": "./dist/knowledge-profile-compatibility.js"
+    },
+    "./connector-capabilities": {
+      "types": "./dist/connector-capabilities.d.ts",
+      "default": "./dist/connector-capabilities.js"
     }
   },
   "scripts": {

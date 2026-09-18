@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ConnectorAccessMode } from "./connector-capabilities.js";
 import { TrustTier } from "./index.js";
 
 const ProfileId = z
@@ -249,16 +250,7 @@ export type FreshnessPolicyDefinition = z.infer<
 
 export const ConnectorProfilePolicy = z
   .object({
-    allowedAccessModes: z
-      .array(
-        z.enum([
-          "MIRROR_INDEXED",
-          "REMOTE_FEDERATED",
-          "REFERENCE_LIVE",
-          "HYBRID_CACHE",
-        ]),
-      )
-      .min(1),
+    allowedAccessModes: z.array(ConnectorAccessMode).min(1),
     requirePermissionFidelity: z.boolean().default(true),
   })
   .strict();

@@ -1,3 +1,4 @@
+export * from "./connector-capabilities.js";
 import { z } from "zod";
 
 export const TrustTier = z.enum([
