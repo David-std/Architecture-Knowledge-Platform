@@ -68,13 +68,13 @@ beforeAll(async () => {
     [actorId, `${actorId}@example.test`],
   );
   await db.pool.query(
-    "insert into memberships(user_id,space_id,role,path_prefix) values($1,$2,'EDITOR',null)",
+    "insert into memberships(user_id,space_id,role,path_prefix) values($1,$2,'CONTRIBUTOR',null)",
     [actorId, spaceId],
   );
   await grantVaultMembership(db, {
     userId: actorId,
     vaultId,
-    role: "EDITOR",
+    role: "CONTRIBUTOR",
     pathPrefix: null,
     permissions: ["knowledge:read", "knowledge:propose", "source:read"],
   });
