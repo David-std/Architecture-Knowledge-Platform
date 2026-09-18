@@ -9,6 +9,11 @@ import {
 import { appendOutboxEvent, type IntegrationEventType } from "./outbox.js";
 
 export type WorkspaceParticipantRole = "OWNER" | "PARTICIPANT";
+export type WorkspaceWorkStatus =
+  | "OPEN"
+  | "BLOCKED"
+  | "COMPLETED"
+  | "ABANDONED";
 export const PROMOTABLE_WORKSPACE_EVENT_TYPES = [
   "FINDING",
   "ARTIFACT",
@@ -18,6 +23,7 @@ export type PromotableWorkspaceEventType =
   (typeof PROMOTABLE_WORKSPACE_EVENT_TYPES)[number];
 export type WorkspaceEventType =
   | "SESSION_CREATED"
+  | "WORK_CONTEXT_UPDATED"
   | "PARTICIPANT_JOINED"
   | "CLAIM_ACQUIRED"
   | "CLAIM_HEARTBEAT"
@@ -34,6 +40,7 @@ export type WorkspaceEventType =
 export type WorkspaceUserEventType = Exclude<
   WorkspaceEventType,
   | "SESSION_CREATED"
+  | "WORK_CONTEXT_UPDATED"
   | "PARTICIPANT_JOINED"
   | "CLAIM_ACQUIRED"
   | "CLAIM_HEARTBEAT"
@@ -47,6 +54,8 @@ function workspaceIntegrationEventType(
   switch (eventType) {
     case "SESSION_CREATED":
       return "WorkspaceSessionCreated";
+    case "WORK_CONTEXT_UPDATED":
+      return "WorkspaceSessionUpdated";
     case "CLAIM_ACQUIRED":
     case "CLAIM_HEARTBEAT":
     case "CLAIM_RELEASED":
@@ -69,6 +78,10 @@ export interface WorkspaceSessionAccess {
   purpose: string;
   contextBudget: number;
   coordinationVersion: number;
+  workStatus: WorkspaceWorkStatus;
+  outcome: string | null;
+  followUps: string[];
+  touchedResources: string[];
   state: Record<string, unknown>;
   contextRevisionSet: ContextRevisionSet | null;
   contextRevisionSetHash: string | null;
@@ -121,6 +134,39 @@ function normalizeSession(
     purpose: String(row.purpose),
     contextBudget: Number(row.context_budget),
     coordinationVersion: Number(row.coordination_version ?? 0),
+    workStatus:
+      row.state &&
+      typeof row.state === "object" &&
+      ["OPEN", "BLOCKED", "COMPLETED", "ABANDONED"].includes(
+        String((row.state as Record<string, unknown>).workStatus ?? ""),
+      )
+        ? (String(
+            (row.state as Record<string, unknown>).workStatus,
+          ) as WorkspaceWorkStatus)
+        : "OPEN",
+    outcome:
+      row.state &&
+      typeof row.state === "object" &&
+      typeof (row.state as Record<string, unknown>).outcome === "string"
+        ? String((row.state as Record<string, unknown>).outcome)
+        : null,
+    followUps:
+      row.state &&
+      typeof row.state === "object" &&
+      Array.isArray((row.state as Record<string, unknown>).followUps)
+        ? ((row.state as Record<string, unknown>).followUps as unknown[]).map(
+            String,
+          )
+        : [],
+    touchedResources:
+      row.state &&
+      typeof row.state === "object" &&
+      Array.isArray((row.state as Record<string, unknown>).touchedResources)
+        ? (
+            (row.state as Record<string, unknown>)
+              .touchedResources as unknown[]
+          ).map(String)
+        : [],
     state:
       row.state && typeof row.state === "object"
         ? (row.state as Record<string, unknown>)
@@ -359,7 +405,14 @@ export async function createWorkspaceSession(
         input.projectId ?? null,
         input.purpose,
         input.contextBudget,
-        JSON.stringify({ status: "ACTIVE", createdBy: "api" }),
+        JSON.stringify({
+          status: "ACTIVE",
+          workStatus: "OPEN",
+          outcome: null,
+          followUps: [],
+          touchedResources: [],
+          createdBy: "api",
+        }),
       ],
     );
     const row = created.rows[0];
@@ -391,6 +444,104 @@ export async function createWorkspaceSession(
       context_revision_set: pinnedContext.revisionSet,
       context_revision_set_hash: pinnedContext.revisionSetHash,
       participant_role: "OWNER",
+    });
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+
+const WORK_STATUS_TRANSITIONS: Record<
+  WorkspaceWorkStatus,
+  readonly WorkspaceWorkStatus[]
+> = {
+  OPEN: ["OPEN", "BLOCKED", "COMPLETED", "ABANDONED"],
+  BLOCKED: ["BLOCKED", "OPEN", "COMPLETED", "ABANDONED"],
+  COMPLETED: ["COMPLETED"],
+  ABANDONED: ["ABANDONED"],
+};
+
+export async function updateWorkspaceWorkContext(
+  db: Postgres,
+  input: {
+    sessionId: string;
+    actorId: string;
+    actorPrincipalId?: string | null;
+    status: WorkspaceWorkStatus;
+    outcome?: string | null;
+    followUps: string[];
+    touchedResources: string[];
+  },
+): Promise<WorkspaceSessionAccess> {
+  const client = await db.pool.connect();
+  try {
+    await client.query("begin");
+    const sessionResult = await client.query<Record<string, unknown>>(
+      `select s.*,c.revision_set context_revision_set,
+              c.revision_set_hash context_revision_set_hash,
+              p.role participant_role
+         from agent_sessions s
+         left join workspace_context_revision_sets c on c.session_id=s.id
+         join workspace_session_participants p
+           on p.session_id=s.id and p.user_id=$2 and p.left_at is null
+        where s.id=$1
+        for update of s`,
+      [input.sessionId, input.actorId],
+    );
+    const currentRow = sessionResult.rows[0];
+    if (!currentRow) throw workspaceError("SESSION_NOT_FOUND", 404);
+    await assertWorkspaceContextRevisionCurrent(
+      client,
+      input.sessionId,
+      String(currentRow.space_id),
+      String(currentRow.vault_id),
+    );
+    const current = normalizeSession(currentRow);
+    if (!WORK_STATUS_TRANSITIONS[current.workStatus].includes(input.status)) {
+      throw workspaceError("WORK_CONTEXT_STATUS_TRANSITION_DENIED", 409);
+    }
+    if (input.status === "COMPLETED" && !input.outcome?.trim()) {
+      throw workspaceError("WORK_CONTEXT_OUTCOME_REQUIRED", 422);
+    }
+    const state = {
+      ...current.state,
+      workStatus: input.status,
+      outcome: input.outcome?.trim() || null,
+      followUps: input.followUps,
+      touchedResources: input.touchedResources,
+    };
+    const updated = await client.query<Record<string, unknown>>(
+      `update agent_sessions
+          set state=$2::jsonb,updated_at=now()
+        where id=$1
+        returning *`,
+      [input.sessionId, JSON.stringify(state)],
+    );
+    const updatedRow = updated.rows[0];
+    if (!updatedRow) throw workspaceError("WORK_CONTEXT_UPDATE_FAILED", 500);
+    const event = await appendCoordinationEvent(client, {
+      sessionId: input.sessionId,
+      actorId: input.actorId,
+      actorPrincipalId: input.actorPrincipalId,
+      eventType: "WORK_CONTEXT_UPDATED",
+      payload: {
+        previousStatus: current.workStatus,
+        status: input.status,
+        outcome: state.outcome,
+        followUps: input.followUps,
+        touchedResources: input.touchedResources,
+      },
+    });
+    await client.query("commit");
+    return normalizeSession({
+      ...updatedRow,
+      context_revision_set: currentRow.context_revision_set,
+      context_revision_set_hash: currentRow.context_revision_set_hash,
+      participant_role: currentRow.participant_role,
+      coordination_version: event.session_version,
     });
   } catch (error) {
     await client.query("rollback");
