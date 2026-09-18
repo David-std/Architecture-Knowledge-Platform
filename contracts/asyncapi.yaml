@@ -95,6 +95,7 @@ components:
             - GraphIndexUpdateRequested
             - GraphRevisionBuilt
             - GraphRevisionActivated
+            - GraphRevisionStale
             - ContextPackInvalidationRequested
             - ImpactedEvalRunRequested
             - WorkspaceSessionCreated
