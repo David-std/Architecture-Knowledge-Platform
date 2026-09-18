@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { Postgres } from "./index.js";
 import {
   pathMatchesVaultPrefix,
@@ -11,10 +12,15 @@ export interface AuthorizedResourceCandidate {
   path?: string | null;
 }
 
+export interface AuthorizationDecisionScope extends AuthorizedVaultScope {
+  /** Stable fingerprint of the effective authorization decision. */
+  policyRevision: string;
+}
+
 export interface AuthorizationPort {
   resolveVaultScope(
     request: AuthorizedVaultScopeRequest,
-  ): Promise<AuthorizedVaultScope>;
+  ): Promise<AuthorizationDecisionScope>;
   canExpandResource(
     scope: AuthorizedVaultScope,
     candidate: AuthorizedResourceCandidate,
@@ -25,6 +31,35 @@ export interface AuthorizationPort {
   ): T[];
 }
 
+export function authorizationDecisionRevision(
+  request: AuthorizedVaultScopeRequest,
+  scope: AuthorizedVaultScope,
+): string {
+  const accessByVault = Object.fromEntries(
+    Object.entries(scope.accessByVault)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([vaultId, access]) => [
+        vaultId,
+        {
+          pathPrefix: access.pathPrefix,
+          permissions: [...access.permissions].sort(),
+        },
+      ]),
+  );
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        userId: request.userId,
+        spaceId: request.spaceId,
+        permission: request.permission ?? null,
+        vaultIds: [...scope.vaultIds].sort(),
+        accessByVault,
+        federated: scope.federated,
+      }),
+    )
+    .digest("hex");
+}
+
 /**
  * Built-in authorization adapter. Retrieval/planning callers use the resolved
  * scope before candidate expansion; this is intentionally not a final-output
@@ -33,10 +68,14 @@ export interface AuthorizationPort {
 export class PostgresAuthorizationPort implements AuthorizationPort {
   constructor(private readonly db: Postgres) {}
 
-  resolveVaultScope(
+  async resolveVaultScope(
     request: AuthorizedVaultScopeRequest,
-  ): Promise<AuthorizedVaultScope> {
-    return resolveAuthorizedVaultScope(this.db, request);
+  ): Promise<AuthorizationDecisionScope> {
+    const scope = await resolveAuthorizedVaultScope(this.db, request);
+    return {
+      ...scope,
+      policyRevision: authorizationDecisionRevision(request, scope),
+    };
   }
 
   canExpandResource(
