@@ -3,6 +3,10 @@ name: team-node
 on:
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # Prove the TEAM_NODE deployment mode is an executable topology, not a
   # declared one: build the node's images, run them against one infrastructure,
