@@ -300,6 +300,50 @@ if (
     "contracts/asyncapi.yaml: audit events must expose principalId",
   );
 }
+const integrationEventEnum = new Set(
+  asyncapi?.components?.schemas?.IntegrationEventEnvelope?.properties?.eventType
+    ?.enum ?? [],
+);
+for (const eventType of [
+  "WorkspaceSessionCreated",
+  "WorkspaceSessionUpdated",
+  "WorkspaceClaimUpdated",
+  "WorkspaceHandoffCreated",
+  "WorkspacePromotionRequested",
+  "PrincipalRevoked",
+]) {
+  if (!integrationEventEnum.has(eventType)) {
+    failures.push(
+      `contracts/asyncapi.yaml: missing durable P2 integration event ${eventType}`,
+    );
+  }
+}
+const workspaceEventSchema =
+  asyncapi?.components?.schemas?.WorkspaceEventPayload ?? {};
+const workspaceEventEnum = new Set(
+  workspaceEventSchema?.properties?.eventType?.enum ?? [],
+);
+for (const eventType of [
+  "SESSION_CREATED",
+  "WORK_CONTEXT_UPDATED",
+  "CLAIM_ACQUIRED",
+  "CLAIM_HEARTBEAT",
+  "CLAIM_RELEASED",
+  "CLAIM_HANDOFF",
+  "PROMOTION_REQUESTED",
+]) {
+  if (!workspaceEventEnum.has(eventType)) {
+    failures.push(
+      `contracts/asyncapi.yaml: missing durable workspace event ${eventType}`,
+    );
+  }
+}
+if (!workspaceEventSchema?.properties?.actorPrincipalId) {
+  failures.push(
+    "contracts/asyncapi.yaml: workspace events must expose actorPrincipalId",
+  );
+}
+
 const workspaceEvent = asyncapi?.components?.schemas?.WorkspaceEventPayload;
 const workspaceEventRequired = requiredSet(workspaceEvent);
 for (const field of [
