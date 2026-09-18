@@ -780,8 +780,8 @@ function edgeProvenance(edge: ActiveEdgeRow) {
     revision: edge.provenance_revision,
     ...(edge.support_set_id ? { supportSetId: edge.support_set_id } : {}),
     ...(edge.confidence === null ? {} : { confidence: edge.confidence }),
-    ...(edge.valid_from ? { validFrom: iso(edge.valid_from) } : {}),
-    ...(edge.valid_to ? { validTo: iso(edge.valid_to) } : {}),
+    ...(edge.valid_from ? { validFrom: iso(edge.valid_from)! } : {}),
+    ...(edge.valid_to ? { validTo: iso(edge.valid_to)! } : {}),
     recordedAt: iso(edge.recorded_at)!,
   });
 }
