@@ -221,7 +221,7 @@ function queryBase(
       vaults: options.vaults ?? [{ vaultId: fixture.vaultA, pathPrefix: null }],
       allowSpaceScoped: false,
     },
-    domains: options.domains,
+    ...(options.domains ? { domains: options.domains } : {}),
     relationAllowlist: options.relations ?? [],
     direction: options.direction ?? ("outgoing" as const),
     freshnessPolicy: options.freshnessPolicy ?? ("FRESH_ONLY" as const),
