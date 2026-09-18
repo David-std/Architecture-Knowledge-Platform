@@ -190,6 +190,16 @@ export interface GraphQueryBase {
   bounds: GraphTraversalBounds;
 }
 
+export interface GraphNodeLookupQuery {
+  authorization: GraphAuthorizationScope;
+  domains?: readonly GraphDomain[];
+  kinds?: readonly string[];
+  canonicalKeys?: readonly string[];
+  payloadContains?: Readonly<Record<string, string | number | boolean>>;
+  freshnessPolicy: GraphFreshnessPolicy;
+  limit: number;
+}
+
 export interface GraphNeighborQuery extends GraphQueryBase {
   seed: GraphNodeSelector;
 }
@@ -260,6 +270,7 @@ export interface GraphIncrementalUpdate<TArtifact> {
 }
 
 export interface GraphQueryPort {
+  findNodes(input: GraphNodeLookupQuery): Promise<GraphNodeRef[]>;
   neighbors(input: GraphNeighborQuery): Promise<GraphPathResult[]>;
   paths(input: GraphPathQuery): Promise<GraphPathResult[]>;
   impact(input: GraphImpactQuery): Promise<GraphImpactResult>;
