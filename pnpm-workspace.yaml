@@ -6,7 +6,7 @@ verifyDepsBeforeRun: warn
 linkWorkspacePackages: true
 overrides:
   # Security floors for direct/transitive advisories: adm-zip, fast-uri, js-yaml and sharp.
-  adm-zip: 0.6.0
+  adm-zip: 0.6.1
   postcss: 8.5.25
   sharp: 0.35.4
   fast-uri: 4.1.3

@@ -186,7 +186,7 @@ export interface ValidateDerivedTruthInput {
 }
 
 const UUID =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HASH64 = /^[a-f0-9]{64}$/;
 
 function requiredUuid(value: string, code: string): string {
