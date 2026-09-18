@@ -77,6 +77,28 @@ record(
   node?.sharedDerivedState === true,
   String(node?.sharedDerivedState),
 );
+const manifest = capabilities.body?.manifest;
+record(
+  "node publishes the P2 safe discovery manifest",
+  manifest?.nodeId === expectedNodeId &&
+    manifest?.contextApiVersion === "v1" &&
+    Array.isArray(manifest?.requiredAuthenticationModes) &&
+    manifest.requiredAuthenticationModes.includes("BEARER_TOKEN") &&
+    Array.isArray(manifest?.supportedExchangeFormats) &&
+    manifest.supportedExchangeFormats.some(
+      (entry) =>
+        entry?.format === "OKF_0_2" &&
+        entry?.import === true &&
+        entry?.export === true,
+    ) &&
+    manifest?.graphCapabilities?.authorizationBeforeTraversal === true &&
+    Array.isArray(manifest?.graphCapabilities?.domains) &&
+    manifest.graphCapabilities.domains.includes("EPISTEMIC") &&
+    manifest.graphCapabilities.domains.includes("WORK") &&
+    JSON.stringify(manifest?.federationModes) ===
+      JSON.stringify(["CATALOG_ONLY"]),
+  JSON.stringify(manifest),
+);
 
 // 3. The boundary the mode exists to protect is still advertised as closed.
 record(
