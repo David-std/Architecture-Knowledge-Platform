@@ -18,6 +18,8 @@ export interface BootstrapWorkContextSnapshot {
     contextBudget: number;
     coordinationVersion: number;
   };
+  principals: Array<Record<string, unknown>>;
+  assignedPrincipals: string[];
   claims: Array<{
     id: string;
     workKey: string;
