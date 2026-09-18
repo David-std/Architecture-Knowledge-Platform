@@ -1,0 +1,40 @@
+name: graph-proof-once
+
+on:
+  push:
+    branches:
+      - feat/v0.4-enterprise-context-workspace
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  proof:
+    runs-on: ubuntu-24.04
+    env:
+      DATABASE_URL: postgres://akp:akp@localhost:55432/akp
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/v0.4-enterprise-context-workspace
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Check touched graph formatting
+        run: |
+          pnpm exec prettier --check             contracts/asyncapi.yaml             packages/postgres/src/federated-graph.ts             packages/postgres/test/federated-graph.integration.test.ts
+      - run: docker compose up -d --wait postgres
+      - run: pnpm db:migrate
+      - run: pnpm contracts:validate
+      - name: Run federated graph integration proof
+        run: |
+          pnpm --filter @akp/postgres exec vitest run             test/federated-graph.integration.test.ts
+      - name: Stop disposable services
+        if: always()
+        run: docker compose down -v --remove-orphans
