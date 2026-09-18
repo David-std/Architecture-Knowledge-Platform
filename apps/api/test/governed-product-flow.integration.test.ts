@@ -121,7 +121,7 @@ afterAll(async () => {
 });
 
 describe("P2 governed product flow", () => {
-  it("coordinates two actors, denies agent approval, publishes by human review, and exposes R2", async () => {
+  it("coordinates two agent principals, denies agent approval, publishes by human review, and exposes R2", async () => {
     const created = await app.inject({
       method: "POST",
       url: "/v1/sessions",
@@ -212,6 +212,11 @@ describe("P2 governed product flow", () => {
     expect(bootstrapA.statusCode).toBe(200);
     expect(bootstrapA.json()).toMatchObject({
       revisionSetHash: initialSession.contextRevisionSetHash,
+      sharedRevisionSetHash: initialSession.contextRevisionSetHash,
+      authorization: {
+        principalId: agentA.principal.id,
+        principalKind: "AGENT_PROCESS",
+      },
     });
 
     const bootstrapB = await app.inject({
@@ -223,6 +228,11 @@ describe("P2 governed product flow", () => {
     expect(bootstrapB.statusCode).toBe(200);
     expect(bootstrapB.json()).toMatchObject({
       revisionSetHash: initialSession.contextRevisionSetHash,
+      sharedRevisionSetHash: initialSession.contextRevisionSetHash,
+      authorization: {
+        principalId: agentB.principal.id,
+        principalKind: "AGENT_PROCESS",
+      },
     });
 
     const compilerClaim = await app.inject({
@@ -232,6 +242,29 @@ describe("P2 governed product flow", () => {
       payload: { workKey: "packages/compiler/**", leaseSeconds: 120 },
     });
     expect(compilerClaim.statusCode).toBe(201);
+    expect(compilerClaim.json()).toMatchObject({
+      ownerId: actorAId,
+      ownerPrincipalId: agentA.principal.id,
+      workKey: "packages/compiler/**",
+      fencingToken: 1,
+    });
+
+    // Fencing belongs to the process principal, not merely the parent user.
+    // Even the HUMAN parent cannot reuse Agent A's live fencing token.
+    const parentCannotUseAgentFence = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/claims/heartbeat`,
+      headers: actorAHeaders,
+      payload: {
+        workKey: "packages/compiler/**",
+        fencingToken: 1,
+        leaseSeconds: 120,
+      },
+    });
+    expect(parentCannotUseAgentFence.statusCode).toBe(409);
+    expect(parentCannotUseAgentFence.json()).toMatchObject({
+      code: "WORK_CLAIM_FENCE_STALE",
+    });
 
     const webClaim = await app.inject({
       method: "POST",
@@ -240,6 +273,12 @@ describe("P2 governed product flow", () => {
       payload: { workKey: "apps/web/**", leaseSeconds: 120 },
     });
     expect(webClaim.statusCode).toBe(201);
+    expect(webClaim.json()).toMatchObject({
+      ownerId: actorBId,
+      ownerPrincipalId: agentB.principal.id,
+      workKey: "apps/web/**",
+      fencingToken: 1,
+    });
 
     const overlap = await app.inject({
       method: "POST",
@@ -262,6 +301,7 @@ describe("P2 governed product flow", () => {
     expect(compilerRelease.statusCode).toBe(200);
     expect(compilerRelease.json()).toMatchObject({
       ownerId: actorAId,
+      ownerPrincipalId: agentA.principal.id,
       workKey: "packages/compiler/**",
       status: "RELEASED",
       fencingToken: 2,
@@ -276,6 +316,7 @@ describe("P2 governed product flow", () => {
     expect(overlapAfterRelease.statusCode).toBe(201);
     expect(overlapAfterRelease.json()).toMatchObject({
       ownerId: actorBId,
+      ownerPrincipalId: agentB.principal.id,
       workKey: "packages/compiler/src/**",
       status: "ACTIVE",
     });
@@ -303,6 +344,12 @@ describe("P2 governed product flow", () => {
       payload: { workKey: "finding:compiler-boundary", leaseSeconds: 120 },
     });
     expect(promotableClaim.statusCode).toBe(201);
+    expect(promotableClaim.json()).toMatchObject({
+      ownerId: actorAId,
+      ownerPrincipalId: agentA.principal.id,
+      workKey: "finding:compiler-boundary",
+      fencingToken: 1,
+    });
 
     const finding = await app.inject({
       method: "POST",
@@ -318,6 +365,19 @@ describe("P2 governed product flow", () => {
     });
     expect(finding.statusCode).toBe(201);
     const findingId = String((finding.json() as { id: string }).id);
+    const findingIdentity = await db.pool.query<{
+      actor_id: string;
+      actor_principal_id: string;
+    }>(
+      `select actor_id,actor_principal_id
+         from workspace_events
+        where id=$1::bigint`,
+      [findingId],
+    );
+    expect(findingIdentity.rows[0]).toMatchObject({
+      actor_id: actorAId,
+      actor_principal_id: agentA.principal.id,
+    });
 
     const handoff = await app.inject({
       method: "POST",
@@ -326,14 +386,32 @@ describe("P2 governed product flow", () => {
       payload: {
         workKey: "finding:compiler-boundary",
         toUserId: actorBId,
+        toPrincipalId: agentB.principal.id,
         fencingToken: 1,
         leaseSeconds: 120,
+        summary:
+          "Compiler publication boundary is captured with durable evidence and ready for governed promotion.",
+        completed: [
+          "Agent A captured the compiler publication boundary finding.",
+          "Agent A attached durable fixture evidence.",
+        ],
+        remaining: [
+          "Agent B verifies the shared workspace state.",
+          "Agent B requests governed promotion.",
+        ],
+        blockers: [],
+        changedResourceRefs: ["packages/compiler/**"],
+        evidenceRefs: [`workspace-event:${findingId}`],
+        questions: [
+          "Does the evidence remain valid under the pinned shared revision?",
+        ],
         note: "Continue from finding and evidence in durable workspace state.",
       },
     });
     expect(handoff.statusCode).toBe(200);
     expect(handoff.json()).toMatchObject({
       ownerId: actorBId,
+      ownerPrincipalId: agentB.principal.id,
       fencingToken: 2,
     });
 
@@ -343,13 +421,44 @@ describe("P2 governed product flow", () => {
       headers: agentBHeaders,
     });
     expect(resumed.statusCode).toBe(200);
-    expect(
-      (resumed.json() as { events: Array<{ event_type: string }> }).events.map(
-        (event) => event.event_type,
-      ),
-    ).toEqual(
+    const resumedBody = resumed.json() as {
+      events: Array<{
+        event_type: string;
+        actor_principal_id: string | null;
+        payload: Record<string, unknown>;
+      }>;
+    };
+    expect(resumedBody.events.map((event) => event.event_type)).toEqual(
       expect.arrayContaining(["FINDING", "CLAIM_RELEASED", "CLAIM_HANDOFF"]),
     );
+    const durableHandoff = resumedBody.events.find(
+      (event) => event.event_type === "CLAIM_HANDOFF",
+    );
+    expect(durableHandoff).toMatchObject({
+      actor_principal_id: agentA.principal.id,
+      payload: {
+        fromPrincipalId: agentA.principal.id,
+        toPrincipalId: agentB.principal.id,
+        workContextId: sessionId,
+        summary:
+          "Compiler publication boundary is captured with durable evidence and ready for governed promotion.",
+        completed: [
+          "Agent A captured the compiler publication boundary finding.",
+          "Agent A attached durable fixture evidence.",
+        ],
+        remaining: [
+          "Agent B verifies the shared workspace state.",
+          "Agent B requests governed promotion.",
+        ],
+        blockers: [],
+        changedResourceRefs: ["packages/compiler/**"],
+        evidenceRefs: [`workspace-event:${findingId}`],
+        questions: [
+          "Does the evidence remain valid under the pinned shared revision?",
+        ],
+        contextRevisionSetHash: initialSession.contextRevisionSetHash,
+      },
+    });
 
     const trustEscalationSummary =
       "Attempt workspace promotion trust escalation";
