@@ -154,10 +154,59 @@ describe("P2 governed product flow", () => {
     });
     expect(joined.statusCode).toBe(201);
 
+    const agentAIssuance = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/agent-processes`,
+      headers: actorAHeaders,
+      payload: {
+        label: "P2 normative Agent A",
+        durationMinutes: 30,
+        allowedActions: [
+          "workspace:read",
+          "workspace:claim",
+          "workspace:handoff",
+          "workspace:event:append",
+          "knowledge:read",
+          "knowledge:propose",
+        ],
+      },
+    });
+    expect(agentAIssuance.statusCode).toBe(201);
+    const agentA = agentAIssuance.json() as {
+      token: string;
+      principal: { id: string };
+    };
+    const agentAHeaders = { authorization: `Bearer ${agentA.token}` };
+
+    const agentBIssuance = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/agent-processes`,
+      headers: actorBHeaders,
+      payload: {
+        label: "P2 normative Agent B",
+        durationMinutes: 30,
+        allowedActions: [
+          "workspace:read",
+          "workspace:claim",
+          "workspace:handoff",
+          "workspace:event:append",
+          "knowledge:read",
+          "knowledge:propose",
+        ],
+      },
+    });
+    expect(agentBIssuance.statusCode).toBe(201);
+    const agentB = agentBIssuance.json() as {
+      token: string;
+      principal: { id: string };
+    };
+    const agentBHeaders = { authorization: `Bearer ${agentB.token}` };
+    expect(agentA.principal.id).not.toBe(agentB.principal.id);
+
     const bootstrapA = await app.inject({
       method: "POST",
       url: `/v1/sessions/${sessionId}/bootstrap`,
-      headers: actorAHeaders,
+      headers: agentAHeaders,
       payload: { query: "compiler boundary", intent: "WORKFLOW_EXECUTION" },
     });
     expect(bootstrapA.statusCode).toBe(200);
@@ -168,7 +217,7 @@ describe("P2 governed product flow", () => {
     const bootstrapB = await app.inject({
       method: "POST",
       url: `/v1/sessions/${sessionId}/bootstrap`,
-      headers: actorBHeaders,
+      headers: agentBHeaders,
       payload: { query: "web workspace", intent: "WORKFLOW_EXECUTION" },
     });
     expect(bootstrapB.statusCode).toBe(200);
@@ -179,7 +228,7 @@ describe("P2 governed product flow", () => {
     const compilerClaim = await app.inject({
       method: "POST",
       url: `/v1/sessions/${sessionId}/claims`,
-      headers: actorAHeaders,
+      headers: agentAHeaders,
       payload: { workKey: "packages/compiler/**", leaseSeconds: 120 },
     });
     expect(compilerClaim.statusCode).toBe(201);
@@ -187,7 +236,7 @@ describe("P2 governed product flow", () => {
     const webClaim = await app.inject({
       method: "POST",
       url: `/v1/sessions/${sessionId}/claims`,
-      headers: actorBHeaders,
+      headers: agentBHeaders,
       payload: { workKey: "apps/web/**", leaseSeconds: 120 },
     });
     expect(webClaim.statusCode).toBe(201);
@@ -195,7 +244,7 @@ describe("P2 governed product flow", () => {
     const overlap = await app.inject({
       method: "POST",
       url: `/v1/sessions/${sessionId}/claims`,
-      headers: actorBHeaders,
+      headers: agentBHeaders,
       payload: { workKey: "packages/compiler/src/**", leaseSeconds: 120 },
     });
     expect(overlap.statusCode).toBe(409);
@@ -207,7 +256,7 @@ describe("P2 governed product flow", () => {
     const compilerRelease = await app.inject({
       method: "POST",
       url: `/v1/sessions/${sessionId}/claims/release`,
-      headers: actorAHeaders,
+      headers: agentAHeaders,
       payload: { workKey: "packages/compiler/**", fencingToken: 1 },
     });
     expect(compilerRelease.statusCode).toBe(200);
@@ -221,7 +270,7 @@ describe("P2 governed product flow", () => {
     const overlapAfterRelease = await app.inject({
       method: "POST",
       url: `/v1/sessions/${sessionId}/claims`,
-      headers: actorBHeaders,
+      headers: agentBHeaders,
       payload: { workKey: "packages/compiler/src/**", leaseSeconds: 120 },
     });
     expect(overlapAfterRelease.statusCode).toBe(201);
@@ -235,7 +284,7 @@ describe("P2 governed product flow", () => {
     const staleCompilerWriter = await app.inject({
       method: "POST",
       url: `/v1/sessions/${sessionId}/claims/heartbeat`,
-      headers: actorAHeaders,
+      headers: agentAHeaders,
       payload: {
         workKey: "packages/compiler/**",
         fencingToken: 1,
@@ -250,7 +299,7 @@ describe("P2 governed product flow", () => {
     const promotableClaim = await app.inject({
       method: "POST",
       url: `/v1/sessions/${sessionId}/claims`,
-      headers: actorAHeaders,
+      headers: agentAHeaders,
       payload: { workKey: "finding:compiler-boundary", leaseSeconds: 120 },
     });
     expect(promotableClaim.statusCode).toBe(201);
@@ -258,7 +307,7 @@ describe("P2 governed product flow", () => {
     const finding = await app.inject({
       method: "POST",
       url: `/v1/sessions/${sessionId}/events`,
-      headers: actorAHeaders,
+      headers: agentAHeaders,
       payload: {
         eventType: "FINDING",
         payload: {
@@ -273,7 +322,7 @@ describe("P2 governed product flow", () => {
     const handoff = await app.inject({
       method: "POST",
       url: `/v1/sessions/${sessionId}/claims/handoff`,
-      headers: actorAHeaders,
+      headers: agentAHeaders,
       payload: {
         workKey: "finding:compiler-boundary",
         toUserId: actorBId,
@@ -291,7 +340,7 @@ describe("P2 governed product flow", () => {
     const resumed = await app.inject({
       method: "GET",
       url: `/v1/sessions/${sessionId}/state`,
-      headers: actorBHeaders,
+      headers: agentBHeaders,
     });
     expect(resumed.statusCode).toBe(200);
     expect(
@@ -307,7 +356,7 @@ describe("P2 governed product flow", () => {
     const trustEscalation = await app.inject({
       method: "POST",
       url: `/v1/sessions/${sessionId}/promotions`,
-      headers: actorBHeaders,
+      headers: agentBHeaders,
       payload: {
         evidenceEventIds: [findingId],
         summary: trustEscalationSummary,
@@ -341,7 +390,7 @@ describe("P2 governed product flow", () => {
     const promotion = await app.inject({
       method: "POST",
       url: `/v1/sessions/${sessionId}/promotions`,
-      headers: actorBHeaders,
+      headers: agentBHeaders,
       payload: {
         evidenceEventIds: [findingId],
         summary: "Promote compiler publication boundary",
@@ -362,27 +411,10 @@ describe("P2 governed product flow", () => {
       promotionEventId: string;
     };
 
-    const agentCredential = await app.inject({
-      method: "POST",
-      url: `/v1/sessions/${sessionId}/agent-processes`,
-      headers: actorAHeaders,
-      payload: {
-        label: "P2 approval-negative-test agent",
-        durationMinutes: 30,
-        allowedActions: [
-          "workspace:read",
-          "knowledge:read",
-          "knowledge:propose",
-        ],
-      },
-    });
-    expect(agentCredential.statusCode).toBe(201);
-    const agentToken = (agentCredential.json() as { token: string }).token;
-
     const agentApproval = await app.inject({
       method: "POST",
       url: `/v1/reviews/${promotionBody.reviewId}/decision`,
-      headers: { authorization: `Bearer ${agentToken}` },
+      headers: agentBHeaders,
       payload: {
         decision: "APPROVE",
         reason: "A normal agent credential must not approve publication.",
@@ -419,7 +451,7 @@ describe("P2 governed product flow", () => {
     const oldState = await app.inject({
       method: "GET",
       url: `/v1/sessions/${sessionId}/state`,
-      headers: actorAHeaders,
+      headers: agentAHeaders,
     });
     expect(oldState.statusCode).toBe(200);
     expect(oldState.json()).toMatchObject({
@@ -432,7 +464,7 @@ describe("P2 governed product flow", () => {
     const strictOldWrite = await app.inject({
       method: "POST",
       url: `/v1/sessions/${sessionId}/claims`,
-      headers: actorAHeaders,
+      headers: agentAHeaders,
       payload: { workKey: "post-publication:stale", leaseSeconds: 120 },
     });
     expect(strictOldWrite.statusCode).toBe(409);
