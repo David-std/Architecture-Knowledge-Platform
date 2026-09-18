@@ -137,6 +137,16 @@ interface GraphQueryBase {
   bounds: GraphTraversalBounds;
 }
 
+interface GraphNodeLookupQuery {
+  authorization: GraphAuthorizationScope;
+  domains?: readonly GraphDomain[];
+  kinds?: readonly string[];
+  canonicalKeys?: readonly string[];
+  payloadContains?: Readonly<Record<string, string | number | boolean>>;
+  freshnessPolicy: GraphFreshnessPolicy;
+  limit: number;
+}
+
 interface GraphNeighborQuery extends GraphQueryBase {
   seed: GraphNodeSelector;
 }
@@ -202,6 +212,7 @@ interface GraphProjectionArtifact {
 }
 
 interface GraphQueryPort {
+  findNodes(input: GraphNodeLookupQuery): Promise<GraphNodeRef[]>;
   neighbors(input: GraphNeighborQuery): Promise<GraphPathResult[]>;
   paths(input: GraphPathQuery): Promise<GraphPathResult[]>;
   impact(input: GraphImpactQuery): Promise<GraphImpactResult>;
@@ -1364,6 +1375,91 @@ export class PostgresFederatedGraphStore
       activeFreshness: active?.freshness ?? null,
       lastSuccessfulUpdate,
     };
+  }
+
+  async findNodes(input: GraphNodeLookupQuery): Promise<GraphNodeRef[]> {
+    parseGraphFreshnessPolicy(input.freshnessPolicy);
+    if (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 1000) {
+      throw graphError("GRAPH_LOOKUP_LIMIT_INVALID");
+    }
+    const domains = domainAllowlist(input.domains);
+    const prefixes = normalizeAuthorizationScope(input.authorization);
+    const freshnessClause =
+      input.freshnessPolicy === "FRESH_ONLY" ? "and pr.freshness='FRESH'" : "";
+    const kinds =
+      input.kinds === undefined
+        ? null
+        : input.kinds.map((kind) =>
+            requiredString(kind, 120, "GRAPH_NODE_KIND_INVALID"),
+          );
+    const canonicalKeys =
+      input.canonicalKeys === undefined
+        ? null
+        : input.canonicalKeys.map((key) =>
+            requiredString(key, 2048, "GRAPH_CANONICAL_KEY_INVALID"),
+          );
+    const payloadContains = input.payloadContains ?? null;
+    if (payloadContains && Object.keys(payloadContains).length > 32) {
+      throw graphError("GRAPH_LOOKUP_PAYLOAD_FILTER_INVALID");
+    }
+    const rows = await this.db.pool.query<ActiveNodeRow>(
+      `select distinct on (n.id)
+         n.id,n.space_id,n.vault_id,n.graph_domain,n.scope_id,n.kind,
+         n.canonical_key,n.revision,n.authorization_path,n.payload,
+         pr.id projection_id,pr.revision projection_revision,
+         pr.lifecycle projection_lifecycle,pr.freshness projection_freshness
+       from federated_graph_nodes n
+       join federated_graph_projection_nodes pn on pn.node_id=n.id
+       join federated_graph_projection_revisions pr
+         on pr.id=pn.projection_revision_id
+        and pr.space_id=n.space_id
+        and pr.graph_domain=n.graph_domain
+        and pr.scope_id=n.scope_id
+      where n.space_id=$1
+        and n.graph_domain=any($2::text[])
+        and pr.lifecycle='ACTIVE'
+        ${freshnessClause}
+        and ($3::text[] is null or n.kind=any($3::text[]))
+        and ($4::text[] is null or n.canonical_key=any($4::text[]))
+        and ($5::jsonb is null or n.payload @> $5::jsonb)
+      order by n.id,pr.activated_at desc nulls last,pr.id`,
+      [
+        input.authorization.spaceId,
+        domains,
+        kinds,
+        canonicalKeys,
+        payloadContains ? JSON.stringify(payloadContains) : null,
+      ],
+    );
+    return rows.rows
+      .map(activeNodeRef)
+      .filter((node) =>
+        nodeAllowed(
+          node,
+          prefixes,
+          input.authorization.allowSpaceScoped === true,
+        ),
+      )
+      .sort((left, right) =>
+        [
+          left.identity.graphDomain,
+          left.identity.scopeId,
+          left.identity.kind,
+          left.identity.canonicalKey,
+          left.id,
+        ]
+          .join("|")
+          .localeCompare(
+            [
+              right.identity.graphDomain,
+              right.identity.scopeId,
+              right.identity.kind,
+              right.identity.canonicalKey,
+              right.id,
+            ].join("|"),
+          ),
+      )
+      .slice(0, input.limit);
   }
 
   async neighbors(input: GraphNeighborQuery): Promise<GraphPathResult[]> {
