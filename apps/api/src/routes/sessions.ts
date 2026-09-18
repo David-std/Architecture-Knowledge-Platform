@@ -25,6 +25,7 @@ import {
   isWorkspaceWorkKey,
   listWorkspaceSessionsForParticipant,
   linkDecisionCandidateReviewInTransaction,
+  PostgresAuthorizationPort,
   resolveAuthorizedVaultScope,
   revokeAgentProcessPrincipal,
   workspaceSessionSnapshot,
@@ -36,6 +37,7 @@ import {
 import {
   actorOf,
   audit,
+  authorizationPolicyFingerprint,
   requirePermission,
   requirePrincipalAction,
   serializeEffectiveScopes,
@@ -381,6 +383,28 @@ export function registerSessionRoutes(
         return reply.code(413).send({ code: "BOOTSTRAP_QUERY_TOO_LARGE" });
       }
 
+      const authorizationPort = new PostgresAuthorizationPort(db);
+      let vaultAuthorizationRevision: string;
+      try {
+        const authorizationScope = await authorizationPort.resolveVaultScope({
+          userId: actor.id,
+          spaceId: session.spaceId,
+          permission: "knowledge:read",
+          vaultId: session.vaultId,
+          vaultIds: [session.vaultId],
+          federated: false,
+        });
+        vaultAuthorizationRevision = authorizationScope.policyRevision;
+      } catch {
+        return reply.code(403).send({ code: "VAULT_ACCESS_DENIED" });
+      }
+      const actorAuthorizationRevision = authorizationPolicyFingerprint(actor);
+      const effectiveAuthorizationRevision = createHash("sha256")
+        .update(
+          `${actorAuthorizationRevision}:${vaultAuthorizationRevision}`,
+        )
+        .digest("hex");
+
       const bootstrap = new BootstrapContext({
         loadWorkContext: async (sessionId, actorId) => {
           const snapshot = await workspaceSessionSnapshot(
@@ -512,6 +536,7 @@ export function registerSessionRoutes(
           principalKind: actor.principalKind,
           principalPolicyRevision: actor.principalPolicyRevision,
           scopeFingerprint: actor.idempotencyScopeFingerprint,
+          policyRevision: effectiveAuthorizationRevision,
         },
       );
       workspaceTelemetry.counter("akp.workspace.bootstrap_total", 1, {
@@ -532,7 +557,32 @@ export function registerSessionRoutes(
         },
         session.spaceId,
       );
-      return result;
+      if (!session.contextRevisionSet || !session.contextRevisionSetHash) {
+        return reply.code(409).send({ code: "CONTEXT_REVISION_PIN_REQUIRED" });
+      }
+      const effectiveContextRevisionSet = {
+        ...session.contextRevisionSet,
+        authorization: {
+          source: "BUILT_IN_AUTHORIZATION" as const,
+          principalId: actor.principalId,
+          principalKind: actor.principalKind,
+          principalPolicyRevision: actor.principalPolicyRevision,
+          actorRevision: actorAuthorizationRevision,
+          vaultRevision: vaultAuthorizationRevision,
+          revision: effectiveAuthorizationRevision,
+        },
+      };
+      const effectiveRevisionSetHash = createHash("sha256")
+        .update(
+          `${session.contextRevisionSetHash}:${effectiveAuthorizationRevision}`,
+        )
+        .digest("hex");
+      return {
+        ...result,
+        sharedRevisionSetHash: result.revisionSetHash,
+        effectiveRevisionSetHash,
+        contextRevisionSet: effectiveContextRevisionSet,
+      };
     },
   );
 
