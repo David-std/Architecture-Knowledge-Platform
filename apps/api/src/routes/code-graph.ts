@@ -10,6 +10,7 @@ import {
   type CodeImpactOptions,
   type CodePathOptions,
   type CodeQueryContext,
+  type CodeSymbolSelector,
 } from "@akp/project-adapter";
 import {
   actorOf,
@@ -88,6 +89,21 @@ const ScopedChangeImpact = CodeScope.extend({
 });
 
 type CodeScopeInput = z.infer<typeof CodeScope>;
+type ParsedCodeSymbolSelector = z.infer<typeof CodeSymbolSelector>;
+
+function normalizedCodeSelector(
+  value: ParsedCodeSymbolSelector,
+): CodeSymbolSelector {
+  return {
+    repository: value.repository,
+    ...(value.commitSha ? { commitSha: value.commitSha } : {}),
+    ...(value.path ? { path: value.path } : {}),
+    ...(value.qualifiedName ? { qualifiedName: value.qualifiedName } : {}),
+    ...(value.name ? { name: value.name } : {}),
+    ...(value.kind ? { kind: value.kind } : {}),
+    ...(value.signature ? { signature: value.signature } : {}),
+  };
+}
 
 function codeQueryStatus(code: string): number {
   if (
@@ -216,7 +232,7 @@ export function registerCodeGraphRoutes(
       try {
         const context = await authorizedCodeContext(db, request, parsed.data);
         return {
-          symbols: await service.symbol(context, parsed.data.selector),
+          symbols: await service.symbol(context, normalizedCodeSelector(parsed.data.selector)),
         };
       } catch (error) {
         return sendCodeQueryError(reply, error);
@@ -238,7 +254,7 @@ export function registerCodeGraphRoutes(
       try {
         const context = await authorizedCodeContext(db, request, parsed.data);
         return {
-          paths: await service.callers(context, parsed.data.selector),
+          paths: await service.callers(context, normalizedCodeSelector(parsed.data.selector)),
         };
       } catch (error) {
         return sendCodeQueryError(reply, error);
@@ -260,7 +276,7 @@ export function registerCodeGraphRoutes(
       try {
         const context = await authorizedCodeContext(db, request, parsed.data);
         return {
-          paths: await service.callees(context, parsed.data.selector),
+          paths: await service.callees(context, normalizedCodeSelector(parsed.data.selector)),
         };
       } catch (error) {
         return sendCodeQueryError(reply, error);
@@ -281,8 +297,8 @@ export function registerCodeGraphRoutes(
       return {
         paths: await service.path(
           context,
-          parsed.data.source,
-          parsed.data.target,
+          normalizedCodeSelector(parsed.data.source),
+          normalizedCodeSelector(parsed.data.target),
           (parsed.data.options ?? {}) as CodePathOptions,
         ),
       };
@@ -307,7 +323,7 @@ export function registerCodeGraphRoutes(
         return {
           impact: await service.impact(
             context,
-            parsed.data.selector,
+            normalizedCodeSelector(parsed.data.selector),
             (parsed.data.options ?? {}) as CodeImpactOptions,
           ),
         };
@@ -355,7 +371,7 @@ export function registerCodeGraphRoutes(
     try {
       const context = await authorizedCodeContext(db, request, parsed.data);
       return {
-        paths: await service.tests(context, parsed.data.selector),
+        paths: await service.tests(context, normalizedCodeSelector(parsed.data.selector)),
       };
     } catch (error) {
       return sendCodeQueryError(reply, error);
@@ -378,8 +394,8 @@ export function registerCodeGraphRoutes(
         return {
           paths: await service.explain(
             context,
-            parsed.data.source,
-            parsed.data.target,
+            normalizedCodeSelector(parsed.data.source),
+            normalizedCodeSelector(parsed.data.target),
             (parsed.data.options ?? {}) as CodePathOptions,
           ),
         };
