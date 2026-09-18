@@ -4,7 +4,8 @@ import {
   intersectVaultPathPrefixes,
   normalizeVaultPathPrefix,
   pathMatchesVaultPrefix,
-  resolveAuthorizedVaultScope,
+  PostgresAuthorizationPort,
+  type AuthorizedVaultScope,
   type Postgres,
 } from "@akp/postgres";
 import {
@@ -442,11 +443,9 @@ async function readableContextSnapshot(
     return null;
   }
 
-  let accessByVault: Awaited<
-    ReturnType<typeof resolveAuthorizedVaultScope>
-  >["accessByVault"];
+  let accessByVault: AuthorizedVaultScope["accessByVault"];
   try {
-    const currentScope = await resolveAuthorizedVaultScope(db, {
+    const currentScope = await new PostgresAuthorizationPort(db).resolveVaultScope({
       userId: actor.id,
       spaceId: row.space_id,
       permission: "knowledge:read",
@@ -2059,11 +2058,9 @@ export function registerSearchRoutes(
         return reply.code(403).send({ code: "PRINCIPAL_VAULT_SCOPE_DENIED" });
       }
       let vaultIds: string[];
-      let accessByVault: Awaited<
-        ReturnType<typeof resolveAuthorizedVaultScope>
-      >["accessByVault"] = {};
+      let accessByVault: AuthorizedVaultScope["accessByVault"] = {};
       try {
-        const scope = await resolveAuthorizedVaultScope(db, {
+        const scope = await new PostgresAuthorizationPort(db).resolveVaultScope({
           userId: actor.id,
           spaceId: requestedSpace,
           permission: "knowledge:read",
@@ -2354,11 +2351,9 @@ export function registerSearchRoutes(
         return reply.code(403).send({ code: "PRINCIPAL_VAULT_SCOPE_DENIED" });
       }
       let vaultIds: string[];
-      let accessByVault: Awaited<
-        ReturnType<typeof resolveAuthorizedVaultScope>
-      >["accessByVault"] = {};
+      let accessByVault: AuthorizedVaultScope["accessByVault"] = {};
       try {
-        const scope = await resolveAuthorizedVaultScope(db, {
+        const scope = await new PostgresAuthorizationPort(db).resolveVaultScope({
           userId: actor.id,
           spaceId: requestedSpace,
           permission: "knowledge:read",
