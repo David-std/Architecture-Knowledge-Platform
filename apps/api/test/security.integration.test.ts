@@ -226,6 +226,8 @@ describe("API security boundaries", () => {
     const vaultId = randomUUID();
     const vaultKey = `scope-boundary-${vaultId.slice(0, 8)}`;
     const reviewId = randomUUID();
+    const privateDocumentId = randomUUID();
+    const privateExternalId = `PRIVATE-PERSONAL-${suffix}`;
     await db.pool.query(
       `
       insert into vaults(
@@ -240,7 +242,70 @@ describe("API security boundaries", () => {
         vaultKey,
       ],
     );
+    await db.pool.query(
+      `
+      insert into knowledge_documents(
+        id,space_id,vault_id,path,external_id,title,type,lifecycle,trust_tier,
+        current_revision,body_cache,frontmatter,aliases,layer,content_hash,
+        token_estimate,raw_links,refresh_status
+      ) values(
+        $1,$2,$3,'personal/private-note.md',$4,'Private personal fixture',
+        'note','ACTIVE','HUMAN_REVIEWED','fixture:private-personal',
+        $5,'{}'::jsonb,'{}','concept',$6,12,'[]'::jsonb,'CURRENT'
+      )
+      `,
+      [
+        privateDocumentId,
+        defaultSpace,
+        vaultId,
+        privateExternalId,
+        `Private personal content ${suffix} must never leak into a team-wide search without an explicit vault grant.`,
+        createHash("sha256")
+          .update(`private-personal-${suffix}`)
+          .digest("hex"),
+      ],
+    );
     try {
+      const teamWideSearch = await app.inject({
+        method: "POST",
+        url: "/v1/search",
+        headers,
+        payload: {
+          query: privateExternalId,
+          spaceId: defaultSpace,
+          vaultIds: [],
+          federated: true,
+          types: [],
+          minimumTrust: "UNVERIFIED",
+          mode: "COMPILED_ONLY",
+          limit: 10,
+        },
+      });
+      expect(teamWideSearch.statusCode).toBe(200);
+      expect(teamWideSearch.json().hits).toHaveLength(0);
+      expect(teamWideSearch.json().scope.vaultIds).not.toContain(vaultId);
+
+      const explicitlyRequestedPrivate = await app.inject({
+        method: "POST",
+        url: "/v1/search",
+        headers,
+        payload: {
+          query: privateExternalId,
+          spaceId: defaultSpace,
+          vaultId,
+          vaultIds: [],
+          federated: false,
+          types: [],
+          minimumTrust: "UNVERIFIED",
+          mode: "COMPILED_ONLY",
+          limit: 10,
+        },
+      });
+      expect(explicitlyRequestedPrivate.statusCode).toBe(403);
+      expect(explicitlyRequestedPrivate.json()).toMatchObject({
+        code: "VAULT_ACCESS_DENIED",
+      });
+
       const withoutGrant = await app.inject({
         method: "POST",
         url: "/v1/proposals",
@@ -330,6 +395,9 @@ describe("API security boundaries", () => {
       expect(reviewerWithoutGrant.statusCode).toBe(403);
       expect(reviewerWithoutGrant.json().code).toBe("PATH_SCOPE_DENIED");
     } finally {
+      await db.pool.query("delete from knowledge_documents where id=$1", [
+        privateDocumentId,
+      ]);
       await db.pool.query("delete from review_comments where review_id=$1", [
         reviewId,
       ]);
