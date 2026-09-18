@@ -1,8 +1,8 @@
-import { GraphNodeIdentity, type GraphProjectionArtifact } from "@akp/contracts";
 import {
-  PostgresFederatedGraphStore,
-  type Postgres,
-} from "@akp/postgres";
+  GraphNodeIdentity,
+  type GraphProjectionArtifact,
+} from "@akp/contracts";
+import { PostgresFederatedGraphStore, type Postgres } from "@akp/postgres";
 import type { EventHandlers } from "./event-worker.js";
 
 interface LinkRow {
@@ -12,7 +12,7 @@ interface LinkRow {
   project_id: string;
   document_id: string;
   review_id: string;
-  relation_type: "rationale_ref" | "governed_by" | "applies_to";
+  relation_type: "rationale_ref" | "applies_to";
   knowledge_revision: string;
   code_repository: string;
   code_commit_sha: string;
@@ -27,7 +27,9 @@ interface LinkRow {
   document_lifecycle: string;
 }
 
-function currentProjectCommit(metadata: Record<string, unknown>): string | null {
+function currentProjectCommit(
+  metadata: Record<string, unknown>,
+): string | null {
   const value = metadata.commit;
   return typeof value === "string" && /^[a-f0-9]{40}$/i.test(value)
     ? value.toLowerCase()
@@ -35,7 +37,9 @@ function currentProjectCommit(metadata: Record<string, unknown>): string | null 
 }
 
 function iso(value: Date | string): string {
-  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+  return value instanceof Date
+    ? value.toISOString()
+    : new Date(value).toISOString();
 }
 
 export function createCodeKnowledgeLinkHandlers(
@@ -60,10 +64,7 @@ export function createCodeKnowledgeLinkHandlers(
       );
       const link = result.rows[0];
       if (!link) throw new Error("CODE_KNOWLEDGE_LINK_NOT_FOUND");
-      if (
-        event.spaceId !== link.space_id ||
-        event.vaultId !== link.vault_id
-      ) {
+      if (event.spaceId !== link.space_id || event.vaultId !== link.vault_id) {
         throw new Error("CODE_KNOWLEDGE_LINK_SCOPE_MISMATCH");
       }
       if (
@@ -145,10 +146,7 @@ export function createCodeKnowledgeLinkHandlers(
             provenance: {
               derivation: "HUMAN_ASSERTED",
               sourceIds: [`document:${link.document_id}`],
-              evidenceIds: [
-                `review:${link.review_id}`,
-                `mapping:${link.id}`,
-              ],
+              evidenceIds: [`review:${link.review_id}`, `mapping:${link.id}`],
               locatorRefs: [
                 `knowledge:${link.document_id}@${link.knowledge_revision}`,
                 `code:${link.code_commit_sha}:${targetIdentity.kind}:${targetIdentity.canonicalKey}`.slice(

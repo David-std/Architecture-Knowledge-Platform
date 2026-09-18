@@ -9,7 +9,7 @@ create table code_knowledge_links (
   document_id uuid not null references knowledge_documents(id),
   review_id uuid not null references reviews(id),
   relation_type text not null check (
-    relation_type in ('rationale_ref','governed_by','applies_to')
+    relation_type in ('rationale_ref','applies_to')
   ),
   knowledge_revision text not null check (length(btrim(knowledge_revision)) > 0),
   code_repository text not null check (length(btrim(code_repository)) > 0),

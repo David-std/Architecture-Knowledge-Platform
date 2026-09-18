@@ -251,10 +251,7 @@ describe.skipIf(!process.env.DATABASE_URL)(
         direction: "incoming",
         provenance: {
           derivation: "HUMAN_ASSERTED",
-          evidenceIds: [
-            `review:${reviewId}`,
-            `mapping:${mappingId}`,
-          ],
+          evidenceIds: [`review:${reviewId}`, `mapping:${mappingId}`],
         },
       });
       expect(rationale?.revisionSet).toMatchObject({

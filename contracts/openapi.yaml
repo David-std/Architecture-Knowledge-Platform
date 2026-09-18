@@ -138,20 +138,22 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [projectId, documentId, reviewId, relationType, selector]
+              required:
+                [projectId, documentId, reviewId, relationType, selector]
               properties:
                 projectId: { type: string, format: uuid }
                 documentId: { type: string, format: uuid }
                 reviewId: { type: string, format: uuid }
                 relationType:
                   type: string
-                  enum: [rationale_ref, governed_by, applies_to]
+                  enum: [rationale_ref, applies_to]
                 selector:
                   type: object
                   additionalProperties: false
                   properties:
                     path: { type: string, minLength: 1, maxLength: 4096 }
-                    qualifiedName: { type: string, minLength: 1, maxLength: 2048 }
+                    qualifiedName:
+                      { type: string, minLength: 1, maxLength: 2048 }
                     name: { type: string, minLength: 1, maxLength: 1024 }
                     kind: { type: string, minLength: 1, maxLength: 120 }
                     signature: { type: string, minLength: 1, maxLength: 4096 }

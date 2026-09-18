@@ -26,7 +26,7 @@ const LinkRequest = z
     projectId: z.string().uuid(),
     documentId: z.string().uuid(),
     reviewId: z.string().uuid(),
-    relationType: z.enum(["rationale_ref", "governed_by", "applies_to"]),
+    relationType: z.enum(["rationale_ref", "applies_to"]),
     selector: z
       .object({
         path: z.string().trim().min(1).max(4096).optional(),
@@ -39,10 +39,7 @@ const LinkRequest = z
       .refine(
         (value) =>
           Boolean(
-            value.path ||
-              value.qualifiedName ||
-              value.name ||
-              value.signature,
+            value.path || value.qualifiedName || value.name || value.signature,
           ),
         { message: "A code symbol locator is required." },
       ),
@@ -82,7 +79,8 @@ function approvedPath(manifest: Record<string, unknown>, documentPath: string) {
     ? manifest.proposedChanges
     : [];
   return changes.some((entry) => {
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return false;
+    if (!entry || typeof entry !== "object" || Array.isArray(entry))
+      return false;
     const value = entry as Record<string, unknown>;
     return (
       String(value.path ?? "") === documentPath &&
@@ -91,7 +89,9 @@ function approvedPath(manifest: Record<string, unknown>, documentPath: string) {
   });
 }
 
-function currentProjectCommit(metadata: Record<string, unknown>): string | null {
+function currentProjectCommit(
+  metadata: Record<string, unknown>,
+): string | null {
   const commit = metadata.commit;
   return typeof commit === "string" && /^[a-f0-9]{40}$/i.test(commit)
     ? commit.toLowerCase()
@@ -231,7 +231,11 @@ export function registerCodeKnowledgeLinkRoutes(
         return reply.code(409).send({ code: "CODE_GRAPH_NOT_READY" });
       }
       const graph = new PostgresFederatedGraphStore(db);
-      const state = await graph.revisionState("CODE", spaceId, identity.scopeId);
+      const state = await graph.revisionState(
+        "CODE",
+        spaceId,
+        identity.scopeId,
+      );
       if (
         !state.active ||
         state.active.freshness !== "FRESH" ||
