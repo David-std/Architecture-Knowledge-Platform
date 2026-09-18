@@ -6,7 +6,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc -p ../contracts/tsconfig.json && tsc -p tsconfig.build.json",
+    "build": "tsc -p ../contracts/tsconfig.json && tsc -p tsconfig.build.json && node -e \"const fs=require('node:fs'); for (const f of ['dist/index.js','dist/index.d.ts']) fs.accessSync(f)\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests"
