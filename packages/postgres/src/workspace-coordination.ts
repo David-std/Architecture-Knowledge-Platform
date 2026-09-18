@@ -261,7 +261,7 @@ async function resolveWorkspacePrincipalId(
   input: {
     sessionId: string;
     userId: string;
-    principalId?: string | null;
+    principalId?: string | null | undefined;
   },
 ): Promise<string> {
   if (input.principalId) {
@@ -297,7 +297,7 @@ async function appendCoordinationEvent(
   input: {
     sessionId: string;
     actorId: string | null;
-    actorPrincipalId?: string | null;
+    actorPrincipalId?: string | null | undefined;
     eventType: WorkspaceEventType;
     payload: Record<string, unknown>;
     claimId?: string | null;
