@@ -412,9 +412,7 @@ export function registerSessionRoutes(
       }
       const actorAuthorizationRevision = authorizationPolicyFingerprint(actor);
       const effectiveAuthorizationRevision = createHash("sha256")
-        .update(
-          `${actorAuthorizationRevision}:${vaultAuthorizationRevision}`,
-        )
+        .update(`${actorAuthorizationRevision}:${vaultAuthorizationRevision}`)
         .digest("hex");
 
       const bootstrap = new BootstrapContext({
@@ -671,9 +669,9 @@ export function registerSessionRoutes(
           .code(400)
           .send({ code: "DECISION_PROMOTION_SINGLE_CANDIDATE_REQUIRED" });
       }
-      let decisionCandidate:
-        | Awaited<ReturnType<typeof validateDecisionPromotionCandidate>>
-        | null = null;
+      let decisionCandidate: Awaited<
+        ReturnType<typeof validateDecisionPromotionCandidate>
+      > | null = null;
       let decisionCapturedEventId: string | null = null;
       if (structuredDecisionEvents[0]) {
         decisionCapturedEventId = String(structuredDecisionEvents[0].event.id);
@@ -741,9 +739,7 @@ export function registerSessionRoutes(
           throw new Error("PROMOTION_VALIDATED_METADATA_MISSING");
         }
         const trustTier =
-          typeof metadata.trust_tier === "string"
-            ? metadata.trust_tier
-            : null;
+          typeof metadata.trust_tier === "string" ? metadata.trust_tier : null;
         return {
           path: change.path,
           kind: metadata.type,
@@ -942,11 +938,7 @@ export function registerSessionRoutes(
         request.body?.outcome === null || request.body?.outcome === undefined
           ? null
           : boundedHandoffText(request.body.outcome, 12_000);
-      const followUps = boundedHandoffList(
-        request.body?.followUps,
-        50,
-        2_000,
-      );
+      const followUps = boundedHandoffList(request.body?.followUps, 50, 2_000);
       const touchedResources = boundedHandoffList(
         request.body?.touchedResources,
         100,

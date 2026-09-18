@@ -136,7 +136,6 @@ A KnowledgeProfile remains the policy authority. `ConnectorCapabilities` says wh
 
 `context_fabric_peers` is the first consumer of this shared contract. It is not the definition of the contract: later source connectors reuse the same schema. Registration persists the declared capability set and performs no network contact. Listing peers exposes the derived read plan. Supplying `vaultId` additionally evaluates each peer against that vault's active KnowledgeProfile without changing the peer or upgrading its trust.
 
-
 ## Consultative decision workflow
 
 Architecture decisions use workspace coordination state before they become governed knowledge. The durable flow is:

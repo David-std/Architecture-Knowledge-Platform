@@ -653,9 +653,7 @@ function agentProcessRouteAction(
     return "workspace:event:append";
   }
   if (
-    /^\/v1\/sessions\/[^/]+\/decisions\/[^/]+\/capture$/.test(
-      requestPath,
-    ) &&
+    /^\/v1\/sessions\/[^/]+\/decisions\/[^/]+\/capture$/.test(requestPath) &&
     method === "POST"
   ) {
     return "knowledge:propose";

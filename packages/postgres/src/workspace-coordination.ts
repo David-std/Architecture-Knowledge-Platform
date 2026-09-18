@@ -10,10 +10,7 @@ import { appendOutboxEvent, type IntegrationEventType } from "./outbox.js";
 
 export type WorkspaceParticipantRole = "OWNER" | "PARTICIPANT";
 export type WorkspaceWorkStatus =
-  | "OPEN"
-  | "BLOCKED"
-  | "COMPLETED"
-  | "ABANDONED";
+  "OPEN" | "BLOCKED" | "COMPLETED" | "ABANDONED";
 export const PROMOTABLE_WORKSPACE_EVENT_TYPES = [
   "FINDING",
   "ARTIFACT",
@@ -163,8 +160,7 @@ function normalizeSession(
       typeof row.state === "object" &&
       Array.isArray((row.state as Record<string, unknown>).touchedResources)
         ? (
-            (row.state as Record<string, unknown>)
-              .touchedResources as unknown[]
+            (row.state as Record<string, unknown>).touchedResources as unknown[]
           ).map(String)
         : [],
     state:
@@ -452,7 +448,6 @@ export async function createWorkspaceSession(
     client.release();
   }
 }
-
 
 const WORK_STATUS_TRANSITIONS: Record<
   WorkspaceWorkStatus,
@@ -1161,8 +1156,10 @@ export async function appendWorkspaceEventInTransaction(
     scope.space_id,
     scope.vault_id,
   );
-  if ((input.claimId && input.fencingToken === undefined) ||
-      (!input.claimId && input.fencingToken !== undefined)) {
+  if (
+    (input.claimId && input.fencingToken === undefined) ||
+    (!input.claimId && input.fencingToken !== undefined)
+  ) {
     throw workspaceError("WORKSPACE_EVENT_CLAIM_FENCE_REQUIRED", 400);
   }
   if (input.claimId) {

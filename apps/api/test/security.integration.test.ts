@@ -260,9 +260,7 @@ describe("API security boundaries", () => {
         vaultId,
         privateExternalId,
         `Private personal content ${suffix} must never leak into a team-wide search without an explicit vault grant.`,
-        createHash("sha256")
-          .update(`private-personal-${suffix}`)
-          .digest("hex"),
+        createHash("sha256").update(`private-personal-${suffix}`).digest("hex"),
       ],
     );
     try {

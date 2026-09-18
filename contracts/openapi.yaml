@@ -2724,7 +2724,6 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
-
   /v1/sessions/{id}/decisions:
     get:
       tags: [Sessions]

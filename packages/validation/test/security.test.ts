@@ -62,15 +62,18 @@ describe("generated Markdown safety", () => {
     ["trust_tier", "human-reviewed"],
     ["verification_status", "reviewed"],
     ["status", "proposed"],
-  ])("does not reject non-attested governed trust metadata %s=%s", (field, value) => {
-    const candidate =
-      "---\n" +
-      "type: note\n" +
-      "status: proposed\n" +
-      "knowledge_layer: generated\n" +
-      `${field}: ${value}\n` +
-      "---\n\n# Generated\n\n" +
-      "Substantive governed proposal content. ".repeat(8);
-    expect(validateGovernedTrustBoundary(candidate)).toEqual([]);
-  });
+  ])(
+    "does not reject non-attested governed trust metadata %s=%s",
+    (field, value) => {
+      const candidate =
+        "---\n" +
+        "type: note\n" +
+        "status: proposed\n" +
+        "knowledge_layer: generated\n" +
+        `${field}: ${value}\n` +
+        "---\n\n# Generated\n\n" +
+        "Substantive governed proposal content. ".repeat(8);
+      expect(validateGovernedTrustBoundary(candidate)).toEqual([]);
+    },
+  );
 });

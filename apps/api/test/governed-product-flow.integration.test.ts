@@ -1149,9 +1149,7 @@ describe("P2 governed product flow", () => {
       },
     });
     expect(rejectedAltAResponse.statusCode).toBe(201);
-    const rejectedAltAId = (
-      rejectedAltAResponse.json() as { id: string }
-    ).id;
+    const rejectedAltAId = (rejectedAltAResponse.json() as { id: string }).id;
 
     const rejectedAltBResponse = await app.inject({
       method: "POST",
@@ -1215,9 +1213,8 @@ describe("P2 governed product flow", () => {
       headers: actorAHeaders,
     });
     expect(rejectedCapture.statusCode).toBe(201);
-    const rejectedEventId = (
-      rejectedCapture.json() as { eventId: string }
-    ).eventId;
+    const rejectedEventId = (rejectedCapture.json() as { eventId: string })
+      .eventId;
 
     const rejectedPromotion = await app.inject({
       method: "POST",
@@ -1238,9 +1235,8 @@ describe("P2 governed product flow", () => {
       },
     });
     expect(rejectedPromotion.statusCode).toBe(201);
-    const rejectedReviewId = (
-      rejectedPromotion.json() as { reviewId: string }
-    ).reviewId;
+    const rejectedReviewId = (rejectedPromotion.json() as { reviewId: string })
+      .reviewId;
 
     const rejectedReview = await app.inject({
       method: "POST",
@@ -1315,8 +1311,7 @@ describe("P2 governed product flow", () => {
       headers: actorBHeaders,
       payload: {
         title: "Live reference only",
-        description:
-          "Use only live references for the changed provider.",
+        description: "Use only live references for the changed provider.",
         tradeoffs:
           "Strong freshness but no offline content when the provider is unavailable.",
       },
@@ -1448,5 +1443,4 @@ describe("P2 governed product flow", () => {
       published_revision: replacementApproved.mergedCommit,
     });
   });
-
 });

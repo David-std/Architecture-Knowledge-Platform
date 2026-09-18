@@ -44,7 +44,11 @@ function stringList(
   value: unknown,
   options: { min: number; max: number; itemMax: number },
 ): string[] | null {
-  if (!Array.isArray(value) || value.length < options.min || value.length > options.max) {
+  if (
+    !Array.isArray(value) ||
+    value.length < options.min ||
+    value.length > options.max
+  ) {
     return null;
   }
   const normalized = value.map((entry) => safeText(entry, options.itemMax));
@@ -135,8 +139,8 @@ function actorSupportsDecisionContribution(
 ): boolean {
   return Boolean(
     actor &&
-      (actor.principalKind === "HUMAN" ||
-        actor.principalKind === "AGENT_PROCESS"),
+    (actor.principalKind === "HUMAN" ||
+      actor.principalKind === "AGENT_PROCESS"),
   );
 }
 
@@ -213,8 +217,8 @@ export function registerDecisionWorkflowRoutes(
       if (!actorSupportsDecisionContribution(actor)) {
         return reply.code(403).send({ code: "DECISION_PRINCIPAL_KIND_DENIED" });
       }
-      const decisionAuthorityPrincipalId = request.body
-        ?.decisionAuthorityPrincipalId;
+      const decisionAuthorityPrincipalId =
+        request.body?.decisionAuthorityPrincipalId;
       const title = safeText(request.body?.title, 200);
       const problem = safeText(request.body?.problem, 12_000);
       const context = safeText(request.body?.context, 12_000);
@@ -256,8 +260,7 @@ export function registerDecisionWorkflowRoutes(
         !verificationPlan ||
         verificationDueAt === undefined ||
         decisionDeadline === undefined ||
-        (supersedesCandidateId &&
-          !UUID_PATTERN.test(supersedesCandidateId))
+        (supersedesCandidateId && !UUID_PATTERN.test(supersedesCandidateId))
       ) {
         return reply.code(400).send({ code: "INVALID_DECISION_CANDIDATE" });
       }
@@ -633,9 +636,7 @@ export function registerDecisionWorkflowRoutes(
         !UUID_PATTERN.test(reviewerPrincipalId) ||
         !question
       ) {
-        return reply
-          .code(400)
-          .send({ code: "INVALID_DECISION_CONSULTATION" });
+        return reply.code(400).send({ code: "INVALID_DECISION_CONSULTATION" });
       }
       try {
         const consultation = await requestDecisionConsultation(db, {
@@ -759,10 +760,11 @@ export function registerDecisionWorkflowRoutes(
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
       const alternativeId = request.body?.alternativeId;
       const consequences = safeText(request.body?.consequences, 12_000);
-      const followUpActions = stringList(
-        request.body?.followUpActions ?? [],
-        { min: 0, max: 100, itemMax: 2_000 },
-      );
+      const followUpActions = stringList(request.body?.followUpActions ?? [], {
+        min: 0,
+        max: 100,
+        itemMax: 2_000,
+      });
       const effectiveFrom = optionalDate(request.body?.effectiveFrom);
       const effectiveUntil = optionalDate(request.body?.effectiveUntil);
       if (

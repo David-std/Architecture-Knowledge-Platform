@@ -13,10 +13,7 @@ export type DecisionCandidateStatus =
   | "SUPERSEDED"
   | "WITHDRAWN";
 
-export type DecisionAlternativeStatus =
-  | "SUGGESTED"
-  | "CONSIDERED"
-  | "REJECTED";
+export type DecisionAlternativeStatus = "SUGGESTED" | "CONSIDERED" | "REJECTED";
 
 export interface DecisionCandidateRecord {
   id: string;
@@ -117,7 +114,9 @@ function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.map(String) : [];
 }
 
-function candidateRecord(row: Record<string, unknown>): DecisionCandidateRecord {
+function candidateRecord(
+  row: Record<string, unknown>,
+): DecisionCandidateRecord {
   return {
     id: String(row.id),
     sessionId: String(row.session_id),
@@ -232,9 +231,7 @@ function consultationRecord(
       : null,
     response: row.response ? String(row.response) : null,
     requestedAt: new Date(String(row.requested_at)),
-    respondedAt: row.responded_at
-      ? new Date(String(row.responded_at))
-      : null,
+    respondedAt: row.responded_at ? new Date(String(row.responded_at)) : null,
   };
 }
 
@@ -316,7 +313,10 @@ async function lockedCandidate(
     actorUserId: string;
     actorPrincipalId: string;
   },
-): Promise<{ scope: { spaceId: string; vaultId: string }; row: Record<string, unknown> }> {
+): Promise<{
+  scope: { spaceId: string; vaultId: string };
+  row: Record<string, unknown>;
+}> {
   const scope = await requireDecisionScope(client, {
     sessionId: input.sessionId,
     actorUserId: input.actorUserId,
@@ -603,7 +603,10 @@ export async function decideDecisionAlternative(
   try {
     await client.query("begin");
     const locked = await lockedCandidate(client, input);
-    if (String(locked.row.decision_authority_principal_id) !== input.actorPrincipalId) {
+    if (
+      String(locked.row.decision_authority_principal_id) !==
+      input.actorPrincipalId
+    ) {
       throw decisionError("DECISION_AUTHORITY_REQUIRED", 403);
     }
     if (!["DRAFT", "CONSULTATION"].includes(String(locked.row.status))) {
@@ -714,7 +717,10 @@ export async function resolveDecisionObjection(
   try {
     await client.query("begin");
     const locked = await lockedCandidate(client, input);
-    if (String(locked.row.decision_authority_principal_id) !== input.actorPrincipalId) {
+    if (
+      String(locked.row.decision_authority_principal_id) !==
+      input.actorPrincipalId
+    ) {
       throw decisionError("DECISION_AUTHORITY_REQUIRED", 403);
     }
     if (!["DRAFT", "CONSULTATION"].includes(String(locked.row.status))) {
@@ -878,7 +884,10 @@ export async function selectDecisionAlternative(
   try {
     await client.query("begin");
     const locked = await lockedCandidate(client, input);
-    if (String(locked.row.decision_authority_principal_id) !== input.actorPrincipalId) {
+    if (
+      String(locked.row.decision_authority_principal_id) !==
+      input.actorPrincipalId
+    ) {
       throw decisionError("DECISION_AUTHORITY_REQUIRED", 403);
     }
     if (!["DRAFT", "CONSULTATION"].includes(String(locked.row.status))) {
@@ -952,7 +961,10 @@ export async function captureDecisionCandidate(
     actorUserId: string;
     actorPrincipalId: string;
   },
-): Promise<{ candidate: DecisionCandidateRecord; event: Record<string, unknown> }> {
+): Promise<{
+  candidate: DecisionCandidateRecord;
+  event: Record<string, unknown>;
+}> {
   const client = await db.pool.connect();
   try {
     await client.query("begin");
@@ -978,7 +990,8 @@ export async function captureDecisionCandidate(
       (alternative) =>
         alternative.id === snapshot.candidate.selectedAlternativeId,
     );
-    if (!selected) throw decisionError("DECISION_SELECTED_ALTERNATIVE_MISSING", 500);
+    if (!selected)
+      throw decisionError("DECISION_SELECTED_ALTERNATIVE_MISSING", 500);
     const event = await appendWorkspaceEventInTransaction(client, {
       sessionId: input.sessionId,
       actorId: input.actorUserId,
@@ -1199,4 +1212,3 @@ export async function finalizeDecisionCandidatePublicationInTransaction(
   );
   if (!approved.rowCount) throw new Error("DECISION_PUBLICATION_STATE_LOST");
 }
-

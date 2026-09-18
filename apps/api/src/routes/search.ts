@@ -445,7 +445,9 @@ async function readableContextSnapshot(
 
   let accessByVault: AuthorizedVaultScope["accessByVault"];
   try {
-    const currentScope = await new PostgresAuthorizationPort(db).resolveVaultScope({
+    const currentScope = await new PostgresAuthorizationPort(
+      db,
+    ).resolveVaultScope({
       userId: actor.id,
       spaceId: row.space_id,
       permission: "knowledge:read",
@@ -2060,20 +2062,22 @@ export function registerSearchRoutes(
       let vaultIds: string[];
       let accessByVault: AuthorizedVaultScope["accessByVault"] = {};
       try {
-        const scope = await new PostgresAuthorizationPort(db).resolveVaultScope({
-          userId: actor.id,
-          spaceId: requestedSpace,
-          permission: "knowledge:read",
-          ...(principalVaultId
-            ? { vaultId: principalVaultId }
-            : parsed.data.vaultId
-              ? { vaultId: parsed.data.vaultId }
-              : {}),
-          vaultIds: principalVaultId
-            ? [principalVaultId]
-            : parsed.data.vaultIds,
-          federated: principalVaultId ? false : parsed.data.federated,
-        });
+        const scope = await new PostgresAuthorizationPort(db).resolveVaultScope(
+          {
+            userId: actor.id,
+            spaceId: requestedSpace,
+            permission: "knowledge:read",
+            ...(principalVaultId
+              ? { vaultId: principalVaultId }
+              : parsed.data.vaultId
+                ? { vaultId: parsed.data.vaultId }
+                : {}),
+            vaultIds: principalVaultId
+              ? [principalVaultId]
+              : parsed.data.vaultIds,
+            federated: principalVaultId ? false : parsed.data.federated,
+          },
+        );
         vaultIds = scope.vaultIds;
         accessByVault = scope.accessByVault;
       } catch (error) {
@@ -2353,20 +2357,22 @@ export function registerSearchRoutes(
       let vaultIds: string[];
       let accessByVault: AuthorizedVaultScope["accessByVault"] = {};
       try {
-        const scope = await new PostgresAuthorizationPort(db).resolveVaultScope({
-          userId: actor.id,
-          spaceId: requestedSpace,
-          permission: "knowledge:read",
-          ...(principalVaultId
-            ? { vaultId: principalVaultId }
-            : parsed.data.vaultId
-              ? { vaultId: parsed.data.vaultId }
-              : {}),
-          vaultIds: principalVaultId
-            ? [principalVaultId]
-            : parsed.data.vaultIds,
-          federated: principalVaultId ? false : parsed.data.federated,
-        });
+        const scope = await new PostgresAuthorizationPort(db).resolveVaultScope(
+          {
+            userId: actor.id,
+            spaceId: requestedSpace,
+            permission: "knowledge:read",
+            ...(principalVaultId
+              ? { vaultId: principalVaultId }
+              : parsed.data.vaultId
+                ? { vaultId: parsed.data.vaultId }
+                : {}),
+            vaultIds: principalVaultId
+              ? [principalVaultId]
+              : parsed.data.vaultIds,
+            federated: principalVaultId ? false : parsed.data.federated,
+          },
+        );
         vaultIds = scope.vaultIds;
         accessByVault = scope.accessByVault;
       } catch (error) {
