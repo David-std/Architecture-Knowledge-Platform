@@ -11,17 +11,23 @@ const spaceId = "00000000-0000-0000-0000-000000000003";
 const actorAId = randomUUID();
 const actorBId = randomUUID();
 const outsiderId = randomUUID();
+const crossSpaceId = randomUUID();
+const crossSpaceUserId = randomUUID();
 const vaultId = randomUUID();
 const actorAToken = `workspace-a-${randomUUID()}`;
 const actorBToken = `workspace-b-${randomUUID()}`;
 const actorBNarrowToken = `workspace-b-narrow-${randomUUID()}`;
 const outsiderToken = `workspace-outsider-${randomUUID()}`;
+const crossSpaceToken = `workspace-cross-space-${randomUUID()}`;
 const tokenHash = (token: string) =>
   createHash("sha256").update(token).digest("hex");
 const actorAHeaders = { authorization: `Bearer ${actorAToken}` };
 const actorBHeaders = { authorization: `Bearer ${actorBToken}` };
 const actorBNarrowHeaders = { authorization: `Bearer ${actorBNarrowToken}` };
 const outsiderHeaders = { authorization: `Bearer ${outsiderToken}` };
+const crossSpaceHeaders = {
+  authorization: `Bearer ${crossSpaceToken}`,
+};
 
 let app: FastifyInstance;
 let db: Postgres;
@@ -38,6 +44,7 @@ async function insertToken(
     "knowledge:propose",
     "source:read",
   ],
+  scopeSpaceId: string = spaceId,
 ): Promise<void> {
   await db.pool.query(
     `insert into api_tokens(user_id,token_hash,label,scopes)
@@ -49,7 +56,7 @@ async function insertToken(
       JSON.stringify({
         spaces: [
           {
-            spaceId,
+            spaceId: scopeSpaceId,
             pathPrefix,
             permissions,
           },
@@ -78,11 +85,30 @@ beforeAll(async () => {
       `workspace-${vaultId.slice(0, 8)}`,
     ],
   );
+  const organization = await db.pool.query<{ organization_id: string }>(
+    "select organization_id from spaces where id=$1",
+    [spaceId],
+  );
+  const organizationId = organization.rows[0]?.organization_id;
+  if (!organizationId) throw new Error("WORKSPACE_TEST_ORGANIZATION_MISSING");
+  await db.pool.query(
+    `insert into spaces(
+       id,organization_id,slug,name,visibility,knowledge_repo_path
+     ) values($1,$2,$3,$4,'PRIVATE',$5)`,
+    [
+      crossSpaceId,
+      organizationId,
+      `workspace-cross-${crossSpaceId.slice(0, 8)}`,
+      "Workspace cross-space adversarial scope",
+      `/tmp/workspace-cross-${crossSpaceId}`,
+    ],
+  );
   await db.pool.query(
     `insert into users(id,email,display_name) values
       ($1,$2,'Workspace Actor A'),
       ($3,$4,'Workspace Actor B'),
-      ($5,$6,'Workspace Outsider')`,
+      ($5,$6,'Workspace Outsider'),
+      ($7,$8,'Workspace Cross Space Actor')`,
     [
       actorAId,
       `${actorAId}@example.test`,
@@ -90,6 +116,8 @@ beforeAll(async () => {
       `${actorBId}@example.test`,
       outsiderId,
       `${outsiderId}@example.test`,
+      crossSpaceUserId,
+      `${crossSpaceUserId}@example.test`,
     ],
   );
   await db.pool.query(
@@ -98,6 +126,11 @@ beforeAll(async () => {
       ($2,$4,'CONTRIBUTOR',null),
       ($3,$4,'VIEWER',null)`,
     [actorAId, actorBId, outsiderId, spaceId],
+  );
+  await db.pool.query(
+    `insert into memberships(user_id,space_id,role,path_prefix)
+     values($1,$2,'VIEWER',null)`,
+    [crossSpaceUserId, crossSpaceId],
   );
   for (const userId of [actorAId, actorBId]) {
     await grantVaultMembership(db, {
@@ -117,6 +150,14 @@ beforeAll(async () => {
     "docs",
   );
   await insertToken(outsiderId, outsiderToken, "workspace outsider");
+  await insertToken(
+    crossSpaceUserId,
+    crossSpaceToken,
+    "workspace cross-space actor",
+    null,
+    ["knowledge:read", "source:read"],
+    crossSpaceId,
+  );
   const module = await import("../src/server.js");
   app = module.buildServer();
 });
@@ -139,6 +180,7 @@ afterAll(async () => {
           tokenHash(actorBToken),
           tokenHash(actorBNarrowToken),
           tokenHash(outsiderToken),
+          tokenHash(crossSpaceToken),
         ],
       ],
     );
@@ -146,6 +188,11 @@ afterAll(async () => {
       "delete from memberships where user_id=any($1::uuid[]) and space_id=$2",
       [[actorAId, actorBId, outsiderId], spaceId],
     );
+    await db.pool.query(
+      "delete from memberships where user_id=$1 and space_id=$2",
+      [crossSpaceUserId, crossSpaceId],
+    );
+    await db.pool.query("delete from spaces where id=$1", [crossSpaceId]);
     await db.pool.query("update vaults set enabled=false where id=$1", [
       vaultId,
     ]);
@@ -254,6 +301,16 @@ describe("workspace coordination integration", () => {
     });
     expect(hiddenFromOutsider.statusCode).toBe(404);
     expect(hiddenFromOutsider.json()).toMatchObject({
+      code: "SESSION_NOT_FOUND",
+    });
+
+    const hiddenAcrossSpace = await app.inject({
+      method: "GET",
+      url: `/v1/sessions/${sessionId}/state`,
+      headers: crossSpaceHeaders,
+    });
+    expect(hiddenAcrossSpace.statusCode).toBe(404);
+    expect(hiddenAcrossSpace.json()).toMatchObject({
       code: "SESSION_NOT_FOUND",
     });
 
