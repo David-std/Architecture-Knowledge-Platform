@@ -14,6 +14,7 @@ export * from "./context-revision-set.js";
 export * from "./principals.js";
 export * from "./team-context-fabric.js";
 export * from "./decision-workflow.js";
+export * from "./federated-graph.js";
 export * from "./context-fabric-node.js";
 
 export interface PostgresOptions {
