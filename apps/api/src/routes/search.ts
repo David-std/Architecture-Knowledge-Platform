@@ -938,9 +938,8 @@ export async function queryKnowledge(
   const truthStore = new PostgresTemporalTruthStore(db);
   const truthSnapshot = await truthStore.captureSnapshot(spaceId, vaultIds);
   const finalizeTruthSnapshot = async (): Promise<RetrievalTruthState> => {
-    const changedDuringQuery = !(await truthStore.snapshotUnchanged(
-      truthSnapshot,
-    ));
+    const changedDuringQuery =
+      !(await truthStore.snapshotUnchanged(truthSnapshot));
     const state: RetrievalTruthState = {
       consistency: truthConsistency,
       snapshot: truthSnapshot,

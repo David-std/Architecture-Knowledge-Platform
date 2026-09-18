@@ -1,10 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { SearchRequest } from "@akp/contracts";
-import {
-  Postgres,
-  PostgresTemporalTruthStore,
-} from "@akp/postgres";
+import { Postgres, PostgresTemporalTruthStore } from "@akp/postgres";
 import {
   EmbeddingGenerationManager,
   type RequestEmbeddingGeneration,
@@ -272,24 +269,20 @@ describe.skipIf(!databaseUrl)("truth-valid vector retrieval", () => {
     const fixture = await seedFixture("Strict truth vector");
     let withdrawalRevision = "";
     await expect(
-      queryKnowledge(
-        db,
-        searchInput(fixture.spaceId, fixture.vaultId),
-        {
-          vaultIds: [fixture.vaultId],
-          channels: ["vector"],
-          queryEmbeddingService: queryService(async () => {
-            const withdrawn = await fixture.store.withdrawSourceEpisode({
-              spaceId: fixture.spaceId,
-              vaultId: fixture.vaultId,
-              sourceEpisodeId: fixture.sourceEpisodeId,
-              reason: "Support withdrawn during retrieval",
-            });
-            withdrawalRevision = withdrawn.revisionHash;
-          }),
-          truthConsistency: "STRICT",
-        },
-      ),
+      queryKnowledge(db, searchInput(fixture.spaceId, fixture.vaultId), {
+        vaultIds: [fixture.vaultId],
+        channels: ["vector"],
+        queryEmbeddingService: queryService(async () => {
+          const withdrawn = await fixture.store.withdrawSourceEpisode({
+            spaceId: fixture.spaceId,
+            vaultId: fixture.vaultId,
+            sourceEpisodeId: fixture.sourceEpisodeId,
+            reason: "Support withdrawn during retrieval",
+          });
+          withdrawalRevision = withdrawn.revisionHash;
+        }),
+        truthConsistency: "STRICT",
+      }),
     ).rejects.toThrow("CONTEXT_REVISION_CHANGED");
     expect(withdrawalRevision).not.toBe("");
 
@@ -322,9 +315,7 @@ describe.skipIf(!databaseUrl)("truth-valid vector retrieval", () => {
         spaceId: fixture.spaceId,
         vaultId: fixture.vaultId,
         derivedStoreKind: "VECTOR",
-        derivedItemRefs: [
-          `vector:${fixture.generationId}:${fixture.unitId}`,
-        ],
+        derivedItemRefs: [`vector:${fixture.generationId}:${fixture.unitId}`],
         truthRevisionHash: fixture.preWithdrawalRevisionHash,
       }),
     ).toMatchObject([{ state: "SUPPORTED", valid: true }]);
