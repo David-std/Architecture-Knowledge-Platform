@@ -165,10 +165,7 @@ export interface TruthSnapshot {
 }
 
 export type DerivedTruthValidationState =
-  | "SUPPORTED"
-  | "DISPUTED"
-  | "UNSUPPORTED"
-  | "UNANNOTATED";
+  "SUPPORTED" | "DISPUTED" | "UNSUPPORTED" | "UNANNOTATED";
 
 export interface DerivedTruthValidation {
   derivedItemRef: string;

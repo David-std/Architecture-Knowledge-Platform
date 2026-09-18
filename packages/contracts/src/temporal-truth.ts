@@ -193,9 +193,7 @@ export const DerivedTruthDependency = z.object({
   derivedStoreKind: DerivedTruthStoreKind,
   derivedItemRef: z.string().min(1).max(4096),
   supportSetId: z.string().uuid(),
-  sourceRevisionHashes: z
-    .array(z.string().regex(/^[a-f0-9]{64}$/))
-    .max(500),
+  sourceRevisionHashes: z.array(z.string().regex(/^[a-f0-9]{64}$/)).max(500),
   truthRevisionHash: z.string().regex(/^[a-f0-9]{64}$/),
   projectionRevision: z.string().min(1).max(2048).nullable(),
   createdAt: z.string().datetime(),
@@ -221,7 +219,10 @@ export type RegisterDerivedTruthDependencyInput = z.infer<
 
 export const TruthSnapshotEntry = z.object({
   vaultId: z.string().uuid(),
-  revisionHash: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
+  revisionHash: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .nullable(),
   revisionSeq: z.number().int().nonnegative(),
 });
 export type TruthSnapshotEntry = z.infer<typeof TruthSnapshotEntry>;
@@ -248,7 +249,10 @@ export const DerivedTruthValidation = z.object({
   state: DerivedTruthValidationState,
   valid: z.boolean(),
   dependency: DerivedTruthDependency.nullable(),
-  queryRevisionHash: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
+  queryRevisionHash: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .nullable(),
   queryRevisionSeq: z.number().int().nonnegative(),
 });
 export type DerivedTruthValidation = z.infer<typeof DerivedTruthValidation>;
