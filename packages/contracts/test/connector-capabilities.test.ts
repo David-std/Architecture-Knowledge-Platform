@@ -98,22 +98,25 @@ describe("ConnectorCapabilities", () => {
     });
   });
 
-  it("denies a connector whose access mode the active profile does not allow", () => {
-    const remote = ConnectorCapabilities.parse({
-      ...liveReference,
-      accessMode: "REMOTE_FEDERATED",
-    });
-    const policy = SOFTWARE_DELIVERY_KNOWLEDGE_PROFILE_V1.connectorPolicy;
-    expect(policy).toBeDefined();
-    expect(evaluateConnectorCapabilities(remote, policy!)).toEqual({
-      status: "DENIED",
-      permissionFidelitySatisfied: false,
-      reasons: [
-        "ACCESS_MODE_NOT_ALLOWED",
-        "PERMISSION_FIDELITY_INSUFFICIENT",
-      ],
-    });
-  });
+  it(
+    "denies a connector whose access mode the active profile does not allow",
+    () => {
+      const remote = ConnectorCapabilities.parse({
+        ...liveReference,
+        accessMode: "REMOTE_FEDERATED",
+      });
+      const policy = SOFTWARE_DELIVERY_KNOWLEDGE_PROFILE_V1.connectorPolicy;
+      expect(policy).toBeDefined();
+      expect(evaluateConnectorCapabilities(remote, policy!)).toEqual({
+        status: "DENIED",
+        permissionFidelitySatisfied: false,
+        reasons: [
+          "ACCESS_MODE_NOT_ALLOWED",
+          "PERMISSION_FIDELITY_INSUFFICIENT",
+        ],
+      });
+    },
+  );
 
   it("does not let a remote-only connector promise stale local content", () => {
     const invalid = {
