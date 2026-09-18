@@ -43,7 +43,7 @@ describe("generated Markdown safety", () => {
     const candidate =
       "---\n" +
       "type: note\n" +
-      "status: proposed\n" +
+      (field === "status" ? "" : "status: proposed\n") +
       "knowledge_layer: generated\n" +
       `${field}: ${value}\n` +
       "---\n\n# Generated\n\n" +
@@ -68,7 +68,7 @@ describe("generated Markdown safety", () => {
       const candidate =
         "---\n" +
         "type: note\n" +
-        "status: proposed\n" +
+        (field === "status" ? "" : "status: proposed\n") +
         "knowledge_layer: generated\n" +
         `${field}: ${value}\n` +
         "---\n\n# Generated\n\n" +
