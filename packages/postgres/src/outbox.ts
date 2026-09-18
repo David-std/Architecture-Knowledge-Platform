@@ -73,6 +73,7 @@ export const INTEGRATION_EVENT_TYPES = [
   "GraphIndexUpdateRequested",
   "GraphRevisionBuilt",
   "GraphRevisionActivated",
+  "GraphRevisionStale",
   "ContextPackInvalidationRequested",
   "ImpactedEvalRunRequested",
   "WorkspaceSessionCreated",
