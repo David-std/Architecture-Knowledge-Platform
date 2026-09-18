@@ -106,7 +106,7 @@ export class DeterministicProjectAdapter implements ProjectAdapter {
           "**/build.gradle",
           "**/build.gradle.kts",
           "**/*.csproj",
-          "**/*.{java,cs,ts,tsx,vue}",
+          "**/*.{java,cs,ts,tsx,js,jsx,mjs,cjs,vue}",
         ],
         {
           cwd: root,
@@ -135,7 +135,7 @@ export class DeterministicProjectAdapter implements ProjectAdapter {
       return listed.stdout
         .split(/\r?\n/)
         .filter((file) =>
-          /(^|\/)(package\.json|pom\.xml|build\.gradle(?:\.kts)?|[^/]+\.csproj)$|\.(java|cs|ts|tsx|vue)$/i.test(
+          /(^|\/)(package\.json|pom\.xml|build\.gradle(?:\.kts)?|[^/]+\.csproj)$|\.(java|cs|ts|tsx|js|jsx|mjs|cjs|vue)$/i.test(
             file,
           ),
         );
