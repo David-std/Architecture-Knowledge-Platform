@@ -26,6 +26,9 @@ export type GraphDerivation = z.infer<typeof GraphDerivation>;
 export const GraphDirection = z.enum(["outgoing", "incoming", "both"]);
 export type GraphDirection = z.infer<typeof GraphDirection>;
 
+export const GraphFreshnessPolicy = z.enum(["FRESH_ONLY", "ALLOW_STALE"]);
+export type GraphFreshnessPolicy = z.infer<typeof GraphFreshnessPolicy>;
+
 export const GraphProjectionLifecycle = z.enum([
   "REQUESTED",
   "BUILT",
@@ -190,6 +193,7 @@ export interface GraphQueryBase {
   domains?: readonly GraphDomain[];
   relationAllowlist: readonly string[];
   direction: GraphDirection;
+  freshnessPolicy: GraphFreshnessPolicy;
   bounds: GraphTraversalBounds;
 }
 
