@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   GraphPathResult,
   GraphProjectionRevision,
@@ -219,6 +219,7 @@ function queryBase(
     maxHops?: number;
     maxFanout?: number;
     maxCandidates?: number;
+    timeBudgetMs?: number;
   } = {},
 ) {
   return {
@@ -235,7 +236,7 @@ function queryBase(
       maxHops: options.maxHops ?? 4,
       maxFanout: options.maxFanout ?? 50,
       maxCandidates: options.maxCandidates ?? 100,
-      timeBudgetMs: 5_000,
+      timeBudgetMs: options.timeBudgetMs ?? 5_000,
     },
   };
 }
@@ -990,6 +991,100 @@ describe("federated multi-graph substrate integration", () => {
           revision: "stale-r2",
           freshness: "STALE",
         });
+
+        const fallbackScope = "code:failed-build-fallback";
+        const fallbackR1 = identity(
+          "CODE",
+          fallbackScope,
+          "function",
+          "fallback-seed",
+          "fallback-r1",
+        );
+        await store.build(
+          artifact({
+            graphDomain: "CODE",
+            spaceId: fixture.spaceId,
+            vaultId: fixture.vaultA,
+            scopeId: fallbackScope,
+            revision: "fallback-r1",
+            nodes: [
+              node(fallbackR1, fixture.vaultA, "allowed/fallback-seed"),
+            ],
+          }),
+        );
+
+        const fallbackR2 = identity(
+          "CODE",
+          fallbackScope,
+          "function",
+          "fallback-seed",
+          "fallback-r2",
+        );
+        const missingR2Target = identity(
+          "CODE",
+          fallbackScope,
+          "function",
+          "missing-target",
+          "fallback-r2",
+        );
+        await expect(
+          store.update({
+            baseRevision: "fallback-r1",
+            next: artifact({
+              graphDomain: "CODE",
+              spaceId: fixture.spaceId,
+              vaultId: fixture.vaultA,
+              scopeId: fallbackScope,
+              revision: "fallback-r2",
+              nodes: [
+                node(fallbackR2, fixture.vaultA, "allowed/fallback-seed"),
+              ],
+              edges: [
+                edge(
+                  fallbackR2,
+                  "calls",
+                  missingR2Target,
+                  "STATICALLY_RESOLVED",
+                  "fallback-r2",
+                ),
+              ],
+            }),
+          }),
+        ).rejects.toThrow("GRAPH_EDGE_NODE_NOT_FOUND");
+
+        const fallbackState = await store.revisionState(
+          "CODE",
+          fixture.spaceId,
+          fallbackScope,
+        );
+        expect(fallbackState).toMatchObject({
+          requestedRevision: "fallback-r2",
+          builtRevision: "fallback-r1",
+          activeRevision: "fallback-r1",
+          activeFreshness: "FRESH",
+          requested: {
+            revision: "fallback-r2",
+            lifecycle: "FAILED",
+            freshness: "STALE",
+          },
+          active: {
+            revision: "fallback-r1",
+            lifecycle: "ACTIVE",
+            freshness: "FRESH",
+          },
+        });
+        const fallbackRead = await store.impact({
+          ...queryBase(fixture, {
+            domains: ["CODE"],
+            freshnessPolicy: "FRESH_ONLY",
+          }),
+          seed: { identity: fallbackR1 },
+        });
+        expect(fallbackRead.seed.projection).toMatchObject({
+          revision: "fallback-r1",
+          lifecycle: "ACTIVE",
+          freshness: "FRESH",
+        });
       } finally {
         await cleanupFixture(db, fixture).catch(() => undefined);
         await db.close();
@@ -1191,6 +1286,27 @@ describe("federated multi-graph substrate integration", () => {
         expect(incoming).toHaveLength(1);
         expect(incoming[0]?.target.identity.canonicalKey).toBe("seed");
         expect(incoming[0]?.steps[0]?.direction).toBe("incoming");
+
+        let fakeNow = 0;
+        const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => {
+          fakeNow += 2;
+          return fakeNow;
+        });
+        try {
+          await expect(
+            store.paths({
+              ...queryBase(fixture, {
+                domains: ["CODE"],
+                relations: ["calls"],
+                maxHops: 5,
+                timeBudgetMs: 1,
+              }),
+              seed: { identity: seed },
+            }),
+          ).rejects.toThrow("GRAPH_QUERY_TIME_BUDGET_EXCEEDED");
+        } finally {
+          nowSpy.mockRestore();
+        }
 
         await expect(
           store.paths({
