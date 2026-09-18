@@ -302,6 +302,42 @@ describe("P2 governed product flow", () => {
       expect.arrayContaining(["FINDING", "CLAIM_RELEASED", "CLAIM_HANDOFF"]),
     );
 
+    const trustEscalationSummary =
+      "Attempt workspace promotion trust escalation";
+    const trustEscalation = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/promotions`,
+      headers: actorBHeaders,
+      payload: {
+        evidenceEventIds: [findingId],
+        summary: trustEscalationSummary,
+        changes: [
+          {
+            path: `knowledge/p2-trust-escalation-${vaultId.slice(0, 8)}.md`,
+            content:
+              "---\ntype: claim\nstatus: proposed\nknowledge_layer: project\ntrust_tier: attested\n---\n# Forged attestation\n\nThis candidate deliberately attempts to claim a trust authority stronger than the governed human review can confer. It must be rejected before a review draft or canonical publication is created.\n",
+            reason:
+              "Adversarial P2 proof that proposal content cannot manufacture ATTESTED trust.",
+          },
+        ],
+      },
+    });
+    expect(trustEscalation.statusCode).toBe(422);
+    expect(trustEscalation.json()).toMatchObject({
+      code: "DRAFT_VALIDATION_FAILED",
+      issues: expect.arrayContaining([
+        expect.objectContaining({
+          code: "TRUST_ESCALATION_FORBIDDEN",
+          severity: "ERROR",
+        }),
+      ]),
+    });
+    const forgedReview = await db.pool.query(
+      "select id from reviews where summary=$1",
+      [trustEscalationSummary],
+    );
+    expect(forgedReview.rowCount).toBe(0);
+
     const promotion = await app.inject({
       method: "POST",
       url: `/v1/sessions/${sessionId}/promotions`,
