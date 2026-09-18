@@ -292,7 +292,7 @@ export function registerProjectRoutes(
             : ("DISABLED" as const),
       };
       const client = await db.pool.connect();
-      let projectRow: Record<string, unknown>;
+      let projectRow: Record<string, unknown> | null = null;
       try {
         await client.query("begin");
         const result = await client.query(
@@ -380,6 +380,7 @@ export function registerProjectRoutes(
       } finally {
         client.release();
       }
+      if (!projectRow) throw new Error("PROJECT_PERSISTENCE_FAILED");
       const projection = await rebuildSpaceProjections(db, spaceId, vaultId);
       await audit(
         db,
