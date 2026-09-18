@@ -1,3 +1,4 @@
+export * from "./temporal-truth.js";
 export * from "./code-graph.js";
 export * from "./connector-capabilities.js";
 import { z } from "zod";
@@ -457,9 +458,20 @@ export const IntegrationEventType = z.enum([
   "LexicalIndexUpdateRequested",
   "VectorIndexUpdateRequested",
   "GraphIndexUpdateRequested",
+  "CodeGraphRefreshRequested",
+  "CodeKnowledgeLinkApproved",
+  "GraphRevisionBuilt",
+  "GraphRevisionActivated",
+  "GraphRevisionStale",
+  "SourceWithdrawn",
+  "EvidenceInvalidated",
+  "FactSuperseded",
+  "TruthRevisionPublished",
+  "DerivedSupportInvalidationRequested",
   "ContextPackInvalidationRequested",
   "ImpactedEvalRunRequested",
   "WorkspaceSessionCreated",
+  "WorkspaceSessionUpdated",
   "WorkspaceClaimUpdated",
   "WorkspaceHandoffCreated",
   "WorkspacePromotionRequested",
@@ -467,6 +479,7 @@ export const IntegrationEventType = z.enum([
   "OfflineDraftQueued",
   "OfflineDraftReconciled",
   "ContextFabricPeerRegistered",
+  "PrincipalRevoked",
 ]);
 export type IntegrationEventType = z.infer<typeof IntegrationEventType>;
 

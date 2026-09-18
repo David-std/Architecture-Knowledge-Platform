@@ -98,6 +98,11 @@ components:
             - GraphRevisionBuilt
             - GraphRevisionActivated
             - GraphRevisionStale
+            - SourceWithdrawn
+            - EvidenceInvalidated
+            - FactSuperseded
+            - TruthRevisionPublished
+            - DerivedSupportInvalidationRequested
             - ContextPackInvalidationRequested
             - ImpactedEvalRunRequested
             - WorkspaceSessionCreated

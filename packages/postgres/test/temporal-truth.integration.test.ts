@@ -1,0 +1,324 @@
+import { randomUUID } from "node:crypto";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { Postgres, PostgresTemporalTruthStore } from "../src/index.js";
+
+const databaseUrl = process.env.DATABASE_URL;
+const organizationId = randomUUID();
+const spaceId = randomUUID();
+const vaultId = randomUUID();
+let db: Postgres;
+let store: PostgresTemporalTruthStore;
+let sourceA = "";
+let sourceB = "";
+let artifactA = "";
+let artifactB = "";
+
+beforeAll(async () => {
+  if (!databaseUrl) return;
+  db = new Postgres(databaseUrl);
+  store = new PostgresTemporalTruthStore(db);
+  await db.pool.query(
+    `insert into organizations(id,slug,name)
+     values($1,$2,'Temporal truth integration')`,
+    [organizationId, `truth-${organizationId.slice(0, 8)}`],
+  );
+  await db.pool.query(
+    `insert into spaces(
+       id,organization_id,slug,name,visibility,knowledge_repo_path
+     ) values($1,$2,$3,'Temporal truth space','PRIVATE',$4)`,
+    [
+      spaceId,
+      organizationId,
+      `truth-${spaceId.slice(0, 8)}`,
+      `/tmp/truth-${spaceId}`,
+    ],
+  );
+  await db.pool.query(
+    `insert into vaults(
+       id,space_id,canonical_path,name,read_only,current_revision,vault_key,
+       local_path,visibility,enabled
+     ) values($1,$2,$3,'Temporal truth vault',true,'truth:r0',$4,$3,'PRIVATE',true)`,
+    [
+      vaultId,
+      spaceId,
+      `/tmp/truth-vault-${vaultId}`,
+      `truth-${vaultId.slice(0, 8)}`,
+    ],
+  );
+
+  sourceA = randomUUID();
+  sourceB = randomUUID();
+  artifactA = randomUUID();
+  artifactB = randomUUID();
+  for (const [sourceId, artifactId, hash, suffix] of [
+    [sourceA, artifactA, "a".repeat(64), "a"],
+    [sourceB, artifactB, "b".repeat(64), "b"],
+  ]) {
+    await db.pool.query(
+      `insert into sources(
+         id,space_id,vault_id,title,source_uri,media_type,sha256,byte_size,
+         object_key,status,metadata
+       ) values($1,$2,$3,$4,$5,'text/plain',$6,4,$7,'ACTIVE','{}'::jsonb)`,
+      [
+        sourceId,
+        spaceId,
+        vaultId,
+        `Source ${suffix}`,
+        `https://example.test/${suffix}`,
+        hash,
+        `truth/${suffix}.txt`,
+      ],
+    );
+    await db.pool.query(
+      `insert into source_artifacts(
+         id,source_id,kind,object_key,source_hash,extractor,extractor_version,
+         quality,metadata
+       ) values($1,$2,'normalized',$3,$4,'fixture','1','HIGH','{}'::jsonb)`,
+      [artifactId, sourceId, `truth/${suffix}.json`, hash],
+    );
+  }
+});
+
+afterAll(async () => {
+  if (!db) return;
+  await db.pool.query("update vaults set enabled=false where id=$1", [vaultId]);
+  await db.close();
+});
+
+describe.skipIf(!databaseUrl)("temporal truth store", () => {
+  it("preserves alternative support and historical truth after withdrawals", async () => {
+    const episodeA = await store.createSourceEpisode({
+      spaceId,
+      vaultId,
+      sourceId: sourceA,
+      sourceArtifactId: artifactA,
+      sourceHash: "a".repeat(64),
+      observedAt: "2025-01-02T00:00:00.000Z",
+      ingestedAt: "2025-01-10T00:00:00.000Z",
+      locatorRefs: ["source:a#policy"],
+    });
+    const episodeB = await store.createSourceEpisode({
+      spaceId,
+      vaultId,
+      sourceId: sourceB,
+      sourceArtifactId: artifactB,
+      sourceHash: "b".repeat(64),
+      observedAt: "2025-01-03T00:00:00.000Z",
+      ingestedAt: "2025-01-11T00:00:00.000Z",
+      locatorRefs: ["source:b#policy"],
+    });
+    const support = await store.createSupportSet({
+      spaceId,
+      vaultId,
+      sourceEpisodeIds: [episodeA.id, episodeB.id],
+      alternativeSupportGroups: [
+        [`source_episode:${episodeA.id}`],
+        [`source_episode:${episodeB.id}`],
+      ],
+    });
+    const recorded = await store.recordFact({
+      spaceId,
+      vaultId,
+      scopeId: "security:admin",
+      authorizationPath: "security/admin.md",
+      subjectRef: "policy:admin-access",
+      predicate: "requires_mfa",
+      object: { required: true },
+      validFrom: "2025-01-01T00:00:00.000Z",
+      supportSetId: support.id,
+      sourceEpisodeId: episodeA.id,
+    });
+
+    const initial = await store.listFacts({
+      spaceId,
+      vaultId,
+      subjectRef: "policy:admin-access",
+      predicate: "requires_mfa",
+      validAt: "2025-02-01T00:00:00.000Z",
+      truthRevisionHash: recorded.revision.revisionHash,
+    });
+    expect(initial).toHaveLength(1);
+    expect(initial[0]).toMatchObject({ supportState: "SUPPORTED" });
+
+    const afterA = await store.withdrawSourceEpisode({
+      spaceId,
+      vaultId,
+      sourceEpisodeId: episodeA.id,
+      reason: "Source A withdrawn",
+    });
+    const stillSupported = await store.listFacts({
+      spaceId,
+      vaultId,
+      subjectRef: "policy:admin-access",
+      predicate: "requires_mfa",
+      validAt: "2025-02-01T00:00:00.000Z",
+      truthRevisionHash: afterA.revisionHash,
+    });
+    expect(stillSupported).toHaveLength(1);
+    expect(stillSupported[0]?.supportState).toBe("SUPPORTED");
+
+    const afterB = await store.withdrawSourceEpisode({
+      spaceId,
+      vaultId,
+      sourceEpisodeId: episodeB.id,
+      reason: "Source B withdrawn",
+    });
+    expect(
+      await store.listFacts({
+        spaceId,
+        vaultId,
+        subjectRef: "policy:admin-access",
+        predicate: "requires_mfa",
+        validAt: "2025-02-01T00:00:00.000Z",
+        truthRevisionHash: afterB.revisionHash,
+      }),
+    ).toEqual([]);
+
+    const historical = await store.listFacts({
+      spaceId,
+      vaultId,
+      subjectRef: "policy:admin-access",
+      predicate: "requires_mfa",
+      validAt: "2025-02-01T00:00:00.000Z",
+      truthRevisionHash: recorded.revision.revisionHash,
+    });
+    expect(historical).toHaveLength(1);
+    const history = await store.supportHistory(recorded.fact.id);
+    expect(history.sourceWithdrawals).toHaveLength(2);
+  });
+
+  it("separates valid time from recorded truth and delays future supersession", async () => {
+    const episode = await store.createSourceEpisode({
+      spaceId,
+      vaultId,
+      sourceId: sourceA,
+      sourceArtifactId: artifactA,
+      sourceHash: "a".repeat(64),
+      locatorRefs: ["source:a#tls"],
+    });
+    const support = await store.createSupportSet({
+      spaceId,
+      vaultId,
+      sourceEpisodeIds: [episode.id],
+    });
+    const old = await store.recordFact({
+      spaceId,
+      vaultId,
+      scopeId: "security:tls",
+      authorizationPath: "security/tls.md",
+      subjectRef: "policy:transport",
+      predicate: "tls_minimum",
+      object: { version: "1.2" },
+      validFrom: "2024-01-01T00:00:00.000Z",
+      supportSetId: support.id,
+    });
+    const future = await store.recordFact({
+      spaceId,
+      vaultId,
+      scopeId: "security:tls",
+      authorizationPath: "security/tls.md",
+      subjectRef: "policy:transport",
+      predicate: "tls_minimum",
+      object: { version: "1.3" },
+      validFrom: "2027-01-01T00:00:00.000Z",
+      supportSetId: support.id,
+      supersedesFactId: old.fact.id,
+    });
+
+    const beforeEffective = await store.listFacts({
+      spaceId,
+      vaultId,
+      subjectRef: "policy:transport",
+      predicate: "tls_minimum",
+      validAt: "2026-06-01T00:00:00.000Z",
+      truthRevisionHash: future.revision.revisionHash,
+    });
+    expect(beforeEffective.map((fact) => fact.object)).toEqual([
+      { version: "1.2" },
+    ]);
+
+    const afterEffective = await store.listFacts({
+      spaceId,
+      vaultId,
+      subjectRef: "policy:transport",
+      predicate: "tls_minimum",
+      validAt: "2027-02-01T00:00:00.000Z",
+      truthRevisionHash: future.revision.revisionHash,
+    });
+    expect(afterEffective.map((fact) => fact.object)).toEqual([
+      { version: "1.3" },
+    ]);
+
+    const late = await store.recordFact({
+      spaceId,
+      vaultId,
+      scopeId: "security:legacy",
+      authorizationPath: "security/legacy.md",
+      subjectRef: "policy:legacy",
+      predicate: "effective_rule",
+      object: { value: "older-but-learned-later" },
+      validFrom: "2020-01-01T00:00:00.000Z",
+      supportSetId: support.id,
+    });
+    expect(
+      await store.listFacts({
+        spaceId,
+        vaultId,
+        subjectRef: "policy:legacy",
+        validAt: "2026-01-01T00:00:00.000Z",
+        truthRevisionHash: future.revision.revisionHash,
+      }),
+    ).toEqual([]);
+    expect(
+      await store.listFacts({
+        spaceId,
+        vaultId,
+        subjectRef: "policy:legacy",
+        validAt: "2026-01-01T00:00:00.000Z",
+        truthRevisionHash: late.revision.revisionHash,
+      }),
+    ).toHaveLength(1);
+  });
+
+  it("keeps facts append-only and exposes disputed support", async () => {
+    const episode = await store.createSourceEpisode({
+      spaceId,
+      vaultId,
+      sourceId: sourceA,
+      sourceArtifactId: artifactA,
+      sourceHash: "a".repeat(64),
+      locatorRefs: ["source:a#dispute"],
+    });
+    const support = await store.createSupportSet({
+      spaceId,
+      vaultId,
+      state: "DISPUTED",
+      sourceEpisodeIds: [episode.id],
+    });
+    const recorded = await store.recordFact({
+      spaceId,
+      vaultId,
+      scopeId: "security:disputed",
+      authorizationPath: "security/disputed.md",
+      subjectRef: "policy:disputed",
+      predicate: "setting",
+      object: { enabled: false },
+      validFrom: "2025-01-01T00:00:00.000Z",
+      supportSetId: support.id,
+      lifecycle: "DISPUTED",
+    });
+    const facts = await store.listFacts({
+      spaceId,
+      vaultId,
+      subjectRef: "policy:disputed",
+      truthRevisionHash: recorded.revision.revisionHash,
+      validAt: "2026-01-01T00:00:00.000Z",
+    });
+    expect(facts[0]?.supportState).toBe("DISPUTED");
+    await expect(
+      db.pool.query("update temporal_facts set predicate='mutated' where id=$1", [
+        recorded.fact.id,
+      ]),
+    ).rejects.toThrow("TEMPORAL_TRUTH_IMMUTABLE");
+  });
+});
