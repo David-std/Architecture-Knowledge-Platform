@@ -464,11 +464,12 @@ describe("federated multi-graph substrate integration", () => {
             ),
           ],
         });
+        const firstCatalogBuild = await store.build(catalogProjection);
         expect(
-          GraphProjectionRevision.safeParse(
-            await store.build(catalogProjection),
-          ).success,
+          GraphProjectionRevision.safeParse(firstCatalogBuild).success,
         ).toBe(true);
+        const repeatedCatalogBuild = await store.build(catalogProjection);
+        expect(repeatedCatalogBuild).toEqual(firstCatalogBuild);
 
         const direct = await store.neighbors({
           ...queryBase(fixture, {
