@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import type {
   CodeGraphArtifact,
@@ -19,7 +20,7 @@ function revision(input: {
   freshness?: "FRESH" | "STALE";
 }): GraphProjectionRevision {
   return {
-    id: crypto.randomUUID(),
+    id: randomUUID(),
     graphDomain: "CODE",
     spaceId: "00000000-0000-0000-0000-000000000003",
     vaultId: "00000000-0000-0000-0000-000000000004",
