@@ -1201,7 +1201,9 @@ export class PostgresFederatedGraphStore
     const requested = requestedResult.rows[0]
       ? mapProjection(requestedResult.rows[0])
       : null;
-    const built = builtResult.rows[0] ? mapProjection(builtResult.rows[0]) : null;
+    const built = builtResult.rows[0]
+      ? mapProjection(builtResult.rows[0])
+      : null;
     const active = activeResult.rows[0]
       ? mapProjection(activeResult.rows[0])
       : null;
@@ -1211,8 +1213,7 @@ export class PostgresFederatedGraphStore
     return {
       graphDomain: domain,
       spaceId,
-      vaultId:
-        requested?.vaultId ?? built?.vaultId ?? active?.vaultId ?? null,
+      vaultId: requested?.vaultId ?? built?.vaultId ?? active?.vaultId ?? null,
       scopeId,
       requested,
       built,

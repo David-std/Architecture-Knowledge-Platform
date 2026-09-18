@@ -470,8 +470,7 @@ describe("federated multi-graph substrate integration", () => {
             ),
           ],
         });
-        const firstCatalogBuild =
-          await projectionPort.build(catalogProjection);
+        const firstCatalogBuild = await projectionPort.build(catalogProjection);
         expect(
           GraphProjectionRevision.safeParse(firstCatalogBuild).success,
         ).toBe(true);
