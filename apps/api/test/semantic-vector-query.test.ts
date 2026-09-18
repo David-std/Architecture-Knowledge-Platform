@@ -100,9 +100,12 @@ describe("semantic vector query", () => {
             return {
               rows: [
                 {
+                  generation_id: generationId,
+                  vault_id: vaultId,
                   id: documentId,
                   unit_id: unitId,
                   unit_type: "PARAGRAPH",
+                  document_revision: "revision-1",
                   score: 0.91,
                 },
               ],
