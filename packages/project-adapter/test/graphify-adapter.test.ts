@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -215,5 +215,60 @@ describe("GraphifyCodeGraphAdapter", () => {
     await expect(
       adapter.analyze(snapshot, defaultCodeGraphOptions()),
     ).rejects.toThrow("GRAPHIFY_PROCESS_FAILED");
+  });
+
+  it("rejects a Git symlink before provider extraction", async () => {
+    const { root } = await gitRepository();
+    await symlink("a.ts", path.join(root, "src", "linked.ts"));
+    const run = (...args: string[]) =>
+      spawnSync("git", ["-C", root, ...args], {
+        encoding: "utf8",
+        windowsHide: true,
+      });
+    expect(run("add", "src/linked.ts").status).toBe(0);
+    expect(run("commit", "-m", "symlink fixture").status).toBe(0);
+    const commit = run("rev-parse", "HEAD").stdout.trim();
+    const snapshot = await createCodeSnapshot({
+      repositoryPath: root,
+      commit,
+    });
+    const script = await fakeGraphify(root, { nodes: [], edges: [] });
+    const adapter = new GraphifyCodeGraphAdapter({
+      executable: process.execPath,
+      executableArgs: [script],
+    });
+
+    await expect(
+      adapter.analyze(snapshot, defaultCodeGraphOptions()),
+    ).rejects.toThrow("CODE_SNAPSHOT_SYMLINK_REJECTED");
+  });
+
+  it("kills a provider that exceeds the bounded process output budget", async () => {
+    const { root, commit } = await gitRepository();
+    const snapshot = await createCodeSnapshot({
+      repositoryPath: root,
+      commit,
+    });
+    const script = path.join(root, "output-bomb-graphify.mjs");
+    await writeFile(
+      script,
+      [
+        "const args = process.argv.slice(2);",
+        'if (args.includes("--version")) { console.log("graphify 0.9.99"); process.exit(0); }',
+        'if (args[0] !== "extract") process.exit(43);',
+        'process.stdout.write("x".repeat(4096));',
+      ].join("\n"),
+    );
+    const adapter = new GraphifyCodeGraphAdapter({
+      executable: process.execPath,
+      executableArgs: [script],
+    });
+
+    await expect(
+      adapter.analyze(snapshot, {
+        ...defaultCodeGraphOptions(),
+        maxProcessOutputBytes: 1024,
+      }),
+    ).rejects.toThrow("GRAPHIFY_PROCESS_OUTPUT_LIMIT");
   });
 });
