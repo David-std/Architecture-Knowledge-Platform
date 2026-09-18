@@ -262,6 +262,35 @@ export function serializeEffectiveScopes(actor: Actor): {
   return { spaces };
 }
 
+export function authorizationPolicyFingerprint(actor: Actor): string {
+  const canonicalMemberships = actor.memberships
+    .map((membership) => ({
+      spaceId: membership.spaceId,
+      role: membership.role,
+      pathPrefix: normalizePath(membership.pathPrefix),
+      permissions: [...permissionsForMembership(membership)].sort(),
+    }))
+    .sort((left, right) =>
+      JSON.stringify(left).localeCompare(JSON.stringify(right)),
+    );
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        memberships: canonicalMemberships,
+        principal: {
+          id: actor.principalId,
+          kind: actor.principalKind,
+          parentPrincipalId: actor.parentPrincipalId,
+          sessionId: actor.principalSessionId,
+          vaultId: actor.principalVaultId,
+          allowedActions: [...actor.principalAllowedActions].sort(),
+          policyRevision: actor.principalPolicyRevision,
+        },
+      }),
+    )
+    .digest("hex");
+}
+
 function idempotencyScopeFingerprint(
   authenticationKind: Actor["authenticationKind"],
   credentialId: string,
