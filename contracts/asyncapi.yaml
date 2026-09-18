@@ -96,6 +96,7 @@ components:
             - ContextPackInvalidationRequested
             - ImpactedEvalRunRequested
             - WorkspaceSessionCreated
+            - WorkspaceSessionUpdated
             - WorkspaceClaimUpdated
             - WorkspaceHandoffCreated
             - WorkspacePromotionRequested
@@ -103,6 +104,7 @@ components:
             - OfflineDraftQueued
             - OfflineDraftReconciled
             - ContextFabricPeerRegistered
+            - PrincipalRevoked
         eventVersion: { type: integer, minimum: 1 }
         resourceId: { type: string, minLength: 1 }
         organizationId: { type: [string, "null"], format: uuid }
@@ -148,6 +150,10 @@ components:
           type: [string, "null"]
           format: uuid
           description: Compatibility user identity that authored the event.
+        actorPrincipalId:
+          type: [string, "null"]
+          format: uuid
+          description: Exact HUMAN or AGENT_PROCESS principal that authored the event.
         claimId:
           type: [string, "null"]
           format: uuid
@@ -156,9 +162,11 @@ components:
           type: string
           enum:
             - SESSION_CREATED
+            - WORK_CONTEXT_UPDATED
             - PARTICIPANT_JOINED
             - CLAIM_ACQUIRED
             - CLAIM_HEARTBEAT
+            - CLAIM_RELEASED
             - CLAIM_HANDOFF
             - FINDING
             - BLOCKER
