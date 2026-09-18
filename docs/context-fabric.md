@@ -101,19 +101,18 @@ Before treating Team Context Fabric as proven, execute the maintained integratio
 
 For `TEAM_NODE` specifically, configuration evidence is not enough: the guarantees are about a running topology. `scripts/verify-team-node.mjs` probes a live node for readiness, its database claim, single-authority revision agreement across two clients, and its web surface. The `team-node` workflow builds and starts the topology, fails unless API, worker and web remain running, and additionally proves that a second node with a different identity is refused while a replica of the same node is admitted.
 
-
 ## Connector capability contract
 
 Federation/source adapters do not receive trust merely because they implement a fetch call. They declare a versioned `ConnectorCapabilities` contract from `@akp/contracts/connector-capabilities`. The contract records access mode, permission and synchronization fidelity, incremental sync support, deletion propagation, freshness, source authority, write-back, identity mapping, residency, replay/audit behavior, rate limits, degradation policy and current health.
 
 The access modes have different runtime behavior:
 
-| access mode | primary read | local content | live provider required | offline read |
-| --- | --- | --- | --- | --- |
-| `MIRROR_INDEXED` | local index | full mirror | no | yes |
-| `REMOTE_FEDERATED` | remote query | none | yes | no |
-| `REFERENCE_LIVE` | safe pointer + live expansion | none | yes | no |
-| `HYBRID_CACHE` | bounded cache, then live revalidation | bounded cache | yes | yes, within explicit stale policy |
+| access mode        | primary read                          | local content | live provider required | offline read                      |
+| ------------------ | ------------------------------------- | ------------- | ---------------------- | --------------------------------- |
+| `MIRROR_INDEXED`   | local index                           | full mirror   | no                     | yes                               |
+| `REMOTE_FEDERATED` | remote query                          | none          | yes                    | no                                |
+| `REFERENCE_LIVE`   | safe pointer + live expansion         | none          | yes                    | no                                |
+| `HYBRID_CACHE`     | bounded cache, then live revalidation | bounded cache | yes                    | yes, within explicit stale policy |
 
 `REFERENCE_LIVE` and `REMOTE_FEDERATED` therefore cannot claim `STALE_READ`: they do not own a local content projection from which such a read could be served. `MIRROR_INDEXED` and `HYBRID_CACHE` may serve bounded stale state only when the connector declares that degradation policy, and the resulting read plan labels that state as stale.
 

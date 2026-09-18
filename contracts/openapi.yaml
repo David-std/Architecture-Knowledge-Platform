@@ -2009,7 +2009,8 @@ paths:
                   type: string
                   enum: [DISCOVERED, APPROVED, DISABLED]
                   default: DISCOVERED
-                capabilities: { $ref: "#/components/schemas/ConnectorCapabilities" }
+                capabilities:
+                  { $ref: "#/components/schemas/ConnectorCapabilities" }
                 revision: { type: string }
       responses:
         "201":

@@ -167,12 +167,7 @@ export interface ConnectorReadPlan {
   supportsOfflineRead: boolean;
   revalidatesLive: boolean;
   health: ConnectorCapabilities["health"];
-  availability:
-    | "READY"
-    | "DEGRADED"
-    | "STALE"
-    | "STALE_LOCAL"
-    | "UNAVAILABLE";
+  availability: "READY" | "DEGRADED" | "STALE" | "STALE_LOCAL" | "UNAVAILABLE";
   staleDisclosureRequired: boolean;
 }
 

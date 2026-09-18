@@ -679,17 +679,14 @@ export function registerContextFabricRoutes(
       }
       const peers = await listContextFabricPeers(db, organizationId, spaces);
       const vaultId = request.query.vaultId?.trim();
-      let policy:
-        | {
-            vaultId: string;
-            profileId: string;
-            version: string;
-            revisionId: string | null;
-            connectorPolicy:
-              | typeof DEFAULT_KNOWLEDGE_PROFILE_V1.connectorPolicy
-              | undefined;
-          }
-        | null = null;
+      let policy: {
+        vaultId: string;
+        profileId: string;
+        version: string;
+        revisionId: string | null;
+        connectorPolicy:
+          typeof DEFAULT_KNOWLEDGE_PROFILE_V1.connectorPolicy | undefined;
+      } | null = null;
       if (vaultId) {
         if (!UUID_PATTERN.test(vaultId)) {
           return reply.code(400).send({ code: "INVALID_VAULT_ID" });
@@ -781,9 +778,10 @@ export function registerContextFabricRoutes(
         !parsedCapabilities?.success
       ) {
         return reply.code(400).send({
-          code: parsedCapabilities?.success === false
-            ? "INVALID_CONNECTOR_CAPABILITIES"
-            : "INVALID_CONTEXT_FABRIC_PEER",
+          code:
+            parsedCapabilities?.success === false
+              ? "INVALID_CONNECTOR_CAPABILITIES"
+              : "INVALID_CONTEXT_FABRIC_PEER",
         });
       }
       const capabilities = parsedCapabilities.data;
