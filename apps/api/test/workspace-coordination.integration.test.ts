@@ -175,7 +175,11 @@ describe("workspace coordination integration", () => {
       },
     });
     expect(created.statusCode).toBe(201);
-    sessionId = (created.json() as { id: string }).id;
+    const createdSession = created.json() as {
+      id: string;
+      contextRevisionSetHash: string;
+    };
+    sessionId = createdSession.id;
     const sessionOutbox = await db.pool.query<{ count: number }>(
       `select count(*)::int count from event_outbox
         where event_type='WorkspaceSessionCreated'
@@ -448,6 +452,22 @@ describe("workspace coordination integration", () => {
         toUserId: actorBId,
         fencingToken: 1,
         leaseSeconds: 120,
+        summary:
+          "Compiler boundary finding is captured; continue validation and promotion from the shared workspace.",
+        completed: [
+          "Claimed and isolated the compiler boundary.",
+          "Captured the compiler-boundary finding with durable evidence.",
+        ],
+        remaining: [
+          "Validate the finding against the current governed context.",
+          "Promote the durable candidate through human review.",
+        ],
+        blockers: [],
+        changedResourceRefs: ["packages/compiler/**"],
+        evidenceRefs: ["workspace:finding:compiler-boundary"],
+        questions: [
+          "Does the promoted claim remain valid under the current pinned revision?",
+        ],
         note: "Continue from the durable workspace state.",
       },
     });
@@ -564,6 +584,35 @@ describe("workspace coordination integration", () => {
     expect(snapshot.events.map((event) => event.event_type)).toContain(
       "CLAIM_HEARTBEAT",
     );
+    const handoffEvent = snapshot.events.find(
+      (event) => event.event_type === "CLAIM_HANDOFF",
+    );
+    expect(handoffEvent?.payload).toMatchObject({
+      workContextId: sessionId,
+      fromPrincipalId: expect.any(String),
+      toPrincipalId: expect.any(String),
+      summary:
+        "Compiler boundary finding is captured; continue validation and promotion from the shared workspace.",
+      completed: [
+        "Claimed and isolated the compiler boundary.",
+        "Captured the compiler-boundary finding with durable evidence.",
+      ],
+      remaining: [
+        "Validate the finding against the current governed context.",
+        "Promote the durable candidate through human review.",
+      ],
+      blockers: [],
+      changedResourceRefs: ["packages/compiler/**"],
+      evidenceRefs: ["workspace:finding:compiler-boundary"],
+      questions: [
+        "Does the promoted claim remain valid under the current pinned revision?",
+      ],
+      contextRevisionSetHash: createdSession.contextRevisionSetHash,
+      contextRevision: expect.objectContaining({
+        spaceId,
+        vaultId,
+      }),
+    });
     expect(snapshot.snapshotVersion).toBe(snapshot.session.coordinationVersion);
     expect(snapshot.eventWindow.latestVersion).toBe(snapshot.snapshotVersion);
 
