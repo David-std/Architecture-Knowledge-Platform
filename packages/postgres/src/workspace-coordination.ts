@@ -1,6 +1,7 @@
 import type { Postgres, PostgresPoolClient } from "./index.js";
 import {
   assertWorkspaceContextRevisionCurrent,
+  loadPinnedWorkspaceContextRevisionSet,
   pinWorkspaceContextRevisionSet,
   workspaceContextRevisionState,
   type ContextRevisionSet,
@@ -85,6 +86,16 @@ export interface WorkspaceClaim {
   version: number;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface StructuredWorkspaceHandoff {
+  summary: string;
+  completed: string[];
+  remaining: string[];
+  blockers: string[];
+  changedResourceRefs: string[];
+  evidenceRefs: string[];
+  questions: string[];
 }
 
 function workspaceError(code: string, statusCode: number): Error {
@@ -729,6 +740,8 @@ export async function handoffWorkspaceWork(
     toUserId: string;
     fencingToken: number;
     leaseSeconds: number;
+    actorPrincipalId?: string | null;
+    handoff?: StructuredWorkspaceHandoff;
     note?: string;
   },
 ): Promise<WorkspaceClaim> {
@@ -771,6 +784,22 @@ export async function handoffWorkspaceWork(
       scope.space_id,
       scope.vault_id,
     );
+    const pinnedContext = input.handoff
+      ? await loadPinnedWorkspaceContextRevisionSet(client, input.sessionId)
+      : null;
+    if (input.handoff && !pinnedContext) {
+      throw workspaceError("CONTEXT_REVISION_PIN_REQUIRED", 409);
+    }
+    const targetPrincipal = input.handoff
+      ? await client.query<{ id: string }>(
+          `select id
+             from principals
+            where kind='HUMAN' and user_id=$1 and state='ACTIVE'
+            order by created_at
+            limit 1`,
+          [input.toUserId],
+        )
+      : null;
     const current = await client.query<Record<string, unknown>>(
       `select *
          from workspace_claims
@@ -824,6 +853,22 @@ export async function handoffWorkspaceWork(
         toUserId: input.toUserId,
         previousFencingToken,
         fencingToken: Number(row.fencing_token),
+        ...(input.handoff && pinnedContext
+          ? {
+              fromPrincipalId: input.actorPrincipalId ?? null,
+              toPrincipalId: targetPrincipal?.rows[0]?.id ?? null,
+              workContextId: input.sessionId,
+              summary: input.handoff.summary,
+              completed: input.handoff.completed,
+              remaining: input.handoff.remaining,
+              blockers: input.handoff.blockers,
+              changedResourceRefs: input.handoff.changedResourceRefs,
+              contextRevision: pinnedContext.revisionSet,
+              contextRevisionSetHash: pinnedContext.revisionSetHash,
+              evidenceRefs: input.handoff.evidenceRefs,
+              questions: input.handoff.questions,
+            }
+          : {}),
         ...(input.note ? { note: input.note } : {}),
       },
     });
