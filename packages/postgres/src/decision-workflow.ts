@@ -1198,14 +1198,3 @@ export async function finalizeDecisionCandidatePublicationInTransaction(
   if (!approved.rowCount) throw new Error("DECISION_PUBLICATION_STATE_LOST");
 }
 
-export async function markDecisionCandidateReviewRejected(
-  db: Postgres,
-  reviewId: string,
-): Promise<void> {
-  await db.pool.query(
-    `update workspace_decision_candidates
-        set status='REJECTED',version=version+1,updated_at=now()
-      where review_id=$1 and status='PENDING_REVIEW'`,
-    [reviewId],
-  );
-}
