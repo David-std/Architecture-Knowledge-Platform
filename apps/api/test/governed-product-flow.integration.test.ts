@@ -552,7 +552,7 @@ describe("P2 governed product flow", () => {
       ]),
     });
     const forgedReview = await db.pool.query(
-      "select id from reviews where summary=$1",
+      "select id from reviews where impact_manifest->>'summary'=$1",
       [trustEscalationSummary],
     );
     expect(forgedReview.rowCount).toBe(0);
@@ -1014,14 +1014,14 @@ describe("P2 governed product flow", () => {
           {
             path: `20-knowledge/generated/decision/context-delivery-${vaultId.slice(0, 8)}.md`,
             content:
-              "---\\nid: P2-CONTEXT-DELIVERY\\ntype: decision\\nstatus: proposed\\nknowledge_layer: project\\n---\\n# Context delivery mode\\n\\nUse an indexed governed projection only when connector capabilities preserve the source authorization boundary. The alternative originated as an agent suggestion, was explicitly considered by the human decision authority, received independent consultation, and resolved its open objection before entering governed review.\\n",
+              "---\nid: P2-CONTEXT-DELIVERY\ntype: decision\nstatus: proposed\nknowledge_layer: project\n---\n# Context delivery mode\n\nUse an indexed governed projection only when connector capabilities preserve the source authorization boundary. The alternative originated as an agent suggestion, was explicitly considered by the human decision authority, received independent consultation, and resolved its open objection before entering governed review.\n",
             reason:
               "Promote only the captured consultative decision through human review.",
           },
         ],
       },
     });
-    expect(firstPromotion.statusCode).toBe(201);
+    expect(firstPromotion.statusCode, firstPromotion.body).toBe(201);
     const firstPromotionBody = firstPromotion.json() as {
       reviewId: string;
       decisionCandidateId: string;
@@ -1227,14 +1227,14 @@ describe("P2 governed product flow", () => {
           {
             path: `20-knowledge/generated/decision/rejected-lifecycle-${vaultId.slice(0, 8)}.md`,
             content:
-              "---\\nid: P2-REJECTED-LIFECYCLE\\ntype: decision\\nstatus: proposed\\nknowledge_layer: project\\n---\\n# Rejected lifecycle candidate\\n\\nThis candidate exists only to prove that review rejection and structured decision rejection remain one durable transition.\\n",
+              "---\nid: P2-REJECTED-LIFECYCLE\ntype: decision\nstatus: proposed\nknowledge_layer: project\n---\n# Rejected lifecycle candidate\n\nThis candidate exists only to prove that review rejection and structured decision rejection remain one durable transition.\n",
             reason:
               "Exercise the negative governance path without publishing canonical knowledge.",
           },
         ],
       },
     });
-    expect(rejectedPromotion.statusCode).toBe(201);
+    expect(rejectedPromotion.statusCode, rejectedPromotion.body).toBe(201);
     const rejectedReviewId = (rejectedPromotion.json() as { reviewId: string })
       .reviewId;
 
@@ -1385,14 +1385,14 @@ describe("P2 governed product flow", () => {
           {
             path: `20-knowledge/generated/decision/context-delivery-v2-${vaultId.slice(0, 8)}.md`,
             content:
-              "---\\nid: P2-CONTEXT-DELIVERY-V2\\ntype: decision\\nstatus: proposed\\nknowledge_layer: project\\n---\\n# Context delivery mode v2\\n\\nUse a bounded hybrid cache only where permission fidelity is preserved and stale state is explicitly disclosed. This replacement was consulted independently and is not authoritative until the governed human review publishes it.\\n",
+              "---\nid: P2-CONTEXT-DELIVERY-V2\ntype: decision\nstatus: proposed\nknowledge_layer: project\n---\n# Context delivery mode v2\n\nUse a bounded hybrid cache only where permission fidelity is preserved and stale state is explicitly disclosed. This replacement was consulted independently and is not authoritative until the governed human review publishes it.\n",
             reason:
               "Publish the replacement through the existing review authority.",
           },
         ],
       },
     });
-    expect(replacementPromotion.statusCode).toBe(201);
+    expect(replacementPromotion.statusCode, replacementPromotion.body).toBe(201);
     const replacementReviewId = (
       replacementPromotion.json() as { reviewId: string }
     ).reviewId;

@@ -116,6 +116,10 @@ afterAll(async () => {
       ]);
     }
     await db.pool.query(
+      "delete from idempotency_records where actor_id=any($1::uuid[])",
+      [[actorId, adminId]],
+    );
+    await db.pool.query(
       "delete from api_tokens where token_hash=any($1::text[])",
       [[tokenHash, adminTokenHash]],
     );
