@@ -45,6 +45,9 @@ import {
   unrestrictedSpaceIdsForPermission,
 } from "../auth.js";
 
+const PRINCIPAL_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 const USER_EVENT_TYPES = new Set([
   "FINDING",
   "BLOCKER",
@@ -805,6 +808,7 @@ export function registerSessionRoutes(
           {
             sessionId: session.id,
             actorId: actor.id,
+            actorPrincipalId: actor.principalId,
             eventType: "PROMOTION_REQUESTED",
             payload: {
               reviewId: created.reviewId,
@@ -981,6 +985,7 @@ export function registerSessionRoutes(
       const claim = await claimWorkspaceWork(db, {
         sessionId: session.id,
         actorId: actor.id,
+        actorPrincipalId: actor.principalId,
         workKey,
         leaseSeconds,
       });
@@ -1042,6 +1047,7 @@ export function registerSessionRoutes(
       const claim = await heartbeatWorkspaceWork(db, {
         sessionId: session.id,
         actorId: actor.id,
+        actorPrincipalId: actor.principalId,
         workKey,
         fencingToken,
         leaseSeconds,
@@ -1096,6 +1102,7 @@ export function registerSessionRoutes(
       const claim = await releaseWorkspaceWork(db, {
         sessionId: session.id,
         actorId: actor.id,
+        actorPrincipalId: actor.principalId,
         workKey,
         fencingToken,
       });
@@ -1122,6 +1129,7 @@ export function registerSessionRoutes(
     Body: {
       workKey: string;
       toUserId: string;
+      toPrincipalId?: string;
       fencingToken: number;
       leaseSeconds?: number;
       summary?: string;
@@ -1153,7 +1161,13 @@ export function registerSessionRoutes(
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
       const workKey = request.body?.workKey?.trim();
       const toUserId = request.body?.toUserId?.trim();
-      if (!workKey || !isWorkspaceWorkKey(workKey) || !toUserId) {
+      const toPrincipalId = request.body?.toPrincipalId?.trim() || null;
+      if (
+        !workKey ||
+        !isWorkspaceWorkKey(workKey) ||
+        !toUserId ||
+        (toPrincipalId && !PRINCIPAL_ID_PATTERN.test(toPrincipalId))
+      ) {
         return reply.code(400).send({ code: "INVALID_WORK_HANDOFF" });
       }
       const fencingToken = Number(request.body.fencingToken);
@@ -1228,6 +1242,7 @@ export function registerSessionRoutes(
         actorId: actor.id,
         workKey,
         toUserId,
+        ...(toPrincipalId ? { toPrincipalId } : {}),
         fencingToken,
         leaseSeconds,
         actorPrincipalId: actor.principalId,
@@ -1278,7 +1293,7 @@ export function registerSessionRoutes(
       if (!session) return;
       const actor = actorOf(request);
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
-      if (actor.principalKind !== "HUMAN" || session.role !== "OWNER") {
+      if (actor.principalKind !== "HUMAN") {
         return reply.code(403).send({ code: "AGENT_PROCESS_ISSUER_DENIED" });
       }
       const label = request.body?.label?.trim() || "Workspace agent";
@@ -1413,6 +1428,7 @@ export function registerSessionRoutes(
       const event = await appendWorkspaceEvent(db, {
         sessionId: session.id,
         actorId: actor.id,
+        actorPrincipalId: actor.principalId,
         eventType: eventType as
           | "FINDING"
           | "BLOCKER"
