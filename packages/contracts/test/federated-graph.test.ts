@@ -125,6 +125,7 @@ describe("federated graph contracts", () => {
         {
           from: node,
           relation: "implemented_by",
+          direction: "outgoing",
           to: target,
           provenance: {
             derivation: "HUMAN_ASSERTED",
