@@ -232,7 +232,10 @@ export function registerCodeGraphRoutes(
       try {
         const context = await authorizedCodeContext(db, request, parsed.data);
         return {
-          symbols: await service.symbol(context, normalizedCodeSelector(parsed.data.selector)),
+          symbols: await service.symbol(
+            context,
+            normalizedCodeSelector(parsed.data.selector),
+          ),
         };
       } catch (error) {
         return sendCodeQueryError(reply, error);
@@ -254,7 +257,10 @@ export function registerCodeGraphRoutes(
       try {
         const context = await authorizedCodeContext(db, request, parsed.data);
         return {
-          paths: await service.callers(context, normalizedCodeSelector(parsed.data.selector)),
+          paths: await service.callers(
+            context,
+            normalizedCodeSelector(parsed.data.selector),
+          ),
         };
       } catch (error) {
         return sendCodeQueryError(reply, error);
@@ -276,7 +282,10 @@ export function registerCodeGraphRoutes(
       try {
         const context = await authorizedCodeContext(db, request, parsed.data);
         return {
-          paths: await service.callees(context, normalizedCodeSelector(parsed.data.selector)),
+          paths: await service.callees(
+            context,
+            normalizedCodeSelector(parsed.data.selector),
+          ),
         };
       } catch (error) {
         return sendCodeQueryError(reply, error);
@@ -371,7 +380,10 @@ export function registerCodeGraphRoutes(
     try {
       const context = await authorizedCodeContext(db, request, parsed.data);
       return {
-        paths: await service.tests(context, normalizedCodeSelector(parsed.data.selector)),
+        paths: await service.tests(
+          context,
+          normalizedCodeSelector(parsed.data.selector),
+        ),
       };
     } catch (error) {
       return sendCodeQueryError(reply, error);
