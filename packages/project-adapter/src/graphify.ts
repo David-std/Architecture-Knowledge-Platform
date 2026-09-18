@@ -68,8 +68,7 @@ function configurationHash(value: unknown): string {
 function safeIncrementalFailureCode(error: unknown): string {
   if (!error || typeof error !== "object") return "GRAPHIFY_INCREMENTAL_FAILED";
   const message = (error as { message?: unknown }).message;
-  return typeof message === "string" &&
-    /^[A-Z][A-Z0-9_]{2,80}$/.test(message)
+  return typeof message === "string" && /^[A-Z][A-Z0-9_]{2,80}$/.test(message)
     ? message
     : "GRAPHIFY_INCREMENTAL_FAILED";
 }
