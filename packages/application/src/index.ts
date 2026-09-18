@@ -61,6 +61,7 @@ export interface BootstrapAuthorizationSnapshot {
   principalKind: string;
   principalPolicyRevision: number;
   scopeFingerprint: string;
+  policyRevision: string;
 }
 
 export interface BootstrapContextRequest {
