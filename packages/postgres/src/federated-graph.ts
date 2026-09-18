@@ -1231,6 +1231,71 @@ export class PostgresFederatedGraphStore
     return this.build(input.next);
   }
 
+  async markStale(
+    domain: GraphDomain,
+    spaceId: string,
+    scopeId: string,
+    reason?: string,
+  ): Promise<GraphProjectionRevision | null> {
+    parseGraphDomain(domain);
+    return withTransaction(this.db, async (client) => {
+      await client.query(
+        "select pg_advisory_xact_lock(hashtextextended($1,0))",
+        [spaceId + "|" + domain + "|" + scopeId],
+      );
+      const active = await client.query<ProjectionRow>(
+        `select *
+           from federated_graph_projection_revisions
+          where space_id=$1 and graph_domain=$2 and scope_id=$3
+            and lifecycle='ACTIVE'
+          order by activated_at desc nulls last,id desc
+          limit 1
+          for update`,
+        [spaceId, domain, scopeId],
+      );
+      const current = active.rows[0];
+      if (!current) return null;
+      if (current.freshness === "STALE") return mapProjection(current);
+
+      const updated = await client.query<ProjectionRow>(
+        `update federated_graph_projection_revisions
+            set freshness='STALE',updated_at=now()
+          where id=$1
+          returning *`,
+        [current.id],
+      );
+      const row = updated.rows[0];
+      if (!row) throw graphError("GRAPH_PROJECTION_STALE_FAILED");
+      const projection = mapProjection(row);
+      const organization = await client.query<{ organization_id: string }>(
+        "select organization_id from spaces where id=$1",
+        [spaceId],
+      );
+      const organizationId = organization.rows[0]?.organization_id;
+      if (!organizationId) {
+        throw graphError("GRAPH_SPACE_ORGANIZATION_NOT_FOUND");
+      }
+      await appendOutboxEvent(client, {
+        eventType: "GraphRevisionStale",
+        resourceId: projection.id,
+        organizationId,
+        spaceId,
+        vaultId: projection.vaultId,
+        correlationId: "graph:" + domain + ":" + scopeId,
+        payload: {
+          projectionRevisionId: projection.id,
+          graphDomain: domain,
+          scopeId,
+          revision: projection.revision,
+          lifecycle: projection.lifecycle,
+          freshness: projection.freshness,
+          ...(reason?.trim() ? { reason: reason.trim().slice(0, 2048) } : {}),
+        },
+      });
+      return projection;
+    });
+  }
+
   async revisionState(
     domain: GraphDomain,
     spaceId: string,
