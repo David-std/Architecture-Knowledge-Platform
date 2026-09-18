@@ -376,33 +376,46 @@ if (runtimeIntegrationEventTypes.size === 0) {
   }
 }
 
-const outboxConstraintMigration = await readFile(
-  path.join(root, "db/migrations/046_outbox_workspace_authority_events.sql"),
-  "utf8",
-);
-const outboxConstraintBlock =
-  /add constraint event_outbox_event_type_check[\s\S]*?event_type in \(([\s\S]*?)\)\s*\);/.exec(
-    outboxConstraintMigration,
-  )?.[1] ?? "";
+const migrationDirectory = path.join(root, "db/migrations");
+const migrationNames = (await readdir(migrationDirectory))
+  .filter((name) => /^\d+_.*\.sql$/.test(name))
+  .sort();
+let latestOutboxConstraint = null;
+for (const migrationName of migrationNames) {
+  const source = await readFile(
+    path.join(migrationDirectory, migrationName),
+    "utf8",
+  );
+  for (const match of source.matchAll(
+    /add constraint event_outbox_event_type_check[\s\S]*?event_type in \(([\s\S]*?)\)\s*\);/g,
+  )) {
+    latestOutboxConstraint = {
+      migrationName,
+      block: match[1] ?? "",
+    };
+  }
+}
 const databaseIntegrationEventTypes = new Set(
-  [...outboxConstraintBlock.matchAll(/'([^']+)'/g)].map((match) => match[1]),
+  [...(latestOutboxConstraint?.block ?? "").matchAll(/'([^']+)'/g)].map(
+    (match) => match[1],
+  ),
 );
-if (databaseIntegrationEventTypes.size === 0) {
+if (!latestOutboxConstraint || databaseIntegrationEventTypes.size === 0) {
   failures.push(
-    "db/migrations/046_outbox_workspace_authority_events.sql: could not resolve event_outbox event types",
+    "db/migrations: could not resolve the latest event_outbox event-type constraint",
   );
 } else {
   for (const eventType of runtimeIntegrationEventTypes) {
     if (!databaseIntegrationEventTypes.has(eventType)) {
       failures.push(
-        `event_outbox constraint: runtime integration event ${eventType} is not accepted by the database`,
+        `event_outbox constraint in ${latestOutboxConstraint.migrationName}: runtime integration event ${eventType} is not accepted by the database`,
       );
     }
   }
   for (const eventType of databaseIntegrationEventTypes) {
     if (!runtimeIntegrationEventTypes.has(eventType)) {
       failures.push(
-        `event_outbox constraint: database event ${eventType} is absent from runtime`,
+        `event_outbox constraint in ${latestOutboxConstraint.migrationName}: database event ${eventType} is absent from runtime`,
       );
     }
   }
