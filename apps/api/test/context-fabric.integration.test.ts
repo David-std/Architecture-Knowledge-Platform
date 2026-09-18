@@ -10,10 +10,14 @@ import {
 
 const spaceId = "00000000-0000-0000-0000-000000000003";
 const actorId = randomUUID();
+const adminId = randomUUID();
 const vaultId = randomUUID();
 const token = `context-fabric-${randomUUID()}`;
+const adminToken = `context-fabric-admin-${randomUUID()}`;
 const tokenHash = createHash("sha256").update(token).digest("hex");
+const adminTokenHash = createHash("sha256").update(adminToken).digest("hex");
 const headers = { authorization: `Bearer ${token}` };
+const adminHeaders = { authorization: `Bearer ${adminToken}` };
 
 let app: FastifyInstance;
 let db: Postgres;
@@ -40,12 +44,16 @@ beforeAll(async () => {
     ],
   );
   await db.pool.query(
-    "insert into users(id,email,display_name) values($1,$2,'Context Fabric Actor')",
-    [actorId, `${actorId}@example.test`],
+    `insert into users(id,email,display_name) values
+      ($1,$2,'Context Fabric Actor'),
+      ($3,$4,'Context Fabric Admin')`,
+    [actorId, `${actorId}@example.test`, adminId, `${adminId}@example.test`],
   );
   await db.pool.query(
-    "insert into memberships(user_id,space_id,role,path_prefix) values($1,$2,'VIEWER',null)",
-    [actorId, spaceId],
+    `insert into memberships(user_id,space_id,role,path_prefix) values
+      ($1,$3,'VIEWER',null),
+      ($2,$3,'ADMIN',null)`,
+    [actorId, adminId, spaceId],
   );
   await grantVaultMembership(db, {
     userId: actorId,
@@ -55,8 +63,9 @@ beforeAll(async () => {
     permissions: ["knowledge:read", "source:read"],
   });
   await db.pool.query(
-    `insert into api_tokens(user_id,token_hash,label,scopes)
-     values($1,$2,'context fabric actor',$3::jsonb)`,
+    `insert into api_tokens(user_id,token_hash,label,scopes) values
+      ($1,$2,'context fabric actor',$3::jsonb),
+      ($4,$5,'context fabric admin',$6::jsonb)`,
     [
       actorId,
       tokenHash,
@@ -66,6 +75,17 @@ beforeAll(async () => {
             spaceId,
             pathPrefix: null,
             permissions: ["knowledge:read", "source:read"],
+          },
+        ],
+      }),
+      adminId,
+      adminTokenHash,
+      JSON.stringify({
+        spaces: [
+          {
+            spaceId,
+            pathPrefix: null,
+            permissions: ["knowledge:read", "admin"],
           },
         ],
       }),
@@ -93,14 +113,17 @@ afterAll(async () => {
         sessionId,
       ]);
     }
-    await db.pool.query("delete from api_tokens where token_hash=$1", [
-      tokenHash,
-    ]);
     await db.pool.query(
-      "delete from memberships where user_id=$1 and space_id=$2",
-      [actorId, spaceId],
+      "delete from api_tokens where token_hash=any($1::text[])",
+      [[tokenHash, adminTokenHash]],
     );
-    await db.pool.query("delete from users where id=$1", [actorId]);
+    await db.pool.query(
+      "delete from memberships where user_id=any($1::uuid[]) and space_id=$2",
+      [[actorId, adminId], spaceId],
+    );
+    await db.pool.query("delete from users where id=any($1::uuid[])", [
+      [actorId, adminId],
+    ]);
     await db.pool.query("update vaults set enabled=false where id=$1", [
       vaultId,
     ]);
@@ -389,6 +412,34 @@ describe("team context fabric integration", () => {
       degradation: { onUnavailable: "FAIL_CLOSED" },
       health: "HEALTHY",
     });
+    const remoteRegistration = await app.inject({
+      method: "POST",
+      url: "/v1/context-fabric/peers",
+      headers: adminHeaders,
+      payload: {
+        spaceId,
+        peerKey: `integration-hostile-remote-${vaultId.slice(0, 8)}`,
+        displayName: "Hostile remote-query fixture",
+        endpoint: "http://127.0.0.1:9/unauthorized-object",
+        discoveryMode: "REMOTE_QUERY",
+        trustState: "APPROVED",
+        capabilities: liveCapabilities,
+        revision: "peer:remote:r1",
+      },
+    });
+    expect(remoteRegistration.statusCode).toBe(201);
+    expect(remoteRegistration.json()).toMatchObject({
+      boundary: "DISCOVERY_METADATA_ONLY",
+      networkContactPerformed: false,
+      peer: {
+        discoveryMode: "REMOTE_QUERY",
+        trustState: "APPROVED",
+      },
+    });
+    const remotePeerId = String(
+      (remoteRegistration.json() as { peer: { id: string } }).peer.id,
+    );
+
     const mirrorPeer = await upsertContextFabricPeer(db, {
       organizationId: organizationId!,
       spaceId,
@@ -411,7 +462,7 @@ describe("team context fabric integration", () => {
       revision: "peer:live:r1",
       lastSeenAt: new Date(),
     });
-    peerIds = [mirrorPeer.id, livePeer.id];
+    peerIds = [remotePeerId, mirrorPeer.id, livePeer.id];
     const peerOutbox = await db.pool.query<{
       organization_id: string;
       space_id: string;
@@ -472,5 +523,14 @@ describe("team context fabric integration", () => {
       [vaultId],
     );
     expect(afterDocuments.rows[0]?.count).toBe(beforeDocuments.rows[0]?.count);
+    const remoteMaterialization = await db.pool.query<{ count: number }>(
+      `select count(*)::int count
+         from knowledge_documents
+        where vault_id=$1
+          and (title ilike '%unauthorized-object%'
+               or path ilike '%unauthorized-object%')`,
+      [vaultId],
+    );
+    expect(remoteMaterialization.rows[0]?.count).toBe(0);
   });
 });
