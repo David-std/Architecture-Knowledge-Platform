@@ -399,6 +399,40 @@ run("P2 principal identity", () => {
         policyRevision: 2,
       },
     });
+    const revocationEvent = await db.pool.query<{
+      event_type: string;
+      resource_id: string;
+      space_id: string;
+      vault_id: string;
+      correlation_id: string;
+      payload: {
+        principalId: string;
+        parentPrincipalId: string;
+        sessionId: string;
+        kind: string;
+        policyRevision: number;
+      };
+    }>(
+      `select event_type,resource_id,space_id,vault_id,correlation_id,payload
+         from event_outbox
+        where event_type='PrincipalRevoked' and resource_id=$1
+        order by occurred_at desc limit 1`,
+      [issuance.principal.id],
+    );
+    expect(revocationEvent.rows[0]).toMatchObject({
+      event_type: "PrincipalRevoked",
+      resource_id: issuance.principal.id,
+      space_id: spaceId,
+      vault_id: vaultId,
+      correlation_id: sessionId,
+      payload: {
+        principalId: issuance.principal.id,
+        parentPrincipalId: issuance.principal.parentPrincipalId,
+        sessionId,
+        kind: "AGENT_PROCESS",
+        policyRevision: 2,
+      },
+    });
 
     const afterRevocation = await app.inject({
       method: "GET",
