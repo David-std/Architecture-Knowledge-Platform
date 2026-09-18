@@ -716,16 +716,20 @@ export function registerContextFabricRoutes(
         };
       }
       return {
-        peers: peers.map((peer) => ({
-          ...peer,
-          readPlan: connectorReadPlan(peer.capabilities),
-          compatibility: policy?.connectorPolicy
-            ? evaluateConnectorCapabilities(
-                peer.capabilities,
-                policy.connectorPolicy,
-              )
-            : null,
-        })),
+        peers: peers.map((peer) => {
+          const capabilities = ConnectorCapabilities.parse(peer.capabilities);
+          return {
+            ...peer,
+            capabilities,
+            readPlan: connectorReadPlan(capabilities),
+            compatibility: policy?.connectorPolicy
+              ? evaluateConnectorCapabilities(
+                  capabilities,
+                  policy.connectorPolicy,
+                )
+              : null,
+          };
+        }),
         policy: policy
           ? {
               vaultId: policy.vaultId,
@@ -820,9 +824,12 @@ export function registerContextFabricRoutes(
         { spaceId, peerKey, discoveryMode, trustState },
         spaceId,
       );
+      const persistedCapabilities = ConnectorCapabilities.parse(
+        peer.capabilities,
+      );
       return reply.code(201).send({
-        peer,
-        readPlan: connectorReadPlan(peer.capabilities),
+        peer: { ...peer, capabilities: persistedCapabilities },
+        readPlan: connectorReadPlan(persistedCapabilities),
         boundary: "DISCOVERY_METADATA_ONLY",
         networkContactPerformed: false,
       });
