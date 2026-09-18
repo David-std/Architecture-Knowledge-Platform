@@ -143,6 +143,111 @@ for (const [route, methods] of Object.entries(workspaceCoordinationPaths)) {
   }
 }
 
+const decisionWorkflowOperations = [
+  {
+    route: "/v1/sessions/{id}/decisions",
+    method: "get",
+    permission: "knowledge:read",
+    principalAction: "workspace:read",
+  },
+  {
+    route: "/v1/sessions/{id}/decisions",
+    method: "post",
+    permission: "knowledge:read",
+    principalAction: "workspace:event:append",
+    idempotentWrite: true,
+  },
+  {
+    route: "/v1/sessions/{id}/decisions/{decisionId}",
+    method: "get",
+    permission: "knowledge:read",
+    principalAction: "workspace:read",
+  },
+  {
+    route: "/v1/sessions/{id}/decisions/{decisionId}/alternatives",
+    method: "post",
+    permission: "knowledge:read",
+    principalAction: "workspace:event:append",
+    idempotentWrite: true,
+  },
+  {
+    route:
+      "/v1/sessions/{id}/decisions/{decisionId}/alternatives/{alternativeId}/decision",
+    method: "post",
+    permission: "knowledge:read",
+    principalAction: "workspace:event:append",
+    idempotentWrite: true,
+  },
+  {
+    route: "/v1/sessions/{id}/decisions/{decisionId}/objections",
+    method: "post",
+    permission: "knowledge:read",
+    principalAction: "workspace:event:append",
+    idempotentWrite: true,
+  },
+  {
+    route:
+      "/v1/sessions/{id}/decisions/{decisionId}/objections/{objectionId}/resolve",
+    method: "post",
+    permission: "knowledge:read",
+    principalAction: "workspace:event:append",
+    idempotentWrite: true,
+  },
+  {
+    route: "/v1/sessions/{id}/decisions/{decisionId}/consultations",
+    method: "post",
+    permission: "knowledge:read",
+    principalAction: "workspace:event:append",
+    idempotentWrite: true,
+  },
+  {
+    route:
+      "/v1/sessions/{id}/decisions/{decisionId}/consultations/{consultationId}/respond",
+    method: "post",
+    permission: "knowledge:read",
+    principalAction: "workspace:event:append",
+    idempotentWrite: true,
+  },
+  {
+    route: "/v1/sessions/{id}/decisions/{decisionId}/selection",
+    method: "post",
+    permission: "knowledge:read",
+    principalAction: "workspace:event:append",
+    idempotentWrite: true,
+  },
+  {
+    route: "/v1/sessions/{id}/decisions/{decisionId}/capture",
+    method: "post",
+    permission: "knowledge:propose",
+    principalAction: "knowledge:propose",
+    idempotentWrite: true,
+  },
+];
+for (const expected of decisionWorkflowOperations) {
+  const operation = openapi?.paths?.[expected.route]?.[expected.method];
+  if (!operation) {
+    failures.push(
+      `contracts/openapi.yaml: missing decision workflow ${expected.method.toUpperCase()} ${expected.route}`,
+    );
+    continue;
+  }
+  if (operation["x-akp-permission"] !== expected.permission) {
+    failures.push(
+      `contracts/openapi.yaml: decision workflow ${expected.method.toUpperCase()} ${expected.route} must require ${expected.permission}`,
+    );
+  }
+  if (operation["x-akp-principal-action"] !== expected.principalAction) {
+    failures.push(
+      `contracts/openapi.yaml: decision workflow ${expected.method.toUpperCase()} ${expected.route} must require principal action ${expected.principalAction}`,
+    );
+  }
+  if (expected.idempotentWrite && !hasIdempotencyKey(operation)) {
+    failures.push(
+      `contracts/openapi.yaml: decision workflow write ${expected.route} must declare Idempotency-Key`,
+    );
+  }
+}
+
 const sessionStartSchema =
   openapi?.paths?.["/v1/sessions"]?.post?.requestBody?.content?.[
     "application/json"
