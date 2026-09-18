@@ -35,9 +35,7 @@ export const TruthSupportSet = z.object({
   factIds: z.array(z.string().uuid()).max(500),
   evidenceIds: z.array(z.string().uuid()).max(500),
   sourceArtifactIds: z.array(z.string().uuid()).max(500),
-  sourceRevisionHashes: z
-    .array(z.string().regex(/^[a-f0-9]{64}$/))
-    .max(500),
+  sourceRevisionHashes: z.array(z.string().regex(/^[a-f0-9]{64}$/)).max(500),
   sourceEpisodeIds: z.array(z.string().uuid()).max(500),
   alternativeSupportGroups: z
     .array(z.array(z.string().min(1).max(2200)).min(1).max(100))
@@ -52,7 +50,10 @@ export const TruthRevision = z.object({
   vaultId: z.string().uuid(),
   revisionSeq: z.number().int().positive(),
   revisionHash: z.string().regex(/^[a-f0-9]{64}$/),
-  parentRevisionHash: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
+  parentRevisionHash: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .nullable(),
   reason: z.string().min(1).max(120),
   resourceType: z.string().min(1).max(120),
   resourceId: z.string().min(1).max(2048),
@@ -82,7 +83,10 @@ export type TemporalFact = z.infer<typeof TemporalFact>;
 
 export const TemporalFactView = TemporalFact.extend({
   supportState: TruthSupportEvaluation,
-  queryRevisionHash: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
+  queryRevisionHash: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .nullable(),
   queryRevisionSeq: z.number().int().nonnegative(),
 });
 export type TemporalFactView = z.infer<typeof TemporalFactView>;
@@ -97,9 +101,7 @@ export const CreateSourceEpisodeInput = z.object({
   ingestedAt: z.string().datetime().optional(),
   locatorRefs: z.array(z.string().min(1).max(2048)).max(500).default([]),
 });
-export type CreateSourceEpisodeInput = z.infer<
-  typeof CreateSourceEpisodeInput
->;
+export type CreateSourceEpisodeInput = z.infer<typeof CreateSourceEpisodeInput>;
 
 export const CreateTruthSupportSetInput = z.object({
   spaceId: z.string().uuid(),
@@ -151,9 +153,7 @@ export const RecordTemporalFactInput = z
       });
     }
   });
-export type RecordTemporalFactInput = z.infer<
-  typeof RecordTemporalFactInput
->;
+export type RecordTemporalFactInput = z.infer<typeof RecordTemporalFactInput>;
 
 export const TemporalTruthQuery = z.object({
   spaceId: z.string().uuid(),
@@ -163,7 +163,10 @@ export const TemporalTruthQuery = z.object({
   mode: z.enum(["CURRENT", "HISTORY"]).default("CURRENT"),
   validAt: z.string().datetime().optional(),
   recordedAtOrBefore: z.string().datetime().optional(),
-  truthRevisionHash: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  truthRevisionHash: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
   changedSince: z.string().datetime().optional(),
   authorizationPathPrefixes: z
     .array(z.string().min(1).max(4096).nullable())

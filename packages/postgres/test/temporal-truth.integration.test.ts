@@ -316,9 +316,10 @@ describe.skipIf(!databaseUrl)("temporal truth store", () => {
     });
     expect(facts[0]?.supportState).toBe("DISPUTED");
     await expect(
-      db.pool.query("update temporal_facts set predicate='mutated' where id=$1", [
-        recorded.fact.id,
-      ]),
+      db.pool.query(
+        "update temporal_facts set predicate='mutated' where id=$1",
+        [recorded.fact.id],
+      ),
     ).rejects.toThrow("TEMPORAL_TRUTH_IMMUTABLE");
   });
 });

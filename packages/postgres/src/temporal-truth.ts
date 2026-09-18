@@ -70,7 +70,9 @@ interface FactRow {
 }
 
 function iso(value: Date | string): string {
-  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+  return value instanceof Date
+    ? value.toISOString()
+    : new Date(value).toISOString();
 }
 
 function normalizeRevision(row: RevisionRow): TruthRevisionType {
@@ -260,7 +262,8 @@ export class PostgresTemporalTruthStore {
         input.sourceHash,
       ],
     );
-    if (!source.rowCount) throw new Error("TRUTH_SOURCE_EPISODE_SCOPE_MISMATCH");
+    if (!source.rowCount)
+      throw new Error("TRUTH_SOURCE_EPISODE_SCOPE_MISMATCH");
     const id = randomUUID();
     const ingestedAt = input.ingestedAt ?? new Date().toISOString();
     const result = await this.db.pool.query(
@@ -289,7 +292,9 @@ export class PostgresTemporalTruthStore {
       sourceId: row.source_id,
       sourceArtifactId: row.source_artifact_id,
       sourceHash: row.source_hash,
-      observedAt: row.observed_at ? iso(row.observed_at as Date | string) : null,
+      observedAt: row.observed_at
+        ? iso(row.observed_at as Date | string)
+        : null,
       ingestedAt: iso(row.ingested_at as Date | string),
       locatorRefs: row.locator_refs,
     });
@@ -411,8 +416,14 @@ export class PostgresTemporalTruthStore {
 
   async recordFact(
     rawInput: RecordTemporalFactInputType,
-    metadata: { correlationId?: string | null; causationId?: string | null } = {},
-  ): Promise<{ fact: ReturnType<typeof normalizeFact>; revision: TruthRevisionType }> {
+    metadata: {
+      correlationId?: string | null;
+      causationId?: string | null;
+    } = {},
+  ): Promise<{
+    fact: ReturnType<typeof normalizeFact>;
+    revision: TruthRevisionType;
+  }> {
     const input = RecordTemporalFactInput.parse(rawInput);
     const authorizationPath = normalizedPath(input.authorizationPath);
     const client = await this.db.pool.connect();
@@ -432,7 +443,8 @@ export class PostgresTemporalTruthStore {
             limit 1`,
           [input.sourceEpisodeId, input.spaceId, input.vaultId],
         );
-        if (!episode.rowCount) throw new Error("TRUTH_SOURCE_EPISODE_NOT_FOUND");
+        if (!episode.rowCount)
+          throw new Error("TRUTH_SOURCE_EPISODE_NOT_FOUND");
       }
       let oldFact: FactRow | undefined;
       if (input.supersedesFactId) {
@@ -459,8 +471,12 @@ export class PostgresTemporalTruthStore {
         reason: input.supersedesFactId ? "FACT_SUPERSEDED" : "FACT_RECORDED",
         resourceType: "temporal_fact",
         resourceId: factId,
-        correlationId: metadata.correlationId,
-        causationId: metadata.causationId,
+        ...(metadata.correlationId !== undefined
+          ? { correlationId: metadata.correlationId }
+          : {}),
+        ...(metadata.causationId !== undefined
+          ? { causationId: metadata.causationId }
+          : {}),
       });
       const recordedAt = input.recordedAt ?? revision.createdAt;
       const inserted = await client.query<FactRow>(
@@ -545,18 +561,17 @@ export class PostgresTemporalTruthStore {
     }
   }
 
-  async withdrawSourceEpisode(
-    input: {
-      spaceId: string;
-      vaultId: string;
-      sourceEpisodeId: string;
-      reason: string;
-      recordedAt?: string;
-      correlationId?: string | null;
-      causationId?: string | null;
-    },
-  ): Promise<TruthRevisionType> {
-    if (!input.reason.trim()) throw new Error("TRUTH_WITHDRAWAL_REASON_REQUIRED");
+  async withdrawSourceEpisode(input: {
+    spaceId: string;
+    vaultId: string;
+    sourceEpisodeId: string;
+    reason: string;
+    recordedAt?: string;
+    correlationId?: string | null;
+    causationId?: string | null;
+  }): Promise<TruthRevisionType> {
+    if (!input.reason.trim())
+      throw new Error("TRUTH_WITHDRAWAL_REASON_REQUIRED");
     const client = await this.db.pool.connect();
     try {
       await client.query("begin");
@@ -585,8 +600,12 @@ export class PostgresTemporalTruthStore {
         reason: "SOURCE_WITHDRAWN",
         resourceType: "source_episode",
         resourceId: input.sourceEpisodeId,
-        correlationId: input.correlationId,
-        causationId: input.causationId,
+        ...(input.correlationId !== undefined
+          ? { correlationId: input.correlationId }
+          : {}),
+        ...(input.causationId !== undefined
+          ? { causationId: input.causationId }
+          : {}),
       });
       await client.query(
         `insert into source_episode_withdrawals(
@@ -640,17 +659,16 @@ export class PostgresTemporalTruthStore {
     }
   }
 
-  async invalidateEvidence(
-    input: {
-      spaceId: string;
-      vaultId: string;
-      evidenceId: string;
-      reason: string;
-      correlationId?: string | null;
-      causationId?: string | null;
-    },
-  ): Promise<TruthRevisionType> {
-    if (!input.reason.trim()) throw new Error("TRUTH_INVALIDATION_REASON_REQUIRED");
+  async invalidateEvidence(input: {
+    spaceId: string;
+    vaultId: string;
+    evidenceId: string;
+    reason: string;
+    correlationId?: string | null;
+    causationId?: string | null;
+  }): Promise<TruthRevisionType> {
+    if (!input.reason.trim())
+      throw new Error("TRUTH_INVALIDATION_REASON_REQUIRED");
     const client = await this.db.pool.connect();
     try {
       await client.query("begin");
@@ -679,8 +697,12 @@ export class PostgresTemporalTruthStore {
         reason: "EVIDENCE_INVALIDATED",
         resourceType: "evidence",
         resourceId: input.evidenceId,
-        correlationId: input.correlationId,
-        causationId: input.causationId,
+        ...(input.correlationId !== undefined
+          ? { correlationId: input.correlationId }
+          : {}),
+        ...(input.causationId !== undefined
+          ? { causationId: input.causationId }
+          : {}),
       });
       await client.query(
         `insert into evidence_invalidations(
@@ -829,7 +851,9 @@ export class PostgresTemporalTruthStore {
     return support.state === "DISPUTED" ? "DISPUTED" : "SUPPORTED";
   }
 
-  async listFacts(rawQuery: TemporalTruthQueryType): Promise<TemporalFactViewType[]> {
+  async listFacts(
+    rawQuery: TemporalTruthQueryType,
+  ): Promise<TemporalFactViewType[]> {
     const query = TemporalTruthQuery.parse(rawQuery);
     const cutoff = await this.revisionCutoff(query);
     if (cutoff.seq === 0) return [];
@@ -891,10 +915,7 @@ export class PostgresTemporalTruthStore {
     for (const row of result.rows) {
       const fact = normalizeFact(row);
       if (
-        !pathAllowed(
-          fact.authorizationPath,
-          query.authorizationPathPrefixes,
-        )
+        !pathAllowed(fact.authorizationPath, query.authorizationPathPrefixes)
       ) {
         continue;
       }
