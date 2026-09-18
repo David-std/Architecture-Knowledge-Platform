@@ -1397,7 +1397,12 @@ export function registerSessionRoutes(
 
   app.post<{
     Params: { id: string };
-    Body: { eventType: string; payload?: Record<string, unknown> };
+    Body: {
+      eventType: string;
+      claimId?: string;
+      fencingToken?: number;
+      payload?: Record<string, unknown>;
+    };
   }>(
     "/v1/sessions/:id/events",
     {
@@ -1426,10 +1431,25 @@ export function registerSessionRoutes(
           .code(413)
           .send({ code: "WORKSPACE_EVENT_PAYLOAD_INVALID" });
       }
+      const claimId = request.body?.claimId?.trim() || null;
+      const fencingToken =
+        request.body?.fencingToken === undefined
+          ? null
+          : Number(request.body.fencingToken);
+      if (
+        (claimId && fencingToken === null) ||
+        (!claimId && fencingToken !== null) ||
+        (claimId && !PRINCIPAL_ID_PATTERN.test(claimId)) ||
+        (fencingToken !== null &&
+          (!Number.isSafeInteger(fencingToken) || fencingToken < 1))
+      ) {
+        return reply.code(400).send({ code: "INVALID_WORKSPACE_EVENT_CLAIM" });
+      }
       const event = await appendWorkspaceEvent(db, {
         sessionId: session.id,
         actorId: actor.id,
         actorPrincipalId: actor.principalId,
+        ...(claimId ? { claimId, fencingToken } : {}),
         eventType: eventType as
           | "FINDING"
           | "BLOCKER"
@@ -1449,6 +1469,7 @@ export function registerSessionRoutes(
           vaultId: session.vaultId,
           eventId: event.id,
           eventType,
+          ...(claimId ? { claimId, fencingToken } : {}),
         },
         session.spaceId,
       );
