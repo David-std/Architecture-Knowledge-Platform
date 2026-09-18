@@ -52,6 +52,10 @@ The session pin contains shared truth/profile/index authorities and is safe to h
 
 Workspace findings, artifacts, notes, blockers, claims, handoffs, external references and offline drafts are operational state. They are not approved knowledge.
 
+Work claims retain the participating user as the compatibility/RBAC anchor and a distinct `ownerPrincipalId` as the fencing authority. New claims and coordination events persist the exact HUMAN or AGENT_PROCESS principal. Heartbeat, release and handoff must present the same principal that owns the live fence; a human parent therefore cannot reuse a child agent's fencing token merely because both principals map to the same user. Historical rows created before this principal-aware schema are backfilled to their HUMAN principal during migration.
+
+A HUMAN participant may issue an AGENT_PROCESS child for itself after joining the session; the issuance helper verifies the authenticated parent principal, user, session and vault, so a participant cannot mint a child under another human. This allows independent Agent A and Agent B credentials without granting either agent participant-management, review, publication or administrative authority.
+
 A claim handoff may carry bounded structured state: summary, completed work, remaining work, blockers, changed resource references, evidence references and open questions. The server attaches the session's pinned `ContextRevisionSet`, its hash and the resolved principal identities to the durable `CLAIM_HANDOFF` event; clients do not supply or override that revision metadata. The legacy `note` field remains accepted for compatibility, but the structured fields are the resumable machine-readable contract for agents that must continue without the previous chat transcript.
 
 Promotion remains:
@@ -99,7 +103,7 @@ The API returns `boundary: DISCOVERY_METADATA_ONLY` and `networkContactPerformed
 Before treating Team Context Fabric as proven, execute the maintained integration suite and remote CI matrix. Evidence must cover at least:
 
 - multi-vault and path-scope isolation, including a private vault that cannot leak into team-wide search without an explicit grant;
-- two-agent claim overlap, fencing and durable handoff;
+- two distinct AGENT_PROCESS principals bootstrapping the same shared revision, disjoint claims, overlap denial, principal-bound fencing and durable structured handoff;
 - revision-pinned bootstrap and R1 -> R2 drift detection;
 - promotion provenance, denial of agent self-approval and rejection of proposal-authored `ATTESTED` trust escalation;
 - human-governed publication;
