@@ -539,6 +539,7 @@ export function registerSessionRoutes(
           principalId: actor.principalId,
           principalKind: actor.principalKind,
           principalPolicyRevision: actor.principalPolicyRevision,
+          allowedActions: [...actor.principalAllowedActions].sort(),
           scopeFingerprint: actor.idempotencyScopeFingerprint,
           policyRevision: effectiveAuthorizationRevision,
         },
