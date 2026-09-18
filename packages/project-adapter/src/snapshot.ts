@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
+import type { CodeSnapshot } from "@akp/contracts";
 import type { CodeEvidence, CodeLocator } from "./index.js";
 
 export interface ProjectFileInventory {
@@ -108,6 +109,30 @@ function resolveRelativeImport(
     ),
   ];
   return candidates.find((candidate) => files.has(candidate)) ?? null;
+}
+
+export async function createCodeSnapshot(input: {
+  repositoryPath: string;
+  commit: string;
+}): Promise<CodeSnapshot> {
+  const project = await buildProjectSnapshot(input);
+  const root = path.resolve(input.repositoryPath);
+  const tree = git(root, ["rev-parse", "--verify", `${project.commit}^{tree}`]);
+  const treeHash = tree.status === 0 ? tree.stdout.trim() : "";
+  if (!/^[a-f0-9]{40}$/i.test(treeHash)) {
+    throw new Error("IMMUTABLE_GIT_TREE_REQUIRED");
+  }
+  return {
+    repository: project.remote ?? root,
+    repositoryPath: root,
+    commitSha: project.commit,
+    treeHash,
+    files: project.files.map((file) => ({
+      path: file.path,
+      contentHash: file.sha256,
+      bytes: file.bytes,
+    })),
+  };
 }
 
 export async function buildProjectSnapshot(input: {
