@@ -464,12 +464,31 @@ describe("P2 governed product flow", () => {
     });
     expect(resumed.statusCode).toBe(200);
     const resumedBody = resumed.json() as {
+      assignedPrincipals: string[];
+      principals: Array<{ id: string; kind: string; state: string }>;
       events: Array<{
         event_type: string;
         actor_principal_id: string | null;
         payload: Record<string, unknown>;
       }>;
     };
+    expect(resumedBody.assignedPrincipals).toEqual(
+      expect.arrayContaining([agentA.principal.id, agentB.principal.id]),
+    );
+    expect(resumedBody.principals).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: agentA.principal.id,
+          kind: "AGENT_PROCESS",
+          state: "ACTIVE",
+        }),
+        expect.objectContaining({
+          id: agentB.principal.id,
+          kind: "AGENT_PROCESS",
+          state: "ACTIVE",
+        }),
+      ]),
+    );
     expect(resumedBody.events.map((event) => event.event_type)).toEqual(
       expect.arrayContaining(["FINDING", "CLAIM_RELEASED", "CLAIM_HANDOFF"]),
     );
