@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   PostgresAuthorizationPort,
+  authorizationDecisionRevision,
   type AuthorizedVaultScope,
   type Postgres,
 } from "../src/index.js";
@@ -18,6 +19,41 @@ const scoped: AuthorizedVaultScope = {
 };
 
 describe("PostgresAuthorizationPort", () => {
+  it("revisions the effective authorization decision deterministically", () => {
+    const request = {
+      userId: "user-a",
+      spaceId: "space-a",
+      permission: "knowledge:read",
+      vaultId: "vault-a",
+      vaultIds: ["vault-a"],
+      federated: false,
+    };
+    const first = authorizationDecisionRevision(request, scoped);
+    const reordered: AuthorizedVaultScope = {
+      ...scoped,
+      accessByVault: {
+        "vault-a": {
+          pathPrefix: "docs/security",
+          permissions: ["knowledge:read"],
+        },
+      },
+    };
+    expect(authorizationDecisionRevision(request, reordered)).toBe(first);
+    expect(first).toMatch(/^[a-f0-9]{64}$/);
+
+    expect(
+      authorizationDecisionRevision(request, {
+        ...scoped,
+        accessByVault: {
+          "vault-a": {
+            pathPrefix: "docs",
+            permissions: ["knowledge:read"],
+          },
+        },
+      }),
+    ).not.toBe(first);
+  });
+
   it("filters unauthorized candidates before expansion", () => {
     const port = new PostgresAuthorizationPort({} as Postgres);
     const candidates = [
