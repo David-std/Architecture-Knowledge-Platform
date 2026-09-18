@@ -24,9 +24,12 @@ update context_fabric_peers
      "rateLimit": {"kind": "NONE"},
      "degradation": {"onUnavailable": "FAIL_CLOSED"},
      "health": "STALE"
-   }'::jsonb
- where capabilities->>'schemaVersion' is distinct from '1';
+   }'::jsonb;
 
+-- Every row present when this migration runs predates the governed capability
+-- contract. Do not trust a legacy blob merely because it self-declared
+-- schemaVersion=1; all pre-contract rows are downgraded before the constraint
+-- makes future writes prove their semantics.
 alter table context_fabric_peers
   add constraint context_fabric_peers_capability_contract_v1
   check (
