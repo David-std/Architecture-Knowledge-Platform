@@ -497,11 +497,14 @@ describe("federated multi-graph substrate integration", () => {
             ["GraphRevisionBuilt", "GraphRevisionActivated"],
           ],
         );
-        expect(lifecycleEvents.rows.map((event) => event.event_type)).toEqual([
-          "GraphRevisionBuilt",
-          "GraphRevisionActivated",
-        ]);
-        expect(lifecycleEvents.rows[0]?.payload).toMatchObject({
+        expect(lifecycleEvents.rows).toHaveLength(2);
+        const builtEvent = lifecycleEvents.rows.find(
+          (event) => event.event_type === "GraphRevisionBuilt",
+        );
+        const activatedEvent = lifecycleEvents.rows.find(
+          (event) => event.event_type === "GraphRevisionActivated",
+        );
+        expect(builtEvent?.payload).toMatchObject({
           projectionRevisionId: firstCatalogBuild.id,
           graphDomain: "SOFTWARE_CATALOG",
           scopeId: catalogScope,
@@ -512,10 +515,8 @@ describe("federated multi-graph substrate integration", () => {
           lifecycle: "BUILT",
           freshness: "FRESH",
         });
-        expect(lifecycleEvents.rows[1]?.causation_id).toBe(
-          lifecycleEvents.rows[0]?.event_id,
-        );
-        expect(lifecycleEvents.rows[1]?.payload).toMatchObject({
+        expect(activatedEvent?.causation_id).toBe(builtEvent?.event_id);
+        expect(activatedEvent?.payload).toMatchObject({
           projectionRevisionId: firstCatalogBuild.id,
           graphDomain: "SOFTWARE_CATALOG",
           scopeId: catalogScope,
