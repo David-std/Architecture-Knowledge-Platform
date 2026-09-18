@@ -989,20 +989,8 @@ export class PostgresFederatedGraphStore
 
     const sortEdges = (left: ActiveEdgeRow, right: ActiveEdgeRow) =>
       left.relation_type.localeCompare(right.relation_type) ||
-      graphNodeIdentityKey(nodes.get(left.to_node_id)?.identity ?? {
-        graphDomain: left.owner_graph_domain,
-        scopeId: "",
-        kind: "",
-        canonicalKey: left.to_node_id,
-        revision: "",
-      }).localeCompare(
-        graphNodeIdentityKey(nodes.get(right.to_node_id)?.identity ?? {
-          graphDomain: right.owner_graph_domain,
-          scopeId: "",
-          kind: "",
-          canonicalKey: right.to_node_id,
-          revision: "",
-        }),
+      graphNodeIdentityKey(nodes.get(left.to_node_id)!.identity).localeCompare(
+        graphNodeIdentityKey(nodes.get(right.to_node_id)!.identity),
       ) ||
       left.id.localeCompare(right.id);
     for (const edges of outgoing.values()) edges.sort(sortEdges);
