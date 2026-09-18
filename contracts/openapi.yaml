@@ -368,6 +368,9 @@ paths:
                   indexRevisions:
                     type: [object, "null"]
                     additionalProperties: true
+                  truth:
+                    type: [object, "null"]
+                    additionalProperties: true
                   hits:
                     type: array
                     items: { $ref: "#/components/schemas/SearchHit" }
@@ -406,6 +409,7 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
   /v1/context:
     post:
       tags: [Retrieval]
@@ -442,6 +446,7 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
         "422":
           description: Requested token budget cannot represent the context packet envelope.
           content:
@@ -3793,6 +3798,10 @@ components:
           default: false
           description: Must be true when more than one vaultId is requested.
         projectId: { type: string, format: uuid }
+        truthConsistency:
+          type: string
+          enum: [STRICT, BEST_EFFORT]
+          default: STRICT
         types:
           type: array
           items: { type: string }

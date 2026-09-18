@@ -5,8 +5,10 @@ import {
   normalizeVaultPathPrefix,
   pathMatchesVaultPrefix,
   PostgresAuthorizationPort,
+  PostgresTemporalTruthStore,
   type AuthorizedVaultScope,
   type Postgres,
+  type TruthSnapshot,
 } from "@akp/postgres";
 import {
   GraphRelationType,
@@ -341,6 +343,14 @@ function kindOf(
   return "concept";
 }
 
+export type TruthConsistencyMode = "STRICT" | "BEST_EFFORT";
+
+export interface RetrievalTruthState {
+  consistency: TruthConsistencyMode;
+  snapshot: TruthSnapshot;
+  changedDuringQuery: boolean;
+}
+
 export interface RetrievalExecutionOptions {
   channels?: Array<
     "context-pack" | "exact" | "lexical" | "vector" | "graph" | "raw" | "code"
@@ -364,6 +374,8 @@ export interface RetrievalExecutionOptions {
   /** Applied after policy/trust filtering so a scoped caller never receives a
    * path it is not allowed to read. */
   pathAuthorizer?: (path: string, vaultId?: string) => boolean;
+  truthConsistency?: TruthConsistencyMode;
+  truthStateSink?: (state: RetrievalTruthState) => void;
 }
 
 export interface SearchRouteDependencies {
@@ -537,11 +549,17 @@ interface ActiveEmbeddingGenerationRow {
 }
 
 interface VectorSearchRow {
+  generation_id: string;
+  vault_id: string;
   id: string;
   unit_id: string;
   unit_type: string;
   document_revision: string;
   score: number;
+}
+
+function vectorTruthRef(row: VectorSearchRow): string {
+  return `vector:${row.generation_id}:${row.unit_id}`;
 }
 
 function activeDescriptor(
@@ -915,6 +933,28 @@ export async function queryKnowledge(
       : `and ${alias}vault_id=any(array[${vaultIds
           .map((id) => `'${id}'::uuid`)
           .join(",")}])`;
+  const truthConsistency: TruthConsistencyMode =
+    options.truthConsistency ?? input.truthConsistency ?? "STRICT";
+  const truthStore = new PostgresTemporalTruthStore(db);
+  const truthSnapshot = await truthStore.captureSnapshot(spaceId, vaultIds);
+  const finalizeTruthSnapshot = async (): Promise<RetrievalTruthState> => {
+    const changedDuringQuery = !(await truthStore.snapshotUnchanged(
+      truthSnapshot,
+    ));
+    const state: RetrievalTruthState = {
+      consistency: truthConsistency,
+      snapshot: truthSnapshot,
+      changedDuringQuery,
+    };
+    options.truthStateSink?.(state);
+    if (changedDuringQuery) {
+      if (truthConsistency === "STRICT") {
+        throw new Error("CONTEXT_REVISION_CHANGED");
+      }
+      options.warningSink?.push("CONTEXT_REVISION_CHANGED_BEST_EFFORT");
+    }
+    return state;
+  };
   const indexRows = await db.pool.query(
     `select vault_id,corpus_revision,lexical_revision,vector_revision,
             graph_revision,context_pack_revision,status,warnings,
@@ -1213,7 +1253,8 @@ export async function queryKnowledge(
         const result = await observedRetrieval("vector", () =>
           db.pool.query<VectorSearchRow>(
             `
-          select u.document_id id,u.id unit_id,u.unit_type,
+          select $1::uuid generation_id,u.vault_id,
+                 u.document_id id,u.id unit_id,u.unit_type,
                  u.document_revision,
                  1 - (e.embedding::vector(${dimensions}) <=> $3::vector(${dimensions})) score
             from unit_embeddings e
@@ -1257,6 +1298,53 @@ export async function queryKnowledge(
         String(left.unit_id).localeCompare(String(right.unit_id)),
     );
     vector.rows.splice(Math.max(input.limit * 3, 30));
+  }
+
+  if (vector.rows.length > 0) {
+    const truthRevisionByVault = new Map(
+      truthSnapshot.vaults.map((entry) => [entry.vaultId, entry]),
+    );
+    const truthValidRows: VectorSearchRow[] = [];
+    for (const vaultId of vaultIds) {
+      const scopedRows = vector.rows.filter((row) => row.vault_id === vaultId);
+      if (scopedRows.length === 0) continue;
+      const snapshotEntry = truthRevisionByVault.get(vaultId);
+      const validations = await truthStore.validateDerivedItems({
+        spaceId,
+        vaultId,
+        derivedStoreKind: "VECTOR",
+        derivedItemRefs: scopedRows.map(vectorTruthRef),
+        ...(snapshotEntry?.revisionHash
+          ? { truthRevisionHash: snapshotEntry.revisionHash }
+          : {}),
+      });
+      const validationByRef = new Map(
+        validations.map((validation) => [
+          validation.derivedItemRef,
+          validation,
+        ]),
+      );
+      for (const row of scopedRows) {
+        const validation = validationByRef.get(vectorTruthRef(row));
+        if (validation?.valid === false) {
+          options.warningSink?.push(
+            `TRUTH_SUPPORT_REJECTED:VECTOR:${row.unit_id}`,
+          );
+          telemetry.counter("truth_candidate_rejected", 1, {
+            channel: "vector",
+            state: validation.state,
+          });
+          continue;
+        }
+        if (validation?.state === "DISPUTED") {
+          options.warningSink?.push(
+            `TRUTH_SUPPORT_DISPUTED:VECTOR:${row.unit_id}`,
+          );
+        }
+        truthValidRows.push(row);
+      }
+    }
+    vector.rows.splice(0, vector.rows.length, ...truthValidRows);
   }
   recordRetrievalCandidates("vector", vector.rows.length);
 
@@ -1830,7 +1918,10 @@ export async function queryKnowledge(
       reciprocalRankFusion(rankedChannels),
     )
   ).slice(0, input.limit * 2);
-  if (fused.length === 0) return [];
+  if (fused.length === 0) {
+    await finalizeTruthSnapshot();
+    return [];
+  }
 
   const details = await db.pool.query(
     `
@@ -2036,11 +2127,13 @@ export async function queryKnowledge(
       };
     })
     .filter((hit): hit is SearchHit => hit !== null);
-  return (
+  const finalResults = (
     options.deterministicRerank
       ? deterministicLexicalRerank(input.query, results)
       : results
   ).slice(0, input.limit);
+  await finalizeTruthSnapshot();
+  return finalResults;
 }
 
 export function registerSearchRoutes(
@@ -2200,15 +2293,31 @@ export function registerSearchRoutes(
         ...(projectCode?.warnings ?? []),
       ];
       const availableChannels = new Set<RetrievalChannel>();
-      const hits = await queryKnowledge(db, scopedRequest, {
-        plan,
-        vaultIds,
-        graphScopes,
-        ...(projectCode ? { codeCandidates: projectCode.candidates } : {}),
-        warningSink: retrievalWarnings,
-        availableChannelSink: availableChannels,
-        pathAuthorizer,
-      });
+      let truthState: RetrievalTruthState | undefined;
+      let hits: SearchHit[];
+      try {
+        hits = await queryKnowledge(db, scopedRequest, {
+          plan,
+          vaultIds,
+          graphScopes,
+          ...(projectCode ? { codeCandidates: projectCode.candidates } : {}),
+          warningSink: retrievalWarnings,
+          availableChannelSink: availableChannels,
+          pathAuthorizer,
+          truthConsistency: parsed.data.truthConsistency ?? "STRICT",
+          truthStateSink: (state) => {
+            truthState = state;
+          },
+        });
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message === "CONTEXT_REVISION_CHANGED"
+        ) {
+          return reply.code(409).send({ code: "CONTEXT_REVISION_CHANGED" });
+        }
+        throw error;
+      }
       const channelState = channelsConsistentWithIndex(
         plan.channels,
         index,
@@ -2240,6 +2349,7 @@ export function registerSearchRoutes(
         channels: effectiveChannelState.channels,
         warnings: effectiveChannelState.warnings,
         indexRevisions: index,
+        truth: truthState ?? null,
         hits,
         noAnswer:
           hits.length === 0
@@ -2528,15 +2638,31 @@ export function registerSearchRoutes(
         ...(projectCode?.warnings ?? []),
       ];
       const availableChannels = new Set<RetrievalChannel>();
-      const hits = await queryKnowledge(db, scopedRequest, {
-        plan,
-        vaultIds,
-        graphScopes,
-        ...(projectCode ? { codeCandidates: projectCode.candidates } : {}),
-        warningSink: retrievalWarnings,
-        availableChannelSink: availableChannels,
-        pathAuthorizer,
-      });
+      let truthState: RetrievalTruthState | undefined;
+      let hits: SearchHit[];
+      try {
+        hits = await queryKnowledge(db, scopedRequest, {
+          plan,
+          vaultIds,
+          graphScopes,
+          ...(projectCode ? { codeCandidates: projectCode.candidates } : {}),
+          warningSink: retrievalWarnings,
+          availableChannelSink: availableChannels,
+          pathAuthorizer,
+          truthConsistency: parsed.data.truthConsistency ?? "STRICT",
+          truthStateSink: (state) => {
+            truthState = state;
+          },
+        });
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message === "CONTEXT_REVISION_CHANGED"
+        ) {
+          return reply.code(409).send({ code: "CONTEXT_REVISION_CHANGED" });
+        }
+        throw error;
+      }
       const details =
         hits.length === 0
           ? { rows: [] }
@@ -2620,6 +2746,14 @@ export function registerSearchRoutes(
                 }
               : null,
             warnings: effectiveChannelState.warnings,
+            truth: truthState
+              ? {
+                  consistency: truthState.consistency,
+                  capturedAt: truthState.snapshot.capturedAt,
+                  changedDuringQuery: truthState.changedDuringQuery,
+                  revisions: truthState.snapshot.vaults,
+                }
+              : null,
           },
           candidates: hits.map((hit) => {
             const detail = detailById.get(hit.documentId);

@@ -90,6 +90,7 @@ export const SearchRequest = z.object({
   vaultIds: z.array(z.string().uuid()).max(20).default([]),
   federated: z.boolean().default(false),
   projectId: z.string().uuid().optional(),
+  truthConsistency: z.enum(["STRICT", "BEST_EFFORT"]).optional(),
   types: z.array(z.string()).default([]),
   minimumTrust: TrustTier.default("MACHINE_SUPPORTED"),
   mode: z
