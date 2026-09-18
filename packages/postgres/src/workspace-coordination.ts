@@ -983,6 +983,8 @@ export async function appendWorkspaceEventInTransaction(
     sessionId: string;
     actorId: string;
     actorPrincipalId?: string | null;
+    claimId?: string | null;
+    fencingToken?: number | null;
     eventType: WorkspaceUserEventType;
     payload: Record<string, unknown>;
   },
@@ -1008,6 +1010,42 @@ export async function appendWorkspaceEventInTransaction(
     scope.space_id,
     scope.vault_id,
   );
+  if ((input.claimId && input.fencingToken === undefined) ||
+      (!input.claimId && input.fencingToken !== undefined)) {
+    throw workspaceError("WORKSPACE_EVENT_CLAIM_FENCE_REQUIRED", 400);
+  }
+  if (input.claimId) {
+    if (
+      !Number.isSafeInteger(input.fencingToken) ||
+      Number(input.fencingToken) < 1
+    ) {
+      throw workspaceError("INVALID_FENCING_TOKEN", 400);
+    }
+    const actorPrincipalId = await resolveWorkspacePrincipalId(client, {
+      sessionId: input.sessionId,
+      userId: input.actorId,
+      principalId: input.actorPrincipalId,
+    });
+    const claim = await client.query<{ id: string }>(
+      `select id
+         from workspace_claims
+        where id=$1 and session_id=$2
+          and owner_id=$3 and owner_principal_id=$4
+          and fencing_token=$5 and status='ACTIVE'
+          and lease_expires_at>now()
+        for update`,
+      [
+        input.claimId,
+        input.sessionId,
+        input.actorId,
+        actorPrincipalId,
+        input.fencingToken,
+      ],
+    );
+    if (!claim.rowCount) {
+      throw workspaceError("WORK_CLAIM_FENCE_STALE", 409);
+    }
+  }
   return appendCoordinationEvent(client, input);
 }
 
@@ -1017,6 +1055,8 @@ export async function appendWorkspaceEvent(
     sessionId: string;
     actorId: string;
     actorPrincipalId?: string | null;
+    claimId?: string | null;
+    fencingToken?: number | null;
     eventType: WorkspaceUserEventType;
     payload: Record<string, unknown>;
   },
