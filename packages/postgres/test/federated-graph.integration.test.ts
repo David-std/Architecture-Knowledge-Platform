@@ -1007,9 +1007,7 @@ describe("federated multi-graph substrate integration", () => {
             vaultId: fixture.vaultA,
             scopeId: fallbackScope,
             revision: "fallback-r1",
-            nodes: [
-              node(fallbackR1, fixture.vaultA, "allowed/fallback-seed"),
-            ],
+            nodes: [node(fallbackR1, fixture.vaultA, "allowed/fallback-seed")],
           }),
         );
 
