@@ -9,7 +9,10 @@ import {
   resolveAuthorizedVaultScope,
   type Postgres,
 } from "@akp/postgres";
-import { buildProjectSnapshot } from "@akp/project-adapter";
+import {
+  buildProjectSnapshot,
+  projectCodeGraphIdentity,
+} from "@akp/project-adapter";
 import {
   actorOf,
   audit,
@@ -36,14 +39,6 @@ function revision(repositoryPath: string): string | null {
 
 function safeProjectSlug(slug: string): string | null {
   return /^[a-z0-9][a-z0-9-]{0,79}$/i.test(slug) ? slug : null;
-}
-
-function projectCodeGraphIdentity(vaultId: string, slug: string) {
-  return {
-    repository: `akp-project:${vaultId}:${slug}`,
-    scopeId: `project:${vaultId}:${slug}`,
-    authorizationPathPrefix: `projects/${slug}`,
-  };
 }
 
 function configuredProjectRoots(): string[] | null {
