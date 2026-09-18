@@ -343,6 +343,11 @@
           "sessionId": { "type": "string", "format": "uuid" },
           "workKey": { "type": "string", "minLength": 1, "maxLength": 200 },
           "toUserId": { "type": "string", "format": "uuid" },
+          "toPrincipalId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Optional exact target principal for agent-to-agent handoff."
+          },
           "fencingToken": { "type": "integer", "minimum": 1 },
           "leaseSeconds": {
             "type": "integer",
