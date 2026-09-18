@@ -26,7 +26,6 @@ flowchart BT
 
 Primary modules map to identity, sources, ingestion, knowledge, review, retrieval, governance, evaluation and integration. They are currently deployed together; splitting them into microservices is not a goal.
 
-
 ## Federated graph substrate
 
 The federated graph substrate keeps graph semantics separated by domain rather than merging every relation into one universal namespace. A graph node is identified by domain, scope, kind, canonical key and revision. Projection revisions are stored in PostgreSQL with their source revision/hash, provider/configuration version, lifecycle and freshness; the active revision is a pointer, not a rewrite of historical nodes or edges.
