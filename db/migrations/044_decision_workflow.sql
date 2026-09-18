@@ -13,14 +13,22 @@ create table workspace_decision_candidates (
   decision_authority_principal_id uuid not null references principals(id),
   title text not null check (char_length(title) between 1 and 200),
   problem text not null check (char_length(problem) between 1 and 12000),
+  context text not null check (char_length(context) between 1 and 12000),
   drivers jsonb not null check (jsonb_typeof(drivers)='array'),
+  quality_attributes jsonb not null check (jsonb_typeof(quality_attributes)='array'),
   affected_refs jsonb not null default '[]'::jsonb
     check (jsonb_typeof(affected_refs)='array'),
   evidence_refs jsonb not null check (jsonb_typeof(evidence_refs)='array'),
+  consequences text
+    check (consequences is null or char_length(consequences) between 1 and 12000),
+  follow_up_actions jsonb not null default '[]'::jsonb
+    check (jsonb_typeof(follow_up_actions)='array'),
   verification_plan text not null
     check (char_length(verification_plan) between 1 and 12000),
   verification_due_at timestamptz,
   decision_deadline timestamptz,
+  effective_from timestamptz,
+  effective_until timestamptz,
   status text not null default 'DRAFT'
     check (
       status in (
@@ -48,8 +56,16 @@ create table workspace_decision_candidates (
     or review_id is not null
   ),
   check (
+    status not in ('READY_FOR_REVIEW','PENDING_REVIEW','APPROVED','REJECTED','SUPERSEDED')
+    or (selected_alternative_id is not null and consequences is not null)
+  ),
+  check (
     status not in ('APPROVED','SUPERSEDED')
     or published_revision is not null
+  ),
+  check (
+    effective_until is null
+    or (effective_from is not null and effective_until > effective_from)
   )
 );
 
