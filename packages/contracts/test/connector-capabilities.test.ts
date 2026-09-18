@@ -85,6 +85,19 @@ describe("ConnectorCapabilities", () => {
     });
   });
 
+  it("does not treat workspace-wide authorization as source ACL fidelity", () => {
+    const policy = SOFTWARE_DELIVERY_KNOWLEDGE_PROFILE_V1.connectorPolicy;
+    const workspaceWide = ConnectorCapabilities.parse({
+      ...mirror,
+      permissionFidelity: "WORKSPACE_WIDE",
+    });
+    expect(evaluateConnectorCapabilities(workspaceWide, policy!)).toEqual({
+      status: "DENIED",
+      permissionFidelitySatisfied: false,
+      reasons: ["PERMISSION_FIDELITY_INSUFFICIENT"],
+    });
+  });
+
   it("does not let a remote-only connector promise stale local content", () => {
     const invalid = {
       ...liveReference,
