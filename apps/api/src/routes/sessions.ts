@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { OpenTelemetryBridge } from "@akp/observability";
 import { BootstrapContext } from "@akp/application";
 import { ContextPacketResponse, QueryIntent } from "@akp/contracts";
+import { parseKnowledgeDocumentMetadata } from "@akp/validation";
 import {
   DEFAULT_KNOWLEDGE_PROFILE_V1,
   KnowledgeProfileV1,
@@ -720,9 +721,66 @@ export function registerSessionRoutes(
         branchName: string;
         headCommit: string;
       };
+      const promotionCandidates = changes.map((change) => {
+        const metadata = parseKnowledgeDocumentMetadata(change.content);
+        if (!metadata) {
+          throw new Error("PROMOTION_VALIDATED_METADATA_MISSING");
+        }
+        const trustTier =
+          typeof metadata.trust_tier === "string"
+            ? metadata.trust_tier
+            : null;
+        return {
+          path: change.path,
+          kind: metadata.type,
+          knowledgeLayer: metadata.knowledge_layer,
+          lifecycle: metadata.status,
+          trustTier,
+        };
+      });
+      const targetKnowledgeLayers = [
+        ...new Set(
+          promotionCandidates.map((candidate) => candidate.knowledgeLayer),
+        ),
+      ].sort();
       const evidenceVersions = evidence.events.map((event) =>
         Number(event.session_version),
       );
+      const promotionSemantics = {
+        sourceScope: {
+          sessionId: session.id,
+          spaceId: session.spaceId,
+          vaultId: session.vaultId,
+          revisionSetHash: session.contextRevisionSetHash,
+        },
+        targetScope: {
+          spaceId: session.spaceId,
+          vaultId: session.vaultId,
+          knowledgeLayers: targetKnowledgeLayers,
+        },
+        knowledgeCandidates: promotionCandidates,
+        evidence: evidenceEventIds.map((eventId, index) => ({
+          eventId,
+          sessionVersion: evidenceVersions[index] ?? null,
+        })),
+        conflicts: {
+          status: "NOT_EVALUATED" as const,
+          items: [] as string[],
+        },
+        implications: {
+          lifecycle: promotionCandidates.map((candidate) => ({
+            path: candidate.path,
+            requestedStatus: candidate.lifecycle,
+            publicationRequired: true,
+          })),
+          trust: promotionCandidates.map((candidate) => ({
+            path: candidate.path,
+            requestedTier: candidate.trustTier,
+            selfAttestationAllowed: false,
+            authority: "GOVERNED_REVIEW",
+          })),
+        },
+      };
       const promotionClient = await db.pool.connect();
       let promotionEvent: Record<string, unknown>;
       try {
@@ -754,6 +812,7 @@ export function registerSessionRoutes(
               evidenceVersions,
               revisionSetHash: session.contextRevisionSetHash,
               requestedPaths: changes.map((change) => change.path),
+              ...promotionSemantics,
             },
           },
         );
@@ -772,6 +831,7 @@ export function registerSessionRoutes(
                 evidenceEventIds,
                 evidenceVersions,
                 revisionSetHash: session.contextRevisionSetHash,
+                ...promotionSemantics,
               },
               ...(decisionCandidate && decisionCapturedEventId
                 ? {
