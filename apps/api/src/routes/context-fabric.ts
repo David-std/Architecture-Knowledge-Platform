@@ -445,16 +445,23 @@ export function registerContextFabricRoutes(
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
       const state = await workspaceSessionSnapshot(db, session.id, actor.id);
       if (!state) return reply.code(404).send({ code: "SESSION_NOT_FOUND" });
-      const capturedAt = new Date().toISOString();
+      const capturedAt = new Date();
+      const pinnedAt = state.contextRevision.pinned?.pinnedAt ?? null;
+      const sharedRevisionAgeSeconds = pinnedAt
+        ? Math.max(
+            0,
+            Math.floor((capturedAt.getTime() - pinnedAt.getTime()) / 1000),
+          )
+        : null;
       if (
         state.contextRevision.status !== "CURRENT" ||
         !state.contextRevision.pinned
       ) {
         return reply.code(409).send({
           schemaVersion: 1,
-          capturedAt,
+          capturedAt: capturedAt.toISOString(),
           stale: true,
-          ageSeconds: 0,
+          ageSeconds: sharedRevisionAgeSeconds,
           status: state.contextRevision.status,
           changedDimensions: state.contextRevision.changedDimensions,
           pinnedRevisionSetHash:
@@ -489,9 +496,9 @@ export function registerContextFabricRoutes(
       const serialized = JSON.stringify(context);
       return {
         schemaVersion: 1,
-        capturedAt,
+        capturedAt: capturedAt.toISOString(),
         stale: false,
-        ageSeconds: 0,
+        ageSeconds: sharedRevisionAgeSeconds,
         status: "CURRENT",
         pinnedRevisionSetHash: state.contextRevision.pinned.revisionSetHash,
         currentRevisionSetHash: state.contextRevision.current.revisionSetHash,
