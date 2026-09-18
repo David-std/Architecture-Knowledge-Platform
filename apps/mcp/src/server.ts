@@ -160,6 +160,33 @@ export function createMcpServer(): McpServer {
   );
 
   server.registerTool(
+    "akp_update_work_context",
+    {
+      description:
+        "Update durable WorkContext lifecycle state, outcome, follow-ups, and touched resources without turning coordination memory into canonical knowledge.",
+      inputSchema: {
+        sessionId: z.string().uuid(),
+        status: z.enum(["OPEN", "BLOCKED", "COMPLETED", "ABANDONED"]),
+        outcome: z.string().min(1).max(12000).nullable().optional(),
+        followUps: z.array(z.string().min(1).max(2000)).max(50).optional(),
+        touchedResources: z
+          .array(z.string().min(1).max(1000))
+          .max(100)
+          .optional(),
+        idempotencyKey: z.string().min(8).max(200),
+      },
+    },
+    async ({ sessionId, idempotencyKey, ...body }) =>
+      textResult(
+        await writeApi(
+          `/v1/sessions/${encodeURIComponent(sessionId)}/work-context`,
+          idempotencyKey,
+          body,
+        ),
+      ),
+  );
+
+  server.registerTool(
     "akp_claim_workspace_work",
     {
       description:
@@ -230,13 +257,24 @@ export function createMcpServer(): McpServer {
     "akp_handoff_workspace_claim",
     {
       description:
-        "Transfer an owned fenced workspace claim to another authorized participant with an optional structured note.",
+        "Transfer an owned fenced workspace claim to another authorized participant or exact agent principal with bounded machine-readable handoff state.",
       inputSchema: {
         sessionId: z.string().uuid(),
         workKey: z.string().min(1).max(200),
         toUserId: z.string().uuid(),
+        toPrincipalId: z.string().uuid().optional(),
         fencingToken: z.number().int().min(1),
         leaseSeconds: z.number().int().min(15).max(900).default(120),
+        summary: z.string().min(1).max(4096).optional(),
+        completed: z.array(z.string().min(1).max(2000)).max(50).optional(),
+        remaining: z.array(z.string().min(1).max(2000)).max(50).optional(),
+        blockers: z.array(z.string().min(1).max(2000)).max(50).optional(),
+        changedResourceRefs: z
+          .array(z.string().min(1).max(1000))
+          .max(100)
+          .optional(),
+        evidenceRefs: z.array(z.string().min(1).max(1000)).max(100).optional(),
+        questions: z.array(z.string().min(1).max(2000)).max(50).optional(),
         note: z.string().max(2048).optional(),
         idempotencyKey: z.string().min(8).max(200),
       },
@@ -266,6 +304,8 @@ export function createMcpServer(): McpServer {
           "DECISION_CANDIDATE",
           "NOTE",
         ]),
+        claimId: z.string().uuid().optional(),
+        fencingToken: z.number().int().min(1).optional(),
         payload: z.record(z.unknown()).default({}),
         idempotencyKey: z.string().min(8).max(200),
       },
