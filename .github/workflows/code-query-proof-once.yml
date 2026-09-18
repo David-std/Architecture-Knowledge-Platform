@@ -1,0 +1,43 @@
+name: code-query-proof-once
+
+on:
+  push:
+    branches:
+      - feat/v0.4-enterprise-context-workspace
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  proof:
+    runs-on: ubuntu-24.04
+    env:
+      DATABASE_URL: postgres://akp:akp@localhost:55432/akp
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/v0.4-enterprise-context-workspace
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Check touched formatting
+        run: |
+          pnpm exec prettier --check             apps/api/src/routes/code-graph.ts             apps/api/src/server.ts             apps/api/test/code-graph-query.integration.test.ts             contracts/openapi.yaml             packages/project-adapter/src/snapshot.ts             packages/project-adapter/src/index.ts
+      - run: docker compose up -d --wait postgres
+      - run: pnpm db:migrate
+      - run: pnpm contracts:validate
+      - run: pnpm --filter @akp/project-adapter test
+      - run: pnpm --filter @akp/project-adapter build
+      - run: pnpm --filter @akp/api typecheck
+      - name: Run code graph API integration
+        run: |
+          pnpm --filter @akp/api exec vitest run             --config vitest.integration.config.ts             test/code-graph-query.integration.test.ts
+      - name: Stop disposable services
+        if: always()
+        run: docker compose down -v --remove-orphans
