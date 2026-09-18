@@ -221,9 +221,16 @@ afterAll(async () => {
       "delete from federated_graph_projection_revisions where vault_id=$1",
       [vaultId],
     );
-    await db.pool.query("delete from federated_graph_edges where space_id=$1", [
-      spaceId,
-    ]);
+    await db.pool.query(
+      `delete from federated_graph_edges
+        where from_node_id in (
+          select id from federated_graph_nodes where vault_id=$1
+        )
+           or to_node_id in (
+             select id from federated_graph_nodes where vault_id=$1
+           )`,
+      [vaultId],
+    );
     await db.pool.query("delete from federated_graph_nodes where vault_id=$1", [
       vaultId,
     ]);
