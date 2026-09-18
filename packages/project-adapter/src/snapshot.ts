@@ -94,7 +94,6 @@ function language(file: string): string {
       ".json": "JSON",
       ".xml": "XML",
       ".gradle": "Gradle",
-      ".kts": "KotlinScript",
       ".csproj": "MSBuild",
     }[extension] ?? "BuildMetadata"
   );
