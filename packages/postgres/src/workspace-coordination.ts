@@ -80,6 +80,7 @@ export interface WorkspaceClaim {
   sessionId: string;
   workKey: string;
   ownerId: string;
+  ownerPrincipalId: string;
   status: "ACTIVE" | "RELEASED" | "COMPLETED";
   fencingToken: number;
   leaseExpiresAt: Date;
@@ -141,6 +142,7 @@ function normalizeClaim(row: Record<string, unknown>): WorkspaceClaim {
     sessionId: String(row.session_id),
     workKey: String(row.work_key),
     ownerId: String(row.owner_id),
+    ownerPrincipalId: String(row.owner_principal_id),
     status: String(row.status) as WorkspaceClaim["status"],
     fencingToken: Number(row.fencing_token),
     leaseExpiresAt: new Date(String(row.lease_expires_at)),
@@ -212,11 +214,48 @@ function workspaceScopesOverlap(
   return false;
 }
 
+async function resolveWorkspacePrincipalId(
+  client: PostgresPoolClient,
+  input: {
+    sessionId: string;
+    userId: string;
+    principalId?: string | null;
+  },
+): Promise<string> {
+  if (input.principalId) {
+    const explicit = await client.query<{ id: string }>(
+      `select id
+         from principals
+        where id=$1 and user_id=$2 and state='ACTIVE'
+          and (
+            kind='HUMAN'
+            or (kind='AGENT_PROCESS' and session_id=$3)
+          )
+        limit 1`,
+      [input.principalId, input.userId, input.sessionId],
+    );
+    const id = explicit.rows[0]?.id;
+    if (!id) throw workspaceError("WORKSPACE_PRINCIPAL_SCOPE_DENIED", 403);
+    return id;
+  }
+  const human = await client.query<{ id: string }>(
+    `select id
+       from principals
+      where kind='HUMAN' and user_id=$1 and state='ACTIVE'
+      limit 1`,
+    [input.userId],
+  );
+  const id = human.rows[0]?.id;
+  if (!id) throw workspaceError("WORKSPACE_PRINCIPAL_NOT_FOUND", 409);
+  return id;
+}
+
 async function appendCoordinationEvent(
   client: PostgresPoolClient,
   input: {
     sessionId: string;
     actorId: string | null;
+    actorPrincipalId?: string | null;
     eventType: WorkspaceEventType;
     payload: Record<string, unknown>;
     claimId?: string | null;
@@ -234,16 +273,25 @@ async function appendCoordinationEvent(
   if (!session || !session.vault_id) {
     throw workspaceError("SESSION_NOT_FOUND", 404);
   }
+  const actorPrincipalId = input.actorId
+    ? await resolveWorkspacePrincipalId(client, {
+        sessionId: input.sessionId,
+        userId: input.actorId,
+        principalId: input.actorPrincipalId,
+      })
+    : null;
   const inserted = await client.query<Record<string, unknown>>(
     `insert into workspace_events(
-       session_id,space_id,vault_id,actor_id,claim_id,event_type,payload,session_version
-     ) values($1,$2,$3,$4,$5,$6,$7::jsonb,$8)
+       session_id,space_id,vault_id,actor_id,actor_principal_id,claim_id,
+       event_type,payload,session_version
+     ) values($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9)
      returning *`,
     [
       input.sessionId,
       session.space_id,
       session.vault_id,
       input.actorId,
+      actorPrincipalId,
       input.claimId ?? null,
       input.eventType,
       JSON.stringify(input.payload),
@@ -276,6 +324,7 @@ async function appendCoordinationEvent(
         sessionVersion: Number(row.session_version),
         workspaceEventType: input.eventType,
         actorId: input.actorId,
+        actorPrincipalId,
         claimId: input.claimId ?? null,
         data: input.payload,
       },
@@ -476,6 +525,7 @@ export async function claimWorkspaceWork(
   input: {
     sessionId: string;
     actorId: string;
+    actorPrincipalId?: string | null;
     workKey: string;
     leaseSeconds: number;
   },
@@ -509,6 +559,11 @@ export async function claimWorkspaceWork(
       scope.space_id,
       scope.vault_id,
     );
+    const actorPrincipalId = await resolveWorkspacePrincipalId(client, {
+      sessionId: input.sessionId,
+      userId: input.actorId,
+      principalId: input.actorPrincipalId,
+    });
 
     // The session row lock serializes claim acquisition in this workspace. Without
     // it, two overlapping prefixes could both observe an empty set and commit.
@@ -537,12 +592,14 @@ export async function claimWorkspaceWork(
 
     const claimed = await client.query<Record<string, unknown>>(
       `insert into workspace_claims(
-         session_id,work_key,owner_id,status,fencing_token,lease_expires_at,version
+         session_id,work_key,owner_id,owner_principal_id,status,fencing_token,
+         lease_expires_at,version
        ) values(
-         $1,$2,$3,'ACTIVE',1,now()+make_interval(secs => $4),1
+         $1,$2,$3,$4,'ACTIVE',1,now()+make_interval(secs => $5),1
        )
        on conflict(session_id,work_key) do update set
          owner_id=excluded.owner_id,
+         owner_principal_id=excluded.owner_principal_id,
          status='ACTIVE',
          fencing_token=workspace_claims.fencing_token+1,
          lease_expires_at=excluded.lease_expires_at,
@@ -551,13 +608,20 @@ export async function claimWorkspaceWork(
        where workspace_claims.status<>'ACTIVE'
           or workspace_claims.lease_expires_at<=now()
        returning *`,
-      [input.sessionId, input.workKey, input.actorId, input.leaseSeconds],
+      [
+        input.sessionId,
+        input.workKey,
+        input.actorId,
+        actorPrincipalId,
+        input.leaseSeconds,
+      ],
     );
     const row = claimed.rows[0];
     if (!row) throw workspaceError("WORK_CLAIM_HELD", 409);
     await appendCoordinationEvent(client, {
       sessionId: input.sessionId,
       actorId: input.actorId,
+      actorPrincipalId,
       claimId: String(row.id),
       eventType: "CLAIM_ACQUIRED",
       payload: {
@@ -583,6 +647,7 @@ export async function heartbeatWorkspaceWork(
   input: {
     sessionId: string;
     actorId: string;
+    actorPrincipalId?: string | null;
     workKey: string;
     fencingToken: number;
     leaseSeconds: number;
@@ -614,15 +679,21 @@ export async function heartbeatWorkspaceWork(
       scope.space_id,
       scope.vault_id,
     );
+    const actorPrincipalId = await resolveWorkspacePrincipalId(client, {
+      sessionId: input.sessionId,
+      userId: input.actorId,
+      principalId: input.actorPrincipalId,
+    });
     const updated = await client.query<Record<string, unknown>>(
       `update workspace_claims
-          set lease_expires_at=now()+make_interval(secs => $5),
+          set lease_expires_at=now()+make_interval(secs => $6),
               version=version+1,
               updated_at=now()
         where session_id=$1
           and work_key=$2
           and owner_id=$3
-          and fencing_token=$4
+          and owner_principal_id=$4
+          and fencing_token=$5
           and status='ACTIVE'
           and lease_expires_at>now()
         returning *`,
@@ -630,6 +701,7 @@ export async function heartbeatWorkspaceWork(
         input.sessionId,
         input.workKey,
         input.actorId,
+        actorPrincipalId,
         input.fencingToken,
         input.leaseSeconds,
       ],
@@ -639,6 +711,7 @@ export async function heartbeatWorkspaceWork(
     await appendCoordinationEvent(client, {
       sessionId: input.sessionId,
       actorId: input.actorId,
+      actorPrincipalId,
       claimId: String(row.id),
       eventType: "CLAIM_HEARTBEAT",
       payload: {
@@ -662,6 +735,7 @@ export async function releaseWorkspaceWork(
   input: {
     sessionId: string;
     actorId: string;
+    actorPrincipalId?: string | null;
     workKey: string;
     fencingToken: number;
   },
@@ -691,6 +765,11 @@ export async function releaseWorkspaceWork(
       scope.space_id,
       scope.vault_id,
     );
+    const actorPrincipalId = await resolveWorkspacePrincipalId(client, {
+      sessionId: input.sessionId,
+      userId: input.actorId,
+      principalId: input.actorPrincipalId,
+    });
     const updated = await client.query<Record<string, unknown>>(
       `update workspace_claims
           set status='RELEASED',
@@ -701,17 +780,25 @@ export async function releaseWorkspaceWork(
         where session_id=$1
           and work_key=$2
           and owner_id=$3
-          and fencing_token=$4
+          and owner_principal_id=$4
+          and fencing_token=$5
           and status='ACTIVE'
           and lease_expires_at>now()
         returning *`,
-      [input.sessionId, input.workKey, input.actorId, input.fencingToken],
+      [
+        input.sessionId,
+        input.workKey,
+        input.actorId,
+        actorPrincipalId,
+        input.fencingToken,
+      ],
     );
     const row = updated.rows[0];
     if (!row) throw workspaceError("WORK_CLAIM_FENCE_STALE", 409);
     await appendCoordinationEvent(client, {
       sessionId: input.sessionId,
       actorId: input.actorId,
+      actorPrincipalId,
       claimId: String(row.id),
       eventType: "CLAIM_RELEASED",
       payload: {
@@ -719,6 +806,7 @@ export async function releaseWorkspaceWork(
         previousFencingToken: input.fencingToken,
         fencingToken: Number(row.fencing_token),
         releasedBy: input.actorId,
+        releasedByPrincipalId: actorPrincipalId,
       },
     });
     await client.query("commit");
@@ -738,6 +826,7 @@ export async function handoffWorkspaceWork(
     actorId: string;
     workKey: string;
     toUserId: string;
+    toPrincipalId?: string | null;
     fencingToken: number;
     leaseSeconds: number;
     actorPrincipalId?: string | null;
@@ -790,16 +879,16 @@ export async function handoffWorkspaceWork(
     if (input.handoff && !pinnedContext) {
       throw workspaceError("CONTEXT_REVISION_PIN_REQUIRED", 409);
     }
-    const targetPrincipal = input.handoff
-      ? await client.query<{ id: string }>(
-          `select id
-             from principals
-            where kind='HUMAN' and user_id=$1 and state='ACTIVE'
-            order by created_at
-            limit 1`,
-          [input.toUserId],
-        )
-      : null;
+    const actorPrincipalId = await resolveWorkspacePrincipalId(client, {
+      sessionId: input.sessionId,
+      userId: input.actorId,
+      principalId: input.actorPrincipalId,
+    });
+    const targetPrincipalId = await resolveWorkspacePrincipalId(client, {
+      sessionId: input.sessionId,
+      userId: input.toUserId,
+      principalId: input.toPrincipalId,
+    });
     const current = await client.query<Record<string, unknown>>(
       `select *
          from workspace_claims
@@ -812,6 +901,7 @@ export async function handoffWorkspaceWork(
       !currentRow ||
       currentRow.status !== "ACTIVE" ||
       String(currentRow.owner_id) !== input.actorId ||
+      String(currentRow.owner_principal_id) !== actorPrincipalId ||
       Number(currentRow.fencing_token) !== input.fencingToken
     ) {
       throw workspaceError("WORK_CLAIM_FENCE_STALE", 409);
@@ -820,14 +910,16 @@ export async function handoffWorkspaceWork(
     const updated = await client.query<Record<string, unknown>>(
       `update workspace_claims
           set owner_id=$4,
+              owner_principal_id=$5,
               fencing_token=fencing_token+1,
-              lease_expires_at=now()+make_interval(secs => $5),
+              lease_expires_at=now()+make_interval(secs => $6),
               version=version+1,
               updated_at=now()
         where session_id=$1
           and work_key=$2
           and owner_id=$3
-          and fencing_token=$6
+          and owner_principal_id=$7
+          and fencing_token=$8
           and status='ACTIVE'
           and lease_expires_at>now()
         returning *`,
@@ -836,7 +928,9 @@ export async function handoffWorkspaceWork(
         input.workKey,
         input.actorId,
         input.toUserId,
+        targetPrincipalId,
         input.leaseSeconds,
+        actorPrincipalId,
         input.fencingToken,
       ],
     );
@@ -845,6 +939,7 @@ export async function handoffWorkspaceWork(
     await appendCoordinationEvent(client, {
       sessionId: input.sessionId,
       actorId: input.actorId,
+      actorPrincipalId,
       claimId: String(row.id),
       eventType: "CLAIM_HANDOFF",
       payload: {
@@ -855,8 +950,8 @@ export async function handoffWorkspaceWork(
         fencingToken: Number(row.fencing_token),
         ...(input.handoff && pinnedContext
           ? {
-              fromPrincipalId: input.actorPrincipalId ?? null,
-              toPrincipalId: targetPrincipal?.rows[0]?.id ?? null,
+              fromPrincipalId: actorPrincipalId,
+              toPrincipalId: targetPrincipalId,
               workContextId: input.sessionId,
               summary: input.handoff.summary,
               completed: input.handoff.completed,
@@ -887,6 +982,7 @@ export async function appendWorkspaceEventInTransaction(
   input: {
     sessionId: string;
     actorId: string;
+    actorPrincipalId?: string | null;
     eventType: WorkspaceUserEventType;
     payload: Record<string, unknown>;
   },
@@ -920,6 +1016,7 @@ export async function appendWorkspaceEvent(
   input: {
     sessionId: string;
     actorId: string;
+    actorPrincipalId?: string | null;
     eventType: WorkspaceUserEventType;
     payload: Record<string, unknown>;
   },
