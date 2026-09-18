@@ -252,5 +252,7 @@ export class DeterministicProjectAdapter implements ProjectAdapter {
   }
 }
 
+export * from "./code-graph-projection.js";
+export * from "./code-graph-lifecycle.js";
 export * from "./graphify.js";
 export * from "./snapshot.js";
