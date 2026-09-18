@@ -951,6 +951,16 @@ describe("federated multi-graph substrate integration", () => {
               edge(target, "calls", seed, "STATICALLY_RESOLVED", revision, {
                 authorizationPath: "allowed/target",
               }),
+              edge(
+                seed,
+                "secret_bridge",
+                target,
+                "STATICALLY_RESOLVED",
+                revision,
+                {
+                  authorizationPath: "private/bridge",
+                },
+              ),
               // Insert reverse lexical order to prove result order is not
               // inherited from write order.
               edge(seed, "related", tieB, "STATICALLY_RESOLVED", revision, {
@@ -1002,6 +1012,28 @@ describe("federated multi-graph substrate integration", () => {
             (result) => result.target.identity.canonicalKey === "hidden",
           ),
         ).toBe(false);
+
+        const fullPrivateBridge = await store.neighbors({
+          ...queryBase(fixture, {
+            domains: ["CODE"],
+            relations: ["secret_bridge"],
+          }),
+          seed: { identity: seed },
+        });
+        expect(
+          fullPrivateBridge.map(
+            (result) => result.target.identity.canonicalKey,
+          ),
+        ).toEqual(["target"]);
+        const restrictedPrivateBridge = await store.neighbors({
+          ...queryBase(fixture, {
+            vaults: [{ vaultId: fixture.vaultA, pathPrefix: "allowed" }],
+            domains: ["CODE"],
+            relations: ["secret_bridge"],
+          }),
+          seed: { identity: seed },
+        });
+        expect(restrictedPrivateBridge).toEqual([]);
 
         const tiesFirst = await store.neighbors({
           ...queryBase(fixture, {
