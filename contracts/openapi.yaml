@@ -750,6 +750,17 @@ paths:
                       DECISION_CANDIDATE,
                       NOTE,
                     ]
+                claimId:
+                  type: string
+                  format: uuid
+                  description: >-
+                    Optional claim that owns this coordination write. When set,
+                    fencingToken is required and must match the current
+                    principal-owned live claim.
+                fencingToken:
+                  type: integer
+                  minimum: 1
+                  description: Required together with claimId.
                 payload:
                   type: object
                   additionalProperties: true
