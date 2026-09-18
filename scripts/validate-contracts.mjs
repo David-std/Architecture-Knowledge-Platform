@@ -421,6 +421,22 @@ if (!latestOutboxConstraint || databaseIntegrationEventTypes.size === 0) {
   }
 }
 
+let latestWorkspaceEventConstraint = null;
+for (const migrationName of migrationNames) {
+  const source = await readFile(
+    path.join(migrationDirectory, migrationName),
+    "utf8",
+  );
+  for (const match of source.matchAll(
+    /add constraint workspace_events_event_type_check[\s\S]*?event_type in \(([\s\S]*?)\)\s*\);/g,
+  )) {
+    latestWorkspaceEventConstraint = {
+      migrationName,
+      block: match[1] ?? "",
+    };
+  }
+}
+
 const workspaceCoordinationSource = await readFile(
   path.join(root, "packages/postgres/src/workspace-coordination.ts"),
   "utf8",
@@ -432,11 +448,40 @@ const workspaceTypeBlock =
 const runtimeWorkspaceEventTypes = new Set(
   [...workspaceTypeBlock.matchAll(/"([^"]+)"/g)].map((match) => match[1]),
 );
+const databaseWorkspaceEventTypes = new Set(
+  [...(latestWorkspaceEventConstraint?.block ?? "").matchAll(/'([^']+)'/g)].map(
+    (match) => match[1],
+  ),
+);
+
 if (runtimeWorkspaceEventTypes.size === 0) {
   failures.push(
     "packages/postgres/src/workspace-coordination.ts: could not resolve runtime workspace event types",
   );
 } else {
+  if (
+    !latestWorkspaceEventConstraint ||
+    databaseWorkspaceEventTypes.size === 0
+  ) {
+    failures.push(
+      "db/migrations: could not resolve the latest workspace_events event-type constraint",
+    );
+  } else {
+    for (const eventType of runtimeWorkspaceEventTypes) {
+      if (!databaseWorkspaceEventTypes.has(eventType)) {
+        failures.push(
+          `workspace_events constraint in ${latestWorkspaceEventConstraint.migrationName}: runtime workspace event ${eventType} is not accepted by the database`,
+        );
+      }
+    }
+    for (const eventType of databaseWorkspaceEventTypes) {
+      if (!runtimeWorkspaceEventTypes.has(eventType)) {
+        failures.push(
+          `workspace_events constraint in ${latestWorkspaceEventConstraint.migrationName}: database workspace event ${eventType} is absent from runtime`,
+        );
+      }
+    }
+  }
   for (const eventType of runtimeWorkspaceEventTypes) {
     if (!workspaceEventEnum.has(eventType)) {
       failures.push(
