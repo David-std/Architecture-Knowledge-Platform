@@ -446,4 +446,87 @@ describe.skipIf(!databaseUrl)("temporal truth store", () => {
       },
     ]);
   });
+
+  it("rejects a derived item that only becomes annotated in a future truth revision", async () => {
+    const episode = await store.createSourceEpisode({
+      spaceId,
+      vaultId,
+      sourceId: sourceA,
+      sourceArtifactId: artifactA,
+      sourceHash: "e".repeat(64),
+      locatorRefs: ["source:a#future-derived"],
+    });
+    const support = await store.createSupportSet({
+      spaceId,
+      vaultId,
+      sourceEpisodeIds: [episode.id],
+      sourceRevisionHashes: ["e".repeat(64)],
+    });
+    const historical = await store.recordFact({
+      spaceId,
+      vaultId,
+      scopeId: "security:historical-derived",
+      authorizationPath: "security/historical-derived.md",
+      subjectRef: "policy:historical-derived",
+      predicate: "setting",
+      object: { version: "old" },
+      validFrom: "2025-01-01T00:00:00.000Z",
+      supportSetId: support.id,
+      sourceEpisodeId: episode.id,
+    });
+    const current = await store.recordFact({
+      spaceId,
+      vaultId,
+      scopeId: "security:future-derived",
+      authorizationPath: "security/future-derived.md",
+      subjectRef: "policy:future-derived",
+      predicate: "setting",
+      object: { version: "new" },
+      validFrom: "2026-01-01T00:00:00.000Z",
+      supportSetId: support.id,
+      sourceEpisodeId: episode.id,
+    });
+    const dependency = await store.registerDerivedDependency({
+      spaceId,
+      vaultId,
+      derivedStoreKind: "VECTOR",
+      derivedItemRef: "vector:generation-future:unit-future",
+      supportSetId: support.id,
+      sourceRevisionHashes: ["e".repeat(64)],
+      truthRevisionHash: current.revision.revisionHash,
+      projectionRevision: "vector:future",
+    });
+
+    expect(
+      await store.validateDerivedItems({
+        spaceId,
+        vaultId,
+        derivedStoreKind: "VECTOR",
+        derivedItemRefs: [
+          "vector:generation-future:unit-future",
+          "vector:never-annotated:unit",
+        ],
+        truthRevisionHash: historical.revision.revisionHash,
+        validAt: "2026-06-01T00:00:00.000Z",
+      }),
+    ).toMatchObject([
+      {
+        derivedItemRef: "vector:generation-future:unit-future",
+        state: "UNSUPPORTED",
+        valid: false,
+        dependency: {
+          id: dependency.id,
+          truthRevisionHash: current.revision.revisionHash,
+        },
+        queryRevisionHash: historical.revision.revisionHash,
+      },
+      {
+        derivedItemRef: "vector:never-annotated:unit",
+        state: "UNANNOTATED",
+        valid: true,
+        dependency: null,
+        queryRevisionHash: historical.revision.revisionHash,
+      },
+    ]);
+  });
 });

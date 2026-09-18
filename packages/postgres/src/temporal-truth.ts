@@ -1660,14 +1660,21 @@ export class PostgresTemporalTruthStore {
         where d.space_id=$1 and d.vault_id=$2
           and d.derived_store_kind=$3
           and d.derived_item_ref=any($4::text[])
-          and r.revision_seq<=$5
         order by d.derived_item_ref,r.revision_seq desc,d.created_at desc,d.id`,
-      [spaceId, vaultId, rawInput.derivedStoreKind, refs, cutoff.seq],
+      [spaceId, vaultId, rawInput.derivedStoreKind, refs],
     );
     const latest = new Map<string, DerivedDependencyRow>();
+    const future = new Map<string, DerivedDependencyRow>();
     for (const row of rows.rows) {
-      if (!latest.has(row.derived_item_ref)) {
-        latest.set(row.derived_item_ref, row);
+      const revisionSeq = Number(row.revision_seq ?? 0);
+      if (revisionSeq <= cutoff.seq) {
+        if (!latest.has(row.derived_item_ref)) {
+          latest.set(row.derived_item_ref, row);
+        }
+        continue;
+      }
+      if (!future.has(row.derived_item_ref)) {
+        future.set(row.derived_item_ref, row);
       }
     }
 
@@ -1675,11 +1682,14 @@ export class PostgresTemporalTruthStore {
     for (const derivedItemRef of refs) {
       const row = latest.get(derivedItemRef);
       if (!row) {
+        const futureDependency = future.get(derivedItemRef);
         output.push({
           derivedItemRef,
-          state: "UNANNOTATED",
-          valid: true,
-          dependency: null,
+          state: futureDependency ? "UNSUPPORTED" : "UNANNOTATED",
+          valid: !futureDependency,
+          dependency: futureDependency
+            ? normalizeDerivedDependency(futureDependency)
+            : null,
           queryRevisionHash: cutoff.hash,
           queryRevisionSeq: cutoff.seq,
         });
