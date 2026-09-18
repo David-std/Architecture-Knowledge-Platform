@@ -82,6 +82,7 @@ function event(commit: string): OutboxEventRecord {
     correlationId: null,
     causationId: null,
     occurredAt: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
     payload: {
       projectId,
       slug,
