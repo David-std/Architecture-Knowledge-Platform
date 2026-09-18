@@ -155,14 +155,15 @@ export function registerContextFabricRoutes(
       const configuredMode =
         process.env.AKP_CONTEXT_FABRIC_MODE?.trim() || "SOLO_LOCAL";
       const deploymentMode = claim?.deploymentMode ?? configuredMode;
+      const nodeId =
+        claim?.nodeId ??
+        (process.env.AKP_CONTEXT_FABRIC_NODE_ID?.trim() ||
+          "local-context-node");
       return {
         schemaVersion: 1,
         deploymentMode,
         node: {
-          id:
-            claim?.nodeId ??
-            (process.env.AKP_CONTEXT_FABRIC_NODE_ID?.trim() ||
-              "local-context-node"),
+          id: nodeId,
           claimed: claim !== null,
           claimedAt: claim?.claimedAt.toISOString() ?? null,
           adoptedFrom: claim?.adoptedFrom ?? null,
@@ -170,6 +171,24 @@ export function registerContextFabricRoutes(
             claim !== null &&
             (claim.deploymentMode === "TEAM_NODE" ||
               claim.deploymentMode === "FEDERATED_ORG"),
+        },
+        manifest: {
+          nodeId,
+          contextApiVersion: "v1",
+          requiredAuthenticationModes: ["BEARER_TOKEN", "WEB_SESSION"],
+          supportedExchangeFormats: [
+            { format: "OKF_0_2", import: true, export: true },
+            { format: "JSON_LD", import: false, export: true },
+            { format: "GRAPHML", import: false, export: true },
+          ],
+          graphCapabilities: {
+            domains: ["EPISTEMIC", "WORK"],
+            authorizationBeforeTraversal: true,
+          },
+          // P2 supports safe peer discovery only. Advertising REMOTE_QUERY or
+          // MIRROR_BUNDLE here would claim network behavior that belongs to
+          // later federation work.
+          federationModes: ["CATALOG_ONLY"],
         },
         capabilities: {
           workspaceCoordination: true,
