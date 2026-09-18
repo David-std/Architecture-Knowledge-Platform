@@ -153,6 +153,49 @@ jobs:
         if: always()
         run: docker compose down -v --remove-orphans
 
+  code-graph-graphify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - uses: actions/setup-python@v7
+        with: { python-version: "3.12" }
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          version: 0.12.7
+          enable-cache: true
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Install pinned real Graphify provider
+        run: uv tool install graphifyy==0.9.63
+      - name: Verify real Graphify adapter
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p reports/ci
+          GRAPHIFY_BIN="$(uv tool dir --bin)/graphify"
+          "$GRAPHIFY_BIN" --version | tee reports/ci/graphify-version.txt
+          grep -Eq '0\.9\.63' reports/ci/graphify-version.txt
+          AKP_REAL_GRAPHIFY=1 \
+          AKP_GRAPHIFY_EXECUTABLE="$GRAPHIFY_BIN" \
+            pnpm --filter @akp/project-adapter exec vitest run \
+              test/graphify-real.integration.test.ts \
+              --reporter=default --reporter=junit \
+              --outputFile.junit=../../reports/ci/graphify-real-junit.xml
+      - name: Upload Graphify evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-diagnostics-${{ github.run_id }}-${{ github.job }}
+          path: reports/ci
+          if-no-files-found: ignore
+          retention-days: 14
+
   python:
     runs-on: ubuntu-latest
     defaults:
