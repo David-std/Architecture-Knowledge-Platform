@@ -50,6 +50,7 @@ try {
     "akp_start_session",
     "akp_list_sessions",
     "akp_get_session_state",
+    "akp_update_work_context",
     "akp_bootstrap_session_context",
     "akp_claim_workspace_work",
     "akp_heartbeat_workspace_claim",
