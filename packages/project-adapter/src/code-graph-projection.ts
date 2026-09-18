@@ -11,6 +11,7 @@ export interface CodeGraphProjectionInput {
   spaceId: string;
   vaultId: string | null;
   scopeId: string;
+  authorizationPathPrefix?: string;
 }
 
 export interface CodeGraphProjectionPlan {
@@ -34,6 +35,38 @@ function stableValue(value: unknown): unknown {
 
 function stableJson(value: unknown): string {
   return JSON.stringify(stableValue(value));
+}
+
+function authorizationPath(
+  prefix: string | undefined,
+  nodePath: string,
+): string {
+  const relative = nodePath.replaceAll("\\", "/").replace(/^\.\//, "");
+  if (
+    !relative ||
+    relative === "." ||
+    relative === ".." ||
+    relative.startsWith("../") ||
+    relative.includes("/../") ||
+    relative.startsWith("/")
+  ) {
+    throw new Error("CODE_GRAPH_AUTHORIZATION_PATH_INVALID");
+  }
+  const normalizedPrefix = prefix
+    ?.replaceAll("\\", "/")
+    .replace(/^\/+|\/+$/g, "")
+    .trim();
+  if (
+    prefix !== undefined &&
+    (!normalizedPrefix ||
+      normalizedPrefix === "." ||
+      normalizedPrefix === ".." ||
+      normalizedPrefix.startsWith("../") ||
+      normalizedPrefix.includes("/../"))
+  ) {
+    throw new Error("CODE_GRAPH_AUTHORIZATION_PREFIX_INVALID");
+  }
+  return normalizedPrefix ? `${normalizedPrefix}/${relative}` : relative;
 }
 
 function locatorRef(input: {
@@ -79,7 +112,10 @@ export function planCodeGraphProjection(
         revision,
       },
       vaultId: input.vaultId,
-      authorizationPath: node.path,
+      authorizationPath: authorizationPath(
+        input.authorizationPathPrefix,
+        node.path,
+      ),
       payload: {
         codeNodeId: node.id,
         repository: input.artifact.repository,
@@ -153,7 +189,10 @@ export function planCodeGraphProjection(
         canonicalKey: to.id,
         revision,
       },
-      authorizationPath: from.path,
+      authorizationPath: authorizationPath(
+        input.authorizationPathPrefix,
+        from.path,
+      ),
       provenance: {
         derivation:
           edge.derivation === "EXTRACTED"
