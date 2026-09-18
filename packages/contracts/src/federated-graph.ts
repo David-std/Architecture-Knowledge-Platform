@@ -275,4 +275,10 @@ export interface GraphProjectionPort<TArtifact = GraphProjectionArtifact> {
   update?(
     input: GraphIncrementalUpdate<TArtifact>,
   ): Promise<GraphProjectionRevision>;
+  markStale?(
+    domain: GraphDomain,
+    spaceId: string,
+    scopeId: string,
+    reason?: string,
+  ): Promise<GraphProjectionRevision | null>;
 }
