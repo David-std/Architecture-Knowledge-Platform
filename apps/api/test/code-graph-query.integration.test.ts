@@ -242,7 +242,7 @@ afterAll(async () => {
     await db.pool.query("delete from users where id=any($1::uuid[])", [
       [actorId, narrowActorId],
     ]);
-    await db.pool.query("delete from vaults where id=$1", [vaultId]);
+    await db.pool.query("update vaults set enabled=false where id=$1", [vaultId]);
     await db.close();
   }
 });
