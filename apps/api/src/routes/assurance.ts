@@ -37,6 +37,7 @@ const FindingQuery = ScopedQuery.extend({
     .enum(["OPEN", "ACKNOWLEDGED", "RESOLVED", "FALSE_POSITIVE"])
     .optional(),
   detector: z.enum(ASSURANCE_DETECTORS).optional(),
+  severity: z.enum(["INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL"]).optional(),
   category: z.string().trim().min(1).max(120).optional(),
 }).strict();
 
@@ -287,7 +288,8 @@ export function registerAssuranceRoutes(
           where space_id=$1 and vault_id=$2
             and ($3::text is null or status=$3)
             and ($4::text is null or detector=$4)
-            and ($5::text is null or category=$5)
+            and ($5::text is null or severity=$5)
+            and ($6::text is null or category=$6)
           order by
             case severity
               when 'CRITICAL' then 1
@@ -297,12 +299,13 @@ export function registerAssuranceRoutes(
               else 5
             end,
             last_seen_at desc,id
-          limit $6`,
+          limit $7`,
         [
           parsed.data.spaceId,
           parsed.data.vaultId,
           parsed.data.status ?? null,
           parsed.data.detector ?? null,
+          parsed.data.severity ?? null,
           parsed.data.category ?? null,
           parsed.data.limit,
         ],

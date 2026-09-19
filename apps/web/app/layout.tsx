@@ -23,6 +23,8 @@ export default function RootLayout({
             <Link href="/graph">Grafo</Link>
             <Link href="/evals">Evaluaciones</Link>
             <Link href="/admin/health">Salud</Link>
+            <Link href="/admin/assurance">Assurance</Link>
+            <Link href="/admin/connectors">Connectors</Link>
             <Link href="/admin/spaces">Espacios</Link>
             <Link href="/admin/profiles">Perfiles</Link>
             <Link href="/admin/audit">Auditoría</Link>
