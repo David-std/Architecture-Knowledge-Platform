@@ -52,6 +52,7 @@ export interface AgentAbScore {
   claimSupportRecall: number | null;
   contextUtilization: number | null;
   faithfulness: number | null;
+  faithfulnessMethod: "CITATION_SCOPED_LEXICAL_SUPPORT" | null;
   noiseSensitivity: number | null;
   noAnswerCorrect: boolean | null;
 }
@@ -102,6 +103,60 @@ function containsTerm(text: string, term: string): boolean {
   return normalize(text).includes(normalize(term));
 }
 
+const FAITHFULNESS_STOP_WORDS = new Set([
+  "the", "and", "for", "that", "with", "from", "this", "into", "must",
+  "what", "which", "when", "where", "does", "before", "after", "using",
+  "los", "las", "del", "para", "que", "con", "desde", "este", "esta",
+  "como", "cuando", "donde", "debe", "deben", "una", "uno",
+]);
+
+function lexicalSupportTokens(value: string): string[] {
+  return [
+    ...new Set(
+      normalize(value)
+        .replace(/[^\p{L}\p{N}_:/.-]+/gu, " ")
+        .split(/\s+/u)
+        .map((token) => token.trim())
+        .filter(
+          (token) =>
+            token.length >= 4 &&
+            !FAITHFULNESS_STOP_WORDS.has(token) &&
+            !/^\d+$/u.test(token),
+        ),
+    ),
+  ];
+}
+
+function citationScopedFaithfulness(
+  output: AgentAbModelOutput,
+  allowed: ReadonlySet<string>,
+  citationEvidence: Readonly<Record<string, readonly string[]>>,
+): number | null {
+  if (output.claims.length === 0) return null;
+  const claimScores: number[] = [];
+  for (const claim of output.claims) {
+    const validCitations = [
+      ...new Set(claim.citations.filter((citation) => allowed.has(citation))),
+    ];
+    if (validCitations.length === 0) {
+      claimScores.push(0);
+      continue;
+    }
+    const evidence = validCitations.flatMap(
+      (citation) => citationEvidence[citation] ?? [],
+    );
+    if (evidence.length === 0) return null;
+    const claimTokens = lexicalSupportTokens(claim.text);
+    if (claimTokens.length === 0) return null;
+    const evidenceTokens = new Set(lexicalSupportTokens(evidence.join("\n")));
+    const overlap =
+      claimTokens.filter((token) => evidenceTokens.has(token)).length /
+      claimTokens.length;
+    claimScores.push(Number(overlap >= 0.5));
+  }
+  return mean(claimScores);
+}
+
 export function validateAgentAbTasks(tasks: AgentAbTask[]): void {
   if (tasks.length === 0) throw new Error("Agent A/B task set is empty.");
   const ids = new Set<string>();
@@ -147,6 +202,7 @@ export function scoreAgentAbOutput(
   output: AgentAbModelOutput,
   allowedCitations: readonly string[],
   context = "",
+  citationEvidence: Readonly<Record<string, readonly string[]>> = {},
 ): AgentAbScore {
   const mandatoryFound = task.mandatoryTerms.filter((term) =>
     containsTerm(output.answer, term),
@@ -214,6 +270,11 @@ export function scoreAgentAbOutput(
       ? uniqueUsedCitations.length / uniqueAllowed.length
       : null;
   const noAnswerCorrect = task.expectNoAnswer ? output.abstain : null;
+  const faithfulness = citationScopedFaithfulness(
+    output,
+    allowed,
+    citationEvidence,
+  );
   return {
     mandatoryRuleRecall,
     missedConstraints,
@@ -226,7 +287,9 @@ export function scoreAgentAbOutput(
     contextPrecision,
     claimSupportRecall,
     contextUtilization,
-    faithfulness: null,
+    faithfulness,
+    faithfulnessMethod:
+      faithfulness === null ? null : "CITATION_SCOPED_LEXICAL_SUPPORT",
     noiseSensitivity: null,
     noAnswerCorrect,
   };

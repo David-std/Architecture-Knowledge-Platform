@@ -51,6 +51,10 @@ describe("Agent A/B evaluation", () => {
       },
       ["doc-a@rev", "doc-noise@rev"],
       "The required fact is present in doc-a.",
+      {
+        "doc-a@rev": ["The required fact is present and supported."],
+        "doc-noise@rev": ["Unrelated material."],
+      },
     );
     expect(score.mandatoryRuleRecall).toBe(1);
     expect(score.unsupportedClaims).toBe(1);
@@ -60,7 +64,8 @@ describe("Agent A/B evaluation", () => {
     expect(score.contextPrecision).toBe(0.5);
     expect(score.claimSupportRecall).toBe(1);
     expect(score.contextUtilization).toBe(0.5);
-    expect(score.faithfulness).toBeNull();
+    expect(score.faithfulness).toBe(1);
+    expect(score.faithfulnessMethod).toBe("CITATION_SCOPED_LEXICAL_SUPPORT");
     expect(score.noiseSensitivity).toBeNull();
   });
 
@@ -100,7 +105,8 @@ describe("Agent A/B evaluation", () => {
       contextPrecision: 1,
       claimSupportRecall: 1,
       contextUtilization: 1,
-      faithfulness: null,
+      faithfulness: 1,
+      faithfulnessMethod: "CITATION_SCOPED_LEXICAL_SUPPORT",
       noiseSensitivity: null,
       noAnswerCorrect: null,
     };
@@ -112,8 +118,8 @@ describe("Agent A/B evaluation", () => {
         meanCorrectness: 1,
         meanRetrievalRecall: 1,
         retrievalRecallCoverage: 1,
-        meanFaithfulness: null,
-        faithfulnessCoverage: 0,
+        meanFaithfulness: 1,
+        faithfulnessCoverage: 1,
       }),
     );
   });
