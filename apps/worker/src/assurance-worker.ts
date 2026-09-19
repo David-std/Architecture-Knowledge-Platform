@@ -2306,7 +2306,13 @@ export async function runClaimedAssuranceRun(
           ),
         });
       }
-      counts[detector] = (counts[detector] ?? 0) + findings.length;
+      const persistedCount = await db.pool.query<{ count: number }>(
+        `select count(*)::int count
+           from assurance_findings
+          where run_id=$1 and detector=$2`,
+        [run.id, detector],
+      );
+      counts[detector] = Number(persistedCount.rows[0]?.count ?? 0);
 
       if (pageState.saturated) {
         detectorCursor = nextDetectorCursor(detector, pageOffset);
