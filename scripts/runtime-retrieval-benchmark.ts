@@ -73,6 +73,27 @@ type RuntimeObservation = BenchmarkObservation & {
   fusionReasons: Record<string, string[]>;
 };
 
+type MemorySnapshot = {
+  rssBytes: number;
+  heapUsedBytes: number;
+  heapTotalBytes: number;
+  externalBytes: number;
+};
+
+type StorageSnapshot = {
+  databaseBytes: number;
+  documentsBytes: number;
+  unitsBytes: number;
+  relationsBytes: number;
+  embeddingsBytes: number;
+};
+
+const V03_BASELINE = Object.freeze({
+  tag: "v0.3.0",
+  commitSha: "a6bdcc38fdf026d6c353db096799366865011022",
+  benchmarkMatrixBlobSha: "dca597bc97f4d3646e8d84960755ef76b5f50650",
+});
+
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is required");
 
@@ -90,6 +111,76 @@ const outputPath = path.resolve(
 
 function sha256(value: string | Buffer): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function memorySnapshot(): MemorySnapshot {
+  const memory = process.memoryUsage();
+  return {
+    rssBytes: memory.rss,
+    heapUsedBytes: memory.heapUsed,
+    heapTotalBytes: memory.heapTotal,
+    externalBytes: memory.external,
+  };
+}
+
+function memoryDelta(after: MemorySnapshot, before: MemorySnapshot) {
+  return {
+    rssBytes: after.rssBytes - before.rssBytes,
+    heapUsedBytes: after.heapUsedBytes - before.heapUsedBytes,
+    heapTotalBytes: after.heapTotalBytes - before.heapTotalBytes,
+    externalBytes: after.externalBytes - before.externalBytes,
+  };
+}
+
+function numeric(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`Expected finite numeric value, received ${String(value)}`);
+  }
+  return parsed;
+}
+
+async function storageSnapshot(db: Postgres): Promise<StorageSnapshot> {
+  const result = await db.pool.query(
+    `
+    select
+      pg_database_size(current_database())::bigint database_bytes,
+      pg_total_relation_size('public.knowledge_documents'::regclass)::bigint documents_bytes,
+      pg_total_relation_size('public.knowledge_units'::regclass)::bigint units_bytes,
+      pg_total_relation_size('public.knowledge_relations'::regclass)::bigint relations_bytes,
+      pg_total_relation_size('public.unit_embeddings'::regclass)::bigint embeddings_bytes
+    `,
+  );
+  const row = result.rows[0];
+  if (!row) throw new Error("PostgreSQL did not return storage evidence");
+  return {
+    databaseBytes: numeric(row.database_bytes),
+    documentsBytes: numeric(row.documents_bytes),
+    unitsBytes: numeric(row.units_bytes),
+    relationsBytes: numeric(row.relations_bytes),
+    embeddingsBytes: numeric(row.embeddings_bytes),
+  };
+}
+
+function storageDelta(after: StorageSnapshot, before: StorageSnapshot) {
+  return {
+    databaseBytes: after.databaseBytes - before.databaseBytes,
+    documentsBytes: after.documentsBytes - before.documentsBytes,
+    unitsBytes: after.unitsBytes - before.unitsBytes,
+    relationsBytes: after.relationsBytes - before.relationsBytes,
+    embeddingsBytes: after.embeddingsBytes - before.embeddingsBytes,
+  };
+}
+
+function resourceRequirements(configuration: BenchmarkConfiguration) {
+  return {
+    lexical: configuration.channels.includes("lexical"),
+    vector: configuration.channels.includes("vector"),
+    typedGraph: configuration.channels.includes("graph"),
+    contextPack: configuration.channels.includes("context-pack"),
+    rerank: Boolean(configuration.deterministicRerank),
+    associativePpr: Boolean(configuration.associativePpr),
+  };
 }
 
 async function loadDataset(): Promise<{
@@ -333,6 +424,7 @@ function benchmarkConfigurations(): BenchmarkConfiguration[] {
     "context-pack+lexical+graph",
     "full-hybrid-rrf",
     "full-hybrid+rerank",
+    "lexical+vector+graph+ppr",
   ]);
   return RETRIEVAL_BENCHMARK_MATRIX.filter((configuration) =>
     required.has(configuration.name),
@@ -488,14 +580,25 @@ async function main(): Promise<void> {
   });
 
   try {
+    const memoryBeforeFixture = memorySnapshot();
+    const storageBeforeFixture = await storageSnapshot(db);
+    const seedStarted = performance.now();
     await seedFixture(db, dataset.manifest, fixture);
+    const fixtureSeedMs = performance.now() - seedStarted;
+    const memoryAfterFixture = memorySnapshot();
+    const storageAfterFixture = await storageSnapshot(db);
+
     await adapter.load();
+    const embeddingBuildStarted = performance.now();
     const generations = await buildRealEmbeddings(
       db,
       dataset.manifest,
       fixture,
       adapter,
     );
+    const embeddingBuildMs = performance.now() - embeddingBuildStarted;
+    const memoryAfterEmbeddings = memorySnapshot();
+    const storageAfterEmbeddings = await storageSnapshot(db);
     const queryEmbeddingService = new QueryEmbeddingService(
       async () => adapter,
     );
@@ -516,6 +619,107 @@ async function main(): Promise<void> {
       }
       runs.push(aggregateBenchmarkRun(configuration, observations));
     }
+
+    const baselineRun = runs.find(
+      (run) => run.configurationName === "exact+lexical",
+    );
+    if (!baselineRun) {
+      throw new Error("Runtime benchmark requires exact+lexical baseline");
+    }
+    const reportRuns = runs.map((run) => {
+      const configuration = configurations.find(
+        (candidate) => candidate.name === run.configurationName,
+      );
+      if (!configuration) {
+        throw new Error(`Missing configuration for ${run.configurationName}`);
+      }
+      const warnings = run.results.flatMap((result) =>
+        "warnings" in result && Array.isArray(result.warnings)
+          ? result.warnings.map(String)
+          : [],
+      );
+      return {
+        ...run,
+        qualityDelta: {
+          recallAt10: run.meanRecallAt10 - baselineRun.meanRecallAt10,
+          mrr: run.meanReciprocalRank - baselineRun.meanReciprocalRank,
+          ndcgAt10: run.meanNdcgAt10 - baselineRun.meanNdcgAt10,
+          citationPrecision:
+            run.meanCitationPrecision - baselineRun.meanCitationPrecision,
+        },
+        resourceRequirements: resourceRequirements(configuration),
+        indexBuildUpdate: {
+          buildEvidence:
+            configuration.channels.includes("vector")
+              ? {
+                  measured: true,
+                  sharedEmbeddingBuildMs: embeddingBuildMs,
+                }
+              : {
+                  measured: false,
+                  sharedEmbeddingBuildMs: null,
+                  reason:
+                    "This harness seeds lexical/graph fixture projections directly; no isolated build timer exists for this option.",
+                },
+          updateEvidence: {
+            measured: false,
+            milliseconds: null,
+            reason: "Incremental index update cost is not exercised by this harness.",
+          },
+        },
+        storageRam: {
+          measured: true,
+          sharedProjectionStorageBytes: {
+            fixture: storageDelta(storageAfterFixture, storageBeforeFixture),
+            embeddings: storageDelta(
+              storageAfterEmbeddings,
+              storageAfterFixture,
+            ),
+          },
+          sharedProcessMemoryBytes: {
+            fixture: memoryDelta(memoryAfterFixture, memoryBeforeFixture),
+            embeddings: memoryDelta(
+              memoryAfterEmbeddings,
+              memoryAfterFixture,
+            ),
+          },
+          attribution:
+            "Shared fixture/component evidence; not presented as isolated per-query memory.",
+        },
+        tokenCost: {
+          measured: true,
+          meanEstimatedExcerptTokens: run.meanEstimatedTokens,
+          method: "characters/4 estimate over returned excerpts",
+        },
+        providerCost: {
+          measured: true,
+          externalApiUsd: 0,
+          basis:
+            "Pinned local embedding provider; no metered external provider API call.",
+          localComputeCostMeasured: false,
+        },
+        filteredRecall: {
+          measured: false,
+          value: null,
+          reason:
+            "Filtered ANN recall is measured by the separate benchmark:filtered-ann harness, not inferred here.",
+        },
+        multilingualBehavior: {
+          measured: true,
+          recallAt10: run.crossLanguageRecall,
+        },
+        codeSymbolBehavior: {
+          measured: run.codeSymbolCases > 0,
+          cases: run.codeSymbolCases,
+          recallAt10: run.codeSymbolCases > 0 ? run.codeSymbolRecall : null,
+        },
+        failureDegradedMode: {
+          warningCount: warnings.length,
+          warnings: [...new Set(warnings)].sort(),
+          criticalFailures: run.criticalFailures,
+        },
+      };
+    });
 
     const isolationViolations = runs.flatMap((run) =>
       run.results.flatMap((result) =>
@@ -538,8 +742,13 @@ async function main(): Promise<void> {
     }
 
     const report = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       generatedAt: new Date().toISOString(),
+      historicalBaseline: {
+        ...V03_BASELINE,
+        execution:
+          "REFERENCE_PIN_ONLY: current-process results are not relabelled as historical v0.3 execution.",
+      },
       evidence: {
         level: "CURATED_FIXTURE_REAL_PIPELINE",
         qualityClaim: "PIPELINE_EXECUTED_NOT_REAL_CORPUS",
@@ -549,8 +758,10 @@ async function main(): Promise<void> {
           "registered private/production-like corpus quality",
           "evidence-locator recall against real source artifacts",
           "agent task quality",
-          "concurrent throughput and resource pressure",
-          "provider monetary cost",
+          "concurrent throughput under this retrieval matrix",
+          "incremental index-update cost",
+          "filtered ANN recall inside this harness",
+          "local hardware/energy monetary cost",
         ],
       },
       runtime: {
@@ -580,6 +791,30 @@ async function main(): Promise<void> {
           runtime: generation.runtime,
         })),
       },
+      resourceEvidence: {
+        fixtureSeedMs,
+        embeddingBuildMs,
+        storage: {
+          beforeFixture: storageBeforeFixture,
+          afterFixture: storageAfterFixture,
+          afterEmbeddings: storageAfterEmbeddings,
+          fixtureDelta: storageDelta(storageAfterFixture, storageBeforeFixture),
+          embeddingDelta: storageDelta(
+            storageAfterEmbeddings,
+            storageAfterFixture,
+          ),
+        },
+        memory: {
+          beforeFixture: memoryBeforeFixture,
+          afterFixture: memoryAfterFixture,
+          afterEmbeddings: memoryAfterEmbeddings,
+          fixtureDelta: memoryDelta(memoryAfterFixture, memoryBeforeFixture),
+          embeddingDelta: memoryDelta(
+            memoryAfterEmbeddings,
+            memoryAfterFixture,
+          ),
+        },
+      },
       isolation: {
         status: "PROVEN_IN_FIXTURE",
         violations: isolationViolations,
@@ -589,7 +824,7 @@ async function main(): Promise<void> {
         reason:
           "A curated fixture running through the real pipeline is not the registered real-corpus evidence required to select a production retrieval default.",
       },
-      runs,
+      runs: reportRuns,
     };
     await mkdir(path.dirname(outputPath), { recursive: true });
     await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
@@ -598,10 +833,11 @@ async function main(): Promise<void> {
         {
           outputPath,
           evidenceLevel: report.evidence.level,
-          configurations: runs.map((run) => ({
+          configurations: reportRuns.map((run) => ({
             name: run.configurationName,
             recallAt10: run.meanRecallAt10,
             mrr: run.meanReciprocalRank,
+            codeSymbolRecall: run.codeSymbolBehavior.recallAt10,
             noAnswerAccuracy: run.noAnswerAccuracy,
             criticalFailures: run.criticalFailures,
             meanLatencyMs: run.meanLatencyMs,
