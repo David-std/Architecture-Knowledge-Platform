@@ -26,12 +26,12 @@ describe("offline retrieval benchmark", () => {
     expect(first.qualityClaim).toBe("NONE");
     expect(first.provider.readsPrivateVault).toBe(false);
     expect(first.provider.readsDatabase).toBe(false);
-    expect(first.matrix.size).toBe(11);
+    expect(first.matrix.size).toBe(12);
     expect(first.requiredSlices).toContain("vector-disabled");
     expect(first.vectorDisabled.vectorInvoked).toBe(false);
     expect(first.productionDefault.selected).toBeNull();
     expect(first.measuredSelection.vectorActivatedByDefault).toBe(false);
-    expect(first.runs).toHaveLength(11);
+    expect(first.runs).toHaveLength(12);
     expect(first.runs.every((run) => run.cases === cases.length)).toBe(true);
     expect(first.runs.every((run) => run.evidenceRecallCoverage === 0)).toBe(
       true,
