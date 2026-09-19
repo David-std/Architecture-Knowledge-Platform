@@ -187,6 +187,94 @@ describe.skipIf(!databaseUrl)("temporal truth store", () => {
     expect(history.sourceWithdrawals).toHaveLength(2);
   });
 
+  it("invalidates evidence without erasing the historical supported fact", async () => {
+    const evidenceId = randomUUID();
+    await db.pool.query(
+      `insert into evidence(
+         id,space_id,vault_id,source_id,artifact_id,locator,content_hash,
+         excerpt,review_status
+       ) values($1,$2,$3,$4,$5,$6::jsonb,$7,$8,'REVIEWED')`,
+      [
+        evidenceId,
+        spaceId,
+        vaultId,
+        sourceA,
+        artifactA,
+        JSON.stringify({ source: "a", paragraph: 1 }),
+        "c".repeat(64),
+        "Evidence-backed transport rule",
+      ],
+    );
+    const support = await store.createSupportSet({
+      spaceId,
+      vaultId,
+      evidenceIds: [evidenceId],
+    });
+    const recorded = await store.recordFact({
+      spaceId,
+      vaultId,
+      scopeId: "security:evidence",
+      authorizationPath: "security/evidence.md",
+      subjectRef: "policy:evidence-backed",
+      predicate: "enabled",
+      object: { value: true },
+      validFrom: "2025-01-01T00:00:00.000Z",
+      supportSetId: support.id,
+    });
+    expect(
+      await store.listFacts({
+        spaceId,
+        vaultId,
+        subjectRef: "policy:evidence-backed",
+        truthRevisionHash: recorded.revision.revisionHash,
+        validAt: "2026-01-01T00:00:00.000Z",
+      }),
+    ).toMatchObject([{ supportState: "SUPPORTED" }]);
+
+    const invalidated = await store.invalidateEvidence({
+      spaceId,
+      vaultId,
+      evidenceId,
+      reason: "Evidence failed integrity review",
+    });
+    expect(
+      await store.listFacts({
+        spaceId,
+        vaultId,
+        subjectRef: "policy:evidence-backed",
+        truthRevisionHash: invalidated.revisionHash,
+        validAt: "2026-01-01T00:00:00.000Z",
+      }),
+    ).toEqual([]);
+    expect(
+      await store.listFacts({
+        spaceId,
+        vaultId,
+        subjectRef: "policy:evidence-backed",
+        truthRevisionHash: recorded.revision.revisionHash,
+        validAt: "2026-01-01T00:00:00.000Z",
+      }),
+    ).toMatchObject([{ supportState: "SUPPORTED" }]);
+
+    const history = await store.supportHistory(recorded.fact.id);
+    expect(history.evidenceInvalidations).toHaveLength(1);
+    expect(history.evidenceInvalidations[0]).toMatchObject({
+      evidence_id: evidenceId,
+      truth_revision_hash: invalidated.revisionHash,
+    });
+    const events = await db.pool.query<{ event_type: string }>(
+      `select event_type from event_outbox
+        where resource_id=$1 and space_id=$2 and vault_id=$3
+          and event_type in ('EvidenceInvalidated','DerivedSupportInvalidationRequested')
+        order by event_type`,
+      [evidenceId, spaceId, vaultId],
+    );
+    expect(events.rows.map((row) => row.event_type)).toEqual([
+      "DerivedSupportInvalidationRequested",
+      "EvidenceInvalidated",
+    ]);
+  });
+
   it("separates valid time from recorded truth and delays future supersession", async () => {
     const episode = await store.createSourceEpisode({
       spaceId,
