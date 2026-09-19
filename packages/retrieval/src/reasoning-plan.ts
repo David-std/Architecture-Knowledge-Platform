@@ -1,6 +1,7 @@
 import {
   ReasoningPlan,
   type ContextRevisionSet,
+  type ReasoningModelRole,
   type ReasoningOperator,
   type ReasoningPlan as ReasoningPlanValue,
   type ReasoningStep,
@@ -26,8 +27,12 @@ export interface ReasoningPlanValidationPolicy {
   maxGraphHops?: number;
   allowExternalPeers?: boolean;
   allowedExternalPeerIds?: readonly string[];
+  allowedModelRoles?: readonly ReasoningModelRole[];
   allowedModelProviders?: readonly string[];
   allowedDataResidencies?: readonly string[];
+  allowedResidenciesByModelRole?: Partial<
+    Record<ReasoningModelRole, readonly string[]>
+  >;
   pathAuthorizer?: (vaultId: string, pathPrefix: string) => boolean;
 }
 
@@ -278,6 +283,9 @@ export function validateReasoningPlan(
   const priorSteps = new Map<string, ReasoningStep>();
   const consumerCounts = new Map<string, number>();
   const allowedPeers = new Set(policy.allowedExternalPeerIds ?? []);
+  const allowedRoles = policy.allowedModelRoles
+    ? new Set(policy.allowedModelRoles)
+    : null;
   const allowedProviders = policy.allowedModelProviders
     ? new Set(policy.allowedModelProviders)
     : null;
@@ -366,6 +374,39 @@ export function validateReasoningPlan(
         `${stepPath}.executionTarget`,
         "external peer execution is not allowed by policy",
       );
+    }
+    if (
+      step.processing?.modelRole &&
+      allowedRoles &&
+      !allowedRoles.has(step.processing.modelRole)
+    ) {
+      issue(
+        issues,
+        "REASONING_PLAN_MODEL_ROLE_DENIED",
+        `${stepPath}.processing.modelRole`,
+        "model role is not allowed by policy",
+      );
+    }
+    if (step.processing?.modelRole) {
+      const roleResidencies =
+        policy.allowedResidenciesByModelRole?.[step.processing.modelRole];
+      if (roleResidencies) {
+        if (!step.processing.dataResidency) {
+          issue(
+            issues,
+            "REASONING_PLAN_MODEL_ROLE_RESIDENCY_REQUIRED",
+            `${stepPath}.processing.dataResidency`,
+            "model role requires an explicit data residency",
+          );
+        } else if (!roleResidencies.includes(step.processing.dataResidency)) {
+          issue(
+            issues,
+            "REASONING_PLAN_MODEL_ROLE_RESIDENCY_DENIED",
+            `${stepPath}.processing.dataResidency`,
+            "data residency is not allowed for this model role",
+          );
+        }
+      }
     }
     if (
       step.processing?.modelProvider &&
