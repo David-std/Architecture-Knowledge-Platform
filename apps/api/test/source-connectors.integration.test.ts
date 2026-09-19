@@ -1,6 +1,10 @@
 import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { Postgres, registerSourceConnector } from "@akp/postgres";
+import {
+  Postgres,
+  applyNextSourceConnectorEvent,
+  registerSourceConnector,
+} from "@akp/postgres";
 import type { FastifyInstance } from "fastify";
 import { sourceConnectorWebhookMessage } from "../src/routes/source-connectors.js";
 
@@ -104,6 +108,36 @@ describeDb("authenticated generic source connector webhook", () => {
     };
   }
 
+  async function governedSnapshot() {
+    const result = await db.pool.query<{
+      knowledge_documents: number;
+      knowledge_units: number;
+      reviews: number;
+      vault_memberships: number;
+      profile_revisions: number;
+      active_profile_revision_id: string | null;
+      connector_descriptor: Record<string, unknown>;
+    }>(
+      `select
+         (select count(*)::int from knowledge_documents
+           where space_id=$1 and vault_id=$2) knowledge_documents,
+         (select count(*)::int from knowledge_units
+           where space_id=$1 and vault_id=$2) knowledge_units,
+         (select count(*)::int from reviews
+           where space_id=$1 and vault_id=$2) reviews,
+         (select count(*)::int from vault_memberships
+           where vault_id=$2) vault_memberships,
+         (select count(*)::int from knowledge_profile_revisions
+           where space_id=$1 and vault_id=$2) profile_revisions,
+         (select active_knowledge_profile_revision_id::text
+            from vaults where id=$2) active_profile_revision_id,
+         (select descriptor from source_connector_registrations
+           where id=$3) connector_descriptor`,
+      [spaceId, vaultId, connectorId],
+    );
+    return result.rows[0];
+  }
+
   it("accepts a signed event without bearer auth and stores hostile URLs as inert data", async () => {
     const timestamp = String(Math.floor(Date.now() / 1000));
     const body = {
@@ -127,10 +161,17 @@ describeDb("authenticated generic source connector webhook", () => {
         metadata: {
           canonicalUrl: "http://169.254.169.254/latest/meta-data/",
           callback: "http://127.0.0.1:1/should-never-be-requested",
+          activateProfile: "attacker-profile",
+          publish: true,
+          provider: "attacker-provider",
+          federated: true,
+          requestedPermissions: ["admin", "knowledge:review"],
+          tool: "shell",
         },
       },
     };
 
+    const governedBefore = await governedSnapshot();
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async () => {
       throw new Error("SOURCE_CONNECTOR_OUTBOUND_FETCH_FORBIDDEN");
@@ -198,6 +239,45 @@ describeDb("authenticated generic source connector webhook", () => {
       metadata: body.object.metadata,
     });
     expect(stored.rows[0]?.payload_hash).toMatch(/^[a-f0-9]{64}$/);
+
+    expect(await applyNextSourceConnectorEvent(db)).toMatchObject({
+      connectorId,
+      eventId: "signed-event-1",
+      sequence: 1,
+      operation: "UPSERT",
+      objectId: "ticket-ssrf-probe",
+    });
+
+    const projected = await db.pool.query<{
+      lifecycle: string;
+      content_trust: string;
+      permission_uncertain: boolean;
+      metadata: Record<string, unknown>;
+    }>(
+      `select lifecycle,content_trust,permission_uncertain,metadata
+         from source_connector_objects
+        where connector_id=$1 and object_id='ticket-ssrf-probe'`,
+      [connectorId],
+    );
+    expect(projected.rows[0]).toMatchObject({
+      lifecycle: "ACTIVE",
+      content_trust: "UNTRUSTED_EXTERNAL",
+      permission_uncertain: true,
+      metadata: body.object.metadata,
+    });
+
+    const governedAfter = await governedSnapshot();
+    expect(governedAfter).toEqual(governedBefore);
+
+    const automaticAssurance = await db.pool.query<{ count: number }>(
+      `select count(*)::int count
+         from assurance_runs
+        where space_id=$1 and vault_id=$2
+          and trigger='CONNECTOR_EVENT'
+          and idempotency_key=$3`,
+      [spaceId, vaultId, `connector-event:${connectorId}:1`],
+    );
+    expect(automaticAssurance.rows[0]?.count).toBe(1);
   });
 
   it("rejects tampered and stale signed events before they enter the inbox", async () => {
