@@ -1394,22 +1394,25 @@ export class PostgresTemporalTruthStore {
     support: TruthSupportSet,
     validAt: string,
     revisionSeq: number,
+    recordedAtOrBefore?: string,
   ): Promise<TruthSupportEvaluation> {
     const [withdrawn, invalidEvidence, supersededFacts] = await Promise.all([
       support.sourceEpisodeIds.length
         ? this.db.pool.query<{ id: string }>(
             `select source_episode_id id from source_episode_withdrawals
               where source_episode_id=any($1::uuid[])
-                and truth_revision_seq<=$2`,
-            [support.sourceEpisodeIds, revisionSeq],
+                and truth_revision_seq<=$2
+                and ($3::timestamptz is null or recorded_at<=$3)`,
+            [support.sourceEpisodeIds, revisionSeq, recordedAtOrBefore ?? null],
           )
         : { rows: [] as { id: string }[] },
       support.evidenceIds.length
         ? this.db.pool.query<{ id: string }>(
             `select evidence_id id from evidence_invalidations
               where evidence_id=any($1::uuid[])
-                and truth_revision_seq<=$2`,
-            [support.evidenceIds, revisionSeq],
+                and truth_revision_seq<=$2
+                and ($3::timestamptz is null or recorded_at<=$3)`,
+            [support.evidenceIds, revisionSeq, recordedAtOrBefore ?? null],
           )
         : { rows: [] as { id: string }[] },
       support.factIds.length
@@ -1420,8 +1423,9 @@ export class PostgresTemporalTruthStore {
               where s.old_fact_id=any($1::uuid[])
                 and s.truth_revision_seq<=$2
                 and replacement.valid_from<=$3
-                and (replacement.valid_to is null or replacement.valid_to>$3)`,
-            [support.factIds, revisionSeq, validAt],
+                and (replacement.valid_to is null or replacement.valid_to>$3)
+                and ($4::timestamptz is null or s.recorded_at<=$4)`,
+            [support.factIds, revisionSeq, validAt, recordedAtOrBefore ?? null],
           )
         : { rows: [] as { id: string }[] },
     ]);
@@ -1459,6 +1463,7 @@ export class PostgresTemporalTruthStore {
       query.limit,
     ];
     let where = `f.space_id=$1 and f.vault_id=$2 and f.truth_revision_seq<=$3`;
+    let recordedCutoffIndex: number | null = null;
     if (query.subjectRef) {
       values.push(query.subjectRef);
       where += ` and f.subject_ref=$${values.length}`;
@@ -1469,17 +1474,24 @@ export class PostgresTemporalTruthStore {
     }
     if (query.recordedAtOrBefore) {
       values.push(query.recordedAtOrBefore);
-      where += ` and f.recorded_at<=$${values.length}`;
+      recordedCutoffIndex = values.length;
+      where += ` and f.recorded_at<=${recordedCutoffIndex}`;
     }
     if (query.changedSince) {
       values.push(query.changedSince);
+      const changedIndex = values.length;
       where += ` and (
-        f.recorded_at>$${values.length}
+        f.recorded_at>${changedIndex}
         or exists(
           select 1 from temporal_fact_supersessions changed
            where changed.old_fact_id=f.id
              and changed.truth_revision_seq<=$3
-             and changed.recorded_at>$${values.length}
+             and changed.recorded_at>${changedIndex}
+             ${
+               recordedCutoffIndex === null
+                 ? ""
+                 : `and changed.recorded_at<=${recordedCutoffIndex}`
+             }
         )
       )`;
     }
@@ -1494,8 +1506,13 @@ export class PostgresTemporalTruthStore {
             join temporal_facts replacement on replacement.id=s.new_fact_id
            where s.old_fact_id=f.id
              and s.truth_revision_seq<=$3
-             and replacement.valid_from<=$${validIndex}
-             and (replacement.valid_to is null or replacement.valid_to>$${validIndex})
+             and replacement.valid_from<=${validIndex}
+             and (replacement.valid_to is null or replacement.valid_to>${validIndex})
+             ${
+               recordedCutoffIndex === null
+                 ? ""
+                 : `and s.recorded_at<=${recordedCutoffIndex}`
+             }
         )`;
     }
     const result = await this.db.pool.query<FactRow>(
@@ -1521,7 +1538,12 @@ export class PostgresTemporalTruthStore {
         ? normalizeSupportSet(supportRow.rows[0])
         : null;
       const supportState = support
-        ? await this.supportEvaluation(support, validAt, cutoff.seq)
+        ? await this.supportEvaluation(
+            support,
+            validAt,
+            cutoff.seq,
+            query.recordedAtOrBefore,
+          )
         : "UNSUPPORTED";
       if (query.mode === "CURRENT" && supportState === "UNSUPPORTED") continue;
       output.push({
