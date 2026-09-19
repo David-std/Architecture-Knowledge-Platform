@@ -165,7 +165,8 @@ export function AuthoringForm({ vaults }: { vaults: Vault[] }) {
         <strong>Fronteras del flujo</strong>
         <ol>
           <li>
-            <strong>Autosave:</strong> recovery local del navegador; no canónico.
+            <strong>Autosave:</strong> recovery local del navegador; no
+            canónico.
           </li>
           <li>
             <strong>Save:</strong> valida y crea un commit Git de draft aislado.
@@ -304,11 +305,7 @@ export function AuthoringForm({ vaults }: { vaults: Vault[] }) {
             <code>{saveState.headCommit?.slice(0, 12) ?? "—"}</code>
           </p>
           <form action={submitAction}>
-            <input
-              type="hidden"
-              name="reviewId"
-              value={saveState.reviewId}
-            />
+            <input type="hidden" name="reviewId" value={saveState.reviewId} />
             <button type="submit" disabled={submitting}>
               {submitting ? "Enviando…" : "Submit review"}
             </button>

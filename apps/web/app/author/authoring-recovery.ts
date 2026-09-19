@@ -2,7 +2,9 @@ import type { AuthorDraftState } from "./authoring-types";
 
 export const AUTHOR_RECOVERY_STORAGE_KEY = "akp.author.recovery.v1";
 
-export function parseAuthorRecovery(value: string | null): AuthorDraftState | null {
+export function parseAuthorRecovery(
+  value: string | null,
+): AuthorDraftState | null {
   if (!value) return null;
   try {
     const candidate = JSON.parse(value) as Partial<AuthorDraftState>;

@@ -209,7 +209,9 @@ export default async function Home() {
                     <small>
                       {" "}
                       · commit{" "}
-                      <code>{String(project.metadata.commit).slice(0, 10)}</code>
+                      <code>
+                        {String(project.metadata.commit).slice(0, 10)}
+                      </code>
                     </small>
                   ) : null}
                 </li>
@@ -218,10 +220,7 @@ export default async function Home() {
                 <li key={goal.id}>
                   <span className="badge">{goal.work_object_class}</span>{" "}
                   {workTitle(goal)}
-                  <small className="muted">
-                    {" "}
-                    · authority {goal.authority}
-                  </small>
+                  <small className="muted"> · authority {goal.authority}</small>
                 </li>
               ))}
             </ul>
@@ -323,8 +322,8 @@ export default async function Home() {
                   <code>{claim.work_key}</code>
                   <br />
                   <small>
-                    {claim.owner_principal_kind} · {claim.owner_principal_label} ·
-                    fencing {String(claim.fencing_token)} · vence{" "}
+                    {claim.owner_principal_kind} · {claim.owner_principal_label}{" "}
+                    · fencing {String(claim.fencing_token)} · vence{" "}
                     {claim.lease_expires_at}
                   </small>
                 </li>
@@ -392,7 +391,9 @@ export default async function Home() {
                   vault <code>{item.vault_id.slice(0, 10)}</code>
                   <br />
                   <small>
-                    {revisionParity(item) ? "revisiones en paridad" : "stale/degraded"}
+                    {revisionParity(item)
+                      ? "revisiones en paridad"
+                      : "stale/degraded"}
                     {" · "}
                     {item.updated_at}
                   </small>

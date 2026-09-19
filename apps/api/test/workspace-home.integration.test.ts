@@ -166,8 +166,12 @@ describeDb("workspace home operator projection", () => {
         }),
       }),
     ]);
-    expect(JSON.stringify(body.projects)).not.toContain("/secret/local/project");
-    expect(JSON.stringify(body.projects)).not.toContain("/another/private/path");
+    expect(JSON.stringify(body.projects)).not.toContain(
+      "/secret/local/project",
+    );
+    expect(JSON.stringify(body.projects)).not.toContain(
+      "/another/private/path",
+    );
     for (const key of [
       "pendingReviews",
       "assuranceFindings",
