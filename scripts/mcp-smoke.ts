@@ -1,8 +1,16 @@
 import "dotenv/config";
+import { strict as assert } from "node:assert";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import type { CodeGraphArtifact } from "../packages/contracts/src/index.js";
+import {
+  Postgres,
+  PostgresFederatedGraphStore,
+} from "../packages/postgres/src/index.js";
+import { planCodeGraphProjection } from "../packages/project-adapter/src/index.js";
 
 const client = new Client({ name: "akp-smoke", version: "0.1.0" });
+let p9Db: Postgres | null = null;
 const transport = new StdioClientTransport({
   command: process.execPath,
   args: ["--import", "tsx", "apps/mcp/src/server.ts"],
@@ -13,6 +21,89 @@ const transport = new StdioClientTransport({
   ),
   stderr: "pipe",
 });
+
+function normalizedSearchProvenance(value: unknown): Array<{
+  documentId: string;
+  citations: string[];
+}> {
+  const record =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  const hits = Array.isArray(record.hits) ? record.hits : [];
+  return hits
+    .flatMap((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+      const hit = item as Record<string, unknown>;
+      if (typeof hit.documentId !== "string") return [];
+      return [
+        {
+          documentId: hit.documentId,
+          citations: Array.isArray(hit.citations)
+            ? hit.citations
+                .filter(
+                  (citation): citation is string =>
+                    typeof citation === "string",
+                )
+                .sort()
+            : [],
+        },
+      ];
+    })
+    .sort((left, right) => left.documentId.localeCompare(right.documentId));
+}
+
+function normalizedCodeProvenance(value: unknown): Array<{
+  repository: string;
+  commitSha: string;
+  qualifiedName: string;
+  revision: string | null;
+  freshness: string | null;
+}> {
+  const record =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  const symbols = Array.isArray(record.symbols) ? record.symbols : [];
+  return symbols.flatMap((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const symbol = item as Record<string, unknown>;
+    const payload =
+      symbol.payload &&
+      typeof symbol.payload === "object" &&
+      !Array.isArray(symbol.payload)
+        ? (symbol.payload as Record<string, unknown>)
+        : {};
+    const projection =
+      symbol.projection &&
+      typeof symbol.projection === "object" &&
+      !Array.isArray(symbol.projection)
+        ? (symbol.projection as Record<string, unknown>)
+        : {};
+    if (
+      typeof payload.repository !== "string" ||
+      typeof payload.commitSha !== "string" ||
+      typeof payload.qualifiedName !== "string"
+    ) {
+      return [];
+    }
+    return [
+      {
+        repository: payload.repository,
+        commitSha: payload.commitSha,
+        qualifiedName: payload.qualifiedName,
+        revision:
+          typeof projection.revision === "string"
+            ? projection.revision
+            : null,
+        freshness:
+          typeof projection.freshness === "string"
+            ? projection.freshness
+            : null,
+      },
+    ];
+  });
+}
 
 function structuredToolResult(result: {
   isError?: boolean;
@@ -189,6 +280,66 @@ try {
       `MCP smoke requires one authorized VaultRegistry entry: ${JSON.stringify(listedPayload)}`,
     );
   }
+
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    throw new Error("DATABASE_URL is required for MCP P9 exit evidence.");
+  }
+  const codeRepository = `mcp-p9-fixture-${vaultId.slice(0, 8)}`;
+  const codeCommit = "7".repeat(40);
+  const codeScopeId = `repo:${codeRepository}`;
+  const codeArtifact: CodeGraphArtifact = {
+    schemaVersion: 1,
+    repository: codeRepository,
+    commitSha: codeCommit,
+    provider: "mcp-p9-exit-fixture",
+    providerVersion: "1",
+    configurationHash: "8".repeat(64),
+    generatedAt: "2026-09-19T00:00:00.000Z",
+    languages: ["typescript"],
+    nodes: [
+      {
+        id: "function:facadeEntry",
+        kind: "FUNCTION",
+        name: "facadeEntry",
+        qualifiedName: "facadeEntry",
+        path: "src/facade-entry.ts",
+        lineStart: 1,
+        lineEnd: 4,
+      },
+      {
+        id: "function:facadeHelper",
+        kind: "FUNCTION",
+        name: "facadeHelper",
+        qualifiedName: "facadeHelper",
+        path: "src/facade-helper.ts",
+        lineStart: 1,
+        lineEnd: 3,
+      },
+    ],
+    edges: [
+      {
+        id: "edge:facade-entry-helper",
+        sourceId: "function:facadeEntry",
+        targetId: "function:facadeHelper",
+        relation: "CALLS",
+        derivation: "STATICALLY_RESOLVED",
+      },
+    ],
+    warnings: [],
+  };
+  p9Db = new Postgres(databaseUrl);
+  const p9Graph = new PostgresFederatedGraphStore(p9Db);
+  const projection = planCodeGraphProjection({
+    artifact: codeArtifact,
+    spaceId,
+    vaultId,
+    scopeId: codeScopeId,
+  });
+  if (projection.skippedCandidateEdgeIds.length !== 0) {
+    throw new Error("MCP P9 Code Graph fixture unexpectedly skipped edges.");
+  }
+  await p9Graph.build(projection.projection);
   const facadeSearch = await client.callTool({
     name: "akp_context",
     arguments: {
@@ -219,6 +370,7 @@ try {
     name: "akp_search",
     arguments: {
       query: "dependency inversion architecture",
+      intent: "CONCEPTUAL",
       spaceId,
       vaultIds: [vaultId],
       federated: false,
@@ -231,6 +383,62 @@ try {
       `Unexpected MCP search payload: ${JSON.stringify(searchPayload)}`,
     );
   }
+  assert.deepEqual(
+    normalizedSearchProvenance(facadeSearchResult),
+    normalizedSearchProvenance(searchPayload),
+    "akp_context SEARCH must preserve the expert search provenance set",
+  );
+
+  const codeArguments = {
+    spaceId,
+    vaultId,
+    vaultIds: [],
+    federated: false,
+    freshnessPolicy: "FRESH_ONLY",
+    selector: {
+      repository: codeRepository,
+      commitSha: codeCommit,
+      qualifiedName: "facadeEntry",
+    },
+  };
+  const expertCode = await client.callTool({
+    name: "akp_find_code_symbol",
+    arguments: codeArguments,
+  });
+  const expertCodePayload = structuredToolResult(expertCode);
+  const facadeCode = await client.callTool({
+    name: "akp_context",
+    arguments: {
+      action: "CODE",
+      codeOperation: "SYMBOL",
+      spaceId,
+      vaultId,
+      selector: codeArguments.selector,
+    },
+  });
+  const facadeCodePayload = structuredToolResult(facadeCode);
+  const facadeCodeResult = facadeCodePayload.result as
+    Record<string, unknown> | undefined;
+  if (
+    facadeCodePayload.action !== "CODE" ||
+    facadeCodePayload.status !== "OK" ||
+    facadeCodePayload.delegatedTo !== "akp_find_code_symbol" ||
+    !facadeCodeResult
+  ) {
+    throw new Error(
+      `Unexpected akp_context CODE payload: ${JSON.stringify(facadeCodePayload)}`,
+    );
+  }
+  const expertCodeProvenance = normalizedCodeProvenance(expertCodePayload);
+  const facadeCodeProvenance = normalizedCodeProvenance(facadeCodeResult);
+  if (expertCodeProvenance.length === 0) {
+    throw new Error("Expert Code Graph task returned no provenance.");
+  }
+  assert.deepEqual(
+    facadeCodeProvenance,
+    expertCodeProvenance,
+    "akp_context CODE must preserve expert Code Graph provenance",
+  );
   const context = await client.callTool({
     name: "akp_build_context",
     arguments: {
@@ -272,6 +480,24 @@ try {
         scopedVaultId: vaultId,
         searchHitCount: searchPayload.hits.length,
         facadeSearchHitCount: facadeSearchResult.hits.length,
+        p9ExitEvidence: {
+          knowledgeTask: {
+            status: "PROVEN",
+            facadeAction: "SEARCH",
+            delegatedTo: "akp_search",
+            provenanceEquivalent: true,
+            provenanceItems: normalizedSearchProvenance(searchPayload).length,
+          },
+          codingTask: {
+            status: "PROVEN",
+            facadeAction: "CODE",
+            delegatedTo: "akp_find_code_symbol",
+            provenanceEquivalent: true,
+            provenanceItems: expertCodeProvenance.length,
+            repository: codeRepository,
+            commitSha: codeCommit,
+          },
+        },
         contextPacketMode: contextPayload.packetMode,
         contextSerializedTokens: contextBudget.serializedTokens,
         contextMaxTokens: contextBudget.maxTokens,
@@ -282,4 +508,5 @@ try {
   );
 } finally {
   await client.close();
+  await p9Db?.close();
 }
