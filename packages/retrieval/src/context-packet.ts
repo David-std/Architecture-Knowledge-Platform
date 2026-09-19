@@ -4,7 +4,7 @@ import type {
   CompactContextSection as ContractCompactContextSection,
   ContextPacket,
   ContextPacketBudget as ContractContextPacketBudget,
-  type ContextDisclosureLevel,
+  ContextDisclosureLevel,
   GraphPathProvenance,
   SearchHit,
   SearchRequest,
@@ -107,6 +107,7 @@ export interface CompactPacketIdentity {
   corpusRevision: string;
   status: ContextPacket["status"];
   mode: SearchRequest["mode"];
+  requestedContextLevel: ContextDisclosureLevel;
   scope: ContextPacket["scope"];
   indexRevisions: Record<string, string | null>;
 }
@@ -743,6 +744,7 @@ export function buildContextPacket(
         packetMode: "FULL_CONTEXT_PACKET",
         indexRevisions,
         retrievalConfiguration,
+        requestedContextLevel,
         searchedChannels,
         scope,
         generatedAt,
@@ -810,6 +812,7 @@ export function buildContextPacket(
       generatedAt,
       budget: provisionalBudget,
       mode: input.request.mode,
+      requestedContextLevel,
       searchedChannels,
       sections: candidateSections,
       citations: candidateCitations,
