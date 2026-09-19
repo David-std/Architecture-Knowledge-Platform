@@ -406,6 +406,16 @@ async function executeCase(
       channels: [...configuration.channels],
       allowVectorForBenchmark: Boolean(configuration.allowVectorForBenchmark),
       deterministicRerank: Boolean(configuration.deterministicRerank),
+      ...(configuration.associativePpr
+        ? {
+            retrievalPolicy: {
+              graphMode: "ASSOCIATIVE" as const,
+              channels: {
+                GRAPH_PPR: { enabled: true, weight: 1.1 },
+              },
+            },
+          }
+        : {}),
       queryEmbeddingService,
       warningSink: warnings,
       availableChannelSink: availableChannels,
