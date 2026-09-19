@@ -527,6 +527,10 @@ paths:
                       type: string
                       enum: [FULL_CONTEXT_PACKET, COMPACT_AGENT_PACKET]
                       default: FULL_CONTEXT_PACKET
+                    contextLevel:
+                      type: string
+                      enum: [L0, L1, L2, L3]
+                      default: L2
                     maxTokens:
                       {
                         type: integer,
