@@ -369,6 +369,9 @@ export function registerOperatorRoutes(
         indexes,
         outbox,
         stuck,
+        assuranceRuns,
+        assuranceFindings,
+        connectorStates,
       ] = await Promise.all([
         db.health().catch(() => false),
         probeJson(`${rawEndpoint}/minio/health/live`),
@@ -418,6 +421,72 @@ export function registerOperatorRoutes(
             `,
           [scope.spaces, scope.vaultIds],
         ),
+        db.pool.query(
+          `
+            select id,space_id,vault_id,trigger,detectors,status,cursor,
+                   attempts,max_attempts,next_attempt_at,completed_at,
+                   result_summary,created_at,updated_at
+              from assurance_runs
+             where space_id=any($1::uuid[]) and vault_id=any($2::uuid[])
+             order by created_at desc
+             limit 50
+            `,
+          [scope.spaces, scope.vaultIds],
+        ),
+        db.pool.query(
+          `
+            select id,run_id,space_id,vault_id,detector,severity,subject_kind,
+                   subject_id,code,summary,state,created_at,resolved_at
+              from assurance_findings
+             where space_id=any($1::uuid[]) and vault_id=any($2::uuid[])
+               and state='OPEN'
+             order by
+               case severity
+                 when 'CRITICAL' then 1
+                 when 'HIGH' then 2
+                 when 'WARN' then 3
+                 else 4
+               end,
+               created_at desc
+             limit 100
+            `,
+          [scope.spaces, scope.vaultIds],
+        ),
+        db.pool.query(
+          `
+            select r.id,r.space_id,r.vault_id,r.connector_key,r.source_system,
+                   r.state,r.descriptor,r.last_event_at,c.applied_sequence,
+                   (
+                     select count(*)::int
+                       from source_connector_events e
+                      where e.connector_id=r.id and e.status='PENDING'
+                   ) pending_events,
+                   (
+                     select count(*)::int
+                       from source_connector_events e
+                      where e.connector_id=r.id and e.status='PENDING'
+                        and e.sequence>c.applied_sequence+1
+                   ) gap_events,
+                   (
+                     select count(*)::int
+                       from source_connector_objects o
+                      where o.connector_id=r.id and o.lifecycle='ACTIVE'
+                        and o.permission_uncertain
+                   ) uncertain_acl_objects,
+                   (
+                     select count(*)::int
+                       from source_connector_objects o
+                      where o.connector_id=r.id
+                        and o.lifecycle='DELETED_TOMBSTONE'
+                   ) tombstones
+              from source_connector_registrations r
+              join source_connector_checkpoints c on c.connector_id=r.id
+             where r.space_id=any($1::uuid[]) and r.vault_id=any($2::uuid[])
+             order by r.updated_at desc,r.id
+             limit 100
+            `,
+          [scope.spaces, scope.vaultIds],
+        ),
       ]);
       const telemetry = getOpenTelemetryStatus();
       const status =
@@ -445,6 +514,11 @@ export function registerOperatorRoutes(
         indexes: indexes.rows,
         outbox: outbox.rows,
         stuckJobs: stuck.rows,
+        assurance: {
+          runs: assuranceRuns.rows,
+          openFindings: assuranceFindings.rows,
+        },
+        connectors: connectorStates.rows,
       });
     },
   );

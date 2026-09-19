@@ -55,6 +55,46 @@ interface HealthResponse {
     updated_at?: string;
     error?: unknown;
   }>;
+  assurance: {
+    runs: Array<{
+      id: string;
+      vault_id: string;
+      trigger: string;
+      detectors: string[];
+      status: string;
+      attempts: number;
+      max_attempts: number;
+      created_at: string;
+      completed_at?: string | null;
+      result_summary?: Record<string, unknown>;
+    }>;
+    openFindings: Array<{
+      id: string;
+      run_id: string;
+      vault_id: string;
+      detector: string;
+      severity: string;
+      subject_kind: string;
+      subject_id: string;
+      code: string;
+      summary: string;
+      created_at: string;
+    }>;
+  };
+  connectors: Array<{
+    id: string;
+    vault_id: string;
+    connector_key: string;
+    source_system: string;
+    state: string;
+    descriptor: Record<string, unknown>;
+    last_event_at?: string | null;
+    applied_sequence: number | string;
+    pending_events: number;
+    gap_events: number;
+    uncertain_acl_objects: number;
+    tombstones: number;
+  }>;
 }
 
 function serviceBadge(ok?: boolean): string {
@@ -232,6 +272,102 @@ export default async function HealthPage() {
           <p className="metric">{quarantined}</p>
         </div>
       </div>
+
+      <h2>Continuous Assurance</h2>
+      <div className="grid">
+        <section className="card">
+          <span className="muted">Runs recientes</span>
+          <p className="metric">{health.assurance.runs.length}</p>
+        </section>
+        <section className="card">
+          <span className="muted">Findings abiertos</span>
+          <p className="metric">{health.assurance.openFindings.length}</p>
+        </section>
+        <section className="card">
+          <span className="muted">Críticos / altos</span>
+          <p className="metric">
+            {
+              health.assurance.openFindings.filter((finding) =>
+                ["CRITICAL", "HIGH"].includes(finding.severity),
+              ).length
+            }
+          </p>
+        </section>
+      </div>
+      {health.assurance.openFindings.length ? (
+        <table>
+          <thead>
+            <tr>
+              <th>Severidad</th>
+              <th>Detector</th>
+              <th>Código</th>
+              <th>Recurso</th>
+              <th>Hallazgo</th>
+            </tr>
+          </thead>
+          <tbody>
+            {health.assurance.openFindings.map((finding) => (
+              <tr key={finding.id}>
+                <td>
+                  <span className="badge">{finding.severity}</span>
+                </td>
+                <td>{finding.detector}</td>
+                <td>
+                  <code>{finding.code}</code>
+                </td>
+                <td>
+                  {finding.subject_kind} ·{" "}
+                  <code>{finding.subject_id.slice(0, 18)}</code>
+                </td>
+                <td>{finding.summary}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <p className="card">
+          No hay findings abiertos de Continuous Assurance en el scope
+          autorizado.
+        </p>
+      )}
+
+      <h2>Source connectors</h2>
+      {health.connectors.length ? (
+        <table>
+          <thead>
+            <tr>
+              <th>Connector</th>
+              <th>Estado</th>
+              <th>Checkpoint</th>
+              <th>Pending / gaps</th>
+              <th>ACL incierto</th>
+              <th>Tombstones</th>
+              <th>Último evento</th>
+            </tr>
+          </thead>
+          <tbody>
+            {health.connectors.map((connector) => (
+              <tr key={connector.id}>
+                <td>
+                  {connector.connector_key}
+                  <br />
+                  <small>{connector.source_system}</small>
+                </td>
+                <td>{connector.state}</td>
+                <td>{String(connector.applied_sequence)}</td>
+                <td>
+                  {connector.pending_events} / {connector.gap_events}
+                </td>
+                <td>{connector.uncertain_acl_objects}</td>
+                <td>{connector.tombstones}</td>
+                <td>{connector.last_event_at ?? "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <p className="card">No hay source connectors registrados.</p>
+      )}
 
       <h2>Jobs atascados</h2>
       {health.stuckJobs.length ? (
