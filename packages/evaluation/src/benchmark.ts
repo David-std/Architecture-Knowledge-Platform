@@ -15,6 +15,8 @@ export interface BenchmarkConfiguration {
   deterministicRerank?: boolean;
   /** Execute the authorized ASSOCIATIVE graph strategy with GRAPH_PPR. */
   associativePpr?: boolean;
+  /** Execute GLOBAL routing over the versioned Leiden community index. */
+  communityGlobal?: boolean;
 }
 
 /**
@@ -22,6 +24,26 @@ export interface BenchmarkConfiguration {
  * offline evaluators cannot silently drift apart. Runtime-capability variants
  * such as PPR must be explicitly flagged rather than inferred from their name.
  */
+export const V03_RETRIEVAL_BASELINE = Object.freeze({
+  tag: "v0.3.0",
+  commitSha: "a6bdcc38fdf026d6c353db096799366865011022",
+  benchmarkMatrixBlobSha: "dca597bc97f4d3646e8d84960755ef76b5f50650",
+  configurationNames: Object.freeze([
+    "context-pack-only",
+    "exact+lexical",
+    "vector-only",
+    "graph-only",
+    "lexical+vector",
+    "lexical+graph",
+    "vector+graph",
+    "context-pack+lexical+graph",
+    "full-hybrid-rrf",
+    "full-hybrid+rerank",
+  ]),
+  execution:
+    "REFERENCE_PIN_ONLY: current-process results must not be relabelled as historical v0.3 execution.",
+});
+
 const RETRIEVAL_BENCHMARK_MATRIX_SOURCE: readonly BenchmarkConfiguration[] = [
   { name: "context-pack-only", channels: ["context-pack"] },
   { name: "exact+lexical", channels: ["exact", "lexical"] },
@@ -62,6 +84,12 @@ const RETRIEVAL_BENCHMARK_MATRIX_SOURCE: readonly BenchmarkConfiguration[] = [
     channels: ["lexical", "vector", "graph"],
     allowVectorForBenchmark: true,
     associativePpr: true,
+  },
+  {
+    name: "lexical+vector+graph+community-global",
+    channels: ["lexical", "vector", "graph"],
+    allowVectorForBenchmark: true,
+    communityGlobal: true,
   },
 ];
 
