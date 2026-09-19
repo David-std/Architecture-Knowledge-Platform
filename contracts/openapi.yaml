@@ -3974,6 +3974,9 @@ components:
               rank: { type: integer, minimum: 1 }
               channelWeight: { type: number, minimum: 0 }
               reason: { type: string }
+              rawScore:
+                type: number
+                description: Channel-native score retained for explanation; it does not enter RRF.
               candidateRevision: { type: [string, "null"] }
         excerpt: { type: string }
         citations:
