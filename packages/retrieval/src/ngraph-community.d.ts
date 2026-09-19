@@ -1,22 +1,5 @@
-declare module "ngraph.graph" {
-  export interface NGraphLinkData {
-    weight?: number;
-  }
-
-  export interface NGraphLink {
-    data?: NGraphLinkData;
-  }
-
-  export interface NGraph {
-    addNode(id: string): unknown;
-    addLink(fromId: string, toId: string, data?: NGraphLinkData): unknown;
-  }
-
-  export default function createGraph(): NGraph;
-}
-
 declare module "ngraph.leiden" {
-  import type { NGraph, NGraphLink } from "ngraph.graph";
+  import type { Graph, Link } from "ngraph.graph";
 
   export interface LeidenOptions {
     quality?: "modularity" | "cpm";
@@ -27,7 +10,7 @@ declare module "ngraph.leiden" {
     allowNewCommunity?: boolean;
     refine?: boolean;
     maxCommunitySize?: number;
-    linkWeight?: (link: NGraphLink) => number;
+    linkWeight?: (link: Link<{ weight?: number }>) => number;
   }
 
   export interface LeidenClusters {
@@ -45,7 +28,7 @@ declare module "ngraph.leiden" {
   }
 
   export function detectClusters(
-    graph: NGraph,
+    graph: Graph<unknown, { weight?: number }>,
     options?: LeidenOptions,
   ): LeidenClusters;
 }
