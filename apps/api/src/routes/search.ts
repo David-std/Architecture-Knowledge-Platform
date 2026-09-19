@@ -33,11 +33,15 @@ import {
   QueryEmbeddingService,
   rehydrateStructuralContext,
   reciprocalRankFusion,
+  resolveRetrievalPolicy,
+  retrievalCandidatesToRankedChannels,
+  runtimeChannelEnabled,
   toPgVector,
   type ActiveEmbeddingGenerationDescriptor,
   type QueryPlan,
   type QueryPlannerCapabilities,
-  type RankedChannel,
+  type RetrievalCandidate,
+  type RetrievalPolicyInput,
   type Tokenizer,
   type ContextContinuationPayload,
 } from "@akp/retrieval";
@@ -187,16 +191,6 @@ const GRAPH_HARD_MAX_CANDIDATES = 100;
 const GRAPH_HARD_MAX_FANOUT = 10;
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-const RRF_CHANNEL_WEIGHTS = {
-  exact: 3,
-  lexical: 1.5,
-  vector: 1,
-  "context-pack": 2.5,
-  raw: 1.2,
-  code: 1.2,
-  graph: 1.4,
-} as const;
 
 function boundedNumber(
   value: unknown,
@@ -356,6 +350,8 @@ export interface RetrievalExecutionOptions {
     "context-pack" | "exact" | "lexical" | "vector" | "graph" | "raw" | "code"
   >;
   plan?: QueryPlan;
+  /** P6 typed retrieval policy; legacy execution options remain compatible. */
+  retrievalPolicy?: RetrievalPolicyInput;
   /** Runtime capability snapshot. Production callers must provide all fields. */
   plannerCapabilities?: Partial<QueryPlannerCapabilities>;
   graphPolicy?: Partial<GraphTraversalPolicy>;
@@ -934,7 +930,14 @@ export async function queryKnowledge(
           .map((id) => `'${id}'::uuid`)
           .join(",")}])`;
   const truthConsistency: TruthConsistencyMode =
-    options.truthConsistency ?? input.truthConsistency ?? "STRICT";
+    options.truthConsistency ??
+    input.truthConsistency ??
+    options.retrievalPolicy?.truthValidation ??
+    "STRICT";
+  const retrievalPolicy = resolveRetrievalPolicy({
+    ...(options.retrievalPolicy ?? {}),
+    truthValidation: truthConsistency,
+  });
   const truthStore = new PostgresTemporalTruthStore(db);
   const truthSnapshot = await truthStore.captureSnapshot(spaceId, vaultIds);
   const finalizeTruthSnapshot = async (): Promise<RetrievalTruthState> => {
@@ -1004,10 +1007,16 @@ export async function queryKnowledge(
       : options.graphScopes,
   );
   const requestedByPolicy = options.channels ?? plan.channels;
-  const requestedChannels = requestedByPolicy.filter((channel) =>
-    channelAllowedByCapabilities(channel, effectiveCapabilities),
+  const requestedChannels = requestedByPolicy.filter(
+    (channel) =>
+      runtimeChannelEnabled(retrievalPolicy, channel) &&
+      channelAllowedByCapabilities(channel, effectiveCapabilities),
   );
   for (const channel of requestedByPolicy) {
+    if (!runtimeChannelEnabled(retrievalPolicy, channel)) {
+      options.warningSink?.push(`CHANNEL_POLICY_DISABLED:${channel}`);
+      continue;
+    }
     if (!requestedChannels.includes(channel)) {
       options.warningSink?.push(`CHANNEL_CAPABILITY_UNAVAILABLE:${channel}`);
     }
@@ -1836,83 +1845,84 @@ export async function queryKnowledge(
     options.availableChannelSink?.add("graph");
   }
 
-  const rankedChannels: RankedChannel[] = [
-    {
-      channel: "exact",
-      channelWeight: RRF_CHANNEL_WEIGHTS.exact,
-      items: exact.rows.map((row, index) => ({
-        id: String(row.id),
-        rank: index + 1,
-        reason: row.match_reason ? String(row.match_reason) : "exact",
-        candidateRevision: String(row.document_revision),
-      })),
-    },
+  const retrievalCandidates: RetrievalCandidate[] = [
+    ...exact.rows.map((row, index) => ({
+      candidateId: String(row.id),
+      channel: "EXACT" as const,
+      rank: index + 1,
+      scopeId: spaceId,
+      documentId: String(row.id),
+      revision: String(row.document_revision),
+      selectionReason: row.match_reason ? String(row.match_reason) : "exact",
+    })),
     ...(channels.has("lexical")
-      ? [
-          {
-            channel: "lexical",
-            channelWeight: RRF_CHANNEL_WEIGHTS.lexical,
-            items: lexical.rows.map((row, index) => ({
-              id: String(row.id),
-              rank: index + 1,
-              reason: row.match_reason ? String(row.match_reason) : "lexical",
-              candidateRevision: String(row.document_revision),
-            })),
-          },
-        ]
+      ? lexical.rows.map((row, index) => ({
+          candidateId: String(row.id),
+          channel: "LEXICAL" as const,
+          rank: index + 1,
+          rawScore: Number(row.score),
+          scopeId: spaceId,
+          documentId: String(row.id),
+          ...(row.unit_id ? { unitId: String(row.unit_id) } : {}),
+          revision: String(row.document_revision),
+          selectionReason: row.match_reason
+            ? String(row.match_reason)
+            : "lexical",
+        }))
       : []),
-    {
-      channel: "vector",
-      channelWeight: RRF_CHANNEL_WEIGHTS.vector,
-      items: vector.rows.map((row, index) => ({
-        id: String(row.id),
-        rank: index + 1,
-        reason: "vector",
-        rawScore: Number(row.score),
-        candidateRevision: String(row.document_revision),
-      })),
-    },
-    {
-      channel: "context-pack",
-      channelWeight: RRF_CHANNEL_WEIGHTS["context-pack"],
-      items: contextPack.rows.map((row, index) => ({
-        id: String(row.id),
-        rank: index + 1,
-        reason: "context-pack:lexical-match",
-        candidateRevision: String(row.document_revision),
-      })),
-    },
-    {
-      channel: "raw",
-      channelWeight: RRF_CHANNEL_WEIGHTS.raw,
-      items: rawFallback.rows.map((row, index) => ({
-        id: String(row.id),
-        rank: index + 1,
-        reason: "raw:source-match",
-        candidateRevision: String(row.document_revision),
-      })),
-    },
-    {
-      channel: "code",
-      channelWeight: RRF_CHANNEL_WEIGHTS.code,
-      items: codeFallback.rows.map((row, index) => ({
-        id: String(row.id),
-        rank: index + 1,
-        reason: row.match_reason ?? "code:project-match",
-        candidateRevision: String(row.document_revision),
-      })),
-    },
-    {
-      channel: "graph",
-      channelWeight: RRF_CHANNEL_WEIGHTS.graph,
-      items: graph.rows.map((row, index) => ({
-        id: String(row.id),
-        rank: index + 1,
-        reason: "graph:bounded-path",
-        candidateRevision: row.candidateRevision,
-      })),
-    },
+    ...vector.rows.map((row, index) => ({
+      candidateId: String(row.id),
+      channel: "VECTOR" as const,
+      rank: index + 1,
+      rawScore: Number(row.score),
+      scopeId: spaceId,
+      documentId: String(row.id),
+      ...(row.unit_id ? { unitId: String(row.unit_id) } : {}),
+      revision: String(row.document_revision),
+      selectionReason: "vector",
+    })),
+    ...contextPack.rows.map((row, index) => ({
+      candidateId: String(row.id),
+      channel: "CONTEXT_PACK" as const,
+      rank: index + 1,
+      scopeId: spaceId,
+      documentId: String(row.id),
+      revision: String(row.document_revision),
+      selectionReason: "context-pack:lexical-match",
+    })),
+    ...rawFallback.rows.map((row, index) => ({
+      candidateId: String(row.id),
+      channel: "RAW" as const,
+      rank: index + 1,
+      scopeId: spaceId,
+      documentId: String(row.id),
+      revision: String(row.document_revision),
+      selectionReason: "raw:source-match",
+    })),
+    ...codeFallback.rows.map((row, index) => ({
+      candidateId: String(row.id),
+      channel: "CODE" as const,
+      rank: index + 1,
+      scopeId: spaceId,
+      documentId: String(row.id),
+      revision: String(row.document_revision),
+      selectionReason: row.match_reason ?? "code:project-match",
+    })),
+    ...graph.rows.map((row, index) => ({
+      candidateId: String(row.id),
+      channel: "GRAPH_TYPED" as const,
+      rank: index + 1,
+      rawScore: Number(row.weight),
+      scopeId: spaceId,
+      documentId: String(row.id),
+      revision: row.candidateRevision,
+      selectionReason: "graph:bounded-path",
+    })),
   ];
+  const rankedChannels = retrievalCandidatesToRankedChannels(
+    retrievalCandidates,
+    retrievalPolicy,
+  );
   const fused = (
     await withSpan("retrieve.fuse", {}, async () =>
       reciprocalRankFusion(rankedChannels),
