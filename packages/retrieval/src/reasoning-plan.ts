@@ -55,7 +55,9 @@ const DEFAULT_LIMITS = Object.freeze({
   maxGraphHops: 3,
 });
 
-function outputKind(operator: ReasoningOperator): ReasoningOutputKind {
+export function reasoningOutputKind(
+  operator: ReasoningOperator,
+): ReasoningOutputKind {
   switch (operator) {
     case "RESOLVE_ENTITY":
     case "EXACT_LOOKUP":
