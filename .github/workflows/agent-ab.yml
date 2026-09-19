@@ -17,6 +17,7 @@ jobs:
     env:
       DATABASE_URL: postgres://akp:akp@localhost:55432/akp
       AKP_AGENT_AB_TASKS: evals/registered/agent-ab-public-product-tasks.json
+      AKP_TOOL_ERGONOMICS_TASKS: evals/registered/agent-ab-public-product-tasks.json
       AKP_AGENT_AB_REPORT: reports/ci/agent-ab-benchmark.json
       AKP_AGENT_AB_ENABLE: "1"
       AKP_AGENT_AB_REAL_MODEL: "1"

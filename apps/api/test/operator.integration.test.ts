@@ -325,9 +325,7 @@ beforeAll(async () => {
       spaceId,
       allowedFederatedA,
       allowedFederatedB,
-      JSON.stringify([
-        { path: "src/a.ts", startLine: 10, endLine: 10 },
-      ]),
+      JSON.stringify([{ path: "src/a.ts", startLine: 10, endLine: 10 }]),
       codeRevision,
       createHash("sha256").update("p10-fed-edge").digest("hex"),
     ],
@@ -350,10 +348,9 @@ afterAll(async () => {
     "delete from federated_graph_projection_revisions where id=any($1::uuid[])",
     [[allowedProjectionId, deniedProjectionId]],
   );
-  await db.pool.query(
-    "delete from federated_graph_edges where id=$1",
-    [allowedFederatedEdge],
-  );
+  await db.pool.query("delete from federated_graph_edges where id=$1", [
+    allowedFederatedEdge,
+  ]);
   await db.pool.query(
     "delete from federated_graph_nodes where id=any($1::uuid[])",
     [[allowedFederatedA, allowedFederatedB, deniedFederatedNode]],

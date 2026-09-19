@@ -20,9 +20,7 @@ export default async function GraphPage({
       })
     : null;
   const graph = graphQuery
-    ? await akp<OperatorGraph>(
-        `/v1/operator/graph?${graphQuery.toString()}`,
-      )
+    ? await akp<OperatorGraph>(`/v1/operator/graph?${graphQuery.toString()}`)
     : null;
 
   return (

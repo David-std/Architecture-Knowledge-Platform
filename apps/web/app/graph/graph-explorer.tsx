@@ -374,8 +374,7 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
                 <li key={edge.id}>
                   <strong>{edge.type}</strong> ·{" "}
                   {edge.derivation ?? "LEGACY_RELATION"}
-                  {edge.confidence !== null &&
-                  edge.confidence !== undefined
+                  {edge.confidence !== null && edge.confidence !== undefined
                     ? ` · confidence ${edge.confidence}`
                     : ""}
                   <br />
@@ -622,7 +621,7 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
                 <dd>
                   {typeof selectedPayload.path === "string"
                     ? selectedPayload.path
-                    : selected.path ?? "—"}
+                    : (selected.path ?? "—")}
                   {typeof selectedPayload.lineStart === "number"
                     ? `:${selectedPayload.lineStart}`
                     : ""}

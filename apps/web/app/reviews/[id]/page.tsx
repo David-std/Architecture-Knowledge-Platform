@@ -309,11 +309,16 @@ export default async function ReviewPage({
       {comments.length ? (
         <div className="card">
           {comments.map((comment, index) => (
-            <article key={String(comment.id ?? index)} style={{ marginBottom: 12 }}>
+            <article
+              key={String(comment.id ?? index)}
+              style={{ marginBottom: 12 }}
+            >
               <strong>{summary(comment.body)}</strong>
               <br />
               <small>
-                {comment.path ? `${summary(comment.path)}:${summary(comment.line)} · ` : ""}
+                {comment.path
+                  ? `${summary(comment.path)}:${summary(comment.line)} · `
+                  : ""}
                 {summary(comment.created_at)}
               </small>
             </article>
@@ -402,9 +407,14 @@ export default async function ReviewPage({
       {evidenceDetails.length ? (
         <div className="card">
           {evidenceDetails.map((entry, index) => (
-            <article key={String(entry.id ?? index)} style={{ marginBottom: 16 }}>
+            <article
+              key={String(entry.id ?? index)}
+              style={{ marginBottom: 16 }}
+            >
               <p>
-                <strong>{summary(entry.source_title ?? entry.source_id)}</strong>
+                <strong>
+                  {summary(entry.source_title ?? entry.source_id)}
+                </strong>
                 <br />
                 <small>{locatorSummary(entry.locator)}</small>
               </p>
@@ -653,8 +663,8 @@ export default async function ReviewPage({
             <ul>
               {graphImpact.map((edge, index) => (
                 <li key={String(edge.id ?? index)}>
-                  <code>{summary(edge.from_external_id ?? edge.from)}</code>{" "}
-                  —{summary(edge.relation_type)}→{" "}
+                  <code>{summary(edge.from_external_id ?? edge.from)}</code> —
+                  {summary(edge.relation_type)}→{" "}
                   <code>{summary(edge.to_external_id ?? edge.to)}</code>
                   <br />
                   <small>provenance {summary(edge.provenance)}</small>
@@ -673,7 +683,9 @@ export default async function ReviewPage({
           <h3>Temporal impact</h3>
           <p>
             Truth head:{" "}
-            <code>{summary(temporalHead?.revision_hash ?? "sin revisión")}</code>
+            <code>
+              {summary(temporalHead?.revision_hash ?? "sin revisión")}
+            </code>
           </p>
           {temporalFacts.length ? (
             <ul>
