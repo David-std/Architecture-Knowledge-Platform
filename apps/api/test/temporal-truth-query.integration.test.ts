@@ -229,6 +229,24 @@ describe("temporal truth read boundary", () => {
     });
   });
 
+  it("applies recorded-time cutoff before later supersessions", async () => {
+    const asRecorded = await query(
+      "/v1/truth/facts?subjectRef=policy%3Atransport&predicate=tls_minimum&validAt=2026-09-01T00%3A00%3A00.000Z&recordedAtOrBefore=2026-01-15T00%3A00%3A00.000Z",
+    );
+    expect(asRecorded.statusCode, asRecorded.body).toBe(200);
+    expect(asRecorded.json()).toMatchObject({
+      mode: "CURRENT",
+      facts: [
+        {
+          id: oldFactId,
+          object: { version: "1.2" },
+          recordedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    });
+    expect(JSON.stringify(asRecorded.json())).not.toContain(newFactId);
+  });
+
   it("supports history, changed_since and support history without leaking other path scopes", async () => {
     const history = await query(
       "/v1/truth/facts?mode=HISTORY&subjectRef=policy%3Atransport",
