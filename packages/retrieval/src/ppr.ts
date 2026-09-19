@@ -229,11 +229,7 @@ export function personalizedPageRank(input: {
   }
   const nodeIds = [...nodes.keys()].sort(compareStrings);
 
-  const outgoing = new Map<
-    string,
-    Array<{ toNodeId: string; weight: number }>
-  >();
-  let edgeCount = 0;
+  const edgeByKey = new Map<string, PersonalizedPageRankEdge>();
   for (const raw of input.edges) {
     const fromNodeId = nonEmpty(raw?.fromNodeId, "edge.fromNodeId");
     const toNodeId = nonEmpty(raw?.toNodeId, "edge.toNodeId");
@@ -251,10 +247,33 @@ export function personalizedPageRank(input: {
     ) {
       throw new Error("PPR_SCOPE_VIOLATION");
     }
-    const edges = outgoing.get(fromNodeId) ?? [];
-    edges.push({ toNodeId, weight });
-    outgoing.set(fromNodeId, edges);
-    edgeCount += 1;
+    const key = `${scopeId}\u0000${fromNodeId}\u0000${toNodeId}\u0000${relation}`;
+    const current = edgeByKey.get(key);
+    if (!current || weight > current.weight) {
+      edgeByKey.set(key, {
+        fromNodeId,
+        toNodeId,
+        scopeId,
+        relation,
+        weight,
+      });
+    }
+  }
+
+  const outgoing = new Map<
+    string,
+    Array<{ toNodeId: string; weight: number }>
+  >();
+  for (const edge of [...edgeByKey.values()].sort(
+    (left, right) =>
+      compareStrings(left.scopeId, right.scopeId) ||
+      compareStrings(left.fromNodeId, right.fromNodeId) ||
+      compareStrings(left.toNodeId, right.toNodeId) ||
+      compareStrings(left.relation, right.relation),
+  )) {
+    const edges = outgoing.get(edge.fromNodeId) ?? [];
+    edges.push({ toNodeId: edge.toNodeId, weight: edge.weight });
+    outgoing.set(edge.fromNodeId, edges);
   }
   for (const edges of outgoing.values()) {
     edges.sort(
@@ -263,6 +282,7 @@ export function personalizedPageRank(input: {
         right.weight - left.weight,
     );
   }
+  const edgeCount = edgeByKey.size;
 
   const seedWeights = new Map<string, number>();
   for (const raw of input.seeds) {
