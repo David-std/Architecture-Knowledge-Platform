@@ -81,6 +81,24 @@ export const QueryIntent = z.enum([
 ]);
 export type QueryIntent = z.infer<typeof QueryIntent>;
 
+export const GraphRelationType = z.enum([
+  "derives_from",
+  "supports",
+  "contradicts",
+  "supersedes",
+  "implements",
+  "applies_to",
+  "example_of",
+  "counterexample_of",
+  "uses",
+  "requires",
+  "validated_by",
+  "produces",
+  "consumed_by",
+  "related_to",
+]);
+export type GraphRelationType = z.infer<typeof GraphRelationType>;
+
 export const ContextRevisionEntry = z
   .object({
     vaultId: z.string().uuid(),
@@ -420,24 +438,6 @@ export const SearchRequest = z.object({
   limit: z.number().int().min(1).max(100).default(20),
 });
 export type SearchRequest = z.infer<typeof SearchRequest>;
-
-export const GraphRelationType = z.enum([
-  "derives_from",
-  "supports",
-  "contradicts",
-  "supersedes",
-  "implements",
-  "applies_to",
-  "example_of",
-  "counterexample_of",
-  "uses",
-  "requires",
-  "validated_by",
-  "produces",
-  "consumed_by",
-  "related_to",
-]);
-export type GraphRelationType = z.infer<typeof GraphRelationType>;
 
 export const GraphPathNode = z.object({
   documentId: z.string().uuid(),
