@@ -2,10 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import type { SearchRequest } from "@akp/contracts";
 import { Postgres } from "@akp/postgres";
-import {
-  DeterministicQueryDecomposer,
-  planQuery,
-} from "@akp/retrieval";
+import { DeterministicQueryDecomposer, planQuery } from "@akp/retrieval";
 import { queryKnowledge } from "../src/routes/search.js";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -148,8 +145,7 @@ async function seed(db: Postgres, value: Fixture): Promise<void> {
     externalId: "SECRET-COMBINATION",
     path: "private/secret.md",
     title: "TLS rotation policy JWT signing keys",
-    body:
-      "TLS rotation policy and JWT signing keys confidential combined guidance.",
+    body: "TLS rotation policy and JWT signing keys confidential combined guidance.",
   });
 }
 
@@ -228,11 +224,13 @@ describe("query transformation retrieval", () => {
           warningSink: warnings,
         });
 
+        expect(withTransform.map((hit) => hit.documentId).sort()).toEqual(
+          [value.jwtDocumentId, value.tlsDocumentId].sort(),
+        );
         expect(
-          withTransform.map((hit) => hit.documentId).sort(),
-        ).toEqual([value.jwtDocumentId, value.tlsDocumentId].sort());
-        expect(
-          withTransform.some((hit) => hit.documentId === value.secretDocumentId),
+          withTransform.some(
+            (hit) => hit.documentId === value.secretDocumentId,
+          ),
         ).toBe(false);
         expect(
           withTransform.every((hit) =>
@@ -278,10 +276,9 @@ describe("query transformation retrieval", () => {
           assisted_channels: ["LEXICAL"],
           vault_ids: [value.authorizedVaultId],
         });
-        expect(trace.rows[0]?.variants.map((variant) => variant.query)).toEqual([
-          "TLS rotation policy",
-          "JWT signing keys",
-        ]);
+        expect(trace.rows[0]?.variants.map((variant) => variant.query)).toEqual(
+          ["TLS rotation policy", "JWT signing keys"],
+        );
         expect(
           trace.rows[0]?.truth_snapshot.vaults?.map((vault) => vault.vaultId),
         ).toEqual([value.authorizedVaultId]);
