@@ -177,6 +177,7 @@ export async function claimNextAssuranceRun(
   db: Postgres,
   workerId: string,
   leaseSeconds = 60,
+  options: { runId?: string } = {},
 ): Promise<AssuranceRun | null> {
   if (!workerId.trim()) throw new Error("ASSURANCE_WORKER_ID_REQUIRED");
   if (
@@ -191,6 +192,7 @@ export async function claimNextAssuranceRun(
        select id
          from assurance_runs
         where status in ('PENDING','RUNNING')
+          and ($3::uuid is null or id=$3::uuid)
           and cancel_requested_at is null
           and attempts < max_attempts
           and next_attempt_at <= now()
@@ -214,7 +216,7 @@ export async function claimNextAssuranceRun(
        from candidate
       where r.id=candidate.id
      returning r.*`,
-    [workerId, leaseSeconds],
+    [workerId, leaseSeconds, options.runId ?? null],
   );
   const row = result.rows[0] as Record<string, unknown> | undefined;
   return row ? rowToRun(row) : null;

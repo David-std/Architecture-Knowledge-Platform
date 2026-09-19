@@ -347,6 +347,26 @@ export async function applyNextSourceConnectorEvent(
     if (checkpointUpdated.rowCount !== 1) {
       throw new Error("SOURCE_CONNECTOR_CHECKPOINT_FENCED");
     }
+
+    await client.query(
+      `insert into assurance_runs(
+         space_id,vault_id,trigger,detectors,idempotency_key
+       ) values(
+         $1,$2,'CONNECTOR_EVENT',
+         array[
+           'CONNECTOR_DELETION',
+           'CONNECTOR_FRESHNESS',
+           'CONNECTOR_ACL_DRIFT'
+         ]::text[],
+         $3
+       )
+       on conflict(space_id,vault_id,idempotency_key) do nothing`,
+      [
+        event.space_id,
+        event.vault_id,
+        `connector-event:${String(event.connector_id)}:${sequence}`,
+      ],
+    );
     await client.query("commit");
     return {
       eventId: String(event.event_id),

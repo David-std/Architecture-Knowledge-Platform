@@ -85,7 +85,9 @@ describeDb("continuous assurance durable runs", () => {
     });
     expect(duplicate.id).toBe(first.id);
 
-    const workerA = await claimNextAssuranceRun(db, "worker-a", 60);
+    const workerA = await claimNextAssuranceRun(db, "worker-a", 60, {
+      runId: first.id,
+    });
     expect(workerA?.id).toBe(first.id);
     expect(workerA?.leaseToken).toBe(1);
 
@@ -93,7 +95,9 @@ describeDb("continuous assurance durable runs", () => {
       "update assurance_runs set lease_expires_at=now()-interval '1 second' where id=$1",
       [first.id],
     );
-    const workerB = await claimNextAssuranceRun(db, "worker-b", 60);
+    const workerB = await claimNextAssuranceRun(db, "worker-b", 60, {
+      runId: first.id,
+    });
     expect(workerB?.id).toBe(first.id);
     expect(workerB?.leaseToken).toBe(2);
 
@@ -163,7 +167,9 @@ describeDb("continuous assurance durable runs", () => {
     });
 
     const workerA = `resume-a-${randomUUID()}`;
-    const first = await claimNextAssuranceRun(db, workerA, 60);
+    const first = await claimNextAssuranceRun(db, workerA, 60, {
+      runId: run.id,
+    });
     expect(first?.id).toBe(run.id);
     if (!first) throw new Error("expected resumable assurance run");
 
@@ -185,7 +191,9 @@ describeDb("continuous assurance durable runs", () => {
     );
 
     const workerB = `resume-b-${randomUUID()}`;
-    const resumed = await claimNextAssuranceRun(db, workerB, 60);
+    const resumed = await claimNextAssuranceRun(db, workerB, 60, {
+      runId: run.id,
+    });
     expect(resumed?.id).toBe(run.id);
     expect(resumed?.leaseToken).toBe(first.leaseToken + 1);
     expect(resumed?.cursor).toEqual({

@@ -81,7 +81,9 @@ describeDb("continuous assurance detector execution", () => {
       maxAttempts: 1,
     });
     const workerId = `assurance-detector-smoke-${randomUUID()}`;
-    const claimed = await claimNextAssuranceRun(db, workerId, 60);
+    const claimed = await claimNextAssuranceRun(db, workerId, 60, {
+      runId: run.id,
+    });
     expect(claimed?.id).toBe(run.id);
     if (!claimed) throw new Error("expected assurance run claim");
 
@@ -168,21 +170,23 @@ describeDb("continuous assurance detector execution", () => {
       operation: "UPSERT",
     });
 
-    const firstRun = await submitAssuranceRun(db, {
-      spaceId,
-      vaultId,
-      trigger: "CONNECTOR_EVENT",
-      detectors: [
-        "CONNECTOR_FRESHNESS",
-        "CONNECTOR_ACL_DRIFT",
-        "CONNECTOR_DELETION",
-      ],
-      idempotencyKey: `connector-findings-${randomUUID()}`,
-      maxAttempts: 1,
-    });
+    const firstRun = await db.pool.query<{ id: string }>(
+      `select id
+         from assurance_runs
+        where space_id=$1 and vault_id=$2
+          and idempotency_key=$3
+          and trigger='CONNECTOR_EVENT'`,
+      [spaceId, vaultId, `connector-event:${connectorId}:1`],
+    );
+    const firstRunId = firstRun.rows[0]?.id;
+    expect(firstRunId).toBeTruthy();
+    if (!firstRunId) throw new Error("expected automatic connector assurance");
+
     const firstWorker = `connector-assurance-${randomUUID()}`;
-    const firstClaim = await claimNextAssuranceRun(db, firstWorker, 60);
-    expect(firstClaim?.id).toBe(firstRun.id);
+    const firstClaim = await claimNextAssuranceRun(db, firstWorker, 60, {
+      runId: firstRunId,
+    });
+    expect(firstClaim?.id).toBe(firstRunId);
     if (!firstClaim) throw new Error("expected connector assurance run");
 
     await expect(
@@ -198,7 +202,7 @@ describeDb("continuous assurance detector execution", () => {
          from assurance_findings
         where run_id=$1
         order by detector,code`,
-      [firstRun.id],
+      [firstRunId],
     );
     expect(firstFindings.rows).toEqual(
       expect.arrayContaining([
@@ -248,21 +252,28 @@ describeDb("continuous assurance detector execution", () => {
       [connectorId],
     );
 
-    const deletionRun = await submitAssuranceRun(db, {
-      spaceId,
-      vaultId,
-      trigger: "CONNECTOR_EVENT",
-      detectors: ["CONNECTOR_DELETION"],
-      idempotencyKey: `connector-deletion-${randomUUID()}`,
-      maxAttempts: 1,
-    });
+    const deletionRun = await db.pool.query<{ id: string }>(
+      `select id
+         from assurance_runs
+        where space_id=$1 and vault_id=$2
+          and idempotency_key=$3
+          and trigger='CONNECTOR_EVENT'`,
+      [spaceId, vaultId, `connector-event:${connectorId}:2`],
+    );
+    const deletionRunId = deletionRun.rows[0]?.id;
+    expect(deletionRunId).toBeTruthy();
+    if (!deletionRunId) {
+      throw new Error("expected automatic deletion assurance");
+    }
+
     const deletionWorker = `connector-deletion-${randomUUID()}`;
     const deletionClaim = await claimNextAssuranceRun(
       db,
       deletionWorker,
       60,
+      { runId: deletionRunId },
     );
-    expect(deletionClaim?.id).toBe(deletionRun.id);
+    expect(deletionClaim?.id).toBe(deletionRunId);
     if (!deletionClaim) throw new Error("expected connector deletion run");
 
     await expect(
@@ -277,7 +288,7 @@ describeDb("continuous assurance detector execution", () => {
       `select detector,code,severity
          from assurance_findings
         where run_id=$1 and detector='CONNECTOR_DELETION'`,
-      [deletionRun.id],
+      [deletionRunId],
     );
     expect(deletionFinding.rows[0]).toMatchObject({
       detector: "CONNECTOR_DELETION",
