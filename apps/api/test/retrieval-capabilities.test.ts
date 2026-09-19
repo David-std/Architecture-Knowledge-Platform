@@ -4,6 +4,7 @@ import { plannerCapabilitiesForIndex } from "../src/routes/search.js";
 
 const policy = {
   vectorProviderAvailable: true,
+  communityAvailable: false,
   rawAllowed: true,
   codeAdapterAvailable: true,
 };
@@ -24,6 +25,7 @@ describe("retrieval capability degradation", () => {
     expect(capabilities).toMatchObject({
       vectorAvailable: true,
       graphConsistent: false,
+      communityAvailable: false,
       rawAllowed: true,
       codeAdapterAvailable: true,
       contextPackAvailable: true,
