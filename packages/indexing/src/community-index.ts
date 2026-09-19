@@ -23,6 +23,7 @@ interface CommunityRelationRow {
   to_document_id: string;
   relation_type: string;
   weight: number | string | null;
+  provenance: string;
 }
 
 export interface RebuildCommunityIndexOptions {
@@ -63,14 +64,13 @@ function communityRevisionFor(input: {
     nodes: [...input.nodes].map((node) => node.id).sort(),
     edges: [...input.edges]
       .map((edge) => ({
-        id: edge.id,
         from: edge.from,
         to: edge.to,
         weight: edge.weight ?? 1,
       }))
       .sort((left, right) =>
-        [left.from, left.to, left.id].join("\0").localeCompare(
-          [right.from, right.to, right.id].join("\0"),
+        [left.from, left.to, String(left.weight)].join("\0").localeCompare(
+          [right.from, right.to, String(right.weight)].join("\0"),
         ),
       ),
   };
@@ -128,7 +128,8 @@ export async function rebuildCommunityIndex(
 
   const relations = await db.pool.query<CommunityRelationRow>(
     `
-    select r.id,r.from_document_id,r.to_document_id,r.relation_type,r.weight
+    select r.id,r.from_document_id,r.to_document_id,r.relation_type,r.weight,
+           r.provenance
       from knowledge_relations r
       join knowledge_documents source on source.id=r.from_document_id
       join knowledge_documents target on target.id=r.to_document_id
@@ -155,7 +156,12 @@ export async function rebuildCommunityIndex(
         documentIds.has(relation.to_document_id),
     )
     .map((relation) => ({
-      id: relation.id,
+      id: [
+        relation.from_document_id,
+        relation.relation_type,
+        relation.to_document_id,
+        relation.provenance,
+      ].join(":"),
       from: relation.from_document_id,
       to: relation.to_document_id,
       weight: numericWeight(relation.weight),
@@ -276,7 +282,7 @@ export async function rebuildCommunityIndex(
         .filter((document): document is CommunityDocumentRow => Boolean(document));
       const supportSet = {
         documentIds: community.memberNodeIds,
-        relationIds: community.supportEdgeIds,
+        relationKeys: community.supportEdgeIds,
       };
       await client.query(
         `
