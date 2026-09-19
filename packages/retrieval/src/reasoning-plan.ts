@@ -169,7 +169,9 @@ function comparableRevisionSet(
         communityRevision: vault.communityRevision ?? null,
       }))
       .sort((left, right) => left.vaultId.localeCompare(right.vaultId));
-  return JSON.stringify(normalize(planned)) === JSON.stringify(normalize(current));
+  return (
+    JSON.stringify(normalize(planned)) === JSON.stringify(normalize(current))
+  );
 }
 
 function issue(
@@ -235,7 +237,10 @@ export function validateReasoningPlan(
     );
   }
 
-  if (plan.steps.length > plan.budget.maxSteps || plan.budget.maxSteps > maxSteps) {
+  if (
+    plan.steps.length > plan.budget.maxSteps ||
+    plan.budget.maxSteps > maxSteps
+  ) {
     issue(
       issues,
       "REASONING_PLAN_STEP_BUDGET_EXCEEDED",
@@ -347,7 +352,8 @@ export function validateReasoningPlan(
 
     if (
       step.executionTarget.kind === "EXTERNAL_PEER" &&
-      (!policy.allowExternalPeers || !allowedPeers.has(step.executionTarget.peerId))
+      (!policy.allowExternalPeers ||
+        !allowedPeers.has(step.executionTarget.peerId))
     ) {
       issue(
         issues,
@@ -381,7 +387,10 @@ export function validateReasoningPlan(
       );
     }
 
-    if (step.operator === "TRAVERSE_TYPED" && step.args.maxHops > maxGraphHops) {
+    if (
+      step.operator === "TRAVERSE_TYPED" &&
+      step.args.maxHops > maxGraphHops
+    ) {
       issue(
         issues,
         "REASONING_PLAN_GRAPH_HOPS_EXCEEDED",
