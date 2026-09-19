@@ -1265,6 +1265,23 @@ export async function queryKnowledge(
     "when 'ATTESTED' then 3 else -1 end) " +
     `>= ${minimumTrust}`;
 
+  const assistedChannels = [
+    ...(channels.has("lexical") || channels.has("graph") ? ["LEXICAL"] : []),
+    ...(channels.has("vector") ? ["VECTOR"] : []),
+  ];
+  const assistedQueries = await transformedRetrievalQueries({
+    db,
+    originalQuery: input.query,
+    intent: plan.intent,
+    strategy: effectiveStrategy,
+    spaceId,
+    vaultIds,
+    graphScopes,
+    truthSnapshot,
+    assistedChannels,
+    options,
+  });
+
   const exact = channels.has("exact")
     ? await observedRetrieval("exact", () =>
         db.pool.query<ExactSearchRow>(
@@ -1315,11 +1332,12 @@ export async function queryKnowledge(
   recordRetrievalCandidates("exact", exact.rows.length);
   if (channels.has("exact")) options.availableChannelSink?.add("exact");
 
-  const lexical =
-    channels.has("lexical") || channels.has("graph")
-      ? await observedRetrieval("lexical", () =>
-          db.pool.query<LexicalSearchRow>(
-            `
+  const lexicalRows: LexicalSearchRow[] = [];
+  if (channels.has("lexical") || channels.has("graph")) {
+    for (const assisted of assistedQueries) {
+      const result = await observedRetrieval("lexical", () =>
+        db.pool.query<LexicalSearchRow>(
+          `
           with query as (
             select plainto_tsquery('simple', $2) terms,
                    plainto_tsquery(
@@ -1432,10 +1450,30 @@ export async function queryKnowledge(
            order by score desc,id,unit_id nulls last
            limit $3
           `,
-            [spaceId, input.query, Math.max(input.limit * 3, 30)],
-          ),
-        )
-      : { rows: [] as LexicalSearchRow[] };
+          [spaceId, assisted.query, Math.max(input.limit * 3, 30)],
+        ),
+      );
+      lexicalRows.push(
+        ...result.rows.map((row) =>
+          assisted.variant
+            ? {
+                ...row,
+                match_reason:
+                  `lexical:transformed:${assisted.variant.kind}:${row.match_reason}`,
+                query_variant_kind: assisted.variant.kind,
+                query_variant_ordinal: assisted.variant.ordinal,
+              }
+            : row,
+        ),
+      );
+    }
+  }
+  const lexical = {
+    rows: mergeLexicalRows(lexicalRows).slice(
+      0,
+      Math.max(input.limit * 3, 30),
+    ),
+  };
   recordRetrievalCandidates("lexical", lexical.rows.length);
   if (channels.has("lexical")) {
     options.availableChannelSink?.add("lexical");
@@ -1486,68 +1524,81 @@ export async function queryKnowledge(
       ) {
         throw new Error("EMBEDDING_GENERATION_DIMENSIONS_INVALID");
       }
-      let queryVector: number[];
-      try {
-        queryVector = await embeddingService.embedQuery(
-          input.query,
-          generation,
-        );
-      } catch {
-        options.warningSink?.push(
-          `VECTOR_PROVIDER_UNAVAILABLE:${generation.vaultId}`,
-        );
-        continue;
-      }
       const dimensions = generation.dimensions;
-      try {
-        const result = await observedRetrieval("vector", () =>
-          db.pool.query<VectorSearchRow>(
-            `
-          select $1::uuid generation_id,u.vault_id,
-                 u.document_id id,u.id unit_id,u.unit_type,
-                 u.document_revision,
-                 1 - (e.embedding::vector(${dimensions}) <=> $3::vector(${dimensions})) score
-            from unit_embeddings e
-            join knowledge_units u on u.id=e.unit_id
-            join knowledge_documents d on d.id=u.document_id
-           where e.generation_id=$1 and u.space_id=$2 and u.vault_id=$4
-             and e.embedding_dimensions=${dimensions}
-             and e.content_hash=u.content_hash
-             and u.embedding_eligible
-             and u.lifecycle ${lifecycleClause}
-             and ${trustClause("u.")}
-             and d.lifecycle ${lifecycleClause}
-             and ${trustClause("d.")}
-             and d.refresh_status not in ('STALE_BLOCKED','INVALID')
-             ${modeClause}
-           order by e.embedding::vector(${dimensions}) <=> $3::vector(${dimensions}),
-                    u.document_id,u.id
-           limit $5
-          `,
-            [
-              generation.generationId,
-              spaceId,
-              toPgVector(queryVector),
-              generation.vaultId,
-              Math.max(input.limit * 3, 30),
-            ],
-          ),
-        );
-        options.availableChannelSink?.add("vector");
-        vector.rows.push(...result.rows);
-      } catch {
-        options.warningSink?.push(
-          `VECTOR_QUERY_UNAVAILABLE:${generation.vaultId}`,
-        );
+      for (const assisted of assistedQueries) {
+        let queryVector: number[];
+        try {
+          queryVector = await embeddingService.embedQuery(
+            assisted.query,
+            generation,
+          );
+        } catch {
+          options.warningSink?.push(
+            `VECTOR_PROVIDER_UNAVAILABLE:${generation.vaultId}`,
+          );
+          continue;
+        }
+        try {
+          const result = await observedRetrieval("vector", () =>
+            db.pool.query<VectorSearchRow>(
+              `
+              select $1::uuid generation_id,u.vault_id,
+                     u.document_id id,u.id unit_id,u.unit_type,
+                     u.document_revision,
+                     1 - (e.embedding::vector(${dimensions}) <=> $3::vector(${dimensions})) score
+                from unit_embeddings e
+                join knowledge_units u on u.id=e.unit_id
+                join knowledge_documents d on d.id=u.document_id
+               where e.generation_id=$1 and u.space_id=$2 and u.vault_id=$4
+                 and e.embedding_dimensions=${dimensions}
+                 and e.content_hash=u.content_hash
+                 and u.embedding_eligible
+                 and u.lifecycle ${lifecycleClause}
+                 and ${trustClause("u.")}
+                 and d.lifecycle ${lifecycleClause}
+                 and ${trustClause("d.")}
+                 and d.refresh_status not in ('STALE_BLOCKED','INVALID')
+                 ${modeClause}
+               order by e.embedding::vector(${dimensions}) <=> $3::vector(${dimensions}),
+                        u.document_id,u.id
+               limit $5
+              `,
+              [
+                generation.generationId,
+                spaceId,
+                toPgVector(queryVector),
+                generation.vaultId,
+                Math.max(input.limit * 3, 30),
+              ],
+            ),
+          );
+          options.availableChannelSink?.add("vector");
+          vector.rows.push(
+            ...result.rows.map((row) =>
+              assisted.variant
+                ? {
+                    ...row,
+                    query_variant_kind: assisted.variant.kind,
+                    query_variant_ordinal: assisted.variant.ordinal,
+                  }
+                : row,
+            ),
+          );
+        } catch {
+          options.warningSink?.push(
+            `VECTOR_QUERY_UNAVAILABLE:${generation.vaultId}`,
+          );
+        }
       }
     }
-    vector.rows.sort(
-      (left, right) =>
-        Number(right.score) - Number(left.score) ||
-        String(left.id).localeCompare(String(right.id)) ||
-        String(left.unit_id).localeCompare(String(right.unit_id)),
+    vector.rows.splice(
+      0,
+      vector.rows.length,
+      ...mergeVectorRows(vector.rows).slice(
+        0,
+        Math.max(input.limit * 3, 30),
+      ),
     );
-    vector.rows.splice(Math.max(input.limit * 3, 30));
   }
 
   if (vector.rows.length > 0) {
@@ -2354,7 +2405,9 @@ export async function queryKnowledge(
       documentId: String(row.id),
       ...(row.unit_id ? { unitId: String(row.unit_id) } : {}),
       revision: String(row.document_revision),
-      selectionReason: "vector",
+      selectionReason: row.query_variant_kind
+        ? `vector:transformed:${row.query_variant_kind}`
+        : "vector",
     })),
     ...communityCandidates.map((row, index) => ({
       candidateId: String(row.id),
