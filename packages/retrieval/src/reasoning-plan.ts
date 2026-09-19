@@ -331,12 +331,12 @@ export function validateReasoningPlan(
         );
       }
       const allowedKinds = allowedInputKinds(step.operator);
-      if (allowedKinds && !allowedKinds.has(outputKind(source.operator))) {
+      if (allowedKinds && !allowedKinds.has(reasoningOutputKind(source.operator))) {
         issue(
           issues,
           "REASONING_PLAN_IO_MISMATCH",
           `${stepPath}.args`,
-          `${step.operator} cannot consume ${outputKind(source.operator)} from ${reference}`,
+          `${step.operator} cannot consume ${reasoningOutputKind(source.operator)} from ${reference}`,
         );
       }
       consumerCounts.set(reference, (consumerCounts.get(reference) ?? 0) + 1);
