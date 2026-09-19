@@ -27,11 +27,15 @@ export type PacketCandidateKind =
  * fallback. Either spelling is accepted to ease adapters around common
  * tokenizer libraries.
  */
+export type TokenizerQuality = "EXACT" | "APPROXIMATE";
+
 export interface Tokenizer {
   count?: (text: string) => number;
   countTokens?: (text: string) => number;
   id?: string;
   label?: string;
+  quality?: TokenizerQuality;
+  /** Deprecated compatibility mirror of quality. */
   approximate?: boolean;
 }
 
@@ -40,6 +44,7 @@ export type ContextPacketMode = "FULL_CONTEXT_PACKET" | "COMPACT_AGENT_PACKET";
 export interface TokenizerMetadata {
   id: string;
   label: string;
+  quality: TokenizerQuality;
   approximate: boolean;
   source: "injected" | "fallback";
 }
@@ -160,6 +165,7 @@ const roughTokens = (text: string): number => Math.ceil(text.length / 4);
 export const CHAR_4_FALLBACK_TOKENIZER: Tokenizer = Object.freeze({
   id: "char/4",
   label: "char/4 fallback (approximate)",
+  quality: "APPROXIMATE",
   approximate: true,
   count: roughTokens,
 });
@@ -174,6 +180,7 @@ function normalizeTokenizer(input?: Tokenizer): {
       metadata: {
         id: "char/4",
         label: "char/4 fallback (approximate)",
+        quality: "APPROXIMATE",
         approximate: true,
         source: "fallback",
       },
@@ -185,6 +192,22 @@ function normalizeTokenizer(input?: Tokenizer): {
     throw new TypeError(
       "Tokenizer must expose count(text) or countTokens(text)",
     );
+  }
+
+  const quality: TokenizerQuality =
+    input.quality ??
+    (input.approximate === true ? "APPROXIMATE" : "EXACT");
+  const approximate = quality === "APPROXIMATE";
+  if (
+    input.approximate !== undefined &&
+    input.approximate !== approximate
+  ) {
+    throw new TypeError(
+      "TOKENIZER_QUALITY_INVALID:CONFLICTING_APPROXIMATE_METADATA",
+    );
+  }
+  if (input.id === "char/4" && quality === "EXACT") {
+    throw new TypeError("TOKENIZER_QUALITY_INVALID:CHAR_4_CANNOT_BE_EXACT");
   }
 
   return {
@@ -201,9 +224,21 @@ function normalizeTokenizer(input?: Tokenizer): {
     metadata: {
       id: input.id ?? "injected",
       label: input.label ?? "injected tokenizer",
-      approximate: input.approximate ?? false,
+      quality,
+      approximate,
       source: "injected",
     },
+  };
+}
+
+export function measureTokens(
+  text: string,
+  tokenizer?: Tokenizer,
+): { tokens: number; metadata: TokenizerMetadata } {
+  const normalized = normalizeTokenizer(tokenizer);
+  return {
+    tokens: normalized.count(text),
+    metadata: normalized.metadata,
   };
 }
 
