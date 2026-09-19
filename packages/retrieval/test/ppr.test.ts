@@ -107,6 +107,45 @@ describe("personalized PageRank", () => {
     expect(result.edgeCount).toBe(1);
   });
 
+  it("deduplicates repeated path edges without amplifying their influence", () => {
+    const result = personalizedPageRank({
+      nodes: [
+        { id: "seed", scopeId: "vault", graphDomain: "EPISTEMIC" },
+        { id: "next", scopeId: "vault", graphDomain: "EPISTEMIC" },
+      ],
+      edges: [
+        {
+          fromNodeId: "seed",
+          toNodeId: "next",
+          scopeId: "vault",
+          relation: "supports",
+          weight: 1,
+        },
+        {
+          fromNodeId: "seed",
+          toNodeId: "next",
+          scopeId: "vault",
+          relation: "supports",
+          weight: 3,
+        },
+        {
+          fromNodeId: "seed",
+          toNodeId: "next",
+          scopeId: "vault",
+          relation: "supports",
+          weight: 2,
+        },
+      ],
+      seeds: [{ nodeId: "seed", weight: 1 }],
+      policy: { allowedRelations: ["supports"] },
+    });
+
+    expect(result.edgeCount).toBe(1);
+    expect(result.candidates.some((candidate) => candidate.nodeId === "next")).toBe(
+      true,
+    );
+  });
+
   it("enforces per-scope caps without merging independent scopes", () => {
     const result = personalizedPageRank({
       nodes: [
