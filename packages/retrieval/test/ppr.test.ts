@@ -141,9 +141,9 @@ describe("personalized PageRank", () => {
     });
 
     expect(result.edgeCount).toBe(1);
-    expect(result.candidates.some((candidate) => candidate.nodeId === "next")).toBe(
-      true,
-    );
+    expect(
+      result.candidates.some((candidate) => candidate.nodeId === "next"),
+    ).toBe(true);
   });
 
   it("enforces per-scope caps without merging independent scopes", () => {
