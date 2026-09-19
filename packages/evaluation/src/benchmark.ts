@@ -13,11 +13,14 @@ export interface BenchmarkConfiguration {
   channels: readonly BenchmarkChannel[];
   allowVectorForBenchmark?: boolean;
   deterministicRerank?: boolean;
+  /** Execute the authorized ASSOCIATIVE graph strategy with GRAPH_PPR. */
+  associativePpr?: boolean;
 }
 
 /**
- * The ten configurations required by the retrieval specification.  Keep this
- * list as data so API, CLI and offline evaluators cannot silently drift apart.
+ * Canonical retrieval configurations. Keep this list as data so API, CLI and
+ * offline evaluators cannot silently drift apart. Runtime-capability variants
+ * such as PPR must be explicitly flagged rather than inferred from their name.
  */
 const RETRIEVAL_BENCHMARK_MATRIX_SOURCE: readonly BenchmarkConfiguration[] = [
   { name: "context-pack-only", channels: ["context-pack"] },
@@ -53,6 +56,12 @@ const RETRIEVAL_BENCHMARK_MATRIX_SOURCE: readonly BenchmarkConfiguration[] = [
     channels: ["context-pack", "exact", "lexical", "vector", "graph"],
     allowVectorForBenchmark: true,
     deterministicRerank: true,
+  },
+  {
+    name: "lexical+vector+graph+ppr",
+    channels: ["lexical", "vector", "graph"],
+    allowVectorForBenchmark: true,
+    associativePpr: true,
   },
 ];
 
