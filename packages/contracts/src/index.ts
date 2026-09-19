@@ -164,6 +164,21 @@ export const ReasoningExecutionTarget = z.discriminatedUnion("kind", [
 ]);
 export type ReasoningExecutionTarget = z.infer<typeof ReasoningExecutionTarget>;
 
+export const ReasoningModelRole = z.enum([
+  "DOCUMENT_EXTRACT",
+  "VISION",
+  "KNOWLEDGE_COMPILE",
+  "ENTITY_RESOLUTION",
+  "TEMPORAL_EXTRACTION",
+  "QUERY_EXPANSION",
+  "RERANK",
+  "COMMUNITY_SUMMARY",
+  "REASONING_PLAN",
+  "ADVERSARY",
+  "EVAL_JUDGE",
+]);
+export type ReasoningModelRole = z.infer<typeof ReasoningModelRole>;
+
 const ReasoningStepBase = {
   id: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/),
   dependsOn: z
@@ -173,6 +188,7 @@ const ReasoningStepBase = {
   executionTarget: ReasoningExecutionTarget.default({ kind: "LOCAL" }),
   processing: z
     .object({
+      modelRole: ReasoningModelRole.optional(),
       modelProvider: z.string().min(1).max(160).optional(),
       dataResidency: z.string().min(1).max(160).optional(),
     })
