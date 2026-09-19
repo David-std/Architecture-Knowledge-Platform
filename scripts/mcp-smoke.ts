@@ -169,8 +169,7 @@ try {
   });
   const facadeSearchPayload = structuredToolResult(facadeSearch);
   const facadeSearchResult = facadeSearchPayload.result as
-    | Record<string, unknown>
-    | undefined;
+    Record<string, unknown> | undefined;
   if (
     facadeSearchPayload.action !== "SEARCH" ||
     facadeSearchPayload.status !== "OK" ||

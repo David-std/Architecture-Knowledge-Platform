@@ -21,7 +21,10 @@ const UUID = z.string().uuid();
 const CodeSelector = z
   .object({
     repository: z.string().trim().min(1).max(2048),
-    commitSha: z.string().regex(/^[a-f0-9]{40}$/i).optional(),
+    commitSha: z
+      .string()
+      .regex(/^[a-f0-9]{40}$/i)
+      .optional(),
     path: z.string().trim().min(1).max(4096).optional(),
     qualifiedName: z.string().trim().min(1).max(2048).optional(),
     name: z.string().trim().min(1).max(1024).optional(),
@@ -42,7 +45,10 @@ const CodeSelector = z
 
 const CodeOptions = z
   .object({
-    relationTypes: z.array(z.string().trim().min(1).max(160)).max(100).optional(),
+    relationTypes: z
+      .array(z.string().trim().min(1).max(160))
+      .max(100)
+      .optional(),
     maxHops: z.number().int().min(1).max(16).optional(),
     maxFanout: z.number().int().min(1).max(1000).optional(),
     maxCandidates: z.number().int().min(1).max(10000).optional(),
@@ -96,7 +102,10 @@ const TemporalInput = z
     mode: z.enum(["CURRENT", "HISTORY"]).default("CURRENT"),
     validAt: z.string().datetime().optional(),
     recordedAtOrBefore: z.string().datetime().optional(),
-    truthRevisionHash: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+    truthRevisionHash: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
     changedSince: z.string().datetime().optional(),
     limit: z.number().int().min(1).max(1000).default(100),
   })
@@ -136,7 +145,10 @@ export const AkpContextInput = z
     sourceSelector: CodeSelector.optional(),
     targetSelector: CodeSelector.optional(),
     repository: z.string().trim().min(1).max(2048).optional(),
-    commitSha: z.string().regex(/^[a-f0-9]{40}$/i).optional(),
+    commitSha: z
+      .string()
+      .regex(/^[a-f0-9]{40}$/i)
+      .optional(),
     changedPaths: z
       .array(z.string().trim().min(1).max(4096))
       .min(1)
@@ -226,11 +238,7 @@ export async function dispatchAkpContext(
   const input = AkpContextInput.parse(rawInput);
   switch (input.action) {
     case "STATUS":
-      return envelope(
-        input.action,
-        await deps.api("/v1/status"),
-        "akp_status",
-      );
+      return envelope(input.action, await deps.api("/v1/status"), "akp_status");
 
     case "BOOTSTRAP": {
       const sessionId = required(
@@ -328,10 +336,7 @@ export async function dispatchAkpContext(
     }
 
     case "TEMPORAL": {
-      const spaceId = required(
-        input.spaceId,
-        "AKP_CONTEXT_SPACE_REQUIRED",
-      );
+      const spaceId = required(input.spaceId, "AKP_CONTEXT_SPACE_REQUIRED");
       const vaultId = required(
         input.vaultId ?? input.vaultIds[0],
         "AKP_CONTEXT_VAULT_SCOPE_REQUIRED",
@@ -507,10 +512,7 @@ export async function dispatchAkpContext(
         input.idempotencyKey,
         "AKP_CONTEXT_IDEMPOTENCY_KEY_REQUIRED",
       );
-      const capture = required(
-        input.capture,
-        "AKP_CONTEXT_CAPTURE_REQUIRED",
-      );
+      const capture = required(input.capture, "AKP_CONTEXT_CAPTURE_REQUIRED");
       return envelope(
         input.action,
         await deps.writeApi(

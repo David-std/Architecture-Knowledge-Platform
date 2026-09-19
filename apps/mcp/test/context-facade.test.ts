@@ -47,7 +47,9 @@ describe("akp_context façade", () => {
       "/v1/search",
       expect.objectContaining({ method: "POST" }),
     );
-    expect(JSON.parse(String((api.mock.calls[0]?.[1] as RequestInit).body))).toMatchObject({
+    expect(
+      JSON.parse(String((api.mock.calls[0]?.[1] as RequestInit).body)),
+    ).toMatchObject({
       query: "dependency inversion",
       spaceId: scope.spaceId,
       vaultIds: [scope.vaultId],
@@ -67,7 +69,9 @@ describe("akp_context façade", () => {
       "/v1/context",
       expect.objectContaining({ method: "POST" }),
     );
-    expect(JSON.parse(String((api.mock.calls[1]?.[1] as RequestInit).body))).toMatchObject({
+    expect(
+      JSON.parse(String((api.mock.calls[1]?.[1] as RequestInit).body)),
+    ).toMatchObject({
       intent: "GLOBAL_SYNTHESIS",
       packetMode: "COMPACT_AGENT_PACKET",
     });
