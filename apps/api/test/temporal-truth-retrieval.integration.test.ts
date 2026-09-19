@@ -526,11 +526,7 @@ async function seedAlternativeSupportVectorFixture(
 
   await db.pool.query(
     "insert into organizations(id,slug,name) values($1,$2,$3)",
-    [
-      organizationId,
-      `truth-alternative-${organizationId.slice(0, 8)}`,
-      label,
-    ],
+    [organizationId, `truth-alternative-${organizationId.slice(0, 8)}`, label],
   );
   await db.pool.query(
     `insert into spaces(
@@ -881,131 +877,129 @@ describe.skipIf(!databaseUrl)("truth-valid vector retrieval", () => {
   });
 
   it(
-    "keeps alternative support while rejecting the higher-scoring A-only explanation before RRF",
-    async () => {
-      const fixture = await seedAlternativeSupportVectorFixture(
-        "Alternative support vector truth",
-      );
-      const physicalScores = await db.pool.query<{
-        unit_id: string;
-        score: number;
-      }>(
-        `select unit_id,
-                1 - (embedding::vector(3) <=> '[1,0,0]'::vector(3)) score
-           from unit_embeddings
-          where generation_id=$1 and unit_id=any($2::uuid[])
-          order by score desc,unit_id`,
-        [
-          fixture.generationId,
-          [fixture.explanationUnitId, fixture.conclusionUnitId],
-        ],
-      );
-      const scoreByUnit = new Map(
-        physicalScores.rows.map((row) => [row.unit_id, Number(row.score)]),
-      );
-      expect(scoreByUnit.get(fixture.explanationUnitId)).toBeGreaterThan(
-        scoreByUnit.get(fixture.conclusionUnitId) ?? Number.POSITIVE_INFINITY,
-      );
-  
-      const withdrawn = await fixture.store.withdrawSourceEpisode({
-        spaceId: fixture.spaceId,
-        vaultId: fixture.vaultId,
-        sourceEpisodeId: fixture.sourceEpisodeAId,
-        reason: "Source A withdrawn while source B remains independent support",
-      });
-  
-      const warnings: string[] = [];
-      const hits = await queryKnowledge(
-        db,
-        {
-          ...searchInput(fixture.spaceId, fixture.vaultId),
-          query: "independently supported security conclusion",
-        },
-        {
-          vaultIds: [fixture.vaultId],
-          channels: ["vector"],
-          allowVectorForBenchmark: true,
-          queryEmbeddingService: queryService(),
-          truthConsistency: "STRICT",
-          warningSink: warnings,
-        },
-      );
-  
-      expect(hits).toHaveLength(1);
-      expect(hits[0]).toMatchObject({
-        documentId: fixture.conclusionDocumentId,
-        unitId: fixture.conclusionUnitId,
-        fusionContributions: [
-          expect.objectContaining({
-            channel: "vector",
-            rank: 1,
-            rawScore: expect.any(Number),
-          }),
-        ],
-      });
-      const selectedScore = hits[0]?.fusionContributions?.find(
-        (entry) => entry.channel === "vector",
-      )?.rawScore;
-      expect(selectedScore).toBeCloseTo(
-        scoreByUnit.get(fixture.conclusionUnitId) ?? 0,
-        8,
-      );
-      expect(selectedScore).toBeLessThan(
-        scoreByUnit.get(fixture.explanationUnitId) ?? 0,
-      );
-      expect(warnings).toContain(
-        `TRUTH_SUPPORT_REJECTED:VECTOR:${fixture.explanationUnitId}`,
-      );
-      expect(warnings).not.toContain(
-        `TRUTH_SUPPORT_REJECTED:VECTOR:${fixture.conclusionUnitId}`,
-      );
-  
-      const currentValidation = await fixture.store.validateDerivedItems({
-        spaceId: fixture.spaceId,
-        vaultId: fixture.vaultId,
-        derivedStoreKind: "VECTOR",
-        derivedItemRefs: [
-          `vector:${fixture.generationId}:${fixture.explanationUnitId}`,
-          `vector:${fixture.generationId}:${fixture.conclusionUnitId}`,
-        ],
-        truthRevisionHash: withdrawn.revisionHash,
-        validAt: "2026-09-01T00:00:00.000Z",
-      });
-      expect(currentValidation).toMatchObject([
-        { state: "UNSUPPORTED", valid: false },
-        { state: "SUPPORTED", valid: true },
-      ]);
-  
-      const historicalValidation = await fixture.store.validateDerivedItems({
-        spaceId: fixture.spaceId,
-        vaultId: fixture.vaultId,
-        derivedStoreKind: "VECTOR",
-        derivedItemRefs: [
-          `vector:${fixture.generationId}:${fixture.explanationUnitId}`,
-          `vector:${fixture.generationId}:${fixture.conclusionUnitId}`,
-        ],
-        truthRevisionHash: fixture.preWithdrawalRevisionHash,
-        validAt: "2026-09-01T00:00:00.000Z",
-      });
-      expect(historicalValidation).toMatchObject([
-        { state: "SUPPORTED", valid: true },
-        { state: "SUPPORTED", valid: true },
-      ]);
-  
-      const physicalCount = await db.pool.query<{ count: string }>(
-        `select count(*)::text count
-           from unit_embeddings
-          where generation_id=$1 and unit_id=any($2::uuid[])`,
-        [
-          fixture.generationId,
-          [fixture.explanationUnitId, fixture.conclusionUnitId],
-        ],
-      );
-      expect(physicalCount.rows[0]?.count).toBe("2");
-    },
-  );
+    "keeps alternat  it("keeps alternative support while rejecting the higher-scoring A-only explanation before RRF", async () => {
+    const fixture = await seedAlternativeSupportVectorFixture(
+      "Alternative support vector truth",
+    );
+    const physicalScores = await db.pool.query<{
+      unit_id: string;
+      score: number;
+    }>(
+      `select unit_id,
+              1 - (embedding::vector(3) <=> '[1,0,0]'::vector(3)) score
+         from unit_embeddings
+        where generation_id=$1 and unit_id=any($2::uuid[])
+        order by score desc,unit_id`,
+      [
+        fixture.generationId,
+        [fixture.explanationUnitId, fixture.conclusionUnitId],
+      ],
+    );
+    const scoreByUnit = new Map(
+      physicalScores.rows.map((row) => [row.unit_id, Number(row.score)]),
+    );
+    expect(scoreByUnit.get(fixture.explanationUnitId)).toBeGreaterThan(
+      scoreByUnit.get(fixture.conclusionUnitId) ?? Number.POSITIVE_INFINITY,
+    );
 
-  it("filters the higher-scoring OLD neighbor before RRF while preserving historical eligibility", async () => {
+    const withdrawn = await fixture.store.withdrawSourceEpisode({
+      spaceId: fixture.spaceId,
+      vaultId: fixture.vaultId,
+      sourceEpisodeId: fixture.sourceEpisodeAId,
+      reason: "Source A withdrawn while source B remains independent support",
+    });
+
+    const warnings: string[] = [];
+    const hits = await queryKnowledge(
+      db,
+      {
+        ...searchInput(fixture.spaceId, fixture.vaultId),
+        query: "independently supported security conclusion",
+      },
+      {
+        vaultIds: [fixture.vaultId],
+        channels: ["vector"],
+        allowVectorForBenchmark: true,
+        queryEmbeddingService: queryService(),
+        truthConsistency: "STRICT",
+        warningSink: warnings,
+      },
+    );
+
+    expect(hits).toHaveLength(1);
+    expect(hits[0]).toMatchObject({
+      documentId: fixture.conclusionDocumentId,
+      unitId: fixture.conclusionUnitId,
+      fusionContributions: [
+        expect.objectContaining({
+          channel: "vector",
+          rank: 1,
+          rawScore: expect.any(Number),
+        }),
+      ],
+    });
+    const selectedScore = hits[0]?.fusionContributions?.find(
+      (entry) => entry.channel === "vector",
+    )?.rawScore;
+    expect(selectedScore).toBeCloseTo(
+      scoreByUnit.get(fixture.conclusionUnitId) ?? 0,
+      8,
+    );
+    expect(selectedScore).toBeLessThan(
+      scoreByUnit.get(fixture.explanationUnitId) ?? 0,
+    );
+    expect(warnings).toContain(
+      `TRUTH_SUPPORT_REJECTED:VECTOR:${fixture.explanationUnitId}`,
+    );
+    expect(warnings).not.toContain(
+      `TRUTH_SUPPORT_REJECTED:VECTOR:${fixture.conclusionUnitId}`,
+    );
+
+    const currentValidation = await fixture.store.validateDerivedItems({
+      spaceId: fixture.spaceId,
+      vaultId: fixture.vaultId,
+      derivedStoreKind: "VECTOR",
+      derivedItemRefs: [
+        `vector:${fixture.generationId}:${fixture.explanationUnitId}`,
+        `vector:${fixture.generationId}:${fixture.conclusionUnitId}`,
+      ],
+      truthRevisionHash: withdrawn.revisionHash,
+      validAt: "2026-09-01T00:00:00.000Z",
+    });
+    expect(currentValidation).toMatchObject([
+      { state: "UNSUPPORTED", valid: false },
+      { state: "SUPPORTED", valid: true },
+    ]);
+
+    const historicalValidation = await fixture.store.validateDerivedItems({
+      spaceId: fixture.spaceId,
+      vaultId: fixture.vaultId,
+      derivedStoreKind: "VECTOR",
+      derivedItemRefs: [
+        `vector:${fixture.generationId}:${fixture.explanationUnitId}`,
+        `vector:${fixture.generationId}:${fixture.conclusionUnitId}`,
+      ],
+      truthRevisionHash: fixture.preWithdrawalRevisionHash,
+      validAt: "2026-09-01T00:00:00.000Z",
+    });
+    expect(historicalValidation).toMatchObject([
+      { state: "SUPPORTED", valid: true },
+      { state: "SUPPORTED", valid: true },
+    ]);
+
+    const physicalCount = await db.pool.query<{ count: string }>(
+      `select count(*)::text count
+         from unit_embeddings
+        where generation_id=$1 and unit_id=any($2::uuid[])`,
+      [
+        fixture.generationId,
+        [fixture.explanationUnitId, fixture.conclusionUnitId],
+      ],
+    );
+    expect(physicalCount.rows[0]?.count).toBe("2");
+  });
+
+scoring OLD neighbor before RRF while preserving historical eligibility", async () => {
     const fixture = await seedContradictoryVectorFixture(
       "Contradictory dense neighbors",
     );
