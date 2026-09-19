@@ -805,7 +805,10 @@ function deterministicLexicalRerank(
       .split(/[^\p{Letter}\p{Number}]+/u)
       .filter((term) => term.length >= 3),
   );
-  return hits
+  const preRankByDocument = new Map(
+    hits.map((hit, index) => [hit.documentId, index + 1]),
+  );
+  const reranked = hits
     .map((hit) => {
       const haystack = `${hit.title} ${hit.excerpt}`
         .normalize("NFD")
@@ -825,6 +828,14 @@ function deterministicLexicalRerank(
         right.score - left.score ||
         left.documentId.localeCompare(right.documentId),
     );
+  return reranked.map((hit, index) => ({
+    ...hit,
+    rerankTrace: {
+      reranker: "deterministic-lexical-v1",
+      preRank: preRankByDocument.get(hit.documentId) ?? index + 1,
+      postRank: index + 1,
+    },
+  }));
 }
 
 /**
