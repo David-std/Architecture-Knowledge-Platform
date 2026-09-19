@@ -50,6 +50,44 @@ describe("derived truth maintenance event boundary", () => {
       validAt: "2026-09-19T00:00:00.000Z",
     });
 
+    const factId = "00000000-0000-0000-0000-000000000046";
+    expect(
+      projectionInputFromEvent(
+        invalidationEvent({
+          resourceId: factId,
+          payload: {
+            reason: "FACT_SUPERSEDED",
+            factId,
+            replacementFactId:
+              "00000000-0000-0000-0000-000000000047",
+            truthRevisionHash: "b".repeat(64),
+          },
+        }),
+      ),
+    ).toMatchObject({
+      reason: "FACT_SUPERSEDED",
+      resourceId: factId,
+      truthRevisionHash: "b".repeat(64),
+    });
+
+    const evidenceId = "00000000-0000-0000-0000-000000000048";
+    expect(
+      projectionInputFromEvent(
+        invalidationEvent({
+          resourceId: evidenceId,
+          payload: {
+            reason: "EVIDENCE_INVALIDATED",
+            evidenceId,
+            truthRevisionHash: "c".repeat(64),
+          },
+        }),
+      ),
+    ).toMatchObject({
+      reason: "EVIDENCE_INVALIDATED",
+      resourceId: evidenceId,
+      truthRevisionHash: "c".repeat(64),
+    });
+
     expect(() =>
       projectionInputFromEvent(
         invalidationEvent({
