@@ -179,3 +179,68 @@ export interface SourceConnectorPort {
     request: SourceConnectorWebhookRequest,
   ): Promise<SourceConnectorWebhookVerification>;
 }
+
+
+export const ASSURANCE_DETECTORS = [
+  "GROUNDING",
+  "FRESHNESS",
+  "CONTRADICTION",
+  "DUPLICATE_IDENTITY",
+  "GRAPH_HEALTH",
+  "TEMPORAL_CONSISTENCY",
+  "CODE_GRAPH_FRESHNESS",
+  "LINK_ORPHAN",
+  "SYNTHESIS_ACCESS_BOUNDARY",
+  "CONNECTOR_DELETION",
+  "CONNECTOR_FRESHNESS",
+  "CONNECTOR_ACL_DRIFT",
+  "GRAPH_DISAGREEMENT",
+  "ORPHAN_WORK",
+  "EXPIRED_CLAIM",
+  "STALE_HANDOFF",
+  "UNSUPPORTED_CAUSALITY",
+] as const;
+
+export type AssuranceDetector = (typeof ASSURANCE_DETECTORS)[number];
+export type AssuranceSeverity = "INFO" | "WARN" | "HIGH" | "CRITICAL";
+
+export interface AssuranceFinding {
+  detector: AssuranceDetector;
+  severity: AssuranceSeverity;
+  code: string;
+  subjectKind: string;
+  subjectId: string;
+  summary: string;
+  evidenceRefs: string[];
+  metadata: Record<string, unknown>;
+}
+
+export interface AssuranceRunCursor {
+  detectorIndex: number;
+  detectorCursor?: string;
+}
+
+export interface AssuranceRun {
+  id: string;
+  spaceId: string;
+  vaultId: string;
+  trigger:
+    | "MANUAL"
+    | "SCHEDULED"
+    | "SOURCE_CHANGE"
+    | "INDEX_CHANGE"
+    | "CONNECTOR_EVENT";
+  detectors: AssuranceDetector[];
+  status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";
+  idempotencyKey: string;
+  cursor: AssuranceRunCursor;
+  attempts: number;
+  maxAttempts: number;
+  leaseOwner: string | null;
+  leaseToken: number;
+  leaseExpiresAt: Date | null;
+  cancelRequestedAt: Date | null;
+  nextAttemptAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
