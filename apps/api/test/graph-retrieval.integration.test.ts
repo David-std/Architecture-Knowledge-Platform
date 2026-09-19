@@ -362,7 +362,9 @@ describe("recursive graph retrieval PostgreSQL integration", () => {
               !hit.citations.some((citation) =>
                 citation.toLowerCase().includes("community"),
               ) &&
-              !hit.excerpt.toLowerCase().includes("derived community containing"),
+              !hit.excerpt
+                .toLowerCase()
+                .includes("derived community containing"),
           ),
         ).toBe(true);
 
