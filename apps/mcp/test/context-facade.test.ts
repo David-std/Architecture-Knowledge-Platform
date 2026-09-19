@@ -84,10 +84,7 @@ describe("akp_context façade", () => {
         effectiveRevisionSetHash: bootstrap.effectiveRevisionSetHash,
         contextRevisionSet: bootstrap.contextRevisionSet,
         context: bootstrap.context,
-        permittedActions: [
-          "workspace:read",
-          "workspace:event:append",
-        ],
+        permittedActions: ["workspace:read", "workspace:event:append"],
         mandatoryPolicies: [
           "USE_PINNED_CONTEXT_REVISION",
           "PROMOTION_REQUIRES_GOVERNED_REVIEW",

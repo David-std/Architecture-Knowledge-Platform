@@ -86,5 +86,4 @@ export function createAgentInstructionBundle(
 }
 
 export const AGENT_INSTRUCTION_BUNDLE = createAgentInstructionBundle();
-export const AGENT_INSTRUCTION_RESOURCE_URI =
-  `akp://instructions/agent/v1/${AGENT_INSTRUCTION_BUNDLE.manifest.sha256}`;
+export const AGENT_INSTRUCTION_RESOURCE_URI = `akp://instructions/agent/v1/${AGENT_INSTRUCTION_BUNDLE.manifest.sha256}`;
