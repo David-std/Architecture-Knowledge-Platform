@@ -77,6 +77,23 @@ jobs:
             if (!Number.isFinite(measurement.meanRecallAtK) || !Number.isFinite(measurement.minimumRecallAtK)) {
               throw new Error(`Missing recall evidence for ${measurement.scenario}/${measurement.mode}.`);
             }
+            if (
+              !Number.isFinite(measurement.p50LatencyMs) ||
+              !Number.isFinite(measurement.p95LatencyMs) ||
+              measurement.p50LatencyMs < 0 ||
+              measurement.p95LatencyMs < measurement.p50LatencyMs ||
+              !Number.isInteger(measurement.latencySamples) ||
+              measurement.latencySamples < measurement.queries
+            ) {
+              throw new Error(`Missing p50/p95 latency evidence for ${measurement.scenario}/${measurement.mode}.`);
+            }
+          }
+          if (
+            report.candidateScanMeasurement?.status !== "UNAVAILABLE" ||
+            report.candidateScanMeasurement?.candidatesScanned !== null ||
+            typeof report.candidateScanMeasurement?.reason !== "string"
+          ) {
+            throw new Error("Candidate scan evidence must be measured when available or explicitly report why unavailable.");
           }
           const modes = new Set(measurements.map((item) => item.mode));
           for (const requiredMode of ["HNSW_FILTERED", "HNSW_PARTIAL"]) {

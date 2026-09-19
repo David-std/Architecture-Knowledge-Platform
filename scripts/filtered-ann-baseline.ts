@@ -38,6 +38,9 @@ type ScenarioMeasurement = {
   scenario: string;
   mode: SearchMode;
   queries: number;
+  latencySamples: number;
+  p50LatencyMs: number;
+  p95LatencyMs: number;
   meanRecallAtK: number;
   minimumRecallAtK: number;
   meanReturned: number;
@@ -237,6 +240,13 @@ function recall(expected: SearchRow[], actual: SearchRow[]): number {
   return hits / expectedIds.size;
 }
 
+function percentile(values: readonly number[], percentileRank: number): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((left, right) => left - right);
+  const rank = Math.ceil(percentileRank * sorted.length) - 1;
+  return sorted[Math.max(0, Math.min(sorted.length - 1, rank))]!;
+}
+
 async function measureScenario(
   client: PoolClient,
   queries: number[][],
@@ -248,11 +258,19 @@ async function measureScenario(
   await configureMode(client, mode);
   const recalls: number[] = [];
   const returned: number[] = [];
+  const latenciesMs: number[] = [];
   let leakageCount = 0;
   const planIndexNames = new Set<string>();
 
   for (let index = 0; index < queries.length; index += 1) {
-    const actual = await search(client, queries[index]!, pathPattern);
+    const query = queries[index]!;
+    let actual: SearchRow[] = [];
+    for (let repetition = 0; repetition < 5; repetition += 1) {
+      const started = performance.now();
+      const measured = await search(client, query, pathPattern);
+      latenciesMs.push(performance.now() - started);
+      if (repetition === 0) actual = measured;
+    }
     recalls.push(recall(exactResults[index]!, actual));
     returned.push(actual.length);
     leakageCount += actual.filter(
@@ -260,7 +278,7 @@ async function measureScenario(
         row.vault_id !== vaultA ||
         (pathPattern === "authorized/%" && !row.path.startsWith("authorized/")),
     ).length;
-    const names = await explain(client, queries[index]!, pathPattern);
+    const names = await explain(client, query, pathPattern);
     names.forEach((name) => planIndexNames.add(name));
   }
 
@@ -268,6 +286,9 @@ async function measureScenario(
     scenario,
     mode,
     queries: queries.length,
+    latencySamples: latenciesMs.length,
+    p50LatencyMs: percentile(latenciesMs, 0.5),
+    p95LatencyMs: percentile(latenciesMs, 0.95),
     meanRecallAtK:
       recalls.reduce((sum, value) => sum + value, 0) / recalls.length,
     minimumRecallAtK: Math.min(...recalls),
@@ -404,6 +425,12 @@ try {
     },
     iterativeScanSupported,
     measurements,
+    candidateScanMeasurement: {
+      status: "UNAVAILABLE",
+      candidatesScanned: null,
+      reason:
+        "PostgreSQL EXPLAIN does not expose pgvector HNSW internal candidate-scan counts as a stable metric; row-return and filter behavior are measured without relabeling them as ANN candidates scanned.",
+    },
     alternatives: {
       iterativeScan: iterativeScanSupported ? "MEASURED" : "UNAVAILABLE",
       partialIndex: "MEASURED",
