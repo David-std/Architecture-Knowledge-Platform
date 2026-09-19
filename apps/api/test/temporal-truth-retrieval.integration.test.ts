@@ -493,6 +493,302 @@ async function seedContradictoryVectorFixture(
   };
 }
 
+interface AlternativeSupportVectorFixture {
+  spaceId: string;
+  vaultId: string;
+  generationId: string;
+  explanationDocumentId: string;
+  conclusionDocumentId: string;
+  explanationUnitId: string;
+  conclusionUnitId: string;
+  sourceEpisodeAId: string;
+  preWithdrawalRevisionHash: string;
+  store: PostgresTemporalTruthStore;
+}
+
+async function seedAlternativeSupportVectorFixture(
+  label: string,
+): Promise<AlternativeSupportVectorFixture> {
+  const organizationId = randomUUID();
+  const spaceId = randomUUID();
+  const vaultId = randomUUID();
+  const sourceA = randomUUID();
+  const sourceB = randomUUID();
+  const artifactA = randomUUID();
+  const artifactB = randomUUID();
+  const explanationDocumentId = randomUUID();
+  const conclusionDocumentId = randomUUID();
+  const explanationUnitId = randomUUID();
+  const conclusionUnitId = randomUUID();
+  const corpusRevision = `truth-alternative-${randomUUID()}`;
+  const sourceHashA = "1".repeat(64);
+  const sourceHashB = "2".repeat(64);
+
+  await db.pool.query(
+    "insert into organizations(id,slug,name) values($1,$2,$3)",
+    [
+      organizationId,
+      `truth-alternative-${organizationId.slice(0, 8)}`,
+      label,
+    ],
+  );
+  await db.pool.query(
+    `insert into spaces(
+       id,organization_id,slug,name,visibility,knowledge_repo_path
+     ) values($1,$2,$3,$4,'PRIVATE',$5)`,
+    [
+      spaceId,
+      organizationId,
+      `truth-alternative-${spaceId.slice(0, 8)}`,
+      label,
+      `/tmp/truth-alternative-${spaceId}`,
+    ],
+  );
+  await db.pool.query(
+    `insert into vaults(
+       id,space_id,canonical_path,name,read_only,current_revision,vault_key,
+       local_path,visibility,enabled
+     ) values($1,$2,$3,$4,true,$5,$6,$3,'PRIVATE',true)`,
+    [
+      vaultId,
+      spaceId,
+      `/tmp/truth-alternative-${vaultId}`,
+      label,
+      corpusRevision,
+      `truth-alternative-${vaultId.slice(0, 8)}`,
+    ],
+  );
+
+  for (const source of [
+    {
+      sourceId: sourceA,
+      artifactId: artifactA,
+      hash: sourceHashA,
+      suffix: "a",
+    },
+    {
+      sourceId: sourceB,
+      artifactId: artifactB,
+      hash: sourceHashB,
+      suffix: "b",
+    },
+  ]) {
+    await db.pool.query(
+      `insert into sources(
+         id,space_id,vault_id,title,source_uri,media_type,sha256,byte_size,
+         object_key,status,metadata
+       ) values($1,$2,$3,$4,$5,'text/plain',$6,4,$7,'ACTIVE','{}'::jsonb)`,
+      [
+        source.sourceId,
+        spaceId,
+        vaultId,
+        `${label} source ${source.suffix}`,
+        `https://example.test/${source.sourceId}`,
+        source.hash,
+        `truth-alternative/${source.artifactId}.txt`,
+      ],
+    );
+    await db.pool.query(
+      `insert into source_artifacts(
+         id,source_id,kind,object_key,source_hash,extractor,extractor_version,
+         quality,metadata
+       ) values($1,$2,'normalized',$3,$4,'fixture','1','HIGH','{}'::jsonb)`,
+      [
+        source.artifactId,
+        source.sourceId,
+        `truth-alternative/${source.artifactId}.json`,
+        source.hash,
+      ],
+    );
+  }
+
+  const documents = [
+    {
+      documentId: explanationDocumentId,
+      unitId: explanationUnitId,
+      title: "Source A security explanation",
+      body: "Source A alone explains the security conclusion.",
+      unitHash: "3".repeat(64),
+      embedding: [1, 0, 0],
+    },
+    {
+      documentId: conclusionDocumentId,
+      unitId: conclusionUnitId,
+      title: "Independently supported security conclusion",
+      body: "The security conclusion remains supported independently by source B.",
+      unitHash: "4".repeat(64),
+      embedding: [0.995, 0.1, 0],
+    },
+  ] as const;
+
+  for (const document of documents) {
+    await db.pool.query(
+      `insert into knowledge_documents(
+         id,space_id,vault_id,path,external_id,title,type,lifecycle,trust_tier,
+         current_revision,body_cache,frontmatter,aliases,layer,content_hash,
+         token_estimate,raw_links
+       ) values($1,$2,$3,$4,$5,$6,'rule','ACTIVE','HUMAN_REVIEWED',
+         $7,$8,'{}'::jsonb,'{}','concept',$9,20,'[]'::jsonb)`,
+      [
+        document.documentId,
+        spaceId,
+        vaultId,
+        `security/${document.documentId}.md`,
+        `TRUTH-${document.documentId.slice(0, 8)}`,
+        document.title,
+        corpusRevision,
+        document.body,
+        document.unitHash,
+      ],
+    );
+    await db.pool.query(
+      `insert into knowledge_units(
+         id,document_id,space_id,vault_id,unit_key,unit_type,heading_path,body,
+         content_hash,corpus_revision,lifecycle,trust_tier,source_ids,
+         token_estimate,parent_unit_id,document_revision,permissions,locator,
+         structural_order,container_only,embedding_eligible
+       ) values($1,$2,$3,$4,$5,'PARAGRAPH','{}',$6,$7,$8,'ACTIVE',
+         'HUMAN_REVIEWED','{}',20,null,$8,'{}'::jsonb,'{}'::jsonb,1,false,true)`,
+      [
+        document.unitId,
+        document.documentId,
+        spaceId,
+        vaultId,
+        `paragraph-${document.unitId.slice(0, 8)}`,
+        document.body,
+        document.unitHash,
+        corpusRevision,
+      ],
+    );
+  }
+
+  await db.pool.query(
+    `insert into vault_index_revisions(
+       space_id,vault_id,corpus_revision,lexical_revision,vector_revision,
+       graph_revision,context_pack_revision,status,warnings
+     ) values($1,$2,$3,$3,$3,$3,$3,'CONSISTENT','[]'::jsonb)`,
+    [spaceId, vaultId, corpusRevision],
+  );
+
+  const manager = new EmbeddingGenerationManager(db);
+  const requested = await manager.request({
+    spaceId,
+    vaultId,
+    corpusRevision,
+    descriptor,
+  });
+  await manager.build(requested.generationId);
+  for (const document of documents) {
+    await manager.writeEmbedding({
+      generationId: requested.generationId,
+      unitId: document.unitId,
+      contentHash: document.unitHash,
+      embedding: [...document.embedding],
+    });
+  }
+  await manager.ready(requested.generationId, documents.length);
+  const active = await manager.activate(requested.generationId);
+
+  const store = new PostgresTemporalTruthStore(db);
+  const episodeA = await store.createSourceEpisode({
+    spaceId,
+    vaultId,
+    sourceId: sourceA,
+    sourceArtifactId: artifactA,
+    sourceHash: sourceHashA,
+    locatorRefs: ["source:a#security"],
+  });
+  const episodeB = await store.createSourceEpisode({
+    spaceId,
+    vaultId,
+    sourceId: sourceB,
+    sourceArtifactId: artifactB,
+    sourceHash: sourceHashB,
+    locatorRefs: ["source:b#security"],
+  });
+
+  const aOnlySupport = await store.createSupportSet({
+    spaceId,
+    vaultId,
+    sourceEpisodeIds: [episodeA.id],
+  });
+  const explanationFact = await store.recordFact({
+    spaceId,
+    vaultId,
+    scopeId: "security:a-only-explanation",
+    authorizationPath: `security/${explanationDocumentId}.md`,
+    subjectRef: "policy:a-only-explanation",
+    predicate: "supported",
+    object: { value: true },
+    validFrom: "2025-01-01T00:00:00.000Z",
+    supportSetId: aOnlySupport.id,
+    sourceEpisodeId: episodeA.id,
+  });
+  const explanationVectorSupport = await store.createSupportSet({
+    spaceId,
+    vaultId,
+    factIds: [explanationFact.fact.id],
+  });
+  await store.registerDerivedDependency({
+    spaceId,
+    vaultId,
+    derivedStoreKind: "VECTOR",
+    derivedItemRef: `vector:${active.generationId}:${explanationUnitId}`,
+    supportSetId: explanationVectorSupport.id,
+    truthRevisionHash: explanationFact.revision.revisionHash,
+    projectionRevision: corpusRevision,
+  });
+
+  const conclusionSupport = await store.createSupportSet({
+    spaceId,
+    vaultId,
+    sourceEpisodeIds: [episodeA.id, episodeB.id],
+    alternativeSupportGroups: [
+      [`source_episode:${episodeA.id}`],
+      [`source_episode:${episodeB.id}`],
+    ],
+  });
+  const conclusionFact = await store.recordFact({
+    spaceId,
+    vaultId,
+    scopeId: "security:independent-conclusion",
+    authorizationPath: `security/${conclusionDocumentId}.md`,
+    subjectRef: "policy:independent-conclusion",
+    predicate: "supported",
+    object: { value: true },
+    validFrom: "2025-01-01T00:00:00.000Z",
+    supportSetId: conclusionSupport.id,
+    sourceEpisodeId: episodeA.id,
+  });
+  const conclusionVectorSupport = await store.createSupportSet({
+    spaceId,
+    vaultId,
+    factIds: [conclusionFact.fact.id],
+  });
+  await store.registerDerivedDependency({
+    spaceId,
+    vaultId,
+    derivedStoreKind: "VECTOR",
+    derivedItemRef: `vector:${active.generationId}:${conclusionUnitId}`,
+    supportSetId: conclusionVectorSupport.id,
+    truthRevisionHash: conclusionFact.revision.revisionHash,
+    projectionRevision: corpusRevision,
+  });
+
+  return {
+    spaceId,
+    vaultId,
+    generationId: active.generationId,
+    explanationDocumentId,
+    conclusionDocumentId,
+    explanationUnitId,
+    conclusionUnitId,
+    sourceEpisodeAId: episodeA.id,
+    preWithdrawalRevisionHash: conclusionFact.revision.revisionHash,
+    store,
+  };
+}
+
 function queryService(
   beforeEmbedding?: () => Promise<void>,
 ): QueryEmbeddingService {
@@ -584,7 +880,129 @@ describe.skipIf(!databaseUrl)("truth-valid vector retrieval", () => {
     ).toMatchObject([{ state: "SUPPORTED", valid: true }]);
   });
 
-  it("filters the higher-scoring OLD neighbor before RRF while preserving historical eligibility", async () => {
+  it("keeps alternative support while rejecting the higher-scoring A-only explanation before RRF", async () => {
+    const fixture = await seedAlternativeSupportVectorFixture(
+      "Alternative support vector truth",
+    );
+    const physicalScores = await db.pool.query<{
+      unit_id: string;
+      score: number;
+    }>(
+      `select unit_id,
+              1 - (embedding::vector(3) <=> '[1,0,0]'::vector(3)) score
+         from unit_embeddings
+        where generation_id=$1 and unit_id=any($2::uuid[])
+        order by score desc,unit_id`,
+      [
+        fixture.generationId,
+        [fixture.explanationUnitId, fixture.conclusionUnitId],
+      ],
+    );
+    const scoreByUnit = new Map(
+      physicalScores.rows.map((row) => [row.unit_id, Number(row.score)]),
+    );
+    expect(scoreByUnit.get(fixture.explanationUnitId)).toBeGreaterThan(
+      scoreByUnit.get(fixture.conclusionUnitId) ?? Number.POSITIVE_INFINITY,
+    );
+
+    const withdrawn = await fixture.store.withdrawSourceEpisode({
+      spaceId: fixture.spaceId,
+      vaultId: fixture.vaultId,
+      sourceEpisodeId: fixture.sourceEpisodeAId,
+      reason: "Source A withdrawn while source B remains independent support",
+    });
+
+    const warnings: string[] = [];
+    const hits = await queryKnowledge(
+      db,
+      {
+        ...searchInput(fixture.spaceId, fixture.vaultId),
+        query: "independently supported security conclusion",
+      },
+      {
+        vaultIds: [fixture.vaultId],
+        channels: ["vector"],
+        allowVectorForBenchmark: true,
+        queryEmbeddingService: queryService(),
+        truthConsistency: "STRICT",
+        warningSink: warnings,
+      },
+    );
+
+    expect(hits).toHaveLength(1);
+    expect(hits[0]).toMatchObject({
+      documentId: fixture.conclusionDocumentId,
+      unitId: fixture.conclusionUnitId,
+      fusionContributions: [
+        expect.objectContaining({
+          channel: "vector",
+          rank: 1,
+          rawScore: expect.any(Number),
+        }),
+      ],
+    });
+    const selectedScore = hits[0]?.fusionContributions?.find(
+      (entry) => entry.channel === "vector",
+    )?.rawScore;
+    expect(selectedScore).toBeCloseTo(
+      scoreByUnit.get(fixture.conclusionUnitId) ?? 0,
+      8,
+    );
+    expect(selectedScore).toBeLessThan(
+      scoreByUnit.get(fixture.explanationUnitId) ?? 0,
+    );
+    expect(warnings).toContain(
+      `TRUTH_SUPPORT_REJECTED:VECTOR:${fixture.explanationUnitId}`,
+    );
+    expect(warnings).not.toContain(
+      `TRUTH_SUPPORT_REJECTED:VECTOR:${fixture.conclusionUnitId}`,
+    );
+
+    const currentValidation = await fixture.store.validateDerivedItems({
+      spaceId: fixture.spaceId,
+      vaultId: fixture.vaultId,
+      derivedStoreKind: "VECTOR",
+      derivedItemRefs: [
+        `vector:${fixture.generationId}:${fixture.explanationUnitId}`,
+        `vector:${fixture.generationId}:${fixture.conclusionUnitId}`,
+      ],
+      truthRevisionHash: withdrawn.revisionHash,
+      validAt: "2026-09-01T00:00:00.000Z",
+    });
+    expect(currentValidation).toMatchObject([
+      { state: "UNSUPPORTED", valid: false },
+      { state: "SUPPORTED", valid: true },
+    ]);
+
+    const historicalValidation = await fixture.store.validateDerivedItems({
+      spaceId: fixture.spaceId,
+      vaultId: fixture.vaultId,
+      derivedStoreKind: "VECTOR",
+      derivedItemRefs: [
+        `vector:${fixture.generationId}:${fixture.explanationUnitId}`,
+        `vector:${fixture.generationId}:${fixture.conclusionUnitId}`,
+      ],
+      truthRevisionHash: fixture.preWithdrawalRevisionHash,
+      validAt: "2026-09-01T00:00:00.000Z",
+    });
+    expect(historicalValidation).toMatchObject([
+      { state: "SUPPORTED", valid: true },
+      { state: "SUPPORTED", valid: true },
+    ]);
+
+    const physicalCount = await db.pool.query<{ count: string }>(
+      `select count(*)::text count
+         from unit_embeddings
+        where generation_id=$1 and unit_id=any($2::uuid[])`,
+      [
+        fixture.generationId,
+        [fixture.explanationUnitId, fixture.conclusionUnitId],
+      ],
+    );
+    expect(physicalCount.rows[0]?.count).toBe("2");
+  });
+
+    it("filters the higher-scoring OLD neighbor before RRF while preserving historical eligibility", async () => {
     const fixture = await seedContradictoryVectorFixture(
       "Contradictory dense neighbors",
     );
