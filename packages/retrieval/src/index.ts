@@ -9,4 +9,4 @@ export * from "./local-semantic-embedding.js";
 export * from "./openai-compatible-embedding.js";
 export * from "./embedding-provider-registry.js";
 export * from "./structural-context.js";
-export * from "./community.js";\n
+export * from "./community.js";
