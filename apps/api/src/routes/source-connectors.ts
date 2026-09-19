@@ -56,7 +56,7 @@ const Descriptor = z
   })
   .strict();
 
-const RegistrationBody = z
+export const SourceConnectorRegistrationSchema = z
   .object({
     spaceId: UUID,
     vaultId: UUID,
@@ -65,6 +65,8 @@ const RegistrationBody = z
     descriptor: Descriptor,
   })
   .strict();
+
+const RegistrationBody = SourceConnectorRegistrationSchema;
 
 const WebhookBody = z
   .object({

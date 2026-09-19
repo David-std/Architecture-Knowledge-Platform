@@ -226,6 +226,20 @@ describeDb("continuous assurance durable runs", () => {
     expect(finding?.status).toBe("OPEN");
     if (!finding) throw new Error("expected persistent finding");
 
+    const governedBefore = await db.pool.query<{
+      reviews: number;
+      publications: number;
+    }>(
+      `select
+         (select count(*)::int from reviews
+           where space_id=$1 and vault_id=$2) reviews,
+         (select count(*)::int from event_outbox
+           where space_id=$1 and vault_id=$2
+             and event_type in ('KnowledgePublished','CorpusRevisionPublished'))
+           publications`,
+      [spaceId, vaultId],
+    );
+
     await expect(
       requestAssuranceFindingAction(db, {
         findingId: finding.id,
@@ -238,6 +252,30 @@ describeDb("continuous assurance durable runs", () => {
       findingId: finding.id,
       action: "RECOMPILE",
     });
+
+    await expect(
+      requestAssuranceFindingAction(db, {
+        findingId: finding.id,
+        spaceId,
+        vaultId,
+        action: "REINDEX",
+      }),
+    ).rejects.toThrow("ASSURANCE_FINDING_ACTION_NOT_PROPOSED");
+
+    const governedAfter = await db.pool.query<{
+      reviews: number;
+      publications: number;
+    }>(
+      `select
+         (select count(*)::int from reviews
+           where space_id=$1 and vault_id=$2) reviews,
+         (select count(*)::int from event_outbox
+           where space_id=$1 and vault_id=$2
+             and event_type in ('KnowledgePublished','CorpusRevisionPublished'))
+           publications`,
+      [spaceId, vaultId],
+    );
+    expect(governedAfter.rows[0]).toEqual(governedBefore.rows[0]);
 
     await transitionAssuranceFindingStatus(db, {
       findingId: finding.id,

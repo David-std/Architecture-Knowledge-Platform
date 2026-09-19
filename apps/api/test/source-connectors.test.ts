@@ -1,6 +1,7 @@
 import { generateKeyPairSync, sign } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
+  SourceConnectorRegistrationSchema,
   sourceConnectorWebhookMessage,
   verifySourceConnectorWebhookSignature,
 } from "../src/routes/source-connectors.js";
@@ -77,6 +78,35 @@ describe("source connector webhook signatures", () => {
         nowMs: Number(timestamp) * 1000,
       }),
     ).toBe(false);
+  });
+
+  it("rejects outbound endpoint fields in generic connector configuration", () => {
+    const registration = {
+      spaceId: "11111111-1111-4111-8111-111111111111",
+      vaultId: "22222222-2222-4222-8222-222222222222",
+      connectorKey: "ssrf-config-probe",
+      publicKeyPem,
+      descriptor: {
+        schemaVersion: 1,
+        sourceSystem: "fixture",
+        objectTypes: ["WORK_ITEM"],
+        incremental: { cursor: false, webhook: true },
+        permissionFidelity: "SOURCE_ACL_MAPPED",
+        replication: "FULL_MIRROR",
+        dataResidency: "LOCAL",
+        attachments: { supported: false },
+        rateLimit: { kind: "NONE" },
+        deletionPropagation: "TOMBSTONE",
+        sourceVersioning: true,
+        contentTrust: "UNTRUSTED_EXTERNAL",
+        endpointUrl: "http://169.254.169.254/latest/meta-data/",
+        callbackUrl: "http://127.0.0.1:1/internal",
+      },
+    };
+
+    expect(SourceConnectorRegistrationSchema.safeParse(registration).success).toBe(
+      false,
+    );
   });
 
   it("binds the signature to one connector and rejects stale timestamps", () => {
