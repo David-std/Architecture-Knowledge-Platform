@@ -1473,22 +1473,25 @@ export class PostgresTemporalTruthStore {
     if (query.recordedAtOrBefore) {
       values.push(query.recordedAtOrBefore);
       recordedCutoffIndex = values.length;
-      where += ` and f.recorded_at<=${recordedCutoffIndex}`;
+      where += " and f.recorded_at<=$" + recordedCutoffIndex;
     }
     if (query.changedSince) {
       values.push(query.changedSince);
       const changedIndex = values.length;
+      const changedParam = "$" + changedIndex;
+      const recordedCutoffParam =
+        recordedCutoffIndex === null ? null : "$" + recordedCutoffIndex;
       where += ` and (
-        f.recorded_at>${changedIndex}
+        f.recorded_at>${changedParam}
         or exists(
           select 1 from temporal_fact_supersessions changed
            where changed.old_fact_id=f.id
              and changed.truth_revision_seq<=$3
-             and changed.recorded_at>${changedIndex}
+             and changed.recorded_at>${changedParam}
              ${
-               recordedCutoffIndex === null
+               recordedCutoffParam === null
                  ? ""
-                 : `and changed.recorded_at<=${recordedCutoffIndex}`
+                 : `and changed.recorded_at<=${recordedCutoffParam}`
              }
         )
       )`;
@@ -1496,20 +1499,23 @@ export class PostgresTemporalTruthStore {
     if (query.mode === "CURRENT") {
       values.push(validAt);
       const validIndex = values.length;
-      where += ` and f.valid_from<=$${validIndex}
-        and (f.valid_to is null or f.valid_to>$${validIndex})
+      const validParam = "$" + validIndex;
+      const recordedCutoffParam =
+        recordedCutoffIndex === null ? null : "$" + recordedCutoffIndex;
+      where += ` and f.valid_from<=${validParam}
+        and (f.valid_to is null or f.valid_to>${validParam})
         and not exists(
           select 1
             from temporal_fact_supersessions s
             join temporal_facts replacement on replacement.id=s.new_fact_id
            where s.old_fact_id=f.id
              and s.truth_revision_seq<=$3
-             and replacement.valid_from<=${validIndex}
-             and (replacement.valid_to is null or replacement.valid_to>${validIndex})
+             and replacement.valid_from<=${validParam}
+             and (replacement.valid_to is null or replacement.valid_to>${validParam})
              ${
-               recordedCutoffIndex === null
+               recordedCutoffParam === null
                  ? ""
-                 : `and s.recorded_at<=${recordedCutoffIndex}`
+                 : `and s.recorded_at<=${recordedCutoffParam}`
              }
         )`;
     }
