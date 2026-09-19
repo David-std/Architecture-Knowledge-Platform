@@ -17,6 +17,7 @@ import {
 } from "../packages/indexing/src/index.js";
 import { Postgres } from "../packages/postgres/src/index.js";
 import {
+  DeterministicQueryDecomposer,
   LOCAL_MULTILINGUAL_E5_SMALL_DESCRIPTOR,
   LocalSemanticEmbeddingAdapter,
   MULTILINGUAL_E5_SMALL_DIMENSIONS,
@@ -370,6 +371,7 @@ function benchmarkConfigurations(): BenchmarkConfiguration[] {
     "full-hybrid+rerank",
     "lexical+vector+graph+ppr",
     "lexical+vector+graph+community-global",
+    "lexical+vector+query-decomposition",
   ]);
   return RETRIEVAL_BENCHMARK_MATRIX.filter((configuration) =>
     required.has(configuration.name),
@@ -470,6 +472,9 @@ async function executeCase(
               },
             }
           : {}),
+      ...(configuration.queryDecomposition
+        ? { queryTransformer: new DeterministicQueryDecomposer() }
+        : {}),
       queryEmbeddingService,
       warningSink: warnings,
       availableChannelSink: availableChannels,
