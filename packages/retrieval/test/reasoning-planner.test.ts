@@ -73,12 +73,7 @@ describe("deterministic reasoning planner", () => {
       operators("COMPARISON", {
         vectorAvailable: true,
       }),
-    ).toEqual([
-      "SEARCH_LEXICAL",
-      "SEARCH_VECTOR",
-      "COMPARE",
-      "BUILD_CONTEXT",
-    ]);
+    ).toEqual(["SEARCH_LEXICAL", "SEARCH_VECTOR", "COMPARE", "BUILD_CONTEXT"]);
 
     expect(
       operators("IMPACT_ANALYSIS", {
