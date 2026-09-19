@@ -23,6 +23,7 @@ const baseHit = {
   },
   trust: "HUMAN_REVIEWED" as const,
   lifecycle: "ACTIVE" as const,
+  refreshStatus: "CURRENT",
   score: 1,
   reasons: ["gold"],
   excerpt: "CQRS",
@@ -42,6 +43,85 @@ const requestFor = (query = "cqrs") => ({
 });
 
 describe("buildContextPacket", () => {
+  it("applies L0-L3 progressive disclosure and records the actual level", () => {
+    const detailed =
+      "CQRS separates command and query responsibilities. " +
+      "This second sentence carries implementation detail that orientation can omit.";
+    const full =
+      "# CQRS\n\n" +
+      detailed +
+      "\n\nFull approved page content with constraints, evidence, and examples.";
+
+    const build = (
+      requestedContextLevel: "L0" | "L1" | "L2" | "L3",
+      fullContent?: string,
+    ) =>
+      buildContextPacket({
+        request: requestFor(),
+        intent: "CONCEPTUAL",
+        corpusRevision: "deadbeef",
+        maxTokens: 4_000,
+        requestedContextLevel,
+        candidates: [
+          {
+            hit: baseHit,
+            content: detailed,
+            ...(fullContent === undefined ? {} : { fullContent }),
+            kind: "concept",
+          },
+        ],
+      });
+
+    const l0 = build("L0");
+    expect(l0.requestedContextLevel).toBe("L0");
+    expect(l0.sections[0]).toMatchObject({
+      contextLevel: "L0",
+      documentRevision: "abc",
+    });
+    expect(l0.sections[0]?.content).toContain("id=doc:cqrs");
+    expect(l0.sections[0]?.content).toContain("type=architecture");
+    expect(l0.sections[0]?.content).not.toContain(
+      "separates command and query responsibilities",
+    );
+
+    const l1 = build("L1");
+    expect(l1.sections[0]?.contextLevel).toBe("L1");
+    expect(l1.sections[0]?.content).toContain(
+      "CQRS separates command and query responsibilities.",
+    );
+    expect(l1.sections[0]?.content.length).toBeLessThanOrEqual(320);
+
+    const l2 = build("L2");
+    expect(l2.sections[0]).toMatchObject({
+      contextLevel: "L2",
+      content: detailed,
+    });
+
+    const downgraded = build("L3");
+    expect(downgraded.requestedContextLevel).toBe("L3");
+    expect(downgraded.sections[0]).toMatchObject({
+      contextLevel: "L2",
+      content: detailed,
+    });
+
+    const l3 = build("L3", full);
+    expect(l3.sections[0]).toMatchObject({
+      contextLevel: "L3",
+      content: full,
+    });
+
+    const compact = buildContextPacketPair({
+      request: requestFor(),
+      intent: "CONCEPTUAL",
+      corpusRevision: "deadbeef",
+      maxTokens: 4_000,
+      requestedContextLevel: "L1",
+      candidates: [{ hit: baseHit, content: detailed, kind: "concept" }],
+    }).compact;
+    expect(compact.identity.requestedContextLevel).toBe("L1");
+    expect(compact.content[0]?.contextLevel).toBe("L1");
+  });
+
   it("copies graph provenance and renders compact, de-duplicated paths", () => {
     const graphProvenance: GraphPathProvenance[] = [
       {
