@@ -3633,6 +3633,9 @@ export function registerSearchRoutes(
             retrievalWarnings.push(
               `REASONING_PLAN_EXECUTED:${reasoned.execution.status}`,
             );
+            if (reasoned.execution.status === "PARTIAL") {
+              retrievalWarnings.push("REASONING_PLAN_PARTIAL_CONTEXT");
+            }
           } catch (error) {
             const code =
               error instanceof Error

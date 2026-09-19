@@ -587,9 +587,16 @@ export async function executeApplicationReasoning(
   if (execution.status === "REJECTED") {
     throw new Error("REASONING_PLAN_VALIDATION_FAILED");
   }
+  const hits = finalDocumentHits(execution);
+  if (execution.status === "FAILED") {
+    throw new Error("REASONING_PLAN_EXECUTION_FAILED");
+  }
+  if (execution.status === "PARTIAL" && hits.length === 0) {
+    throw new Error("REASONING_PLAN_PARTIAL_WITHOUT_CONTEXT");
+  }
   return {
     execution,
-    hits: finalDocumentHits(execution),
+    hits,
     reasoningTrace: execution.trace,
   };
 }

@@ -207,4 +207,21 @@ describe("reasoning application runtime", () => {
       trusted.documentId,
     ]);
   });
+
+  it("rejects failed or contextless partial executions so callers can fall back directly", async () => {
+    await expect(
+      executeApplicationReasoning({
+        request: request("CONCEPTUAL"),
+        revisionSet: revisions(),
+        validationContext: validationContext(),
+        capabilities: capabilities("CONCEPTUAL"),
+        corpusRevision: "corpus-1",
+        indexRevisions: { corpus: "corpus-1" },
+        retrieve: async () => {
+          throw new Error("CONTROLLED_RETRIEVAL_FAILURE");
+        },
+      }),
+    ).rejects.toThrow("REASONING_PLAN_EXECUTION_FAILED");
+  });
+
 });
