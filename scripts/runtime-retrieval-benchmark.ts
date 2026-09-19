@@ -554,6 +554,108 @@ async function buildRealEmbeddings(
   return generations;
 }
 
+type IncrementalEmbeddingUpdateEvidence = {
+  measured: true;
+  milliseconds: number;
+  vaultId: string;
+  priorCorpusRevision: string;
+  updateCorpusRevision: string;
+  unitCount: number;
+  embeddingsReused: number;
+  embeddingsCreated: number;
+  changedUnits: number;
+};
+
+async function measureIncrementalEmbeddingUpdate(
+  db: Postgres,
+  manifest: CuratedManifest,
+  fixture: Fixture,
+  adapter: LocalSemanticEmbeddingAdapter,
+): Promise<IncrementalEmbeddingUpdateEvidence> {
+  const vault = manifest.vaults[0];
+  if (!vault) throw new Error("Runtime benchmark requires at least one vault.");
+  const vaultId = fixture.vaultIds.get(vault.id);
+  if (!vaultId) throw new Error(`Missing runtime vault mapping for ${vault.id}`);
+
+  const source = await db.pool.query<{ id: string; body: string }>(
+    `select u.id,u.body
+       from knowledge_units u
+       join knowledge_documents d on d.id=u.document_id
+      where u.space_id=$1 and u.vault_id=$2 and u.corpus_revision=$3
+        and u.embedding_eligible=true
+        and u.lifecycle in ('ACTIVE','DISPUTED')
+        and d.lifecycle in ('ACTIVE','DISPUTED')
+        and d.refresh_status not in ('STALE_BLOCKED','INVALID')
+      order by u.document_id,u.structural_order,u.id
+      limit 1`,
+    [fixture.spaceId, vaultId, fixture.corpusRevision],
+  );
+  const changed = source.rows[0];
+  if (!changed) throw new Error("Runtime benchmark has no embeddable update unit.");
+
+  const updateCorpusRevision = `${fixture.corpusRevision}:incremental-vector`;
+  const changedBody = `${changed.body}\n\nIncremental vector benchmark delta.`;
+  const changedHash = sha256(changedBody);
+
+  await db.pool.query(
+    `insert into knowledge_units(
+       document_id,space_id,vault_id,unit_key,unit_type,heading_path,body,
+       content_hash,corpus_revision,lifecycle,trust_tier,source_ids,
+       token_estimate,parent_unit_id,document_revision,permissions,locator,
+       structural_order,container_only,embedding_eligible,artifact_id
+     )
+     select document_id,space_id,vault_id,unit_key,unit_type,heading_path,
+            case when id=$4::uuid then $5 else body end,
+            case when id=$4::uuid then $6 else content_hash end,
+            $7,lifecycle,trust_tier,source_ids,token_estimate,parent_unit_id,
+            $7,permissions,locator,structural_order,container_only,
+            embedding_eligible,artifact_id
+       from knowledge_units
+      where space_id=$1 and vault_id=$2 and corpus_revision=$3`,
+    [
+      fixture.spaceId,
+      vaultId,
+      fixture.corpusRevision,
+      changed.id,
+      changedBody,
+      changedHash,
+      updateCorpusRevision,
+    ],
+  );
+
+  const started = performance.now();
+  const built = await buildEmbeddingIndex(db, {
+    spaceId: fixture.spaceId,
+    vaultId,
+    corpusRevision: updateCorpusRevision,
+    provider: adapter,
+    activate: false,
+    batchSize: 8,
+  });
+  const milliseconds = performance.now() - started;
+
+  if (
+    built.embeddingsCreated !== 1 ||
+    built.embeddingsReused !== built.unitCount - 1
+  ) {
+    throw new Error(
+      `Incremental vector evidence expected one new embedding and reuse of the rest; created=${built.embeddingsCreated}, reused=${built.embeddingsReused}, units=${built.unitCount}.`,
+    );
+  }
+
+  return {
+    measured: true,
+    milliseconds,
+    vaultId,
+    priorCorpusRevision: fixture.corpusRevision,
+    updateCorpusRevision,
+    unitCount: built.unitCount,
+    embeddingsReused: built.embeddingsReused,
+    embeddingsCreated: built.embeddingsCreated,
+    changedUnits: 1,
+  };
+}
+
 async function executeCase(
   db: Postgres,
   fixture: Fixture,
@@ -699,6 +801,12 @@ async function main(): Promise<void> {
     const queryEmbeddingService = new QueryEmbeddingService(
       async () => adapter,
     );
+    const incrementalEmbeddingUpdate = await measureIncrementalEmbeddingUpdate(
+      db,
+      dataset.manifest,
+      fixture,
+      adapter,
+    );
     const configurations = benchmarkConfigurations();
     const filteredAnnEvidence = await loadFilteredAnnEvidence();
     const runs = [];
@@ -770,12 +878,18 @@ async function main(): Promise<void> {
                   reason:
                     "This harness seeds lexical/graph fixture projections directly; no isolated build timer exists for this option.",
                 },
-          updateEvidence: {
-            measured: false,
-            milliseconds: null,
-            reason:
-              "Incremental index update cost is not exercised by this harness.",
-          },
+          updateEvidence: configuration.channels.includes("vector")
+            ? {
+                ...incrementalEmbeddingUpdate,
+                attribution:
+                  "Controlled one-unit content-hash delta in a new vault-scoped corpus revision; unchanged embeddings must be reused from the prior generation.",
+              }
+            : {
+                measured: false,
+                milliseconds: null,
+                reason:
+                  "This configuration does not consume the vector generation measured by the controlled incremental update probe.",
+              },
         },
         storageRam: {
           measured: true,
