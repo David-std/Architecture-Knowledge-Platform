@@ -190,6 +190,9 @@ export const SearchHit = z.object({
 });
 export type SearchHit = z.infer<typeof SearchHit>;
 
+export const ContextDisclosureLevel = z.enum(["L0", "L1", "L2", "L3"]);
+export type ContextDisclosureLevel = z.infer<typeof ContextDisclosureLevel>;
+
 export const ContextSection = z.object({
   kind: z.enum([
     "rule",
@@ -202,6 +205,7 @@ export const ContextSection = z.object({
     "evidence",
     "source",
   ]),
+  contextLevel: ContextDisclosureLevel,
   title: z.string(),
   content: z.string(),
   documentId: z.string().uuid(),
@@ -230,6 +234,7 @@ export type ContextPacketMode = z.infer<typeof ContextPacketMode>;
 export const ContextRequest = SearchRequest.extend({
   maxTokens: z.number().int().min(256).max(32000).optional(),
   packetMode: ContextPacketMode.default("FULL_CONTEXT_PACKET"),
+  contextLevel: ContextDisclosureLevel.default("L2"),
 });
 export type ContextRequest = z.infer<typeof ContextRequest>;
 
@@ -277,6 +282,7 @@ export const ContextPacket = z.object({
   generatedAt: z.string().datetime(),
   budget: ContextPacketBudget,
   mode: SearchRequest.shape.mode,
+  requestedContextLevel: ContextDisclosureLevel,
   searchedChannels: z.array(z.string()),
   sections: z.array(ContextSection),
   citations: z.array(z.string()),
@@ -303,6 +309,7 @@ export type ContextContinuationResponse = z.infer<
 
 export const CompactContextSection = z.object({
   kind: ContextSection.shape.kind,
+  contextLevel: ContextDisclosureLevel,
   identity: z.object({
     documentId: z.string().uuid(),
     vaultId: z.string().uuid(),
@@ -334,6 +341,7 @@ export const CompactAgentPacket = z.object({
     corpusRevision: z.string(),
     status: ContextPacket.shape.status,
     mode: SearchRequest.shape.mode,
+    requestedContextLevel: ContextDisclosureLevel,
     scope: ContextPacket.shape.scope,
     indexRevisions: ContextPacket.shape.indexRevisions,
   }),
