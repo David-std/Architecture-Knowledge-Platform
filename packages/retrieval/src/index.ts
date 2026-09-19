@@ -13,3 +13,4 @@ export * from "./community.js";
 export * from "./rerank.js";
 export * from "./reasoning-plan.js";
 export * from "./reasoning-executor.js";
+export * from "./reasoning-planner.js";
