@@ -368,6 +368,26 @@ describe("recursive graph retrieval PostgreSQL integration", () => {
           ),
         ).toBe(true);
 
+        const driftWithoutSeed = await queryKnowledge(
+          db,
+          { ...searchRequest(fixture), query: "no-local-seed-token" },
+          {
+            vaultIds: [fixture.vaultId],
+            plan: planQuery("no-local-seed-token", "CONCEPTUAL", {
+              graphConsistent: true,
+              communityAvailable: true,
+            }),
+            graphScopes: [{ vaultId: fixture.vaultId, pathPrefix: "allowed" }],
+          },
+        );
+        expect(
+          driftWithoutSeed.some((hit) =>
+            (hit.fusionContributions ?? []).some(
+              (contribution) => contribution.channel === "community",
+            ),
+          ),
+        ).toBe(false);
+
         const global = await queryKnowledge(
           db,
           { ...searchRequest(fixture), query: "whole corpus panorama" },
