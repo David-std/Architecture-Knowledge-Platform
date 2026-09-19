@@ -183,11 +183,11 @@ function validateCandidate(candidate: RetrievalCandidate): void {
   if (!Number.isInteger(candidate.rank) || candidate.rank < 1) {
     throw new Error("candidate rank must be a positive integer");
   }
-  if (candidate.rawScore !== undefined) {
-    validWeight(candidate.rawScore < 0 ? undefined : candidate.rawScore, "rawScore");
-    if (!Number.isFinite(candidate.rawScore)) {
-      throw new Error("rawScore must be finite when provided");
-    }
+  if (
+    candidate.rawScore !== undefined &&
+    (typeof candidate.rawScore !== "number" || !Number.isFinite(candidate.rawScore))
+  ) {
+    throw new Error("rawScore must be finite when provided");
   }
   if (typeof candidate.scopeId !== "string" || candidate.scopeId.trim() === "") {
     throw new Error("scopeId must be a non-empty string");
