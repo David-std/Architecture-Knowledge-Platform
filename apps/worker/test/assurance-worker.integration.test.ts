@@ -1049,10 +1049,9 @@ describeDb("continuous assurance detector execution", () => {
         "delete from knowledge_documents where id=any($1::uuid[])",
         [[siblingDocumentId, foreignDocumentId]],
       );
-      await db.pool.query(
-        "delete from vaults where id=any($1::uuid[])",
-        [[siblingVaultId, foreignVaultId]],
-      );
+      await db.pool.query("delete from vaults where id=any($1::uuid[])", [
+        [siblingVaultId, foreignVaultId],
+      ]);
       await db.pool.query("delete from spaces where id=$1", [foreignSpaceId]);
     }
   });
