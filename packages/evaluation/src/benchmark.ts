@@ -517,21 +517,48 @@ export function aggregateBenchmarkRun(
   };
 }
 
+export interface BenchmarkPromotionEvidence {
+  /** Same dataset/slices and comparable execution path were used. */
+  comparableEvaluation: boolean;
+  /** Measured latency, storage/RAM, token/provider and build/update costs fit policy. */
+  operationalCostAcceptable: boolean;
+  /** Failure, stale-index and provider-unavailable behavior was exercised/understood. */
+  degradedBehaviorUnderstood: boolean;
+  /** Authorization scope and temporal truth/freshness invariants passed. */
+  authorizationTruthPassed: boolean;
+  /** A tested rollback path exists for the proposed retrieval default. */
+  rollbackAvailable: boolean;
+}
+
 export interface BenchmarkDefaultDecision {
   selectedDefault: string | null;
+  /** Best quality candidate before promotion gates; diagnostic only. */
+  measuredCandidate: string | null;
   vectorActivatedByDefault: boolean;
   baseline: string | null;
   bestVector: string | null;
+  promotionEligible: boolean;
+  missingPromotionGates: string[];
   eligibility: string;
 }
 
+const PROMOTION_GATES: ReadonlyArray<keyof BenchmarkPromotionEvidence> = [
+  "comparableEvaluation",
+  "operationalCostAcceptable",
+  "degradedBehaviorUnderstood",
+  "authorizationTruthPassed",
+  "rollbackAvailable",
+];
+
 /**
- * Selects only from measured, eligible runs.  A vector run cannot become the
- * default merely because it exists; it must improve quality without violating
- * exact-identifier, citation, no-answer or latency guardrails.
+ * Select a production default only when both measured quality and explicit
+ * operational/safety promotion evidence pass. Missing promotion evidence fails
+ * closed: the function still reports the best measured candidate, but never
+ * turns a diagnostic benchmark into a runtime-default change.
  */
 export function selectBenchmarkDefault(
   runs: readonly BenchmarkRunMetrics[],
+  promotionEvidence?: Partial<BenchmarkPromotionEvidence>,
 ): BenchmarkDefaultDecision {
   const eligible = runs.filter(
     (run) =>
@@ -560,17 +587,26 @@ export function selectBenchmarkDefault(
     bestVector.exactIdentifierRecall >= baseline.exactIdentifierRecall &&
     bestVector.meanLatencyMs <= Math.max(baseline.meanLatencyMs * 2, 25),
   );
-  // A vector-only experiment is never a safe implicit runtime default.  If
-  // no measured non-vector baseline exists, leave selection empty instead of
-  // returning a vector name while reporting `vectorActivatedByDefault=false`.
-  const winner = vectorEligible ? bestVector : baseline;
+  // A vector-only experiment is never a safe implicit runtime candidate. If
+  // there is no measured non-vector baseline, no candidate is promotable.
+  const measuredWinner = vectorEligible ? bestVector : baseline;
+  const missingPromotionGates = PROMOTION_GATES.filter(
+    (gate) => promotionEvidence?.[gate] !== true,
+  );
+  const promotionEligible = Boolean(
+    measuredWinner && missingPromotionGates.length === 0,
+  );
+  const selected = promotionEligible ? measuredWinner : undefined;
   return {
-    selectedDefault: winner?.configurationName ?? null,
-    vectorActivatedByDefault: vectorEligible,
+    selectedDefault: selected?.configurationName ?? null,
+    measuredCandidate: measuredWinner?.configurationName ?? null,
+    vectorActivatedByDefault: Boolean(selected?.vectorEnabled),
     baseline: baseline?.configurationName ?? null,
     bestVector: bestVector?.configurationName ?? null,
+    promotionEligible,
+    missingPromotionGates,
     eligibility:
-      "criticalFailures=0, unsupportedClaimRate=0, noAnswerAccuracy=1; vector requires +0.02 MRR, no exact/citation/Recall@10 regression and <=2x latency",
+      "measured: criticalFailures=0, unsupportedClaimRate=0, noAnswerAccuracy=1; vector additionally requires +0.02 MRR, no exact/citation/Recall@10 regression and <=2x latency. promotion: comparableEvaluation, operationalCostAcceptable, degradedBehaviorUnderstood, authorizationTruthPassed and rollbackAvailable must all be true.",
   };
 }
 
