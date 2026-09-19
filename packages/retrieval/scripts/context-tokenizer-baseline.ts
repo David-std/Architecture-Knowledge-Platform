@@ -136,6 +136,7 @@ const countExact = (text: string): number => tokenizer.encode(text).length;
 const tokenizerPort: Tokenizer = {
   id: `huggingface:${model}@${revision}`,
   label: `${model} tokenizer at ${revision}`,
+  quality: "EXACT",
   approximate: false,
   count: countExact,
 };
@@ -149,7 +150,10 @@ const samples = languageEntries.map(([language, text], index) => {
   const fallbackPacket = buildPacket(text, suffix);
   const exactWireTokens = countExact(JSON.stringify(exactPacket));
 
-  if (exactPacket.budget.tokenizer.approximate) {
+  if (
+    exactPacket.budget.tokenizer.quality !== "EXACT" ||
+    exactPacket.budget.tokenizer.approximate
+  ) {
     throw new Error(
       `${language} packet did not use the exact model tokenizer.`,
     );
@@ -159,7 +163,10 @@ const samples = languageEntries.map(([language, text], index) => {
       `${language} packet serialized token count does not match the actual wire JSON.`,
     );
   }
-  if (!fallbackPacket.budget.tokenizer.approximate) {
+  if (
+    fallbackPacket.budget.tokenizer.quality !== "APPROXIMATE" ||
+    !fallbackPacket.budget.tokenizer.approximate
+  ) {
     throw new Error(
       `${language} fallback tokenizer was not labelled approximate.`,
     );
@@ -204,6 +211,7 @@ const report = {
     model,
     revision,
     tokenizerId: tokenizerPort.id,
+    quality: "EXACT",
     exact: true,
   },
   samples,
