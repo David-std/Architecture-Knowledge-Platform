@@ -657,7 +657,7 @@ function reasoningRevisionSetFromRows(
   };
 }
 
-function sameReasoningRevisionSet(
+export function sameReasoningRevisionSet(
   planned: ContextRevisionSet,
   current: ContextRevisionSet,
 ): boolean {
