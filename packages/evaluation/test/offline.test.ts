@@ -31,7 +31,7 @@ describe("offline retrieval benchmark", () => {
     expect(first.vectorDisabled.vectorInvoked).toBe(false);
     expect(first.productionDefault.selected).toBeNull();
     expect(first.measuredSelection.vectorActivatedByDefault).toBe(false);
-    expect(first.runs).toHaveLength(10);
+    expect(first.runs).toHaveLength(11);
     expect(first.runs.every((run) => run.cases === cases.length)).toBe(true);
     expect(first.runs.every((run) => run.evidenceRecallCoverage === 0)).toBe(
       true,
