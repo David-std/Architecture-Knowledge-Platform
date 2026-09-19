@@ -1,8 +1,9 @@
-import type {
-  AssuranceDetector,
-  AssuranceFinding,
-  AssuranceRun,
-  AssuranceSeverity,
+import {
+  IMPLEMENTED_ASSURANCE_DETECTORS,
+  type AssuranceDetector,
+  type AssuranceFinding,
+  type AssuranceRun,
+  type AssuranceSeverity,
 } from "@akp/domain";
 import {
   appendAssuranceFindings,
@@ -12,24 +13,10 @@ import {
   type Postgres,
 } from "@akp/postgres";
 
-export const SUPPORTED_ASSURANCE_DETECTORS = [
-  "GROUNDING",
-  "FRESHNESS",
-  "CONTRADICTION",
-  "DUPLICATE_IDENTITY",
-  "GRAPH_HEALTH",
-  "TEMPORAL_CONSISTENCY",
-  "CODE_GRAPH_FRESHNESS",
-  "LINK_ORPHAN",
-  "SYNTHESIS_ACCESS_BOUNDARY",
-  "GRAPH_DISAGREEMENT",
-  "ORPHAN_WORK",
-  "EXPIRED_CLAIM",
-  "STALE_HANDOFF",
-  "UNSUPPORTED_CAUSALITY",
-] as const satisfies readonly AssuranceDetector[];
+export const SUPPORTED_ASSURANCE_DETECTORS =
+  IMPLEMENTED_ASSURANCE_DETECTORS;
 
-type SupportedDetector = (typeof SUPPORTED_ASSURANCE_DETECTORS)[number];
+type SupportedDetector = (typeof IMPLEMENTED_ASSURANCE_DETECTORS)[number];
 
 function finding(
   detector: SupportedDetector,

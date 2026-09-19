@@ -202,6 +202,24 @@ export const ASSURANCE_DETECTORS = [
 ] as const;
 
 export type AssuranceDetector = (typeof ASSURANCE_DETECTORS)[number];
+
+export const IMPLEMENTED_ASSURANCE_DETECTORS = [
+  "GROUNDING",
+  "FRESHNESS",
+  "CONTRADICTION",
+  "DUPLICATE_IDENTITY",
+  "GRAPH_HEALTH",
+  "TEMPORAL_CONSISTENCY",
+  "CODE_GRAPH_FRESHNESS",
+  "LINK_ORPHAN",
+  "SYNTHESIS_ACCESS_BOUNDARY",
+  "GRAPH_DISAGREEMENT",
+  "ORPHAN_WORK",
+  "EXPIRED_CLAIM",
+  "STALE_HANDOFF",
+  "UNSUPPORTED_CAUSALITY",
+] as const satisfies readonly AssuranceDetector[];
+
 export type AssuranceSeverity = "INFO" | "WARN" | "HIGH" | "CRITICAL";
 
 export interface AssuranceFinding {
