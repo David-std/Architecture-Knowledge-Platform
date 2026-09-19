@@ -288,7 +288,10 @@ export const ReasoningStep = z.discriminatedUnion("operator", [
         .object({
           inputStepId: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/),
           vaultIds: z.array(z.string().uuid()).max(20).default([]),
-          pathPrefixes: z.array(z.string().min(1).max(2048)).max(64).default([]),
+          pathPrefixes: z
+            .array(z.string().min(1).max(2048))
+            .max(64)
+            .default([]),
         })
         .strict(),
     })
@@ -325,7 +328,14 @@ export const ReasoningStep = z.discriminatedUnion("operator", [
       args: z
         .object({
           inputStepId: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/),
-          operation: z.enum(["COUNT", "DISTINCT_COUNT", "SUM", "AVERAGE", "MIN", "MAX"]),
+          operation: z.enum([
+            "COUNT",
+            "DISTINCT_COUNT",
+            "SUM",
+            "AVERAGE",
+            "MIN",
+            "MAX",
+          ]),
           field: z.string().min(1).max(160).optional(),
           groupBy: z.string().min(1).max(160).optional(),
         })
@@ -369,7 +379,10 @@ export const ReasoningStep = z.discriminatedUnion("operator", [
       operator: z.literal("LOAD_RAW"),
       args: z
         .object({
-          inputStepId: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/).optional(),
+          inputStepId: z
+            .string()
+            .regex(/^[a-z][a-z0-9_-]{0,63}$/)
+            .optional(),
           sourceIds: z.array(z.string().uuid()).max(100).default([]),
           maxBytes: z.number().int().min(1).max(10_000_000).default(1_000_000),
         })
