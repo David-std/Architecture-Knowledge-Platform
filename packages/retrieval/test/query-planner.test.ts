@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_QUERY_PLANNER_CAPABILITIES,
+  classifyQueryShape,
   planQuery,
 } from "../src/query-planner.js";
 
@@ -90,6 +91,59 @@ describe("query planner", () => {
       codeAdapterAvailable: false,
       contextPackAvailable: false,
     });
+  });
+
+  it("classifies Deep Spec query-shape signals independently from intent", () => {
+    expect(
+      classifyQueryShape(
+        "Compare the current architecture as_of release R2 for /src/cache/refresh.py; trace the dependency path across the whole corpus for ticket INC-42, verify source evidence from a federated peer ACL.",
+        "CONCEPTUAL",
+      ),
+    ).toEqual({
+      exactIdentifier: true,
+      naturalLanguageConceptual: true,
+      versionSensitiveCurrent: true,
+      asOfTemporal: true,
+      codeSymbolOrPath: true,
+      multiHop: true,
+      corpusGlobalSynthesis: true,
+      ticketWorkProcess: true,
+      comparison: true,
+      sourceVerification: true,
+      permissionSensitiveFederated: true,
+    });
+  });
+
+  it("lets runtime context add shape signals without suppressing inferred ones", () => {
+    const plan = planQuery("verify source evidence", {
+      requestedIntent: "CONCEPTUAL",
+      queryShape: {
+        permissionSensitiveFederated: true,
+        sourceVerification: false,
+      },
+    });
+
+    expect(plan.shape.sourceVerification).toBe(true);
+    expect(plan.shape.permissionSensitiveFederated).toBe(true);
+  });
+
+  it("uses multi-hop query shape to raise only an already-permitted graph budget", () => {
+    const plan = planQuery(
+      "verify the source chain and trace the dependency path",
+      "SOURCE_VERIFICATION",
+      {
+        graphConsistent: true,
+        rawAllowed: false,
+      },
+    );
+
+    expect(plan.shape).toMatchObject({
+      multiHop: true,
+      sourceVerification: true,
+    });
+    expect(plan.channels).toEqual(["exact", "lexical", "graph"]);
+    expect(plan.omittedChannels).toContain("raw");
+    expect(plan.maxGraphHops).toBe(3);
   });
 
   it("selects global, drift and associative strategies only when their capabilities exist", () => {

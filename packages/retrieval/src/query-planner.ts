@@ -14,6 +14,20 @@ export type RetrievalChannel =
 
 export type RetrievalStrategy = "LOCAL" | "GLOBAL" | "DRIFT" | "ASSOCIATIVE";
 
+export interface QueryShape {
+  exactIdentifier: boolean;
+  naturalLanguageConceptual: boolean;
+  versionSensitiveCurrent: boolean;
+  asOfTemporal: boolean;
+  codeSymbolOrPath: boolean;
+  multiHop: boolean;
+  corpusGlobalSynthesis: boolean;
+  ticketWorkProcess: boolean;
+  comparison: boolean;
+  sourceVerification: boolean;
+  permissionSensitiveFederated: boolean;
+}
+
 /**
  * Runtime capabilities used to turn an intent into an executable plan.
  *
@@ -36,10 +50,16 @@ export interface QueryPlannerOptions extends Partial<QueryPlannerCapabilities> {
   requestedIntent?: string;
   /** Partial capabilities are merged with fail-closed defaults. */
   capabilities?: Partial<QueryPlannerCapabilities>;
+  /**
+   * Runtime-known shape signals may add safety/context information that cannot
+   * be inferred from query text alone. False never suppresses an inferred signal.
+   */
+  queryShape?: Partial<QueryShape>;
 }
 
 export interface QueryPlan {
   intent: QueryIntent;
+  shape: QueryShape;
   strategy: RetrievalStrategy;
   channels: RetrievalChannel[];
   maxGraphHops: number;
@@ -57,6 +77,23 @@ export interface QueryPlan {
 // their naming conventions.
 const exactPattern =
   /(?:\b[A-Z][A-Z0-9]{1,15}(?:[-_][A-Z0-9]+)+\b|[/\\][\w.-]+\.(?:md|ts|tsx|java|cs|py)|\b[A-Z][A-Za-z0-9]+(?:Service|Controller|Repository)\b)/;
+
+const codeShapePattern =
+  /(?:[/\\][\w.-]+\.(?:md|ts|tsx|js|jsx|java|cs|py|go|rs)|\b[A-Z][A-Za-z0-9]+(?:Service|Controller|Repository|Client|Handler)\b|\b[A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*|\.[A-Za-z_][A-Za-z0-9_]*)+\b)/;
+
+const QUERY_SHAPE_KEYS: readonly (keyof QueryShape)[] = [
+  "exactIdentifier",
+  "naturalLanguageConceptual",
+  "versionSensitiveCurrent",
+  "asOfTemporal",
+  "codeSymbolOrPath",
+  "multiHop",
+  "corpusGlobalSynthesis",
+  "ticketWorkProcess",
+  "comparison",
+  "sourceVerification",
+  "permissionSensitiveFederated",
+];
 
 const QUERY_INTENTS: ReadonlySet<QueryIntent> = new Set([
   "EXACT_LOOKUP",
@@ -154,6 +191,83 @@ function channelIsAvailable(
 }
 
 /**
+ * Classify orthogonal query-shape signals before retrieval policy is applied.
+ *
+ * Shape is intentionally multi-label: a source-verification request can also
+ * be temporal, code-oriented, multi-hop and permission-sensitive. These
+ * signals never grant a capability.
+ */
+export function classifyQueryShape(
+  query: string,
+  intent?: QueryIntent,
+): QueryShape {
+  const normalized = query.trim().toLowerCase();
+  return {
+    exactIdentifier: exactPattern.test(query),
+    naturalLanguageConceptual:
+      intent === "CONCEPTUAL" ||
+      /\b(explain|what|why|how|concept|define|describe|explica|que|qué|por que|por qué|como|cómo|concepto)\b/u.test(
+        normalized,
+      ),
+    versionSensitiveCurrent:
+      /\b(current|currently|latest|active|effective|today|now|vigente|actual|actualmente|ultimo|último|ultima|última|activo|activa|efectivo|efectiva|hoy|ahora)\b/u.test(
+        normalized,
+      ),
+    asOfTemporal:
+      /\b(as[_ -]?of|historical|history|historico|histórico|historica|histórica|en fecha|at version|at revision)\b/u.test(
+        normalized,
+      ),
+    codeSymbolOrPath:
+      intent === "PROJECT_CODE" ||
+      codeShapePattern.test(query) ||
+      /\b(code|codigo|código|symbol|simbolo|símbolo|class|clase|function|funcion|función|method|metodo|método|file|archivo|path|ruta|repository|repositorio)\b/u.test(
+        normalized,
+      ),
+    multiHop:
+      intent === "IMPACT_ANALYSIS" ||
+      /\b(multi[- ]?hop|trace|traverse|dependency path|dependency chain|impact|impacto|afecta|dependenc|cadena|recorrido)\b/u.test(
+        normalized,
+      ),
+    corpusGlobalSynthesis:
+      intent === "GLOBAL_SYNTHESIS" ||
+      /\b(global|synthesis|sintesis|síntesis|panorama|whole corpus|todo el corpus|corpus-wide)\b/u.test(
+        normalized,
+      ),
+    ticketWorkProcess:
+      intent === "WORKFLOW_EXECUTION" ||
+      /\b(ticket|issue|jira|linear|work item|workitem|workflow|process|task|handoff|claim|incident|incidente|tarea|flujo|proceso)\b/u.test(
+        normalized,
+      ),
+    comparison:
+      intent === "COMPARISON" ||
+      /\b(compare|comparison|comparar|versus|diferencia|difference)\b/u.test(
+        normalized,
+      ) ||
+      normalized.includes(" vs "),
+    sourceVerification:
+      intent === "SOURCE_VERIFICATION" ||
+      /\b(source|fuente|evidence|evidencia|verify|verification|verifica|citation|cita)\b/u.test(
+        normalized,
+      ),
+    permissionSensitiveFederated:
+      /\b(permission|permissions|authorized|authorization|acl|rbac|scope|vault|tenant|federated|federation|peer|cross-space|cross-tenant|permiso|permisos|autorizacion|autorización|alcance|boveda|bóveda|inquilino|federado|federada)\b/u.test(
+        normalized,
+      ),
+  };
+}
+
+function addRuntimeShapeSignals(
+  inferred: QueryShape,
+  supplied: Partial<QueryShape> | undefined,
+): QueryShape {
+  const merged = { ...inferred };
+  for (const key of QUERY_SHAPE_KEYS) {
+    if (supplied?.[key] === true) merged[key] = true;
+  }
+  return merged;
+}
+
+/**
  * Build a deterministic retrieval plan.
  *
  * The second argument accepts either the legacy intent string or an options
@@ -237,6 +351,13 @@ export function planQuery(
   else if (exactPattern.test(query)) intent = "EXACT_LOOKUP";
   else intent = "CONCEPTUAL";
 
+  const inferredShape = classifyQueryShape(query, intent);
+  const suppliedShape =
+    typeof requestedIntentOrOptions === "object" &&
+    requestedIntentOrOptions !== null
+      ? requestedIntentOrOptions.queryShape
+      : undefined;
+  const shape = addRuntimeShapeSignals(inferredShape, suppliedShape);
   const requestedChannels = intentChannels(intent);
   const channels = requestedChannels.filter((channel) =>
     channelIsAvailable(channel, capabilities),
@@ -245,7 +366,7 @@ export function planQuery(
     (channel) => !channelIsAvailable(channel, capabilities),
   );
   const maxGraphHops = channels.includes("graph")
-    ? intent === "IMPACT_ANALYSIS"
+    ? shape.multiHop
       ? 3
       : 1
     : 0;
@@ -260,11 +381,12 @@ export function planQuery(
           : "LOCAL";
   return {
     intent,
+    shape,
     strategy,
     channels,
     maxGraphHops,
     requireEvidence: intent === "SOURCE_VERIFICATION",
-    diversityLimitPerDocument: intent === "GLOBAL_SYNTHESIS" ? 1 : 3,
+    diversityLimitPerDocument: shape.corpusGlobalSynthesis ? 1 : 3,
     capabilities,
     omittedChannels,
   };

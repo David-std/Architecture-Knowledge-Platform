@@ -1182,7 +1182,16 @@ export async function queryKnowledge(
     ...(options.plannerCapabilities ?? {}),
   };
   const plan =
-    options.plan ?? planQuery(input.query, input.intent, capabilities);
+    options.plan ??
+    planQuery(input.query, {
+      ...(input.intent ? { requestedIntent: input.intent } : {}),
+      capabilities,
+      queryShape: {
+        permissionSensitiveFederated: input.federated || vaultIds.length > 1,
+        ...(input.projectId ? { ticketWorkProcess: true } : {}),
+        ...(input.mode === "PROJECT_CODE" ? { codeSymbolOrPath: true } : {}),
+      },
+    });
   const effectiveStrategy = options.retrievalPolicy?.graphMode ?? plan.strategy;
   const retrievalPolicy = resolveRetrievalPolicy({
     ...(options.retrievalPolicy ?? {}),
