@@ -575,7 +575,8 @@ async function measureIncrementalEmbeddingUpdate(
   const vault = manifest.vaults[0];
   if (!vault) throw new Error("Runtime benchmark requires at least one vault.");
   const vaultId = fixture.vaultIds.get(vault.id);
-  if (!vaultId) throw new Error(`Missing runtime vault mapping for ${vault.id}`);
+  if (!vaultId)
+    throw new Error(`Missing runtime vault mapping for ${vault.id}`);
 
   const source = await db.pool.query<{ id: string; body: string }>(
     `select u.id,u.body
@@ -591,7 +592,8 @@ async function measureIncrementalEmbeddingUpdate(
     [fixture.spaceId, vaultId, fixture.corpusRevision],
   );
   const changed = source.rows[0];
-  if (!changed) throw new Error("Runtime benchmark has no embeddable update unit.");
+  if (!changed)
+    throw new Error("Runtime benchmark has no embeddable update unit.");
 
   const updateCorpusRevision = `${fixture.corpusRevision}:incremental-vector`;
   const changedBody = `${changed.body}\n\nIncremental vector benchmark delta.`;

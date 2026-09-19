@@ -260,7 +260,9 @@ async function measureScenario(
 ): Promise<ScenarioMeasurement> {
   await configureMode(client, mode);
   const [fixtureCount, eligibleCount] = await Promise.all([
-    client.query<{ count: string }>("select count(*)::text as count from p0_filtered_ann_probe"),
+    client.query<{ count: string }>(
+      "select count(*)::text as count from p0_filtered_ann_probe",
+    ),
     client.query<{ count: string }>(
       "select count(*)::text as count from p0_filtered_ann_probe where vault_id=$1::uuid and path like $2",
       [vaultA, pathPattern],

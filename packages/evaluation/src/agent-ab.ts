@@ -104,10 +104,39 @@ function containsTerm(text: string, term: string): boolean {
 }
 
 const FAITHFULNESS_STOP_WORDS = new Set([
-  "the", "and", "for", "that", "with", "from", "this", "into", "must",
-  "what", "which", "when", "where", "does", "before", "after", "using",
-  "los", "las", "del", "para", "que", "con", "desde", "este", "esta",
-  "como", "cuando", "donde", "debe", "deben", "una", "uno",
+  "the",
+  "and",
+  "for",
+  "that",
+  "with",
+  "from",
+  "this",
+  "into",
+  "must",
+  "what",
+  "which",
+  "when",
+  "where",
+  "does",
+  "before",
+  "after",
+  "using",
+  "los",
+  "las",
+  "del",
+  "para",
+  "que",
+  "con",
+  "desde",
+  "este",
+  "esta",
+  "como",
+  "cuando",
+  "donde",
+  "debe",
+  "deben",
+  "una",
+  "uno",
 ]);
 
 function lexicalSupportTokens(value: string): string[] {
@@ -386,9 +415,8 @@ export function aggregateAgentAbArm(
         ? null
         : mean(measured.map((value) => Number(value)));
     })(),
-    noAnswerCases: observations.filter(
-      (item) => item.noAnswerCorrect !== null,
-    ).length,
+    noAnswerCases: observations.filter((item) => item.noAnswerCorrect !== null)
+      .length,
     totalMissedConstraints: observations.reduce(
       (sum, item) => sum + item.missedConstraints.length,
       0,

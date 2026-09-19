@@ -2,14 +2,6 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { lstat, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type {
-  SourceConnectorCheckpoint,
-  SourceConnectorDescriptor,
-  SourceConnectorObject,
-  SourceConnectorPort,
-  SourceConnectorPullPage,
-  SourceConnectorPullRequest,
-} from "@akp/domain";
 
 const exec = promisify(execFile);
 export class GitKnowledgeFileNotFoundError extends Error {
@@ -27,6 +19,86 @@ function isMissingGitPathError(error: unknown): boolean {
   return /path .* does not exist|exists on disk, but not in|path .* not in .* tree/i.test(
     detail,
   );
+}
+
+type SourceConnectorCheckpoint = {
+  kind: "REVISION" | "OPAQUE_CURSOR";
+  value: string;
+};
+
+type SourceConnectorDescriptor = {
+  schemaVersion: 1;
+  connectorId: string;
+  sourceSystem: string;
+  objectTypes: string[];
+  incremental: { cursor: boolean; webhook: boolean };
+  permissionFidelity:
+    | "SOURCE_ACL_EXACT"
+    | "SOURCE_ACL_MAPPED"
+    | "WORKSPACE_WIDE"
+    | "NONE";
+  replication: "FULL_MIRROR" | "METADATA_ONLY" | "REFERENCE";
+  dataResidency: "LOCAL" | "ORG" | "EXTERNAL";
+  attachments: { supported: boolean; maxBytes?: number };
+  rateLimit:
+    | { kind: "NONE" }
+    | { kind: "DECLARED"; requestsPerMinute: number; burst?: number };
+  deletionPropagation: "TOMBSTONE" | "NONE";
+  sourceVersioning: boolean;
+  contentTrust: "UNTRUSTED_EXTERNAL";
+};
+
+type SourceConnectorObject = {
+  objectId: string;
+  objectType: string;
+  sourceSystem: string;
+  sourceVersion: string;
+  operation: "UPSERT" | "DELETE";
+  path?: string;
+  title?: string;
+  content?: string;
+  contentType?: string;
+  contentTrust: "UNTRUSTED_EXTERNAL";
+  permissions: {
+    fidelity:
+      | "SOURCE_ACL_EXACT"
+      | "SOURCE_ACL_MAPPED"
+      | "WORKSPACE_WIDE"
+      | "NONE";
+    uncertain: boolean;
+    aclFingerprint?: string;
+  };
+  attachments: Array<{
+    id: string;
+    name: string;
+    contentType?: string;
+    sizeBytes?: number;
+  }>;
+  metadata: Record<string, unknown>;
+};
+
+type SourceConnectorPullRequest = {
+  from?: SourceConnectorCheckpoint;
+  target: SourceConnectorCheckpoint;
+  pageCursor?: string;
+  limit: number;
+};
+
+type SourceConnectorPullPage = {
+  objects: SourceConnectorObject[];
+  target: SourceConnectorCheckpoint;
+  nextPageCursor: string | null;
+  completed: boolean;
+};
+
+interface SourceConnectorPort {
+  describe(): Promise<SourceConnectorDescriptor>;
+  checkpoint(): Promise<SourceConnectorCheckpoint>;
+  pull(request: SourceConnectorPullRequest): Promise<SourceConnectorPullPage>;
+  fetchById?(
+    objectId: string,
+    checkpoint?: SourceConnectorCheckpoint,
+  ): Promise<SourceConnectorObject | null>;
 }
 
 export class GitKnowledgeStore {
@@ -524,7 +596,6 @@ export class GitKnowledgeStore {
   }
 }
 
-
 export interface LocalGitSourceConnectorOptions {
   connectorId?: string;
   includeExtensions?: string[];
@@ -627,7 +698,9 @@ export class LocalGitSourceConnector implements SourceConnectorPort {
   }
 
   private includedPath(relativePath: string): boolean {
-    return this.includeExtensions.has(path.posix.extname(relativePath).toLowerCase());
+    return this.includeExtensions.has(
+      path.posix.extname(relativePath).toLowerCase(),
+    );
   }
 
   private async objectAt(
@@ -636,7 +709,10 @@ export class LocalGitSourceConnector implements SourceConnectorPort {
   ): Promise<SourceConnectorObject | null> {
     // Git symlinks are blobs with mode 120000. Never turn their target text
     // into mirrored source content.
-    if (!["100644", "100755"].includes(entry.mode) || !this.includedPath(entry.path)) {
+    if (
+      !["100644", "100755"].includes(entry.mode) ||
+      !this.includedPath(entry.path)
+    ) {
       return null;
     }
     const content = await this.store.showFile(revision, entry.path);
@@ -667,8 +743,14 @@ export class LocalGitSourceConnector implements SourceConnectorPort {
     };
   }
 
-  async pull(request: SourceConnectorPullRequest): Promise<SourceConnectorPullPage> {
-    if (!Number.isSafeInteger(request.limit) || request.limit < 1 || request.limit > 500) {
+  async pull(
+    request: SourceConnectorPullRequest,
+  ): Promise<SourceConnectorPullPage> {
+    if (
+      !Number.isSafeInteger(request.limit) ||
+      request.limit < 1 ||
+      request.limit > 500
+    ) {
       throw new Error("SOURCE_CONNECTOR_PULL_LIMIT_INVALID");
     }
     const target = this.assertRevisionCheckpoint(request.target);
@@ -707,8 +789,7 @@ export class LocalGitSourceConnector implements SourceConnectorPort {
         const previous = fromEntries.get(relativePath);
         if (!this.includedPath(relativePath)) return false;
         return (
-          current?.blob !== previous?.blob ||
-          current?.mode !== previous?.mode
+          current?.blob !== previous?.blob || current?.mode !== previous?.mode
         );
       })
       .sort();

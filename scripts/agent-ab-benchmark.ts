@@ -706,10 +706,7 @@ async function main(): Promise<void> {
       for (const [arm, input] of ordered) {
         const observation = await runArm(arm, task, input, config);
         observations.push(observation);
-        if (
-          arm === "B_AKP_CONTEXT_PACKET" &&
-          noiseProbeTaskIds.has(task.id)
-        ) {
+        if (arm === "B_AKP_CONTEXT_PACKET" && noiseProbeTaskIds.has(task.id)) {
           noiseProbeQueue.push({ task, input, observation });
         }
       }

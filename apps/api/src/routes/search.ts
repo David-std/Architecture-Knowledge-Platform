@@ -641,9 +641,7 @@ function reasoningRevisionSetFromRows(
         vectorRevision: row.vector_revision
           ? String(row.vector_revision)
           : null,
-        graphRevision: row.graph_revision
-          ? String(row.graph_revision)
-          : null,
+        graphRevision: row.graph_revision ? String(row.graph_revision) : null,
         contextPackRevision: row.context_pack_revision
           ? String(row.context_pack_revision)
           : null,
@@ -663,8 +661,7 @@ export function sameReasoningRevisionSet(
 ): boolean {
   const stable = (value: ContextRevisionSet) => ({
     spaceId: value.spaceId,
-    retrievalConfigurationVersion:
-      value.retrievalConfigurationVersion ?? null,
+    retrievalConfigurationVersion: value.retrievalConfigurationVersion ?? null,
     vaults: [...value.vaults]
       .map((vault) => ({
         vaultId: vault.vaultId,
@@ -2898,9 +2895,7 @@ export function registerSearchRoutes(
         codeAdapterAvailable: projectCode?.available ?? false,
       });
       const plan = planQuery(parsed.data.query, {
-        ...(parsed.data.intent
-          ? { requestedIntent: parsed.data.intent }
-          : {}),
+        ...(parsed.data.intent ? { requestedIntent: parsed.data.intent } : {}),
         capabilities,
         queryShape: {
           permissionSensitiveFederated:
@@ -3273,9 +3268,7 @@ export function registerSearchRoutes(
         codeAdapterAvailable: projectCode?.available ?? false,
       });
       const plan = planQuery(parsed.data.query, {
-        ...(parsed.data.intent
-          ? { requestedIntent: parsed.data.intent }
-          : {}),
+        ...(parsed.data.intent ? { requestedIntent: parsed.data.intent } : {}),
         capabilities,
         queryShape: {
           permissionSensitiveFederated:
@@ -3458,13 +3451,13 @@ export function registerSearchRoutes(
           case "LOAD_RAW":
             executionOptions.channels = ["raw"];
             break;
-          case "TEMPORAL_AT":
-            throw new Error(
-              "REASONING_TEMPORAL_AT_REQUIRES_AS_OF_SEARCH_CONTRACT",
-            );
         }
 
-        const result = await queryKnowledge(db, operatorRequest, executionOptions);
+        const result = await queryKnowledge(
+          db,
+          operatorRequest,
+          executionOptions,
+        );
         if (signal.aborted) throw new Error("REASONING_EXECUTION_ABORTED");
         return result;
       };
@@ -3609,10 +3602,7 @@ export function registerSearchRoutes(
               ),
             );
             if (
-              !sameReasoningRevisionSet(
-                reasoningRevisionSet,
-                finalRevisionSet,
-              )
+              !sameReasoningRevisionSet(reasoningRevisionSet, finalRevisionSet)
             ) {
               throw new Error("CONTEXT_REVISION_CHANGED");
             }

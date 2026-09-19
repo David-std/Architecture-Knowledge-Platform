@@ -1,13 +1,16 @@
-import { access, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdtemp,
+  readFile,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
-import {
-  GitKnowledgeStore,
-  LocalGitSourceConnector,
-} from "../src/index.js";
+import { GitKnowledgeStore, LocalGitSourceConnector } from "../src/index.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -118,7 +121,6 @@ describe("isolated draft worktrees", () => {
     await store.cleanupDraft(branch);
   });
 });
-
 
 describe("local Git source connector", () => {
   it("uses fixed revision checkpoints, paginates changes and emits deletion tombstones", async () => {

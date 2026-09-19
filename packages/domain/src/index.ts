@@ -79,12 +79,8 @@ export interface KnowledgeRelation {
   source: "frontmatter" | "markdown" | "deterministic" | "reviewed_ai";
 }
 
-
 export type SourceConnectorPermissionFidelity =
-  | "SOURCE_ACL_EXACT"
-  | "SOURCE_ACL_MAPPED"
-  | "WORKSPACE_WIDE"
-  | "NONE";
+  "SOURCE_ACL_EXACT" | "SOURCE_ACL_MAPPED" | "WORKSPACE_WIDE" | "NONE";
 
 export interface SourceConnectorDescriptor {
   schemaVersion: 1;
