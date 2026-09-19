@@ -1,34 +1,25 @@
-import type {
-  FastifyInstance,
-  FastifyReply,
-  FastifyRequest,
-} from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
   ASSURANCE_DETECTORS,
   IMPLEMENTED_ASSURANCE_DETECTORS,
-} from "@akp/domain";
-import {
   cancelAssuranceRun,
   resolveAuthorizedVaultScope,
   submitAssuranceRun,
   type Postgres,
 } from "@akp/postgres";
-import {
-  actorOf,
-  audit,
-  requirePermission,
-  type Permission,
-} from "../auth.js";
+import { actorOf, audit, requirePermission, type Permission } from "../auth.js";
 
 const UUID = z.string().uuid();
 const RunBody = z
   .object({
     spaceId: UUID,
     vaultId: UUID,
-    detectors: z.array(z.enum(IMPLEMENTED_ASSURANCE_DETECTORS)).min(1).max(
-      IMPLEMENTED_ASSURANCE_DETECTORS.length,
-    ).optional(),
+    detectors: z
+      .array(z.enum(IMPLEMENTED_ASSURANCE_DETECTORS))
+      .min(1)
+      .max(IMPLEMENTED_ASSURANCE_DETECTORS.length)
+      .optional(),
   })
   .strict();
 
@@ -305,10 +296,9 @@ export function registerAssuranceRoutes(
       const run = await db.pool.query<{
         space_id: string;
         vault_id: string;
-      }>(
-        "select space_id,vault_id from assurance_runs where id=$1",
-        [request.params.id],
-      );
+      }>("select space_id,vault_id from assurance_runs where id=$1", [
+        request.params.id,
+      ]);
       const row = run.rows[0];
       if (!row) {
         return reply.code(404).send({ code: "ASSURANCE_RUN_NOT_FOUND" });
@@ -327,9 +317,7 @@ export function registerAssuranceRoutes(
       }
       const cancelled = await cancelAssuranceRun(db, request.params.id);
       if (!cancelled) {
-        return reply
-          .code(409)
-          .send({ code: "ASSURANCE_RUN_NOT_CANCELLABLE" });
+        return reply.code(409).send({ code: "ASSURANCE_RUN_NOT_CANCELLABLE" });
       }
       await audit(
         db,

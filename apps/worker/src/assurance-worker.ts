@@ -13,8 +13,7 @@ import {
   type Postgres,
 } from "@akp/postgres";
 
-export const SUPPORTED_ASSURANCE_DETECTORS =
-  IMPLEMENTED_ASSURANCE_DETECTORS;
+export const SUPPORTED_ASSURANCE_DETECTORS = IMPLEMENTED_ASSURANCE_DETECTORS;
 
 type SupportedDetector = (typeof IMPLEMENTED_ASSURANCE_DETECTORS)[number];
 

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Postgres } from "./index.js";
 
-const ASSURANCE_DETECTORS = [
+export const ASSURANCE_DETECTORS = [
   "GROUNDING",
   "FRESHNESS",
   "CONTRADICTION",
@@ -22,6 +22,23 @@ const ASSURANCE_DETECTORS = [
 ] as const;
 
 type AssuranceDetector = (typeof ASSURANCE_DETECTORS)[number];
+
+export const IMPLEMENTED_ASSURANCE_DETECTORS = [
+  "GROUNDING",
+  "FRESHNESS",
+  "CONTRADICTION",
+  "DUPLICATE_IDENTITY",
+  "GRAPH_HEALTH",
+  "TEMPORAL_CONSISTENCY",
+  "CODE_GRAPH_FRESHNESS",
+  "LINK_ORPHAN",
+  "SYNTHESIS_ACCESS_BOUNDARY",
+  "GRAPH_DISAGREEMENT",
+  "ORPHAN_WORK",
+  "EXPIRED_CLAIM",
+  "STALE_HANDOFF",
+  "UNSUPPORTED_CAUSALITY",
+] as const satisfies readonly AssuranceDetector[];
 
 interface AssuranceFinding {
   detector: AssuranceDetector;
