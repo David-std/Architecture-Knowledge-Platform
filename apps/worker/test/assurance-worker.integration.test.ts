@@ -297,6 +297,11 @@ describeDb("continuous assurance detector execution", () => {
     const documentA = randomUUID();
     const documentB = randomUUID();
     const projectId = randomUUID();
+    const generationId = randomUUID();
+    const unitA1 = randomUUID();
+    const unitA2 = randomUUID();
+    const unitB1 = randomUUID();
+    const unitB2 = randomUUID();
     const projectionId = randomUUID();
     const runtimeProjectionId = randomUUID();
     const nodeId = randomUUID();
@@ -304,6 +309,10 @@ describeDb("continuous assurance detector execution", () => {
     const currentCommit = "b".repeat(40);
     const indexedCommit = "a".repeat(40);
     const graphRevision = `${indexedCommit}:fixture-v1`;
+    const corpusRevision = "assurance-semantic-corpus-v1";
+    const semanticVector = `[${Array.from({ length: 64 }, (_, index) =>
+      index === 0 ? "1" : "0",
+    ).join(",")}]`;
     const scopeId = `project:${vaultId.toLowerCase()}:${slug.toLowerCase()}`;
 
     try {
@@ -330,6 +339,91 @@ describeDb("continuous assurance detector execution", () => {
           sha256("assurance-beta"),
           JSON.stringify(["ASSURANCE-BETA"]),
         ],
+      );
+
+      await db.pool.query(
+        `insert into vault_index_revisions(
+           space_id,vault_id,corpus_revision,lexical_revision,vector_revision,
+           graph_revision,context_pack_revision,status,warnings
+         ) values($1,$2,$3,$3,$3,$3,$3,'READY','[]'::jsonb)`,
+        [spaceId, vaultId, corpusRevision],
+      );
+      await db.pool.query(
+        `insert into knowledge_units(
+           id,document_id,space_id,vault_id,unit_key,unit_type,body,content_hash,
+           corpus_revision,lifecycle,trust_tier,token_estimate,
+           document_revision,structural_order,container_only,embedding_eligible
+         ) values
+           ($1,$5,$7,$8,'a-1','RULE','Semantic duplicate rule alpha one',$9,
+            $13,'ACTIVE','HUMAN_REVIEWED',8,'rev-identity',1,false,true),
+           ($2,$5,$7,$8,'a-2','RULE','Semantic duplicate rule alpha two',$10,
+            $13,'ACTIVE','HUMAN_REVIEWED',8,'rev-identity',2,false,true),
+           ($3,$6,$7,$8,'b-1','RULE','Semantically equivalent beta one',$11,
+            $13,'ACTIVE','HUMAN_REVIEWED',8,'rev-identity',1,false,true),
+           ($4,$6,$7,$8,'b-2','RULE','Semantically equivalent beta two',$12,
+            $13,'ACTIVE','HUMAN_REVIEWED',8,'rev-identity',2,false,true)`,
+        [
+          unitA1,
+          unitA2,
+          unitB1,
+          unitB2,
+          documentA,
+          documentB,
+          spaceId,
+          vaultId,
+          sha256("semantic-unit-a-1"),
+          sha256("semantic-unit-a-2"),
+          sha256("semantic-unit-b-1"),
+          sha256("semantic-unit-b-2"),
+          corpusRevision,
+        ],
+      );
+      await db.pool.query(
+        `insert into embedding_generations(
+           id,space_id,vault_id,provider,model,model_revision,dimensions,
+           normalization,configuration_version,corpus_revision,status,
+           input_strategy,configuration_hash,runtime
+         ) values(
+           $1,$2,$3,'assurance-fixture','semantic-fixture','1',64,
+           'l2','semantic-assurance-v1',$4,'BUILDING',
+           'unit-body-v1',$5,'integration-test'
+         )`,
+        [
+          generationId,
+          spaceId,
+          vaultId,
+          corpusRevision,
+          sha256("semantic-assurance-v1"),
+        ],
+      );
+      await db.pool.query(
+        `insert into unit_embeddings(
+           unit_id,generation_id,content_hash,embedding,embedding_dimensions
+         ) values
+           ($1,$5,$6,$10::vector,64),
+           ($2,$5,$7,$10::vector,64),
+           ($3,$5,$8,$10::vector,64),
+           ($4,$5,$9,$10::vector,64)`,
+        [
+          unitA1,
+          unitA2,
+          unitB1,
+          unitB2,
+          generationId,
+          sha256("semantic-unit-a-1"),
+          sha256("semantic-unit-a-2"),
+          sha256("semantic-unit-b-1"),
+          sha256("semantic-unit-b-2"),
+          semanticVector,
+        ],
+      );
+      await db.pool.query(
+        "update embedding_generations set status='READY' where id=$1",
+        [generationId],
+      );
+      await db.pool.query(
+        "select * from akp_activate_embedding_generation($1)",
+        [generationId],
       );
 
       await db.pool.query(
@@ -421,6 +515,7 @@ describeDb("continuous assurance detector execution", () => {
         vaultId,
         trigger: "MANUAL",
         detectors: [
+          "FRESHNESS",
           "DUPLICATE_IDENTITY",
           "GRAPH_HEALTH",
           "CODE_GRAPH_FRESHNESS",
@@ -457,6 +552,14 @@ describeDb("continuous assurance detector execution", () => {
             code: "AMBIGUOUS_KNOWLEDGE_IDENTITY",
           }),
           expect.objectContaining({
+            detector: "DUPLICATE_IDENTITY",
+            code: "SEMANTIC_DUPLICATE_CANDIDATE",
+          }),
+          expect.objectContaining({
+            detector: "FRESHNESS",
+            code: "CODE_GRAPH_BEHIND_REPOSITORY_HEAD",
+          }),
+          expect.objectContaining({
             detector: "LINK_GAP",
             code: "MISSING_RESOLVED_LINK_RELATION",
           }),
@@ -489,6 +592,21 @@ describeDb("continuous assurance detector execution", () => {
         nodeId,
       ]);
       await db.pool.query("delete from projects where id=$1", [projectId]);
+      await db.pool.query(
+        "delete from unit_embeddings where generation_id=$1",
+        [generationId],
+      );
+      await db.pool.query("delete from embedding_generations where id=$1", [
+        generationId,
+      ]);
+      await db.pool.query(
+        "delete from knowledge_units where id=any($1::uuid[])",
+        [[unitA1, unitA2, unitB1, unitB2]],
+      );
+      await db.pool.query(
+        "delete from vault_index_revisions where space_id=$1 and vault_id=$2",
+        [spaceId, vaultId],
+      );
       await db.pool.query(
         "delete from knowledge_documents where id=any($1::uuid[])",
         [[documentA, documentB]],

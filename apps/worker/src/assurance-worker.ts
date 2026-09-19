@@ -330,6 +330,40 @@ async function collectDetectorFindings(
         scope,
       );
 
+      const codeGraphBehind = await db.pool.query<{
+        project_id: string;
+        slug: string;
+        project_commit: string;
+        active_projection_id: string;
+        active_source_revision: string;
+      }>(
+        `select p.id::text project_id,p.slug,
+                lower(p.metadata->>'commit') project_commit,
+                active.id::text active_projection_id,
+                lower(active.source_revision) active_source_revision
+           from projects p
+           join lateral (
+             select g.id,g.source_revision
+               from federated_graph_projection_revisions g
+              where g.space_id=p.space_id
+                and g.vault_id=p.vault_id
+                and g.graph_domain='CODE'
+                and g.scope_id=
+                    'project:'||lower(p.vault_id::text)||':'||lower(p.slug)
+                and g.lifecycle='ACTIVE'
+              order by g.activated_at desc nulls last,g.updated_at desc
+              limit 1
+           ) active on true
+          where p.space_id=$1 and p.vault_id=$2
+            and p.metadata->>'commit' ~ '^[a-fA-F0-9]{40}$'
+            and coalesce(p.metadata#>>'{codeGraph,status}','REQUESTED')
+                <>'DISABLED'
+            and lower(active.source_revision)<>lower(p.metadata->>'commit')
+          order by p.id
+          limit 500`,
+        scope,
+      );
+
       const communities = await db.pool.query<{
         id: string;
         community_revision: string;
@@ -436,6 +470,23 @@ async function collectDetectorFindings(
           ),
         ),
         ...projectionFindings,
+        ...codeGraphBehind.rows.map((row) =>
+          findingForScope(
+            run.vaultId,
+            detector,
+            "HIGH",
+            "CODE_GRAPH_BEHIND_REPOSITORY_HEAD",
+            "project",
+            row.project_id,
+            "The active Code Graph was built from an older repository commit than the current immutable project snapshot.",
+            {
+              slug: row.slug,
+              projectCommit: row.project_commit,
+              activeProjectionId: row.active_projection_id,
+              activeSourceRevision: row.active_source_revision,
+            },
+          ),
+        ),
         ...communities.rows.map((row) =>
           findingForScope(
             run.vaultId,
@@ -584,19 +635,99 @@ async function collectDetectorFindings(
           limit 500`,
         scope,
       );
-      return rows.rows.map((row) => ({
-        ...findingForScope(
-          run.vaultId,
-          detector,
-          "HIGH",
-          "AMBIGUOUS_KNOWLEDGE_IDENTITY",
-          "knowledge_identity",
-          row.normalized_identity,
-          "Multiple active knowledge documents share a normalized path/title/alias identity signal.",
-          { signals: row.signals },
-        ),
-        targetIds: row.document_ids,
-      }));
+      const semantic = await db.pool.query<{
+        left_id: string;
+        right_id: string;
+        matching_units: number;
+        left_units: number;
+        right_units: number;
+        max_similarity: number;
+      }>(
+        `with active_generation as (
+           select g.id
+             from embedding_generations g
+             join vault_index_revisions i
+               on i.space_id=g.space_id
+              and i.vault_id=g.vault_id
+              and i.corpus_revision=g.corpus_revision
+            where g.space_id=$1 and g.vault_id=$2
+              and g.status='ACTIVE'
+            order by g.activated_at desc nulls last,g.created_at desc,g.id
+            limit 1
+         ),
+         sample as (
+           select e.unit_id,u.document_id,e.embedding
+             from active_generation g
+             join unit_embeddings e on e.generation_id=g.id
+             join knowledge_units u on u.id=e.unit_id
+             join knowledge_documents d on d.id=u.document_id
+            where u.space_id=$1 and u.vault_id=$2
+              and u.embedding_eligible=true
+              and u.lifecycle in ('ACTIVE','DISPUTED')
+              and d.lifecycle in ('ACTIVE','DISPUTED')
+              and d.refresh_status not in ('STALE_BLOCKED','INVALID')
+              and e.content_hash=u.content_hash
+            order by e.unit_id
+            limit 300
+         ),
+         matches as (
+           select a.document_id::text left_id,
+                  b.document_id::text right_id,
+                  count(*)::int matching_units,
+                  count(distinct a.unit_id)::int left_units,
+                  count(distinct b.unit_id)::int right_units,
+                  max(1-(a.embedding <=> b.embedding)) max_similarity
+             from sample a
+             join sample b
+               on a.document_id::text<b.document_id::text
+              and 1-(a.embedding <=> b.embedding)>=0.995
+            group by a.document_id,b.document_id
+         )
+         select left_id,right_id,matching_units,left_units,right_units,
+                max_similarity
+           from matches
+          where left_units>=2 and right_units>=2
+          order by max_similarity desc,left_id,right_id
+          limit 100`,
+        scope,
+      );
+
+      return [
+        ...rows.rows.map((row) => ({
+          ...findingForScope(
+            run.vaultId,
+            detector,
+            "HIGH",
+            "AMBIGUOUS_KNOWLEDGE_IDENTITY",
+            "knowledge_identity",
+            row.normalized_identity,
+            "Multiple active knowledge documents share a normalized path/title/alias identity signal.",
+            { signals: row.signals },
+          ),
+          targetIds: row.document_ids,
+        })),
+        ...semantic.rows.map((row) => ({
+          ...findingForScope(
+            run.vaultId,
+            detector,
+            "MEDIUM",
+            "SEMANTIC_DUPLICATE_CANDIDATE",
+            "knowledge_identity_candidate",
+            `${row.left_id}:${row.right_id}`,
+            "Two active knowledge documents contain multiple independently embedded units with near-identical semantic vectors and require human duplicate review.",
+            {
+              matchingUnits: Number(row.matching_units),
+              leftUnits: Number(row.left_units),
+              rightUnits: Number(row.right_units),
+              maxSimilarity: Number(row.max_similarity),
+              similarityThreshold: 0.995,
+              boundedSampleUnits: 300,
+              canonicalDecision: "HUMAN_REVIEW_REQUIRED",
+            },
+          ),
+          targetIds: [row.left_id, row.right_id],
+        })),
+      ];
     }
     case "GRAPH_HEALTH": {
       const revisionMismatch = await db.pool.query<{
