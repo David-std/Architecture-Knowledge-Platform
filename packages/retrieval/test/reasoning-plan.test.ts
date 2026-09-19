@@ -105,8 +105,12 @@ function context(overrides: Record<string, unknown> = {}) {
       maxGraphHops: 3,
       allowExternalPeers: false,
       allowedExternalPeerIds: [],
+      allowedModelRoles: ["REASONING_PLAN"],
       allowedModelProviders: ["local-model"],
       allowedDataResidencies: ["local"],
+      allowedResidenciesByModelRole: {
+        REASONING_PLAN: ["local"],
+      },
       pathAuthorizer: (_vaultId: string, prefix: string) =>
         prefix.startsWith("allowed/"),
       ...overrides,
@@ -351,12 +355,13 @@ describe("safe reasoning plan schema and validation", () => {
     }
   });
 
-  it("enforces external peer, model-provider and data-residency policy", () => {
+  it("enforces peer, model-role, provider and residency policy", () => {
     const plan = validPlan();
     plan.steps[0] = {
       ...plan.steps[0]!,
       executionTarget: { kind: "EXTERNAL_PEER", peerId: "peer-unapproved" },
       processing: {
+        modelRole: "REASONING_PLAN",
         modelProvider: "remote-unapproved",
         dataResidency: "outside-policy",
       },
@@ -368,6 +373,9 @@ describe("safe reasoning plan schema and validation", () => {
       expect(codes).toContain("REASONING_PLAN_EXTERNAL_PEER_DENIED");
       expect(codes).toContain("REASONING_PLAN_MODEL_PROVIDER_DENIED");
       expect(codes).toContain("REASONING_PLAN_DATA_RESIDENCY_DENIED");
+      expect(codes).toContain(
+        "REASONING_PLAN_MODEL_ROLE_RESIDENCY_DENIED",
+      );
     }
   });
 });
