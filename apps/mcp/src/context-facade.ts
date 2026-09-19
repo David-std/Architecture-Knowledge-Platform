@@ -273,19 +273,91 @@ function enrichBootstrapResult(value: unknown): Record<string, unknown> {
   };
 }
 
+type AkpContextStatus = "OK" | "NO_ANSWER" | "DEGRADED" | "ERROR";
+
+interface FacadeFailure {
+  code: string;
+  statusCode: number | null;
+}
+
+function facadeFailure(error: unknown): FacadeFailure {
+  const message = error instanceof Error ? error.message : String(error);
+  const api = /^AKP API (\d+):\s*(.+)$/u.exec(message);
+  if (api) {
+    let code = "AKP_API_ERROR";
+    try {
+      const body = JSON.parse(api[2] ?? "{}") as Record<string, unknown>;
+      if (typeof body.code === "string" && /^[A-Z0-9_]+$/u.test(body.code)) {
+        code = body.code;
+      }
+    } catch {
+      // Preserve a bounded generic code; raw HTTP bodies never become policy.
+    }
+    return { code, statusCode: Number(api[1]) };
+  }
+  if (/^[A-Z][A-Z0-9_]{2,120}$/u.test(message)) {
+    return { code: message, statusCode: null };
+  }
+  return { code: "AKP_CONTEXT_DELEGATE_FAILED", statusCode: null };
+}
+
+function explicitNoAnswer(result: unknown): unknown | null {
+  const record = objectRecord(result);
+  if (record.status === "NO_ANSWER") {
+    return record.noAnswer ?? { explicit: true };
+  }
+  return record.noAnswer && record.noAnswer !== false ? record.noAnswer : null;
+}
+
 function envelope(
   action: AkpContextAction,
   result: unknown,
   delegatedTo: string,
+  status?: AkpContextStatus,
+  diagnostics?: Record<string, unknown>,
+) {
+  const noAnswer = explicitNoAnswer(result);
+  return {
+    schemaVersion: 1,
+    action,
+    status: status ?? (noAnswer ? ("NO_ANSWER" as const) : ("OK" as const)),
+    delegatedTo,
+    result,
+    ...(noAnswer ? { noAnswer } : {}),
+    ...(diagnostics ? { diagnostics } : {}),
+  };
+}
+
+function failureEnvelope(
+  action: AkpContextAction,
+  delegatedTo: string,
+  status: Extract<AkpContextStatus, "DEGRADED" | "ERROR">,
+  failure: FacadeFailure,
+  diagnostics: Record<string, unknown>,
 ) {
   return {
     schemaVersion: 1,
     action,
-    status: "OK" as const,
+    status,
     delegatedTo,
-    result,
+    result: null,
+    error: {
+      code: failure.code,
+      statusCode: failure.statusCode,
+    },
+    diagnostics,
   };
 }
+
+const OPTIONAL_CODE_GRAPH_FAILURES = new Set([
+  "CODE_GRAPH_NOT_READY",
+  "CODE_GRAPH_SOURCE_REVISION_STALE",
+]);
+
+const STRICT_REVISION_FAILURES = new Set([
+  "CONTEXT_REVISION_CHANGED",
+  "CONTEXT_REVISION_PIN_REQUIRED",
+]);
 
 export async function dispatchAkpContext(
   rawInput: unknown,
@@ -301,22 +373,41 @@ export async function dispatchAkpContext(
         input.sessionId,
         "AKP_CONTEXT_SESSION_REQUIRED",
       );
-      const bootstrap = await deps.api(
-        `/v1/sessions/${encodeURIComponent(sessionId)}/bootstrap`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            ...(input.query ? { query: input.query } : {}),
-            intent: input.intent ?? "WORKFLOW_EXECUTION",
-            packetMode: input.packetMode,
-          }),
-        },
-      );
-      return envelope(
-        input.action,
-        enrichBootstrapResult(bootstrap),
-        "akp_bootstrap_session_context",
-      );
+      try {
+        const bootstrap = await deps.api(
+          `/v1/sessions/${encodeURIComponent(sessionId)}/bootstrap`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              ...(input.query ? { query: input.query } : {}),
+              intent: input.intent ?? "WORKFLOW_EXECUTION",
+              packetMode: input.packetMode,
+            }),
+          },
+        );
+        return envelope(
+          input.action,
+          enrichBootstrapResult(bootstrap),
+          "akp_bootstrap_session_context",
+        );
+      } catch (error) {
+        const failure = facadeFailure(error);
+        if (STRICT_REVISION_FAILURES.has(failure.code)) {
+          return failureEnvelope(
+            input.action,
+            "akp_bootstrap_session_context",
+            "ERROR",
+            failure,
+            {
+              pinPolicy: "STRICT",
+              revisionChanged: failure.code === "CONTEXT_REVISION_CHANGED",
+              retryRequiresRebootstrap: true,
+              expertToolsUnaffected: true,
+            },
+          );
+        }
+        throw error;
+      }
     }
 
     case "SEARCH":
@@ -430,15 +521,39 @@ export async function dispatchAkpContext(
     case "CODE": {
       const scope = codeScope(input);
       const options = input.codeOptions;
-      const call = async (route: string, body: unknown, delegatedTo: string) =>
-        envelope(
-          input.action,
-          await deps.api(route, {
-            method: "POST",
-            body: JSON.stringify(body),
-          }),
-          delegatedTo,
-        );
+      const call = async (
+        route: string,
+        body: unknown,
+        delegatedTo: string,
+      ) => {
+        try {
+          return envelope(
+            input.action,
+            await deps.api(route, {
+              method: "POST",
+              body: JSON.stringify(body),
+            }),
+            delegatedTo,
+          );
+        } catch (error) {
+          const failure = facadeFailure(error);
+          if (OPTIONAL_CODE_GRAPH_FAILURES.has(failure.code)) {
+            return failureEnvelope(
+              input.action,
+              delegatedTo,
+              "DEGRADED",
+              failure,
+              {
+                optionalChannel: "CODE_GRAPH",
+                freshnessPolicy: "FRESH_ONLY",
+                retryAfterRefresh: true,
+                expertToolsUnaffected: true,
+              },
+            );
+          }
+          throw error;
+        }
+      };
 
       switch (input.codeOperation) {
         case "SYMBOL":

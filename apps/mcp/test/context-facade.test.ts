@@ -271,6 +271,118 @@ describe("akp_context façade", () => {
     );
   });
 
+  it("returns an explicit degraded envelope only for optional Code Graph readiness failures", async () => {
+    const api = vi.fn(async () => {
+      throw new Error(
+        'AKP API 409: {"code":"CODE_GRAPH_NOT_READY"}',
+      );
+    });
+    const writeApi = vi.fn();
+
+    await expect(
+      dispatchAkpContext(
+        {
+          action: "CODE",
+          codeOperation: "SYMBOL",
+          spaceId: "11111111-1111-4111-8111-111111111111",
+          vaultId: "22222222-2222-4222-8222-222222222222",
+          selector: {
+            repository:
+              "akp-project:22222222-2222-4222-8222-222222222222:api",
+            name: "PaymentService",
+          },
+        },
+        { api, writeApi: writeApi as never },
+      ),
+    ).resolves.toMatchObject({
+      action: "CODE",
+      status: "DEGRADED",
+      delegatedTo: "akp_find_code_symbol",
+      error: { code: "CODE_GRAPH_NOT_READY", statusCode: 409 },
+      diagnostics: {
+        optionalChannel: "CODE_GRAPH",
+        freshnessPolicy: "FRESH_ONLY",
+        retryAfterRefresh: true,
+        expertToolsUnaffected: true,
+      },
+    });
+
+    api.mockRejectedValueOnce(
+      new Error('AKP API 403: {"code":"VAULT_ACCESS_DENIED"}'),
+    );
+    await expect(
+      dispatchAkpContext(
+        {
+          action: "CODE",
+          codeOperation: "SYMBOL",
+          spaceId: "11111111-1111-4111-8111-111111111111",
+          vaultId: "22222222-2222-4222-8222-222222222222",
+          selector: {
+            repository:
+              "akp-project:22222222-2222-4222-8222-222222222222:api",
+            name: "PaymentService",
+          },
+        },
+        { api, writeApi: writeApi as never },
+      ),
+    ).rejects.toThrow("VAULT_ACCESS_DENIED");
+  });
+
+  it("returns an explicit strict-pin error when task context revisions changed", async () => {
+    const api = vi.fn(async () => {
+      throw new Error(
+        'AKP API 409: {"code":"CONTEXT_REVISION_CHANGED"}',
+      );
+    });
+    const writeApi = vi.fn();
+
+    await expect(
+      dispatchAkpContext(
+        {
+          action: "BOOTSTRAP",
+          sessionId: "33333333-3333-4333-8333-333333333333",
+        },
+        { api, writeApi: writeApi as never },
+      ),
+    ).resolves.toMatchObject({
+      action: "BOOTSTRAP",
+      status: "ERROR",
+      error: { code: "CONTEXT_REVISION_CHANGED", statusCode: 409 },
+      diagnostics: {
+        pinPolicy: "STRICT",
+        revisionChanged: true,
+        retryRequiresRebootstrap: true,
+        expertToolsUnaffected: true,
+      },
+    });
+  });
+
+  it("keeps no-answer explicit in the façade envelope", async () => {
+    const noAnswer = {
+      reason: "NO_SOURCE_BACKED_MATCH",
+      message: "No source-backed material matched the request.",
+    };
+    const api = vi.fn(async () => ({ hits: [], noAnswer }));
+    const writeApi = vi.fn();
+
+    await expect(
+      dispatchAkpContext(
+        {
+          action: "SEARCH",
+          query: "unknown cloud region",
+          spaceId: "11111111-1111-4111-8111-111111111111",
+          vaultId: "22222222-2222-4222-8222-222222222222",
+        },
+        { api, writeApi: writeApi as never },
+      ),
+    ).resolves.toMatchObject({
+      action: "SEARCH",
+      status: "NO_ANSWER",
+      noAnswer,
+      result: { hits: [], noAnswer },
+    });
+  });
+
   it("fails closed on missing action-specific scope instead of widening it", async () => {
     const api = vi.fn();
     const writeApi = vi.fn();
