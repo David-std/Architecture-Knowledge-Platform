@@ -206,6 +206,28 @@ jobs:
               throw new Error(`Observation ${observation.taskId}/${observation.arm} lacks quality evidence.`);
             }
           }
+          const aggregates = Array.isArray(report.aggregates) ? report.aggregates : [];
+          if (aggregates.length !== 2) {
+            throw new Error("Agent A/B report must contain both aggregate arms.");
+          }
+          for (const aggregate of aggregates) {
+            for (const metric of [
+              "retrievalRecallCoverage",
+              "contextPrecisionCoverage",
+              "claimSupportRecallCoverage",
+              "contextUtilizationCoverage",
+            ]) {
+              if (!Number.isFinite(aggregate[metric]) || aggregate[metric] < 5 / 6) {
+                throw new Error(`Agent A/B aggregate ${aggregate.arm} lacks P6.15 coverage for ${metric}.`);
+              }
+            }
+            if (!Number.isFinite(aggregate.noAnswerAccuracy) || aggregate.noAnswerCases !== 1) {
+              throw new Error(`Agent A/B aggregate ${aggregate.arm} lacks no-answer evidence.`);
+            }
+            if (aggregate.faithfulnessCoverage !== 0 || aggregate.noiseSensitivityCoverage !== 0) {
+              throw new Error("Unimplemented semantic faithfulness/noise diagnostics must not be reported as measured.");
+            }
+          }
           console.log(JSON.stringify({
             status: report.status,
             model: report.execution.provider.model,

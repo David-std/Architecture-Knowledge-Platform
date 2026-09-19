@@ -24,6 +24,7 @@ const tasks: AgentAbTask[] = AGENT_AB_REQUIRED_CATEGORIES.map(
               ? "PROJECT_CODE"
               : "CONCEPTUAL",
     mandatoryTerms: category === "no-answer" ? [] : ["required fact"],
+    ...(category === "no-answer" ? {} : { goldCitations: ["doc-a@rev"] }),
     expectNoAnswer: category === "no-answer",
   }),
 );
@@ -48,12 +49,19 @@ describe("Agent A/B evaluation", () => {
           { text: "unsupported", citations: [] },
         ],
       },
-      ["doc-a@rev"],
+      ["doc-a@rev", "doc-noise@rev"],
+      "The required fact is present in doc-a.",
     );
     expect(score.mandatoryRuleRecall).toBe(1);
     expect(score.unsupportedClaims).toBe(1);
     expect(score.citationPrecision).toBe(1);
     expect(score.correctness).toBe(1);
+    expect(score.retrievalRecall).toBe(1);
+    expect(score.contextPrecision).toBe(0.5);
+    expect(score.claimSupportRecall).toBe(1);
+    expect(score.contextUtilization).toBe(0.5);
+    expect(score.faithfulness).toBeNull();
+    expect(score.noiseSensitivity).toBeNull();
   });
 
   it("treats a correct no-answer abstention as correct without citations", () => {
@@ -88,6 +96,13 @@ describe("Agent A/B evaluation", () => {
       unsupportedClaimRate: 0,
       citationPrecision: 1,
       correctness: 1,
+      retrievalRecall: 1,
+      contextPrecision: 1,
+      claimSupportRecall: 1,
+      contextUtilization: 1,
+      faithfulness: null,
+      noiseSensitivity: null,
+      noAnswerCorrect: null,
     };
     expect(aggregateAgentAbArm([observation])).toEqual(
       expect.objectContaining({
@@ -95,6 +110,10 @@ describe("Agent A/B evaluation", () => {
         tasks: 1,
         meanContextTokens: 100,
         meanCorrectness: 1,
+        meanRetrievalRecall: 1,
+        retrievalRecallCoverage: 1,
+        meanFaithfulness: null,
+        faithfulnessCoverage: 0,
       }),
     );
   });

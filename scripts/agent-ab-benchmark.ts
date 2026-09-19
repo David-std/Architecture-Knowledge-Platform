@@ -546,6 +546,7 @@ async function runArm(
     task,
     provider.output,
     input.allowedCitations,
+    input.context,
   );
   return {
     taskId: task.id,
