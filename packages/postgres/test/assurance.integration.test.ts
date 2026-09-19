@@ -7,6 +7,7 @@ import {
   claimNextAssuranceRun,
   completeAssuranceRun,
   renewAssuranceRunLease,
+  requestAssuranceFindingAction,
   submitAssuranceRun,
   transitionAssuranceFindingStatus,
 } from "../src/index.js";
@@ -225,6 +226,19 @@ describeDb("continuous assurance durable runs", () => {
     expect(finding?.status).toBe("OPEN");
     if (!finding) throw new Error("expected persistent finding");
 
+    await expect(
+      requestAssuranceFindingAction(db, {
+        findingId: finding.id,
+        spaceId,
+        vaultId,
+        action: "RECOMPILE",
+        reason: "Operator requested governed recompilation.",
+      }),
+    ).resolves.toEqual({
+      findingId: finding.id,
+      action: "RECOMPILE",
+    });
+
     await transitionAssuranceFindingStatus(db, {
       findingId: finding.id,
       spaceId,
@@ -287,6 +301,7 @@ describeDb("continuous assurance durable runs", () => {
     );
     expect(history.rows.map((row) => row.action)).toEqual([
       "DETECTED",
+      "ACTION_REQUESTED",
       "FALSE_POSITIVE",
     ]);
 

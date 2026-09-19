@@ -121,6 +121,24 @@ export default async function AssurancePage({
     revalidatePath("/admin/assurance");
   }
 
+  async function requestFindingAction(formData: FormData) {
+    "use server";
+    const findingId = String(formData.get("findingId") ?? "");
+    const action = String(formData.get("action") ?? "");
+    const reason = String(formData.get("reason") ?? "").trim();
+    if (!findingId || !["PROMOTION", "RECOMPILE", "REINDEX"].includes(action)) {
+      throw new Error("ASSURANCE_FINDING_ACTION_REQUIRED");
+    }
+    await akp(`/v1/assurance/findings/${findingId}/actions`, {
+      method: "POST",
+      body: JSON.stringify({
+        action,
+        ...(reason ? { reason } : {}),
+      }),
+    });
+    revalidatePath("/admin/assurance");
+  }
+
   async function updateFinding(formData: FormData) {
     "use server";
     const findingId = String(formData.get("findingId") ?? "");
@@ -320,6 +338,35 @@ export default async function AssurancePage({
                       />
                       <button type="submit">Guardar</button>
                     </form>
+                    {finding.proposed_action &&
+                    ["PROMOTION", "RECOMPILE", "REINDEX"].includes(
+                      finding.proposed_action,
+                    ) &&
+                    ["OPEN", "ACKNOWLEDGED"].includes(finding.status) ? (
+                      <form
+                        action={requestFindingAction}
+                        style={{ marginTop: 8 }}
+                      >
+                        <input
+                          type="hidden"
+                          name="findingId"
+                          value={finding.id}
+                        />
+                        <input
+                          type="hidden"
+                          name="action"
+                          value={finding.proposed_action}
+                        />
+                        <input
+                          name="reason"
+                          placeholder="Motivo de la solicitud"
+                          maxLength={2000}
+                        />
+                        <button type="submit">
+                          Solicitar {finding.proposed_action}
+                        </button>
+                      </form>
+                    ) : null}
                   </td>
                 </tr>
               ))}

@@ -529,6 +529,77 @@ export async function transitionAssuranceFindingStatus(
   }
 }
 
+export type AssuranceFindingAction =
+  | "PROMOTION"
+  | "RECOMPILE"
+  | "REINDEX";
+
+export async function requestAssuranceFindingAction(
+  db: Postgres,
+  input: {
+    findingId: string;
+    spaceId: string;
+    vaultId: string;
+    action: AssuranceFindingAction;
+    actorUserId?: string | null;
+    actorPrincipalId?: string | null;
+    reason?: string | null;
+  },
+): Promise<{ findingId: string; action: AssuranceFindingAction } | null> {
+  const client = await db.pool.connect();
+  try {
+    await client.query("begin");
+    const current = await client.query<{
+      id: string;
+      status: AssuranceFindingStatus;
+      proposed_action: string | null;
+    }>(
+      `select id,status,proposed_action
+         from assurance_findings
+        where id=$1 and space_id=$2 and vault_id=$3
+        for update`,
+      [input.findingId, input.spaceId, input.vaultId],
+    );
+    const row = current.rows[0];
+    if (!row) {
+      await client.query("rollback");
+      return null;
+    }
+    if (!["OPEN", "ACKNOWLEDGED"].includes(row.status)) {
+      throw new Error("ASSURANCE_FINDING_ACTION_NOT_OPEN");
+    }
+    if (row.proposed_action !== input.action) {
+      throw new Error("ASSURANCE_FINDING_ACTION_NOT_PROPOSED");
+    }
+
+    await client.query(
+      `insert into assurance_finding_events(
+         finding_id,space_id,vault_id,action,from_status,to_status,
+         actor_user_id,actor_principal_id,reason,payload
+       ) values(
+         $1,$2,$3,'ACTION_REQUESTED',$4,$4,$5,$6,$7,$8::jsonb
+       )`,
+      [
+        input.findingId,
+        input.spaceId,
+        input.vaultId,
+        row.status,
+        input.actorUserId ?? null,
+        input.actorPrincipalId ?? null,
+        input.reason?.trim() || null,
+        JSON.stringify({ requestedAction: input.action }),
+      ],
+    );
+    await client.query("commit");
+    return { findingId: input.findingId, action: input.action };
+  } catch (error) {
+    await client.query("rollback").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function completeAssuranceRun(
   db: Postgres,
   input: {

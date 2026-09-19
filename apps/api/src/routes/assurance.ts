@@ -4,6 +4,7 @@ import {
   ASSURANCE_DETECTORS,
   IMPLEMENTED_ASSURANCE_DETECTORS,
   cancelAssuranceRun,
+  requestAssuranceFindingAction,
   resolveAuthorizedVaultScope,
   submitAssuranceRun,
   transitionAssuranceFindingStatus,
@@ -40,6 +41,13 @@ const FindingQuery = ScopedQuery.extend({
   severity: z.enum(["INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL"]).optional(),
   category: z.string().trim().min(1).max(120).optional(),
 }).strict();
+
+const FindingActionBody = z
+  .object({
+    action: z.enum(["PROMOTION", "RECOMPILE", "REINDEX"]),
+    reason: z.string().trim().min(1).max(2000).optional(),
+  })
+  .strict();
 
 const FindingStatusBody = z
   .object({
@@ -379,6 +387,90 @@ export function registerAssuranceRoutes(
         scope.space_id,
       );
       return { finding };
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    "/v1/assurance/findings/:id/actions",
+    { preHandler: requirePermission("knowledge:review") },
+    async (request, reply) => {
+      if (!UUID.safeParse(request.params.id).success) {
+        return reply.code(400).send({ code: "INVALID_ASSURANCE_FINDING_ID" });
+      }
+      const parsed = FindingActionBody.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          code: "INVALID_ASSURANCE_FINDING_ACTION",
+          issues: parsed.error.issues,
+        });
+      }
+      const current = await db.pool.query<{
+        space_id: string;
+        vault_id: string;
+      }>("select space_id,vault_id from assurance_findings where id=$1", [
+        request.params.id,
+      ]);
+      const scope = current.rows[0];
+      if (!scope) {
+        return reply.code(404).send({ code: "ASSURANCE_FINDING_NOT_FOUND" });
+      }
+      if (
+        !(await requireWholeVault(
+          db,
+          request,
+          reply,
+          "knowledge:review",
+          scope.space_id,
+          scope.vault_id,
+        ))
+      ) {
+        return;
+      }
+      const actor = actorOf(request);
+      if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
+
+      let requested;
+      try {
+        requested = await requestAssuranceFindingAction(db, {
+          findingId: request.params.id,
+          spaceId: scope.space_id,
+          vaultId: scope.vault_id,
+          action: parsed.data.action,
+          actorUserId: actor.id,
+          actorPrincipalId: actor.principalId,
+          reason: parsed.data.reason ?? null,
+        });
+      } catch (error) {
+        const code = error instanceof Error ? error.message : String(error);
+        if (
+          code === "ASSURANCE_FINDING_ACTION_NOT_OPEN" ||
+          code === "ASSURANCE_FINDING_ACTION_NOT_PROPOSED"
+        ) {
+          return reply.code(409).send({ code });
+        }
+        throw error;
+      }
+      if (!requested) {
+        return reply.code(404).send({ code: "ASSURANCE_FINDING_NOT_FOUND" });
+      }
+      await audit(
+        db,
+        request,
+        "assurance.finding.action.request",
+        "assurance_finding",
+        request.params.id,
+        {
+          vaultId: scope.vault_id,
+          requestedAction: requested.action,
+          reason: parsed.data.reason ?? null,
+        },
+        scope.space_id,
+      );
+      return reply.code(202).send({
+        findingId: requested.findingId,
+        action: requested.action,
+        status: "REQUESTED",
+      });
     },
   );
 
