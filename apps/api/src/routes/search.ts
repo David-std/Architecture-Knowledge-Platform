@@ -27,6 +27,7 @@ import {
   buildContextPacket,
   buildContextPacketPair,
   ContextPacketBudgetError,
+  DETERMINISTIC_LEXICAL_RERANKER,
   contextBudgetForIntent,
   createEmbeddingProviderForGeneration,
   personalizedPageRank,
@@ -34,8 +35,10 @@ import {
   QueryEmbeddingService,
   rehydrateStructuralContext,
   reciprocalRankFusion,
+  rerankSearchHits,
   resolvePersonalizedPageRankPolicy,
   resolveRetrievalPolicy,
+  resolveSearchHitReranker,
   retrievalCandidatesToRankedChannels,
   runtimeChannelEnabled,
   toPgVector,
@@ -851,50 +854,6 @@ export function effectiveRetrievalChannels(
   };
 }
 
-function deterministicLexicalRerank(
-  query: string,
-  hits: SearchHit[],
-): SearchHit[] {
-  const terms = new Set(
-    query
-      .normalize("NFD")
-      .replace(/\p{Diacritic}/gu, "")
-      .toLowerCase()
-      .split(/[^\p{Letter}\p{Number}]+/u)
-      .filter((term) => term.length >= 3),
-  );
-  const preRankByDocument = new Map(
-    hits.map((hit, index) => [hit.documentId, index + 1]),
-  );
-  const reranked = hits
-    .map((hit) => {
-      const haystack = `${hit.title} ${hit.excerpt}`
-        .normalize("NFD")
-        .replace(/\p{Diacritic}/gu, "")
-        .toLowerCase();
-      const overlap = [...terms].filter((term) =>
-        haystack.includes(term),
-      ).length;
-      return {
-        ...hit,
-        score: hit.score + overlap * 0.001,
-        reasons: [...hit.reasons, "deterministic-lexical-rerank"],
-      };
-    })
-    .sort(
-      (left, right) =>
-        right.score - left.score ||
-        left.documentId.localeCompare(right.documentId),
-    );
-  return reranked.map((hit, index) => ({
-    ...hit,
-    rerankTrace: {
-      reranker: "deterministic-lexical-v1",
-      preRank: preRankByDocument.get(hit.documentId) ?? index + 1,
-      postRank: index + 1,
-    },
-  }));
-}
 
 /**
  * Evidence locators are corpus data and can contain local paths.  A
@@ -2512,10 +2471,14 @@ export async function queryKnowledge(
       };
     })
     .filter((hit): hit is SearchHit => hit !== null);
+  const reranker = resolveSearchHitReranker(
+    retrievalPolicy.reranker ??
+      (options.deterministicRerank
+        ? DETERMINISTIC_LEXICAL_RERANKER
+        : undefined),
+  );
   const finalResults = (
-    options.deterministicRerank
-      ? deterministicLexicalRerank(input.query, results)
-      : results
+    reranker ? rerankSearchHits(input.query, results, reranker) : results
   ).slice(0, input.limit);
   await finalizeTruthSnapshot();
   return finalResults;
