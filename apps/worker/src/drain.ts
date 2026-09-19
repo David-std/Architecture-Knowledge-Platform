@@ -1,10 +1,13 @@
 import type { AssuranceRun } from "@akp/domain";
 import {
+  applyNextSourceConnectorEvent,
   claimNextAssuranceRun,
   claimNextIngestJob,
   summarizeOutbox,
+  summarizeSourceConnectorInbox,
   type OutboxDrainSummary,
   type Postgres,
+  type SourceConnectorInboxSummary,
 } from "@akp/postgres";
 
 /** States that still represent work for the ingest worker. */
@@ -46,7 +49,11 @@ export interface WorkerDrainSummary {
   status: "SUCCEEDED" | "FAILED";
   success: boolean;
   reason:
-    "QUIESCENT" | "QUARANTINED" | "ASSURANCE_FAILED" | "DEADLINE_EXCEEDED";
+    | "QUIESCENT"
+    | "QUARANTINED"
+    | "ASSURANCE_FAILED"
+    | "CONNECTOR_GAP_BLOCKED"
+    | "DEADLINE_EXCEEDED";
   consumerName: string;
   startedAt: string;
   finishedAt: string;
@@ -55,9 +62,11 @@ export interface WorkerDrainSummary {
   eventsProcessed: number;
   ingestJobsProcessed: number;
   assuranceRunsProcessed: number;
+  connectorEventsProcessed: number;
   deliveries: OutboxDrainSummary;
   ingest: IngestDrainSummary;
   assurance: AssuranceDrainSummary;
+  connectors: SourceConnectorInboxSummary;
 }
 
 export interface WorkerDrainOptions {
@@ -184,9 +193,11 @@ function makeSummary(
   eventsProcessed: number,
   ingestJobsProcessed: number,
   assuranceRunsProcessed: number,
+  connectorEventsProcessed: number,
   deliveries: OutboxDrainSummary,
   ingest: IngestDrainSummary,
   assurance: AssuranceDrainSummary,
+  connectors: SourceConnectorInboxSummary,
   reason: WorkerDrainSummary["reason"],
 ): WorkerDrainSummary {
   const finishedAtMs = Date.now();
@@ -203,9 +214,11 @@ function makeSummary(
     eventsProcessed,
     ingestJobsProcessed,
     assuranceRunsProcessed,
+    connectorEventsProcessed,
     deliveries,
     ingest,
     assurance,
+    connectors,
   };
 }
 
@@ -247,10 +260,17 @@ export async function drainToQuiescence(
   let eventsProcessed = 0;
   let ingestJobsProcessed = 0;
   let assuranceRunsProcessed = 0;
+  let connectorEventsProcessed = 0;
 
   for (;;) {
     const eventHandled = await options.runEventOnce();
     if (eventHandled) eventsProcessed += 1;
+
+    const connectorEvent = await applyNextSourceConnectorEvent(options.db);
+    if (connectorEvent) {
+      connectorEventsProcessed += 1;
+      continue;
+    }
 
     if (options.runAssuranceRun) {
       const assurance = await claimNextAssuranceRun(
@@ -286,6 +306,7 @@ export async function drainToQuiescence(
           failed: 0,
           nextWakeAt: null,
         };
+    const connectors = await summarizeSourceConnectorInbox(options.db);
     if (deliveries.quarantined > 0 || ingest.quarantined > 0) {
       const summary = makeSummary(
         options,
@@ -294,12 +315,33 @@ export async function drainToQuiescence(
         eventsProcessed,
         ingestJobsProcessed,
         assuranceRunsProcessed,
+        connectorEventsProcessed,
         deliveries,
         ingest,
         assurance,
+        connectors,
         "QUARANTINED",
       );
       throw new WorkerDrainError(summary);
+    }
+
+    if (connectors.blockedByGap > 0 && connectors.immediatelyClaimable === 0) {
+      throw new WorkerDrainError(
+        makeSummary(
+          options,
+          startedAtMs,
+          deadlineAtMs,
+          eventsProcessed,
+          ingestJobsProcessed,
+          assuranceRunsProcessed,
+          connectorEventsProcessed,
+          deliveries,
+          ingest,
+          assurance,
+          connectors,
+          "CONNECTOR_GAP_BLOCKED",
+        ),
+      );
     }
 
     if (assurance.failed > 0) {
@@ -311,9 +353,11 @@ export async function drainToQuiescence(
           eventsProcessed,
           ingestJobsProcessed,
           assuranceRunsProcessed,
+          connectorEventsProcessed,
           deliveries,
           ingest,
           assurance,
+          connectors,
           "ASSURANCE_FAILED",
         ),
       );
@@ -328,9 +372,11 @@ export async function drainToQuiescence(
           eventsProcessed,
           ingestJobsProcessed,
           assuranceRunsProcessed,
+          connectorEventsProcessed,
           deliveries,
           ingest,
           assurance,
+          connectors,
           "DEADLINE_EXCEEDED",
         ),
       );
@@ -339,7 +385,8 @@ export async function drainToQuiescence(
     if (
       ingest.work === 0 &&
       deliveries.nonTerminal === 0 &&
-      assurance.work === 0
+      assurance.work === 0 &&
+      connectors.pending === 0
     ) {
       return makeSummary(
         options,
@@ -348,9 +395,11 @@ export async function drainToQuiescence(
         eventsProcessed,
         ingestJobsProcessed,
         assuranceRunsProcessed,
+        connectorEventsProcessed,
         deliveries,
         ingest,
         assurance,
+        connectors,
         "QUIESCENT",
       );
     }
@@ -362,7 +411,8 @@ export async function drainToQuiescence(
     if (
       deliveries.immediatelyClaimable > 0 ||
       ingest.immediatelyClaimable > 0 ||
-      assurance.immediatelyClaimable > 0
+      assurance.immediatelyClaimable > 0 ||
+      connectors.immediatelyClaimable > 0
     ) {
       continue;
     }

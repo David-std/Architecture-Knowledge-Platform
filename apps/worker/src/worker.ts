@@ -11,6 +11,7 @@ import { pipeline } from "node:stream/promises";
 import {
   Postgres,
   appendOutboxEvent,
+  applyNextSourceConnectorEvent,
   claimContextFabricNode,
   claimNextAssuranceRun,
   claimNextIngestJob,
@@ -957,6 +958,8 @@ async function loop(): Promise<WorkerDrainSummary | undefined> {
   }
   for (;;) {
     const eventHandled = await eventWorker.runOnce();
+    const connectorEvent = await applyNextSourceConnectorEvent(db);
+    if (connectorEvent) continue;
     const assuranceWorkerId = `${workerId}:assurance`;
     const assurance = await claimNextAssuranceRun(db, assuranceWorkerId, 60);
     if (assurance) {
