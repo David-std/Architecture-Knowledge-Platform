@@ -2,6 +2,7 @@
 
 ```text
 /                       workspace home (projects/work/reviews/agents/health)
+/author                 browser recovery + governed Git draft + review submit
 /search                 query and context packet inspector
 /sources                source registry
 /sources/:id            raw/derivative/evidence view

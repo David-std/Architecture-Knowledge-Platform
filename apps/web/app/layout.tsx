@@ -15,6 +15,7 @@ export default function RootLayout({
           <nav aria-label="Navegación principal">
             <h1>Architecture Knowledge Platform</h1>
             <Link href="/">Workspace</Link>
+            <Link href="/author">Authoring</Link>
             <Link href="/search">Búsqueda</Link>
             <Link href="/sources">Fuentes</Link>
             <Link href="/ingest">Nueva ingesta</Link>
