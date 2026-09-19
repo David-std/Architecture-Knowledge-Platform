@@ -41,6 +41,9 @@ type ScenarioMeasurement = {
   latencySamples: number;
   p50LatencyMs: number;
   p95LatencyMs: number;
+  fixtureRows: number;
+  eligibleRows: number;
+  selectivityRatio: number;
   meanRecallAtK: number;
   minimumRecallAtK: number;
   meanReturned: number;
@@ -256,6 +259,15 @@ async function measureScenario(
   mode: SearchMode,
 ): Promise<ScenarioMeasurement> {
   await configureMode(client, mode);
+  const [fixtureCount, eligibleCount] = await Promise.all([
+    client.query<{ count: string }>("select count(*)::text as count from p0_filtered_ann_probe"),
+    client.query<{ count: string }>(
+      "select count(*)::text as count from p0_filtered_ann_probe where vault_id=$1::uuid and path like $2",
+      [vaultA, pathPattern],
+    ),
+  ]);
+  const fixtureRows = Number(fixtureCount.rows[0]?.count ?? "0");
+  const eligibleRows = Number(eligibleCount.rows[0]?.count ?? "0");
   const recalls: number[] = [];
   const returned: number[] = [];
   const latenciesMs: number[] = [];
@@ -289,6 +301,9 @@ async function measureScenario(
     latencySamples: latenciesMs.length,
     p50LatencyMs: percentile(latenciesMs, 0.5),
     p95LatencyMs: percentile(latenciesMs, 0.95),
+    fixtureRows,
+    eligibleRows,
+    selectivityRatio: fixtureRows === 0 ? 0 : eligibleRows / fixtureRows,
     meanRecallAtK:
       recalls.reduce((sum, value) => sum + value, 0) / recalls.length,
     minimumRecallAtK: Math.min(...recalls),
