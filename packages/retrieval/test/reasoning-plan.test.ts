@@ -373,9 +373,7 @@ describe("safe reasoning plan schema and validation", () => {
       expect(codes).toContain("REASONING_PLAN_EXTERNAL_PEER_DENIED");
       expect(codes).toContain("REASONING_PLAN_MODEL_PROVIDER_DENIED");
       expect(codes).toContain("REASONING_PLAN_DATA_RESIDENCY_DENIED");
-      expect(codes).toContain(
-        "REASONING_PLAN_MODEL_ROLE_RESIDENCY_DENIED",
-      );
+      expect(codes).toContain("REASONING_PLAN_MODEL_ROLE_RESIDENCY_DENIED");
     }
   });
 });
