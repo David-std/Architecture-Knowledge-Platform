@@ -1540,7 +1540,6 @@ export async function queryKnowledge(
                 on dc.revision_id=ac.revision_id
                and dc.community_key=ac.community_key
              where $5::text='GLOBAL'
-                or cardinality($4::uuid[])=0
                 or dc.community_key is not null
           )
           select d.id,d.current_revision document_revision,
