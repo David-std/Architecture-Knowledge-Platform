@@ -26,7 +26,7 @@ describe("offline retrieval benchmark", () => {
     expect(first.qualityClaim).toBe("NONE");
     expect(first.provider.readsPrivateVault).toBe(false);
     expect(first.provider.readsDatabase).toBe(false);
-    expect(first.matrix.size).toBe(10);
+    expect(first.matrix.size).toBe(11);
     expect(first.requiredSlices).toContain("vector-disabled");
     expect(first.vectorDisabled.vectorInvoked).toBe(false);
     expect(first.productionDefault.selected).toBeNull();
