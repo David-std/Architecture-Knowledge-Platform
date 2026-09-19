@@ -157,7 +157,8 @@ function mergeToolContexts(contexts: ToolContext[]): ToolContext {
     for (const [citation, evidence] of Object.entries(
       context.citationEvidence,
     )) {
-      for (const text of evidence) appendEvidence(citationEvidence, citation, text);
+      for (const text of evidence)
+        appendEvidence(citationEvidence, citation, text);
     }
   }
   return {
@@ -318,8 +319,10 @@ function benchmarkPrerequisites() {
   if (!apiUrl) reasons.push("AKP_API_URL is required.");
   if (!apiToken) reasons.push("AKP_API_TOKEN is required.");
   if (!spaceId) reasons.push("AKP_AGENT_AB_SPACE_ID is required.");
-  if (vaultIds.length === 0) reasons.push("AKP_AGENT_AB_VAULT_IDS is required.");
-  if (!providerBaseUrl) reasons.push("AKP_AGENT_AB_PROVIDER_BASE_URL is required.");
+  if (vaultIds.length === 0)
+    reasons.push("AKP_AGENT_AB_VAULT_IDS is required.");
+  if (!providerBaseUrl)
+    reasons.push("AKP_AGENT_AB_PROVIDER_BASE_URL is required.");
   if (!providerModel) reasons.push("AKP_AGENT_AB_PROVIDER_MODEL is required.");
   if (!Number.isFinite(temperature) || temperature < 0 || temperature > 2) {
     reasons.push("AKP_AGENT_AB_TEMPERATURE must be between 0 and 2.");
@@ -403,15 +406,16 @@ async function providerText(
   const latencyMs = performance.now() - started;
   const raw = await response.text();
   if (!response.ok) {
-    throw new Error(`Provider request ${response.status}: ${raw.slice(0, 500)}`);
+    throw new Error(
+      `Provider request ${response.status}: ${raw.slice(0, 500)}`,
+    );
   }
   const body = JSON.parse(raw) as Record<string, unknown>;
-  const first = (Array.isArray(body.choices) ? body.choices[0] : null) as
-    | Record<string, unknown>
-    | null;
+  const first = (
+    Array.isArray(body.choices) ? body.choices[0] : null
+  ) as Record<string, unknown> | null;
   const message = first?.message as Record<string, unknown> | undefined;
-  const content =
-    typeof message?.content === "string" ? message.content : null;
+  const content = typeof message?.content === "string" ? message.content : null;
   if (!content) throw new Error("Provider returned no text completion.");
   const usage = objectRecord(body.usage);
   return {
@@ -929,9 +933,7 @@ async function main(): Promise<void> {
           providerPromptTokens,
           providerCompletionTokens,
           latencyMs:
-            selection.latencyMs +
-            executed.latencyMs +
-            completion.latencyMs,
+            selection.latencyMs + executed.latencyMs + completion.latencyMs,
           correctness: quality.correctness,
           missedConstraints: quality.missedConstraints.length,
           unsupportedClaims: quality.unsupportedClaims,

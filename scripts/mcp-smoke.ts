@@ -93,9 +93,7 @@ function normalizedCodeProvenance(value: unknown): Array<{
         commitSha: payload.commitSha,
         qualifiedName: payload.qualifiedName,
         revision:
-          typeof projection.revision === "string"
-            ? projection.revision
-            : null,
+          typeof projection.revision === "string" ? projection.revision : null,
         freshness:
           typeof projection.freshness === "string"
             ? projection.freshness

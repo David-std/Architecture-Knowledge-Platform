@@ -60,7 +60,9 @@ export interface ToolErgonomicsAggregate {
   meanCitationPrecision: number;
 }
 
-function canonicalCall(call: ToolSelectionCall | ToolSelectionExpectation): string {
+function canonicalCall(
+  call: ToolSelectionCall | ToolSelectionExpectation,
+): string {
   return `${call.tool.trim()}\u001f${call.action?.trim() || ""}`;
 }
 

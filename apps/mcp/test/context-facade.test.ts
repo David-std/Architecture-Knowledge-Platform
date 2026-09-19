@@ -273,9 +273,7 @@ describe("akp_context façade", () => {
 
   it("returns an explicit degraded envelope only for optional Code Graph readiness failures", async () => {
     const api = vi.fn(async () => {
-      throw new Error(
-        'AKP API 409: {"code":"CODE_GRAPH_NOT_READY"}',
-      );
+      throw new Error('AKP API 409: {"code":"CODE_GRAPH_NOT_READY"}');
     });
     const writeApi = vi.fn();
 
@@ -287,8 +285,7 @@ describe("akp_context façade", () => {
           spaceId: "11111111-1111-4111-8111-111111111111",
           vaultId: "22222222-2222-4222-8222-222222222222",
           selector: {
-            repository:
-              "akp-project:22222222-2222-4222-8222-222222222222:api",
+            repository: "akp-project:22222222-2222-4222-8222-222222222222:api",
             name: "PaymentService",
           },
         },
@@ -318,8 +315,7 @@ describe("akp_context façade", () => {
           spaceId: "11111111-1111-4111-8111-111111111111",
           vaultId: "22222222-2222-4222-8222-222222222222",
           selector: {
-            repository:
-              "akp-project:22222222-2222-4222-8222-222222222222:api",
+            repository: "akp-project:22222222-2222-4222-8222-222222222222:api",
             name: "PaymentService",
           },
         },
@@ -330,9 +326,7 @@ describe("akp_context façade", () => {
 
   it("returns an explicit strict-pin error when task context revisions changed", async () => {
     const api = vi.fn(async () => {
-      throw new Error(
-        'AKP API 409: {"code":"CONTEXT_REVISION_CHANGED"}',
-      );
+      throw new Error('AKP API 409: {"code":"CONTEXT_REVISION_CHANGED"}');
     });
     const writeApi = vi.fn();
 
