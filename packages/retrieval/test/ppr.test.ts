@@ -53,7 +53,9 @@ describe("personalized PageRank", () => {
 
     expect(first.converged).toBe(true);
     expect(first.candidates).toEqual(second.candidates);
-    expect(first.candidates.find((item) => item.nodeId === "strong")?.score).toBeGreaterThan(
+    expect(
+      first.candidates.find((item) => item.nodeId === "strong")?.score,
+    ).toBeGreaterThan(
       first.candidates.find((item) => item.nodeId === "weak")?.score ?? 0,
     );
     expect(
@@ -137,9 +139,9 @@ describe("personalized PageRank", () => {
     });
 
     expect(result.candidates).toHaveLength(2);
-    expect(new Set(result.candidates.map((candidate) => candidate.scopeId))).toEqual(
-      new Set(["a", "b"]),
-    );
+    expect(
+      new Set(result.candidates.map((candidate) => candidate.scopeId)),
+    ).toEqual(new Set(["a", "b"]));
   });
 
   it("fails closed on cross-scope graph edges", () => {
