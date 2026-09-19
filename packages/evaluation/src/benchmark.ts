@@ -169,6 +169,8 @@ export interface BenchmarkRunMetrics {
   meanLatencyMs: number;
   exactIdentifierRecall: number;
   crossLanguageRecall: number;
+  codeSymbolRecall: number;
+  codeSymbolCases: number;
   vectorEnabled: boolean;
   rerankEnabled: boolean;
   results: Array<
@@ -478,6 +480,9 @@ export function aggregateBenchmarkRun(
     meanLatencyMs: average(results.map((result) => result.metrics.latencyMs)),
     exactIdentifierRecall: sliceAverage("exact-identifiers"),
     crossLanguageRecall: sliceAverage("cross-language"),
+    codeSymbolRecall: sliceAverage("code-symbol"),
+    codeSymbolCases: results.filter((result) => result.slice === "code-symbol")
+      .length,
     vectorEnabled: configuration.channels.includes("vector"),
     rerankEnabled: Boolean(configuration.deterministicRerank),
     results,
