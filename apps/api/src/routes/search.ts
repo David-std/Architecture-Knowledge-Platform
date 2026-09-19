@@ -186,6 +186,12 @@ interface DocumentChannelRow {
   document_revision: string;
 }
 
+interface CommunityCandidateRow extends DocumentChannelRow {
+  community_key: string;
+  community_revision: string;
+  orientation_score: number;
+}
+
 interface CodeChannelRow extends DocumentChannelRow {
   match_reason?: string;
   code_citations?: string[];
@@ -716,9 +722,16 @@ async function activeCommunityIndexAvailable(
   const expected = indexRows
     .map((row) => ({
       vaultId: String(row.vault_id ?? ""),
+      corpusRevision: String(row.corpus_revision ?? ""),
       graphRevision: String(row.graph_revision ?? ""),
     }))
-    .filter((row) => row.vaultId && row.graphRevision);
+    .filter(
+      (row) =>
+        row.vaultId &&
+        row.corpusRevision &&
+        row.graphRevision &&
+        row.corpusRevision === row.graphRevision,
+    );
   if (expected.length !== indexRows.length || expected.length === 0) {
     return false;
   }
@@ -1481,6 +1494,104 @@ export async function queryKnowledge(
       ),
     ),
   ];
+  const communityCandidates: CommunityCandidateRow[] = [];
+  if (
+    (retrievalPolicy.graphMode === "GLOBAL" ||
+      retrievalPolicy.graphMode === "DRIFT") &&
+    retrievalPolicy.channels.COMMUNITY.enabled &&
+    effectiveCapabilities.communityAvailable
+  ) {
+    const driftSeeds = seedIds.filter((id) => UUID_PATTERN.test(id));
+    try {
+      const routed = await observedRetrieval("community", () =>
+        db.pool.query<CommunityCandidateRow>(
+          `
+          with query as (
+            select plainto_tsquery('simple',$2) terms
+          ),
+          active_community as (
+            select r.id revision_id,r.vault_id,r.community_revision,
+                   c.community_key,c.member_count,c.summary
+              from community_index_revisions r
+              join vault_index_revisions vi
+                on vi.space_id=r.space_id and vi.vault_id=r.vault_id
+               and vi.graph_revision=vi.corpus_revision
+               and r.graph_revision=vi.graph_revision
+              join community_index_communities c on c.revision_id=r.id
+             where r.space_id=$1
+               and r.vault_id=any($3::uuid[])
+               and r.status='ACTIVE' and r.stale=false
+               and c.summary_lifecycle='DERIVED_INDEX'
+               and c.citable=false
+          ),
+          drift_community as (
+            select distinct m.revision_id,m.community_key
+              from community_index_memberships m
+             where cardinality($4::uuid[]) > 0
+               and m.document_id=any($4::uuid[])
+          ),
+          oriented as (
+            select ac.*,
+                   ts_rank_cd(
+                     to_tsvector('simple',coalesce(ac.summary,'')),
+                     query.terms
+                   ) text_score,
+                   case when dc.community_key is not null then 1 else 0 end
+                     seed_match
+              from active_community ac
+              cross join query
+              left join drift_community dc
+                on dc.revision_id=ac.revision_id
+               and dc.community_key=ac.community_key
+             where $5::text='GLOBAL'
+                or cardinality($4::uuid[])=0
+                or dc.community_key is not null
+          )
+          select d.id,d.current_revision document_revision,
+                 o.community_key,o.community_revision,
+                 (
+                   100 * o.seed_match +
+                   10 * o.text_score +
+                   ln(greatest(o.member_count,1) + 1)
+                 )::double precision orientation_score
+            from oriented o
+            join community_index_memberships m
+              on m.revision_id=o.revision_id
+             and m.community_key=o.community_key
+            join knowledge_documents d on d.id=m.document_id
+           where d.space_id=$1
+             ${vaultFilter("d.")}
+             and d.lifecycle ${lifecycleClause}
+             and ${trustClause("d.")}
+             and d.refresh_status not in ('STALE_BLOCKED','INVALID')
+             ${modeClause}
+             and not (
+               $5::text='DRIFT'
+               and cardinality($4::uuid[]) > 0
+               and d.id=any($4::uuid[])
+             )
+           order by orientation_score desc,o.community_key,d.id
+           limit $6
+          `,
+          [
+            spaceId,
+            input.query,
+            vaultIds,
+            driftSeeds,
+            retrievalPolicy.graphMode,
+            Math.max(input.limit * 4, 40),
+          ],
+        ),
+      );
+      communityCandidates.push(...routed.rows);
+    } catch (error) {
+      const code =
+        error instanceof Error ? error.message : "COMMUNITY_ROUTING_FAILED";
+      options.warningSink?.push(`COMMUNITY_UNAVAILABLE:${code}`);
+    }
+  }
+  recordRetrievalCandidates("community", communityCandidates.length);
+
   const contextPack = channels.has("context-pack")
     ? await db.pool.query<DocumentChannelRow>(
         `
@@ -2134,6 +2245,20 @@ export async function queryKnowledge(
       ...(row.unit_id ? { unitId: String(row.unit_id) } : {}),
       revision: String(row.document_revision),
       selectionReason: "vector",
+    })),
+    ...communityCandidates.map((row, index) => ({
+      candidateId: String(row.id),
+      channel: "COMMUNITY" as const,
+      rank: index + 1,
+      rawScore: Number(row.orientation_score),
+      scopeId: spaceId,
+      documentId: String(row.id),
+      revision: String(row.document_revision),
+      supportSetId: `${row.community_revision}:${row.community_key}`,
+      selectionReason:
+        retrievalPolicy.graphMode === "DRIFT"
+          ? "community:drift-routing"
+          : "community:global-routing",
     })),
     ...contextPack.rows.map((row, index) => ({
       candidateId: String(row.id),
