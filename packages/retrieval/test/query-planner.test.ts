@@ -85,10 +85,39 @@ describe("query planner", () => {
     expect(plan.capabilities).toEqual({
       vectorAvailable: false,
       graphConsistent: false,
+      communityAvailable: false,
       rawAllowed: false,
       codeAdapterAvailable: false,
       contextPackAvailable: false,
     });
+  });
+
+  it("selects global, drift and associative strategies only when their capabilities exist", () => {
+    expect(
+      planQuery("global architecture synthesis", "GLOBAL_SYNTHESIS", {
+        vectorAvailable: true,
+        graphConsistent: true,
+        communityAvailable: true,
+      }).strategy,
+    ).toBe("GLOBAL");
+
+    expect(
+      planQuery("explain the retry concept", "CONCEPTUAL", {
+        communityAvailable: true,
+      }).strategy,
+    ).toBe("DRIFT");
+
+    expect(
+      planQuery("trace the dependency impact", "IMPACT_ANALYSIS", {
+        graphConsistent: true,
+      }).strategy,
+    ).toBe("ASSOCIATIVE");
+
+    expect(
+      planQuery("global architecture synthesis", "GLOBAL_SYNTHESIS", {
+        communityAvailable: false,
+      }).strategy,
+    ).toBe("LOCAL");
   });
 
   it("keeps exact and lexical as deterministic first-class fallbacks", () => {
