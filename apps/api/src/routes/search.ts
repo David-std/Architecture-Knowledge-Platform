@@ -1113,12 +1113,18 @@ export async function queryKnowledge(
           db.pool.query<LexicalSearchRow>(
             `
           with query as (
-            select plainto_tsquery('simple', $2) terms
+            select plainto_tsquery('simple', $2) terms,
+                   plainto_tsquery(
+                     'simple',
+                     akp_lexical_symbol_text($2)
+                   ) symbol_terms
           ), eligible_documents as (
             select d.id,d.current_revision,d.lexical_external_id_vector,
                    d.lexical_alias_vector,d.lexical_title_vector,
                    d.lexical_path_vector,d.lexical_body_vector,
-                   i.lexical_revision index_revision,query.terms
+                   d.lexical_symbol_vector,
+                   i.lexical_revision index_revision,
+                   query.terms,query.symbol_terms
               from knowledge_documents d
               join vault_index_revisions i
                 on i.space_id=d.space_id and i.vault_id=d.vault_id
@@ -1132,6 +1138,7 @@ export async function queryKnowledge(
                ${modeClause}
                and (
                  d.lexical_search_vector @@ query.terms
+                 or d.lexical_symbol_vector @@ query.symbol_terms
                  or exists (
                    select 1
                      from knowledge_units matching_unit
@@ -1141,7 +1148,10 @@ export async function queryKnowledge(
                       and matching_unit.corpus_revision=i.lexical_revision
                       and matching_unit.lifecycle ${lifecycleClause}
                       and ${trustClause("matching_unit.")}
-                      and matching_unit.lexical_search_vector @@ query.terms
+                      and (
+                        matching_unit.lexical_search_vector @@ query.terms
+                        or matching_unit.lexical_symbol_vector @@ query.symbol_terms
+                      )
                  )
                )
           ), scored as (
@@ -1152,6 +1162,15 @@ export async function queryKnowledge(
                    20 * ts_rank_cd(d.lexical_title_vector,d.terms) +
                    24 * ts_rank_cd(d.lexical_path_vector,d.terms) +
                     2 * ts_rank_cd(d.lexical_body_vector,d.terms) +
+                   case
+                     when not (d.lexical_search_vector @@ d.terms)
+                      and d.lexical_symbol_vector @@ d.symbol_terms
+                     then 26 * ts_rank_cd(
+                       d.lexical_symbol_vector,
+                       d.symbol_terms
+                     )
+                     else 0
+                   end +
                    coalesce(best_unit.unit_score,0) score,
                    case
                      when d.lexical_external_id_vector @@ d.terms
@@ -1162,10 +1181,15 @@ export async function queryKnowledge(
                        then 'lexical:path-terms'
                      when d.lexical_title_vector @@ d.terms
                        then 'lexical:title-terms'
+                     when d.lexical_symbol_vector @@ d.symbol_terms
+                      and not (d.lexical_search_vector @@ d.terms)
+                       then 'lexical:symbol-terms'
                      when best_unit.heading_match
                        then 'lexical:heading-terms'
                      when best_unit.unit_match
                        then 'lexical:unit-terms'
+                     when best_unit.symbol_match
+                       then 'lexical:symbol-terms'
                      else 'lexical:body-terms'
                    end match_reason
               from eligible_documents d
@@ -1173,9 +1197,19 @@ export async function queryKnowledge(
                 select u.id unit_id,u.unit_type,
                        12 * ts_rank_cd(u.lexical_heading_vector,d.terms) +
                         8 * ts_rank_cd(u.lexical_unit_vector,d.terms) +
-                            ts_rank_cd(u.lexical_body_vector,d.terms) unit_score,
+                            ts_rank_cd(u.lexical_body_vector,d.terms) +
+                       case
+                         when not (u.lexical_search_vector @@ d.terms)
+                          and u.lexical_symbol_vector @@ d.symbol_terms
+                         then 10 * ts_rank_cd(
+                           u.lexical_symbol_vector,
+                           d.symbol_terms
+                         )
+                         else 0
+                       end unit_score,
                        u.lexical_heading_vector @@ d.terms heading_match,
-                       u.lexical_unit_vector @@ d.terms unit_match
+                       u.lexical_unit_vector @@ d.terms unit_match,
+                       u.lexical_symbol_vector @@ d.symbol_terms symbol_match
                   from knowledge_units u
                  where u.document_id=d.id
                    and u.corpus_revision=d.index_revision
