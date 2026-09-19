@@ -1,7 +1,4 @@
-export type QueryTransformationKind =
-  | "DECOMPOSITION"
-  | "MULTI_QUERY"
-  | "HYDE";
+export type QueryTransformationKind = "DECOMPOSITION" | "MULTI_QUERY" | "HYDE";
 
 export interface QueryTransformationInput {
   originalQuery: string;
@@ -125,29 +122,31 @@ export function validateQueryTransformationResult(
   }
 
   const seen = new Set<string>();
-  const variants = result.variants.slice(0, maxVariants).map((variant, index) => {
-    const query = validateOriginalQuery(variant.query);
-    const key = query.toLocaleLowerCase();
-    if (key === originalQuery.toLocaleLowerCase()) {
-      throw new Error("QUERY_TRANSFORM_VARIANT_DUPLICATES_ORIGINAL");
-    }
-    if (seen.has(key)) {
-      throw new Error("QUERY_TRANSFORM_VARIANT_DUPLICATE");
-    }
-    seen.add(key);
-    if (variant.ordinal !== index + 1) {
-      throw new Error("QUERY_TRANSFORM_VARIANT_ORDINAL_INVALID");
-    }
-    if (!variant.reason.trim()) {
-      throw new Error("QUERY_TRANSFORM_VARIANT_REASON_REQUIRED");
-    }
-    return {
-      ordinal: variant.ordinal,
-      kind: variant.kind,
-      query,
-      reason: variant.reason.trim(),
-    };
-  });
+  const variants = result.variants
+    .slice(0, maxVariants)
+    .map((variant, index) => {
+      const query = validateOriginalQuery(variant.query);
+      const key = query.toLocaleLowerCase();
+      if (key === originalQuery.toLocaleLowerCase()) {
+        throw new Error("QUERY_TRANSFORM_VARIANT_DUPLICATES_ORIGINAL");
+      }
+      if (seen.has(key)) {
+        throw new Error("QUERY_TRANSFORM_VARIANT_DUPLICATE");
+      }
+      seen.add(key);
+      if (variant.ordinal !== index + 1) {
+        throw new Error("QUERY_TRANSFORM_VARIANT_ORDINAL_INVALID");
+      }
+      if (!variant.reason.trim()) {
+        throw new Error("QUERY_TRANSFORM_VARIANT_REASON_REQUIRED");
+      }
+      return {
+        ordinal: variant.ordinal,
+        kind: variant.kind,
+        query,
+        reason: variant.reason.trim(),
+      };
+    });
 
   return {
     transformerId: result.transformerId.trim(),
