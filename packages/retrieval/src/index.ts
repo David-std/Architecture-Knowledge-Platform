@@ -1,6 +1,7 @@
 export * from "./rrf.js";
 export * from "./context-packet.js";
 export * from "./query-planner.js";
+export * from "./candidate-policy.js";
 export * from "./chunking.js";
 export * from "./embeddings.js";
 export * from "./local-semantic-embedding.js";
