@@ -320,7 +320,9 @@ export function registerOperatorRoutes(
     },
   );
 
-  app.get<{ Querystring: { limit?: string; vaultId?: string } }>(
+  app.get<{
+    Querystring: { limit?: string; vaultId?: string; asOf?: string };
+  }>(
     "/v1/operator/graph",
     { preHandler: requirePermission("knowledge:read") },
     async (request, reply) => {
@@ -338,23 +340,127 @@ export function registerOperatorRoutes(
         return reply.code(404).send({ code: "VAULT_NOT_FOUND" });
       }
       const limit = boundedLimit(request.query.limit, 120, 250);
-      const nodes = await db.pool.query(
-        `
-        select id,space_id,vault_id,external_id,path,title,type,layer,lifecycle,
-               trust_tier,refresh_status,current_revision,updated_at
-          from knowledge_documents
-         where space_id=any($1::uuid[]) and vault_id=any($2::uuid[])
-           and lifecycle <> 'DELETED_TOMBSTONE'
-         order by updated_at desc,id
-         limit $3
-        `,
-        [scope.spaces, vaultIds, limit],
-      );
-      const nodeIds = nodes.rows.map((node) => String(node.id));
-      const edges =
-        nodeIds.length === 0
-          ? { rows: [] }
-          : await db.pool.query(
+      const asOfRaw = request.query.asOf?.trim();
+      const asOfDate = asOfRaw ? new Date(asOfRaw) : null;
+      if (asOfDate && Number.isNaN(asOfDate.getTime())) {
+        return reply.code(400).send({ code: "INVALID_GRAPH_AS_OF" });
+      }
+      const asOf = asOfDate?.toISOString() ?? null;
+
+      const [knowledgeNodesResult, federatedNodesResult] = await Promise.all([
+        db.pool.query(
+          `
+          select id,space_id,vault_id,external_id,path,title,type,layer,lifecycle,
+                 trust_tier,refresh_status,current_revision,updated_at
+            from knowledge_documents
+           where space_id=any($1::uuid[]) and vault_id=any($2::uuid[])
+             and lifecycle <> 'DELETED_TOMBSTONE'
+           order by updated_at desc,id
+           limit $3
+          `,
+          [scope.spaces, vaultIds, limit],
+        ),
+        db.pool.query(
+          `
+          select distinct
+                 n.id,n.space_id,n.vault_id,n.graph_domain,n.scope_id,n.kind,
+                 n.canonical_key,n.revision,n.authorization_path,n.payload,
+                 p.lifecycle projection_lifecycle,p.freshness,
+                 p.updated_at projection_updated_at
+            from federated_graph_projection_revisions p
+            join federated_graph_projection_nodes pn
+              on pn.projection_revision_id=p.id
+            join federated_graph_nodes n on n.id=pn.node_id
+           where p.space_id=any($1::uuid[])
+             and p.vault_id=any($2::uuid[])
+             and n.vault_id=any($2::uuid[])
+             and p.lifecycle='ACTIVE'
+           order by p.updated_at desc,n.id
+           limit $3
+          `,
+          [scope.spaces, vaultIds, limit],
+        ),
+      ]);
+
+      const knowledgeNodes = knowledgeNodesResult.rows.map((row) => ({
+        id: `knowledge:${String(row.id)}`,
+        entityId: String(row.id),
+        nodeSource: "KNOWLEDGE",
+        graph_domain: "EPISTEMIC",
+        scope_id: `vault:${String(row.vault_id)}`,
+        kind: String(row.type),
+        canonical_key: String(row.external_id ?? row.path ?? row.id),
+        vault_id: row.vault_id,
+        external_id: row.external_id,
+        path: row.path,
+        title: row.title,
+        type: row.type,
+        layer: row.layer ?? "EPISTEMIC",
+        lifecycle: row.lifecycle,
+        trust_tier: row.trust_tier,
+        refresh_status: row.refresh_status,
+        current_revision: row.current_revision,
+        updated_at: row.updated_at,
+        payload: {
+          documentId: row.id,
+          externalId: row.external_id,
+          path: row.path,
+          title: row.title,
+        },
+      }));
+      const federatedNodes = federatedNodesResult.rows.map((row) => {
+        const payload =
+          row.payload && typeof row.payload === "object"
+            ? (row.payload as Record<string, unknown>)
+            : {};
+        return {
+          id: `federated:${String(row.id)}`,
+          entityId: String(row.id),
+          nodeSource: "FEDERATED",
+          graph_domain: String(row.graph_domain),
+          scope_id: String(row.scope_id),
+          kind: String(row.kind),
+          canonical_key: String(row.canonical_key),
+          vault_id: row.vault_id,
+          external_id: row.canonical_key,
+          path: row.authorization_path ?? null,
+          title: String(
+            payload.title ??
+              payload.name ??
+              payload.qualifiedName ??
+              row.canonical_key,
+          ),
+          type: row.kind,
+          layer: row.graph_domain,
+          lifecycle: row.projection_lifecycle,
+          trust_tier: String(
+            payload.trustTier ?? payload.trust_tier ?? "DERIVED",
+          ),
+          refresh_status: row.freshness,
+          current_revision: row.revision,
+          updated_at: row.projection_updated_at,
+          payload,
+        };
+      });
+
+      const nodes = [...knowledgeNodes, ...federatedNodes]
+        .sort(
+          (left, right) =>
+            new Date(String(right.updated_at ?? 0)).getTime() -
+            new Date(String(left.updated_at ?? 0)).getTime(),
+        )
+        .slice(0, limit);
+      const knowledgeIds = nodes
+        .filter((node) => node.nodeSource === "KNOWLEDGE")
+        .map((node) => node.entityId);
+      const federatedIds = nodes
+        .filter((node) => node.nodeSource === "FEDERATED")
+        .map((node) => node.entityId);
+
+      const [knowledgeEdgesResult, federatedEdgesResult] = await Promise.all([
+        knowledgeIds.length === 0
+          ? Promise.resolve({ rows: [] as Record<string, unknown>[] })
+          : db.pool.query(
               `
               select r.id,r.from_document_id "from",r.to_document_id "to",
                      r.relation_type "type",r.weight,r.provenance
@@ -368,26 +474,120 @@ export function registerOperatorRoutes(
                  and r.to_document_id=any($1::uuid[])
                order by r.relation_type,r.from_document_id,r.to_document_id
               `,
-              [nodeIds, scope.spaces, vaultIds],
-            );
+              [knowledgeIds, scope.spaces, vaultIds],
+            ),
+        federatedIds.length === 0
+          ? Promise.resolve({ rows: [] as Record<string, unknown>[] })
+          : db.pool.query(
+              `
+              select distinct
+                     e.id,e.from_node_id "from",e.to_node_id "to",
+                     e.relation_type "type",e.owner_graph_domain,
+                     e.derivation,e.confidence,e.source_ids,e.evidence_ids,
+                     e.locator_refs,e.provenance_revision,e.support_set_id,
+                     e.valid_from,e.valid_to,e.recorded_at
+                from federated_graph_projection_revisions p
+                join federated_graph_projection_edges pe
+                  on pe.projection_revision_id=p.id
+                join federated_graph_edges e on e.id=pe.edge_id
+               where p.space_id=any($2::uuid[])
+                 and p.vault_id=any($3::uuid[])
+                 and p.lifecycle='ACTIVE'
+                 and e.from_node_id=any($1::uuid[])
+                 and e.to_node_id=any($1::uuid[])
+                 and (
+                   $4::timestamptz is null
+                   or (
+                     (e.valid_from is null or e.valid_from<=$4::timestamptz)
+                     and (e.valid_to is null or e.valid_to>$4::timestamptz)
+                   )
+                 )
+               order by e.owner_graph_domain,e.relation_type,e.id
+              `,
+              [federatedIds, scope.spaces, vaultIds, asOf],
+            ),
+      ]);
+
+      const edges = [
+        ...knowledgeEdgesResult.rows.map((row) => ({
+          id: `knowledge-edge:${String(row.id)}`,
+          entityId: String(row.id),
+          edgeSource: "KNOWLEDGE",
+          from: `knowledge:${String(row.from)}`,
+          to: `knowledge:${String(row.to)}`,
+          type: row.type,
+          weight: row.weight,
+          owner_graph_domain: "EPISTEMIC",
+          derivation: null,
+          confidence: null,
+          provenance: row.provenance,
+          provenance_revision: null,
+          source_ids: [],
+          evidence_ids: [],
+          locator_refs: [],
+          support_set_id: null,
+          valid_from: null,
+          valid_to: null,
+          recorded_at: null,
+        })),
+        ...federatedEdgesResult.rows.map((row) => ({
+          id: `federated-edge:${String(row.id)}`,
+          entityId: String(row.id),
+          edgeSource: "FEDERATED",
+          from: `federated:${String(row.from)}`,
+          to: `federated:${String(row.to)}`,
+          type: row.type,
+          weight: null,
+          owner_graph_domain: row.owner_graph_domain,
+          derivation: row.derivation,
+          confidence: row.confidence,
+          provenance: {
+            sourceIds: row.source_ids,
+            evidenceIds: row.evidence_ids,
+            locatorRefs: row.locator_refs,
+          },
+          provenance_revision: row.provenance_revision,
+          source_ids: row.source_ids,
+          evidence_ids: row.evidence_ids,
+          locator_refs: row.locator_refs,
+          support_set_id: row.support_set_id,
+          valid_from: row.valid_from,
+          valid_to: row.valid_to,
+          recorded_at: row.recorded_at,
+        })),
+      ];
+
       const byRelationType = new Map<string, number>();
+      const byLayer = new Map<string, number>();
       const connected = new Set<string>();
-      for (const edge of edges.rows) {
+      for (const node of nodes) {
+        const layer = String(node.graph_domain);
+        byLayer.set(layer, (byLayer.get(layer) ?? 0) + 1);
+      }
+      for (const edge of edges) {
         const type = String(edge.type);
         byRelationType.set(type, (byRelationType.get(type) ?? 0) + 1);
         connected.add(String(edge.from));
         connected.add(String(edge.to));
       }
-      return {
+
+      return sanitizeOperationalValue({
         scope: { vaultIds },
-        truncated: nodes.rowCount === limit,
-        nodes: nodes.rows,
-        edges: edges.rows,
+        asOf,
+        truncated:
+          knowledgeNodesResult.rowCount === limit ||
+          federatedNodesResult.rowCount === limit ||
+          nodes.length === limit,
+        nodes,
+        edges,
+        byLayer: [...byLayer.entries()]
+          .map(([graph_domain, count]) => ({ graph_domain, nodes: count }))
+          .sort((left, right) => right.nodes - left.nodes),
         byRelationType: [...byRelationType.entries()]
           .map(([relation_type, count]) => ({ relation_type, edges: count }))
           .sort((left, right) => right.edges - left.edges),
-        orphanDocuments: nodeIds.filter((id) => !connected.has(id)).length,
-      };
+        orphanDocuments: nodes.filter((node) => !connected.has(node.id)).length,
+      });
     },
   );
 

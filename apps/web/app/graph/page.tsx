@@ -5,15 +5,23 @@ import { GraphExplorer, type OperatorGraph } from "./graph-explorer";
 export default async function GraphPage({
   searchParams,
 }: {
-  searchParams: Promise<{ vaultId?: string }>;
+  searchParams: Promise<{ vaultId?: string; asOf?: string }>;
 }) {
   const params = await searchParams;
   const registry = await akp<{ vaults: VaultOption[] }>("/v1/vaults");
   const selection = selectVault(registry.vaults ?? [], params.vaultId);
   const selected = selection.vault;
-  const graph = selected
+  const asOf = params.asOf?.trim() ?? "";
+  const graphQuery = selected
+    ? new URLSearchParams({
+        vaultId: selected.id,
+        limit: "180",
+        ...(asOf ? { asOf } : {}),
+      })
+    : null;
+  const graph = graphQuery
     ? await akp<OperatorGraph>(
-        `/v1/operator/graph?vaultId=${encodeURIComponent(selected.id)}&limit=180`,
+        `/v1/operator/graph?${graphQuery.toString()}`,
       )
     : null;
 
@@ -34,6 +42,15 @@ export default async function GraphPage({
               </option>
             ))}
           </select>
+        </label>{" "}
+        <label>
+          as_of
+          <input
+            type="text"
+            name="asOf"
+            defaultValue={asOf}
+            placeholder="2026-09-19T17:12:00-05:00"
+          />
         </label>{" "}
         <button type="submit">Explorar</button>
       </form>
@@ -65,6 +82,19 @@ export default async function GraphPage({
               <p className="metric">
                 {graph.truncated ? "TRUNCATED" : "BOUNDED"}
               </p>
+            </div>
+            <div className="card">
+              <span className="muted">Capas</span>
+              <p className="metric">{graph.byLayer.length}</p>
+              <small>
+                {graph.byLayer
+                  .map((entry) => `${entry.graph_domain}:${entry.nodes}`)
+                  .join(" · ") || "—"}
+              </small>
+            </div>
+            <div className="card">
+              <span className="muted">as_of</span>
+              <p>{graph.asOf ?? "CURRENT"}</p>
             </div>
           </div>
 

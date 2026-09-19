@@ -4,6 +4,12 @@ import { useMemo, useRef, useState } from "react";
 
 export interface GraphNode {
   id: string;
+  entityId: string;
+  nodeSource: "KNOWLEDGE" | "FEDERATED";
+  graph_domain: string;
+  scope_id: string;
+  kind: string;
+  canonical_key: string;
   vault_id: string;
   external_id?: string | null;
   path?: string;
@@ -15,22 +21,38 @@ export interface GraphNode {
   refresh_status: string;
   current_revision?: string;
   updated_at?: string;
+  payload?: Record<string, unknown>;
 }
 
 export interface GraphEdge {
   id: string;
+  entityId: string;
+  edgeSource: "KNOWLEDGE" | "FEDERATED";
   from: string;
   to: string;
   type: string;
-  weight?: number;
+  weight?: number | null;
+  owner_graph_domain: string;
+  derivation?: string | null;
+  confidence?: number | null;
   provenance?: unknown;
+  provenance_revision?: string | null;
+  source_ids?: unknown[];
+  evidence_ids?: unknown[];
+  locator_refs?: unknown[];
+  support_set_id?: string | null;
+  valid_from?: string | null;
+  valid_to?: string | null;
+  recorded_at?: string | null;
 }
 
 export interface OperatorGraph {
   scope: { vaultIds: string[] };
+  asOf: string | null;
   truncated: boolean;
   nodes: GraphNode[];
   edges: GraphEdge[];
+  byLayer: Array<{ graph_domain: string; nodes: number }>;
   byRelationType: Array<{ relation_type: string; edges: number }>;
   orphanDocuments: number;
 }
@@ -125,6 +147,10 @@ function clamp(value: number, minimum: number, maximum: number): number {
 }
 
 export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
+  const layers = useMemo(
+    () => [...new Set(graph.nodes.map((node) => node.graph_domain))].sort(),
+    [graph.nodes],
+  );
   const relationTypes = useMemo(
     () => [...new Set(graph.edges.map((edge) => edge.type))].sort(),
     [graph.edges],
@@ -136,6 +162,9 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
   const freshnessStates = useMemo(
     () => [...new Set(graph.nodes.map((node) => node.refresh_status))].sort(),
     [graph.nodes],
+  );
+  const [enabledLayers, setEnabledLayers] = useState<Set<string>>(
+    () => new Set(layers),
   );
   const [enabledRelations, setEnabledRelations] = useState<Set<string>>(
     () => new Set(relationTypes),
@@ -158,10 +187,11 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
     () =>
       graph.nodes.filter(
         (node) =>
+          enabledLayers.has(node.graph_domain) &&
           (trust === "ALL" || node.trust_tier === trust) &&
           (freshness === "ALL" || node.refresh_status === freshness),
       ),
-    [graph.nodes, trust, freshness],
+    [graph.nodes, enabledLayers, trust, freshness],
   );
   const visibleNodeIds = useMemo(
     () => new Set(filteredNodes.map((node) => node.id)),
@@ -171,14 +201,16 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
     () =>
       graph.edges.filter(
         (edge) =>
+          enabledLayers.has(edge.owner_graph_domain) &&
           enabledRelations.has(edge.type) &&
           visibleNodeIds.has(edge.from) &&
           visibleNodeIds.has(edge.to),
       ),
-    [graph.edges, enabledRelations, visibleNodeIds],
+    [graph.edges, enabledLayers, enabledRelations, visibleNodeIds],
   );
   const positions = useMemo(() => graphLayout(filteredNodes), [filteredNodes]);
   const selected = graph.nodes.find((node) => node.id === selectedId) ?? null;
+  const selectedPayload = selected?.payload ?? {};
   const path = useMemo(
     () => shortestPath(selectedId, targetId, filteredEdges),
     [selectedId, targetId, filteredEdges],
@@ -187,6 +219,27 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
     () => impactTraversal(selectedId, impactDepth, filteredEdges),
     [selectedId, impactDepth, filteredEdges],
   );
+  const pathEdges = useMemo(
+    () => filteredEdges.filter((edge) => path.edges.has(edge.id)),
+    [filteredEdges, path.edges],
+  );
+  const derivationSummary = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const edge of filteredEdges) {
+      const key = edge.derivation ?? "LEGACY_RELATION";
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return [...counts.entries()].sort((left, right) => right[1] - left[1]);
+  }, [filteredEdges]);
+
+  function toggleLayer(layer: string) {
+    setEnabledLayers((current) => {
+      const next = new Set(current);
+      if (next.has(layer)) next.delete(layer);
+      else next.add(layer);
+      return next;
+    });
+  }
 
   function toggleRelation(type: string) {
     setEnabledRelations((current) => {
@@ -230,6 +283,24 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
               ))}
             </select>
           </label>
+          <div style={{ marginTop: 12 }}>
+            <strong>Capas</strong>
+            <br />
+            {layers.map((layer) => (
+              <label
+                key={layer}
+                style={{ marginRight: 10, display: "inline-block" }}
+              >
+                <input
+                  type="checkbox"
+                  checked={enabledLayers.has(layer)}
+                  onChange={() => toggleLayer(layer)}
+                  style={{ minWidth: 0, width: "auto" }}
+                />{" "}
+                {layer}
+              </label>
+            ))}
+          </div>
         </section>
         <section className="card">
           <h3>Camino / impacto</h3>
@@ -289,6 +360,73 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
           </label>
         ))}
       </section>
+
+      <div className="grid" style={{ marginTop: 16 }}>
+        <section className="card">
+          <h3>Why connected?</h3>
+          {!targetId ? (
+            <p className="muted">
+              Selecciona un target para inspeccionar el camino y su provenance.
+            </p>
+          ) : pathEdges.length ? (
+            <ol>
+              {pathEdges.map((edge) => (
+                <li key={edge.id}>
+                  <strong>{edge.type}</strong> ·{" "}
+                  {edge.derivation ?? "LEGACY_RELATION"}
+                  {edge.confidence !== null &&
+                  edge.confidence !== undefined
+                    ? ` · confidence ${edge.confidence}`
+                    : ""}
+                  <br />
+                  <small>
+                    revision {edge.provenance_revision ?? "—"} · support{" "}
+                    {edge.support_set_id ?? "—"}
+                  </small>
+                  <details>
+                    <summary>Provenance / evidence</summary>
+                    <pre>
+                      {JSON.stringify(
+                        {
+                          provenance: edge.provenance,
+                          sourceIds: edge.source_ids ?? [],
+                          evidenceIds: edge.evidence_ids ?? [],
+                          locatorRefs: edge.locator_refs ?? [],
+                          validFrom: edge.valid_from ?? null,
+                          validTo: edge.valid_to ?? null,
+                          recordedAt: edge.recorded_at ?? null,
+                        },
+                        null,
+                        2,
+                      )}
+                    </pre>
+                  </details>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="muted">No hay camino dirigido visible.</p>
+          )}
+        </section>
+        <section className="card">
+          <h3>Derivación visible</h3>
+          {derivationSummary.length ? (
+            <ul>
+              {derivationSummary.map(([derivation, count]) => (
+                <li key={derivation}>
+                  {derivation}: {count}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted">Sin aristas visibles.</p>
+          )}
+          <small>
+            SOURCE_EXPLICIT/HUMAN_ASSERTED = declarado · STATICALLY_RESOLVED =
+            estático · RUNTIME_OBSERVED/DYNAMICALLY_PROVEN = observado.
+          </small>
+        </section>
+      </div>
 
       <div
         style={{
@@ -464,8 +602,34 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
                 <dd>
                   <code>{selected.id}</code>
                 </dd>
-                <dt className="muted">Layer</dt>
-                <dd>{selected.layer ?? "—"}</dd>
+                <dt className="muted">Layer / domain</dt>
+                <dd>
+                  {selected.layer ?? "—"} · {selected.graph_domain}
+                </dd>
+                <dt className="muted">Source / kind</dt>
+                <dd>
+                  {selected.nodeSource} · {selected.kind}
+                </dd>
+                <dt className="muted">Scope</dt>
+                <dd>
+                  <code>{selected.scope_id}</code>
+                </dd>
+                <dt className="muted">Canonical key</dt>
+                <dd>
+                  <code>{selected.canonical_key}</code>
+                </dd>
+                <dt className="muted">File / line</dt>
+                <dd>
+                  {typeof selectedPayload.path === "string"
+                    ? selectedPayload.path
+                    : selected.path ?? "—"}
+                  {typeof selectedPayload.lineStart === "number"
+                    ? `:${selectedPayload.lineStart}`
+                    : ""}
+                  {typeof selectedPayload.lineEnd === "number"
+                    ? `-${selectedPayload.lineEnd}`
+                    : ""}
+                </dd>
                 <dt className="muted">Revision</dt>
                 <dd>
                   <code>{selected.current_revision ?? "—"}</code>
@@ -477,7 +641,9 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
                     : "—"}
                 </dd>
               </dl>
-              <a href={`/documents/${selected.id}`}>Abrir documento</a>
+              {selected.nodeSource === "KNOWLEDGE" ? (
+                <a href={`/documents/${selected.entityId}`}>Abrir documento</a>
+              ) : null}
               <p className="muted">
                 Click en otro nodo cambia el seed. El resaltado de impacto sigue
                 relaciones salientes hasta la profundidad seleccionada.
