@@ -171,6 +171,7 @@ export const SearchHit = z.object({
         rank: z.number().int().positive(),
         channelWeight: z.number().nonnegative(),
         reason: z.string().min(1),
+        rawScore: z.number().finite().optional(),
         candidateRevision: z.string().nullable().optional(),
       }),
     )
