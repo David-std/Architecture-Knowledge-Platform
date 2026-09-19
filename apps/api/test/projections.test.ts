@@ -12,6 +12,9 @@ describe("vault-scoped structural projections", () => {
         if (sql.includes("insert into embedding_generations")) {
           return { rows: [{ id: "generation-a" }], rowCount: 1 };
         }
+        if (sql.includes("insert into community_index_revisions")) {
+          return { rows: [{ id: "community-revision-a" }], rowCount: 1 };
+        }
         if (sql.includes("insert into knowledge_units")) {
           unitNumber += 1;
           return { rows: [{ id: `unit-${unitNumber}` }], rowCount: 1 };
@@ -146,6 +149,9 @@ async function runProjection(): Promise<{
       calls.push({ sql, args });
       if (sql.includes("insert into embedding_generations")) {
         return { rows: [{ id: "generation-a" }], rowCount: 1 };
+      }
+      if (sql.includes("insert into community_index_revisions")) {
+        return { rows: [{ id: "community-revision-a" }], rowCount: 1 };
       }
       if (sql.includes("insert into knowledge_units")) {
         unitNumber += 1;
