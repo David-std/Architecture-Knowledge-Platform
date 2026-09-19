@@ -167,14 +167,7 @@ describe("community index PostgreSQL integration", () => {
           communities.rows.flatMap(
             (community) => community.support_set.relationKeys,
           ),
-        ).not.toContain(
-          [
-            ids.c,
-            "supports",
-            ids.d,
-            "community-test",
-          ].join(":"),
-        );
+        ).not.toContain([ids.c, "supports", ids.d, "community-test"].join(":"));
 
         const repeated = await rebuildCommunityIndex(db, {
           spaceId,
