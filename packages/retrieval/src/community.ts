@@ -91,7 +91,9 @@ export function detectLeidenCommunities(
   }
 
   const graph = createGraph();
-  const nodeIds = [...new Set(nodes.map((node) => node.id).filter(Boolean))].sort();
+  const nodeIds = [
+    ...new Set(nodes.map((node) => node.id).filter(Boolean)),
+  ].sort();
   for (const nodeId of nodeIds) graph.addNode(nodeId);
 
   const knownNodes = new Set(nodeIds);
@@ -106,9 +108,9 @@ export function detectLeidenCommunities(
     .map((edge) => ({ ...edge, weight: positiveWeight(edge.weight) }))
     .filter((edge) => edge.weight > 0)
     .sort((left, right) =>
-      [left.from, left.to, left.id].join("\0").localeCompare(
-        [right.from, right.to, right.id].join("\0"),
-      ),
+      [left.from, left.to, left.id]
+        .join("\0")
+        .localeCompare([right.from, right.to, right.id].join("\0")),
     );
 
   for (const edge of normalizedEdges) {
@@ -153,9 +155,7 @@ export function detectLeidenCommunities(
     const communityKey = stableCommunityKey(group.members);
     const memberSet = new Set(group.members);
     const supportEdgeIds = normalizedEdges
-      .filter(
-        (edge) => memberSet.has(edge.from) && memberSet.has(edge.to),
-      )
+      .filter((edge) => memberSet.has(edge.from) && memberSet.has(edge.to))
       .map((edge) => edge.id)
       .sort();
     return {
