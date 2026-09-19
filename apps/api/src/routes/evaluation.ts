@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import { resolveAuthorizedVaultScope, type Postgres } from "@akp/postgres";
 import { z } from "zod";
+import { DeterministicQueryDecomposer } from "@akp/retrieval";
 import {
   loadEvaluationPack,
   RETRIEVAL_BENCHMARK_MATRIX,
@@ -81,6 +82,7 @@ export async function runEvaluation(
     deterministicRerank?: boolean;
     associativePpr?: boolean;
     communityGlobal?: boolean;
+    queryDecomposition?: boolean;
   },
   spaceId: string,
   packName: string,
@@ -169,6 +171,9 @@ export async function runEvaluation(
                 },
               }
             : {}),
+        ...(configuration.queryDecomposition
+          ? { queryTransformer: new DeterministicQueryDecomposer() }
+          : {}),
       },
     );
     const latencyMs = performance.now() - started;
@@ -433,6 +438,7 @@ export async function runRetrievalBenchmark(
     deterministicRerank?: boolean;
     associativePpr?: boolean;
     communityGlobal?: boolean;
+    queryDecomposition?: boolean;
   }> = RETRIEVAL_BENCHMARK_MATRIX.map((configuration) => ({
     name: configuration.name,
     channels: [...configuration.channels] as NonNullable<
@@ -450,6 +456,9 @@ export async function runRetrievalBenchmark(
     ...(configuration.communityGlobal === undefined
       ? {}
       : { communityGlobal: configuration.communityGlobal }),
+    ...(configuration.queryDecomposition === undefined
+      ? {}
+      : { queryDecomposition: configuration.queryDecomposition }),
   }));
   const runs = [];
   for (const configuration of configurations) {
@@ -520,6 +529,7 @@ export async function runRetrievalBenchmark(
       rerank: Boolean(configuration.deterministicRerank),
       associativePpr: Boolean(configuration.associativePpr),
       communityGlobal: Boolean(configuration.communityGlobal),
+      queryDecomposition: Boolean(configuration.queryDecomposition),
     })),
     datasetSlices,
     requiredGenericSlices:
