@@ -279,6 +279,7 @@ export function resolveRetrievalPolicy(
     }),
   ) as Record<RetrievalCandidateChannel, RetrievalChannelPolicy>;
 
+  const graphMode = input.graphMode ?? DEFAULT_RETRIEVAL_POLICY.graphMode;
   return {
     channels,
     exactFirst: input.exactFirst ?? DEFAULT_RETRIEVAL_POLICY.exactFirst,
@@ -291,7 +292,7 @@ export function resolveRetrievalPolicy(
       : {}),
     truthValidation:
       input.truthValidation ?? DEFAULT_RETRIEVAL_POLICY.truthValidation,
-    graphMode: input.graphMode ?? DEFAULT_RETRIEVAL_POLICY.graphMode,
+    ...(graphMode !== undefined ? { graphMode } : {}),
     contextLevel: input.contextLevel ?? DEFAULT_RETRIEVAL_POLICY.contextLevel,
   };
 }
