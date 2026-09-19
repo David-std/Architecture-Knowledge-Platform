@@ -22,7 +22,9 @@ export function projectionInputFromEvent(
 ): RebuildDerivedTruthProjectionInput {
   const spaceId = String(event.spaceId ?? "");
   const vaultId = String(event.vaultId ?? "");
-  const reason = String(event.payload.reason ?? "") as DerivedTruthInvalidationReason;
+  const reason = String(
+    event.payload.reason ?? "",
+  ) as DerivedTruthInvalidationReason;
   const truthRevisionHash = String(event.payload.truthRevisionHash ?? "");
   const resourceKey = resourcePayloadKey[reason];
   if (!spaceId || !vaultId) {
