@@ -51,10 +51,7 @@ function request(intent: QueryIntent): SearchRequest {
   };
 }
 
-function hit(
-  label: string,
-  overrides: Partial<SearchHit> = {},
-): SearchHit {
+function hit(label: string, overrides: Partial<SearchHit> = {}): SearchHit {
   return {
     documentId: randomUUID(),
     vaultId: VAULT_ID,
