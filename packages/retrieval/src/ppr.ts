@@ -227,6 +227,7 @@ export function personalizedPageRank(input: {
   if (nodes.size > policy.maxNodes) {
     throw new Error("PPR_MAX_NODES_EXCEEDED");
   }
+  const nodeIds = [...nodes.keys()].sort(compareStrings);
 
   const outgoing = new Map<
     string,
@@ -285,7 +286,7 @@ export function personalizedPageRank(input: {
   }
 
   const personalization = new Map<string, number>();
-  for (const nodeId of nodes.keys()) {
+  for (const nodeId of nodeIds) {
     personalization.set(
       nodeId,
       (seedWeights.get(nodeId) ?? 0) / totalSeedWeight,
@@ -299,7 +300,7 @@ export function personalizedPageRank(input: {
 
   for (let iteration = 1; iteration <= policy.maxIterations; iteration += 1) {
     const next = new Map<string, number>();
-    for (const nodeId of nodes.keys()) {
+    for (const nodeId of nodeIds) {
       next.set(
         nodeId,
         policy.restartProbability * (personalization.get(nodeId) ?? 0),
@@ -333,7 +334,7 @@ export function personalizedPageRank(input: {
     }
 
     let delta = 0;
-    for (const nodeId of nodes.keys()) {
+    for (const nodeId of nodeIds) {
       delta += Math.abs((next.get(nodeId) ?? 0) - (scores.get(nodeId) ?? 0));
     }
     scores = next;
