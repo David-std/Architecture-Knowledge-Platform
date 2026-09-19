@@ -12,6 +12,8 @@ export type QueryIntent =
 export type RetrievalChannel =
   "context-pack" | "exact" | "lexical" | "vector" | "graph" | "raw" | "code";
 
+export type RetrievalStrategy = "LOCAL" | "GLOBAL" | "DRIFT" | "ASSOCIATIVE";
+
 /**
  * Runtime capabilities used to turn an intent into an executable plan.
  *
@@ -23,6 +25,7 @@ export type RetrievalChannel =
 export interface QueryPlannerCapabilities {
   vectorAvailable: boolean;
   graphConsistent: boolean;
+  communityAvailable: boolean;
   rawAllowed: boolean;
   codeAdapterAvailable: boolean;
   contextPackAvailable: boolean;
@@ -37,6 +40,7 @@ export interface QueryPlannerOptions extends Partial<QueryPlannerCapabilities> {
 
 export interface QueryPlan {
   intent: QueryIntent;
+  strategy: RetrievalStrategy;
   channels: RetrievalChannel[];
   maxGraphHops: number;
   requireEvidence: boolean;
@@ -74,6 +78,7 @@ const QUERY_INTENTS: ReadonlySet<QueryIntent> = new Set([
 export const DEFAULT_QUERY_PLANNER_CAPABILITIES: QueryPlannerCapabilities = {
   vectorAvailable: false,
   graphConsistent: false,
+  communityAvailable: false,
   rawAllowed: false,
   codeAdapterAvailable: false,
   contextPackAvailable: false,
@@ -92,6 +97,10 @@ function normalizeCapabilities(
     graphConsistent: capability(
       input?.graphConsistent,
       DEFAULT_QUERY_PLANNER_CAPABILITIES.graphConsistent,
+    ),
+    communityAvailable: capability(
+      input?.communityAvailable,
+      DEFAULT_QUERY_PLANNER_CAPABILITIES.communityAvailable,
     ),
     rawAllowed: capability(
       input?.rawAllowed,
@@ -175,6 +184,10 @@ export function planQuery(
       directCapabilities.graphConsistent =
         requestedIntentOrOptions.graphConsistent;
     }
+    if (requestedIntentOrOptions.communityAvailable !== undefined) {
+      directCapabilities.communityAvailable =
+        requestedIntentOrOptions.communityAvailable;
+    }
     if (requestedIntentOrOptions.rawAllowed !== undefined) {
       directCapabilities.rawAllowed = requestedIntentOrOptions.rawAllowed;
     }
@@ -236,8 +249,18 @@ export function planQuery(
       ? 3
       : 1
     : 0;
+  const strategy: RetrievalStrategy =
+    intent === "IMPACT_ANALYSIS" && capabilities.graphConsistent
+      ? "ASSOCIATIVE"
+      : intent === "GLOBAL_SYNTHESIS" && capabilities.communityAvailable
+        ? "GLOBAL"
+        : (intent === "CONCEPTUAL" || intent === "COMPARISON") &&
+            capabilities.communityAvailable
+          ? "DRIFT"
+          : "LOCAL";
   return {
     intent,
+    strategy,
     channels,
     maxGraphHops,
     requireEvidence: intent === "SOURCE_VERIFICATION",
