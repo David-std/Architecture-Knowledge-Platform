@@ -92,7 +92,9 @@ function searchHitsFromPayload(payload: unknown): SearchHit[] {
   return arrays.flat();
 }
 
-function hitsFromValue(value: ReasoningExecutionValue | undefined): SearchHit[] {
+function hitsFromValue(
+  value: ReasoningExecutionValue | undefined,
+): SearchHit[] {
   return value ? searchHitsFromPayload(value.payload) : [];
 }
 
@@ -136,7 +138,8 @@ function candidateKind(
   | "source" {
   const value = hit.type.toLowerCase();
   if (value.includes("rule") || value.includes("policy")) return "rule";
-  if (value.includes("workflow") || value.includes("procedure")) return "workflow";
+  if (value.includes("workflow") || value.includes("procedure"))
+    return "workflow";
   if (value.includes("profile")) return "profile";
   if (value.includes("decision") || value.includes("adr")) return "decision";
   if (value.includes("counterexample")) return "counterexample";
@@ -450,7 +453,8 @@ export function createApplicationReasoningPorts(
           (sum, value) => sum + value,
           0,
         );
-        result = denominatorValue === 0 ? null : numeratorValue / denominatorValue;
+        result =
+          denominatorValue === 0 ? null : numeratorValue / denominatorValue;
       } else {
         result = aggregateValues(
           step.args.operation,
