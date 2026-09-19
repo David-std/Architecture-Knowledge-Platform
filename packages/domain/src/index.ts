@@ -107,6 +107,7 @@ export interface SourceConnectorDescriptor {
       };
   deletionPropagation: "TOMBSTONE" | "NONE";
   sourceVersioning: boolean;
+  freshnessSlaSeconds?: number;
   contentTrust: "UNTRUSTED_EXTERNAL";
 }
 
@@ -212,6 +213,9 @@ export const IMPLEMENTED_ASSURANCE_DETECTORS = [
   "CODE_GRAPH_FRESHNESS",
   "LINK_ORPHAN",
   "SYNTHESIS_ACCESS_BOUNDARY",
+  "CONNECTOR_DELETION",
+  "CONNECTOR_FRESHNESS",
+  "CONNECTOR_ACL_DRIFT",
   "GRAPH_DISAGREEMENT",
   "ORPHAN_WORK",
   "EXPIRED_CLAIM",
