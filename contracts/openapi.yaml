@@ -3978,6 +3978,13 @@ components:
                 type: number
                 description: Channel-native score retained for explanation; it does not enter RRF.
               candidateRevision: { type: [string, "null"] }
+        rerankTrace:
+          type: object
+          required: [reranker, preRank, postRank]
+          properties:
+            reranker: { type: string, minLength: 1 }
+            preRank: { type: integer, minimum: 1 }
+            postRank: { type: integer, minimum: 1 }
         excerpt: { type: string }
         citations:
           type: array
