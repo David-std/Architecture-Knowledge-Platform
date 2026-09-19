@@ -250,6 +250,157 @@ jobs:
             aggregates: report.aggregates,
           }, null, 2));
           NODE
+      - name: Execute P9 agent context tool ergonomics benchmark
+        shell: bash
+        run: |
+          set +e
+          AKP_TOOL_ERGONOMICS_REPORT=reports/ci/agent-context-ergonomics.json \
+            pnpm benchmark:agent-context-ergonomics \
+            > reports/ci/agent-context-ergonomics.log 2>&1
+          status=$?
+          cat reports/ci/agent-context-ergonomics.log
+          if [ ! -f reports/ci/agent-context-ergonomics.json ]; then
+            echo "P9 tool ergonomics harness did not produce its report" >&2
+            exit 1
+          fi
+          exit "$status"
+      - name: Validate P9 tool ergonomics evidence
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const report = JSON.parse(
+            readFileSync("reports/ci/agent-context-ergonomics.json", "utf8"),
+          );
+          const providerHealth = JSON.parse(
+            readFileSync("reports/ci/local-agent-provider-health.json", "utf8"),
+          );
+          if (report.benchmark !== "P9_AGENT_CONTEXT_TOOL_ERGONOMICS") {
+            throw new Error("Unexpected P9 ergonomics benchmark identity.");
+          }
+          if (
+            report.status !== "PROVEN" ||
+            report.taskSet?.tasks !== 6 ||
+            report.taskSet?.evidenceLevel !== "REGISTERED_PUBLIC_PRODUCT_CORPUS"
+          ) {
+            throw new Error("P9 ergonomics evidence is not PROVEN on the registered six-task corpus.");
+          }
+          if (
+            report.claimPolicy?.realModelRequired !== true ||
+            report.claimPolicy?.sameModelSettingsAcrossArms !== true ||
+            report.claimPolicy?.superiorityClaimAllowed !== false ||
+            report.claimPolicy?.mutationExecutionAllowed !== false
+          ) {
+            throw new Error("P9 ergonomics claim policy is incomplete.");
+          }
+          if (
+            report.execution?.provider?.model !==
+              "onnx-community/Qwen2.5-0.5B-Instruct" ||
+            report.execution?.provider?.operatorAssertedRealModel !== true ||
+            providerHealth.revision !==
+              "cc5cc01a65cc3ff17bdb73a7de33d879f62599b0" ||
+            providerHealth.dtype !== "q4"
+          ) {
+            throw new Error("P9 ergonomics did not use the pinned real model.");
+          }
+          if (
+            typeof report.instructionBundle?.sha256 !== "string" ||
+            !/^[a-f0-9]{64}$/.test(report.instructionBundle.sha256)
+          ) {
+            throw new Error("P9 ergonomics lacks an integrity-addressed instruction bundle.");
+          }
+          if (report.winner !== null) {
+            throw new Error("P9 ergonomics must not manufacture a winning arm.");
+          }
+          const observations = Array.isArray(report.observations)
+            ? report.observations
+            : [];
+          if (observations.length !== 18) {
+            throw new Error(
+              `Expected 18 P9 observations, got ${observations.length}.`,
+            );
+          }
+          const requiredArms = [
+            "EXPERT_TOOLS_ONLY",
+            "AKP_CONTEXT_FACADE",
+            "FACADE_WITH_INSTRUCTIONS",
+          ];
+          for (const arm of requiredArms) {
+            const armObservations = observations.filter(
+              (observation) => observation.arm === arm,
+            );
+            if (armObservations.length !== 6) {
+              throw new Error(
+                `P9 arm ${arm} has ${armObservations.length} observations.`,
+              );
+            }
+          }
+          for (const observation of observations) {
+            for (const metric of [
+              "callsPerTask",
+              "toolSelectionErrors",
+              "inputTokens",
+              "contextTokens",
+              "latencyMs",
+              "correctness",
+              "missedConstraints",
+              "unsupportedClaims",
+              "unsupportedClaimRate",
+              "citationPrecision",
+            ]) {
+              if (!Number.isFinite(observation[metric])) {
+                throw new Error(
+                  `P9 observation ${observation.taskId}/${observation.arm} lacks ${metric}.`,
+                );
+              }
+            }
+            if (!Array.isArray(observation.selectedCalls)) {
+              throw new Error("P9 observation lacks selected call trace.");
+            }
+          }
+          const aggregates = Array.isArray(report.aggregates)
+            ? report.aggregates
+            : [];
+          if (aggregates.length !== 3) {
+            throw new Error("P9 ergonomics report must contain three aggregate arms.");
+          }
+          for (const arm of requiredArms) {
+            const aggregate = aggregates.find((item) => item.arm === arm);
+            if (!aggregate || aggregate.tasks !== 6) {
+              throw new Error(`P9 aggregate missing for ${arm}.`);
+            }
+            for (const metric of [
+              "meanCallsPerTask",
+              "meanToolSelectionErrors",
+              "exactSelectionRate",
+              "meanInputTokens",
+              "meanContextTokens",
+              "meanLatencyMs",
+              "meanCorrectness",
+              "meanMissedConstraints",
+              "meanUnsupportedClaims",
+              "meanUnsupportedClaimRate",
+              "meanCitationPrecision",
+            ]) {
+              if (!Number.isFinite(aggregate[metric])) {
+                throw new Error(`P9 aggregate ${arm} lacks ${metric}.`);
+              }
+            }
+          }
+          console.log(
+            JSON.stringify(
+              {
+                status: report.status,
+                model: report.execution.provider.model,
+                observations: observations.length,
+                aggregates,
+              },
+              null,
+              2,
+            ),
+          );
+          NODE
       - name: Capture Agent A/B diagnostics
         if: always()
         shell: bash
