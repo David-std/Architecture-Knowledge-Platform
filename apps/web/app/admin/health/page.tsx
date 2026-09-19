@@ -330,9 +330,11 @@ export default async function HealthPage() {
                 </td>
                 <td>
                   {finding.target_ids.length
-                    ? finding.target_ids.slice(0, 2).map((target) => (
-                        <code key={target}>{target.slice(0, 22)} </code>
-                      ))
+                    ? finding.target_ids
+                        .slice(0, 2)
+                        .map((target) => (
+                          <code key={target}>{target.slice(0, 22)} </code>
+                        ))
                     : "—"}
                 </td>
                 <td>

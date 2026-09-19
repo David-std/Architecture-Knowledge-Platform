@@ -87,9 +87,9 @@ describeDb("continuous assurance detector execution", () => {
     expect(claimed?.id).toBe(run.id);
     if (!claimed) throw new Error("expected assurance run claim");
 
-    await expect(
-      runClaimedAssuranceRun(db, claimed, workerId),
-    ).resolves.toBe("COMPLETED");
+    await expect(runClaimedAssuranceRun(db, claimed, workerId)).resolves.toBe(
+      "COMPLETED",
+    );
 
     const stored = await db.pool.query<{
       status: string;
@@ -267,12 +267,9 @@ describeDb("continuous assurance detector execution", () => {
     }
 
     const deletionWorker = `connector-deletion-${randomUUID()}`;
-    const deletionClaim = await claimNextAssuranceRun(
-      db,
-      deletionWorker,
-      60,
-      { runId: deletionRunId },
-    );
+    const deletionClaim = await claimNextAssuranceRun(db, deletionWorker, 60, {
+      runId: deletionRunId,
+    });
     expect(deletionClaim?.id).toBe(deletionRunId);
     if (!deletionClaim) throw new Error("expected connector deletion run");
 

@@ -268,7 +268,9 @@ describeDb("source connector no-gap inbox", () => {
     });
     expect(String(reconfigured.id)).toBe(connectorId);
 
-    const checkpoint = await db.pool.query<{ applied_sequence: string | number }>(
+    const checkpoint = await db.pool.query<{
+      applied_sequence: string | number;
+    }>(
       "select applied_sequence from source_connector_checkpoints where connector_id=$1",
       [connectorId],
     );

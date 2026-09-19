@@ -42,12 +42,7 @@ const FindingQuery = ScopedQuery.extend({
 
 const FindingStatusBody = z
   .object({
-    status: z.enum([
-      "OPEN",
-      "ACKNOWLEDGED",
-      "RESOLVED",
-      "FALSE_POSITIVE",
-    ]),
+    status: z.enum(["OPEN", "ACKNOWLEDGED", "RESOLVED", "FALSE_POSITIVE"]),
     reason: z.string().trim().min(1).max(2000).optional(),
   })
   .strict();
@@ -333,10 +328,9 @@ export function registerAssuranceRoutes(
       const current = await db.pool.query<{
         space_id: string;
         vault_id: string;
-      }>(
-        "select space_id,vault_id from assurance_findings where id=$1",
-        [request.params.id],
-      );
+      }>("select space_id,vault_id from assurance_findings where id=$1", [
+        request.params.id,
+      ]);
       const scope = current.rows[0];
       if (!scope) {
         return reply.code(404).send({ code: "ASSURANCE_FINDING_NOT_FOUND" });

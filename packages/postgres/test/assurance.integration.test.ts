@@ -276,9 +276,7 @@ describeDb("continuous assurance durable runs", () => {
     });
     expect(
       new Date(String(after.rows[0]?.last_seen_at)).getTime(),
-    ).toBeGreaterThanOrEqual(
-      new Date(String(finding.last_seen_at)).getTime(),
-    );
+    ).toBeGreaterThanOrEqual(new Date(String(finding.last_seen_at)).getTime());
 
     const history = await db.pool.query<{ action: string }>(
       `select action

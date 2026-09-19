@@ -125,7 +125,10 @@ export async function appendSourceConnectorEvent(
     throw sourceConnectorError("SOURCE_CONNECTOR_PAYLOAD_HASH_INVALID", 400);
   }
   if (input.operation === "DELETE" && input.content != null) {
-    throw sourceConnectorError("SOURCE_CONNECTOR_DELETE_CONTENT_FORBIDDEN", 400);
+    throw sourceConnectorError(
+      "SOURCE_CONNECTOR_DELETE_CONTENT_FORBIDDEN",
+      400,
+    );
   }
 
   const client = await db.pool.connect();
@@ -143,7 +146,8 @@ export async function appendSourceConnectorEvent(
       [input.connectorId],
     );
     const connector = registration.rows[0];
-    if (!connector) throw sourceConnectorError("SOURCE_CONNECTOR_NOT_FOUND", 404);
+    if (!connector)
+      throw sourceConnectorError("SOURCE_CONNECTOR_NOT_FOUND", 404);
     if (connector.state !== "ACTIVE") {
       throw sourceConnectorError("SOURCE_CONNECTOR_DISABLED", 409);
     }
@@ -177,7 +181,10 @@ export async function appendSourceConnectorEvent(
     }
 
     if (input.sequence <= Number(connector.applied_sequence)) {
-      throw sourceConnectorError("SOURCE_CONNECTOR_SEQUENCE_ALREADY_APPLIED", 409);
+      throw sourceConnectorError(
+        "SOURCE_CONNECTOR_SEQUENCE_ALREADY_APPLIED",
+        409,
+      );
     }
 
     const existingSequence = await client.query<{ event_id: string }>(

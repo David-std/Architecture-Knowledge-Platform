@@ -30,10 +30,7 @@ export const IMPLEMENTED_ASSURANCE_DETECTORS = [
 
 type AssuranceSeverity = "INFO" | "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 export type AssuranceFindingStatus =
-  | "OPEN"
-  | "ACKNOWLEDGED"
-  | "RESOLVED"
-  | "FALSE_POSITIVE";
+  "OPEN" | "ACKNOWLEDGED" | "RESOLVED" | "FALSE_POSITIVE";
 
 interface AssuranceFindingDraft {
   detector: AssuranceDetector;
@@ -286,7 +283,9 @@ export function assuranceFindingKey(
   }
   return createHash("sha256")
     .update(
-      [finding.detector, finding.code, finding.scopeId, ...targets].join("\u001f"),
+      [finding.detector, finding.code, finding.scopeId, ...targets].join(
+        "\u001f",
+      ),
     )
     .digest("hex");
 }

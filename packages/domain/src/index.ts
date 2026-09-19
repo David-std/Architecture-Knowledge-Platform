@@ -208,18 +208,10 @@ export const IMPLEMENTED_ASSURANCE_DETECTORS = [
   ...ASSURANCE_DETECTORS,
 ] as const satisfies readonly AssuranceDetector[];
 
-export type AssuranceSeverity =
-  | "INFO"
-  | "LOW"
-  | "MEDIUM"
-  | "HIGH"
-  | "CRITICAL";
+export type AssuranceSeverity = "INFO" | "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 
 export type AssuranceFindingStatus =
-  | "OPEN"
-  | "ACKNOWLEDGED"
-  | "RESOLVED"
-  | "FALSE_POSITIVE";
+  "OPEN" | "ACKNOWLEDGED" | "RESOLVED" | "FALSE_POSITIVE";
 
 export interface AssuranceFindingRevisionSet {
   [revision: string]: string | null | undefined;

@@ -38,9 +38,7 @@ const DETECTOR_CATEGORY: Record<SupportedDetector, string> = {
   UNSUPPORTED_CAUSALITY: "WORK_GRAPH",
 };
 
-const DETECTOR_PROPOSED_ACTION: Partial<
-  Record<SupportedDetector, string>
-> = {
+const DETECTOR_PROPOSED_ACTION: Partial<Record<SupportedDetector, string>> = {
   GROUNDING: "RECOMPILE",
   FRESHNESS: "RECOMPILE",
   CONTRADICTION: "PROMOTION",
@@ -117,7 +115,8 @@ async function collectDetectorFindings(
         scope,
       );
       return rows.rows.map((row) =>
-        findingForScope(run.vaultId, 
+        findingForScope(
+          run.vaultId,
           detector,
           "HIGH",
           "UNGROUNDED_ACTIVE_KNOWLEDGE",
@@ -144,7 +143,8 @@ async function collectDetectorFindings(
         scope,
       );
       return rows.rows.map((row) =>
-        findingForScope(run.vaultId, 
+        findingForScope(
+          run.vaultId,
           detector,
           row.refresh_status === "INVALID" ? "HIGH" : "MEDIUM",
           "STALE_KNOWLEDGE",
@@ -172,7 +172,8 @@ async function collectDetectorFindings(
         scope,
       );
       return rows.rows.map((row) =>
-        findingForScope(run.vaultId, 
+        findingForScope(
+          run.vaultId,
           detector,
           "MEDIUM",
           "OPEN_CONTRADICTION",
@@ -198,7 +199,8 @@ async function collectDetectorFindings(
         scope,
       );
       return rows.rows.map((row) =>
-        findingForScope(run.vaultId, 
+        findingForScope(
+          run.vaultId,
           detector,
           "HIGH",
           "DUPLICATE_EXTERNAL_ID",
@@ -221,7 +223,8 @@ async function collectDetectorFindings(
         scope,
       );
       return rows.rows.map((row) =>
-        findingForScope(run.vaultId, 
+        findingForScope(
+          run.vaultId,
           detector,
           "HIGH",
           "GRAPH_REVISION_MISMATCH",
@@ -261,7 +264,8 @@ async function collectDetectorFindings(
         scope,
       );
       return rows.rows.map((row) =>
-        findingForScope(run.vaultId, 
+        findingForScope(
+          run.vaultId,
           detector,
           "CRITICAL",
           "TEMPORAL_TRUTH_HEAD_MISMATCH",
@@ -294,7 +298,8 @@ async function collectDetectorFindings(
         scope,
       );
       return rows.rows.map((row) =>
-        findingForScope(run.vaultId, 
+        findingForScope(
+          run.vaultId,
           detector,
           "HIGH",
           "CODE_GRAPH_STALE",
@@ -334,7 +339,8 @@ async function collectDetectorFindings(
         scope,
       );
       return rows.rows.map((row) =>
-        findingForScope(run.vaultId, 
+        findingForScope(
+          run.vaultId,
           detector,
           "MEDIUM",
           "ORPHAN_ACTIVE_KNOWLEDGE",
@@ -411,7 +417,8 @@ async function collectDetectorFindings(
         [run.spaceId],
       );
       return rows.rows.map((row) =>
-        findingForScope(run.vaultId, 
+        findingForScope(
+          run.vaultId,
           detector,
           "CRITICAL",
           "CONTEXT_PACKET_SCOPE_MISMATCH",
@@ -454,7 +461,8 @@ async function collectDetectorFindings(
         scope,
       );
       return rows.rows.map((row) =>
-        findingForScope(run.vaultId, 
+        findingForScope(
+          run.vaultId,
           detector,
           "CRITICAL",
           "CONNECTOR_DELETE_NOT_TOMBSTONED",
@@ -501,7 +509,8 @@ async function collectDetectorFindings(
         scope,
       );
       return rows.rows.map((row) =>
-        findingForScope(run.vaultId, 
+        findingForScope(
+          run.vaultId,
           detector,
           "HIGH",
           "CONNECTOR_FRESHNESS_SLA_EXCEEDED",
@@ -550,7 +559,8 @@ async function collectDetectorFindings(
         scope,
       );
       return rows.rows.map((row) =>
-        findingForScope(run.vaultId, 
+        findingForScope(
+          run.vaultId,
           detector,
           row.permission_uncertain ? "HIGH" : "MEDIUM",
           row.permission_uncertain
@@ -586,7 +596,8 @@ async function collectDetectorFindings(
         scope,
       );
       return rows.rows.map((row) =>
-        findingForScope(run.vaultId, 
+        findingForScope(
+          run.vaultId,
           detector,
           "CRITICAL",
           "MULTIPLE_ACTIVE_GRAPH_REVISIONS",
@@ -615,7 +626,8 @@ async function collectDetectorFindings(
         scope,
       );
       return rows.rows.map((row) =>
-        findingForScope(run.vaultId, 
+        findingForScope(
+          run.vaultId,
           detector,
           "HIGH",
           "ORPHAN_ACTIVE_WORK",
@@ -647,7 +659,8 @@ async function collectDetectorFindings(
         scope,
       );
       return rows.rows.map((row) =>
-        findingForScope(run.vaultId, 
+        findingForScope(
+          run.vaultId,
           detector,
           "MEDIUM",
           "EXPIRED_WORKSPACE_CLAIM",
@@ -692,7 +705,8 @@ async function collectDetectorFindings(
         scope,
       );
       return rows.rows.map((row) =>
-        findingForScope(run.vaultId, 
+        findingForScope(
+          run.vaultId,
           detector,
           "HIGH",
           "STALE_WORKSPACE_HANDOFF",
@@ -724,7 +738,8 @@ async function collectDetectorFindings(
         scope,
       );
       return rows.rows.map((row) =>
-        findingForScope(run.vaultId, 
+        findingForScope(
+          run.vaultId,
           detector,
           "CRITICAL",
           "UNSUPPORTED_CAUSALITY",
