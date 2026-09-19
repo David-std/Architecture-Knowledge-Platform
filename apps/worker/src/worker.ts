@@ -12,9 +12,11 @@ import {
   Postgres,
   appendOutboxEvent,
   claimContextFabricNode,
+  claimNextAssuranceRun,
   claimNextIngestJob,
   resolveContextFabricIdentity,
   runKnowledgeLint,
+  submitAssuranceRun,
 } from "@akp/postgres";
 import { transitionIngest, type IngestState } from "@akp/domain";
 import {
@@ -41,6 +43,10 @@ import {
   WorkerDrainError,
   type WorkerDrainSummary,
 } from "./drain.js";
+import {
+  runClaimedAssuranceRun,
+  SUPPORTED_ASSURANCE_DETECTORS,
+} from "./assurance-worker.js";
 import {
   DOCUMENT_ARTIFACT_SCHEMA_VERSION,
   parseCanonicalExtractionResponse,
@@ -135,6 +141,13 @@ async function runScheduledLintIfDue(force = false): Promise<void> {
         String(space.vault_id),
         "SCHEDULED",
       );
+      await submitAssuranceRun(db, {
+        spaceId: String(space.id),
+        vaultId: String(space.vault_id),
+        trigger: "SCHEDULED",
+        detectors: [...SUPPORTED_ASSURANCE_DETECTORS],
+        idempotencyKey: `scheduled:${Math.floor(Date.now() / lintIntervalMs)}`,
+      });
     }
   }
 }
@@ -936,10 +949,20 @@ async function loop(): Promise<WorkerDrainSummary | undefined> {
       ),
       runEventOnce: () => eventWorker.runOnce(),
       runIngestJob: runClaimedJob,
+      assuranceWorkerId: `${workerId}:assurance`,
+      runAssuranceRun: async (run) => {
+        await runClaimedAssuranceRun(db, run, `${workerId}:assurance`);
+      },
     });
   }
   for (;;) {
     const eventHandled = await eventWorker.runOnce();
+    const assuranceWorkerId = `${workerId}:assurance`;
+    const assurance = await claimNextAssuranceRun(db, assuranceWorkerId, 60);
+    if (assurance) {
+      await runClaimedAssuranceRun(db, assurance, assuranceWorkerId);
+      continue;
+    }
     const job = await claimNextIngestJob(db, workerId, 60);
     if (!job) {
       await runScheduledLintIfDue();

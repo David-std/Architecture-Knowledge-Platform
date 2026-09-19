@@ -1,4 +1,6 @@
+import type { AssuranceRun } from "@akp/domain";
 import {
+  claimNextAssuranceRun,
   claimNextIngestJob,
   summarizeOutbox,
   type OutboxDrainSummary,
@@ -32,11 +34,22 @@ export interface IngestDrainSummary {
   nextWakeAt: string | null;
 }
 
+export interface AssuranceDrainSummary {
+  work: number;
+  immediatelyClaimable: number;
+  failed: number;
+  nextWakeAt: string | null;
+}
+
 export interface WorkerDrainSummary {
   mode: "DRAIN";
   status: "SUCCEEDED" | "FAILED";
   success: boolean;
-  reason: "QUIESCENT" | "QUARANTINED" | "DEADLINE_EXCEEDED";
+  reason:
+    | "QUIESCENT"
+    | "QUARANTINED"
+    | "ASSURANCE_FAILED"
+    | "DEADLINE_EXCEEDED";
   consumerName: string;
   startedAt: string;
   finishedAt: string;
@@ -44,8 +57,10 @@ export interface WorkerDrainSummary {
   elapsedMs: number;
   eventsProcessed: number;
   ingestJobsProcessed: number;
+  assuranceRunsProcessed: number;
   deliveries: OutboxDrainSummary;
   ingest: IngestDrainSummary;
+  assurance: AssuranceDrainSummary;
 }
 
 export interface WorkerDrainOptions {
@@ -56,6 +71,8 @@ export interface WorkerDrainOptions {
   deadlineMs?: number;
   runEventOnce: () => Promise<boolean>;
   runIngestJob: (job: Record<string, unknown>) => Promise<void>;
+  assuranceWorkerId?: string;
+  runAssuranceRun?: (run: AssuranceRun) => Promise<void>;
 }
 
 export class WorkerDrainError extends Error {
@@ -83,6 +100,44 @@ function earlierTimestamp(
   if (!left) return right;
   if (!right) return left;
   return new Date(left).getTime() <= new Date(right).getTime() ? left : right;
+}
+
+export async function summarizeAssuranceRuns(
+  db: Postgres,
+): Promise<AssuranceDrainSummary> {
+  const result = await db.pool.query(
+    `
+    select
+      count(*) filter (where status in ('PENDING','RUNNING'))::int work,
+      count(*) filter (
+        where (
+          status='PENDING' and next_attempt_at<=now()
+        ) or (
+          status='RUNNING' and lease_expires_at<=now()
+        )
+      )::int immediately_claimable,
+      count(*) filter (where status='FAILED')::int failed,
+      min(
+        case
+          when status='RUNNING' and lease_expires_at>now()
+            then lease_expires_at
+          when status='PENDING' and next_attempt_at>now()
+            then next_attempt_at
+          else null
+        end
+      ) next_wake_at
+    from assurance_runs
+    `,
+  );
+  const row = result.rows[0] as Record<string, unknown> | undefined;
+  return {
+    work: Number(row?.work ?? 0),
+    immediatelyClaimable: Number(row?.immediately_claimable ?? 0),
+    failed: Number(row?.failed ?? 0),
+    nextWakeAt: row?.next_wake_at
+      ? new Date(String(row.next_wake_at)).toISOString()
+      : null,
+  };
 }
 
 export async function summarizeIngestJobs(
@@ -131,8 +186,10 @@ function makeSummary(
   deadlineAtMs: number,
   eventsProcessed: number,
   ingestJobsProcessed: number,
+  assuranceRunsProcessed: number,
   deliveries: OutboxDrainSummary,
   ingest: IngestDrainSummary,
+  assurance: AssuranceDrainSummary,
   reason: WorkerDrainSummary["reason"],
 ): WorkerDrainSummary {
   const finishedAtMs = Date.now();
@@ -148,8 +205,10 @@ function makeSummary(
     elapsedMs: Math.max(0, finishedAtMs - startedAtMs),
     eventsProcessed,
     ingestJobsProcessed,
+    assuranceRunsProcessed,
     deliveries,
     ingest,
+    assurance,
   };
 }
 
@@ -190,10 +249,24 @@ export async function drainToQuiescence(
   const deadlineAtMs = startedAtMs + deadlineMs;
   let eventsProcessed = 0;
   let ingestJobsProcessed = 0;
+  let assuranceRunsProcessed = 0;
 
   for (;;) {
     const eventHandled = await options.runEventOnce();
     if (eventHandled) eventsProcessed += 1;
+
+    if (options.runAssuranceRun) {
+      const assurance = await claimNextAssuranceRun(
+        options.db,
+        options.assuranceWorkerId ?? `${options.workerId}:assurance`,
+        options.leaseSeconds ?? 60,
+      );
+      if (assurance) {
+        assuranceRunsProcessed += 1;
+        await options.runAssuranceRun(assurance);
+        continue;
+      }
+    }
 
     const job = await claimNextIngestJob(
       options.db,
@@ -208,6 +281,14 @@ export async function drainToQuiescence(
 
     const deliveries = await summarizeOutbox(options.db, options.consumerName);
     const ingest = await summarizeIngestJobs(options.db);
+    const assurance = options.runAssuranceRun
+      ? await summarizeAssuranceRuns(options.db)
+      : {
+          work: 0,
+          immediatelyClaimable: 0,
+          failed: 0,
+          nextWakeAt: null,
+        };
     if (deliveries.quarantined > 0 || ingest.quarantined > 0) {
       const summary = makeSummary(
         options,
@@ -215,11 +296,30 @@ export async function drainToQuiescence(
         deadlineAtMs,
         eventsProcessed,
         ingestJobsProcessed,
+        assuranceRunsProcessed,
         deliveries,
         ingest,
+        assurance,
         "QUARANTINED",
       );
       throw new WorkerDrainError(summary);
+    }
+
+    if (assurance.failed > 0) {
+      throw new WorkerDrainError(
+        makeSummary(
+          options,
+          startedAtMs,
+          deadlineAtMs,
+          eventsProcessed,
+          ingestJobsProcessed,
+          assuranceRunsProcessed,
+          deliveries,
+          ingest,
+          assurance,
+          "ASSURANCE_FAILED",
+        ),
+      );
     }
 
     if (Date.now() >= deadlineAtMs) {
@@ -230,22 +330,30 @@ export async function drainToQuiescence(
           deadlineAtMs,
           eventsProcessed,
           ingestJobsProcessed,
+          assuranceRunsProcessed,
           deliveries,
           ingest,
+          assurance,
           "DEADLINE_EXCEEDED",
         ),
       );
     }
 
-    if (ingest.work === 0 && deliveries.nonTerminal === 0) {
+    if (
+      ingest.work === 0 &&
+      deliveries.nonTerminal === 0 &&
+      assurance.work === 0
+    ) {
       return makeSummary(
         options,
         startedAtMs,
         deadlineAtMs,
         eventsProcessed,
         ingestJobsProcessed,
+        assuranceRunsProcessed,
         deliveries,
         ingest,
+        assurance,
         "QUIESCENT",
       );
     }
@@ -254,11 +362,19 @@ export async function drainToQuiescence(
     // durable summary (for example when a preceding transaction commits).
     // Re-enter the claim loop immediately instead of sleeping until the
     // overall deadline while executable work is already visible.
-    if (deliveries.immediatelyClaimable > 0 || ingest.immediatelyClaimable > 0)
+    if (
+      deliveries.immediatelyClaimable > 0 ||
+      ingest.immediatelyClaimable > 0 ||
+      assurance.immediatelyClaimable > 0
+    ) {
       continue;
+    }
 
     await waitUntil(
-      earlierTimestamp(deliveries.nextWakeAt, ingest.nextWakeAt),
+      earlierTimestamp(
+        earlierTimestamp(deliveries.nextWakeAt, ingest.nextWakeAt),
+        assurance.nextWakeAt,
+      ),
       deadlineAtMs,
     );
   }
