@@ -10,7 +10,7 @@ import {
 import { planCodeGraphProjection } from "../packages/project-adapter/src/index.js";
 
 const client = new Client({ name: "akp-smoke", version: "0.1.0" });
-let p9Db: Postgres | null = null;
+let agentContextDb: Postgres | null = null;
 const transport = new StdioClientTransport({
   command: process.execPath,
   args: ["--import", "tsx", "apps/mcp/src/server.ts"],
@@ -281,16 +281,16 @@ try {
 
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
-    throw new Error("DATABASE_URL is required for MCP P9 exit evidence.");
+    throw new Error("DATABASE_URL is required for MCP agent context exit evidence.");
   }
-  const codeRepository = `mcp-p9-fixture-${vaultId.slice(0, 8)}`;
+  const codeRepository = `mcp-agent-context-fixture-${vaultId.slice(0, 8)}`;
   const codeCommit = "7".repeat(40);
   const codeScopeId = `repo:${codeRepository}`;
   const codeArtifact: CodeGraphArtifact = {
     schemaVersion: 1,
     repository: codeRepository,
     commitSha: codeCommit,
-    provider: "mcp-p9-exit-fixture",
+    provider: "mcp-agent-context-exit-fixture",
     providerVersion: "1",
     configurationHash: "8".repeat(64),
     generatedAt: "2026-09-19T00:00:00.000Z",
@@ -326,8 +326,8 @@ try {
     ],
     warnings: [],
   };
-  p9Db = new Postgres(databaseUrl);
-  const p9Graph = new PostgresFederatedGraphStore(p9Db);
+  agentContextDb = new Postgres(databaseUrl);
+  const agentContextGraph = new PostgresFederatedGraphStore(agentContextDb);
   const projection = planCodeGraphProjection({
     artifact: codeArtifact,
     spaceId,
@@ -335,9 +335,9 @@ try {
     scopeId: codeScopeId,
   });
   if (projection.skippedCandidateEdgeIds.length !== 0) {
-    throw new Error("MCP P9 Code Graph fixture unexpectedly skipped edges.");
+    throw new Error("MCP agent context Code Graph fixture unexpectedly skipped edges.");
   }
-  await p9Graph.build(projection.projection);
+  await agentContextGraph.build(projection.projection);
   const facadeSearch = await client.callTool({
     name: "akp_context",
     arguments: {
@@ -478,7 +478,7 @@ try {
         scopedVaultId: vaultId,
         searchHitCount: searchPayload.hits.length,
         facadeSearchHitCount: facadeSearchResult.hits.length,
-        p9ExitEvidence: {
+        agentContextExitEvidence: {
           knowledgeTask: {
             status: "PROVEN",
             facadeAction: "SEARCH",
@@ -506,5 +506,5 @@ try {
   );
 } finally {
   await client.close();
-  await p9Db?.close();
+  await agentContextDb?.close();
 }

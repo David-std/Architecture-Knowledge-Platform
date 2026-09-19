@@ -821,7 +821,7 @@ async function main(): Promise<void> {
   const base = {
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
-    benchmark: "P9_AGENT_CONTEXT_TOOL_ERGONOMICS",
+    benchmark: "AGENT_CONTEXT_TOOL_ERGONOMICS",
     taskSet: {
       path: path.relative(process.cwd(), taskPath),
       sha256: loaded.taskHash,

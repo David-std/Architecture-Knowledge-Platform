@@ -251,7 +251,7 @@ jobs:
             aggregates: report.aggregates,
           }, null, 2));
           NODE
-      - name: Execute P9 agent context tool ergonomics benchmark
+      - name: Execute agent context tool ergonomics benchmark
         shell: bash
         run: |
           set +e
@@ -261,11 +261,11 @@ jobs:
           status=$?
           cat reports/ci/agent-context-ergonomics.log
           if [ ! -f reports/ci/agent-context-ergonomics.json ]; then
-            echo "P9 tool ergonomics harness did not produce its report" >&2
+            echo "Agent context tool ergonomics harness did not produce its report" >&2
             exit 1
           fi
           exit "$status"
-      - name: Validate P9 tool ergonomics evidence
+      - name: Validate agent context tool ergonomics evidence
         shell: bash
         run: |
           node --input-type=module <<'NODE'
@@ -277,15 +277,15 @@ jobs:
           const providerHealth = JSON.parse(
             readFileSync("reports/ci/local-agent-provider-health.json", "utf8"),
           );
-          if (report.benchmark !== "P9_AGENT_CONTEXT_TOOL_ERGONOMICS") {
-            throw new Error("Unexpected P9 ergonomics benchmark identity.");
+          if (report.benchmark !== "AGENT_CONTEXT_TOOL_ERGONOMICS") {
+            throw new Error("Unexpected Agent context ergonomics benchmark identity.");
           }
           if (
             report.status !== "PROVEN" ||
             report.taskSet?.tasks !== 6 ||
             report.taskSet?.evidenceLevel !== "REGISTERED_PUBLIC_PRODUCT_CORPUS"
           ) {
-            throw new Error("P9 ergonomics evidence is not PROVEN on the registered six-task corpus.");
+            throw new Error("Agent context ergonomics evidence is not PROVEN on the registered six-task corpus.");
           }
           if (
             report.claimPolicy?.realModelRequired !== true ||
@@ -293,7 +293,7 @@ jobs:
             report.claimPolicy?.superiorityClaimAllowed !== false ||
             report.claimPolicy?.mutationExecutionAllowed !== false
           ) {
-            throw new Error("P9 ergonomics claim policy is incomplete.");
+            throw new Error("Agent context ergonomics claim policy is incomplete.");
           }
           if (
             report.execution?.provider?.model !==
@@ -303,23 +303,23 @@ jobs:
               "cc5cc01a65cc3ff17bdb73a7de33d879f62599b0" ||
             providerHealth.dtype !== "q4"
           ) {
-            throw new Error("P9 ergonomics did not use the pinned real model.");
+            throw new Error("Agent context ergonomics did not use the pinned real model.");
           }
           if (
             typeof report.instructionBundle?.sha256 !== "string" ||
             !/^[a-f0-9]{64}$/.test(report.instructionBundle.sha256)
           ) {
-            throw new Error("P9 ergonomics lacks an integrity-addressed instruction bundle.");
+            throw new Error("Agent context ergonomics lacks an integrity-addressed instruction bundle.");
           }
           if (report.winner !== null) {
-            throw new Error("P9 ergonomics must not manufacture a winning arm.");
+            throw new Error("Agent context ergonomics must not manufacture a winning arm.");
           }
           const observations = Array.isArray(report.observations)
             ? report.observations
             : [];
           if (observations.length !== 18) {
             throw new Error(
-              `Expected 18 P9 observations, got ${observations.length}.`,
+              `Expected 18 agent context observations, got ${observations.length}.`,
             );
           }
           const requiredArms = [
@@ -333,7 +333,7 @@ jobs:
             );
             if (armObservations.length !== 6) {
               throw new Error(
-                `P9 arm ${arm} has ${armObservations.length} observations.`,
+                `Agent context arm ${arm} has ${armObservations.length} observations.`,
               );
             }
           }
@@ -352,24 +352,24 @@ jobs:
             ]) {
               if (!Number.isFinite(observation[metric])) {
                 throw new Error(
-                  `P9 observation ${observation.taskId}/${observation.arm} lacks ${metric}.`,
+                  `Agent context observation ${observation.taskId}/${observation.arm} lacks ${metric}.`,
                 );
               }
             }
             if (!Array.isArray(observation.selectedCalls)) {
-              throw new Error("P9 observation lacks selected call trace.");
+              throw new Error("Agent context observation lacks selected call trace.");
             }
           }
           const aggregates = Array.isArray(report.aggregates)
             ? report.aggregates
             : [];
           if (aggregates.length !== 3) {
-            throw new Error("P9 ergonomics report must contain three aggregate arms.");
+            throw new Error("Agent context ergonomics report must contain three aggregate arms.");
           }
           for (const arm of requiredArms) {
             const aggregate = aggregates.find((item) => item.arm === arm);
             if (!aggregate || aggregate.tasks !== 6) {
-              throw new Error(`P9 aggregate missing for ${arm}.`);
+              throw new Error(`Agent context aggregate missing for ${arm}.`);
             }
             for (const metric of [
               "meanCallsPerTask",
@@ -385,7 +385,7 @@ jobs:
               "meanCitationPrecision",
             ]) {
               if (!Number.isFinite(aggregate[metric])) {
-                throw new Error(`P9 aggregate ${arm} lacks ${metric}.`);
+                throw new Error(`Agent context aggregate ${arm} lacks ${metric}.`);
               }
             }
           }
