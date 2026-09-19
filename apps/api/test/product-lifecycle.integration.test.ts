@@ -521,12 +521,33 @@ describe("product lifecycle E2E", () => {
       impact_manifest?: {
         proposedChanges?: Array<{ path?: string; content?: string }>;
       };
+      comments: Array<Record<string, unknown>>;
+      evidenceDetails: Array<Record<string, unknown>>;
+      assuranceFindings: Array<Record<string, unknown>>;
+      graphImpact: Array<Record<string, unknown>>;
+      codeImpact: Array<Record<string, unknown>>;
+      temporalImpact: {
+        head: Record<string, unknown> | null;
+        facts: Array<Record<string, unknown>>;
+      };
+      affectedEvals: Array<Record<string, unknown>>;
+      affectedTests: Array<Record<string, unknown>>;
     };
     expect(pendingReviewBody).toMatchObject({
       id: firstReviewId,
       status: "PENDING",
       vault_id: vaultId,
     });
+    expect(pendingReviewBody.comments).toEqual(expect.any(Array));
+    expect(pendingReviewBody.evidenceDetails).toEqual(expect.any(Array));
+    expect(pendingReviewBody.assuranceFindings).toEqual(expect.any(Array));
+    expect(pendingReviewBody.graphImpact).toEqual(expect.any(Array));
+    expect(pendingReviewBody.codeImpact).toEqual(expect.any(Array));
+    expect(pendingReviewBody.temporalImpact).toMatchObject({
+      facts: expect.any(Array),
+    });
+    expect(pendingReviewBody.affectedEvals).toEqual(expect.any(Array));
+    expect(pendingReviewBody.affectedTests).toEqual(expect.any(Array));
 
     const originalChange =
       pendingReviewBody.impact_manifest?.proposedChanges?.[0];
@@ -582,6 +603,28 @@ describe("product lifecycle E2E", () => {
     });
 
     await runWorkerDrain();
+
+    const publishedReview = await app.inject({
+      method: "GET",
+      url: `/v1/reviews/${firstReviewId}`,
+      headers,
+    });
+    expect(publishedReview.statusCode, publishedReview.body).toBe(200);
+    const publishedReviewBody = publishedReview.json() as {
+      affectedEvals: Array<{
+        run_id?: string | null;
+        status?: string | null;
+      }>;
+    };
+    expect(publishedReviewBody.affectedEvals.length).toBeGreaterThan(0);
+    expect(
+      publishedReviewBody.affectedEvals.some(
+        (evaluation) =>
+          typeof evaluation.run_id === "string" &&
+          typeof evaluation.status === "string",
+      ),
+    ).toBe(true);
+
     const indexed = await db.pool.query<{
       state: string;
       source_id: string;

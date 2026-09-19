@@ -1253,6 +1253,262 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
         "select * from review_comments where review_id=$1 order by created_at",
         [request.params.id],
       );
+      const impactManifest =
+        review.impact_manifest &&
+        typeof review.impact_manifest === "object" &&
+        !Array.isArray(review.impact_manifest)
+          ? (review.impact_manifest as Record<string, unknown>)
+          : {};
+      const reviewContext =
+        impactManifest.reviewContext &&
+        typeof impactManifest.reviewContext === "object" &&
+        !Array.isArray(impactManifest.reviewContext)
+          ? (impactManifest.reviewContext as Record<string, unknown>)
+          : {};
+      const proposedChanges = Array.isArray(impactManifest.proposedChanges)
+        ? impactManifest.proposedChanges
+        : Array.isArray(impactManifest.proposed_changes)
+          ? impactManifest.proposed_changes
+          : [];
+      const impactedRaw = Array.isArray(impactManifest.impactedDocumentIds)
+        ? impactManifest.impactedDocumentIds
+        : Array.isArray(impactManifest.impacted_document_ids)
+          ? impactManifest.impacted_document_ids
+          : [];
+      const impactedDocumentIds = [
+        ...new Set(
+          impactedRaw.filter(
+            (value): value is string =>
+              typeof value === "string" &&
+              /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(
+                value,
+              ),
+          ),
+        ),
+      ];
+      const proposedPaths = [
+        ...new Set(
+          proposedChanges.flatMap((entry) => {
+            if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+              return [];
+            }
+            const value = (entry as Record<string, unknown>).path;
+            return typeof value === "string" && value.trim()
+              ? [value.trim()]
+              : [];
+          }),
+        ),
+      ];
+      const reviewEvidence = Array.isArray(reviewContext.evidence)
+        ? reviewContext.evidence
+        : [];
+      const evidenceRaw = [
+        ...(Array.isArray(impactManifest.evidenceIds)
+          ? impactManifest.evidenceIds
+          : Array.isArray(impactManifest.evidence_ids)
+            ? impactManifest.evidence_ids
+            : []),
+        ...reviewEvidence.flatMap((entry) => {
+          if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+            return [];
+          }
+          const id = (entry as Record<string, unknown>).id;
+          return typeof id === "string" ? [id] : [];
+        }),
+      ];
+      const evidenceIds = [
+        ...new Set(
+          evidenceRaw.filter(
+            (value): value is string =>
+              typeof value === "string" &&
+              /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(
+                value,
+              ),
+          ),
+        ),
+      ];
+      const vaultId =
+        typeof review.vault_id === "string" ? review.vault_id : null;
+      const relatedTargets = [
+        ...new Set([
+          ...impactedDocumentIds,
+          ...proposedPaths,
+          request.params.id,
+        ]),
+      ];
+
+      const emptyRows = Promise.resolve({
+        rows: [] as Record<string, unknown>[],
+      });
+      const [
+        evidenceDetails,
+        assuranceFindings,
+        graphImpact,
+        codeImpact,
+        temporalHead,
+        temporalFacts,
+        affectedEvals,
+        affectedTests,
+      ] = await Promise.all([
+        vaultId && evidenceIds.length
+          ? db.pool.query(
+              `select e.id,e.source_id,s.title source_title,
+                      e.locator,e.excerpt,e.created_at
+                 from evidence e
+                 join sources s on s.id=e.source_id
+                where e.space_id=$1 and e.vault_id=$2
+                  and e.id=any($3::uuid[])
+                order by e.created_at,e.id
+                limit 100`,
+              [review.space_id, vaultId, evidenceIds],
+            )
+          : emptyRows,
+        vaultId && relatedTargets.length
+          ? db.pool.query(
+              `select id,detector,detector_version,severity,category,scope_id,
+                      target_ids,evidence_refs evidence_ids,support_set_ids,
+                      code,summary,status,proposed_action,revision_set,
+                      first_seen_at,last_seen_at
+                 from assurance_findings
+                where space_id=$1 and vault_id=$2
+                  and status in ('OPEN','ACKNOWLEDGED')
+                  and target_ids ?| $3::text[]
+                order by
+                  case severity
+                    when 'CRITICAL' then 1
+                    when 'HIGH' then 2
+                    when 'MEDIUM' then 3
+                    when 'LOW' then 4
+                    else 5
+                  end,
+                  last_seen_at desc
+                limit 100`,
+              [review.space_id, vaultId, relatedTargets],
+            )
+          : emptyRows,
+        vaultId && impactedDocumentIds.length
+          ? db.pool.query(
+              `select r.id,r.from_document_id "from",r.to_document_id "to",
+                      r.relation_type,r.weight,r.provenance,
+                      source.external_id from_external_id,
+                      source.path from_path,source.title from_title,
+                      target.external_id to_external_id,
+                      target.path to_path,target.title to_title
+                 from knowledge_relations r
+                 join knowledge_documents source on source.id=r.from_document_id
+                 join knowledge_documents target on target.id=r.to_document_id
+                where r.space_id=$1
+                  and source.vault_id=$2 and target.vault_id=$2
+                  and (
+                    r.from_document_id=any($3::uuid[])
+                    or r.to_document_id=any($3::uuid[])
+                  )
+                order by r.id
+                limit 200`,
+              [review.space_id, vaultId, impactedDocumentIds],
+            )
+          : emptyRows,
+        vaultId
+          ? db.pool.query(
+              `select id,project_id,document_id,review_id,relation_type,
+                      knowledge_revision,code_repository,code_commit_sha,
+                      code_node_identity,code_selector,created_at
+                 from code_knowledge_links
+                where space_id=$1 and vault_id=$2
+                  and (
+                    review_id=$3
+                    or document_id=any($4::uuid[])
+                  )
+                order by created_at desc
+                limit 100`,
+              [
+                review.space_id,
+                vaultId,
+                request.params.id,
+                impactedDocumentIds,
+              ],
+            )
+          : emptyRows,
+        vaultId
+          ? db.pool.query(
+              `select revision_seq,revision_hash,updated_at
+                 from truth_revision_heads
+                where space_id=$1 and vault_id=$2
+                limit 1`,
+              [review.space_id, vaultId],
+            )
+          : emptyRows,
+        vaultId && evidenceIds.length
+          ? db.pool.query(
+              `select tf.id,tf.subject_ref,tf.predicate,tf.object,
+                      tf.valid_from,tf.valid_to,tf.recorded_at,tf.lifecycle,
+                      tf.truth_revision_hash,tf.truth_revision_seq,
+                      tf.support_set_id
+                 from temporal_facts tf
+                 join truth_support_sets support on support.id=tf.support_set_id
+                where tf.space_id=$1 and tf.vault_id=$2
+                  and support.evidence_ids && $3::uuid[]
+                order by tf.truth_revision_seq desc,tf.recorded_at desc
+                limit 100`,
+              [review.space_id, vaultId, evidenceIds],
+            )
+          : emptyRows,
+        vaultId
+          ? db.pool.query(
+              `select outbox.event_id,outbox.created_at requested_at,
+                      run.id run_id,run.eval_pack,run.corpus_revision,
+                      run.status,run.metrics,run.created_at run_created_at
+                 from event_outbox outbox
+                 left join eval_runs run on run.trigger_event_id=outbox.event_id
+                where outbox.space_id=$1 and outbox.vault_id=$2
+                  and outbox.resource_id=$3
+                  and outbox.event_type='ImpactedEvalRunRequested'
+                order by outbox.created_at desc
+                limit 50`,
+              [review.space_id, vaultId, request.params.id],
+            )
+          : emptyRows,
+        vaultId
+          ? db.pool.query(
+              `select distinct
+                      link.id code_link_id,link.document_id,
+                      link.code_repository,link.code_commit_sha,
+                      test.id test_node_id,test.kind test_kind,
+                      test.canonical_key,test.payload test_payload,
+                      edge.derivation,edge.confidence,
+                      edge.provenance_revision,edge.source_ids,
+                      edge.evidence_ids,edge.locator_refs
+                 from code_knowledge_links link
+                 join federated_graph_nodes target
+                   on target.space_id=link.space_id
+                  and target.graph_domain='CODE'
+                  and target.scope_id=link.code_node_identity->>'scopeId'
+                  and target.kind=link.code_node_identity->>'kind'
+                  and target.canonical_key=
+                      link.code_node_identity->>'canonicalKey'
+                  and target.revision=link.code_node_identity->>'revision'
+                 join federated_graph_edges edge
+                   on edge.space_id=link.space_id
+                  and edge.to_node_id=target.id
+                  and edge.relation_type='TESTS'
+                 join federated_graph_nodes test on test.id=edge.from_node_id
+                where link.space_id=$1 and link.vault_id=$2
+                  and (
+                    link.review_id=$3
+                    or link.document_id=any($4::uuid[])
+                  )
+                order by test.canonical_key
+                limit 100`,
+              [
+                review.space_id,
+                vaultId,
+                request.params.id,
+                impactedDocumentIds,
+              ],
+            )
+          : emptyRows,
+      ]);
+
       const approvalStatus = await reviewApprovalStatus(db, review);
       const store = new GitKnowledgeStore(repositoryPath());
       const diff = await store
@@ -1271,6 +1527,16 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
           pinned: approvalStatus.pinned,
         },
         approvals: approvalStatus.approvals,
+        evidenceDetails: evidenceDetails.rows,
+        assuranceFindings: assuranceFindings.rows,
+        graphImpact: graphImpact.rows,
+        codeImpact: codeImpact.rows,
+        temporalImpact: {
+          head: temporalHead.rows[0] ?? null,
+          facts: temporalFacts.rows,
+        },
+        affectedEvals: affectedEvals.rows,
+        affectedTests: affectedTests.rows,
       };
     },
   );
