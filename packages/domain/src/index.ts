@@ -180,7 +180,6 @@ export interface SourceConnectorPort {
   ): Promise<SourceConnectorWebhookVerification>;
 }
 
-
 export const ASSURANCE_DETECTORS = [
   "GROUNDING",
   "FRESHNESS",

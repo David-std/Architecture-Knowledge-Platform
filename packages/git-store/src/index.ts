@@ -33,10 +33,7 @@ type SourceConnectorDescriptor = {
   objectTypes: string[];
   incremental: { cursor: boolean; webhook: boolean };
   permissionFidelity:
-    | "SOURCE_ACL_EXACT"
-    | "SOURCE_ACL_MAPPED"
-    | "WORKSPACE_WIDE"
-    | "NONE";
+    "SOURCE_ACL_EXACT" | "SOURCE_ACL_MAPPED" | "WORKSPACE_WIDE" | "NONE";
   replication: "FULL_MIRROR" | "METADATA_ONLY" | "REFERENCE";
   dataResidency: "LOCAL" | "ORG" | "EXTERNAL";
   attachments: { supported: boolean; maxBytes?: number };
@@ -61,10 +58,7 @@ type SourceConnectorObject = {
   contentTrust: "UNTRUSTED_EXTERNAL";
   permissions: {
     fidelity:
-      | "SOURCE_ACL_EXACT"
-      | "SOURCE_ACL_MAPPED"
-      | "WORKSPACE_WIDE"
-      | "NONE";
+      "SOURCE_ACL_EXACT" | "SOURCE_ACL_MAPPED" | "WORKSPACE_WIDE" | "NONE";
     uncertain: boolean;
     aclFingerprint?: string;
   };

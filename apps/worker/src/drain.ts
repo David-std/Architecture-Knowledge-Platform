@@ -46,10 +46,7 @@ export interface WorkerDrainSummary {
   status: "SUCCEEDED" | "FAILED";
   success: boolean;
   reason:
-    | "QUIESCENT"
-    | "QUARANTINED"
-    | "ASSURANCE_FAILED"
-    | "DEADLINE_EXCEEDED";
+    "QUIESCENT" | "QUARANTINED" | "ASSURANCE_FAILED" | "DEADLINE_EXCEEDED";
   consumerName: string;
   startedAt: string;
   finishedAt: string;

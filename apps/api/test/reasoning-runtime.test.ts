@@ -223,5 +223,4 @@ describe("reasoning application runtime", () => {
       }),
     ).rejects.toThrow("REASONING_PLAN_EXECUTION_FAILED");
   });
-
 });

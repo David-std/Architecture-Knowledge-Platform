@@ -1,12 +1,68 @@
 import { createHash } from "node:crypto";
-import type {
-  AssuranceDetector,
-  AssuranceFinding,
-  AssuranceRun,
-  AssuranceRunCursor,
-} from "@akp/domain";
-import { ASSURANCE_DETECTORS } from "@akp/domain";
 import type { Postgres } from "./index.js";
+
+const ASSURANCE_DETECTORS = [
+  "GROUNDING",
+  "FRESHNESS",
+  "CONTRADICTION",
+  "DUPLICATE_IDENTITY",
+  "GRAPH_HEALTH",
+  "TEMPORAL_CONSISTENCY",
+  "CODE_GRAPH_FRESHNESS",
+  "LINK_ORPHAN",
+  "SYNTHESIS_ACCESS_BOUNDARY",
+  "CONNECTOR_DELETION",
+  "CONNECTOR_FRESHNESS",
+  "CONNECTOR_ACL_DRIFT",
+  "GRAPH_DISAGREEMENT",
+  "ORPHAN_WORK",
+  "EXPIRED_CLAIM",
+  "STALE_HANDOFF",
+  "UNSUPPORTED_CAUSALITY",
+] as const;
+
+type AssuranceDetector = (typeof ASSURANCE_DETECTORS)[number];
+
+interface AssuranceFinding {
+  detector: AssuranceDetector;
+  severity: "INFO" | "WARN" | "HIGH" | "CRITICAL";
+  code: string;
+  subjectKind: string;
+  subjectId: string;
+  summary: string;
+  evidenceRefs: string[];
+  metadata: Record<string, unknown>;
+}
+
+interface AssuranceRunCursor {
+  detectorIndex: number;
+  detectorCursor?: string;
+}
+
+interface AssuranceRun {
+  id: string;
+  spaceId: string;
+  vaultId: string;
+  trigger:
+    | "MANUAL"
+    | "SCHEDULED"
+    | "SOURCE_CHANGE"
+    | "INDEX_CHANGE"
+    | "CONNECTOR_EVENT";
+  detectors: AssuranceDetector[];
+  status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";
+  idempotencyKey: string;
+  cursor: AssuranceRunCursor;
+  attempts: number;
+  maxAttempts: number;
+  leaseOwner: string | null;
+  leaseToken: number;
+  leaseExpiresAt: Date | null;
+  cancelRequestedAt: Date | null;
+  nextAttemptAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
 
 const DETECTOR_SET = new Set<string>(ASSURANCE_DETECTORS);
 

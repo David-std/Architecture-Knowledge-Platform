@@ -45,7 +45,7 @@ async function collectDetectorFindings(
   run: AssuranceRun,
   detector: SupportedDetector,
 ): Promise<AssuranceFinding[]> {
-  const scope = [run.spaceId, run.vaultId] as const;
+  const scope = [run.spaceId, run.vaultId];
   switch (detector) {
     case "GROUNDING": {
       const rows = await db.pool.query<{
@@ -499,7 +499,9 @@ async function collectDetectorFindings(
 function supportedDetector(
   detector: AssuranceDetector,
 ): detector is SupportedDetector {
-  return (SUPPORTED_ASSURANCE_DETECTORS as readonly string[]).includes(detector);
+  return (SUPPORTED_ASSURANCE_DETECTORS as readonly string[]).includes(
+    detector,
+  );
 }
 
 export async function runClaimedAssuranceRun(
