@@ -2841,6 +2841,466 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  /v1/operator/workspace-home:
+    get:
+      tags: [Governance]
+      operationId: getWorkspaceHome
+      x-akp-permission: knowledge:read
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/assurance/capabilities:
+    get:
+      tags: [Governance]
+      operationId: getAssuranceCapabilities
+      x-akp-permission: knowledge:read
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/assurance/runs:
+    get:
+      tags: [Governance]
+      operationId: listAssuranceRuns
+      x-akp-permission: knowledge:read
+      parameters:
+        - {
+            name: spaceId,
+            in: query,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+        - {
+            name: vaultId,
+            in: query,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+        - {
+            name: limit,
+            in: query,
+            schema: { type: integer, minimum: 1, maximum: 200, default: 50 },
+          }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Governance]
+      operationId: createAssuranceRun
+      x-akp-permission: admin
+      parameters:
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [spaceId, vaultId]
+              properties:
+                spaceId: { type: string, format: uuid }
+                vaultId: { type: string, format: uuid }
+                detectors:
+                  type: array
+                  minItems: 1
+                  maxItems: 18
+                  uniqueItems: true
+                  items: { type: string }
+      responses:
+        "202": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/assurance/runs/{id}:
+    get:
+      tags: [Governance]
+      operationId: getAssuranceRun
+      x-akp-permission: knowledge:read
+      parameters:
+        - {
+            name: id,
+            in: path,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/assurance/runs/{id}/cancel:
+    post:
+      tags: [Governance]
+      operationId: cancelAssuranceRun
+      x-akp-permission: admin
+      x-akp-idempotency-exempt: true
+      parameters:
+        - {
+            name: id,
+            in: path,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/assurance/findings:
+    get:
+      tags: [Governance]
+      operationId: listAssuranceFindings
+      x-akp-permission: knowledge:read
+      parameters:
+        - {
+            name: spaceId,
+            in: query,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+        - {
+            name: vaultId,
+            in: query,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+        - {
+            name: status,
+            in: query,
+            schema:
+              {
+                type: string,
+                enum: [OPEN, ACKNOWLEDGED, RESOLVED, FALSE_POSITIVE],
+              },
+          }
+        - {
+            name: detector,
+            in: query,
+            schema: { type: string },
+          }
+        - {
+            name: severity,
+            in: query,
+            schema:
+              { type: string, enum: [INFO, LOW, MEDIUM, HIGH, CRITICAL] },
+          }
+        - {
+            name: category,
+            in: query,
+            schema: { type: string, minLength: 1, maxLength: 120 },
+          }
+        - {
+            name: limit,
+            in: query,
+            schema: { type: integer, minimum: 1, maximum: 200, default: 50 },
+          }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/assurance/findings/{id}/status:
+    post:
+      tags: [Governance]
+      operationId: transitionAssuranceFindingStatus
+      x-akp-permission: knowledge:review
+      x-akp-idempotency-exempt: true
+      parameters:
+        - {
+            name: id,
+            in: path,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [OPEN, ACKNOWLEDGED, RESOLVED, FALSE_POSITIVE]
+                reason: { type: string, minLength: 1, maxLength: 2000 }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/assurance/findings/{id}/actions:
+    post:
+      tags: [Governance]
+      operationId: requestAssuranceFindingAction
+      x-akp-permission: knowledge:review
+      x-akp-idempotency-exempt: true
+      parameters:
+        - {
+            name: id,
+            in: path,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [action]
+              properties:
+                action:
+                  type: string
+                  enum: [PROMOTION, RECOMPILE, REINDEX]
+                reason: { type: string, minLength: 1, maxLength: 2000 }
+      responses:
+        "202": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/source-connectors:
+    post:
+      tags: [Sources]
+      operationId: registerSourceConnector
+      x-akp-permission: admin
+      x-akp-idempotency-exempt: true
+      description: >
+        Register or replace one vault-scoped generic source connector. The
+        connector is webhook-only and cannot declare outbound network targets;
+        external content remains UNTRUSTED_EXTERNAL.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                [spaceId, vaultId, connectorKey, publicKeyPem, descriptor]
+              properties:
+                spaceId: { type: string, format: uuid }
+                vaultId: { type: string, format: uuid }
+                connectorKey:
+                  {
+                    type: string,
+                    pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+                  }
+                publicKeyPem: { type: string, minLength: 32, maxLength: 8192 }
+                descriptor:
+                  type: object
+                  additionalProperties: false
+                  required:
+                    [
+                      schemaVersion,
+                      sourceSystem,
+                      objectTypes,
+                      incremental,
+                      permissionFidelity,
+                      replication,
+                      dataResidency,
+                      attachments,
+                      rateLimit,
+                      checkpointModel,
+                      deletionPropagation,
+                      sourceVersioning,
+                      contentTrust,
+                    ]
+                  properties:
+                    schemaVersion: { type: integer, const: 1 }
+                    sourceSystem:
+                      { type: string, minLength: 1, maxLength: 120 }
+                    objectTypes:
+                      type: array
+                      minItems: 1
+                      maxItems: 100
+                      items: { type: string, minLength: 1, maxLength: 120 }
+                    incremental:
+                      type: object
+                      additionalProperties: false
+                      required: [cursor, webhook]
+                      properties:
+                        cursor: { type: boolean }
+                        webhook: { type: boolean, const: true }
+                    permissionFidelity:
+                      type: string
+                      enum:
+                        [
+                          SOURCE_ACL_EXACT,
+                          SOURCE_ACL_MAPPED,
+                          WORKSPACE_WIDE,
+                          NONE,
+                          UNKNOWN,
+                        ]
+                    replication:
+                      type: string
+                      enum: [FULL_MIRROR, METADATA_ONLY, REFERENCE]
+                    dataResidency:
+                      type: string
+                      enum: [LOCAL, ORG, EXTERNAL]
+                    attachments:
+                      type: object
+                      additionalProperties: false
+                      required: [supported]
+                      properties:
+                        supported: { type: boolean }
+                        maxBytes:
+                          {
+                            type: integer,
+                            minimum: 1,
+                            maximum: 100000000,
+                          }
+                    rateLimit:
+                      oneOf:
+                        - type: object
+                          additionalProperties: false
+                          required: [kind]
+                          properties:
+                            kind: { type: string, const: NONE }
+                        - type: object
+                          additionalProperties: false
+                          required: [kind, requestsPerMinute]
+                          properties:
+                            kind: { type: string, const: DECLARED }
+                            requestsPerMinute:
+                              {
+                                type: integer,
+                                minimum: 1,
+                                maximum: 100000,
+                              }
+                            burst:
+                              {
+                                type: integer,
+                                minimum: 1,
+                                maximum: 100000,
+                              }
+                    checkpointModel:
+                      { type: string, const: SOURCE_SEQUENCE }
+                    deletionPropagation:
+                      { type: string, enum: [TOMBSTONE, NONE] }
+                    sourceVersioning: { type: boolean }
+                    freshnessSlaSeconds:
+                      {
+                        type: integer,
+                        minimum: 1,
+                        maximum: 31536000,
+                      }
+                    contentTrust:
+                      { type: string, const: UNTRUSTED_EXTERNAL }
+      responses:
+        "201": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /hooks/source-connectors/{id}/events:
+    post:
+      tags: [Sources]
+      operationId: receiveSourceConnectorWebhook
+      security: []
+      x-akp-idempotency-exempt: true
+      description: >
+        Authenticated generic connector inbox. A valid Ed25519 signature binds
+        connector id, timestamp and the canonical request body; exact event
+        replay is idempotent and source sequence gaps never advance the durable
+        checkpoint.
+      parameters:
+        - {
+            name: id,
+            in: path,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+        - {
+            name: X-AKP-Timestamp,
+            in: header,
+            required: true,
+            schema: { type: string, pattern: "^[0-9]{10}$" },
+          }
+        - {
+            name: X-AKP-Signature,
+            in: header,
+            required: true,
+            schema: { type: string, minLength: 1 },
+          }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [eventId, sequence, occurredAt, operation, object]
+              properties:
+                eventId: { type: string, minLength: 1, maxLength: 200 }
+                sequence: { type: integer, minimum: 1 }
+                occurredAt: { type: string, format: date-time }
+                operation: { type: string, enum: [UPSERT, DELETE] }
+                object:
+                  type: object
+                  additionalProperties: false
+                  required:
+                    [id, type, sourceVersion, permissions]
+                  properties:
+                    id: { type: string, minLength: 1, maxLength: 2048 }
+                    type: { type: string, minLength: 1, maxLength: 120 }
+                    sourceVersion:
+                      { type: string, minLength: 1, maxLength: 1024 }
+                    title: { type: [string, "null"], maxLength: 1000 }
+                    content:
+                      { type: [string, "null"], maxLength: 1000000 }
+                    contentType:
+                      { type: [string, "null"], maxLength: 200 }
+                    permissions:
+                      type: object
+                      additionalProperties: false
+                      required: [fidelity, uncertain]
+                      properties:
+                        fidelity:
+                          type: string
+                          enum:
+                            [
+                              SOURCE_ACL_EXACT,
+                              SOURCE_ACL_MAPPED,
+                              WORKSPACE_WIDE,
+                              NONE,
+                              UNKNOWN,
+                            ]
+                        uncertain: { type: boolean }
+                        aclFingerprint:
+                          { type: [string, "null"], maxLength: 1024 }
+                    metadata:
+                      type: object
+                      additionalProperties: true
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "202": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+
   /v1/schema/rollback:
     post:
       tags: [Governance]
