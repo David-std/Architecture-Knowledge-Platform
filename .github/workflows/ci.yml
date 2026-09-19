@@ -67,6 +67,13 @@ jobs:
       - run: pnpm hygiene:validate
       - run: pnpm build
       - run: pnpm security:secrets
+      - name: Run temporal truth maintenance integration
+        run: |
+          mkdir -p reports/ci
+          pnpm --filter @akp/worker exec vitest run \
+            test/truth-maintenance.test.ts \
+            --reporter=default --reporter=junit \
+            --outputFile.junit=../../reports/ci/truth-maintenance-junit.xml
       - name: Run API integration with a persisted report
         run: |
           mkdir -p reports/ci
