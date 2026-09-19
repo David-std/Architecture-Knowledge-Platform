@@ -258,6 +258,66 @@ describe("recursive graph retrieval PostgreSQL integration", () => {
         ]);
         expect(threeHopD?.graphProvenance?.[0]?.graphScore).toBeCloseTo(0.125);
         expect(threeHopD?.graphProvenance).toHaveLength(2);
+        expect(
+          threeHop.some((hit) =>
+            (hit.fusionContributions ?? []).some(
+              (contribution) => contribution.channel === "graph-ppr",
+            ),
+          ),
+        ).toBe(false);
+
+        const associative = await queryKnowledge(db, searchRequest(fixture), {
+          vaultIds: [fixture.vaultId],
+          channels: ["exact", "graph"],
+          plan: planQuery("GRAPH-A", "IMPACT_ANALYSIS", {
+            graphConsistent: true,
+          }),
+          graphPolicy: { maxHops: 3, directionPolicy: "outgoing" },
+          graphScopes: [
+            { vaultId: fixture.vaultId, pathPrefix: "allowed" },
+          ],
+          retrievalPolicy: {
+            graphMode: "ASSOCIATIVE",
+            channels: {
+              GRAPH_PPR: { enabled: true, weight: 1.1 },
+            },
+          },
+          pprPolicy: {
+            restartProbability: 0.2,
+            maxIterations: 100,
+            maxNodes: 100,
+            minimumScore: 0,
+            perScopeCap: 20,
+          },
+        });
+        const pprHits = associative.filter((hit) =>
+          (hit.fusionContributions ?? []).some(
+            (contribution) => contribution.channel === "graph-ppr",
+          ),
+        );
+        expect(pprHits.length).toBeGreaterThan(0);
+        expect(
+          pprHits.every((hit) => (hit.graphProvenance?.length ?? 0) > 0),
+        ).toBe(true);
+        expect(pprHits.map((hit) => hit.documentId)).not.toContain(
+          fixture.documents.S,
+        );
+        expect(pprHits.map((hit) => hit.documentId)).not.toContain(
+          fixture.documents.T,
+        );
+        expect(pprHits.map((hit) => hit.documentId)).not.toContain(
+          fixture.documents.X,
+        );
+        expect(pprHits.map((hit) => hit.documentId)).not.toContain(
+          fixture.documents.Y,
+        );
+        for (const hit of pprHits) {
+          const contribution = hit.fusionContributions?.find(
+            (item) => item.channel === "graph-ppr",
+          );
+          expect(contribution?.rawScore).toBeGreaterThan(0);
+          expect(contribution?.candidateRevision).toBe(fixture.corpusRevision);
+        }
 
         const weighted = await queryKnowledge(db, searchRequest(fixture), {
           vaultIds: [fixture.vaultId],
