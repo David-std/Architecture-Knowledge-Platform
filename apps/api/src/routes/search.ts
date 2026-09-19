@@ -2748,6 +2748,7 @@ export function registerSearchRoutes(
       }
       const {
         packetMode: _packetMode,
+        contextLevel: requestedContextLevel,
         maxTokens: requestedMaxTokens,
         ...contextSearchRequest
       } = parsed.data;
@@ -2864,7 +2865,7 @@ export function registerSearchRoutes(
         hits.length === 0
           ? { rows: [] }
           : await db.pool.query(
-              `select id, layer, type from knowledge_documents where id = any($1::uuid[]) and space_id=$2 and vault_id=any($3::uuid[])`,
+              `select id, layer, type, body_cache from knowledge_documents where id = any($1::uuid[]) and space_id=$2 and vault_id=any($3::uuid[])`,
               [hits.map((hit) => hit.documentId), requestedSpace, vaultIds],
             );
       const detailById = new Map(
@@ -2907,6 +2908,7 @@ export function registerSearchRoutes(
           intent,
           corpusRevision: String(indexRow.corpus_revision ?? "unknown"),
           maxTokens,
+          requestedContextLevel,
           searchedChannels: effectiveChannelState.channels,
           ...(dependencies.contextTokenizer
             ? { tokenizer: dependencies.contextTokenizer }
@@ -2933,6 +2935,7 @@ export function registerSearchRoutes(
             ),
             indexStatus: String(indexRow.status ?? "DEGRADED"),
             channels: effectiveChannelState.channels,
+            contextLevel: requestedContextLevel,
             vectorEnabled: capabilities.vectorAvailable,
             codeGraph: projectCode
               ? {
@@ -2957,6 +2960,9 @@ export function registerSearchRoutes(
             return {
               hit,
               content: hit.parentContext ?? hit.excerpt,
+              ...(requestedContextLevel === "L3" && detail?.body_cache
+                ? { fullContent: String(detail.body_cache) }
+                : {}),
               kind: kindOf(
                 String(detail?.layer ?? ""),
                 String(detail?.type ?? hit.type),
