@@ -65,11 +65,7 @@ import {
 const telemetry = new OpenTelemetryBridge();
 
 type RequiredRetrievalChannel =
-  | "exact"
-  | "lexical"
-  | "vector"
-  | "graph"
-  | "community";
+  "exact" | "lexical" | "vector" | "graph" | "community";
 
 const RETRIEVAL_SPAN_NAMES: Record<RequiredRetrievalChannel, string> = {
   exact: "retrieve.exact",
