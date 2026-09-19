@@ -1576,9 +1576,9 @@ describe("API security boundaries", () => {
       expect(packet.gaps).not.toContain(
         expect.stringContaining("authorization/truth policy"),
       );
-      expect(new Set(packet.sections.map((section) => section.documentId))).toEqual(
-        new Set([leftId, rightId]),
-      );
+      expect(
+        new Set(packet.sections.map((section) => section.documentId)),
+      ).toEqual(new Set([leftId, rightId]));
       const counterpart = packet.sections.find(
         (section) => section.documentId === rightId,
       );
