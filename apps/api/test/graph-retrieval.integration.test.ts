@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { GraphPathProvenance } from "@akp/contracts";
 import { Postgres } from "@akp/postgres";
+import { rebuildCommunityIndex } from "@akp/indexing";
 import { planQuery } from "@akp/retrieval";
 import { queryKnowledge } from "../src/routes/search.js";
 
@@ -153,6 +154,21 @@ async function seedGraph(db: Postgres, fixture: GraphFixture): Promise<void> {
       ],
     );
   }
+
+  await rebuildCommunityIndex(db, {
+    spaceId: fixture.spaceId,
+    vaultId: fixture.vaultId,
+    graphRevision: fixture.corpusRevision,
+    resolution: 0.5,
+    randomSeed: 7,
+  });
+  await rebuildCommunityIndex(db, {
+    spaceId: fixture.spaceId,
+    vaultId: fixture.foreignVaultId,
+    graphRevision: fixture.corpusRevision,
+    resolution: 0.5,
+    randomSeed: 7,
+  });
 }
 
 async function cleanupGraph(
@@ -315,6 +331,105 @@ describe("recursive graph retrieval PostgreSQL integration", () => {
           );
           expect(contribution?.rawScore).toBeGreaterThan(0);
           expect(contribution?.candidateRevision).toBe(fixture.corpusRevision);
+        }
+
+        const drift = await queryKnowledge(
+          db,
+          { ...searchRequest(fixture), query: "GRAPH-A" },
+          {
+            vaultIds: [fixture.vaultId],
+            plan: planQuery("GRAPH-A", "CONCEPTUAL", {
+              graphConsistent: true,
+              communityAvailable: true,
+            }),
+            graphScopes: [{ vaultId: fixture.vaultId, pathPrefix: "allowed" }],
+          },
+        );
+        const driftCommunityHits = drift.filter((hit) =>
+          (hit.fusionContributions ?? []).some(
+            (contribution) => contribution.channel === "community",
+          ),
+        );
+        expect(driftCommunityHits.length).toBeGreaterThan(0);
+        expect(
+          driftCommunityHits.every((hit) =>
+            hit.reasons.includes("community:drift-routing"),
+          ),
+        ).toBe(true);
+        expect(
+          driftCommunityHits.every(
+            (hit) =>
+              !hit.citations.some((citation) =>
+                citation.toLowerCase().includes("community"),
+              ) &&
+              !hit.excerpt.toLowerCase().includes("derived community containing"),
+          ),
+        ).toBe(true);
+
+        const global = await queryKnowledge(
+          db,
+          { ...searchRequest(fixture), query: "whole corpus panorama" },
+          {
+            vaultIds: [fixture.vaultId],
+            plan: planQuery("whole corpus panorama", "GLOBAL_SYNTHESIS", {
+              vectorAvailable: false,
+              graphConsistent: true,
+              communityAvailable: true,
+            }),
+            graphScopes: [{ vaultId: fixture.vaultId, pathPrefix: "allowed" }],
+          },
+        );
+        expect(
+          global.some((hit) =>
+            (hit.fusionContributions ?? []).some(
+              (contribution) => contribution.channel === "community",
+            ),
+          ),
+        ).toBe(true);
+        expect(
+          global.every((hit) =>
+            hit.citations.every(
+              (citation) => !citation.toLowerCase().includes("community"),
+            ),
+          ),
+        ).toBe(true);
+
+        await db.pool.query(
+          `update community_index_revisions
+              set status='STALE',stale=true
+            where space_id=$1 and vault_id=$2 and status='ACTIVE'`,
+          [fixture.spaceId, fixture.vaultId],
+        );
+        try {
+          const staleCommunity = await queryKnowledge(
+            db,
+            { ...searchRequest(fixture), query: "GRAPH-A" },
+            {
+              vaultIds: [fixture.vaultId],
+              plan: planQuery("GRAPH-A", "CONCEPTUAL", {
+                graphConsistent: true,
+                communityAvailable: true,
+              }),
+              graphScopes: [
+                { vaultId: fixture.vaultId, pathPrefix: "allowed" },
+              ],
+            },
+          );
+          expect(
+            staleCommunity.some((hit) =>
+              (hit.fusionContributions ?? []).some(
+                (contribution) => contribution.channel === "community",
+              ),
+            ),
+          ).toBe(false);
+        } finally {
+          await db.pool.query(
+            `update community_index_revisions
+                set status='ACTIVE',stale=false
+              where space_id=$1 and vault_id=$2
+                and graph_revision=$3`,
+            [fixture.spaceId, fixture.vaultId, fixture.corpusRevision],
+          );
         }
 
         const weighted = await queryKnowledge(db, searchRequest(fixture), {
