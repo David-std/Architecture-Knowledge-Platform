@@ -241,6 +241,7 @@ export type ContextRequest = z.infer<typeof ContextRequest>;
 export const TokenizerMetadata = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
+  quality: z.enum(["EXACT", "APPROXIMATE"]),
   approximate: z.boolean(),
   source: z.enum(["injected", "fallback"]),
 });
