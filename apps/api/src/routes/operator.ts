@@ -435,19 +435,22 @@ export function registerOperatorRoutes(
         ),
         db.pool.query(
           `
-            select id,run_id,space_id,vault_id,detector,severity,subject_kind,
-                   subject_id,code,summary,state,created_at,resolved_at
+            select id,run_id,space_id,vault_id,detector,detector_version,
+                   severity,category,scope_id,target_ids,
+                   evidence_refs evidence_ids,support_set_ids,code,summary,
+                   status,proposed_action,revision_set,first_seen_at,last_seen_at
               from assurance_findings
              where space_id=any($1::uuid[]) and vault_id=any($2::uuid[])
-               and state='OPEN'
+               and status='OPEN'
              order by
                case severity
                  when 'CRITICAL' then 1
                  when 'HIGH' then 2
-                 when 'WARN' then 3
-                 else 4
+                 when 'MEDIUM' then 3
+                 when 'LOW' then 4
+                 else 5
                end,
-               created_at desc
+               last_seen_at desc
              limit 100
             `,
           [scope.spaces, scope.vaultIds],

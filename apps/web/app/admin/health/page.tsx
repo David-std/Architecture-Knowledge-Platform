@@ -73,12 +73,19 @@ interface HealthResponse {
       run_id: string;
       vault_id: string;
       detector: string;
+      detector_version: string;
       severity: string;
-      subject_kind: string;
-      subject_id: string;
+      category: string;
+      scope_id: string;
+      target_ids: string[];
+      evidence_ids: string[];
+      support_set_ids: string[];
       code: string;
       summary: string;
-      created_at: string;
+      status: string;
+      proposed_action?: string | null;
+      first_seen_at: string;
+      last_seen_at: string;
     }>;
   };
   connectors: Array<{
@@ -311,15 +318,32 @@ export default async function HealthPage() {
                 <td>
                   <span className="badge">{finding.severity}</span>
                 </td>
-                <td>{finding.detector}</td>
+                <td>
+                  {finding.detector}
+                  <br />
+                  <small>
+                    {finding.detector_version} · {finding.category}
+                  </small>
+                </td>
                 <td>
                   <code>{finding.code}</code>
                 </td>
                 <td>
-                  {finding.subject_kind} ·{" "}
-                  <code>{finding.subject_id.slice(0, 18)}</code>
+                  {finding.target_ids.length
+                    ? finding.target_ids.slice(0, 2).map((target) => (
+                        <code key={target}>{target.slice(0, 22)} </code>
+                      ))
+                    : "—"}
                 </td>
-                <td>{finding.summary}</td>
+                <td>
+                  {finding.summary}
+                  {finding.proposed_action ? (
+                    <>
+                      <br />
+                      <small>Acción: {finding.proposed_action}</small>
+                    </>
+                  ) : null}
+                </td>
               </tr>
             ))}
           </tbody>

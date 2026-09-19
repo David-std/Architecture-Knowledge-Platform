@@ -1,7 +1,7 @@
 import {
   IMPLEMENTED_ASSURANCE_DETECTORS,
   type AssuranceDetector,
-  type AssuranceFinding,
+  type AssuranceFindingDraft,
   type AssuranceRun,
   type AssuranceSeverity,
 } from "@akp/domain";
@@ -17,25 +17,77 @@ export const SUPPORTED_ASSURANCE_DETECTORS = IMPLEMENTED_ASSURANCE_DETECTORS;
 
 type SupportedDetector = (typeof IMPLEMENTED_ASSURANCE_DETECTORS)[number];
 
-function finding(
+const DETECTOR_CATEGORY: Record<SupportedDetector, string> = {
+  GROUNDING: "GROUNDING",
+  FRESHNESS: "FRESHNESS",
+  CONTRADICTION: "CONTRADICTION",
+  DUPLICATE_IDENTITY: "IDENTITY",
+  GRAPH_HEALTH: "GRAPH_HEALTH",
+  TEMPORAL_CONSISTENCY: "TEMPORAL_CONSISTENCY",
+  CODE_GRAPH_FRESHNESS: "CODE_GRAPH_FRESHNESS",
+  LINK_GAP: "LINK_GAP",
+  SYNTHESIS_CANDIDATE: "SYNTHESIS_CANDIDATE",
+  ACCESS_BOUNDARY: "ACCESS_BOUNDARY",
+  CONNECTOR_DELETION: "CONNECTOR",
+  CONNECTOR_FRESHNESS: "CONNECTOR",
+  CONNECTOR_ACL_DRIFT: "ACCESS_BOUNDARY",
+  GRAPH_DISAGREEMENT: "GRAPH_HEALTH",
+  ORPHAN_WORK: "WORKSPACE",
+  EXPIRED_CLAIM: "WORKSPACE",
+  STALE_HANDOFF: "WORKSPACE",
+  UNSUPPORTED_CAUSALITY: "WORK_GRAPH",
+};
+
+const DETECTOR_PROPOSED_ACTION: Partial<
+  Record<SupportedDetector, string>
+> = {
+  GROUNDING: "RECOMPILE",
+  FRESHNESS: "RECOMPILE",
+  CONTRADICTION: "PROMOTION",
+  DUPLICATE_IDENTITY: "PROMOTION",
+  GRAPH_HEALTH: "REINDEX",
+  CODE_GRAPH_FRESHNESS: "REINDEX",
+  LINK_GAP: "PROMOTION",
+  SYNTHESIS_CANDIDATE: "PROMOTION",
+  CONNECTOR_DELETION: "REINDEX",
+  CONNECTOR_FRESHNESS: "REINDEX",
+  CONNECTOR_ACL_DRIFT: "REVIEW",
+  GRAPH_DISAGREEMENT: "REINDEX",
+  STALE_HANDOFF: "REVIEW",
+};
+
+function findingForScope(
+  scopeId: string,
   detector: SupportedDetector,
-  severity: AssuranceSeverity,
+  severity: AssuranceFindingDraft["severity"],
   code: string,
   subjectKind: string,
   subjectId: string,
   summary: string,
   metadata: Record<string, unknown> = {},
-  evidenceRefs: string[] = [],
-): AssuranceFinding {
+  evidenceIds: string[] = [],
+  supportSetIds: string[] = [],
+  revisionSet?: Record<string, string | null | undefined>,
+): AssuranceFindingDraft {
   return {
     detector,
+    detectorVersion: "1.0.0",
     severity,
+    category: DETECTOR_CATEGORY[detector],
+    scopeId,
+    targetIds: [subjectId],
+    evidenceIds,
+    supportSetIds,
     code,
-    subjectKind,
-    subjectId,
     summary,
-    evidenceRefs,
-    metadata,
+    ...(DETECTOR_PROPOSED_ACTION[detector]
+      ? { proposedAction: DETECTOR_PROPOSED_ACTION[detector] }
+      : {}),
+    ...(revisionSet ? { revisionSet } : {}),
+    metadata: {
+      subjectKind,
+      ...metadata,
+    },
   };
 }
 
@@ -43,7 +95,7 @@ async function collectDetectorFindings(
   db: Postgres,
   run: AssuranceRun,
   detector: SupportedDetector,
-): Promise<AssuranceFinding[]> {
+): Promise<AssuranceFindingDraft[]> {
   const scope = [run.spaceId, run.vaultId];
   switch (detector) {
     case "GROUNDING": {
@@ -65,7 +117,7 @@ async function collectDetectorFindings(
         scope,
       );
       return rows.rows.map((row) =>
-        finding(
+        findingForScope(run.vaultId, 
           detector,
           "HIGH",
           "UNGROUNDED_ACTIVE_KNOWLEDGE",
@@ -92,9 +144,9 @@ async function collectDetectorFindings(
         scope,
       );
       return rows.rows.map((row) =>
-        finding(
+        findingForScope(run.vaultId, 
           detector,
-          row.refresh_status === "INVALID" ? "HIGH" : "WARN",
+          row.refresh_status === "INVALID" ? "HIGH" : "MEDIUM",
           "STALE_KNOWLEDGE",
           "knowledge_document",
           row.id,
@@ -120,9 +172,9 @@ async function collectDetectorFindings(
         scope,
       );
       return rows.rows.map((row) =>
-        finding(
+        findingForScope(run.vaultId, 
           detector,
-          "WARN",
+          "MEDIUM",
           "OPEN_CONTRADICTION",
           "contradiction_cluster",
           row.id,
@@ -146,7 +198,7 @@ async function collectDetectorFindings(
         scope,
       );
       return rows.rows.map((row) =>
-        finding(
+        findingForScope(run.vaultId, 
           detector,
           "HIGH",
           "DUPLICATE_EXTERNAL_ID",
@@ -169,7 +221,7 @@ async function collectDetectorFindings(
         scope,
       );
       return rows.rows.map((row) =>
-        finding(
+        findingForScope(run.vaultId, 
           detector,
           "HIGH",
           "GRAPH_REVISION_MISMATCH",
@@ -209,7 +261,7 @@ async function collectDetectorFindings(
         scope,
       );
       return rows.rows.map((row) =>
-        finding(
+        findingForScope(run.vaultId, 
           detector,
           "CRITICAL",
           "TEMPORAL_TRUTH_HEAD_MISMATCH",
@@ -242,7 +294,7 @@ async function collectDetectorFindings(
         scope,
       );
       return rows.rows.map((row) =>
-        finding(
+        findingForScope(run.vaultId, 
           detector,
           "HIGH",
           "CODE_GRAPH_STALE",
@@ -258,7 +310,7 @@ async function collectDetectorFindings(
         ),
       );
     }
-    case "LINK_ORPHAN": {
+    case "LINK_GAP": {
       const rows = await db.pool.query<{
         id: string;
         path: string;
@@ -282,9 +334,9 @@ async function collectDetectorFindings(
         scope,
       );
       return rows.rows.map((row) =>
-        finding(
+        findingForScope(run.vaultId, 
           detector,
-          "WARN",
+          "MEDIUM",
           "ORPHAN_ACTIVE_KNOWLEDGE",
           "knowledge_document",
           row.id,
@@ -293,7 +345,50 @@ async function collectDetectorFindings(
         ),
       );
     }
-    case "SYNTHESIS_ACCESS_BOUNDARY": {
+    case "SYNTHESIS_CANDIDATE": {
+      const rows = await db.pool.query<{
+        revision_id: string;
+        community_key: string;
+        member_count: number;
+        community_revision: string;
+        graph_revision: string;
+        support_set: Record<string, unknown>;
+      }>(
+        `select c.revision_id::text,c.community_key,c.member_count,
+                r.community_revision,r.graph_revision,c.support_set
+           from community_index_communities c
+           join community_index_revisions r on r.id=c.revision_id
+          where r.space_id=$1 and r.vault_id=$2
+            and r.status='ACTIVE' and r.stale=false
+            and c.member_count>=3
+          order by c.member_count desc,c.community_key
+          limit 200`,
+        scope,
+      );
+      return rows.rows.map((row) =>
+        findingForScope(
+          run.vaultId,
+          detector,
+          "INFO",
+          "SYNTHESIS_CANDIDATE",
+          "community",
+          `${row.revision_id}:${row.community_key}`,
+          "An active derived community has enough approved members to warrant human review for a synthesis document.",
+          {
+            communityKey: row.community_key,
+            memberCount: row.member_count,
+            summaryAuthority: "DERIVED_INDEX_NON_CITABLE",
+          },
+          [],
+          [],
+          {
+            community: row.community_revision,
+            graph: row.graph_revision,
+          },
+        ),
+      );
+    }
+    case "ACCESS_BOUNDARY": {
       const rows = await db.pool.query<{
         id: string;
         vault_id: string | null;
@@ -316,7 +411,7 @@ async function collectDetectorFindings(
         [run.spaceId],
       );
       return rows.rows.map((row) =>
-        finding(
+        findingForScope(run.vaultId, 
           detector,
           "CRITICAL",
           "CONTEXT_PACKET_SCOPE_MISMATCH",
@@ -359,7 +454,7 @@ async function collectDetectorFindings(
         scope,
       );
       return rows.rows.map((row) =>
-        finding(
+        findingForScope(run.vaultId, 
           detector,
           "CRITICAL",
           "CONNECTOR_DELETE_NOT_TOMBSTONED",
@@ -406,7 +501,7 @@ async function collectDetectorFindings(
         scope,
       );
       return rows.rows.map((row) =>
-        finding(
+        findingForScope(run.vaultId, 
           detector,
           "HIGH",
           "CONNECTOR_FRESHNESS_SLA_EXCEEDED",
@@ -455,9 +550,9 @@ async function collectDetectorFindings(
         scope,
       );
       return rows.rows.map((row) =>
-        finding(
+        findingForScope(run.vaultId, 
           detector,
-          row.permission_uncertain ? "HIGH" : "WARN",
+          row.permission_uncertain ? "HIGH" : "MEDIUM",
           row.permission_uncertain
             ? "CONNECTOR_ACL_UNCERTAIN"
             : "CONNECTOR_ACL_FIDELITY_DRIFT",
@@ -491,7 +586,7 @@ async function collectDetectorFindings(
         scope,
       );
       return rows.rows.map((row) =>
-        finding(
+        findingForScope(run.vaultId, 
           detector,
           "CRITICAL",
           "MULTIPLE_ACTIVE_GRAPH_REVISIONS",
@@ -520,7 +615,7 @@ async function collectDetectorFindings(
         scope,
       );
       return rows.rows.map((row) =>
-        finding(
+        findingForScope(run.vaultId, 
           detector,
           "HIGH",
           "ORPHAN_ACTIVE_WORK",
@@ -552,9 +647,9 @@ async function collectDetectorFindings(
         scope,
       );
       return rows.rows.map((row) =>
-        finding(
+        findingForScope(run.vaultId, 
           detector,
-          "WARN",
+          "MEDIUM",
           "EXPIRED_WORKSPACE_CLAIM",
           "workspace_claim",
           row.id,
@@ -597,7 +692,7 @@ async function collectDetectorFindings(
         scope,
       );
       return rows.rows.map((row) =>
-        finding(
+        findingForScope(run.vaultId, 
           detector,
           "HIGH",
           "STALE_WORKSPACE_HANDOFF",
@@ -629,7 +724,7 @@ async function collectDetectorFindings(
         scope,
       );
       return rows.rows.map((row) =>
-        finding(
+        findingForScope(run.vaultId, 
           detector,
           "CRITICAL",
           "UNSUPPORTED_CAUSALITY",

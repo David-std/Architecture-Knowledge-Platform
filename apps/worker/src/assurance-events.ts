@@ -13,7 +13,7 @@ const SOURCE_CHANGE_DETECTORS = [
   "CONTRADICTION",
   "DUPLICATE_IDENTITY",
   "TEMPORAL_CONSISTENCY",
-  "LINK_ORPHAN",
+  "LINK_GAP",
 ] as const;
 
 async function scheduleSourceChangeAssurance(

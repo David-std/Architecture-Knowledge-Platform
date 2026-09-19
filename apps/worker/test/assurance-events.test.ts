@@ -46,7 +46,7 @@ describe("continuous assurance source event triggers", () => {
                 "CONTRADICTION",
                 "DUPLICATE_IDENTITY",
                 "TEMPORAL_CONSISTENCY",
-                "LINK_ORPHAN",
+                "LINK_GAP",
               ],
               status: "PENDING",
               idempotency_key:
@@ -87,7 +87,7 @@ describe("continuous assurance source event triggers", () => {
         "CONTRADICTION",
         "DUPLICATE_IDENTITY",
         "TEMPORAL_CONSISTENCY",
-        "LINK_ORPHAN",
+        "LINK_GAP",
       ],
       "source-change:00000000-0000-0000-0000-000000000081",
       null,

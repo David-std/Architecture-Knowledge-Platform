@@ -9,8 +9,9 @@ export const ASSURANCE_DETECTORS = [
   "GRAPH_HEALTH",
   "TEMPORAL_CONSISTENCY",
   "CODE_GRAPH_FRESHNESS",
-  "LINK_ORPHAN",
-  "SYNTHESIS_ACCESS_BOUNDARY",
+  "LINK_GAP",
+  "SYNTHESIS_CANDIDATE",
+  "ACCESS_BOUNDARY",
   "CONNECTOR_DELETION",
   "CONNECTOR_FRESHNESS",
   "CONNECTOR_ACL_DRIFT",
@@ -24,33 +25,29 @@ export const ASSURANCE_DETECTORS = [
 type AssuranceDetector = (typeof ASSURANCE_DETECTORS)[number];
 
 export const IMPLEMENTED_ASSURANCE_DETECTORS = [
-  "GROUNDING",
-  "FRESHNESS",
-  "CONTRADICTION",
-  "DUPLICATE_IDENTITY",
-  "GRAPH_HEALTH",
-  "TEMPORAL_CONSISTENCY",
-  "CODE_GRAPH_FRESHNESS",
-  "LINK_ORPHAN",
-  "SYNTHESIS_ACCESS_BOUNDARY",
-  "CONNECTOR_DELETION",
-  "CONNECTOR_FRESHNESS",
-  "CONNECTOR_ACL_DRIFT",
-  "GRAPH_DISAGREEMENT",
-  "ORPHAN_WORK",
-  "EXPIRED_CLAIM",
-  "STALE_HANDOFF",
-  "UNSUPPORTED_CAUSALITY",
+  ...ASSURANCE_DETECTORS,
 ] as const satisfies readonly AssuranceDetector[];
 
-interface AssuranceFinding {
+type AssuranceSeverity = "INFO" | "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+export type AssuranceFindingStatus =
+  | "OPEN"
+  | "ACKNOWLEDGED"
+  | "RESOLVED"
+  | "FALSE_POSITIVE";
+
+interface AssuranceFindingDraft {
   detector: AssuranceDetector;
-  severity: "INFO" | "WARN" | "HIGH" | "CRITICAL";
+  detectorVersion: string;
+  severity: AssuranceSeverity;
+  category: string;
+  scopeId: string;
+  targetIds: string[];
+  evidenceIds: string[];
+  supportSetIds?: string[];
   code: string;
-  subjectKind: string;
-  subjectId: string;
   summary: string;
-  evidenceRefs: string[];
+  proposedAction?: string;
+  revisionSet?: Record<string, string | null | undefined>;
   metadata: Record<string, unknown>;
 }
 
@@ -277,18 +274,19 @@ export async function cancelAssuranceRun(
 
 export function assuranceFindingKey(
   finding: Pick<
-    AssuranceFinding,
-    "detector" | "code" | "subjectKind" | "subjectId"
+    AssuranceFindingDraft,
+    "detector" | "code" | "scopeId" | "targetIds"
   >,
 ): string {
+  const targets = [...new Set(finding.targetIds.map((value) => value.trim()))]
+    .filter(Boolean)
+    .sort();
+  if (!finding.scopeId.trim() || targets.length === 0) {
+    throw new Error("ASSURANCE_FINDING_IDENTITY_INVALID");
+  }
   return createHash("sha256")
     .update(
-      [
-        finding.detector,
-        finding.code,
-        finding.subjectKind,
-        finding.subjectId,
-      ].join("\0"),
+      [finding.detector, finding.code, finding.scopeId, ...targets].join("\0"),
     )
     .digest("hex");
 }
@@ -301,7 +299,7 @@ export async function appendAssuranceFindings(
     leaseToken: number;
     spaceId: string;
     vaultId: string;
-    findings: readonly AssuranceFinding[];
+    findings: readonly AssuranceFindingDraft[];
   },
 ): Promise<number> {
   if (input.findings.length > 1000) {
@@ -326,36 +324,204 @@ export async function appendAssuranceFindings(
       ],
     );
     if (owner.rowCount !== 1) throw new Error("ASSURANCE_RUN_FENCED");
-    let inserted = 0;
+
+    let affected = 0;
     for (const finding of input.findings) {
       if (!DETECTOR_SET.has(finding.detector)) {
         throw new Error("ASSURANCE_DETECTOR_INVALID");
       }
-      const result = await client.query(
+      if (
+        !finding.detectorVersion.trim() ||
+        !finding.category.trim() ||
+        finding.targetIds.length === 0 ||
+        finding.targetIds.some((value) => !value.trim())
+      ) {
+        throw new Error("ASSURANCE_FINDING_CONTRACT_INVALID");
+      }
+      const supportSetIds = finding.supportSetIds ?? [];
+      const key = assuranceFindingKey(finding);
+      const existing = await client.query<{
+        id: string;
+        status: AssuranceFindingStatus;
+      }>(
+        `select id,status
+           from assurance_findings
+          where space_id=$1 and vault_id=$2 and finding_key=$3
+          for update`,
+        [input.spaceId, input.vaultId, key],
+      );
+      const previous = existing.rows[0];
+
+      const result = await client.query<{ id: string; status: string }>(
         `insert into assurance_findings(
-           run_id,space_id,vault_id,detector,severity,finding_key,
-           subject_kind,subject_id,code,summary,evidence_refs,metadata
-         ) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb)
-         on conflict(run_id,finding_key) do nothing`,
+           run_id,space_id,vault_id,detector,detector_version,severity,category,
+           scope_id,target_ids,evidence_refs,support_set_ids,finding_key,
+           subject_kind,subject_id,code,summary,proposed_action,revision_set,
+           metadata,status,first_seen_at,last_seen_at
+         ) values(
+           $1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11::jsonb,$12,
+           $13,$14,$15,$16,$17,$18::jsonb,$19::jsonb,'OPEN',now(),now()
+         )
+         on conflict(space_id,vault_id,finding_key) do update
+           set run_id=excluded.run_id,
+               detector=excluded.detector,
+               detector_version=excluded.detector_version,
+               severity=excluded.severity,
+               category=excluded.category,
+               scope_id=excluded.scope_id,
+               target_ids=excluded.target_ids,
+               evidence_refs=excluded.evidence_refs,
+               support_set_ids=excluded.support_set_ids,
+               subject_kind=excluded.subject_kind,
+               subject_id=excluded.subject_id,
+               code=excluded.code,
+               summary=excluded.summary,
+               proposed_action=excluded.proposed_action,
+               revision_set=excluded.revision_set,
+               metadata=excluded.metadata,
+               last_seen_at=now(),
+               status=case
+                 when assurance_findings.status='RESOLVED' then 'OPEN'
+                 else assurance_findings.status
+               end,
+               resolved_at=case
+                 when assurance_findings.status='RESOLVED' then null
+                 else assurance_findings.resolved_at
+               end
+         returning id,status`,
         [
           input.runId,
           input.spaceId,
           input.vaultId,
           finding.detector,
+          finding.detectorVersion,
           finding.severity,
-          assuranceFindingKey(finding),
-          finding.subjectKind,
-          finding.subjectId,
+          finding.category,
+          finding.scopeId,
+          JSON.stringify(finding.targetIds),
+          JSON.stringify(finding.evidenceIds),
+          JSON.stringify(supportSetIds),
+          key,
+          String(finding.metadata.subjectKind ?? "resource"),
+          finding.targetIds[0],
           finding.code,
           finding.summary,
-          JSON.stringify(finding.evidenceRefs),
+          finding.proposedAction ?? null,
+          finding.revisionSet ? JSON.stringify(finding.revisionSet) : null,
           JSON.stringify(finding.metadata),
         ],
       );
-      inserted += result.rowCount ?? 0;
+      const current = result.rows[0];
+      if (!current) throw new Error("ASSURANCE_FINDING_WRITE_FAILED");
+
+      const action =
+        previous?.status === "RESOLVED" && current.status === "OPEN"
+          ? "REOPENED"
+          : previous
+            ? null
+            : "DETECTED";
+      if (action) {
+        await client.query(
+          `insert into assurance_finding_events(
+             finding_id,space_id,vault_id,action,from_status,to_status,payload
+           ) values($1,$2,$3,$4,$5,$6,$7::jsonb)`,
+          [
+            current.id,
+            input.spaceId,
+            input.vaultId,
+            action,
+            previous?.status ?? null,
+            current.status,
+            JSON.stringify({
+              runId: input.runId,
+              detector: finding.detector,
+              detectorVersion: finding.detectorVersion,
+            }),
+          ],
+        );
+      }
+      affected += result.rowCount ?? 0;
     }
     await client.query("commit");
-    return inserted;
+    return affected;
+  } catch (error) {
+    await client.query("rollback").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function transitionAssuranceFindingStatus(
+  db: Postgres,
+  input: {
+    findingId: string;
+    spaceId: string;
+    vaultId: string;
+    status: AssuranceFindingStatus;
+    actorUserId?: string | null;
+    actorPrincipalId?: string | null;
+    reason?: string | null;
+  },
+): Promise<Record<string, unknown> | null> {
+  const client = await db.pool.connect();
+  try {
+    await client.query("begin");
+    const current = await client.query<{
+      id: string;
+      status: AssuranceFindingStatus;
+    }>(
+      `select id,status
+         from assurance_findings
+        where id=$1 and space_id=$2 and vault_id=$3
+        for update`,
+      [input.findingId, input.spaceId, input.vaultId],
+    );
+    const row = current.rows[0];
+    if (!row) {
+      await client.query("rollback");
+      return null;
+    }
+    if (row.status === input.status) {
+      const existing = await client.query<Record<string, unknown>>(
+        "select * from assurance_findings where id=$1",
+        [input.findingId],
+      );
+      await client.query("commit");
+      return existing.rows[0] ?? null;
+    }
+
+    const updated = await client.query<Record<string, unknown>>(
+      `update assurance_findings
+          set status=$4,
+              resolved_at=case when $4='RESOLVED' then now() else null end,
+              last_seen_at=greatest(last_seen_at,first_seen_at)
+        where id=$1 and space_id=$2 and vault_id=$3
+        returning *`,
+      [input.findingId, input.spaceId, input.vaultId, input.status],
+    );
+    const finding = updated.rows[0];
+    if (!finding) throw new Error("ASSURANCE_FINDING_STATUS_UPDATE_FAILED");
+
+    await client.query(
+      `insert into assurance_finding_events(
+         finding_id,space_id,vault_id,action,from_status,to_status,
+         actor_user_id,actor_principal_id,reason,payload
+       ) values($1,$2,$3,$4,$5,$6,$7,$8,$9,'{}'::jsonb)`,
+      [
+        input.findingId,
+        input.spaceId,
+        input.vaultId,
+        input.status,
+        row.status,
+        input.status,
+        input.actorUserId ?? null,
+        input.actorPrincipalId ?? null,
+        input.reason?.trim() || null,
+      ],
+    );
+    await client.query("commit");
+    return finding;
   } catch (error) {
     await client.query("rollback").catch(() => undefined);
     throw error;

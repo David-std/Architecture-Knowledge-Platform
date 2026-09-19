@@ -34,7 +34,7 @@ async function currentVaultCorpusRevision(
 const INDEX_CHANGE_DETECTORS = [
   "GRAPH_HEALTH",
   "CODE_GRAPH_FRESHNESS",
-  "SYNTHESIS_ACCESS_BOUNDARY",
+  "ACCESS_BOUNDARY",
   "GRAPH_DISAGREEMENT",
 ] as const;
 

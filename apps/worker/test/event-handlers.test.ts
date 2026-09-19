@@ -131,7 +131,7 @@ describe("index event consumers", () => {
               detectors: [
                 "GRAPH_HEALTH",
                 "CODE_GRAPH_FRESHNESS",
-                "SYNTHESIS_ACCESS_BOUNDARY",
+                "ACCESS_BOUNDARY",
                 "GRAPH_DISAGREEMENT",
               ],
               status: "PENDING",
@@ -185,7 +185,7 @@ describe("index event consumers", () => {
       [
         "GRAPH_HEALTH",
         "CODE_GRAPH_FRESHNESS",
-        "SYNTHESIS_ACCESS_BOUNDARY",
+        "ACCESS_BOUNDARY",
         "GRAPH_DISAGREEMENT",
       ],
       "index-change:00000000-0000-0000-0000-000000000045:composite:r42",

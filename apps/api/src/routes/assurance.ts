@@ -6,6 +6,7 @@ import {
   cancelAssuranceRun,
   resolveAuthorizedVaultScope,
   submitAssuranceRun,
+  transitionAssuranceFindingStatus,
   type Postgres,
 } from "@akp/postgres";
 import { actorOf, audit, requirePermission, type Permission } from "../auth.js";
@@ -32,9 +33,24 @@ const ScopedQuery = z
   .strict();
 
 const FindingQuery = ScopedQuery.extend({
-  state: z.enum(["OPEN", "RESOLVED", "SUPPRESSED"]).optional(),
+  status: z
+    .enum(["OPEN", "ACKNOWLEDGED", "RESOLVED", "FALSE_POSITIVE"])
+    .optional(),
   detector: z.enum(ASSURANCE_DETECTORS).optional(),
+  category: z.string().trim().min(1).max(120).optional(),
 }).strict();
+
+const FindingStatusBody = z
+  .object({
+    status: z.enum([
+      "OPEN",
+      "ACKNOWLEDGED",
+      "RESOLVED",
+      "FALSE_POSITIVE",
+    ]),
+    reason: z.string().trim().min(1).max(2000).optional(),
+  })
+  .strict();
 
 async function requireWholeVault(
   db: Postgres,
@@ -230,11 +246,13 @@ export function registerAssuranceRoutes(
         return;
       }
       const findings = await db.pool.query(
-        `select id,detector,severity,subject_kind,subject_id,code,summary,
-                evidence_refs,metadata,state,created_at,resolved_at
+        `select id,detector,detector_version,severity,category,scope_id,
+                target_ids,evidence_refs evidence_ids,support_set_ids,code,
+                summary,status,proposed_action,revision_set,metadata,
+                first_seen_at,last_seen_at,resolved_at
            from assurance_findings
           where run_id=$1
-          order by created_at,id
+          order by last_seen_at,id
           limit 1000`,
         [request.params.id],
       );
@@ -266,23 +284,104 @@ export function registerAssuranceRoutes(
         return;
       }
       const findings = await db.pool.query(
-        `select id,run_id,detector,severity,subject_kind,subject_id,code,
-                summary,evidence_refs,metadata,state,created_at,resolved_at
+        `select id,run_id,detector,detector_version,severity,category,scope_id,
+                target_ids,evidence_refs evidence_ids,support_set_ids,code,
+                summary,status,proposed_action,revision_set,metadata,
+                first_seen_at,last_seen_at,resolved_at
            from assurance_findings
           where space_id=$1 and vault_id=$2
-            and ($3::text is null or state=$3)
+            and ($3::text is null or status=$3)
             and ($4::text is null or detector=$4)
-          order by created_at desc,id
-          limit $5`,
+            and ($5::text is null or category=$5)
+          order by
+            case severity
+              when 'CRITICAL' then 1
+              when 'HIGH' then 2
+              when 'MEDIUM' then 3
+              when 'LOW' then 4
+              else 5
+            end,
+            last_seen_at desc,id
+          limit $6`,
         [
           parsed.data.spaceId,
           parsed.data.vaultId,
-          parsed.data.state ?? null,
+          parsed.data.status ?? null,
           parsed.data.detector ?? null,
+          parsed.data.category ?? null,
           parsed.data.limit,
         ],
       );
       return { findings: findings.rows };
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    "/v1/assurance/findings/:id/status",
+    { preHandler: requirePermission("knowledge:review") },
+    async (request, reply) => {
+      if (!UUID.safeParse(request.params.id).success) {
+        return reply.code(400).send({ code: "INVALID_ASSURANCE_FINDING_ID" });
+      }
+      const parsed = FindingStatusBody.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          code: "INVALID_ASSURANCE_FINDING_STATUS",
+          issues: parsed.error.issues,
+        });
+      }
+      const current = await db.pool.query<{
+        space_id: string;
+        vault_id: string;
+      }>(
+        "select space_id,vault_id from assurance_findings where id=$1",
+        [request.params.id],
+      );
+      const scope = current.rows[0];
+      if (!scope) {
+        return reply.code(404).send({ code: "ASSURANCE_FINDING_NOT_FOUND" });
+      }
+      if (
+        !(await requireWholeVault(
+          db,
+          request,
+          reply,
+          "knowledge:review",
+          scope.space_id,
+          scope.vault_id,
+        ))
+      ) {
+        return;
+      }
+      const actor = actorOf(request);
+      if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
+
+      const finding = await transitionAssuranceFindingStatus(db, {
+        findingId: request.params.id,
+        spaceId: scope.space_id,
+        vaultId: scope.vault_id,
+        status: parsed.data.status,
+        actorUserId: actor.id,
+        actorPrincipalId: actor.principalId,
+        reason: parsed.data.reason ?? null,
+      });
+      if (!finding) {
+        return reply.code(404).send({ code: "ASSURANCE_FINDING_NOT_FOUND" });
+      }
+      await audit(
+        db,
+        request,
+        "assurance.finding.status",
+        "assurance_finding",
+        request.params.id,
+        {
+          vaultId: scope.vault_id,
+          status: parsed.data.status,
+          reason: parsed.data.reason ?? null,
+        },
+        scope.space_id,
+      );
+      return { finding };
     },
   );
 

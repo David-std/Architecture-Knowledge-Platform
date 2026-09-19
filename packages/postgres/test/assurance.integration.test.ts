@@ -8,6 +8,7 @@ import {
   completeAssuranceRun,
   renewAssuranceRunLease,
   submitAssuranceRun,
+  transitionAssuranceFindingStatus,
 } from "../src/index.js";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -111,13 +112,16 @@ describeDb("continuous assurance durable runs", () => {
         findings: [
           {
             detector: "FRESHNESS",
-            severity: "WARN",
+            detectorVersion: "1.0.0",
+            severity: "MEDIUM",
+            category: "FRESHNESS",
+            scopeId: vaultId,
+            targetIds: ["doc-a"],
+            evidenceIds: [],
             code: "STALE_KNOWLEDGE",
-            subjectKind: "document",
-            subjectId: "doc-a",
             summary: "Document is stale.",
-            evidenceRefs: [],
-            metadata: {},
+            proposedAction: "RECOMPILE",
+            metadata: { subjectKind: "document" },
           },
         ],
       }),
@@ -133,13 +137,16 @@ describeDb("continuous assurance durable runs", () => {
         findings: [
           {
             detector: "FRESHNESS",
-            severity: "WARN",
+            detectorVersion: "1.0.0",
+            severity: "MEDIUM",
+            category: "FRESHNESS",
+            scopeId: vaultId,
+            targetIds: ["doc-a"],
+            evidenceIds: [],
             code: "STALE_KNOWLEDGE",
-            subjectKind: "document",
-            subjectId: "doc-a",
             summary: "Document is stale.",
-            evidenceRefs: [],
-            metadata: {},
+            proposedAction: "RECOMPILE",
+            metadata: { subjectKind: "document" },
           },
         ],
       }),
@@ -154,6 +161,138 @@ describeDb("continuous assurance durable runs", () => {
         summary: {},
       }),
     ).toBe(false);
+  });
+
+  it("deduplicates identical findings across runs and preserves false-positive lifecycle", async () => {
+    const firstRun = await submitAssuranceRun(db, {
+      spaceId,
+      vaultId,
+      trigger: "MANUAL",
+      detectors: ["FRESHNESS"],
+      idempotencyKey: `finding-dedupe-a-${randomUUID()}`,
+      maxAttempts: 1,
+    });
+    const firstWorker = `finding-dedupe-a-${randomUUID()}`;
+    const firstClaim = await claimNextAssuranceRun(db, firstWorker, 60, {
+      runId: firstRun.id,
+    });
+    if (!firstClaim) throw new Error("expected first finding run");
+    const draft = {
+      detector: "FRESHNESS" as const,
+      detectorVersion: "1.0.0",
+      severity: "MEDIUM" as const,
+      category: "FRESHNESS",
+      scopeId: vaultId,
+      targetIds: ["persistent-doc"],
+      evidenceIds: [],
+      code: "STALE_KNOWLEDGE",
+      summary: "Persistent stale knowledge.",
+      proposedAction: "RECOMPILE",
+      metadata: { subjectKind: "knowledge_document" },
+    };
+    expect(
+      await appendAssuranceFindings(db, {
+        runId: firstRun.id,
+        workerId: firstWorker,
+        leaseToken: firstClaim.leaseToken,
+        spaceId,
+        vaultId,
+        findings: [draft],
+      }),
+    ).toBe(1);
+    expect(
+      await completeAssuranceRun(db, {
+        runId: firstRun.id,
+        workerId: firstWorker,
+        leaseToken: firstClaim.leaseToken,
+        summary: {},
+      }),
+    ).toBe(true);
+
+    const persisted = await db.pool.query<{
+      id: string;
+      first_seen_at: Date | string;
+      last_seen_at: Date | string;
+      status: string;
+    }>(
+      `select id,first_seen_at,last_seen_at,status
+         from assurance_findings
+        where space_id=$1 and vault_id=$2 and code='STALE_KNOWLEDGE'
+          and target_ids @> '["persistent-doc"]'::jsonb`,
+      [spaceId, vaultId],
+    );
+    const finding = persisted.rows[0];
+    expect(finding?.status).toBe("OPEN");
+    if (!finding) throw new Error("expected persistent finding");
+
+    await transitionAssuranceFindingStatus(db, {
+      findingId: finding.id,
+      spaceId,
+      vaultId,
+      status: "FALSE_POSITIVE",
+      reason: "Reviewed fixture false positive.",
+    });
+
+    const secondRun = await submitAssuranceRun(db, {
+      spaceId,
+      vaultId,
+      trigger: "SCHEDULED",
+      detectors: ["FRESHNESS"],
+      idempotencyKey: `finding-dedupe-b-${randomUUID()}`,
+      maxAttempts: 1,
+    });
+    const secondWorker = `finding-dedupe-b-${randomUUID()}`;
+    const secondClaim = await claimNextAssuranceRun(db, secondWorker, 60, {
+      runId: secondRun.id,
+    });
+    if (!secondClaim) throw new Error("expected second finding run");
+    expect(
+      await appendAssuranceFindings(db, {
+        runId: secondRun.id,
+        workerId: secondWorker,
+        leaseToken: secondClaim.leaseToken,
+        spaceId,
+        vaultId,
+        findings: [{ ...draft, severity: "HIGH" }],
+      }),
+    ).toBe(1);
+
+    const after = await db.pool.query<{
+      count: number;
+      status: string;
+      run_id: string;
+      first_seen_at: Date | string;
+      last_seen_at: Date | string;
+    }>(
+      `select count(*) over()::int count,status,run_id,first_seen_at,last_seen_at
+         from assurance_findings
+        where id=$1`,
+      [finding.id],
+    );
+    expect(after.rows[0]).toMatchObject({
+      count: 1,
+      status: "FALSE_POSITIVE",
+      run_id: secondRun.id,
+    });
+    expect(
+      new Date(String(after.rows[0]?.last_seen_at)).getTime(),
+    ).toBeGreaterThanOrEqual(
+      new Date(String(finding.last_seen_at)).getTime(),
+    );
+
+    const history = await db.pool.query<{ action: string }>(
+      `select action
+         from assurance_finding_events
+        where finding_id=$1
+        order by id`,
+      [finding.id],
+    );
+    expect(history.rows.map((row) => row.action)).toEqual([
+      "DETECTED",
+      "FALSE_POSITIVE",
+    ]);
+
+    expect(await cancelAssuranceRun(db, secondRun.id)).toBe(true);
   });
 
   it("preserves the persisted detector cursor across lease expiry and reclaim", async () => {

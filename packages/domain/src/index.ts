@@ -189,8 +189,9 @@ export const ASSURANCE_DETECTORS = [
   "GRAPH_HEALTH",
   "TEMPORAL_CONSISTENCY",
   "CODE_GRAPH_FRESHNESS",
-  "LINK_ORPHAN",
-  "SYNTHESIS_ACCESS_BOUNDARY",
+  "LINK_GAP",
+  "SYNTHESIS_CANDIDATE",
+  "ACCESS_BOUNDARY",
   "CONNECTOR_DELETION",
   "CONNECTOR_FRESHNESS",
   "CONNECTOR_ACL_DRIFT",
@@ -204,36 +205,47 @@ export const ASSURANCE_DETECTORS = [
 export type AssuranceDetector = (typeof ASSURANCE_DETECTORS)[number];
 
 export const IMPLEMENTED_ASSURANCE_DETECTORS = [
-  "GROUNDING",
-  "FRESHNESS",
-  "CONTRADICTION",
-  "DUPLICATE_IDENTITY",
-  "GRAPH_HEALTH",
-  "TEMPORAL_CONSISTENCY",
-  "CODE_GRAPH_FRESHNESS",
-  "LINK_ORPHAN",
-  "SYNTHESIS_ACCESS_BOUNDARY",
-  "CONNECTOR_DELETION",
-  "CONNECTOR_FRESHNESS",
-  "CONNECTOR_ACL_DRIFT",
-  "GRAPH_DISAGREEMENT",
-  "ORPHAN_WORK",
-  "EXPIRED_CLAIM",
-  "STALE_HANDOFF",
-  "UNSUPPORTED_CAUSALITY",
+  ...ASSURANCE_DETECTORS,
 ] as const satisfies readonly AssuranceDetector[];
 
-export type AssuranceSeverity = "INFO" | "WARN" | "HIGH" | "CRITICAL";
+export type AssuranceSeverity =
+  | "INFO"
+  | "LOW"
+  | "MEDIUM"
+  | "HIGH"
+  | "CRITICAL";
 
-export interface AssuranceFinding {
+export type AssuranceFindingStatus =
+  | "OPEN"
+  | "ACKNOWLEDGED"
+  | "RESOLVED"
+  | "FALSE_POSITIVE";
+
+export interface AssuranceFindingRevisionSet {
+  [revision: string]: string | null | undefined;
+}
+
+export interface AssuranceFindingDraft {
   detector: AssuranceDetector;
+  detectorVersion: string;
   severity: AssuranceSeverity;
+  category: string;
+  scopeId: string;
+  targetIds: string[];
+  evidenceIds: string[];
+  supportSetIds?: string[];
   code: string;
-  subjectKind: string;
-  subjectId: string;
   summary: string;
-  evidenceRefs: string[];
+  proposedAction?: string;
+  revisionSet?: AssuranceFindingRevisionSet;
   metadata: Record<string, unknown>;
+}
+
+export interface AssuranceFinding extends AssuranceFindingDraft {
+  id: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  status: AssuranceFindingStatus;
 }
 
 export interface AssuranceRunCursor {
