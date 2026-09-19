@@ -891,6 +891,15 @@ export function registerAuthentication(
         return;
       }
     }
+    if (
+      actor.principalKind === "MAINTENANCE_JOB" &&
+      !["GET", "HEAD", "OPTIONS"].includes(request.method)
+    ) {
+      await reply.code(403).send({
+        code: "MAINTENANCE_PRINCIPAL_MUTATION_DENIED",
+      });
+      return;
+    }
     if (actor.sessionId) {
       await db.pool.query(
         "update web_sessions set last_seen_at=now() where id=$1",
