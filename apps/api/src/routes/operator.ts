@@ -120,6 +120,206 @@ export function registerOperatorRoutes(
     },
   );
 
+  app.get(
+    "/v1/operator/workspace-home",
+    { preHandler: requirePermission("knowledge:read") },
+    async (request, reply) => {
+      const scope = await operatorScope(db, actorOf(request), "knowledge:read");
+      if (!scope.vaultIds.length) {
+        return reply.code(403).send({ code: "VAULT_ACCESS_DENIED" });
+      }
+
+      const [
+        projects,
+        workObjects,
+        reviews,
+        findings,
+        sessions,
+        claims,
+        handoffs,
+        indexes,
+        connectors,
+        federation,
+      ] = await Promise.all([
+        db.pool.query(
+          `select id,space_id,vault_id,slug,
+                  metadata-'rootPath'-'repositoryPath'-'localPath' metadata,
+                  created_at
+             from projects
+            where space_id=any($1::uuid[]) and vault_id=any($2::uuid[])
+            order by created_at desc
+            limit 20`,
+          [scope.spaces, scope.vaultIds],
+        ),
+        db.pool.query(
+          `select id,space_id,vault_id,provider,object_type,external_id,title,
+                  authority,source_revision,work_object_class,metadata,
+                  observed_at,updated_at
+             from external_object_refs
+            where space_id=any($1::uuid[]) and vault_id=any($2::uuid[])
+              and work_object_class is not null
+            order by updated_at desc,id
+            limit 80`,
+          [scope.spaces, scope.vaultIds],
+        ),
+        db.pool.query(
+          `select id,space_id,vault_id,status,base_commit,head_commit,
+                  decision_at,decision_reason,created_at,updated_at
+             from reviews
+            where space_id=any($1::uuid[]) and vault_id=any($2::uuid[])
+              and status in ('PENDING','CHANGES_REQUESTED')
+            order by created_at desc
+            limit 30`,
+          [scope.spaces, scope.vaultIds],
+        ),
+        db.pool.query(
+          `select id,space_id,vault_id,severity,category,detector,code,summary,
+                  status,proposed_action,target_ids,last_seen_at
+             from assurance_findings
+            where space_id=any($1::uuid[]) and vault_id=any($2::uuid[])
+              and status in ('OPEN','ACKNOWLEDGED')
+            order by
+              case severity
+                when 'CRITICAL' then 1
+                when 'HIGH' then 2
+                when 'MEDIUM' then 3
+                when 'LOW' then 4
+                else 5
+              end,
+              last_seen_at desc
+            limit 30`,
+          [scope.spaces, scope.vaultIds],
+        ),
+        db.pool.query(
+          `select s.id,s.space_id,s.vault_id,s.project_id,s.purpose,s.state,
+                  s.created_at,s.updated_at,
+                  r.revision_set_hash,r.pinned_at,
+                  count(p.user_id) filter (
+                    where p.left_at is null
+                      and (
+                        p.presence_expires_at is null
+                        or p.presence_expires_at>now()
+                      )
+                  )::int active_participants
+             from agent_sessions s
+             left join workspace_context_revision_sets r on r.session_id=s.id
+             left join workspace_session_participants p on p.session_id=s.id
+            where s.space_id=any($1::uuid[]) and s.vault_id=any($2::uuid[])
+              and coalesce(s.state->>'workStatus','OPEN') not in (
+                'COMPLETED','ABANDONED'
+              )
+            group by s.id,r.revision_set_hash,r.pinned_at
+            order by s.updated_at desc
+            limit 30`,
+          [scope.spaces, scope.vaultIds],
+        ),
+        db.pool.query(
+          `select c.id,c.session_id,c.work_key,c.status,c.fencing_token,
+                  c.lease_expires_at,c.updated_at,s.space_id,s.vault_id,
+                  p.kind owner_principal_kind,p.label owner_principal_label
+             from workspace_claims c
+             join agent_sessions s on s.id=c.session_id
+             join principals p on p.id=c.owner_principal_id
+            where s.space_id=any($1::uuid[]) and s.vault_id=any($2::uuid[])
+              and c.status='ACTIVE'
+            order by c.lease_expires_at,c.updated_at desc
+            limit 40`,
+          [scope.spaces, scope.vaultIds],
+        ),
+        db.pool.query(
+          `select e.id,e.session_id,e.space_id,e.vault_id,e.claim_id,e.payload,
+                  e.created_at
+             from workspace_events e
+            where e.space_id=any($1::uuid[]) and e.vault_id=any($2::uuid[])
+              and e.event_type='CLAIM_HANDOFF'
+            order by e.created_at desc,e.id desc
+            limit 20`,
+          [scope.spaces, scope.vaultIds],
+        ),
+        db.pool.query(
+          `select vault_id,corpus_revision,lexical_revision,vector_revision,
+                  graph_revision,context_pack_revision,status,warnings,
+                  updated_at
+             from vault_index_revisions
+            where space_id=any($1::uuid[]) and vault_id=any($2::uuid[])
+            order by vault_id`,
+          [scope.spaces, scope.vaultIds],
+        ),
+        db.pool.query(
+          `select r.vault_id,r.state,count(*)::int count,
+                  count(*) filter (
+                    where exists (
+                      select 1
+                        from source_connector_events e
+                       where e.connector_id=r.id
+                         and e.status in ('PENDING','REJECTED')
+                    )
+                  )::int attention
+             from source_connector_registrations r
+            where r.space_id=any($1::uuid[]) and r.vault_id=any($2::uuid[])
+            group by r.vault_id,r.state
+            order by r.vault_id,r.state`,
+          [scope.spaces, scope.vaultIds],
+        ),
+        db.pool.query(
+          `select space_id,trust_state,discovery_mode,count(*)::int count,
+                  max(last_seen_at) last_seen_at
+             from context_fabric_peers
+            where space_id=any($1::uuid[])
+            group by space_id,trust_state,discovery_mode
+            order by space_id,trust_state,discovery_mode`,
+          [scope.spaces],
+        ),
+      ]);
+
+      const workByClass = new Map<string, unknown[]>();
+      for (const row of workObjects.rows) {
+        const key = String(row.work_object_class);
+        const values = workByClass.get(key) ?? [];
+        values.push(row);
+        workByClass.set(key, values);
+      }
+
+      const currentWork = (classes: string[], limit: number) =>
+        classes
+          .flatMap((key) => workByClass.get(key) ?? [])
+          .sort((left, right) => {
+            const a = new Date(
+              String((left as Record<string, unknown>).updated_at ?? 0),
+            ).getTime();
+            const b = new Date(
+              String((right as Record<string, unknown>).updated_at ?? 0),
+            ).getTime();
+            return b - a;
+          })
+          .slice(0, limit);
+
+      return sanitizeOperationalValue({
+        generatedAt: new Date().toISOString(),
+        scope: {
+          spaces: scope.spaces,
+          vaultIds: scope.vaultIds,
+        },
+        projects: projects.rows,
+        goals: currentWork(["GOAL", "PROJECT"], 20),
+        workItems: currentWork(["WORK_ITEM"], 30),
+        pullRequests: currentWork(["PULL_REQUEST", "CODE_REVIEW"], 20),
+        incidentsAndDeployments: currentWork(
+          ["INCIDENT", "DEPLOYMENT", "CHANGE", "BUILD", "TEST_RUN"],
+          30,
+        ),
+        pendingReviews: reviews.rows,
+        assuranceFindings: findings.rows,
+        activeSessions: sessions.rows,
+        activeClaims: claims.rows,
+        recentHandoffs: handoffs.rows,
+        freshness: indexes.rows,
+        connectors: connectors.rows,
+        federation: federation.rows,
+      });
+    },
+  );
+
   app.get<{ Querystring: { limit?: string; vaultId?: string } }>(
     "/v1/operator/graph",
     { preHandler: requirePermission("knowledge:read") },

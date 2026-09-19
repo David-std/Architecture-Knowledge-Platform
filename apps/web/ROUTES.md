@@ -1,7 +1,7 @@
 # Implemented web routes
 
 ```text
-/                       dashboard
+/                       workspace home (projects/work/reviews/agents/health)
 /search                 query and context packet inspector
 /sources                source registry
 /sources/:id            raw/derivative/evidence view
