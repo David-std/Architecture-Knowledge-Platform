@@ -6,10 +6,14 @@ import { performance } from "node:perf_hooks";
 import {
   aggregateBenchmarkRun,
   RETRIEVAL_BENCHMARK_MATRIX,
+  V03_RETRIEVAL_BASELINE,
   type BenchmarkConfiguration,
   type BenchmarkObservation,
 } from "../packages/evaluation/src/index.js";
-import { buildEmbeddingIndex } from "../packages/indexing/src/index.js";
+import {
+  buildEmbeddingIndex,
+  rebuildCommunityIndex,
+} from "../packages/indexing/src/index.js";
 import { Postgres } from "../packages/postgres/src/index.js";
 import {
   LOCAL_MULTILINGUAL_E5_SMALL_DESCRIPTOR,
@@ -85,14 +89,9 @@ type StorageSnapshot = {
   documentsBytes: number;
   unitsBytes: number;
   relationsBytes: number;
+  communityBytes: number;
   embeddingsBytes: number;
 };
-
-const V03_BASELINE = Object.freeze({
-  tag: "v0.3.0",
-  commitSha: "a6bdcc38fdf026d6c353db096799366865011022",
-  benchmarkMatrixBlobSha: "dca597bc97f4d3646e8d84960755ef76b5f50650",
-});
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is required");
@@ -152,6 +151,11 @@ async function storageSnapshot(db: Postgres): Promise<StorageSnapshot> {
       pg_total_relation_size('public.knowledge_documents'::regclass)::bigint documents_bytes,
       pg_total_relation_size('public.knowledge_units'::regclass)::bigint units_bytes,
       pg_total_relation_size('public.knowledge_relations'::regclass)::bigint relations_bytes,
+      (
+        pg_total_relation_size('public.community_index_revisions'::regclass) +
+        pg_total_relation_size('public.community_index_communities'::regclass) +
+        pg_total_relation_size('public.community_index_memberships'::regclass)
+      )::bigint community_bytes,
       pg_total_relation_size('public.unit_embeddings'::regclass)::bigint embeddings_bytes
     `,
   );
@@ -162,6 +166,7 @@ async function storageSnapshot(db: Postgres): Promise<StorageSnapshot> {
     documentsBytes: numeric(row.documents_bytes),
     unitsBytes: numeric(row.units_bytes),
     relationsBytes: numeric(row.relations_bytes),
+    communityBytes: numeric(row.community_bytes),
     embeddingsBytes: numeric(row.embeddings_bytes),
   };
 }
@@ -172,6 +177,7 @@ function storageDelta(after: StorageSnapshot, before: StorageSnapshot) {
     documentsBytes: after.documentsBytes - before.documentsBytes,
     unitsBytes: after.unitsBytes - before.unitsBytes,
     relationsBytes: after.relationsBytes - before.relationsBytes,
+    communityBytes: after.communityBytes - before.communityBytes,
     embeddingsBytes: after.embeddingsBytes - before.embeddingsBytes,
   };
 }
@@ -184,6 +190,7 @@ function resourceRequirements(configuration: BenchmarkConfiguration) {
     contextPack: configuration.channels.includes("context-pack"),
     rerank: Boolean(configuration.deterministicRerank),
     associativePpr: Boolean(configuration.associativePpr),
+    communityGlobal: Boolean(configuration.communityGlobal),
   };
 }
 
@@ -428,6 +435,24 @@ async function seedFixture(
   }
 }
 
+async function buildCommunityIndexes(
+  db: Postgres,
+  manifest: CuratedManifest,
+  fixture: Fixture,
+): Promise<void> {
+  for (const vault of manifest.vaults) {
+    const vaultId = fixture.vaultIds.get(vault.id);
+    if (!vaultId) {
+      throw new Error(`Missing runtime vault mapping for ${vault.id}`);
+    }
+    await rebuildCommunityIndex(db, {
+      spaceId: fixture.spaceId,
+      vaultId,
+      graphRevision: fixture.corpusRevision,
+    });
+  }
+}
+
 async function cleanupFixture(db: Postgres, fixture: Fixture): Promise<void> {
   const vaultIds = [...fixture.vaultIds.values()];
   await db.pool.query("delete from knowledge_relations where space_id=$1", [
@@ -475,6 +500,7 @@ function benchmarkConfigurations(): BenchmarkConfiguration[] {
     "full-hybrid-rrf",
     "full-hybrid+rerank",
     "lexical+vector+graph+ppr",
+    "lexical+vector+graph+community-global",
   ]);
   return RETRIEVAL_BENCHMARK_MATRIX.filter((configuration) =>
     required.has(configuration.name),
@@ -566,7 +592,16 @@ async function executeCase(
               },
             },
           }
-        : {}),
+        : configuration.communityGlobal
+          ? {
+              retrievalPolicy: {
+                graphMode: "GLOBAL" as const,
+                channels: {
+                  COMMUNITY: { enabled: true, weight: 1.1 },
+                },
+              },
+            }
+          : {}),
       queryEmbeddingService,
       warningSink: warnings,
       availableChannelSink: availableChannels,
@@ -638,6 +673,12 @@ async function main(): Promise<void> {
     const memoryAfterFixture = memorySnapshot();
     const storageAfterFixture = await storageSnapshot(db);
 
+    const communityBuildStarted = performance.now();
+    await buildCommunityIndexes(db, dataset.manifest, fixture);
+    const communityBuildMs = performance.now() - communityBuildStarted;
+    const memoryAfterCommunities = memorySnapshot();
+    const storageAfterCommunities = await storageSnapshot(db);
+
     await adapter.load();
     const embeddingBuildStarted = performance.now();
     const generations = await buildRealEmbeddings(
@@ -700,17 +741,29 @@ async function main(): Promise<void> {
         },
         resourceRequirements: resourceRequirements(configuration),
         indexBuildUpdate: {
-          buildEvidence: configuration.channels.includes("vector")
-            ? {
-                measured: true,
-                sharedEmbeddingBuildMs: embeddingBuildMs,
-              }
-            : {
-                measured: false,
-                sharedEmbeddingBuildMs: null,
-                reason:
-                  "This harness seeds lexical/graph fixture projections directly; no isolated build timer exists for this option.",
-              },
+          buildEvidence:
+            configuration.channels.includes("vector") ||
+            configuration.communityGlobal
+              ? {
+                  measured: true,
+                  sharedEmbeddingBuildMs: configuration.channels.includes(
+                    "vector",
+                  )
+                    ? embeddingBuildMs
+                    : null,
+                  sharedCommunityBuildMs: configuration.communityGlobal
+                    ? communityBuildMs
+                    : null,
+                  attribution:
+                    "Shared fixture component build evidence; not isolated per query.",
+                }
+              : {
+                  measured: false,
+                  sharedEmbeddingBuildMs: null,
+                  sharedCommunityBuildMs: null,
+                  reason:
+                    "This harness seeds lexical/graph fixture projections directly; no isolated build timer exists for this option.",
+                },
           updateEvidence: {
             measured: false,
             milliseconds: null,
@@ -722,14 +775,25 @@ async function main(): Promise<void> {
           measured: true,
           sharedProjectionStorageBytes: {
             fixture: storageDelta(storageAfterFixture, storageBeforeFixture),
+            communities: storageDelta(
+              storageAfterCommunities,
+              storageAfterFixture,
+            ),
             embeddings: storageDelta(
               storageAfterEmbeddings,
-              storageAfterFixture,
+              storageAfterCommunities,
             ),
           },
           sharedProcessMemoryBytes: {
             fixture: memoryDelta(memoryAfterFixture, memoryBeforeFixture),
-            embeddings: memoryDelta(memoryAfterEmbeddings, memoryAfterFixture),
+            communities: memoryDelta(
+              memoryAfterCommunities,
+              memoryAfterFixture,
+            ),
+            embeddings: memoryDelta(
+              memoryAfterEmbeddings,
+              memoryAfterCommunities,
+            ),
           },
           attribution:
             "Shared fixture/component evidence; not presented as isolated per-query memory.",
@@ -737,7 +801,8 @@ async function main(): Promise<void> {
         tokenCost: {
           measured: true,
           meanEstimatedExcerptTokens: run.meanEstimatedTokens,
-          method: "characters/4 estimate over returned excerpts",
+          method:
+            "APPROXIMATE characters/4 estimate over returned excerpts; ContextPacket budgets use tokenizer metadata separately.",
         },
         providerCost: {
           measured: true,
@@ -793,11 +858,7 @@ async function main(): Promise<void> {
     const report = {
       schemaVersion: 2,
       generatedAt: new Date().toISOString(),
-      historicalBaseline: {
-        ...V03_BASELINE,
-        execution:
-          "REFERENCE_PIN_ONLY: current-process results are not relabelled as historical v0.3 execution.",
-      },
+      historicalBaseline: V03_RETRIEVAL_BASELINE,
       evidence: {
         level: "CURATED_FIXTURE_REAL_PIPELINE",
         qualityClaim: "PIPELINE_EXECUTED_NOT_REAL_CORPUS",
