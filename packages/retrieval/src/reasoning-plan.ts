@@ -331,7 +331,10 @@ export function validateReasoningPlan(
         );
       }
       const allowedKinds = allowedInputKinds(step.operator);
-      if (allowedKinds && !allowedKinds.has(reasoningOutputKind(source.operator))) {
+      if (
+        allowedKinds &&
+        !allowedKinds.has(reasoningOutputKind(source.operator))
+      ) {
         issue(
           issues,
           "REASONING_PLAN_IO_MISMATCH",
