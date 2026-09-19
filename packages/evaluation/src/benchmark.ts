@@ -276,7 +276,8 @@ export function scoreBenchmarkObservation(
       ? usedContext.length === 0
         ? 1
         : 0
-      : intersectionSize(usedContext, contextDocuments) / contextDocuments.length
+      : intersectionSize(usedContext, contextDocuments) /
+        contextDocuments.length
     : 0;
 
   const noiseSensitivityScored =
@@ -292,9 +293,7 @@ export function scoreBenchmarkObservation(
     Number.isFinite(observation.faithfulnessScore) &&
     observation.faithfulnessScore >= 0 &&
     observation.faithfulnessScore <= 1;
-  const faithfulness = faithfulnessScored
-    ? observation.faithfulnessScore!
-    : 0;
+  const faithfulness = faithfulnessScored ? observation.faithfulnessScore! : 0;
 
   const unsupportedClaim =
     observation.unsupportedClaim ??
@@ -423,9 +422,7 @@ export function aggregateBenchmarkRun(
       scoredContextPrecision.map((result) => result.metrics.contextPrecision),
     ),
     contextPrecisionCoverage:
-      results.length === 0
-        ? 0
-        : scoredContextPrecision.length / results.length,
+      results.length === 0 ? 0 : scoredContextPrecision.length / results.length,
     meanClaimSupportRecall: average(
       scoredClaimSupport.map((result) => result.metrics.claimSupportRecall),
     ),
@@ -449,9 +446,7 @@ export function aggregateBenchmarkRun(
       scoredNoiseSensitivity.map((result) => result.metrics.noiseSensitivity),
     ),
     noiseSensitivityCoverage:
-      results.length === 0
-        ? 0
-        : scoredNoiseSensitivity.length / results.length,
+      results.length === 0 ? 0 : scoredNoiseSensitivity.length / results.length,
     meanFaithfulness: average(
       scoredFaithfulness.map((result) => result.metrics.faithfulness),
     ),
