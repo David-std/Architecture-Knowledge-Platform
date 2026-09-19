@@ -33,10 +33,7 @@
     "GraphPathNode": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "documentId",
-        "document"
-      ],
+      "required": ["documentId", "document"],
       "properties": {
         "documentId": {
           "type": "string",
@@ -51,10 +48,7 @@
         },
         "direction": {
           "type": "string",
-          "enum": [
-            "outgoing",
-            "incoming"
-          ]
+          "enum": ["outgoing", "incoming"]
         }
       }
     },
@@ -101,17 +95,10 @@
     "DocumentDescriptor": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "externalId",
-        "path",
-        "title"
-      ],
+      "required": ["externalId", "path", "title"],
       "properties": {
         "externalId": {
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": ["string", "null"]
         },
         "path": {
           "type": "string"
@@ -124,12 +111,7 @@
     "TokenizerMetadata": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "id",
-        "label",
-        "approximate",
-        "source"
-      ],
+      "required": ["id", "label", "approximate", "source"],
       "properties": {
         "id": {
           "type": "string",
@@ -144,10 +126,7 @@
         },
         "source": {
           "type": "string",
-          "enum": [
-            "injected",
-            "fallback"
-          ]
+          "enum": ["injected", "fallback"]
         }
       }
     },
@@ -191,11 +170,7 @@
     "Scope": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "spaceId",
-        "vaultIds",
-        "federated"
-      ],
+      "required": ["spaceId", "vaultIds", "federated"],
       "properties": {
         "organizationId": {
           "type": "string",
@@ -221,20 +196,13 @@
     "IndexRevisions": {
       "type": "object",
       "additionalProperties": {
-        "type": [
-          "string",
-          "null"
-        ]
+        "type": ["string", "null"]
       }
     },
     "Continuation": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "handle",
-        "reason",
-        "remainingTokens"
-      ],
+      "required": ["handle", "reason", "remainingTokens"],
       "properties": {
         "handle": {
           "type": "string",
@@ -403,11 +371,7 @@
         },
         "status": {
           "type": "string",
-          "enum": [
-            "SUPPORTED",
-            "INSUFFICIENT_KNOWLEDGE",
-            "DEGRADED"
-          ]
+          "enum": ["SUPPORTED", "INSUFFICIENT_KNOWLEDGE", "DEGRADED"]
         },
         "indexRevisions": {
           "$ref": "#/$defs/IndexRevisions"
@@ -658,11 +622,7 @@
             },
             "status": {
               "type": "string",
-              "enum": [
-                "SUPPORTED",
-                "INSUFFICIENT_KNOWLEDGE",
-                "DEGRADED"
-              ]
+              "enum": ["SUPPORTED", "INSUFFICIENT_KNOWLEDGE", "DEGRADED"]
             },
             "mode": {
               "type": "string",
@@ -750,12 +710,7 @@
     },
     "ContextDisclosureLevel": {
       "type": "string",
-      "enum": [
-        "L0",
-        "L1",
-        "L2",
-        "L3"
-      ]
+      "enum": ["L0", "L1", "L2", "L3"]
     }
   }
 }
