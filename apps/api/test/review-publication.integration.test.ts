@@ -245,11 +245,7 @@ beforeAll(async () => {
           {
             spaceId: defaultSpace,
             pathPrefix: null,
-            permissions: [
-              "knowledge:read",
-              "knowledge:review",
-              "admin",
-            ],
+            permissions: ["knowledge:read", "knowledge:review", "admin"],
           },
         ],
       }),

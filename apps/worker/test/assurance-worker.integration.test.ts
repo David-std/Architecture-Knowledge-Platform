@@ -703,9 +703,9 @@ describeDb("continuous assurance detector execution", () => {
       });
       if (!claimed) throw new Error("expected grounding/freshness run");
 
-      await expect(
-        runClaimedAssuranceRun(db, claimed, workerId),
-      ).resolves.toBe("COMPLETED");
+      await expect(runClaimedAssuranceRun(db, claimed, workerId)).resolves.toBe(
+        "COMPLETED",
+      );
 
       const findings = await db.pool.query<{
         detector: string;
@@ -1032,12 +1032,14 @@ describeDb("continuous assurance detector execution", () => {
     } finally {
       await db.pool.query(
         "delete from context_packets where id=any($1::uuid[])",
-        [[
-          crossVaultPacketId,
-          crossSpacePacketId,
-          nonFederatedPacketId,
-          foreignScopePacketId,
-        ]],
+        [
+          [
+            crossVaultPacketId,
+            crossSpacePacketId,
+            nonFederatedPacketId,
+            foreignScopePacketId,
+          ],
+        ],
       );
       await db.pool.query("delete from evidence where id=$1", [
         siblingEvidenceId,
@@ -1138,5 +1140,4 @@ describeDb("continuous assurance detector execution", () => {
       );
     }
   });
-
 });
