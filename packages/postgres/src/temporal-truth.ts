@@ -2147,11 +2147,11 @@ export class PostgresTemporalTruthStore {
     let where = "i.space_id=$1 and i.vault_id=$2 and i.truth_revision_seq<=$3";
     if (rawQuery.derivedStoreKind !== undefined) {
       values.push(rawQuery.derivedStoreKind);
-      where += ` and i.derived_store_kind=${values.length}`;
+      where += " and i.derived_store_kind=$" + values.length;
     }
     if (derivedItemRefs.length > 0) {
       values.push(derivedItemRefs);
-      where += ` and i.derived_item_ref=any(${values.length}::text[])`;
+      where += " and i.derived_item_ref=any($" + values.length + "::text[])";
     }
 
     const result = await this.db.pool.query<DerivedProjectionItemRow>(
