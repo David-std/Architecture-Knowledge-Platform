@@ -9,6 +9,8 @@ export interface RankedItem {
   /** Legacy alias retained for existing adapters; never a raw retrieval score. */
   weight?: number;
   reason: string;
+  /** Channel-native score retained for explanation only; never used by RRF. */
+  rawScore?: number;
   candidateRevision?: string | null;
 }
 
@@ -24,6 +26,8 @@ export interface RrfContribution {
   rank: number;
   channelWeight: number;
   reason: string;
+  /** Channel-native score retained for explanation only; never used by RRF. */
+  rawScore?: number;
   candidateRevision?: string | null;
 }
 
@@ -137,6 +141,12 @@ function normalizeRankedItem(
   ) {
     throw new Error("candidateRevision must be a non-empty string or null");
   }
+  if (
+    item.rawScore !== undefined &&
+    (typeof item.rawScore !== "number" || !Number.isFinite(item.rawScore))
+  ) {
+    throw new Error("rawScore must be finite when provided");
+  }
 
   // Only channelWeight (or the legacy weight alias) enters RRF. Arbitrary raw
   // retrieval scores are intentionally not part of RankedItem and are ignored.
@@ -224,6 +234,7 @@ export function reciprocalRankFusion(
         rank: item.rank,
         channelWeight: item.channelWeight,
         reason: item.reason,
+        ...(item.rawScore !== undefined ? { rawScore: item.rawScore } : {}),
         ...(item.candidateRevision !== undefined
           ? { candidateRevision: item.candidateRevision }
           : {}),
