@@ -3021,12 +3021,204 @@ export function registerSearchRoutes(
         }
         throw error;
       }
-      const details =
+      type MaterialConflictRow = {
+        id: string;
+        topic: string;
+        status: string;
+        resolution: string | null;
+        members: string[];
+      };
+      const conflicts =
         hits.length === 0
+          ? { rows: [] as MaterialConflictRow[] }
+          : await db.pool.query<MaterialConflictRow>(
+              `
+              select c.id,c.topic,c.status,c.resolution,
+                     array_agg(distinct all_members.document_id)::uuid[] members
+                from contradiction_clusters c
+                join contradiction_members matched
+                  on matched.cluster_id=c.id
+                join contradiction_members all_members
+                  on all_members.cluster_id=c.id
+               where matched.document_id=any($1::uuid[])
+                 and c.space_id=$2
+                 and c.vault_id=any($3::uuid[])
+                 and c.status <> 'RESOLVED'
+               group by c.id,c.topic,c.status,c.resolution
+               order by c.id
+              `,
+              [hits.map((hit) => hit.documentId), requestedSpace, vaultIds],
+            );
+      const hitIds = new Set(hits.map((hit) => hit.documentId));
+      const missingConflictMemberIds = [
+        ...new Set(
+          conflicts.rows.flatMap((conflict) =>
+            (conflict.members ?? []).filter((documentId) => !hitIds.has(documentId)),
+          ),
+        ),
+      ];
+      const counterpartRows =
+        missingConflictMemberIds.length === 0
+          ? { rows: [] as Array<Record<string, unknown>> }
+          : await db.pool.query(
+              `
+              select d.id,d.space_id,d.vault_id,d.external_id,d.current_revision,
+                     d.path,d.title,d.type,d.layer,d.trust_tier,d.lifecycle,
+                     d.body_cache,d.refresh_status,
+                     coalesce(
+                       jsonb_agg(distinct jsonb_build_object(
+                         'id',cited.id,'spaceId',cited.space_id,
+                         'vaultId',cited.vault_id,'path',cited.path,
+                         'revision',cited.current_revision
+                       )) filter (where cited.id is not null),
+                       '[]'::jsonb
+                     ) citations,
+                     coalesce(
+                       jsonb_agg(distinct e.locator)
+                         filter (where e.id is not null),
+                       '[]'::jsonb
+                     ) evidence_locators
+                from knowledge_documents d
+                left join knowledge_relations r
+                  on r.from_document_id=d.id
+                 and r.space_id=d.space_id
+                 and r.relation_type in ('supports','derives_from','related_to')
+                left join knowledge_documents cited
+                  on cited.id=r.to_document_id
+                 and cited.space_id=d.space_id
+                 and cited.vault_id is not distinct from d.vault_id
+                 and cited.lifecycle in ('ACTIVE','DISPUTED')
+                 and cited.refresh_status not in ('STALE_BLOCKED','INVALID')
+                left join document_evidence de on de.document_id=d.id
+                left join evidence e
+                  on e.id=de.evidence_id
+                 and e.space_id=d.space_id
+                 and e.vault_id is not distinct from d.vault_id
+               where d.id=any($1::uuid[])
+                 and d.space_id=$2
+                 and d.vault_id=any($3::uuid[])
+                 and d.refresh_status not in ('STALE_BLOCKED','INVALID')
+               group by d.id
+              `,
+              [missingConflictMemberIds, requestedSpace, vaultIds],
+            );
+      const allowedContextLifecycles = new Set(
+        scopedRequest.mode === "DRAFT_INCLUDED"
+          ? ["ACTIVE", "DISPUTED", "DRAFT"]
+          : ["ACTIVE", "DISPUTED"],
+      );
+      const contextMinimumTrust = TRUST_RANK[scopedRequest.minimumTrust] ?? 1;
+      const conflictCounterparts: SearchHit[] = counterpartRows.rows
+        .filter((row) => {
+          const current = row as unknown as CurrentContextDocumentRow;
+          return (
+            allowedContextLifecycles.has(String(row.lifecycle)) &&
+            (TRUST_RANK[String(row.trust_tier)] ?? -1) >= contextMinimumTrust &&
+            modeAllowsCurrentDocument(scopedRequest.mode, current) &&
+            pathAuthorizer(String(row.path), String(row.vault_id))
+          );
+        })
+        .map((row) => {
+          const documentCitations = ["source", "resource"].includes(
+            String(row.layer),
+          )
+            ? [`${String(row.path)}@${String(row.current_revision)}`]
+            : ((row.citations ?? []) as Array<Record<string, unknown>>)
+                .filter(
+                  (citation) =>
+                    String(citation.spaceId ?? citation.space_id ?? "") ===
+                      String(row.space_id) &&
+                    String(citation.vaultId ?? citation.vault_id ?? "") ===
+                      String(row.vault_id) &&
+                    pathAuthorizer(
+                      String(citation.path ?? ""),
+                      String(
+                        citation.vaultId ??
+                          citation.vault_id ??
+                          row.vault_id,
+                      ),
+                    ),
+                )
+                .map(
+                  (citation) =>
+                    `${String(citation.path)}@${String(
+                      citation.revision ?? row.current_revision,
+                    )}`,
+                );
+          const rowPathAuthorizer = (value: string) =>
+            pathAuthorizer(value, String(row.vault_id));
+          const citations = [
+            ...new Set([
+              ...documentCitations,
+              ...((row.evidence_locators ?? []) as Array<Record<string, unknown>>)
+                .filter((locator) =>
+                  evidenceLocatorAllowed(locator, rowPathAuthorizer),
+                )
+                .map(
+                  (locator) =>
+                    `evidence:${JSON.stringify(
+                      sanitizeEvidenceLocator(locator),
+                    )}`,
+                ),
+            ]),
+          ];
+          return {
+            documentId: String(row.id),
+            vaultId: String(row.vault_id),
+            document: {
+              externalId: row.external_id ? String(row.external_id) : null,
+              path: String(row.path),
+              title: String(row.title),
+            },
+            revision: String(row.current_revision),
+            title: String(row.title),
+            type: String(row.type),
+            trust: String(row.trust_tier) as SearchHit["trust"],
+            lifecycle: String(row.lifecycle) as SearchHit["lifecycle"],
+            refreshStatus: String(row.refresh_status),
+            score: 0,
+            reasons: ["context:material-conflict-counterpart"],
+            excerpt: String(row.body_cache).slice(0, 1200),
+            citations,
+            warnings: [
+              "UNTRUSTED_RETRIEVED_CONTENT",
+              "MATERIAL_CONFLICT_COUNTERPART",
+              ...(String(row.refresh_status) === "STALE_PENDING_REVIEW"
+                ? ["STALE_PENDING_REVIEW"]
+                : []),
+            ],
+          } satisfies SearchHit;
+        });
+      const contextHits = [...hits, ...conflictCounterparts];
+      const contextHitIds = new Set(contextHits.map((hit) => hit.documentId));
+      const materialConflicts = conflicts.rows.map((conflict) => ({
+        id: String(conflict.id),
+        documentIds: (conflict.members ?? []).filter((documentId) =>
+          contextHitIds.has(documentId),
+        ),
+      }));
+      const conflictCoverageGaps = conflicts.rows
+        .filter(
+          (conflict) =>
+            (conflict.members ?? []).some(
+              (documentId) => !contextHitIds.has(documentId),
+            ),
+        )
+        .map(
+          (conflict) =>
+            `Material conflict ${conflict.topic} has counterpart material unavailable under the active authorization/truth policy.`,
+        );
+
+      const details =
+        contextHits.length === 0
           ? { rows: [] }
           : await db.pool.query(
               `select id, layer, type, body_cache from knowledge_documents where id = any($1::uuid[]) and space_id=$2 and vault_id=any($3::uuid[])`,
-              [hits.map((hit) => hit.documentId), requestedSpace, vaultIds],
+              [
+                contextHits.map((hit) => hit.documentId),
+                requestedSpace,
+                vaultIds,
+              ],
             );
       const detailById = new Map(
         details.rows.map((row) => [String(row.id), row]),
@@ -3041,21 +3233,6 @@ export function registerSearchRoutes(
         retrievalWarnings,
         availableChannels,
       );
-      const conflicts =
-        hits.length === 0
-          ? { rows: [] }
-          : await db.pool.query(
-              `
-              select distinct c.id,c.topic,c.status,c.resolution
-               from contradiction_clusters c
-               join contradiction_members m on m.cluster_id=c.id
-               where m.document_id=any($1::uuid[])
-                 and c.space_id=$2
-                 and c.vault_id=any($3::uuid[])
-                 and c.status <> 'RESOLVED'
-              `,
-              [hits.map((hit) => hit.documentId), requestedSpace, vaultIds],
-            );
       let packet;
       let responsePacket;
       const continuationPayloads = new Map<
@@ -3115,27 +3292,32 @@ export function registerSearchRoutes(
                 }
               : null,
           },
-          candidates: hits.map((hit) => {
+          candidates: contextHits.map((hit) => {
             const detail = detailById.get(hit.documentId);
+            const kind = kindOf(
+              String(detail?.layer ?? ""),
+              String(detail?.type ?? hit.type),
+            );
             return {
               hit,
               content: hit.parentContext ?? hit.excerpt,
               ...(requestedContextLevel === "L3" && detail?.body_cache
                 ? { fullContent: String(detail.body_cache) }
                 : {}),
-              kind: kindOf(
-                String(detail?.layer ?? ""),
-                String(detail?.type ?? hit.type),
-              ),
+              kind,
+              ...(kind === "rule" ? { mandatory: true } : {}),
             };
           }),
-          gaps:
-            hits.length === 0
+          gaps: [
+            ...(hits.length === 0
               ? ["No source-backed material matched the request."]
-              : [],
+              : []),
+            ...conflictCoverageGaps,
+          ],
           conflicts: conflicts.rows.map(
             (row) => `${row.topic} (${row.status})`,
           ),
+          materialConflicts,
           continuationSink: (payload: ContextContinuationPayload) => {
             const existing = continuationPayloads.get(
               payload.continuation.handle,
