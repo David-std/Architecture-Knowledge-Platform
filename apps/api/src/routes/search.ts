@@ -64,13 +64,19 @@ import {
 
 const telemetry = new OpenTelemetryBridge();
 
-type RequiredRetrievalChannel = "exact" | "lexical" | "vector" | "graph";
+type RequiredRetrievalChannel =
+  | "exact"
+  | "lexical"
+  | "vector"
+  | "graph"
+  | "community";
 
 const RETRIEVAL_SPAN_NAMES: Record<RequiredRetrievalChannel, string> = {
   exact: "retrieve.exact",
   lexical: "retrieve.lexical",
   vector: "retrieve.vector",
   graph: "retrieve.graph",
+  community: "retrieve.community",
 };
 
 async function observedRetrieval<T>(
@@ -664,6 +670,7 @@ export function plannerCapabilitiesForIndex(
   index: Record<string, unknown> | undefined,
   policy: {
     vectorProviderAvailable: boolean;
+    communityAvailable?: boolean;
     rawAllowed: boolean;
     codeAdapterAvailable: boolean;
   },
@@ -673,6 +680,7 @@ export function plannerCapabilitiesForIndex(
       policy.vectorProviderAvailable &&
       revisionIsCurrent(index, "vector_revision"),
     graphConsistent: revisionIsCurrent(index, "graph_revision"),
+    communityAvailable: policy.communityAvailable === true,
     rawAllowed: policy.rawAllowed,
     codeAdapterAvailable: policy.codeAdapterAvailable,
     contextPackAvailable: revisionIsCurrent(index, "context_pack_revision"),
@@ -697,6 +705,47 @@ function channelAllowedByCapabilities(
       return capabilities.codeAdapterAvailable;
     case "context-pack":
       return capabilities.contextPackAvailable;
+  }
+}
+
+async function activeCommunityIndexAvailable(
+  db: Postgres,
+  spaceId: string,
+  indexRows: readonly IndexRevisionRow[],
+): Promise<boolean> {
+  const expected = indexRows
+    .map((row) => ({
+      vaultId: String(row.vault_id ?? ""),
+      graphRevision: String(row.graph_revision ?? ""),
+    }))
+    .filter((row) => row.vaultId && row.graphRevision);
+  if (expected.length !== indexRows.length || expected.length === 0) {
+    return false;
+  }
+  try {
+    const active = await db.pool.query<{
+      vault_id: string;
+      graph_revision: string;
+    }>(
+      `
+      select vault_id,graph_revision
+        from community_index_revisions
+       where space_id=$1 and vault_id=any($2::uuid[])
+         and status='ACTIVE' and stale=false
+      `,
+      [spaceId, expected.map((row) => row.vaultId)],
+    );
+    const byVault = new Map(
+      active.rows.map((row) => [
+        String(row.vault_id),
+        String(row.graph_revision),
+      ]),
+    );
+    return expected.every(
+      (row) => byVault.get(row.vaultId) === row.graphRevision,
+    );
+  } catch {
+    return false;
   }
 }
 
@@ -950,10 +999,6 @@ export async function queryKnowledge(
     input.truthConsistency ??
     options.retrievalPolicy?.truthValidation ??
     "STRICT";
-  const retrievalPolicy = resolveRetrievalPolicy({
-    ...(options.retrievalPolicy ?? {}),
-    truthValidation: truthConsistency,
-  });
   const truthStore = new PostgresTemporalTruthStore(db);
   const truthSnapshot = await truthStore.captureSnapshot(spaceId, vaultIds);
   const finalizeTruthSnapshot = async (): Promise<RetrievalTruthState> => {
@@ -987,6 +1032,11 @@ export async function queryKnowledge(
     vectorProviderAvailable:
       process.env.AKP_VECTOR_ENABLED === "true" ||
       Boolean(options.allowVectorForBenchmark),
+    communityAvailable: await activeCommunityIndexAvailable(
+      db,
+      spaceId,
+      indexRows.rows,
+    ),
     // Direct library callers do not carry an actor. Raw retrieval therefore
     // fails closed unless they explicitly request RAW_ONLY or inject policy.
     rawAllowed: input.mode === "RAW_ONLY",
@@ -1007,6 +1057,24 @@ export async function queryKnowledge(
   };
   const plan =
     options.plan ?? planQuery(input.query, input.intent, capabilities);
+  const effectiveStrategy = options.retrievalPolicy?.graphMode ?? plan.strategy;
+  const explicitChannels = options.retrievalPolicy?.channels ?? {};
+  const retrievalPolicy = resolveRetrievalPolicy({
+    ...(options.retrievalPolicy ?? {}),
+    graphMode: effectiveStrategy,
+    truthValidation: truthConsistency,
+    channels: {
+      ...explicitChannels,
+      ...(effectiveStrategy === "ASSOCIATIVE" &&
+      explicitChannels.GRAPH_PPR === undefined
+        ? { GRAPH_PPR: { enabled: true } }
+        : {}),
+      ...((effectiveStrategy === "GLOBAL" || effectiveStrategy === "DRIFT") &&
+      explicitChannels.COMMUNITY === undefined
+        ? { COMMUNITY: { enabled: true } }
+        : {}),
+    },
+  });
   const effectiveCapabilities = options.plan?.capabilities ?? capabilities;
   const graphPolicy = normalizeGraphPolicy(
     options.graphPolicy,
@@ -2472,6 +2540,11 @@ export function registerSearchRoutes(
           requestedSpace,
           vaultIds,
         ),
+        communityAvailable: await activeCommunityIndexAvailable(
+          db,
+          requestedSpace,
+          indexRows.rows,
+        ),
         rawAllowed:
           parsed.data.mode !== "COMPILED_ONLY" &&
           hasSpaceAccess(actor, requestedSpace, "source:read"),
@@ -2816,6 +2889,11 @@ export function registerSearchRoutes(
           db,
           requestedSpace,
           vaultIds,
+        ),
+        communityAvailable: await activeCommunityIndexAvailable(
+          db,
+          requestedSpace,
+          indexRows.rows,
         ),
         rawAllowed:
           parsed.data.mode !== "COMPILED_ONLY" &&
