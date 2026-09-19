@@ -46,6 +46,7 @@ describe("benchmark metrics", () => {
       estimatedTokens: 80,
     });
     expect(scored.recallAt5).toBe(1);
+    expect(scored.retrievalRecall).toBe(1);
     expect(scored.evidenceRecall).toBe(1);
     expect(scored.citationPrecision).toBe(0.5);
     expect(scored.evidenceScored).toBe(true);
@@ -76,6 +77,62 @@ describe("benchmark metrics", () => {
       returnedAnswer: true,
     });
     expect(unsupported.unsupportedClaim).toBe(true);
+  });
+
+  it("scores diagnostic RAG dimensions only when their evidence is supplied", () => {
+    const scored = scoreBenchmarkObservation({
+      configurationName: "diagnostic",
+      caseId: "fully-labelled",
+      slice: "diagnostic-rag",
+      rankedDocumentIds: ["doc-a", "noise"],
+      goldDocumentIds: ["doc-a", "doc-b"],
+      contextDocumentIds: ["doc-a", "noise"],
+      goldSupportIds: ["support-a", "support-b"],
+      retrievedSupportIds: ["support-a"],
+      goldCitationIds: ["citation-a"],
+      retrievedCitationIds: ["citation-a"],
+      usedContextIds: ["doc-a"],
+      noiseSensitiveFailure: false,
+      faithfulnessScore: 0.8,
+      returnedAnswer: true,
+    });
+
+    expect(scored).toMatchObject({
+      retrievalRecall: 0.5,
+      contextPrecision: 0.5,
+      claimSupportRecall: 0.5,
+      citationPrecision: 1,
+      contextUtilization: 0.5,
+      noiseSensitivity: 0,
+      faithfulness: 0.8,
+      contextPrecisionScored: true,
+      claimSupportScored: true,
+      citationScored: true,
+      contextUtilizationScored: true,
+      noiseSensitivityScored: true,
+      faithfulnessScored: true,
+    });
+
+    const unlabelled = scoreBenchmarkObservation({
+      configurationName: "diagnostic",
+      caseId: "unlabelled",
+      slice: "diagnostic-rag",
+      rankedDocumentIds: ["doc-a"],
+      goldDocumentIds: ["doc-a"],
+      returnedAnswer: true,
+    });
+    expect(unlabelled).toMatchObject({
+      contextPrecision: 0,
+      claimSupportRecall: 0,
+      contextUtilization: 0,
+      noiseSensitivity: 0,
+      faithfulness: 0,
+      contextPrecisionScored: false,
+      claimSupportScored: false,
+      contextUtilizationScored: false,
+      noiseSensitivityScored: false,
+      faithfulnessScored: false,
+    });
   });
 
   it("deduplicates repeated document rows before rank metrics", () => {
@@ -132,7 +189,13 @@ describe("benchmark metrics", () => {
     expect(run.exactIdentifierRecall).toBe(1);
     expect(run.crossLanguageRecall).toBe(1);
     expect(run.noAnswerAccuracy).toBe(1);
+    expect(run.meanRetrievalRecall).toBe(1);
     expect(run.evidenceRecallCoverage).toBe(0);
+    expect(run.contextPrecisionCoverage).toBe(0);
+    expect(run.claimSupportRecallCoverage).toBe(0);
+    expect(run.contextUtilizationCoverage).toBe(0);
+    expect(run.noiseSensitivityCoverage).toBe(0);
+    expect(run.faithfulnessCoverage).toBe(0);
 
     const vector = aggregateBenchmarkRun(
       RETRIEVAL_BENCHMARK_MATRIX[8]!,
