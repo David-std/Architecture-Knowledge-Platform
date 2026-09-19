@@ -45,9 +45,12 @@ export interface ReasoningRetrievalInvocation {
   relationTypes?: GraphRelationType[];
   direction?: "outgoing" | "incoming" | "both";
   maxHops?: number;
+  damping?: number;
+  maxIterations?: number;
   strategy?: "GLOBAL" | "DRIFT";
   asOf?: string;
   sourceIds?: string[];
+  maxBytes?: number;
 }
 
 export type ReasoningRetrievalDelegate = (
@@ -305,6 +308,8 @@ export function createApplicationReasoningPorts(
             input.request.query,
           limit: step.args.limit,
           seedHits: seeds,
+          damping: step.args.damping,
+          maxIterations: step.args.maxIterations,
         },
         signal,
       );
@@ -484,6 +489,7 @@ export function createApplicationReasoningPorts(
           limit: Math.min(100, input.request.limit),
           seedHits: seeds,
           sourceIds: step.args.sourceIds,
+          maxBytes: step.args.maxBytes,
         },
         signal,
       );
