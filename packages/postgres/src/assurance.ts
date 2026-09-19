@@ -529,10 +529,7 @@ export async function transitionAssuranceFindingStatus(
   }
 }
 
-export type AssuranceFindingAction =
-  | "PROMOTION"
-  | "RECOMPILE"
-  | "REINDEX";
+export type AssuranceFindingAction = "PROMOTION" | "RECOMPILE" | "REINDEX";
 
 export async function requestAssuranceFindingAction(
   db: Postgres,

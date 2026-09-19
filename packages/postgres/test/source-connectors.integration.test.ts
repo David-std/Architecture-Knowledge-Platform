@@ -345,9 +345,9 @@ describeDb("source connector no-gap inbox", () => {
         apply_attempts: 1,
         error_code: "SOURCE_CONNECTOR_TEST_PROJECTION_FAILURE",
       });
-      expect(new Date(firstAttempt.rows[0]!.next_attempt_at).getTime()).toBeGreaterThan(
-        Date.now() - 500,
-      );
+      expect(
+        new Date(firstAttempt.rows[0]!.next_attempt_at).getTime(),
+      ).toBeGreaterThan(Date.now() - 500);
       expect(await summarizeSourceConnectorInbox(db)).toMatchObject({
         pending: 1,
         immediatelyClaimable: 0,
@@ -408,7 +408,9 @@ describeDb("source connector no-gap inbox", () => {
         )
         .catch(() => undefined);
       await db.pool
-        .query("drop function if exists akp_test_source_connector_retry_guard()")
+        .query(
+          "drop function if exists akp_test_source_connector_retry_guard()",
+        )
         .catch(() => undefined);
     }
   });

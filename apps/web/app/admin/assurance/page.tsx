@@ -96,9 +96,7 @@ export default async function AssurancePage({
   if (query.detector) findingParams.set("detector", query.detector);
 
   const [runResponse, findingResponse, capabilities] = await Promise.all([
-    akp<{ runs: AssuranceRun[] }>(
-      `/v1/assurance/runs?${runParams.toString()}`,
-    ),
+    akp<{ runs: AssuranceRun[] }>(`/v1/assurance/runs?${runParams.toString()}`),
     akp<{ findings: AssuranceFinding[] }>(
       `/v1/assurance/findings?${findingParams.toString()}`,
     ),
@@ -305,7 +303,9 @@ export default async function AssurancePage({
                     {finding.evidence_ids.length ? (
                       <details>
                         <summary>Evidence IDs</summary>
-                        <pre>{JSON.stringify(finding.evidence_ids, null, 2)}</pre>
+                        <pre>
+                          {JSON.stringify(finding.evidence_ids, null, 2)}
+                        </pre>
                       </details>
                     ) : null}
                   </td>
@@ -314,17 +314,24 @@ export default async function AssurancePage({
                     {finding.proposed_action ? (
                       <>
                         <br />
-                        <small>Acción propuesta: {finding.proposed_action}</small>
+                        <small>
+                          Acción propuesta: {finding.proposed_action}
+                        </small>
                       </>
                     ) : null}
                     <br />
                     <small>
-                      first {finding.first_seen_at} · last {finding.last_seen_at}
+                      first {finding.first_seen_at} · last{" "}
+                      {finding.last_seen_at}
                     </small>
                   </td>
                   <td>
                     <form action={updateFinding}>
-                      <input type="hidden" name="findingId" value={finding.id} />
+                      <input
+                        type="hidden"
+                        name="findingId"
+                        value={finding.id}
+                      />
                       <select name="status" defaultValue={finding.status}>
                         <option value="OPEN">OPEN</option>
                         <option value="ACKNOWLEDGED">ACKNOWLEDGED</option>

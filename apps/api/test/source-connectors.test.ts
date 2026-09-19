@@ -104,9 +104,9 @@ describe("source connector webhook signatures", () => {
       },
     };
 
-    expect(SourceConnectorRegistrationSchema.safeParse(registration).success).toBe(
-      false,
-    );
+    expect(
+      SourceConnectorRegistrationSchema.safeParse(registration).success,
+    ).toBe(false);
   });
 
   it("binds the signature to one connector and rejects stale timestamps", () => {

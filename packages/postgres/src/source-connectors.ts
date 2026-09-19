@@ -321,9 +321,7 @@ export async function applyNextSourceConnectorEvent(
 
     try {
       const lifecycle =
-        String(event.operation) === "DELETE"
-          ? "DELETED_TOMBSTONE"
-          : "ACTIVE";
+        String(event.operation) === "DELETE" ? "DELETED_TOMBSTONE" : "ACTIVE";
       await client.query(
         `insert into source_connector_objects(
            connector_id,object_id,object_type,source_version,lifecycle,title,
@@ -428,12 +426,7 @@ export async function applyNextSourceConnectorEvent(
                   else now()+make_interval(secs => $4)
                 end
           where id=$1`,
-        [
-          event.id,
-          terminal,
-          safeConnectorApplyErrorCode(error),
-          delaySeconds,
-        ],
+        [event.id, terminal, safeConnectorApplyErrorCode(error), delaySeconds],
       );
       await client.query("commit");
       return null;
@@ -499,4 +492,3 @@ export async function summarizeSourceConnectorInbox(
       : null,
   };
 }
-
