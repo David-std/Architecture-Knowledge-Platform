@@ -445,6 +445,7 @@ describe("buildContextPacket", () => {
 
     expect(packet.budget.tokenizer).toMatchObject({
       id: "test-character-counter",
+      quality: "EXACT",
       source: "injected",
       approximate: false,
     });
@@ -481,6 +482,7 @@ describe("buildContextPacket", () => {
 
     expect(packet.budget.tokenizer).toMatchObject({
       id: "char/4",
+      quality: "APPROXIMATE",
       source: "fallback",
       approximate: true,
     });
@@ -825,6 +827,7 @@ describe("buildContextPacket", () => {
     expect(packet.budget.tokenizer).toEqual({
       id: "receiver-aware",
       label: "receiver-aware tokenizer",
+      quality: "EXACT",
       approximate: false,
       source: "injected",
     });
