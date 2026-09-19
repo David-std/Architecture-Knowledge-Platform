@@ -79,6 +79,7 @@ export async function runEvaluation(
     channels?: RetrievalExecutionOptions["channels"];
     allowVectorForBenchmark?: boolean;
     deterministicRerank?: boolean;
+    associativePpr?: boolean;
   },
   spaceId: string,
   packName: string,
@@ -147,6 +148,16 @@ export async function runEvaluation(
           : { allowVectorForBenchmark: configuration.allowVectorForBenchmark }),
         ...(configuration.deterministicRerank
           ? { deterministicRerank: true }
+          : {}),
+        ...(configuration.associativePpr
+          ? {
+              retrievalPolicy: {
+                graphMode: "ASSOCIATIVE" as const,
+                channels: {
+                  GRAPH_PPR: { enabled: true, weight: 1.1 },
+                },
+              },
+            }
           : {}),
       },
     );
@@ -377,6 +388,7 @@ export async function runEvaluation(
         ],
         vectorBenchmarkOnly: Boolean(configuration.allowVectorForBenchmark),
         deterministicRerank: Boolean(configuration.deterministicRerank),
+        associativePpr: Boolean(configuration.associativePpr),
         k: 10,
       }),
       JSON.stringify({ ...metrics, diagnosticMetrics, results }),
@@ -409,6 +421,7 @@ export async function runRetrievalBenchmark(
     channels: NonNullable<RetrievalExecutionOptions["channels"]>;
     allowVectorForBenchmark?: boolean;
     deterministicRerank?: boolean;
+    associativePpr?: boolean;
   }> = RETRIEVAL_BENCHMARK_MATRIX.map((configuration) => ({
     name: configuration.name,
     channels: [...configuration.channels] as NonNullable<
@@ -420,6 +433,9 @@ export async function runRetrievalBenchmark(
     ...(configuration.deterministicRerank === undefined
       ? {}
       : { deterministicRerank: configuration.deterministicRerank }),
+    ...(configuration.associativePpr === undefined
+      ? {}
+      : { associativePpr: configuration.associativePpr }),
   }));
   const runs = [];
   for (const configuration of configurations) {
@@ -488,6 +504,7 @@ export async function runRetrievalBenchmark(
       channels: [...configuration.channels],
       vectorBenchmarkOnly: Boolean(configuration.allowVectorForBenchmark),
       rerank: Boolean(configuration.deterministicRerank),
+      associativePpr: Boolean(configuration.associativePpr),
     })),
     datasetSlices,
     requiredGenericSlices:
