@@ -880,7 +880,9 @@ describe.skipIf(!databaseUrl)("truth-valid vector retrieval", () => {
     ).toMatchObject([{ state: "SUPPORTED", valid: true }]);
   });
 
-  it("keeps alternative support while rejecting the higher-scoring A-only explanation before RRF", async () => {
+  it(
+    "keeps alternative support while rejecting the higher-scoring A-only explanation before RRF",
+    async () => {
     const fixture = await seedAlternativeSupportVectorFixture(
       "Alternative support vector truth",
     );
@@ -1000,9 +1002,10 @@ describe.skipIf(!databaseUrl)("truth-valid vector retrieval", () => {
       ],
     );
     expect(physicalCount.rows[0]?.count).toBe("2");
-  });
+    },
+  );
 
-    it("filters the higher-scoring OLD neighbor before RRF while preserving historical eligibility", async () => {
+  it("filters the higher-scoring OLD neighbor before RRF while preserving historical eligibility", async () => {
     const fixture = await seedContradictoryVectorFixture(
       "Contradictory dense neighbors",
     );
