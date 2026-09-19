@@ -1032,7 +1032,9 @@ function lexicalRowKey(row: LexicalSearchRow): string {
   return `${row.id}:${row.unit_id ?? ""}`;
 }
 
-function mergeLexicalRows(rows: readonly LexicalSearchRow[]): LexicalSearchRow[] {
+function mergeLexicalRows(
+  rows: readonly LexicalSearchRow[],
+): LexicalSearchRow[] {
   const best = new Map<string, LexicalSearchRow>();
   for (const row of rows) {
     const key = lexicalRowKey(row);
@@ -1458,8 +1460,7 @@ export async function queryKnowledge(
           assisted.variant
             ? {
                 ...row,
-                match_reason:
-                  `lexical:transformed:${assisted.variant.kind}:${row.match_reason}`,
+                match_reason: `lexical:transformed:${assisted.variant.kind}:${row.match_reason}`,
                 query_variant_kind: assisted.variant.kind,
                 query_variant_ordinal: assisted.variant.ordinal,
               }
@@ -1469,10 +1470,7 @@ export async function queryKnowledge(
     }
   }
   const lexical = {
-    rows: mergeLexicalRows(lexicalRows).slice(
-      0,
-      Math.max(input.limit * 3, 30),
-    ),
+    rows: mergeLexicalRows(lexicalRows).slice(0, Math.max(input.limit * 3, 30)),
   };
   recordRetrievalCandidates("lexical", lexical.rows.length);
   if (channels.has("lexical")) {
@@ -1594,10 +1592,7 @@ export async function queryKnowledge(
     vector.rows.splice(
       0,
       vector.rows.length,
-      ...mergeVectorRows(vector.rows).slice(
-        0,
-        Math.max(input.limit * 3, 30),
-      ),
+      ...mergeVectorRows(vector.rows).slice(0, Math.max(input.limit * 3, 30)),
     );
   }
 
