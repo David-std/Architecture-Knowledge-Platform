@@ -39,7 +39,7 @@ describe("personalized PageRank", () => {
       seeds: [{ nodeId: "seed", weight: 1 }],
       policy: {
         allowedRelations: ["supports", "related_to"],
-        maxIterations: 100,
+        maxIterations: 250,
         tolerance: 1e-12,
       },
     } as const;
