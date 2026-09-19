@@ -323,6 +323,32 @@ export async function runEvaluation(
     exactIdentifierRecall: averageSlice(results, "exact-identifiers"),
     crossLanguageRecall: averageSlice(results, "cross-language"),
   };
+  const diagnosticCitationCases = results.filter(
+    (result) => result.citationLabelled,
+  );
+  const diagnosticMetrics = {
+    retrievalRecall: metrics.meanRecallAt10,
+    contextPrecision: null,
+    contextPrecisionCoverage: 0,
+    claimSupportRecall: null,
+    claimSupportRecallCoverage: 0,
+    citationPrecision:
+      diagnosticCitationCases.length === 0
+        ? null
+        : diagnosticCitationCases.reduce(
+            (sum, result) => sum + result.citationPrecision,
+            0,
+          ) / diagnosticCitationCases.length,
+    citationPrecisionCoverage:
+      diagnosticCitationCases.length / Math.max(results.length, 1),
+    contextUtilization: null,
+    contextUtilizationCoverage: 0,
+    noiseSensitivity: null,
+    noiseSensitivityCoverage: 0,
+    faithfulness: null,
+    faithfulnessCoverage: 0,
+    noAnswerAccuracy: metrics.noAnswerAccuracy,
+  };
   const revision = await db.pool.query(
     `select current_revision from vaults where space_id=$1
       and ($2::uuid is null or id=$2)
@@ -353,7 +379,7 @@ export async function runEvaluation(
         deterministicRerank: Boolean(configuration.deterministicRerank),
         k: 10,
       }),
-      JSON.stringify({ ...metrics, results }),
+      JSON.stringify({ ...metrics, diagnosticMetrics, results }),
       metrics.criticalFailures === 0 ? "PASSED" : "FAILED",
     ],
   );
@@ -364,6 +390,7 @@ export async function runEvaluation(
     configurationName: configuration.name ?? "default",
     status: metrics.criticalFailures === 0 ? "PASSED" : "FAILED",
     ...metrics,
+    diagnosticMetrics,
     results,
   };
 }
@@ -466,10 +493,25 @@ export async function runRetrievalBenchmark(
     requiredGenericSlices:
       packName === "generic" ? [...REQUIRED_GENERIC_SLICES] : [],
     metricDefinitions: {
-      evidenceRecall:
-        "gold_evidence labels when present; otherwise cited relevant-document provenance proxy",
+      retrievalRecall: "Recall@10 over labelled gold documents.",
+      contextPrecision:
+        "Diagnostic only; requires assembled-context labels and is unscored by this retrieval-only API runner.",
+      claimSupportRecall:
+        "Diagnostic only; requires explicit claim-support labels and is unscored by this retrieval-only API runner.",
       citationPrecision:
-        "gold_citations labels when present; otherwise cited relevant-hit precision proxy",
+        "Diagnostic citation precision uses only explicit gold_citations labels; zero coverage means unscored.",
+      contextUtilization:
+        "Diagnostic only; requires answer-to-context usage evidence and is unscored by this retrieval-only API runner.",
+      noiseSensitivity:
+        "Diagnostic only; requires paired clean/noisy execution and is unscored by this retrieval-only API runner.",
+      faithfulness:
+        "Diagnostic only; requires an explicit grounded-answer evaluator and is unscored by this retrieval-only API runner.",
+      noAnswerAccuracy:
+        "Accuracy over cases explicitly labelled as no-answer.",
+      legacyEvidenceRecall:
+        "Existing benchmark field; when gold_evidence is absent it uses a cited-relevant-document proxy and must not be reported as P6.15 claim-support recall.",
+      legacyCitationPrecision:
+        "Existing benchmark field may use a cited-relevant-hit proxy for default-selection compatibility; diagnostic citationPrecision does not.",
       unsupportedClaimRate:
         "returned non-no-answer result with no cited relevant hit",
       tokenCost: "estimated excerpt tokens (characters / 4)",
