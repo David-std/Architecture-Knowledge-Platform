@@ -145,7 +145,7 @@ describe("community index PostgreSQL integration", () => {
           member_count: number;
           support_set: {
             documentIds: string[];
-            relationIds: string[];
+            relationKeys: string[];
           };
         }>(
           `select summary_lifecycle,citable,member_count,support_set
@@ -165,9 +165,16 @@ describe("community index PostgreSQL integration", () => {
         ).toBe(true);
         expect(
           communities.rows.flatMap(
-            (community) => community.support_set.relationIds,
+            (community) => community.support_set.relationKeys,
           ),
-        ).not.toContain(relationIds.get("bridge"));
+        ).not.toContain(
+          [
+            ids.c,
+            "supports",
+            ids.d,
+            "community-test",
+          ].join(":"),
+        );
 
         const repeated = await rebuildCommunityIndex(db, {
           spaceId,
