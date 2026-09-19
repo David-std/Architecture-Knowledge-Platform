@@ -262,7 +262,11 @@ async function seedContradictoryVectorFixture(
 
   await db.pool.query(
     "insert into organizations(id,slug,name) values($1,$2,$3)",
-    [organizationId, `truth-contradiction-${organizationId.slice(0, 8)}`, label],
+    [
+      organizationId,
+      `truth-contradiction-${organizationId.slice(0, 8)}`,
+      label,
+    ],
   );
   await db.pool.query(
     `insert into spaces(
