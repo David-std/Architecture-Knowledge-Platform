@@ -1,5 +1,9 @@
 import { QueryIntent } from "@akp/contracts";
 import { z } from "zod";
+import {
+  AGENT_INSTRUCTION_BUNDLE,
+  AGENT_INSTRUCTION_RESOURCE_URI,
+} from "./instruction-bundle.js";
 
 export const AkpContextAction = z.enum([
   "BOOTSTRAP",
@@ -217,6 +221,58 @@ function codeScope(input: AkpContextInput) {
   };
 }
 
+function objectRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+function enrichBootstrapResult(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("AKP_CONTEXT_BOOTSTRAP_RESPONSE_INVALID");
+  }
+  const result = value as Record<string, unknown>;
+  const authorization = objectRecord(result.authorization);
+  const workContext = objectRecord(result.workContext);
+  const session = objectRecord(workContext.session);
+  const instructionDigest = objectRecord(result.agentInstructionDigest);
+  const context = objectRecord(result.context);
+  const continuations = Array.isArray(context.continuations)
+    ? context.continuations
+    : [];
+  const projectId =
+    typeof session.projectId === "string" ? session.projectId : null;
+
+  return {
+    ...result,
+    permittedActions: stringArray(authorization.allowedActions),
+    mandatoryPolicies: stringArray(instructionDigest.directives),
+    mandatoryRules: [...AGENT_INSTRUCTION_BUNDLE.rules],
+    gaps: stringArray(context.gaps),
+    conflicts: stringArray(context.conflicts),
+    continuationTokens: continuations.flatMap((continuation) => {
+      const record = objectRecord(continuation);
+      return typeof record.handle === "string" ? [record.handle] : [];
+    }),
+    codeOrientation: {
+      projectId,
+      mode: projectId ? "PROJECT_SCOPED_TARGETED" : "TARGETED_ON_DEMAND",
+      action: "CODE",
+    },
+    instructionBundle: {
+      resourceUri: AGENT_INSTRUCTION_RESOURCE_URI,
+      digest: AGENT_INSTRUCTION_BUNDLE.manifest.sha256,
+      manifest: AGENT_INSTRUCTION_BUNDLE.manifest,
+    },
+  };
+}
+
 function envelope(
   action: AkpContextAction,
   result: unknown,
@@ -245,19 +301,20 @@ export async function dispatchAkpContext(
         input.sessionId,
         "AKP_CONTEXT_SESSION_REQUIRED",
       );
+      const bootstrap = await deps.api(
+        `/v1/sessions/${encodeURIComponent(sessionId)}/bootstrap`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            ...(input.query ? { query: input.query } : {}),
+            intent: input.intent ?? "WORKFLOW_EXECUTION",
+            packetMode: input.packetMode,
+          }),
+        },
+      );
       return envelope(
         input.action,
-        await deps.api(
-          `/v1/sessions/${encodeURIComponent(sessionId)}/bootstrap`,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              ...(input.query ? { query: input.query } : {}),
-              intent: input.intent ?? "WORKFLOW_EXECUTION",
-              packetMode: input.packetMode,
-            }),
-          },
-        ),
+        enrichBootstrapResult(bootstrap),
         "akp_bootstrap_session_context",
       );
     }

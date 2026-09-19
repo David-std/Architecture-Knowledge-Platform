@@ -22,6 +22,99 @@ describe("akp_context façade", () => {
     expect(writeApi).not.toHaveBeenCalled();
   });
 
+  it("enriches bootstrap without replacing authorized context or revision provenance", async () => {
+    const sessionId = "33333333-3333-4333-8333-333333333333";
+    const bootstrap = {
+      schemaVersion: 1,
+      revisionSetHash: "a".repeat(64),
+      effectiveRevisionSetHash: "b".repeat(64),
+      contextRevisionSet: {
+        corpus: { revision: "corpus:r7" },
+        authorization: { revision: "auth:r3" },
+      },
+      authorization: {
+        principalId: "principal-a",
+        allowedActions: ["workspace:read", "workspace:event:append"],
+      },
+      workContext: {
+        session: {
+          id: sessionId,
+          projectId: "44444444-4444-4444-8444-444444444444",
+        },
+      },
+      agentInstructionDigest: {
+        directives: [
+          "USE_PINNED_CONTEXT_REVISION",
+          "PROMOTION_REQUIRES_GOVERNED_REVIEW",
+        ],
+      },
+      context: {
+        packetMode: "COMPACT_AGENT_PACKET",
+        packetHash: "packet-hash",
+        gaps: ["MANDATORY_KIND:decision"],
+        conflicts: ["ADR-1 conflicts with ADR-2"],
+        continuations: [
+          {
+            handle: "c".repeat(64),
+            reason: "budget",
+            remainingTokens: 800,
+          },
+        ],
+      },
+    };
+    const api = vi.fn(async () => bootstrap);
+    const writeApi = vi.fn();
+
+    const result = await dispatchAkpContext(
+      {
+        action: "BOOTSTRAP",
+        sessionId,
+        query: "prepare refactor",
+      },
+      { api, writeApi: writeApi as never },
+    );
+
+    expect(result).toMatchObject({
+      schemaVersion: 1,
+      action: "BOOTSTRAP",
+      status: "OK",
+      delegatedTo: "akp_bootstrap_session_context",
+      result: {
+        revisionSetHash: bootstrap.revisionSetHash,
+        effectiveRevisionSetHash: bootstrap.effectiveRevisionSetHash,
+        contextRevisionSet: bootstrap.contextRevisionSet,
+        context: bootstrap.context,
+        permittedActions: [
+          "workspace:read",
+          "workspace:event:append",
+        ],
+        mandatoryPolicies: [
+          "USE_PINNED_CONTEXT_REVISION",
+          "PROMOTION_REQUIRES_GOVERNED_REVIEW",
+        ],
+        gaps: ["MANDATORY_KIND:decision"],
+        conflicts: ["ADR-1 conflicts with ADR-2"],
+        continuationTokens: ["c".repeat(64)],
+        codeOrientation: {
+          projectId: "44444444-4444-4444-8444-444444444444",
+          mode: "PROJECT_SCOPED_TARGETED",
+          action: "CODE",
+        },
+        instructionBundle: {
+          digest: expect.stringMatching(/^[a-f0-9]{64}$/),
+          resourceUri: expect.stringMatching(
+            /^akp:\/\/instructions\/agent\/v1\/[a-f0-9]{64}$/,
+          ),
+        },
+      },
+    });
+    expect(api).toHaveBeenCalledWith(
+      `/v1/sessions/${sessionId}/bootstrap`,
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(writeApi).not.toHaveBeenCalled();
+  });
+
   it("delegates search and global synthesis to the existing retrieval/context APIs", async () => {
     const api = vi.fn(async (route: string, init?: RequestInit) => ({
       route,

@@ -86,6 +86,39 @@ try {
     "akp_benchmark_retrieval",
     "akp_export_audit_bundle",
   ];
+  const resources = await client.listResources();
+  const instructionResource = resources.resources.find((resource) =>
+    /^akp:\/\/instructions\/agent\/v1\/[a-f0-9]{64}$/.test(resource.uri),
+  );
+  if (!instructionResource) {
+    throw new Error(
+      `Missing integrity-addressed AKP instruction resource: ${JSON.stringify(resources.resources)}`,
+    );
+  }
+  const instructionRead = await client.readResource({
+    uri: instructionResource.uri,
+  });
+  const instructionText = instructionRead.contents.find(
+    (content) => "text" in content && typeof content.text === "string",
+  );
+  if (!instructionText || !("text" in instructionText)) {
+    throw new Error("AKP instruction resource returned no JSON text.");
+  }
+  const instructionBundle = JSON.parse(String(instructionText.text)) as {
+    manifest?: { sha256?: string };
+    rules?: unknown[];
+  };
+  const resourceDigest = instructionResource.uri.split("/").at(-1);
+  if (
+    instructionBundle.manifest?.sha256 !== resourceDigest ||
+    !Array.isArray(instructionBundle.rules) ||
+    instructionBundle.rules.length < 7
+  ) {
+    throw new Error(
+      `Invalid AKP instruction resource: ${JSON.stringify(instructionBundle)}`,
+    );
+  }
+
   const names = new Set(tools.tools.map((tool) => tool.name));
   const missing = required.filter((name) => !names.has(name));
   if (missing.length)
@@ -230,6 +263,8 @@ try {
         result: "PASSED",
         toolCount: tools.tools.length,
         requiredTools: required.length,
+        instructionResource: instructionResource.uri,
+        instructionDigest: instructionBundle.manifest?.sha256,
         platformStatus: statusPayload.status,
         principalKind: identityRecord.principalKind,
         authenticationKind: identityRecord.authenticationKind,

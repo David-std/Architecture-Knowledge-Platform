@@ -5,6 +5,10 @@ import { fileURLToPath } from "node:url";
 import { QueryIntent, SearchRequest } from "@akp/contracts";
 import { McpContextRequest } from "./context-request.js";
 import { AkpContextInput, dispatchAkpContext } from "./context-facade.js";
+import {
+  AGENT_INSTRUCTION_BUNDLE,
+  AGENT_INSTRUCTION_RESOURCE_URI,
+} from "./instruction-bundle.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -118,6 +122,26 @@ export function createMcpServer(): McpServer {
     name: "architecture-knowledge-platform",
     version: "0.2.0",
   });
+
+  server.registerResource(
+    "akp-agent-instructions",
+    AGENT_INSTRUCTION_RESOURCE_URI,
+    {
+      title: "AKP Agent Instruction Bundle",
+      description:
+        "Versioned, integrity-addressed instructions for using AKP context, evidence, task memory, impact analysis, and governed promotion.",
+      mimeType: "application/json",
+    },
+    async (uri) => ({
+      contents: [
+        {
+          uri: uri.href,
+          mimeType: "application/json",
+          text: JSON.stringify(AGENT_INSTRUCTION_BUNDLE),
+        },
+      ],
+    }),
+  );
 
   server.registerTool(
     "akp_context",

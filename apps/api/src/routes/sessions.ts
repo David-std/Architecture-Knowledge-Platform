@@ -428,6 +428,7 @@ export function registerSessionRoutes(
               id: snapshot.session.id,
               spaceId: snapshot.session.spaceId,
               vaultId: snapshot.session.vaultId,
+              projectId: snapshot.session.projectId,
               purpose: snapshot.session.purpose,
               contextBudget: snapshot.session.contextBudget,
               coordinationVersion: snapshot.session.coordinationVersion,

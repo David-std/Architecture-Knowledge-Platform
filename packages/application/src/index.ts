@@ -14,6 +14,7 @@ export interface BootstrapWorkContextSnapshot {
     id: string;
     spaceId: string;
     vaultId: string;
+    projectId?: string | null;
     purpose: string;
     contextBudget: number;
     coordinationVersion: number;
