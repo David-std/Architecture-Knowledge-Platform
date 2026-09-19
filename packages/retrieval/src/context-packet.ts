@@ -69,6 +69,18 @@ export interface PacketCandidate {
   /** Authorized full approved page/body used only when L3 is requested. */
   fullContent?: string;
   kind: PacketCandidateKind;
+  /**
+   * Mandatory policy/rule material is selected ahead of ordinary relevance
+   * candidates. This flag never bypasses authorization, truth or evidence
+   * requirements: callers may only set it on already-valid candidates.
+   */
+  mandatory?: boolean;
+}
+
+export interface MaterialConflictRequirement {
+  id: string;
+  /** All known authorized document identities that form the material conflict. */
+  documentIds: string[];
 }
 
 export interface BuildContextPacketInput {
@@ -80,6 +92,8 @@ export interface BuildContextPacketInput {
   candidates: PacketCandidate[];
   gaps?: string[];
   conflicts?: string[];
+  /** Material unresolved conflicts whose accessible sides should travel together. */
+  materialConflicts?: MaterialConflictRequirement[];
   indexRevisions?: Record<string, string | null>;
   retrievalConfiguration?: Record<string, unknown>;
   /** Keep a dossier from flooding a bounded packet with repeated units. */
@@ -332,10 +346,36 @@ function hasEvidence(candidate: PacketCandidate): boolean {
   return candidate.hit.citations.length > 0;
 }
 
+const authorityRank: Record<SearchHit["trust"], number> = {
+  ATTESTED: 0,
+  HUMAN_REVIEWED: 1,
+  MACHINE_SUPPORTED: 2,
+  UNVERIFIED: 3,
+};
+
+function freshnessRank(refreshStatus: string): number {
+  switch (refreshStatus) {
+    case "CURRENT":
+      return 0;
+    case "STALE_PENDING_REVIEW":
+      return 1;
+    default:
+      return 2;
+  }
+}
+
+function independentSupportCount(candidate: PacketCandidate): number {
+  return new Set(candidate.hit.citations).size;
+}
+
 function compareCandidates(a: PacketCandidate, b: PacketCandidate): number {
   return (
+    Number(Boolean(b.mandatory)) - Number(Boolean(a.mandatory)) ||
     priority[a.kind] - priority[b.kind] ||
+    authorityRank[a.hit.trust] - authorityRank[b.hit.trust] ||
+    freshnessRank(a.hit.refreshStatus) - freshnessRank(b.hit.refreshStatus) ||
     Number(hasEvidence(b)) - Number(hasEvidence(a)) ||
+    independentSupportCount(b) - independentSupportCount(a) ||
     b.hit.score - a.hit.score ||
     a.hit.documentId.localeCompare(b.hit.documentId) ||
     (a.hit.unitId ?? "").localeCompare(b.hit.unitId ?? "") ||
@@ -729,14 +769,71 @@ export function buildContextPacket(
     packetGaps.push("No source or evidence citation matched the request.");
   }
 
-  const orderedCandidates = diverseCandidateOrder(
-    packetCandidates,
-    maxSectionsPerDocument,
+  const candidateByDocument = new Map<string, PacketCandidate[]>();
+  for (const candidate of packetCandidates) {
+    const group = candidateByDocument.get(candidate.hit.documentId) ?? [];
+    group.push(candidate);
+    candidateByDocument.set(candidate.hit.documentId, group);
+  }
+  for (const group of candidateByDocument.values()) {
+    group.sort(compareCandidates);
+  }
+
+  const materialConflicts = (input.materialConflicts ?? []).map((conflict) => ({
+    id: conflict.id,
+    documentIds: [...new Set(conflict.documentIds.filter(Boolean))],
+  }));
+  const requiredDocumentIds = new Set(
+    materialConflicts.flatMap((conflict) => conflict.documentIds),
   );
+  for (const conflict of materialConflicts) {
+    const accessible = conflict.documentIds.filter((documentId) =>
+      candidateByDocument.has(documentId),
+    );
+    if (accessible.length < conflict.documentIds.length) {
+      packetGaps.push(
+        `Material conflict ${conflict.id} has ${conflict.documentIds.length - accessible.length} unavailable side(s); complete conflict coverage was not possible.`,
+      );
+    }
+  }
+
+  const requiredCandidates = [
+    ...packetCandidates.filter((candidate) => candidate.mandatory),
+    ...[...requiredDocumentIds]
+      .map((documentId) => candidateByDocument.get(documentId)?.[0])
+      .filter((candidate): candidate is PacketCandidate => Boolean(candidate)),
+  ]
+    .sort(compareCandidates)
+    .filter(
+      (candidate, index, all) =>
+        all.findIndex((item) => candidateKey(item) === candidateKey(candidate)) ===
+        index,
+    );
+  const requiredKeys = new Set(requiredCandidates.map(candidateKey));
+  const ordinaryCandidates = packetCandidates.filter(
+    (candidate) => !requiredKeys.has(candidateKey(candidate)),
+  );
+  const orderedCandidates = [
+    ...requiredCandidates,
+    ...diverseCandidateOrder(ordinaryCandidates, maxSectionsPerDocument),
+  ];
   const orderedKeys = new Set(orderedCandidates.map(candidateKey));
   const omitted: PacketCandidate[] = packetCandidates.filter(
     (candidate) => !orderedKeys.has(candidateKey(candidate)),
   );
+  const noteRequiredOmissions = (): void => {
+    const omittedRequired = omitted.filter((candidate) =>
+      requiredKeys.has(candidateKey(candidate)),
+    );
+    if (
+      omittedRequired.length > 0 &&
+      !packetGaps.some((gap) => gap.startsWith("Mandatory context omitted:"))
+    ) {
+      packetGaps.push(
+        `Mandatory context omitted: ${omittedRequired.length} required section(s) could not be included under the active evidence or token-budget policy.`,
+      );
+    }
+  };
   const seenCandidates = new Set<string>();
   const sectionsByDocument = new Map<string, number>();
   const selected: Array<{
@@ -941,6 +1038,7 @@ export function buildContextPacket(
     }
   };
   ensureNoAnswerGap();
+  noteRequiredOmissions();
 
   // Continuation metadata can grow after later candidates are omitted. Trim
   // the lowest-priority selected sections until the complete final wire fits.
@@ -981,6 +1079,7 @@ export function buildContextPacket(
       if (!removed) throw error;
       omitted.push(removed.candidate);
       ensureNoAnswerGap();
+      noteRequiredOmissions();
       final = baseEnvelope(
         selected.map((entry) => entry.section),
         omitted,
