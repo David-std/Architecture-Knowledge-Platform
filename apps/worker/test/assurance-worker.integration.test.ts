@@ -298,6 +298,7 @@ describeDb("continuous assurance detector execution", () => {
     const documentB = randomUUID();
     const projectId = randomUUID();
     const projectionId = randomUUID();
+    const runtimeProjectionId = randomUUID();
     const nodeId = randomUUID();
     const slug = `assurance-project-${projectId.slice(0, 8)}`;
     const currentCommit = "b".repeat(40);
@@ -370,6 +371,26 @@ describeDb("continuous assurance detector execution", () => {
           indexedCommit,
         ],
       );
+      await db.pool.query(
+        `insert into federated_graph_projection_revisions(
+           id,space_id,vault_id,graph_domain,scope_id,revision,source_revision,
+           provider,provider_version,configuration_version,lifecycle,freshness,
+           built_at,activated_at,last_successful_update
+         ) values(
+           $1,$2,$3,'RUNTIME',$4,$5,$6,
+           'node-v8','test','runtime-v1','ACTIVE','FRESH',
+           now(),now(),now()
+         )`,
+        [
+          runtimeProjectionId,
+          spaceId,
+          vaultId,
+          scopeId,
+          `runtime:${indexedCommit}`,
+          indexedCommit,
+        ],
+      );
+
       await db.pool.query(
         `insert into federated_graph_nodes(
            id,space_id,vault_id,graph_domain,scope_id,kind,canonical_key,
@@ -447,6 +468,10 @@ describeDb("continuous assurance detector execution", () => {
             detector: "CODE_GRAPH_FRESHNESS",
             code: "CODE_GRAPH_REPO_SHA_MISMATCH",
           }),
+          expect.objectContaining({
+            detector: "CODE_GRAPH_FRESHNESS",
+            code: "STALE_RUNTIME_EVIDENCE",
+          }),
         ]),
       );
       const identity = findings.rows.find(
@@ -457,8 +482,8 @@ describeDb("continuous assurance detector execution", () => {
       );
     } finally {
       await db.pool.query(
-        "delete from federated_graph_projection_revisions where id=$1",
-        [projectionId],
+        "delete from federated_graph_projection_revisions where id=any($1::uuid[])",
+        [[projectionId, runtimeProjectionId]],
       );
       await db.pool.query("delete from federated_graph_nodes where id=$1", [
         nodeId,

@@ -1045,6 +1045,10 @@ async function collectDetectorFindings(
         active_freshness: string | null;
         latest_projection_id: string | null;
         latest_lifecycle: string | null;
+        runtime_projection_id: string | null;
+        runtime_source_revision: string | null;
+        runtime_freshness: string | null;
+        runtime_lifecycle: string | null;
       }>(
         `select p.id::text project_id,p.slug,
                 p.metadata->>'commit' project_commit,
@@ -1054,7 +1058,11 @@ async function collectDetectorFindings(
                 active.source_revision active_source_revision,
                 active.freshness active_freshness,
                 latest.id::text latest_projection_id,
-                latest.lifecycle latest_lifecycle
+                latest.lifecycle latest_lifecycle,
+                runtime.id::text runtime_projection_id,
+                runtime.source_revision runtime_source_revision,
+                runtime.freshness runtime_freshness,
+                runtime.lifecycle runtime_lifecycle
            from projects p
            left join lateral (
              select g.id,g.source_revision,g.freshness,g.lifecycle
@@ -1079,6 +1087,20 @@ async function collectDetectorFindings(
               order by g.updated_at desc,g.created_at desc
               limit 1
            ) latest on true
+           left join lateral (
+             select g.id,g.source_revision,g.freshness,g.lifecycle
+               from federated_graph_projection_revisions g
+              where g.space_id=p.space_id
+                and g.vault_id=p.vault_id
+                and g.graph_domain='RUNTIME'
+                and g.scope_id=
+                    'project:'||lower(p.vault_id::text)||':'||lower(p.slug)
+              order by
+                (g.lifecycle='ACTIVE') desc,
+                g.activated_at desc nulls last,
+                g.updated_at desc
+              limit 1
+           ) runtime on true
           where p.space_id=$1 and p.vault_id=$2
             and p.metadata->>'commit' ~ '^[a-fA-F0-9]{40}$'
             and coalesce(p.metadata#>>'{codeGraph,status}','REQUESTED')
@@ -1091,6 +1113,34 @@ async function collectDetectorFindings(
       const findings: AssuranceFindingDraft[] = [];
       for (const row of projects.rows) {
         const commit = row.project_commit?.toLowerCase() ?? null;
+        if (
+          row.runtime_projection_id &&
+          (
+            row.runtime_lifecycle !== "ACTIVE" ||
+            row.runtime_freshness !== "FRESH" ||
+            (commit !== null &&
+              row.runtime_source_revision?.toLowerCase() !== commit)
+          )
+        ) {
+          findings.push(
+            findingForScope(
+              run.vaultId,
+              detector,
+              row.runtime_lifecycle === "FAILED" ? "CRITICAL" : "HIGH",
+              "STALE_RUNTIME_EVIDENCE",
+              "runtime_graph_projection",
+              row.runtime_projection_id,
+              "Runtime-observed evidence is stale or was captured against a different repository commit.",
+              {
+                slug: row.slug,
+                projectCommit: commit,
+                runtimeSourceRevision: row.runtime_source_revision,
+                runtimeFreshness: row.runtime_freshness,
+                runtimeLifecycle: row.runtime_lifecycle,
+              },
+            ),
+          );
+        }
         if (
           row.code_status === "FAILED" ||
           row.code_status === "DEGRADED" ||
