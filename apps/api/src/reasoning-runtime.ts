@@ -538,6 +538,16 @@ export function createApplicationReasoningPorts(
 function finalDocumentHits(
   execution: Exclude<ReasoningPlanExecutionResult, { status: "REJECTED" }>,
 ): SearchHit[] {
+  const contextStep = [...execution.plan.steps]
+    .reverse()
+    .find((step) => step.operator === "BUILD_CONTEXT");
+  if (contextStep?.operator === "BUILD_CONTEXT") {
+    return uniqueHits(
+      contextStep.args.inputStepIds.flatMap((stepId) =>
+        hitsFromValue(execution.results.get(stepId)),
+      ),
+    );
+  }
   for (const step of [...execution.plan.steps].reverse()) {
     const value = execution.results.get(step.id);
     if (value?.kind !== "DOCUMENT_SET") continue;
