@@ -80,6 +80,7 @@ export async function runEvaluation(
     allowVectorForBenchmark?: boolean;
     deterministicRerank?: boolean;
     associativePpr?: boolean;
+    communityGlobal?: boolean;
   },
   spaceId: string,
   packName: string,
@@ -158,7 +159,16 @@ export async function runEvaluation(
                 },
               },
             }
-          : {}),
+          : configuration.communityGlobal
+            ? {
+                retrievalPolicy: {
+                  graphMode: "GLOBAL" as const,
+                  channels: {
+                    COMMUNITY: { enabled: true, weight: 1.1 },
+                  },
+                },
+              }
+            : {}),
       },
     );
     const latencyMs = performance.now() - started;
@@ -422,6 +432,7 @@ export async function runRetrievalBenchmark(
     allowVectorForBenchmark?: boolean;
     deterministicRerank?: boolean;
     associativePpr?: boolean;
+    communityGlobal?: boolean;
   }> = RETRIEVAL_BENCHMARK_MATRIX.map((configuration) => ({
     name: configuration.name,
     channels: [...configuration.channels] as NonNullable<
@@ -436,6 +447,9 @@ export async function runRetrievalBenchmark(
     ...(configuration.associativePpr === undefined
       ? {}
       : { associativePpr: configuration.associativePpr }),
+    ...(configuration.communityGlobal === undefined
+      ? {}
+      : { communityGlobal: configuration.communityGlobal }),
   }));
   const runs = [];
   for (const configuration of configurations) {
@@ -505,6 +519,7 @@ export async function runRetrievalBenchmark(
       vectorBenchmarkOnly: Boolean(configuration.allowVectorForBenchmark),
       rerank: Boolean(configuration.deterministicRerank),
       associativePpr: Boolean(configuration.associativePpr),
+      communityGlobal: Boolean(configuration.communityGlobal),
     })),
     datasetSlices,
     requiredGenericSlices:
