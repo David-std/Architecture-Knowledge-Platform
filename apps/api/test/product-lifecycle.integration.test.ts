@@ -801,8 +801,9 @@ describe("product lifecycle E2E", () => {
       intent: string;
       steps: Array<{ operator: string; status: string }>;
       vault_ids: string[];
+      revision_verified: boolean;
     }>(
-      `select status,intent,steps,vault_ids
+      `select status,intent,steps,vault_ids,revision_verified
          from reasoning_execution_traces
         where space_id=$1 and plan_id=$2
         order by created_at desc
@@ -816,6 +817,7 @@ describe("product lifecycle E2E", () => {
       status: "SUCCESS",
       intent: "CONCEPTUAL",
       vault_ids: [vaultId],
+      revision_verified: true,
     });
     expect(persistedReasoning.rows[0]?.steps.at(-1)).toMatchObject({
       operator: "BUILD_CONTEXT",

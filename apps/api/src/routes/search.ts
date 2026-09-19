@@ -623,6 +623,63 @@ type IndexRevisionRow = Record<string, unknown> & {
   corpus_revision?: string;
 };
 
+function reasoningRevisionSetFromRows(
+  spaceId: string,
+  rows: readonly IndexRevisionRow[],
+  retrievalConfigurationVersion: string,
+  capturedAt = new Date().toISOString(),
+): ContextRevisionSet {
+  return {
+    spaceId,
+    vaults: rows
+      .map((row) => ({
+        vaultId: String(row.vault_id ?? ""),
+        corpusRevision: String(row.corpus_revision ?? ""),
+        lexicalRevision: row.lexical_revision
+          ? String(row.lexical_revision)
+          : null,
+        vectorRevision: row.vector_revision
+          ? String(row.vector_revision)
+          : null,
+        graphRevision: row.graph_revision
+          ? String(row.graph_revision)
+          : null,
+        contextPackRevision: row.context_pack_revision
+          ? String(row.context_pack_revision)
+          : null,
+        communityRevision: row.community_revision
+          ? String(row.community_revision)
+          : null,
+      }))
+      .sort((left, right) => left.vaultId.localeCompare(right.vaultId)),
+    retrievalConfigurationVersion,
+    capturedAt,
+  };
+}
+
+function sameReasoningRevisionSet(
+  planned: ContextRevisionSet,
+  current: ContextRevisionSet,
+): boolean {
+  const stable = (value: ContextRevisionSet) => ({
+    spaceId: value.spaceId,
+    retrievalConfigurationVersion:
+      value.retrievalConfigurationVersion ?? null,
+    vaults: [...value.vaults]
+      .map((vault) => ({
+        vaultId: vault.vaultId,
+        corpusRevision: vault.corpusRevision,
+        lexicalRevision: vault.lexicalRevision ?? null,
+        vectorRevision: vault.vectorRevision ?? null,
+        graphRevision: vault.graphRevision ?? null,
+        contextPackRevision: vault.contextPackRevision ?? null,
+        communityRevision: vault.communityRevision ?? null,
+      }))
+      .sort((left, right) => left.vaultId.localeCompare(right.vaultId)),
+  });
+  return JSON.stringify(stable(planned)) === JSON.stringify(stable(current));
+}
+
 function combineVaultIndexRows(rows: IndexRevisionRow[]): IndexRevisionRow {
   if (rows.length === 0) return {};
   if (rows.length === 1) return rows[0] ?? {};
@@ -3180,12 +3237,21 @@ export function registerSearchRoutes(
       }
       const indexRows = await db.pool.query(
         `
-        select vault_id,corpus_revision,lexical_revision,vector_revision,
-               graph_revision,context_pack_revision,status,warnings,
-               retrieval_configuration_version
-          from vault_index_revisions
-         where space_id=$1 and vault_id=any($2::uuid[])
-         order by vault_id
+        select i.vault_id,i.corpus_revision,i.lexical_revision,i.vector_revision,
+               i.graph_revision,i.context_pack_revision,i.status,i.warnings,
+               i.retrieval_configuration_version,
+               (
+                 select c.community_revision
+                   from community_index_revisions c
+                  where c.space_id=i.space_id and c.vault_id=i.vault_id
+                    and c.status='ACTIVE' and c.stale=false
+                    and c.graph_revision=i.graph_revision
+                  order by c.activated_at desc nulls last,c.updated_at desc
+                  limit 1
+               ) community_revision
+          from vault_index_revisions i
+         where i.space_id=$1 and i.vault_id=any($2::uuid[])
+         order by i.vault_id
         `,
         [requestedSpace, vaultIds],
       );
@@ -3410,29 +3476,14 @@ export function registerSearchRoutes(
             if (indexRows.rows.length !== vaultIds.length) {
               throw new Error("REASONING_REVISION_SET_INCOMPLETE");
             }
-            const reasoningRevisionSet: ContextRevisionSet = {
-              spaceId: requestedSpace,
-              vaults: indexRows.rows.map((row) => ({
-                vaultId: String(row.vault_id),
-                corpusRevision: String(row.corpus_revision),
-                lexicalRevision: row.lexical_revision
-                  ? String(row.lexical_revision)
-                  : null,
-                vectorRevision: row.vector_revision
-                  ? String(row.vector_revision)
-                  : null,
-                graphRevision: row.graph_revision
-                  ? String(row.graph_revision)
-                  : null,
-                contextPackRevision: row.context_pack_revision
-                  ? String(row.context_pack_revision)
-                  : null,
-              })),
-              retrievalConfigurationVersion: String(
-                indexRow.retrieval_configuration_version ?? "rrf-v1",
-              ),
-              capturedAt: new Date().toISOString(),
-            };
+            const reasoningConfigurationVersion = String(
+              indexRow.retrieval_configuration_version ?? "rrf-v1",
+            );
+            const reasoningRevisionSet = reasoningRevisionSetFromRows(
+              requestedSpace,
+              indexRows.rows,
+              reasoningConfigurationVersion,
+            );
             const reasoned = await executeApplicationReasoning({
               request: { ...scopedRequest, intent },
               revisionSet: reasoningRevisionSet,
@@ -3523,6 +3574,59 @@ export function registerSearchRoutes(
             if (reasoned.execution.tracePersistence !== "PERSISTED") {
               throw new Error("REASONING_TRACE_PERSIST_FAILED");
             }
+
+            const finalIndexRows = await db.pool.query(
+              `
+              select i.vault_id,i.corpus_revision,i.lexical_revision,
+                     i.vector_revision,i.graph_revision,i.context_pack_revision,
+                     i.status,i.warnings,i.retrieval_configuration_version,
+                     (
+                       select c.community_revision
+                         from community_index_revisions c
+                        where c.space_id=i.space_id and c.vault_id=i.vault_id
+                          and c.status='ACTIVE' and c.stale=false
+                          and c.graph_revision=i.graph_revision
+                        order by c.activated_at desc nulls last,c.updated_at desc
+                        limit 1
+                     ) community_revision
+                from vault_index_revisions i
+               where i.space_id=$1 and i.vault_id=any($2::uuid[])
+               order by i.vault_id
+              `,
+              [requestedSpace, vaultIds],
+            );
+            if (finalIndexRows.rows.length !== vaultIds.length) {
+              throw new Error("CONTEXT_REVISION_CHANGED");
+            }
+            const finalCombinedIndex = combineVaultIndexRows(
+              finalIndexRows.rows,
+            );
+            const finalRevisionSet = reasoningRevisionSetFromRows(
+              requestedSpace,
+              finalIndexRows.rows,
+              String(
+                finalCombinedIndex.retrieval_configuration_version ?? "rrf-v1",
+              ),
+            );
+            if (
+              !sameReasoningRevisionSet(
+                reasoningRevisionSet,
+                finalRevisionSet,
+              )
+            ) {
+              throw new Error("CONTEXT_REVISION_CHANGED");
+            }
+            const verifiedTrace = await db.pool.query(
+              `update reasoning_execution_traces
+                  set revision_verified=true
+                where space_id=$1 and request_id=$2 and plan_id=$3
+                  and revision_verified=false`,
+              [requestedSpace, request.id, reasoned.reasoningTrace.planId],
+            );
+            if (verifiedTrace.rowCount !== 1) {
+              throw new Error("REASONING_TRACE_VERIFY_FAILED");
+            }
+
             hits = reasoned.hits;
             reasoningTrace = reasoned.reasoningTrace;
             reasoningExecutionMode = "PLAN";
