@@ -209,7 +209,25 @@ describe("derived truth maintenance event boundary", () => {
           vaultId,
           sourceEpisodeIds: [episodeA.id],
         });
+        const aOnlyFact = await store.recordFact({
+          spaceId,
+          vaultId,
+          scopeId: "security:a-only-fact",
+          authorizationPath: "security/a-only-fact.md",
+          subjectRef: "policy:a-only",
+          predicate: "supported",
+          object: { value: true },
+          validFrom: "2025-01-01T00:00:00.000Z",
+          supportSetId: aOnlySupport.id,
+          sourceEpisodeId: episodeA.id,
+        });
+        const factBackedSupport = await store.createSupportSet({
+          spaceId,
+          vaultId,
+          factIds: [aOnlyFact.fact.id],
+        });
         const vectorRef = `vector:generation-a:${randomUUID()}`;
+        const factBackedVectorRef = `vector:generation-fact:${randomUUID()}`;
         const synthesisRef = `synthesis:conclusion:${randomUUID()}`;
         await store.registerDerivedDependency({
           spaceId,
@@ -218,6 +236,15 @@ describe("derived truth maintenance event boundary", () => {
           derivedItemRef: vectorRef,
           supportSetId: aOnlySupport.id,
           truthRevisionHash: fact.revision.revisionHash,
+          projectionRevision: "vector:r1",
+        });
+        await store.registerDerivedDependency({
+          spaceId,
+          vaultId,
+          derivedStoreKind: "VECTOR",
+          derivedItemRef: factBackedVectorRef,
+          supportSetId: factBackedSupport.id,
+          truthRevisionHash: aOnlyFact.revision.revisionHash,
           projectionRevision: "vector:r1",
         });
         await store.registerDerivedDependency({
@@ -279,12 +306,20 @@ describe("derived truth maintenance event boundary", () => {
           spaceId,
           vaultId,
           truthRevisionHash: withdrawn.revisionHash,
-          derivedItemRefs: [vectorRef, synthesisRef],
+          derivedItemRefs: [vectorRef, factBackedVectorRef, synthesisRef],
         });
         const byRef = new Map(
           projected.map((item) => [item.derivedItemRef, item]),
         );
         expect(byRef.get(vectorRef)).toMatchObject({
+          derivedStoreKind: "VECTOR",
+          state: "UNSUPPORTED",
+          valid: false,
+          triggerEventId: targetEvent.event_id,
+          reason: "SOURCE_WITHDRAWN",
+          resourceId: episodeA.id,
+        });
+        expect(byRef.get(factBackedVectorRef)).toMatchObject({
           derivedStoreKind: "VECTOR",
           state: "UNSUPPORTED",
           valid: false,
@@ -300,6 +335,27 @@ describe("derived truth maintenance event boundary", () => {
           reason: "SOURCE_WITHDRAWN",
           resourceId: episodeA.id,
         });
+
+        expect(
+          await store.validateDerivedItems({
+            spaceId,
+            vaultId,
+            derivedStoreKind: "VECTOR",
+            derivedItemRefs: [factBackedVectorRef],
+            truthRevisionHash: withdrawn.revisionHash,
+            validAt: "2026-09-01T00:00:00.000Z",
+          }),
+        ).toMatchObject([{ state: "UNSUPPORTED", valid: false }]);
+        expect(
+          await store.validateDerivedItems({
+            spaceId,
+            vaultId,
+            derivedStoreKind: "VECTOR",
+            derivedItemRefs: [factBackedVectorRef],
+            truthRevisionHash: aOnlyFact.revision.revisionHash,
+            validAt: "2026-09-01T00:00:00.000Z",
+          }),
+        ).toMatchObject([{ state: "SUPPORTED", valid: true }]);
 
         expect(
           await store.validateDerivedItems({
@@ -327,9 +383,9 @@ describe("derived truth maintenance event boundary", () => {
              from derived_truth_dependencies
             where space_id=$1 and vault_id=$2
               and derived_item_ref=any($3::text[])`,
-          [spaceId, vaultId, [vectorRef, synthesisRef]],
+          [spaceId, vaultId, [vectorRef, factBackedVectorRef, synthesisRef]],
         );
-        expect(physical.rows[0]?.count).toBe("2");
+        expect(physical.rows[0]?.count).toBe("3");
 
         const projectionId = projected[0]?.projectionRevisionId;
         expect(projectionId).toBeTruthy();
