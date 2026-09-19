@@ -56,6 +56,8 @@ export interface OfflineBenchmarkReport {
       channels: readonly string[];
       vectorBenchmarkOnly: boolean;
       rerank: boolean;
+      associativePpr: boolean;
+      communityGlobal: boolean;
     }>;
   };
   metricDefinitions: Record<string, string>;
@@ -220,6 +222,8 @@ export function buildOfflineBenchmarkReport(
         channels: [...configuration.channels],
         vectorBenchmarkOnly: Boolean(configuration.allowVectorForBenchmark),
         rerank: Boolean(configuration.deterministicRerank),
+        associativePpr: Boolean(configuration.associativePpr),
+        communityGlobal: Boolean(configuration.communityGlobal),
       })),
     },
     metricDefinitions: {
