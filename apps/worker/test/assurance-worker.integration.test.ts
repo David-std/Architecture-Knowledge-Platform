@@ -293,4 +293,321 @@ describeDb("continuous assurance detector execution", () => {
       severity: "CRITICAL",
     });
   });
+  it("detects ambiguous identities, missing governed links, orphan graph nodes, and repository SHA drift", async () => {
+    const documentA = randomUUID();
+    const documentB = randomUUID();
+    const projectId = randomUUID();
+    const projectionId = randomUUID();
+    const nodeId = randomUUID();
+    const slug = `assurance-project-${projectId.slice(0, 8)}`;
+    const currentCommit = "b".repeat(40);
+    const indexedCommit = "a".repeat(40);
+    const graphRevision = `${indexedCommit}:fixture-v1`;
+    const scopeId = `project:${vaultId.toLowerCase()}:${slug.toLowerCase()}`;
+
+    try {
+      await db.pool.query(
+        `insert into knowledge_documents(
+           id,space_id,vault_id,path,external_id,title,type,lifecycle,trust_tier,
+           current_revision,body_cache,frontmatter,aliases,layer,content_hash,
+           token_estimate,raw_links
+         ) values
+           ($1,$3,$4,'assurance/alpha.md','ASSURANCE-ALPHA',
+            'Assurance Alpha','concept','ACTIVE','HUMAN_REVIEWED','rev-identity',
+            'alpha','{}'::jsonb,array['shared-assurance-identity'],'compiled',
+            $5,10,$7::jsonb),
+           ($2,$3,$4,'assurance/beta.md','ASSURANCE-BETA',
+            'Assurance Beta','concept','ACTIVE','HUMAN_REVIEWED','rev-identity',
+            'beta','{}'::jsonb,array['shared-assurance-identity'],'compiled',
+            $6,10,'[]'::jsonb)`,
+        [
+          documentA,
+          documentB,
+          spaceId,
+          vaultId,
+          sha256("assurance-alpha"),
+          sha256("assurance-beta"),
+          JSON.stringify(["ASSURANCE-BETA"]),
+        ],
+      );
+
+      await db.pool.query(
+        `insert into projects(
+           id,space_id,vault_id,slug,root_path,metadata
+         ) values($1,$2,$3,$4,$5,$6::jsonb)`,
+        [
+          projectId,
+          spaceId,
+          vaultId,
+          slug,
+          `test/project/${projectId}`,
+          JSON.stringify({
+            commit: currentCommit,
+            codeGraph: {
+              status: "ACTIVE",
+              sourceRevision: indexedCommit,
+            },
+          }),
+        ],
+      );
+
+      await db.pool.query(
+        `insert into federated_graph_projection_revisions(
+           id,space_id,vault_id,graph_domain,scope_id,revision,source_revision,
+           provider,provider_version,configuration_version,lifecycle,freshness,
+           built_at,activated_at,last_successful_update
+         ) values(
+           $1,$2,$3,'CODE',$4,$5,$6,
+           'assurance-fixture','1','fixture-v1','ACTIVE','FRESH',
+           now(),now(),now()
+         )`,
+        [
+          projectionId,
+          spaceId,
+          vaultId,
+          scopeId,
+          graphRevision,
+          indexedCommit,
+        ],
+      );
+      await db.pool.query(
+        `insert into federated_graph_nodes(
+           id,space_id,vault_id,graph_domain,scope_id,kind,canonical_key,
+           revision,authorization_path,payload,payload_hash
+         ) values(
+           $1,$2,$3,'CODE',$4,'function','fixture-node',$5,
+           $6,'{}'::jsonb,$7
+         )`,
+        [
+          nodeId,
+          spaceId,
+          vaultId,
+          scopeId,
+          graphRevision,
+          `projects/${slug}/src/fixture.ts`,
+          sha256("{}"),
+        ],
+      );
+      await db.pool.query(
+        `insert into federated_graph_projection_nodes(
+           projection_revision_id,node_id
+         ) values($1,$2)`,
+        [projectionId, nodeId],
+      );
+
+      const run = await submitAssuranceRun(db, {
+        spaceId,
+        vaultId,
+        trigger: "MANUAL",
+        detectors: [
+          "DUPLICATE_IDENTITY",
+          "GRAPH_HEALTH",
+          "CODE_GRAPH_FRESHNESS",
+          "LINK_GAP",
+        ],
+        idempotencyKey: `structural-detectors-${randomUUID()}`,
+        maxAttempts: 1,
+      });
+      const workerId = `structural-detectors-${randomUUID()}`;
+      const claimed = await claimNextAssuranceRun(db, workerId, 60, {
+        runId: run.id,
+      });
+      if (!claimed) throw new Error("expected structural detector run");
+
+      await expect(
+        runClaimedAssuranceRun(db, claimed, workerId),
+      ).resolves.toBe("COMPLETED");
+
+      const findings = await db.pool.query<{
+        detector: string;
+        code: string;
+        target_ids: string[];
+      }>(
+        `select detector,code,target_ids
+           from assurance_findings
+          where run_id=$1
+          order by detector,code`,
+        [run.id],
+      );
+      expect(findings.rows).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            detector: "DUPLICATE_IDENTITY",
+            code: "AMBIGUOUS_KNOWLEDGE_IDENTITY",
+          }),
+          expect.objectContaining({
+            detector: "LINK_GAP",
+            code: "MISSING_RESOLVED_LINK_RELATION",
+          }),
+          expect.objectContaining({
+            detector: "GRAPH_HEALTH",
+            code: "GRAPH_ORPHAN_NODE",
+          }),
+          expect.objectContaining({
+            detector: "CODE_GRAPH_FRESHNESS",
+            code: "CODE_GRAPH_REPO_SHA_MISMATCH",
+          }),
+        ]),
+      );
+      const identity = findings.rows.find(
+        (finding) => finding.code === "AMBIGUOUS_KNOWLEDGE_IDENTITY",
+      );
+      expect(new Set(identity?.target_ids)).toEqual(
+        new Set([documentA, documentB]),
+      );
+    } finally {
+      await db.pool.query(
+        "delete from federated_graph_projection_revisions where id=$1",
+        [projectionId],
+      );
+      await db.pool.query("delete from federated_graph_nodes where id=$1", [
+        nodeId,
+      ]);
+      await db.pool.query("delete from projects where id=$1", [projectId]);
+      await db.pool.query(
+        "delete from knowledge_documents where id=any($1::uuid[])",
+        [[documentA, documentB]],
+      );
+    }
+  });
+
+  it("detects withdrawn source dependencies and evidence hash integrity failures", async () => {
+    const sourceId = randomUUID();
+    const artifactId = randomUUID();
+    const evidenceId = randomUUID();
+    const documentId = randomUUID();
+    const sourceHash = sha256(`source-${sourceId}`);
+    const wrongArtifactHash = sha256(`artifact-${artifactId}`);
+
+    try {
+      await db.pool.query(
+        `insert into sources(
+           id,space_id,vault_id,title,source_uri,media_type,sha256,byte_size,
+           object_key,status,metadata
+         ) values(
+           $1,$2,$3,'Assurance source',$4,'text/plain',$5,16,$6,
+           'WITHDRAWN','{}'::jsonb
+         )`,
+        [
+          sourceId,
+          spaceId,
+          vaultId,
+          `fixture://${sourceId}`,
+          sourceHash,
+          `sources/${sourceHash}`,
+        ],
+      );
+      await db.pool.query(
+        `insert into source_artifacts(
+           id,source_id,kind,object_key,source_hash,extractor,
+           extractor_version,quality,metadata
+         ) values(
+           $1,$2,'fixture',$3,$4,'deterministic','1',
+           'MACHINE_EXTRACTED','{}'::jsonb
+         )`,
+        [
+          artifactId,
+          sourceId,
+          `artifacts/${artifactId}`,
+          wrongArtifactHash,
+        ],
+      );
+      await db.pool.query(
+        `insert into evidence(
+           id,space_id,vault_id,source_id,artifact_id,locator,content_hash,
+           excerpt,review_status
+         ) values(
+           $1,$2,$3,$4,$5,$6::jsonb,$7,'bounded evidence','APPROVED'
+         )`,
+        [
+          evidenceId,
+          spaceId,
+          vaultId,
+          sourceId,
+          artifactId,
+          JSON.stringify({
+            kind: "source",
+            source_hash: sourceHash,
+            path: `source:${sourceId}`,
+          }),
+          sha256("bounded evidence"),
+        ],
+      );
+      await db.pool.query(
+        `insert into knowledge_documents(
+           id,space_id,vault_id,path,external_id,title,type,lifecycle,trust_tier,
+           current_revision,body_cache,frontmatter,aliases,layer,content_hash,
+           token_estimate,raw_links
+         ) values(
+           $1,$2,$3,$4,$5,'Grounding fixture','claim','ACTIVE',
+           'HUMAN_REVIEWED','grounding-rev','grounded claim','{}'::jsonb,
+           '{}','compiled',$6,8,'[]'::jsonb
+         )`,
+        [
+          documentId,
+          spaceId,
+          vaultId,
+          `assurance/grounding-${documentId}.md`,
+          `GROUNDING-${documentId}`,
+          sha256("grounded claim"),
+        ],
+      );
+      await db.pool.query(
+        `insert into document_evidence(document_id,evidence_id)
+         values($1,$2)`,
+        [documentId, evidenceId],
+      );
+
+      const run = await submitAssuranceRun(db, {
+        spaceId,
+        vaultId,
+        trigger: "MANUAL",
+        detectors: ["GROUNDING", "FRESHNESS"],
+        idempotencyKey: `grounding-freshness-${randomUUID()}`,
+        maxAttempts: 1,
+      });
+      const workerId = `grounding-freshness-${randomUUID()}`;
+      const claimed = await claimNextAssuranceRun(db, workerId, 60, {
+        runId: run.id,
+      });
+      if (!claimed) throw new Error("expected grounding/freshness run");
+
+      await expect(
+        runClaimedAssuranceRun(db, claimed, workerId),
+      ).resolves.toBe("COMPLETED");
+
+      const findings = await db.pool.query<{
+        detector: string;
+        code: string;
+      }>(
+        `select detector,code
+           from assurance_findings
+          where run_id=$1
+          order by detector,code`,
+        [run.id],
+      );
+      expect(findings.rows).toEqual(
+        expect.arrayContaining([
+          {
+            detector: "GROUNDING",
+            code: "ARTIFACT_SOURCE_HASH_MISMATCH",
+          },
+          {
+            detector: "FRESHNESS",
+            code: "DEPENDENCY_SOURCE_REMOVED",
+          },
+        ]),
+      );
+    } finally {
+      await db.pool.query("delete from knowledge_documents where id=$1", [
+        documentId,
+      ]);
+      await db.pool.query("delete from evidence where id=$1", [evidenceId]);
+      await db.pool.query("delete from source_artifacts where id=$1", [
+        artifactId,
+      ]);
+      await db.pool.query("delete from sources where id=$1", [sourceId]);
+    }
+  });
+
 });
