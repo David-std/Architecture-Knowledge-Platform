@@ -5,7 +5,9 @@ info:
   x-akp-write-idempotency: >
     Mutating POST operations accept Idempotency-Key and MCP write tools require
     it. POST /v1/auth/session is intentionally exempt because it creates a
-    Set-Cookie response that cannot be safely replayed.
+    Set-Cookie response that cannot be safely replayed. Agent-process credential
+    issuance is also exempt because its raw token is returned exactly once and
+    is never stored in replayable plaintext form.
   description: >
     HTTP contract for the routes registered by the current Fastify runtime.
     All /v1 operations require a scoped bearer API token or an unexpired
@@ -122,6 +124,317 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "409": { $ref: "#/components/responses/Conflict" }
 
+  /v1/truth/facts:
+    get:
+      tags: [Knowledge]
+      operationId: queryTemporalTruthFacts
+      x-akp-permission: knowledge:read
+      parameters:
+        - {
+            name: spaceId,
+            in: query,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+        - {
+            name: vaultId,
+            in: query,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+        - {
+            name: subjectRef,
+            in: query,
+            schema: { type: string, maxLength: 2048 },
+          }
+        - {
+            name: predicate,
+            in: query,
+            schema: { type: string, maxLength: 512 },
+          }
+        - {
+            name: mode,
+            in: query,
+            schema:
+              { type: string, enum: [CURRENT, HISTORY], default: CURRENT },
+          }
+        - {
+            name: validAt,
+            in: query,
+            schema: { type: string, format: date-time },
+          }
+        - {
+            name: recordedAtOrBefore,
+            in: query,
+            schema: { type: string, format: date-time },
+          }
+        - {
+            name: truthRevisionHash,
+            in: query,
+            schema: { type: string, pattern: "^[a-f0-9]{64}$" },
+          }
+        - {
+            name: changedSince,
+            in: query,
+            schema: { type: string, format: date-time },
+          }
+        - {
+            name: limit,
+            in: query,
+            schema: { type: integer, minimum: 1, maximum: 1000, default: 100 },
+          }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/truth/facts/{factId}/support-history:
+    get:
+      tags: [Knowledge]
+      operationId: getTemporalTruthSupportHistory
+      x-akp-permission: knowledge:read
+      parameters:
+        - {
+            name: factId,
+            in: path,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+        - {
+            name: spaceId,
+            in: query,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+        - {
+            name: vaultId,
+            in: query,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/code/knowledge-links:
+    post:
+      tags: [Code]
+      operationId: approveCodeKnowledgeLink
+      x-akp-permission: knowledge:review
+      parameters:
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                [projectId, documentId, reviewId, relationType, selector]
+              properties:
+                projectId: { type: string, format: uuid }
+                documentId: { type: string, format: uuid }
+                reviewId: { type: string, format: uuid }
+                relationType:
+                  type: string
+                  enum: [rationale_ref, applies_to]
+                selector:
+                  type: object
+                  additionalProperties: false
+                  properties:
+                    path: { type: string, minLength: 1, maxLength: 4096 }
+                    qualifiedName:
+                      { type: string, minLength: 1, maxLength: 2048 }
+                    name: { type: string, minLength: 1, maxLength: 1024 }
+                    kind: { type: string, minLength: 1, maxLength: 120 }
+                    signature: { type: string, minLength: 1, maxLength: 4096 }
+                  anyOf:
+                    - required: [path]
+                    - required: [qualifiedName]
+                    - required: [name]
+                    - required: [signature]
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "202": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/code/symbol:
+    post:
+      tags: [Code]
+      operationId: findCodeSymbol
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: knowledge:read
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CodeScopedSelectorRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/code/callers:
+    post:
+      tags: [Code]
+      operationId: findCodeCallers
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: knowledge:read
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CodeScopedSelectorRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/code/callees:
+    post:
+      tags: [Code]
+      operationId: findCodeCallees
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: knowledge:read
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CodeScopedSelectorRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/code/path:
+    post:
+      tags: [Code]
+      operationId: findCodeDependencyPath
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: knowledge:read
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CodeScopedPathRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "408":
+          description: Bounded graph query exceeded its time budget.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/code/impact:
+    post:
+      tags: [Code]
+      operationId: analyzeCodeImpact
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: knowledge:read
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CodeScopedImpactRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "408":
+          description: Bounded graph query exceeded its time budget.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/code/change-impact:
+    post:
+      tags: [Code]
+      operationId: analyzeCodeChangeImpact
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: knowledge:read
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              { $ref: "#/components/schemas/CodeScopedChangeImpactRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "408":
+          description: Bounded graph query exceeded its time budget.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/code/tests:
+    post:
+      tags: [Code]
+      operationId: findCodeTests
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: knowledge:read
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CodeScopedSelectorRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/code/explain:
+    post:
+      tags: [Code]
+      operationId: explainCodePath
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: knowledge:read
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CodeScopedPathRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "408":
+          description: Bounded graph query exceeded its time budget.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
   /v1/search:
     post:
       tags: [Retrieval]
@@ -151,6 +464,9 @@ paths:
                     type: array
                     items: { type: string }
                   indexRevisions:
+                    type: [object, "null"]
+                    additionalProperties: true
+                  truth:
                     type: [object, "null"]
                     additionalProperties: true
                   hits:
@@ -191,6 +507,7 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
   /v1/context:
     post:
       tags: [Retrieval]
@@ -210,6 +527,14 @@ paths:
                       type: string
                       enum: [FULL_CONTEXT_PACKET, COMPACT_AGENT_PACKET]
                       default: FULL_CONTEXT_PACKET
+                    contextLevel:
+                      type: string
+                      enum: [L0, L1, L2, L3]
+                      default: L2
+                    reasoningMode:
+                      type: string
+                      enum: [DIRECT, PLAN]
+                      default: DIRECT
                     maxTokens:
                       {
                         type: integer,
@@ -227,6 +552,7 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
         "422":
           description: Requested token budget cannot represent the context packet envelope.
           content:
@@ -239,6 +565,10 @@ paths:
       tags: [Sessions]
       operationId: listAgentSessions
       x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:read
+      description: >
+        List durable workspace sessions visible to the current participant. An
+        AGENT_PROCESS principal only sees the session bound into its credential.
       responses:
         "200": { $ref: "#/components/responses/ObjectResponse" }
         "401": { $ref: "#/components/responses/Unauthorized" }
@@ -247,24 +577,648 @@ paths:
       tags: [Sessions]
       operationId: startAgentSession
       x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:create
+      parameters:
+        - { $ref: "#/components/parameters/IdempotencyKey" }
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [purpose]
+              additionalProperties: false
+              required: [purpose, spaceId, vaultId]
               properties:
                 purpose: { type: string, minLength: 1 }
                 contextBudget:
                   { type: integer, minimum: 256, maximum: 32000, default: 6000 }
                 projectId: { type: string, format: uuid }
                 spaceId: { type: string, format: uuid }
+                vaultId: { type: string, format: uuid }
       responses:
         "201": { $ref: "#/components/responses/ObjectResponse" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/sessions/{id}/state:
+    get:
+      tags: [Sessions]
+      operationId: getAgentSessionState
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:read
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+      description: >
+        Read the durable structured workspace snapshot for one authorized
+        participant. The snapshot is sufficient for another participant to
+        resume without relying on a prior chat transcript.
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/sessions/{id}/participants:
+    post:
+      tags: [Sessions]
+      operationId: addAgentSessionParticipant
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:manage-participants
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [userId]
+              properties:
+                userId: { type: string, format: uuid }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "201": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422":
+          description: Target participant is not authorized for the full session vault.
+
+  /v1/sessions/{id}/activity:
+    get:
+      tags: [Sessions]
+      operationId: listWorkActivity
+      x-akp-permission: knowledge:read
+      description: >
+        Activity recorded against the work objects this session's vault
+        projects, newest first. Scoped through session participation, so an
+        actor cannot page through another vault's work history.
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - name: objectRefId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+      responses:
+        "200":
+          description: Activity events for the authorized scope.
+          content:
+            application/json:
+              schema: { type: object }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [Sessions]
+      operationId: recordWorkActivity
+      x-akp-permission: knowledge:read
+      description: >
+        Record one observation about a work object. Append-only: correcting an
+        earlier observation means recording a later one. `derivation` states how
+        the assertion is known, and a `CAUSED` action may only rest on
+        SOURCE_EXPLICIT, HUMAN_ASSERTED or DYNAMICALLY_PROVEN — an observed
+        ordering never becomes a causal claim however often it recurs.
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                [objectRefId, action, occurredAt, sourceSystem, derivation]
+              properties:
+                objectRefId: { type: string, format: uuid }
+                targetRefId: { type: string, format: uuid }
+                action:
+                  type: string
+                  enum:
+                    - CREATED
+                    - UPDATED
+                    - COMMENTED
+                    - REVIEWED
+                    - APPROVED
+                    - REJECTED
+                    - MERGED
+                    - CLOSED
+                    - REOPENED
+                    - ASSIGNED
+                    - ESCALATED
+                    - DEPLOYED
+                    - ROLLED_BACK
+                    - RESOLVED
+                    - LINKED
+                    - REFERENCED
+                    - CAUSED
+                occurredAt: { type: string, format: date-time }
+                sourceSystem: { type: string, minLength: 1, maxLength: 80 }
+                derivation:
+                  type: string
+                  enum:
+                    - SOURCE_EXPLICIT
+                    - OBSERVED_CORRELATION
+                    - MODEL_INFERRED
+                    - HUMAN_ASSERTED
+                    - DYNAMICALLY_PROVEN
+                actorExternalId: { type: string, minLength: 1, maxLength: 512 }
+                evidenceRefs:
+                  type: array
+                  maxItems: 50
+                  items: { type: string, minLength: 1 }
+                payload: { type: object }
+      responses:
+        "201":
+          description: The recorded, immutable activity event.
+          content:
+            application/json:
+              schema: { type: object }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: >-
+            The session, or one of the referenced work objects, is not visible
+            in this scope.
+          content:
+            application/json:
+              schema: { type: object }
+        "422":
+          description: >-
+            WORK_ACTIVITY_CAUSALITY_UNSUPPORTED - a causal claim was asserted on
+            a derivation that cannot support one.
+          content:
+            application/json:
+              schema: { type: object }
+
+  /v1/sessions/{id}/bootstrap:
+    post:
+      tags: [Sessions]
+      operationId: bootstrapAgentSessionContext
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:read
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                query: { type: string, maxLength: 4096 }
+                intent:
+                  type: string
+                  default: WORKFLOW_EXECUTION
+                  enum:
+                    - EXACT_LOOKUP
+                    - CONCEPTUAL
+                    - COMPARISON
+                    - WORKFLOW_EXECUTION
+                    - SOURCE_VERIFICATION
+                    - PROJECT_CODE
+                    - GLOBAL_SYNTHESIS
+                    - IMPACT_ANALYSIS
+                    - NO_RETRIEVAL_REQUIRED
+                packetMode:
+                  type: string
+                  default: COMPACT_AGENT_PACKET
+                  enum: [COMPACT_AGENT_PACKET, FULL_CONTEXT_PACKET]
+      responses:
+        "200":
+          description: >-
+            An authorized context packet resolved against the revision this
+            session pinned, with that revision set reported back.
+          content:
+            application/json:
+              schema: { type: object }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: >-
+            The pinned context revision changed, or a pin is required. The node
+            reports the drift rather than mixing two snapshots.
+          content:
+            application/json:
+              schema: { type: object }
+        "413":
+          description: The bootstrap query exceeds the bounded payload size.
+          content:
+            application/json:
+              schema: { type: object }
+
+  /v1/sessions/{id}/promotions:
+    post:
+      tags: [Sessions]
+      operationId: requestWorkspacePromotion
+      x-akp-permission: knowledge:propose
+      x-akp-principal-action: knowledge:propose
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [evidenceEventIds, changes]
+              properties:
+                evidenceEventIds:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items: { type: string, pattern: "^[1-9][0-9]*$" }
+                summary: { type: string, minLength: 1, maxLength: 2000 }
+                changes:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [path, content]
+                    properties:
+                      path: { type: string, minLength: 1 }
+                      content: { type: string, minLength: 1 }
+                      reason: { type: string, minLength: 1 }
+      responses:
+        "201":
+          description: >-
+            A pending review carrying the workspace provenance. Promotion never
+            publishes; human review remains decisive.
+          content:
+            application/json:
+              schema: { type: object }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "413":
+          description: The promotion exceeds the bounded evidence or change limits.
+          content:
+            application/json:
+              schema: { type: object }
+
+  /v1/sessions/{id}/work-context:
+    post:
+      tags: [Sessions]
+      operationId: updateWorkspaceWorkContext
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:event:append
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [OPEN, BLOCKED, COMPLETED, ABANDONED]
+                outcome:
+                  type: [string, "null"]
+                  minLength: 1
+                  maxLength: 12000
+                followUps:
+                  type: array
+                  maxItems: 50
+                  items: { type: string, minLength: 1, maxLength: 2000 }
+                touchedResources:
+                  type: array
+                  maxItems: 100
+                  items: { type: string, minLength: 1, maxLength: 1000 }
+      responses:
+        "200":
+          description: Updated durable WorkContext lifecycle state.
+          content:
+            application/json:
+              schema: { type: object }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/sessions/{id}/claims:
+    post:
+      tags: [Sessions]
+      operationId: claimAgentSessionWork
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:claim
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [workKey]
+              properties:
+                workKey:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                  description: Exact work key or terminal /** recursive scope.
+                leaseSeconds:
+                  { type: integer, minimum: 15, maximum: 900, default: 120 }
+      responses:
+        "201": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/sessions/{id}/claims/heartbeat:
+    post:
+      tags: [Sessions]
+      operationId: heartbeatAgentSessionClaim
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:claim
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [workKey, fencingToken]
+              properties:
+                workKey: { type: string, minLength: 1, maxLength: 200 }
+                fencingToken: { type: integer, minimum: 1 }
+                leaseSeconds:
+                  { type: integer, minimum: 15, maximum: 900, default: 120 }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/sessions/{id}/claims/release:
+    post:
+      tags: [Sessions]
+      operationId: releaseAgentSessionClaim
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:claim
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [workKey, fencingToken]
+              properties:
+                workKey: { type: string, minLength: 1, maxLength: 200 }
+                fencingToken: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: >-
+            The claim is RELEASED at an advanced fencing token, its lease is
+            expired, and the scope is free to reacquire.
+          content:
+            application/json:
+              schema: { type: object }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/sessions/{id}/claims/handoff:
+    post:
+      tags: [Sessions]
+      operationId: handoffAgentSessionClaim
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:handoff
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [workKey, toUserId, fencingToken]
+              properties:
+                workKey: { type: string, minLength: 1, maxLength: 200 }
+                toUserId: { type: string, format: uuid }
+                toPrincipalId:
+                  type: string
+                  format: uuid
+                  description: >-
+                    Optional exact target principal. When omitted, the target
+                    participant's HUMAN principal owns the transferred claim.
+                fencingToken: { type: integer, minimum: 1 }
+                leaseSeconds:
+                  { type: integer, minimum: 15, maximum: 900, default: 120 }
+                summary: { type: string, minLength: 1, maxLength: 4096 }
+                completed:
+                  type: array
+                  maxItems: 50
+                  items: { type: string, minLength: 1, maxLength: 2000 }
+                remaining:
+                  type: array
+                  maxItems: 50
+                  items: { type: string, minLength: 1, maxLength: 2000 }
+                blockers:
+                  type: array
+                  maxItems: 50
+                  items: { type: string, minLength: 1, maxLength: 2000 }
+                changedResourceRefs:
+                  type: array
+                  maxItems: 100
+                  items: { type: string, minLength: 1, maxLength: 1000 }
+                evidenceRefs:
+                  type: array
+                  maxItems: 100
+                  items: { type: string, minLength: 1, maxLength: 1000 }
+                questions:
+                  type: array
+                  maxItems: 50
+                  items: { type: string, minLength: 1, maxLength: 2000 }
+                note:
+                  type: string
+                  maxLength: 2048
+                  description: Legacy compatibility note; prefer structured handoff fields.
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413":
+          description: Handoff note exceeds the bounded payload size.
+        "422":
+          description: Handoff target is not authorized for the full session vault.
+
+  /v1/sessions/{id}/events:
+    post:
+      tags: [Sessions]
+      operationId: appendAgentSessionEvent
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:event:append
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [eventType]
+              properties:
+                eventType:
+                  type: string
+                  enum:
+                    [
+                      FINDING,
+                      BLOCKER,
+                      QUESTION,
+                      ARTIFACT,
+                      DECISION_CANDIDATE,
+                      NOTE,
+                    ]
+                claimId:
+                  type: string
+                  format: uuid
+                  description: >-
+                    Optional claim that owns this coordination write. When set,
+                    fencingToken is required and must match the current
+                    principal-owned live claim.
+                fencingToken:
+                  type: integer
+                  minimum: 1
+                  description: Required together with claimId.
+                payload:
+                  type: object
+                  additionalProperties: true
+                  description: Bounded to 16 KiB after JSON serialization.
+      responses:
+        "201": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413":
+          description: Event payload is invalid or exceeds 16 KiB.
+
+  /v1/sessions/{id}/agent-processes:
+    post:
+      tags: [Sessions, Authentication]
+      operationId: issueAgentProcessCredential
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:manage-agents
+      x-akp-idempotency-exempt: true
+      x-akp-secret-response: true
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+      description: >
+        HUMAN-participant operation that creates a session- and vault-bound
+        AGENT_PROCESS child of the authenticated human principal. A participant
+        cannot issue a child under another user or parent principal. The raw
+        bearer token is returned exactly once; only its SHA-256 hash is
+        persisted, so this operation is deliberately not replayed through the
+        idempotency journal and is not exposed as an MCP tool.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                label: { type: string, minLength: 1, maxLength: 200 }
+                durationMinutes:
+                  { type: number, minimum: 5, maximum: 720, default: 60 }
+                allowedActions:
+                  type: array
+                  minItems: 1
+                  uniqueItems: true
+                  items:
+                    type: string
+                    enum:
+                      - workspace:read
+                      - workspace:claim
+                      - workspace:handoff
+                      - workspace:event:append
+                      - knowledge:read
+                      - knowledge:propose
+      responses:
+        "201":
+          description: Newly issued principal metadata plus one-time raw bearer token.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [principal, token, authenticationKind]
+                properties:
+                  principal: { type: object, additionalProperties: true }
+                  token: { type: string, minLength: 32 }
+                  authenticationKind: { type: string, const: PRINCIPAL_TOKEN }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/agent-processes/{id}/revoke:
+    post:
+      tags: [Sessions, Authentication]
+      operationId: revokeAgentProcessCredential
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:manage-agents
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      description: >
+        Revoke an AGENT_PROCESS principal owned by the current human principal.
+        Existing process credentials stop authenticating after revocation.
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /v1/context-packs/{id}:
     get:
@@ -478,17 +1432,20 @@ paths:
       tags: [Projects]
       operationId: scanProject
       x-akp-permission: knowledge:propose
+      parameters:
+        - { $ref: "#/components/parameters/IdempotencyKey" }
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [slug, rootPath]
+              required: [slug, rootPath, spaceId, vaultId]
               properties:
                 slug: { type: string, minLength: 1 }
                 rootPath: { type: string, minLength: 1 }
                 spaceId: { type: string, format: uuid }
+                vaultId: { type: string, format: uuid }
                 commit: { type: string, pattern: "^[a-fA-F0-9]{40}$" }
                 changedSince: { type: string, minLength: 1 }
       responses:
@@ -903,24 +1860,228 @@ paths:
       tags: [Governance]
       operationId: dryRunKnowledgeSchema
       x-akp-permission: admin
+      x-akp-requires-unrestricted-space: true
+      x-akp-requires-vault-scope: true
+      description: >
+        Validates either the legacy schema candidate or a complete
+        KnowledgeProfileV1 against the exact authorized vault corpus.
+        Full-profile dry-runs persist an immutable profile revision and
+        corpus-pinned validation evidence without activating it.
+      parameters:
+        - { $ref: "#/components/parameters/IdempotencyKey" }
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [candidateVersion]
+              additionalProperties: false
+              required: [spaceId, vaultId]
+              anyOf:
+                - required: [candidateVersion]
+                - required: [profile]
               properties:
                 spaceId: { type: string, format: uuid }
+                vaultId: { type: string, format: uuid }
                 candidateVersion: { type: string, minLength: 1 }
                 requiredFrontmatterFields:
                   { type: array, items: { type: string } }
                 allowedTypes: { type: array, items: { type: string } }
+                profile: { $ref: "./knowledge-profile.schema.json" }
+                supersedesRevisionId: { type: string, format: uuid }
       responses:
-        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "200":
+          description: Corpus-pinned compatibility report; full-profile mode also returns the durable profile revision.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  [
+                    id,
+                    createdAt,
+                    candidateHash,
+                    corpusFingerprintBefore,
+                    corpusFingerprintAfter,
+                    compatibilityStatus,
+                    compatibilityClass,
+                    affectedDocumentCount,
+                    corpusRevision,
+                    corpusUnchanged,
+                  ]
+                properties:
+                  id: { type: string, format: uuid }
+                  createdAt: { type: string, format: date-time }
+                  profileRevisionId: { type: string, format: uuid }
+                  profileRevisionStatus:
+                    type: string
+                    enum:
+                      [
+                        DRAFT,
+                        VALIDATED,
+                        REVIEW_REQUIRED,
+                        ACTIVE,
+                        SUPERSEDED,
+                        RETIRED,
+                      ]
+                  candidateHash: { type: string, pattern: "^[a-f0-9]{64}$" }
+                  corpusFingerprintBefore:
+                    { type: string, pattern: "^[a-f0-9]{64}$" }
+                  corpusFingerprintAfter:
+                    { type: string, pattern: "^[a-f0-9]{64}$" }
+                  compatibilityStatus:
+                    type: string
+                    enum: [COMPATIBLE, MIGRATION_REQUIRED]
+                  compatibilityClass:
+                    type: string
+                    enum:
+                      [
+                        NON_BREAKING,
+                        REINDEX_REQUIRED,
+                        RECOMPILE_REQUIRED,
+                        MIGRATION_REQUIRED,
+                        UNSAFE,
+                      ]
+                  affectedDocumentCount: { type: integer, minimum: 0 }
+                  corpusRevision: { type: string, minLength: 1 }
+                  corpusUnchanged: { type: boolean }
+                additionalProperties: true
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/schema/adopt:
+    post:
+      tags: [Governance]
+      operationId: adoptKnowledgeProfile
+      x-akp-permission: admin
+      x-akp-requires-unrestricted-space: true
+      x-akp-requires-vault-scope: true
+      description: >
+        Binds a vault to a differently-identified KnowledgeProfile. Activation
+        governs successive revisions of one profile and treats a changed
+        profile id as UNSAFE, so moving between profiles is this separate,
+        separately-authorized act. It is permitted only when no compiled
+        knowledge would be reinterpreted: every incompatibility the classifier
+        found must apply to zero existing documents. Otherwise it refuses with
+        the blocking kinds and their usage counts.
+      parameters:
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                [
+                  spaceId,
+                  vaultId,
+                  profileRevisionId,
+                  dryRunId,
+                  expectedProfileHash,
+                  expectedCorpusRevision,
+                ]
+              properties:
+                spaceId: { type: string, format: uuid }
+                vaultId: { type: string, format: uuid }
+                profileRevisionId: { type: string, format: uuid }
+                dryRunId: { type: string, format: uuid }
+                expectedProfileHash: { type: string, pattern: "^[a-f0-9]{64}$" }
+                expectedCorpusRevision: { type: string, minLength: 1 }
+      responses:
+        "200":
+          description: The vault now runs the adopted profile.
+          content:
+            application/json:
+              schema: { type: object }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: >-
+            The adoption was refused. KNOWLEDGE_PROFILE_ADOPTION_WOULD_REINTERPRET
+            carries the blocking kinds and how many documents use each.
+          content:
+            application/json:
+              schema: { type: object }
+
+  /v1/schema/activate:
+    post:
+      tags: [Governance]
+      operationId: activateKnowledgeProfile
+      x-akp-permission: admin
+      x-akp-requires-unrestricted-space: true
+      x-akp-requires-vault-scope: true
+      description: >
+        Atomically activates a VALIDATED, NON_BREAKING profile only
+        when the exact dry-run, profile hash, corpus revision and
+        corpus fingerprint still match. REVIEW_REQUIRED and breaking
+        profiles remain blocked until governed profile review and
+        migration approval are complete.
+      parameters:
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                [
+                  spaceId,
+                  vaultId,
+                  profileRevisionId,
+                  dryRunId,
+                  expectedProfileHash,
+                  expectedCorpusRevision,
+                ]
+              properties:
+                spaceId: { type: string, format: uuid }
+                vaultId: { type: string, format: uuid }
+                profileRevisionId: { type: string, format: uuid }
+                dryRunId: { type: string, format: uuid }
+                expectedProfileHash: { type: string, pattern: "^[a-f0-9]{64}$" }
+                expectedCorpusRevision: { type: string, minLength: 1 }
+      responses:
+        "200":
+          description: Active profile binding, including idempotent replay state.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  [
+                    profileRevisionId,
+                    profileId,
+                    version,
+                    profileHash,
+                    status,
+                    corpusRevision,
+                    dryRunId,
+                    alreadyActive,
+                  ]
+                properties:
+                  profileRevisionId: { type: string, format: uuid }
+                  profileId: { type: string }
+                  version: { type: string }
+                  profileHash: { type: string, pattern: "^[a-f0-9]{64}$" }
+                  status: { type: string, const: ACTIVE }
+                  previousRevisionId:
+                    type: [string, "null"]
+                    format: uuid
+                  corpusRevision: { type: string, minLength: 1 }
+                  dryRunId: { type: string, format: uuid }
+                  alreadyActive: { type: boolean }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
   /v1/indexes:
     get:
       tags: [Governance]
@@ -1201,6 +2362,1089 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  /v1/context-fabric/capabilities:
+    get:
+      tags: [Governance]
+      operationId: getContextFabricCapabilities
+      x-akp-permission: knowledge:read
+      responses:
+        "200":
+          description: Claimed context-fabric node identity, deployment mode and supported boundaries.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/context-fabric/peers:
+    get:
+      tags: [Governance]
+      operationId: listContextFabricPeers
+      x-akp-permission: knowledge:read
+      parameters:
+        - name: spaceId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: vaultId
+          in: query
+          required: false
+          description: Optional vault whose active KnowledgeProfile connector policy should be evaluated.
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Authorized federation discovery metadata. No remote query is performed.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [Governance]
+      operationId: upsertContextFabricPeer
+      x-akp-permission: admin
+      parameters:
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [spaceId, peerKey, displayName, capabilities]
+              properties:
+                spaceId: { type: string, format: uuid }
+                peerKey: { type: string, minLength: 1, maxLength: 128 }
+                displayName: { type: string, minLength: 1, maxLength: 200 }
+                endpoint: { type: string }
+                discoveryMode:
+                  type: string
+                  enum: [CATALOG_ONLY, REMOTE_QUERY, MIRROR_BUNDLE]
+                  default: CATALOG_ONLY
+                trustState:
+                  type: string
+                  enum: [DISCOVERED, APPROVED, DISABLED]
+                  default: DISCOVERED
+                capabilities:
+                  { $ref: "#/components/schemas/ConnectorCapabilities" }
+                revision: { type: string }
+      responses:
+        "201":
+          description: Peer discovery metadata recorded without network contact.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/sessions/{id}/external-refs:
+    get:
+      tags: [Sessions]
+      operationId: listSessionExternalObjectRefs
+      x-akp-permission: knowledge:read
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+      responses:
+        "200":
+          description: External system-of-record references visible to the authorized session.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [Sessions]
+      operationId: upsertSessionExternalObjectRef
+      x-akp-permission: knowledge:read
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [provider, objectType, externalId]
+              properties:
+                provider: { type: string, minLength: 1, maxLength: 80 }
+                objectType: { type: string, minLength: 1, maxLength: 80 }
+                externalId: { type: string, minLength: 1, maxLength: 512 }
+                canonicalUrl: { type: string }
+                sourceRevision: { type: string }
+                title: { type: string }
+                authority:
+                  type: string
+                  enum: [SYSTEM_OF_RECORD, REFERENCE, MIRRORED_PROJECTION]
+                workObjectClass:
+                  type: string
+                  enum:
+                    [
+                      GOAL,
+                      PROJECT,
+                      WORK_ITEM,
+                      PULL_REQUEST,
+                      CODE_REVIEW,
+                      INCIDENT,
+                      CHANGE,
+                      BUILD,
+                      DEPLOYMENT,
+                      ENVIRONMENT,
+                      TEST_RUN,
+                      MEETING,
+                      MESSAGE,
+                      DOCUMENT,
+                      REPOSITORY,
+                      SERVICE,
+                    ]
+                metadata: { type: object, additionalProperties: true }
+      responses:
+        "201":
+          description: External reference recorded in the authorized vault projection.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/sessions/{id}/offline-drafts:
+    get:
+      tags: [Sessions]
+      operationId: listSessionOfflineDrafts
+      x-akp-permission: knowledge:read
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+      responses:
+        "200":
+          description: Offline drafts visible to the authorized session participant.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [Sessions]
+      operationId: queueSessionOfflineDraft
+      x-akp-permission: knowledge:read
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [clientDraftId, baseRevisionSetHash, eventType]
+              properties:
+                clientDraftId: { type: string, minLength: 1, maxLength: 200 }
+                baseRevisionSetHash:
+                  type: string
+                  pattern: "^[a-f0-9]{64}$"
+                eventType:
+                  type: string
+                  enum: [FINDING, ARTIFACT, DECISION_CANDIDATE, NOTE]
+                payload: { type: object, additionalProperties: true }
+      responses:
+        "201":
+          description: Draft queued against the pinned revision.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/sessions/{id}/offline-drafts/{draftId}/apply:
+    post:
+      tags: [Sessions]
+      operationId: applySessionOfflineDraft
+      x-akp-permission: knowledge:read
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - name: draftId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      responses:
+        "200":
+          description: Queued draft applied to the live workspace journal.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/sessions/{id}/offline-snapshot:
+    post:
+      tags: [Sessions]
+      operationId: captureSessionOfflineSnapshot
+      x-akp-permission: knowledge:read
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                query: { type: string, maxLength: 4096 }
+                intent: { type: string }
+      responses:
+        "200":
+          description: Approved, revision-pinned bootstrap snapshot for offline use.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+
+  /v1/sessions/{id}/presence:
+    get:
+      tags: [Sessions]
+      operationId: listSessionPresence
+      x-akp-permission: knowledge:read
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+      responses:
+        "200":
+          description: Current presence projection for authorized session participants.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/sessions/{id}/presence/heartbeat:
+    post:
+      tags: [Sessions]
+      operationId: heartbeatSessionPresence
+      x-akp-permission: knowledge:read
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                ttlSeconds: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: Presence heartbeat recorded for the authorized participant.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/generated-context-packets/{id}:
+    get:
+      tags: [Retrieval]
+      operationId: getGeneratedContextPacket
+      x-akp-permission: knowledge:read
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+      responses:
+        "200":
+          description: Stored ContextPacket after current authorization and scope revalidation.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/generated-context-packets/{id}/continuations/{handle}:
+    get:
+      tags: [Retrieval]
+      operationId: getGeneratedContextContinuation
+      x-akp-permission: knowledge:read
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - name: handle
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[a-f0-9]{64}$"
+      responses:
+        "200":
+          description: Authorized continuation sections for a stored ContextPacket.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/operator/publications/reconcile:
+    post:
+      tags: [Reviews]
+      operationId: reconcilePublication
+      x-akp-permission: admin
+      parameters:
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reviewId]
+              properties:
+                reviewId: { type: string, minLength: 1 }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /internal/provider-tasks:
+    post:
+      tags: [Ingestion]
+      operationId: journalProviderTask
+      security:
+        - providerTaskCallbackAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [provider, taskId, status]
+              properties:
+                jobId: { type: string, format: uuid }
+                sourceId: { type: string, format: uuid }
+                provider:
+                  type: string
+                  minLength: 1
+                  maxLength: 64
+                  pattern: "^[a-zA-Z0-9][a-zA-Z0-9._-]*$"
+                taskId: { type: string, minLength: 1, maxLength: 256 }
+                status:
+                  type: string
+                  minLength: 1
+                  maxLength: 80
+                  pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                taskType: { type: string, minLength: 1, maxLength: 80 }
+                mode: { type: string, minLength: 1, maxLength: 40 }
+                eventTime: { type: string, format: date-time }
+                metadata: { type: object, additionalProperties: true }
+      responses:
+        "202":
+          description: Provider task lifecycle update durably journaled or deduplicated.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /v1/operator/me:
+    get:
+      tags: [Governance]
+      operationId: getOperatorIdentity
+      x-akp-permission: knowledge:read
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/operator/graph:
+    get:
+      tags: [Knowledge]
+      operationId: getOperatorGraph
+      x-akp-permission: knowledge:read
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 250 }
+        - name: vaultId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/operator/sources/{id}:
+    get:
+      tags: [Sources]
+      operationId: getOperatorSource
+      x-akp-permission: source:read
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/operator/jobs/{id}:
+    get:
+      tags: [Ingestion]
+      operationId: getOperatorJob
+      x-akp-permission: source:read
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/operator/health:
+    get:
+      tags: [Governance]
+      operationId: getOperatorHealth
+      x-akp-permission: admin
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/schema/rollback:
+    post:
+      tags: [Governance]
+      operationId: rollbackKnowledgeProfile
+      x-akp-permission: admin
+      x-akp-requires-unrestricted-space: true
+      x-akp-requires-vault-scope: true
+      parameters:
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                [
+                  spaceId,
+                  vaultId,
+                  targetRevisionId,
+                  dryRunId,
+                  expectedProfileHash,
+                  expectedCorpusRevision,
+                  expectedActiveRevisionId,
+                ]
+              properties:
+                spaceId: { type: string, format: uuid }
+                vaultId: { type: string, format: uuid }
+                targetRevisionId: { type: string, format: uuid }
+                dryRunId: { type: string, format: uuid }
+                expectedProfileHash:
+                  type: string
+                  pattern: "^[a-f0-9]{64}$"
+                expectedCorpusRevision: { type: string, minLength: 1 }
+                expectedActiveRevisionId: { type: string, format: uuid }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/schema/profiles:
+    get:
+      tags: [Governance]
+      operationId: listKnowledgeProfiles
+      x-akp-permission: admin
+      parameters:
+        - name: spaceId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+        - name: vaultId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/schema/profiles/{revisionId}:
+    get:
+      tags: [Governance]
+      operationId: getKnowledgeProfileRevision
+      x-akp-permission: admin
+      parameters:
+        - name: revisionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: spaceId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+        - name: vaultId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/schema/profiles/validate:
+    post:
+      tags: [Governance]
+      operationId: validateKnowledgeProfile
+      x-akp-permission: admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [spaceId, vaultId, profile]
+              properties:
+                spaceId: { type: string, format: uuid }
+                vaultId: { type: string, format: uuid }
+                profile: { $ref: "./knowledge-profile.schema.json" }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/schema/profiles/diff:
+    post:
+      tags: [Governance]
+      operationId: diffKnowledgeProfiles
+      x-akp-permission: admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [spaceId, vaultId]
+              properties:
+                spaceId: { type: string, format: uuid }
+                vaultId: { type: string, format: uuid }
+                candidateProfile: { $ref: "./knowledge-profile.schema.json" }
+                candidateRevisionId: { type: string, format: uuid }
+                baseRevisionId: { type: string, format: uuid }
+              oneOf:
+                - required: [candidateProfile]
+                - required: [candidateRevisionId]
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/interoperability/export:
+    post:
+      tags: [Knowledge]
+      operationId: exportInteroperabilityBundle
+      x-akp-permission: knowledge:read
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [spaceId, vaultId]
+              properties:
+                spaceId: { type: string, format: uuid }
+                vaultId: { type: string, format: uuid }
+                format:
+                  type: string
+                  enum: [OKF_0_2, JSON_LD, GRAPHML]
+                  default: OKF_0_2
+                documentIds:
+                  type: array
+                  items: { type: string, minLength: 1 }
+      responses:
+        "200":
+          description: Authorized OKF v0.2, JSON-LD or GraphML export.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+            application/graphml+xml:
+              schema: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/interoperability/import/okf:
+    post:
+      tags: [Knowledge]
+      operationId: importOkfReviewCandidate
+      x-akp-permission: knowledge:propose
+      parameters:
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [spaceId, vaultId, bundle]
+              properties:
+                spaceId: { type: string, format: uuid }
+                vaultId: { type: string, format: uuid }
+                bundle: { type: object, additionalProperties: true }
+                mapping: { type: object, additionalProperties: true }
+                summary: { type: string }
+      responses:
+        "201": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422":
+          description: Imported bundle maps to no valid reviewable changes.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/sessions/{id}/decisions:
+    get:
+      tags: [Sessions]
+      operationId: listWorkspaceDecisions
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:read
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [Sessions]
+      operationId: createWorkspaceDecision
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:event:append
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                [
+                  decisionAuthorityPrincipalId,
+                  title,
+                  problem,
+                  context,
+                  drivers,
+                  qualityAttributes,
+                  evidenceRefs,
+                  verificationPlan,
+                ]
+              properties:
+                decisionAuthorityPrincipalId: { type: string, format: uuid }
+                title: { type: string, minLength: 1, maxLength: 200 }
+                problem: { type: string, minLength: 1, maxLength: 12000 }
+                context: { type: string, minLength: 1, maxLength: 12000 }
+                drivers:
+                  type: array
+                  minItems: 1
+                  maxItems: 50
+                  items: { type: string, minLength: 1, maxLength: 2000 }
+                qualityAttributes:
+                  type: array
+                  minItems: 1
+                  maxItems: 50
+                  items: { type: string, minLength: 1, maxLength: 500 }
+                affectedRefs:
+                  type: array
+                  maxItems: 100
+                  items: { type: string, minLength: 1, maxLength: 1000 }
+                evidenceRefs:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items: { type: string, minLength: 1, maxLength: 1000 }
+                verificationPlan:
+                  type: string
+                  minLength: 1
+                  maxLength: 12000
+                verificationDueAt:
+                  type: [string, "null"]
+                  format: date-time
+                decisionDeadline:
+                  type: [string, "null"]
+                  format: date-time
+                supersedesCandidateId:
+                  type: [string, "null"]
+                  format: uuid
+      responses:
+        "201": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /v1/sessions/{id}/decisions/{decisionId}:
+    get:
+      tags: [Sessions]
+      operationId: getWorkspaceDecision
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:read
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - name: decisionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/sessions/{id}/decisions/{decisionId}/alternatives:
+    post:
+      tags: [Sessions]
+      operationId: addWorkspaceDecisionAlternative
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:event:append
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - name: decisionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [title, description, tradeoffs]
+              properties:
+                title: { type: string, minLength: 1, maxLength: 240 }
+                description: { type: string, minLength: 1, maxLength: 12000 }
+                tradeoffs: { type: string, minLength: 1, maxLength: 12000 }
+                evidenceRefs:
+                  type: array
+                  maxItems: 100
+                  items: { type: string, minLength: 1, maxLength: 1000 }
+      responses:
+        "201": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/sessions/{id}/decisions/{decisionId}/alternatives/{alternativeId}/decision:
+    post:
+      tags: [Sessions]
+      operationId: decideWorkspaceDecisionAlternative
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:event:append
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - name: decisionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: alternativeId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [decision]
+              properties:
+                decision:
+                  type: string
+                  enum: [CONSIDER, REJECT]
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/sessions/{id}/decisions/{decisionId}/objections:
+    post:
+      tags: [Sessions]
+      operationId: addWorkspaceDecisionObjection
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:event:append
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - name: decisionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [statement]
+              properties:
+                alternativeId:
+                  type: [string, "null"]
+                  format: uuid
+                statement: { type: string, minLength: 1, maxLength: 12000 }
+                evidenceRefs:
+                  type: array
+                  maxItems: 100
+                  items: { type: string, minLength: 1, maxLength: 1000 }
+      responses:
+        "201": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/sessions/{id}/decisions/{decisionId}/objections/{objectionId}/resolve:
+    post:
+      tags: [Sessions]
+      operationId: resolveWorkspaceDecisionObjection
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:event:append
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - name: decisionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: objectionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [resolution]
+              properties:
+                resolution:
+                  type: string
+                  minLength: 1
+                  maxLength: 12000
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/sessions/{id}/decisions/{decisionId}/consultations:
+    post:
+      tags: [Sessions]
+      operationId: requestWorkspaceDecisionConsultation
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:event:append
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - name: decisionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reviewerPrincipalId, question]
+              properties:
+                reviewerPrincipalId: { type: string, format: uuid }
+                question: { type: string, minLength: 1, maxLength: 8000 }
+      responses:
+        "201": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /v1/sessions/{id}/decisions/{decisionId}/consultations/{consultationId}/respond:
+    post:
+      tags: [Sessions]
+      operationId: respondWorkspaceDecisionConsultation
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:event:append
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - name: decisionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: consultationId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [position, response]
+              properties:
+                position:
+                  type: string
+                  enum: [SUPPORT, OPPOSE, NEUTRAL]
+                response:
+                  type: string
+                  minLength: 1
+                  maxLength: 12000
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/sessions/{id}/decisions/{decisionId}/selection:
+    post:
+      tags: [Sessions]
+      operationId: selectWorkspaceDecisionAlternative
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:event:append
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - name: decisionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [alternativeId, consequences]
+              properties:
+                alternativeId: { type: string, format: uuid }
+                consequences:
+                  type: string
+                  minLength: 1
+                  maxLength: 12000
+                followUpActions:
+                  type: array
+                  maxItems: 100
+                  items: { type: string, minLength: 1, maxLength: 2000 }
+                effectiveFrom:
+                  type: [string, "null"]
+                  format: date-time
+                effectiveUntil:
+                  type: [string, "null"]
+                  format: date-time
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/sessions/{id}/decisions/{decisionId}/capture:
+    post:
+      tags: [Sessions]
+      operationId: captureWorkspaceDecisionCandidate
+      x-akp-permission: knowledge:propose
+      x-akp-principal-action: knowledge:propose
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - name: decisionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      responses:
+        "201": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1215,6 +3459,11 @@ components:
       in: cookie
       name: akp_session
       description: HttpOnly session carrying the effective TokenScopeSet snapshot.
+    providerTaskCallbackAuth:
+      type: apiKey
+      in: header
+      name: x-akp-provider-task-token
+      description: Internal extractor/provider callback journal token.
   parameters:
     IdempotencyKey:
       in: header
@@ -1328,6 +3577,213 @@ components:
                 type: string
                 enum: [REBUILD_DERIVED_PROJECTIONS, REIMPORT_AND_REBUILD]
   schemas:
+    ConnectorCapabilities:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          schemaVersion,
+          accessMode,
+          permissionFidelity,
+          syncFidelity,
+          incrementalSync,
+          deletionPropagation,
+          cursorOrWebhook,
+          sourceAuthority,
+          writeBack,
+          identityMapping,
+          dataResidency,
+          replayable,
+          auditTrail,
+          rateLimit,
+          degradation,
+          health,
+        ]
+      properties:
+        schemaVersion: { type: integer, enum: [1] }
+        accessMode:
+          type: string
+          enum: [MIRROR_INDEXED, REMOTE_FEDERATED, REFERENCE_LIVE, HYBRID_CACHE]
+        permissionFidelity:
+          type: string
+          enum: [SOURCE_ACL_EXACT, SOURCE_ACL_MAPPED, WORKSPACE_WIDE, NONE]
+        syncFidelity:
+          type: string
+          enum: [APPEND, UPSERT, MIRROR]
+        incrementalSync: { type: boolean }
+        deletionPropagation:
+          type: string
+          enum: [IMMEDIATE, EVENTUAL, NONE]
+        freshnessSlaSeconds: { type: integer, minimum: 1 }
+        cursorOrWebhook: { type: boolean }
+        sourceAuthority:
+          type: string
+          enum: [SYSTEM_OF_RECORD, REFERENCE, DERIVED]
+        writeBack:
+          type: string
+          enum: [NONE, BOUNDED_ACTIONS, FULL]
+        identityMapping:
+          type: string
+          enum: [EXACT, MAPPED, NONE]
+        dataResidency:
+          type: string
+          enum: [LOCAL, ORG, EXTERNAL]
+        replayable: { type: boolean }
+        auditTrail:
+          type: string
+          enum: [FULL, METADATA_ONLY, NONE]
+        rateLimit:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [kind]
+              properties:
+                kind: { type: string, enum: [NONE] }
+            - type: object
+              additionalProperties: false
+              required: [kind, requestsPerMinute, onExceeded]
+              properties:
+                kind: { type: string, enum: [DECLARED] }
+                requestsPerMinute: { type: integer, minimum: 1 }
+                burst: { type: integer, minimum: 1 }
+                onExceeded:
+                  type: string
+                  enum: [BACKOFF, QUEUE, FAIL_CLOSED]
+        degradation:
+          type: object
+          additionalProperties: false
+          required: [onUnavailable]
+          properties:
+            onUnavailable:
+              type: string
+              enum: [FAIL_CLOSED, STALE_READ]
+            maxStaleSeconds: { type: integer, minimum: 0 }
+        health:
+          type: string
+          enum: [HEALTHY, DEGRADED, STALE, UNAVAILABLE]
+    CodeSymbolSelector:
+      type: object
+      additionalProperties: false
+      required: [repository]
+      properties:
+        repository: { type: string, minLength: 1, maxLength: 2048 }
+        commitSha:
+          type: string
+          pattern: "^[a-fA-F0-9]{40}$"
+        path: { type: string, minLength: 1, maxLength: 4096 }
+        qualifiedName: { type: string, minLength: 1, maxLength: 2048 }
+        name: { type: string, minLength: 1, maxLength: 1024 }
+        kind: { type: string, minLength: 1, maxLength: 120 }
+        signature: { type: string, minLength: 1, maxLength: 4096 }
+      anyOf:
+        - required: [path]
+        - required: [qualifiedName]
+        - required: [name]
+        - required: [signature]
+    CodePathOptions:
+      type: object
+      additionalProperties: false
+      properties:
+        relationTypes:
+          type: array
+          maxItems: 100
+          items: { type: string, minLength: 1, maxLength: 160 }
+        maxHops: { type: integer, minimum: 1, maximum: 16 }
+        maxFanout: { type: integer, minimum: 1, maximum: 1000 }
+        maxCandidates: { type: integer, minimum: 1, maximum: 10000 }
+        timeBudgetMs: { type: integer, minimum: 1, maximum: 60000 }
+    CodeImpactOptions:
+      allOf:
+        - { $ref: "#/components/schemas/CodePathOptions" }
+        - type: object
+          properties:
+            direction:
+              type: string
+              enum: [outgoing, incoming, both]
+            includeTests: { type: boolean }
+            includeCatalogBridges: { type: boolean }
+            includeRulesDecisions: { type: boolean }
+            includeRuntimeObservations: { type: boolean }
+    CodeScopedSelectorRequest:
+      type: object
+      additionalProperties: false
+      required: [spaceId, selector]
+      properties:
+        spaceId: { type: string, format: uuid }
+        vaultId: { type: string, format: uuid }
+        vaultIds:
+          type: array
+          maxItems: 100
+          items: { type: string, format: uuid }
+        federated: { type: boolean, default: false }
+        freshnessPolicy:
+          type: string
+          enum: [FRESH_ONLY, ALLOW_STALE]
+          default: FRESH_ONLY
+        selector: { $ref: "#/components/schemas/CodeSymbolSelector" }
+    CodeScopedPathRequest:
+      type: object
+      additionalProperties: false
+      required: [spaceId, source, target]
+      properties:
+        spaceId: { type: string, format: uuid }
+        vaultId: { type: string, format: uuid }
+        vaultIds:
+          type: array
+          maxItems: 100
+          items: { type: string, format: uuid }
+        federated: { type: boolean, default: false }
+        freshnessPolicy:
+          type: string
+          enum: [FRESH_ONLY, ALLOW_STALE]
+          default: FRESH_ONLY
+        source: { $ref: "#/components/schemas/CodeSymbolSelector" }
+        target: { $ref: "#/components/schemas/CodeSymbolSelector" }
+        options: { $ref: "#/components/schemas/CodePathOptions" }
+    CodeScopedImpactRequest:
+      type: object
+      additionalProperties: false
+      required: [spaceId, selector]
+      properties:
+        spaceId: { type: string, format: uuid }
+        vaultId: { type: string, format: uuid }
+        vaultIds:
+          type: array
+          maxItems: 100
+          items: { type: string, format: uuid }
+        federated: { type: boolean, default: false }
+        freshnessPolicy:
+          type: string
+          enum: [FRESH_ONLY, ALLOW_STALE]
+          default: FRESH_ONLY
+        selector: { $ref: "#/components/schemas/CodeSymbolSelector" }
+        options: { $ref: "#/components/schemas/CodeImpactOptions" }
+    CodeScopedChangeImpactRequest:
+      type: object
+      additionalProperties: false
+      required: [spaceId, repository, commitSha, changedPaths]
+      properties:
+        spaceId: { type: string, format: uuid }
+        vaultId: { type: string, format: uuid }
+        vaultIds:
+          type: array
+          maxItems: 100
+          items: { type: string, format: uuid }
+        federated: { type: boolean, default: false }
+        freshnessPolicy:
+          type: string
+          enum: [FRESH_ONLY, ALLOW_STALE]
+          default: FRESH_ONLY
+        repository: { type: string, minLength: 1, maxLength: 2048 }
+        commitSha:
+          type: string
+          pattern: "^[a-fA-F0-9]{40}$"
+        changedPaths:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items: { type: string, minLength: 1, maxLength: 4096 }
+        options: { $ref: "#/components/schemas/CodeImpactOptions" }
     Error:
       type: object
       required: [code]
@@ -1448,6 +3904,10 @@ components:
           default: false
           description: Must be true when more than one vaultId is requested.
         projectId: { type: string, format: uuid }
+        truthConsistency:
+          type: string
+          enum: [STRICT, BEST_EFFORT]
+          default: STRICT
         types:
           type: array
           items: { type: string }
@@ -1522,7 +3982,17 @@ components:
               rank: { type: integer, minimum: 1 }
               channelWeight: { type: number, minimum: 0 }
               reason: { type: string }
+              rawScore:
+                type: number
+                description: Channel-native score retained for explanation; it does not enter RRF.
               candidateRevision: { type: [string, "null"] }
+        rerankTrace:
+          type: object
+          required: [reranker, preRank, postRank]
+          properties:
+            reranker: { type: string, minLength: 1 }
+            preRank: { type: integer, minimum: 1 }
+            postRank: { type: integer, minimum: 1 }
         excerpt: { type: string }
         citations:
           type: array

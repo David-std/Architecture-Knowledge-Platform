@@ -23,6 +23,7 @@ const baseHit = {
   },
   trust: "HUMAN_REVIEWED" as const,
   lifecycle: "ACTIVE" as const,
+  refreshStatus: "CURRENT",
   score: 1,
   reasons: ["gold"],
   excerpt: "CQRS",
@@ -42,6 +43,85 @@ const requestFor = (query = "cqrs") => ({
 });
 
 describe("buildContextPacket", () => {
+  it("applies L0-L3 progressive disclosure and records the actual level", () => {
+    const detailed =
+      "CQRS separates command and query responsibilities. " +
+      "This second sentence carries implementation detail that orientation can omit.";
+    const full =
+      "# CQRS\n\n" +
+      detailed +
+      "\n\nFull approved page content with constraints, evidence, and examples.";
+
+    const build = (
+      requestedContextLevel: "L0" | "L1" | "L2" | "L3",
+      fullContent?: string,
+    ) =>
+      buildContextPacket({
+        request: requestFor(),
+        intent: "CONCEPTUAL",
+        corpusRevision: "deadbeef",
+        maxTokens: 4_000,
+        requestedContextLevel,
+        candidates: [
+          {
+            hit: baseHit,
+            content: detailed,
+            ...(fullContent === undefined ? {} : { fullContent }),
+            kind: "concept",
+          },
+        ],
+      });
+
+    const l0 = build("L0");
+    expect(l0.requestedContextLevel).toBe("L0");
+    expect(l0.sections[0]).toMatchObject({
+      contextLevel: "L0",
+      documentRevision: "abc",
+    });
+    expect(l0.sections[0]?.content).toContain("id=doc:cqrs");
+    expect(l0.sections[0]?.content).toContain("type=architecture");
+    expect(l0.sections[0]?.content).not.toContain(
+      "separates command and query responsibilities",
+    );
+
+    const l1 = build("L1");
+    expect(l1.sections[0]?.contextLevel).toBe("L1");
+    expect(l1.sections[0]?.content).toContain(
+      "CQRS separates command and query responsibilities.",
+    );
+    expect(l1.sections[0]?.content.length).toBeLessThanOrEqual(320);
+
+    const l2 = build("L2");
+    expect(l2.sections[0]).toMatchObject({
+      contextLevel: "L2",
+      content: detailed,
+    });
+
+    const downgraded = build("L3");
+    expect(downgraded.requestedContextLevel).toBe("L3");
+    expect(downgraded.sections[0]).toMatchObject({
+      contextLevel: "L2",
+      content: detailed,
+    });
+
+    const l3 = build("L3", full);
+    expect(l3.sections[0]).toMatchObject({
+      contextLevel: "L3",
+      content: full,
+    });
+
+    const compact = buildContextPacketPair({
+      request: requestFor(),
+      intent: "CONCEPTUAL",
+      corpusRevision: "deadbeef",
+      maxTokens: 4_000,
+      requestedContextLevel: "L1",
+      candidates: [{ hit: baseHit, content: detailed, kind: "concept" }],
+    }).compact;
+    expect(compact.identity.requestedContextLevel).toBe("L1");
+    expect(compact.content[0]?.contextLevel).toBe("L1");
+  });
+
   it("copies graph provenance and renders compact, de-duplicated paths", () => {
     const graphProvenance: GraphPathProvenance[] = [
       {
@@ -365,6 +445,7 @@ describe("buildContextPacket", () => {
 
     expect(packet.budget.tokenizer).toMatchObject({
       id: "test-character-counter",
+      quality: "EXACT",
       source: "injected",
       approximate: false,
     });
@@ -401,6 +482,7 @@ describe("buildContextPacket", () => {
 
     expect(packet.budget.tokenizer).toMatchObject({
       id: "char/4",
+      quality: "APPROXIMATE",
       source: "fallback",
       approximate: true,
     });
@@ -745,6 +827,7 @@ describe("buildContextPacket", () => {
     expect(packet.budget.tokenizer).toEqual({
       id: "receiver-aware",
       label: "receiver-aware tokenizer",
+      quality: "EXACT",
       approximate: false,
       source: "injected",
     });
@@ -851,6 +934,124 @@ describe("buildContextPacket", () => {
     expect(
       priorityBeforeDiversity.sections.map((section) => section.content),
     ).toEqual(["rule A1", "concept A2", "source B1"]);
+  });
+
+  it("orders equal-kind context by authority, freshness, independent support, then relevance", () => {
+    const packet = buildContextPacket({
+      request: requestFor("authority freshness support"),
+      intent: "CONCEPTUAL",
+      corpusRevision: "deadbeef",
+      maxTokens: 20_000,
+      candidates: [
+        {
+          hit: {
+            ...baseHit,
+            documentId: "22222222-2222-4222-8222-222222222222",
+            trust: "MACHINE_SUPPORTED",
+            refreshStatus: "STALE_PENDING_REVIEW",
+            citations: ["source:one"],
+            score: 100,
+          },
+          content: "high relevance but weaker authority",
+          kind: "concept",
+        },
+        {
+          hit: {
+            ...baseHit,
+            documentId: "33333333-3333-4333-8333-333333333333",
+            trust: "ATTESTED",
+            refreshStatus: "CURRENT",
+            citations: ["source:one", "source:two"],
+            score: 1,
+          },
+          content: "authoritative current independently supported",
+          kind: "concept",
+        },
+      ],
+    });
+
+    expect(packet.sections.map((section) => section.content)).toEqual([
+      "authoritative current independently supported",
+      "high relevance but weaker authority",
+    ]);
+  });
+
+  it("places mandatory context and all accessible sides of a material conflict before ordinary candidates", () => {
+    const leftId = "22222222-2222-4222-8222-222222222222";
+    const rightId = "33333333-3333-4333-8333-333333333333";
+    const packet = buildContextPacket({
+      request: requestFor("material conflict"),
+      intent: "COMPARISON",
+      corpusRevision: "deadbeef",
+      maxTokens: 20_000,
+      materialConflicts: [
+        { id: "conflict:retry-policy", documentIds: [leftId, rightId] },
+      ],
+      candidates: [
+        {
+          hit: {
+            ...baseHit,
+            documentId: "44444444-4444-4444-8444-444444444444",
+            score: 1_000,
+          },
+          content: "ordinary high-score concept",
+          kind: "concept",
+        },
+        {
+          hit: { ...baseHit, documentId: leftId, score: 2 },
+          content: "conflict side A",
+          kind: "concept",
+        },
+        {
+          hit: { ...baseHit, documentId: rightId, score: 1 },
+          content: "conflict side B",
+          kind: "concept",
+        },
+        {
+          hit: {
+            ...baseHit,
+            documentId: "55555555-5555-4555-8555-555555555555",
+            score: 0.1,
+          },
+          content: "mandatory policy",
+          kind: "concept",
+          mandatory: true,
+        },
+      ],
+    });
+
+    expect(
+      packet.sections.slice(0, 3).map((section) => section.content),
+    ).toEqual(["mandatory policy", "conflict side A", "conflict side B"]);
+    expect(packet.sections[3]?.content).toBe("ordinary high-score concept");
+  });
+
+  it("makes unavailable material conflict sides explicit instead of silently claiming coverage", () => {
+    const packet = buildContextPacket({
+      request: requestFor("partial conflict"),
+      intent: "COMPARISON",
+      corpusRevision: "deadbeef",
+      maxTokens: 20_000,
+      materialConflicts: [
+        {
+          id: "conflict:partial",
+          documentIds: [
+            baseHit.documentId,
+            "22222222-2222-4222-8222-222222222222",
+          ],
+        },
+      ],
+      candidates: [
+        { hit: baseHit, content: "only accessible side", kind: "rule" },
+      ],
+    });
+
+    expect(packet.gaps).toContain(
+      "Material conflict conflict:partial has 1 unavailable side(s); complete conflict coverage was not possible.",
+    );
+    expect(packet.recommendedActions).toContain(
+      "Review the retrieval gaps before making a definitive claim.",
+    );
   });
 
   it("projects a compact packet with a hard budget and preserves kind, revisions and continuation identity", () => {

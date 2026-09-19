@@ -106,7 +106,7 @@ export class DeterministicProjectAdapter implements ProjectAdapter {
           "**/build.gradle",
           "**/build.gradle.kts",
           "**/*.csproj",
-          "**/*.{java,cs,ts,tsx,vue}",
+          "**/*.{java,cs,ts,tsx,js,jsx,mjs,cjs,vue}",
         ],
         {
           cwd: root,
@@ -135,7 +135,7 @@ export class DeterministicProjectAdapter implements ProjectAdapter {
       return listed.stdout
         .split(/\r?\n/)
         .filter((file) =>
-          /(^|\/)(package\.json|pom\.xml|build\.gradle(?:\.kts)?|[^/]+\.csproj)$|\.(java|cs|ts|tsx|vue)$/i.test(
+          /(^|\/)(package\.json|pom\.xml|build\.gradle(?:\.kts)?|[^/]+\.csproj)$|\.(java|cs|ts|tsx|js|jsx|mjs|cjs|vue)$/i.test(
             file,
           ),
         );
@@ -252,4 +252,11 @@ export class DeterministicProjectAdapter implements ProjectAdapter {
   }
 }
 
+export * from "./code-reconciliation.js";
+export * from "./code-graph-projection.js";
+export * from "./code-graph-lifecycle.js";
+export * from "./code-query.js";
+export * from "./graphify.js";
+export * from "./project-code-graph.js";
+export * from "./runtime-coverage.js";
 export * from "./snapshot.js";

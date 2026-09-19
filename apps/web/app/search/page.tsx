@@ -97,7 +97,11 @@ interface ContextPacket {
     contentTokens?: number;
     metadataTokens?: number;
     serializedTokens?: number;
-    tokenizer?: { label?: string; approximate?: boolean };
+    tokenizer?: {
+      label?: string;
+      quality?: "EXACT" | "APPROXIMATE";
+      approximate?: boolean;
+    };
   };
   sections?: ContextSection[];
   gaps?: string[];
@@ -399,7 +403,11 @@ export default async function SearchPage({
               <p>{tokenSummary(packet)} tokens</p>
               <small>
                 {packet.budget?.tokenizer?.label ?? "tokenizer desconocido"}
-                {packet.budget?.tokenizer?.approximate ? " · aproximado" : ""}
+                {packet.budget?.tokenizer?.quality
+                  ? ` · ${packet.budget.tokenizer.quality}`
+                  : packet.budget?.tokenizer?.approximate
+                    ? " · APPROXIMATE"
+                    : ""}
               </small>
             </div>
             <div className="card">

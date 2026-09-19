@@ -13,12 +13,39 @@ export interface BenchmarkConfiguration {
   channels: readonly BenchmarkChannel[];
   allowVectorForBenchmark?: boolean;
   deterministicRerank?: boolean;
+  /** Execute the authorized ASSOCIATIVE graph strategy with GRAPH_PPR. */
+  associativePpr?: boolean;
+  /** Execute GLOBAL routing over the versioned Leiden community index. */
+  communityGlobal?: boolean;
+  /** Optional P6.7 deterministic query-decomposition experiment. */
+  queryDecomposition?: boolean;
 }
 
 /**
- * The ten configurations required by the retrieval specification.  Keep this
- * list as data so API, CLI and offline evaluators cannot silently drift apart.
+ * Canonical retrieval configurations. Keep this list as data so API, CLI and
+ * offline evaluators cannot silently drift apart. Runtime-capability variants
+ * such as PPR must be explicitly flagged rather than inferred from their name.
  */
+export const V03_RETRIEVAL_BASELINE = Object.freeze({
+  tag: "v0.3.0",
+  commitSha: "a6bdcc38fdf026d6c353db096799366865011022",
+  benchmarkMatrixBlobSha: "dca597bc97f4d3646e8d84960755ef76b5f50650",
+  configurationNames: Object.freeze([
+    "context-pack-only",
+    "exact+lexical",
+    "vector-only",
+    "graph-only",
+    "lexical+vector",
+    "lexical+graph",
+    "vector+graph",
+    "context-pack+lexical+graph",
+    "full-hybrid-rrf",
+    "full-hybrid+rerank",
+  ]),
+  execution:
+    "REFERENCE_PIN_ONLY: current-process results must not be relabelled as historical v0.3 execution.",
+});
+
 const RETRIEVAL_BENCHMARK_MATRIX_SOURCE: readonly BenchmarkConfiguration[] = [
   { name: "context-pack-only", channels: ["context-pack"] },
   { name: "exact+lexical", channels: ["exact", "lexical"] },
@@ -54,6 +81,24 @@ const RETRIEVAL_BENCHMARK_MATRIX_SOURCE: readonly BenchmarkConfiguration[] = [
     allowVectorForBenchmark: true,
     deterministicRerank: true,
   },
+  {
+    name: "lexical+vector+graph+ppr",
+    channels: ["lexical", "vector", "graph"],
+    allowVectorForBenchmark: true,
+    associativePpr: true,
+  },
+  {
+    name: "lexical+vector+graph+community-global",
+    channels: ["lexical", "vector", "graph"],
+    allowVectorForBenchmark: true,
+    communityGlobal: true,
+  },
+  {
+    name: "lexical+vector+query-decomposition",
+    channels: ["lexical", "vector"],
+    allowVectorForBenchmark: true,
+    queryDecomposition: true,
+  },
 ];
 
 export const RETRIEVAL_BENCHMARK_MATRIX: readonly BenchmarkConfiguration[] =
@@ -81,6 +126,17 @@ export interface BenchmarkObservation {
   /** Explicit citation IDs, when a dataset has citation-level labels. */
   goldCitationIds?: string[];
   retrievedCitationIds?: string[];
+  /** Documents actually assembled into model context. */
+  contextDocumentIds?: string[];
+  /** Gold and retrieved support units/claims for claim-support recall. */
+  goldSupportIds?: string[];
+  retrievedSupportIds?: string[];
+  /** Context items demonstrably used by the answer/agent. */
+  usedContextIds?: string[];
+  /** Explicit paired-noise judgement. True means the added noise caused failure. */
+  noiseSensitiveFailure?: boolean;
+  /** Explicit grounded-answer faithfulness score in [0,1]. */
+  faithfulnessScore?: number;
   /** The adapter may provide a stronger unsupported-claim judgement. */
   unsupportedClaim?: boolean;
   latencyMs?: number;
@@ -91,19 +147,31 @@ export interface BenchmarkObservation {
 export interface BenchmarkCaseMetrics {
   recallAt5: number;
   recallAt10: number;
+  /** Explicit P6.15 name; equal to recallAt10 for this top-10 benchmark. */
+  retrievalRecall: number;
   precisionAt10: number;
   reciprocalRank: number;
   ndcgAt10: number;
   evidenceRecall: number;
+  contextPrecision: number;
+  claimSupportRecall: number;
   citationPrecision: number;
+  contextUtilization: number;
+  noiseSensitivity: number;
+  faithfulness: number;
   noAnswerCorrect: boolean;
   unsupportedClaim: boolean;
   estimatedTokens: number;
   latencyMs: number;
   forbidden: string[];
-  /** False means the dataset did not provide labels for this metric. */
+  /** False means the adapter/dataset did not provide evidence for this metric. */
   evidenceScored: boolean;
+  contextPrecisionScored: boolean;
+  claimSupportScored: boolean;
   citationScored: boolean;
+  contextUtilizationScored: boolean;
+  noiseSensitivityScored: boolean;
+  faithfulnessScored: boolean;
 }
 
 export interface BenchmarkRunMetrics {
@@ -113,12 +181,23 @@ export interface BenchmarkRunMetrics {
   criticalFailures: number;
   meanRecallAt5: number;
   meanRecallAt10: number;
+  meanRetrievalRecall: number;
   meanReciprocalRank: number;
   meanNdcgAt10: number;
   meanEvidenceRecall: number;
   evidenceRecallCoverage: number;
+  meanContextPrecision: number;
+  contextPrecisionCoverage: number;
+  meanClaimSupportRecall: number;
+  claimSupportRecallCoverage: number;
   meanCitationPrecision: number;
   citationPrecisionCoverage: number;
+  meanContextUtilization: number;
+  contextUtilizationCoverage: number;
+  meanNoiseSensitivity: number;
+  noiseSensitivityCoverage: number;
+  meanFaithfulness: number;
+  faithfulnessCoverage: number;
   unsupportedClaimRate: number;
   noAnswerAccuracy: number;
   noAnswerCases: number;
@@ -126,6 +205,8 @@ export interface BenchmarkRunMetrics {
   meanLatencyMs: number;
   exactIdentifierRecall: number;
   crossLanguageRecall: number;
+  codeSymbolRecall: number;
+  codeSymbolCases: number;
   vectorEnabled: boolean;
   rerankEnabled: boolean;
   results: Array<
@@ -212,6 +293,55 @@ export function scoreBenchmarkObservation(
       : intersectionSize(retrievedCitations, observation.goldCitationIds!) /
         retrievedCitations.length
     : 0;
+
+  const contextPrecisionScored = observation.contextDocumentIds !== undefined;
+  const contextDocuments = unique(observation.contextDocumentIds ?? []);
+  const contextPrecision = contextPrecisionScored
+    ? contextDocuments.length === 0
+      ? observation.goldDocumentIds.length === 0
+        ? 1
+        : 0
+      : intersectionSize(contextDocuments, observation.goldDocumentIds) /
+        contextDocuments.length
+    : 0;
+
+  const claimSupportScored = observation.goldSupportIds !== undefined;
+  const retrievedSupport = unique(observation.retrievedSupportIds ?? []);
+  const claimSupportRecall = claimSupportScored
+    ? observation.goldSupportIds!.length === 0
+      ? 1
+      : intersectionSize(retrievedSupport, observation.goldSupportIds!) /
+        observation.goldSupportIds!.length
+    : 0;
+
+  const contextUtilizationScored =
+    observation.contextDocumentIds !== undefined &&
+    observation.usedContextIds !== undefined;
+  const usedContext = unique(observation.usedContextIds ?? []);
+  const contextUtilization = contextUtilizationScored
+    ? contextDocuments.length === 0
+      ? usedContext.length === 0
+        ? 1
+        : 0
+      : intersectionSize(usedContext, contextDocuments) /
+        contextDocuments.length
+    : 0;
+
+  const noiseSensitivityScored =
+    observation.noiseSensitiveFailure !== undefined;
+  const noiseSensitivity = noiseSensitivityScored
+    ? observation.noiseSensitiveFailure
+      ? 1
+      : 0
+    : 0;
+
+  const faithfulnessScored =
+    typeof observation.faithfulnessScore === "number" &&
+    Number.isFinite(observation.faithfulnessScore) &&
+    observation.faithfulnessScore >= 0 &&
+    observation.faithfulnessScore <= 1;
+  const faithfulness = faithfulnessScored ? observation.faithfulnessScore! : 0;
+
   const unsupportedClaim =
     observation.unsupportedClaim ??
     (observation.retrievedEvidenceIds !== undefined &&
@@ -232,19 +362,35 @@ export function scoreBenchmarkObservation(
           ? 1
           : 0
         : relevantAt10.length / gold.size,
+    retrievalRecall:
+      gold.size === 0
+        ? expectedNoAnswer
+          ? 1
+          : 0
+        : relevantAt10.length / gold.size,
     precisionAt10:
       rankedAt10.length === 0 ? 0 : relevantAt10.length / rankedAt10.length,
     reciprocalRank: first < 0 ? 0 : 1 / (first + 1),
     ndcgAt10: idealDcg === 0 ? (expectedNoAnswer ? 1 : 0) : dcg / idealDcg,
     evidenceRecall,
+    contextPrecision,
+    claimSupportRecall,
     citationPrecision,
+    contextUtilization,
+    noiseSensitivity,
+    faithfulness,
     noAnswerCorrect,
     unsupportedClaim,
     estimatedTokens: Math.max(0, observation.estimatedTokens ?? 0),
     latencyMs: safeDuration(observation.latencyMs),
     forbidden,
     evidenceScored,
+    contextPrecisionScored,
+    claimSupportScored,
     citationScored,
+    contextUtilizationScored,
+    noiseSensitivityScored,
+    faithfulnessScored,
   };
 }
 
@@ -276,6 +422,21 @@ export function aggregateBenchmarkRun(
   const scoredCitations = results.filter(
     (result) => result.metrics.citationScored,
   );
+  const scoredContextPrecision = results.filter(
+    (result) => result.metrics.contextPrecisionScored,
+  );
+  const scoredClaimSupport = results.filter(
+    (result) => result.metrics.claimSupportScored,
+  );
+  const scoredContextUtilization = results.filter(
+    (result) => result.metrics.contextUtilizationScored,
+  );
+  const scoredNoiseSensitivity = results.filter(
+    (result) => result.metrics.noiseSensitivityScored,
+  );
+  const scoredFaithfulness = results.filter(
+    (result) => result.metrics.faithfulnessScored,
+  );
   const noAnswer = results.filter((result) => result.expectNoAnswer);
   const sliceAverage = (slice: string): number =>
     average(
@@ -292,6 +453,9 @@ export function aggregateBenchmarkRun(
     ).length,
     meanRecallAt5: average(results.map((result) => result.metrics.recallAt5)),
     meanRecallAt10: average(results.map((result) => result.metrics.recallAt10)),
+    meanRetrievalRecall: average(
+      results.map((result) => result.metrics.retrievalRecall),
+    ),
     meanReciprocalRank: average(
       results.map((result) => result.metrics.reciprocalRank),
     ),
@@ -301,11 +465,40 @@ export function aggregateBenchmarkRun(
     ),
     evidenceRecallCoverage:
       results.length === 0 ? 0 : scoredEvidence.length / results.length,
+    meanContextPrecision: average(
+      scoredContextPrecision.map((result) => result.metrics.contextPrecision),
+    ),
+    contextPrecisionCoverage:
+      results.length === 0 ? 0 : scoredContextPrecision.length / results.length,
+    meanClaimSupportRecall: average(
+      scoredClaimSupport.map((result) => result.metrics.claimSupportRecall),
+    ),
+    claimSupportRecallCoverage:
+      results.length === 0 ? 0 : scoredClaimSupport.length / results.length,
     meanCitationPrecision: average(
       scoredCitations.map((result) => result.metrics.citationPrecision),
     ),
     citationPrecisionCoverage:
       results.length === 0 ? 0 : scoredCitations.length / results.length,
+    meanContextUtilization: average(
+      scoredContextUtilization.map(
+        (result) => result.metrics.contextUtilization,
+      ),
+    ),
+    contextUtilizationCoverage:
+      results.length === 0
+        ? 0
+        : scoredContextUtilization.length / results.length,
+    meanNoiseSensitivity: average(
+      scoredNoiseSensitivity.map((result) => result.metrics.noiseSensitivity),
+    ),
+    noiseSensitivityCoverage:
+      results.length === 0 ? 0 : scoredNoiseSensitivity.length / results.length,
+    meanFaithfulness: average(
+      scoredFaithfulness.map((result) => result.metrics.faithfulness),
+    ),
+    faithfulnessCoverage:
+      results.length === 0 ? 0 : scoredFaithfulness.length / results.length,
     unsupportedClaimRate:
       results.length === 0
         ? 0
@@ -323,27 +516,57 @@ export function aggregateBenchmarkRun(
     meanLatencyMs: average(results.map((result) => result.metrics.latencyMs)),
     exactIdentifierRecall: sliceAverage("exact-identifiers"),
     crossLanguageRecall: sliceAverage("cross-language"),
+    codeSymbolRecall: sliceAverage("code-symbol"),
+    codeSymbolCases: results.filter((result) => result.slice === "code-symbol")
+      .length,
     vectorEnabled: configuration.channels.includes("vector"),
     rerankEnabled: Boolean(configuration.deterministicRerank),
     results,
   };
 }
 
+export interface BenchmarkPromotionEvidence {
+  /** Same dataset/slices and comparable execution path were used. */
+  comparableEvaluation: boolean;
+  /** Measured latency, storage/RAM, token/provider and build/update costs fit policy. */
+  operationalCostAcceptable: boolean;
+  /** Failure, stale-index and provider-unavailable behavior was exercised/understood. */
+  degradedBehaviorUnderstood: boolean;
+  /** Authorization scope and temporal truth/freshness invariants passed. */
+  authorizationTruthPassed: boolean;
+  /** A tested rollback path exists for the proposed retrieval default. */
+  rollbackAvailable: boolean;
+}
+
 export interface BenchmarkDefaultDecision {
   selectedDefault: string | null;
+  /** Best quality candidate before promotion gates; diagnostic only. */
+  measuredCandidate: string | null;
   vectorActivatedByDefault: boolean;
   baseline: string | null;
   bestVector: string | null;
+  promotionEligible: boolean;
+  missingPromotionGates: string[];
   eligibility: string;
 }
 
+const PROMOTION_GATES: ReadonlyArray<keyof BenchmarkPromotionEvidence> = [
+  "comparableEvaluation",
+  "operationalCostAcceptable",
+  "degradedBehaviorUnderstood",
+  "authorizationTruthPassed",
+  "rollbackAvailable",
+];
+
 /**
- * Selects only from measured, eligible runs.  A vector run cannot become the
- * default merely because it exists; it must improve quality without violating
- * exact-identifier, citation, no-answer or latency guardrails.
+ * Select a production default only when both measured quality and explicit
+ * operational/safety promotion evidence pass. Missing promotion evidence fails
+ * closed: the function still reports the best measured candidate, but never
+ * turns a diagnostic benchmark into a runtime-default change.
  */
 export function selectBenchmarkDefault(
   runs: readonly BenchmarkRunMetrics[],
+  promotionEvidence?: Partial<BenchmarkPromotionEvidence>,
 ): BenchmarkDefaultDecision {
   const eligible = runs.filter(
     (run) =>
@@ -372,17 +595,26 @@ export function selectBenchmarkDefault(
     bestVector.exactIdentifierRecall >= baseline.exactIdentifierRecall &&
     bestVector.meanLatencyMs <= Math.max(baseline.meanLatencyMs * 2, 25),
   );
-  // A vector-only experiment is never a safe implicit runtime default.  If
-  // no measured non-vector baseline exists, leave selection empty instead of
-  // returning a vector name while reporting `vectorActivatedByDefault=false`.
-  const winner = vectorEligible ? bestVector : baseline;
+  // A vector-only experiment is never a safe implicit runtime candidate. If
+  // there is no measured non-vector baseline, no candidate is promotable.
+  const measuredWinner = vectorEligible ? bestVector : baseline;
+  const missingPromotionGates = PROMOTION_GATES.filter(
+    (gate) => promotionEvidence?.[gate] !== true,
+  );
+  const promotionEligible = Boolean(
+    measuredWinner && missingPromotionGates.length === 0,
+  );
+  const selected = promotionEligible ? measuredWinner : undefined;
   return {
-    selectedDefault: winner?.configurationName ?? null,
-    vectorActivatedByDefault: vectorEligible,
+    selectedDefault: selected?.configurationName ?? null,
+    measuredCandidate: measuredWinner?.configurationName ?? null,
+    vectorActivatedByDefault: Boolean(selected?.vectorEnabled),
     baseline: baseline?.configurationName ?? null,
     bestVector: bestVector?.configurationName ?? null,
+    promotionEligible,
+    missingPromotionGates,
     eligibility:
-      "criticalFailures=0, unsupportedClaimRate=0, noAnswerAccuracy=1; vector requires +0.02 MRR, no exact/citation/Recall@10 regression and <=2x latency",
+      "measured: criticalFailures=0, unsupportedClaimRate=0, noAnswerAccuracy=1; vector additionally requires +0.02 MRR, no exact/citation/Recall@10 regression and <=2x latency. promotion: comparableEvaluation, operationalCostAcceptable, degradedBehaviorUnderstood, authorizationTruthPassed and rollbackAvailable must all be true.",
   };
 }
 

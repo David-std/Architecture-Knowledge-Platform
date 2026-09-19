@@ -1,0 +1,528 @@
+{
+  "schemaVersion": 1,
+  "baselineVersion": "v0.3.0",
+  "baseCommit": "a6bdcc38fdf026d6c353db096799366865011022",
+  "maturityLadder": [
+    "DESIGNED",
+    "FUNCTIONAL",
+    "INTEGRATED",
+    "HARDENED",
+    "OPERABLE",
+    "BENCHMARKED",
+    "DOCUMENTED",
+    "PRODUCTIZED"
+  ],
+  "evidenceStatuses": ["PROVEN", "PARTIALLY_PROVEN", "NOT_APPLICABLE"],
+  "dimensions": [
+    "semantic_correctness",
+    "real_adapter_provider_behavior",
+    "lifecycle_freshness_versioning",
+    "degraded_offline_behavior",
+    "authorization_security_isolation",
+    "governance_provenance_trust",
+    "observability_doctor_diagnostics",
+    "retry_recovery_idempotency",
+    "concurrency_fencing",
+    "performance_scale",
+    "migration_rollback_compatibility",
+    "api_mcp_web_ergonomics",
+    "operator_user_docs",
+    "benchmark_evaluation",
+    "interoperability_licensing"
+  ],
+  "harnessAllowlist": [
+    ".github/workflows/agent-ab.yml",
+    ".github/workflows/semantic-retrieval.yml",
+    "evals/registered/context-correctness-regressions.json",
+    "evals/registered/v0.3-capability-maturity-baseline.json",
+    "package.json",
+    "packages/evaluation/test/context-correctness.test.ts",
+    "packages/retrieval/scripts/context-tokenizer-baseline.ts",
+    "packages/retrieval/test/context-correctness-regression.test.ts",
+    "scripts/filtered-ann-baseline.ts",
+    "scripts/capability-maturity-baseline.ts"
+  ],
+  "capabilities": [
+    {
+      "id": "durable-ingest-recovery",
+      "title": "Durable ingest, causal outbox and recovery",
+      "maturityStage": "BENCHMARKED",
+      "dimensions": {
+        "semantic_correctness": {
+          "status": "NOT_APPLICABLE",
+          "rationale": "Durable work correctness is state-machine and delivery correctness rather than semantic retrieval quality."
+        },
+        "real_adapter_provider_behavior": {
+          "status": "PROVEN",
+          "evidence": [".github/workflows/ci.yml"]
+        },
+        "lifecycle_freshness_versioning": {
+          "status": "PROVEN",
+          "evidence": [".github/workflows/recovery.yml"]
+        },
+        "degraded_offline_behavior": {
+          "status": "PROVEN",
+          "evidence": [".github/workflows/resilience-matrix.yml"]
+        },
+        "authorization_security_isolation": {
+          "status": "PARTIALLY_PROVEN",
+          "evidence": [".github/workflows/ci.yml"],
+          "limitation": "The standard gate covers scoped runtime behavior but is not a dedicated hostile authorization benchmark for every durable-work transition."
+        },
+        "governance_provenance_trust": {
+          "status": "PROVEN",
+          "evidence": [".github/workflows/ci.yml"]
+        },
+        "observability_doctor_diagnostics": {
+          "status": "PROVEN",
+          "evidence": [".github/workflows/ci.yml"]
+        },
+        "retry_recovery_idempotency": {
+          "status": "PROVEN",
+          "evidence": [
+            ".github/workflows/recovery.yml",
+            ".github/workflows/resilience-matrix.yml"
+          ]
+        },
+        "concurrency_fencing": {
+          "status": "PROVEN",
+          "evidence": [".github/workflows/concurrency-benchmark.yml"]
+        },
+        "performance_scale": {
+          "status": "PARTIALLY_PROVEN",
+          "evidence": [".github/workflows/scale-benchmark.yml"],
+          "limitation": "v0.3 scale evidence is bounded and synthetic rather than a production SLO claim."
+        },
+        "migration_rollback_compatibility": {
+          "status": "PROVEN",
+          "evidence": [".github/workflows/recovery.yml"]
+        },
+        "api_mcp_web_ergonomics": {
+          "status": "PARTIALLY_PROVEN",
+          "evidence": [".github/workflows/ci.yml"],
+          "limitation": "Runtime/API smoke evidence exists, but this capability has no dedicated operator-ergonomics benchmark."
+        },
+        "operator_user_docs": {
+          "status": "PROVEN",
+          "evidence": ["docs/assurance/releases/v0.3.0/README.md"]
+        },
+        "benchmark_evaluation": {
+          "status": "PROVEN",
+          "evidence": [
+            ".github/workflows/concurrency-benchmark.yml",
+            ".github/workflows/resilience-matrix.yml",
+            ".github/workflows/scale-benchmark.yml"
+          ]
+        },
+        "interoperability_licensing": {
+          "status": "NOT_APPLICABLE",
+          "rationale": "The v0.3 durable-work core does not expose a third-party interchange format or optional provider license boundary."
+        }
+      }
+    },
+    {
+      "id": "authorization-multivault",
+      "title": "Authorization and multi-vault isolation",
+      "maturityStage": "HARDENED",
+      "dimensions": {
+        "semantic_correctness": {
+          "status": "NOT_APPLICABLE",
+          "rationale": "Authorization acceptance is permission/isolation correctness, not semantic relevance."
+        },
+        "real_adapter_provider_behavior": {
+          "status": "NOT_APPLICABLE",
+          "rationale": "v0.3 uses the built-in scoped-token authorization path and does not claim an external relationship-based provider."
+        },
+        "lifecycle_freshness_versioning": {
+          "status": "PARTIALLY_PROVEN",
+          "evidence": [".github/workflows/ci.yml"],
+          "limitation": "Policy revision lifecycle is exercised indirectly through runtime configuration rather than a dedicated policy-generation benchmark."
+        },
+        "degraded_offline_behavior": {
+          "status": "PROVEN",
+          "evidence": [".github/workflows/resilience-matrix.yml"]
+        },
+        "authorization_security_isolation": {
+          "status": "PROVEN",
+          "evidence": [
+            "packages/indexing/test/multivault-isolation.integration.test.ts",
+            ".github/workflows/semantic-retrieval.yml"
+          ]
+        },
+        "governance_provenance_trust": {
+          "status": "PROVEN",
+          "evidence": [".github/workflows/ci.yml"]
+        },
+        "observability_doctor_diagnostics": {
+          "status": "PARTIALLY_PROVEN",
+          "evidence": [".github/workflows/ci.yml"],
+          "limitation": "Authorization failures are observable in maintained runtime diagnostics, but there is no dedicated authorization doctor surface in v0.3."
+        },
+        "retry_recovery_idempotency": {
+          "status": "NOT_APPLICABLE",
+          "rationale": "Authorization checks are synchronous guards and do not own a retry lifecycle."
+        },
+        "concurrency_fencing": {
+          "status": "PARTIALLY_PROVEN",
+          "evidence": [".github/workflows/concurrency-benchmark.yml"],
+          "limitation": "Concurrency evidence covers shared runtime state but is not a dedicated policy-revision race benchmark."
+        },
+        "performance_scale": {
+          "status": "PARTIALLY_PROVEN",
+          "evidence": [".github/workflows/scale-benchmark.yml"],
+          "limitation": "Scale evidence is bounded and does not establish enterprise authorization latency SLOs."
+        },
+        "migration_rollback_compatibility": {
+          "status": "PROVEN",
+          "evidence": [".github/workflows/ci.yml"]
+        },
+        "api_mcp_web_ergonomics": {
+          "status": "PARTIALLY_PROVEN",
+          "evidence": [".github/workflows/ci.yml"],
+          "limitation": "Scoped access is exercised through runtime interfaces, but UX quality is not benchmarked."
+        },
+        "operator_user_docs": {
+          "status": "PROVEN",
+          "evidence": ["docs/assurance/releases/v0.3.0/README.md"]
+        },
+        "benchmark_evaluation": {
+          "status": "PARTIALLY_PROVEN",
+          "evidence": [
+            ".github/workflows/semantic-retrieval.yml",
+            "packages/indexing/test/multivault-isolation.integration.test.ts"
+          ],
+          "limitation": "Isolation regressions are strong, but v0.3 has no standalone authorization benchmark suite."
+        },
+        "interoperability_licensing": {
+          "status": "NOT_APPLICABLE",
+          "rationale": "No external authorization adapter is claimed in v0.3."
+        }
+      }
+    },
+    {
+      "id": "governed-git-knowledge",
+      "title": "Governed Git publication, review and rollback",
+      "maturityStage": "OPERABLE",
+      "dimensions": {
+        "semantic_correctness": {
+          "status": "NOT_APPLICABLE",
+          "rationale": "Publication lifecycle correctness is governed state correctness rather than semantic ranking quality."
+        },
+        "real_adapter_provider_behavior": {
+          "status": "PROVEN",
+          "evidence": [".github/workflows/recovery.yml"]
+        },
+        "lifecycle_freshness_versioning": {
+          "status": "PROVEN",
+          "evidence": [".github/workflows/recovery.yml"]
+        },
+        "degraded_offline_behavior": {
+          "status": "PROVEN",
+          "evidence": [
+            ".github/workflows/recovery.yml",
+            ".github/workflows/resilience-matrix.yml"
+          ]
+        },
+        "authorization_security_isolation": {
+          "status": "PARTIALLY_PROVEN",
+          "evidence": [".github/workflows/ci.yml"],
+          "limitation": "Review/publish authorization is exercised, but v0.3 does not claim hostile internet hardening."
+        },
+        "governance_provenance_trust": {
+          "status": "PROVEN",
+          "evidence": [
+            ".github/workflows/ci.yml",
+            "docs/assurance/releases/v0.3.0/README.md"
+          ]
+        },
+        "observability_doctor_diagnostics": {
+          "status": "PROVEN",
+          "evidence": [".github/workflows/ci.yml"]
+        },
+        "retry_recovery_idempotency": {
+          "status": "PROVEN",
+          "evidence": [".github/workflows/recovery.yml"]
+        },
+        "concurrency_fencing": {
+          "status": "PARTIALLY_PROVEN",
+          "evidence": [".github/workflows/concurrency-benchmark.yml"],
+          "limitation": "Concurrent runtime behavior is exercised, but publication race coverage is not the sole focus of the benchmark."
+        },
+        "performance_scale": {
+          "status": "NOT_APPLICABLE",
+          "rationale": "v0.3 does not make a throughput-scale claim for human-governed publication."
+        },
+        "migration_rollback_compatibility": {
+          "status": "PROVEN",
+          "evidence": [".github/workflows/recovery.yml"]
+        },
+        "api_mcp_web_ergonomics": {
+          "status": "PARTIALLY_PROVEN",
+          "evidence": [".github/workflows/ci.yml"],
+          "limitation": "Governed actions are integrated in runtime surfaces, but dedicated human-factors evidence is outside v0.3."
+        },
+        "operator_user_docs": {
+          "status": "PROVEN",
+          "evidence": ["docs/assurance/releases/v0.3.0/README.md"]
+        },
+        "benchmark_evaluation": {
+          "status": "PROVEN",
+          "evidence": [
+            ".github/workflows/recovery.yml",
+            ".github/workflows/resilience-matrix.yml"
+          ]
+        },
+        "interoperability_licensing": {
+          "status": "NOT_APPLICABLE",
+          "rationale": "The managed Git lifecycle does not claim a v0.3 interchange adapter beyond Git itself."
+        }
+      }
+    },
+    {
+      "id": "retrieval-context",
+      "title": "Multichannel retrieval and bounded ContextPacket",
+      "maturityStage": "BENCHMARKED",
+      "dimensions": {
+        "semantic_correctness": {
+          "status": "PROVEN",
+          "evidence": [".github/workflows/semantic-retrieval.yml"]
+        },
+        "real_adapter_provider_behavior": {
+          "status": "PROVEN",
+          "evidence": [
+            ".github/workflows/semantic-retrieval.yml",
+            "apps/api/test/real-semantic-retrieval.integration.test.ts"
+          ]
+        },
+        "lifecycle_freshness_versioning": {
+          "status": "PROVEN",
+          "evidence": [
+            "db/migrations/019_semantic_embedding_generations.sql",
+            ".github/workflows/semantic-retrieval.yml"
+          ]
+        },
+        "degraded_offline_behavior": {
+          "status": "PROVEN",
+          "evidence": ["packages/retrieval/test/context-packet.test.ts"]
+        },
+        "authorization_security_isolation": {
+          "status": "PROVEN",
+          "evidence": [
+            "packages/indexing/test/multivault-isolation.integration.test.ts",
+            ".github/workflows/semantic-retrieval.yml"
+          ]
+        },
+        "governance_provenance_trust": {
+          "status": "PROVEN",
+          "evidence": ["packages/retrieval/test/context-packet.test.ts"]
+        },
+        "observability_doctor_diagnostics": {
+          "status": "PARTIALLY_PROVEN",
+          "evidence": [
+            ".github/workflows/semantic-retrieval.yml",
+            ".github/workflows/ci.yml"
+          ],
+          "limitation": "Retrieval diagnostics are persisted in CI/runtime evidence, but v0.3 has no complete retrieval doctor UI."
+        },
+        "retry_recovery_idempotency": {
+          "status": "NOT_APPLICABLE",
+          "rationale": "The synchronous read path does not own durable retry semantics; generation/rebuild work is covered by its lifecycle evidence."
+        },
+        "concurrency_fencing": {
+          "status": "NOT_APPLICABLE",
+          "rationale": "Read-only packet assembly does not require a write lease or fencing token."
+        },
+        "performance_scale": {
+          "status": "PARTIALLY_PROVEN",
+          "evidence": [".github/workflows/scale-benchmark.yml"],
+          "limitation": "The scale workflow is bounded and synthetic and is not a production SLO."
+        },
+        "migration_rollback_compatibility": {
+          "status": "PROVEN",
+          "evidence": ["db/migrations/019_semantic_embedding_generations.sql"]
+        },
+        "api_mcp_web_ergonomics": {
+          "status": "PARTIALLY_PROVEN",
+          "evidence": [".github/workflows/ci.yml"],
+          "limitation": "API/MCP runtime compatibility is exercised; dedicated end-user retrieval UX evaluation is not claimed."
+        },
+        "operator_user_docs": {
+          "status": "PROVEN",
+          "evidence": ["docs/assurance/releases/v0.3.0/README.md"]
+        },
+        "benchmark_evaluation": {
+          "status": "PROVEN",
+          "evidence": [
+            ".github/workflows/semantic-retrieval.yml",
+            ".github/workflows/agent-ab.yml"
+          ]
+        },
+        "interoperability_licensing": {
+          "status": "PARTIALLY_PROVEN",
+          "evidence": ["docs/assurance/releases/v0.3.0/README.md"],
+          "limitation": "v0.3 proves its local real-model provider path but does not claim broad enterprise provider interoperability."
+        }
+      }
+    },
+    {
+      "id": "document-intelligence",
+      "title": "Document intelligence and durable OCR",
+      "maturityStage": "BENCHMARKED",
+      "dimensions": {
+        "semantic_correctness": {
+          "status": "PARTIALLY_PROVEN",
+          "evidence": [".github/workflows/document-intelligence-benchmark.yml"],
+          "limitation": "Deterministic and Docling paths are exercised; unavailable optional providers remain explicitly unproven."
+        },
+        "real_adapter_provider_behavior": {
+          "status": "PARTIALLY_PROVEN",
+          "evidence": [".github/workflows/document-intelligence-benchmark.yml"],
+          "limitation": "The maintained benchmark executes available real providers but not every optional provider family."
+        },
+        "lifecycle_freshness_versioning": {
+          "status": "PROVEN",
+          "evidence": [".github/workflows/document-intelligence-benchmark.yml"]
+        },
+        "degraded_offline_behavior": {
+          "status": "PROVEN",
+          "evidence": [".github/workflows/document-intelligence-benchmark.yml"]
+        },
+        "authorization_security_isolation": {
+          "status": "PARTIALLY_PROVEN",
+          "evidence": [".github/workflows/ci.yml"],
+          "limitation": "Document ingest is exercised through scoped runtime paths, but each provider does not have a separate authorization matrix."
+        },
+        "governance_provenance_trust": {
+          "status": "PROVEN",
+          "evidence": [".github/workflows/document-intelligence-benchmark.yml"]
+        },
+        "observability_doctor_diagnostics": {
+          "status": "PROVEN",
+          "evidence": [
+            ".github/workflows/document-intelligence-benchmark.yml",
+            ".github/workflows/ci.yml"
+          ]
+        },
+        "retry_recovery_idempotency": {
+          "status": "PROVEN",
+          "evidence": [
+            ".github/workflows/recovery.yml",
+            ".github/workflows/resilience-matrix.yml"
+          ]
+        },
+        "concurrency_fencing": {
+          "status": "NOT_APPLICABLE",
+          "rationale": "v0.3 does not make a standalone concurrent-provider scheduling claim for document extraction."
+        },
+        "performance_scale": {
+          "status": "PARTIALLY_PROVEN",
+          "evidence": [".github/workflows/document-intelligence-benchmark.yml"],
+          "limitation": "Provider benchmark evidence is bounded and not a universal throughput SLO."
+        },
+        "migration_rollback_compatibility": {
+          "status": "PARTIALLY_PROVEN",
+          "evidence": [".github/workflows/ci.yml"],
+          "limitation": "Schema upgrade compatibility is exercised by the standard migration gate; provider-specific rollback is not claimed."
+        },
+        "api_mcp_web_ergonomics": {
+          "status": "PARTIALLY_PROVEN",
+          "evidence": [".github/workflows/ci.yml"],
+          "limitation": "Durable OCR ingest is exercised end-to-end; operator UX quality is not benchmarked."
+        },
+        "operator_user_docs": {
+          "status": "PROVEN",
+          "evidence": ["docs/assurance/releases/v0.3.0/README.md"]
+        },
+        "benchmark_evaluation": {
+          "status": "PARTIALLY_PROVEN",
+          "evidence": [".github/workflows/document-intelligence-benchmark.yml"],
+          "limitation": "The benchmark is explicit about skipped unavailable providers and therefore does not support universal provider-quality claims."
+        },
+        "interoperability_licensing": {
+          "status": "PARTIALLY_PROVEN",
+          "evidence": [".github/workflows/document-intelligence-benchmark.yml"],
+          "limitation": "Optional provider availability and packaging remain environment-dependent."
+        }
+      }
+    },
+    {
+      "id": "operations-evaluation-productization",
+      "title": "Observability, evaluation and repository productization",
+      "maturityStage": "PRODUCTIZED",
+      "dimensions": {
+        "semantic_correctness": {
+          "status": "NOT_APPLICABLE",
+          "rationale": "Operational productization does not itself perform semantic ranking."
+        },
+        "real_adapter_provider_behavior": {
+          "status": "PARTIALLY_PROVEN",
+          "evidence": [".github/workflows/agent-ab.yml"],
+          "limitation": "The real-model path is exercised, but no arbitrary-provider superiority claim is supported."
+        },
+        "lifecycle_freshness_versioning": {
+          "status": "PROVEN",
+          "evidence": [".github/workflows/ci.yml"]
+        },
+        "degraded_offline_behavior": {
+          "status": "PROVEN",
+          "evidence": [".github/workflows/resilience-matrix.yml"]
+        },
+        "authorization_security_isolation": {
+          "status": "PROVEN",
+          "evidence": [".github/workflows/ci.yml"]
+        },
+        "governance_provenance_trust": {
+          "status": "PROVEN",
+          "evidence": [
+            "docs/assurance/releases/v0.3.0/README.md",
+            "scripts/validate-repository-hygiene.mjs"
+          ]
+        },
+        "observability_doctor_diagnostics": {
+          "status": "PROVEN",
+          "evidence": [".github/workflows/ci.yml"]
+        },
+        "retry_recovery_idempotency": {
+          "status": "PROVEN",
+          "evidence": [".github/workflows/recovery.yml"]
+        },
+        "concurrency_fencing": {
+          "status": "PROVEN",
+          "evidence": [".github/workflows/concurrency-benchmark.yml"]
+        },
+        "performance_scale": {
+          "status": "PARTIALLY_PROVEN",
+          "evidence": [".github/workflows/scale-benchmark.yml"],
+          "limitation": "The maintained scale evidence is bounded and explicitly not a production-scale throughput claim."
+        },
+        "migration_rollback_compatibility": {
+          "status": "PROVEN",
+          "evidence": [".github/workflows/recovery.yml"]
+        },
+        "api_mcp_web_ergonomics": {
+          "status": "PROVEN",
+          "evidence": [".github/workflows/ci.yml"]
+        },
+        "operator_user_docs": {
+          "status": "PROVEN",
+          "evidence": ["docs/assurance/releases/v0.3.0/README.md"]
+        },
+        "benchmark_evaluation": {
+          "status": "PROVEN",
+          "evidence": [
+            ".github/workflows/agent-ab.yml",
+            ".github/workflows/concurrency-benchmark.yml",
+            ".github/workflows/document-intelligence-benchmark.yml",
+            ".github/workflows/resilience-matrix.yml",
+            ".github/workflows/scale-benchmark.yml",
+            ".github/workflows/semantic-retrieval.yml"
+          ]
+        },
+        "interoperability_licensing": {
+          "status": "NOT_APPLICABLE",
+          "rationale": "Repository productization is an internal release discipline rather than an interchange format or third-party adapter."
+        }
+      }
+    }
+  ]
+}

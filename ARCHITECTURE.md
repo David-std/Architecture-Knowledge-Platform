@@ -26,16 +26,20 @@ registered vault (read-only import) or immutable source
   -> grounded compilation plan and isolated Git draft
   -> deterministic validation and human review
   -> approved Git publication or reviewed rollback
-  -> durable lifecycle events
+  -> durable lifecycle and truth invalidation events
   -> incremental lexical/vector/graph/context projections
+  -> captured truth snapshot + support validation before fusion
   -> bounded ContextPacket for humans and agents
 ```
 
 Normal publication queues incremental work through the PostgreSQL outbox. Full
-reindex remains an explicit repair operation, not the normal write path. Every
-query resolves an authorized scope; cross-vault federation is explicit opt-in.
-Optional semantic/document providers may degrade without changing canonical
-knowledge or bypassing review.
+reindex remains an explicit repair operation, not the normal write path. Truth
+withdrawal/supersession events rebuild an append-only derived-support projection;
+that projection is an operational accelerator, while read-time support validation
+against the captured truth revision remains the correctness boundary and retains
+historical derived rows. Every query resolves an authorized scope; cross-vault
+federation is explicit opt-in. Optional semantic/document providers may degrade
+without changing canonical knowledge or bypassing review.
 
 ## Detailed views
 

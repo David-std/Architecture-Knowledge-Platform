@@ -10,7 +10,11 @@ import {
   createConfiguredEmbeddingProvider,
   parseKnowledgeUnits,
 } from "@akp/retrieval";
-import { buildEmbeddingIndex, vaultIndexRevisionStatus } from "@akp/indexing";
+import {
+  buildEmbeddingIndex,
+  rebuildCommunityIndex,
+  vaultIndexRevisionStatus,
+} from "@akp/indexing";
 import type { GitKnowledgeStore } from "@akp/git-store";
 
 export type ManagedChange = IncrementalManagedChange;
@@ -131,6 +135,8 @@ export async function rebuildSpaceProjections(
   managedRevision?: string | null,
 ): Promise<{
   corpusRevision: string;
+  communityRevision: string;
+  communities: number;
   unitCount: number;
   documentCount: number;
 }> {
@@ -294,6 +300,12 @@ export async function rebuildSpaceProjections(
   } finally {
     client.release();
   }
+  const communityIndex = await rebuildCommunityIndex(db, {
+    spaceId,
+    vaultId,
+    graphRevision: corpusRevision,
+  });
+
   let provider: ReturnType<typeof createConfiguredEmbeddingProvider> = null;
   try {
     provider = createConfiguredEmbeddingProvider();
@@ -336,6 +348,8 @@ export async function rebuildSpaceProjections(
   }
   return {
     corpusRevision,
+    communityRevision: communityIndex.communityRevision,
+    communities: communityIndex.communities,
     unitCount,
     documentCount: documents.rowCount ?? documents.rows.length,
   };

@@ -4,6 +4,7 @@ import type {
   CompactContextSection as ContractCompactContextSection,
   ContextPacket,
   ContextPacketBudget as ContractContextPacketBudget,
+  ContextDisclosureLevel,
   GraphPathProvenance,
   SearchHit,
   SearchRequest,
@@ -26,11 +27,15 @@ export type PacketCandidateKind =
  * fallback. Either spelling is accepted to ease adapters around common
  * tokenizer libraries.
  */
+export type TokenizerQuality = "EXACT" | "APPROXIMATE";
+
 export interface Tokenizer {
   count?: (text: string) => number;
   countTokens?: (text: string) => number;
   id?: string;
   label?: string;
+  quality?: TokenizerQuality;
+  /** Deprecated compatibility mirror of quality. */
   approximate?: boolean;
 }
 
@@ -39,6 +44,7 @@ export type ContextPacketMode = "FULL_CONTEXT_PACKET" | "COMPACT_AGENT_PACKET";
 export interface TokenizerMetadata {
   id: string;
   label: string;
+  quality: TokenizerQuality;
   approximate: boolean;
   source: "injected" | "fallback";
 }
@@ -60,7 +66,21 @@ export type ContextContinuationSink = (
 export interface PacketCandidate {
   hit: SearchHit;
   content: string;
+  /** Authorized full approved page/body used only when L3 is requested. */
+  fullContent?: string;
   kind: PacketCandidateKind;
+  /**
+   * Mandatory policy/rule material is selected ahead of ordinary relevance
+   * candidates. This flag never bypasses authorization, truth or evidence
+   * requirements: callers may only set it on already-valid candidates.
+   */
+  mandatory?: boolean;
+}
+
+export interface MaterialConflictRequirement {
+  id: string;
+  /** All known authorized document identities that form the material conflict. */
+  documentIds: string[];
 }
 
 export interface BuildContextPacketInput {
@@ -68,9 +88,12 @@ export interface BuildContextPacketInput {
   intent: string;
   corpusRevision: string;
   maxTokens: number;
+  requestedContextLevel?: ContextDisclosureLevel;
   candidates: PacketCandidate[];
   gaps?: string[];
   conflicts?: string[];
+  /** Material unresolved conflicts whose accessible sides should travel together. */
+  materialConflicts?: MaterialConflictRequirement[];
   indexRevisions?: Record<string, string | null>;
   retrievalConfiguration?: Record<string, unknown>;
   /** Keep a dossier from flooding a bounded packet with repeated units. */
@@ -103,6 +126,7 @@ export interface CompactPacketIdentity {
   corpusRevision: string;
   status: ContextPacket["status"];
   mode: SearchRequest["mode"];
+  requestedContextLevel: ContextDisclosureLevel;
   scope: ContextPacket["scope"];
   indexRevisions: Record<string, string | null>;
 }
@@ -155,6 +179,7 @@ const roughTokens = (text: string): number => Math.ceil(text.length / 4);
 export const CHAR_4_FALLBACK_TOKENIZER: Tokenizer = Object.freeze({
   id: "char/4",
   label: "char/4 fallback (approximate)",
+  quality: "APPROXIMATE",
   approximate: true,
   count: roughTokens,
 });
@@ -169,6 +194,7 @@ function normalizeTokenizer(input?: Tokenizer): {
       metadata: {
         id: "char/4",
         label: "char/4 fallback (approximate)",
+        quality: "APPROXIMATE",
         approximate: true,
         source: "fallback",
       },
@@ -180,6 +206,18 @@ function normalizeTokenizer(input?: Tokenizer): {
     throw new TypeError(
       "Tokenizer must expose count(text) or countTokens(text)",
     );
+  }
+
+  const quality: TokenizerQuality =
+    input.quality ?? (input.approximate === true ? "APPROXIMATE" : "EXACT");
+  const approximate = quality === "APPROXIMATE";
+  if (input.approximate !== undefined && input.approximate !== approximate) {
+    throw new TypeError(
+      "TOKENIZER_QUALITY_INVALID:CONFLICTING_APPROXIMATE_METADATA",
+    );
+  }
+  if (input.id === "char/4" && quality === "EXACT") {
+    throw new TypeError("TOKENIZER_QUALITY_INVALID:CHAR_4_CANNOT_BE_EXACT");
   }
 
   return {
@@ -196,9 +234,21 @@ function normalizeTokenizer(input?: Tokenizer): {
     metadata: {
       id: input.id ?? "injected",
       label: input.label ?? "injected tokenizer",
-      approximate: input.approximate ?? false,
+      quality,
+      approximate,
       source: "injected",
     },
+  };
+}
+
+export function measureTokens(
+  text: string,
+  tokenizer?: Tokenizer,
+): { tokens: number; metadata: TokenizerMetadata } {
+  const normalized = normalizeTokenizer(tokenizer);
+  return {
+    tokens: normalized.count(text),
+    metadata: normalized.metadata,
   };
 }
 
@@ -292,10 +342,36 @@ function hasEvidence(candidate: PacketCandidate): boolean {
   return candidate.hit.citations.length > 0;
 }
 
+const authorityRank: Record<SearchHit["trust"], number> = {
+  ATTESTED: 0,
+  HUMAN_REVIEWED: 1,
+  MACHINE_SUPPORTED: 2,
+  UNVERIFIED: 3,
+};
+
+function freshnessRank(refreshStatus: string): number {
+  switch (refreshStatus) {
+    case "CURRENT":
+      return 0;
+    case "STALE_PENDING_REVIEW":
+      return 1;
+    default:
+      return 2;
+  }
+}
+
+function independentSupportCount(candidate: PacketCandidate): number {
+  return new Set(candidate.hit.citations).size;
+}
+
 function compareCandidates(a: PacketCandidate, b: PacketCandidate): number {
   return (
+    Number(Boolean(b.mandatory)) - Number(Boolean(a.mandatory)) ||
     priority[a.kind] - priority[b.kind] ||
+    authorityRank[a.hit.trust] - authorityRank[b.hit.trust] ||
+    freshnessRank(a.hit.refreshStatus) - freshnessRank(b.hit.refreshStatus) ||
     Number(hasEvidence(b)) - Number(hasEvidence(a)) ||
+    independentSupportCount(b) - independentSupportCount(a) ||
     b.hit.score - a.hit.score ||
     a.hit.documentId.localeCompare(b.hit.documentId) ||
     (a.hit.unitId ?? "").localeCompare(b.hit.unitId ?? "") ||
@@ -304,10 +380,53 @@ function compareCandidates(a: PacketCandidate, b: PacketCandidate): number {
   );
 }
 
+function oneLineOrientation(value: string, limit = 320): string {
+  const normalized = value.replace(/\s+/gu, " ").trim();
+  if (normalized.length <= limit) return normalized;
+  const boundary = normalized.lastIndexOf(" ", limit - 1);
+  const end = boundary >= Math.floor(limit * 0.6) ? boundary : limit - 1;
+  return `${normalized.slice(0, end).trimEnd()}…`;
+}
+
+function catalogContent(candidate: PacketCandidate): string {
+  const hit = candidate.hit;
+  return [
+    `id=${hit.document.externalId ?? hit.documentId}`,
+    `title=${hit.title}`,
+    `type=${hit.type}`,
+    `lifecycle=${hit.lifecycle}`,
+    `refresh=${hit.refreshStatus}`,
+    `revision=${hit.revision}`,
+  ].join("; ");
+}
+
+function disclosedContent(
+  candidate: PacketCandidate,
+  requested: ContextDisclosureLevel,
+): { content: string; actual: ContextDisclosureLevel } {
+  if (requested === "L0") {
+    return { content: catalogContent(candidate), actual: "L0" };
+  }
+  if (requested === "L1") {
+    const summary = oneLineOrientation(candidate.content);
+    return {
+      content: summary || catalogContent(candidate),
+      actual: "L1",
+    };
+  }
+  if (requested === "L3") {
+    const full = candidate.fullContent?.trim();
+    if (full) return { content: full, actual: "L3" };
+  }
+  return { content: candidate.content, actual: "L2" };
+}
+
 export function contextSectionFromCandidate(
   candidate: PacketCandidate,
+  requestedContextLevel: ContextDisclosureLevel = "L2",
 ): BaseContextSection {
   const hit = candidate.hit;
+  const disclosure = disclosedContent(candidate, requestedContextLevel);
   const retrievalChannels = [
     ...new Set(
       hit.fusionContributions?.map((contribution) => contribution.channel) ??
@@ -316,8 +435,9 @@ export function contextSectionFromCandidate(
   ];
   return {
     kind: candidate.kind,
+    contextLevel: disclosure.actual,
     title: hit.title,
-    content: candidate.content,
+    content: disclosure.content,
     documentId: hit.documentId,
     vaultId: hit.vaultId,
     document: hit.document,
@@ -347,6 +467,7 @@ function metadataForSection(
 function compactSection(section: BaseContextSection): CompactPacketSection {
   return {
     kind: section.kind,
+    contextLevel: section.contextLevel,
     identity: {
       documentId: section.documentId,
       vaultId: section.vaultId,
@@ -451,6 +572,7 @@ function defaultMaxSections(_intent: string): number {
 function continuationForCandidates(
   packetContentKey: string,
   candidates: PacketCandidate[],
+  requestedContextLevel: ContextDisclosureLevel,
   count: (text: string) => number,
   reason: string,
 ): ContextPacket["continuations"][number] {
@@ -466,7 +588,11 @@ function continuationForCandidates(
       .digest("hex"),
     reason,
     remainingTokens: candidates.reduce(
-      (sum, candidate) => sum + count(candidate.content),
+      (sum, candidate) =>
+        sum +
+        count(
+          contextSectionFromCandidate(candidate, requestedContextLevel).content,
+        ),
       0,
     ),
   };
@@ -615,6 +741,7 @@ export function buildContextPacket(
     (typeof retrievalConfiguration.indexStatus === "string" &&
       retrievalConfiguration.indexStatus !== "CONSISTENT");
   const maxTokens = requestedMaxTokens(input.maxTokens);
+  const requestedContextLevel = input.requestedContextLevel ?? "L2";
   const requiresEvidence = input.intent.toUpperCase() === "SOURCE_VERIFICATION";
   const maxSectionsPerDocument = Number.isFinite(input.maxSectionsPerDocument)
     ? Math.max(1, Math.trunc(input.maxSectionsPerDocument ?? 1))
@@ -638,14 +765,72 @@ export function buildContextPacket(
     packetGaps.push("No source or evidence citation matched the request.");
   }
 
-  const orderedCandidates = diverseCandidateOrder(
-    packetCandidates,
-    maxSectionsPerDocument,
+  const candidateByDocument = new Map<string, PacketCandidate[]>();
+  for (const candidate of packetCandidates) {
+    const group = candidateByDocument.get(candidate.hit.documentId) ?? [];
+    group.push(candidate);
+    candidateByDocument.set(candidate.hit.documentId, group);
+  }
+  for (const group of candidateByDocument.values()) {
+    group.sort(compareCandidates);
+  }
+
+  const materialConflicts = (input.materialConflicts ?? []).map((conflict) => ({
+    id: conflict.id,
+    documentIds: [...new Set(conflict.documentIds.filter(Boolean))],
+  }));
+  const requiredDocumentIds = new Set(
+    materialConflicts.flatMap((conflict) => conflict.documentIds),
   );
+  for (const conflict of materialConflicts) {
+    const accessible = conflict.documentIds.filter((documentId) =>
+      candidateByDocument.has(documentId),
+    );
+    if (accessible.length < conflict.documentIds.length) {
+      packetGaps.push(
+        `Material conflict ${conflict.id} has ${conflict.documentIds.length - accessible.length} unavailable side(s); complete conflict coverage was not possible.`,
+      );
+    }
+  }
+
+  const requiredCandidates = [
+    ...packetCandidates.filter((candidate) => candidate.mandatory),
+    ...[...requiredDocumentIds]
+      .map((documentId) => candidateByDocument.get(documentId)?.[0])
+      .filter((candidate): candidate is PacketCandidate => Boolean(candidate)),
+  ]
+    .sort(compareCandidates)
+    .filter(
+      (candidate, index, all) =>
+        all.findIndex(
+          (item) => candidateKey(item) === candidateKey(candidate),
+        ) === index,
+    );
+  const requiredKeys = new Set(requiredCandidates.map(candidateKey));
+  const ordinaryCandidates = packetCandidates.filter(
+    (candidate) => !requiredKeys.has(candidateKey(candidate)),
+  );
+  const orderedCandidates = [
+    ...requiredCandidates,
+    ...diverseCandidateOrder(ordinaryCandidates, maxSectionsPerDocument),
+  ];
   const orderedKeys = new Set(orderedCandidates.map(candidateKey));
   const omitted: PacketCandidate[] = packetCandidates.filter(
     (candidate) => !orderedKeys.has(candidateKey(candidate)),
   );
+  const noteRequiredOmissions = (): void => {
+    const omittedRequired = omitted.filter((candidate) =>
+      requiredKeys.has(candidateKey(candidate)),
+    );
+    if (
+      omittedRequired.length > 0 &&
+      !packetGaps.some((gap) => gap.startsWith("Mandatory context omitted:"))
+    ) {
+      packetGaps.push(
+        `Mandatory context omitted: ${omittedRequired.length} required section(s) could not be included under the active evidence or token-budget policy.`,
+      );
+    }
+  };
   const seenCandidates = new Set<string>();
   const sectionsByDocument = new Map<string, number>();
   const selected: Array<{
@@ -688,6 +873,7 @@ export function buildContextPacket(
         packetMode: "FULL_CONTEXT_PACKET",
         indexRevisions,
         retrievalConfiguration,
+        requestedContextLevel,
         searchedChannels,
         scope,
         generatedAt,
@@ -731,10 +917,12 @@ export function buildContextPacket(
                     corpusRevision: input.corpusRevision,
                     indexRevisions,
                     retrievalConfiguration,
+                    requestedContextLevel,
                   }),
                 )
                 .digest("hex"),
               omittedCandidates,
+              requestedContextLevel,
               count,
               `${omittedCandidates.length} lower-priority sections exceeded the token budget or document diversity cap.`,
             ),
@@ -753,6 +941,7 @@ export function buildContextPacket(
       generatedAt,
       budget: provisionalBudget,
       mode: input.request.mode,
+      requestedContextLevel,
       searchedChannels,
       sections: candidateSections,
       citations: candidateCitations,
@@ -770,6 +959,7 @@ export function buildContextPacket(
           corpusRevision: input.corpusRevision,
           indexRevisions,
           retrievalConfiguration,
+          requestedContextLevel,
           searchedChannels,
           sections: candidateSections,
           citations: candidateCitations,
@@ -812,7 +1002,10 @@ export function buildContextPacket(
       omitted.push(candidate);
       continue;
     }
-    const section = contextSectionFromCandidate(candidate);
+    const section = contextSectionFromCandidate(
+      candidate,
+      requestedContextLevel,
+    );
     const tentative = baseEnvelope(
       [...selected.map((entry) => entry.section), section],
       omitted,
@@ -842,6 +1035,7 @@ export function buildContextPacket(
     }
   };
   ensureNoAnswerGap();
+  noteRequiredOmissions();
 
   // Continuation metadata can grow after later candidates are omitted. Trim
   // the lowest-priority selected sections until the complete final wire fits.
@@ -865,7 +1059,9 @@ export function buildContextPacket(
         input.continuationSink?.({
           packetId: full.packetId,
           continuation,
-          sections: omitted.map(contextSectionFromCandidate),
+          sections: omitted.map((candidate) =>
+            contextSectionFromCandidate(candidate, requestedContextLevel),
+          ),
         });
       }
       return full;
@@ -880,6 +1076,7 @@ export function buildContextPacket(
       if (!removed) throw error;
       omitted.push(removed.candidate);
       ensureNoAnswerGap();
+      noteRequiredOmissions();
       final = baseEnvelope(
         selected.map((entry) => entry.section),
         omitted,
@@ -940,6 +1137,7 @@ export function projectContextPacket(
         corpusRevision: packet.corpusRevision,
         status: packet.status,
         mode: packet.mode,
+        requestedContextLevel: packet.requestedContextLevel,
         scope: packet.scope,
         indexRevisions,
       },

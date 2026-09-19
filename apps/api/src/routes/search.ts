@@ -4,8 +4,11 @@ import {
   intersectVaultPathPrefixes,
   normalizeVaultPathPrefix,
   pathMatchesVaultPrefix,
-  resolveAuthorizedVaultScope,
+  PostgresAuthorizationPort,
+  PostgresTemporalTruthStore,
+  type AuthorizedVaultScope,
   type Postgres,
+  type TruthSnapshot,
 } from "@akp/postgres";
 import {
   GraphRelationType,
@@ -14,6 +17,7 @@ import {
   ContextRequest,
   SearchRequest,
   type ContextPacket,
+  type ContextRevisionSet,
   type ContextSection,
   type GraphPathNode,
   type GraphPathProvenance,
@@ -24,17 +28,31 @@ import {
   buildContextPacket,
   buildContextPacketPair,
   ContextPacketBudgetError,
+  DETERMINISTIC_LEXICAL_RERANKER,
   contextBudgetForIntent,
   createEmbeddingProviderForGeneration,
+  personalizedPageRank,
   planQuery,
   QueryEmbeddingService,
   rehydrateStructuralContext,
   reciprocalRankFusion,
+  validateQueryTransformationResult,
+  rerankSearchHits,
+  resolvePersonalizedPageRankPolicy,
+  resolveRetrievalPolicy,
+  resolveSearchHitReranker,
+  retrievalCandidatesToRankedChannels,
+  runtimeChannelEnabled,
   toPgVector,
   type ActiveEmbeddingGenerationDescriptor,
+  type PersonalizedPageRankPolicy,
   type QueryPlan,
   type QueryPlannerCapabilities,
-  type RankedChannel,
+  type QueryTransformationKind,
+  type QueryTransformationVariant,
+  type QueryTransformerPort,
+  type RetrievalCandidate,
+  type RetrievalPolicyInput,
   type Tokenizer,
   type ContextContinuationPayload,
 } from "@akp/retrieval";
@@ -45,17 +63,28 @@ import {
   hasSpaceAccess,
   pathPrefixesForPermission,
   requirePermission,
+  requirePrincipalAction,
 } from "../auth.js";
+import {
+  resolveProjectCodeRetrieval,
+  type CodeChannelCandidate,
+} from "../project-code-retrieval.js";
+import {
+  executeApplicationReasoning,
+  type ReasoningRetrievalInvocation,
+} from "../reasoning-runtime.js";
 
 const telemetry = new OpenTelemetryBridge();
 
-type RequiredRetrievalChannel = "exact" | "lexical" | "vector" | "graph";
+type RequiredRetrievalChannel =
+  "exact" | "lexical" | "vector" | "graph" | "community";
 
 const RETRIEVAL_SPAN_NAMES: Record<RequiredRetrievalChannel, string> = {
   exact: "retrieve.exact",
   lexical: "retrieve.lexical",
   vector: "retrieve.vector",
   graph: "retrieve.graph",
+  community: "retrieve.community",
 };
 
 async function observedRetrieval<T>(
@@ -158,11 +187,24 @@ interface LexicalSearchRow {
   document_revision: string;
   score: number;
   match_reason: string;
+  query_variant_kind?: QueryTransformationKind;
+  query_variant_ordinal?: number;
 }
 
 interface DocumentChannelRow {
   id: string;
   document_revision: string;
+}
+
+interface CommunityCandidateRow extends DocumentChannelRow {
+  community_key: string;
+  community_revision: string;
+  orientation_score: number;
+}
+
+interface CodeChannelRow extends DocumentChannelRow {
+  match_reason?: string;
+  code_citations?: string[];
 }
 
 const ALL_GRAPH_RELATION_TYPES: readonly GraphRelationType[] =
@@ -174,16 +216,6 @@ const GRAPH_HARD_MAX_CANDIDATES = 100;
 const GRAPH_HARD_MAX_FANOUT = 10;
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-const RRF_CHANNEL_WEIGHTS = {
-  exact: 3,
-  lexical: 1.5,
-  vector: 1,
-  "context-pack": 2.5,
-  raw: 1.2,
-  code: 1.2,
-  graph: 1.4,
-} as const;
 
 function boundedNumber(
   value: unknown,
@@ -330,17 +362,34 @@ function kindOf(
   return "concept";
 }
 
+export type TruthConsistencyMode = "STRICT" | "BEST_EFFORT";
+
+export interface RetrievalTruthState {
+  consistency: TruthConsistencyMode;
+  snapshot: TruthSnapshot;
+  changedDuringQuery: boolean;
+}
+
 export interface RetrievalExecutionOptions {
   channels?: Array<
     "context-pack" | "exact" | "lexical" | "vector" | "graph" | "raw" | "code"
   >;
   plan?: QueryPlan;
+  /** P6 typed retrieval policy; legacy execution options remain compatible. */
+  retrievalPolicy?: RetrievalPolicyInput;
   /** Runtime capability snapshot. Production callers must provide all fields. */
   plannerCapabilities?: Partial<QueryPlannerCapabilities>;
   graphPolicy?: Partial<GraphTraversalPolicy>;
+  /** Optional P6.9 associative expansion policy; disabled unless GRAPH_PPR is enabled. */
+  pprPolicy?: Partial<PersonalizedPageRankPolicy>;
   graphScopes?: Array<{ vaultId: string; pathPrefix: string | null }>;
   allowVectorForBenchmark?: boolean;
   deterministicRerank?: boolean;
+  /** Optional P6.7 query assistance. It never receives authorization/truth controls. */
+  queryTransformer?: QueryTransformerPort;
+  queryTransformMaxVariants?: number;
+  queryTransformActorId?: string;
+  queryTransformTraceId?: string;
   /** Test/provider injection seam; production resolves the active descriptor. */
   queryEmbeddingService?: QueryEmbeddingService;
   /** Safe capability warnings accumulated without changing the legacy hit return type. */
@@ -348,14 +397,20 @@ export interface RetrievalExecutionOptions {
   /** Channels that reached their provider/index successfully for this request. */
   availableChannelSink?: Set<RetrievalChannel>;
   vaultIds?: string[];
+  /** Exact, authorized Code Graph candidates resolved by the HTTP boundary. */
+  codeCandidates?: CodeChannelCandidate[];
   /** Applied after policy/trust filtering so a scoped caller never receives a
    * path it is not allowed to read. */
   pathAuthorizer?: (path: string, vaultId?: string) => boolean;
+  truthConsistency?: TruthConsistencyMode;
+  truthStateSink?: (state: RetrievalTruthState) => void;
 }
 
 export interface SearchRouteDependencies {
   /** Active model/agent tokenizer when the runtime provides one. */
   contextTokenizer?: Tokenizer;
+  /** Optional experimental query transformer, normally controlled by feature flag. */
+  queryTransformer?: QueryTransformerPort;
 }
 
 interface StoredContextPacketRow {
@@ -441,11 +496,11 @@ async function readableContextSnapshot(
     return null;
   }
 
-  let accessByVault: Awaited<
-    ReturnType<typeof resolveAuthorizedVaultScope>
-  >["accessByVault"];
+  let accessByVault: AuthorizedVaultScope["accessByVault"];
   try {
-    const currentScope = await resolveAuthorizedVaultScope(db, {
+    const currentScope = await new PostgresAuthorizationPort(
+      db,
+    ).resolveVaultScope({
       userId: actor.id,
       spaceId: row.space_id,
       permission: "knowledge:read",
@@ -524,11 +579,19 @@ interface ActiveEmbeddingGenerationRow {
 }
 
 interface VectorSearchRow {
+  generation_id: string;
+  vault_id: string;
   id: string;
   unit_id: string;
   unit_type: string;
   document_revision: string;
   score: number;
+  query_variant_kind?: QueryTransformationKind;
+  query_variant_ordinal?: number;
+}
+
+function vectorTruthRef(row: VectorSearchRow): string {
+  return `vector:${row.generation_id}:${row.unit_id}`;
 }
 
 function activeDescriptor(
@@ -559,6 +622,63 @@ type IndexRevisionRow = Record<string, unknown> & {
   vault_id?: string;
   corpus_revision?: string;
 };
+
+function reasoningRevisionSetFromRows(
+  spaceId: string,
+  rows: readonly IndexRevisionRow[],
+  retrievalConfigurationVersion: string,
+  capturedAt = new Date().toISOString(),
+): ContextRevisionSet {
+  return {
+    spaceId,
+    vaults: rows
+      .map((row) => ({
+        vaultId: String(row.vault_id ?? ""),
+        corpusRevision: String(row.corpus_revision ?? ""),
+        lexicalRevision: row.lexical_revision
+          ? String(row.lexical_revision)
+          : null,
+        vectorRevision: row.vector_revision
+          ? String(row.vector_revision)
+          : null,
+        graphRevision: row.graph_revision
+          ? String(row.graph_revision)
+          : null,
+        contextPackRevision: row.context_pack_revision
+          ? String(row.context_pack_revision)
+          : null,
+        communityRevision: row.community_revision
+          ? String(row.community_revision)
+          : null,
+      }))
+      .sort((left, right) => left.vaultId.localeCompare(right.vaultId)),
+    retrievalConfigurationVersion,
+    capturedAt,
+  };
+}
+
+export function sameReasoningRevisionSet(
+  planned: ContextRevisionSet,
+  current: ContextRevisionSet,
+): boolean {
+  const stable = (value: ContextRevisionSet) => ({
+    spaceId: value.spaceId,
+    retrievalConfigurationVersion:
+      value.retrievalConfigurationVersion ?? null,
+    vaults: [...value.vaults]
+      .map((vault) => ({
+        vaultId: vault.vaultId,
+        corpusRevision: vault.corpusRevision,
+        lexicalRevision: vault.lexicalRevision ?? null,
+        vectorRevision: vault.vectorRevision ?? null,
+        graphRevision: vault.graphRevision ?? null,
+        contextPackRevision: vault.contextPackRevision ?? null,
+        communityRevision: vault.communityRevision ?? null,
+      }))
+      .sort((left, right) => left.vaultId.localeCompare(right.vaultId)),
+  });
+  return JSON.stringify(stable(planned)) === JSON.stringify(stable(current));
+}
 
 function combineVaultIndexRows(rows: IndexRevisionRow[]): IndexRevisionRow {
   if (rows.length === 0) return {};
@@ -632,6 +752,7 @@ export function plannerCapabilitiesForIndex(
   index: Record<string, unknown> | undefined,
   policy: {
     vectorProviderAvailable: boolean;
+    communityAvailable?: boolean;
     rawAllowed: boolean;
     codeAdapterAvailable: boolean;
   },
@@ -641,6 +762,7 @@ export function plannerCapabilitiesForIndex(
       policy.vectorProviderAvailable &&
       revisionIsCurrent(index, "vector_revision"),
     graphConsistent: revisionIsCurrent(index, "graph_revision"),
+    communityAvailable: policy.communityAvailable === true,
     rawAllowed: policy.rawAllowed,
     codeAdapterAvailable: policy.codeAdapterAvailable,
     contextPackAvailable: revisionIsCurrent(index, "context_pack_revision"),
@@ -665,6 +787,54 @@ function channelAllowedByCapabilities(
       return capabilities.codeAdapterAvailable;
     case "context-pack":
       return capabilities.contextPackAvailable;
+  }
+}
+
+async function activeCommunityIndexAvailable(
+  db: Postgres,
+  spaceId: string,
+  indexRows: readonly IndexRevisionRow[],
+): Promise<boolean> {
+  const expected = indexRows
+    .map((row) => ({
+      vaultId: String(row.vault_id ?? ""),
+      corpusRevision: String(row.corpus_revision ?? ""),
+      graphRevision: String(row.graph_revision ?? ""),
+    }))
+    .filter(
+      (row) =>
+        row.vaultId &&
+        row.corpusRevision &&
+        row.graphRevision &&
+        row.corpusRevision === row.graphRevision,
+    );
+  if (expected.length !== indexRows.length || expected.length === 0) {
+    return false;
+  }
+  try {
+    const active = await db.pool.query<{
+      vault_id: string;
+      graph_revision: string;
+    }>(
+      `
+      select vault_id,graph_revision
+        from community_index_revisions
+       where space_id=$1 and vault_id=any($2::uuid[])
+         and status='ACTIVE' and stale=false
+      `,
+      [spaceId, expected.map((row) => row.vaultId)],
+    );
+    const byVault = new Map(
+      active.rows.map((row) => [
+        String(row.vault_id),
+        String(row.graph_revision),
+      ]),
+    );
+    return expected.every(
+      (row) => byVault.get(row.vaultId) === row.graphRevision,
+    );
+  } catch {
+    return false;
   }
 }
 
@@ -761,40 +931,6 @@ export function effectiveRetrievalChannels(
   };
 }
 
-function deterministicLexicalRerank(
-  query: string,
-  hits: SearchHit[],
-): SearchHit[] {
-  const terms = new Set(
-    query
-      .normalize("NFD")
-      .replace(/\p{Diacritic}/gu, "")
-      .toLowerCase()
-      .split(/[^\p{Letter}\p{Number}]+/u)
-      .filter((term) => term.length >= 3),
-  );
-  return hits
-    .map((hit) => {
-      const haystack = `${hit.title} ${hit.excerpt}`
-        .normalize("NFD")
-        .replace(/\p{Diacritic}/gu, "")
-        .toLowerCase();
-      const overlap = [...terms].filter((term) =>
-        haystack.includes(term),
-      ).length;
-      return {
-        ...hit,
-        score: hit.score + overlap * 0.001,
-        reasons: [...hit.reasons, "deterministic-lexical-rerank"],
-      };
-    })
-    .sort(
-      (left, right) =>
-        right.score - left.score ||
-        left.documentId.localeCompare(right.documentId),
-    );
-}
-
 /**
  * Evidence locators are corpus data and can contain local paths.  A
  * path-scoped caller must not receive a locator for a path outside its
@@ -866,6 +1002,150 @@ export function sanitizeEvidenceLocator(value: unknown): unknown {
   );
 }
 
+interface AssistedRetrievalQuery {
+  query: string;
+  variant?: QueryTransformationVariant;
+}
+
+async function transformedRetrievalQueries(input: {
+  db: Postgres;
+  originalQuery: string;
+  intent: string;
+  strategy: string;
+  spaceId: string;
+  vaultIds: string[];
+  graphScopes: GraphScope[];
+  truthSnapshot: TruthSnapshot;
+  assistedChannels: string[];
+  options: RetrievalExecutionOptions;
+}): Promise<AssistedRetrievalQuery[]> {
+  const transformer = input.options.queryTransformer;
+  if (!transformer || input.assistedChannels.length === 0) {
+    return [{ query: input.originalQuery }];
+  }
+
+  try {
+    const transformed = validateQueryTransformationResult(
+      await transformer.transform({
+        originalQuery: input.originalQuery,
+        intent: input.intent,
+        ...(input.options.queryTransformMaxVariants === undefined
+          ? {}
+          : { maxVariants: input.options.queryTransformMaxVariants }),
+      }),
+      input.originalQuery,
+      input.options.queryTransformMaxVariants,
+    );
+
+    const persisted = await input.db.pool.query<{ id: string }>(
+      `
+      insert into retrieval_query_traces(
+        space_id,actor_id,trace_id,original_query,original_query_hash,
+        intent,strategy,transformer_id,transform_kind,variants,variant_count,
+        assisted_channels,vault_ids,scope,truth_snapshot
+      ) values(
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12::text[],$13::uuid[],
+        $14::jsonb,$15::jsonb
+      )
+      returning id
+      `,
+      [
+        input.spaceId,
+        input.options.queryTransformActorId ?? null,
+        input.options.queryTransformTraceId ?? null,
+        transformed.originalQuery,
+        createHash("sha256").update(transformed.originalQuery).digest("hex"),
+        input.intent,
+        input.strategy,
+        transformed.transformerId,
+        transformed.kind,
+        JSON.stringify(transformed.variants),
+        transformed.variants.length,
+        input.assistedChannels,
+        input.vaultIds,
+        JSON.stringify({
+          vaultIds: input.vaultIds,
+          graphScopes: input.graphScopes,
+        }),
+        JSON.stringify(input.truthSnapshot),
+      ],
+    );
+    if (!persisted.rows[0]?.id) {
+      input.options.warningSink?.push("QUERY_TRANSFORM_TRACE_NOT_PERSISTED");
+      return [{ query: input.originalQuery }];
+    }
+
+    return [
+      { query: input.originalQuery },
+      ...transformed.variants.map((variant) => ({
+        query: variant.query,
+        variant,
+      })),
+    ];
+  } catch (error) {
+    const code =
+      error instanceof Error ? error.message : "QUERY_TRANSFORM_FAILED";
+    input.options.warningSink?.push(`QUERY_TRANSFORM_SKIPPED:${code}`);
+    return [{ query: input.originalQuery }];
+  }
+}
+
+function lexicalRowKey(row: LexicalSearchRow): string {
+  return `${row.id}:${row.unit_id ?? ""}`;
+}
+
+function mergeLexicalRows(
+  rows: readonly LexicalSearchRow[],
+): LexicalSearchRow[] {
+  const best = new Map<string, LexicalSearchRow>();
+  for (const row of rows) {
+    const key = lexicalRowKey(row);
+    const current = best.get(key);
+    if (
+      !current ||
+      Number(row.score) > Number(current.score) ||
+      (Number(row.score) === Number(current.score) &&
+        current.query_variant_kind !== undefined &&
+        row.query_variant_kind === undefined)
+    ) {
+      best.set(key, row);
+    }
+  }
+  return [...best.values()].sort(
+    (left, right) =>
+      Number(right.score) - Number(left.score) ||
+      String(left.id).localeCompare(String(right.id)) ||
+      String(left.unit_id ?? "").localeCompare(String(right.unit_id ?? "")),
+  );
+}
+
+function vectorRowKey(row: VectorSearchRow): string {
+  return `${row.generation_id}:${row.unit_id}`;
+}
+
+function mergeVectorRows(rows: readonly VectorSearchRow[]): VectorSearchRow[] {
+  const best = new Map<string, VectorSearchRow>();
+  for (const row of rows) {
+    const key = vectorRowKey(row);
+    const current = best.get(key);
+    if (
+      !current ||
+      Number(row.score) > Number(current.score) ||
+      (Number(row.score) === Number(current.score) &&
+        current.query_variant_kind !== undefined &&
+        row.query_variant_kind === undefined)
+    ) {
+      best.set(key, row);
+    }
+  }
+  return [...best.values()].sort(
+    (left, right) =>
+      Number(right.score) - Number(left.score) ||
+      String(left.id).localeCompare(String(right.id)) ||
+      String(left.unit_id).localeCompare(String(right.unit_id)),
+  );
+}
+
 export async function queryKnowledge(
   db: Postgres,
   input: SearchInput,
@@ -902,6 +1182,30 @@ export async function queryKnowledge(
       : `and ${alias}vault_id=any(array[${vaultIds
           .map((id) => `'${id}'::uuid`)
           .join(",")}])`;
+  const truthConsistency: TruthConsistencyMode =
+    options.truthConsistency ??
+    input.truthConsistency ??
+    options.retrievalPolicy?.truthValidation ??
+    "STRICT";
+  const truthStore = new PostgresTemporalTruthStore(db);
+  const truthSnapshot = await truthStore.captureSnapshot(spaceId, vaultIds);
+  const finalizeTruthSnapshot = async (): Promise<RetrievalTruthState> => {
+    const changedDuringQuery =
+      !(await truthStore.snapshotUnchanged(truthSnapshot));
+    const state: RetrievalTruthState = {
+      consistency: truthConsistency,
+      snapshot: truthSnapshot,
+      changedDuringQuery,
+    };
+    options.truthStateSink?.(state);
+    if (changedDuringQuery) {
+      if (truthConsistency === "STRICT") {
+        throw new Error("CONTEXT_REVISION_CHANGED");
+      }
+      options.warningSink?.push("CONTEXT_REVISION_CHANGED_BEST_EFFORT");
+    }
+    return state;
+  };
   const indexRows = await db.pool.query(
     `select vault_id,corpus_revision,lexical_revision,vector_revision,
             graph_revision,context_pack_revision,status,warnings,
@@ -916,6 +1220,11 @@ export async function queryKnowledge(
     vectorProviderAvailable:
       process.env.AKP_VECTOR_ENABLED === "true" ||
       Boolean(options.allowVectorForBenchmark),
+    communityAvailable: await activeCommunityIndexAvailable(
+      db,
+      spaceId,
+      indexRows.rows,
+    ),
     // Direct library callers do not carry an actor. Raw retrieval therefore
     // fails closed unless they explicitly request RAW_ONLY or inject policy.
     rawAllowed: input.mode === "RAW_ONLY",
@@ -935,7 +1244,22 @@ export async function queryKnowledge(
     ...(options.plannerCapabilities ?? {}),
   };
   const plan =
-    options.plan ?? planQuery(input.query, input.intent, capabilities);
+    options.plan ??
+    planQuery(input.query, {
+      ...(input.intent ? { requestedIntent: input.intent } : {}),
+      capabilities,
+      queryShape: {
+        permissionSensitiveFederated: input.federated || vaultIds.length > 1,
+        ...(input.projectId ? { ticketWorkProcess: true } : {}),
+        ...(input.mode === "PROJECT_CODE" ? { codeSymbolOrPath: true } : {}),
+      },
+    });
+  const effectiveStrategy = options.retrievalPolicy?.graphMode ?? plan.strategy;
+  const retrievalPolicy = resolveRetrievalPolicy({
+    ...(options.retrievalPolicy ?? {}),
+    graphMode: effectiveStrategy,
+    truthValidation: truthConsistency,
+  });
   const effectiveCapabilities = options.plan?.capabilities ?? capabilities;
   const graphPolicy = normalizeGraphPolicy(
     options.graphPolicy,
@@ -952,10 +1276,16 @@ export async function queryKnowledge(
       : options.graphScopes,
   );
   const requestedByPolicy = options.channels ?? plan.channels;
-  const requestedChannels = requestedByPolicy.filter((channel) =>
-    channelAllowedByCapabilities(channel, effectiveCapabilities),
+  const requestedChannels = requestedByPolicy.filter(
+    (channel) =>
+      runtimeChannelEnabled(retrievalPolicy, channel) &&
+      channelAllowedByCapabilities(channel, effectiveCapabilities),
   );
   for (const channel of requestedByPolicy) {
+    if (!runtimeChannelEnabled(retrievalPolicy, channel)) {
+      options.warningSink?.push(`CHANNEL_POLICY_DISABLED:${channel}`);
+      continue;
+    }
     if (!requestedChannels.includes(channel)) {
       options.warningSink?.push(`CHANNEL_CAPABILITY_UNAVAILABLE:${channel}`);
     }
@@ -995,6 +1325,23 @@ export async function queryKnowledge(
     "when 'HUMAN_REVIEWED' then 2 " +
     "when 'ATTESTED' then 3 else -1 end) " +
     `>= ${minimumTrust}`;
+
+  const assistedChannels = [
+    ...(channels.has("lexical") || channels.has("graph") ? ["LEXICAL"] : []),
+    ...(channels.has("vector") ? ["VECTOR"] : []),
+  ];
+  const assistedQueries = await transformedRetrievalQueries({
+    db,
+    originalQuery: input.query,
+    intent: plan.intent,
+    strategy: effectiveStrategy,
+    spaceId,
+    vaultIds,
+    graphScopes,
+    truthSnapshot,
+    assistedChannels,
+    options,
+  });
 
   const exact = channels.has("exact")
     ? await observedRetrieval("exact", () =>
@@ -1046,18 +1393,25 @@ export async function queryKnowledge(
   recordRetrievalCandidates("exact", exact.rows.length);
   if (channels.has("exact")) options.availableChannelSink?.add("exact");
 
-  const lexical =
-    channels.has("lexical") || channels.has("graph")
-      ? await observedRetrieval("lexical", () =>
-          db.pool.query<LexicalSearchRow>(
-            `
+  const lexicalRows: LexicalSearchRow[] = [];
+  if (channels.has("lexical") || channels.has("graph")) {
+    for (const assisted of assistedQueries) {
+      const result = await observedRetrieval("lexical", () =>
+        db.pool.query<LexicalSearchRow>(
+          `
           with query as (
-            select plainto_tsquery('simple', $2) terms
+            select plainto_tsquery('simple', $2) terms,
+                   plainto_tsquery(
+                     'simple',
+                     akp_lexical_symbol_text($2)
+                   ) symbol_terms
           ), eligible_documents as (
             select d.id,d.current_revision,d.lexical_external_id_vector,
                    d.lexical_alias_vector,d.lexical_title_vector,
                    d.lexical_path_vector,d.lexical_body_vector,
-                   i.lexical_revision index_revision,query.terms
+                   d.lexical_search_vector,d.lexical_symbol_vector,
+                   i.lexical_revision index_revision,
+                   query.terms,query.symbol_terms
               from knowledge_documents d
               join vault_index_revisions i
                 on i.space_id=d.space_id and i.vault_id=d.vault_id
@@ -1071,6 +1425,7 @@ export async function queryKnowledge(
                ${modeClause}
                and (
                  d.lexical_search_vector @@ query.terms
+                 or d.lexical_symbol_vector @@ query.symbol_terms
                  or exists (
                    select 1
                      from knowledge_units matching_unit
@@ -1080,7 +1435,10 @@ export async function queryKnowledge(
                       and matching_unit.corpus_revision=i.lexical_revision
                       and matching_unit.lifecycle ${lifecycleClause}
                       and ${trustClause("matching_unit.")}
-                      and matching_unit.lexical_search_vector @@ query.terms
+                      and (
+                        matching_unit.lexical_search_vector @@ query.terms
+                        or matching_unit.lexical_symbol_vector @@ query.symbol_terms
+                      )
                  )
                )
           ), scored as (
@@ -1091,6 +1449,15 @@ export async function queryKnowledge(
                    20 * ts_rank_cd(d.lexical_title_vector,d.terms) +
                    24 * ts_rank_cd(d.lexical_path_vector,d.terms) +
                     2 * ts_rank_cd(d.lexical_body_vector,d.terms) +
+                   case
+                     when not (d.lexical_search_vector @@ d.terms)
+                      and d.lexical_symbol_vector @@ d.symbol_terms
+                     then 26 * ts_rank_cd(
+                       d.lexical_symbol_vector,
+                       d.symbol_terms
+                     )
+                     else 0
+                   end +
                    coalesce(best_unit.unit_score,0) score,
                    case
                      when d.lexical_external_id_vector @@ d.terms
@@ -1101,10 +1468,15 @@ export async function queryKnowledge(
                        then 'lexical:path-terms'
                      when d.lexical_title_vector @@ d.terms
                        then 'lexical:title-terms'
+                     when d.lexical_symbol_vector @@ d.symbol_terms
+                      and not (d.lexical_search_vector @@ d.terms)
+                       then 'lexical:symbol-terms'
                      when best_unit.heading_match
                        then 'lexical:heading-terms'
                      when best_unit.unit_match
                        then 'lexical:unit-terms'
+                     when best_unit.symbol_match
+                       then 'lexical:symbol-terms'
                      else 'lexical:body-terms'
                    end match_reason
               from eligible_documents d
@@ -1112,9 +1484,19 @@ export async function queryKnowledge(
                 select u.id unit_id,u.unit_type,
                        12 * ts_rank_cd(u.lexical_heading_vector,d.terms) +
                         8 * ts_rank_cd(u.lexical_unit_vector,d.terms) +
-                            ts_rank_cd(u.lexical_body_vector,d.terms) unit_score,
+                            ts_rank_cd(u.lexical_body_vector,d.terms) +
+                       case
+                         when not (u.lexical_search_vector @@ d.terms)
+                          and u.lexical_symbol_vector @@ d.symbol_terms
+                         then 10 * ts_rank_cd(
+                           u.lexical_symbol_vector,
+                           d.symbol_terms
+                         )
+                         else 0
+                       end unit_score,
                        u.lexical_heading_vector @@ d.terms heading_match,
-                       u.lexical_unit_vector @@ d.terms unit_match
+                       u.lexical_unit_vector @@ d.terms unit_match,
+                       u.lexical_symbol_vector @@ d.symbol_terms symbol_match
                   from knowledge_units u
                  where u.document_id=d.id
                    and u.corpus_revision=d.index_revision
@@ -1129,10 +1511,26 @@ export async function queryKnowledge(
            order by score desc,id,unit_id nulls last
            limit $3
           `,
-            [spaceId, input.query, Math.max(input.limit * 3, 30)],
-          ),
-        )
-      : { rows: [] as LexicalSearchRow[] };
+          [spaceId, assisted.query, Math.max(input.limit * 3, 30)],
+        ),
+      );
+      lexicalRows.push(
+        ...result.rows.map((row) =>
+          assisted.variant
+            ? {
+                ...row,
+                match_reason: `lexical:transformed:${assisted.variant.kind}:${row.match_reason}`,
+                query_variant_kind: assisted.variant.kind,
+                query_variant_ordinal: assisted.variant.ordinal,
+              }
+            : row,
+        ),
+      );
+    }
+  }
+  const lexical = {
+    rows: mergeLexicalRows(lexicalRows).slice(0, Math.max(input.limit * 3, 30)),
+  };
   recordRetrievalCandidates("lexical", lexical.rows.length);
   if (channels.has("lexical")) {
     options.availableChannelSink?.add("lexical");
@@ -1183,67 +1581,125 @@ export async function queryKnowledge(
       ) {
         throw new Error("EMBEDDING_GENERATION_DIMENSIONS_INVALID");
       }
-      let queryVector: number[];
-      try {
-        queryVector = await embeddingService.embedQuery(
-          input.query,
-          generation,
-        );
-      } catch {
-        options.warningSink?.push(
-          `VECTOR_PROVIDER_UNAVAILABLE:${generation.vaultId}`,
-        );
-        continue;
-      }
       const dimensions = generation.dimensions;
-      try {
-        const result = await observedRetrieval("vector", () =>
-          db.pool.query<VectorSearchRow>(
-            `
-          select u.document_id id,u.id unit_id,u.unit_type,
-                 u.document_revision,
-                 1 - (e.embedding::vector(${dimensions}) <=> $3::vector(${dimensions})) score
-            from unit_embeddings e
-            join knowledge_units u on u.id=e.unit_id
-            join knowledge_documents d on d.id=u.document_id
-           where e.generation_id=$1 and u.space_id=$2 and u.vault_id=$4
-             and e.embedding_dimensions=${dimensions}
-             and e.content_hash=u.content_hash
-             and u.embedding_eligible
-             and u.lifecycle ${lifecycleClause}
-             and ${trustClause("u.")}
-             and d.lifecycle ${lifecycleClause}
-             and ${trustClause("d.")}
-             and d.refresh_status not in ('STALE_BLOCKED','INVALID')
-             ${modeClause}
-           order by e.embedding::vector(${dimensions}) <=> $3::vector(${dimensions}),
-                    u.document_id,u.id
-           limit $5
-          `,
-            [
-              generation.generationId,
-              spaceId,
-              toPgVector(queryVector),
-              generation.vaultId,
-              Math.max(input.limit * 3, 30),
-            ],
-          ),
-        );
-        options.availableChannelSink?.add("vector");
-        vector.rows.push(...result.rows);
-      } catch {
-        options.warningSink?.push(
-          `VECTOR_QUERY_UNAVAILABLE:${generation.vaultId}`,
-        );
+      for (const assisted of assistedQueries) {
+        let queryVector: number[];
+        try {
+          queryVector = await embeddingService.embedQuery(
+            assisted.query,
+            generation,
+          );
+        } catch {
+          options.warningSink?.push(
+            `VECTOR_PROVIDER_UNAVAILABLE:${generation.vaultId}`,
+          );
+          continue;
+        }
+        try {
+          const result = await observedRetrieval("vector", () =>
+            db.pool.query<VectorSearchRow>(
+              `
+              select $1::uuid generation_id,u.vault_id,
+                     u.document_id id,u.id unit_id,u.unit_type,
+                     u.document_revision,
+                     1 - (e.embedding::vector(${dimensions}) <=> $3::vector(${dimensions})) score
+                from unit_embeddings e
+                join knowledge_units u on u.id=e.unit_id
+                join knowledge_documents d on d.id=u.document_id
+               where e.generation_id=$1 and u.space_id=$2 and u.vault_id=$4
+                 and e.embedding_dimensions=${dimensions}
+                 and e.content_hash=u.content_hash
+                 and u.embedding_eligible
+                 and u.lifecycle ${lifecycleClause}
+                 and ${trustClause("u.")}
+                 and d.lifecycle ${lifecycleClause}
+                 and ${trustClause("d.")}
+                 and d.refresh_status not in ('STALE_BLOCKED','INVALID')
+                 ${modeClause}
+               order by e.embedding::vector(${dimensions}) <=> $3::vector(${dimensions}),
+                        u.document_id,u.id
+               limit $5
+              `,
+              [
+                generation.generationId,
+                spaceId,
+                toPgVector(queryVector),
+                generation.vaultId,
+                Math.max(input.limit * 3, 30),
+              ],
+            ),
+          );
+          options.availableChannelSink?.add("vector");
+          vector.rows.push(
+            ...result.rows.map((row) =>
+              assisted.variant
+                ? {
+                    ...row,
+                    query_variant_kind: assisted.variant.kind,
+                    query_variant_ordinal: assisted.variant.ordinal,
+                  }
+                : row,
+            ),
+          );
+        } catch {
+          options.warningSink?.push(
+            `VECTOR_QUERY_UNAVAILABLE:${generation.vaultId}`,
+          );
+        }
       }
     }
-    vector.rows.sort(
-      (left, right) =>
-        Number(right.score) - Number(left.score) ||
-        String(left.id).localeCompare(String(right.id)) ||
-        String(left.unit_id).localeCompare(String(right.unit_id)),
+    vector.rows.splice(
+      0,
+      vector.rows.length,
+      ...mergeVectorRows(vector.rows).slice(0, Math.max(input.limit * 3, 30)),
     );
-    vector.rows.splice(Math.max(input.limit * 3, 30));
+  }
+
+  if (vector.rows.length > 0) {
+    const truthRevisionByVault = new Map(
+      truthSnapshot.vaults.map((entry) => [entry.vaultId, entry]),
+    );
+    const truthValidRows: VectorSearchRow[] = [];
+    for (const vaultId of vaultIds) {
+      const scopedRows = vector.rows.filter((row) => row.vault_id === vaultId);
+      if (scopedRows.length === 0) continue;
+      const snapshotEntry = truthRevisionByVault.get(vaultId);
+      const validations = await truthStore.validateDerivedItems({
+        spaceId,
+        vaultId,
+        derivedStoreKind: "VECTOR",
+        derivedItemRefs: scopedRows.map(vectorTruthRef),
+        ...(snapshotEntry?.revisionHash
+          ? { truthRevisionHash: snapshotEntry.revisionHash }
+          : {}),
+      });
+      const validationByRef = new Map(
+        validations.map((validation) => [
+          validation.derivedItemRef,
+          validation,
+        ]),
+      );
+      for (const row of scopedRows) {
+        const validation = validationByRef.get(vectorTruthRef(row));
+        if (validation?.valid === false) {
+          options.warningSink?.push(
+            `TRUTH_SUPPORT_REJECTED:VECTOR:${row.unit_id}`,
+          );
+          telemetry.counter("truth_candidate_rejected", 1, {
+            channel: "vector",
+            state: validation.state,
+          });
+          continue;
+        }
+        if (validation?.state === "DISPUTED") {
+          options.warningSink?.push(
+            `TRUTH_SUPPORT_DISPUTED:VECTOR:${row.unit_id}`,
+          );
+        }
+        truthValidRows.push(row);
+      }
+    }
+    vector.rows.splice(0, vector.rows.length, ...truthValidRows);
   }
   recordRetrievalCandidates("vector", vector.rows.length);
 
@@ -1254,6 +1710,103 @@ export async function queryKnowledge(
       ),
     ),
   ];
+  const communityCandidates: CommunityCandidateRow[] = [];
+  if (
+    (retrievalPolicy.graphMode === "GLOBAL" ||
+      retrievalPolicy.graphMode === "DRIFT") &&
+    retrievalPolicy.channels.COMMUNITY.enabled &&
+    effectiveCapabilities.communityAvailable
+  ) {
+    const driftSeeds = seedIds.filter((id) => UUID_PATTERN.test(id));
+    try {
+      const routed = await observedRetrieval("community", () =>
+        db.pool.query<CommunityCandidateRow>(
+          `
+          with query as (
+            select plainto_tsquery('simple',$2) terms
+          ),
+          active_community as (
+            select r.id revision_id,r.vault_id,r.community_revision,
+                   c.community_key,c.member_count,c.summary
+              from community_index_revisions r
+              join vault_index_revisions vi
+                on vi.space_id=r.space_id and vi.vault_id=r.vault_id
+               and vi.graph_revision=vi.corpus_revision
+               and r.graph_revision=vi.graph_revision
+              join community_index_communities c on c.revision_id=r.id
+             where r.space_id=$1
+               and r.vault_id=any($3::uuid[])
+               and r.status='ACTIVE' and r.stale=false
+               and c.summary_lifecycle='DERIVED_INDEX'
+               and c.citable=false
+          ),
+          drift_community as (
+            select distinct m.revision_id,m.community_key
+              from community_index_memberships m
+             where cardinality($4::uuid[]) > 0
+               and m.document_id=any($4::uuid[])
+          ),
+          oriented as (
+            select ac.*,
+                   ts_rank_cd(
+                     to_tsvector('simple',coalesce(ac.summary,'')),
+                     query.terms
+                   ) text_score,
+                   case when dc.community_key is not null then 1 else 0 end
+                     seed_match
+              from active_community ac
+              cross join query
+              left join drift_community dc
+                on dc.revision_id=ac.revision_id
+               and dc.community_key=ac.community_key
+             where $5::text='GLOBAL'
+                or dc.community_key is not null
+          )
+          select d.id,d.current_revision document_revision,
+                 o.community_key,o.community_revision,
+                 (
+                   100 * o.seed_match +
+                   10 * o.text_score +
+                   ln(greatest(o.member_count,1) + 1)
+                 )::double precision orientation_score
+            from oriented o
+            join community_index_memberships m
+              on m.revision_id=o.revision_id
+             and m.community_key=o.community_key
+            join knowledge_documents d on d.id=m.document_id
+           where d.space_id=$1
+             ${vaultFilter("d.")}
+             and d.lifecycle ${lifecycleClause}
+             and ${trustClause("d.")}
+             and d.refresh_status not in ('STALE_BLOCKED','INVALID')
+             ${modeClause}
+             and not (
+               $5::text='DRIFT'
+               and cardinality($4::uuid[]) > 0
+               and d.id=any($4::uuid[])
+             )
+           order by orientation_score desc,o.community_key,d.id
+           limit $6
+          `,
+          [
+            spaceId,
+            input.query,
+            vaultIds,
+            driftSeeds,
+            retrievalPolicy.graphMode,
+            Math.max(input.limit * 4, 40),
+          ],
+        ),
+      );
+      communityCandidates.push(...routed.rows);
+    } catch (error) {
+      const code =
+        error instanceof Error ? error.message : "COMMUNITY_ROUTING_FAILED";
+      options.warningSink?.push(`COMMUNITY_UNAVAILABLE:${code}`);
+    }
+  }
+  recordRetrievalCandidates("community", communityCandidates.length);
+
   const contextPack = channels.has("context-pack")
     ? await db.pool.query<DocumentChannelRow>(
         `
@@ -1303,9 +1856,18 @@ export async function queryKnowledge(
     : { rows: [] as DocumentChannelRow[] };
   if (channels.has("raw")) options.availableChannelSink?.add("raw");
 
-  const codeFallback = channels.has("code")
-    ? await db.pool.query<DocumentChannelRow>(
-        `
+  const codeFallback: { rows: CodeChannelRow[] } = channels.has("code")
+    ? options.codeCandidates !== undefined
+      ? {
+          rows: options.codeCandidates.map((candidate) => ({
+            id: candidate.id,
+            document_revision: candidate.documentRevision,
+            match_reason: candidate.reason,
+            code_citations: candidate.citations,
+          })),
+        }
+      : await db.pool.query<CodeChannelRow>(
+          `
           with query as (select plainto_tsquery('simple',$2) terms)
           select d.id,d.current_revision document_revision
             from knowledge_documents d
@@ -1322,10 +1884,13 @@ export async function queryKnowledge(
                     d.id
            limit $3
           `,
-        [spaceId, input.query, Math.max(input.limit, 10)],
-      )
-    : { rows: [] as DocumentChannelRow[] };
+          [spaceId, input.query, Math.max(input.limit, 10)],
+        )
+    : { rows: [] };
   if (channels.has("code")) options.availableChannelSink?.add("code");
+  const codeCitationsByCandidate = new Map(
+    codeFallback.rows.map((row) => [String(row.id), row.code_citations ?? []]),
+  );
 
   const candidateSeedIds = seedIds.filter((id) => UUID_PATTERN.test(id));
   const graphRows =
@@ -1724,88 +2289,246 @@ export async function queryKnowledge(
     options.availableChannelSink?.add("graph");
   }
 
-  const rankedChannels: RankedChannel[] = [
-    {
-      channel: "exact",
-      channelWeight: RRF_CHANNEL_WEIGHTS.exact,
-      items: exact.rows.map((row, index) => ({
-        id: String(row.id),
-        rank: index + 1,
-        reason: row.match_reason ? String(row.match_reason) : "exact",
-        candidateRevision: String(row.document_revision),
-      })),
-    },
-    ...(channels.has("lexical")
-      ? [
-          {
-            channel: "lexical",
-            channelWeight: RRF_CHANNEL_WEIGHTS.lexical,
-            items: lexical.rows.map((row, index) => ({
-              id: String(row.id),
-              rank: index + 1,
-              reason: row.match_reason ? String(row.match_reason) : "lexical",
-              candidateRevision: String(row.document_revision),
+  const pprCandidates: RetrievalCandidate[] = [];
+  if (
+    retrievalPolicy.graphMode === "ASSOCIATIVE" &&
+    retrievalPolicy.channels.GRAPH_PPR.enabled &&
+    graphProvenanceByCandidate.size > 0
+  ) {
+    const graphRevision = String(index.graph_revision ?? "").trim();
+    if (!graphRevision) {
+      options.warningSink?.push("PPR_UNAVAILABLE:GRAPH_REVISION_MISSING");
+    } else {
+      try {
+        const pprNodeById = new Map<
+          string,
+          { id: string; scopeId: string; graphDomain: string }
+        >();
+        const pprEdges: Array<{
+          fromNodeId: string;
+          toNodeId: string;
+          scopeId: string;
+          relation: string;
+          weight: number;
+        }> = [];
+        for (const paths of graphProvenanceByCandidate.values()) {
+          for (const provenance of paths) {
+            for (let index = 0; index < provenance.path.length; index += 1) {
+              const current = provenance.path[index];
+              if (!current) continue;
+              const currentDocument = graphNodeById.get(current.documentId);
+              if (!currentDocument) continue;
+              const scopeId = String(currentDocument.vault_id);
+              pprNodeById.set(current.documentId, {
+                id: current.documentId,
+                scopeId,
+                graphDomain: "EPISTEMIC",
+              });
+              const next = provenance.path[index + 1];
+              if (!next || !current.relation) continue;
+              const nextDocument = graphNodeById.get(next.documentId);
+              if (!nextDocument || String(nextDocument.vault_id) !== scopeId) {
+                continue;
+              }
+              const configuredWeight =
+                graphPolicy.relationWeights[current.relation] ?? 1;
+              if (
+                typeof configuredWeight !== "number" ||
+                !Number.isFinite(configuredWeight) ||
+                configuredWeight <= 0
+              ) {
+                continue;
+              }
+              pprEdges.push({
+                fromNodeId: current.documentId,
+                toNodeId: next.documentId,
+                scopeId,
+                relation: current.relation,
+                weight: configuredWeight,
+              });
+            }
+          }
+        }
+
+        const pprSeedWeights = new Map<string, number>();
+        const addPprSeeds = (
+          rows: readonly { id: unknown }[],
+          channelWeight: number | undefined,
+        ): void => {
+          if (
+            typeof channelWeight !== "number" ||
+            !Number.isFinite(channelWeight) ||
+            channelWeight <= 0
+          ) {
+            return;
+          }
+          rows.forEach((row, rankIndex) => {
+            const nodeId = String(row.id);
+            if (!pprNodeById.has(nodeId)) return;
+            const weight = channelWeight / (60 + rankIndex + 1);
+            pprSeedWeights.set(
+              nodeId,
+              (pprSeedWeights.get(nodeId) ?? 0) + weight,
+            );
+          });
+        };
+        addPprSeeds(exact.rows, retrievalPolicy.channels.EXACT.weight);
+        addPprSeeds(lexical.rows, retrievalPolicy.channels.LEXICAL.weight);
+        addPprSeeds(vector.rows, retrievalPolicy.channels.VECTOR.weight);
+
+        if (pprSeedWeights.size > 0) {
+          const pprPolicy = resolvePersonalizedPageRankPolicy({
+            ...options.pprPolicy,
+            allowedGraphDomains: options.pprPolicy?.allowedGraphDomains ?? [
+              "EPISTEMIC",
+            ],
+            allowedRelations:
+              options.pprPolicy?.allowedRelations ??
+              graphPolicy.allowedRelationTypes,
+          });
+          const pprResult = personalizedPageRank({
+            nodes: [...pprNodeById.values()],
+            edges: pprEdges,
+            seeds: [...pprSeedWeights].map(([nodeId, weight]) => ({
+              nodeId,
+              weight,
             })),
-          },
-        ]
+            policy: pprPolicy,
+          });
+          if (!pprResult.converged) {
+            options.warningSink?.push("PPR_MAX_ITERATIONS_REACHED");
+          }
+          const seedIds = new Set(pprSeedWeights.keys());
+          const supported = pprResult.candidates.filter(
+            (candidate) =>
+              !seedIds.has(candidate.nodeId) &&
+              graphProvenanceByCandidate.has(candidate.nodeId),
+          );
+          pprCandidates.push(
+            ...supported.map((candidate, rankIndex) => ({
+              candidateId: candidate.nodeId,
+              channel: "GRAPH_PPR" as const,
+              rank: rankIndex + 1,
+              rawScore: candidate.score,
+              scopeId: spaceId,
+              documentId: candidate.nodeId,
+              revision: graphRevision,
+              selectionReason: "graph-ppr:associative",
+            })),
+          );
+        }
+      } catch (error) {
+        const code =
+          error instanceof Error ? error.message : "PPR_EXECUTION_FAILED";
+        options.warningSink?.push(`PPR_UNAVAILABLE:${code}`);
+      }
+    }
+  }
+
+  const retrievalCandidates: RetrievalCandidate[] = [
+    ...exact.rows.map((row, index) => ({
+      candidateId: String(row.id),
+      channel: "EXACT" as const,
+      rank: index + 1,
+      scopeId: spaceId,
+      documentId: String(row.id),
+      revision: String(row.document_revision),
+      selectionReason: row.match_reason ? String(row.match_reason) : "exact",
+    })),
+    ...(channels.has("lexical")
+      ? lexical.rows.map((row, index) => ({
+          candidateId: String(row.id),
+          channel: "LEXICAL" as const,
+          rank: index + 1,
+          rawScore: Number(row.score),
+          scopeId: spaceId,
+          documentId: String(row.id),
+          ...(row.unit_id ? { unitId: String(row.unit_id) } : {}),
+          revision: String(row.document_revision),
+          selectionReason: row.match_reason
+            ? String(row.match_reason)
+            : "lexical",
+        }))
       : []),
-    {
-      channel: "vector",
-      channelWeight: RRF_CHANNEL_WEIGHTS.vector,
-      items: vector.rows.map((row, index) => ({
-        id: String(row.id),
-        rank: index + 1,
-        reason: "vector",
-        candidateRevision: String(row.document_revision),
-      })),
-    },
-    {
-      channel: "context-pack",
-      channelWeight: RRF_CHANNEL_WEIGHTS["context-pack"],
-      items: contextPack.rows.map((row, index) => ({
-        id: String(row.id),
-        rank: index + 1,
-        reason: "context-pack:lexical-match",
-        candidateRevision: String(row.document_revision),
-      })),
-    },
-    {
-      channel: "raw",
-      channelWeight: RRF_CHANNEL_WEIGHTS.raw,
-      items: rawFallback.rows.map((row, index) => ({
-        id: String(row.id),
-        rank: index + 1,
-        reason: "raw:source-match",
-        candidateRevision: String(row.document_revision),
-      })),
-    },
-    {
-      channel: "code",
-      channelWeight: RRF_CHANNEL_WEIGHTS.code,
-      items: codeFallback.rows.map((row, index) => ({
-        id: String(row.id),
-        rank: index + 1,
-        reason: "code:project-match",
-        candidateRevision: String(row.document_revision),
-      })),
-    },
-    {
-      channel: "graph",
-      channelWeight: RRF_CHANNEL_WEIGHTS.graph,
-      items: graph.rows.map((row, index) => ({
-        id: String(row.id),
-        rank: index + 1,
-        reason: "graph:bounded-path",
-        candidateRevision: row.candidateRevision,
-      })),
-    },
+    ...vector.rows.map((row, index) => ({
+      candidateId: String(row.id),
+      channel: "VECTOR" as const,
+      rank: index + 1,
+      rawScore: Number(row.score),
+      scopeId: spaceId,
+      documentId: String(row.id),
+      ...(row.unit_id ? { unitId: String(row.unit_id) } : {}),
+      revision: String(row.document_revision),
+      selectionReason: row.query_variant_kind
+        ? `vector:transformed:${row.query_variant_kind}`
+        : "vector",
+    })),
+    ...communityCandidates.map((row, index) => ({
+      candidateId: String(row.id),
+      channel: "COMMUNITY" as const,
+      rank: index + 1,
+      rawScore: Number(row.orientation_score),
+      scopeId: spaceId,
+      documentId: String(row.id),
+      revision: String(row.document_revision),
+      supportSetId: `${row.community_revision}:${row.community_key}`,
+      selectionReason:
+        retrievalPolicy.graphMode === "DRIFT"
+          ? "community:drift-routing"
+          : "community:global-routing",
+    })),
+    ...contextPack.rows.map((row, index) => ({
+      candidateId: String(row.id),
+      channel: "CONTEXT_PACK" as const,
+      rank: index + 1,
+      scopeId: spaceId,
+      documentId: String(row.id),
+      revision: String(row.document_revision),
+      selectionReason: "context-pack:lexical-match",
+    })),
+    ...rawFallback.rows.map((row, index) => ({
+      candidateId: String(row.id),
+      channel: "RAW" as const,
+      rank: index + 1,
+      scopeId: spaceId,
+      documentId: String(row.id),
+      revision: String(row.document_revision),
+      selectionReason: "raw:source-match",
+    })),
+    ...codeFallback.rows.map((row, index) => ({
+      candidateId: String(row.id),
+      channel: "CODE" as const,
+      rank: index + 1,
+      scopeId: spaceId,
+      documentId: String(row.id),
+      revision: String(row.document_revision),
+      selectionReason: row.match_reason ?? "code:project-match",
+    })),
+    ...graph.rows.map((row, index) => ({
+      candidateId: String(row.id),
+      channel: "GRAPH_TYPED" as const,
+      rank: index + 1,
+      rawScore: Number(row.weight),
+      scopeId: spaceId,
+      documentId: String(row.id),
+      revision: row.candidateRevision,
+      selectionReason: "graph:bounded-path",
+    })),
+    ...pprCandidates,
   ];
+  const rankedChannels = retrievalCandidatesToRankedChannels(
+    retrievalCandidates,
+    retrievalPolicy,
+  );
   const fused = (
     await withSpan("retrieve.fuse", {}, async () =>
       reciprocalRankFusion(rankedChannels),
     )
   ).slice(0, input.limit * 2);
-  if (fused.length === 0) return [];
+  if (fused.length === 0) {
+    await finalizeTruthSnapshot();
+    return [];
+  }
 
   const details = await db.pool.query(
     `
@@ -1947,15 +2670,18 @@ export async function queryKnowledge(
             options.pathAuthorizer!(value, String(row.vault_id))
         : undefined;
       const citations = [
-        ...documentCitations,
-        ...((row.evidence_locators ?? []) as Array<Record<string, unknown>>)
-          .filter((locator) =>
-            evidenceLocatorAllowed(locator, rowPathAuthorizer),
-          )
-          .map(
-            (locator) =>
-              `evidence:${JSON.stringify(sanitizeEvidenceLocator(locator))}`,
-          ),
+        ...new Set([
+          ...documentCitations,
+          ...((row.evidence_locators ?? []) as Array<Record<string, unknown>>)
+            .filter((locator) =>
+              evidenceLocatorAllowed(locator, rowPathAuthorizer),
+            )
+            .map(
+              (locator) =>
+                `evidence:${JSON.stringify(sanitizeEvidenceLocator(locator))}`,
+            ),
+          ...(codeCitationsByCandidate.get(item.id) ?? []),
+        ]),
       ];
       const matchedUnit = bestUnitByDocument.get(item.id);
       const structuralContext = matchedUnit
@@ -2008,11 +2734,17 @@ export async function queryKnowledge(
       };
     })
     .filter((hit): hit is SearchHit => hit !== null);
-  return (
-    options.deterministicRerank
-      ? deterministicLexicalRerank(input.query, results)
-      : results
+  const reranker = resolveSearchHitReranker(
+    retrievalPolicy.reranker ??
+      (options.deterministicRerank
+        ? DETERMINISTIC_LEXICAL_RERANKER
+        : undefined),
+  );
+  const finalResults = (
+    reranker ? rerankSearchHits(input.query, results, reranker) : results
   ).slice(0, input.limit);
+  await finalizeTruthSnapshot();
+  return finalResults;
 }
 
 export function registerSearchRoutes(
@@ -2022,7 +2754,12 @@ export function registerSearchRoutes(
 ): void {
   app.post(
     "/v1/search",
-    { preHandler: requirePermission("knowledge:read") },
+    {
+      preHandler: [
+        requirePermission("knowledge:read"),
+        requirePrincipalAction("knowledge:read"),
+      ],
+    },
     async (request, reply) => {
       const parsed = SearchRequest.safeParse(request.body);
       if (!parsed.success) {
@@ -2037,19 +2774,40 @@ export function registerSearchRoutes(
       if (!hasSpaceAccess(actor, requestedSpace, "knowledge:read")) {
         return reply.code(403).send({ code: "SPACE_ACCESS_DENIED" });
       }
+      const principalVaultId =
+        actor.principalKind === "AGENT_PROCESS" ? actor.principalVaultId : null;
+      const explicitlyRequestedVaults = [
+        ...(parsed.data.vaultId ? [parsed.data.vaultId] : []),
+        ...parsed.data.vaultIds,
+      ];
+      if (
+        principalVaultId &&
+        (parsed.data.federated ||
+          explicitlyRequestedVaults.some(
+            (vaultId) => vaultId !== principalVaultId,
+          ))
+      ) {
+        return reply.code(403).send({ code: "PRINCIPAL_VAULT_SCOPE_DENIED" });
+      }
       let vaultIds: string[];
-      let accessByVault: Awaited<
-        ReturnType<typeof resolveAuthorizedVaultScope>
-      >["accessByVault"] = {};
+      let accessByVault: AuthorizedVaultScope["accessByVault"] = {};
       try {
-        const scope = await resolveAuthorizedVaultScope(db, {
-          userId: actor.id,
-          spaceId: requestedSpace,
-          permission: "knowledge:read",
-          ...(parsed.data.vaultId ? { vaultId: parsed.data.vaultId } : {}),
-          vaultIds: parsed.data.vaultIds,
-          federated: parsed.data.federated,
-        });
+        const scope = await new PostgresAuthorizationPort(db).resolveVaultScope(
+          {
+            userId: actor.id,
+            spaceId: requestedSpace,
+            permission: "knowledge:read",
+            ...(principalVaultId
+              ? { vaultId: principalVaultId }
+              : parsed.data.vaultId
+                ? { vaultId: parsed.data.vaultId }
+                : {}),
+            vaultIds: principalVaultId
+              ? [principalVaultId]
+              : parsed.data.vaultIds,
+            federated: principalVaultId ? false : parsed.data.federated,
+          },
+        );
         vaultIds = scope.vaultIds;
         accessByVault = scope.accessByVault;
       } catch (error) {
@@ -2070,6 +2828,48 @@ export function registerSearchRoutes(
         vaultIds,
         ...(vaultIds.length === 1 ? { vaultId: vaultIds[0] } : {}),
       };
+      const actorPathPrefixes = pathPrefixesForPermission(
+        actor,
+        requestedSpace,
+        "knowledge:read",
+      );
+      const graphScopes = Object.entries(accessByVault).flatMap(
+        ([vaultId, access]) =>
+          actorPathPrefixes.flatMap((actorPathPrefix) => {
+            const pathPrefix = intersectVaultPathPrefixes(
+              actorPathPrefix,
+              access.pathPrefix,
+            );
+            return pathPrefix === undefined ? [] : [{ vaultId, pathPrefix }];
+          }),
+      );
+      const pathAuthorizer = (documentPath: string, vaultId?: string) => {
+        const access = accessByVault[String(vaultId ?? "")];
+        if (!access) return false;
+        return (
+          pathMatchesVaultPrefix(documentPath, access.pathPrefix) &&
+          hasPathAccess(actor, requestedSpace, "knowledge:read", documentPath)
+        );
+      };
+      let projectCode;
+      try {
+        projectCode = await resolveProjectCodeRetrieval(db, {
+          spaceId: requestedSpace,
+          vaultIds,
+          ...(parsed.data.projectId
+            ? { projectId: parsed.data.projectId }
+            : {}),
+          query: parsed.data.query,
+          graphScopes,
+          pathAuthorizer,
+        });
+      } catch (error) {
+        const code =
+          error instanceof Error
+            ? error.message
+            : "PROJECT_CODE_NOT_FOUND_OR_UNAUTHORIZED";
+        return reply.code(404).send({ code });
+      }
       const indexRows = await db.pool.query(
         `select vault_id,corpus_revision,lexical_revision,vector_revision,
                 graph_revision,context_pack_revision,status,warnings,
@@ -2086,50 +2886,70 @@ export function registerSearchRoutes(
           requestedSpace,
           vaultIds,
         ),
+        communityAvailable: await activeCommunityIndexAvailable(
+          db,
+          requestedSpace,
+          indexRows.rows,
+        ),
         rawAllowed:
           parsed.data.mode !== "COMPILED_ONLY" &&
           hasSpaceAccess(actor, requestedSpace, "source:read"),
         // No project code adapter is registered in the current runtime.
-        codeAdapterAvailable: false,
+        codeAdapterAvailable: projectCode?.available ?? false,
       });
-      const plan = planQuery(
-        parsed.data.query,
-        parsed.data.intent,
+      const plan = planQuery(parsed.data.query, {
+        ...(parsed.data.intent
+          ? { requestedIntent: parsed.data.intent }
+          : {}),
         capabilities,
-      );
-      const retrievalWarnings: string[] = plan.omittedChannels.map(
-        (channel) => `PLAN_CHANNEL_OMITTED:${channel}`,
-      );
-      const availableChannels = new Set<RetrievalChannel>();
-      const actorPathPrefixes = pathPrefixesForPermission(
-        actor,
-        requestedSpace,
-        "knowledge:read",
-      );
-      const hits = await queryKnowledge(db, scopedRequest, {
-        plan,
-        vaultIds,
-        graphScopes: Object.entries(accessByVault).flatMap(
-          ([vaultId, access]) =>
-            actorPathPrefixes.flatMap((actorPathPrefix) => {
-              const pathPrefix = intersectVaultPathPrefixes(
-                actorPathPrefix,
-                access.pathPrefix,
-              );
-              return pathPrefix === undefined ? [] : [{ vaultId, pathPrefix }];
-            }),
-        ),
-        warningSink: retrievalWarnings,
-        availableChannelSink: availableChannels,
-        pathAuthorizer: (documentPath, vaultId) => {
-          const access = accessByVault[String(vaultId ?? "")];
-          if (!access) return false;
-          return (
-            pathMatchesVaultPrefix(documentPath, access.pathPrefix) &&
-            hasPathAccess(actor, requestedSpace, "knowledge:read", documentPath)
-          );
+        queryShape: {
+          permissionSensitiveFederated:
+            parsed.data.federated || vaultIds.length > 1,
+          ...(parsed.data.projectId ? { ticketWorkProcess: true } : {}),
+          ...(parsed.data.mode === "PROJECT_CODE"
+            ? { codeSymbolOrPath: true }
+            : {}),
         },
       });
+      const retrievalWarnings: string[] = [
+        ...plan.omittedChannels.map(
+          (channel) => `PLAN_CHANNEL_OMITTED:${channel}`,
+        ),
+        ...(projectCode?.warnings ?? []),
+      ];
+      const availableChannels = new Set<RetrievalChannel>();
+      let truthState: RetrievalTruthState | undefined;
+      let hits: SearchHit[];
+      try {
+        hits = await queryKnowledge(db, scopedRequest, {
+          plan,
+          vaultIds,
+          graphScopes,
+          ...(projectCode ? { codeCandidates: projectCode.candidates } : {}),
+          ...(dependencies.queryTransformer
+            ? {
+                queryTransformer: dependencies.queryTransformer,
+                queryTransformActorId: actor.id,
+                queryTransformTraceId: request.id,
+              }
+            : {}),
+          warningSink: retrievalWarnings,
+          availableChannelSink: availableChannels,
+          pathAuthorizer,
+          truthConsistency: parsed.data.truthConsistency ?? "STRICT",
+          truthStateSink: (state) => {
+            truthState = state;
+          },
+        });
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message === "CONTEXT_REVISION_CHANGED"
+        ) {
+          return reply.code(409).send({ code: "CONTEXT_REVISION_CHANGED" });
+        }
+        throw error;
+      }
       const channelState = channelsConsistentWithIndex(
         plan.channels,
         index,
@@ -2161,6 +2981,7 @@ export function registerSearchRoutes(
         channels: effectiveChannelState.channels,
         warnings: effectiveChannelState.warnings,
         indexRevisions: index,
+        truth: truthState ?? null,
         hits,
         noAnswer:
           hits.length === 0
@@ -2289,7 +3110,12 @@ export function registerSearchRoutes(
 
   app.post(
     "/v1/context",
-    { preHandler: requirePermission("knowledge:read") },
+    {
+      preHandler: [
+        requirePermission("knowledge:read"),
+        requirePrincipalAction("knowledge:read"),
+      ],
+    },
     async (request, reply) => {
       const body = request.body as Record<string, unknown>;
       const parsed = ContextRequest.safeParse(body);
@@ -2306,19 +3132,40 @@ export function registerSearchRoutes(
       }
       const actor = actorOf(request);
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
+      const principalVaultId =
+        actor.principalKind === "AGENT_PROCESS" ? actor.principalVaultId : null;
+      const explicitlyRequestedVaults = [
+        ...(parsed.data.vaultId ? [parsed.data.vaultId] : []),
+        ...parsed.data.vaultIds,
+      ];
+      if (
+        principalVaultId &&
+        (parsed.data.federated ||
+          explicitlyRequestedVaults.some(
+            (vaultId) => vaultId !== principalVaultId,
+          ))
+      ) {
+        return reply.code(403).send({ code: "PRINCIPAL_VAULT_SCOPE_DENIED" });
+      }
       let vaultIds: string[];
-      let accessByVault: Awaited<
-        ReturnType<typeof resolveAuthorizedVaultScope>
-      >["accessByVault"] = {};
+      let accessByVault: AuthorizedVaultScope["accessByVault"] = {};
       try {
-        const scope = await resolveAuthorizedVaultScope(db, {
-          userId: actor.id,
-          spaceId: requestedSpace,
-          permission: "knowledge:read",
-          ...(parsed.data.vaultId ? { vaultId: parsed.data.vaultId } : {}),
-          vaultIds: parsed.data.vaultIds,
-          federated: parsed.data.federated,
-        });
+        const scope = await new PostgresAuthorizationPort(db).resolveVaultScope(
+          {
+            userId: actor.id,
+            spaceId: requestedSpace,
+            permission: "knowledge:read",
+            ...(principalVaultId
+              ? { vaultId: principalVaultId }
+              : parsed.data.vaultId
+                ? { vaultId: parsed.data.vaultId }
+                : {}),
+            vaultIds: principalVaultId
+              ? [principalVaultId]
+              : parsed.data.vaultIds,
+            federated: principalVaultId ? false : parsed.data.federated,
+          },
+        );
         vaultIds = scope.vaultIds;
         accessByVault = scope.accessByVault;
       } catch (error) {
@@ -2336,7 +3183,9 @@ export function registerSearchRoutes(
       }
       const {
         packetMode: _packetMode,
+        contextLevel: requestedContextLevel,
         maxTokens: requestedMaxTokens,
+        reasoningMode: requestedReasoningMode,
         ...contextSearchRequest
       } = parsed.data;
       const scopedRequest: SearchInput = {
@@ -2344,14 +3193,65 @@ export function registerSearchRoutes(
         vaultIds,
         ...(vaultIds.length === 1 ? { vaultId: vaultIds[0] } : {}),
       };
+      const actorPathPrefixes = pathPrefixesForPermission(
+        actor,
+        requestedSpace,
+        "knowledge:read",
+      );
+      const graphScopes = Object.entries(accessByVault).flatMap(
+        ([vaultId, access]) =>
+          actorPathPrefixes.flatMap((actorPathPrefix) => {
+            const pathPrefix = intersectVaultPathPrefixes(
+              actorPathPrefix,
+              access.pathPrefix,
+            );
+            return pathPrefix === undefined ? [] : [{ vaultId, pathPrefix }];
+          }),
+      );
+      const pathAuthorizer = (documentPath: string, vaultId?: string) => {
+        const access = accessByVault[String(vaultId ?? "")];
+        if (!access) return false;
+        return (
+          pathMatchesVaultPrefix(documentPath, access.pathPrefix) &&
+          hasPathAccess(actor, requestedSpace, "knowledge:read", documentPath)
+        );
+      };
+      let projectCode;
+      try {
+        projectCode = await resolveProjectCodeRetrieval(db, {
+          spaceId: requestedSpace,
+          vaultIds,
+          ...(parsed.data.projectId
+            ? { projectId: parsed.data.projectId }
+            : {}),
+          query: parsed.data.query,
+          graphScopes,
+          pathAuthorizer,
+        });
+      } catch (error) {
+        const code =
+          error instanceof Error
+            ? error.message
+            : "PROJECT_CODE_NOT_FOUND_OR_UNAUTHORIZED";
+        return reply.code(404).send({ code });
+      }
       const indexRows = await db.pool.query(
         `
-        select vault_id,corpus_revision,lexical_revision,vector_revision,
-               graph_revision,context_pack_revision,status,warnings,
-               retrieval_configuration_version
-          from vault_index_revisions
-         where space_id=$1 and vault_id=any($2::uuid[])
-         order by vault_id
+        select i.vault_id,i.corpus_revision,i.lexical_revision,i.vector_revision,
+               i.graph_revision,i.context_pack_revision,i.status,i.warnings,
+               i.retrieval_configuration_version,
+               (
+                 select c.community_revision
+                   from community_index_revisions c
+                  where c.space_id=i.space_id and c.vault_id=i.vault_id
+                    and c.status='ACTIVE' and c.stale=false
+                    and c.graph_revision=i.graph_revision
+                  order by c.activated_at desc nulls last,c.updated_at desc
+                  limit 1
+               ) community_revision
+          from vault_index_revisions i
+         where i.space_id=$1 and i.vault_id=any($2::uuid[])
+         order by i.vault_id
         `,
         [requestedSpace, vaultIds],
       );
@@ -2362,57 +3262,601 @@ export function registerSearchRoutes(
           requestedSpace,
           vaultIds,
         ),
+        communityAvailable: await activeCommunityIndexAvailable(
+          db,
+          requestedSpace,
+          indexRows.rows,
+        ),
         rawAllowed:
           parsed.data.mode !== "COMPILED_ONLY" &&
           hasSpaceAccess(actor, requestedSpace, "source:read"),
-        codeAdapterAvailable: false,
+        codeAdapterAvailable: projectCode?.available ?? false,
       });
-      const plan = planQuery(
-        parsed.data.query,
-        parsed.data.intent,
+      const plan = planQuery(parsed.data.query, {
+        ...(parsed.data.intent
+          ? { requestedIntent: parsed.data.intent }
+          : {}),
         capabilities,
-      );
-      const intent = plan.intent;
-      const maxTokens = contextBudgetForIntent(intent, requestedMaxTokens);
-      const retrievalWarnings: string[] = plan.omittedChannels.map(
-        (channel) => `PLAN_CHANNEL_OMITTED:${channel}`,
-      );
-      const availableChannels = new Set<RetrievalChannel>();
-      const actorPathPrefixes = pathPrefixesForPermission(
-        actor,
-        requestedSpace,
-        "knowledge:read",
-      );
-      const hits = await queryKnowledge(db, scopedRequest, {
-        plan,
-        vaultIds,
-        graphScopes: Object.entries(accessByVault).flatMap(
-          ([vaultId, access]) =>
-            actorPathPrefixes.flatMap((actorPathPrefix) => {
-              const pathPrefix = intersectVaultPathPrefixes(
-                actorPathPrefix,
-                access.pathPrefix,
-              );
-              return pathPrefix === undefined ? [] : [{ vaultId, pathPrefix }];
-            }),
-        ),
-        warningSink: retrievalWarnings,
-        availableChannelSink: availableChannels,
-        pathAuthorizer: (documentPath, vaultId) => {
-          const access = accessByVault[String(vaultId ?? "")];
-          if (!access) return false;
-          return (
-            pathMatchesVaultPrefix(documentPath, access.pathPrefix) &&
-            hasPathAccess(actor, requestedSpace, "knowledge:read", documentPath)
-          );
+        queryShape: {
+          permissionSensitiveFederated:
+            parsed.data.federated || vaultIds.length > 1,
+          ...(parsed.data.projectId ? { ticketWorkProcess: true } : {}),
+          ...(parsed.data.mode === "PROJECT_CODE"
+            ? { codeSymbolOrPath: true }
+            : {}),
         },
       });
-      const details =
+      const intent = plan.intent;
+      const maxTokens = contextBudgetForIntent(intent, requestedMaxTokens);
+      const retrievalWarnings: string[] = [
+        ...plan.omittedChannels.map(
+          (channel) => `PLAN_CHANNEL_OMITTED:${channel}`,
+        ),
+        ...(projectCode?.warnings ?? []),
+      ];
+      const availableChannels = new Set<RetrievalChannel>();
+      let truthState: RetrievalTruthState | undefined;
+      let reasoningTrace: unknown = null;
+      let reasoningExecutionMode: "DIRECT" | "PLAN" | "DIRECT_FALLBACK" =
+        "DIRECT";
+
+      const directRetrieval = () =>
+        queryKnowledge(db, scopedRequest, {
+          plan,
+          vaultIds,
+          graphScopes,
+          ...(projectCode ? { codeCandidates: projectCode.candidates } : {}),
+          ...(dependencies.queryTransformer
+            ? {
+                queryTransformer: dependencies.queryTransformer,
+                queryTransformActorId: actor.id,
+                queryTransformTraceId: request.id,
+              }
+            : {}),
+          warningSink: retrievalWarnings,
+          availableChannelSink: availableChannels,
+          pathAuthorizer,
+          truthConsistency: parsed.data.truthConsistency ?? "STRICT",
+          truthStateSink: (state) => {
+            truthState = state;
+          },
+        });
+
+      const reasoningRetrieval = async (
+        invocation: ReasoningRetrievalInvocation,
+        signal: AbortSignal,
+      ): Promise<SearchHit[]> => {
+        if (signal.aborted) throw new Error("REASONING_EXECUTION_ABORTED");
+        if (
+          invocation.kind === "TEMPORAL_AT" ||
+          (invocation.kind === "LOAD_RAW" &&
+            (invocation.sourceIds?.length ?? 0) > 0)
+        ) {
+          throw new Error(
+            invocation.kind === "TEMPORAL_AT"
+              ? "REASONING_TEMPORAL_AT_REQUIRES_AS_OF_SEARCH_CONTRACT"
+              : "REASONING_RAW_SOURCE_FILTER_NOT_INTEGRATED",
+          );
+        }
+
+        const operatorIntent =
+          invocation.kind === "RESOLVE_ENTITY" ||
+          invocation.kind === "EXACT_LOOKUP"
+            ? "EXACT_LOOKUP"
+            : invocation.kind === "SEARCH_CODE"
+              ? "PROJECT_CODE"
+              : invocation.kind === "TRAVERSE_TYPED" ||
+                  invocation.kind === "PPR_EXPAND"
+                ? "IMPACT_ANALYSIS"
+                : invocation.kind === "COMMUNITY_SEARCH"
+                  ? invocation.strategy === "GLOBAL"
+                    ? "GLOBAL_SYNTHESIS"
+                    : "CONCEPTUAL"
+                  : invocation.kind === "LOAD_RAW"
+                    ? "SOURCE_VERIFICATION"
+                    : "CONCEPTUAL";
+        const operatorRequest: SearchInput = {
+          ...scopedRequest,
+          query: invocation.query,
+          intent: operatorIntent,
+          limit: Math.max(1, Math.min(100, invocation.limit)),
+          ...(invocation.kind === "LOAD_RAW" ? { mode: "RAW_ONLY" } : {}),
+          ...(invocation.kind === "SEARCH_CODE"
+            ? { mode: "PROJECT_CODE" }
+            : {}),
+        };
+        const operatorPlan = planQuery(invocation.query, {
+          requestedIntent: operatorIntent,
+          capabilities,
+          queryShape: {
+            permissionSensitiveFederated:
+              operatorRequest.federated || vaultIds.length > 1,
+            ...(operatorRequest.projectId ? { ticketWorkProcess: true } : {}),
+            ...(operatorRequest.mode === "PROJECT_CODE"
+              ? { codeSymbolOrPath: true }
+              : {}),
+            ...(invocation.kind === "TRAVERSE_TYPED" ||
+            invocation.kind === "PPR_EXPAND"
+              ? { multiHop: true }
+              : {}),
+          },
+        });
+        retrievalWarnings.push(
+          ...operatorPlan.omittedChannels.map(
+            (channel) =>
+              `REASONING_${invocation.kind}_CHANNEL_OMITTED:${channel}`,
+          ),
+        );
+
+        const executionOptions: RetrievalExecutionOptions = {
+          plan: operatorPlan,
+          vaultIds,
+          graphScopes,
+          ...(projectCode ? { codeCandidates: projectCode.candidates } : {}),
+          ...(dependencies.queryTransformer
+            ? {
+                queryTransformer: dependencies.queryTransformer,
+                queryTransformActorId: actor.id,
+                queryTransformTraceId: request.id,
+              }
+            : {}),
+          warningSink: retrievalWarnings,
+          availableChannelSink: availableChannels,
+          pathAuthorizer,
+          truthConsistency: parsed.data.truthConsistency ?? "STRICT",
+          truthStateSink: (state) => {
+            truthState = state;
+          },
+        };
+
+        switch (invocation.kind) {
+          case "RESOLVE_ENTITY":
+          case "EXACT_LOOKUP":
+          case "SEARCH_LEXICAL":
+            executionOptions.channels = ["exact", "lexical"];
+            break;
+          case "SEARCH_VECTOR":
+            executionOptions.channels = ["vector"];
+            break;
+          case "SEARCH_CODE":
+            executionOptions.channels = ["code", "exact", "lexical"];
+            break;
+          case "TRAVERSE_TYPED":
+            executionOptions.channels = ["exact", "graph"];
+            executionOptions.graphPolicy = {
+              maxHops: invocation.maxHops ?? 3,
+              directionPolicy: invocation.direction ?? "both",
+              allowedRelationTypes: invocation.relationTypes ?? [],
+              maxCandidates: invocation.limit,
+            };
+            break;
+          case "PPR_EXPAND":
+            executionOptions.channels = ["exact", "graph"];
+            executionOptions.retrievalPolicy = {
+              graphMode: "ASSOCIATIVE",
+              channels: {
+                GRAPH_PPR: { enabled: true, weight: 1.1 },
+              },
+            };
+            executionOptions.pprPolicy = {
+              restartProbability: 1 - (invocation.damping ?? 0.85),
+              maxIterations: invocation.maxIterations ?? 100,
+              maxNodes: Math.max(100, invocation.limit * 4),
+              minimumScore: 0,
+              perScopeCap: invocation.limit,
+            };
+            break;
+          case "COMMUNITY_SEARCH":
+            executionOptions.channels = ["lexical", "graph"];
+            executionOptions.retrievalPolicy = {
+              graphMode: invocation.strategy ?? "GLOBAL",
+              channels: {
+                COMMUNITY: { enabled: true, weight: 1.1 },
+              },
+            };
+            break;
+          case "LOAD_RAW":
+            executionOptions.channels = ["raw"];
+            break;
+          case "TEMPORAL_AT":
+            throw new Error(
+              "REASONING_TEMPORAL_AT_REQUIRES_AS_OF_SEARCH_CONTRACT",
+            );
+        }
+
+        const result = await queryKnowledge(db, operatorRequest, executionOptions);
+        if (signal.aborted) throw new Error("REASONING_EXECUTION_ABORTED");
+        return result;
+      };
+
+      let hits: SearchHit[];
+      try {
+        if (requestedReasoningMode === "PLAN") {
+          try {
+            if (indexRows.rows.length !== vaultIds.length) {
+              throw new Error("REASONING_REVISION_SET_INCOMPLETE");
+            }
+            const reasoningConfigurationVersion = String(
+              indexRow.retrieval_configuration_version ?? "rrf-v1",
+            );
+            const reasoningRevisionSet = reasoningRevisionSetFromRows(
+              requestedSpace,
+              indexRows.rows,
+              reasoningConfigurationVersion,
+            );
+            const reasoned = await executeApplicationReasoning({
+              request: { ...scopedRequest, intent },
+              revisionSet: reasoningRevisionSet,
+              validationContext: {
+                currentRevisionSet: reasoningRevisionSet,
+                policy: {
+                  authorizedSpaceId: requestedSpace,
+                  authorizedVaultIds: vaultIds,
+                  ...(parsed.data.projectId
+                    ? { authorizedProjectIds: [parsed.data.projectId] }
+                    : {}),
+                  rawAllowed: capabilities.rawAllowed,
+                  maxSteps: 32,
+                  maxWallMs: 30_000,
+                  maxTokens: Math.max(64_000, maxTokens * 2),
+                  maxCost: 2,
+                  maxFanout: 8,
+                  maxGraphHops: 3,
+                  allowExternalPeers: false,
+                  allowedExternalPeerIds: [],
+                  pathAuthorizer: (vaultId, prefix) =>
+                    pathAuthorizer(prefix, vaultId),
+                },
+              },
+              capabilities,
+              corpusRevision: String(indexRow.corpus_revision ?? "unknown"),
+              indexRevisions: {
+                corpus: String(indexRow.corpus_revision ?? "unknown"),
+                lexical: indexRow.lexical_revision
+                  ? String(indexRow.lexical_revision)
+                  : null,
+                vector: indexRow.vector_revision
+                  ? String(indexRow.vector_revision)
+                  : null,
+                graph: indexRow.graph_revision
+                  ? String(indexRow.graph_revision)
+                  : null,
+                contextPack: indexRow.context_pack_revision
+                  ? String(indexRow.context_pack_revision)
+                  : null,
+                codeGraph: projectCode?.revision ?? null,
+              },
+              retrievalConfiguration: {
+                version: String(
+                  indexRow.retrieval_configuration_version ?? "rrf-v1",
+                ),
+                source: "v1-context",
+              },
+              retrieve: reasoningRetrieval,
+              traceSink: {
+                persist: async (trace) => {
+                  await db.pool.query(
+                    `insert into reasoning_execution_traces(
+                       space_id,actor_id,principal_id,request_id,vault_ids,
+                       plan_id,schema_version,intent,revision_set_hash,
+                       started_at,completed_at,status,steps,warnings,budget
+                     ) values(
+                       $1,$2,$3,$4,$5::uuid[],$6,$7,$8,$9,
+                       $10::timestamptz,$11::timestamptz,$12,
+                       $13::jsonb,$14::jsonb,$15::jsonb
+                     )`,
+                    [
+                      requestedSpace,
+                      actor.id,
+                      actor.principalId,
+                      request.id,
+                      vaultIds,
+                      trace.planId,
+                      trace.schemaVersion,
+                      trace.intent,
+                      trace.revisionSetHash,
+                      trace.startedAt,
+                      trace.completedAt,
+                      trace.status,
+                      JSON.stringify(trace.steps),
+                      JSON.stringify(trace.warnings),
+                      JSON.stringify(trace.budget),
+                    ],
+                  );
+                },
+              },
+              ...(dependencies.contextTokenizer
+                ? { tokenizer: dependencies.contextTokenizer }
+                : {}),
+              contextLevel: requestedContextLevel,
+              contextMaxTokens: maxTokens,
+            });
+            if (reasoned.execution.tracePersistence !== "PERSISTED") {
+              throw new Error("REASONING_TRACE_PERSIST_FAILED");
+            }
+
+            const finalIndexRows = await db.pool.query(
+              `
+              select i.vault_id,i.corpus_revision,i.lexical_revision,
+                     i.vector_revision,i.graph_revision,i.context_pack_revision,
+                     i.status,i.warnings,i.retrieval_configuration_version,
+                     (
+                       select c.community_revision
+                         from community_index_revisions c
+                        where c.space_id=i.space_id and c.vault_id=i.vault_id
+                          and c.status='ACTIVE' and c.stale=false
+                          and c.graph_revision=i.graph_revision
+                        order by c.activated_at desc nulls last,c.updated_at desc
+                        limit 1
+                     ) community_revision
+                from vault_index_revisions i
+               where i.space_id=$1 and i.vault_id=any($2::uuid[])
+               order by i.vault_id
+              `,
+              [requestedSpace, vaultIds],
+            );
+            if (finalIndexRows.rows.length !== vaultIds.length) {
+              throw new Error("CONTEXT_REVISION_CHANGED");
+            }
+            const finalCombinedIndex = combineVaultIndexRows(
+              finalIndexRows.rows,
+            );
+            const finalRevisionSet = reasoningRevisionSetFromRows(
+              requestedSpace,
+              finalIndexRows.rows,
+              String(
+                finalCombinedIndex.retrieval_configuration_version ?? "rrf-v1",
+              ),
+            );
+            if (
+              !sameReasoningRevisionSet(
+                reasoningRevisionSet,
+                finalRevisionSet,
+              )
+            ) {
+              throw new Error("CONTEXT_REVISION_CHANGED");
+            }
+            const verifiedTrace = await db.pool.query(
+              `update reasoning_execution_traces
+                  set revision_verified=true
+                where space_id=$1 and request_id=$2 and plan_id=$3
+                  and revision_verified=false`,
+              [requestedSpace, request.id, reasoned.reasoningTrace.planId],
+            );
+            if (verifiedTrace.rowCount !== 1) {
+              throw new Error("REASONING_TRACE_VERIFY_FAILED");
+            }
+
+            hits = reasoned.hits;
+            reasoningTrace = reasoned.reasoningTrace;
+            reasoningExecutionMode = "PLAN";
+            retrievalWarnings.push(
+              `REASONING_PLAN_EXECUTED:${reasoned.execution.status}`,
+            );
+            if (reasoned.execution.status === "PARTIAL") {
+              retrievalWarnings.push("REASONING_PLAN_PARTIAL_CONTEXT");
+            }
+          } catch (error) {
+            const code =
+              error instanceof Error
+                ? error.message
+                : "REASONING_PLAN_EXECUTION_FAILED";
+            if (code === "CONTEXT_REVISION_CHANGED") throw error;
+            reasoningExecutionMode = "DIRECT_FALLBACK";
+            retrievalWarnings.push(`REASONING_PLAN_FALLBACK:${code}`);
+            hits = await directRetrieval();
+          }
+        } else {
+          hits = await directRetrieval();
+        }
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message === "CONTEXT_REVISION_CHANGED"
+        ) {
+          return reply.code(409).send({ code: "CONTEXT_REVISION_CHANGED" });
+        }
+        throw error;
+      }
+      type MaterialConflictRow = {
+        id: string;
+        topic: string;
+        status: string;
+        resolution: string | null;
+        members: string[];
+      };
+      const conflicts =
         hits.length === 0
+          ? { rows: [] as MaterialConflictRow[] }
+          : await db.pool.query<MaterialConflictRow>(
+              `
+              select c.id,c.topic,c.status,c.resolution,
+                     array_agg(distinct all_members.document_id)::uuid[] members
+                from contradiction_clusters c
+                join contradiction_members matched
+                  on matched.cluster_id=c.id
+                join contradiction_members all_members
+                  on all_members.cluster_id=c.id
+               where matched.document_id=any($1::uuid[])
+                 and c.space_id=$2
+                 and c.vault_id=any($3::uuid[])
+                 and c.status <> 'RESOLVED'
+               group by c.id,c.topic,c.status,c.resolution
+               order by c.id
+              `,
+              [hits.map((hit) => hit.documentId), requestedSpace, vaultIds],
+            );
+      const hitIds = new Set(hits.map((hit) => hit.documentId));
+      const missingConflictMemberIds = [
+        ...new Set(
+          conflicts.rows.flatMap((conflict) =>
+            (conflict.members ?? []).filter(
+              (documentId) => !hitIds.has(documentId),
+            ),
+          ),
+        ),
+      ];
+      const counterpartRows =
+        missingConflictMemberIds.length === 0
+          ? { rows: [] as Array<Record<string, unknown>> }
+          : await db.pool.query(
+              `
+              select d.id,d.space_id,d.vault_id,d.external_id,d.current_revision,
+                     d.path,d.title,d.type,d.layer,d.trust_tier,d.lifecycle,
+                     d.body_cache,d.refresh_status,
+                     coalesce(
+                       jsonb_agg(distinct jsonb_build_object(
+                         'id',cited.id,'spaceId',cited.space_id,
+                         'vaultId',cited.vault_id,'path',cited.path,
+                         'revision',cited.current_revision
+                       )) filter (where cited.id is not null),
+                       '[]'::jsonb
+                     ) citations,
+                     coalesce(
+                       jsonb_agg(distinct e.locator)
+                         filter (where e.id is not null),
+                       '[]'::jsonb
+                     ) evidence_locators
+                from knowledge_documents d
+                left join knowledge_relations r
+                  on r.from_document_id=d.id
+                 and r.space_id=d.space_id
+                 and r.relation_type in ('supports','derives_from','related_to')
+                left join knowledge_documents cited
+                  on cited.id=r.to_document_id
+                 and cited.space_id=d.space_id
+                 and cited.vault_id is not distinct from d.vault_id
+                 and cited.lifecycle in ('ACTIVE','DISPUTED')
+                 and cited.refresh_status not in ('STALE_BLOCKED','INVALID')
+                left join document_evidence de on de.document_id=d.id
+                left join evidence e
+                  on e.id=de.evidence_id
+                 and e.space_id=d.space_id
+                 and e.vault_id is not distinct from d.vault_id
+               where d.id=any($1::uuid[])
+                 and d.space_id=$2
+                 and d.vault_id=any($3::uuid[])
+                 and d.refresh_status not in ('STALE_BLOCKED','INVALID')
+               group by d.id
+              `,
+              [missingConflictMemberIds, requestedSpace, vaultIds],
+            );
+      const allowedContextLifecycles = new Set(
+        scopedRequest.mode === "DRAFT_INCLUDED"
+          ? ["ACTIVE", "DISPUTED", "DRAFT"]
+          : ["ACTIVE", "DISPUTED"],
+      );
+      const contextMinimumTrust = TRUST_RANK[scopedRequest.minimumTrust] ?? 1;
+      const conflictCounterparts: SearchHit[] = counterpartRows.rows
+        .filter((row) => {
+          const current = row as unknown as CurrentContextDocumentRow;
+          return (
+            allowedContextLifecycles.has(String(row.lifecycle)) &&
+            (TRUST_RANK[String(row.trust_tier)] ?? -1) >= contextMinimumTrust &&
+            modeAllowsCurrentDocument(scopedRequest.mode, current) &&
+            pathAuthorizer(String(row.path), String(row.vault_id))
+          );
+        })
+        .map((row) => {
+          const documentCitations = ["source", "resource"].includes(
+            String(row.layer),
+          )
+            ? [`${String(row.path)}@${String(row.current_revision)}`]
+            : ((row.citations ?? []) as Array<Record<string, unknown>>)
+                .filter(
+                  (citation) =>
+                    String(citation.spaceId ?? citation.space_id ?? "") ===
+                      String(row.space_id) &&
+                    String(citation.vaultId ?? citation.vault_id ?? "") ===
+                      String(row.vault_id) &&
+                    pathAuthorizer(
+                      String(citation.path ?? ""),
+                      String(
+                        citation.vaultId ?? citation.vault_id ?? row.vault_id,
+                      ),
+                    ),
+                )
+                .map(
+                  (citation) =>
+                    `${String(citation.path)}@${String(
+                      citation.revision ?? row.current_revision,
+                    )}`,
+                );
+          const rowPathAuthorizer = (value: string) =>
+            pathAuthorizer(value, String(row.vault_id));
+          const citations = [
+            ...new Set([
+              ...documentCitations,
+              ...(
+                (row.evidence_locators ?? []) as Array<Record<string, unknown>>
+              )
+                .filter((locator) =>
+                  evidenceLocatorAllowed(locator, rowPathAuthorizer),
+                )
+                .map(
+                  (locator) =>
+                    `evidence:${JSON.stringify(
+                      sanitizeEvidenceLocator(locator),
+                    )}`,
+                ),
+            ]),
+          ];
+          return {
+            documentId: String(row.id),
+            vaultId: String(row.vault_id),
+            document: {
+              externalId: row.external_id ? String(row.external_id) : null,
+              path: String(row.path),
+              title: String(row.title),
+            },
+            revision: String(row.current_revision),
+            title: String(row.title),
+            type: String(row.type),
+            trust: String(row.trust_tier) as SearchHit["trust"],
+            lifecycle: String(row.lifecycle) as SearchHit["lifecycle"],
+            refreshStatus: String(row.refresh_status),
+            score: 0,
+            reasons: ["context:material-conflict-counterpart"],
+            excerpt: String(row.body_cache).slice(0, 1200),
+            citations,
+            warnings: [
+              "UNTRUSTED_RETRIEVED_CONTENT",
+              "MATERIAL_CONFLICT_COUNTERPART",
+              ...(String(row.refresh_status) === "STALE_PENDING_REVIEW"
+                ? ["STALE_PENDING_REVIEW"]
+                : []),
+            ],
+          } satisfies SearchHit;
+        });
+      const contextHits = [...hits, ...conflictCounterparts];
+      const contextHitIds = new Set(contextHits.map((hit) => hit.documentId));
+      const materialConflicts = conflicts.rows.map((conflict) => ({
+        id: String(conflict.id),
+        documentIds: (conflict.members ?? []).filter((documentId) =>
+          contextHitIds.has(documentId),
+        ),
+      }));
+      const conflictCoverageGaps = conflicts.rows
+        .filter((conflict) =>
+          (conflict.members ?? []).some(
+            (documentId) => !contextHitIds.has(documentId),
+          ),
+        )
+        .map(
+          (conflict) =>
+            `Material conflict ${conflict.topic} has counterpart material unavailable under the active authorization/truth policy.`,
+        );
+
+      const details =
+        contextHits.length === 0
           ? { rows: [] }
           : await db.pool.query(
-              `select id, layer, type from knowledge_documents where id = any($1::uuid[]) and space_id=$2 and vault_id=any($3::uuid[])`,
-              [hits.map((hit) => hit.documentId), requestedSpace, vaultIds],
+              `select id, layer, type, body_cache from knowledge_documents where id = any($1::uuid[]) and space_id=$2 and vault_id=any($3::uuid[])`,
+              [
+                contextHits.map((hit) => hit.documentId),
+                requestedSpace,
+                vaultIds,
+              ],
             );
       const detailById = new Map(
         details.rows.map((row) => [String(row.id), row]),
@@ -2427,21 +3871,6 @@ export function registerSearchRoutes(
         retrievalWarnings,
         availableChannels,
       );
-      const conflicts =
-        hits.length === 0
-          ? { rows: [] }
-          : await db.pool.query(
-              `
-              select distinct c.id,c.topic,c.status,c.resolution
-               from contradiction_clusters c
-               join contradiction_members m on m.cluster_id=c.id
-               where m.document_id=any($1::uuid[])
-                 and c.space_id=$2
-                 and c.vault_id=any($3::uuid[])
-                 and c.status <> 'RESOLVED'
-              `,
-              [hits.map((hit) => hit.documentId), requestedSpace, vaultIds],
-            );
       let packet;
       let responsePacket;
       const continuationPayloads = new Map<
@@ -2454,6 +3883,7 @@ export function registerSearchRoutes(
           intent,
           corpusRevision: String(indexRow.corpus_revision ?? "unknown"),
           maxTokens,
+          requestedContextLevel,
           searchedChannels: effectiveChannelState.channels,
           ...(dependencies.contextTokenizer
             ? { tokenizer: dependencies.contextTokenizer }
@@ -2472,6 +3902,7 @@ export function registerSearchRoutes(
             contextPack: indexRow.context_pack_revision
               ? String(indexRow.context_pack_revision)
               : null,
+            codeGraph: projectCode?.revision ?? null,
           },
           retrievalConfiguration: {
             version: String(
@@ -2479,27 +3910,57 @@ export function registerSearchRoutes(
             ),
             indexStatus: String(indexRow.status ?? "DEGRADED"),
             channels: effectiveChannelState.channels,
+            contextLevel: requestedContextLevel,
             vectorEnabled: capabilities.vectorAvailable,
+            codeGraph: projectCode
+              ? {
+                  projectId: projectCode.projectId,
+                  available: projectCode.available,
+                  revision: projectCode.revision,
+                  sourceRevision: projectCode.sourceRevision,
+                }
+              : null,
             warnings: effectiveChannelState.warnings,
+            truth: truthState
+              ? {
+                  consistency: truthState.consistency,
+                  capturedAt: truthState.snapshot.capturedAt,
+                  changedDuringQuery: truthState.changedDuringQuery,
+                  revisions: truthState.snapshot.vaults,
+                }
+              : null,
+            reasoning: {
+              requested: requestedReasoningMode,
+              execution: reasoningExecutionMode,
+              trace: reasoningTrace,
+            },
           },
-          candidates: hits.map((hit) => {
+          candidates: contextHits.map((hit) => {
             const detail = detailById.get(hit.documentId);
+            const kind = kindOf(
+              String(detail?.layer ?? ""),
+              String(detail?.type ?? hit.type),
+            );
             return {
               hit,
               content: hit.parentContext ?? hit.excerpt,
-              kind: kindOf(
-                String(detail?.layer ?? ""),
-                String(detail?.type ?? hit.type),
-              ),
+              ...(requestedContextLevel === "L3" && detail?.body_cache
+                ? { fullContent: String(detail.body_cache) }
+                : {}),
+              kind,
+              ...(kind === "rule" ? { mandatory: true } : {}),
             };
           }),
-          gaps:
-            hits.length === 0
+          gaps: [
+            ...(hits.length === 0
               ? ["No source-backed material matched the request."]
-              : [],
+              : []),
+            ...conflictCoverageGaps,
+          ],
           conflicts: conflicts.rows.map(
             (row) => `${row.topic} (${row.status})`,
           ),
+          materialConflicts,
           continuationSink: (payload: ContextContinuationPayload) => {
             const existing = continuationPayloads.get(
               payload.continuation.handle,

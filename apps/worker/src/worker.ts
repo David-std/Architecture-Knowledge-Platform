@@ -11,7 +11,9 @@ import { pipeline } from "node:stream/promises";
 import {
   Postgres,
   appendOutboxEvent,
+  claimContextFabricNode,
   claimNextIngestJob,
+  resolveContextFabricIdentity,
   runKnowledgeLint,
 } from "@akp/postgres";
 import { transitionIngest, type IngestState } from "@akp/domain";
@@ -29,6 +31,9 @@ import { validateMarkdownDocument } from "@akp/validation";
 import mime from "mime-types";
 import { DurableEventWorker } from "./event-worker.js";
 import { createIndexEventHandlers } from "./event-handlers.js";
+import { createTruthMaintenanceHandlers } from "./truth-maintenance.js";
+import { createCodeGraphRefreshHandlers } from "./code-graph-refresh.js";
+import { createCodeKnowledgeLinkHandlers } from "./code-knowledge-link.js";
 import { lifecycleEventForState } from "./lifecycle.js";
 import {
   DEFAULT_WORKER_DRAIN_DEADLINE_MS,
@@ -73,6 +78,9 @@ const eventWorker = new DurableEventWorker(db, {
   leaseSeconds: Number(process.env.AKP_EVENT_LEASE_SECONDS ?? 60),
   handlers: {
     ...createIndexEventHandlers(db, git),
+    ...createTruthMaintenanceHandlers(db),
+    ...createCodeGraphRefreshHandlers(db),
+    ...createCodeKnowledgeLinkHandlers(db),
     // The ingest job remains the durable work record.  This handler turns the
     // event into a prompt for the existing claim loop while preserving the
     // event's idempotent delivery semantics.
@@ -907,6 +915,13 @@ async function runClaimedJob(job: Record<string, unknown>): Promise<void> {
 
 async function loop(): Promise<WorkerDrainSummary | undefined> {
   const drain = process.env.AKP_WORKER_DRAIN === "true";
+  // The worker writes the shared derived state a Team Context Node owns, so it
+  // claims the node identity before draining anything rather than after.
+  const identity = resolveContextFabricIdentity();
+  await claimContextFabricNode(db, {
+    ...identity,
+    adopt: process.env.AKP_CONTEXT_FABRIC_NODE_ADOPT === "true",
+  });
   await eventWorker.register();
   await runScheduledLintIfDue(process.env.AKP_LINT_RUN_ONCE === "true");
   if (drain) {

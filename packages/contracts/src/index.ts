@@ -1,3 +1,6 @@
+export * from "./temporal-truth.js";
+export * from "./code-graph.js";
+export * from "./connector-capabilities.js";
 import { z } from "zod";
 
 export const TrustTier = z.enum([
@@ -78,30 +81,6 @@ export const QueryIntent = z.enum([
 ]);
 export type QueryIntent = z.infer<typeof QueryIntent>;
 
-export const SearchRequest = z.object({
-  query: z.string().min(1),
-  intent: QueryIntent.optional(),
-  organizationId: z.string().uuid().optional(),
-  spaceId: z.string().uuid(),
-  vaultId: z.string().uuid().optional(),
-  vaultIds: z.array(z.string().uuid()).max(20).default([]),
-  federated: z.boolean().default(false),
-  projectId: z.string().uuid().optional(),
-  types: z.array(z.string()).default([]),
-  minimumTrust: TrustTier.default("MACHINE_SUPPORTED"),
-  mode: z
-    .enum([
-      "COMPILED_ONLY",
-      "SOURCE_BACKED",
-      "RAW_ONLY",
-      "PROJECT_CODE",
-      "DRAFT_INCLUDED",
-    ])
-    .default("SOURCE_BACKED"),
-  limit: z.number().int().min(1).max(100).default(20),
-});
-export type SearchRequest = z.infer<typeof SearchRequest>;
-
 export const GraphRelationType = z.enum([
   "derives_from",
   "supports",
@@ -119,6 +98,375 @@ export const GraphRelationType = z.enum([
   "related_to",
 ]);
 export type GraphRelationType = z.infer<typeof GraphRelationType>;
+
+export const ContextRevisionEntry = z
+  .object({
+    vaultId: z.string().uuid(),
+    corpusRevision: z.string().min(1),
+    lexicalRevision: z.string().min(1).nullable().optional(),
+    vectorRevision: z.string().min(1).nullable().optional(),
+    graphRevision: z.string().min(1).nullable().optional(),
+    contextPackRevision: z.string().min(1).nullable().optional(),
+    communityRevision: z.string().min(1).nullable().optional(),
+  })
+  .strict();
+export type ContextRevisionEntry = z.infer<typeof ContextRevisionEntry>;
+
+export const ContextRevisionSet = z
+  .object({
+    spaceId: z.string().uuid(),
+    vaults: z.array(ContextRevisionEntry).min(1).max(20),
+    retrievalConfigurationVersion: z.string().min(1).optional(),
+    capturedAt: z.string().datetime(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const vaultIds = value.vaults.map((vault) => vault.vaultId);
+    if (new Set(vaultIds).size !== vaultIds.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["vaults"],
+        message: "revision set contains duplicate vault identities",
+      });
+    }
+  });
+export type ContextRevisionSet = z.infer<typeof ContextRevisionSet>;
+
+export const ReasoningOperator = z.enum([
+  "RESOLVE_ENTITY",
+  "EXACT_LOOKUP",
+  "SEARCH_LEXICAL",
+  "SEARCH_VECTOR",
+  "SEARCH_CODE",
+  "TRAVERSE_TYPED",
+  "PPR_EXPAND",
+  "COMMUNITY_SEARCH",
+  "TEMPORAL_AT",
+  "FILTER_SCOPE",
+  "JOIN_EVIDENCE",
+  "COMPARE",
+  "AGGREGATE",
+  "CALCULATE",
+  "VERIFY_SUPPORT",
+  "LOAD_RAW",
+  "BUILD_CONTEXT",
+]);
+export type ReasoningOperator = z.infer<typeof ReasoningOperator>;
+
+export const ReasoningExecutionTarget = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("LOCAL") }).strict(),
+  z
+    .object({
+      kind: z.literal("EXTERNAL_PEER"),
+      peerId: z.string().min(1).max(256),
+    })
+    .strict(),
+]);
+export type ReasoningExecutionTarget = z.infer<typeof ReasoningExecutionTarget>;
+
+export const ReasoningModelRole = z.enum([
+  "DOCUMENT_EXTRACT",
+  "VISION",
+  "KNOWLEDGE_COMPILE",
+  "ENTITY_RESOLUTION",
+  "TEMPORAL_EXTRACTION",
+  "QUERY_EXPANSION",
+  "RERANK",
+  "COMMUNITY_SUMMARY",
+  "REASONING_PLAN",
+  "ADVERSARY",
+  "EVAL_JUDGE",
+]);
+export type ReasoningModelRole = z.infer<typeof ReasoningModelRole>;
+
+const ReasoningStepBase = {
+  id: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/),
+  dependsOn: z
+    .array(z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/))
+    .max(16)
+    .default([]),
+  executionTarget: ReasoningExecutionTarget.default({ kind: "LOCAL" }),
+  processing: z
+    .object({
+      modelRole: ReasoningModelRole.optional(),
+      modelProvider: z.string().min(1).max(160).optional(),
+      dataResidency: z.string().min(1).max(160).optional(),
+    })
+    .strict()
+    .optional(),
+};
+
+const QueryArgs = z
+  .object({
+    query: z.string().min(1).max(8_000),
+    limit: z.number().int().min(1).max(100).default(20),
+  })
+  .strict();
+
+export const ReasoningStep = z.discriminatedUnion("operator", [
+  z
+    .object({
+      ...ReasoningStepBase,
+      operator: z.literal("RESOLVE_ENTITY"),
+      args: QueryArgs.extend({
+        entityKinds: z.array(z.string().min(1).max(120)).max(20).default([]),
+      }).strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...ReasoningStepBase,
+      operator: z.literal("EXACT_LOOKUP"),
+      args: QueryArgs,
+    })
+    .strict(),
+  z
+    .object({
+      ...ReasoningStepBase,
+      operator: z.literal("SEARCH_LEXICAL"),
+      args: QueryArgs,
+    })
+    .strict(),
+  z
+    .object({
+      ...ReasoningStepBase,
+      operator: z.literal("SEARCH_VECTOR"),
+      args: QueryArgs,
+    })
+    .strict(),
+  z
+    .object({
+      ...ReasoningStepBase,
+      operator: z.literal("SEARCH_CODE"),
+      args: QueryArgs.extend({
+        projectId: z.string().uuid().optional(),
+      }).strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...ReasoningStepBase,
+      operator: z.literal("TRAVERSE_TYPED"),
+      args: z
+        .object({
+          seedStepId: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/),
+          relationTypes: z.array(GraphRelationType).max(32).default([]),
+          direction: z.enum(["outgoing", "incoming", "both"]).default("both"),
+          maxHops: z.number().int().min(1).max(8).default(2),
+          limit: z.number().int().min(1).max(500).default(100),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...ReasoningStepBase,
+      operator: z.literal("PPR_EXPAND"),
+      args: z
+        .object({
+          seedStepIds: z
+            .array(z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/))
+            .min(1)
+            .max(16),
+          damping: z.number().gt(0).lt(1).default(0.85),
+          maxIterations: z.number().int().min(1).max(500).default(100),
+          limit: z.number().int().min(1).max(500).default(100),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...ReasoningStepBase,
+      operator: z.literal("COMMUNITY_SEARCH"),
+      args: QueryArgs.extend({
+        strategy: z.enum(["GLOBAL", "DRIFT"]).default("GLOBAL"),
+      }).strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...ReasoningStepBase,
+      operator: z.literal("TEMPORAL_AT"),
+      args: z
+        .object({
+          inputStepId: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/),
+          asOf: z.string().datetime(),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...ReasoningStepBase,
+      operator: z.literal("FILTER_SCOPE"),
+      args: z
+        .object({
+          inputStepId: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/),
+          vaultIds: z.array(z.string().uuid()).max(20).default([]),
+          pathPrefixes: z
+            .array(z.string().min(1).max(2048))
+            .max(64)
+            .default([]),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...ReasoningStepBase,
+      operator: z.literal("JOIN_EVIDENCE"),
+      args: z
+        .object({
+          inputStepId: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/),
+          minimumSupport: z.number().int().min(1).max(20).default(1),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...ReasoningStepBase,
+      operator: z.literal("COMPARE"),
+      args: z
+        .object({
+          leftStepId: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/),
+          rightStepId: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/),
+          fields: z.array(z.string().min(1).max(160)).max(32).default([]),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...ReasoningStepBase,
+      operator: z.literal("AGGREGATE"),
+      args: z
+        .object({
+          inputStepId: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/),
+          operation: z.enum([
+            "COUNT",
+            "DISTINCT_COUNT",
+            "SUM",
+            "AVERAGE",
+            "MIN",
+            "MAX",
+          ]),
+          field: z.string().min(1).max(160).optional(),
+          groupBy: z.string().min(1).max(160).optional(),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...ReasoningStepBase,
+      operator: z.literal("CALCULATE"),
+      args: z
+        .object({
+          operation: z.enum(["COUNT", "SUM", "AVERAGE", "MIN", "MAX", "RATIO"]),
+          inputStepIds: z
+            .array(z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/))
+            .min(1)
+            .max(16),
+          field: z.string().min(1).max(160).optional(),
+          numeratorField: z.string().min(1).max(160).optional(),
+          denominatorField: z.string().min(1).max(160).optional(),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...ReasoningStepBase,
+      operator: z.literal("VERIFY_SUPPORT"),
+      args: z
+        .object({
+          inputStepId: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/),
+          minimumTrust: TrustTier.default("MACHINE_SUPPORTED"),
+          requireCitation: z.boolean().default(true),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...ReasoningStepBase,
+      operator: z.literal("LOAD_RAW"),
+      args: z
+        .object({
+          inputStepId: z
+            .string()
+            .regex(/^[a-z][a-z0-9_-]{0,63}$/)
+            .optional(),
+          sourceIds: z.array(z.string().uuid()).max(100).default([]),
+          maxBytes: z.number().int().min(1).max(10_000_000).default(1_000_000),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...ReasoningStepBase,
+      operator: z.literal("BUILD_CONTEXT"),
+      args: z
+        .object({
+          inputStepIds: z
+            .array(z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/))
+            .min(1)
+            .max(16),
+          contextLevel: z.enum(["L0", "L1", "L2", "L3"]).default("L2"),
+          maxTokens: z.number().int().min(128).max(200_000),
+        })
+        .strict(),
+    })
+    .strict(),
+]);
+export type ReasoningStep = z.infer<typeof ReasoningStep>;
+
+export const ReasoningPlan = z
+  .object({
+    schemaVersion: z.literal(1),
+    query: z.string().min(1).max(8_000),
+    intent: QueryIntent,
+    revisionSet: ContextRevisionSet,
+    steps: z.array(ReasoningStep).min(1).max(100),
+    budget: z
+      .object({
+        maxSteps: z.number().int().min(1).max(100),
+        maxWallMs: z.number().int().min(1).max(3_600_000),
+        maxTokens: z.number().int().min(1).max(2_000_000).optional(),
+        maxCost: z.number().nonnegative().max(10_000).optional(),
+      })
+      .strict(),
+  })
+  .strict();
+export type ReasoningPlan = z.infer<typeof ReasoningPlan>;
+
+export const SearchRequest = z.object({
+  query: z.string().min(1),
+  intent: QueryIntent.optional(),
+  organizationId: z.string().uuid().optional(),
+  spaceId: z.string().uuid(),
+  vaultId: z.string().uuid().optional(),
+  vaultIds: z.array(z.string().uuid()).max(20).default([]),
+  federated: z.boolean().default(false),
+  projectId: z.string().uuid().optional(),
+  truthConsistency: z.enum(["STRICT", "BEST_EFFORT"]).optional(),
+  types: z.array(z.string()).default([]),
+  minimumTrust: TrustTier.default("MACHINE_SUPPORTED"),
+  mode: z
+    .enum([
+      "COMPILED_ONLY",
+      "SOURCE_BACKED",
+      "RAW_ONLY",
+      "PROJECT_CODE",
+      "DRAFT_INCLUDED",
+    ])
+    .default("SOURCE_BACKED"),
+  limit: z.number().int().min(1).max(100).default(20),
+});
+export type SearchRequest = z.infer<typeof SearchRequest>;
 
 export const GraphPathNode = z.object({
   documentId: z.string().uuid(),
@@ -167,9 +515,17 @@ export const SearchHit = z.object({
         rank: z.number().int().positive(),
         channelWeight: z.number().nonnegative(),
         reason: z.string().min(1),
+        rawScore: z.number().finite().optional(),
         candidateRevision: z.string().nullable().optional(),
       }),
     )
+    .optional(),
+  rerankTrace: z
+    .object({
+      reranker: z.string().min(1),
+      preRank: z.number().int().positive(),
+      postRank: z.number().int().positive(),
+    })
     .optional(),
   excerpt: z.string(),
   citations: z.array(z.string()),
@@ -177,6 +533,9 @@ export const SearchHit = z.object({
   graphProvenance: z.array(GraphPathProvenance).optional(),
 });
 export type SearchHit = z.infer<typeof SearchHit>;
+
+export const ContextDisclosureLevel = z.enum(["L0", "L1", "L2", "L3"]);
+export type ContextDisclosureLevel = z.infer<typeof ContextDisclosureLevel>;
 
 export const ContextSection = z.object({
   kind: z.enum([
@@ -190,6 +549,7 @@ export const ContextSection = z.object({
     "evidence",
     "source",
   ]),
+  contextLevel: ContextDisclosureLevel,
   title: z.string(),
   content: z.string(),
   documentId: z.string().uuid(),
@@ -218,12 +578,15 @@ export type ContextPacketMode = z.infer<typeof ContextPacketMode>;
 export const ContextRequest = SearchRequest.extend({
   maxTokens: z.number().int().min(256).max(32000).optional(),
   packetMode: ContextPacketMode.default("FULL_CONTEXT_PACKET"),
+  contextLevel: ContextDisclosureLevel.default("L2"),
+  reasoningMode: z.enum(["DIRECT", "PLAN"]).default("DIRECT"),
 });
 export type ContextRequest = z.infer<typeof ContextRequest>;
 
 export const TokenizerMetadata = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
+  quality: z.enum(["EXACT", "APPROXIMATE"]),
   approximate: z.boolean(),
   source: z.enum(["injected", "fallback"]),
 });
@@ -265,6 +628,7 @@ export const ContextPacket = z.object({
   generatedAt: z.string().datetime(),
   budget: ContextPacketBudget,
   mode: SearchRequest.shape.mode,
+  requestedContextLevel: ContextDisclosureLevel,
   searchedChannels: z.array(z.string()),
   sections: z.array(ContextSection),
   citations: z.array(z.string()),
@@ -291,6 +655,7 @@ export type ContextContinuationResponse = z.infer<
 
 export const CompactContextSection = z.object({
   kind: ContextSection.shape.kind,
+  contextLevel: ContextDisclosureLevel,
   identity: z.object({
     documentId: z.string().uuid(),
     vaultId: z.string().uuid(),
@@ -322,6 +687,7 @@ export const CompactAgentPacket = z.object({
     corpusRevision: z.string(),
     status: ContextPacket.shape.status,
     mode: SearchRequest.shape.mode,
+    requestedContextLevel: ContextDisclosureLevel,
     scope: ContextPacket.shape.scope,
     indexRevisions: ContextPacket.shape.indexRevisions,
   }),
@@ -455,8 +821,28 @@ export const IntegrationEventType = z.enum([
   "LexicalIndexUpdateRequested",
   "VectorIndexUpdateRequested",
   "GraphIndexUpdateRequested",
+  "CodeGraphRefreshRequested",
+  "CodeKnowledgeLinkApproved",
+  "GraphRevisionBuilt",
+  "GraphRevisionActivated",
+  "GraphRevisionStale",
+  "SourceWithdrawn",
+  "EvidenceInvalidated",
+  "FactSuperseded",
+  "TruthRevisionPublished",
+  "DerivedSupportInvalidationRequested",
   "ContextPackInvalidationRequested",
   "ImpactedEvalRunRequested",
+  "WorkspaceSessionCreated",
+  "WorkspaceSessionUpdated",
+  "WorkspaceClaimUpdated",
+  "WorkspaceHandoffCreated",
+  "WorkspacePromotionRequested",
+  "ExternalObjectRefUpserted",
+  "OfflineDraftQueued",
+  "OfflineDraftReconciled",
+  "ContextFabricPeerRegistered",
+  "PrincipalRevoked",
 ]);
 export type IntegrationEventType = z.infer<typeof IntegrationEventType>;
 
@@ -611,3 +997,5 @@ export const DocumentArtifact = z
     }
   });
 export type DocumentArtifact = z.infer<typeof DocumentArtifact>;
+
+export * from "./federated-graph.js";

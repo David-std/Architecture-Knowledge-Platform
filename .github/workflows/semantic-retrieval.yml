@@ -5,6 +5,10 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   real-multilingual-semantic-retrieval:
     runs-on: ubuntu-latest
@@ -23,9 +27,118 @@ jobs:
           node-version: 24.20.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Fetch exact v0.3 baseline commit
+        shell: bash
+        run: |
+          git fetch --no-tags --depth=1 origin \
+            a6bdcc38fdf026d6c353db096799366865011022
+      - name: Generate v0.3 capability maturity baseline
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p reports/ci
+          AKP_CAPABILITY_BASELINE_REPORT=reports/ci/v0.3-capability-maturity-baseline.json \
+            pnpm benchmark:capability-baseline \
+            2>&1 | tee reports/ci/v0.3-capability-maturity-baseline.log
       - run: pnpm build
       - run: docker compose up -d --wait postgres
       - run: pnpm db:migrate
+      - name: Characterize filtered ANN recall under vault and path authorization
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p reports/ci
+          AKP_FILTERED_ANN_REPORT=reports/ci/filtered-ann-baseline.json \
+            pnpm benchmark:filtered-ann \
+            2>&1 | tee reports/ci/filtered-ann-baseline.log
+      - name: Validate filtered ANN evidence boundaries
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const report = JSON.parse(
+            readFileSync("reports/ci/filtered-ann-baseline.json", "utf8"),
+          );
+          if (report.status !== "PROVEN") {
+            throw new Error(`Filtered ANN measurement status is ${report.status}.`);
+          }
+          if (report.productionDefaultChanged !== false || report.productionIndexSelected !== false) {
+            throw new Error("Filtered ANN characterization must not change or select a production default.");
+          }
+          if (report.fixture?.duplicateIdentifiersAcrossVaults !== true || report.fixture?.duplicateTextAcrossVaults !== true) {
+            throw new Error("Filtered ANN fixture must include cross-vault identifier and text collisions.");
+          }
+          const measurements = Array.isArray(report.measurements) ? report.measurements : [];
+          for (const measurement of measurements) {
+            if (measurement.leakageCount !== 0) {
+              throw new Error(`Authorization leakage observed in ${measurement.scenario}/${measurement.mode}.`);
+            }
+            if (!Number.isFinite(measurement.meanRecallAtK) || !Number.isFinite(measurement.minimumRecallAtK)) {
+              throw new Error(`Missing recall evidence for ${measurement.scenario}/${measurement.mode}.`);
+            }
+            if (
+              !Number.isFinite(measurement.p50LatencyMs) ||
+              !Number.isFinite(measurement.p95LatencyMs) ||
+              measurement.p50LatencyMs < 0 ||
+              measurement.p95LatencyMs < measurement.p50LatencyMs ||
+              !Number.isInteger(measurement.latencySamples) ||
+              measurement.latencySamples < measurement.queries
+            ) {
+              throw new Error(`Missing p50/p95 latency evidence for ${measurement.scenario}/${measurement.mode}.`);
+            }
+          }
+          const candidateScan = report.candidateScanMeasurement;
+          const measuredCandidateScan =
+            candidateScan?.status === "MEASURED" &&
+            Number.isFinite(candidateScan?.candidatesScanned) &&
+            candidateScan.candidatesScanned >= 0;
+          const unavailableCandidateScan =
+            candidateScan?.status === "UNAVAILABLE" &&
+            candidateScan?.candidatesScanned === null &&
+            typeof candidateScan?.reason === "string" &&
+            candidateScan.reason.length > 0;
+          if (!measuredCandidateScan && !unavailableCandidateScan) {
+            throw new Error("Candidate scan evidence must be measured when available or explicitly report why unavailable.");
+          }
+          const broad = measurements.find(
+            (item) => item.scenario === "VAULT_FILTER" && item.mode === "HNSW_FILTERED",
+          );
+          const selective = measurements.find(
+            (item) => item.scenario === "VAULT_PLUS_PATH_ACL" && item.mode === "HNSW_FILTERED",
+          );
+          for (const measurement of measurements) {
+            if (
+              !Number.isInteger(measurement.fixtureRows) ||
+              !Number.isInteger(measurement.eligibleRows) ||
+              measurement.fixtureRows <= 0 ||
+              measurement.eligibleRows <= 0 ||
+              !Number.isFinite(measurement.selectivityRatio) ||
+              measurement.selectivityRatio <= 0 ||
+              measurement.selectivityRatio > 1
+            ) {
+              throw new Error(`Missing filter selectivity evidence for ${measurement.scenario}/${measurement.mode}.`);
+            }
+          }
+          if (!broad || !selective || selective.selectivityRatio >= broad.selectivityRatio) {
+            throw new Error("Path ACL scenario must be measurably more selective than the broad vault filter.");
+          }
+          const modes = new Set(measurements.map((item) => item.mode));
+          for (const requiredMode of ["HNSW_FILTERED", "HNSW_PARTIAL"]) {
+            if (!modes.has(requiredMode)) {
+              throw new Error(`Filtered ANN baseline is missing ${requiredMode}.`);
+            }
+          }
+          if (report.iterativeScanSupported === true && !modes.has("HNSW_ITERATIVE")) {
+            throw new Error("pgvector supports iterative scan but the baseline did not measure it.");
+          }
+          console.log(JSON.stringify({
+            pgvectorVersion: report.pgvectorVersion,
+            iterativeScanSupported: report.iterativeScanSupported,
+            measurements,
+            alternatives: report.alternatives,
+          }, null, 2));
+          NODE
       - name: Execute pinned multilingual semantic retrieval end to end
         shell: bash
         run: |
@@ -44,6 +157,42 @@ jobs:
           AKP_RUNTIME_RETRIEVAL_REPORT=reports/ci/runtime-retrieval-benchmark.json \
             pnpm benchmark:retrieval:runtime \
             2>&1 | tee reports/ci/runtime-retrieval-benchmark.log
+      - name: Validate incremental vector update evidence
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const report = JSON.parse(
+            readFileSync("reports/ci/runtime-retrieval-benchmark.json", "utf8"),
+          );
+          const runs = Array.isArray(report.runs) ? report.runs : [];
+          const vectorRuns = runs.filter((run) => run.vectorEnabled === true);
+          if (vectorRuns.length === 0) {
+            throw new Error("Runtime retrieval benchmark produced no vector-enabled configurations.");
+          }
+          for (const run of vectorRuns) {
+            const update = run.indexBuildUpdate?.updateEvidence;
+            if (
+              update?.measured !== true ||
+              !Number.isFinite(update.milliseconds) ||
+              update.milliseconds < 0 ||
+              !Number.isInteger(update.unitCount) ||
+              update.unitCount < 2 ||
+              update.changedUnits !== 1 ||
+              update.embeddingsCreated !== 1 ||
+              update.embeddingsReused !== update.unitCount - 1
+            ) {
+              throw new Error(
+                `Vector configuration ${run.configurationName} lacks valid incremental update-cost evidence.`,
+              );
+            }
+          }
+          console.log(JSON.stringify({
+            vectorConfigurations: vectorRuns.map((run) => run.configurationName),
+            updateEvidence: vectorRuns[0]?.indexBuildUpdate?.updateEvidence ?? null,
+          }, null, 2));
+          NODE
       - name: Execute registered public corpus retrieval benchmark
         shell: bash
         run: |

@@ -28,6 +28,9 @@ function fakeDatabase(
       if (sql.includes("update knowledge_documents")) {
         return { rows: [{ id: "document-a" }], rowCount: 1 };
       }
+      if (sql.includes("insert into community_index_revisions")) {
+        return { rows: [{ id: "community-revision-a" }], rowCount: 1 };
+      }
       return { rows: [], rowCount: 0 };
     }),
     release: vi.fn(),

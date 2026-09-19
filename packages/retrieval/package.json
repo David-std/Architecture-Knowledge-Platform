@@ -13,7 +13,9 @@
   },
   "dependencies": {
     "@akp/contracts": "*",
-    "@huggingface/transformers": "4.2.0"
+    "@huggingface/transformers": "4.2.0",
+    "ngraph.graph": "20.1.2",
+    "ngraph.leiden": "0.3.0"
   },
   "devDependencies": {}
 }

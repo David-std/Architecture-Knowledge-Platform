@@ -45,14 +45,33 @@ try {
   const tools = await client.listTools();
   const required = [
     "akp_status",
+    "akp_get_current_identity",
     "akp_list_vaults",
     "akp_start_session",
+    "akp_list_sessions",
+    "akp_get_session_state",
+    "akp_update_work_context",
+    "akp_bootstrap_session_context",
+    "akp_claim_workspace_work",
+    "akp_heartbeat_workspace_claim",
+    "akp_release_workspace_claim",
+    "akp_handoff_workspace_claim",
+    "akp_append_workspace_event",
+    "akp_request_workspace_promotion",
     "akp_search",
     "akp_build_context",
     "akp_get_document",
     "akp_get_source_evidence",
     "akp_get_context_pack",
     "akp_analyze_impact",
+    "akp_find_code_symbol",
+    "akp_find_code_callers",
+    "akp_find_code_callees",
+    "akp_find_code_path",
+    "akp_analyze_code_impact",
+    "akp_analyze_code_change_impact",
+    "akp_find_code_tests",
+    "akp_explain_code_path",
     "akp_submit_source",
     "akp_ingest_status",
     "akp_propose_knowledge_change",
@@ -76,6 +95,31 @@ try {
     throw new Error(
       `Unexpected platform status: ${JSON.stringify(statusPayload)}`,
     );
+  }
+  // Resolve identity live so revocation or expiry cannot be hidden by cached MCP state.
+  const identity = await client.callTool({
+    name: "akp_get_current_identity",
+    arguments: {},
+  });
+  const identityPayload = structuredToolResult(identity);
+  const identityActor = identityPayload.actor;
+  if (!identityActor || typeof identityActor !== "object") {
+    throw new Error(
+      `Unexpected MCP identity payload: ${JSON.stringify(identityPayload)}`,
+    );
+  }
+  const identityRecord = identityActor as Record<string, unknown>;
+  const identityJson = JSON.stringify(identityPayload);
+  if (
+    identityPayload.authenticated !== true ||
+    typeof identityRecord.principalId !== "string" ||
+    typeof identityRecord.principalKind !== "string" ||
+    typeof identityRecord.authenticationKind !== "string" ||
+    !Array.isArray(identityRecord.principalAllowedActions) ||
+    typeof identityRecord.principalPolicyRevision !== "number" ||
+    /"(?:token|tokenHash|credentialHash|csrfHash)"\s*:/.test(identityJson)
+  ) {
+    throw new Error(`Unexpected MCP identity payload: ${identityJson}`);
   }
   const listed = await client.callTool({
     name: "akp_list_vaults",
@@ -145,6 +189,8 @@ try {
         toolCount: tools.tools.length,
         requiredTools: required.length,
         platformStatus: statusPayload.status,
+        principalKind: identityRecord.principalKind,
+        authenticationKind: identityRecord.authenticationKind,
         visibleVaultCount: vaults.length,
         scopedVaultId: vaultId,
         searchHitCount: searchPayload.hits.length,

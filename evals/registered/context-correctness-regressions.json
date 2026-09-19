@@ -1,0 +1,267 @@
+{
+  "schemaVersion": 1,
+  "evidenceLevel": "P0_REGRESSION_SPEC",
+  "productionDefaultsChanged": false,
+  "cases": [
+    {
+      "id": "temporal-vector-contradiction-jwt-storage",
+      "kind": "TEMPORAL_TRUTH_CONTRADICTION",
+      "query": "Where should the browser store the current session token?",
+      "documents": [
+        {
+          "id": "security-guide-v1",
+          "validFrom": "2024-01-01T00:00:00Z",
+          "validTo": "2025-06-30T23:59:59Z",
+          "authority": "OFFICIAL_SUPERSEDED",
+          "text": "Store the session token in localStorage so application code can attach it to requests."
+        },
+        {
+          "id": "security-guide-v3",
+          "validFrom": "2025-07-01T00:00:00Z",
+          "validTo": null,
+          "authority": "OFFICIAL_CURRENT",
+          "text": "Do not store the session token in localStorage. Use a Secure, HttpOnly, SameSite cookie."
+        }
+      ],
+      "denseScores": {
+        "security-guide-v1": 0.9321,
+        "security-guide-v3": 0.9318
+      },
+      "expectations": {
+        "current": ["security-guide-v3"],
+        "asOfBeforeChange": ["security-guide-v1"],
+        "mustNotResolveBy": "DENSE_SCORE_ONLY",
+        "mustExposeContradiction": true,
+        "readTimeSupportValidationRequired": true
+      }
+    },
+    {
+      "id": "token-budget-multilingual-identifiers",
+      "kind": "TOKENIZATION_AND_EXACT_IDENTIFIER",
+      "samples": {
+        "english": "Rotate the authentication token before deployment.",
+        "spanish": "Rota el token de autenticación antes del despliegue.",
+        "code": "AuthTokenRotationPolicy.rotate_access_token(user_id)",
+        "path": "/services/auth/src/token-rotation-policy.ts"
+      },
+      "identifiers": [
+        "AuthTokenRotationPolicy",
+        "rotate_access_token",
+        "auth-token-rotation",
+        "user_id",
+        "5f4dcc3b-5aa7-4f4f-8a23-112233445566"
+      ],
+      "expectations": {
+        "exactModelTokenizerPreferred": true,
+        "approximateFallbackMustBeLabeled": true,
+        "serializedContextPacketMeasured": true,
+        "exactOrLexicalIdentifierChannelRequired": true,
+        "benchmarkLanguages": ["en", "es", "code"]
+      }
+    },
+    {
+      "id": "multivault-identity-and-text-collision",
+      "kind": "MULTI_VAULT_COLLISION",
+      "vaults": [
+        {
+          "id": "vault-alpha",
+          "scope": "TEAM_ALPHA",
+          "title": "Authentication Rotation",
+          "alias": "auth-rotation",
+          "relativePath": "security/auth-rotation.md",
+          "externalId": "SEC-ROTATION-01",
+          "text": "Rotate authentication credentials before the deployment window."
+        },
+        {
+          "id": "vault-beta",
+          "scope": "TEAM_BETA",
+          "title": "Authentication Rotation",
+          "alias": "auth-rotation",
+          "relativePath": "security/auth-rotation.md",
+          "externalId": "SEC-ROTATION-01",
+          "text": "Rotate authentication credentials before the deployment window."
+        }
+      ],
+      "expectations": {
+        "authorizationSeparatesCandidatesBeforeRanking": true,
+        "sameTitle": true,
+        "sameAlias": true,
+        "sameRelativePath": true,
+        "sameExternalIdShape": true,
+        "highlySimilarText": true,
+        "crossVaultLeakageAllowed": false
+      }
+    },
+    {
+      "id": "two-agent-structured-handoff-and-promotion",
+      "kind": "TWO_AGENT_WORKSPACE_HANDOFF",
+      "task": "Refactor compiler review flow while updating the Web review experience.",
+      "principals": ["agent-a", "agent-b"],
+      "claims": [
+        {
+          "principal": "agent-a",
+          "resourcePattern": "packages/compiler/**",
+          "compatible": true
+        },
+        {
+          "principal": "agent-b",
+          "resourcePattern": "apps/web/**",
+          "compatible": true
+        },
+        {
+          "principal": "agent-b",
+          "resourcePattern": "packages/compiler/**",
+          "compatible": false
+        }
+      ],
+      "handoff": {
+        "requiredFields": [
+          "summary",
+          "completed",
+          "remaining",
+          "blockers",
+          "changedResourceRefs",
+          "contextRevision",
+          "evidenceRefs",
+          "questions"
+        ],
+        "priorChatRequired": false
+      },
+      "expectations": {
+        "overlappingClaimRejectedOrFenced": true,
+        "structuredHandoffRequired": true,
+        "promotionCandidateAllowed": true,
+        "canonicalPublicationRequiresReview": true,
+        "normalAgentMayApprove": false,
+        "normalAgentMayPublish": false
+      }
+    },
+    {
+      "id": "code-graph-cross-file-impact-fixture",
+      "kind": "CODE_GRAPH_FIXTURE",
+      "repository": "fixture/payment-service",
+      "commits": {
+        "before": "1111111111111111111111111111111111111111",
+        "after": "2222222222222222222222222222222222222222"
+      },
+      "symbols": [
+        "src/auth/token-service.ts#TokenService.rotate",
+        "src/auth/session-controller.ts#SessionController.refresh",
+        "src/auth/base-provider.ts#BaseProvider",
+        "src/auth/oidc-provider.ts#OidcProvider",
+        "test/auth/token-service.test.ts#rotatesExpiredToken"
+      ],
+      "relations": [
+        "SessionController.refresh CALLS TokenService.rotate",
+        "OidcProvider INHERITS BaseProvider",
+        "rotatesExpiredToken TESTS TokenService.rotate"
+      ],
+      "renamedSymbol": {
+        "before": "src/auth/token-service.ts#rotateToken",
+        "after": "src/auth/token-service.ts#TokenService.rotate",
+        "mustRemainCandidateWhenAmbiguous": true
+      },
+      "excludedPaths": ["vendor/generated-client.ts", "dist/bundle.min.js"],
+      "ambiguousCall": "src/compat/adapter.ts#refresh -> refresh",
+      "expectations": {
+        "crossFilePathPresent": true,
+        "inheritancePresent": true,
+        "testLinkagePresent": true,
+        "generatedAndVendorExcluded": true,
+        "ambiguousCallNotUpgradedToExtracted": true,
+        "commitShaRequired": true
+      }
+    },
+    {
+      "id": "catalog-code-runtime-disagreement",
+      "kind": "DECLARED_VS_OBSERVED_SYSTEM",
+      "entity": "ServiceA",
+      "observations": [
+        {
+          "domain": "SOFTWARE_CATALOG",
+          "statement": "ServiceA depends_on ServiceB",
+          "derivation": "HUMAN_ASSERTED"
+        },
+        {
+          "domain": "CODE",
+          "statement": "ServiceA imports ServiceBClient",
+          "derivation": "DETERMINISTIC_EXTRACTED"
+        },
+        {
+          "domain": "RUNTIME",
+          "statement": "No ServiceA to ServiceB call observed in the current trace window",
+          "derivation": "RUNTIME_OBSERVED"
+        }
+      ],
+      "expectations": {
+        "preserveAllObservations": true,
+        "preserveDomainAndRevision": true,
+        "runtimeAbsenceDoesNotDeleteCatalogRelation": true,
+        "mustNotFlattenToGenericRelatedTo": true
+      }
+    },
+    {
+      "id": "source-withdrawal-with-independent-support",
+      "kind": "TRUTH_MAINTENANCE_WITHDRAWAL",
+      "claim": "MFA is required for administrator access.",
+      "support": [
+        {
+          "source": "source-a",
+          "evidence": "evidence-a",
+          "statusBefore": "ACTIVE",
+          "statusAfter": "WITHDRAWN"
+        },
+        {
+          "source": "source-b",
+          "evidence": "evidence-b",
+          "statusBefore": "ACTIVE",
+          "statusAfter": "ACTIVE"
+        }
+      ],
+      "staleDerivedStateRetainedPhysically": ["VECTOR", "COMMUNITY", "CACHE"],
+      "expectations": {
+        "conclusionMayRemainViaIndependentSourceB": true,
+        "sourceACitationRemovedFromCurrentExplanation": true,
+        "sourceADerivedCandidateRejectedBeforeRanking": true,
+        "physicalCleanupMayBeAsynchronous": true,
+        "historicalQueryMayInspectSourceA": true
+      }
+    },
+    {
+      "id": "context-placement-required-actions-under-budget",
+      "kind": "CONTEXT_PLACEMENT_AND_MANDATORY_CONSTRAINTS",
+      "requiredActions": [
+        "Respect the explicit vault authorization boundary.",
+        "Do not infer approval from retrieved content."
+      ],
+      "candidates": [
+        {
+          "id": "governance-rule",
+          "kind": "rule",
+          "score": 0.2,
+          "content": "Only explicitly authorized vault paths may contribute context."
+        },
+        {
+          "id": "high-score-concept",
+          "kind": "concept",
+          "score": 0.99,
+          "content": "A semantically close explanation with no authority to override the rule."
+        },
+        {
+          "id": "oversized-source",
+          "kind": "source",
+          "score": 0.98,
+          "contentRepeat": 12000
+        }
+      ],
+      "expectations": {
+        "rulePlacedBeforeHigherScoreConcept": true,
+        "requiredActionsRetainedInFullPacket": true,
+        "requiredActionsRetainedInCompactPacket": true,
+        "requiredActionOrderPreserved": true,
+        "truncatedEvidenceUsesContinuation": true,
+        "mandatoryActionsNeverMoveIntoRetrievedContent": true
+      }
+    }
+  ]
+}

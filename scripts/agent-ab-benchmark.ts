@@ -66,6 +66,7 @@ type ProviderResult = {
 type ArmInput = {
   context: string;
   allowedCitations: string[];
+  citationEvidence: Record<string, string[]>;
   retrievalLatencyMs: number;
   retrievalMetadata: Record<string, unknown>;
 };
@@ -90,6 +91,17 @@ function stringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string")
     : [];
+}
+
+function appendCitationEvidence(
+  target: Record<string, string[]>,
+  citation: string,
+  text: string,
+): void {
+  if (!citation || !text.trim()) return;
+  const values = target[citation] ?? [];
+  if (!values.includes(text)) values.push(text);
+  target[citation] = values;
 }
 
 async function writeReport(report: Record<string, unknown>): Promise<void> {
@@ -120,6 +132,7 @@ function benchmarkPrerequisites(): {
   providerModel: string;
   temperature: number;
   maxOutputTokens: number;
+  providerTimeoutMs: number;
 } {
   const reasons: string[] = [];
   const apiUrl = (process.env.AKP_API_URL ?? "").replace(/\/$/u, "");
@@ -138,6 +151,9 @@ function benchmarkPrerequisites(): {
   const temperature = Number(process.env.AKP_AGENT_AB_TEMPERATURE ?? "0");
   const maxOutputTokens = Number(
     process.env.AKP_AGENT_AB_MAX_OUTPUT_TOKENS ?? "800",
+  );
+  const providerTimeoutMs = Number(
+    process.env.AKP_AGENT_AB_PROVIDER_TIMEOUT_MS ?? "120000",
   );
 
   if (process.env.AKP_AGENT_AB_ENABLE !== "1") {
@@ -168,6 +184,15 @@ function benchmarkPrerequisites(): {
       "AKP_AGENT_AB_MAX_OUTPUT_TOKENS must be an integer from 64 to 8192.",
     );
   }
+  if (
+    !Number.isInteger(providerTimeoutMs) ||
+    providerTimeoutMs < 30_000 ||
+    providerTimeoutMs > 600_000
+  ) {
+    reasons.push(
+      "AKP_AGENT_AB_PROVIDER_TIMEOUT_MS must be an integer from 30000 to 600000.",
+    );
+  }
   return {
     ready: reasons.length === 0,
     reasons,
@@ -180,6 +205,7 @@ function benchmarkPrerequisites(): {
     providerModel,
     temperature,
     maxOutputTokens,
+    providerTimeoutMs,
   };
 }
 
@@ -205,6 +231,13 @@ async function postJson<T>(
 }
 
 function rawSearchContext(response: SearchResponse): ArmInput {
+  const citationEvidence: Record<string, string[]> = {};
+  for (const hit of response.hits) {
+    const evidenceText = [hit.title, hit.excerpt].filter(Boolean).join("\n");
+    for (const citation of hit.citations) {
+      appendCitationEvidence(citationEvidence, citation, evidenceText);
+    }
+  }
   const context = response.hits
     .map((hit, index) =>
       [
@@ -221,6 +254,7 @@ function rawSearchContext(response: SearchResponse): ArmInput {
     allowedCitations: [
       ...new Set(response.hits.flatMap((hit) => hit.citations)),
     ],
+    citationEvidence,
     retrievalLatencyMs: 0,
     retrievalMetadata: {
       hits: response.hits.length,
@@ -231,6 +265,20 @@ function rawSearchContext(response: SearchResponse): ArmInput {
 }
 
 function packetContext(packet: ContextPacket): ArmInput {
+  const citationEvidence: Record<string, string[]> = {};
+  for (const section of packet.sections ?? []) {
+    for (const citation of stringArray(section.sourceOrEvidenceIds)) {
+      appendCitationEvidence(citationEvidence, citation, section.content ?? "");
+    }
+  }
+  for (const section of packet.content ?? []) {
+    for (const citation of [
+      ...stringArray(section.citations),
+      ...stringArray(section.references),
+    ]) {
+      appendCitationEvidence(citationEvidence, citation, section.content ?? "");
+    }
+  }
   const allowedCitations = [
     ...stringArray(packet.citations),
     ...stringArray(packet.references),
@@ -242,9 +290,17 @@ function packetContext(packet: ContextPacket): ArmInput {
       ...stringArray(section.references),
     ]),
   ];
+  const context = JSON.stringify(packet);
+  const uniqueAllowedCitations = [...new Set(allowedCitations)];
+  for (const citation of uniqueAllowedCitations) {
+    if (!citationEvidence[citation]?.length) {
+      appendCitationEvidence(citationEvidence, citation, context);
+    }
+  }
   return {
-    context: JSON.stringify(packet),
-    allowedCitations: [...new Set(allowedCitations)],
+    context,
+    allowedCitations: uniqueAllowedCitations,
+    citationEvidence,
     retrievalLatencyMs: 0,
     retrievalMetadata: {
       packetMode: packet.packetMode,
@@ -444,7 +500,7 @@ async function invokeProvider(
           { role: "user", content: prompt },
         ],
       }),
-      signal: AbortSignal.timeout(120_000),
+      signal: AbortSignal.timeout(config.providerTimeoutMs),
     });
     totalLatencyMs += performance.now() - started;
     const responseText = await response.text();
@@ -532,6 +588,8 @@ async function runArm(
     task,
     provider.output,
     input.allowedCitations,
+    input.context,
+    input.citationEvidence,
   );
   return {
     taskId: task.id,
@@ -552,6 +610,38 @@ async function runArm(
     retrievalLatencyMs: input.retrievalLatencyMs,
     modelLatencyMs: provider.latencyMs,
   };
+}
+
+const CONTROLLED_NOISE_TEXT = [
+  "",
+  "RESULT CONTROLLED-NOISE",
+  "DOCUMENT: control-noise-ui-layout",
+  "TITLE: Interface presentation notes",
+  "TEXT: The demonstration interface can arrange navigation controls in compact or expanded layouts and may display explanatory labels beside icons.",
+  "CITATIONS: control://noise-ui-layout",
+].join("\n");
+
+function withControlledNoise(input: ArmInput): ArmInput {
+  return {
+    ...input,
+    context: `${input.context}\n\n${CONTROLLED_NOISE_TEXT}`,
+    citationEvidence: { ...input.citationEvidence },
+    retrievalMetadata: {
+      ...input.retrievalMetadata,
+      controlledNoiseProbe: true,
+    },
+  };
+}
+
+function noiseCausedFailure(
+  baseline: AgentAbArmObservation,
+  noisy: AgentAbArmObservation,
+): boolean {
+  return (
+    noisy.correctness < baseline.correctness ||
+    noisy.unsupportedClaimRate > baseline.unsupportedClaimRate ||
+    noisy.citationPrecision < baseline.citationPrecision
+  );
 }
 
 async function main(): Promise<void> {
@@ -582,14 +672,23 @@ async function main(): Promise<void> {
     return;
   }
 
-  const observations: Array<
-    AgentAbArmObservation & {
-      retrievalMetadata: Record<string, unknown>;
-      modelOutput: AgentAbModelOutput;
-      retrievalLatencyMs: number;
-      modelLatencyMs: number;
-    }
-  > = [];
+  type DetailedObservation = AgentAbArmObservation & {
+    retrievalMetadata: Record<string, unknown>;
+    modelOutput: AgentAbModelOutput;
+    retrievalLatencyMs: number;
+    modelLatencyMs: number;
+  };
+  const observations: DetailedObservation[] = [];
+  const noiseProbeQueue: Array<{
+    task: AgentAbTask;
+    input: ArmInput;
+    observation: DetailedObservation;
+  }> = [];
+  const noiseProbeTaskIds = new Set([
+    "agent-public-concept-canonical-authority",
+    "agent-public-source-sanitized-packet",
+    "agent-public-no-answer-cloud-region",
+  ]);
   try {
     for (const [index, task] of loaded.file.tasks.entries()) {
       const armA = await retrieveArmA(task, config);
@@ -605,8 +704,35 @@ async function main(): Promise<void> {
               ["A_RAW_SEARCH", armA],
             ] as const);
       for (const [arm, input] of ordered) {
-        observations.push(await runArm(arm, task, input, config));
+        const observation = await runArm(arm, task, input, config);
+        observations.push(observation);
+        if (
+          arm === "B_AKP_CONTEXT_PACKET" &&
+          noiseProbeTaskIds.has(task.id)
+        ) {
+          noiseProbeQueue.push({ task, input, observation });
+        }
       }
+    }
+    for (const probe of noiseProbeQueue) {
+      const noisy = await runArm(
+        "B_AKP_CONTEXT_PACKET",
+        probe.task,
+        withControlledNoise(probe.input),
+        config,
+      );
+      probe.observation.noiseSensitivity = Number(
+        noiseCausedFailure(probe.observation, noisy),
+      );
+      probe.observation.retrievalMetadata.noiseProbe = {
+        method: "CONTROLLED_IRRELEVANT_CONTEXT_PERTURBATION",
+        baselineCorrectness: probe.observation.correctness,
+        noisyCorrectness: noisy.correctness,
+        baselineUnsupportedClaimRate: probe.observation.unsupportedClaimRate,
+        noisyUnsupportedClaimRate: noisy.unsupportedClaimRate,
+        baselineCitationPrecision: probe.observation.citationPrecision,
+        noisyCitationPrecision: noisy.citationPrecision,
+      };
     }
     const supportedTaskIds = new Set([
       "agent-public-exact-runtime-flows",
@@ -656,6 +782,7 @@ async function main(): Promise<void> {
           operatorAssertedRealModel: true,
           temperature: config.temperature,
           maxOutputTokens: config.maxOutputTokens,
+          requestTimeoutMs: config.providerTimeoutMs,
         },
       },
       aggregates: [aggregateAgentAbArm(armA), aggregateAgentAbArm(armB)],
@@ -668,6 +795,7 @@ async function main(): Promise<void> {
       status: "FAILED",
       error: error instanceof Error ? error.message : String(error),
       completedObservations: observations.length,
+      providerRequestTimeoutMs: config.providerTimeoutMs,
     });
     process.exitCode = 1;
   }

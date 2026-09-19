@@ -56,6 +56,8 @@ export interface OfflineBenchmarkReport {
       channels: readonly string[];
       vectorBenchmarkOnly: boolean;
       rerank: boolean;
+      associativePpr: boolean;
+      communityGlobal: boolean;
     }>;
   };
   metricDefinitions: Record<string, string>;
@@ -220,21 +222,37 @@ export function buildOfflineBenchmarkReport(
         channels: [...configuration.channels],
         vectorBenchmarkOnly: Boolean(configuration.allowVectorForBenchmark),
         rerank: Boolean(configuration.deterministicRerank),
+        associativePpr: Boolean(configuration.associativePpr),
+        communityGlobal: Boolean(configuration.communityGlobal),
       })),
     },
     metricDefinitions: {
+      retrievalRecall:
+        "Relevant gold document fraction in the first ten ranks (Recall@10).",
       recallAt5: "Relevant gold document fraction in the first five ranks.",
       recallAt10: "Relevant gold document fraction in the first ten ranks.",
       mrr: "Reciprocal rank of the first relevant gold document.",
       ndcgAt10: "Binary relevance nDCG at ten.",
       evidenceRecall:
-        "Only measured when gold_evidence labels are present; otherwise coverage is zero.",
+        "Legacy evidence-label recall; only measured when gold_evidence labels are present.",
+      contextPrecision:
+        "Relevant-context fraction; scored only when the adapter supplies contextDocumentIds.",
+      claimSupportRecall:
+        "Required claim-support fraction retrieved; scored only with explicit goldSupportIds.",
       citationPrecision:
-        "Only measured when gold_citations labels are present; otherwise coverage is zero.",
+        "Valid gold-citation fraction among retrieved citations; scored only with gold_citations labels.",
+      contextUtilization:
+        "Assembled context demonstrably used by the answer; scored only with usedContextIds.",
+      noiseSensitivity:
+        "Paired-noise failure rate where 0 is stable and 1 is noise-sensitive; requires an explicit paired judgement.",
+      faithfulness:
+        "Grounded-answer faithfulness in [0,1]; requires an explicit evaluator score.",
       unsupportedClaimRate:
-        "Returned answer with explicitly supplied evidence IDs empty; coverage is zero when no evidence labels are supplied.",
+        "Returned answer with explicitly supplied evidence IDs empty; this is not a substitute for faithfulness.",
       noAnswerAccuracy:
         "Accuracy over cases explicitly marked expect_no_answer.",
+      coverage:
+        "Coverage fields are the fraction of cases with evidence for a diagnostic metric; zero coverage means not measured, not zero quality.",
       exactIdentifierRecall: "Recall@10 over the exact-identifiers slice.",
       crossLanguageRecall: "Recall@10 over the cross-language slice.",
       tokenCost:

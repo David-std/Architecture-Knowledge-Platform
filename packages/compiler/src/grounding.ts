@@ -1,4 +1,6 @@
+import type { TrustTier } from "@akp/contracts";
 import {
+  EffectiveReviewPolicy,
   KnowledgeCompilerInput,
   KnowledgeCompilerResult,
   ReviewCompilationContext,
@@ -104,6 +106,171 @@ export function deriveKnowledgePath(input: {
   const path = `${root}/${input.kind}/${slug(input.title)}.md`;
   assertCompilerAuthoredKnowledgePath(path);
   return path;
+}
+
+function portableArtifactToken(value: string): string {
+  const normalized = value
+    .normalize("NFKD")
+    .replaceAll(/[\u0300-\u036f]/g, "")
+    .replaceAll(/[^A-Za-z0-9._-]+/g, "-")
+    .replaceAll(/^-+|-+$/g, "")
+    .slice(0, 128);
+  return normalized || "knowledge";
+}
+
+function isV03CompatibilityProfile(
+  profile: KnowledgeCompilerInputType["knowledgeProfile"],
+): boolean {
+  return (
+    profile.profile.profileId === "default" &&
+    profile.profile.version === "0.3-compat"
+  );
+}
+
+export function deriveProfileKnowledgePath(input: {
+  title: string;
+  kind: KnowledgeKind;
+  candidateId: string;
+  knowledgeProfile: KnowledgeCompilerInputType["knowledgeProfile"];
+  schemaProfile?: Record<string, unknown>;
+}): string {
+  if (isV03CompatibilityProfile(input.knowledgeProfile)) {
+    return deriveKnowledgePath({
+      title: input.title,
+      kind: input.kind,
+      ...(input.schemaProfile ? { schemaProfile: input.schemaProfile } : {}),
+    });
+  }
+  const kind = input.knowledgeProfile.profile.knowledgeKinds[input.kind];
+  if (!kind) {
+    throw new Error(`COMPILER_PROFILE_KIND_NOT_DECLARED:${input.kind}`);
+  }
+  const contract =
+    input.knowledgeProfile.profile.artifactContracts[kind.artifactContract];
+  if (!contract) {
+    throw new Error(
+      `COMPILER_ARTIFACT_CONTRACT_NOT_FOUND:${kind.artifactContract}`,
+    );
+  }
+  const root = contract.root.replaceAll("\\", "/").replaceAll(/\/+$/g, "");
+  assertCompilerAuthoredKnowledgePath(root);
+  const tokens: Record<string, string> = {
+    kind: portableArtifactToken(input.kind),
+    candidateId: portableArtifactToken(input.candidateId),
+    slug: slug(input.title),
+  };
+  let rendered = contract.pathTemplate.replaceAll("\\", "/");
+  for (const token of rendered.matchAll(/\{([^}]+)\}/g)) {
+    const tokenName = token[1] ?? "";
+    if (!Object.hasOwn(tokens, tokenName)) {
+      throw new Error(
+        `COMPILER_ARTIFACT_TEMPLATE_TOKEN_UNSUPPORTED:${tokenName}`,
+      );
+    }
+  }
+  for (const [name, value] of Object.entries(tokens)) {
+    rendered = rendered.replaceAll(`{${name}}`, value);
+  }
+  if (/[{}]/.test(rendered)) {
+    throw new Error("COMPILER_ARTIFACT_TEMPLATE_INVALID");
+  }
+  const withoutExtension = `${root}/${rendered}`.replaceAll(/\/{2,}/g, "/");
+  const path = withoutExtension.endsWith(contract.extension)
+    ? withoutExtension
+    : `${withoutExtension}${contract.extension}`;
+  assertCompilerAuthoredKnowledgePath(path);
+  return path;
+}
+
+const TRUST_ORDER: Record<TrustTier, number> = {
+  UNVERIFIED: 0,
+  MACHINE_SUPPORTED: 1,
+  HUMAN_REVIEWED: 2,
+  ATTESTED: 3,
+};
+
+function effectiveEvidenceTrust(
+  input: KnowledgeCompilerInputType,
+  evidence: CompilerEvidence,
+): TrustTier {
+  if (evidence.trust) return evidence.trust;
+  return isV03CompatibilityProfile(input.knowledgeProfile)
+    ? "MACHINE_SUPPORTED"
+    : "UNVERIFIED";
+}
+
+export function effectiveReviewPolicyForKinds(
+  knowledgeProfile: KnowledgeCompilerInputType["knowledgeProfile"],
+  kinds: readonly string[],
+): ReturnType<typeof EffectiveReviewPolicy.parse> {
+  const uniqueKinds = [...new Set(kinds)];
+  const policyDefinitions = uniqueKinds.map((kindName) => {
+    const kind = knowledgeProfile.profile.knowledgeKinds[kindName];
+    if (!kind) {
+      throw new Error(`COMPILER_PROFILE_KIND_NOT_DECLARED:${kindName}`);
+    }
+    const policy = knowledgeProfile.profile.reviewPolicies[kind.reviewPolicy];
+    if (!policy) {
+      throw new Error(`COMPILER_REVIEW_POLICY_NOT_FOUND:${kind.reviewPolicy}`);
+    }
+    return policy;
+  });
+  const minimumApprovals = Math.max(
+    1,
+    ...policyDefinitions.map((policy) => policy.minimumApprovals),
+  );
+  const allowedRoles = policyDefinitions.length
+    ? policyDefinitions
+        .slice(1)
+        .reduce(
+          (roles, policy) =>
+            roles.filter((role) => policy.allowedRoles.includes(role)),
+          [...policyDefinitions[0]!.allowedRoles],
+        )
+        .sort()
+    : ["ADMIN", "ARCHITECT", "REVIEWER"];
+  if (!allowedRoles.length) {
+    throw new Error("COMPILER_REVIEW_POLICY_ROLE_CONFLICT");
+  }
+  return EffectiveReviewPolicy.parse({
+    required: true,
+    minimumApprovals,
+    allowedRoles,
+    profileSource: knowledgeProfile.source,
+    profileRevisionId: knowledgeProfile.revisionId,
+    profileHash: knowledgeProfile.profileHash,
+    profileId: knowledgeProfile.profile.profileId,
+    profileVersion: knowledgeProfile.profile.version,
+  });
+}
+
+export function effectiveReviewKinds(
+  result: KnowledgeCompilerResultType,
+): string[] {
+  const materialCandidateIds = new Set(
+    result.proposedFileChanges.map((change) => change.candidateId),
+  );
+  return [
+    ...new Set(
+      result.knowledgeCandidates
+        .filter((candidate) =>
+          materialCandidateIds.size
+            ? materialCandidateIds.has(candidate.candidateId)
+            : candidate.proposedAction !== "NO_MATERIAL",
+        )
+        .map((candidate) => candidate.kind),
+    ),
+  ];
+}
+
+function effectiveReviewPolicy(
+  input: KnowledgeCompilerInputType,
+  result: KnowledgeCompilerResultType,
+) {
+  return effectiveReviewPolicyForKinds(
+    input.knowledgeProfile,
+    effectiveReviewKinds(result),
+  );
 }
 
 function assertEvidenceReferences(
@@ -216,6 +383,48 @@ export function normalizeKnowledgeCompilerResult(
       candidate.evidenceIds,
       allowedEvidenceIds,
     );
+    const kindDefinition =
+      input.knowledgeProfile.profile.knowledgeKinds[candidate.kind];
+    if (!kindDefinition) {
+      throw new Error(`COMPILER_PROFILE_KIND_NOT_DECLARED:${candidate.kind}`);
+    }
+    const evidencePolicy =
+      input.knowledgeProfile.profile.evidencePolicies[
+        kindDefinition.evidencePolicy
+      ];
+    if (!evidencePolicy) {
+      throw new Error(
+        `COMPILER_EVIDENCE_POLICY_NOT_FOUND:${kindDefinition.evidencePolicy}`,
+      );
+    }
+    const uniqueEvidenceIds = [...new Set(candidate.evidenceIds)];
+    if (
+      uniqueEvidenceIds.length < Math.max(1, evidencePolicy.minimumEvidence)
+    ) {
+      throw new Error(
+        `COMPILER_EVIDENCE_POLICY_MINIMUM_NOT_MET:${candidate.candidateId}`,
+      );
+    }
+    for (const evidenceId of uniqueEvidenceIds) {
+      const evidence = evidenceById.get(evidenceId)!;
+      if (
+        evidencePolicy.requireSourceLocator &&
+        (!evidence.locator.path?.trim() ||
+          !evidence.locator.source_hash?.trim())
+      ) {
+        throw new Error(
+          `COMPILER_EVIDENCE_POLICY_LOCATOR_REQUIRED:${candidate.candidateId}:${evidenceId}`,
+        );
+      }
+      if (
+        TRUST_ORDER[effectiveEvidenceTrust(input, evidence)] <
+        TRUST_ORDER[evidencePolicy.minimumTrust]
+      ) {
+        throw new Error(
+          `COMPILER_EVIDENCE_POLICY_TRUST_NOT_MET:${candidate.candidateId}:${evidenceId}`,
+        );
+      }
+    }
     if (
       candidate.existingDocumentId &&
       !allowedDocumentIds.has(candidate.existingDocumentId)
@@ -290,9 +499,11 @@ export function normalizeKnowledgeCompilerResult(
       if (!change.content.includes(candidate.statement)) {
         throw new Error("COMPILER_FILE_CONTENT_MISSING_STATEMENT");
       }
-      const expectedPath = deriveKnowledgePath({
+      const expectedPath = deriveProfileKnowledgePath({
         title: candidate.statement,
         kind: candidate.kind,
+        candidateId: candidate.candidateId,
+        knowledgeProfile: input.knowledgeProfile,
         schemaProfile: input.schemaProfile,
       });
       if (change.path !== expectedPath) {
@@ -379,7 +590,9 @@ export function resultToCompilationPlan(
       reasons: entry.reasons,
     })),
     knowledgeCandidates: result.knowledgeCandidates,
+    reviewKinds: effectiveReviewKinds(result),
     contradictions: result.contradictions,
+    reviewPolicy: effectiveReviewPolicy(input, result),
     warnings: result.warnings,
     summary: result.summary,
   });

@@ -10,7 +10,11 @@
         {
           "id": "software-api-boundary",
           "title": "API boundary policy",
-          "aliases": ["ingress adapter", "edge boundary"],
+          "aliases": [
+            "ingress adapter",
+            "edge boundary",
+            "IngressValidationService"
+          ],
           "body": "The ingress adapter validates requests before application services and records a boundary decision for audit.",
           "related": ["software-retry-policy"],
           "evidence": ["ev-software-boundary"],

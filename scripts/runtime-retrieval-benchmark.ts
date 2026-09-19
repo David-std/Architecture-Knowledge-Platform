@@ -6,12 +6,17 @@ import { performance } from "node:perf_hooks";
 import {
   aggregateBenchmarkRun,
   RETRIEVAL_BENCHMARK_MATRIX,
+  V03_RETRIEVAL_BASELINE,
   type BenchmarkConfiguration,
   type BenchmarkObservation,
 } from "../packages/evaluation/src/index.js";
-import { buildEmbeddingIndex } from "../packages/indexing/src/index.js";
+import {
+  buildEmbeddingIndex,
+  rebuildCommunityIndex,
+} from "../packages/indexing/src/index.js";
 import { Postgres } from "../packages/postgres/src/index.js";
 import {
+  DeterministicQueryDecomposer,
   LOCAL_MULTILINGUAL_E5_SMALL_DESCRIPTOR,
   LocalSemanticEmbeddingAdapter,
   MULTILINGUAL_E5_SMALL_DIMENSIONS,
@@ -73,6 +78,22 @@ type RuntimeObservation = BenchmarkObservation & {
   fusionReasons: Record<string, string[]>;
 };
 
+type MemorySnapshot = {
+  rssBytes: number;
+  heapUsedBytes: number;
+  heapTotalBytes: number;
+  externalBytes: number;
+};
+
+type StorageSnapshot = {
+  databaseBytes: number;
+  documentsBytes: number;
+  unitsBytes: number;
+  relationsBytes: number;
+  communityBytes: number;
+  embeddingsBytes: number;
+};
+
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is required");
 
@@ -87,9 +108,138 @@ const outputPath = path.resolve(
   process.env.AKP_RUNTIME_RETRIEVAL_REPORT ??
     "reports/ci/runtime-retrieval-benchmark.json",
 );
+const filteredAnnPath = path.resolve(
+  process.env.AKP_FILTERED_ANN_REPORT_INPUT ??
+    "reports/ci/filtered-ann-baseline.json",
+);
 
 function sha256(value: string | Buffer): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function memorySnapshot(): MemorySnapshot {
+  const memory = process.memoryUsage();
+  return {
+    rssBytes: memory.rss,
+    heapUsedBytes: memory.heapUsed,
+    heapTotalBytes: memory.heapTotal,
+    externalBytes: memory.external,
+  };
+}
+
+function memoryDelta(after: MemorySnapshot, before: MemorySnapshot) {
+  return {
+    rssBytes: after.rssBytes - before.rssBytes,
+    heapUsedBytes: after.heapUsedBytes - before.heapUsedBytes,
+    heapTotalBytes: after.heapTotalBytes - before.heapTotalBytes,
+    externalBytes: after.externalBytes - before.externalBytes,
+  };
+}
+
+function numeric(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`Expected finite numeric value, received ${String(value)}`);
+  }
+  return parsed;
+}
+
+async function storageSnapshot(db: Postgres): Promise<StorageSnapshot> {
+  const result = await db.pool.query(
+    `
+    select
+      pg_database_size(current_database())::bigint database_bytes,
+      pg_total_relation_size('public.knowledge_documents'::regclass)::bigint documents_bytes,
+      pg_total_relation_size('public.knowledge_units'::regclass)::bigint units_bytes,
+      pg_total_relation_size('public.knowledge_relations'::regclass)::bigint relations_bytes,
+      (
+        pg_total_relation_size('public.community_index_revisions'::regclass) +
+        pg_total_relation_size('public.community_index_communities'::regclass) +
+        pg_total_relation_size('public.community_index_memberships'::regclass)
+      )::bigint community_bytes,
+      pg_total_relation_size('public.unit_embeddings'::regclass)::bigint embeddings_bytes
+    `,
+  );
+  const row = result.rows[0];
+  if (!row) throw new Error("PostgreSQL did not return storage evidence");
+  return {
+    databaseBytes: numeric(row.database_bytes),
+    documentsBytes: numeric(row.documents_bytes),
+    unitsBytes: numeric(row.units_bytes),
+    relationsBytes: numeric(row.relations_bytes),
+    communityBytes: numeric(row.community_bytes),
+    embeddingsBytes: numeric(row.embeddings_bytes),
+  };
+}
+
+function storageDelta(after: StorageSnapshot, before: StorageSnapshot) {
+  return {
+    databaseBytes: after.databaseBytes - before.databaseBytes,
+    documentsBytes: after.documentsBytes - before.documentsBytes,
+    unitsBytes: after.unitsBytes - before.unitsBytes,
+    relationsBytes: after.relationsBytes - before.relationsBytes,
+    communityBytes: after.communityBytes - before.communityBytes,
+    embeddingsBytes: after.embeddingsBytes - before.embeddingsBytes,
+  };
+}
+
+function resourceRequirements(configuration: BenchmarkConfiguration) {
+  return {
+    lexical: configuration.channels.includes("lexical"),
+    vector: configuration.channels.includes("vector"),
+    typedGraph: configuration.channels.includes("graph"),
+    contextPack: configuration.channels.includes("context-pack"),
+    rerank: Boolean(configuration.deterministicRerank),
+    associativePpr: Boolean(configuration.associativePpr),
+    communityGlobal: Boolean(configuration.communityGlobal),
+    queryDecomposition: Boolean(configuration.queryDecomposition),
+  };
+}
+
+async function loadFilteredAnnEvidence(): Promise<
+  | {
+      measured: true;
+      path: string;
+      sha256: string;
+      status: string;
+      measurements: unknown[];
+    }
+  | { measured: false; path: string; reason: string }
+> {
+  try {
+    const raw = await readFile(filteredAnnPath, "utf8");
+    const parsed = JSON.parse(raw) as {
+      status?: unknown;
+      measurements?: unknown;
+    };
+    const measurements = Array.isArray(parsed.measurements)
+      ? parsed.measurements
+      : [];
+    if (parsed.status !== "PROVEN" || measurements.length === 0) {
+      return {
+        measured: false,
+        path: filteredAnnPath,
+        reason:
+          "Filtered ANN report exists but is not PROVEN with measurements.",
+      };
+    }
+    return {
+      measured: true,
+      path: filteredAnnPath,
+      sha256: sha256(raw),
+      status: String(parsed.status),
+      measurements,
+    };
+  } catch (error) {
+    return {
+      measured: false,
+      path: filteredAnnPath,
+      reason:
+        error instanceof Error
+          ? `Filtered ANN evidence unavailable: ${error.message}`
+          : "Filtered ANN evidence unavailable.",
+    };
+  }
 }
 
 async function loadDataset(): Promise<{
@@ -123,6 +273,15 @@ async function loadDataset(): Promise<{
     vault: "vault-a-software",
     critical: false,
     slice: "cross-language",
+  });
+  cases.push({
+    id: "runtime-code-symbol-ingress",
+    category: "code-symbol",
+    query: "ingress validation service",
+    gold_documents: ["software-api-boundary"],
+    vault: "vault-a-software",
+    critical: false,
+    slice: "code-symbol",
   });
   return { manifest, cases, hashes };
 }
@@ -278,6 +437,24 @@ async function seedFixture(
   }
 }
 
+async function buildCommunityIndexes(
+  db: Postgres,
+  manifest: CuratedManifest,
+  fixture: Fixture,
+): Promise<void> {
+  for (const vault of manifest.vaults) {
+    const vaultId = fixture.vaultIds.get(vault.id);
+    if (!vaultId) {
+      throw new Error(`Missing runtime vault mapping for ${vault.id}`);
+    }
+    await rebuildCommunityIndex(db, {
+      spaceId: fixture.spaceId,
+      vaultId,
+      graphRevision: fixture.corpusRevision,
+    });
+  }
+}
+
 async function cleanupFixture(db: Postgres, fixture: Fixture): Promise<void> {
   const vaultIds = [...fixture.vaultIds.values()];
   await db.pool.query("delete from knowledge_relations where space_id=$1", [
@@ -324,6 +501,9 @@ function benchmarkConfigurations(): BenchmarkConfiguration[] {
     "context-pack+lexical+graph",
     "full-hybrid-rrf",
     "full-hybrid+rerank",
+    "lexical+vector+graph+ppr",
+    "lexical+vector+graph+community-global",
+    "lexical+vector+query-decomposition",
   ]);
   return RETRIEVAL_BENCHMARK_MATRIX.filter((configuration) =>
     required.has(configuration.name),
@@ -374,6 +554,108 @@ async function buildRealEmbeddings(
   return generations;
 }
 
+type IncrementalEmbeddingUpdateEvidence = {
+  measured: true;
+  milliseconds: number;
+  vaultId: string;
+  priorCorpusRevision: string;
+  updateCorpusRevision: string;
+  unitCount: number;
+  embeddingsReused: number;
+  embeddingsCreated: number;
+  changedUnits: number;
+};
+
+async function measureIncrementalEmbeddingUpdate(
+  db: Postgres,
+  manifest: CuratedManifest,
+  fixture: Fixture,
+  adapter: LocalSemanticEmbeddingAdapter,
+): Promise<IncrementalEmbeddingUpdateEvidence> {
+  const vault = manifest.vaults[0];
+  if (!vault) throw new Error("Runtime benchmark requires at least one vault.");
+  const vaultId = fixture.vaultIds.get(vault.id);
+  if (!vaultId) throw new Error(`Missing runtime vault mapping for ${vault.id}`);
+
+  const source = await db.pool.query<{ id: string; body: string }>(
+    `select u.id,u.body
+       from knowledge_units u
+       join knowledge_documents d on d.id=u.document_id
+      where u.space_id=$1 and u.vault_id=$2 and u.corpus_revision=$3
+        and u.embedding_eligible=true
+        and u.lifecycle in ('ACTIVE','DISPUTED')
+        and d.lifecycle in ('ACTIVE','DISPUTED')
+        and d.refresh_status not in ('STALE_BLOCKED','INVALID')
+      order by u.document_id,u.structural_order,u.id
+      limit 1`,
+    [fixture.spaceId, vaultId, fixture.corpusRevision],
+  );
+  const changed = source.rows[0];
+  if (!changed) throw new Error("Runtime benchmark has no embeddable update unit.");
+
+  const updateCorpusRevision = `${fixture.corpusRevision}:incremental-vector`;
+  const changedBody = `${changed.body}\n\nIncremental vector benchmark delta.`;
+  const changedHash = sha256(changedBody);
+
+  await db.pool.query(
+    `insert into knowledge_units(
+       document_id,space_id,vault_id,unit_key,unit_type,heading_path,body,
+       content_hash,corpus_revision,lifecycle,trust_tier,source_ids,
+       token_estimate,parent_unit_id,document_revision,permissions,locator,
+       structural_order,container_only,embedding_eligible,artifact_id
+     )
+     select document_id,space_id,vault_id,unit_key,unit_type,heading_path,
+            case when id=$4::uuid then $5 else body end,
+            case when id=$4::uuid then $6 else content_hash end,
+            $7,lifecycle,trust_tier,source_ids,token_estimate,parent_unit_id,
+            $7,permissions,locator,structural_order,container_only,
+            embedding_eligible,artifact_id
+       from knowledge_units
+      where space_id=$1 and vault_id=$2 and corpus_revision=$3`,
+    [
+      fixture.spaceId,
+      vaultId,
+      fixture.corpusRevision,
+      changed.id,
+      changedBody,
+      changedHash,
+      updateCorpusRevision,
+    ],
+  );
+
+  const started = performance.now();
+  const built = await buildEmbeddingIndex(db, {
+    spaceId: fixture.spaceId,
+    vaultId,
+    corpusRevision: updateCorpusRevision,
+    provider: adapter,
+    activate: false,
+    batchSize: 8,
+  });
+  const milliseconds = performance.now() - started;
+
+  if (
+    built.embeddingsCreated !== 1 ||
+    built.embeddingsReused !== built.unitCount - 1
+  ) {
+    throw new Error(
+      `Incremental vector evidence expected one new embedding and reuse of the rest; created=${built.embeddingsCreated}, reused=${built.embeddingsReused}, units=${built.unitCount}.`,
+    );
+  }
+
+  return {
+    measured: true,
+    milliseconds,
+    vaultId,
+    priorCorpusRevision: fixture.corpusRevision,
+    updateCorpusRevision,
+    unitCount: built.unitCount,
+    embeddingsReused: built.embeddingsReused,
+    embeddingsCreated: built.embeddingsCreated,
+    changedUnits: 1,
+  };
+}
+
 async function executeCase(
   db: Postgres,
   fixture: Fixture,
@@ -406,6 +688,28 @@ async function executeCase(
       channels: [...configuration.channels],
       allowVectorForBenchmark: Boolean(configuration.allowVectorForBenchmark),
       deterministicRerank: Boolean(configuration.deterministicRerank),
+      ...(configuration.associativePpr
+        ? {
+            retrievalPolicy: {
+              graphMode: "ASSOCIATIVE" as const,
+              channels: {
+                GRAPH_PPR: { enabled: true, weight: 1.1 },
+              },
+            },
+          }
+        : configuration.communityGlobal
+          ? {
+              retrievalPolicy: {
+                graphMode: "GLOBAL" as const,
+                channels: {
+                  COMMUNITY: { enabled: true, weight: 1.1 },
+                },
+              },
+            }
+          : {}),
+      ...(configuration.queryDecomposition
+        ? { queryTransformer: new DeterministicQueryDecomposer() }
+        : {}),
       queryEmbeddingService,
       warningSink: warnings,
       availableChannelSink: availableChannels,
@@ -469,18 +773,42 @@ async function main(): Promise<void> {
   });
 
   try {
+    const memoryBeforeFixture = memorySnapshot();
+    const storageBeforeFixture = await storageSnapshot(db);
+    const seedStarted = performance.now();
     await seedFixture(db, dataset.manifest, fixture);
+    const fixtureSeedMs = performance.now() - seedStarted;
+    const memoryAfterFixture = memorySnapshot();
+    const storageAfterFixture = await storageSnapshot(db);
+
+    const communityBuildStarted = performance.now();
+    await buildCommunityIndexes(db, dataset.manifest, fixture);
+    const communityBuildMs = performance.now() - communityBuildStarted;
+    const memoryAfterCommunities = memorySnapshot();
+    const storageAfterCommunities = await storageSnapshot(db);
+
     await adapter.load();
+    const embeddingBuildStarted = performance.now();
     const generations = await buildRealEmbeddings(
       db,
       dataset.manifest,
       fixture,
       adapter,
     );
+    const embeddingBuildMs = performance.now() - embeddingBuildStarted;
+    const memoryAfterEmbeddings = memorySnapshot();
+    const storageAfterEmbeddings = await storageSnapshot(db);
     const queryEmbeddingService = new QueryEmbeddingService(
       async () => adapter,
     );
+    const incrementalEmbeddingUpdate = await measureIncrementalEmbeddingUpdate(
+      db,
+      dataset.manifest,
+      fixture,
+      adapter,
+    );
     const configurations = benchmarkConfigurations();
+    const filteredAnnEvidence = await loadFilteredAnnEvidence();
     const runs = [];
     for (const configuration of configurations) {
       const observations: RuntimeObservation[] = [];
@@ -497,6 +825,135 @@ async function main(): Promise<void> {
       }
       runs.push(aggregateBenchmarkRun(configuration, observations));
     }
+
+    const baselineRun = runs.find(
+      (run) => run.configurationName === "exact+lexical",
+    );
+    if (!baselineRun) {
+      throw new Error("Runtime benchmark requires exact+lexical baseline");
+    }
+    const reportRuns = runs.map((run) => {
+      const configuration = configurations.find(
+        (candidate) => candidate.name === run.configurationName,
+      );
+      if (!configuration) {
+        throw new Error(`Missing configuration for ${run.configurationName}`);
+      }
+      const warnings = run.results.flatMap((result) =>
+        "warnings" in result && Array.isArray(result.warnings)
+          ? result.warnings.map(String)
+          : [],
+      );
+      return {
+        ...run,
+        qualityDelta: {
+          recallAt10: run.meanRecallAt10 - baselineRun.meanRecallAt10,
+          mrr: run.meanReciprocalRank - baselineRun.meanReciprocalRank,
+          ndcgAt10: run.meanNdcgAt10 - baselineRun.meanNdcgAt10,
+          citationPrecision:
+            run.meanCitationPrecision - baselineRun.meanCitationPrecision,
+        },
+        resourceRequirements: resourceRequirements(configuration),
+        indexBuildUpdate: {
+          buildEvidence:
+            configuration.channels.includes("vector") ||
+            configuration.communityGlobal
+              ? {
+                  measured: true,
+                  sharedEmbeddingBuildMs: configuration.channels.includes(
+                    "vector",
+                  )
+                    ? embeddingBuildMs
+                    : null,
+                  sharedCommunityBuildMs: configuration.communityGlobal
+                    ? communityBuildMs
+                    : null,
+                  attribution:
+                    "Shared fixture component build evidence; not isolated per query.",
+                }
+              : {
+                  measured: false,
+                  sharedEmbeddingBuildMs: null,
+                  sharedCommunityBuildMs: null,
+                  reason:
+                    "This harness seeds lexical/graph fixture projections directly; no isolated build timer exists for this option.",
+                },
+          updateEvidence: configuration.channels.includes("vector")
+            ? {
+                ...incrementalEmbeddingUpdate,
+                attribution:
+                  "Controlled one-unit content-hash delta in a new vault-scoped corpus revision; unchanged embeddings must be reused from the prior generation.",
+              }
+            : {
+                measured: false,
+                milliseconds: null,
+                reason:
+                  "This configuration does not consume the vector generation measured by the controlled incremental update probe.",
+              },
+        },
+        storageRam: {
+          measured: true,
+          sharedProjectionStorageBytes: {
+            fixture: storageDelta(storageAfterFixture, storageBeforeFixture),
+            communities: storageDelta(
+              storageAfterCommunities,
+              storageAfterFixture,
+            ),
+            embeddings: storageDelta(
+              storageAfterEmbeddings,
+              storageAfterCommunities,
+            ),
+          },
+          sharedProcessMemoryBytes: {
+            fixture: memoryDelta(memoryAfterFixture, memoryBeforeFixture),
+            communities: memoryDelta(
+              memoryAfterCommunities,
+              memoryAfterFixture,
+            ),
+            embeddings: memoryDelta(
+              memoryAfterEmbeddings,
+              memoryAfterCommunities,
+            ),
+          },
+          attribution:
+            "Shared fixture/component evidence; not presented as isolated per-query memory.",
+        },
+        tokenCost: {
+          measured: true,
+          meanEstimatedExcerptTokens: run.meanEstimatedTokens,
+          method:
+            "APPROXIMATE characters/4 estimate over returned excerpts; ContextPacket budgets use tokenizer metadata separately.",
+        },
+        providerCost: {
+          measured: true,
+          externalApiUsd: 0,
+          basis:
+            "Pinned local embedding provider; no metered external provider API call.",
+          localComputeCostMeasured: false,
+        },
+        filteredRecall: configuration.channels.includes("vector")
+          ? filteredAnnEvidence
+          : {
+              measured: false,
+              notApplicable: true,
+              reason: "Configuration does not use the vector channel.",
+            },
+        multilingualBehavior: {
+          measured: true,
+          recallAt10: run.crossLanguageRecall,
+        },
+        codeSymbolBehavior: {
+          measured: run.codeSymbolCases > 0,
+          cases: run.codeSymbolCases,
+          recallAt10: run.codeSymbolCases > 0 ? run.codeSymbolRecall : null,
+        },
+        failureDegradedMode: {
+          warningCount: warnings.length,
+          warnings: [...new Set(warnings)].sort(),
+          criticalFailures: run.criticalFailures,
+        },
+      };
+    });
 
     const isolationViolations = runs.flatMap((run) =>
       run.results.flatMap((result) =>
@@ -519,8 +976,9 @@ async function main(): Promise<void> {
     }
 
     const report = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       generatedAt: new Date().toISOString(),
+      historicalBaseline: V03_RETRIEVAL_BASELINE,
       evidence: {
         level: "CURATED_FIXTURE_REAL_PIPELINE",
         qualityClaim: "PIPELINE_EXECUTED_NOT_REAL_CORPUS",
@@ -530,8 +988,10 @@ async function main(): Promise<void> {
           "registered private/production-like corpus quality",
           "evidence-locator recall against real source artifacts",
           "agent task quality",
-          "concurrent throughput and resource pressure",
-          "provider monetary cost",
+          "concurrent throughput under this retrieval matrix",
+          "incremental index-update cost",
+          "filtered ANN recall inside this harness",
+          "local hardware/energy monetary cost",
         ],
       },
       runtime: {
@@ -561,6 +1021,31 @@ async function main(): Promise<void> {
           runtime: generation.runtime,
         })),
       },
+      resourceEvidence: {
+        filteredAnn: filteredAnnEvidence,
+        fixtureSeedMs,
+        embeddingBuildMs,
+        storage: {
+          beforeFixture: storageBeforeFixture,
+          afterFixture: storageAfterFixture,
+          afterEmbeddings: storageAfterEmbeddings,
+          fixtureDelta: storageDelta(storageAfterFixture, storageBeforeFixture),
+          embeddingDelta: storageDelta(
+            storageAfterEmbeddings,
+            storageAfterFixture,
+          ),
+        },
+        memory: {
+          beforeFixture: memoryBeforeFixture,
+          afterFixture: memoryAfterFixture,
+          afterEmbeddings: memoryAfterEmbeddings,
+          fixtureDelta: memoryDelta(memoryAfterFixture, memoryBeforeFixture),
+          embeddingDelta: memoryDelta(
+            memoryAfterEmbeddings,
+            memoryAfterFixture,
+          ),
+        },
+      },
       isolation: {
         status: "PROVEN_IN_FIXTURE",
         violations: isolationViolations,
@@ -570,7 +1055,7 @@ async function main(): Promise<void> {
         reason:
           "A curated fixture running through the real pipeline is not the registered real-corpus evidence required to select a production retrieval default.",
       },
-      runs,
+      runs: reportRuns,
     };
     await mkdir(path.dirname(outputPath), { recursive: true });
     await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
@@ -579,10 +1064,11 @@ async function main(): Promise<void> {
         {
           outputPath,
           evidenceLevel: report.evidence.level,
-          configurations: runs.map((run) => ({
+          configurations: reportRuns.map((run) => ({
             name: run.configurationName,
             recallAt10: run.meanRecallAt10,
             mrr: run.meanReciprocalRank,
+            codeSymbolRecall: run.codeSymbolBehavior.recallAt10,
             noAnswerAccuracy: run.noAnswerAccuracy,
             criticalFailures: run.criticalFailures,
             meanLatencyMs: run.meanLatencyMs,

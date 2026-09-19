@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import { resolveAuthorizedVaultScope, type Postgres } from "@akp/postgres";
 import { z } from "zod";
+import { DeterministicQueryDecomposer } from "@akp/retrieval";
 import {
   loadEvaluationPack,
   RETRIEVAL_BENCHMARK_MATRIX,
@@ -79,6 +80,9 @@ export async function runEvaluation(
     channels?: RetrievalExecutionOptions["channels"];
     allowVectorForBenchmark?: boolean;
     deterministicRerank?: boolean;
+    associativePpr?: boolean;
+    communityGlobal?: boolean;
+    queryDecomposition?: boolean;
   },
   spaceId: string,
   packName: string,
@@ -147,6 +151,28 @@ export async function runEvaluation(
           : { allowVectorForBenchmark: configuration.allowVectorForBenchmark }),
         ...(configuration.deterministicRerank
           ? { deterministicRerank: true }
+          : {}),
+        ...(configuration.associativePpr
+          ? {
+              retrievalPolicy: {
+                graphMode: "ASSOCIATIVE" as const,
+                channels: {
+                  GRAPH_PPR: { enabled: true, weight: 1.1 },
+                },
+              },
+            }
+          : configuration.communityGlobal
+            ? {
+                retrievalPolicy: {
+                  graphMode: "GLOBAL" as const,
+                  channels: {
+                    COMMUNITY: { enabled: true, weight: 1.1 },
+                  },
+                },
+              }
+            : {}),
+        ...(configuration.queryDecomposition
+          ? { queryTransformer: new DeterministicQueryDecomposer() }
           : {}),
       },
     );
@@ -323,6 +349,32 @@ export async function runEvaluation(
     exactIdentifierRecall: averageSlice(results, "exact-identifiers"),
     crossLanguageRecall: averageSlice(results, "cross-language"),
   };
+  const diagnosticCitationCases = results.filter(
+    (result) => result.citationLabelled,
+  );
+  const diagnosticMetrics = {
+    retrievalRecall: metrics.meanRecallAt10,
+    contextPrecision: null,
+    contextPrecisionCoverage: 0,
+    claimSupportRecall: null,
+    claimSupportRecallCoverage: 0,
+    citationPrecision:
+      diagnosticCitationCases.length === 0
+        ? null
+        : diagnosticCitationCases.reduce(
+            (sum, result) => sum + result.citationPrecision,
+            0,
+          ) / diagnosticCitationCases.length,
+    citationPrecisionCoverage:
+      diagnosticCitationCases.length / Math.max(results.length, 1),
+    contextUtilization: null,
+    contextUtilizationCoverage: 0,
+    noiseSensitivity: null,
+    noiseSensitivityCoverage: 0,
+    faithfulness: null,
+    faithfulnessCoverage: 0,
+    noAnswerAccuracy: metrics.noAnswerAccuracy,
+  };
   const revision = await db.pool.query(
     `select current_revision from vaults where space_id=$1
       and ($2::uuid is null or id=$2)
@@ -351,9 +403,10 @@ export async function runEvaluation(
         ],
         vectorBenchmarkOnly: Boolean(configuration.allowVectorForBenchmark),
         deterministicRerank: Boolean(configuration.deterministicRerank),
+        associativePpr: Boolean(configuration.associativePpr),
         k: 10,
       }),
-      JSON.stringify({ ...metrics, results }),
+      JSON.stringify({ ...metrics, diagnosticMetrics, results }),
       metrics.criticalFailures === 0 ? "PASSED" : "FAILED",
     ],
   );
@@ -364,6 +417,7 @@ export async function runEvaluation(
     configurationName: configuration.name ?? "default",
     status: metrics.criticalFailures === 0 ? "PASSED" : "FAILED",
     ...metrics,
+    diagnosticMetrics,
     results,
   };
 }
@@ -382,6 +436,9 @@ export async function runRetrievalBenchmark(
     channels: NonNullable<RetrievalExecutionOptions["channels"]>;
     allowVectorForBenchmark?: boolean;
     deterministicRerank?: boolean;
+    associativePpr?: boolean;
+    communityGlobal?: boolean;
+    queryDecomposition?: boolean;
   }> = RETRIEVAL_BENCHMARK_MATRIX.map((configuration) => ({
     name: configuration.name,
     channels: [...configuration.channels] as NonNullable<
@@ -393,6 +450,15 @@ export async function runRetrievalBenchmark(
     ...(configuration.deterministicRerank === undefined
       ? {}
       : { deterministicRerank: configuration.deterministicRerank }),
+    ...(configuration.associativePpr === undefined
+      ? {}
+      : { associativePpr: configuration.associativePpr }),
+    ...(configuration.communityGlobal === undefined
+      ? {}
+      : { communityGlobal: configuration.communityGlobal }),
+    ...(configuration.queryDecomposition === undefined
+      ? {}
+      : { queryDecomposition: configuration.queryDecomposition }),
   }));
   const runs = [];
   for (const configuration of configurations) {
@@ -461,30 +527,58 @@ export async function runRetrievalBenchmark(
       channels: [...configuration.channels],
       vectorBenchmarkOnly: Boolean(configuration.allowVectorForBenchmark),
       rerank: Boolean(configuration.deterministicRerank),
+      associativePpr: Boolean(configuration.associativePpr),
+      communityGlobal: Boolean(configuration.communityGlobal),
+      queryDecomposition: Boolean(configuration.queryDecomposition),
     })),
     datasetSlices,
     requiredGenericSlices:
       packName === "generic" ? [...REQUIRED_GENERIC_SLICES] : [],
     metricDefinitions: {
-      evidenceRecall:
-        "gold_evidence labels when present; otherwise cited relevant-document provenance proxy",
+      retrievalRecall: "Recall@10 over labelled gold documents.",
+      contextPrecision:
+        "Diagnostic only; requires assembled-context labels and is unscored by this retrieval-only API runner.",
+      claimSupportRecall:
+        "Diagnostic only; requires explicit claim-support labels and is unscored by this retrieval-only API runner.",
       citationPrecision:
-        "gold_citations labels when present; otherwise cited relevant-hit precision proxy",
+        "Diagnostic citation precision uses only explicit gold_citations labels; zero coverage means unscored.",
+      contextUtilization:
+        "Diagnostic only; requires answer-to-context usage evidence and is unscored by this retrieval-only API runner.",
+      noiseSensitivity:
+        "Diagnostic only; requires paired clean/noisy execution and is unscored by this retrieval-only API runner.",
+      faithfulness:
+        "Diagnostic only; requires an explicit grounded-answer evaluator and is unscored by this retrieval-only API runner.",
+      noAnswerAccuracy: "Accuracy over cases explicitly labelled as no-answer.",
+      legacyEvidenceRecall:
+        "Existing benchmark field; when gold_evidence is absent it uses a cited-relevant-document proxy and must not be reported as P6.15 claim-support recall.",
+      legacyCitationPrecision:
+        "Existing benchmark field may use a cited-relevant-hit proxy for default-selection compatibility; diagnostic citationPrecision does not.",
       unsupportedClaimRate:
         "returned non-no-answer result with no cited relevant hit",
       tokenCost: "estimated excerpt tokens (characters / 4)",
     },
     runs,
-    selectedDefault: String(winner?.configurationName ?? "exact+lexical"),
-    vectorActivatedByDefault: vectorEligible,
+    selectedDefault: null,
+    measuredCandidate: winner?.configurationName ?? null,
+    vectorActivatedByDefault: false,
     decision: {
-      eligibility:
+      measuredEligibility:
         "Critical failures and unsupported-answer rate must both be zero.",
-      vectorRule:
+      vectorQualityRule:
         "Vector requires >=0.02 MRR gain, no Recall@10/citation/exact-ID regression, and <=2x baseline latency.",
       baseline: baseline?.configurationName ?? null,
       bestVector: bestVector?.configurationName ?? null,
-      vectorEligible,
+      vectorQualityEligible: vectorEligible,
+      promotionEligible: false,
+      missingPromotionGates: [
+        "comparableEvaluation",
+        "operationalCostAcceptable",
+        "degradedBehaviorUnderstood",
+        "authorizationTruthPassed",
+        "rollbackAvailable",
+      ],
+      promotionRule:
+        "A measured winner is diagnostic only until comparable evaluation, operational cost, degraded behavior, authorization/truth and rollback gates are all proven.",
     },
     bestEligibleRunId: String(winner?.runId ?? ""),
   };

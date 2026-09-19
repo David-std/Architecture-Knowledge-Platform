@@ -5,14 +5,22 @@ import { fileURLToPath } from "node:url";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
-import { Postgres } from "@akp/postgres";
+import {
+  Postgres,
+  claimContextFabricNode,
+  resolveContextFabricIdentity,
+} from "@akp/postgres";
 import { MinioObjectStore } from "@akp/object-store";
 import {
   OpenTelemetryBridge,
   shutdownOpenTelemetry,
   type ActiveTrace,
 } from "@akp/observability";
-import type { Tokenizer } from "@akp/retrieval";
+import {
+  DeterministicQueryDecomposer,
+  type QueryTransformerPort,
+  type Tokenizer,
+} from "@akp/retrieval";
 import { registerSearchRoutes } from "./routes/search.js";
 import { registerIngestRoutes } from "./routes/ingest.js";
 import { registerKnowledgeRoutes } from "./routes/knowledge.js";
@@ -20,6 +28,9 @@ import { registerReviewRoutes } from "./routes/reviews.js";
 import { registerEvaluationRoutes } from "./routes/evaluation.js";
 import { registerProjectRoutes } from "./routes/projects.js";
 import { registerSessionRoutes } from "./routes/sessions.js";
+import { registerContextFabricRoutes } from "./routes/context-fabric.js";
+import { registerDecisionWorkflowRoutes } from "./routes/decision-workflow.js";
+import { registerWorkspacePresenceRoutes } from "./routes/workspace-presence.js";
 import { registerGovernanceRoutes } from "./routes/governance.js";
 import { registerProviderTaskRoutes } from "./routes/provider-tasks.js";
 import { registerOperatorRoutes } from "./routes/operator.js";
@@ -27,9 +38,15 @@ import { registerAuthentication } from "./auth.js";
 import { registerWriteIdempotency } from "./idempotency.js";
 import { registerWebAuthRoutes } from "./routes/web-auth.js";
 import { registerSchemaGovernanceRoutes } from "./routes/schema-governance.js";
+import { registerProfileActivationRoutes } from "./routes/profile-activation.js";
+import { registerProfileGovernanceRoutes } from "./routes/profile-governance.js";
 import { registerErrorBookRoutes } from "./routes/error-book.js";
 import { registerAuditRoutes } from "./routes/audit.js";
 import { registerAuditExportRoutes } from "./routes/audit-export.js";
+import { registerInteroperabilityRoutes } from "./routes/interoperability.js";
+import { registerCodeGraphRoutes } from "./routes/code-graph.js";
+import { registerCodeKnowledgeLinkRoutes } from "./routes/code-knowledge-links.js";
+import { registerTemporalTruthRoutes } from "./routes/temporal-truth.js";
 
 config({
   path: path.resolve(
@@ -40,6 +57,7 @@ config({
 
 export interface ApiServerDependencies {
   contextTokenizer?: Tokenizer;
+  queryTransformer?: QueryTransformerPort;
 }
 
 export function buildServer(dependencies: ApiServerDependencies = {}) {
@@ -206,24 +224,37 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
   registerWriteIdempotency(app, db);
   registerWebAuthRoutes(app, db);
   registerSchemaGovernanceRoutes(app, db);
+  registerProfileActivationRoutes(app, db);
+  registerProfileGovernanceRoutes(app, db);
   registerErrorBookRoutes(app, db);
   registerAuditRoutes(app, db);
   registerAuditExportRoutes(app, db, rawObjectStore);
+  registerInteroperabilityRoutes(app, db);
+  registerCodeGraphRoutes(app, db);
+  registerCodeKnowledgeLinkRoutes(app, db);
+  registerTemporalTruthRoutes(app, db);
   registerProviderTaskRoutes(app, db);
   registerOperatorRoutes(app, db);
-  registerSearchRoutes(
-    app,
-    db,
-    dependencies.contextTokenizer
+  const queryTransformer =
+    dependencies.queryTransformer ??
+    (process.env.AKP_QUERY_TRANSFORM_ENABLED === "true"
+      ? new DeterministicQueryDecomposer()
+      : undefined);
+  registerSearchRoutes(app, db, {
+    ...(dependencies.contextTokenizer
       ? { contextTokenizer: dependencies.contextTokenizer }
-      : {},
-  );
+      : {}),
+    ...(queryTransformer ? { queryTransformer } : {}),
+  });
   registerIngestRoutes(app, db);
   registerKnowledgeRoutes(app, db);
   registerReviewRoutes(app, db);
   registerEvaluationRoutes(app, db);
   registerProjectRoutes(app, db);
   registerSessionRoutes(app, db);
+  registerContextFabricRoutes(app, db);
+  registerDecisionWorkflowRoutes(app, db);
+  registerWorkspacePresenceRoutes(app, db);
   registerGovernanceRoutes(app, db);
 
   app.addHook("onClose", async () => db.close());
@@ -233,11 +264,30 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
 if (process.env.NODE_ENV !== "test") {
   const app = buildServer();
   const port = Number(process.env.PORT ?? 8080);
+  // A loopback bind is the right default for SOLO_LOCAL: the API stays
+  // unreachable from the network unless an operator opts in. A Team Context
+  // Node runs inside a container whose loopback its peers cannot reach, so the
+  // bind address is configurable rather than hardcoded.
+  const host = process.env.AKP_API_HOST?.trim() || "127.0.0.1";
+  // Fail closed before accepting traffic. A node that cannot legitimately claim
+  // this database must not start serving context from it as if it owned it.
+  // This runs on its own short-lived pool so a refused claim never leaves the
+  // serving pool half-initialised.
+  const identity = resolveContextFabricIdentity();
+  const claimDb = new Postgres(process.env.DATABASE_URL ?? "");
+  try {
+    await claimContextFabricNode(claimDb, {
+      ...identity,
+      adopt: process.env.AKP_CONTEXT_FABRIC_NODE_ADOPT === "true",
+    });
+  } finally {
+    await claimDb.close();
+  }
   const close = async () => {
     await app.close();
     await shutdownOpenTelemetry();
   };
   process.once("SIGTERM", () => void close());
   process.once("SIGINT", () => void close());
-  await app.listen({ port, host: "127.0.0.1" });
+  await app.listen({ port, host });
 }

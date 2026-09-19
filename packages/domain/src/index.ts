@@ -78,3 +78,108 @@ export interface KnowledgeRelation {
   weight: number;
   source: "frontmatter" | "markdown" | "deterministic" | "reviewed_ai";
 }
+
+
+export type SourceConnectorPermissionFidelity =
+  | "SOURCE_ACL_EXACT"
+  | "SOURCE_ACL_MAPPED"
+  | "WORKSPACE_WIDE"
+  | "NONE";
+
+export interface SourceConnectorDescriptor {
+  schemaVersion: 1;
+  connectorId: string;
+  sourceSystem: string;
+  objectTypes: string[];
+  incremental: {
+    cursor: boolean;
+    webhook: boolean;
+  };
+  permissionFidelity: SourceConnectorPermissionFidelity;
+  replication: "FULL_MIRROR" | "METADATA_ONLY" | "REFERENCE";
+  dataResidency: "LOCAL" | "ORG" | "EXTERNAL";
+  attachments: {
+    supported: boolean;
+    maxBytes?: number;
+  };
+  rateLimit:
+    | { kind: "NONE" }
+    | {
+        kind: "DECLARED";
+        requestsPerMinute: number;
+        burst?: number;
+      };
+  deletionPropagation: "TOMBSTONE" | "NONE";
+  sourceVersioning: boolean;
+  contentTrust: "UNTRUSTED_EXTERNAL";
+}
+
+export interface SourceConnectorCheckpoint {
+  kind: "REVISION" | "OPAQUE_CURSOR";
+  value: string;
+}
+
+export interface SourceConnectorObject {
+  objectId: string;
+  objectType: string;
+  sourceSystem: string;
+  sourceVersion: string;
+  operation: "UPSERT" | "DELETE";
+  path?: string;
+  title?: string;
+  content?: string;
+  contentType?: string;
+  contentTrust: "UNTRUSTED_EXTERNAL";
+  permissions: {
+    fidelity: SourceConnectorPermissionFidelity;
+    uncertain: boolean;
+    aclFingerprint?: string;
+  };
+  attachments: Array<{
+    id: string;
+    name: string;
+    contentType?: string;
+    sizeBytes?: number;
+  }>;
+  metadata: Record<string, unknown>;
+}
+
+export interface SourceConnectorPullRequest {
+  from?: SourceConnectorCheckpoint;
+  /** Fixed upper-bound checkpoint captured before pagination starts. */
+  target: SourceConnectorCheckpoint;
+  pageCursor?: string;
+  limit: number;
+}
+
+export interface SourceConnectorPullPage {
+  objects: SourceConnectorObject[];
+  target: SourceConnectorCheckpoint;
+  nextPageCursor: string | null;
+  completed: boolean;
+}
+
+export interface SourceConnectorWebhookRequest {
+  rawBody: Uint8Array;
+  headers: Readonly<Record<string, string | string[] | undefined>>;
+}
+
+export interface SourceConnectorWebhookVerification {
+  accepted: boolean;
+  eventId?: string;
+  checkpoint?: SourceConnectorCheckpoint;
+  reason?: string;
+}
+
+export interface SourceConnectorPort {
+  describe(): Promise<SourceConnectorDescriptor>;
+  checkpoint(): Promise<SourceConnectorCheckpoint>;
+  pull(request: SourceConnectorPullRequest): Promise<SourceConnectorPullPage>;
+  fetchById?(
+    objectId: string,
+    checkpoint?: SourceConnectorCheckpoint,
+  ): Promise<SourceConnectorObject | null>;
+  verifyWebhook?(
+    request: SourceConnectorWebhookRequest,
+  ): Promise<SourceConnectorWebhookVerification>;
+}

@@ -2,7 +2,7 @@ import "./instrumentation.js";
 import { config } from "dotenv";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { SearchRequest } from "@akp/contracts";
+import { QueryIntent, SearchRequest } from "@akp/contracts";
 import { McpContextRequest } from "./context-request.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -64,6 +64,54 @@ function compactTextResult(value: unknown) {
   };
 }
 
+const codeScopeInput = {
+  spaceId: z.string().uuid(),
+  vaultId: z.string().uuid().optional(),
+  vaultIds: z.array(z.string().uuid()).max(100).default([]),
+  federated: z.boolean().default(false),
+  freshnessPolicy: z.enum(["FRESH_ONLY", "ALLOW_STALE"]).default("FRESH_ONLY"),
+};
+
+const codeSymbolSelectorInput = z
+  .object({
+    repository: z.string().trim().min(1).max(2048),
+    commitSha: z
+      .string()
+      .regex(/^[a-f0-9]{40}$/i)
+      .optional(),
+    path: z.string().trim().min(1).max(4096).optional(),
+    qualifiedName: z.string().trim().min(1).max(2048).optional(),
+    name: z.string().trim().min(1).max(1024).optional(),
+    kind: z.string().trim().min(1).max(120).optional(),
+    signature: z.string().trim().min(1).max(4096).optional(),
+  })
+  .refine(
+    (value) =>
+      Boolean(
+        value.path || value.qualifiedName || value.name || value.signature,
+      ),
+    {
+      message:
+        "At least one of path, qualifiedName, name, or signature is required.",
+    },
+  );
+
+const codePathOptionsInput = z.object({
+  relationTypes: z.array(z.string().trim().min(1).max(160)).max(100).optional(),
+  maxHops: z.number().int().min(1).max(16).optional(),
+  maxFanout: z.number().int().min(1).max(1000).optional(),
+  maxCandidates: z.number().int().min(1).max(10000).optional(),
+  timeBudgetMs: z.number().int().min(1).max(60000).optional(),
+});
+
+const codeImpactOptionsInput = codePathOptionsInput.extend({
+  direction: z.enum(["outgoing", "incoming", "both"]).optional(),
+  includeTests: z.boolean().optional(),
+  includeCatalogBridges: z.boolean().optional(),
+  includeRulesDecisions: z.boolean().optional(),
+  includeRuntimeObservations: z.boolean().optional(),
+});
+
 export function createMcpServer(): McpServer {
   const server = new McpServer({
     name: "architecture-knowledge-platform",
@@ -74,6 +122,16 @@ export function createMcpServer(): McpServer {
     "akp_status",
     { description: "Check platform and corpus capabilities.", inputSchema: {} },
     async () => textResult(await api("/v1/status")),
+  );
+
+  server.registerTool(
+    "akp_get_current_identity",
+    {
+      description:
+        "Read the effective authenticated principal identity, parent/session binding, allowed actions, and policy revision without exposing credential secrets.",
+      inputSchema: {},
+    },
+    async () => textResult(await api("/v1/auth/session")),
   );
 
   server.registerTool(
@@ -101,6 +159,248 @@ export function createMcpServer(): McpServer {
     },
     async ({ idempotencyKey, ...input }) =>
       textResult(await writeApi("/v1/sessions", idempotencyKey, input)),
+  );
+
+  server.registerTool(
+    "akp_list_sessions",
+    {
+      description:
+        "List durable workspace sessions visible to the authenticated participant.",
+      inputSchema: {},
+    },
+    async () => textResult(await api("/v1/sessions")),
+  );
+
+  server.registerTool(
+    "akp_get_session_state",
+    {
+      description:
+        "Read durable structured workspace state so an authorized participant can resume without prior chat history.",
+      inputSchema: { sessionId: z.string().uuid() },
+    },
+    async ({ sessionId }) =>
+      textResult(
+        await api(`/v1/sessions/${encodeURIComponent(sessionId)}/state`),
+      ),
+  );
+
+  server.registerTool(
+    "akp_bootstrap_session_context",
+    {
+      description:
+        "Bootstrap a workspace session with its pinned revision, durable work context, knowledge profile, and authorized context packet.",
+      inputSchema: {
+        sessionId: z.string().uuid(),
+        query: z.string().max(4096).optional(),
+        intent: QueryIntent.default("WORKFLOW_EXECUTION"),
+        packetMode: z
+          .enum(["COMPACT_AGENT_PACKET", "FULL_CONTEXT_PACKET"])
+          .default("COMPACT_AGENT_PACKET"),
+      },
+    },
+    async ({ sessionId, ...body }) =>
+      textResult(
+        await api(`/v1/sessions/${encodeURIComponent(sessionId)}/bootstrap`, {
+          method: "POST",
+          body: JSON.stringify(body),
+        }),
+      ),
+  );
+
+  server.registerTool(
+    "akp_update_work_context",
+    {
+      description:
+        "Update durable WorkContext lifecycle state, outcome, follow-ups, and touched resources without turning coordination memory into canonical knowledge.",
+      inputSchema: {
+        sessionId: z.string().uuid(),
+        status: z.enum(["OPEN", "BLOCKED", "COMPLETED", "ABANDONED"]),
+        outcome: z.string().min(1).max(12000).nullable().optional(),
+        followUps: z.array(z.string().min(1).max(2000)).max(50).optional(),
+        touchedResources: z
+          .array(z.string().min(1).max(1000))
+          .max(100)
+          .optional(),
+        idempotencyKey: z.string().min(8).max(200),
+      },
+    },
+    async ({ sessionId, idempotencyKey, ...body }) =>
+      textResult(
+        await writeApi(
+          `/v1/sessions/${encodeURIComponent(sessionId)}/work-context`,
+          idempotencyKey,
+          body,
+        ),
+      ),
+  );
+
+  server.registerTool(
+    "akp_claim_workspace_work",
+    {
+      description:
+        "Acquire a bounded exact or recursive workspace claim with a lease and fencing token.",
+      inputSchema: {
+        sessionId: z.string().uuid(),
+        workKey: z.string().min(1).max(200),
+        leaseSeconds: z.number().int().min(15).max(900).default(120),
+        idempotencyKey: z.string().min(8).max(200),
+      },
+    },
+    async ({ sessionId, idempotencyKey, ...body }) =>
+      textResult(
+        await writeApi(
+          `/v1/sessions/${encodeURIComponent(sessionId)}/claims`,
+          idempotencyKey,
+          body,
+        ),
+      ),
+  );
+
+  server.registerTool(
+    "akp_heartbeat_workspace_claim",
+    {
+      description:
+        "Renew an owned workspace claim only when its current fencing token matches.",
+      inputSchema: {
+        sessionId: z.string().uuid(),
+        workKey: z.string().min(1).max(200),
+        fencingToken: z.number().int().min(1),
+        leaseSeconds: z.number().int().min(15).max(900).default(120),
+        idempotencyKey: z.string().min(8).max(200),
+      },
+    },
+    async ({ sessionId, idempotencyKey, ...body }) =>
+      textResult(
+        await writeApi(
+          `/v1/sessions/${encodeURIComponent(sessionId)}/claims/heartbeat`,
+          idempotencyKey,
+          body,
+        ),
+      ),
+  );
+
+  server.registerTool(
+    "akp_release_workspace_claim",
+    {
+      description:
+        "Release an owned live workspace claim and advance its fencing token so stale writers cannot continue.",
+      inputSchema: {
+        sessionId: z.string().uuid(),
+        workKey: z.string().min(1).max(200),
+        fencingToken: z.number().int().min(1),
+        idempotencyKey: z.string().min(8).max(200),
+      },
+    },
+    async ({ sessionId, idempotencyKey, ...body }) =>
+      textResult(
+        await writeApi(
+          `/v1/sessions/${encodeURIComponent(sessionId)}/claims/release`,
+          idempotencyKey,
+          body,
+        ),
+      ),
+  );
+
+  server.registerTool(
+    "akp_handoff_workspace_claim",
+    {
+      description:
+        "Transfer an owned fenced workspace claim to another authorized participant or exact agent principal with bounded machine-readable handoff state.",
+      inputSchema: {
+        sessionId: z.string().uuid(),
+        workKey: z.string().min(1).max(200),
+        toUserId: z.string().uuid(),
+        toPrincipalId: z.string().uuid().optional(),
+        fencingToken: z.number().int().min(1),
+        leaseSeconds: z.number().int().min(15).max(900).default(120),
+        summary: z.string().min(1).max(4096).optional(),
+        completed: z.array(z.string().min(1).max(2000)).max(50).optional(),
+        remaining: z.array(z.string().min(1).max(2000)).max(50).optional(),
+        blockers: z.array(z.string().min(1).max(2000)).max(50).optional(),
+        changedResourceRefs: z
+          .array(z.string().min(1).max(1000))
+          .max(100)
+          .optional(),
+        evidenceRefs: z.array(z.string().min(1).max(1000)).max(100).optional(),
+        questions: z.array(z.string().min(1).max(2000)).max(50).optional(),
+        note: z.string().max(2048).optional(),
+        idempotencyKey: z.string().min(8).max(200),
+      },
+    },
+    async ({ sessionId, idempotencyKey, ...body }) =>
+      textResult(
+        await writeApi(
+          `/v1/sessions/${encodeURIComponent(sessionId)}/claims/handoff`,
+          idempotencyKey,
+          body,
+        ),
+      ),
+  );
+
+  server.registerTool(
+    "akp_append_workspace_event",
+    {
+      description:
+        "Append a bounded finding, blocker, question, artifact, decision candidate, or note to the durable workspace blackboard.",
+      inputSchema: {
+        sessionId: z.string().uuid(),
+        eventType: z.enum([
+          "FINDING",
+          "BLOCKER",
+          "QUESTION",
+          "ARTIFACT",
+          "DECISION_CANDIDATE",
+          "NOTE",
+        ]),
+        claimId: z.string().uuid().optional(),
+        fencingToken: z.number().int().min(1).optional(),
+        payload: z.record(z.unknown()).default({}),
+        idempotencyKey: z.string().min(8).max(200),
+      },
+    },
+    async ({ sessionId, idempotencyKey, ...body }) =>
+      textResult(
+        await writeApi(
+          `/v1/sessions/${encodeURIComponent(sessionId)}/events`,
+          idempotencyKey,
+          body,
+        ),
+      ),
+  );
+
+  server.registerTool(
+    "akp_request_workspace_promotion",
+    {
+      description:
+        "Request governed promotion of durable workspace evidence into Git-backed review; this never bypasses human review policy.",
+      inputSchema: {
+        sessionId: z.string().uuid(),
+        evidenceEventIds: z
+          .array(z.string().regex(/^[1-9][0-9]*$/))
+          .min(1)
+          .max(100),
+        summary: z.string().min(1).max(2000).optional(),
+        changes: z
+          .array(
+            z.object({
+              path: z.string().min(1),
+              content: z.string().min(1),
+              reason: z.string().min(1).optional(),
+            }),
+          )
+          .min(1)
+          .max(100),
+        idempotencyKey: z.string().min(8).max(200),
+      },
+    },
+    async ({ sessionId, idempotencyKey, ...body }) =>
+      textResult(
+        await writeApi(
+          `/v1/sessions/${encodeURIComponent(sessionId)}/promotions`,
+          idempotencyKey,
+          body,
+        ),
+      ),
   );
 
   server.registerTool(
@@ -212,6 +512,169 @@ export function createMcpServer(): McpServer {
     async ({ id, depth }) =>
       textResult(
         await api(`/v1/impact/${encodeURIComponent(id)}?depth=${depth}`),
+      ),
+  );
+
+  server.registerTool(
+    "akp_find_code_symbol",
+    {
+      description:
+        "Resolve code symbols in the authorized revisioned Code Graph.",
+      inputSchema: {
+        ...codeScopeInput,
+        selector: codeSymbolSelectorInput,
+      },
+    },
+    async (input) =>
+      textResult(
+        await api("/v1/code/symbol", {
+          method: "POST",
+          body: JSON.stringify(input),
+        }),
+      ),
+  );
+
+  server.registerTool(
+    "akp_find_code_callers",
+    {
+      description:
+        "Find authorized direct callers of one uniquely resolved code symbol.",
+      inputSchema: {
+        ...codeScopeInput,
+        selector: codeSymbolSelectorInput,
+      },
+    },
+    async (input) =>
+      textResult(
+        await api("/v1/code/callers", {
+          method: "POST",
+          body: JSON.stringify(input),
+        }),
+      ),
+  );
+
+  server.registerTool(
+    "akp_find_code_callees",
+    {
+      description:
+        "Find authorized direct callees of one uniquely resolved code symbol.",
+      inputSchema: {
+        ...codeScopeInput,
+        selector: codeSymbolSelectorInput,
+      },
+    },
+    async (input) =>
+      textResult(
+        await api("/v1/code/callees", {
+          method: "POST",
+          body: JSON.stringify(input),
+        }),
+      ),
+  );
+
+  server.registerTool(
+    "akp_find_code_path",
+    {
+      description:
+        "Find bounded authorized dependency paths between two code symbols.",
+      inputSchema: {
+        ...codeScopeInput,
+        source: codeSymbolSelectorInput,
+        target: codeSymbolSelectorInput,
+        options: codePathOptionsInput.optional(),
+      },
+    },
+    async (input) =>
+      textResult(
+        await api("/v1/code/path", {
+          method: "POST",
+          body: JSON.stringify(input),
+        }),
+      ),
+  );
+
+  server.registerTool(
+    "akp_analyze_code_impact",
+    {
+      description:
+        "Traverse bounded code impact with optional catalog, rule/decision, test, and runtime bridges.",
+      inputSchema: {
+        ...codeScopeInput,
+        selector: codeSymbolSelectorInput,
+        options: codeImpactOptionsInput.optional(),
+      },
+    },
+    async (input) =>
+      textResult(
+        await api("/v1/code/impact", {
+          method: "POST",
+          body: JSON.stringify(input),
+        }),
+      ),
+  );
+
+  server.registerTool(
+    "akp_analyze_code_change_impact",
+    {
+      description:
+        "Analyze bounded impact for changed repository paths at an immutable commit.",
+      inputSchema: {
+        ...codeScopeInput,
+        repository: z.string().trim().min(1).max(2048),
+        commitSha: z.string().regex(/^[a-f0-9]{40}$/i),
+        changedPaths: z
+          .array(z.string().trim().min(1).max(4096))
+          .min(1)
+          .max(500),
+        options: codeImpactOptionsInput.optional(),
+      },
+    },
+    async (input) =>
+      textResult(
+        await api("/v1/code/change-impact", {
+          method: "POST",
+          body: JSON.stringify(input),
+        }),
+      ),
+  );
+
+  server.registerTool(
+    "akp_find_code_tests",
+    {
+      description:
+        "Find tests linked to one uniquely resolved code symbol in the authorized graph.",
+      inputSchema: {
+        ...codeScopeInput,
+        selector: codeSymbolSelectorInput,
+      },
+    },
+    async (input) =>
+      textResult(
+        await api("/v1/code/tests", {
+          method: "POST",
+          body: JSON.stringify(input),
+        }),
+      ),
+  );
+
+  server.registerTool(
+    "akp_explain_code_path",
+    {
+      description:
+        "Explain bounded authorized dependency paths between two code symbols with edge provenance.",
+      inputSchema: {
+        ...codeScopeInput,
+        source: codeSymbolSelectorInput,
+        target: codeSymbolSelectorInput,
+        options: codePathOptionsInput.optional(),
+      },
+    },
+    async (input) =>
+      textResult(
+        await api("/v1/code/explain", {
+          method: "POST",
+          body: JSON.stringify(input),
+        }),
       ),
   );
 

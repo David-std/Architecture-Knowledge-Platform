@@ -5,19 +5,17 @@ import {
   StructuralLocator,
   TrustTier,
 } from "@akp/contracts";
+import {
+  CompilerKnowledgeProfileContext,
+  defaultCompilerKnowledgeProfileContext,
+} from "./knowledge-profile.js";
 
 const Sha256 = z.string().regex(/^[a-f0-9]{64}$/);
 const BoundedText = z.string().min(1).max(60_000);
 
-export const KnowledgeKind = z.enum([
-  "claim",
-  "decision",
-  "rule",
-  "workflow",
-  "concept",
-  "example",
-  "counterexample",
-]);
+export const KnowledgeKind = z
+  .string()
+  .regex(/^[A-Za-z][A-Za-z0-9._:-]{0,127}$/);
 export type KnowledgeKind = z.infer<typeof KnowledgeKind>;
 
 export const CompilerEvidence = z
@@ -27,6 +25,7 @@ export const CompilerEvidence = z
     locator: StructuralLocator,
     excerpt: z.string().min(1).max(12_000),
     excerptHash: Sha256,
+    trust: TrustTier.optional(),
   })
   .strict();
 export type CompilerEvidence = z.infer<typeof CompilerEvidence>;
@@ -100,6 +99,9 @@ export const KnowledgeCompilerInput = z
     documentArtifact: DocumentArtifactSchema,
     evidence: z.array(CompilerEvidence).max(50),
     existingCandidates: z.array(ExistingKnowledgeCandidate).max(50),
+    knowledgeProfile: CompilerKnowledgeProfileContext.default(
+      defaultCompilerKnowledgeProfileContext(),
+    ),
     schemaProfile: z.record(z.string(), z.unknown()).default({}),
     policy: CompilerPolicy.default({}),
     budget: CompilerBudget.default({}),
@@ -137,6 +139,18 @@ export const KnowledgeCompilerInput = z
         path: ["existingCandidates"],
         message: "existing knowledge candidates exceed configured budget",
       });
+    }
+    const declaredKinds = new Set(
+      Object.keys(input.knowledgeProfile.profile.knowledgeKinds),
+    );
+    for (const kind of input.policy.allowedKnowledgeKinds) {
+      if (!declaredKinds.has(kind)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["policy", "allowedKnowledgeKinds"],
+          message: `compiler policy allows a kind not declared by the active profile: ${kind}`,
+        });
+      }
     }
     for (const evidence of input.evidence) {
       if (evidence.sourceArtifactId !== input.source.sourceArtifactId) {
@@ -267,6 +281,20 @@ export type ReviewExistingKnowledgeCandidate = z.infer<
   typeof ReviewExistingKnowledgeCandidate
 >;
 
+export const EffectiveReviewPolicy = z
+  .object({
+    required: z.literal(true),
+    minimumApprovals: z.number().int().min(1).max(20),
+    allowedRoles: z.array(z.string().min(1).max(100)).min(1),
+    profileSource: z.enum(["DURABLE_REVISION", "V03_DEFAULT"]),
+    profileRevisionId: z.string().uuid().nullable(),
+    profileHash: Sha256,
+    profileId: z.string().min(1).max(100),
+    profileVersion: z.string().min(1).max(100),
+  })
+  .strict();
+export type EffectiveReviewPolicy = z.infer<typeof EffectiveReviewPolicy>;
+
 export const ReviewCompilationContext = z
   .object({
     identity: IdentityAssessment,
@@ -274,7 +302,9 @@ export const ReviewCompilationContext = z
     evidenceCandidates: z.array(EvidenceCandidate).max(50),
     existingCandidates: z.array(ReviewExistingKnowledgeCandidate).max(50),
     knowledgeCandidates: z.array(KnowledgeCandidate).max(50),
+    reviewKinds: z.array(KnowledgeKind).max(50).optional(),
     contradictions: z.array(KnowledgeContradiction).max(50),
+    reviewPolicy: EffectiveReviewPolicy.optional(),
     warnings: z.array(z.string().min(1).max(2_000)).max(50),
     summary: z.string().min(1).max(8_000),
   })

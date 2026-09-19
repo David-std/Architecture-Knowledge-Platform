@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
+import type { CodeSnapshot } from "@akp/contracts";
 import type { CodeEvidence, CodeLocator } from "./index.js";
 
 export interface ProjectFileInventory {
@@ -66,14 +67,33 @@ function language(file: string): string {
   return (
     {
       ".java": "Java",
+      ".kt": "Kotlin",
+      ".kts": "KotlinScript",
       ".cs": "CSharp",
       ".ts": "TypeScript",
       ".tsx": "TypeScriptReact",
+      ".js": "JavaScript",
+      ".jsx": "JavaScriptReact",
+      ".mjs": "JavaScript",
+      ".cjs": "JavaScript",
       ".vue": "Vue",
+      ".svelte": "Svelte",
+      ".py": "Python",
+      ".go": "Go",
+      ".rs": "Rust",
+      ".c": "C",
+      ".h": "C",
+      ".cc": "Cpp",
+      ".cpp": "Cpp",
+      ".cxx": "Cpp",
+      ".hpp": "Cpp",
+      ".rb": "Ruby",
+      ".php": "PHP",
+      ".swift": "Swift",
+      ".scala": "Scala",
       ".json": "JSON",
       ".xml": "XML",
       ".gradle": "Gradle",
-      ".kts": "KotlinScript",
       ".csproj": "MSBuild",
     }[extension] ?? "BuildMetadata"
   );
@@ -100,14 +120,52 @@ function resolveRelativeImport(
   );
   const candidates = [
     unresolved,
-    ...[".ts", ".tsx", ".vue", ".java", ".cs"].map(
-      (extension) => `${unresolved}${extension}`,
-    ),
-    ...["index.ts", "index.tsx", "index.vue"].map(
-      (name) => `${unresolved}/${name}`,
-    ),
+    ...[
+      ".ts",
+      ".tsx",
+      ".js",
+      ".jsx",
+      ".mjs",
+      ".cjs",
+      ".vue",
+      ".java",
+      ".cs",
+    ].map((extension) => `${unresolved}${extension}`),
+    ...[
+      "index.ts",
+      "index.tsx",
+      "index.js",
+      "index.jsx",
+      "index.mjs",
+      "index.cjs",
+      "index.vue",
+    ].map((name) => `${unresolved}/${name}`),
   ];
   return candidates.find((candidate) => files.has(candidate)) ?? null;
+}
+
+export async function createCodeSnapshot(input: {
+  repositoryPath: string;
+  commit: string;
+}): Promise<CodeSnapshot> {
+  const project = await buildProjectSnapshot(input);
+  const root = path.resolve(input.repositoryPath);
+  const tree = git(root, ["rev-parse", "--verify", `${project.commit}^{tree}`]);
+  const treeHash = tree.status === 0 ? tree.stdout.trim() : "";
+  if (!/^[a-f0-9]{40}$/i.test(treeHash)) {
+    throw new Error("IMMUTABLE_GIT_TREE_REQUIRED");
+  }
+  return {
+    repository: project.remote ?? root,
+    repositoryPath: root,
+    commitSha: project.commit,
+    treeHash,
+    files: project.files.map((file) => ({
+      path: file.path,
+      contentHash: file.sha256,
+      bytes: file.bytes,
+    })),
+  };
 }
 
 export async function buildProjectSnapshot(input: {
@@ -139,7 +197,7 @@ export async function buildProjectSnapshot(input: {
   const allFiles = listed.stdout
     .split(/\r?\n/)
     .filter((file) =>
-      /(^|\/)(package\.json|pom\.xml|build\.gradle(?:\.kts)?|[^/]+\.csproj)$|\.(java|cs|ts|tsx|vue)$/i.test(
+      /(^|\/)(package\.json|pom\.xml|build\.gradle(?:\.kts)?|[^/]+\.csproj)$|\.(java|cs|ts|tsx|js|jsx|mjs|cjs|vue)$/i.test(
         file,
       ),
     )

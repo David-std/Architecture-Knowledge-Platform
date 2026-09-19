@@ -18,6 +18,16 @@ function fakeDatabase(options: FakeDatabaseOptions): {
   calls: Array<{ sql: string; args: unknown[] | undefined }>;
 } {
   const calls: Array<{ sql: string; args: unknown[] | undefined }> = [];
+  const client = {
+    query: vi.fn(async (sql: string, args?: unknown[]) => {
+      calls.push({ sql, args });
+      if (sql.includes("insert into community_index_revisions")) {
+        return { rows: [{ id: "community-revision-a" }], rowCount: 1 };
+      }
+      return { rows: [], rowCount: 0 };
+    }),
+    release: vi.fn(),
+  };
   const pool = {
     query: vi.fn(async (sql: string, args?: unknown[]) => {
       calls.push({ sql, args });
@@ -31,6 +41,7 @@ function fakeDatabase(options: FakeDatabaseOptions): {
       }
       return { rows: [], rowCount: 0 };
     }),
+    connect: vi.fn(async () => client),
   };
   return { db: { pool } as unknown as Postgres, calls };
 }
