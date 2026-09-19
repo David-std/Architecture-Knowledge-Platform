@@ -209,13 +209,9 @@ function normalizeTokenizer(input?: Tokenizer): {
   }
 
   const quality: TokenizerQuality =
-    input.quality ??
-    (input.approximate === true ? "APPROXIMATE" : "EXACT");
+    input.quality ?? (input.approximate === true ? "APPROXIMATE" : "EXACT");
   const approximate = quality === "APPROXIMATE";
-  if (
-    input.approximate !== undefined &&
-    input.approximate !== approximate
-  ) {
+  if (input.approximate !== undefined && input.approximate !== approximate) {
     throw new TypeError(
       "TOKENIZER_QUALITY_INVALID:CONFLICTING_APPROXIMATE_METADATA",
     );
@@ -806,8 +802,9 @@ export function buildContextPacket(
     .sort(compareCandidates)
     .filter(
       (candidate, index, all) =>
-        all.findIndex((item) => candidateKey(item) === candidateKey(candidate)) ===
-        index,
+        all.findIndex(
+          (item) => candidateKey(item) === candidateKey(candidate),
+        ) === index,
     );
   const requiredKeys = new Set(requiredCandidates.map(candidateKey));
   const ordinaryCandidates = packetCandidates.filter(
