@@ -137,7 +137,9 @@ export function registerTemporalTruthRoutes(
           ...(parsed.data.subjectRef
             ? { subjectRef: parsed.data.subjectRef }
             : {}),
-          ...(parsed.data.predicate ? { predicate: parsed.data.predicate } : {}),
+          ...(parsed.data.predicate
+            ? { predicate: parsed.data.predicate }
+            : {}),
           ...(parsed.data.validAt ? { validAt: parsed.data.validAt } : {}),
           ...(parsed.data.recordedAtOrBefore
             ? { recordedAtOrBefore: parsed.data.recordedAtOrBefore }
