@@ -348,6 +348,7 @@ function benchmarkConfigurations(): BenchmarkConfiguration[] {
     "context-pack+lexical+graph",
     "full-hybrid-rrf",
     "full-hybrid+rerank",
+    "lexical+vector+graph+ppr",
   ]);
   return RETRIEVAL_BENCHMARK_MATRIX.filter((configuration) =>
     required.has(configuration.name),
@@ -429,6 +430,16 @@ async function executeCase(
       channels: [...configuration.channels],
       allowVectorForBenchmark: Boolean(configuration.allowVectorForBenchmark),
       deterministicRerank: Boolean(configuration.deterministicRerank),
+      ...(configuration.associativePpr
+        ? {
+            retrievalPolicy: {
+              graphMode: "ASSOCIATIVE" as const,
+              channels: {
+                GRAPH_PPR: { enabled: true, weight: 1.1 },
+              },
+            },
+          }
+        : {}),
       queryEmbeddingService,
       warningSink: warnings,
       availableChannelSink: availableChannels,
