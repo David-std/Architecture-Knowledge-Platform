@@ -656,6 +656,18 @@ interface FactRow {
   truth_revision_seq: string | number;
 }
 
+interface SupportEvaluationContext {
+  factStates: Map<string, TruthSupportEvaluation>;
+  visitingFactIds: Set<string>;
+}
+
+function supportEvaluationContext(): SupportEvaluationContext {
+  return {
+    factStates: new Map<string, TruthSupportEvaluation>(),
+    visitingFactIds: new Set<string>(),
+  };
+}
+
 function iso(value: Date | string): string {
   return value instanceof Date
     ? value.toISOString()
@@ -1388,13 +1400,94 @@ export class PostgresTemporalTruthStore {
       : { seq: 0, hash: null };
   }
 
+  private async factSupportEvaluation(
+    factId: string,
+    support: TruthSupportSet,
+    validAt: string,
+    revisionSeq: number,
+    recordedAtOrBefore: string | undefined,
+    context: SupportEvaluationContext,
+  ): Promise<TruthSupportEvaluation> {
+    const cached = context.factStates.get(factId);
+    if (cached) return cached;
+    if (context.visitingFactIds.has(factId)) return "UNSUPPORTED";
+
+    context.visitingFactIds.add(factId);
+    try {
+      const factResult = await this.db.pool.query<FactRow>(
+        `select f.*
+           from temporal_facts f
+          where f.id=$1
+            and f.space_id=$2
+            and f.vault_id=$3
+            and f.truth_revision_seq<=$4
+            and f.valid_from<=$5
+            and (f.valid_to is null or f.valid_to>$5)
+            and ($6::timestamptz is null or f.recorded_at<=$6)
+            and not exists(
+              select 1
+                from temporal_fact_supersessions s
+                join temporal_facts replacement on replacement.id=s.new_fact_id
+               where s.old_fact_id=f.id
+                 and s.truth_revision_seq<=$4
+                 and replacement.valid_from<=$5
+                 and (replacement.valid_to is null or replacement.valid_to>$5)
+                 and ($6::timestamptz is null or s.recorded_at<=$6)
+            )
+          limit 1`,
+        [
+          factId,
+          support.spaceId,
+          support.vaultId,
+          revisionSeq,
+          validAt,
+          recordedAtOrBefore ?? null,
+        ],
+      );
+      const factRow = factResult.rows[0];
+      if (!factRow) {
+        context.factStates.set(factId, "UNSUPPORTED");
+        return "UNSUPPORTED";
+      }
+
+      const supportResult = await this.db.pool.query<SupportSetRow>(
+        `select * from truth_support_sets
+          where id=$1 and space_id=$2 and vault_id=$3
+          limit 1`,
+        [factRow.support_set_id, support.spaceId, support.vaultId],
+      );
+      const supportRow = supportResult.rows[0];
+      if (!supportRow) {
+        context.factStates.set(factId, "UNSUPPORTED");
+        return "UNSUPPORTED";
+      }
+
+      const nestedState = await this.supportEvaluation(
+        normalizeSupportSet(supportRow),
+        validAt,
+        revisionSeq,
+        recordedAtOrBefore,
+        context,
+      );
+      const state =
+        nestedState === "SUPPORTED" && factRow.lifecycle === "DISPUTED"
+          ? "DISPUTED"
+          : nestedState;
+      context.factStates.set(factId, state);
+      return state;
+    } finally {
+      context.visitingFactIds.delete(factId);
+    }
+  }
+
   private async supportEvaluation(
     support: TruthSupportSet,
     validAt: string,
     revisionSeq: number,
     recordedAtOrBefore?: string,
+    context: SupportEvaluationContext = supportEvaluationContext(),
   ): Promise<TruthSupportEvaluation> {
-    const [withdrawn, invalidEvidence, supersededFacts] = await Promise.all([
+    const [withdrawn, invalidEvidence] = await Promise.all([
       support.sourceEpisodeIds.length
         ? this.db.pool.query<{ id: string }>(
             `select source_episode_id id from source_episode_withdrawals
@@ -1413,40 +1506,78 @@ export class PostgresTemporalTruthStore {
             [support.evidenceIds, revisionSeq, recordedAtOrBefore ?? null],
           )
         : { rows: [] as { id: string }[] },
-      support.factIds.length
-        ? this.db.pool.query<{ id: string }>(
-            `select distinct s.old_fact_id id
-               from temporal_fact_supersessions s
-               join temporal_facts replacement on replacement.id=s.new_fact_id
-              where s.old_fact_id=any($1::uuid[])
-                and s.truth_revision_seq<=$2
-                and replacement.valid_from<=$3
-                and (replacement.valid_to is null or replacement.valid_to>$3)
-                and ($4::timestamptz is null or s.recorded_at<=$4)`,
-            [support.factIds, revisionSeq, validAt, recordedAtOrBefore ?? null],
-          )
-        : { rows: [] as { id: string }[] },
     ]);
-    const unavailable = new Set<string>([
-      ...withdrawn.rows.map((row) => `source_episode:${row.id}`),
-      ...invalidEvidence.rows.map((row) => `evidence:${row.id}`),
-      ...supersededFacts.rows.map((row) => `fact:${row.id}`),
-    ]);
-    const directRefs = [
-      ...support.sourceEpisodeIds.map((id) => `source_episode:${id}`),
-      ...support.evidenceIds.map((id) => `evidence:${id}`),
-      ...support.factIds.map((id) => `fact:${id}`),
-      ...support.sourceArtifactIds.map((id) => `source_artifact:${id}`),
-      ...support.sourceRevisionHashes.map((hash) => `revision:${hash}`),
-    ];
-    const valid =
-      support.alternativeSupportGroups.length > 0
-        ? support.alternativeSupportGroups.some((group) =>
-            group.every((ref) => !unavailable.has(ref)),
-          )
-        : directRefs.every((ref) => !unavailable.has(ref));
-    if (!valid) return "UNSUPPORTED";
-    return support.state === "DISPUTED" ? "DISPUTED" : "SUPPORTED";
+
+    const withdrawnIds = new Set(withdrawn.rows.map((row) => row.id));
+    const invalidEvidenceIds = new Set(
+      invalidEvidence.rows.map((row) => row.id),
+    );
+    const refStates = new Map<string, TruthSupportEvaluation>();
+    for (const id of support.sourceEpisodeIds) {
+      refStates.set(
+        `source_episode:${id}`,
+        withdrawnIds.has(id) ? "UNSUPPORTED" : "SUPPORTED",
+      );
+    }
+    for (const id of support.evidenceIds) {
+      refStates.set(
+        `evidence:${id}`,
+        invalidEvidenceIds.has(id) ? "UNSUPPORTED" : "SUPPORTED",
+      );
+    }
+    for (const id of support.factIds) {
+      refStates.set(
+        `fact:${id}`,
+        await this.factSupportEvaluation(
+          id,
+          support,
+          validAt,
+          revisionSeq,
+          recordedAtOrBefore,
+          context,
+        ),
+      );
+    }
+    for (const id of support.sourceArtifactIds) {
+      refStates.set(`source_artifact:${id}`, "SUPPORTED");
+    }
+    for (const hash of support.sourceRevisionHashes) {
+      refStates.set(`revision:${hash}`, "SUPPORTED");
+    }
+
+    const stateForRefs = (refs: readonly string[]): TruthSupportEvaluation => {
+      const states = refs.map((ref) => refStates.get(ref) ?? "UNSUPPORTED");
+      if (states.some((state) => state === "UNSUPPORTED")) {
+        return "UNSUPPORTED";
+      }
+      return states.some((state) => state === "DISPUTED")
+        ? "DISPUTED"
+        : "SUPPORTED";
+    };
+
+    let state: TruthSupportEvaluation;
+    if (support.alternativeSupportGroups.length > 0) {
+      const groupStates = support.alternativeSupportGroups.map(stateForRefs);
+      const viable = groupStates.filter((candidate) => candidate !== "UNSUPPORTED");
+      if (viable.length === 0) return "UNSUPPORTED";
+      state = viable.some((candidate) => candidate === "SUPPORTED")
+        ? "SUPPORTED"
+        : "DISPUTED";
+    } else {
+      const directRefs = [
+        ...support.sourceEpisodeIds.map((id) => `source_episode:${id}`),
+        ...support.evidenceIds.map((id) => `evidence:${id}`),
+        ...support.factIds.map((id) => `fact:${id}`),
+        ...support.sourceArtifactIds.map((id) => `source_artifact:${id}`),
+        ...support.sourceRevisionHashes.map((hash) => `revision:${hash}`),
+      ];
+      state = stateForRefs(directRefs);
+      if (state === "UNSUPPORTED") return state;
+    }
+
+    return support.state === "DISPUTED" || state === "DISPUTED"
+      ? "DISPUTED"
+      : "SUPPORTED";
   }
 
   async listFacts(rawQuery: TemporalTruthQuery): Promise<TemporalFactView[]> {
@@ -1944,13 +2075,30 @@ export class PostgresTemporalTruthStore {
       derived_store_kind: DerivedTruthStoreKind;
       derived_item_ref: string;
     }>(
-      `select distinct d.derived_store_kind,d.derived_item_ref
+      `with recursive affected_supports(id) as (
+         select s.id
+           from truth_support_sets s
+          where s.space_id=$1 and s.vault_id=$2
+            and s.${resourceColumn} @> array[$4::uuid]
+         union
+         select parent.id
+           from affected_supports child
+           join temporal_facts f
+             on f.support_set_id=child.id
+            and f.space_id=$1
+            and f.vault_id=$2
+            and f.truth_revision_seq<=$3
+           join truth_support_sets parent
+             on parent.space_id=$1
+            and parent.vault_id=$2
+            and parent.fact_ids @> array[f.id]
+       )
+       select distinct d.derived_store_kind,d.derived_item_ref
          from derived_truth_dependencies d
-         join truth_support_sets s on s.id=d.support_set_id
+         join affected_supports affected on affected.id=d.support_set_id
          join truth_revisions r on r.revision_hash=d.truth_revision_hash
         where d.space_id=$1 and d.vault_id=$2
           and r.revision_seq<=$3
-          and s.${resourceColumn} @> array[$4::uuid]
         order by d.derived_store_kind,d.derived_item_ref
         limit 5001`,
       [input.spaceId, input.vaultId, cutoff.seq, input.resourceId],
