@@ -451,6 +451,34 @@ describe("production lexical ranking", () => {
           path: "docs/identity.md",
           title: "Canonical identity",
         });
+
+        const reranked = await queryKnowledge(db, searchRequest(fixture), {
+          channels: ["exact", "lexical"],
+          plan: planQuery("ranking", {
+            requestedIntent: "CONCEPTUAL",
+            capabilities: {
+              vectorAvailable: false,
+              graphConsistent: false,
+              rawAllowed: false,
+              codeAdapterAvailable: false,
+              contextPackAvailable: false,
+            },
+          }),
+          vaultIds: [fixture.vaultId],
+          deterministicRerank: true,
+        });
+        expect(reranked).toHaveLength(expectedOrder.length);
+        expect(
+          reranked.every(
+            (hit, index) =>
+              hit.rerankTrace?.reranker === "deterministic-lexical-v1" &&
+              hit.rerankTrace.postRank === index + 1 &&
+              hit.rerankTrace.preRank >= 1,
+          ),
+        ).toBe(true);
+        expect(
+          new Set(reranked.map((hit) => hit.rerankTrace?.preRank)).size,
+        ).toBe(reranked.length);
       } finally {
         await cleanupLexical(db, fixture);
         await db.close();
