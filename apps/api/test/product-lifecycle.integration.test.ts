@@ -472,6 +472,8 @@ beforeAll(async () => {
     contextTokenizer: {
       id: "e2e-char4",
       label: "E2E deterministic char/4 tokenizer",
+      quality: "APPROXIMATE" as const,
+      approximate: true,
       count: (text: string) => Math.ceil(text.length / 4),
     },
   });
@@ -718,7 +720,12 @@ describe("product lifecycle E2E", () => {
       sections: Array<{ content: string; vaultId: string }>;
       citations: string[];
       budget: {
-        tokenizer: { id: string; approximate: boolean; source: string };
+        tokenizer: {
+          id: string;
+          quality: "EXACT" | "APPROXIMATE";
+          approximate: boolean;
+          source: string;
+        };
       };
     };
     expect(contextBody).toMatchObject({
@@ -727,7 +734,8 @@ describe("product lifecycle E2E", () => {
       budget: {
         tokenizer: {
           id: "e2e-char4",
-          approximate: false,
+          quality: "APPROXIMATE",
+          approximate: true,
           source: "injected",
         },
       },
