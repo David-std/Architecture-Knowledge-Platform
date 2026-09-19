@@ -763,7 +763,8 @@ describe("product lifecycle E2E", () => {
     expect(
       catalogBody.sections.every(
         (section) =>
-          section.contextLevel === "L0" && section.content.includes("revision="),
+          section.contextLevel === "L0" &&
+          section.content.includes("revision="),
       ),
     ).toBe(true);
 
