@@ -1868,6 +1868,7 @@ export async function queryKnowledge(
         id: String(row.id),
         rank: index + 1,
         reason: "vector",
+        rawScore: Number(row.score),
         candidateRevision: String(row.document_revision),
       })),
     },
