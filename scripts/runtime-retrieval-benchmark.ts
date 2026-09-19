@@ -210,7 +210,8 @@ async function loadFilteredAnnEvidence(): Promise<
       return {
         measured: false,
         path: filteredAnnPath,
-        reason: "Filtered ANN report exists but is not PROVEN with measurements.",
+        reason:
+          "Filtered ANN report exists but is not PROVEN with measurements.",
       };
     }
     return {
@@ -699,22 +700,22 @@ async function main(): Promise<void> {
         },
         resourceRequirements: resourceRequirements(configuration),
         indexBuildUpdate: {
-          buildEvidence:
-            configuration.channels.includes("vector")
-              ? {
-                  measured: true,
-                  sharedEmbeddingBuildMs: embeddingBuildMs,
-                }
-              : {
-                  measured: false,
-                  sharedEmbeddingBuildMs: null,
-                  reason:
-                    "This harness seeds lexical/graph fixture projections directly; no isolated build timer exists for this option.",
-                },
+          buildEvidence: configuration.channels.includes("vector")
+            ? {
+                measured: true,
+                sharedEmbeddingBuildMs: embeddingBuildMs,
+              }
+            : {
+                measured: false,
+                sharedEmbeddingBuildMs: null,
+                reason:
+                  "This harness seeds lexical/graph fixture projections directly; no isolated build timer exists for this option.",
+              },
           updateEvidence: {
             measured: false,
             milliseconds: null,
-            reason: "Incremental index update cost is not exercised by this harness.",
+            reason:
+              "Incremental index update cost is not exercised by this harness.",
           },
         },
         storageRam: {
@@ -728,10 +729,7 @@ async function main(): Promise<void> {
           },
           sharedProcessMemoryBytes: {
             fixture: memoryDelta(memoryAfterFixture, memoryBeforeFixture),
-            embeddings: memoryDelta(
-              memoryAfterEmbeddings,
-              memoryAfterFixture,
-            ),
+            embeddings: memoryDelta(memoryAfterEmbeddings, memoryAfterFixture),
           },
           attribution:
             "Shared fixture/component evidence; not presented as isolated per-query memory.",
