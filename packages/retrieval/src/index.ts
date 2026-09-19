@@ -11,3 +11,4 @@ export * from "./embedding-provider-registry.js";
 export * from "./structural-context.js";
 export * from "./community.js";
 export * from "./rerank.js";
+export * from "./reasoning-plan.js";
