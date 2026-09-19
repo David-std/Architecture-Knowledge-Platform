@@ -73,9 +73,7 @@ function communityRevisionFor(input: {
         [left.from, left.to, left.key, String(left.weight)]
           .join("\0")
           .localeCompare(
-            [right.from, right.to, right.key, String(right.weight)].join(
-              "\0",
-            ),
+            [right.from, right.to, right.key, String(right.weight)].join("\0"),
           ),
       ),
   };
@@ -284,7 +282,9 @@ export async function rebuildCommunityIndex(
     for (const community of partition.communities) {
       const memberDocuments = community.memberNodeIds
         .map((id) => documentById.get(id))
-        .filter((document): document is CommunityDocumentRow => Boolean(document));
+        .filter((document): document is CommunityDocumentRow =>
+          Boolean(document),
+        );
       const supportSet = {
         documentIds: community.memberNodeIds,
         relationKeys: community.supportEdgeIds,
