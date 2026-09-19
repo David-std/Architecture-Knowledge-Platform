@@ -117,9 +117,7 @@ export type PlannedReasoningResult<TFallback> =
     }
   | {
       mode: "DIRECT_FALLBACK";
-      reason:
-        | "PLANNER_UNAVAILABLE"
-        | "PLAN_INVALID";
+      reason: "PLANNER_UNAVAILABLE" | "PLAN_INVALID";
       result: TFallback;
     };
 
@@ -130,7 +128,9 @@ function canonicalJson(value: unknown): string {
     case "boolean":
       return JSON.stringify(value);
     case "number":
-      return Number.isFinite(value) ? JSON.stringify(value) : JSON.stringify(String(value));
+      return Number.isFinite(value)
+        ? JSON.stringify(value)
+        : JSON.stringify(String(value));
     case "bigint":
       return JSON.stringify(value.toString());
     case "undefined":
@@ -248,9 +248,7 @@ function linkedController(parent: AbortSignal | undefined): {
 }
 
 function allInputIds(step: ReasoningStep): string[] {
-  return [
-    ...new Set([...step.dependsOn, ...reasoningReferencedStepIds(step)]),
-  ];
+  return [...new Set([...step.dependsOn, ...reasoningReferencedStepIds(step)])];
 }
 
 function finalStatus(
@@ -498,7 +496,9 @@ export async function executeReasoningPlan(
 
 export async function executeWithReasoningPlanner<TFallback>(input: {
   planner?: ReasoningPlannerPort;
-  fallback: (reason: "PLANNER_UNAVAILABLE" | "PLAN_INVALID") => Promise<TFallback>;
+  fallback: (
+    reason: "PLANNER_UNAVAILABLE" | "PLAN_INVALID",
+  ) => Promise<TFallback>;
   validationContext: ReasoningPlanValidationContext;
   executor: ReasoningExecutorOptions;
 }): Promise<PlannedReasoningResult<TFallback>> {
