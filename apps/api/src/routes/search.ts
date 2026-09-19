@@ -1122,7 +1122,7 @@ export async function queryKnowledge(
             select d.id,d.current_revision,d.lexical_external_id_vector,
                    d.lexical_alias_vector,d.lexical_title_vector,
                    d.lexical_path_vector,d.lexical_body_vector,
-                   d.lexical_symbol_vector,
+                   d.lexical_search_vector,d.lexical_symbol_vector,
                    i.lexical_revision index_revision,
                    query.terms,query.symbol_terms
               from knowledge_documents d
