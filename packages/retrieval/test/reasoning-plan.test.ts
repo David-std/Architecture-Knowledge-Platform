@@ -269,10 +269,12 @@ describe("safe reasoning plan schema and validation", () => {
     plan.steps[1] = {
       ...plan.steps[1]!,
       args: {
-        ...(plan.steps[1] as Extract<
-          (typeof plan.steps)[number],
-          { operator: "TRAVERSE_TYPED" }
-        >).args,
+        ...(
+          plan.steps[1] as Extract<
+            (typeof plan.steps)[number],
+            { operator: "TRAVERSE_TYPED" }
+          >
+        ).args,
         maxHops: 7,
       },
     } as (typeof plan.steps)[number];
