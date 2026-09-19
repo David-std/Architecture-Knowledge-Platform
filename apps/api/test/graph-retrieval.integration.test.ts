@@ -273,9 +273,7 @@ describe("recursive graph retrieval PostgreSQL integration", () => {
             graphConsistent: true,
           }),
           graphPolicy: { maxHops: 3, directionPolicy: "outgoing" },
-          graphScopes: [
-            { vaultId: fixture.vaultId, pathPrefix: "allowed" },
-          ],
+          graphScopes: [{ vaultId: fixture.vaultId, pathPrefix: "allowed" }],
           retrievalPolicy: {
             graphMode: "ASSOCIATIVE",
             channels: {
