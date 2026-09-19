@@ -176,6 +176,13 @@ export const SearchHit = z.object({
       }),
     )
     .optional(),
+  rerankTrace: z
+    .object({
+      reranker: z.string().min(1),
+      preRank: z.number().int().positive(),
+      postRank: z.number().int().positive(),
+    })
+    .optional(),
   excerpt: z.string(),
   citations: z.array(z.string()),
   warnings: z.array(z.string()).optional(),
