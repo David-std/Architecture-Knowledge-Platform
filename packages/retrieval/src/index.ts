@@ -14,3 +14,4 @@ export * from "./rerank.js";
 export * from "./reasoning-plan.js";
 export * from "./reasoning-executor.js";
 export * from "./reasoning-planner.js";
+export * from "./query-transform.js";
