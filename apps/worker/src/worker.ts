@@ -31,6 +31,7 @@ import { validateMarkdownDocument } from "@akp/validation";
 import mime from "mime-types";
 import { DurableEventWorker } from "./event-worker.js";
 import { createIndexEventHandlers } from "./event-handlers.js";
+import { createTruthMaintenanceHandlers } from "./truth-maintenance.js";
 import { createCodeGraphRefreshHandlers } from "./code-graph-refresh.js";
 import { createCodeKnowledgeLinkHandlers } from "./code-knowledge-link.js";
 import { lifecycleEventForState } from "./lifecycle.js";
@@ -77,6 +78,7 @@ const eventWorker = new DurableEventWorker(db, {
   leaseSeconds: Number(process.env.AKP_EVENT_LEASE_SECONDS ?? 60),
   handlers: {
     ...createIndexEventHandlers(db, git),
+    ...createTruthMaintenanceHandlers(db),
     ...createCodeGraphRefreshHandlers(db),
     ...createCodeKnowledgeLinkHandlers(db),
     // The ingest job remains the durable work record.  This handler turns the
