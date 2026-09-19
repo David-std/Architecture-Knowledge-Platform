@@ -465,7 +465,9 @@ describe("production lexical ranking", () => {
             },
           }),
           vaultIds: [fixture.vaultId],
-          deterministicRerank: true,
+          retrievalPolicy: {
+            reranker: "deterministic-lexical-v1",
+          },
         });
         expect(reranked).toHaveLength(expectedOrder.length);
         expect(
@@ -479,6 +481,29 @@ describe("production lexical ranking", () => {
         expect(
           new Set(reranked.map((hit) => hit.rerankTrace?.preRank)).size,
         ).toBe(reranked.length);
+        const originalById = new Map(
+          hits.map((hit) => [
+            hit.documentId,
+            {
+              trust: hit.trust,
+              lifecycle: hit.lifecycle,
+              citations: hit.citations,
+              warnings: hit.warnings,
+              revision: hit.revision,
+              document: hit.document,
+            },
+          ]),
+        );
+        for (const hit of reranked) {
+          expect({
+            trust: hit.trust,
+            lifecycle: hit.lifecycle,
+            citations: hit.citations,
+            warnings: hit.warnings,
+            revision: hit.revision,
+            document: hit.document,
+          }).toEqual(originalById.get(hit.documentId));
+        }
       } finally {
         await cleanupLexical(db, fixture);
         await db.close();
