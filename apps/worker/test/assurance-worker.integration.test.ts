@@ -456,14 +456,7 @@ describeDb("continuous assurance detector execution", () => {
            'assurance-fixture','1','fixture-v1','ACTIVE','FRESH',
            now(),now(),now()
          )`,
-        [
-          projectionId,
-          spaceId,
-          vaultId,
-          scopeId,
-          graphRevision,
-          indexedCommit,
-        ],
+        [projectionId, spaceId, vaultId, scopeId, graphRevision, indexedCommit],
       );
       await db.pool.query(
         `insert into federated_graph_projection_revisions(
@@ -530,9 +523,9 @@ describeDb("continuous assurance detector execution", () => {
       });
       if (!claimed) throw new Error("expected structural detector run");
 
-      await expect(
-        runClaimedAssuranceRun(db, claimed, workerId),
-      ).resolves.toBe("COMPLETED");
+      await expect(runClaimedAssuranceRun(db, claimed, workerId)).resolves.toBe(
+        "COMPLETED",
+      );
 
       const findings = await db.pool.query<{
         detector: string;
@@ -648,12 +641,7 @@ describeDb("continuous assurance detector execution", () => {
            $1,$2,'fixture',$3,$4,'deterministic','1',
            'MACHINE_EXTRACTED','{}'::jsonb
          )`,
-        [
-          artifactId,
-          sourceId,
-          `artifacts/${artifactId}`,
-          wrongArtifactHash,
-        ],
+        [artifactId, sourceId, `artifacts/${artifactId}`, wrongArtifactHash],
       );
       await db.pool.query(
         `insert into evidence(
@@ -752,5 +740,4 @@ describeDb("continuous assurance detector execution", () => {
       await db.pool.query("delete from sources where id=$1", [sourceId]);
     }
   });
-
 });

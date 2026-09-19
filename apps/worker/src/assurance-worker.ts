@@ -1246,12 +1246,10 @@ async function collectDetectorFindings(
         const commit = row.project_commit?.toLowerCase() ?? null;
         if (
           row.runtime_projection_id &&
-          (
-            row.runtime_lifecycle !== "ACTIVE" ||
+          (row.runtime_lifecycle !== "ACTIVE" ||
             row.runtime_freshness !== "FRESH" ||
             (commit !== null &&
-              row.runtime_source_revision?.toLowerCase() !== commit)
-          )
+              row.runtime_source_revision?.toLowerCase() !== commit))
         ) {
           findings.push(
             findingForScope(
@@ -1317,10 +1315,7 @@ async function collectDetectorFindings(
           );
           continue;
         }
-        if (
-          commit &&
-          row.active_source_revision?.toLowerCase() !== commit
-        ) {
+        if (commit && row.active_source_revision?.toLowerCase() !== commit) {
           findings.push(
             findingForScope(
               run.vaultId,

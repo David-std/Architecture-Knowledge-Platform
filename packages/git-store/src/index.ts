@@ -530,9 +530,7 @@ type SourceConnectorPermissionFidelity =
   | "UNKNOWN";
 
 type SourceConnectorCheckpointModel =
-  | "REVISION"
-  | "OPAQUE_CURSOR"
-  | "SOURCE_SEQUENCE";
+  "REVISION" | "OPAQUE_CURSOR" | "SOURCE_SEQUENCE";
 
 interface SourceConnectorDescriptor {
   schemaVersion: 1;

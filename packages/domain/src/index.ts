@@ -87,9 +87,7 @@ export type SourceConnectorPermissionFidelity =
   | "UNKNOWN";
 
 export type SourceConnectorCheckpointModel =
-  | "REVISION"
-  | "OPAQUE_CURSOR"
-  | "SOURCE_SEQUENCE";
+  "REVISION" | "OPAQUE_CURSOR" | "SOURCE_SEQUENCE";
 
 export interface SourceConnectorDescriptor {
   schemaVersion: 1;
