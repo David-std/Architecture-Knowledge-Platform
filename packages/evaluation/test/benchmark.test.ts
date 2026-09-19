@@ -7,7 +7,7 @@ import {
 } from "../src/index.js";
 
 describe("retrieval benchmark matrix", () => {
-  it("contains exactly the ten required, auditable configurations", () => {
+  it("contains the auditable retrieval configurations including real PPR", () => {
     expect(RETRIEVAL_BENCHMARK_MATRIX.map(({ name }) => name)).toEqual([
       "context-pack-only",
       "exact+lexical",
@@ -19,13 +19,22 @@ describe("retrieval benchmark matrix", () => {
       "context-pack+lexical+graph",
       "full-hybrid-rrf",
       "full-hybrid+rerank",
+      "lexical+vector+graph+ppr",
     ]);
-    expect(RETRIEVAL_BENCHMARK_MATRIX).toHaveLength(10);
+    expect(RETRIEVAL_BENCHMARK_MATRIX).toHaveLength(11);
     expect(
       RETRIEVAL_BENCHMARK_MATRIX.filter(({ channels }) =>
         channels.includes("vector"),
       ).every(({ allowVectorForBenchmark }) => allowVectorForBenchmark),
     ).toBe(true);
+    expect(
+      RETRIEVAL_BENCHMARK_MATRIX.find(
+        ({ name }) => name === "lexical+vector+graph+ppr",
+      ),
+    ).toMatchObject({
+      associativePpr: true,
+      channels: ["lexical", "vector", "graph"],
+    });
   });
 });
 
