@@ -124,6 +124,15 @@ async function loadDataset(): Promise<{
     critical: false,
     slice: "cross-language",
   });
+  cases.push({
+    id: "runtime-code-symbol-ingress",
+    category: "code-symbol",
+    query: "ingress validation service",
+    gold_documents: ["software-api-boundary"],
+    vault: "vault-a-software",
+    critical: false,
+    slice: "code-symbol",
+  });
   return { manifest, cases, hashes };
 }
 
