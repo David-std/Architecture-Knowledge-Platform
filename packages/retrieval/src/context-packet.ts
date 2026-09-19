@@ -4,6 +4,7 @@ import type {
   CompactContextSection as ContractCompactContextSection,
   ContextPacket,
   ContextPacketBudget as ContractContextPacketBudget,
+  type ContextDisclosureLevel,
   GraphPathProvenance,
   SearchHit,
   SearchRequest,
@@ -60,6 +61,8 @@ export type ContextContinuationSink = (
 export interface PacketCandidate {
   hit: SearchHit;
   content: string;
+  /** Authorized full approved page/body used only when L3 is requested. */
+  fullContent?: string;
   kind: PacketCandidateKind;
 }
 
@@ -68,6 +71,7 @@ export interface BuildContextPacketInput {
   intent: string;
   corpusRevision: string;
   maxTokens: number;
+  requestedContextLevel?: ContextDisclosureLevel;
   candidates: PacketCandidate[];
   gaps?: string[];
   conflicts?: string[];
@@ -304,10 +308,53 @@ function compareCandidates(a: PacketCandidate, b: PacketCandidate): number {
   );
 }
 
+function oneLineOrientation(value: string, limit = 320): string {
+  const normalized = value.replace(/\s+/gu, " ").trim();
+  if (normalized.length <= limit) return normalized;
+  const boundary = normalized.lastIndexOf(" ", limit - 1);
+  const end = boundary >= Math.floor(limit * 0.6) ? boundary : limit - 1;
+  return `${normalized.slice(0, end).trimEnd()}…`;
+}
+
+function catalogContent(candidate: PacketCandidate): string {
+  const hit = candidate.hit;
+  return [
+    `id=${hit.document.externalId ?? hit.documentId}`,
+    `title=${hit.title}`,
+    `type=${hit.type}`,
+    `lifecycle=${hit.lifecycle}`,
+    `refresh=${hit.refreshStatus}`,
+    `revision=${hit.revision}`,
+  ].join("; ");
+}
+
+function disclosedContent(
+  candidate: PacketCandidate,
+  requested: ContextDisclosureLevel,
+): { content: string; actual: ContextDisclosureLevel } {
+  if (requested === "L0") {
+    return { content: catalogContent(candidate), actual: "L0" };
+  }
+  if (requested === "L1") {
+    const summary = oneLineOrientation(candidate.content);
+    return {
+      content: summary || catalogContent(candidate),
+      actual: "L1",
+    };
+  }
+  if (requested === "L3") {
+    const full = candidate.fullContent?.trim();
+    if (full) return { content: full, actual: "L3" };
+  }
+  return { content: candidate.content, actual: "L2" };
+}
+
 export function contextSectionFromCandidate(
   candidate: PacketCandidate,
+  requestedContextLevel: ContextDisclosureLevel = "L2",
 ): BaseContextSection {
   const hit = candidate.hit;
+  const disclosure = disclosedContent(candidate, requestedContextLevel);
   const retrievalChannels = [
     ...new Set(
       hit.fusionContributions?.map((contribution) => contribution.channel) ??
@@ -316,8 +363,9 @@ export function contextSectionFromCandidate(
   ];
   return {
     kind: candidate.kind,
+    contextLevel: disclosure.actual,
     title: hit.title,
-    content: candidate.content,
+    content: disclosure.content,
     documentId: hit.documentId,
     vaultId: hit.vaultId,
     document: hit.document,
@@ -347,6 +395,7 @@ function metadataForSection(
 function compactSection(section: BaseContextSection): CompactPacketSection {
   return {
     kind: section.kind,
+    contextLevel: section.contextLevel,
     identity: {
       documentId: section.documentId,
       vaultId: section.vaultId,
@@ -451,6 +500,7 @@ function defaultMaxSections(_intent: string): number {
 function continuationForCandidates(
   packetContentKey: string,
   candidates: PacketCandidate[],
+  requestedContextLevel: ContextDisclosureLevel,
   count: (text: string) => number,
   reason: string,
 ): ContextPacket["continuations"][number] {
@@ -466,7 +516,11 @@ function continuationForCandidates(
       .digest("hex"),
     reason,
     remainingTokens: candidates.reduce(
-      (sum, candidate) => sum + count(candidate.content),
+      (sum, candidate) =>
+        sum +
+        count(
+          contextSectionFromCandidate(candidate, requestedContextLevel).content,
+        ),
       0,
     ),
   };
@@ -615,6 +669,7 @@ export function buildContextPacket(
     (typeof retrievalConfiguration.indexStatus === "string" &&
       retrievalConfiguration.indexStatus !== "CONSISTENT");
   const maxTokens = requestedMaxTokens(input.maxTokens);
+  const requestedContextLevel = input.requestedContextLevel ?? "L2";
   const requiresEvidence = input.intent.toUpperCase() === "SOURCE_VERIFICATION";
   const maxSectionsPerDocument = Number.isFinite(input.maxSectionsPerDocument)
     ? Math.max(1, Math.trunc(input.maxSectionsPerDocument ?? 1))
@@ -731,10 +786,12 @@ export function buildContextPacket(
                     corpusRevision: input.corpusRevision,
                     indexRevisions,
                     retrievalConfiguration,
+                    requestedContextLevel,
                   }),
                 )
                 .digest("hex"),
               omittedCandidates,
+              requestedContextLevel,
               count,
               `${omittedCandidates.length} lower-priority sections exceeded the token budget or document diversity cap.`,
             ),
@@ -770,6 +827,7 @@ export function buildContextPacket(
           corpusRevision: input.corpusRevision,
           indexRevisions,
           retrievalConfiguration,
+          requestedContextLevel,
           searchedChannels,
           sections: candidateSections,
           citations: candidateCitations,
@@ -812,7 +870,10 @@ export function buildContextPacket(
       omitted.push(candidate);
       continue;
     }
-    const section = contextSectionFromCandidate(candidate);
+    const section = contextSectionFromCandidate(
+      candidate,
+      requestedContextLevel,
+    );
     const tentative = baseEnvelope(
       [...selected.map((entry) => entry.section), section],
       omitted,
@@ -865,7 +926,9 @@ export function buildContextPacket(
         input.continuationSink?.({
           packetId: full.packetId,
           continuation,
-          sections: omitted.map(contextSectionFromCandidate),
+          sections: omitted.map((candidate) =>
+            contextSectionFromCandidate(candidate, requestedContextLevel),
+          ),
         });
       }
       return full;
@@ -940,6 +1003,7 @@ export function projectContextPacket(
         corpusRevision: packet.corpusRevision,
         status: packet.status,
         mode: packet.mode,
+        requestedContextLevel: packet.requestedContextLevel,
         scope: packet.scope,
         indexRevisions,
       },
