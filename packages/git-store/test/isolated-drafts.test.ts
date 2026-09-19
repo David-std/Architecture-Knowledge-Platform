@@ -225,14 +225,15 @@ describe("local Git source connector", () => {
       target: { kind: "REVISION", value: second },
       limit: 10,
     });
-    expect(deletion.objects).toEqual([
+    expect(deletion.objects).toHaveLength(1);
+    expect(deletion.objects[0]).toEqual(
       expect.objectContaining({
         objectId: "one.md",
         operation: "DELETE",
-        content: undefined,
         metadata: expect.objectContaining({ tombstone: true }),
       }),
-    ]);
+    );
+    expect(deletion.objects[0]).not.toHaveProperty("content");
   });
 
   it("excludes Git symlink blobs from mirrored content", async () => {
