@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import createGraph from "ngraph.graph";
 
 interface LeidenLink {
@@ -35,8 +37,12 @@ interface LeidenModule {
   ): LeidenClusters;
 }
 
-const require = createRequire(import.meta.url);
-const { detectClusters } = require("ngraph.leiden") as LeidenModule;
+const requireForResolution = createRequire(import.meta.url);
+const leidenPackageEntry = requireForResolution.resolve("ngraph.leiden");
+const leidenEsmEntry = join(dirname(leidenPackageEntry), "ngraph-leiden.es.js");
+const { detectClusters } = (await import(
+  pathToFileURL(leidenEsmEntry).href
+)) as LeidenModule;
 
 export const COMMUNITY_ALGORITHM = "LEIDEN";
 export const COMMUNITY_ALGORITHM_VERSION = "ngraph.leiden@0.3.0";
