@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   RETRIEVAL_BENCHMARK_MATRIX,
+  V03_RETRIEVAL_BASELINE,
   aggregateBenchmarkRun,
   scoreBenchmarkObservation,
   selectBenchmarkDefault,
@@ -20,8 +21,9 @@ describe("retrieval benchmark matrix", () => {
       "full-hybrid-rrf",
       "full-hybrid+rerank",
       "lexical+vector+graph+ppr",
+      "lexical+vector+graph+community-global",
     ]);
-    expect(RETRIEVAL_BENCHMARK_MATRIX).toHaveLength(11);
+    expect(RETRIEVAL_BENCHMARK_MATRIX).toHaveLength(12);
     expect(
       RETRIEVAL_BENCHMARK_MATRIX.filter(({ channels }) =>
         channels.includes("vector"),
@@ -35,6 +37,21 @@ describe("retrieval benchmark matrix", () => {
       associativePpr: true,
       channels: ["lexical", "vector", "graph"],
     });
+    expect(
+      RETRIEVAL_BENCHMARK_MATRIX.find(
+        ({ name }) => name === "lexical+vector+graph+community-global",
+      ),
+    ).toMatchObject({
+      communityGlobal: true,
+      channels: ["lexical", "vector", "graph"],
+    });
+    expect(V03_RETRIEVAL_BASELINE).toMatchObject({
+      tag: "v0.3.0",
+      commitSha: "a6bdcc38fdf026d6c353db096799366865011022",
+      benchmarkMatrixBlobSha:
+        "dca597bc97f4d3646e8d84960755ef76b5f50650",
+    });
+    expect(V03_RETRIEVAL_BASELINE.configurationNames).toHaveLength(10);
   });
 });
 
