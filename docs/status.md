@@ -11,6 +11,7 @@ Architecture Knowledge Platform is under active pre-1.0 development. The current
 - Git-backed proposals, review, validation, publication and rollback.
 - Durable jobs, event delivery, retries, quarantine and reconciliation.
 - Incremental lexical/vector/graph/context projection updates.
+- Append-only temporal truth with valid-time/recorded-time queries, pre-fusion derived-support validation and versioned truth-maintenance projections.
 - Evaluation packs, retrieval benchmarks and regression tracking.
 - Operator search, graph, source, job, review, evaluation and health views.
 - OpenTelemetry instrumentation, audit export, backup and isolated restore workflows.
@@ -27,6 +28,7 @@ Imported vaults are treated as external inputs. Source-specific curation rules b
 - Authorization is enforced at the application layer; database row-level security is not the primary isolation boundary.
 - Raw backups are integrity-checked but encryption and remote replication remain deployment responsibilities.
 - Optional retrieval and extraction quality depends on the selected provider and corpus; synthetic or fixture benchmarks are not broad quality guarantees.
+- Derived truth-maintenance projections are rebuildable operational state. Retrieval validates support against the captured truth revision before RRF even when that projection is missing or delayed; physical historical vectors/dependencies are not deleted to manufacture freshness.
 - Human review remains the authority for canonical publication; generated content and provider responses are untrusted until validated and approved.
 
 ## Verification
