@@ -48,8 +48,7 @@ describe("retrieval benchmark matrix", () => {
     expect(V03_RETRIEVAL_BASELINE).toMatchObject({
       tag: "v0.3.0",
       commitSha: "a6bdcc38fdf026d6c353db096799366865011022",
-      benchmarkMatrixBlobSha:
-        "dca597bc97f4d3646e8d84960755ef76b5f50650",
+      benchmarkMatrixBlobSha: "dca597bc97f4d3646e8d84960755ef76b5f50650",
     });
     expect(V03_RETRIEVAL_BASELINE.configurationNames).toHaveLength(10);
   });
