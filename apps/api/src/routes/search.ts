@@ -3482,12 +3482,47 @@ export function registerSearchRoutes(
                 source: "v1-context",
               },
               retrieve: reasoningRetrieval,
+              traceSink: {
+                persist: async (trace) => {
+                  await db.pool.query(
+                    `insert into reasoning_execution_traces(
+                       space_id,actor_id,principal_id,request_id,vault_ids,
+                       plan_id,schema_version,intent,revision_set_hash,
+                       started_at,completed_at,status,steps,warnings,budget
+                     ) values(
+                       $1,$2,$3,$4,$5::uuid[],$6,$7,$8,$9,
+                       $10::timestamptz,$11::timestamptz,$12,
+                       $13::jsonb,$14::jsonb,$15::jsonb
+                     )`,
+                    [
+                      requestedSpace,
+                      actor.id,
+                      actor.principalId,
+                      request.id,
+                      vaultIds,
+                      trace.planId,
+                      trace.schemaVersion,
+                      trace.intent,
+                      trace.revisionSetHash,
+                      trace.startedAt,
+                      trace.completedAt,
+                      trace.status,
+                      JSON.stringify(trace.steps),
+                      JSON.stringify(trace.warnings),
+                      JSON.stringify(trace.budget),
+                    ],
+                  );
+                },
+              },
               ...(dependencies.contextTokenizer
                 ? { tokenizer: dependencies.contextTokenizer }
                 : {}),
               contextLevel: requestedContextLevel,
               contextMaxTokens: maxTokens,
             });
+            if (reasoned.execution.tracePersistence !== "PERSISTED") {
+              throw new Error("REASONING_TRACE_PERSIST_FAILED");
+            }
             hits = reasoned.hits;
             reasoningTrace = reasoned.reasoningTrace;
             reasoningExecutionMode = "PLAN";

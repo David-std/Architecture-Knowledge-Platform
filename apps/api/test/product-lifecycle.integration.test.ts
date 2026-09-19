@@ -769,6 +769,7 @@ describe("product lifecycle E2E", () => {
           requested: string;
           execution: string;
           trace: {
+            planId: string;
             status: string;
             steps: Array<{ operator: string; status: string }>;
           };
@@ -794,6 +795,32 @@ describe("product lifecycle E2E", () => {
         section.content.includes(revisionMarker),
       ),
     ).toBe(true);
+
+    const persistedReasoning = await db.pool.query<{
+      status: string;
+      intent: string;
+      steps: Array<{ operator: string; status: string }>;
+      vault_ids: string[];
+    }>(
+      `select status,intent,steps,vault_ids
+         from reasoning_execution_traces
+        where space_id=$1 and plan_id=$2
+        order by created_at desc
+        limit 1`,
+      [
+        defaultSpace,
+        reasonedContextBody.retrievalConfiguration.reasoning.trace.planId,
+      ],
+    );
+    expect(persistedReasoning.rows[0]).toMatchObject({
+      status: "SUCCESS",
+      intent: "CONCEPTUAL",
+      vault_ids: [vaultId],
+    });
+    expect(persistedReasoning.rows[0]?.steps.at(-1)).toMatchObject({
+      operator: "BUILD_CONTEXT",
+      status: "SUCCESS",
+    });
 
     const catalogContext = await app.inject({
       method: "POST",
