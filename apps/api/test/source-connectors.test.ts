@@ -96,6 +96,7 @@ describe("source connector webhook signatures", () => {
         dataResidency: "LOCAL",
         attachments: { supported: false },
         rateLimit: { kind: "NONE" },
+        checkpointModel: "SOURCE_SEQUENCE",
         deletionPropagation: "TOMBSTONE",
         sourceVersioning: true,
         contentTrust: "UNTRUSTED_EXTERNAL",

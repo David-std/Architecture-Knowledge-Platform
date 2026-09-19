@@ -158,11 +158,12 @@ describe("local Git source connector", () => {
     expect(await connector.describe()).toMatchObject({
       connectorId: "fixture-git",
       incremental: { cursor: true, webhook: false },
+      checkpointModel: "REVISION",
       deletionPropagation: "TOMBSTONE",
       contentTrust: "UNTRUSTED_EXTERNAL",
     });
 
-    const firstPage = await connector.pull({
+    const firstPage = await connector.pullPage({
       from: { kind: "REVISION", value: base },
       target: { kind: "REVISION", value: first },
       limit: 1,
@@ -178,7 +179,7 @@ describe("local Git source connector", () => {
     expect(firstPage.nextPageCursor).not.toBeNull();
 
     await expect(
-      connector.pull({
+      connector.pullPage({
         from: { kind: "REVISION", value: base },
         target: { kind: "REVISION", value: base },
         pageCursor: firstPage.nextPageCursor ?? undefined,
@@ -186,7 +187,7 @@ describe("local Git source connector", () => {
       }),
     ).rejects.toThrow("SOURCE_CONNECTOR_CURSOR_SCOPE_MISMATCH");
 
-    const secondPage = await connector.pull({
+    const secondPage = await connector.pullPage({
       from: { kind: "REVISION", value: base },
       target: { kind: "REVISION", value: first },
       pageCursor: firstPage.nextPageCursor ?? undefined,
@@ -194,6 +195,17 @@ describe("local Git source connector", () => {
     });
     expect(secondPage.completed).toBe(true);
     expect(secondPage.objects).toHaveLength(1);
+
+    const streamed: string[] = [];
+    for await (const object of connector.pull({
+      scope: {},
+      from: { kind: "REVISION", value: base },
+      target: { kind: "REVISION", value: first },
+      pageSize: 1,
+    })) {
+      streamed.push(object.objectId);
+    }
+    expect(streamed.sort()).toEqual(["one.md", "two.md"]);
 
     await execFileAsync("git", ["-C", root, "rm", "one.md"]);
     await execFileAsync("git", [
@@ -208,7 +220,7 @@ describe("local Git source connector", () => {
       "delete connector fixture",
     ]);
     const second = await store.revision();
-    const deletion = await connector.pull({
+    const deletion = await connector.pullPage({
       from: { kind: "REVISION", value: first },
       target: { kind: "REVISION", value: second },
       limit: 10,
@@ -251,7 +263,7 @@ describe("local Git source connector", () => {
     ]);
     const target = await store.revision();
     const connector = new LocalGitSourceConnector(store);
-    const page = await connector.pull({
+    const page = await connector.pullPage({
       from: { kind: "REVISION", value: base },
       target: { kind: "REVISION", value: target },
       limit: 10,

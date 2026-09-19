@@ -137,6 +137,7 @@ describeDb("continuous assurance detector execution", () => {
         dataResidency: "LOCAL",
         attachments: { supported: false },
         rateLimit: { kind: "NONE" },
+        checkpointModel: "SOURCE_SEQUENCE",
         deletionPropagation: "TOMBSTONE",
         sourceVersioning: true,
         freshnessSlaSeconds: 60,

@@ -74,6 +74,7 @@ describeDb("authenticated generic source connector webhook", () => {
         dataResidency: "LOCAL",
         attachments: { supported: false },
         rateLimit: { kind: "NONE" },
+        checkpointModel: "SOURCE_SEQUENCE",
         deletionPropagation: "TOMBSTONE",
         sourceVersioning: true,
         contentTrust: "UNTRUSTED_EXTERNAL",

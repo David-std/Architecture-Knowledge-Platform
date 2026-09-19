@@ -80,7 +80,15 @@ export interface KnowledgeRelation {
 }
 
 export type SourceConnectorPermissionFidelity =
-  "SOURCE_ACL_EXACT" | "SOURCE_ACL_MAPPED" | "WORKSPACE_WIDE" | "NONE";
+  | "SOURCE_ACL_EXACT"
+  | "SOURCE_ACL_MAPPED"
+  | "WORKSPACE_WIDE"
+  | "NONE";
+
+export type SourceConnectorCheckpointModel =
+  | "REVISION"
+  | "OPAQUE_CURSOR"
+  | "SOURCE_SEQUENCE";
 
 export interface SourceConnectorDescriptor {
   schemaVersion: 1;
@@ -105,14 +113,21 @@ export interface SourceConnectorDescriptor {
         requestsPerMinute: number;
         burst?: number;
       };
+  checkpointModel: SourceConnectorCheckpointModel;
   deletionPropagation: "TOMBSTONE" | "NONE";
   sourceVersioning: boolean;
   freshnessSlaSeconds?: number;
   contentTrust: "UNTRUSTED_EXTERNAL";
 }
 
+export interface SourceConnectorScope {
+  organizationId?: string;
+  spaceId?: string;
+  vaultId?: string;
+}
+
 export interface SourceConnectorCheckpoint {
-  kind: "REVISION" | "OPAQUE_CURSOR";
+  kind: SourceConnectorCheckpointModel;
   value: string;
 }
 
@@ -141,9 +156,12 @@ export interface SourceConnectorObject {
   metadata: Record<string, unknown>;
 }
 
+/**
+ * Deterministic page primitive retained for adapters that need resumable,
+ * bounded implementation-level pagination.
+ */
 export interface SourceConnectorPullRequest {
   from?: SourceConnectorCheckpoint;
-  /** Fixed upper-bound checkpoint captured before pagination starts. */
   target: SourceConnectorCheckpoint;
   pageCursor?: string;
   limit: number;
@@ -154,6 +172,19 @@ export interface SourceConnectorPullPage {
   target: SourceConnectorCheckpoint;
   nextPageCursor: string | null;
   completed: boolean;
+}
+
+export interface SourceConnectorPullInput {
+  scope: SourceConnectorScope;
+  from?: SourceConnectorCheckpoint;
+  target: SourceConnectorCheckpoint;
+  pageSize?: number;
+}
+
+export interface SourceConnectorFetchInput {
+  scope: SourceConnectorScope;
+  objectId: string;
+  checkpoint?: SourceConnectorCheckpoint;
 }
 
 export interface SourceConnectorWebhookRequest {
@@ -169,12 +200,11 @@ export interface SourceConnectorWebhookVerification {
 }
 
 export interface SourceConnectorPort {
-  describe(): Promise<SourceConnectorDescriptor>;
-  checkpoint(): Promise<SourceConnectorCheckpoint>;
-  pull(request: SourceConnectorPullRequest): Promise<SourceConnectorPullPage>;
+  describe(): SourceConnectorDescriptor;
+  checkpoint(scope: SourceConnectorScope): Promise<SourceConnectorCheckpoint>;
+  pull(input: SourceConnectorPullInput): AsyncIterable<SourceConnectorObject>;
   fetchById?(
-    objectId: string,
-    checkpoint?: SourceConnectorCheckpoint,
+    input: SourceConnectorFetchInput,
   ): Promise<SourceConnectorObject | null>;
   verifyWebhook?(
     request: SourceConnectorWebhookRequest,

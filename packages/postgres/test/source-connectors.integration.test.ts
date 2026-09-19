@@ -67,6 +67,7 @@ describeDb("source connector no-gap inbox", () => {
       descriptor: {
         schemaVersion: 1,
         sourceSystem: "generic-test",
+        checkpointModel: "SOURCE_SEQUENCE",
         contentTrust: "UNTRUSTED_EXTERNAL",
       },
     });
@@ -263,6 +264,7 @@ describeDb("source connector no-gap inbox", () => {
       descriptor: {
         schemaVersion: 1,
         sourceSystem: "generic-test-v2",
+        checkpointModel: "SOURCE_SEQUENCE",
         contentTrust: "UNTRUSTED_EXTERNAL",
       },
     });

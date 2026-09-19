@@ -49,6 +49,7 @@ const Descriptor = z
         })
         .strict(),
     ]),
+    checkpointModel: z.literal("SOURCE_SEQUENCE"),
     deletionPropagation: z.enum(["TOMBSTONE", "NONE"]),
     sourceVersioning: z.boolean(),
     freshnessSlaSeconds: z.number().int().positive().max(31_536_000).optional(),

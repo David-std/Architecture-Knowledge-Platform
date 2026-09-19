@@ -2,6 +2,17 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { lstat, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import type {
+  SourceConnectorCheckpoint,
+  SourceConnectorDescriptor,
+  SourceConnectorFetchInput,
+  SourceConnectorObject,
+  SourceConnectorPort,
+  SourceConnectorPullInput,
+  SourceConnectorPullPage,
+  SourceConnectorPullRequest,
+  SourceConnectorScope,
+} from "@akp/domain";
 
 const exec = promisify(execFile);
 export class GitKnowledgeFileNotFoundError extends Error {
@@ -19,80 +30,6 @@ function isMissingGitPathError(error: unknown): boolean {
   return /path .* does not exist|exists on disk, but not in|path .* not in .* tree/i.test(
     detail,
   );
-}
-
-type SourceConnectorCheckpoint = {
-  kind: "REVISION" | "OPAQUE_CURSOR";
-  value: string;
-};
-
-type SourceConnectorDescriptor = {
-  schemaVersion: 1;
-  connectorId: string;
-  sourceSystem: string;
-  objectTypes: string[];
-  incremental: { cursor: boolean; webhook: boolean };
-  permissionFidelity:
-    "SOURCE_ACL_EXACT" | "SOURCE_ACL_MAPPED" | "WORKSPACE_WIDE" | "NONE";
-  replication: "FULL_MIRROR" | "METADATA_ONLY" | "REFERENCE";
-  dataResidency: "LOCAL" | "ORG" | "EXTERNAL";
-  attachments: { supported: boolean; maxBytes?: number };
-  rateLimit:
-    | { kind: "NONE" }
-    | { kind: "DECLARED"; requestsPerMinute: number; burst?: number };
-  deletionPropagation: "TOMBSTONE" | "NONE";
-  sourceVersioning: boolean;
-  contentTrust: "UNTRUSTED_EXTERNAL";
-};
-
-type SourceConnectorObject = {
-  objectId: string;
-  objectType: string;
-  sourceSystem: string;
-  sourceVersion: string;
-  operation: "UPSERT" | "DELETE";
-  path?: string;
-  title?: string;
-  content?: string;
-  contentType?: string;
-  contentTrust: "UNTRUSTED_EXTERNAL";
-  permissions: {
-    fidelity:
-      "SOURCE_ACL_EXACT" | "SOURCE_ACL_MAPPED" | "WORKSPACE_WIDE" | "NONE";
-    uncertain: boolean;
-    aclFingerprint?: string;
-  };
-  attachments: Array<{
-    id: string;
-    name: string;
-    contentType?: string;
-    sizeBytes?: number;
-  }>;
-  metadata: Record<string, unknown>;
-};
-
-type SourceConnectorPullRequest = {
-  from?: SourceConnectorCheckpoint;
-  target: SourceConnectorCheckpoint;
-  pageCursor?: string;
-  limit: number;
-};
-
-type SourceConnectorPullPage = {
-  objects: SourceConnectorObject[];
-  target: SourceConnectorCheckpoint;
-  nextPageCursor: string | null;
-  completed: boolean;
-};
-
-interface SourceConnectorPort {
-  describe(): Promise<SourceConnectorDescriptor>;
-  checkpoint(): Promise<SourceConnectorCheckpoint>;
-  pull(request: SourceConnectorPullRequest): Promise<SourceConnectorPullPage>;
-  fetchById?(
-    objectId: string,
-    checkpoint?: SourceConnectorCheckpoint,
-  ): Promise<SourceConnectorObject | null>;
 }
 
 export class GitKnowledgeStore {
@@ -657,7 +594,7 @@ export class LocalGitSourceConnector implements SourceConnectorPort {
     }
   }
 
-  async describe(): Promise<SourceConnectorDescriptor> {
+  describe(): SourceConnectorDescriptor {
     return {
       schemaVersion: 1,
       connectorId: this.connectorId,
@@ -669,13 +606,16 @@ export class LocalGitSourceConnector implements SourceConnectorPort {
       dataResidency: "LOCAL",
       attachments: { supported: false },
       rateLimit: { kind: "NONE" },
+      checkpointModel: "REVISION",
       deletionPropagation: "TOMBSTONE",
       sourceVersioning: true,
       contentTrust: "UNTRUSTED_EXTERNAL",
     };
   }
 
-  async checkpoint(): Promise<SourceConnectorCheckpoint> {
+  async checkpoint(
+    _scope: SourceConnectorScope = {},
+  ): Promise<SourceConnectorCheckpoint> {
     return { kind: "REVISION", value: await this.store.revision() };
   }
 
@@ -737,7 +677,7 @@ export class LocalGitSourceConnector implements SourceConnectorPort {
     };
   }
 
-  async pull(
+  async pullPage(
     request: SourceConnectorPullRequest,
   ): Promise<SourceConnectorPullPage> {
     if (
@@ -831,13 +771,52 @@ export class LocalGitSourceConnector implements SourceConnectorPort {
     };
   }
 
+  async *pull(
+    input: SourceConnectorPullInput,
+  ): AsyncIterable<SourceConnectorObject> {
+    const limit = input.pageSize ?? 100;
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500) {
+      throw new Error("SOURCE_CONNECTOR_PULL_LIMIT_INVALID");
+    }
+    let pageCursor: string | undefined;
+    do {
+      const page = await this.pullPage({
+        from: input.from,
+        target: input.target,
+        pageCursor,
+        limit,
+      });
+      for (const object of page.objects) {
+        yield object;
+      }
+      pageCursor = page.nextPageCursor ?? undefined;
+    } while (pageCursor);
+  }
+
+  async fetchById(
+    input: SourceConnectorFetchInput,
+  ): Promise<SourceConnectorObject | null>;
   async fetchById(
     objectId: string,
     checkpoint?: SourceConnectorCheckpoint,
+  ): Promise<SourceConnectorObject | null>;
+  async fetchById(
+    inputOrObjectId: SourceConnectorFetchInput | string,
+    checkpoint?: SourceConnectorCheckpoint,
   ): Promise<SourceConnectorObject | null> {
-    const revision = checkpoint
-      ? this.assertRevisionCheckpoint(checkpoint)
-      : (await this.checkpoint()).value;
+    const objectId =
+      typeof inputOrObjectId === "string"
+        ? inputOrObjectId
+        : inputOrObjectId.objectId;
+    const resolvedCheckpoint =
+      typeof inputOrObjectId === "string"
+        ? checkpoint
+        : inputOrObjectId.checkpoint;
+    const scope =
+      typeof inputOrObjectId === "string" ? {} : inputOrObjectId.scope;
+    const revision = resolvedCheckpoint
+      ? this.assertRevisionCheckpoint(resolvedCheckpoint)
+      : (await this.checkpoint(scope)).value;
     const entry = (await this.store.listTreeEntries(revision)).find(
       (candidate) => candidate.path === objectId,
     );
