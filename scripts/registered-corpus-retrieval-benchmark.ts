@@ -6,11 +6,15 @@ import { performance } from "node:perf_hooks";
 import {
   aggregateBenchmarkRun,
   RETRIEVAL_BENCHMARK_MATRIX,
+  V03_RETRIEVAL_BASELINE,
   selectBenchmarkDefault,
   type BenchmarkConfiguration,
   type BenchmarkObservation,
 } from "../packages/evaluation/src/index.js";
-import { buildEmbeddingIndex } from "../packages/indexing/src/index.js";
+import {
+  buildEmbeddingIndex,
+  rebuildCommunityIndex,
+} from "../packages/indexing/src/index.js";
 import { Postgres } from "../packages/postgres/src/index.js";
 import {
   LOCAL_MULTILINGUAL_E5_SMALL_DESCRIPTOR,
@@ -302,6 +306,22 @@ async function seedCorpus(
   }
 }
 
+async function buildCommunityIndexes(
+  db: Postgres,
+  manifest: ResolvedManifest,
+  fixture: Fixture,
+): Promise<void> {
+  for (const vault of manifest.vaults) {
+    const vaultId = fixture.vaultIds.get(vault.id);
+    if (!vaultId) throw new Error(`Missing vault mapping for ${vault.id}`);
+    await rebuildCommunityIndex(db, {
+      spaceId: fixture.spaceId,
+      vaultId,
+      graphRevision: fixture.corpusRevision,
+    });
+  }
+}
+
 async function cleanupCorpus(db: Postgres, fixture: Fixture): Promise<void> {
   const vaultIds = [...fixture.vaultIds.values()];
   await db.pool.query("delete from knowledge_relations where space_id=$1", [
@@ -349,6 +369,7 @@ function benchmarkConfigurations(): BenchmarkConfiguration[] {
     "full-hybrid-rrf",
     "full-hybrid+rerank",
     "lexical+vector+graph+ppr",
+    "lexical+vector+graph+community-global",
   ]);
   return RETRIEVAL_BENCHMARK_MATRIX.filter((configuration) =>
     required.has(configuration.name),
@@ -439,7 +460,16 @@ async function executeCase(
               },
             },
           }
-        : {}),
+        : configuration.communityGlobal
+          ? {
+              retrievalPolicy: {
+                graphMode: "GLOBAL" as const,
+                channels: {
+                  COMMUNITY: { enabled: true, weight: 1.1 },
+                },
+              },
+            }
+          : {}),
       queryEmbeddingService,
       warningSink: warnings,
       availableChannelSink: availableChannels,
@@ -517,6 +547,7 @@ async function main(): Promise<void> {
 
   try {
     await seedCorpus(db, dataset.manifest, fixture);
+    await buildCommunityIndexes(db, dataset.manifest, fixture);
     await adapter.load();
     const generations = await buildRealEmbeddings(
       db,
@@ -566,8 +597,9 @@ async function main(): Promise<void> {
 
     const candidateDecision = selectBenchmarkDefault(runs);
     const report = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       generatedAt: new Date().toISOString(),
+      historicalBaseline: V03_RETRIEVAL_BASELINE,
       evidence: {
         level: "REGISTERED_PUBLIC_PRODUCT_CORPUS_REAL_RETRIEVAL_PIPELINE",
         qualityClaim: "MEASURED_ON_PUBLIC_PRODUCT_DOCS_ONLY",
