@@ -1184,18 +1184,10 @@ export async function queryKnowledge(
   const plan =
     options.plan ?? planQuery(input.query, input.intent, capabilities);
   const effectiveStrategy = options.retrievalPolicy?.graphMode ?? plan.strategy;
-  const explicitChannels = options.retrievalPolicy?.channels ?? {};
   const retrievalPolicy = resolveRetrievalPolicy({
     ...(options.retrievalPolicy ?? {}),
     graphMode: effectiveStrategy,
     truthValidation: truthConsistency,
-    channels: {
-      ...explicitChannels,
-      ...((effectiveStrategy === "GLOBAL" || effectiveStrategy === "DRIFT") &&
-      explicitChannels.COMMUNITY === undefined
-        ? { COMMUNITY: { enabled: true } }
-        : {}),
-    },
   });
   const effectiveCapabilities = options.plan?.capabilities ?? capabilities;
   const graphPolicy = normalizeGraphPolicy(

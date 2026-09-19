@@ -333,6 +333,26 @@ describe("recursive graph retrieval PostgreSQL integration", () => {
           expect(contribution?.candidateRevision).toBe(fixture.corpusRevision);
         }
 
+        const driftWithoutOptIn = await queryKnowledge(
+          db,
+          { ...searchRequest(fixture), query: "GRAPH-A" },
+          {
+            vaultIds: [fixture.vaultId],
+            plan: planQuery("GRAPH-A", "CONCEPTUAL", {
+              graphConsistent: true,
+              communityAvailable: true,
+            }),
+            graphScopes: [{ vaultId: fixture.vaultId, pathPrefix: "allowed" }],
+          },
+        );
+        expect(
+          driftWithoutOptIn.some((hit) =>
+            (hit.fusionContributions ?? []).some(
+              (contribution) => contribution.channel === "community",
+            ),
+          ),
+        ).toBe(false);
+
         const drift = await queryKnowledge(
           db,
           { ...searchRequest(fixture), query: "GRAPH-A" },
@@ -343,6 +363,11 @@ describe("recursive graph retrieval PostgreSQL integration", () => {
               communityAvailable: true,
             }),
             graphScopes: [{ vaultId: fixture.vaultId, pathPrefix: "allowed" }],
+            retrievalPolicy: {
+              channels: {
+                COMMUNITY: { enabled: true, weight: 1.1 },
+              },
+            },
           },
         );
         const driftCommunityHits = drift.filter((hit) =>
@@ -378,6 +403,11 @@ describe("recursive graph retrieval PostgreSQL integration", () => {
               communityAvailable: true,
             }),
             graphScopes: [{ vaultId: fixture.vaultId, pathPrefix: "allowed" }],
+            retrievalPolicy: {
+              channels: {
+                COMMUNITY: { enabled: true, weight: 1.1 },
+              },
+            },
           },
         );
         expect(
@@ -399,6 +429,11 @@ describe("recursive graph retrieval PostgreSQL integration", () => {
               communityAvailable: true,
             }),
             graphScopes: [{ vaultId: fixture.vaultId, pathPrefix: "allowed" }],
+            retrievalPolicy: {
+              channels: {
+                COMMUNITY: { enabled: true, weight: 1.1 },
+              },
+            },
           },
         );
         expect(
@@ -435,6 +470,11 @@ describe("recursive graph retrieval PostgreSQL integration", () => {
               graphScopes: [
                 { vaultId: fixture.vaultId, pathPrefix: "allowed" },
               ],
+              retrievalPolicy: {
+                channels: {
+                  COMMUNITY: { enabled: true, weight: 1.1 },
+                },
+              },
             },
           );
           expect(
