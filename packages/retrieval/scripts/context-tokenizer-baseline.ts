@@ -16,6 +16,7 @@ type TokenizationRegressionCase = {
     english: string;
     spanish: string;
     code: string;
+    path: string;
   };
   identifiers: string[];
 };
@@ -72,6 +73,7 @@ async function loadTokenizationCase(): Promise<{
     !testCase.samples?.english ||
     !testCase.samples.spanish ||
     !testCase.samples.code ||
+    !testCase.samples.path ||
     !Array.isArray(testCase.identifiers) ||
     testCase.identifiers.length === 0
   ) {
