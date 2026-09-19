@@ -3053,7 +3053,9 @@ export function registerSearchRoutes(
       const missingConflictMemberIds = [
         ...new Set(
           conflicts.rows.flatMap((conflict) =>
-            (conflict.members ?? []).filter((documentId) => !hitIds.has(documentId)),
+            (conflict.members ?? []).filter(
+              (documentId) => !hitIds.has(documentId),
+            ),
           ),
         ),
       ];
@@ -3133,9 +3135,7 @@ export function registerSearchRoutes(
                     pathAuthorizer(
                       String(citation.path ?? ""),
                       String(
-                        citation.vaultId ??
-                          citation.vault_id ??
-                          row.vault_id,
+                        citation.vaultId ?? citation.vault_id ?? row.vault_id,
                       ),
                     ),
                 )
@@ -3150,7 +3150,9 @@ export function registerSearchRoutes(
           const citations = [
             ...new Set([
               ...documentCitations,
-              ...((row.evidence_locators ?? []) as Array<Record<string, unknown>>)
+              ...(
+                (row.evidence_locators ?? []) as Array<Record<string, unknown>>
+              )
                 .filter((locator) =>
                   evidenceLocatorAllowed(locator, rowPathAuthorizer),
                 )
@@ -3198,11 +3200,10 @@ export function registerSearchRoutes(
         ),
       }));
       const conflictCoverageGaps = conflicts.rows
-        .filter(
-          (conflict) =>
-            (conflict.members ?? []).some(
-              (documentId) => !contextHitIds.has(documentId),
-            ),
+        .filter((conflict) =>
+          (conflict.members ?? []).some(
+            (documentId) => !contextHitIds.has(documentId),
+          ),
         )
         .map(
           (conflict) =>
