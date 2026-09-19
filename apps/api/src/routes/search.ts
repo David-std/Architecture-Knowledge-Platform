@@ -35,6 +35,7 @@ import {
   QueryEmbeddingService,
   rehydrateStructuralContext,
   reciprocalRankFusion,
+  validateQueryTransformationResult,
   rerankSearchHits,
   resolvePersonalizedPageRankPolicy,
   resolveRetrievalPolicy,
@@ -46,6 +47,9 @@ import {
   type PersonalizedPageRankPolicy,
   type QueryPlan,
   type QueryPlannerCapabilities,
+  type QueryTransformationKind,
+  type QueryTransformationVariant,
+  type QueryTransformerPort,
   type RetrievalCandidate,
   type RetrievalPolicyInput,
   type Tokenizer,
@@ -178,6 +182,8 @@ interface LexicalSearchRow {
   document_revision: string;
   score: number;
   match_reason: string;
+  query_variant_kind?: QueryTransformationKind;
+  query_variant_ordinal?: number;
 }
 
 interface DocumentChannelRow {
@@ -374,6 +380,11 @@ export interface RetrievalExecutionOptions {
   graphScopes?: Array<{ vaultId: string; pathPrefix: string | null }>;
   allowVectorForBenchmark?: boolean;
   deterministicRerank?: boolean;
+  /** Optional P6.7 query assistance. It never receives authorization/truth controls. */
+  queryTransformer?: QueryTransformerPort;
+  queryTransformMaxVariants?: number;
+  queryTransformActorId?: string;
+  queryTransformTraceId?: string;
   /** Test/provider injection seam; production resolves the active descriptor. */
   queryEmbeddingService?: QueryEmbeddingService;
   /** Safe capability warnings accumulated without changing the legacy hit return type. */
@@ -393,6 +404,8 @@ export interface RetrievalExecutionOptions {
 export interface SearchRouteDependencies {
   /** Active model/agent tokenizer when the runtime provides one. */
   contextTokenizer?: Tokenizer;
+  /** Optional experimental query transformer, normally controlled by feature flag. */
+  queryTransformer?: QueryTransformerPort;
 }
 
 interface StoredContextPacketRow {
@@ -568,6 +581,8 @@ interface VectorSearchRow {
   unit_type: string;
   document_revision: string;
   score: number;
+  query_variant_kind?: QueryTransformationKind;
+  query_variant_ordinal?: number;
 }
 
 function vectorTruthRef(row: VectorSearchRow): string {
@@ -922,6 +937,148 @@ export function sanitizeEvidenceLocator(value: unknown): unknown {
     Object.entries(value as Record<string, unknown>)
       .filter(([key]) => !UNSAFE_LOCATOR_KEY.test(key))
       .map(([key, entry]) => [key, sanitizeEvidenceLocator(entry)]),
+  );
+}
+
+interface AssistedRetrievalQuery {
+  query: string;
+  variant?: QueryTransformationVariant;
+}
+
+async function transformedRetrievalQueries(input: {
+  db: Postgres;
+  originalQuery: string;
+  intent: string;
+  strategy: string;
+  spaceId: string;
+  vaultIds: string[];
+  graphScopes: GraphScope[];
+  truthSnapshot: TruthSnapshot;
+  assistedChannels: string[];
+  options: RetrievalExecutionOptions;
+}): Promise<AssistedRetrievalQuery[]> {
+  const transformer = input.options.queryTransformer;
+  if (!transformer || input.assistedChannels.length === 0) {
+    return [{ query: input.originalQuery }];
+  }
+
+  try {
+    const transformed = validateQueryTransformationResult(
+      await transformer.transform({
+        originalQuery: input.originalQuery,
+        intent: input.intent,
+        ...(input.options.queryTransformMaxVariants === undefined
+          ? {}
+          : { maxVariants: input.options.queryTransformMaxVariants }),
+      }),
+      input.originalQuery,
+      input.options.queryTransformMaxVariants,
+    );
+
+    const persisted = await input.db.pool.query<{ id: string }>(
+      `
+      insert into retrieval_query_traces(
+        space_id,actor_id,trace_id,original_query,original_query_hash,
+        intent,strategy,transformer_id,transform_kind,variants,variant_count,
+        assisted_channels,vault_ids,scope,truth_snapshot
+      ) values(
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12::text[],$13::uuid[],
+        $14::jsonb,$15::jsonb
+      )
+      returning id
+      `,
+      [
+        input.spaceId,
+        input.options.queryTransformActorId ?? null,
+        input.options.queryTransformTraceId ?? null,
+        transformed.originalQuery,
+        createHash("sha256").update(transformed.originalQuery).digest("hex"),
+        input.intent,
+        input.strategy,
+        transformed.transformerId,
+        transformed.kind,
+        JSON.stringify(transformed.variants),
+        transformed.variants.length,
+        input.assistedChannels,
+        input.vaultIds,
+        JSON.stringify({
+          vaultIds: input.vaultIds,
+          graphScopes: input.graphScopes,
+        }),
+        JSON.stringify(input.truthSnapshot),
+      ],
+    );
+    if (!persisted.rows[0]?.id) {
+      input.options.warningSink?.push("QUERY_TRANSFORM_TRACE_NOT_PERSISTED");
+      return [{ query: input.originalQuery }];
+    }
+
+    return [
+      { query: input.originalQuery },
+      ...transformed.variants.map((variant) => ({
+        query: variant.query,
+        variant,
+      })),
+    ];
+  } catch (error) {
+    const code =
+      error instanceof Error ? error.message : "QUERY_TRANSFORM_FAILED";
+    input.options.warningSink?.push(`QUERY_TRANSFORM_SKIPPED:${code}`);
+    return [{ query: input.originalQuery }];
+  }
+}
+
+function lexicalRowKey(row: LexicalSearchRow): string {
+  return `${row.id}:${row.unit_id ?? ""}`;
+}
+
+function mergeLexicalRows(rows: readonly LexicalSearchRow[]): LexicalSearchRow[] {
+  const best = new Map<string, LexicalSearchRow>();
+  for (const row of rows) {
+    const key = lexicalRowKey(row);
+    const current = best.get(key);
+    if (
+      !current ||
+      Number(row.score) > Number(current.score) ||
+      (Number(row.score) === Number(current.score) &&
+        current.query_variant_kind !== undefined &&
+        row.query_variant_kind === undefined)
+    ) {
+      best.set(key, row);
+    }
+  }
+  return [...best.values()].sort(
+    (left, right) =>
+      Number(right.score) - Number(left.score) ||
+      String(left.id).localeCompare(String(right.id)) ||
+      String(left.unit_id ?? "").localeCompare(String(right.unit_id ?? "")),
+  );
+}
+
+function vectorRowKey(row: VectorSearchRow): string {
+  return `${row.generation_id}:${row.unit_id}`;
+}
+
+function mergeVectorRows(rows: readonly VectorSearchRow[]): VectorSearchRow[] {
+  const best = new Map<string, VectorSearchRow>();
+  for (const row of rows) {
+    const key = vectorRowKey(row);
+    const current = best.get(key);
+    if (
+      !current ||
+      Number(row.score) > Number(current.score) ||
+      (Number(row.score) === Number(current.score) &&
+        current.query_variant_kind !== undefined &&
+        row.query_variant_kind === undefined)
+    ) {
+      best.set(key, row);
+    }
+  }
+  return [...best.values()].sort(
+    (left, right) =>
+      Number(right.score) - Number(left.score) ||
+      String(left.id).localeCompare(String(right.id)) ||
+      String(left.unit_id).localeCompare(String(right.unit_id)),
   );
 }
 
