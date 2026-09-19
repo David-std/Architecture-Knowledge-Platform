@@ -231,9 +231,32 @@ describe("benchmark metrics", () => {
       })),
     );
     const decision = selectBenchmarkDefault([run, vector]);
-    expect(decision.selectedDefault).toBe("exact+lexical");
+    expect(decision.selectedDefault).toBeNull();
+    expect(decision.measuredCandidate).toBe("exact+lexical");
     expect(decision.vectorActivatedByDefault).toBe(false);
     expect(decision.baseline).toBe("exact+lexical");
+    expect(decision.promotionEligible).toBe(false);
+    expect(decision.missingPromotionGates).toEqual([
+      "comparableEvaluation",
+      "operationalCostAcceptable",
+      "degradedBehaviorUnderstood",
+      "authorizationTruthPassed",
+      "rollbackAvailable",
+    ]);
+
+    const promotable = selectBenchmarkDefault([run, vector], {
+      comparableEvaluation: true,
+      operationalCostAcceptable: true,
+      degradedBehaviorUnderstood: true,
+      authorizationTruthPassed: true,
+      rollbackAvailable: true,
+    });
+    expect(promotable).toMatchObject({
+      selectedDefault: "exact+lexical",
+      measuredCandidate: "exact+lexical",
+      promotionEligible: true,
+      vectorActivatedByDefault: false,
+    });
   });
 
   it("does not select a vector-only or empty benchmark as a runtime default", () => {
@@ -249,9 +272,11 @@ describe("benchmark metrics", () => {
     ]);
     expect(selectBenchmarkDefault([vectorOnly])).toMatchObject({
       selectedDefault: null,
+      measuredCandidate: null,
       vectorActivatedByDefault: false,
       baseline: null,
       bestVector: "vector-only",
+      promotionEligible: false,
     });
 
     const emptyBaseline = aggregateBenchmarkRun(
@@ -260,8 +285,10 @@ describe("benchmark metrics", () => {
     );
     expect(selectBenchmarkDefault([emptyBaseline])).toMatchObject({
       selectedDefault: null,
+      measuredCandidate: null,
       baseline: null,
       bestVector: null,
+      promotionEligible: false,
     });
   });
 });
