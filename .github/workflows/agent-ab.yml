@@ -170,11 +170,8 @@ jobs:
           const tokenizerSamples = Array.isArray(tokenizerBaseline.samples)
             ? tokenizerBaseline.samples
             : [];
-          if (tokenizerSamples.length !== 3) {
-            throw new Error(`Expected three tokenizer baseline samples, got ${tokenizerSamples.length}.`);
-          }
           const languages = new Set(tokenizerSamples.map((item) => item.language));
-          for (const requiredLanguage of ["english", "spanish", "code"]) {
+          for (const requiredLanguage of ["english", "spanish", "code", "path"]) {
             if (!languages.has(requiredLanguage)) {
               throw new Error(`Tokenizer baseline is missing ${requiredLanguage}.`);
             }
