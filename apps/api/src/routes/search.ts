@@ -2862,12 +2862,9 @@ export function registerSearchRoutes(
       ];
       const availableChannels = new Set<RetrievalChannel>();
       let truthState: RetrievalTruthState | undefined;
-      let reasoningTrace: unknown = null;
-      let reasoningExecutionMode: "DIRECT" | "PLAN" | "DIRECT_FALLBACK" =
-        "DIRECT";
-
-      const directRetrieval = () =>
-        queryKnowledge(db, scopedRequest, {
+      let hits: SearchHit[];
+      try {
+        hits = await queryKnowledge(db, scopedRequest, {
           plan,
           vaultIds,
           graphScopes,
@@ -2887,258 +2884,6 @@ export function registerSearchRoutes(
             truthState = state;
           },
         });
-
-      const reasoningRetrieval = async (
-        invocation: ReasoningRetrievalInvocation,
-        signal: AbortSignal,
-      ): Promise<SearchHit[]> => {
-        if (signal.aborted) throw new Error("REASONING_EXECUTION_ABORTED");
-        if (
-          invocation.kind === "TEMPORAL_AT" ||
-          (invocation.kind === "LOAD_RAW" &&
-            (invocation.sourceIds?.length ?? 0) > 0)
-        ) {
-          throw new Error(
-            invocation.kind === "TEMPORAL_AT"
-              ? "REASONING_TEMPORAL_AT_REQUIRES_AS_OF_SEARCH_CONTRACT"
-              : "REASONING_RAW_SOURCE_FILTER_NOT_INTEGRATED",
-          );
-        }
-
-        const operatorIntent =
-          invocation.kind === "RESOLVE_ENTITY" ||
-          invocation.kind === "EXACT_LOOKUP"
-            ? "EXACT_LOOKUP"
-            : invocation.kind === "SEARCH_CODE"
-              ? "PROJECT_CODE"
-              : invocation.kind === "TRAVERSE_TYPED" ||
-                  invocation.kind === "PPR_EXPAND"
-                ? "IMPACT_ANALYSIS"
-                : invocation.kind === "COMMUNITY_SEARCH"
-                  ? invocation.strategy === "GLOBAL"
-                    ? "GLOBAL_SYNTHESIS"
-                    : "CONCEPTUAL"
-                  : invocation.kind === "LOAD_RAW"
-                    ? "SOURCE_VERIFICATION"
-                    : "CONCEPTUAL";
-        const operatorRequest: SearchInput = {
-          ...scopedRequest,
-          query: invocation.query,
-          intent: operatorIntent,
-          limit: Math.max(1, Math.min(100, invocation.limit)),
-          ...(invocation.kind === "LOAD_RAW" ? { mode: "RAW_ONLY" } : {}),
-          ...(invocation.kind === "SEARCH_CODE"
-            ? { mode: "PROJECT_CODE" }
-            : {}),
-        };
-        const operatorPlan = planQuery(invocation.query, {
-          requestedIntent: operatorIntent,
-          capabilities,
-          queryShape: {
-            permissionSensitiveFederated:
-              operatorRequest.federated || vaultIds.length > 1,
-            ...(operatorRequest.projectId ? { ticketWorkProcess: true } : {}),
-            ...(operatorRequest.mode === "PROJECT_CODE"
-              ? { codeSymbolOrPath: true }
-              : {}),
-            ...(invocation.kind === "TRAVERSE_TYPED" ||
-            invocation.kind === "PPR_EXPAND"
-              ? { multiHop: true }
-              : {}),
-          },
-        });
-        retrievalWarnings.push(
-          ...operatorPlan.omittedChannels.map(
-            (channel) =>
-              `REASONING_${invocation.kind}_CHANNEL_OMITTED:${channel}`,
-          ),
-        );
-
-        const executionOptions: RetrievalExecutionOptions = {
-          plan: operatorPlan,
-          vaultIds,
-          graphScopes,
-          ...(projectCode ? { codeCandidates: projectCode.candidates } : {}),
-          ...(dependencies.queryTransformer
-            ? {
-                queryTransformer: dependencies.queryTransformer,
-                queryTransformActorId: actor.id,
-                queryTransformTraceId: request.id,
-              }
-            : {}),
-          warningSink: retrievalWarnings,
-          availableChannelSink: availableChannels,
-          pathAuthorizer,
-          truthConsistency: parsed.data.truthConsistency ?? "STRICT",
-          truthStateSink: (state) => {
-            truthState = state;
-          },
-        };
-
-        switch (invocation.kind) {
-          case "RESOLVE_ENTITY":
-          case "EXACT_LOOKUP":
-          case "SEARCH_LEXICAL":
-            executionOptions.channels = ["exact", "lexical"];
-            break;
-          case "SEARCH_VECTOR":
-            executionOptions.channels = ["vector"];
-            break;
-          case "SEARCH_CODE":
-            executionOptions.channels = ["code", "exact", "lexical"];
-            break;
-          case "TRAVERSE_TYPED":
-            executionOptions.channels = ["exact", "graph"];
-            executionOptions.graphPolicy = {
-              maxHops: invocation.maxHops ?? 3,
-              directionPolicy: invocation.direction ?? "both",
-              allowedRelationTypes: invocation.relationTypes ?? [],
-              maxCandidates: invocation.limit,
-            };
-            break;
-          case "PPR_EXPAND":
-            executionOptions.channels = ["exact", "graph"];
-            executionOptions.retrievalPolicy = {
-              graphMode: "ASSOCIATIVE",
-              channels: {
-                GRAPH_PPR: { enabled: true, weight: 1.1 },
-              },
-            };
-            executionOptions.pprPolicy = {
-              restartProbability: 1 - (invocation.damping ?? 0.85),
-              maxIterations: invocation.maxIterations ?? 100,
-              maxNodes: Math.max(100, invocation.limit * 4),
-              minimumScore: 0,
-              perScopeCap: invocation.limit,
-            };
-            break;
-          case "COMMUNITY_SEARCH":
-            executionOptions.channels = ["lexical", "graph"];
-            executionOptions.retrievalPolicy = {
-              graphMode: invocation.strategy ?? "GLOBAL",
-              channels: {
-                COMMUNITY: { enabled: true, weight: 1.1 },
-              },
-            };
-            break;
-          case "LOAD_RAW":
-            executionOptions.channels = ["raw"];
-            break;
-          case "TEMPORAL_AT":
-            throw new Error(
-              "REASONING_TEMPORAL_AT_REQUIRES_AS_OF_SEARCH_CONTRACT",
-            );
-        }
-
-        const result = await queryKnowledge(db, operatorRequest, executionOptions);
-        if (signal.aborted) throw new Error("REASONING_EXECUTION_ABORTED");
-        return result;
-      };
-
-      let hits: SearchHit[];
-      try {
-        if (requestedReasoningMode === "PLAN") {
-          try {
-            if (indexRows.rows.length !== vaultIds.length) {
-              throw new Error("REASONING_REVISION_SET_INCOMPLETE");
-            }
-            const reasoningRevisionSet: ContextRevisionSet = {
-              spaceId: requestedSpace,
-              vaults: indexRows.rows.map((row) => ({
-                vaultId: String(row.vault_id),
-                corpusRevision: String(row.corpus_revision),
-                lexicalRevision: row.lexical_revision
-                  ? String(row.lexical_revision)
-                  : null,
-                vectorRevision: row.vector_revision
-                  ? String(row.vector_revision)
-                  : null,
-                graphRevision: row.graph_revision
-                  ? String(row.graph_revision)
-                  : null,
-                contextPackRevision: row.context_pack_revision
-                  ? String(row.context_pack_revision)
-                  : null,
-              })),
-              retrievalConfigurationVersion: String(
-                indexRow.retrieval_configuration_version ?? "rrf-v1",
-              ),
-              capturedAt: new Date().toISOString(),
-            };
-            const reasoned = await executeApplicationReasoning({
-              request: { ...scopedRequest, intent },
-              revisionSet: reasoningRevisionSet,
-              validationContext: {
-                currentRevisionSet: reasoningRevisionSet,
-                policy: {
-                  authorizedSpaceId: requestedSpace,
-                  authorizedVaultIds: vaultIds,
-                  ...(parsed.data.projectId
-                    ? { authorizedProjectIds: [parsed.data.projectId] }
-                    : {}),
-                  rawAllowed: capabilities.rawAllowed,
-                  maxSteps: 32,
-                  maxWallMs: 30_000,
-                  maxTokens: Math.max(64_000, maxTokens * 2),
-                  maxCost: 2,
-                  maxFanout: 8,
-                  maxGraphHops: 3,
-                  allowExternalPeers: false,
-                  allowedExternalPeerIds: [],
-                  pathAuthorizer: (vaultId, prefix) =>
-                    pathAuthorizer(prefix, vaultId),
-                },
-              },
-              capabilities,
-              corpusRevision: String(indexRow.corpus_revision ?? "unknown"),
-              indexRevisions: {
-                corpus: String(indexRow.corpus_revision ?? "unknown"),
-                lexical: indexRow.lexical_revision
-                  ? String(indexRow.lexical_revision)
-                  : null,
-                vector: indexRow.vector_revision
-                  ? String(indexRow.vector_revision)
-                  : null,
-                graph: indexRow.graph_revision
-                  ? String(indexRow.graph_revision)
-                  : null,
-                contextPack: indexRow.context_pack_revision
-                  ? String(indexRow.context_pack_revision)
-                  : null,
-                codeGraph: projectCode?.revision ?? null,
-              },
-              retrievalConfiguration: {
-                version: String(
-                  indexRow.retrieval_configuration_version ?? "rrf-v1",
-                ),
-                source: "v1-context",
-              },
-              retrieve: reasoningRetrieval,
-              ...(dependencies.contextTokenizer
-                ? { tokenizer: dependencies.contextTokenizer }
-                : {}),
-              contextLevel: requestedContextLevel,
-              contextMaxTokens: maxTokens,
-            });
-            hits = reasoned.hits;
-            reasoningTrace = reasoned.reasoningTrace;
-            reasoningExecutionMode = "PLAN";
-            retrievalWarnings.push(
-              `REASONING_PLAN_EXECUTED:${reasoned.execution.status}`,
-            );
-          } catch (error) {
-            const code =
-              error instanceof Error
-                ? error.message
-                : "REASONING_PLAN_EXECUTION_FAILED";
-            if (code === "CONTEXT_REVISION_CHANGED") throw error;
-            reasoningExecutionMode = "DIRECT_FALLBACK";
-            retrievalWarnings.push(`REASONING_PLAN_FALLBACK:${code}`);
-            hits = await directRetrieval();
-          }
-        } else {
-          hits = await directRetrieval();
-        }
       } catch (error) {
         if (
           error instanceof Error &&
@@ -3485,9 +3230,12 @@ export function registerSearchRoutes(
       ];
       const availableChannels = new Set<RetrievalChannel>();
       let truthState: RetrievalTruthState | undefined;
-      let hits: SearchHit[];
-      try {
-        hits = await queryKnowledge(db, scopedRequest, {
+      let reasoningTrace: unknown = null;
+      let reasoningExecutionMode: "DIRECT" | "PLAN" | "DIRECT_FALLBACK" =
+        "DIRECT";
+
+      const directRetrieval = () =>
+        queryKnowledge(db, scopedRequest, {
           plan,
           vaultIds,
           graphScopes,
@@ -3507,6 +3255,258 @@ export function registerSearchRoutes(
             truthState = state;
           },
         });
+
+      const reasoningRetrieval = async (
+        invocation: ReasoningRetrievalInvocation,
+        signal: AbortSignal,
+      ): Promise<SearchHit[]> => {
+        if (signal.aborted) throw new Error("REASONING_EXECUTION_ABORTED");
+        if (
+          invocation.kind === "TEMPORAL_AT" ||
+          (invocation.kind === "LOAD_RAW" &&
+            (invocation.sourceIds?.length ?? 0) > 0)
+        ) {
+          throw new Error(
+            invocation.kind === "TEMPORAL_AT"
+              ? "REASONING_TEMPORAL_AT_REQUIRES_AS_OF_SEARCH_CONTRACT"
+              : "REASONING_RAW_SOURCE_FILTER_NOT_INTEGRATED",
+          );
+        }
+
+        const operatorIntent =
+          invocation.kind === "RESOLVE_ENTITY" ||
+          invocation.kind === "EXACT_LOOKUP"
+            ? "EXACT_LOOKUP"
+            : invocation.kind === "SEARCH_CODE"
+              ? "PROJECT_CODE"
+              : invocation.kind === "TRAVERSE_TYPED" ||
+                  invocation.kind === "PPR_EXPAND"
+                ? "IMPACT_ANALYSIS"
+                : invocation.kind === "COMMUNITY_SEARCH"
+                  ? invocation.strategy === "GLOBAL"
+                    ? "GLOBAL_SYNTHESIS"
+                    : "CONCEPTUAL"
+                  : invocation.kind === "LOAD_RAW"
+                    ? "SOURCE_VERIFICATION"
+                    : "CONCEPTUAL";
+        const operatorRequest: SearchInput = {
+          ...scopedRequest,
+          query: invocation.query,
+          intent: operatorIntent,
+          limit: Math.max(1, Math.min(100, invocation.limit)),
+          ...(invocation.kind === "LOAD_RAW" ? { mode: "RAW_ONLY" } : {}),
+          ...(invocation.kind === "SEARCH_CODE"
+            ? { mode: "PROJECT_CODE" }
+            : {}),
+        };
+        const operatorPlan = planQuery(invocation.query, {
+          requestedIntent: operatorIntent,
+          capabilities,
+          queryShape: {
+            permissionSensitiveFederated:
+              operatorRequest.federated || vaultIds.length > 1,
+            ...(operatorRequest.projectId ? { ticketWorkProcess: true } : {}),
+            ...(operatorRequest.mode === "PROJECT_CODE"
+              ? { codeSymbolOrPath: true }
+              : {}),
+            ...(invocation.kind === "TRAVERSE_TYPED" ||
+            invocation.kind === "PPR_EXPAND"
+              ? { multiHop: true }
+              : {}),
+          },
+        });
+        retrievalWarnings.push(
+          ...operatorPlan.omittedChannels.map(
+            (channel) =>
+              `REASONING_${invocation.kind}_CHANNEL_OMITTED:${channel}`,
+          ),
+        );
+
+        const executionOptions: RetrievalExecutionOptions = {
+          plan: operatorPlan,
+          vaultIds,
+          graphScopes,
+          ...(projectCode ? { codeCandidates: projectCode.candidates } : {}),
+          ...(dependencies.queryTransformer
+            ? {
+                queryTransformer: dependencies.queryTransformer,
+                queryTransformActorId: actor.id,
+                queryTransformTraceId: request.id,
+              }
+            : {}),
+          warningSink: retrievalWarnings,
+          availableChannelSink: availableChannels,
+          pathAuthorizer,
+          truthConsistency: parsed.data.truthConsistency ?? "STRICT",
+          truthStateSink: (state) => {
+            truthState = state;
+          },
+        };
+
+        switch (invocation.kind) {
+          case "RESOLVE_ENTITY":
+          case "EXACT_LOOKUP":
+          case "SEARCH_LEXICAL":
+            executionOptions.channels = ["exact", "lexical"];
+            break;
+          case "SEARCH_VECTOR":
+            executionOptions.channels = ["vector"];
+            break;
+          case "SEARCH_CODE":
+            executionOptions.channels = ["code", "exact", "lexical"];
+            break;
+          case "TRAVERSE_TYPED":
+            executionOptions.channels = ["exact", "graph"];
+            executionOptions.graphPolicy = {
+              maxHops: invocation.maxHops ?? 3,
+              directionPolicy: invocation.direction ?? "both",
+              allowedRelationTypes: invocation.relationTypes ?? [],
+              maxCandidates: invocation.limit,
+            };
+            break;
+          case "PPR_EXPAND":
+            executionOptions.channels = ["exact", "graph"];
+            executionOptions.retrievalPolicy = {
+              graphMode: "ASSOCIATIVE",
+              channels: {
+                GRAPH_PPR: { enabled: true, weight: 1.1 },
+              },
+            };
+            executionOptions.pprPolicy = {
+              restartProbability: 1 - (invocation.damping ?? 0.85),
+              maxIterations: invocation.maxIterations ?? 100,
+              maxNodes: Math.max(100, invocation.limit * 4),
+              minimumScore: 0,
+              perScopeCap: invocation.limit,
+            };
+            break;
+          case "COMMUNITY_SEARCH":
+            executionOptions.channels = ["lexical", "graph"];
+            executionOptions.retrievalPolicy = {
+              graphMode: invocation.strategy ?? "GLOBAL",
+              channels: {
+                COMMUNITY: { enabled: true, weight: 1.1 },
+              },
+            };
+            break;
+          case "LOAD_RAW":
+            executionOptions.channels = ["raw"];
+            break;
+          case "TEMPORAL_AT":
+            throw new Error(
+              "REASONING_TEMPORAL_AT_REQUIRES_AS_OF_SEARCH_CONTRACT",
+            );
+        }
+
+        const result = await queryKnowledge(db, operatorRequest, executionOptions);
+        if (signal.aborted) throw new Error("REASONING_EXECUTION_ABORTED");
+        return result;
+      };
+
+      let hits: SearchHit[];
+      try {
+        if (requestedReasoningMode === "PLAN") {
+          try {
+            if (indexRows.rows.length !== vaultIds.length) {
+              throw new Error("REASONING_REVISION_SET_INCOMPLETE");
+            }
+            const reasoningRevisionSet: ContextRevisionSet = {
+              spaceId: requestedSpace,
+              vaults: indexRows.rows.map((row) => ({
+                vaultId: String(row.vault_id),
+                corpusRevision: String(row.corpus_revision),
+                lexicalRevision: row.lexical_revision
+                  ? String(row.lexical_revision)
+                  : null,
+                vectorRevision: row.vector_revision
+                  ? String(row.vector_revision)
+                  : null,
+                graphRevision: row.graph_revision
+                  ? String(row.graph_revision)
+                  : null,
+                contextPackRevision: row.context_pack_revision
+                  ? String(row.context_pack_revision)
+                  : null,
+              })),
+              retrievalConfigurationVersion: String(
+                indexRow.retrieval_configuration_version ?? "rrf-v1",
+              ),
+              capturedAt: new Date().toISOString(),
+            };
+            const reasoned = await executeApplicationReasoning({
+              request: { ...scopedRequest, intent },
+              revisionSet: reasoningRevisionSet,
+              validationContext: {
+                currentRevisionSet: reasoningRevisionSet,
+                policy: {
+                  authorizedSpaceId: requestedSpace,
+                  authorizedVaultIds: vaultIds,
+                  ...(parsed.data.projectId
+                    ? { authorizedProjectIds: [parsed.data.projectId] }
+                    : {}),
+                  rawAllowed: capabilities.rawAllowed,
+                  maxSteps: 32,
+                  maxWallMs: 30_000,
+                  maxTokens: Math.max(64_000, maxTokens * 2),
+                  maxCost: 2,
+                  maxFanout: 8,
+                  maxGraphHops: 3,
+                  allowExternalPeers: false,
+                  allowedExternalPeerIds: [],
+                  pathAuthorizer: (vaultId, prefix) =>
+                    pathAuthorizer(prefix, vaultId),
+                },
+              },
+              capabilities,
+              corpusRevision: String(indexRow.corpus_revision ?? "unknown"),
+              indexRevisions: {
+                corpus: String(indexRow.corpus_revision ?? "unknown"),
+                lexical: indexRow.lexical_revision
+                  ? String(indexRow.lexical_revision)
+                  : null,
+                vector: indexRow.vector_revision
+                  ? String(indexRow.vector_revision)
+                  : null,
+                graph: indexRow.graph_revision
+                  ? String(indexRow.graph_revision)
+                  : null,
+                contextPack: indexRow.context_pack_revision
+                  ? String(indexRow.context_pack_revision)
+                  : null,
+                codeGraph: projectCode?.revision ?? null,
+              },
+              retrievalConfiguration: {
+                version: String(
+                  indexRow.retrieval_configuration_version ?? "rrf-v1",
+                ),
+                source: "v1-context",
+              },
+              retrieve: reasoningRetrieval,
+              ...(dependencies.contextTokenizer
+                ? { tokenizer: dependencies.contextTokenizer }
+                : {}),
+              contextLevel: requestedContextLevel,
+              contextMaxTokens: maxTokens,
+            });
+            hits = reasoned.hits;
+            reasoningTrace = reasoned.reasoningTrace;
+            reasoningExecutionMode = "PLAN";
+            retrievalWarnings.push(
+              `REASONING_PLAN_EXECUTED:${reasoned.execution.status}`,
+            );
+          } catch (error) {
+            const code =
+              error instanceof Error
+                ? error.message
+                : "REASONING_PLAN_EXECUTION_FAILED";
+            if (code === "CONTEXT_REVISION_CHANGED") throw error;
+            reasoningExecutionMode = "DIRECT_FALLBACK";
+            retrievalWarnings.push(`REASONING_PLAN_FALLBACK:${code}`);
+            hits = await directRetrieval();
+          }
+        } else {
+          hits = await directRetrieval();
+        }
       } catch (error) {
         if (
           error instanceof Error &&
