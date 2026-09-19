@@ -37,10 +37,7 @@ async function seed(db: Postgres, value: SymbolFixture): Promise<void> {
   await db.pool.query(
     `insert into organizations(id,slug,name)
      values($1,$2,'Symbol lexical integration')`,
-    [
-      value.organizationId,
-      `symbol-${value.organizationId.slice(0, 8)}`,
-    ],
+    [value.organizationId, `symbol-${value.organizationId.slice(0, 8)}`],
   );
   await db.pool.query(
     `insert into spaces(
@@ -227,7 +224,10 @@ describe("symbol-aware lexical retrieval", () => {
           const hit = hits.find(
             (candidate) => candidate.documentId === value.documents[key],
           );
-          expect(hit, `${key} query should retrieve its document`).toBeDefined();
+          expect(
+            hit,
+            `${key} query should retrieve its document`,
+          ).toBeDefined();
           if (requiresSymbolReason) {
             expect(hit?.reasons).toContain("lexical:symbol-terms");
           }
