@@ -1526,39 +1526,351 @@ async function collectDetectorFindings(
       );
     }
     case "ACCESS_BOUNDARY": {
-      const rows = await db.pool.query<{
+      const packetScope = await db.pool.query<{
         id: string;
         vault_id: string | null;
         scope: Record<string, unknown>;
       }>(
-        `select id,vault_id,scope
-           from context_packets
-          where space_id=$1
+        `select p.id::text,p.vault_id::text,p.scope
+           from context_packets p
+           left join vaults pv on pv.id=p.vault_id
+          where p.space_id=$1
             and (
-              scope->>'spaceId' is distinct from $1::text
-              or not (scope ? 'vaultIds')
-              or jsonb_typeof(scope->'vaultIds')<>'array'
+              p.vault_id=$2
               or (
-                vault_id is not null
-                and not (scope->'vaultIds' @> to_jsonb(array[vault_id::text]))
+                jsonb_typeof(p.scope->'vaultIds')='array'
+                and p.scope->'vaultIds' @> to_jsonb(array[$2::text])
               )
             )
-          order by created_at desc
+            and (
+              p.scope->>'spaceId' is distinct from $1::text
+              or not (p.scope ? 'vaultIds')
+              or jsonb_typeof(p.scope->'vaultIds')<>'array'
+              or (
+                p.vault_id is not null
+                and not (
+                  p.scope->'vaultIds'
+                  @> to_jsonb(array[p.vault_id::text])
+                )
+              )
+              or (
+                p.vault_id is not null
+                and pv.space_id is distinct from p.space_id
+              )
+            )
+          order by p.created_at desc,p.id
           limit 500`,
-        [run.spaceId],
+        scope,
       );
-      return rows.rows.map((row) =>
-        findingForScope(
-          run.vaultId,
-          detector,
-          "CRITICAL",
-          "CONTEXT_PACKET_SCOPE_MISMATCH",
-          "context_packet",
-          row.id,
-          "Persisted synthesis scope metadata is inconsistent with its database scope.",
-          { vaultId: row.vault_id, scope: row.scope },
+
+      const federationScope = await db.pool.query<{
+        id: string;
+        vault_ids: string[];
+        federated: string | null;
+      }>(
+        `select p.id::text,
+                array(
+                  select value
+                    from jsonb_array_elements_text(p.scope->'vaultIds')
+                    order by value
+                ) vault_ids,
+                p.scope->>'federated' federated
+           from context_packets p
+          where p.space_id=$1
+            and jsonb_typeof(p.scope->'vaultIds')='array'
+            and p.scope->'vaultIds' @> to_jsonb(array[$2::text])
+            and jsonb_array_length(p.scope->'vaultIds')>1
+            and p.scope->>'federated' is distinct from 'true'
+          order by p.created_at desc,p.id
+          limit 500`,
+        scope,
+      );
+
+      const declaredVaults = await db.pool.query<{
+        packet_id: string;
+        declared_vault_id: string;
+        declared_space_id: string | null;
+      }>(
+        `select p.id::text packet_id,
+                declared.value declared_vault_id,
+                v.space_id::text declared_space_id
+           from context_packets p
+           cross join lateral jsonb_array_elements_text(
+             case
+               when jsonb_typeof(p.scope->'vaultIds')='array'
+                 then p.scope->'vaultIds'
+               else '[]'::jsonb
+             end
+           ) declared(value)
+           left join vaults v on v.id::text=declared.value
+          where p.space_id=$1
+            and p.scope->'vaultIds' @> to_jsonb(array[$2::text])
+            and (
+              v.id is null
+              or v.space_id<>p.space_id
+            )
+          order by p.created_at desc,p.id,declared.value
+          limit 500`,
+        scope,
+      );
+
+      const sectionLeaks = await db.pool.query<{
+        packet_id: string;
+        location: "PACKET" | "CONTINUATION";
+        handle: string | null;
+        ordinal: number;
+        section_vault_id: string | null;
+        document_id: string | null;
+        document_space_id: string | null;
+        document_vault_id: string | null;
+      }>(
+        `with scoped_packets as (
+           select p.id,p.space_id,p.vault_id,p.scope,p.packet
+             from context_packets p
+            where p.space_id=$1
+              and jsonb_typeof(p.scope->'vaultIds')='array'
+              and (
+                p.vault_id=$2
+                or p.scope->'vaultIds' @> to_jsonb(array[$2::text])
+              )
+         ),
+         sections as (
+           select p.id packet_id,p.space_id,p.scope,
+                  'PACKET'::text location,null::text handle,
+                  section.ordinality::int ordinal,
+                  section.value
+             from scoped_packets p
+             cross join lateral jsonb_array_elements(
+               case
+                 when jsonb_typeof(p.packet->'sections')='array'
+                   then p.packet->'sections'
+                 else '[]'::jsonb
+               end
+             ) with ordinality section(value,ordinality)
+           union all
+           select p.id packet_id,p.space_id,p.scope,
+                  'CONTINUATION'::text location,c.handle,
+                  section.ordinality::int ordinal,
+                  section.value
+             from scoped_packets p
+             join context_packet_continuations c on c.packet_id=p.id
+             cross join lateral jsonb_array_elements(c.sections)
+               with ordinality section(value,ordinality)
+         )
+         select s.packet_id::text,s.location,s.handle,s.ordinal,
+                nullif(s.value->>'vaultId','') section_vault_id,
+                nullif(s.value->>'documentId','') document_id,
+                d.space_id::text document_space_id,
+                d.vault_id::text document_vault_id
+           from sections s
+           left join knowledge_documents d
+             on d.id::text=nullif(s.value->>'documentId','')
+          where (
+            (
+              nullif(s.value->>'vaultId','') is not null
+              and not (
+                s.scope->'vaultIds'
+                @> to_jsonb(array[s.value->>'vaultId'])
+              )
+            )
+            or (
+              d.id is not null
+              and (
+                d.space_id<>s.space_id
+                or d.vault_id is null
+                or not (
+                  s.scope->'vaultIds'
+                  @> to_jsonb(array[d.vault_id::text])
+                )
+              )
+            )
+          )
+          order by s.packet_id,s.location,s.handle nulls first,s.ordinal
+          limit 500`,
+        scope,
+      );
+
+      const citationLeaks = await db.pool.query<{
+        packet_id: string;
+        location: "PACKET" | "CONTINUATION";
+        handle: string | null;
+        ordinal: number;
+        citation_id: string;
+        resource_kind: "evidence" | "source";
+        resource_space_id: string;
+        resource_vault_id: string | null;
+      }>(
+        `with scoped_packets as (
+           select p.id,p.space_id,p.vault_id,p.scope,p.packet
+             from context_packets p
+            where p.space_id=$1
+              and jsonb_typeof(p.scope->'vaultIds')='array'
+              and (
+                p.vault_id=$2
+                or p.scope->'vaultIds' @> to_jsonb(array[$2::text])
+              )
+         ),
+         sections as (
+           select p.id packet_id,p.space_id,p.scope,
+                  'PACKET'::text location,null::text handle,
+                  section.ordinality::int ordinal,
+                  section.value
+             from scoped_packets p
+             cross join lateral jsonb_array_elements(
+               case
+                 when jsonb_typeof(p.packet->'sections')='array'
+                   then p.packet->'sections'
+                 else '[]'::jsonb
+               end
+             ) with ordinality section(value,ordinality)
+           union all
+           select p.id packet_id,p.space_id,p.scope,
+                  'CONTINUATION'::text location,c.handle,
+                  section.ordinality::int ordinal,
+                  section.value
+             from scoped_packets p
+             join context_packet_continuations c on c.packet_id=p.id
+             cross join lateral jsonb_array_elements(c.sections)
+               with ordinality section(value,ordinality)
+         ),
+         citations as (
+           select s.*,citation.value citation_id
+             from sections s
+             cross join lateral jsonb_array_elements_text(
+               case
+                 when jsonb_typeof(s.value->'sourceOrEvidenceIds')='array'
+                   then s.value->'sourceOrEvidenceIds'
+                 else '[]'::jsonb
+               end
+             ) citation(value)
+         )
+         select c.packet_id::text,c.location,c.handle,c.ordinal,c.citation_id,
+                case when e.id is not null then 'evidence' else 'source' end
+                  resource_kind,
+                coalesce(e.space_id,src.space_id)::text resource_space_id,
+                coalesce(e.vault_id,src.vault_id)::text resource_vault_id
+           from citations c
+           left join evidence e on e.id::text=c.citation_id
+           left join sources src
+             on src.id::text=c.citation_id and e.id is null
+          where (e.id is not null or src.id is not null)
+            and (
+              coalesce(e.space_id,src.space_id)<>c.space_id
+              or coalesce(e.vault_id,src.vault_id) is null
+              or not (
+                c.scope->'vaultIds'
+                @> to_jsonb(
+                  array[coalesce(e.vault_id,src.vault_id)::text]
+                )
+              )
+            )
+          order by c.packet_id,c.location,c.handle nulls first,c.ordinal,
+                   c.citation_id
+          limit 500`,
+        scope,
+      );
+
+      return [
+        ...packetScope.rows.map((row) =>
+          findingForScope(
+            run.vaultId,
+            detector,
+            "CRITICAL",
+            "CONTEXT_PACKET_SCOPE_MISMATCH",
+            "context_packet",
+            row.id,
+            "Persisted context scope metadata is inconsistent with its database scope.",
+            { vaultId: row.vault_id, scope: row.scope },
+          ),
         ),
-      );
+        ...federationScope.rows.map((row) =>
+          findingForScope(
+            run.vaultId,
+            detector,
+            "CRITICAL",
+            "NON_FEDERATED_MULTI_VAULT_SCOPE",
+            "context_packet",
+            row.id,
+            "A context packet spans multiple vaults without an explicit federated scope.",
+            {
+              vaultIds: row.vault_ids,
+              federated: row.federated,
+            },
+          ),
+        ),
+        ...declaredVaults.rows.map((row) =>
+          findingForScope(
+            run.vaultId,
+            detector,
+            "CRITICAL",
+            "CONTEXT_PACKET_SCOPE_VAULT_OUTSIDE_SPACE",
+            "context_packet",
+            row.packet_id,
+            "A context packet declares a vault that is missing or belongs to another space.",
+            {
+              declaredVaultId: row.declared_vault_id,
+              declaredSpaceId: row.declared_space_id,
+            },
+          ),
+        ),
+        ...sectionLeaks.rows.map((row) => {
+          const crossSpace =
+            row.document_space_id !== null &&
+            row.document_space_id !== run.spaceId;
+          return {
+            ...findingForScope(
+              run.vaultId,
+              detector,
+              "CRITICAL",
+              crossSpace
+                ? "CONTEXT_PACKET_CROSS_SPACE_LEAK"
+                : "CONTEXT_PACKET_CROSS_VAULT_LEAK",
+              "context_packet",
+              row.packet_id,
+              crossSpace
+                ? "A persisted context section references knowledge from another space."
+                : "A persisted context section references a vault outside the packet authorization scope.",
+              {
+                location: row.location,
+                handle: row.handle,
+                ordinal: Number(row.ordinal),
+                sectionVaultId: row.section_vault_id,
+                documentId: row.document_id,
+                documentSpaceId: row.document_space_id,
+                documentVaultId: row.document_vault_id,
+              },
+            ),
+            targetIds: [
+              row.packet_id,
+              ...(row.document_id ? [row.document_id] : []),
+            ],
+          };
+        }),
+        ...citationLeaks.rows.map((row) => ({
+          ...findingForScope(
+            run.vaultId,
+            detector,
+            "CRITICAL",
+            row.resource_kind === "evidence"
+              ? "CONTEXT_PACKET_EVIDENCE_SCOPE_LEAK"
+              : "CONTEXT_PACKET_SOURCE_SCOPE_LEAK",
+            "context_packet",
+            row.packet_id,
+            "A persisted context section cites source material outside the packet authorization scope.",
+            {
+              location: row.location,
+              handle: row.handle,
+              ordinal: Number(row.ordinal),
+              citationId: row.citation_id,
+              resourceKind: row.resource_kind,
+              resourceSpaceId: row.resource_space_id,
+              resourceVaultId: row.resource_vault_id,
+            },
+            [row.citation_id],
+          ),
+          targetIds: [row.packet_id, row.citation_id],
+        })),
+      ];
     }
     case "CONNECTOR_DELETION": {
       const rows = await db.pool.query<{

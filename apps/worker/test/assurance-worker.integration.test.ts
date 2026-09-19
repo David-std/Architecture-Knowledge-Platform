@@ -740,4 +740,316 @@ describeDb("continuous assurance detector execution", () => {
       await db.pool.query("delete from sources where id=$1", [sourceId]);
     }
   });
+  it("probes persisted context for cross-vault, cross-space, federation, and evidence leakage", async () => {
+    const siblingVaultId = randomUUID();
+    const siblingDocumentId = randomUUID();
+    const siblingSourceId = randomUUID();
+    const siblingEvidenceId = randomUUID();
+    const foreignSpaceId = randomUUID();
+    const foreignVaultId = randomUUID();
+    const foreignDocumentId = randomUUID();
+    const crossVaultPacketId = randomUUID();
+    const crossSpacePacketId = randomUUID();
+    const nonFederatedPacketId = randomUUID();
+    const foreignScopePacketId = randomUUID();
+    const continuationHandle = sha256(`continuation-${crossSpacePacketId}`);
+
+    try {
+      await db.pool.query(
+        `insert into vaults(
+           id,space_id,canonical_path,name,read_only,current_revision,
+           vault_key,local_path
+         ) values($1,$2,$3,$4,true,'rev-1',$5,$3)`,
+        [
+          siblingVaultId,
+          spaceId,
+          `test/assurance-sibling/${siblingVaultId}`,
+          "Assurance sibling vault",
+          `assurance-sibling-${siblingVaultId}`,
+        ],
+      );
+      await db.pool.query(
+        `insert into spaces(
+           id,organization_id,slug,name,visibility,knowledge_repo_path
+         ) values($1,$2,$3,$4,'PRIVATE',$5)`,
+        [
+          foreignSpaceId,
+          organizationId,
+          `assurance-foreign-${foreignSpaceId.slice(0, 8)}`,
+          "Assurance foreign space",
+          `test/foreign-space/${foreignSpaceId}`,
+        ],
+      );
+      await db.pool.query(
+        `insert into vaults(
+           id,space_id,canonical_path,name,read_only,current_revision,
+           vault_key,local_path
+         ) values($1,$2,$3,$4,true,'rev-1',$5,$3)`,
+        [
+          foreignVaultId,
+          foreignSpaceId,
+          `test/assurance-foreign/${foreignVaultId}`,
+          "Assurance foreign vault",
+          `assurance-foreign-${foreignVaultId}`,
+        ],
+      );
+
+      await db.pool.query(
+        `insert into knowledge_documents(
+           id,space_id,vault_id,path,external_id,title,type,lifecycle,trust_tier,
+           current_revision,body_cache,frontmatter,aliases,layer,content_hash,
+           token_estimate,raw_links
+         ) values
+           ($1,$3,$4,$5,$6,'Sibling boundary fixture','concept','ACTIVE',
+            'HUMAN_REVIEWED','boundary-v1','sibling','{}'::jsonb,'{}','compiled',
+            $7,4,'[]'::jsonb),
+           ($2,$8,$9,$10,$11,'Foreign boundary fixture','concept','ACTIVE',
+            'HUMAN_REVIEWED','boundary-v1','foreign','{}'::jsonb,'{}','compiled',
+            $12,4,'[]'::jsonb)`,
+        [
+          siblingDocumentId,
+          foreignDocumentId,
+          spaceId,
+          siblingVaultId,
+          `assurance/sibling-${siblingDocumentId}.md`,
+          `BOUNDARY-SIBLING-${siblingDocumentId}`,
+          sha256("sibling-boundary-document"),
+          foreignSpaceId,
+          foreignVaultId,
+          `assurance/foreign-${foreignDocumentId}.md`,
+          `BOUNDARY-FOREIGN-${foreignDocumentId}`,
+          sha256("foreign-boundary-document"),
+        ],
+      );
+
+      const siblingSourceHash = sha256(`boundary-source-${siblingSourceId}`);
+      await db.pool.query(
+        `insert into sources(
+           id,space_id,vault_id,title,source_uri,media_type,sha256,byte_size,
+           object_key,status,metadata
+         ) values(
+           $1,$2,$3,'Boundary source',$4,'text/plain',$5,16,$6,
+           'ACTIVE','{}'::jsonb
+         )`,
+        [
+          siblingSourceId,
+          spaceId,
+          siblingVaultId,
+          `fixture://boundary/${siblingSourceId}`,
+          siblingSourceHash,
+          `sources/${siblingSourceHash}`,
+        ],
+      );
+      await db.pool.query(
+        `insert into evidence(
+           id,space_id,vault_id,source_id,locator,content_hash,excerpt,
+           review_status
+         ) values(
+           $1,$2,$3,$4,$5::jsonb,$6,'sibling evidence','APPROVED'
+         )`,
+        [
+          siblingEvidenceId,
+          spaceId,
+          siblingVaultId,
+          siblingSourceId,
+          JSON.stringify({
+            kind: "source",
+            source_hash: siblingSourceHash,
+            path: `source:${siblingSourceId}`,
+          }),
+          sha256("sibling evidence"),
+        ],
+      );
+
+      const insertPacket = async (
+        id: string,
+        persistedVaultId: string | null,
+        packet: Record<string, unknown>,
+        packetScope: Record<string, unknown>,
+      ) => {
+        await db.pool.query(
+          `insert into context_packets(
+             id,space_id,vault_id,actor_id,corpus_revision,query_hash,
+             packet_hash,request,packet,scope
+           ) values(
+             $1,$2,$3,null,'boundary-rev',$4,$5,$6::jsonb,$7::jsonb,$8::jsonb
+           )`,
+          [
+            id,
+            spaceId,
+            persistedVaultId,
+            sha256(`query-${id}`),
+            sha256(`packet-${id}`),
+            JSON.stringify({ query: "controlled access boundary probe" }),
+            JSON.stringify(packet),
+            JSON.stringify(packetScope),
+          ],
+        );
+      };
+
+      await insertPacket(
+        crossVaultPacketId,
+        vaultId,
+        {
+          sections: [
+            {
+              documentId: siblingDocumentId,
+              vaultId: siblingVaultId,
+              sourceOrEvidenceIds: [siblingEvidenceId],
+            },
+          ],
+        },
+        {
+          spaceId,
+          vaultIds: [vaultId],
+          federated: false,
+        },
+      );
+
+      await insertPacket(
+        crossSpacePacketId,
+        vaultId,
+        { sections: [] },
+        {
+          spaceId,
+          vaultIds: [vaultId],
+          federated: false,
+        },
+      );
+      await db.pool.query(
+        `insert into context_packet_continuations(
+           packet_id,handle,reason,remaining_tokens,sections
+         ) values($1,$2,'controlled boundary fixture',1,$3::jsonb)`,
+        [
+          crossSpacePacketId,
+          continuationHandle,
+          JSON.stringify([
+            {
+              documentId: foreignDocumentId,
+              vaultId: foreignVaultId,
+              sourceOrEvidenceIds: [],
+            },
+          ]),
+        ],
+      );
+
+      await insertPacket(
+        nonFederatedPacketId,
+        null,
+        { sections: [] },
+        {
+          spaceId,
+          vaultIds: [vaultId, siblingVaultId],
+          federated: false,
+        },
+      );
+
+      await insertPacket(
+        foreignScopePacketId,
+        null,
+        { sections: [] },
+        {
+          spaceId,
+          vaultIds: [vaultId, foreignVaultId],
+          federated: true,
+        },
+      );
+
+      const run = await submitAssuranceRun(db, {
+        spaceId,
+        vaultId,
+        trigger: "MANUAL",
+        detectors: ["ACCESS_BOUNDARY"],
+        idempotencyKey: `access-boundary-${randomUUID()}`,
+        maxAttempts: 1,
+      });
+      const workerId = `access-boundary-${randomUUID()}`;
+      const claimed = await claimNextAssuranceRun(db, workerId, 60, {
+        runId: run.id,
+      });
+      if (!claimed) throw new Error("expected access-boundary assurance run");
+
+      await expect(runClaimedAssuranceRun(db, claimed, workerId)).resolves.toBe(
+        "COMPLETED",
+      );
+
+      const findings = await db.pool.query<{
+        code: string;
+        target_ids: string[];
+        metadata: Record<string, unknown>;
+      }>(
+        `select code,target_ids,metadata
+           from assurance_findings
+          where run_id=$1 and detector='ACCESS_BOUNDARY'
+          order by code,target_ids::text`,
+        [run.id],
+      );
+
+      expect(findings.rows).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: "CONTEXT_PACKET_CROSS_VAULT_LEAK",
+          }),
+          expect.objectContaining({
+            code: "CONTEXT_PACKET_CROSS_SPACE_LEAK",
+          }),
+          expect.objectContaining({
+            code: "CONTEXT_PACKET_EVIDENCE_SCOPE_LEAK",
+          }),
+          expect.objectContaining({
+            code: "NON_FEDERATED_MULTI_VAULT_SCOPE",
+          }),
+          expect.objectContaining({
+            code: "CONTEXT_PACKET_SCOPE_VAULT_OUTSIDE_SPACE",
+          }),
+        ]),
+      );
+
+      const crossSpace = findings.rows.find(
+        (finding) => finding.code === "CONTEXT_PACKET_CROSS_SPACE_LEAK",
+      );
+      expect(crossSpace?.target_ids).toEqual(
+        expect.arrayContaining([crossSpacePacketId, foreignDocumentId]),
+      );
+      expect(crossSpace?.metadata).toMatchObject({
+        location: "CONTINUATION",
+        handle: continuationHandle,
+        documentSpaceId: foreignSpaceId,
+        documentVaultId: foreignVaultId,
+      });
+
+      const crossVault = findings.rows.find(
+        (finding) => finding.code === "CONTEXT_PACKET_CROSS_VAULT_LEAK",
+      );
+      expect(crossVault?.target_ids).toEqual(
+        expect.arrayContaining([crossVaultPacketId, siblingDocumentId]),
+      );
+      expect(crossVault?.metadata).toMatchObject({
+        location: "PACKET",
+        documentSpaceId: spaceId,
+        documentVaultId: siblingVaultId,
+      });
+    } finally {
+      await db.pool.query(
+        "delete from context_packets where id=any($1::uuid[])",
+        [[
+          crossVaultPacketId,
+          crossSpacePacketId,
+          nonFederatedPacketId,
+          foreignScopePacketId,
+        ]],
+      );
+      await db.pool.query("delete from evidence where id=$1", [
+        siblingEvidenceId,
+      ]);
+      await db.pool.query("delete from sources where id=$1", [siblingSourceId]);
+      await db.pool.query(
+        "delete from knowledge_documents where id=any($1::uuid[])",
+        [[siblingDocumentId, foreignDocumentId]],
+      );
+      await db.pool.query("delete from vaults where id=$1", [siblingVaultId]);
+      await db.pool.query("delete from spaces where id=$1", [foreignSpaceId]);
+    }
+  });
+
 });
