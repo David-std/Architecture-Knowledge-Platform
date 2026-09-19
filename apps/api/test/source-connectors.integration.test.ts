@@ -2,9 +2,7 @@ import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Postgres, registerSourceConnector } from "@akp/postgres";
 import type { FastifyInstance } from "fastify";
-import {
-  sourceConnectorWebhookMessage,
-} from "../src/routes/source-connectors.js";
+import { sourceConnectorWebhookMessage } from "../src/routes/source-connectors.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describeDb = databaseUrl ? describe : describe.skip;
@@ -133,13 +131,53 @@ describeDb("authenticated generic source connector webhook", () => {
       },
     };
 
-    const response = await app.inject({
-      method: "POST",
-      url: `/hooks/source-connectors/${connectorId}/events`,
-      headers: signedHeaders(body, timestamp),
-      payload: body,
-    });
-    expect(response.statusCode, response.body).toBe(202);
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => {
+      throw new Error("SOURCE_CONNECTOR_OUTBOUND_FETCH_FORBIDDEN");
+    };
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: `/hooks/source-connectors/${connectorId}/events`,
+        headers: signedHeaders(body, timestamp),
+        payload: body,
+      });
+      expect(response.statusCode, response.body).toBe(202);
+
+      const exactReplay = await app.inject({
+        method: "POST",
+        url: `/hooks/source-connectors/${connectorId}/events`,
+        headers: signedHeaders(body, timestamp),
+        payload: body,
+      });
+      expect(exactReplay.statusCode, exactReplay.body).toBe(200);
+      expect(exactReplay.json()).toMatchObject({
+        connectorId,
+        duplicate: true,
+        sequence: 1,
+        status: "PENDING",
+      });
+
+      const mutated = {
+        ...body,
+        object: {
+          ...body.object,
+          title: "Mutated replay",
+        },
+      };
+      const conflictingReplay = await app.inject({
+        method: "POST",
+        url: `/hooks/source-connectors/${connectorId}/events`,
+        headers: signedHeaders(mutated, timestamp),
+        payload: mutated,
+      });
+      expect(conflictingReplay.statusCode, conflictingReplay.body).toBe(409);
+      expect(conflictingReplay.json()).toMatchObject({
+        code: "SOURCE_CONNECTOR_EVENT_ID_CONFLICT",
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
 
     const stored = await db.pool.query<{
       event_id: string;
@@ -199,9 +237,7 @@ describeDb("authenticated generic source connector webhook", () => {
     });
     expect(tamperedResponse.statusCode).toBe(401);
 
-    const staleTimestamp = String(
-      Math.floor((Date.now() - 301_000) / 1000),
-    );
+    const staleTimestamp = String(Math.floor((Date.now() - 301_000) / 1000));
     const staleResponse = await app.inject({
       method: "POST",
       url: `/hooks/source-connectors/${connectorId}/events`,

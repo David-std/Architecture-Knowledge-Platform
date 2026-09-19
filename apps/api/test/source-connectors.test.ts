@@ -1,7 +1,4 @@
-import {
-  generateKeyPairSync,
-  sign,
-} from "node:crypto";
+import { generateKeyPairSync, sign } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   sourceConnectorWebhookMessage,
@@ -10,10 +7,12 @@ import {
 
 describe("source connector webhook signatures", () => {
   const { publicKey, privateKey } = generateKeyPairSync("ed25519");
-  const publicKeyPem = publicKey.export({
-    type: "spki",
-    format: "pem",
-  }).toString();
+  const publicKeyPem = publicKey
+    .export({
+      type: "spki",
+      format: "pem",
+    })
+    .toString();
 
   const connectorId = "11111111-1111-4111-8111-111111111111";
   const timestamp = "1789821600";

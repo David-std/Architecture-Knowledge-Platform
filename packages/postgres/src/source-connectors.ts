@@ -56,6 +56,16 @@ export interface SourceConnectorInboxSummary {
   blockedByGap: number;
 }
 
+function sourceConnectorError(code: string, statusCode: number): Error {
+  const error = new Error(code) as Error & {
+    code?: string;
+    statusCode?: number;
+  };
+  error.code = code;
+  error.statusCode = statusCode;
+  return error;
+}
+
 export async function registerSourceConnector(
   db: Postgres,
   input: SourceConnectorRegistrationInput,
@@ -109,13 +119,13 @@ export async function appendSourceConnectorEvent(
   input: SourceConnectorEventInput,
 ): Promise<SourceConnectorEventReceipt> {
   if (!Number.isSafeInteger(input.sequence) || input.sequence < 1) {
-    throw new Error("SOURCE_CONNECTOR_SEQUENCE_INVALID");
+    throw sourceConnectorError("SOURCE_CONNECTOR_SEQUENCE_INVALID", 400);
   }
   if (!/^[a-f0-9]{64}$/.test(input.payloadHash)) {
-    throw new Error("SOURCE_CONNECTOR_PAYLOAD_HASH_INVALID");
+    throw sourceConnectorError("SOURCE_CONNECTOR_PAYLOAD_HASH_INVALID", 400);
   }
   if (input.operation === "DELETE" && input.content != null) {
-    throw new Error("SOURCE_CONNECTOR_DELETE_CONTENT_FORBIDDEN");
+    throw sourceConnectorError("SOURCE_CONNECTOR_DELETE_CONTENT_FORBIDDEN", 400);
   }
 
   const client = await db.pool.connect();
@@ -133,9 +143,9 @@ export async function appendSourceConnectorEvent(
       [input.connectorId],
     );
     const connector = registration.rows[0];
-    if (!connector) throw new Error("SOURCE_CONNECTOR_NOT_FOUND");
+    if (!connector) throw sourceConnectorError("SOURCE_CONNECTOR_NOT_FOUND", 404);
     if (connector.state !== "ACTIVE") {
-      throw new Error("SOURCE_CONNECTOR_DISABLED");
+      throw sourceConnectorError("SOURCE_CONNECTOR_DISABLED", 409);
     }
 
     const existingByEvent = await client.query<{
@@ -155,7 +165,7 @@ export async function appendSourceConnectorEvent(
         Number(sameEvent.sequence) !== input.sequence ||
         sameEvent.payload_hash !== input.payloadHash
       ) {
-        throw new Error("SOURCE_CONNECTOR_EVENT_ID_CONFLICT");
+        throw sourceConnectorError("SOURCE_CONNECTOR_EVENT_ID_CONFLICT", 409);
       }
       await client.query("commit");
       return {
@@ -167,7 +177,7 @@ export async function appendSourceConnectorEvent(
     }
 
     if (input.sequence <= Number(connector.applied_sequence)) {
-      throw new Error("SOURCE_CONNECTOR_SEQUENCE_ALREADY_APPLIED");
+      throw sourceConnectorError("SOURCE_CONNECTOR_SEQUENCE_ALREADY_APPLIED", 409);
     }
 
     const existingSequence = await client.query<{ event_id: string }>(
@@ -177,7 +187,7 @@ export async function appendSourceConnectorEvent(
       [input.connectorId, input.sequence],
     );
     if (existingSequence.rowCount) {
-      throw new Error("SOURCE_CONNECTOR_SEQUENCE_CONFLICT");
+      throw sourceConnectorError("SOURCE_CONNECTOR_SEQUENCE_CONFLICT", 409);
     }
 
     const inserted = await client.query<{
@@ -261,7 +271,9 @@ export async function applyNextSourceConnectorEvent(
       return null;
     }
 
-    const checkpoint = await client.query<{ applied_sequence: string | number }>(
+    const checkpoint = await client.query<{
+      applied_sequence: string | number;
+    }>(
       `select applied_sequence
          from source_connector_checkpoints
         where connector_id=$1

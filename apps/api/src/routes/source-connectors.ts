@@ -7,12 +7,7 @@ import {
   resolveAuthorizedVaultScope,
   type Postgres,
 } from "@akp/postgres";
-import {
-  actorOf,
-  audit,
-  requirePermission,
-  type Permission,
-} from "../auth.js";
+import { actorOf, audit, requirePermission, type Permission } from "../auth.js";
 
 const UUID = z.string().uuid();
 const CONNECTOR_KEY = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -122,10 +117,7 @@ function canonicalJson(value: unknown): string {
     .join(",")}}`;
 }
 
-function headerValue(
-  request: FastifyRequest,
-  name: string,
-): string | null {
+function headerValue(request: FastifyRequest, name: string): string | null {
   const raw = request.headers[name];
   const value = Array.isArray(raw) ? raw[0] : raw;
   return typeof value === "string" && value.trim() ? value.trim() : null;
@@ -366,8 +358,7 @@ export function registerSourceConnectorRoutes(
         contentType: parsed.data.object.contentType ?? null,
         permissionFidelity: parsed.data.object.permissions.fidelity,
         permissionUncertain: parsed.data.object.permissions.uncertain,
-        aclFingerprint:
-          parsed.data.object.permissions.aclFingerprint ?? null,
+        aclFingerprint: parsed.data.object.permissions.aclFingerprint ?? null,
         metadata: parsed.data.object.metadata,
         payloadHash: createHash("sha256").update(serialized).digest("hex"),
       });
