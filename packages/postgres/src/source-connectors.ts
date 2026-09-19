@@ -54,6 +54,16 @@ export interface SourceConnectorInboxSummary {
   pending: number;
   immediatelyClaimable: number;
   blockedByGap: number;
+  scheduledRetry: number;
+  rejected: number;
+  nextWakeAt: string | null;
+}
+
+function safeConnectorApplyErrorCode(error: unknown): string {
+  const value = error instanceof Error ? error.message : String(error);
+  return /^[A-Z][A-Z0-9_]{2,120}$/.test(value)
+    ? value
+    : "SOURCE_CONNECTOR_APPLY_FAILED";
 }
 
 function sourceConnectorError(code: string, statusCode: number): Error {
@@ -257,6 +267,7 @@ export async function appendSourceConnectorEvent(
 
 export async function applyNextSourceConnectorEvent(
   db: Postgres,
+  options: { connectorId?: string } = {},
 ): Promise<AppliedSourceConnectorEvent | null> {
   const client = await db.pool.connect();
   try {
@@ -267,10 +278,14 @@ export async function applyNextSourceConnectorEvent(
          join source_connector_registrations r on r.id=e.connector_id
          join source_connector_checkpoints c on c.connector_id=e.connector_id
         where e.status='PENDING' and r.state='ACTIVE'
+          and ($1::uuid is null or e.connector_id=$1::uuid)
           and e.sequence=c.applied_sequence+1
-        order by e.received_at,e.id
+          and e.next_attempt_at<=now()
+          and e.apply_attempts<e.max_apply_attempts
+        order by e.next_attempt_at,e.received_at,e.id
         for update of e skip locked
         limit 1`,
+      [options.connectorId ?? null],
     );
     const event = selected.rows[0];
     if (!event) {
@@ -294,96 +309,135 @@ export async function applyNextSourceConnectorEvent(
       return null;
     }
 
-    const lifecycle =
-      String(event.operation) === "DELETE" ? "DELETED_TOMBSTONE" : "ACTIVE";
+    const attempt = Number(event.apply_attempts ?? 0) + 1;
+    const maxAttempts = Number(event.max_apply_attempts ?? 8);
     await client.query(
-      `insert into source_connector_objects(
-         connector_id,object_id,object_type,source_version,lifecycle,title,
-         content,content_type,permission_fidelity,permission_uncertain,
-         acl_fingerprint,metadata,source_sequence,observed_at
-       ) values(
-         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13,$14::timestamptz
-       )
-       on conflict(connector_id,object_id) do update
-         set object_type=excluded.object_type,
-             source_version=excluded.source_version,
-             lifecycle=excluded.lifecycle,
-             title=excluded.title,
-             content=excluded.content,
-             content_type=excluded.content_type,
-             permission_fidelity=excluded.permission_fidelity,
-             permission_uncertain=excluded.permission_uncertain,
-             acl_fingerprint=excluded.acl_fingerprint,
-             metadata=excluded.metadata,
-             source_sequence=excluded.source_sequence,
-             observed_at=excluded.observed_at,
-             updated_at=now()
-       where source_connector_objects.source_sequence<excluded.source_sequence`,
-      [
-        event.connector_id,
-        event.object_id,
-        event.object_type,
-        event.source_version,
-        lifecycle,
-        event.title ?? null,
-        lifecycle === "DELETED_TOMBSTONE" ? null : (event.content ?? null),
-        event.content_type ?? null,
-        event.permission_fidelity,
-        event.permission_uncertain,
-        event.acl_fingerprint ?? null,
-        JSON.stringify(event.metadata ?? {}),
-        sequence,
-        event.occurred_at,
-      ],
-    );
-    const eventUpdated = await client.query(
       `update source_connector_events
-          set status='APPLIED',applied_at=now()
+          set apply_attempts=$2
         where id=$1 and status='PENDING'`,
-      [event.id],
+      [event.id, attempt],
     );
-    if (eventUpdated.rowCount !== 1) {
-      throw new Error("SOURCE_CONNECTOR_EVENT_FENCED");
-    }
-    const checkpointUpdated = await client.query(
-      `update source_connector_checkpoints
-          set applied_sequence=$2,updated_at=now()
-        where connector_id=$1 and applied_sequence=$3`,
-      [event.connector_id, sequence, applied],
-    );
-    if (checkpointUpdated.rowCount !== 1) {
-      throw new Error("SOURCE_CONNECTOR_CHECKPOINT_FENCED");
-    }
+    await client.query("savepoint source_connector_apply");
 
-    await client.query(
-      `insert into assurance_runs(
-         space_id,vault_id,trigger,detectors,idempotency_key
-       ) values(
-         $1,$2,'CONNECTOR_EVENT',
-         array[
-           'CONNECTOR_DELETION',
-           'CONNECTOR_FRESHNESS',
-           'CONNECTOR_ACL_DRIFT'
-         ]::text[],
-         $3
-       )
-       on conflict(space_id,vault_id,idempotency_key) do nothing`,
-      [
-        event.space_id,
-        event.vault_id,
-        `connector-event:${String(event.connector_id)}:${sequence}`,
-      ],
-    );
-    await client.query("commit");
-    return {
-      eventId: String(event.event_id),
-      connectorId: String(event.connector_id),
-      spaceId: String(event.space_id),
-      vaultId: String(event.vault_id),
-      sequence,
-      operation: String(event.operation) as "UPSERT" | "DELETE",
-      objectId: String(event.object_id),
-    };
+    try {
+      const lifecycle =
+        String(event.operation) === "DELETE"
+          ? "DELETED_TOMBSTONE"
+          : "ACTIVE";
+      await client.query(
+        `insert into source_connector_objects(
+           connector_id,object_id,object_type,source_version,lifecycle,title,
+           content,content_type,permission_fidelity,permission_uncertain,
+           acl_fingerprint,metadata,source_sequence,observed_at
+         ) values(
+           $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13,$14::timestamptz
+         )
+         on conflict(connector_id,object_id) do update
+           set object_type=excluded.object_type,
+               source_version=excluded.source_version,
+               lifecycle=excluded.lifecycle,
+               title=excluded.title,
+               content=excluded.content,
+               content_type=excluded.content_type,
+               permission_fidelity=excluded.permission_fidelity,
+               permission_uncertain=excluded.permission_uncertain,
+               acl_fingerprint=excluded.acl_fingerprint,
+               metadata=excluded.metadata,
+               source_sequence=excluded.source_sequence,
+               observed_at=excluded.observed_at,
+               updated_at=now()
+         where source_connector_objects.source_sequence<excluded.source_sequence`,
+        [
+          event.connector_id,
+          event.object_id,
+          event.object_type,
+          event.source_version,
+          lifecycle,
+          event.title ?? null,
+          lifecycle === "DELETED_TOMBSTONE" ? null : (event.content ?? null),
+          event.content_type ?? null,
+          event.permission_fidelity,
+          event.permission_uncertain,
+          event.acl_fingerprint ?? null,
+          JSON.stringify(event.metadata ?? {}),
+          sequence,
+          event.occurred_at,
+        ],
+      );
+      const eventUpdated = await client.query(
+        `update source_connector_events
+            set status='APPLIED',applied_at=now(),error_code=null,
+                last_error_at=null,next_attempt_at=now()
+          where id=$1 and status='PENDING'`,
+        [event.id],
+      );
+      if (eventUpdated.rowCount !== 1) {
+        throw new Error("SOURCE_CONNECTOR_EVENT_FENCED");
+      }
+      const checkpointUpdated = await client.query(
+        `update source_connector_checkpoints
+            set applied_sequence=$2,updated_at=now()
+          where connector_id=$1 and applied_sequence=$3`,
+        [event.connector_id, sequence, applied],
+      );
+      if (checkpointUpdated.rowCount !== 1) {
+        throw new Error("SOURCE_CONNECTOR_CHECKPOINT_FENCED");
+      }
+
+      await client.query(
+        `insert into assurance_runs(
+           space_id,vault_id,trigger,detectors,idempotency_key
+         ) values(
+           $1,$2,'CONNECTOR_EVENT',
+           array[
+             'CONNECTOR_DELETION',
+             'CONNECTOR_FRESHNESS',
+             'CONNECTOR_ACL_DRIFT'
+           ]::text[],
+           $3
+         )
+         on conflict(space_id,vault_id,idempotency_key) do nothing`,
+        [
+          event.space_id,
+          event.vault_id,
+          `connector-event:${String(event.connector_id)}:${sequence}`,
+        ],
+      );
+      await client.query("release savepoint source_connector_apply");
+      await client.query("commit");
+      return {
+        eventId: String(event.event_id),
+        connectorId: String(event.connector_id),
+        spaceId: String(event.space_id),
+        vaultId: String(event.vault_id),
+        sequence,
+        operation: String(event.operation) as "UPSERT" | "DELETE",
+        objectId: String(event.object_id),
+      };
+    } catch (error) {
+      await client.query("rollback to savepoint source_connector_apply");
+      const terminal = attempt >= maxAttempts;
+      const delaySeconds = Math.min(300, 2 ** Math.min(attempt, 8));
+      await client.query(
+        `update source_connector_events
+            set status=case when $2 then 'REJECTED' else 'PENDING' end,
+                error_code=$3,
+                last_error_at=now(),
+                next_attempt_at=case
+                  when $2 then next_attempt_at
+                  else now()+make_interval(secs => $4)
+                end
+          where id=$1`,
+        [
+          event.id,
+          terminal,
+          safeConnectorApplyErrorCode(error),
+          delaySeconds,
+        ],
+      );
+      await client.query("commit");
+      return null;
+    }
   } catch (error) {
     await client.query("rollback").catch(() => undefined);
     throw error;
@@ -399,15 +453,36 @@ export async function summarizeSourceConnectorInbox(
     pending: number;
     immediately_claimable: number;
     blocked_by_gap: number;
+    scheduled_retry: number;
+    rejected: number;
+    next_wake_at: Date | string | null;
   }>(
     `select
        count(*) filter (where e.status='PENDING')::int pending,
        count(*) filter (
-         where e.status='PENDING' and e.sequence=c.applied_sequence+1
+         where e.status='PENDING'
+           and e.sequence=c.applied_sequence+1
+           and e.next_attempt_at<=now()
        )::int immediately_claimable,
        count(*) filter (
-         where e.status='PENDING' and e.sequence>c.applied_sequence+1
-       )::int blocked_by_gap
+         where e.status='PENDING'
+           and e.sequence>c.applied_sequence+1
+       )::int blocked_by_gap,
+       count(*) filter (
+         where e.status='PENDING'
+           and e.sequence=c.applied_sequence+1
+           and e.next_attempt_at>now()
+       )::int scheduled_retry,
+       count(*) filter (where e.status='REJECTED')::int rejected,
+       min(
+         case
+           when e.status='PENDING'
+             and e.sequence=c.applied_sequence+1
+             and e.next_attempt_at>now()
+           then e.next_attempt_at
+           else null
+         end
+       ) next_wake_at
        from source_connector_events e
        join source_connector_checkpoints c on c.connector_id=e.connector_id
        join source_connector_registrations r on r.id=e.connector_id
@@ -417,5 +492,11 @@ export async function summarizeSourceConnectorInbox(
     pending: Number(result.rows[0]?.pending ?? 0),
     immediatelyClaimable: Number(result.rows[0]?.immediately_claimable ?? 0),
     blockedByGap: Number(result.rows[0]?.blocked_by_gap ?? 0),
+    scheduledRetry: Number(result.rows[0]?.scheduled_retry ?? 0),
+    rejected: Number(result.rows[0]?.rejected ?? 0),
+    nextWakeAt: result.rows[0]?.next_wake_at
+      ? new Date(result.rows[0].next_wake_at).toISOString()
+      : null,
   };
 }
+

@@ -281,4 +281,135 @@ describeDb("source connector no-gap inbox", () => {
       blockedByGap: 0,
     });
   });
+
+  it("persists apply retries, exhausts to REJECTED, and never advances the checkpoint", async () => {
+    await appendSourceConnectorEvent(db, {
+      connectorId,
+      eventId: "event-retry-4",
+      sequence: 4,
+      occurredAt: "2026-09-19T12:00:04.000Z",
+      operation: "UPSERT",
+      objectId: "retry-ticket",
+      objectType: "WORK_ITEM",
+      sourceVersion: "v4",
+      title: "Retry fixture",
+      content: "retry fixture",
+      contentType: "text/plain",
+      permissionFidelity: "SOURCE_ACL_MAPPED",
+      permissionUncertain: false,
+      metadata: {},
+      payloadHash: hash("event-retry-4"),
+    });
+    await db.pool.query(
+      `update source_connector_events
+          set max_apply_attempts=2
+        where connector_id=$1 and event_id='event-retry-4'`,
+      [connectorId],
+    );
+
+    await db.pool.query(`
+      create or replace function akp_test_source_connector_retry_guard()
+      returns trigger language plpgsql as $$
+      begin
+        if new.object_id='retry-ticket' then
+          raise exception 'SOURCE_CONNECTOR_TEST_PROJECTION_FAILURE';
+        end if;
+        return new;
+      end;
+      $$
+    `);
+    await db.pool.query(`
+      create trigger akp_test_source_connector_retry_guard
+      before insert or update on source_connector_objects
+      for each row execute function akp_test_source_connector_retry_guard()
+    `);
+
+    try {
+      expect(
+        await applyNextSourceConnectorEvent(db, { connectorId }),
+      ).toBeNull();
+
+      const firstAttempt = await db.pool.query<{
+        status: string;
+        apply_attempts: number;
+        error_code: string | null;
+        next_attempt_at: Date | string;
+      }>(
+        `select status,apply_attempts,error_code,next_attempt_at
+           from source_connector_events
+          where connector_id=$1 and event_id='event-retry-4'`,
+        [connectorId],
+      );
+      expect(firstAttempt.rows[0]).toMatchObject({
+        status: "PENDING",
+        apply_attempts: 1,
+        error_code: "SOURCE_CONNECTOR_TEST_PROJECTION_FAILURE",
+      });
+      expect(new Date(firstAttempt.rows[0]!.next_attempt_at).getTime()).toBeGreaterThan(
+        Date.now() - 500,
+      );
+      expect(await summarizeSourceConnectorInbox(db)).toMatchObject({
+        pending: 1,
+        immediatelyClaimable: 0,
+        scheduledRetry: 1,
+        rejected: 0,
+      });
+
+      await db.pool.query(
+        `update source_connector_events
+            set next_attempt_at=now()-interval '1 second'
+          where connector_id=$1 and event_id='event-retry-4'`,
+        [connectorId],
+      );
+      expect(
+        await applyNextSourceConnectorEvent(db, { connectorId }),
+      ).toBeNull();
+
+      const terminal = await db.pool.query<{
+        status: string;
+        apply_attempts: number;
+        error_code: string | null;
+      }>(
+        `select status,apply_attempts,error_code
+           from source_connector_events
+          where connector_id=$1 and event_id='event-retry-4'`,
+        [connectorId],
+      );
+      expect(terminal.rows[0]).toMatchObject({
+        status: "REJECTED",
+        apply_attempts: 2,
+        error_code: "SOURCE_CONNECTOR_TEST_PROJECTION_FAILURE",
+      });
+      expect(await summarizeSourceConnectorInbox(db)).toMatchObject({
+        pending: 0,
+        immediatelyClaimable: 0,
+        scheduledRetry: 0,
+        rejected: 1,
+      });
+
+      const checkpoint = await db.pool.query<{
+        applied_sequence: string | number;
+      }>(
+        "select applied_sequence from source_connector_checkpoints where connector_id=$1",
+        [connectorId],
+      );
+      expect(Number(checkpoint.rows[0]?.applied_sequence)).toBe(3);
+      const projected = await db.pool.query<{ count: number }>(
+        `select count(*)::int count
+           from source_connector_objects
+          where connector_id=$1 and object_id='retry-ticket'`,
+        [connectorId],
+      );
+      expect(projected.rows[0]?.count).toBe(0);
+    } finally {
+      await db.pool
+        .query(
+          "drop trigger if exists akp_test_source_connector_retry_guard on source_connector_objects",
+        )
+        .catch(() => undefined);
+      await db.pool
+        .query("drop function if exists akp_test_source_connector_retry_guard()")
+        .catch(() => undefined);
+    }
+  });
 });

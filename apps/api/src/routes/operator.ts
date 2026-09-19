@@ -459,6 +459,13 @@ export function registerOperatorRoutes(
           `
             select r.id,r.space_id,r.vault_id,r.connector_key,r.source_system,
                    r.state,r.descriptor,r.last_event_at,c.applied_sequence,
+                   c.updated_at checkpoint_updated_at,
+                   case
+                     when r.state<>'ACTIVE' then 'DISABLED'
+                     when r.descriptor#>>'{incremental,webhook}'='true'
+                       then 'ENABLED'
+                     else 'NOT_CONFIGURED'
+                   end webhook_status,
                    (
                      select count(*)::int
                        from source_connector_events e
@@ -470,6 +477,35 @@ export function registerOperatorRoutes(
                       where e.connector_id=r.id and e.status='PENDING'
                         and e.sequence>c.applied_sequence+1
                    ) gap_events,
+                   (
+                     select count(*)::int
+                       from source_connector_events e
+                      where e.connector_id=r.id and e.status='PENDING'
+                        and e.sequence=c.applied_sequence+1
+                        and e.next_attempt_at>now()
+                   ) retry_events,
+                   (
+                     select count(*)::int
+                       from source_connector_events e
+                      where e.connector_id=r.id and e.status='REJECTED'
+                   ) rejected_events,
+                   (
+                     select coalesce(sum(e.apply_attempts),0)::int
+                       from source_connector_events e
+                      where e.connector_id=r.id
+                   ) total_apply_attempts,
+                   (
+                     select e.error_code
+                       from source_connector_events e
+                      where e.connector_id=r.id and e.error_code is not null
+                      order by e.last_error_at desc nulls last,e.received_at desc
+                      limit 1
+                   ) last_error_code,
+                   (
+                     select count(*)::int
+                       from source_connector_objects o
+                      where o.connector_id=r.id and o.lifecycle='ACTIVE'
+                   ) active_objects,
                    (
                      select count(*)::int
                        from source_connector_objects o

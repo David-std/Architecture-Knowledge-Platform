@@ -26,9 +26,16 @@ type Connector = {
     incremental?: { cursor?: boolean; webhook?: boolean };
   };
   last_event_at?: string | null;
+  checkpoint_updated_at?: string | null;
   applied_sequence: number | string;
+  webhook_status: string;
   pending_events: number;
   gap_events: number;
+  retry_events: number;
+  rejected_events: number;
+  total_apply_attempts: number;
+  last_error_code?: string | null;
+  active_objects: number;
   uncertain_acl_objects: number;
   tombstones: number;
 };
@@ -76,6 +83,10 @@ export default async function ConnectorsPage({
     (total, connector) => total + Number(connector.uncertain_acl_objects ?? 0),
     0,
   );
+  const rejected = connectors.reduce(
+    (total, connector) => total + Number(connector.rejected_events ?? 0),
+    0,
+  );
 
   return (
     <main>
@@ -118,6 +129,10 @@ export default async function ConnectorsPage({
           <span className="muted">Objetos con ACL incierto</span>
           <p className="metric">{uncertainAcl}</p>
         </section>
+        <section className="card">
+          <span className="muted">Eventos rechazados</span>
+          <p className="metric">{rejected}</p>
+        </section>
       </div>
 
       {connectors.length ? (
@@ -127,10 +142,10 @@ export default async function ConnectorsPage({
               <tr>
                 <th>Connector</th>
                 <th>Estado / checkpoint</th>
-                <th>Frescura</th>
+                <th>Sync / retry</th>
                 <th>Permisos</th>
-                <th>Ingesta</th>
-                <th>Borrados</th>
+                <th>Objetos</th>
+                <th>Webhook / borrados</th>
               </tr>
             </thead>
             <tbody>
@@ -149,12 +164,46 @@ export default async function ConnectorsPage({
                     checkpoint {String(connector.applied_sequence)}
                     <br />
                     <small>
-                      pending {connector.pending_events} · gaps{" "}
-                      {connector.gap_events}
+                      actualizado {connector.checkpoint_updated_at ?? "—"}
                     </small>
                   </td>
                   <td>
-                    Último evento: {connector.last_event_at ?? "—"}
+                    último evento {connector.last_event_at ?? "—"}
+                    <br />
+                    <small>
+                      pending {connector.pending_events} · gaps{" "}
+                      {connector.gap_events} · retry {connector.retry_events}
+                    </small>
+                    <br />
+                    <small>
+                      intentos {connector.total_apply_attempts} · rejected{" "}
+                      {connector.rejected_events}
+                    </small>
+                    {connector.last_error_code ? (
+                      <>
+                        <br />
+                        <code>{connector.last_error_code}</code>
+                      </>
+                    ) : null}
+                  </td>
+                  <td>
+                    {connector.descriptor.permissionFidelity ?? "—"}
+                    <br />
+                    <small>
+                      ACL incierto: {connector.uncertain_acl_objects}
+                    </small>
+                    <br />
+                    <small>
+                      residencia {connector.descriptor.dataResidency ?? "—"}
+                    </small>
+                  </td>
+                  <td>
+                    activos {connector.active_objects}
+                    <br />
+                    <small>
+                      replication {connector.descriptor.replication ?? "—"} ·
+                      trust {connector.descriptor.contentTrust ?? "—"}
+                    </small>
                     <br />
                     <small>
                       SLA{" "}
@@ -164,30 +213,19 @@ export default async function ConnectorsPage({
                     </small>
                   </td>
                   <td>
-                    {connector.descriptor.permissionFidelity ?? "—"}
+                    {connector.webhook_status}
                     <br />
                     <small>
-                      ACL incierto: {connector.uncertain_acl_objects}
-                    </small>
-                  </td>
-                  <td>
-                    {connector.descriptor.replication ?? "—"}
-                    <br />
-                    <small>
-                      webhook{" "}
-                      {connector.descriptor.incremental?.webhook ? "sí" : "no"} ·
                       cursor{" "}
-                      {connector.descriptor.incremental?.cursor ? "sí" : "no"}
+                      {connector.descriptor.incremental?.cursor ? "sí" : "no"} ·
+                      webhook{" "}
+                      {connector.descriptor.incremental?.webhook ? "sí" : "no"}
                     </small>
                     <br />
                     <small>
-                      trust {connector.descriptor.contentTrust ?? "—"}
+                      {connector.descriptor.deletionPropagation ?? "—"} ·
+                      tombstones {connector.tombstones}
                     </small>
-                  </td>
-                  <td>
-                    {connector.descriptor.deletionPropagation ?? "—"}
-                    <br />
-                    <small>tombstones {connector.tombstones}</small>
                   </td>
                 </tr>
               ))}

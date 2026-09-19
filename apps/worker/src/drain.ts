@@ -53,6 +53,7 @@ export interface WorkerDrainSummary {
     | "QUARANTINED"
     | "ASSURANCE_FAILED"
     | "CONNECTOR_GAP_BLOCKED"
+    | "CONNECTOR_REJECTED"
     | "DEADLINE_EXCEEDED";
   consumerName: string;
   startedAt: string;
@@ -325,7 +326,30 @@ export async function drainToQuiescence(
       throw new WorkerDrainError(summary);
     }
 
-    if (connectors.blockedByGap > 0 && connectors.immediatelyClaimable === 0) {
+    if (connectors.rejected > 0) {
+      throw new WorkerDrainError(
+        makeSummary(
+          options,
+          startedAtMs,
+          deadlineAtMs,
+          eventsProcessed,
+          ingestJobsProcessed,
+          assuranceRunsProcessed,
+          connectorEventsProcessed,
+          deliveries,
+          ingest,
+          assurance,
+          connectors,
+          "CONNECTOR_REJECTED",
+        ),
+      );
+    }
+
+    if (
+      connectors.blockedByGap > 0 &&
+      connectors.immediatelyClaimable === 0 &&
+      connectors.scheduledRetry === 0
+    ) {
       throw new WorkerDrainError(
         makeSummary(
           options,
@@ -386,7 +410,8 @@ export async function drainToQuiescence(
       ingest.work === 0 &&
       deliveries.nonTerminal === 0 &&
       assurance.work === 0 &&
-      connectors.pending === 0
+      connectors.pending === 0 &&
+      connectors.rejected === 0
     ) {
       return makeSummary(
         options,
@@ -419,8 +444,11 @@ export async function drainToQuiescence(
 
     await waitUntil(
       earlierTimestamp(
-        earlierTimestamp(deliveries.nextWakeAt, ingest.nextWakeAt),
-        assurance.nextWakeAt,
+        earlierTimestamp(
+          earlierTimestamp(deliveries.nextWakeAt, ingest.nextWakeAt),
+          assurance.nextWakeAt,
+        ),
+        connectors.nextWakeAt,
       ),
       deadlineAtMs,
     );
