@@ -740,6 +740,59 @@ describe("product lifecycle E2E", () => {
       ),
     ).toBe(true);
     expect(contextBody.citations.length).toBeGreaterThan(0);
+
+    const catalogContext = await app.inject({
+      method: "POST",
+      url: "/v1/context",
+      headers,
+      payload: {
+        query: revisionMarker,
+        spaceId: defaultSpace,
+        vaultId,
+        contextLevel: "L0",
+        maxTokens: 2_000,
+      },
+    });
+    expect(catalogContext.statusCode, catalogContext.body).toBe(200);
+    const catalogBody = catalogContext.json() as {
+      requestedContextLevel: string;
+      sections: Array<{ contextLevel: string; content: string }>;
+    };
+    expect(catalogBody.requestedContextLevel).toBe("L0");
+    expect(catalogBody.sections.length).toBeGreaterThan(0);
+    expect(
+      catalogBody.sections.every(
+        (section) =>
+          section.contextLevel === "L0" && section.content.includes("revision="),
+      ),
+    ).toBe(true);
+
+    const fullContext = await app.inject({
+      method: "POST",
+      url: "/v1/context",
+      headers,
+      payload: {
+        query: revisionMarker,
+        spaceId: defaultSpace,
+        vaultId,
+        contextLevel: "L3",
+        maxTokens: 8_000,
+      },
+    });
+    expect(fullContext.statusCode, fullContext.body).toBe(200);
+    const fullContextBody = fullContext.json() as {
+      requestedContextLevel: string;
+      sections: Array<{ contextLevel: string; content: string }>;
+    };
+    expect(fullContextBody.requestedContextLevel).toBe("L3");
+    expect(
+      fullContextBody.sections.some(
+        (section) =>
+          section.contextLevel === "L3" &&
+          section.content.includes(revisionMarker),
+      ),
+    ).toBe(true);
+
     const contextRow = await db.pool.query<{
       vault_id: string;
       corpus_revision: string;
