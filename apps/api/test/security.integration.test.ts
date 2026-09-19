@@ -1460,6 +1460,158 @@ describe("API security boundaries", () => {
     }
   });
 
+  it("assembles both authorized sides of an open material conflict even when exact retrieval seeds only one side", async () => {
+    const vaultId = randomUUID();
+    const leftId = randomUUID();
+    const rightId = randomUUID();
+    const clusterId = randomUUID();
+    const revision = "fixture:context-conflict";
+    const leftExternalId = `CONFLICT-SEED-${leftId.slice(0, 8).toUpperCase()}`;
+    const rightExternalId = `CONFLICT-COUNTERPART-${rightId
+      .slice(0, 8)
+      .toUpperCase()}`;
+    try {
+      await db.pool.query(
+        `insert into vaults(
+           id,space_id,canonical_path,name,read_only,current_revision,
+           vault_key,local_path,visibility,enabled
+         ) values($1,$2,$3,'Context conflict fixture',true,$4,$5,$3,'PRIVATE',true)`,
+        [
+          vaultId,
+          defaultSpace,
+          path.join(allowedRoot, `context-conflict-${vaultId}`),
+          revision,
+          `context-conflict-${vaultId.slice(0, 8)}`,
+        ],
+      );
+      await db.pool.query(
+        `insert into vault_memberships(
+           user_id,vault_id,role,path_prefix,permissions
+         ) values($1,$2,'ADMIN',null,'["knowledge:read","source:read"]'::jsonb)`,
+        [admin, vaultId],
+      );
+      for (const fixture of [
+        {
+          id: leftId,
+          externalId: leftExternalId,
+          title: "Conflict side A",
+          path: "shared/conflict-side-a.md",
+          body: "Side A says retry attempts must stop after three failures.",
+        },
+        {
+          id: rightId,
+          externalId: rightExternalId,
+          title: "Conflict side B",
+          path: "shared/conflict-side-b.md",
+          body: "Side B says retry attempts may continue through five failures.",
+        },
+      ]) {
+        await db.pool.query(
+          `insert into knowledge_documents(
+             id,space_id,vault_id,path,external_id,title,type,lifecycle,
+             trust_tier,current_revision,body_cache,frontmatter,aliases,
+             layer,raw_links
+           ) values(
+             $1,$2,$3,$4,$5,$6,'source','ACTIVE','HUMAN_REVIEWED',$7,$8,
+             '{}'::jsonb,'{}'::text[],'source','[]'::jsonb
+           )`,
+          [
+            fixture.id,
+            defaultSpace,
+            vaultId,
+            fixture.path,
+            fixture.externalId,
+            fixture.title,
+            revision,
+            fixture.body,
+          ],
+        );
+      }
+      await db.pool.query(
+        `insert into vault_index_revisions(
+           space_id,vault_id,corpus_revision,lexical_revision,graph_revision,
+           context_pack_revision,status,warnings
+         ) values($1,$2,$3,$3,$3,$3,'CONSISTENT','[]'::jsonb)`,
+        [defaultSpace, vaultId, revision],
+      );
+      await db.pool.query(
+        `insert into contradiction_clusters(
+           id,space_id,vault_id,topic,status
+         ) values($1,$2,$3,'context assembly conflict','OPEN')`,
+        [clusterId, defaultSpace, vaultId],
+      );
+      await db.pool.query(
+        `insert into contradiction_members(
+           cluster_id,document_id,authority,scope
+         ) values
+           ($1,$2,'integration','context'),
+           ($1,$3,'integration','context')`,
+        [clusterId, leftId, rightId],
+      );
+
+      const response = await app.inject({
+        method: "POST",
+        url: "/v1/context",
+        headers,
+        payload: {
+          query: leftExternalId,
+          intent: "EXACT_LOOKUP",
+          spaceId: defaultSpace,
+          vaultId,
+          maxTokens: 4_000,
+        },
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      const packet = response.json() as {
+        conflicts: string[];
+        gaps: string[];
+        sections: Array<{
+          documentId: string;
+          content: string;
+          sourceOrEvidenceIds: string[];
+          selectionReason: string;
+        }>;
+      };
+      expect(packet.conflicts).toContain("context assembly conflict (OPEN)");
+      expect(packet.gaps).not.toContain(
+        expect.stringContaining("authorization/truth policy"),
+      );
+      expect(new Set(packet.sections.map((section) => section.documentId))).toEqual(
+        new Set([leftId, rightId]),
+      );
+      const counterpart = packet.sections.find(
+        (section) => section.documentId === rightId,
+      );
+      expect(counterpart?.content).toContain(
+        "retry attempts may continue through five failures",
+      );
+      expect(counterpart?.sourceOrEvidenceIds).toContain(
+        `shared/conflict-side-b.md@${revision}`,
+      );
+      expect(counterpart?.selectionReason).toContain(
+        "context:material-conflict-counterpart",
+      );
+    } finally {
+      await db.pool.query("delete from context_packets where vault_id=$1", [
+        vaultId,
+      ]);
+      await db.pool.query("delete from contradiction_clusters where id=$1", [
+        clusterId,
+      ]);
+      await db.pool.query("delete from knowledge_documents where vault_id=$1", [
+        vaultId,
+      ]);
+      await db.pool.query(
+        "delete from vault_index_revisions where vault_id=$1",
+        [vaultId],
+      );
+      await db.pool.query("delete from vault_memberships where vault_id=$1", [
+        vaultId,
+      ]);
+      await db.pool.query("delete from vaults where id=$1", [vaultId]);
+    }
+  });
+
   it("reclaims an expired job lease after a worker restart", async () => {
     const jobId = randomUUID();
     await db.pool.query(
