@@ -936,6 +936,124 @@ describe("buildContextPacket", () => {
     ).toEqual(["rule A1", "concept A2", "source B1"]);
   });
 
+  it("orders equal-kind context by authority, freshness, independent support, then relevance", () => {
+    const packet = buildContextPacket({
+      request: requestFor("authority freshness support"),
+      intent: "CONCEPTUAL",
+      corpusRevision: "deadbeef",
+      maxTokens: 20_000,
+      candidates: [
+        {
+          hit: {
+            ...baseHit,
+            documentId: "22222222-2222-4222-8222-222222222222",
+            trust: "MACHINE_SUPPORTED",
+            refreshStatus: "STALE_PENDING_REVIEW",
+            citations: ["source:one"],
+            score: 100,
+          },
+          content: "high relevance but weaker authority",
+          kind: "concept",
+        },
+        {
+          hit: {
+            ...baseHit,
+            documentId: "33333333-3333-4333-8333-333333333333",
+            trust: "ATTESTED",
+            refreshStatus: "CURRENT",
+            citations: ["source:one", "source:two"],
+            score: 1,
+          },
+          content: "authoritative current independently supported",
+          kind: "concept",
+        },
+      ],
+    });
+
+    expect(packet.sections.map((section) => section.content)).toEqual([
+      "authoritative current independently supported",
+      "high relevance but weaker authority",
+    ]);
+  });
+
+  it("places mandatory context and all accessible sides of a material conflict before ordinary candidates", () => {
+    const leftId = "22222222-2222-4222-8222-222222222222";
+    const rightId = "33333333-3333-4333-8333-333333333333";
+    const packet = buildContextPacket({
+      request: requestFor("material conflict"),
+      intent: "COMPARISON",
+      corpusRevision: "deadbeef",
+      maxTokens: 20_000,
+      materialConflicts: [
+        { id: "conflict:retry-policy", documentIds: [leftId, rightId] },
+      ],
+      candidates: [
+        {
+          hit: {
+            ...baseHit,
+            documentId: "44444444-4444-4444-8444-444444444444",
+            score: 1_000,
+          },
+          content: "ordinary high-score concept",
+          kind: "concept",
+        },
+        {
+          hit: { ...baseHit, documentId: leftId, score: 2 },
+          content: "conflict side A",
+          kind: "concept",
+        },
+        {
+          hit: { ...baseHit, documentId: rightId, score: 1 },
+          content: "conflict side B",
+          kind: "concept",
+        },
+        {
+          hit: {
+            ...baseHit,
+            documentId: "55555555-5555-4555-8555-555555555555",
+            score: 0.1,
+          },
+          content: "mandatory policy",
+          kind: "concept",
+          mandatory: true,
+        },
+      ],
+    });
+
+    expect(packet.sections.slice(0, 3).map((section) => section.content)).toEqual([
+      "mandatory policy",
+      "conflict side A",
+      "conflict side B",
+    ]);
+    expect(packet.sections[3]?.content).toBe("ordinary high-score concept");
+  });
+
+  it("makes unavailable material conflict sides explicit instead of silently claiming coverage", () => {
+    const packet = buildContextPacket({
+      request: requestFor("partial conflict"),
+      intent: "COMPARISON",
+      corpusRevision: "deadbeef",
+      maxTokens: 20_000,
+      materialConflicts: [
+        {
+          id: "conflict:partial",
+          documentIds: [
+            baseHit.documentId,
+            "22222222-2222-4222-8222-222222222222",
+          ],
+        },
+      ],
+      candidates: [{ hit: baseHit, content: "only accessible side", kind: "rule" }],
+    });
+
+    expect(packet.gaps).toContain(
+      "Material conflict conflict:partial has 1 unavailable side(s); complete conflict coverage was not possible.",
+    );
+    expect(packet.recommendedActions).toContain(
+      "Review the retrieval gaps before making a definitive claim.",
+    );
+  });
+
   it("projects a compact packet with a hard budget and preserves kind, revisions and continuation identity", () => {
     const full = buildContextPacket({
       request: requestFor("compact budget"),
