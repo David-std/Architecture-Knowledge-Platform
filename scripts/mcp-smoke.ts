@@ -281,7 +281,7 @@ try {
 
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
-    throw new Error("DATABASE_URL is required for MCP agent context exit evidence.");
+    throw new Error(\n      "DATABASE_URL is required for MCP agent context exit evidence.",\n    );
   }
   const codeRepository = `mcp-agent-context-fixture-${vaultId.slice(0, 8)}`;
   const codeCommit = "7".repeat(40);
@@ -335,7 +335,7 @@ try {
     scopeId: codeScopeId,
   });
   if (projection.skippedCandidateEdgeIds.length !== 0) {
-    throw new Error("MCP agent context Code Graph fixture unexpectedly skipped edges.");
+    throw new Error(\n      "MCP agent context Code Graph fixture unexpectedly skipped edges.",\n    );
   }
   await agentContextGraph.build(projection.projection);
   const facadeSearch = await client.callTool({
