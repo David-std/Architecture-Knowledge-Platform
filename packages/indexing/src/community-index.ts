@@ -64,14 +64,19 @@ function communityRevisionFor(input: {
     nodes: [...input.nodes].map((node) => node.id).sort(),
     edges: [...input.edges]
       .map((edge) => ({
+        key: edge.id,
         from: edge.from,
         to: edge.to,
         weight: edge.weight ?? 1,
       }))
       .sort((left, right) =>
-        [left.from, left.to, String(left.weight)].join("\0").localeCompare(
-          [right.from, right.to, String(right.weight)].join("\0"),
-        ),
+        [left.from, left.to, left.key, String(left.weight)]
+          .join("\0")
+          .localeCompare(
+            [right.from, right.to, right.key, String(right.weight)].join(
+              "\0",
+            ),
+          ),
       ),
   };
   return `community:${createHash("sha256")
