@@ -219,7 +219,7 @@ jobs:
               "contextUtilizationCoverage",
             ]) {
               if (!Number.isFinite(aggregate[metric]) || aggregate[metric] < 5 / 6) {
-                throw new Error(`Agent A/B aggregate ${aggregate.arm} lacks P6.15 coverage for ${metric}.`);
+                throw new Error(`Agent A/B aggregate ${aggregate.arm} lacks registered retrieval-quality coverage for ${metric}.`);
               }
             }
             if (!Number.isFinite(aggregate.noAnswerAccuracy) || aggregate.noAnswerCases !== 1) {
