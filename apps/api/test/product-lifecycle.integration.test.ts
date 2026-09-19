@@ -749,6 +749,52 @@ describe("product lifecycle E2E", () => {
     ).toBe(true);
     expect(contextBody.citations.length).toBeGreaterThan(0);
 
+    const reasonedContext = await app.inject({
+      method: "POST",
+      url: "/v1/context",
+      headers,
+      payload: {
+        query: revisionMarker,
+        intent: "CONCEPTUAL",
+        spaceId: defaultSpace,
+        vaultId,
+        reasoningMode: "PLAN",
+        maxTokens: 2_000,
+      },
+    });
+    expect(reasonedContext.statusCode, reasonedContext.body).toBe(200);
+    const reasonedContextBody = reasonedContext.json() as {
+      retrievalConfiguration: {
+        reasoning: {
+          requested: string;
+          execution: string;
+          trace: {
+            status: string;
+            steps: Array<{ operator: string; status: string }>;
+          };
+        };
+      };
+      sections: Array<{ content: string }>;
+    };
+    expect(reasonedContextBody.retrievalConfiguration.reasoning).toMatchObject({
+      requested: "PLAN",
+      execution: "PLAN",
+      trace: {
+        status: "SUCCESS",
+      },
+    });
+    expect(
+      reasonedContextBody.retrievalConfiguration.reasoning.trace.steps.at(-1),
+    ).toMatchObject({
+      operator: "BUILD_CONTEXT",
+      status: "SUCCESS",
+    });
+    expect(
+      reasonedContextBody.sections.some((section) =>
+        section.content.includes(revisionMarker),
+      ),
+    ).toBe(true);
+
     const catalogContext = await app.inject({
       method: "POST",
       url: "/v1/context",

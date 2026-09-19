@@ -579,6 +579,7 @@ export const ContextRequest = SearchRequest.extend({
   maxTokens: z.number().int().min(256).max(32000).optional(),
   packetMode: ContextPacketMode.default("FULL_CONTEXT_PACKET"),
   contextLevel: ContextDisclosureLevel.default("L2"),
+  reasoningMode: z.enum(["DIRECT", "PLAN"]).default("DIRECT"),
 });
 export type ContextRequest = z.infer<typeof ContextRequest>;
 

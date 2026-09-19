@@ -531,6 +531,10 @@ paths:
                       type: string
                       enum: [L0, L1, L2, L3]
                       default: L2
+                    reasoningMode:
+                      type: string
+                      enum: [DIRECT, PLAN]
+                      default: DIRECT
                     maxTokens:
                       {
                         type: integer,
