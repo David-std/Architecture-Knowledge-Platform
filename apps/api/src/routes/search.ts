@@ -2863,6 +2863,13 @@ export function registerSearchRoutes(
           vaultIds,
           graphScopes,
           ...(projectCode ? { codeCandidates: projectCode.candidates } : {}),
+          ...(dependencies.queryTransformer
+            ? {
+                queryTransformer: dependencies.queryTransformer,
+                queryTransformActorId: actor.id,
+                queryTransformTraceId: request.id,
+              }
+            : {}),
           warningSink: retrievalWarnings,
           availableChannelSink: availableChannels,
           pathAuthorizer,
@@ -3214,6 +3221,13 @@ export function registerSearchRoutes(
           vaultIds,
           graphScopes,
           ...(projectCode ? { codeCandidates: projectCode.candidates } : {}),
+          ...(dependencies.queryTransformer
+            ? {
+                queryTransformer: dependencies.queryTransformer,
+                queryTransformActorId: actor.id,
+                queryTransformTraceId: request.id,
+              }
+            : {}),
           warningSink: retrievalWarnings,
           availableChannelSink: availableChannels,
           pathAuthorizer,
