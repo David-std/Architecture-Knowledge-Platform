@@ -1933,10 +1933,7 @@ export async function queryKnowledge(
               const next = provenance.path[index + 1];
               if (!next || !current.relation) continue;
               const nextDocument = graphNodeById.get(next.documentId);
-              if (
-                !nextDocument ||
-                String(nextDocument.vault_id) !== scopeId
-              ) {
+              if (!nextDocument || String(nextDocument.vault_id) !== scopeId) {
                 continue;
               }
               const configuredWeight =
@@ -1988,8 +1985,9 @@ export async function queryKnowledge(
         if (pprSeedWeights.size > 0) {
           const pprPolicy = resolvePersonalizedPageRankPolicy({
             ...options.pprPolicy,
-            allowedGraphDomains:
-              options.pprPolicy?.allowedGraphDomains ?? ["EPISTEMIC"],
+            allowedGraphDomains: options.pprPolicy?.allowedGraphDomains ?? [
+              "EPISTEMIC",
+            ],
             allowedRelations:
               options.pprPolicy?.allowedRelations ??
               graphPolicy.allowedRelationTypes,
