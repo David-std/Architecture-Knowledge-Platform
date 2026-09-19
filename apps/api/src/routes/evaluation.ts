@@ -548,16 +548,27 @@ export async function runRetrievalBenchmark(
       tokenCost: "estimated excerpt tokens (characters / 4)",
     },
     runs,
-    selectedDefault: String(winner?.configurationName ?? "exact+lexical"),
-    vectorActivatedByDefault: vectorEligible,
+    selectedDefault: null,
+    measuredCandidate: winner?.configurationName ?? null,
+    vectorActivatedByDefault: false,
     decision: {
-      eligibility:
+      measuredEligibility:
         "Critical failures and unsupported-answer rate must both be zero.",
-      vectorRule:
+      vectorQualityRule:
         "Vector requires >=0.02 MRR gain, no Recall@10/citation/exact-ID regression, and <=2x baseline latency.",
       baseline: baseline?.configurationName ?? null,
       bestVector: bestVector?.configurationName ?? null,
-      vectorEligible,
+      vectorQualityEligible: vectorEligible,
+      promotionEligible: false,
+      missingPromotionGates: [
+        "comparableEvaluation",
+        "operationalCostAcceptable",
+        "degradedBehaviorUnderstood",
+        "authorizationTruthPassed",
+        "rollbackAvailable",
+      ],
+      promotionRule:
+        "A measured winner is diagnostic only until comparable evaluation, operational cost, degraded behavior, authorization/truth and rollback gates are all proven.",
     },
     bestEligibleRunId: String(winner?.runId ?? ""),
   };
