@@ -58,8 +58,7 @@ describe("derived truth maintenance event boundary", () => {
           payload: {
             reason: "FACT_SUPERSEDED",
             factId,
-            replacementFactId:
-              "00000000-0000-0000-0000-000000000047",
+            replacementFactId: "00000000-0000-0000-0000-000000000047",
             truthRevisionHash: "b".repeat(64),
           },
         }),
@@ -282,7 +281,9 @@ describe("derived truth maintenance event boundary", () => {
           truthRevisionHash: withdrawn.revisionHash,
           derivedItemRefs: [vectorRef, synthesisRef],
         });
-        const byRef = new Map(projected.map((item) => [item.derivedItemRef, item]));
+        const byRef = new Map(
+          projected.map((item) => [item.derivedItemRef, item]),
+        );
         expect(byRef.get(vectorRef)).toMatchObject({
           derivedStoreKind: "VECTOR",
           state: "UNSUPPORTED",
