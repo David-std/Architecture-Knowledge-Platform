@@ -2,17 +2,6 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { lstat, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type {
-  SourceConnectorCheckpoint,
-  SourceConnectorDescriptor,
-  SourceConnectorFetchInput,
-  SourceConnectorObject,
-  SourceConnectorPort,
-  SourceConnectorPullInput,
-  SourceConnectorPullPage,
-  SourceConnectorPullRequest,
-  SourceConnectorScope,
-} from "@akp/domain";
 
 const exec = promisify(execFile);
 export class GitKnowledgeFileNotFoundError extends Error {
@@ -533,6 +522,110 @@ export interface LocalGitSourceConnectorOptions {
   maxObjectBytes?: number;
 }
 
+type SourceConnectorPermissionFidelity =
+  | "SOURCE_ACL_EXACT"
+  | "SOURCE_ACL_MAPPED"
+  | "WORKSPACE_WIDE"
+  | "NONE"
+  | "UNKNOWN";
+
+type SourceConnectorCheckpointModel =
+  | "REVISION"
+  | "OPAQUE_CURSOR"
+  | "SOURCE_SEQUENCE";
+
+interface SourceConnectorDescriptor {
+  schemaVersion: 1;
+  connectorId: string;
+  sourceSystem: string;
+  objectTypes: string[];
+  incremental: { cursor: boolean; webhook: boolean };
+  permissionFidelity: SourceConnectorPermissionFidelity;
+  replication: "FULL_MIRROR" | "METADATA_ONLY" | "REFERENCE";
+  dataResidency: "LOCAL" | "ORG" | "EXTERNAL";
+  attachments: { supported: boolean; maxBytes?: number };
+  rateLimit:
+    | { kind: "NONE" }
+    | { kind: "DECLARED"; requestsPerMinute: number; burst?: number };
+  checkpointModel: SourceConnectorCheckpointModel;
+  deletionPropagation: "TOMBSTONE" | "NONE";
+  sourceVersioning: boolean;
+  freshnessSlaSeconds?: number;
+  contentTrust: "UNTRUSTED_EXTERNAL";
+}
+
+interface SourceConnectorScope {
+  organizationId?: string;
+  spaceId?: string;
+  vaultId?: string;
+}
+
+interface SourceConnectorCheckpoint {
+  kind: SourceConnectorCheckpointModel;
+  value: string;
+}
+
+interface SourceConnectorObject {
+  objectId: string;
+  objectType: string;
+  sourceSystem: string;
+  sourceVersion: string;
+  operation: "UPSERT" | "DELETE";
+  path?: string;
+  title?: string;
+  content?: string;
+  contentType?: string;
+  contentTrust: "UNTRUSTED_EXTERNAL";
+  permissions: {
+    fidelity: SourceConnectorPermissionFidelity;
+    uncertain: boolean;
+    aclFingerprint?: string;
+  };
+  attachments: Array<{
+    id: string;
+    name: string;
+    contentType?: string;
+    sizeBytes?: number;
+  }>;
+  metadata: Record<string, unknown>;
+}
+
+interface SourceConnectorPullRequest {
+  from?: SourceConnectorCheckpoint;
+  target: SourceConnectorCheckpoint;
+  pageCursor?: string;
+  limit: number;
+}
+
+interface SourceConnectorPullPage {
+  objects: SourceConnectorObject[];
+  target: SourceConnectorCheckpoint;
+  nextPageCursor: string | null;
+  completed: boolean;
+}
+
+interface SourceConnectorPullInput {
+  scope: SourceConnectorScope;
+  from?: SourceConnectorCheckpoint;
+  target: SourceConnectorCheckpoint;
+  pageSize?: number;
+}
+
+interface SourceConnectorFetchInput {
+  scope: SourceConnectorScope;
+  objectId: string;
+  checkpoint?: SourceConnectorCheckpoint;
+}
+
+interface SourceConnectorPort {
+  describe(): SourceConnectorDescriptor;
+  checkpoint(scope: SourceConnectorScope): Promise<SourceConnectorCheckpoint>;
+  pull(input: SourceConnectorPullInput): AsyncIterable<SourceConnectorObject>;
+  fetchById?(
+    input: SourceConnectorFetchInput,
+  ): Promise<SourceConnectorObject | null>;
+}
+
 type GitConnectorCursor = {
   from: string | null;
   target: string;
@@ -781,9 +874,9 @@ export class LocalGitSourceConnector implements SourceConnectorPort {
     let pageCursor: string | undefined;
     do {
       const page = await this.pullPage({
-        from: input.from,
+        ...(input.from ? { from: input.from } : {}),
         target: input.target,
-        pageCursor,
+        ...(pageCursor ? { pageCursor } : {}),
         limit,
       });
       for (const object of page.objects) {
