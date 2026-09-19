@@ -185,6 +185,63 @@ export interface ValidateDerivedTruthInput {
   validAt?: string;
 }
 
+export type DerivedTruthInvalidationReason =
+  | "FACT_SUPERSEDED"
+  | "SOURCE_WITHDRAWN"
+  | "EVIDENCE_INVALIDATED";
+
+export interface RebuildDerivedTruthProjectionInput {
+  eventId: string;
+  spaceId: string;
+  vaultId: string;
+  truthRevisionHash: string;
+  reason: DerivedTruthInvalidationReason;
+  resourceId: string;
+  validAt: string;
+}
+
+export interface DerivedTruthProjectionRevision {
+  id: string;
+  spaceId: string;
+  vaultId: string;
+  truthRevisionHash: string;
+  truthRevisionSeq: number;
+  triggerEventId: string;
+  reason: DerivedTruthInvalidationReason;
+  resourceId: string;
+  evaluatedValidAt: string;
+  projectionHash: string;
+  itemCount: number;
+  createdAt: string;
+}
+
+export interface DerivedTruthProjectionItem {
+  projectionRevisionId: string;
+  spaceId: string;
+  vaultId: string;
+  derivedStoreKind: DerivedTruthStoreKind;
+  derivedItemRef: string;
+  state: DerivedTruthValidationState;
+  valid: boolean;
+  dependencyId: string | null;
+  truthRevisionHash: string;
+  truthRevisionSeq: number;
+  evaluatedValidAt: string;
+  triggerEventId: string;
+  reason: DerivedTruthInvalidationReason;
+  resourceId: string;
+  projectionHash: string;
+  createdAt: string;
+}
+
+export interface DerivedTruthProjectionQuery {
+  spaceId: string;
+  vaultId: string;
+  truthRevisionHash?: string;
+  derivedStoreKind?: DerivedTruthStoreKind;
+  derivedItemRefs?: string[];
+}
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HASH64 = /^[a-f0-9]{64}$/;
 
@@ -489,6 +546,40 @@ interface DerivedDependencyRow {
   revision_seq?: string | number;
 }
 
+interface DerivedProjectionRevisionRow {
+  id: string;
+  space_id: string;
+  vault_id: string;
+  truth_revision_hash: string;
+  truth_revision_seq: string | number;
+  trigger_event_id: string;
+  reason: DerivedTruthInvalidationReason;
+  resource_id: string;
+  evaluated_valid_at: Date | string;
+  projection_hash: string;
+  item_count: string | number;
+  created_at: Date | string;
+}
+
+interface DerivedProjectionItemRow {
+  projection_revision_id: string;
+  space_id: string;
+  vault_id: string;
+  derived_store_kind: DerivedTruthStoreKind;
+  derived_item_ref: string;
+  state: DerivedTruthValidationState;
+  valid: boolean;
+  dependency_id: string | null;
+  truth_revision_hash: string;
+  truth_revision_seq: string | number;
+  evaluated_valid_at: Date | string;
+  trigger_event_id: string;
+  reason: DerivedTruthInvalidationReason;
+  resource_id: string;
+  projection_hash: string;
+  created_at: Date | string;
+}
+
 function normalizeDerivedDependency(
   row: DerivedDependencyRow,
 ): DerivedTruthDependency {
@@ -502,6 +593,48 @@ function normalizeDerivedDependency(
     sourceRevisionHashes: row.source_revision_hashes ?? [],
     truthRevisionHash: row.truth_revision_hash,
     projectionRevision: row.projection_revision,
+    createdAt: iso(row.created_at),
+  };
+}
+
+function normalizeDerivedProjectionRevision(
+  row: DerivedProjectionRevisionRow,
+): DerivedTruthProjectionRevision {
+  return {
+    id: row.id,
+    spaceId: row.space_id,
+    vaultId: row.vault_id,
+    truthRevisionHash: row.truth_revision_hash,
+    truthRevisionSeq: Number(row.truth_revision_seq),
+    triggerEventId: row.trigger_event_id,
+    reason: row.reason,
+    resourceId: row.resource_id,
+    evaluatedValidAt: iso(row.evaluated_valid_at),
+    projectionHash: row.projection_hash,
+    itemCount: Number(row.item_count),
+    createdAt: iso(row.created_at),
+  };
+}
+
+function normalizeDerivedProjectionItem(
+  row: DerivedProjectionItemRow,
+): DerivedTruthProjectionItem {
+  return {
+    projectionRevisionId: row.projection_revision_id,
+    spaceId: row.space_id,
+    vaultId: row.vault_id,
+    derivedStoreKind: row.derived_store_kind,
+    derivedItemRef: row.derived_item_ref,
+    state: row.state,
+    valid: row.valid,
+    dependencyId: row.dependency_id,
+    truthRevisionHash: row.truth_revision_hash,
+    truthRevisionSeq: Number(row.truth_revision_seq),
+    evaluatedValidAt: iso(row.evaluated_valid_at),
+    triggerEventId: row.trigger_event_id,
+    reason: row.reason,
+    resourceId: row.resource_id,
+    projectionHash: row.projection_hash,
     createdAt: iso(row.created_at),
   };
 }
@@ -1717,5 +1850,299 @@ export class PostgresTemporalTruthStore {
       });
     }
     return output;
+  }
+
+  async rebuildDerivedProjection(
+    rawInput: RebuildDerivedTruthProjectionInput,
+  ): Promise<DerivedTruthProjectionRevision> {
+    const input = {
+      eventId: requiredUuid(rawInput.eventId, "TRUTH_PROJECTION_EVENT_ID_INVALID"),
+      spaceId: requiredUuid(rawInput.spaceId, "TRUTH_SPACE_ID_INVALID"),
+      vaultId: requiredUuid(rawInput.vaultId, "TRUTH_VAULT_ID_INVALID"),
+      truthRevisionHash: requiredHash(
+        rawInput.truthRevisionHash,
+        "TRUTH_REVISION_HASH_INVALID",
+      ),
+      reason: rawInput.reason,
+      resourceId: requiredUuid(
+        rawInput.resourceId,
+        "TRUTH_PROJECTION_RESOURCE_ID_INVALID",
+      ),
+      validAt: requiredDate(rawInput.validAt, "TRUTH_VALID_AT_INVALID"),
+    };
+    const resourceColumns: Record<DerivedTruthInvalidationReason, string> = {
+      FACT_SUPERSEDED: "fact_ids",
+      SOURCE_WITHDRAWN: "source_episode_ids",
+      EVIDENCE_INVALIDATED: "evidence_ids",
+    };
+    const resourceColumn = resourceColumns[input.reason];
+    if (!resourceColumn) {
+      throw new Error("TRUTH_PROJECTION_REASON_INVALID");
+    }
+
+    const existing = await this.db.pool.query<DerivedProjectionRevisionRow>(
+      `select * from derived_truth_projection_revisions
+        where trigger_event_id=$1
+        limit 1`,
+      [input.eventId],
+    );
+    if (existing.rows[0]) {
+      const projection = normalizeDerivedProjectionRevision(existing.rows[0]);
+      if (
+        projection.spaceId !== input.spaceId ||
+        projection.vaultId !== input.vaultId ||
+        projection.truthRevisionHash !== input.truthRevisionHash ||
+        projection.reason !== input.reason ||
+        projection.resourceId !== input.resourceId ||
+        projection.evaluatedValidAt !== input.validAt
+      ) {
+        throw new Error("TRUTH_DERIVED_PROJECTION_EVENT_CONFLICT");
+      }
+      return projection;
+    }
+
+    const cutoff = await this.revisionCutoff({
+      spaceId: input.spaceId,
+      vaultId: input.vaultId,
+      truthRevisionHash: input.truthRevisionHash,
+      authorizationPathPrefixes: [],
+    });
+    if (cutoff.seq === 0 || cutoff.hash !== input.truthRevisionHash) {
+      throw new Error("TRUTH_REVISION_NOT_FOUND");
+    }
+
+    const affected = await this.db.pool.query<{
+      derived_store_kind: DerivedTruthStoreKind;
+      derived_item_ref: string;
+    }>(
+      `select distinct d.derived_store_kind,d.derived_item_ref
+         from derived_truth_dependencies d
+         join truth_support_sets s on s.id=d.support_set_id
+         join truth_revisions r on r.revision_hash=d.truth_revision_hash
+        where d.space_id=$1 and d.vault_id=$2
+          and r.revision_seq<=$3
+          and s.${resourceColumn} @> array[$4::uuid]
+        order by d.derived_store_kind,d.derived_item_ref
+        limit 5001`,
+      [input.spaceId, input.vaultId, cutoff.seq, input.resourceId],
+    );
+    if (affected.rows.length > 5000) {
+      throw new Error("TRUTH_DERIVED_PROJECTION_ITEM_LIMIT_EXCEEDED");
+    }
+
+    const refsByKind = new Map<DerivedTruthStoreKind, string[]>();
+    for (const row of affected.rows) {
+      const refs = refsByKind.get(row.derived_store_kind) ?? [];
+      refs.push(row.derived_item_ref);
+      refsByKind.set(row.derived_store_kind, refs);
+    }
+    const evaluated: Array<{
+      derivedStoreKind: DerivedTruthStoreKind;
+      validation: DerivedTruthValidation;
+    }> = [];
+    for (const [derivedStoreKind, derivedItemRefs] of refsByKind) {
+      const validations = await this.validateDerivedItems({
+        spaceId: input.spaceId,
+        vaultId: input.vaultId,
+        derivedStoreKind,
+        derivedItemRefs,
+        truthRevisionHash: input.truthRevisionHash,
+        validAt: input.validAt,
+      });
+      for (const validation of validations) {
+        evaluated.push({ derivedStoreKind, validation });
+      }
+    }
+    evaluated.sort(
+      (left, right) =>
+        left.derivedStoreKind.localeCompare(right.derivedStoreKind) ||
+        left.validation.derivedItemRef.localeCompare(
+          right.validation.derivedItemRef,
+        ),
+    );
+
+    const projectionHash = createHash("sha256")
+      .update(
+        JSON.stringify({
+          spaceId: input.spaceId,
+          vaultId: input.vaultId,
+          truthRevisionHash: input.truthRevisionHash,
+          truthRevisionSeq: cutoff.seq,
+          reason: input.reason,
+          resourceId: input.resourceId,
+          validAt: input.validAt,
+          items: evaluated.map(({ derivedStoreKind, validation }) => ({
+            derivedStoreKind,
+            derivedItemRef: validation.derivedItemRef,
+            state: validation.state,
+            valid: validation.valid,
+            dependencyId: validation.dependency?.id ?? null,
+          })),
+        }),
+      )
+      .digest("hex");
+
+    const client = await this.db.pool.connect();
+    try {
+      await client.query("begin");
+      const projectionId = randomUUID();
+      const inserted = await client.query<DerivedProjectionRevisionRow>(
+        `insert into derived_truth_projection_revisions(
+           id,space_id,vault_id,truth_revision_hash,truth_revision_seq,
+           trigger_event_id,reason,resource_id,evaluated_valid_at,
+           projection_hash,item_count
+         ) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+         on conflict(trigger_event_id) do nothing
+         returning *`,
+        [
+          projectionId,
+          input.spaceId,
+          input.vaultId,
+          input.truthRevisionHash,
+          cutoff.seq,
+          input.eventId,
+          input.reason,
+          input.resourceId,
+          input.validAt,
+          projectionHash,
+          evaluated.length,
+        ],
+      );
+      if (!inserted.rows[0]) {
+        const concurrent = await client.query<DerivedProjectionRevisionRow>(
+          `select * from derived_truth_projection_revisions
+            where trigger_event_id=$1
+            limit 1`,
+          [input.eventId],
+        );
+        const row = concurrent.rows[0];
+        if (!row) {
+          throw new Error("TRUTH_DERIVED_PROJECTION_INSERT_FAILED");
+        }
+        await client.query("commit");
+        const projection = normalizeDerivedProjectionRevision(row);
+        if (
+          projection.spaceId !== input.spaceId ||
+          projection.vaultId !== input.vaultId ||
+          projection.truthRevisionHash !== input.truthRevisionHash ||
+          projection.reason !== input.reason ||
+          projection.resourceId !== input.resourceId ||
+          projection.evaluatedValidAt !== input.validAt
+        ) {
+          throw new Error("TRUTH_DERIVED_PROJECTION_EVENT_CONFLICT");
+        }
+        return projection;
+      }
+
+      if (evaluated.length > 0) {
+        await client.query(
+          `insert into derived_truth_projection_items(
+             projection_revision_id,space_id,vault_id,derived_store_kind,
+             derived_item_ref,state,valid,dependency_id,truth_revision_hash,
+             truth_revision_seq,evaluated_valid_at
+           )
+           select $1,$2,$3,item.derived_store_kind,item.derived_item_ref,
+                  item.state,item.valid,item.dependency_id,$4,$5,$6
+             from jsonb_to_recordset($7::jsonb) as item(
+               derived_store_kind text,
+               derived_item_ref text,
+               state text,
+               valid boolean,
+               dependency_id uuid
+             )`,
+          [
+            projectionId,
+            input.spaceId,
+            input.vaultId,
+            input.truthRevisionHash,
+            cutoff.seq,
+            input.validAt,
+            JSON.stringify(
+              evaluated.map(({ derivedStoreKind, validation }) => ({
+                derived_store_kind: derivedStoreKind,
+                derived_item_ref: validation.derivedItemRef,
+                state: validation.state,
+                valid: validation.valid,
+                dependency_id: validation.dependency?.id ?? null,
+              })),
+            ),
+          ],
+        );
+      }
+      await client.query("commit");
+      return normalizeDerivedProjectionRevision(inserted.rows[0]);
+    } catch (error) {
+      await client.query("rollback").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async listDerivedProjectionItems(
+    rawQuery: DerivedTruthProjectionQuery,
+  ): Promise<DerivedTruthProjectionItem[]> {
+    const spaceId = requiredUuid(rawQuery.spaceId, "TRUTH_SPACE_ID_INVALID");
+    const vaultId = requiredUuid(rawQuery.vaultId, "TRUTH_VAULT_ID_INVALID");
+    const derivedItemRefs = [...new Set(rawQuery.derivedItemRefs ?? [])].map(
+      (ref) => requiredText(ref, "TRUTH_DERIVED_ITEM_REF_INVALID", 4096),
+    );
+    if (derivedItemRefs.length > 5000) {
+      throw new Error("TRUTH_DERIVED_ITEM_LIMIT_EXCEEDED");
+    }
+    const allowedKinds = new Set<DerivedTruthStoreKind>([
+      "VECTOR",
+      "GRAPH_SUMMARY",
+      "COMMUNITY_REPORT",
+      "CACHED_SYNTHESIS",
+      "CONTEXT_FRAGMENT",
+      "TASK_ARTIFACT",
+    ]);
+    if (
+      rawQuery.derivedStoreKind !== undefined &&
+      !allowedKinds.has(rawQuery.derivedStoreKind)
+    ) {
+      throw new Error("TRUTH_DERIVED_STORE_KIND_INVALID");
+    }
+
+    const cutoff = await this.revisionCutoff({
+      spaceId,
+      vaultId,
+      ...(rawQuery.truthRevisionHash
+        ? {
+            truthRevisionHash: requiredHash(
+              rawQuery.truthRevisionHash,
+              "TRUTH_REVISION_HASH_INVALID",
+            ),
+          }
+        : {}),
+      authorizationPathPrefixes: [],
+    });
+    if (cutoff.seq === 0) return [];
+
+    const values: unknown[] = [spaceId, vaultId, cutoff.seq];
+    let where =
+      "i.space_id=$1 and i.vault_id=$2 and i.truth_revision_seq<=$3";
+    if (rawQuery.derivedStoreKind !== undefined) {
+      values.push(rawQuery.derivedStoreKind);
+      where += ` and i.derived_store_kind=${values.length}`;
+    }
+    if (derivedItemRefs.length > 0) {
+      values.push(derivedItemRefs);
+      where += ` and i.derived_item_ref=any(${values.length}::text[])`;
+    }
+
+    const result = await this.db.pool.query<DerivedProjectionItemRow>(
+      `select distinct on (i.derived_store_kind,i.derived_item_ref)
+              i.*,p.trigger_event_id,p.reason,p.resource_id,p.projection_hash
+         from derived_truth_projection_items i
+         join derived_truth_projection_revisions p
+           on p.id=i.projection_revision_id
+        where ${where}
+        order by i.derived_store_kind,i.derived_item_ref,
+                 i.truth_revision_seq desc,p.created_at desc,p.id desc`,
+      values,
+    );
+    return result.rows.map(normalizeDerivedProjectionItem);
   }
 }
