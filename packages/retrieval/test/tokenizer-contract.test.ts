@@ -99,8 +99,6 @@ describe("tokenizer quality contract", () => {
         approximate: true,
         count: () => 1,
       }),
-    ).toThrow(
-      "TOKENIZER_QUALITY_INVALID:CONFLICTING_APPROXIMATE_METADATA",
-    );
+    ).toThrow("TOKENIZER_QUALITY_INVALID:CONFLICTING_APPROXIMATE_METADATA");
   });
 });
