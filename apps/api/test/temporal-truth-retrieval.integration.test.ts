@@ -232,6 +232,263 @@ async function seedFixture(label: string): Promise<Fixture> {
   };
 }
 
+interface ContradictoryVectorFixture {
+  spaceId: string;
+  vaultId: string;
+  generationId: string;
+  oldDocumentId: string;
+  newDocumentId: string;
+  oldUnitId: string;
+  newUnitId: string;
+  oldRevisionHash: string;
+  newRevisionHash: string;
+  store: PostgresTemporalTruthStore;
+}
+
+async function seedContradictoryVectorFixture(
+  label: string,
+): Promise<ContradictoryVectorFixture> {
+  const organizationId = randomUUID();
+  const spaceId = randomUUID();
+  const vaultId = randomUUID();
+  const sourceId = randomUUID();
+  const artifactId = randomUUID();
+  const oldDocumentId = randomUUID();
+  const newDocumentId = randomUUID();
+  const oldUnitId = randomUUID();
+  const newUnitId = randomUUID();
+  const corpusRevision = `truth-contradiction-${randomUUID()}`;
+  const sourceHash = "d".repeat(64);
+
+  await db.pool.query(
+    "insert into organizations(id,slug,name) values($1,$2,$3)",
+    [organizationId, `truth-contradiction-${organizationId.slice(0, 8)}`, label],
+  );
+  await db.pool.query(
+    `insert into spaces(
+       id,organization_id,slug,name,visibility,knowledge_repo_path
+     ) values($1,$2,$3,$4,'PRIVATE',$5)`,
+    [
+      spaceId,
+      organizationId,
+      `truth-contradiction-${spaceId.slice(0, 8)}`,
+      label,
+      `/tmp/truth-contradiction-${spaceId}`,
+    ],
+  );
+  await db.pool.query(
+    `insert into vaults(
+       id,space_id,canonical_path,name,read_only,current_revision,vault_key,
+       local_path,visibility,enabled
+     ) values($1,$2,$3,$4,true,$5,$6,$3,'PRIVATE',true)`,
+    [
+      vaultId,
+      spaceId,
+      `/tmp/truth-contradiction-${vaultId}`,
+      label,
+      corpusRevision,
+      `truth-contradiction-${vaultId.slice(0, 8)}`,
+    ],
+  );
+  await db.pool.query(
+    `insert into sources(
+       id,space_id,vault_id,title,source_uri,media_type,sha256,byte_size,
+       object_key,status,metadata
+     ) values($1,$2,$3,$4,$5,'text/plain',$6,4,$7,'ACTIVE','{}'::jsonb)`,
+    [
+      sourceId,
+      spaceId,
+      vaultId,
+      `${label} source`,
+      `https://example.test/${sourceId}`,
+      sourceHash,
+      `truth-contradiction/${sourceId}.txt`,
+    ],
+  );
+  await db.pool.query(
+    `insert into source_artifacts(
+       id,source_id,kind,object_key,source_hash,extractor,extractor_version,
+       quality,metadata
+     ) values($1,$2,'normalized',$3,$4,'fixture','1','HIGH','{}'::jsonb)`,
+    [
+      artifactId,
+      sourceId,
+      `truth-contradiction/${artifactId}.json`,
+      sourceHash,
+    ],
+  );
+
+  const documents = [
+    {
+      documentId: oldDocumentId,
+      unitId: oldUnitId,
+      title: "OLD transport security guidance",
+      body: "TLS 1.2 is the required minimum transport security version.",
+      unitHash: "e".repeat(64),
+      embedding: [1, 0, 0],
+    },
+    {
+      documentId: newDocumentId,
+      unitId: newUnitId,
+      title: "NEW transport security guidance",
+      body: "TLS 1.3 is the required minimum transport security version.",
+      unitHash: "f".repeat(64),
+      embedding: [0.995, 0.1, 0],
+    },
+  ] as const;
+
+  for (const document of documents) {
+    await db.pool.query(
+      `insert into knowledge_documents(
+         id,space_id,vault_id,path,external_id,title,type,lifecycle,trust_tier,
+         current_revision,body_cache,frontmatter,aliases,layer,content_hash,
+         token_estimate,raw_links
+       ) values($1,$2,$3,$4,$5,$6,'rule','ACTIVE','HUMAN_REVIEWED',
+         $7,$8,'{}'::jsonb,'{}','concept',$9,20,'[]'::jsonb)`,
+      [
+        document.documentId,
+        spaceId,
+        vaultId,
+        `security/${document.documentId}.md`,
+        `TRUTH-${document.documentId.slice(0, 8)}`,
+        document.title,
+        corpusRevision,
+        document.body,
+        document.unitHash,
+      ],
+    );
+    await db.pool.query(
+      `insert into knowledge_units(
+         id,document_id,space_id,vault_id,unit_key,unit_type,heading_path,body,
+         content_hash,corpus_revision,lifecycle,trust_tier,source_ids,
+         token_estimate,parent_unit_id,document_revision,permissions,locator,
+         structural_order,container_only,embedding_eligible
+       ) values($1,$2,$3,$4,$5,'PARAGRAPH','{}',$6,$7,$8,'ACTIVE',
+         'HUMAN_REVIEWED','{}',20,null,$8,'{}'::jsonb,'{}'::jsonb,1,false,true)`,
+      [
+        document.unitId,
+        document.documentId,
+        spaceId,
+        vaultId,
+        `paragraph-${document.unitId.slice(0, 8)}`,
+        document.body,
+        document.unitHash,
+        corpusRevision,
+      ],
+    );
+  }
+
+  await db.pool.query(
+    `insert into vault_index_revisions(
+       space_id,vault_id,corpus_revision,lexical_revision,vector_revision,
+       graph_revision,context_pack_revision,status,warnings
+     ) values($1,$2,$3,$3,$3,$3,$3,'CONSISTENT','[]'::jsonb)`,
+    [spaceId, vaultId, corpusRevision],
+  );
+
+  const manager = new EmbeddingGenerationManager(db);
+  const requested = await manager.request({
+    spaceId,
+    vaultId,
+    corpusRevision,
+    descriptor,
+  });
+  await manager.build(requested.generationId);
+  for (const document of documents) {
+    await manager.writeEmbedding({
+      generationId: requested.generationId,
+      unitId: document.unitId,
+      contentHash: document.unitHash,
+      embedding: [...document.embedding],
+    });
+  }
+  await manager.ready(requested.generationId, documents.length);
+  const active = await manager.activate(requested.generationId);
+
+  const store = new PostgresTemporalTruthStore(db);
+  const episode = await store.createSourceEpisode({
+    spaceId,
+    vaultId,
+    sourceId,
+    sourceArtifactId: artifactId,
+    sourceHash,
+    locatorRefs: [`source:${sourceId}#transport-security`],
+  });
+  const factSupport = await store.createSupportSet({
+    spaceId,
+    vaultId,
+    sourceEpisodeIds: [episode.id],
+    sourceRevisionHashes: [sourceHash],
+  });
+  const oldFact = await store.recordFact({
+    spaceId,
+    vaultId,
+    scopeId: "security:transport",
+    authorizationPath: `security/${oldDocumentId}.md`,
+    subjectRef: "policy:transport",
+    predicate: "tls_minimum",
+    object: { version: "1.2" },
+    validFrom: "2025-01-01T00:00:00.000Z",
+    supportSetId: factSupport.id,
+    sourceEpisodeId: episode.id,
+  });
+  const oldVectorSupport = await store.createSupportSet({
+    spaceId,
+    vaultId,
+    factIds: [oldFact.fact.id],
+  });
+  await store.registerDerivedDependency({
+    spaceId,
+    vaultId,
+    derivedStoreKind: "VECTOR",
+    derivedItemRef: `vector:${active.generationId}:${oldUnitId}`,
+    supportSetId: oldVectorSupport.id,
+    truthRevisionHash: oldFact.revision.revisionHash,
+    projectionRevision: corpusRevision,
+  });
+
+  const newFact = await store.recordFact({
+    spaceId,
+    vaultId,
+    scopeId: "security:transport",
+    authorizationPath: `security/${newDocumentId}.md`,
+    subjectRef: "policy:transport",
+    predicate: "tls_minimum",
+    object: { version: "1.3" },
+    validFrom: "2026-01-01T00:00:00.000Z",
+    supportSetId: factSupport.id,
+    sourceEpisodeId: episode.id,
+    supersedesFactId: oldFact.fact.id,
+  });
+  const newVectorSupport = await store.createSupportSet({
+    spaceId,
+    vaultId,
+    factIds: [newFact.fact.id],
+  });
+  await store.registerDerivedDependency({
+    spaceId,
+    vaultId,
+    derivedStoreKind: "VECTOR",
+    derivedItemRef: `vector:${active.generationId}:${newUnitId}`,
+    supportSetId: newVectorSupport.id,
+    truthRevisionHash: newFact.revision.revisionHash,
+    projectionRevision: corpusRevision,
+  });
+
+  return {
+    spaceId,
+    vaultId,
+    generationId: active.generationId,
+    oldDocumentId,
+    newDocumentId,
+    oldUnitId,
+    newUnitId,
+    oldRevisionHash: oldFact.revision.revisionHash,
+    newRevisionHash: newFact.revision.revisionHash,
+    store,
+  };
+}
+
 function queryService(
   beforeEmbedding?: () => Promise<void>,
 ): QueryEmbeddingService {
@@ -321,6 +578,129 @@ describe.skipIf(!databaseUrl)("truth-valid vector retrieval", () => {
         truthRevisionHash: fixture.preWithdrawalRevisionHash,
       }),
     ).toMatchObject([{ state: "SUPPORTED", valid: true }]);
+  });
+
+  it("filters the higher-scoring OLD neighbor before RRF while preserving historical eligibility", async () => {
+    const fixture = await seedContradictoryVectorFixture(
+      "Contradictory dense neighbors",
+    );
+    const physical = await db.pool.query<{ unit_id: string; score: number }>(
+      `select unit_id,
+              1 - (embedding::vector(3) <=> '[1,0,0]'::vector(3)) score
+         from unit_embeddings
+        where generation_id=$1 and unit_id=any($2::uuid[])
+        order by score desc,unit_id`,
+      [fixture.generationId, [fixture.oldUnitId, fixture.newUnitId]],
+    );
+    const scoreByUnit = new Map(
+      physical.rows.map((row) => [row.unit_id, Number(row.score)]),
+    );
+    expect(scoreByUnit.get(fixture.oldUnitId)).toBeGreaterThan(
+      scoreByUnit.get(fixture.newUnitId) ?? Number.POSITIVE_INFINITY,
+    );
+
+    const warnings: string[] = [];
+    const hits = await queryKnowledge(
+      db,
+      {
+        ...searchInput(fixture.spaceId, fixture.vaultId),
+        query: "TLS transport security minimum version",
+      },
+      {
+        vaultIds: [fixture.vaultId],
+        channels: ["vector"],
+        allowVectorForBenchmark: true,
+        queryEmbeddingService: queryService(),
+        truthConsistency: "STRICT",
+        warningSink: warnings,
+      },
+    );
+
+    expect(hits).toHaveLength(1);
+    expect(hits[0]).toMatchObject({
+      documentId: fixture.newDocumentId,
+      fusionContributions: [
+        expect.objectContaining({
+          channel: "vector",
+          rank: 1,
+          rawScore: expect.any(Number),
+        }),
+      ],
+    });
+    const currentVectorScore = hits[0]?.fusionContributions?.find(
+      (entry) => entry.channel === "vector",
+    )?.rawScore;
+    expect(currentVectorScore).toBeCloseTo(
+      scoreByUnit.get(fixture.newUnitId) ?? 0,
+      8,
+    );
+    expect(currentVectorScore).toBeLessThan(
+      scoreByUnit.get(fixture.oldUnitId) ?? 0,
+    );
+    expect(warnings).toContain(
+      `TRUTH_SUPPORT_REJECTED:VECTOR:${fixture.oldUnitId}`,
+    );
+
+    const historicalValidation = await fixture.store.validateDerivedItems({
+      spaceId: fixture.spaceId,
+      vaultId: fixture.vaultId,
+      derivedStoreKind: "VECTOR",
+      derivedItemRefs: [
+        `vector:${fixture.generationId}:${fixture.oldUnitId}`,
+        `vector:${fixture.generationId}:${fixture.newUnitId}`,
+      ],
+      truthRevisionHash: fixture.oldRevisionHash,
+      validAt: "2026-09-01T00:00:00.000Z",
+    });
+    expect(historicalValidation).toMatchObject([
+      {
+        derivedItemRef: `vector:${fixture.generationId}:${fixture.oldUnitId}`,
+        state: "SUPPORTED",
+        valid: true,
+      },
+      {
+        derivedItemRef: `vector:${fixture.generationId}:${fixture.newUnitId}`,
+        state: "UNSUPPORTED",
+        valid: false,
+      },
+    ]);
+
+    const historicalFacts = await fixture.store.listFacts({
+      spaceId: fixture.spaceId,
+      vaultId: fixture.vaultId,
+      subjectRef: "policy:transport",
+      predicate: "tls_minimum",
+      validAt: "2026-09-01T00:00:00.000Z",
+      truthRevisionHash: fixture.oldRevisionHash,
+    });
+    expect(historicalFacts).toMatchObject([
+      {
+        object: { version: "1.2" },
+        queryRevisionHash: fixture.oldRevisionHash,
+      },
+    ]);
+    const currentFacts = await fixture.store.listFacts({
+      spaceId: fixture.spaceId,
+      vaultId: fixture.vaultId,
+      subjectRef: "policy:transport",
+      predicate: "tls_minimum",
+      validAt: "2026-09-01T00:00:00.000Z",
+      truthRevisionHash: fixture.newRevisionHash,
+    });
+    expect(currentFacts).toMatchObject([
+      {
+        object: { version: "1.3" },
+        queryRevisionHash: fixture.newRevisionHash,
+      },
+    ]);
+    const history = await fixture.store.supportHistory(historicalFacts[0]!.id);
+    expect(history.supersessions).toEqual([
+      expect.objectContaining({
+        old_fact_id: historicalFacts[0]!.id,
+        new_fact_id: currentFacts[0]!.id,
+        truth_revision_hash: fixture.newRevisionHash,
+      }),
+    ]);
   });
 
   it("returns the captured snapshot with a warning in best-effort mode", async () => {
