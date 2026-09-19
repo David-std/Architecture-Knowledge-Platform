@@ -128,8 +128,7 @@ export function resolvePersonalizedPageRankPolicy(
     5000,
   );
   const minimumScore =
-    input.minimumScore ??
-    DEFAULT_PERSONALIZED_PAGE_RANK_POLICY.minimumScore;
+    input.minimumScore ?? DEFAULT_PERSONALIZED_PAGE_RANK_POLICY.minimumScore;
   if (
     typeof minimumScore !== "number" ||
     !Number.isFinite(minimumScore) ||
@@ -151,10 +150,10 @@ export function resolvePersonalizedPageRankPolicy(
 
   const allowedGraphDomains = [
     ...new Set(
-      (input.allowedGraphDomains ??
-        DEFAULT_PERSONALIZED_PAGE_RANK_POLICY.allowedGraphDomains).map(
-        (value) => nonEmpty(value, "allowedGraphDomains entry"),
-      ),
+      (
+        input.allowedGraphDomains ??
+        DEFAULT_PERSONALIZED_PAGE_RANK_POLICY.allowedGraphDomains
+      ).map((value) => nonEmpty(value, "allowedGraphDomains entry")),
     ),
   ];
   if (allowedGraphDomains.length === 0) {
@@ -162,10 +161,10 @@ export function resolvePersonalizedPageRankPolicy(
   }
   const allowedRelations = [
     ...new Set(
-      (input.allowedRelations ??
-        DEFAULT_PERSONALIZED_PAGE_RANK_POLICY.allowedRelations).map((value) =>
-        nonEmpty(value, "allowedRelations entry"),
-      ),
+      (
+        input.allowedRelations ??
+        DEFAULT_PERSONALIZED_PAGE_RANK_POLICY.allowedRelations
+      ).map((value) => nonEmpty(value, "allowedRelations entry")),
     ),
   ];
 
@@ -287,7 +286,10 @@ export function personalizedPageRank(input: {
 
   const personalization = new Map<string, number>();
   for (const nodeId of nodes.keys()) {
-    personalization.set(nodeId, (seedWeights.get(nodeId) ?? 0) / totalSeedWeight);
+    personalization.set(
+      nodeId,
+      (seedWeights.get(nodeId) ?? 0) / totalSeedWeight,
+    );
   }
 
   let scores = new Map(personalization);
@@ -315,10 +317,7 @@ export function personalizedPageRank(input: {
       for (const edge of edges) {
         const contribution =
           propagationProbability * score * (edge.weight / totalWeight);
-        next.set(
-          edge.toNodeId,
-          (next.get(edge.toNodeId) ?? 0) + contribution,
-        );
+        next.set(edge.toNodeId, (next.get(edge.toNodeId) ?? 0) + contribution);
       }
     }
 
@@ -335,9 +334,7 @@ export function personalizedPageRank(input: {
 
     let delta = 0;
     for (const nodeId of nodes.keys()) {
-      delta += Math.abs(
-        (next.get(nodeId) ?? 0) - (scores.get(nodeId) ?? 0),
-      );
+      delta += Math.abs((next.get(nodeId) ?? 0) - (scores.get(nodeId) ?? 0));
     }
     scores = next;
     iterations = iteration;
@@ -357,9 +354,10 @@ export function personalizedPageRank(input: {
     byScope.set(node.scopeId, candidates);
   }
 
-  const selected: Array<{ nodeId: string; scopeId: string; score: number }> = [];
-  for (const [scopeId, candidates] of [...byScope.entries()].sort(([left], [right]) =>
-    compareStrings(left, right),
+  const selected: Array<{ nodeId: string; scopeId: string; score: number }> =
+    [];
+  for (const [scopeId, candidates] of [...byScope.entries()].sort(
+    ([left], [right]) => compareStrings(left, right),
   )) {
     candidates.sort(
       (left, right) =>
