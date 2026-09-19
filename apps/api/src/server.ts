@@ -16,7 +16,11 @@ import {
   shutdownOpenTelemetry,
   type ActiveTrace,
 } from "@akp/observability";
-import type { Tokenizer } from "@akp/retrieval";
+import {
+  DeterministicQueryDecomposer,
+  type QueryTransformerPort,
+  type Tokenizer,
+} from "@akp/retrieval";
 import { registerSearchRoutes } from "./routes/search.js";
 import { registerIngestRoutes } from "./routes/ingest.js";
 import { registerKnowledgeRoutes } from "./routes/knowledge.js";
@@ -53,6 +57,7 @@ config({
 
 export interface ApiServerDependencies {
   contextTokenizer?: Tokenizer;
+  queryTransformer?: QueryTransformerPort;
 }
 
 export function buildServer(dependencies: ApiServerDependencies = {}) {
@@ -230,13 +235,17 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
   registerTemporalTruthRoutes(app, db);
   registerProviderTaskRoutes(app, db);
   registerOperatorRoutes(app, db);
-  registerSearchRoutes(
-    app,
-    db,
-    dependencies.contextTokenizer
+  const queryTransformer =
+    dependencies.queryTransformer ??
+    (process.env.AKP_QUERY_TRANSFORM_ENABLED === "true"
+      ? new DeterministicQueryDecomposer()
+      : undefined);
+  registerSearchRoutes(app, db, {
+    ...(dependencies.contextTokenizer
       ? { contextTokenizer: dependencies.contextTokenizer }
-      : {},
-  );
+      : {}),
+    ...(queryTransformer ? { queryTransformer } : {}),
+  });
   registerIngestRoutes(app, db);
   registerKnowledgeRoutes(app, db);
   registerReviewRoutes(app, db);
