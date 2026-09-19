@@ -54,6 +54,42 @@ const DETECTOR_PROPOSED_ACTION: Partial<Record<SupportedDetector, string>> = {
   STALE_HANDOFF: "REVIEW",
 };
 
+const ASSURANCE_DETECTOR_SCAN_PAGE_SIZE = 500;
+const ASSURANCE_DETECTOR_MAX_OFFSET = 1_000_000;
+const ASSURANCE_FINDING_WRITE_BATCH_SIZE = 1000;
+
+function detectorCursorOffset(
+  cursor: string | undefined,
+  detector: SupportedDetector,
+): number {
+  if (!cursor) return 0;
+  const match = /^v1:([A-Z_]+):(\d+)$/.exec(cursor);
+  if (!match || match[1] !== detector) {
+    throw new Error("ASSURANCE_DETECTOR_CURSOR_INVALID");
+  }
+  const offset = Number(match[2]);
+  if (
+    !Number.isSafeInteger(offset) ||
+    offset < 0 ||
+    offset > ASSURANCE_DETECTOR_MAX_OFFSET ||
+    offset % ASSURANCE_DETECTOR_SCAN_PAGE_SIZE !== 0
+  ) {
+    throw new Error("ASSURANCE_DETECTOR_CURSOR_INVALID");
+  }
+  return offset;
+}
+
+function nextDetectorCursor(
+  detector: SupportedDetector,
+  offset: number,
+): string {
+  const next = offset + ASSURANCE_DETECTOR_SCAN_PAGE_SIZE;
+  if (next > ASSURANCE_DETECTOR_MAX_OFFSET) {
+    throw new Error("ASSURANCE_DETECTOR_SCAN_LIMIT_EXCEEDED");
+  }
+  return `v1:${detector}:${next}`;
+}
+
 function findingForScope(
   scopeId: string,
   detector: SupportedDetector,
@@ -93,11 +129,33 @@ async function collectDetectorFindings(
   db: Postgres,
   run: AssuranceRun,
   detector: SupportedDetector,
+  pageOffset: number,
+  pageState: { saturated: boolean },
 ): Promise<AssuranceFindingDraft[]> {
   const scope = [run.spaceId, run.vaultId];
+  const pagedScope = [
+    run.spaceId,
+    run.vaultId,
+    ASSURANCE_DETECTOR_SCAN_PAGE_SIZE,
+    pageOffset,
+  ];
+  const queryDetector = async <T extends Record<string, unknown>>(
+    sql: string,
+    values?: unknown[],
+  ) => {
+    const result = await db.pool.query<T>(sql, values);
+    if (
+      sql.includes("limit $3 offset $4") &&
+      result.rows.length === ASSURANCE_DETECTOR_SCAN_PAGE_SIZE
+    ) {
+      pageState.saturated = true;
+    }
+    return result;
+  };
+
   switch (detector) {
     case "GROUNDING": {
-      const missing = await db.pool.query<{
+      const missing = await queryDetector<{
         id: string;
         path: string;
       }>(
@@ -111,11 +169,11 @@ async function collectDetectorFindings(
               select 1 from document_evidence de where de.document_id=d.id
             )
           order by d.id
-          limit 500`,
-        scope,
+          limit $3 offset $4`,
+        pagedScope,
       );
 
-      const invalidEvidence = await db.pool.query<{
+      const invalidEvidence = await queryDetector<{
         document_id: string;
         path: string;
         evidence_id: string;
@@ -168,11 +226,11 @@ async function collectDetectorFindings(
               )
             )
           order by d.id,e.id
-          limit 500`,
-        scope,
+          limit $3 offset $4`,
+        pagedScope,
       );
 
-      const invalidDerivedSupport = await db.pool.query<{
+      const invalidDerivedSupport = await queryDetector<{
         derived_store_kind: string;
         derived_item_ref: string;
         state: string;
@@ -195,8 +253,8 @@ async function collectDetectorFindings(
            left join derived_truth_dependencies d on d.id=l.dependency_id
           where l.valid=false or l.state='UNSUPPORTED'
           order by l.derived_store_kind,l.derived_item_ref
-          limit 500`,
-        scope,
+          limit $3 offset $4`,
+        pagedScope,
       );
 
       return [
@@ -250,7 +308,7 @@ async function collectDetectorFindings(
       ];
     }
     case "FRESHNESS": {
-      const documents = await db.pool.query<{
+      const documents = await queryDetector<{
         id: string;
         refresh_status: string;
         stale_reason: string | null;
@@ -261,11 +319,11 @@ async function collectDetectorFindings(
             and lifecycle in ('ACTIVE','DISPUTED')
             and refresh_status<>'CURRENT'
           order by id
-          limit 500`,
-        scope,
+          limit $3 offset $4`,
+        pagedScope,
       );
 
-      const removedSources = await db.pool.query<{
+      const removedSources = await queryDetector<{
         document_id: string;
         path: string;
         source_id: string;
@@ -289,11 +347,11 @@ async function collectDetectorFindings(
               )
             )
           order by d.id,s.id
-          limit 500`,
-        scope,
+          limit $3 offset $4`,
+        pagedScope,
       );
 
-      const profile = await db.pool.query<{
+      const profile = await queryDetector<{
         profile_revision_id: string;
         profile_id: string;
         version: string;
@@ -315,7 +373,7 @@ async function collectDetectorFindings(
         scope,
       );
 
-      const revisions = await db.pool.query<{
+      const revisions = await queryDetector<{
         corpus_revision: string;
         lexical_revision: string | null;
         vector_revision: string | null;
@@ -330,7 +388,7 @@ async function collectDetectorFindings(
         scope,
       );
 
-      const codeGraphBehind = await db.pool.query<{
+      const codeGraphBehind = await queryDetector<{
         project_id: string;
         slug: string;
         project_commit: string;
@@ -360,11 +418,11 @@ async function collectDetectorFindings(
                 <>'DISABLED'
             and lower(active.source_revision)<>lower(p.metadata->>'commit')
           order by p.id
-          limit 500`,
-        scope,
+          limit $3 offset $4`,
+        pagedScope,
       );
 
-      const communities = await db.pool.query<{
+      const communities = await queryDetector<{
         id: string;
         community_revision: string;
         graph_revision: string;
@@ -384,8 +442,8 @@ async function collectDetectorFindings(
               or r.graph_revision<>i.graph_revision
             )
           order by r.updated_at desc
-          limit 500`,
-        scope,
+          limit $3 offset $4`,
+        pagedScope,
       );
 
       const projectionFindings: AssuranceFindingDraft[] = [];
@@ -512,7 +570,7 @@ async function collectDetectorFindings(
       ];
     }
     case "CONTRADICTION": {
-      const clusters = await db.pool.query<{
+      const clusters = await queryDetector<{
         id: string;
         topic: string;
         status: string;
@@ -521,11 +579,11 @@ async function collectDetectorFindings(
            from contradiction_clusters
           where space_id=$1 and vault_id=$2 and status<>'RESOLVED'
           order by id
-          limit 500`,
-        scope,
+          limit $3 offset $4`,
+        pagedScope,
       );
 
-      const facts = await db.pool.query<{
+      const facts = await queryDetector<{
         left_id: string;
         right_id: string;
         subject_ref: string;
@@ -552,8 +610,8 @@ async function collectDetectorFindings(
             and f1.lifecycle in ('ACTIVE','DISPUTED')
             and f2.lifecycle in ('ACTIVE','DISPUTED')
           order by f1.subject_ref,f1.predicate,f1.id,f2.id
-          limit 500`,
-        scope,
+          limit $3 offset $4`,
+        pagedScope,
       );
 
       return [
@@ -591,7 +649,7 @@ async function collectDetectorFindings(
       ];
     }
     case "DUPLICATE_IDENTITY": {
-      const rows = await db.pool.query<{
+      const rows = await queryDetector<{
         normalized_identity: string;
         document_ids: string[];
         signals: string[];
@@ -632,10 +690,10 @@ async function collectDetectorFindings(
           group by normalized_identity
          having count(distinct document_id)>1
           order by normalized_identity
-          limit 500`,
-        scope,
+          limit $3 offset $4`,
+        pagedScope,
       );
-      const semantic = await db.pool.query<{
+      const semantic = await queryDetector<{
         left_id: string;
         right_id: string;
         matching_units: number;
@@ -730,7 +788,7 @@ async function collectDetectorFindings(
       ];
     }
     case "GRAPH_HEALTH": {
-      const revisionMismatch = await db.pool.query<{
+      const revisionMismatch = await queryDetector<{
         corpus_revision: string;
         graph_revision: string | null;
       }>(
@@ -741,7 +799,7 @@ async function collectDetectorFindings(
         scope,
       );
 
-      const unhealthyProjections = await db.pool.query<{
+      const unhealthyProjections = await queryDetector<{
         id: string;
         graph_domain: string;
         scope_id: string;
@@ -769,11 +827,11 @@ async function collectDetectorFindings(
               )
             )
           order by updated_at desc,id
-          limit 500`,
-        scope,
+          limit $3 offset $4`,
+        pagedScope,
       );
 
-      const orphanNodes = await db.pool.query<{
+      const orphanNodes = await queryDetector<{
         id: string;
         graph_domain: string;
         scope_id: string;
@@ -797,11 +855,11 @@ async function collectDetectorFindings(
                  and (e.from_node_id=n.id or e.to_node_id=n.id)
             )
           order by n.graph_domain,n.scope_id,n.id
-          limit 500`,
-        scope,
+          limit $3 offset $4`,
+        pagedScope,
       );
 
-      const crossScopeEdges = await db.pool.query<{
+      const crossScopeEdges = await queryDetector<{
         id: string;
         owner_graph_domain: string;
         from_node_id: string;
@@ -831,11 +889,11 @@ async function collectDetectorFindings(
               or t.vault_id=$2
             )
           order by e.id
-          limit 500`,
-        scope,
+          limit $3 offset $4`,
+        pagedScope,
       );
 
-      const staleRelations = await db.pool.query<{
+      const staleRelations = await queryDetector<{
         edge_id: string;
         projection_id: string;
         projection_revision: string;
@@ -855,11 +913,11 @@ async function collectDetectorFindings(
             and e.owner_graph_domain=p.graph_domain
             and e.provenance_revision<>p.revision
           order by e.id
-          limit 500`,
-        scope,
+          limit $3 offset $4`,
+        pagedScope,
       );
 
-      const unresolvedBridges = await db.pool.query<{
+      const unresolvedBridges = await queryDetector<{
         edge_id: string;
         target_node_id: string;
         scope_id: string;
@@ -889,8 +947,8 @@ async function collectDetectorFindings(
                  and code_projection.freshness='FRESH'
             )
           order by e.id
-          limit 500`,
-        scope,
+          limit $3 offset $4`,
+        pagedScope,
       );
 
       return [
@@ -1018,7 +1076,7 @@ async function collectDetectorFindings(
       ];
     }
     case "TEMPORAL_CONSISTENCY": {
-      const heads = await db.pool.query<{
+      const heads = await queryDetector<{
         revision_seq: number;
         revision_hash: string | null;
         latest_seq: number | null;
@@ -1043,7 +1101,7 @@ async function collectDetectorFindings(
         scope,
       );
 
-      const overlaps = await db.pool.query<{
+      const overlaps = await queryDetector<{
         left_id: string;
         right_id: string;
         subject_ref: string;
@@ -1066,11 +1124,11 @@ async function collectDetectorFindings(
             and f1.lifecycle in ('ACTIVE','DISPUTED')
             and f2.lifecycle in ('ACTIVE','DISPUTED')
           order by f1.subject_ref,f1.predicate,f1.id,f2.id
-          limit 500`,
-        scope,
+          limit $3 offset $4`,
+        pagedScope,
       );
 
-      const supersessions = await db.pool.query<{
+      const supersessions = await queryDetector<{
         id: string;
         old_fact_id: string;
         new_fact_id: string;
@@ -1101,8 +1159,8 @@ async function collectDetectorFindings(
               or s.recorded_at<new.recorded_at
             )
           order by s.id
-          limit 500`,
-        scope,
+          limit $3 offset $4`,
+        pagedScope,
       );
 
       return [
@@ -1165,7 +1223,7 @@ async function collectDetectorFindings(
       ];
     }
     case "CODE_GRAPH_FRESHNESS": {
-      const projects = await db.pool.query<{
+      const projects = await queryDetector<{
         project_id: string;
         slug: string;
         project_commit: string | null;
@@ -1237,8 +1295,8 @@ async function collectDetectorFindings(
             and coalesce(p.metadata#>>'{codeGraph,status}','REQUESTED')
                 <>'DISABLED'
           order by p.id
-          limit 500`,
-        scope,
+          limit $3 offset $4`,
+        pagedScope,
       );
 
       const findings: AssuranceFindingDraft[] = [];
@@ -1358,7 +1416,7 @@ async function collectDetectorFindings(
       return findings;
     }
     case "LINK_GAP": {
-      const orphaned = await db.pool.query<{
+      const orphaned = await queryDetector<{
         id: string;
         path: string;
       }>(
@@ -1377,11 +1435,11 @@ async function collectDetectorFindings(
                  )
             )
           order by d.id
-          limit 500`,
-        scope,
+          limit $3 offset $4`,
+        pagedScope,
       );
 
-      const missingRelations = await db.pool.query<{
+      const missingRelations = await queryDetector<{
         source_id: string;
         source_path: string;
         target_text: string;
@@ -1446,8 +1504,8 @@ async function collectDetectorFindings(
                and relation.to_document_id=u.target_id
           )
           order by u.source_id,u.target_text
-          limit 500`,
-        scope,
+          limit $3 offset $4`,
+        pagedScope,
       );
 
       return [
@@ -1483,7 +1541,7 @@ async function collectDetectorFindings(
       ];
     }
     case "SYNTHESIS_CANDIDATE": {
-      const rows = await db.pool.query<{
+      const rows = await queryDetector<{
         revision_id: string;
         community_key: string;
         member_count: number;
@@ -1526,7 +1584,7 @@ async function collectDetectorFindings(
       );
     }
     case "ACCESS_BOUNDARY": {
-      const packetScope = await db.pool.query<{
+      const packetScope = await queryDetector<{
         id: string;
         vault_id: string | null;
         scope: Record<string, unknown>;
@@ -1559,11 +1617,11 @@ async function collectDetectorFindings(
               )
             )
           order by p.created_at desc,p.id
-          limit 500`,
-        scope,
+          limit $3 offset $4`,
+        pagedScope,
       );
 
-      const federationScope = await db.pool.query<{
+      const federationScope = await queryDetector<{
         id: string;
         vault_ids: string[];
         federated: string | null;
@@ -1582,11 +1640,11 @@ async function collectDetectorFindings(
             and jsonb_array_length(p.scope->'vaultIds')>1
             and p.scope->>'federated' is distinct from 'true'
           order by p.created_at desc,p.id
-          limit 500`,
-        scope,
+          limit $3 offset $4`,
+        pagedScope,
       );
 
-      const declaredVaults = await db.pool.query<{
+      const declaredVaults = await queryDetector<{
         packet_id: string;
         declared_vault_id: string;
         declared_space_id: string | null;
@@ -1610,11 +1668,11 @@ async function collectDetectorFindings(
               or v.space_id<>p.space_id
             )
           order by p.created_at desc,p.id,declared.value
-          limit 500`,
-        scope,
+          limit $3 offset $4`,
+        pagedScope,
       );
 
-      const sectionLeaks = await db.pool.query<{
+      const sectionLeaks = await queryDetector<{
         packet_id: string;
         location: "PACKET" | "CONTINUATION";
         handle: string | null;
@@ -1686,11 +1744,11 @@ async function collectDetectorFindings(
             )
           )
           order by s.packet_id,s.location,s.handle nulls first,s.ordinal
-          limit 500`,
-        scope,
+          limit $3 offset $4`,
+        pagedScope,
       );
 
-      const citationLeaks = await db.pool.query<{
+      const citationLeaks = await queryDetector<{
         packet_id: string;
         location: "PACKET" | "CONTINUATION";
         handle: string | null;
@@ -1766,8 +1824,8 @@ async function collectDetectorFindings(
             )
           order by c.packet_id,c.location,c.handle nulls first,c.ordinal,
                    c.citation_id
-          limit 500`,
-        scope,
+          limit $3 offset $4`,
+        pagedScope,
       );
 
       return [
@@ -1873,7 +1931,7 @@ async function collectDetectorFindings(
       ];
     }
     case "CONNECTOR_DELETION": {
-      const rows = await db.pool.query<{
+      const rows = await queryDetector<{
         connector_id: string;
         object_id: string;
         sequence: string | number;
@@ -1900,8 +1958,8 @@ async function collectDetectorFindings(
               or o.source_sequence<>l.sequence
             )
           order by l.connector_id,l.object_id
-          limit 500`,
-        scope,
+          limit $3 offset $4`,
+        pagedScope,
       );
       return rows.rows.map((row) =>
         findingForScope(
@@ -1922,7 +1980,7 @@ async function collectDetectorFindings(
       );
     }
     case "CONNECTOR_FRESHNESS": {
-      const rows = await db.pool.query<{
+      const rows = await queryDetector<{
         id: string;
         connector_key: string;
         source_system: string;
@@ -1948,8 +2006,8 @@ async function collectDetectorFindings(
                     secs => (r.descriptor->>'freshnessSlaSeconds')::int
                   )
           order by r.id
-          limit 500`,
-        scope,
+          limit $3 offset $4`,
+        pagedScope,
       );
       return rows.rows.map((row) =>
         findingForScope(
@@ -1973,7 +2031,7 @@ async function collectDetectorFindings(
       );
     }
     case "CONNECTOR_ACL_DRIFT": {
-      const rows = await db.pool.query<{
+      const rows = await queryDetector<{
         connector_id: string;
         object_id: string;
         permission_fidelity: string;
@@ -1998,8 +2056,8 @@ async function collectDetectorFindings(
               )
             )
           order by o.connector_id,o.object_id
-          limit 500`,
-        scope,
+          limit $3 offset $4`,
+        pagedScope,
       );
       return rows.rows.map((row) =>
         findingForScope(
@@ -2024,7 +2082,7 @@ async function collectDetectorFindings(
       );
     }
     case "GRAPH_DISAGREEMENT": {
-      const rows = await db.pool.query<{
+      const rows = await queryDetector<{
         graph_domain: string;
         scope_id: string;
         active_count: number;
@@ -2035,8 +2093,8 @@ async function collectDetectorFindings(
           group by graph_domain,scope_id
          having count(*)>1
           order by graph_domain,scope_id
-          limit 500`,
-        scope,
+          limit $3 offset $4`,
+        pagedScope,
       );
       return rows.rows.map((row) =>
         findingForScope(
@@ -2052,7 +2110,7 @@ async function collectDetectorFindings(
       );
     }
     case "ORPHAN_WORK": {
-      const rows = await db.pool.query<{
+      const rows = await queryDetector<{
         id: string;
         session_id: string;
         work_key: string;
@@ -2065,8 +2123,8 @@ async function collectDetectorFindings(
           where s.space_id=$1 and s.vault_id=$2 and c.status='ACTIVE'
             and coalesce(s.state->>'workStatus','OPEN') in ('COMPLETED','ABANDONED')
           order by c.id
-          limit 500`,
-        scope,
+          limit $3 offset $4`,
+        pagedScope,
       );
       return rows.rows.map((row) =>
         findingForScope(
@@ -2086,7 +2144,7 @@ async function collectDetectorFindings(
       );
     }
     case "EXPIRED_CLAIM": {
-      const rows = await db.pool.query<{
+      const rows = await queryDetector<{
         id: string;
         session_id: string;
         work_key: string;
@@ -2098,8 +2156,8 @@ async function collectDetectorFindings(
           where s.space_id=$1 and s.vault_id=$2 and c.status='ACTIVE'
             and c.lease_expires_at<=now()
           order by c.lease_expires_at
-          limit 500`,
-        scope,
+          limit $3 offset $4`,
+        pagedScope,
       );
       return rows.rows.map((row) =>
         findingForScope(
@@ -2119,7 +2177,7 @@ async function collectDetectorFindings(
       );
     }
     case "STALE_HANDOFF": {
-      const rows = await db.pool.query<{
+      const rows = await queryDetector<{
         id: string;
         claim_id: string;
         session_id: string;
@@ -2144,8 +2202,8 @@ async function collectDetectorFindings(
            join workspace_context_revision_sets c on c.session_id=h.session_id
           where h.handoff_revision_hash<>c.revision_set_hash
           order by h.id
-          limit 500`,
-        scope,
+          limit $3 offset $4`,
+        pagedScope,
       );
       return rows.rows.map((row) =>
         findingForScope(
@@ -2166,7 +2224,7 @@ async function collectDetectorFindings(
       );
     }
     case "UNSUPPORTED_CAUSALITY": {
-      const rows = await db.pool.query<{
+      const rows = await queryDetector<{
         id: string;
         derivation: string;
       }>(
@@ -2177,8 +2235,8 @@ async function collectDetectorFindings(
               'SOURCE_EXPLICIT','HUMAN_ASSERTED','DYNAMICALLY_PROVEN'
             )
           order by a.id
-          limit 500`,
-        scope,
+          limit $3 offset $4`,
+        pagedScope,
       );
       return rows.rows.map((row) =>
         findingForScope(
@@ -2210,39 +2268,91 @@ export async function runClaimedAssuranceRun(
   workerId: string,
 ): Promise<"COMPLETED" | "RETRY" | "FAILED" | "FENCED"> {
   let detectorIndex = Math.max(0, run.cursor.detectorIndex);
-  const counts: Record<string, number> = {};
+  let detectorCursor = run.cursor.detectorCursor;
+  const counts: Record<string, number> = {
+    ...(run.cursor.detectorCounts ?? {}),
+  };
   try {
-    for (; detectorIndex < run.detectors.length; detectorIndex += 1) {
+    while (detectorIndex < run.detectors.length) {
       const detector = run.detectors[detectorIndex]!;
       if (!supportedDetector(detector)) {
         throw new Error(`ASSURANCE_DETECTOR_NOT_IMPLEMENTED:${detector}`);
       }
-      const findings = await collectDetectorFindings(db, run, detector);
-      await appendAssuranceFindings(db, {
-        runId: run.id,
-        workerId,
-        leaseToken: run.leaseToken,
-        spaceId: run.spaceId,
-        vaultId: run.vaultId,
-        findings,
-      });
-      counts[detector] = findings.length;
+
+      const pageOffset = detectorCursorOffset(detectorCursor, detector);
+      const pageState = { saturated: false };
+      const findings = await collectDetectorFindings(
+        db,
+        run,
+        detector,
+        pageOffset,
+        pageState,
+      );
+
+      for (
+        let findingOffset = 0;
+        findingOffset < findings.length;
+        findingOffset += ASSURANCE_FINDING_WRITE_BATCH_SIZE
+      ) {
+        await appendAssuranceFindings(db, {
+          runId: run.id,
+          workerId,
+          leaseToken: run.leaseToken,
+          spaceId: run.spaceId,
+          vaultId: run.vaultId,
+          findings: findings.slice(
+            findingOffset,
+            findingOffset + ASSURANCE_FINDING_WRITE_BATCH_SIZE,
+          ),
+        });
+      }
+      counts[detector] = (counts[detector] ?? 0) + findings.length;
+
+      if (pageState.saturated) {
+        detectorCursor = nextDetectorCursor(detector, pageOffset);
+        const renewed = await renewAssuranceRunLease(db, {
+          runId: run.id,
+          workerId,
+          leaseToken: run.leaseToken,
+          cursor: {
+            detectorIndex,
+            detectorCursor,
+            detectorCounts: counts,
+          },
+        });
+        if (!renewed) return "FENCED";
+        continue;
+      }
+
+      detectorIndex += 1;
+      detectorCursor = undefined;
       const renewed = await renewAssuranceRunLease(db, {
         runId: run.id,
         workerId,
         leaseToken: run.leaseToken,
-        cursor: { detectorIndex: detectorIndex + 1 },
+        cursor: {
+          detectorIndex,
+          detectorCounts: counts,
+        },
       });
       if (!renewed) return "FENCED";
     }
+
     const completed = await completeAssuranceRun(db, {
       runId: run.id,
       workerId,
       leaseToken: run.leaseToken,
-      cursor: { detectorIndex },
+      cursor: {
+        detectorIndex,
+        detectorCounts: counts,
+      },
       summary: {
         detectorCounts: counts,
         supportedDetectors: [...SUPPORTED_ASSURANCE_DETECTORS],
+        pagination: {
+          pageSize: ASSURANCE_DETECTOR_SCAN_PAGE_SIZE,
+          maxOffset: ASSURANCE_DETECTOR_MAX_OFFSET,
+        },
       },
     });
     return completed ? "COMPLETED" : "FENCED";
@@ -2252,7 +2362,11 @@ export async function runClaimedAssuranceRun(
       workerId,
       leaseToken: run.leaseToken,
       error,
-      cursor: { detectorIndex },
+      cursor: {
+        detectorIndex,
+        ...(detectorCursor ? { detectorCursor } : {}),
+        detectorCounts: counts,
+      },
     });
   }
 }

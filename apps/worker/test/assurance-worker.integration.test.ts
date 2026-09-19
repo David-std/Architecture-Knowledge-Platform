@@ -1052,4 +1052,91 @@ describeDb("continuous assurance detector execution", () => {
     }
   });
 
+  it("paginates a large detector scan beyond the first 500 findings", async () => {
+    const paginationRevision = `assurance-pagination-${randomUUID()}`;
+    try {
+      await db.pool.query(
+        `insert into context_packets(
+           id,space_id,vault_id,actor_id,corpus_revision,query_hash,
+           packet_hash,request,packet,scope
+         )
+         select gen_random_uuid(),$1,$2,null,$3,
+                'pagination-query-'||g::text,
+                'pagination-packet-'||g::text,
+                '{}'::jsonb,
+                jsonb_build_object('sections','[]'::jsonb),
+                jsonb_build_object(
+                  'spaceId',$1::text,
+                  'federated',false
+                )
+           from generate_series(1,501) g`,
+        [spaceId, vaultId, paginationRevision],
+      );
+
+      const run = await submitAssuranceRun(db, {
+        spaceId,
+        vaultId,
+        trigger: "MANUAL",
+        detectors: ["ACCESS_BOUNDARY"],
+        idempotencyKey: `pagination-${randomUUID()}`,
+        maxAttempts: 1,
+      });
+      const workerId = `pagination-${randomUUID()}`;
+      const claimed = await claimNextAssuranceRun(db, workerId, 60, {
+        runId: run.id,
+      });
+      if (!claimed) throw new Error("expected paginated assurance run");
+
+      await expect(runClaimedAssuranceRun(db, claimed, workerId)).resolves.toBe(
+        "COMPLETED",
+      );
+
+      const persisted = await db.pool.query<{
+        status: string;
+        cursor: {
+          detectorIndex: number;
+          detectorCursor?: string;
+          detectorCounts?: Record<string, number>;
+        };
+        result_summary: {
+          detectorCounts?: Record<string, number>;
+          pagination?: { pageSize?: number; maxOffset?: number };
+        };
+      }>(
+        `select status,cursor,result_summary
+           from assurance_runs
+          where id=$1`,
+        [run.id],
+      );
+      expect(persisted.rows[0]).toMatchObject({
+        status: "COMPLETED",
+        cursor: {
+          detectorIndex: 1,
+          detectorCounts: { ACCESS_BOUNDARY: 501 },
+        },
+        result_summary: {
+          detectorCounts: { ACCESS_BOUNDARY: 501 },
+          pagination: { pageSize: 500 },
+        },
+      });
+      expect(persisted.rows[0]?.cursor.detectorCursor).toBeUndefined();
+
+      const findings = await db.pool.query<{ count: number }>(
+        `select count(*)::int count
+           from assurance_findings
+          where run_id=$1
+            and detector='ACCESS_BOUNDARY'
+            and code='CONTEXT_PACKET_SCOPE_MISMATCH'`,
+        [run.id],
+      );
+      expect(findings.rows[0]?.count).toBe(501);
+    } finally {
+      await db.pool.query(
+        `delete from context_packets
+          where space_id=$1 and vault_id=$2 and corpus_revision=$3`,
+        [spaceId, vaultId, paginationRevision],
+      );
+    }
+  });
+
 });

@@ -272,6 +272,7 @@ export interface AssuranceFinding extends AssuranceFindingDraft {
 export interface AssuranceRunCursor {
   detectorIndex: number;
   detectorCursor?: string;
+  detectorCounts?: Record<string, number>;
 }
 
 export interface AssuranceRun {
