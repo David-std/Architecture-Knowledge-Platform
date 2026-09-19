@@ -2,22 +2,41 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "name": "architecture-knowledge-platform",
   "version": "0.2.0",
-  "transports": ["stdio", "streamable-http"],
+  "transports": [
+    "stdio",
+    "streamable-http"
+  ],
   "definitions": {
     "ScopedSearch": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["query", "spaceId", "vaultIds"],
+      "required": [
+        "query",
+        "spaceId",
+        "vaultIds"
+      ],
       "properties": {
-        "query": { "type": "string", "minLength": 1 },
-        "spaceId": { "type": "string", "format": "uuid" },
+        "query": {
+          "type": "string",
+          "minLength": 1
+        },
+        "spaceId": {
+          "type": "string",
+          "format": "uuid"
+        },
         "vaultIds": {
           "type": "array",
           "minItems": 1,
           "maxItems": 20,
-          "items": { "type": "string", "format": "uuid" }
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          }
         },
-        "federated": { "type": "boolean", "default": false },
+        "federated": {
+          "type": "boolean",
+          "default": false
+        },
         "limit": {
           "type": "integer",
           "minimum": 1,
@@ -63,17 +82,33 @@
     "ScopedContext": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["query", "spaceId", "vaultIds"],
+      "required": [
+        "query",
+        "spaceId",
+        "vaultIds"
+      ],
       "properties": {
-        "query": { "type": "string", "minLength": 1 },
-        "spaceId": { "type": "string", "format": "uuid" },
+        "query": {
+          "type": "string",
+          "minLength": 1
+        },
+        "spaceId": {
+          "type": "string",
+          "format": "uuid"
+        },
         "vaultIds": {
           "type": "array",
           "minItems": 1,
           "maxItems": 20,
-          "items": { "type": "string", "format": "uuid" }
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          }
         },
-        "federated": { "type": "boolean", "default": false },
+        "federated": {
+          "type": "boolean",
+          "default": false
+        },
         "intent": {
           "type": "string",
           "enum": [
@@ -97,12 +132,18 @@
         },
         "packetMode": {
           "type": "string",
-          "enum": ["FULL_CONTEXT_PACKET", "COMPACT_AGENT_PACKET"],
+          "enum": [
+            "FULL_CONTEXT_PACKET",
+            "COMPACT_AGENT_PACKET"
+          ],
           "default": "COMPACT_AGENT_PACKET"
         },
         "reasoningMode": {
           "type": "string",
-          "enum": ["DIRECT", "PLAN"],
+          "enum": [
+            "DIRECT",
+            "PLAN"
+          ],
           "default": "DIRECT"
         },
         "limit": {
@@ -126,28 +167,66 @@
     "CodeSymbolSelector": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["repository"],
+      "required": [
+        "repository"
+      ],
       "properties": {
-        "repository": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "repository": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
         "commitSha": {
           "type": "string",
           "pattern": "^[a-fA-F0-9]{40}$"
         },
-        "path": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
         "qualifiedName": {
           "type": "string",
           "minLength": 1,
           "maxLength": 2048
         },
-        "name": { "type": "string", "minLength": 1, "maxLength": 1024 },
-        "kind": { "type": "string", "minLength": 1, "maxLength": 120 },
-        "signature": { "type": "string", "minLength": 1, "maxLength": 4096 }
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "signature": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
       },
       "anyOf": [
-        { "required": ["path"] },
-        { "required": ["qualifiedName"] },
-        { "required": ["name"] },
-        { "required": ["signature"] }
+        {
+          "required": [
+            "path"
+          ]
+        },
+        {
+          "required": [
+            "qualifiedName"
+          ]
+        },
+        {
+          "required": [
+            "name"
+          ]
+        },
+        {
+          "required": [
+            "signature"
+          ]
+        }
       ]
     },
     "CodePathOptions": {
@@ -157,10 +236,22 @@
         "relationTypes": {
           "type": "array",
           "maxItems": 100,
-          "items": { "type": "string", "minLength": 1, "maxLength": 160 }
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          }
         },
-        "maxHops": { "type": "integer", "minimum": 1, "maximum": 16 },
-        "maxFanout": { "type": "integer", "minimum": 1, "maximum": 1000 },
+        "maxHops": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16
+        },
+        "maxFanout": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
         "maxCandidates": {
           "type": "integer",
           "minimum": 1,
@@ -180,10 +271,22 @@
         "relationTypes": {
           "type": "array",
           "maxItems": 100,
-          "items": { "type": "string", "minLength": 1, "maxLength": 160 }
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          }
         },
-        "maxHops": { "type": "integer", "minimum": 1, "maximum": 16 },
-        "maxFanout": { "type": "integer", "minimum": 1, "maximum": 1000 },
+        "maxHops": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16
+        },
+        "maxFanout": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
         "maxCandidates": {
           "type": "integer",
           "minimum": 1,
@@ -196,99 +299,202 @@
         },
         "direction": {
           "type": "string",
-          "enum": ["outgoing", "incoming", "both"]
+          "enum": [
+            "outgoing",
+            "incoming",
+            "both"
+          ]
         },
-        "includeTests": { "type": "boolean" },
-        "includeCatalogBridges": { "type": "boolean" },
-        "includeRulesDecisions": { "type": "boolean" },
-        "includeRuntimeObservations": { "type": "boolean" }
+        "includeTests": {
+          "type": "boolean"
+        },
+        "includeCatalogBridges": {
+          "type": "boolean"
+        },
+        "includeRulesDecisions": {
+          "type": "boolean"
+        },
+        "includeRuntimeObservations": {
+          "type": "boolean"
+        }
       }
     },
     "CodeScopedSelector": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["spaceId", "selector"],
+      "required": [
+        "spaceId",
+        "selector"
+      ],
       "properties": {
-        "spaceId": { "type": "string", "format": "uuid" },
-        "vaultId": { "type": "string", "format": "uuid" },
+        "spaceId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "vaultId": {
+          "type": "string",
+          "format": "uuid"
+        },
         "vaultIds": {
           "type": "array",
           "maxItems": 100,
-          "items": { "type": "string", "format": "uuid" }
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          }
         },
-        "federated": { "type": "boolean", "default": false },
+        "federated": {
+          "type": "boolean",
+          "default": false
+        },
         "freshnessPolicy": {
           "type": "string",
-          "enum": ["FRESH_ONLY", "ALLOW_STALE"],
+          "enum": [
+            "FRESH_ONLY",
+            "ALLOW_STALE"
+          ],
           "default": "FRESH_ONLY"
         },
-        "selector": { "$ref": "#/definitions/CodeSymbolSelector" }
+        "selector": {
+          "$ref": "#/definitions/CodeSymbolSelector"
+        }
       }
     },
     "CodeScopedPath": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["spaceId", "source", "target"],
+      "required": [
+        "spaceId",
+        "source",
+        "target"
+      ],
       "properties": {
-        "spaceId": { "type": "string", "format": "uuid" },
-        "vaultId": { "type": "string", "format": "uuid" },
+        "spaceId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "vaultId": {
+          "type": "string",
+          "format": "uuid"
+        },
         "vaultIds": {
           "type": "array",
           "maxItems": 100,
-          "items": { "type": "string", "format": "uuid" }
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          }
         },
-        "federated": { "type": "boolean", "default": false },
+        "federated": {
+          "type": "boolean",
+          "default": false
+        },
         "freshnessPolicy": {
           "type": "string",
-          "enum": ["FRESH_ONLY", "ALLOW_STALE"],
+          "enum": [
+            "FRESH_ONLY",
+            "ALLOW_STALE"
+          ],
           "default": "FRESH_ONLY"
         },
-        "source": { "$ref": "#/definitions/CodeSymbolSelector" },
-        "target": { "$ref": "#/definitions/CodeSymbolSelector" },
-        "options": { "$ref": "#/definitions/CodePathOptions" }
+        "source": {
+          "$ref": "#/definitions/CodeSymbolSelector"
+        },
+        "target": {
+          "$ref": "#/definitions/CodeSymbolSelector"
+        },
+        "options": {
+          "$ref": "#/definitions/CodePathOptions"
+        }
       }
     },
     "CodeScopedImpact": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["spaceId", "selector"],
+      "required": [
+        "spaceId",
+        "selector"
+      ],
       "properties": {
-        "spaceId": { "type": "string", "format": "uuid" },
-        "vaultId": { "type": "string", "format": "uuid" },
+        "spaceId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "vaultId": {
+          "type": "string",
+          "format": "uuid"
+        },
         "vaultIds": {
           "type": "array",
           "maxItems": 100,
-          "items": { "type": "string", "format": "uuid" }
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          }
         },
-        "federated": { "type": "boolean", "default": false },
+        "federated": {
+          "type": "boolean",
+          "default": false
+        },
         "freshnessPolicy": {
           "type": "string",
-          "enum": ["FRESH_ONLY", "ALLOW_STALE"],
+          "enum": [
+            "FRESH_ONLY",
+            "ALLOW_STALE"
+          ],
           "default": "FRESH_ONLY"
         },
-        "selector": { "$ref": "#/definitions/CodeSymbolSelector" },
-        "options": { "$ref": "#/definitions/CodeImpactOptions" }
+        "selector": {
+          "$ref": "#/definitions/CodeSymbolSelector"
+        },
+        "options": {
+          "$ref": "#/definitions/CodeImpactOptions"
+        }
       }
     },
     "CodeScopedChangeImpact": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["spaceId", "repository", "commitSha", "changedPaths"],
+      "required": [
+        "spaceId",
+        "repository",
+        "commitSha",
+        "changedPaths"
+      ],
       "properties": {
-        "spaceId": { "type": "string", "format": "uuid" },
-        "vaultId": { "type": "string", "format": "uuid" },
+        "spaceId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "vaultId": {
+          "type": "string",
+          "format": "uuid"
+        },
         "vaultIds": {
           "type": "array",
           "maxItems": 100,
-          "items": { "type": "string", "format": "uuid" }
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          }
         },
-        "federated": { "type": "boolean", "default": false },
+        "federated": {
+          "type": "boolean",
+          "default": false
+        },
         "freshnessPolicy": {
           "type": "string",
-          "enum": ["FRESH_ONLY", "ALLOW_STALE"],
+          "enum": [
+            "FRESH_ONLY",
+            "ALLOW_STALE"
+          ],
           "default": "FRESH_ONLY"
         },
-        "repository": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "repository": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
         "commitSha": {
           "type": "string",
           "pattern": "^[a-fA-F0-9]{40}$"
@@ -297,19 +503,205 @@
           "type": "array",
           "minItems": 1,
           "maxItems": 500,
-          "items": { "type": "string", "minLength": 1, "maxLength": 4096 }
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
         },
-        "options": { "$ref": "#/definitions/CodeImpactOptions" }
+        "options": {
+          "$ref": "#/definitions/CodeImpactOptions"
+        }
       }
     }
   },
   "tools": [
     {
+      "name": "akp_context",
+      "version": "1.0.0",
+      "permission": "knowledge:read",
+      "mutates": true,
+      "requiresIdempotencyKey": true,
+      "description": "Low-entropy façade that delegates to existing governed AKP tools/APIs. Idempotency-Key is required only for CAPTURE and TASK actions.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "action"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "BOOTSTRAP",
+              "SEARCH",
+              "EXPLAIN",
+              "IMPACT",
+              "CODE",
+              "TEMPORAL",
+              "GLOBAL",
+              "VERIFY",
+              "CAPTURE",
+              "TASK",
+              "STATUS"
+            ]
+          },
+          "sessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "spaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "vaultId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "vaultIds": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "federated": {
+            "type": "boolean",
+            "default": false
+          },
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "intent": {
+            "type": "string",
+            "enum": [
+              "EXACT_LOOKUP",
+              "CONCEPTUAL",
+              "COMPARISON",
+              "WORKFLOW_EXECUTION",
+              "SOURCE_VERIFICATION",
+              "PROJECT_CODE",
+              "GLOBAL_SYNTHESIS",
+              "IMPACT_ANALYSIS",
+              "NO_RETRIEVAL_REQUIRED"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10
+          },
+          "maxTokens": {
+            "type": "integer",
+            "minimum": 256,
+            "maximum": 32000,
+            "default": 6000
+          },
+          "packetMode": {
+            "type": "string",
+            "enum": [
+              "COMPACT_AGENT_PACKET",
+              "FULL_CONTEXT_PACKET"
+            ],
+            "default": "COMPACT_AGENT_PACKET"
+          },
+          "resourceId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          },
+          "depth": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5,
+            "default": 2
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 200
+          },
+          "codeOperation": {
+            "type": "string",
+            "enum": [
+              "SYMBOL",
+              "CALLERS",
+              "CALLEES",
+              "PATH",
+              "IMPACT",
+              "CHANGE_IMPACT",
+              "TESTS",
+              "EXPLAIN_PATH"
+            ],
+            "default": "SYMBOL"
+          },
+          "selector": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "sourceSelector": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "targetSelector": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "repository": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          },
+          "commitSha": {
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{40}$"
+          },
+          "changedPaths": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 500,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            }
+          },
+          "codeOptions": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "temporal": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "capture": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "task": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "http": {
+        "method": "COMPOSITE",
+        "path": "delegates-existing-governed-akp-endpoints"
+      }
+    },
+    {
       "name": "akp_status",
       "version": "1.0.0",
       "permission": "knowledge:read",
       "mutates": false,
-      "http": { "method": "GET", "path": "/v1/status" }
+      "http": {
+        "method": "GET",
+        "path": "/v1/status"
+      }
     },
     {
       "name": "akp_get_current_identity",
@@ -321,7 +713,10 @@
         "additionalProperties": false,
         "properties": {}
       },
-      "http": { "method": "GET", "path": "/v1/auth/session" }
+      "http": {
+        "method": "GET",
+        "path": "/v1/auth/session"
+      }
     },
     {
       "name": "akp_list_vaults",
@@ -333,7 +728,10 @@
         "additionalProperties": false,
         "properties": {}
       },
-      "http": { "method": "GET", "path": "/v1/vaults" }
+      "http": {
+        "method": "GET",
+        "path": "/v1/vaults"
+      }
     },
     {
       "name": "akp_start_session",
@@ -344,17 +742,34 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["spaceId", "vaultId", "purpose", "idempotencyKey"],
+        "required": [
+          "spaceId",
+          "vaultId",
+          "purpose",
+          "idempotencyKey"
+        ],
         "properties": {
-          "spaceId": { "type": "string", "format": "uuid" },
-          "vaultId": { "type": "string", "format": "uuid" },
-          "purpose": { "type": "string", "minLength": 1 },
+          "spaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "vaultId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "purpose": {
+            "type": "string",
+            "minLength": 1
+          },
           "contextBudget": {
             "type": "integer",
             "minimum": 256,
             "maximum": 32000
           },
-          "projectId": { "type": "string", "format": "uuid" },
+          "projectId": {
+            "type": "string",
+            "format": "uuid"
+          },
           "idempotencyKey": {
             "type": "string",
             "minLength": 8,
@@ -362,7 +777,10 @@
           }
         }
       },
-      "http": { "method": "POST", "path": "/v1/sessions" }
+      "http": {
+        "method": "POST",
+        "path": "/v1/sessions"
+      }
     },
     {
       "name": "akp_list_sessions",
@@ -374,7 +792,10 @@
         "additionalProperties": false,
         "properties": {}
       },
-      "http": { "method": "GET", "path": "/v1/sessions" }
+      "http": {
+        "method": "GET",
+        "path": "/v1/sessions"
+      }
     },
     {
       "name": "akp_get_session_state",
@@ -384,12 +805,20 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["sessionId"],
+        "required": [
+          "sessionId"
+        ],
         "properties": {
-          "sessionId": { "type": "string", "format": "uuid" }
+          "sessionId": {
+            "type": "string",
+            "format": "uuid"
+          }
         }
       },
-      "http": { "method": "GET", "path": "/v1/sessions/{id}/state" }
+      "http": {
+        "method": "GET",
+        "path": "/v1/sessions/{id}/state"
+      }
     },
     {
       "name": "akp_update_work_context",
@@ -400,27 +829,50 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["sessionId", "status", "idempotencyKey"],
+        "required": [
+          "sessionId",
+          "status",
+          "idempotencyKey"
+        ],
         "properties": {
-          "sessionId": { "type": "string", "format": "uuid" },
+          "sessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
           "status": {
             "type": "string",
-            "enum": ["OPEN", "BLOCKED", "COMPLETED", "ABANDONED"]
+            "enum": [
+              "OPEN",
+              "BLOCKED",
+              "COMPLETED",
+              "ABANDONED"
+            ]
           },
           "outcome": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "minLength": 1,
             "maxLength": 12000
           },
           "followUps": {
             "type": "array",
             "maxItems": 50,
-            "items": { "type": "string", "minLength": 1, "maxLength": 2000 }
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            }
           },
           "touchedResources": {
             "type": "array",
             "maxItems": 100,
-            "items": { "type": "string", "minLength": 1, "maxLength": 1000 }
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            }
           },
           "idempotencyKey": {
             "type": "string",
@@ -429,7 +881,10 @@
           }
         }
       },
-      "http": { "method": "POST", "path": "/v1/sessions/{id}/work-context" }
+      "http": {
+        "method": "POST",
+        "path": "/v1/sessions/{id}/work-context"
+      }
     },
     {
       "name": "akp_bootstrap_session_context",
@@ -439,10 +894,18 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["sessionId"],
+        "required": [
+          "sessionId"
+        ],
         "properties": {
-          "sessionId": { "type": "string", "format": "uuid" },
-          "query": { "type": "string", "maxLength": 4096 },
+          "sessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "query": {
+            "type": "string",
+            "maxLength": 4096
+          },
           "intent": {
             "type": "string",
             "default": "WORKFLOW_EXECUTION",
@@ -461,11 +924,17 @@
           "packetMode": {
             "type": "string",
             "default": "COMPACT_AGENT_PACKET",
-            "enum": ["COMPACT_AGENT_PACKET", "FULL_CONTEXT_PACKET"]
+            "enum": [
+              "COMPACT_AGENT_PACKET",
+              "FULL_CONTEXT_PACKET"
+            ]
           }
         }
       },
-      "http": { "method": "POST", "path": "/v1/sessions/{id}/bootstrap" }
+      "http": {
+        "method": "POST",
+        "path": "/v1/sessions/{id}/bootstrap"
+      }
     },
     {
       "name": "akp_claim_workspace_work",
@@ -476,10 +945,21 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["sessionId", "workKey", "idempotencyKey"],
+        "required": [
+          "sessionId",
+          "workKey",
+          "idempotencyKey"
+        ],
         "properties": {
-          "sessionId": { "type": "string", "format": "uuid" },
-          "workKey": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "sessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "workKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
           "leaseSeconds": {
             "type": "integer",
             "minimum": 15,
@@ -493,7 +973,10 @@
           }
         }
       },
-      "http": { "method": "POST", "path": "/v1/sessions/{id}/claims" }
+      "http": {
+        "method": "POST",
+        "path": "/v1/sessions/{id}/claims"
+      }
     },
     {
       "name": "akp_heartbeat_workspace_claim",
@@ -504,11 +987,26 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["sessionId", "workKey", "fencingToken", "idempotencyKey"],
+        "required": [
+          "sessionId",
+          "workKey",
+          "fencingToken",
+          "idempotencyKey"
+        ],
         "properties": {
-          "sessionId": { "type": "string", "format": "uuid" },
-          "workKey": { "type": "string", "minLength": 1, "maxLength": 200 },
-          "fencingToken": { "type": "integer", "minimum": 1 },
+          "sessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "workKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "fencingToken": {
+            "type": "integer",
+            "minimum": 1
+          },
           "leaseSeconds": {
             "type": "integer",
             "minimum": 15,
@@ -522,7 +1020,10 @@
           }
         }
       },
-      "http": { "method": "POST", "path": "/v1/sessions/{id}/claims/heartbeat" }
+      "http": {
+        "method": "POST",
+        "path": "/v1/sessions/{id}/claims/heartbeat"
+      }
     },
     {
       "name": "akp_release_workspace_claim",
@@ -533,11 +1034,26 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["sessionId", "workKey", "fencingToken", "idempotencyKey"],
+        "required": [
+          "sessionId",
+          "workKey",
+          "fencingToken",
+          "idempotencyKey"
+        ],
         "properties": {
-          "sessionId": { "type": "string", "format": "uuid" },
-          "workKey": { "type": "string", "minLength": 1, "maxLength": 200 },
-          "fencingToken": { "type": "integer", "minimum": 1 },
+          "sessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "workKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "fencingToken": {
+            "type": "integer",
+            "minimum": 1
+          },
           "idempotencyKey": {
             "type": "string",
             "minLength": 8,
@@ -545,7 +1061,10 @@
           }
         }
       },
-      "http": { "method": "POST", "path": "/v1/sessions/{id}/claims/release" }
+      "http": {
+        "method": "POST",
+        "path": "/v1/sessions/{id}/claims/release"
+      }
     },
     {
       "name": "akp_handoff_workspace_claim",
@@ -564,51 +1083,92 @@
           "idempotencyKey"
         ],
         "properties": {
-          "sessionId": { "type": "string", "format": "uuid" },
-          "workKey": { "type": "string", "minLength": 1, "maxLength": 200 },
-          "toUserId": { "type": "string", "format": "uuid" },
+          "sessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "workKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "toUserId": {
+            "type": "string",
+            "format": "uuid"
+          },
           "toPrincipalId": {
             "type": "string",
             "format": "uuid",
             "description": "Optional exact target principal for agent-to-agent handoff."
           },
-          "fencingToken": { "type": "integer", "minimum": 1 },
+          "fencingToken": {
+            "type": "integer",
+            "minimum": 1
+          },
           "leaseSeconds": {
             "type": "integer",
             "minimum": 15,
             "maximum": 900,
             "default": 120
           },
-          "summary": { "type": "string", "minLength": 1, "maxLength": 4096 },
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
           "completed": {
             "type": "array",
             "maxItems": 50,
-            "items": { "type": "string", "minLength": 1, "maxLength": 2000 }
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            }
           },
           "remaining": {
             "type": "array",
             "maxItems": 50,
-            "items": { "type": "string", "minLength": 1, "maxLength": 2000 }
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            }
           },
           "blockers": {
             "type": "array",
             "maxItems": 50,
-            "items": { "type": "string", "minLength": 1, "maxLength": 2000 }
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            }
           },
           "changedResourceRefs": {
             "type": "array",
             "maxItems": 100,
-            "items": { "type": "string", "minLength": 1, "maxLength": 1000 }
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            }
           },
           "evidenceRefs": {
             "type": "array",
             "maxItems": 100,
-            "items": { "type": "string", "minLength": 1, "maxLength": 1000 }
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            }
           },
           "questions": {
             "type": "array",
             "maxItems": 50,
-            "items": { "type": "string", "minLength": 1, "maxLength": 2000 }
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            }
           },
           "note": {
             "type": "string",
@@ -622,7 +1182,10 @@
           }
         }
       },
-      "http": { "method": "POST", "path": "/v1/sessions/{id}/claims/handoff" }
+      "http": {
+        "method": "POST",
+        "path": "/v1/sessions/{id}/claims/handoff"
+      }
     },
     {
       "name": "akp_append_workspace_event",
@@ -633,9 +1196,16 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["sessionId", "eventType", "idempotencyKey"],
+        "required": [
+          "sessionId",
+          "eventType",
+          "idempotencyKey"
+        ],
         "properties": {
-          "sessionId": { "type": "string", "format": "uuid" },
+          "sessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
           "eventType": {
             "type": "string",
             "enum": [
@@ -657,7 +1227,10 @@
             "minimum": 1,
             "description": "Required together with claimId."
           },
-          "payload": { "type": "object", "additionalProperties": true },
+          "payload": {
+            "type": "object",
+            "additionalProperties": true
+          },
           "idempotencyKey": {
             "type": "string",
             "minLength": 8,
@@ -665,7 +1238,10 @@
           }
         }
       },
-      "http": { "method": "POST", "path": "/v1/sessions/{id}/events" }
+      "http": {
+        "method": "POST",
+        "path": "/v1/sessions/{id}/events"
+      }
     },
     {
       "name": "akp_request_workspace_promotion",
@@ -683,14 +1259,24 @@
           "idempotencyKey"
         ],
         "properties": {
-          "sessionId": { "type": "string", "format": "uuid" },
+          "sessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
           "evidenceEventIds": {
             "type": "array",
             "minItems": 1,
             "maxItems": 100,
-            "items": { "type": "string", "pattern": "^[1-9][0-9]*$" }
+            "items": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$"
+            }
           },
-          "summary": { "type": "string", "minLength": 1, "maxLength": 2000 },
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
           "changes": {
             "type": "array",
             "minItems": 1,
@@ -698,11 +1284,23 @@
             "items": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["path", "content"],
+              "required": [
+                "path",
+                "content"
+              ],
               "properties": {
-                "path": { "type": "string", "minLength": 1 },
-                "content": { "type": "string", "minLength": 1 },
-                "reason": { "type": "string", "minLength": 1 }
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "content": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1
+                }
               }
             }
           },
@@ -713,45 +1311,69 @@
           }
         }
       },
-      "http": { "method": "POST", "path": "/v1/sessions/{id}/promotions" }
+      "http": {
+        "method": "POST",
+        "path": "/v1/sessions/{id}/promotions"
+      }
     },
     {
       "name": "akp_search",
       "version": "1.0.0",
       "permission": "knowledge:read",
       "mutates": false,
-      "inputSchema": { "$ref": "#/definitions/ScopedSearch" },
-      "http": { "method": "POST", "path": "/v1/search" }
+      "inputSchema": {
+        "$ref": "#/definitions/ScopedSearch"
+      },
+      "http": {
+        "method": "POST",
+        "path": "/v1/search"
+      }
     },
     {
       "name": "akp_build_context",
       "version": "1.0.0",
       "permission": "knowledge:read",
       "mutates": false,
-      "sideEffects": ["persists_context_packet"],
-      "inputSchema": { "$ref": "#/definitions/ScopedContext" },
-      "http": { "method": "POST", "path": "/v1/context" }
+      "sideEffects": [
+        "persists_context_packet"
+      ],
+      "inputSchema": {
+        "$ref": "#/definitions/ScopedContext"
+      },
+      "http": {
+        "method": "POST",
+        "path": "/v1/context"
+      }
     },
     {
       "name": "akp_get_document",
       "version": "1.0.0",
       "permission": "knowledge:read",
       "mutates": false,
-      "http": { "method": "GET", "path": "/v1/documents/{id}" }
+      "http": {
+        "method": "GET",
+        "path": "/v1/documents/{id}"
+      }
     },
     {
       "name": "akp_get_source_evidence",
       "version": "1.0.0",
       "permission": "source:read",
       "mutates": false,
-      "http": { "method": "GET", "path": "/v1/documents/{id}/evidence" }
+      "http": {
+        "method": "GET",
+        "path": "/v1/documents/{id}/evidence"
+      }
     },
     {
       "name": "akp_get_context_pack",
       "version": "1.0.0",
       "permission": "knowledge:read",
       "mutates": false,
-      "http": { "method": "GET", "path": "/v1/context-packs/{id}" }
+      "http": {
+        "method": "GET",
+        "path": "/v1/context-packs/{id}"
+      }
     },
     {
       "name": "akp_get_generated_context_packet",
@@ -761,9 +1383,14 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["packetId"],
+        "required": [
+          "packetId"
+        ],
         "properties": {
-          "packetId": { "type": "string", "format": "uuid" }
+          "packetId": {
+            "type": "string",
+            "format": "uuid"
+          }
         }
       },
       "http": {
@@ -779,10 +1406,19 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["packetId", "handle"],
+        "required": [
+          "packetId",
+          "handle"
+        ],
         "properties": {
-          "packetId": { "type": "string", "format": "uuid" },
-          "handle": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+          "packetId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "handle": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
         }
       },
       "http": {
@@ -795,7 +1431,10 @@
       "version": "1.0.0",
       "permission": "knowledge:read",
       "mutates": false,
-      "http": { "method": "GET", "path": "/v1/impact/{id}" }
+      "http": {
+        "method": "GET",
+        "path": "/v1/impact/{id}"
+      }
     },
     {
       "name": "akp_find_code_symbol",
@@ -803,8 +1442,13 @@
       "permission": "knowledge:read",
       "mutates": false,
       "description": "Resolve code symbols in the authorized revisioned Code Graph.",
-      "inputSchema": { "$ref": "#/definitions/CodeScopedSelector" },
-      "http": { "method": "POST", "path": "/v1/code/symbol" }
+      "inputSchema": {
+        "$ref": "#/definitions/CodeScopedSelector"
+      },
+      "http": {
+        "method": "POST",
+        "path": "/v1/code/symbol"
+      }
     },
     {
       "name": "akp_find_code_callers",
@@ -812,8 +1456,13 @@
       "permission": "knowledge:read",
       "mutates": false,
       "description": "Find authorized direct callers of one uniquely resolved code symbol.",
-      "inputSchema": { "$ref": "#/definitions/CodeScopedSelector" },
-      "http": { "method": "POST", "path": "/v1/code/callers" }
+      "inputSchema": {
+        "$ref": "#/definitions/CodeScopedSelector"
+      },
+      "http": {
+        "method": "POST",
+        "path": "/v1/code/callers"
+      }
     },
     {
       "name": "akp_find_code_callees",
@@ -821,8 +1470,13 @@
       "permission": "knowledge:read",
       "mutates": false,
       "description": "Find authorized direct callees of one uniquely resolved code symbol.",
-      "inputSchema": { "$ref": "#/definitions/CodeScopedSelector" },
-      "http": { "method": "POST", "path": "/v1/code/callees" }
+      "inputSchema": {
+        "$ref": "#/definitions/CodeScopedSelector"
+      },
+      "http": {
+        "method": "POST",
+        "path": "/v1/code/callees"
+      }
     },
     {
       "name": "akp_find_code_path",
@@ -830,8 +1484,13 @@
       "permission": "knowledge:read",
       "mutates": false,
       "description": "Find bounded authorized dependency paths between two code symbols.",
-      "inputSchema": { "$ref": "#/definitions/CodeScopedPath" },
-      "http": { "method": "POST", "path": "/v1/code/path" }
+      "inputSchema": {
+        "$ref": "#/definitions/CodeScopedPath"
+      },
+      "http": {
+        "method": "POST",
+        "path": "/v1/code/path"
+      }
     },
     {
       "name": "akp_analyze_code_impact",
@@ -839,8 +1498,13 @@
       "permission": "knowledge:read",
       "mutates": false,
       "description": "Traverse bounded code impact with optional governed cross-graph bridges.",
-      "inputSchema": { "$ref": "#/definitions/CodeScopedImpact" },
-      "http": { "method": "POST", "path": "/v1/code/impact" }
+      "inputSchema": {
+        "$ref": "#/definitions/CodeScopedImpact"
+      },
+      "http": {
+        "method": "POST",
+        "path": "/v1/code/impact"
+      }
     },
     {
       "name": "akp_analyze_code_change_impact",
@@ -848,8 +1512,13 @@
       "permission": "knowledge:read",
       "mutates": false,
       "description": "Analyze bounded impact for changed repository paths at an immutable commit.",
-      "inputSchema": { "$ref": "#/definitions/CodeScopedChangeImpact" },
-      "http": { "method": "POST", "path": "/v1/code/change-impact" }
+      "inputSchema": {
+        "$ref": "#/definitions/CodeScopedChangeImpact"
+      },
+      "http": {
+        "method": "POST",
+        "path": "/v1/code/change-impact"
+      }
     },
     {
       "name": "akp_find_code_tests",
@@ -857,8 +1526,13 @@
       "permission": "knowledge:read",
       "mutates": false,
       "description": "Find tests linked to one uniquely resolved code symbol.",
-      "inputSchema": { "$ref": "#/definitions/CodeScopedSelector" },
-      "http": { "method": "POST", "path": "/v1/code/tests" }
+      "inputSchema": {
+        "$ref": "#/definitions/CodeScopedSelector"
+      },
+      "http": {
+        "method": "POST",
+        "path": "/v1/code/tests"
+      }
     },
     {
       "name": "akp_explain_code_path",
@@ -866,8 +1540,13 @@
       "permission": "knowledge:read",
       "mutates": false,
       "description": "Explain bounded authorized dependency paths with edge provenance.",
-      "inputSchema": { "$ref": "#/definitions/CodeScopedPath" },
-      "http": { "method": "POST", "path": "/v1/code/explain" }
+      "inputSchema": {
+        "$ref": "#/definitions/CodeScopedPath"
+      },
+      "http": {
+        "method": "POST",
+        "path": "/v1/code/explain"
+      }
     },
     {
       "name": "akp_submit_source",
@@ -878,14 +1557,35 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["spaceId", "vaultId", "sourceUri", "idempotencyKey"],
+        "required": [
+          "spaceId",
+          "vaultId",
+          "sourceUri",
+          "idempotencyKey"
+        ],
         "properties": {
-          "spaceId": { "type": "string", "format": "uuid" },
-          "vaultId": { "type": "string", "format": "uuid" },
-          "sourceUri": { "type": "string", "minLength": 1 },
-          "title": { "type": "string" },
-          "mediaType": { "type": "string" },
-          "expectedSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "spaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "vaultId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sourceUri": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string"
+          },
+          "mediaType": {
+            "type": "string"
+          },
+          "expectedSha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
           "idempotencyKey": {
             "type": "string",
             "minLength": 8,
@@ -893,14 +1593,20 @@
           }
         }
       },
-      "http": { "method": "POST", "path": "/v1/ingest" }
+      "http": {
+        "method": "POST",
+        "path": "/v1/ingest"
+      }
     },
     {
       "name": "akp_ingest_status",
       "version": "1.0.0",
       "permission": "source:read",
       "mutates": false,
-      "http": { "method": "GET", "path": "/v1/ingest/{id}" }
+      "http": {
+        "method": "GET",
+        "path": "/v1/ingest/{id}"
+      }
     },
     {
       "name": "akp_propose_knowledge_change",
@@ -921,12 +1627,30 @@
           "idempotencyKey"
         ],
         "properties": {
-          "spaceId": { "type": "string", "format": "uuid" },
-          "vaultId": { "type": "string", "format": "uuid" },
-          "summary": { "type": "string", "minLength": 1 },
-          "path": { "type": "string", "minLength": 1 },
-          "content": { "type": "string", "minLength": 1 },
-          "reason": { "type": "string", "minLength": 1 },
+          "spaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "vaultId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          },
           "idempotencyKey": {
             "type": "string",
             "minLength": 8,
@@ -934,14 +1658,20 @@
           }
         }
       },
-      "http": { "method": "POST", "path": "/v1/proposals" }
+      "http": {
+        "method": "POST",
+        "path": "/v1/proposals"
+      }
     },
     {
       "name": "akp_validate_draft",
       "version": "1.0.0",
       "permission": "knowledge:read",
       "mutates": false,
-      "http": { "method": "GET", "path": "/v1/reviews/{id}" }
+      "http": {
+        "method": "GET",
+        "path": "/v1/reviews/{id}"
+      }
     },
     {
       "name": "akp_submit_review",
@@ -949,7 +1679,10 @@
       "permission": "knowledge:propose",
       "mutates": true,
       "requiresIdempotencyKey": true,
-      "http": { "method": "POST", "path": "/v1/reviews/{id}/submit" }
+      "http": {
+        "method": "POST",
+        "path": "/v1/reviews/{id}/submit"
+      }
     },
     {
       "name": "akp_revise_review",
@@ -970,11 +1703,26 @@
           "idempotencyKey"
         ],
         "properties": {
-          "reviewId": { "type": "string", "format": "uuid" },
-          "summary": { "type": "string", "minLength": 1 },
-          "path": { "type": "string", "minLength": 1 },
-          "content": { "type": "string", "minLength": 1 },
-          "reason": { "type": "string", "minLength": 1 },
+          "reviewId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          },
           "idempotencyKey": {
             "type": "string",
             "minLength": 8,
@@ -982,7 +1730,10 @@
           }
         }
       },
-      "http": { "method": "POST", "path": "/v1/reviews/{id}/revise" }
+      "http": {
+        "method": "POST",
+        "path": "/v1/reviews/{id}/revise"
+      }
     },
     {
       "name": "akp_approve_review",
@@ -990,7 +1741,10 @@
       "permission": "knowledge:review",
       "mutates": true,
       "requiresIdempotencyKey": true,
-      "http": { "method": "POST", "path": "/v1/reviews/{id}/decision" }
+      "http": {
+        "method": "POST",
+        "path": "/v1/reviews/{id}/decision"
+      }
     },
     {
       "name": "akp_reject_review",
@@ -998,7 +1752,10 @@
       "permission": "knowledge:review",
       "mutates": true,
       "requiresIdempotencyKey": true,
-      "http": { "method": "POST", "path": "/v1/reviews/{id}/decision" }
+      "http": {
+        "method": "POST",
+        "path": "/v1/reviews/{id}/decision"
+      }
     },
     {
       "name": "akp_run_eval",
@@ -1009,11 +1766,24 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["spaceId", "vaultId", "idempotencyKey"],
+        "required": [
+          "spaceId",
+          "vaultId",
+          "idempotencyKey"
+        ],
         "properties": {
-          "spaceId": { "type": "string", "format": "uuid" },
-          "vaultId": { "type": "string", "format": "uuid" },
-          "evalPack": { "type": "string", "default": "generic" },
+          "spaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "vaultId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "evalPack": {
+            "type": "string",
+            "default": "generic"
+          },
           "idempotencyKey": {
             "type": "string",
             "minLength": 8,
@@ -1021,7 +1791,10 @@
           }
         }
       },
-      "http": { "method": "POST", "path": "/v1/evals/run" }
+      "http": {
+        "method": "POST",
+        "path": "/v1/evals/run"
+      }
     },
     {
       "name": "akp_reindex",
@@ -1033,15 +1806,32 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["spaceId", "vaultId", "confirm", "idempotencyKey"],
+        "required": [
+          "spaceId",
+          "vaultId",
+          "confirm",
+          "idempotencyKey"
+        ],
         "properties": {
-          "spaceId": { "type": "string", "format": "uuid" },
-          "vaultId": { "type": "string", "format": "uuid" },
+          "spaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "vaultId": {
+            "type": "string",
+            "format": "uuid"
+          },
           "confirm": {
             "type": "string",
-            "enum": ["REBUILD_DERIVED_PROJECTIONS", "REIMPORT_AND_REBUILD"]
+            "enum": [
+              "REBUILD_DERIVED_PROJECTIONS",
+              "REIMPORT_AND_REBUILD"
+            ]
           },
-          "reimportVault": { "type": "boolean", "default": false },
+          "reimportVault": {
+            "type": "boolean",
+            "default": false
+          },
           "idempotencyKey": {
             "type": "string",
             "minLength": 8,
@@ -1051,34 +1841,59 @@
         "allOf": [
           {
             "if": {
-              "properties": { "reimportVault": { "const": true } },
-              "required": ["reimportVault"]
+              "properties": {
+                "reimportVault": {
+                  "const": true
+                }
+              },
+              "required": [
+                "reimportVault"
+              ]
             },
             "then": {
               "properties": {
-                "confirm": { "const": "REIMPORT_AND_REBUILD" }
+                "confirm": {
+                  "const": "REIMPORT_AND_REBUILD"
+                }
               }
             }
           },
           {
             "if": {
               "anyOf": [
-                { "not": { "required": ["reimportVault"] } },
                 {
-                  "properties": { "reimportVault": { "const": false } },
-                  "required": ["reimportVault"]
+                  "not": {
+                    "required": [
+                      "reimportVault"
+                    ]
+                  }
+                },
+                {
+                  "properties": {
+                    "reimportVault": {
+                      "const": false
+                    }
+                  },
+                  "required": [
+                    "reimportVault"
+                  ]
                 }
               ]
             },
             "then": {
               "properties": {
-                "confirm": { "const": "REBUILD_DERIVED_PROJECTIONS" }
+                "confirm": {
+                  "const": "REBUILD_DERIVED_PROJECTIONS"
+                }
               }
             }
           }
         ]
       },
-      "http": { "method": "POST", "path": "/v1/reindex" }
+      "http": {
+        "method": "POST",
+        "path": "/v1/reindex"
+      }
     },
     {
       "name": "akp_benchmark_retrieval",
@@ -1089,11 +1904,24 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["spaceId", "vaultId", "idempotencyKey"],
+        "required": [
+          "spaceId",
+          "vaultId",
+          "idempotencyKey"
+        ],
         "properties": {
-          "spaceId": { "type": "string", "format": "uuid" },
-          "vaultId": { "type": "string", "format": "uuid" },
-          "evalPack": { "type": "string", "default": "generic" },
+          "spaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "vaultId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "evalPack": {
+            "type": "string",
+            "default": "generic"
+          },
           "idempotencyKey": {
             "type": "string",
             "minLength": 8,
@@ -1101,7 +1929,10 @@
           }
         }
       },
-      "http": { "method": "POST", "path": "/v1/evals/benchmark" }
+      "http": {
+        "method": "POST",
+        "path": "/v1/evals/benchmark"
+      }
     },
     {
       "name": "akp_export_audit_bundle",
@@ -1112,9 +1943,15 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["vaultId", "confirm"],
+        "required": [
+          "vaultId",
+          "confirm"
+        ],
         "properties": {
-          "vaultId": { "type": "string", "format": "uuid" },
+          "vaultId": {
+            "type": "string",
+            "format": "uuid"
+          },
           "confirm": {
             "type": "string",
             "const": "EXPORT_SANITIZED_AUDIT_BUNDLE"

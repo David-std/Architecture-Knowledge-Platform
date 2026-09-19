@@ -44,6 +44,7 @@ try {
   await client.connect(transport);
   const tools = await client.listTools();
   const required = [
+    "akp_context",
     "akp_status",
     "akp_get_current_identity",
     "akp_list_vaults",
@@ -89,6 +90,21 @@ try {
   const missing = required.filter((name) => !names.has(name));
   if (missing.length)
     throw new Error(`Missing MCP tools: ${missing.join(", ")}`);
+  const facadeStatus = await client.callTool({
+    name: "akp_context",
+    arguments: { action: "STATUS" },
+  });
+  const facadeStatusPayload = structuredToolResult(facadeStatus);
+  if (
+    facadeStatusPayload.action !== "STATUS" ||
+    facadeStatusPayload.status !== "OK" ||
+    facadeStatusPayload.delegatedTo !== "akp_status"
+  ) {
+    throw new Error(
+      `Unexpected akp_context STATUS payload: ${JSON.stringify(facadeStatusPayload)}`,
+    );
+  }
+
   const status = await client.callTool({ name: "akp_status", arguments: {} });
   const statusPayload = structuredToolResult(status);
   if (statusPayload.status !== "UP") {
@@ -140,6 +156,33 @@ try {
       `MCP smoke requires one authorized VaultRegistry entry: ${JSON.stringify(listedPayload)}`,
     );
   }
+  const facadeSearch = await client.callTool({
+    name: "akp_context",
+    arguments: {
+      action: "SEARCH",
+      query: "dependency inversion architecture",
+      spaceId,
+      vaultId,
+      federated: false,
+      limit: 3,
+    },
+  });
+  const facadeSearchPayload = structuredToolResult(facadeSearch);
+  const facadeSearchResult = facadeSearchPayload.result as
+    | Record<string, unknown>
+    | undefined;
+  if (
+    facadeSearchPayload.action !== "SEARCH" ||
+    facadeSearchPayload.status !== "OK" ||
+    facadeSearchPayload.delegatedTo !== "akp_search" ||
+    !facadeSearchResult ||
+    !Array.isArray(facadeSearchResult.hits)
+  ) {
+    throw new Error(
+      `Unexpected akp_context SEARCH payload: ${JSON.stringify(facadeSearchPayload)}`,
+    );
+  }
+
   const search = await client.callTool({
     name: "akp_search",
     arguments: {
@@ -194,6 +237,7 @@ try {
         visibleVaultCount: vaults.length,
         scopedVaultId: vaultId,
         searchHitCount: searchPayload.hits.length,
+        facadeSearchHitCount: facadeSearchResult.hits.length,
         contextPacketMode: contextPayload.packetMode,
         contextSerializedTokens: contextBudget.serializedTokens,
         contextMaxTokens: contextBudget.maxTokens,

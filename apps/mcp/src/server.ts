@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { QueryIntent, SearchRequest } from "@akp/contracts";
 import { McpContextRequest } from "./context-request.js";
+import { AkpContextInput, dispatchAkpContext } from "./context-facade.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -117,6 +118,22 @@ export function createMcpServer(): McpServer {
     name: "architecture-knowledge-platform",
     version: "0.2.0",
   });
+
+  server.registerTool(
+    "akp_context",
+    {
+      description:
+        "Low-entropy AKP context façade. Delegates bootstrap, retrieval, impact, code, temporal, verification, capture, task lifecycle, and status actions to the existing governed AKP APIs without replacing expert tools.",
+      inputSchema: AkpContextInput.shape,
+    },
+    async (input) =>
+      compactTextResult(
+        await dispatchAkpContext(input, {
+          api,
+          writeApi,
+        }),
+      ),
+  );
 
   server.registerTool(
     "akp_status",
