@@ -112,10 +112,7 @@ const RUNTIME_TO_CANDIDATE: Record<
   code: "CODE",
 };
 
-const CANDIDATE_TO_RRF_CHANNEL: Record<
-  RetrievalCandidateChannel,
-  string
-> = {
+const CANDIDATE_TO_RRF_CHANNEL: Record<RetrievalCandidateChannel, string> = {
   EXACT: "exact",
   LEXICAL: "lexical",
   VECTOR: "vector",
@@ -185,11 +182,15 @@ function validateCandidate(candidate: RetrievalCandidate): void {
   }
   if (
     candidate.rawScore !== undefined &&
-    (typeof candidate.rawScore !== "number" || !Number.isFinite(candidate.rawScore))
+    (typeof candidate.rawScore !== "number" ||
+      !Number.isFinite(candidate.rawScore))
   ) {
     throw new Error("rawScore must be finite when provided");
   }
-  if (typeof candidate.scopeId !== "string" || candidate.scopeId.trim() === "") {
+  if (
+    typeof candidate.scopeId !== "string" ||
+    candidate.scopeId.trim() === ""
+  ) {
     throw new Error("scopeId must be a non-empty string");
   }
   if (
@@ -299,10 +300,7 @@ export function retrievalCandidatesToRankedChannels(
   candidates: readonly RetrievalCandidate[],
   policy: RetrievalPolicy,
 ): RankedChannel[] {
-  const grouped = new Map<
-    RetrievalCandidateChannel,
-    RetrievalCandidate[]
-  >();
+  const grouped = new Map<RetrievalCandidateChannel, RetrievalCandidate[]>();
   for (const candidate of candidates) {
     validateCandidate(candidate);
     if (!policy.channels[candidate.channel].enabled) continue;
