@@ -1049,7 +1049,10 @@ describeDb("continuous assurance detector execution", () => {
         "delete from knowledge_documents where id=any($1::uuid[])",
         [[siblingDocumentId, foreignDocumentId]],
       );
-      await db.pool.query("delete from vaults where id=$1", [siblingVaultId]);
+      await db.pool.query(
+        "delete from vaults where id=any($1::uuid[])",
+        [[siblingVaultId, foreignVaultId]],
+      );
       await db.pool.query("delete from spaces where id=$1", [foreignSpaceId]);
     }
   });
@@ -1062,13 +1065,13 @@ describeDb("continuous assurance detector execution", () => {
            id,space_id,vault_id,actor_id,corpus_revision,query_hash,
            packet_hash,request,packet,scope
          )
-         select gen_random_uuid(),$1,$2,null,$3,
+         select gen_random_uuid(),$1::uuid,$2::uuid,null,$3::text,
                 'pagination-query-'||g::text,
                 'pagination-packet-'||g::text,
                 '{}'::jsonb,
                 jsonb_build_object('sections','[]'::jsonb),
                 jsonb_build_object(
-                  'spaceId',$1::text,
+                  'spaceId',$1::uuid::text,
                   'federated',false
                 )
            from generate_series(1,501) g`,

@@ -64,7 +64,7 @@ describe("Agent A/B evaluation", () => {
     expect(score.contextPrecision).toBe(0.5);
     expect(score.claimSupportRecall).toBe(1);
     expect(score.contextUtilization).toBe(0.5);
-    expect(score.faithfulness).toBe(1);
+    expect(score.faithfulness).toBe(0.5);
     expect(score.faithfulnessMethod).toBe("CITATION_SCOPED_LEXICAL_SUPPORT");
     expect(score.noiseSensitivity).toBeNull();
   });

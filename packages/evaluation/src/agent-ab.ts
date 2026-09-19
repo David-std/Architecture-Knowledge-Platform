@@ -145,7 +145,11 @@ function lexicalSupportTokens(value: string): string[] {
       normalize(value)
         .replace(/[^\p{L}\p{N}_:/.-]+/gu, " ")
         .split(/\s+/u)
-        .map((token) => token.trim())
+        .map((token) =>
+          token
+            .trim()
+            .replace(/^[.:/\\-]+|[.:/\\-]+$/gu, ""),
+        )
         .filter(
           (token) =>
             token.length >= 4 &&
