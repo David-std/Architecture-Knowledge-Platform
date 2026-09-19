@@ -186,9 +186,7 @@ export interface ValidateDerivedTruthInput {
 }
 
 export type DerivedTruthInvalidationReason =
-  | "FACT_SUPERSEDED"
-  | "SOURCE_WITHDRAWN"
-  | "EVIDENCE_INVALIDATED";
+  "FACT_SUPERSEDED" | "SOURCE_WITHDRAWN" | "EVIDENCE_INVALIDATED";
 
 export interface RebuildDerivedTruthProjectionInput {
   eventId: string;
@@ -1878,7 +1876,10 @@ export class PostgresTemporalTruthStore {
     rawInput: RebuildDerivedTruthProjectionInput,
   ): Promise<DerivedTruthProjectionRevision> {
     const input = {
-      eventId: requiredUuid(rawInput.eventId, "TRUTH_PROJECTION_EVENT_ID_INVALID"),
+      eventId: requiredUuid(
+        rawInput.eventId,
+        "TRUTH_PROJECTION_EVENT_ID_INVALID",
+      ),
       spaceId: requiredUuid(rawInput.spaceId, "TRUTH_SPACE_ID_INVALID"),
       vaultId: requiredUuid(rawInput.vaultId, "TRUTH_VAULT_ID_INVALID"),
       truthRevisionHash: requiredHash(
@@ -2143,8 +2144,7 @@ export class PostgresTemporalTruthStore {
     if (cutoff.seq === 0) return [];
 
     const values: unknown[] = [spaceId, vaultId, cutoff.seq];
-    let where =
-      "i.space_id=$1 and i.vault_id=$2 and i.truth_revision_seq<=$3";
+    let where = "i.space_id=$1 and i.vault_id=$2 and i.truth_revision_seq<=$3";
     if (rawQuery.derivedStoreKind !== undefined) {
       values.push(rawQuery.derivedStoreKind);
       where += ` and i.derived_store_kind=${values.length}`;
