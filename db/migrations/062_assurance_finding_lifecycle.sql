@@ -102,10 +102,10 @@ alter table assurance_findings
 update assurance_findings
    set finding_key = encode(
      digest(
-       detector || chr(0) || code || chr(0) || scope_id || chr(0) ||
+       detector || chr(31) || code || chr(31) || scope_id || chr(31) ||
        coalesce(
          (
-           select string_agg(value, chr(0) order by value)
+           select string_agg(value, chr(31) order by value)
              from jsonb_array_elements_text(target_ids)
          ),
          ''

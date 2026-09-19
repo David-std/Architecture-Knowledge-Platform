@@ -286,7 +286,7 @@ export function assuranceFindingKey(
   }
   return createHash("sha256")
     .update(
-      [finding.detector, finding.code, finding.scopeId, ...targets].join("\0"),
+      [finding.detector, finding.code, finding.scopeId, ...targets].join("\u001f"),
     )
     .digest("hex");
 }
