@@ -1558,7 +1558,9 @@ export class PostgresTemporalTruthStore {
     let state: TruthSupportEvaluation;
     if (support.alternativeSupportGroups.length > 0) {
       const groupStates = support.alternativeSupportGroups.map(stateForRefs);
-      const viable = groupStates.filter((candidate) => candidate !== "UNSUPPORTED");
+      const viable = groupStates.filter(
+        (candidate) => candidate !== "UNSUPPORTED",
+      );
       if (viable.length === 0) return "UNSUPPORTED";
       state = viable.some((candidate) => candidate === "SUPPORTED")
         ? "SUPPORTED"
