@@ -1,6 +1,42 @@
 import { createHash } from "node:crypto";
+import { createRequire } from "node:module";
 import createGraph from "ngraph.graph";
-import { detectClusters } from "ngraph.leiden";
+
+interface LeidenLink {
+  data?: { weight?: number };
+}
+
+interface LeidenClusters {
+  getClass(nodeId: string): number | undefined;
+  getCommunities(): Map<number, string[]>;
+  quality(): number;
+  toJSON(): {
+    membership: Record<string, number>;
+    meta: {
+      levels: number;
+      quality: number;
+      options: Record<string, unknown>;
+    };
+  };
+}
+
+interface LeidenModule {
+  detectClusters(
+    graph: unknown,
+    options: {
+      quality: "cpm";
+      resolution: number;
+      randomSeed: number;
+      refine: boolean;
+      candidateStrategy: "neighbors";
+      directed: boolean;
+      linkWeight: (link: LeidenLink) => number;
+    },
+  ): LeidenClusters;
+}
+
+const require = createRequire(import.meta.url);
+const { detectClusters } = require("ngraph.leiden") as LeidenModule;
 
 export const COMMUNITY_ALGORITHM = "LEIDEN";
 export const COMMUNITY_ALGORITHM_VERSION = "ngraph.leiden@0.3.0";
