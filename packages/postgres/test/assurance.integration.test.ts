@@ -6,6 +6,7 @@ import {
   cancelAssuranceRun,
   claimNextAssuranceRun,
   completeAssuranceRun,
+  renewAssuranceRunLease,
   submitAssuranceRun,
 } from "../src/index.js";
 
@@ -149,5 +150,49 @@ describeDb("continuous assurance durable runs", () => {
         summary: {},
       }),
     ).toBe(false);
+  });
+
+  it("preserves the persisted detector cursor across lease expiry and reclaim", async () => {
+    const run = await submitAssuranceRun(db, {
+      spaceId,
+      vaultId,
+      trigger: "MANUAL",
+      detectors: ["FRESHNESS", "CONTRADICTION"],
+      idempotencyKey: `resume-${randomUUID()}`,
+      maxAttempts: 3,
+    });
+
+    const workerA = `resume-a-${randomUUID()}`;
+    const first = await claimNextAssuranceRun(db, workerA, 60);
+    expect(first?.id).toBe(run.id);
+    if (!first) throw new Error("expected resumable assurance run");
+
+    expect(
+      await renewAssuranceRunLease(db, {
+        runId: run.id,
+        workerId: workerA,
+        leaseToken: first.leaseToken,
+        cursor: {
+          detectorIndex: 1,
+          detectorCursor: "page-2",
+        },
+      }),
+    ).toBe(true);
+
+    await db.pool.query(
+      "update assurance_runs set lease_expires_at=now()-interval '1 second' where id=$1",
+      [run.id],
+    );
+
+    const workerB = `resume-b-${randomUUID()}`;
+    const resumed = await claimNextAssuranceRun(db, workerB, 60);
+    expect(resumed?.id).toBe(run.id);
+    expect(resumed?.leaseToken).toBe(first.leaseToken + 1);
+    expect(resumed?.cursor).toEqual({
+      detectorIndex: 1,
+      detectorCursor: "page-2",
+    });
+
+    expect(await cancelAssuranceRun(db, run.id)).toBe(true);
   });
 });

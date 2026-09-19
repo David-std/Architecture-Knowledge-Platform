@@ -1,15 +1,22 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { IMPLEMENTED_ASSURANCE_DETECTORS } from "@akp/domain";
 import {
   Postgres,
+  appendSourceConnectorEvent,
+  applyNextSourceConnectorEvent,
   claimNextAssuranceRun,
+  registerSourceConnector,
   submitAssuranceRun,
 } from "@akp/postgres";
 import { runClaimedAssuranceRun } from "../src/assurance-worker.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describeDb = databaseUrl ? describe : describe.skip;
+
+function sha256(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
 
 describeDb("continuous assurance detector execution", () => {
   let db: Postgres;
@@ -108,5 +115,174 @@ describeDb("continuous assurance detector execution", () => {
         detector,
       ).toBe(0);
     }
+  });
+
+  it("reports connector freshness and ACL drift, then catches a damaged deletion projection", async () => {
+    const connector = await registerSourceConnector(db, {
+      spaceId,
+      vaultId,
+      connectorKey: `assurance-connector-${randomUUID()}`,
+      sourceSystem: "assurance-fixture",
+      publicKeyPem:
+        "-----BEGIN PUBLIC KEY-----\nCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC=\n-----END PUBLIC KEY-----",
+      descriptor: {
+        schemaVersion: 1,
+        sourceSystem: "assurance-fixture",
+        objectTypes: ["WORK_ITEM"],
+        incremental: { cursor: false, webhook: true },
+        permissionFidelity: "SOURCE_ACL_EXACT",
+        replication: "FULL_MIRROR",
+        dataResidency: "LOCAL",
+        attachments: { supported: false },
+        rateLimit: { kind: "NONE" },
+        deletionPropagation: "TOMBSTONE",
+        sourceVersioning: true,
+        freshnessSlaSeconds: 60,
+        contentTrust: "UNTRUSTED_EXTERNAL",
+      },
+    });
+    const connectorId = String(connector.id);
+    const oldOccurredAt = new Date(Date.now() - 3_600_000).toISOString();
+
+    await appendSourceConnectorEvent(db, {
+      connectorId,
+      eventId: `acl-event-${randomUUID()}`,
+      sequence: 1,
+      occurredAt: oldOccurredAt,
+      operation: "UPSERT",
+      objectId: "ticket-assurance",
+      objectType: "WORK_ITEM",
+      sourceVersion: "v1",
+      title: "Connector assurance fixture",
+      content: "External untrusted work item.",
+      contentType: "text/plain",
+      permissionFidelity: "SOURCE_ACL_MAPPED",
+      permissionUncertain: true,
+      aclFingerprint: "acl-v1",
+      metadata: {},
+      payloadHash: sha256("acl-event-v1"),
+    });
+    expect(await applyNextSourceConnectorEvent(db)).toMatchObject({
+      connectorId,
+      sequence: 1,
+      operation: "UPSERT",
+    });
+
+    const firstRun = await submitAssuranceRun(db, {
+      spaceId,
+      vaultId,
+      trigger: "CONNECTOR_EVENT",
+      detectors: [
+        "CONNECTOR_FRESHNESS",
+        "CONNECTOR_ACL_DRIFT",
+        "CONNECTOR_DELETION",
+      ],
+      idempotencyKey: `connector-findings-${randomUUID()}`,
+      maxAttempts: 1,
+    });
+    const firstWorker = `connector-assurance-${randomUUID()}`;
+    const firstClaim = await claimNextAssuranceRun(db, firstWorker, 60);
+    expect(firstClaim?.id).toBe(firstRun.id);
+    if (!firstClaim) throw new Error("expected connector assurance run");
+
+    await expect(
+      runClaimedAssuranceRun(db, firstClaim, firstWorker),
+    ).resolves.toBe("COMPLETED");
+
+    const firstFindings = await db.pool.query<{
+      detector: string;
+      code: string;
+      severity: string;
+    }>(
+      `select detector,code,severity
+         from assurance_findings
+        where run_id=$1
+        order by detector,code`,
+      [firstRun.id],
+    );
+    expect(firstFindings.rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          detector: "CONNECTOR_FRESHNESS",
+          code: "CONNECTOR_FRESHNESS_SLA_EXCEEDED",
+          severity: "HIGH",
+        }),
+        expect.objectContaining({
+          detector: "CONNECTOR_ACL_DRIFT",
+          code: "CONNECTOR_ACL_UNCERTAIN",
+          severity: "HIGH",
+        }),
+      ]),
+    );
+    expect(
+      firstFindings.rows.some(
+        (finding) => finding.detector === "CONNECTOR_DELETION",
+      ),
+    ).toBe(false);
+
+    await appendSourceConnectorEvent(db, {
+      connectorId,
+      eventId: `delete-event-${randomUUID()}`,
+      sequence: 2,
+      occurredAt: new Date().toISOString(),
+      operation: "DELETE",
+      objectId: "ticket-assurance",
+      objectType: "WORK_ITEM",
+      sourceVersion: "v2",
+      permissionFidelity: "SOURCE_ACL_EXACT",
+      permissionUncertain: false,
+      aclFingerprint: "acl-v2",
+      metadata: { deleted: true },
+      payloadHash: sha256("delete-event-v2"),
+    });
+    expect(await applyNextSourceConnectorEvent(db)).toMatchObject({
+      connectorId,
+      sequence: 2,
+      operation: "DELETE",
+    });
+
+    await db.pool.query(
+      `update source_connector_objects
+          set lifecycle='ACTIVE',updated_at=now()
+        where connector_id=$1 and object_id='ticket-assurance'`,
+      [connectorId],
+    );
+
+    const deletionRun = await submitAssuranceRun(db, {
+      spaceId,
+      vaultId,
+      trigger: "CONNECTOR_EVENT",
+      detectors: ["CONNECTOR_DELETION"],
+      idempotencyKey: `connector-deletion-${randomUUID()}`,
+      maxAttempts: 1,
+    });
+    const deletionWorker = `connector-deletion-${randomUUID()}`;
+    const deletionClaim = await claimNextAssuranceRun(
+      db,
+      deletionWorker,
+      60,
+    );
+    expect(deletionClaim?.id).toBe(deletionRun.id);
+    if (!deletionClaim) throw new Error("expected connector deletion run");
+
+    await expect(
+      runClaimedAssuranceRun(db, deletionClaim, deletionWorker),
+    ).resolves.toBe("COMPLETED");
+
+    const deletionFinding = await db.pool.query<{
+      detector: string;
+      code: string;
+      severity: string;
+    }>(
+      `select detector,code,severity
+         from assurance_findings
+        where run_id=$1 and detector='CONNECTOR_DELETION'`,
+      [deletionRun.id],
+    );
+    expect(deletionFinding.rows[0]).toMatchObject({
+      detector: "CONNECTOR_DELETION",
+      code: "CONNECTOR_DELETE_NOT_TOMBSTONED",
+      severity: "CRITICAL",
+    });
   });
 });
