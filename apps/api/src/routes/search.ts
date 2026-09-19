@@ -854,7 +854,6 @@ export function effectiveRetrievalChannels(
   };
 }
 
-
 /**
  * Evidence locators are corpus data and can contain local paths.  A
  * path-scoped caller must not receive a locator for a path outside its
