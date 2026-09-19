@@ -84,7 +84,7 @@ export function reasoningOutputKind(
   }
 }
 
-function referencedStepIds(step: ReasoningStep): string[] {
+export function reasoningReferencedStepIds(step: ReasoningStep): string[] {
   switch (step.operator) {
     case "TRAVERSE_TYPED":
       return [step.args.seedStepId];
@@ -309,7 +309,7 @@ export function validateReasoningPlan(
       );
     }
 
-    const references = referencedStepIds(step);
+    const references = reasoningReferencedStepIds(step);
     const declaredDependencies = new Set(step.dependsOn);
     for (const reference of references) {
       const source = priorSteps.get(reference);
