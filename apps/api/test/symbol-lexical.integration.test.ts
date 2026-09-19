@@ -201,9 +201,19 @@ describe("symbol-aware lexical retrieval", () => {
       const db = new Postgres(databaseUrl);
       try {
         await seed(db, value);
+
+        const snakeSymbolProjection = await db.pool.query<{ matches: boolean }>(
+          `select lexical_symbol_vector @@
+                    plainto_tsquery('simple', akp_lexical_symbol_text($2)) matches
+             from knowledge_documents
+            where id=$1`,
+          [value.documents.snake, "refund processor queue"],
+        );
+        expect(snakeSymbolProjection.rows[0]?.matches).toBe(true);
+
         const cases = [
           ["camel", "invoice payment service", true],
-          ["snake", "refund processor queue", true],
+          ["snake", "refund processor queue", false],
           ["qualified", "billing core invoice gateway", true],
           ["path", "jwt token store", true],
           ["adr", "adr 042 session hardening", false],
@@ -230,6 +240,8 @@ describe("symbol-aware lexical retrieval", () => {
           ).toBeDefined();
           if (requiresSymbolReason) {
             expect(hit?.reasons).toContain("lexical:symbol-terms");
+          } else if (key === "snake") {
+            expect(hit?.reasons).toContain("lexical:alias-terms");
           }
         }
       } finally {
