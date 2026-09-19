@@ -108,6 +108,10 @@ const outputPath = path.resolve(
   process.env.AKP_RUNTIME_RETRIEVAL_REPORT ??
     "reports/ci/runtime-retrieval-benchmark.json",
 );
+const filteredAnnPath = path.resolve(
+  process.env.AKP_FILTERED_ANN_REPORT_INPUT ??
+    "reports/ci/filtered-ann-baseline.json",
+);
 
 function sha256(value: string | Buffer): string {
   return createHash("sha256").update(value).digest("hex");
@@ -181,6 +185,51 @@ function resourceRequirements(configuration: BenchmarkConfiguration) {
     rerank: Boolean(configuration.deterministicRerank),
     associativePpr: Boolean(configuration.associativePpr),
   };
+}
+
+async function loadFilteredAnnEvidence(): Promise<
+  | {
+      measured: true;
+      path: string;
+      sha256: string;
+      status: string;
+      measurements: unknown[];
+    }
+  | { measured: false; path: string; reason: string }
+> {
+  try {
+    const raw = await readFile(filteredAnnPath, "utf8");
+    const parsed = JSON.parse(raw) as {
+      status?: unknown;
+      measurements?: unknown;
+    };
+    const measurements = Array.isArray(parsed.measurements)
+      ? parsed.measurements
+      : [];
+    if (parsed.status !== "PROVEN" || measurements.length === 0) {
+      return {
+        measured: false,
+        path: filteredAnnPath,
+        reason: "Filtered ANN report exists but is not PROVEN with measurements.",
+      };
+    }
+    return {
+      measured: true,
+      path: filteredAnnPath,
+      sha256: sha256(raw),
+      status: String(parsed.status),
+      measurements,
+    };
+  } catch (error) {
+    return {
+      measured: false,
+      path: filteredAnnPath,
+      reason:
+        error instanceof Error
+          ? `Filtered ANN evidence unavailable: ${error.message}`
+          : "Filtered ANN evidence unavailable.",
+    };
+  }
 }
 
 async function loadDataset(): Promise<{
@@ -603,6 +652,7 @@ async function main(): Promise<void> {
       async () => adapter,
     );
     const configurations = benchmarkConfigurations();
+    const filteredAnnEvidence = await loadFilteredAnnEvidence();
     const runs = [];
     for (const configuration of configurations) {
       const observations: RuntimeObservation[] = [];
@@ -698,12 +748,13 @@ async function main(): Promise<void> {
             "Pinned local embedding provider; no metered external provider API call.",
           localComputeCostMeasured: false,
         },
-        filteredRecall: {
-          measured: false,
-          value: null,
-          reason:
-            "Filtered ANN recall is measured by the separate benchmark:filtered-ann harness, not inferred here.",
-        },
+        filteredRecall: configuration.channels.includes("vector")
+          ? filteredAnnEvidence
+          : {
+              measured: false,
+              notApplicable: true,
+              reason: "Configuration does not use the vector channel.",
+            },
         multilingualBehavior: {
           measured: true,
           recallAt10: run.crossLanguageRecall,
@@ -792,6 +843,7 @@ async function main(): Promise<void> {
         })),
       },
       resourceEvidence: {
+        filteredAnn: filteredAnnEvidence,
         fixtureSeedMs,
         embeddingBuildMs,
         storage: {
