@@ -17,6 +17,8 @@ export interface BenchmarkConfiguration {
   associativePpr?: boolean;
   /** Execute GLOBAL routing over the versioned Leiden community index. */
   communityGlobal?: boolean;
+  /** Optional P6.7 deterministic query-decomposition experiment. */
+  queryDecomposition?: boolean;
 }
 
 /**
@@ -90,6 +92,12 @@ const RETRIEVAL_BENCHMARK_MATRIX_SOURCE: readonly BenchmarkConfiguration[] = [
     channels: ["lexical", "vector", "graph"],
     allowVectorForBenchmark: true,
     communityGlobal: true,
+  },
+  {
+    name: "lexical+vector+query-decomposition",
+    channels: ["lexical", "vector"],
+    allowVectorForBenchmark: true,
+    queryDecomposition: true,
   },
 ];
 
