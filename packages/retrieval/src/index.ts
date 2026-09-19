@@ -10,3 +10,4 @@ export * from "./openai-compatible-embedding.js";
 export * from "./embedding-provider-registry.js";
 export * from "./structural-context.js";
 export * from "./community.js";
+export * from "./rerank.js";
