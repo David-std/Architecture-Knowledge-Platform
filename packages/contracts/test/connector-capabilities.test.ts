@@ -85,6 +85,20 @@ describe("ConnectorCapabilities", () => {
     });
   });
 
+  it("treats unknown permission fidelity as explicit fail-closed uncertainty", () => {
+    const policy = SOFTWARE_DELIVERY_KNOWLEDGE_PROFILE_V1.connectorPolicy;
+    const unknown = ConnectorCapabilities.parse({
+      ...mirror,
+      permissionFidelity: "UNKNOWN",
+      identityMapping: "NONE",
+    });
+    expect(evaluateConnectorCapabilities(unknown, policy!)).toEqual({
+      status: "DENIED",
+      permissionFidelitySatisfied: false,
+      reasons: ["PERMISSION_FIDELITY_INSUFFICIENT"],
+    });
+  });
+
   it("does not treat workspace-wide authorization as source ACL fidelity", () => {
     const policy = SOFTWARE_DELIVERY_KNOWLEDGE_PROFILE_V1.connectorPolicy;
     const workspaceWide = ConnectorCapabilities.parse({

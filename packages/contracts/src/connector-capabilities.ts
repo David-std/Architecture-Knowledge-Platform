@@ -13,6 +13,7 @@ export const PermissionFidelity = z.enum([
   "SOURCE_ACL_MAPPED",
   "WORKSPACE_WIDE",
   "NONE",
+  "UNKNOWN",
 ]);
 export type PermissionFidelity = z.infer<typeof PermissionFidelity>;
 

@@ -159,7 +159,7 @@ describeDb("continuous assurance detector execution", () => {
       title: "Connector assurance fixture",
       content: "External untrusted work item.",
       contentType: "text/plain",
-      permissionFidelity: "NONE",
+      permissionFidelity: "UNKNOWN",
       permissionUncertain: true,
       metadata: {},
       payloadHash: sha256("acl-event-v1"),

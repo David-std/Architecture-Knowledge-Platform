@@ -110,6 +110,34 @@ describe("source connector webhook signatures", () => {
     ).toBe(false);
   });
 
+  it("accepts explicit UNKNOWN permission fidelity without adding a network target", () => {
+    const registration = {
+      spaceId: "11111111-1111-4111-8111-111111111111",
+      vaultId: "22222222-2222-4222-8222-222222222222",
+      connectorKey: "unknown-acl-fixture",
+      publicKeyPem,
+      descriptor: {
+        schemaVersion: 1,
+        sourceSystem: "fixture",
+        objectTypes: ["WORK_ITEM"],
+        incremental: { cursor: false, webhook: true },
+        permissionFidelity: "UNKNOWN",
+        replication: "FULL_MIRROR",
+        dataResidency: "LOCAL",
+        attachments: { supported: false },
+        rateLimit: { kind: "NONE" },
+        checkpointModel: "SOURCE_SEQUENCE",
+        deletionPropagation: "TOMBSTONE",
+        sourceVersioning: true,
+        contentTrust: "UNTRUSTED_EXTERNAL",
+      },
+    };
+
+    expect(
+      SourceConnectorRegistrationSchema.safeParse(registration).success,
+    ).toBe(true);
+  });
+
   it("binds the signature to one connector and rejects stale timestamps", () => {
     const validSignature = signature(body);
     expect(

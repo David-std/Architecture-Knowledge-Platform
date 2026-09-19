@@ -30,6 +30,7 @@ const Descriptor = z
       "SOURCE_ACL_MAPPED",
       "WORKSPACE_WIDE",
       "NONE",
+      "UNKNOWN",
     ]),
     replication: z.enum(["FULL_MIRROR", "METADATA_ONLY", "REFERENCE"]),
     dataResidency: z.enum(["LOCAL", "ORG", "EXTERNAL"]),

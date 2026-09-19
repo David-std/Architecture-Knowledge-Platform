@@ -83,7 +83,8 @@ export type SourceConnectorPermissionFidelity =
   | "SOURCE_ACL_EXACT"
   | "SOURCE_ACL_MAPPED"
   | "WORKSPACE_WIDE"
-  | "NONE";
+  | "NONE"
+  | "UNKNOWN";
 
 export type SourceConnectorCheckpointModel =
   | "REVISION"

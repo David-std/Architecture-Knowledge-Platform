@@ -1,7 +1,11 @@
 import type { Postgres } from "./index.js";
 
 export type SourceConnectorPermissionFidelity =
-  "SOURCE_ACL_EXACT" | "SOURCE_ACL_MAPPED" | "WORKSPACE_WIDE" | "NONE";
+  | "SOURCE_ACL_EXACT"
+  | "SOURCE_ACL_MAPPED"
+  | "WORKSPACE_WIDE"
+  | "NONE"
+  | "UNKNOWN";
 
 export interface SourceConnectorRegistrationInput {
   spaceId: string;
