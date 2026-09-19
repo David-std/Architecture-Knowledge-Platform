@@ -29,15 +29,18 @@ import {
   ContextPacketBudgetError,
   contextBudgetForIntent,
   createEmbeddingProviderForGeneration,
+  personalizedPageRank,
   planQuery,
   QueryEmbeddingService,
   rehydrateStructuralContext,
   reciprocalRankFusion,
+  resolvePersonalizedPageRankPolicy,
   resolveRetrievalPolicy,
   retrievalCandidatesToRankedChannels,
   runtimeChannelEnabled,
   toPgVector,
   type ActiveEmbeddingGenerationDescriptor,
+  type PersonalizedPageRankPolicy,
   type QueryPlan,
   type QueryPlannerCapabilities,
   type RetrievalCandidate,
@@ -355,6 +358,8 @@ export interface RetrievalExecutionOptions {
   /** Runtime capability snapshot. Production callers must provide all fields. */
   plannerCapabilities?: Partial<QueryPlannerCapabilities>;
   graphPolicy?: Partial<GraphTraversalPolicy>;
+  /** Optional P6.9 associative expansion policy; disabled unless GRAPH_PPR is enabled. */
+  pprPolicy?: Partial<PersonalizedPageRankPolicy>;
   graphScopes?: Array<{ vaultId: string; pathPrefix: string | null }>;
   allowVectorForBenchmark?: boolean;
   deterministicRerank?: boolean;
@@ -1879,6 +1884,144 @@ export async function queryKnowledge(
     options.availableChannelSink?.add("graph");
   }
 
+  const pprCandidates: RetrievalCandidate[] = [];
+  if (
+    retrievalPolicy.graphMode === "ASSOCIATIVE" &&
+    retrievalPolicy.channels.GRAPH_PPR.enabled &&
+    graphProvenanceByCandidate.size > 0
+  ) {
+    const graphRevision = String(index.graph_revision ?? "").trim();
+    if (!graphRevision) {
+      options.warningSink?.push("PPR_UNAVAILABLE:GRAPH_REVISION_MISSING");
+    } else {
+      try {
+        const pprNodeById = new Map<
+          string,
+          { id: string; scopeId: string; graphDomain: string }
+        >();
+        const pprEdges: Array<{
+          fromNodeId: string;
+          toNodeId: string;
+          scopeId: string;
+          relation: string;
+          weight: number;
+        }> = [];
+        for (const paths of graphProvenanceByCandidate.values()) {
+          for (const provenance of paths) {
+            for (let index = 0; index < provenance.path.length; index += 1) {
+              const current = provenance.path[index];
+              if (!current) continue;
+              const currentDocument = graphNodeById.get(current.documentId);
+              if (!currentDocument) continue;
+              const scopeId = String(currentDocument.vault_id);
+              pprNodeById.set(current.documentId, {
+                id: current.documentId,
+                scopeId,
+                graphDomain: "EPISTEMIC",
+              });
+              const next = provenance.path[index + 1];
+              if (!next || !current.relation) continue;
+              const nextDocument = graphNodeById.get(next.documentId);
+              if (
+                !nextDocument ||
+                String(nextDocument.vault_id) !== scopeId
+              ) {
+                continue;
+              }
+              const configuredWeight =
+                graphPolicy.relationWeights[current.relation] ?? 1;
+              if (
+                typeof configuredWeight !== "number" ||
+                !Number.isFinite(configuredWeight) ||
+                configuredWeight <= 0
+              ) {
+                continue;
+              }
+              pprEdges.push({
+                fromNodeId: current.documentId,
+                toNodeId: next.documentId,
+                scopeId,
+                relation: current.relation,
+                weight: configuredWeight,
+              });
+            }
+          }
+        }
+
+        const pprSeedWeights = new Map<string, number>();
+        const addPprSeeds = (
+          rows: readonly { id: unknown }[],
+          channelWeight: number | undefined,
+        ): void => {
+          if (
+            typeof channelWeight !== "number" ||
+            !Number.isFinite(channelWeight) ||
+            channelWeight <= 0
+          ) {
+            return;
+          }
+          rows.forEach((row, rankIndex) => {
+            const nodeId = String(row.id);
+            if (!pprNodeById.has(nodeId)) return;
+            const weight = channelWeight / (60 + rankIndex + 1);
+            pprSeedWeights.set(
+              nodeId,
+              (pprSeedWeights.get(nodeId) ?? 0) + weight,
+            );
+          });
+        };
+        addPprSeeds(exact.rows, retrievalPolicy.channels.EXACT.weight);
+        addPprSeeds(lexical.rows, retrievalPolicy.channels.LEXICAL.weight);
+        addPprSeeds(vector.rows, retrievalPolicy.channels.VECTOR.weight);
+
+        if (pprSeedWeights.size > 0) {
+          const pprPolicy = resolvePersonalizedPageRankPolicy({
+            ...options.pprPolicy,
+            allowedGraphDomains:
+              options.pprPolicy?.allowedGraphDomains ?? ["EPISTEMIC"],
+            allowedRelations:
+              options.pprPolicy?.allowedRelations ??
+              graphPolicy.allowedRelationTypes,
+          });
+          const pprResult = personalizedPageRank({
+            nodes: [...pprNodeById.values()],
+            edges: pprEdges,
+            seeds: [...pprSeedWeights].map(([nodeId, weight]) => ({
+              nodeId,
+              weight,
+            })),
+            policy: pprPolicy,
+          });
+          if (!pprResult.converged) {
+            options.warningSink?.push("PPR_MAX_ITERATIONS_REACHED");
+          }
+          const seedIds = new Set(pprSeedWeights.keys());
+          const supported = pprResult.candidates.filter(
+            (candidate) =>
+              !seedIds.has(candidate.nodeId) &&
+              graphProvenanceByCandidate.has(candidate.nodeId),
+          );
+          pprCandidates.push(
+            ...supported.map((candidate, rankIndex) => ({
+              candidateId: candidate.nodeId,
+              channel: "GRAPH_PPR" as const,
+              rank: rankIndex + 1,
+              rawScore: candidate.score,
+              scopeId: spaceId,
+              documentId: candidate.nodeId,
+              revision: graphRevision,
+              selectionReason: "graph-ppr:associative",
+            })),
+          );
+        }
+      } catch (error) {
+        const code =
+          error instanceof Error ? error.message : "PPR_EXECUTION_FAILED";
+        options.warningSink?.push(`PPR_UNAVAILABLE:${code}`);
+      }
+    }
+  }
+
   const retrievalCandidates: RetrievalCandidate[] = [
     ...exact.rows.map((row, index) => ({
       candidateId: String(row.id),
@@ -1952,6 +2095,7 @@ export async function queryKnowledge(
       revision: row.candidateRevision,
       selectionReason: "graph:bounded-path",
     })),
+    ...pprCandidates,
   ];
   const rankedChannels = retrievalCandidatesToRankedChannels(
     retrievalCandidates,
