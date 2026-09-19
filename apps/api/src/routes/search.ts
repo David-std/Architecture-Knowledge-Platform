@@ -1191,10 +1191,6 @@ export async function queryKnowledge(
     truthValidation: truthConsistency,
     channels: {
       ...explicitChannels,
-      ...(effectiveStrategy === "ASSOCIATIVE" &&
-      explicitChannels.GRAPH_PPR === undefined
-        ? { GRAPH_PPR: { enabled: true } }
-        : {}),
       ...((effectiveStrategy === "GLOBAL" || effectiveStrategy === "DRIFT") &&
       explicitChannels.COMMUNITY === undefined
         ? { COMMUNITY: { enabled: true } }
