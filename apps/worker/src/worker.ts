@@ -37,6 +37,7 @@ import { createIndexEventHandlers } from "./event-handlers.js";
 import { createTruthMaintenanceHandlers } from "./truth-maintenance.js";
 import { createCodeGraphRefreshHandlers } from "./code-graph-refresh.js";
 import { createCodeKnowledgeLinkHandlers } from "./code-knowledge-link.js";
+import { createContinuousAssuranceEventHandlers } from "./assurance-events.js";
 import { lifecycleEventForState } from "./lifecycle.js";
 import {
   DEFAULT_WORKER_DRAIN_DEADLINE_MS,
@@ -88,6 +89,7 @@ const eventWorker = new DurableEventWorker(db, {
     ...createTruthMaintenanceHandlers(db),
     ...createCodeGraphRefreshHandlers(db),
     ...createCodeKnowledgeLinkHandlers(db),
+    ...createContinuousAssuranceEventHandlers(db),
     // The ingest job remains the durable work record.  This handler turns the
     // event into a prompt for the existing claim loop while preserving the
     // event's idempotent delivery semantics.

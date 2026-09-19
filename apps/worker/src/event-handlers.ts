@@ -5,7 +5,7 @@ import {
   type ManagedChange,
 } from "@akp/indexing";
 import { withSpan } from "@akp/observability";
-import type { Postgres } from "@akp/postgres";
+import { submitAssuranceRun, type Postgres } from "@akp/postgres";
 import type { EventHandlers } from "./event-worker.js";
 
 type IndexEvent = Parameters<
@@ -31,6 +31,53 @@ async function currentVaultCorpusRevision(
   return { spaceId, vaultId, corpusRevision };
 }
 
+const INDEX_CHANGE_DETECTORS = [
+  "GRAPH_HEALTH",
+  "CODE_GRAPH_FRESHNESS",
+  "SYNTHESIS_ACCESS_BOUNDARY",
+  "GRAPH_DISAGREEMENT",
+] as const;
+
+async function scheduleIndexChangeAssuranceIfReady(
+  db: Postgres,
+  spaceId: string,
+  vaultId: string,
+  corpusRevision: string,
+): Promise<void> {
+  const result = await db.pool.query<{
+    lexical_revision: string | null;
+    vector_revision: string | null;
+    graph_revision: string | null;
+    context_pack_revision: string | null;
+  }>(
+    `select lexical_revision,vector_revision,graph_revision,
+            context_pack_revision
+       from vault_index_revisions
+      where space_id=$1 and vault_id=$2 and corpus_revision=$3`,
+    [spaceId, vaultId, corpusRevision],
+  );
+  const row = result.rows[0];
+  if (!row) return;
+  const vectorReady =
+    process.env.AKP_VECTOR_ENABLED !== "true" ||
+    row.vector_revision === corpusRevision;
+  if (
+    row.lexical_revision !== corpusRevision ||
+    row.graph_revision !== corpusRevision ||
+    row.context_pack_revision !== corpusRevision ||
+    !vectorReady
+  ) {
+    return;
+  }
+  await submitAssuranceRun(db, {
+    spaceId,
+    vaultId,
+    trigger: "INDEX_CHANGE",
+    detectors: [...INDEX_CHANGE_DETECTORS],
+    idempotencyKey: `index-change:${vaultId}:${corpusRevision}`,
+  });
+}
+
 async function markIndexRequestComplete(
   db: Postgres,
   event: IndexEvent,
@@ -50,6 +97,12 @@ async function markIndexRequestComplete(
       where space_id=$1 and vault_id=$2`,
     [scope.spaceId, scope.vaultId],
   );
+  await scheduleIndexChangeAssuranceIfReady(
+    db,
+    scope.spaceId,
+    scope.vaultId,
+    scope.corpusRevision,
+  );
 }
 
 async function invalidateContextPackets(
@@ -67,6 +120,12 @@ async function invalidateContextPackets(
         set context_pack_revision=corpus_revision,updated_at=now()
       where space_id=$1 and vault_id=$2`,
     [scope.spaceId, scope.vaultId],
+  );
+  await scheduleIndexChangeAssuranceIfReady(
+    db,
+    scope.spaceId,
+    scope.vaultId,
+    scope.corpusRevision,
   );
 }
 
