@@ -1020,11 +1020,9 @@ describe("buildContextPacket", () => {
       ],
     });
 
-    expect(packet.sections.slice(0, 3).map((section) => section.content)).toEqual([
-      "mandatory policy",
-      "conflict side A",
-      "conflict side B",
-    ]);
+    expect(
+      packet.sections.slice(0, 3).map((section) => section.content),
+    ).toEqual(["mandatory policy", "conflict side A", "conflict side B"]);
     expect(packet.sections[3]?.content).toBe("ordinary high-score concept");
   });
 
@@ -1043,7 +1041,9 @@ describe("buildContextPacket", () => {
           ],
         },
       ],
-      candidates: [{ hit: baseHit, content: "only accessible side", kind: "rule" }],
+      candidates: [
+        { hit: baseHit, content: "only accessible side", kind: "rule" },
+      ],
     });
 
     expect(packet.gaps).toContain(
