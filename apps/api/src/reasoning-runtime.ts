@@ -120,7 +120,7 @@ function documentValue(
     refs: unique.map((hit) => hit.documentId),
     payload: unique,
     channel,
-    revision: unique[0]?.revision,
+    ...(unique[0]?.revision ? { revision: unique[0].revision } : {}),
   };
 }
 
@@ -502,7 +502,7 @@ export function createApplicationReasoningPorts(
         refs: refsFromHits(hits),
         payload: { hits: uniqueHits(hits) },
         channel: "RAW",
-        revision: hits[0]?.revision,
+        ...(hits[0]?.revision ? { revision: hits[0].revision } : {}),
       };
     },
 
@@ -531,7 +531,7 @@ export function createApplicationReasoningPorts(
           ...(input.retrievalConfiguration ?? {}),
           reasoningPlan: true,
         },
-        tokenizer: input.tokenizer,
+        ...(input.tokenizer ? { tokenizer: input.tokenizer } : {}),
       });
       return {
         kind: "CONTEXT_PACKET",
@@ -574,13 +574,15 @@ export async function executeApplicationReasoning(
     intent: input.request.intent ?? "CONCEPTUAL",
     revisionSet: input.revisionSet,
     capabilities: input.capabilities,
-    projectId: input.request.projectId,
-    contextLevel: input.contextLevel,
-    contextMaxTokens: input.contextMaxTokens,
+    ...(input.request.projectId ? { projectId: input.request.projectId } : {}),
+    ...(input.contextLevel ? { contextLevel: input.contextLevel } : {}),
+    ...(input.contextMaxTokens !== undefined
+      ? { contextMaxTokens: input.contextMaxTokens }
+      : {}),
   });
   const execution = await executeReasoningPlan(plan, input.validationContext, {
     ports: createApplicationReasoningPorts(input),
-    traceSink: input.traceSink,
+    ...(input.traceSink ? { traceSink: input.traceSink } : {}),
   });
   if (execution.status === "REJECTED") {
     throw new Error("REASONING_PLAN_VALIDATION_FAILED");
