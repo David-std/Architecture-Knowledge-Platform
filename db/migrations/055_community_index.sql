@@ -4,6 +4,12 @@
 -- explicitly DERIVED_INDEX and non-citable; source authority remains with the
 -- underlying knowledge/evidence records in the support set.
 
+-- The vault primary key already makes id globally unique. This redundant
+-- composite index lets derived projections enforce that their space_id and
+-- vault_id refer to the same tenant boundary with a composite foreign key.
+create unique index if not exists vaults_space_id_id_idx
+  on vaults(space_id,id);
+
 create table community_index_revisions (
   id uuid primary key default gen_random_uuid(),
   space_id uuid not null references spaces(id) on delete cascade,
