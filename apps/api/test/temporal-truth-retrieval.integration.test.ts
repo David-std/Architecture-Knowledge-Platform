@@ -272,6 +272,7 @@ describe.skipIf(!databaseUrl)("truth-valid vector retrieval", () => {
       queryKnowledge(db, searchInput(fixture.spaceId, fixture.vaultId), {
         vaultIds: [fixture.vaultId],
         channels: ["vector"],
+        allowVectorForBenchmark: true,
         queryEmbeddingService: queryService(async () => {
           const withdrawn = await fixture.store.withdrawSourceEpisode({
             spaceId: fixture.spaceId,
@@ -301,6 +302,7 @@ describe.skipIf(!databaseUrl)("truth-valid vector retrieval", () => {
       {
         vaultIds: [fixture.vaultId],
         channels: ["vector"],
+        allowVectorForBenchmark: true,
         queryEmbeddingService: queryService(),
         truthConsistency: "STRICT",
         warningSink: warnings,
@@ -331,6 +333,7 @@ describe.skipIf(!databaseUrl)("truth-valid vector retrieval", () => {
       {
         vaultIds: [fixture.vaultId],
         channels: ["vector"],
+        allowVectorForBenchmark: true,
         queryEmbeddingService: queryService(async () => {
           await fixture.store.withdrawSourceEpisode({
             spaceId: fixture.spaceId,
