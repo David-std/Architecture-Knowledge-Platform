@@ -264,7 +264,9 @@ for (const domain of domains) {
   for (const command of domain.commands) {
     commands.push(await runCommand(command));
   }
-  const passed = commands.filter((command) => command.status === "PASSED").length;
+  const passed = commands.filter(
+    (command) => command.status === "PASSED",
+  ).length;
   results.push({
     id: domain.id,
     evidenceId: domain.evidenceId,

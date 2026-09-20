@@ -122,6 +122,208 @@ function managedGitCheck(environment: DoctorEnvironment): DoctorCheck {
   };
 }
 
+export function modelRoutingCheck(
+  environment: DoctorEnvironment,
+): DoctorCheck {
+  const policyRaw = environment.AKP_MODEL_ROLE_POLICIES_JSON?.trim();
+  const endpointRaw = environment.AKP_MODEL_ENDPOINTS_JSON?.trim();
+
+  if (policyRaw) {
+    try {
+      const policies = JSON.parse(policyRaw) as unknown;
+      const endpoints = endpointRaw
+        ? (JSON.parse(endpointRaw) as unknown)
+        : undefined;
+      if (!Array.isArray(policies) || policies.length === 0) {
+        throw new Error("MODEL_ROLE_POLICIES_INVALID");
+      }
+      if (
+        !endpoints ||
+        typeof endpoints !== "object" ||
+        Array.isArray(endpoints)
+      ) {
+        throw new Error("MODEL_ENDPOINT_REGISTRY_INVALID");
+      }
+      const endpointMap = endpoints as Record<string, unknown>;
+      const roles = policies.map((value) => {
+        if (!value || typeof value !== "object" || Array.isArray(value)) {
+          throw new Error("MODEL_ROLE_POLICY_INVALID");
+        }
+        const policy = value as Record<string, unknown>;
+        const role = typeof policy.role === "string" ? policy.role.trim() : "";
+        const provider =
+          typeof policy.provider === "string" ? policy.provider.trim() : "";
+        const model =
+          typeof policy.model === "string" ? policy.model.trim() : "";
+        const endpointRef =
+          typeof policy.endpointRef === "string"
+            ? policy.endpointRef.trim()
+            : "";
+        const dataResidency =
+          typeof policy.dataResidency === "string"
+            ? policy.dataResidency.trim()
+            : "";
+        if (!role || !provider || !model || !endpointRef || !dataResidency) {
+          throw new Error("MODEL_ROLE_POLICY_INVALID");
+        }
+        const endpoint = endpointMap[endpointRef];
+        if (!endpoint || typeof endpoint !== "object" || Array.isArray(endpoint)) {
+          throw new Error("MODEL_ENDPOINT_REF_UNRESOLVED");
+        }
+        const endpointResidency = (endpoint as Record<string, unknown>)
+          .dataResidency;
+        if (typeof endpointResidency !== "string" || !endpointResidency.trim()) {
+          throw new Error("MODEL_ENDPOINT_RESIDENCY_INVALID");
+        }
+        return {
+          role,
+          provider,
+          model,
+          endpointRef,
+          policyDataResidency: dataResidency,
+          endpointDataResidency: endpointResidency,
+          fallbackCount: Array.isArray(policy.fallbackRolesOrModels)
+            ? policy.fallbackRolesOrModels.length
+            : 0,
+        };
+      });
+      return {
+        id: "model-routing",
+        label: "Model routing and residency",
+        status: "OK",
+        summary:
+          "Role-specific model routing configuration is structurally resolvable.",
+        details: {
+          mode: "ROLE_POLICY",
+          roles,
+          endpointCount: Object.keys(endpointMap).length,
+          secretsExposed: false,
+        },
+      };
+    } catch (error) {
+      return {
+        id: "model-routing",
+        label: "Model routing and residency",
+        status: "FAIL",
+        summary: "Model routing configuration is invalid.",
+        details: {
+          code: error instanceof Error ? error.message : "MODEL_ROUTING_INVALID",
+          secretsExposed: false,
+        },
+      };
+    }
+  }
+
+  const provider = environment.AKP_LLM_PROVIDER?.trim().toLowerCase();
+  if (!provider || provider === "disabled") {
+    return {
+      id: "model-routing",
+      label: "Model routing and residency",
+      status: "OK",
+      summary:
+        "External model routing is disabled; the baseline has no mandatory model provider.",
+      details: {
+        mode: "DISABLED",
+        externalProviderRequired: false,
+        secretsExposed: false,
+      },
+    };
+  }
+  if (provider !== "openai-compatible") {
+    return {
+      id: "model-routing",
+      label: "Model routing and residency",
+      status: "FAIL",
+      summary: "Configured legacy model provider is unsupported.",
+      details: {
+        mode: "LEGACY",
+        provider,
+        code: "MODEL_PROVIDER_UNSUPPORTED",
+        secretsExposed: false,
+      },
+    };
+  }
+
+  const baseUrl = environment.AKP_LLM_BASE_URL?.trim();
+  const model = environment.AKP_LLM_MODEL?.trim();
+  if (!baseUrl || !model) {
+    return {
+      id: "model-routing",
+      label: "Model routing and residency",
+      status: "FAIL",
+      summary: "Legacy model routing is missing its endpoint or model.",
+      details: {
+        mode: "LEGACY",
+        provider,
+        baseUrlConfigured: Boolean(baseUrl),
+        modelConfigured: Boolean(model),
+        secretsExposed: false,
+      },
+    };
+  }
+
+  let inferredResidency = environment.AKP_LLM_DATA_RESIDENCY?.trim() || "";
+  if (!inferredResidency) {
+    try {
+      const hostname = new URL(baseUrl).hostname.toLowerCase();
+      inferredResidency = ["localhost", "127.0.0.1", "::1", "[::1]"].includes(
+        hostname,
+      )
+        ? "LOCAL_ONLY"
+        : "EXTERNAL_ALLOWED";
+    } catch {
+      return {
+        id: "model-routing",
+        label: "Model routing and residency",
+        status: "FAIL",
+        summary: "Legacy model routing endpoint is not a valid URL.",
+        details: {
+          mode: "LEGACY",
+          provider,
+          code: "MODEL_ENDPOINT_INVALID",
+          secretsExposed: false,
+        },
+      };
+    }
+  }
+  if (
+    !["LOCAL_ONLY", "ORG_APPROVED", "EXTERNAL_ALLOWED"].includes(
+      inferredResidency,
+    )
+  ) {
+    return {
+      id: "model-routing",
+      label: "Model routing and residency",
+      status: "FAIL",
+      summary: "Legacy model residency is invalid.",
+      details: {
+        mode: "LEGACY",
+        provider,
+        code: "MODEL_RESIDENCY_INVALID",
+        secretsExposed: false,
+      },
+    };
+  }
+
+  return {
+    id: "model-routing",
+    label: "Model routing and residency",
+    status: "OK",
+    summary: "Legacy model routing configuration is structurally complete.",
+    details: {
+      mode: "LEGACY",
+      provider,
+      model,
+      endpointRef:
+        environment.AKP_LLM_ENDPOINT_REF?.trim() || "legacy-knowledge-compile",
+      dataResidency: inferredResidency,
+      baseUrlConfigured: true,
+      apiKeyConfigured: Boolean(environment.AKP_LLM_API_KEY?.trim()),
+      secretsExposed: false,
+    },
+  };
+}
+
 function backupCheck(environment: DoctorEnvironment, cwd: string): DoctorCheck {
   const configured = environment.AKP_BACKUP_DIR?.trim() || "backups/latest";
   const backupDirectory = path.resolve(cwd, configured);
@@ -456,6 +658,8 @@ export async function runDoctor(
       contextParityCheck(db),
     ),
   );
+
+  checks.push(modelRoutingCheck(environment));
 
   checks.push(
     await safeCheck("vector-generation", "Vector generation", async () => {

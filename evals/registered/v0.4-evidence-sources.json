@@ -1352,6 +1352,56 @@
           "step": "Validate registered domain quality evidence"
         }
       ]
+    },
+    "integration:federation-two-node": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "federation-two-node",
+          "job": "real-two-node",
+          "step": "Validate real two-node federation evidence"
+        }
+      ]
+    },
+    "recovery:code-graph-rebuild": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "recovery",
+          "job": "managed-git-restore",
+          "step": "Prove managed Git commit, files and searchable reindex after restore"
+        }
+      ]
+    },
+    "recovery:graph-rebuild": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "recovery",
+          "job": "managed-git-restore",
+          "step": "Prove managed Git commit, files and searchable reindex after restore"
+        }
+      ]
+    },
+    "recovery:offline-agent-context": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "recovery",
+          "job": "managed-git-restore",
+          "step": "Prove managed Git commit, files and searchable reindex after restore"
+        }
+      ]
+    },
+    "surface:doctor-model-routing": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run operator doctor diagnostics"
+        }
+      ]
     }
   }
 }

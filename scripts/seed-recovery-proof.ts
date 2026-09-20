@@ -134,12 +134,16 @@ try {
   await client.query(
     `insert into workspace_events(
        session_id,space_id,vault_id,actor_id,actor_principal_id,claim_id,
-       event_type,payload
+       event_type,payload,session_version
      ) values(
        $1,$2,$3,$4,$5,$6,'NOTE',
-       '{"recoverySentinel":"workspace-event"}'::jsonb
+       '{"recoverySentinel":"workspace-event"}'::jsonb,1
      )`,
     [sessionId, vault.space_id, vault.id, adminId, adminPrincipalId, claimId],
+  );
+  await client.query(
+    "update agent_sessions set coordination_version=1 where id=$1",
+    [sessionId],
   );
   await client.query(
     `insert into workspace_offline_drafts(

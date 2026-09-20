@@ -143,6 +143,33 @@ try {
     throw "Restored managed repository could not rebuild a searchable probe."
   }
 
+  $derivedReport = Resolve-InputPath (
+    if ($env:AKP_RESTORED_DERIVED_REPORT) {
+      $env:AKP_RESTORED_DERIVED_REPORT
+    } else {
+      "reports/ci/restored-derived-context.json"
+    }
+  )
+  Invoke-Checked "rebuild graph, code graph and local agent context from restored authority" {
+    pnpm exec tsx scripts/verify-restored-derived-context.ts "--repo=$temporaryRoot" "--commit=$actualRevision" "--space-id=$SpaceId" "--vault-id=$vaultId"
+  } | Out-Null
+  if (-not (Test-Path -LiteralPath $derivedReport -PathType Leaf)) {
+    throw "Restored derived-context proof report is missing: $derivedReport"
+  }
+  try {
+    $derived = Get-Content -LiteralPath $derivedReport -Raw | ConvertFrom-Json
+  } catch {
+    throw "Restored derived-context proof report is invalid JSON: $($_.Exception.Message)"
+  }
+  if (
+    $derived.status -ne "PROVEN" -or
+    $derived.epistemicGraph.status -ne "PROVEN" -or
+    $derived.codeGraph.status -ne "PROVEN" -or
+    $derived.agentContext.status -ne "PROVEN"
+  ) {
+    throw "Restored derived projections or agent context were not proven."
+  }
+
   Write-Output (@{
     status = "PASSED"
     expectedMainRevision = $expectedRevision
@@ -152,6 +179,11 @@ try {
     importedDocuments = $importedDocuments
     indexedUnits = $indexedUnits
     searchableUnits = $searchableUnits
+    rebuiltVaultId = $vaultId
+    epistemicGraphRebuilt = $true
+    codeGraphRebuilt = $true
+    agentContextRebuilt = $true
+    derivedReport = $derivedReport
   } | ConvertTo-Json)
 } finally {
   foreach ($candidate in @($temporaryRoot, $reportRoot)) {

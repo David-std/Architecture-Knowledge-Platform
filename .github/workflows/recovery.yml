@@ -28,7 +28,19 @@ jobs:
         with:
           node-version: 24.20.0
           cache: pnpm
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          version: 0.12.7
+          enable-cache: true
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Install pinned Graphify for recovery rebuild
+        shell: bash
+        run: |
+          uv tool install graphifyy==0.9.63
+          echo "AKP_GRAPHIFY_EXECUTABLE=$(uv tool dir --bin)/graphify" >> "$GITHUB_ENV"
       - run: pnpm build
       - run: docker compose up -d --wait postgres minio
       - name: Create disposable managed repository with a searchable restore probe
@@ -39,7 +51,7 @@ jobs:
           git init -b main "$AKP_MANAGED_REPO"
           git -C "$AKP_MANAGED_REPO" config user.name "AKP Recovery CI"
           git -C "$AKP_MANAGED_REPO" config user.email "akp-recovery-ci@localhost"
-          mkdir -p "$AKP_MANAGED_REPO/managed"
+          mkdir -p "$AKP_MANAGED_REPO/managed" "$AKP_MANAGED_REPO/src"
           cat > "$AKP_MANAGED_REPO/managed/restore-probe.md" <<'EOF'
           ---
           id: RECOVERY-RESTORE-PROBE
@@ -50,6 +62,15 @@ jobs:
           ---
 
           This restore probe must become searchable after the managed Git bundle is restored into a new repository.
+          EOF
+          cat > "$AKP_MANAGED_REPO/src/recovery-code.ts" <<'EOF'
+          export function restoredDependency(): string {
+            return "restore";
+          }
+
+          export function restoredCaller(): string {
+            return restoredDependency();
+          }
           EOF
           git -C "$AKP_MANAGED_REPO" add --all
           git -C "$AKP_MANAGED_REPO" commit -m "test: seed managed restore probe"
@@ -82,6 +103,8 @@ jobs:
           -RecoveryStateManifest reports/ci/recovery-state-seed.json
       - name: Prove managed Git commit, files and searchable reindex after restore
         shell: pwsh
+        env:
+          AKP_RESTORED_DERIVED_REPORT: reports/ci/restored-derived-context.json
         run: >-
           ./scripts/verify-managed-git-restore.ps1
           -BackupDirectory backups/ci-recovery
@@ -95,6 +118,7 @@ jobs:
           path: |
             backups/ci-recovery/manifest.json
             reports/ci/recovery-state-seed.json
+            reports/ci/restored-derived-context.json
             reports/migration
           if-no-files-found: ignore
           retention-days: 7

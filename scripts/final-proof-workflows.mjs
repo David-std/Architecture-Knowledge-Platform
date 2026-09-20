@@ -13,6 +13,7 @@ const requiredWorkflows = [
   "agent-ab",
   "agent-arena",
   "domain-quality",
+  "federation-two-node",
 ];
 
 function requiredEnv(name) {
