@@ -224,9 +224,9 @@ run("P2 principal identity", () => {
     );
     expect(issuance.principal.roles).toEqual(["AGENT_PROCESS"]);
     expect(issuance.principal.revoked).toBe(false);
-    expect(new Date(issuance.principal.createdAt).getTime()).toBeLessThanOrEqual(
-      Date.now(),
-    );
+    expect(
+      new Date(issuance.principal.createdAt).getTime(),
+    ).toBeLessThanOrEqual(Date.now());
     expect(new Date(issuance.principal.expiresAt).getTime()).toBeGreaterThan(
       Date.now(),
     );

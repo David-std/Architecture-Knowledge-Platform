@@ -227,10 +227,12 @@ describe("offline context snapshot reconnect semantics", () => {
     );
     expect(
       new Date(r1Snapshot.snapshotManifest.expiresAt).getTime(),
-    ).toBeGreaterThan(new Date(r1Snapshot.snapshotManifest.createdAt).getTime());
-    expect(r1Snapshot.snapshotRevisionSet.dimensions.knowledgeGit).toMatchObject(
-      { status: "AVAILABLE", revision: "offline:r1" },
+    ).toBeGreaterThan(
+      new Date(r1Snapshot.snapshotManifest.createdAt).getTime(),
     );
+    expect(
+      r1Snapshot.snapshotRevisionSet.dimensions.knowledgeGit,
+    ).toMatchObject({ status: "AVAILABLE", revision: "offline:r1" });
     expect(r1Snapshot.snapshotRevisionSet.policy.revision).toMatch(
       /^[a-f0-9]{64}$/,
     );

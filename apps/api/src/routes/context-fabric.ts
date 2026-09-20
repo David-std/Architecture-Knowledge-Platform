@@ -711,7 +711,9 @@ export function registerContextFabricRoutes(
       }
       const context = bootstrap.json() as Record<string, unknown>;
       const serialized = JSON.stringify(context);
-      const snapshotHash = createHash("sha256").update(serialized).digest("hex");
+      const snapshotHash = createHash("sha256")
+        .update(serialized)
+        .digest("hex");
       return {
         schemaVersion: 1,
         offline: true,
