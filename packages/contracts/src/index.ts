@@ -634,9 +634,11 @@ export type FederationRemoteQueryRequest = z.infer<
   typeof FederationRemoteQueryRequest
 >;
 
-export const FederationPeerQueryRequest = FederationRemoteQueryRequestBase.omit({
-  caller: true,
-})
+export const FederationPeerQueryRequest = FederationRemoteQueryRequestBase.omit(
+  {
+    caller: true,
+  },
+)
   .extend({
     requestId: z.string().uuid().optional(),
   })

@@ -1,10 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
-import {
-  workspaceContextRevisionState,
-  type Postgres,
-} from "@akp/postgres";
+import { workspaceContextRevisionState, type Postgres } from "@akp/postgres";
 
 export type DoctorStatus = "OK" | "WARN" | "FAIL" | "UNKNOWN";
 
@@ -125,10 +122,7 @@ function managedGitCheck(environment: DoctorEnvironment): DoctorCheck {
   };
 }
 
-function backupCheck(
-  environment: DoctorEnvironment,
-  cwd: string,
-): DoctorCheck {
+function backupCheck(environment: DoctorEnvironment, cwd: string): DoctorCheck {
   const configured = environment.AKP_BACKUP_DIR?.trim() || "backups/latest";
   const backupDirectory = path.resolve(cwd, configured);
   const manifestPath = path.join(backupDirectory, "manifest.json");
@@ -292,7 +286,11 @@ async function graphChecks(db: Postgres): Promise<{
   const graphs: DoctorCheck = {
     id: "graph-domain-revisions",
     label: "Graph domain revisions",
-    status: anyFailure ? "FAIL" : anyStale || missingDomains.length ? "WARN" : "OK",
+    status: anyFailure
+      ? "FAIL"
+      : anyStale || missingDomains.length
+        ? "WARN"
+        : "OK",
     summary:
       result.rows.length === 0
         ? "No graph projection revisions are present."
@@ -361,7 +359,9 @@ export async function runDoctor(
     await safeCheck("raw-object-store", "Raw object store", async () => {
       const base =
         environment.AKP_RAW_ENDPOINT?.trim() || "http://127.0.0.1:19000";
-      const healthy = await probeUrl(`${base.replace(/\/$/u, "")}/minio/health/live`);
+      const healthy = await probeUrl(
+        `${base.replace(/\/$/u, "")}/minio/health/live`,
+      );
       return {
         id: "raw-object-store",
         label: "Raw object store",
@@ -452,10 +452,8 @@ export async function runDoctor(
   );
 
   checks.push(
-    await safeCheck(
-      "context-revision-parity",
-      "Context revision parity",
-      () => contextParityCheck(db),
+    await safeCheck("context-revision-parity", "Context revision parity", () =>
+      contextParityCheck(db),
     ),
   );
 
@@ -512,9 +510,13 @@ export async function runDoctor(
   );
   checks.push(graphResult);
   checks.push(
-    await safeCheck("code-graph-staleness", "Code graph staleness", async () => {
-      return (await graphChecks(db)).code;
-    }),
+    await safeCheck(
+      "code-graph-staleness",
+      "Code graph staleness",
+      async () => {
+        return (await graphChecks(db)).code;
+      },
+    ),
   );
 
   checks.push(
@@ -661,11 +663,7 @@ export async function runDoctor(
         id: "federation-peers",
         label: "Federation peers",
         status:
-          row.circuit_open > 0
-            ? "FAIL"
-            : row.degraded > 0
-              ? "WARN"
-              : "OK",
+          row.circuit_open > 0 ? "FAIL" : row.degraded > 0 ? "WARN" : "OK",
         summary:
           row.circuit_open > 0
             ? "One or more federation peer circuits are open."

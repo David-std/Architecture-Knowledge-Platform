@@ -98,7 +98,8 @@ function sameStringSet(left: string[], right: string[]): boolean {
 function federationSchemaVersion(value: unknown): number | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const schemaVersion = (value as Record<string, unknown>).schemaVersion;
-  return typeof schemaVersion === "number" && Number.isSafeInteger(schemaVersion)
+  return typeof schemaVersion === "number" &&
+    Number.isSafeInteger(schemaVersion)
     ? schemaVersion
     : null;
 }
@@ -829,10 +830,7 @@ export function registerContextFabricRoutes(
     { preHandler: requirePermission("knowledge:read") },
     async (request, reply) => {
       const requestedSchemaVersion = federationSchemaVersion(request.body);
-      if (
-        requestedSchemaVersion !== null &&
-        requestedSchemaVersion !== 1
-      ) {
+      if (requestedSchemaVersion !== null && requestedSchemaVersion !== 1) {
         return reply.code(409).send({
           code: "FEDERATION_SCHEMA_VERSION_UNSUPPORTED",
           supportedSchemaVersions: [1],
