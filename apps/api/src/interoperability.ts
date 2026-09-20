@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { TrustTier } from "@akp/contracts";
@@ -7,6 +8,7 @@ import {
 } from "@akp/compiler";
 
 const SHA256 = /^[a-f0-9]{64}$/;
+export const MAX_OKF_BUNDLE_BYTES = 8 * 1024 * 1024;
 const RESERVED_FOREIGN_ROOTS = new Set([
   ".akp",
   ".obsidian",
@@ -143,6 +145,20 @@ function stableValue(value: unknown): unknown {
 
 export function canonicalOkfJson(bundle: OkfBundleV02): string {
   return JSON.stringify(stableValue(OkfBundleV02.parse(bundle)));
+}
+
+function assertOkfBundleSize(bundle: OkfBundleV02): void {
+  const actualBytes = Buffer.byteLength(canonicalOkfJson(bundle), "utf8");
+  if (actualBytes > MAX_OKF_BUNDLE_BYTES) {
+    throw new OkfInteropError("OKF_BUNDLE_TOO_LARGE", {
+      actualBytes,
+      maxBytes: MAX_OKF_BUNDLE_BYTES,
+    });
+  }
+}
+
+function portablePathCollisionKey(value: string): string {
+  return value.normalize("NFC").toLowerCase();
 }
 
 export function assertSafeForeignSourcePath(path: string): string {
@@ -457,12 +473,35 @@ export function planOkfReviewImport(input: {
   schemaProfile?: Record<string, unknown>;
 }): OkfImportPlan {
   const bundle = OkfBundleV02.parse(input.bundle);
+  assertOkfBundleSize(bundle);
   const mapping = OkfImportMapping.parse(input.mapping ?? {});
   const documents = new Map<string, LocalDocumentMapping>();
   const usedPaths = new Set<string>();
+  const foreignSourcePaths = new Map<
+    string,
+    { path: string; foreignDocumentId: string }
+  >();
 
   for (const foreign of bundle.documents) {
-    if (foreign.sourcePath) assertSafeForeignSourcePath(foreign.sourcePath);
+    if (foreign.sourcePath) {
+      const normalizedForeignPath = assertSafeForeignSourcePath(
+        foreign.sourcePath,
+      );
+      const collisionKey = portablePathCollisionKey(normalizedForeignPath);
+      const previous = foreignSourcePaths.get(collisionKey);
+      if (previous && previous.foreignDocumentId !== foreign.id) {
+        throw new OkfInteropError("OKF_FOREIGN_PATH_COLLISION", {
+          path: normalizedForeignPath,
+          conflictsWith: previous.path,
+          foreignDocumentId: foreign.id,
+          conflictingDocumentId: previous.foreignDocumentId,
+        });
+      }
+      foreignSourcePaths.set(collisionKey, {
+        path: normalizedForeignPath,
+        foreignDocumentId: foreign.id,
+      });
+    }
     const localKind = mapKind(foreign.kind, mapping, input.knowledgeProfile);
     const localLifecycle = mapLifecycle(
       foreign.lifecycle,

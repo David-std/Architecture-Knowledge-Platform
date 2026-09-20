@@ -71,6 +71,14 @@ For a breaking profile on a non-empty corpus, use the compatibility/migration wo
 
 A software-delivery profile may permit `note` and `procedure` kinds, require evidence locators, require review for promotion and constrain `KNOWLEDGE_COMPILE` to `ORG_APPROVED` residency. A source marked `LOCAL_ONLY` still tightens the effective runtime route further because the most restrictive boundary wins.
 
+## Review-first interoperability
+
+OKF v0.2 import is always a review-first operation. Foreign trust, review status, profile identity and provenance are retained for inspection but never become local authority. Imported kinds, lifecycle states and relations are validated against the active local Knowledge Profile before any review draft is created.
+
+Import rejects traversal, absolute/control-character and reserved management paths, including portable case-collisions between foreign source paths. Aggregate OKF payload size is bounded independently of the HTTP request limit. JSON-LD and GraphML are export formats only in v0.4; the OKF import route does not dereference remote JSON-LD contexts or parse XML entities.
+
+A supported exchange proof is: canonical AKP knowledge -> OKF v0.2 export -> isolated-vault import candidate -> explicit human review action. Identity/provenance/relations remain inspectable across that round trip while local trust stays `UNVERIFIED` until ordinary AKP review/publication policy approves it.
+
 ## Limitations
 
 Knowledge Profiles are semantic/governance contracts, not general deployment configuration. They intentionally do not carry API keys, raw endpoint URLs or authorization memberships.

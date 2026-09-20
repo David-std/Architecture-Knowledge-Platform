@@ -6,6 +6,7 @@ import {
 import { durableCompilerKnowledgeProfileContext } from "@akp/compiler";
 import { createHash } from "node:crypto";
 import {
+  MAX_OKF_BUNDLE_BYTES,
   OkfBundleV02,
   OkfInteropError,
   canonicalOkfJson,
@@ -127,21 +128,56 @@ describe("OKF v0.2 interoperability", () => {
     }
   });
 
-  it("rejects unsafe foreign paths and never lets a bundle choose a target path", () => {
-    const unsafe = bundle({
+  it("rejects traversal, absolute, control, reserved-root, and case-collision source paths", () => {
+    const attackedPaths = [
+      "../../escape.md",
+      "C:\\outside\\file.md",
+      "/root/secret.md",
+      "knowledge/notes/\u0000secret.md",
+      ".akp/policy.md",
+      "README.md",
+    ];
+    for (const sourcePath of attackedPaths) {
+      const unsafe = bundle({
+        documents: [
+          {
+            ...bundle().documents[0],
+            sourcePath,
+          },
+        ],
+      });
+      try {
+        planOkfReviewImport({ bundle: unsafe, knowledgeProfile: profile });
+        throw new Error("expected unsafe path rejection");
+      } catch (error) {
+        expect(error).toBeInstanceOf(OkfInteropError);
+        expect((error as OkfInteropError).code).toBe("OKF_FOREIGN_PATH_UNSAFE");
+      }
+    }
+
+    const first = bundle().documents[0]!;
+    const collision = bundle({
       documents: [
+        first,
         {
-          ...bundle().documents[0],
-          sourcePath: "../escape.md",
+          ...first,
+          id: "FOREIGN-2",
+          externalId: "ADR-78",
+          title: "Second cache note",
+          sourcePath: "Knowledge/Notes/Cache.md",
         },
       ],
     });
     try {
-      planOkfReviewImport({ bundle: unsafe, knowledgeProfile: profile });
-      throw new Error("expected unsafe path rejection");
+      planOkfReviewImport({ bundle: collision, knowledgeProfile: profile });
+      throw new Error("expected portable path collision rejection");
     } catch (error) {
-      expect((error as OkfInteropError).code).toBe("OKF_FOREIGN_PATH_UNSAFE");
+      expect(error).toBeInstanceOf(OkfInteropError);
+      expect((error as OkfInteropError).code).toBe(
+        "OKF_FOREIGN_PATH_COLLISION",
+      );
     }
+
     expect(
       OkfBundleV02.safeParse({
         ...bundle(),
@@ -152,6 +188,128 @@ describe("OKF v0.2 interoperability", () => {
           },
         ],
       }).success,
+    ).toBe(false);
+  });
+
+  it("bounds aggregate OKF size before planning review state", () => {
+    const base = bundle().documents[0]!;
+    const bodyBytes = Math.ceil(MAX_OKF_BUNDLE_BYTES / 6) + 8_192;
+    const oversized = bundle({
+      documents: Array.from({ length: 6 }, (_, index) => ({
+        ...base,
+        id: `FOREIGN-LARGE-${index}`,
+        externalId: `LARGE-${index}`,
+        title: `Oversized document ${index}`,
+        sourcePath: `knowledge/notes/large-${index}.md`,
+        body: `# Oversized ${index}\n\n${"x".repeat(bodyBytes)}`,
+      })),
+    });
+    try {
+      planOkfReviewImport({ bundle: oversized, knowledgeProfile: profile });
+      throw new Error("expected aggregate OKF size rejection");
+    } catch (error) {
+      expect(error).toBeInstanceOf(OkfInteropError);
+      expect((error as OkfInteropError).code).toBe("OKF_BUNDLE_TOO_LARGE");
+    }
+  });
+
+  it("keeps foreign profile and approval claims as provenance, never local authority", () => {
+    const foreignAuthority = bundle({
+      source: {
+        system: "Foreign Knowledge System",
+        profileId: "foreign-admin-profile",
+        profileVersion: "999.0.0",
+        profileHash: "a".repeat(64),
+      },
+      documents: [
+        {
+          ...bundle().documents[0],
+          evidence: [
+            {
+              id: "E-APPROVED",
+              trust: "ATTESTED",
+              sourceReviewStatus: "APPROVED",
+            },
+          ],
+        },
+      ],
+    });
+    const plan = planOkfReviewImport({
+      bundle: foreignAuthority,
+      knowledgeProfile: profile,
+    });
+    const content = plan.changes[0]?.content ?? "";
+    expect(content).toContain('trust: "UNVERIFIED"');
+    expect(content).toContain('foreign_trust: "ATTESTED"');
+    expect(content).toContain('"profileVersion":"999.0.0"');
+    expect(content).toContain('"sourceReviewStatus":"APPROVED"');
+  });
+
+  it("handles cyclic foreign relations as bounded review data without recursive authority", () => {
+    const base = bundle().documents[0]!;
+    const first = {
+      ...base,
+      id: "FOREIGN-P1",
+      externalId: "PROC-1",
+      title: "Procedure one",
+      sourcePath: "knowledge/procedures/one.md",
+      kind: "procedure",
+    };
+    const second = {
+      ...base,
+      id: "FOREIGN-P2",
+      externalId: "PROC-2",
+      title: "Procedure two",
+      sourcePath: "knowledge/procedures/two.md",
+      kind: "procedure",
+    };
+    const cyclic = bundle({
+      documents: [first, second],
+      relations: [
+        {
+          fromId: "FOREIGN-P1",
+          toId: "FOREIGN-P2",
+          type: "follows",
+          weight: 1,
+          provenance: "foreign-cycle",
+        },
+        {
+          fromId: "FOREIGN-P2",
+          toId: "FOREIGN-P1",
+          type: "follows",
+          weight: 1,
+          provenance: "foreign-cycle",
+        },
+      ],
+    });
+    const plan = planOkfReviewImport({
+      bundle: cyclic,
+      knowledgeProfile: profile,
+    });
+    expect(plan.changes).toHaveLength(2);
+    expect(
+      plan.changes.every((change) =>
+        change.content.includes('trust: "UNVERIFIED"'),
+      ),
+    ).toBe(true);
+    expect(
+      plan.changes.every((change) =>
+        change.content.includes('"foreignType":"follows"'),
+      ),
+    ).toBe(true);
+  });
+
+  it("has no JSON-LD remote-context or GraphML entity import parser escape hatch", () => {
+    expect(
+      OkfBundleV02.safeParse({
+        ...bundle(),
+        "@context": "https://attacker.invalid/context.jsonld",
+      }).success,
+    ).toBe(false);
+    expect(
+      OkfBundleV02.safeParse(
+        '<!DOCTYPE graphml [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><graphml>&xxe;</graphml>',
+      ).success,
     ).toBe(false);
   });
 

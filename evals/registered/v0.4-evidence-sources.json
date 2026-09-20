@@ -1402,6 +1402,26 @@
           "step": "Run operator doctor diagnostics"
         }
       ]
+    },
+    "test:p1-interop-adversarial": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        }
+      ]
+    },
+    "integration:p1-interop-roundtrip": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
     }
   }
 }
