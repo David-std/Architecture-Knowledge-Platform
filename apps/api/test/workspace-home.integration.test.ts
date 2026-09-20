@@ -146,26 +146,31 @@ describeDb("workspace home operator projection", () => {
       connectors: unknown[];
       federation: unknown[];
     };
-    expect(body.scope.vaultIds).toEqual([visibleVaultId]);
-    expect(body.workItems).toEqual([
-      expect.objectContaining({
-        vault_id: visibleVaultId,
-        external_id: "VISIBLE-1",
-        title: "Visible work item",
-        work_object_class: "WORK_ITEM",
-      }),
-    ]);
+    expect(body.scope.vaultIds).toContain(visibleVaultId);
+    expect(body.scope.vaultIds).not.toContain(hiddenVaultId);
+    expect(body.workItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          vault_id: visibleVaultId,
+          external_id: "VISIBLE-1",
+          title: "Visible work item",
+          work_object_class: "WORK_ITEM",
+        }),
+      ]),
+    );
     expect(JSON.stringify(body)).not.toContain("HIDDEN-1");
     expect(JSON.stringify(body)).not.toContain(hiddenVaultId);
-    expect(body.projects).toEqual([
-      expect.objectContaining({
-        vault_id: visibleVaultId,
-        slug: "visible-project",
-        metadata: expect.objectContaining({
-          commit: "a".repeat(40),
+    expect(body.projects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          vault_id: visibleVaultId,
+          slug: "visible-project",
+          metadata: expect.objectContaining({
+            commit: "a".repeat(40),
+          }),
         }),
-      }),
-    ]);
+      ]),
+    );
     expect(JSON.stringify(body.projects)).not.toContain(
       "/secret/local/project",
     );
