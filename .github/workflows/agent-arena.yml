@@ -72,7 +72,7 @@ jobs:
       - name: Provision registered public product corpus and least-privilege token
         shell: bash
         run: |
-          pnpm exec tsx scripts/provision-agent-arena-fixture.ts \
+          pnpm exec tsx scripts/provision-agent-ab-fixture.ts \
             2>&1 | tee reports/ci/agent-arena-fixture.log
           pnpm auth:provision \
             2>&1 | tee reports/ci/agent-arena-auth.log

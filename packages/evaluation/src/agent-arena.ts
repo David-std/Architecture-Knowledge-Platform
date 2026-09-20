@@ -1,5 +1,4 @@
 import {
-  aggregateAgentAbArm,
   scoreAgentAbOutput,
   type AgentAbModelOutput,
   type AgentAbScore,
@@ -161,12 +160,6 @@ export function aggregateAgentArenaArm(
   if (observations.some((observation) => observation.arm !== arm)) {
     throw new Error("Agent arena aggregate must contain one arm.");
   }
-  const legacy = aggregateAgentAbArm(
-    observations.map((observation) => ({
-      ...observation,
-      arm: "B_AKP_CONTEXT_PACKET" as const,
-    })),
-  );
   const noAnswerValues = observations
     .map((observation) => observation.noAnswerCorrect)
     .filter((value): value is boolean => value !== null);
@@ -182,14 +175,23 @@ export function aggregateAgentArenaArm(
       observations.map((item) => item.providerCompletionTokens),
     ),
     meanLatencyMs: mean(observations.map((item) => item.latencyMs)),
-    meanCorrectness: legacy.meanCorrectness,
-    meanMandatoryConstraintRecall: legacy.meanMandatoryRuleRecall,
-    meanUnsupportedClaims: legacy.meanUnsupportedClaims,
+    meanCorrectness: mean(observations.map((item) => item.correctness)),
+    meanMandatoryConstraintRecall: mean(
+      observations.map((item) => item.mandatoryRuleRecall),
+    ),
+    meanUnsupportedClaims: mean(
+      observations.map((item) => item.unsupportedClaims),
+    ),
     meanUnsupportedClaimRate: mean(
       observations.map((item) => item.unsupportedClaimRate),
     ),
-    meanCitationPrecision: legacy.meanCitationPrecision,
-    totalMissedConstraints: legacy.totalMissedConstraints,
+    meanCitationPrecision: mean(
+      observations.map((item) => item.citationPrecision),
+    ),
+    totalMissedConstraints: observations.reduce(
+      (sum, item) => sum + item.missedConstraints.length,
+      0,
+    ),
     totalMissedConflicts: observations.reduce(
       (sum, item) => sum + item.missedConflicts.length,
       0,
