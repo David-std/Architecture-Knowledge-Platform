@@ -75,7 +75,11 @@ beforeAll(async () => {
           {
             spaceId,
             pathPrefix: null,
-            permissions: ["knowledge:read", "knowledge:propose", "knowledge:review"],
+            permissions: [
+              "knowledge:read",
+              "knowledge:propose",
+              "knowledge:review",
+            ],
           },
         ],
       }),
@@ -312,7 +316,6 @@ describe("P1 OKF interoperability", () => {
     });
   });
 
-
   it("round-trips identity, provenance, relations, and trust into an isolated human-review candidate", async () => {
     const noteId = randomUUID();
     const procedureId = randomUUID();
@@ -430,10 +433,9 @@ describe("P1 OKF interoperability", () => {
           trustDisposition: string;
         };
       };
-    }>(
-      "select status,head_commit,impact_manifest from reviews where id=$1",
-      [imported.reviewId],
-    );
+    }>("select status,head_commit,impact_manifest from reviews where id=$1", [
+      imported.reviewId,
+    ]);
     expect(review.rows[0]).toMatchObject({
       status: "PENDING",
       impact_manifest: {

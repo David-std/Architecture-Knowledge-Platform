@@ -29,53 +29,31 @@
       "mandatory": true,
       "requirements": {
         "runtimeTest": {
-          "evidence": [
-            "test:ingest-lifecycle"
-          ]
+          "evidence": ["test:ingest-lifecycle"]
         },
         "negativeTest": {
-          "evidence": [
-            "failure:publication-compensation"
-          ]
+          "evidence": ["failure:publication-compensation"]
         },
         "integrationTest": {
-          "evidence": [
-            "integration:product-lifecycle"
-          ]
+          "evidence": ["integration:product-lifecycle"]
         },
         "recoveryTest": {
-          "evidence": [
-            "recovery:managed-git-restore"
-          ]
+          "evidence": ["recovery:managed-git-restore"]
         },
         "securityTest": {
-          "evidence": [
-            "security:scoped-ingest-review"
-          ]
+          "evidence": ["security:scoped-ingest-review"]
         },
         "operatorSurface": {
-          "evidence": [
-            "surface:source-review-publication"
-          ]
+          "evidence": ["surface:source-review-publication"]
         },
         "docs": {
-          "evidence": [
-            "doc:contributor-reviewer",
-            "doc:operations-recovery"
-          ]
+          "evidence": ["doc:contributor-reviewer", "doc:operations-recovery"]
         },
         "benchmark": {
-          "evidence": [
-            "benchmark:concurrency",
-            "benchmark:scale"
-          ]
+          "evidence": ["benchmark:concurrency", "benchmark:scale"]
         },
         "remoteCi": {
-          "evidence": [
-            "remote:ci",
-            "remote:recovery",
-            "remote:resilience"
-          ]
+          "evidence": ["remote:ci", "remote:recovery", "remote:resilience"]
         }
       },
       "remainingLimitation": null
@@ -86,51 +64,31 @@
       "mandatory": true,
       "requirements": {
         "runtimeTest": {
-          "evidence": [
-            "test:document-intelligence-runtime"
-          ]
+          "evidence": ["test:document-intelligence-runtime"]
         },
         "negativeTest": {
-          "evidence": [
-            "failure:document-provider-unavailable"
-          ]
+          "evidence": ["failure:document-provider-unavailable"]
         },
         "integrationTest": {
-          "evidence": [
-            "integration:document-intelligence"
-          ]
+          "evidence": ["integration:document-intelligence"]
         },
         "recoveryTest": {
-          "evidence": [
-            "recovery:durable-document-state"
-          ]
+          "evidence": ["recovery:durable-document-state"]
         },
         "securityTest": {
-          "evidence": [
-            "security:document-provider-boundary"
-          ]
+          "evidence": ["security:document-provider-boundary"]
         },
         "operatorSurface": {
-          "evidence": [
-            "surface:source-inspection"
-          ]
+          "evidence": ["surface:source-inspection"]
         },
         "docs": {
-          "evidence": [
-            "doc:enterprise-deployment",
-            "doc:operations-recovery"
-          ]
+          "evidence": ["doc:enterprise-deployment", "doc:operations-recovery"]
         },
         "benchmark": {
-          "evidence": [
-            "benchmark:document-intelligence"
-          ]
+          "evidence": ["benchmark:document-intelligence"]
         },
         "remoteCi": {
-          "evidence": [
-            "remote:document-intelligence",
-            "remote:ci"
-          ]
+          "evidence": ["remote:document-intelligence", "remote:ci"]
         }
       },
       "remainingLimitation": "Optional provider quality remains environment-dependent; unavailable providers must remain explicitly unproven."
@@ -141,9 +99,7 @@
       "mandatory": true,
       "requirements": {
         "runtimeTest": {
-          "evidence": [
-            "test:profile-runtime"
-          ]
+          "evidence": ["test:profile-runtime"]
         },
         "negativeTest": {
           "evidence": [
@@ -158,9 +114,7 @@
           ]
         },
         "recoveryTest": {
-          "evidence": [
-            "recovery:profile-state"
-          ]
+          "evidence": ["recovery:profile-state"]
         },
         "securityTest": {
           "evidence": [
@@ -169,14 +123,10 @@
           ]
         },
         "operatorSurface": {
-          "evidence": [
-            "surface:profile-admin"
-          ]
+          "evidence": ["surface:profile-admin"]
         },
         "docs": {
-          "evidence": [
-            "doc:knowledge-profiles"
-          ]
+          "evidence": ["doc:knowledge-profiles"]
         },
         "benchmark": {
           "evidence": [],
@@ -184,10 +134,7 @@
           "rationale": "Profile governance is configuration correctness rather than a standalone performance benchmark."
         },
         "remoteCi": {
-          "evidence": [
-            "remote:ci",
-            "remote:resilience"
-          ]
+          "evidence": ["remote:ci", "remote:resilience"]
         }
       },
       "remainingLimitation": null
@@ -198,50 +145,31 @@
       "mandatory": true,
       "requirements": {
         "runtimeTest": {
-          "evidence": [
-            "test:workspace-runtime"
-          ]
+          "evidence": ["test:workspace-runtime"]
         },
         "negativeTest": {
-          "evidence": [
-            "failure:workspace-fencing"
-          ]
+          "evidence": ["failure:workspace-fencing"]
         },
         "integrationTest": {
-          "evidence": [
-            "integration:team-node"
-          ]
+          "evidence": ["integration:team-node"]
         },
         "recoveryTest": {
-          "evidence": [
-            "recovery:workspace-state"
-          ]
+          "evidence": ["recovery:workspace-state"]
         },
         "securityTest": {
-          "evidence": [
-            "security:cross-space-workspace"
-          ]
+          "evidence": ["security:cross-space-workspace"]
         },
         "operatorSurface": {
-          "evidence": [
-            "surface:workspace-home"
-          ]
+          "evidence": ["surface:workspace-home"]
         },
         "docs": {
-          "evidence": [
-            "doc:team-context"
-          ]
+          "evidence": ["doc:team-context"]
         },
         "benchmark": {
-          "evidence": [
-            "benchmark:concurrency"
-          ]
+          "evidence": ["benchmark:concurrency"]
         },
         "remoteCi": {
-          "evidence": [
-            "remote:team-node",
-            "remote:ci"
-          ]
+          "evidence": ["remote:team-node", "remote:ci"]
         }
       },
       "remainingLimitation": null
@@ -252,19 +180,13 @@
       "mandatory": true,
       "requirements": {
         "runtimeTest": {
-          "evidence": [
-            "test:authorization-runtime"
-          ]
+          "evidence": ["test:authorization-runtime"]
         },
         "negativeTest": {
-          "evidence": [
-            "failure:revoked-principal"
-          ]
+          "evidence": ["failure:revoked-principal"]
         },
         "integrationTest": {
-          "evidence": [
-            "integration:multi-space-security"
-          ]
+          "evidence": ["integration:multi-space-security"]
         },
         "recoveryTest": {
           "evidence": [],
@@ -278,27 +200,16 @@
           ]
         },
         "operatorSurface": {
-          "evidence": [
-            "surface:team-admin"
-          ]
+          "evidence": ["surface:team-admin"]
         },
         "docs": {
-          "evidence": [
-            "doc:enterprise-deployment",
-            "doc:team-context"
-          ]
+          "evidence": ["doc:enterprise-deployment", "doc:team-context"]
         },
         "benchmark": {
-          "evidence": [
-            "benchmark:semantic-isolation"
-          ]
+          "evidence": ["benchmark:semantic-isolation"]
         },
         "remoteCi": {
-          "evidence": [
-            "remote:semantic",
-            "remote:team-node",
-            "remote:ci"
-          ]
+          "evidence": ["remote:semantic", "remote:team-node", "remote:ci"]
         }
       },
       "remainingLimitation": null
@@ -309,52 +220,31 @@
       "mandatory": true,
       "requirements": {
         "runtimeTest": {
-          "evidence": [
-            "test:graph-runtime"
-          ]
+          "evidence": ["test:graph-runtime"]
         },
         "negativeTest": {
-          "evidence": [
-            "failure:graph-build-preserves-active"
-          ]
+          "evidence": ["failure:graph-build-preserves-active"]
         },
         "integrationTest": {
-          "evidence": [
-            "integration:federated-graph"
-          ]
+          "evidence": ["integration:federated-graph"]
         },
         "recoveryTest": {
-          "evidence": [
-            "recovery:graph-rebuild"
-          ]
+          "evidence": ["recovery:graph-rebuild"]
         },
         "securityTest": {
-          "evidence": [
-            "security:unauthorized-graph-hop"
-          ]
+          "evidence": ["security:unauthorized-graph-hop"]
         },
         "operatorSurface": {
-          "evidence": [
-            "surface:graph-explorer"
-          ]
+          "evidence": ["surface:graph-explorer"]
         },
         "docs": {
-          "evidence": [
-            "doc:graph-model"
-          ]
+          "evidence": ["doc:graph-model"]
         },
         "benchmark": {
-          "evidence": [
-            "benchmark:graph-quality",
-            "benchmark:enterprise-state"
-          ]
+          "evidence": ["benchmark:graph-quality", "benchmark:enterprise-state"]
         },
         "remoteCi": {
-          "evidence": [
-            "remote:ci",
-            "remote:scale",
-            "remote:resilience"
-          ]
+          "evidence": ["remote:ci", "remote:scale", "remote:resilience"]
         }
       },
       "remainingLimitation": null
@@ -365,52 +255,31 @@
       "mandatory": true,
       "requirements": {
         "runtimeTest": {
-          "evidence": [
-            "test:code-context-runtime"
-          ]
+          "evidence": ["test:code-context-runtime"]
         },
         "negativeTest": {
-          "evidence": [
-            "failure:code-provider-crash",
-            "failure:stale-code-sha"
-          ]
+          "evidence": ["failure:code-provider-crash", "failure:stale-code-sha"]
         },
         "integrationTest": {
-          "evidence": [
-            "integration:graphify-live"
-          ]
+          "evidence": ["integration:graphify-live"]
         },
         "recoveryTest": {
-          "evidence": [
-            "recovery:code-graph-rebuild"
-          ]
+          "evidence": ["recovery:code-graph-rebuild"]
         },
         "securityTest": {
-          "evidence": [
-            "security:code-scope"
-          ]
+          "evidence": ["security:code-scope"]
         },
         "operatorSurface": {
-          "evidence": [
-            "surface:code-context"
-          ]
+          "evidence": ["surface:code-context"]
         },
         "docs": {
-          "evidence": [
-            "doc:code-context"
-          ]
+          "evidence": ["doc:code-context"]
         },
         "benchmark": {
-          "evidence": [
-            "benchmark:code-quality",
-            "benchmark:enterprise-state"
-          ]
+          "evidence": ["benchmark:code-quality", "benchmark:enterprise-state"]
         },
         "remoteCi": {
-          "evidence": [
-            "remote:ci",
-            "remote:scale"
-          ]
+          "evidence": ["remote:ci", "remote:scale"]
         }
       },
       "remainingLimitation": null
@@ -421,9 +290,7 @@
       "mandatory": true,
       "requirements": {
         "runtimeTest": {
-          "evidence": [
-            "test:temporal-truth-runtime"
-          ]
+          "evidence": ["test:temporal-truth-runtime"]
         },
         "negativeTest": {
           "evidence": [
@@ -432,41 +299,25 @@
           ]
         },
         "integrationTest": {
-          "evidence": [
-            "integration:temporal-truth"
-          ]
+          "evidence": ["integration:temporal-truth"]
         },
         "recoveryTest": {
-          "evidence": [
-            "recovery:truth-state"
-          ]
+          "evidence": ["recovery:truth-state"]
         },
         "securityTest": {
-          "evidence": [
-            "security:truth-scope"
-          ]
+          "evidence": ["security:truth-scope"]
         },
         "operatorSurface": {
-          "evidence": [
-            "surface:temporal-context"
-          ]
+          "evidence": ["surface:temporal-context"]
         },
         "docs": {
-          "evidence": [
-            "doc:temporal-truth"
-          ]
+          "evidence": ["doc:temporal-truth"]
         },
         "benchmark": {
-          "evidence": [
-            "benchmark:temporal-truth"
-          ]
+          "evidence": ["benchmark:temporal-truth"]
         },
         "remoteCi": {
-          "evidence": [
-            "remote:ci",
-            "remote:semantic",
-            "remote:resilience"
-          ]
+          "evidence": ["remote:ci", "remote:semantic", "remote:resilience"]
         }
       },
       "remainingLimitation": null
@@ -477,53 +328,31 @@
       "mandatory": true,
       "requirements": {
         "runtimeTest": {
-          "evidence": [
-            "test:advanced-retrieval-runtime"
-          ]
+          "evidence": ["test:advanced-retrieval-runtime"]
         },
         "negativeTest": {
-          "evidence": [
-            "failure:community-build-rollback",
-            "failure:ppr-cancel"
-          ]
+          "evidence": ["failure:community-build-rollback", "failure:ppr-cancel"]
         },
         "integrationTest": {
-          "evidence": [
-            "integration:retrieval-context"
-          ]
+          "evidence": ["integration:retrieval-context"]
         },
         "recoveryTest": {
-          "evidence": [
-            "recovery:derived-index-rebuild"
-          ]
+          "evidence": ["recovery:derived-index-rebuild"]
         },
         "securityTest": {
-          "evidence": [
-            "security:ppr-no-leak"
-          ]
+          "evidence": ["security:ppr-no-leak"]
         },
         "operatorSurface": {
-          "evidence": [
-            "surface:retrieval-diagnostics"
-          ]
+          "evidence": ["surface:retrieval-diagnostics"]
         },
         "docs": {
-          "evidence": [
-            "doc:retrieval-context-engineering"
-          ]
+          "evidence": ["doc:retrieval-context-engineering"]
         },
         "benchmark": {
-          "evidence": [
-            "benchmark:retrieval-quality",
-            "benchmark:semantic"
-          ]
+          "evidence": ["benchmark:retrieval-quality", "benchmark:semantic"]
         },
         "remoteCi": {
-          "evidence": [
-            "remote:semantic",
-            "remote:scale",
-            "remote:ci"
-          ]
+          "evidence": ["remote:semantic", "remote:scale", "remote:ci"]
         }
       },
       "remainingLimitation": null
@@ -534,9 +363,7 @@
       "mandatory": true,
       "requirements": {
         "runtimeTest": {
-          "evidence": [
-            "test:reasoning-runtime"
-          ]
+          "evidence": ["test:reasoning-runtime"]
         },
         "negativeTest": {
           "evidence": [
@@ -545,9 +372,7 @@
           ]
         },
         "integrationTest": {
-          "evidence": [
-            "integration:reasoning-context"
-          ]
+          "evidence": ["integration:reasoning-context"]
         },
         "recoveryTest": {
           "evidence": [],
@@ -555,14 +380,10 @@
           "rationale": "Reasoning plans are bounded request execution and do not own canonical durable state."
         },
         "securityTest": {
-          "evidence": [
-            "security:no-arbitrary-sql-cypher"
-          ]
+          "evidence": ["security:no-arbitrary-sql-cypher"]
         },
         "operatorSurface": {
-          "evidence": [
-            "surface:agent-context"
-          ]
+          "evidence": ["surface:agent-context"]
         },
         "docs": {
           "evidence": [
@@ -571,14 +392,10 @@
           ]
         },
         "benchmark": {
-          "evidence": [
-            "benchmark:reasoning-adversarial"
-          ]
+          "evidence": ["benchmark:reasoning-adversarial"]
         },
         "remoteCi": {
-          "evidence": [
-            "remote:ci"
-          ]
+          "evidence": ["remote:ci"]
         }
       },
       "remainingLimitation": null
@@ -589,9 +406,7 @@
       "mandatory": true,
       "requirements": {
         "runtimeTest": {
-          "evidence": [
-            "test:assurance-connectors-runtime"
-          ]
+          "evidence": ["test:assurance-connectors-runtime"]
         },
         "negativeTest": {
           "evidence": [
@@ -600,41 +415,25 @@
           ]
         },
         "integrationTest": {
-          "evidence": [
-            "integration:assurance-connectors"
-          ]
+          "evidence": ["integration:assurance-connectors"]
         },
         "recoveryTest": {
-          "evidence": [
-            "recovery:connector-state"
-          ]
+          "evidence": ["recovery:connector-state"]
         },
         "securityTest": {
-          "evidence": [
-            "security:connector-auth-replay"
-          ]
+          "evidence": ["security:connector-auth-replay"]
         },
         "operatorSurface": {
-          "evidence": [
-            "surface:assurance-admin",
-            "surface:connector-admin"
-          ]
+          "evidence": ["surface:assurance-admin", "surface:connector-admin"]
         },
         "docs": {
-          "evidence": [
-            "doc:assurance-connectors"
-          ]
+          "evidence": ["doc:assurance-connectors"]
         },
         "benchmark": {
-          "evidence": [
-            "benchmark:concurrency"
-          ]
+          "evidence": ["benchmark:concurrency"]
         },
         "remoteCi": {
-          "evidence": [
-            "remote:ci",
-            "remote:resilience"
-          ]
+          "evidence": ["remote:ci", "remote:resilience"]
         }
       },
       "remainingLimitation": null
@@ -645,50 +444,31 @@
       "mandatory": true,
       "requirements": {
         "runtimeTest": {
-          "evidence": [
-            "test:agent-context-runtime"
-          ]
+          "evidence": ["test:agent-context-runtime"]
         },
         "negativeTest": {
-          "evidence": [
-            "failure:agent-revoked-mid-task"
-          ]
+          "evidence": ["failure:agent-revoked-mid-task"]
         },
         "integrationTest": {
-          "evidence": [
-            "integration:mcp-context-facade"
-          ]
+          "evidence": ["integration:mcp-context-facade"]
         },
         "recoveryTest": {
-          "evidence": [
-            "recovery:offline-agent-context"
-          ]
+          "evidence": ["recovery:offline-agent-context"]
         },
         "securityTest": {
-          "evidence": [
-            "security:agent-scope"
-          ]
+          "evidence": ["security:agent-scope"]
         },
         "operatorSurface": {
-          "evidence": [
-            "surface:mcp-akp-context"
-          ]
+          "evidence": ["surface:mcp-akp-context"]
         },
         "docs": {
-          "evidence": [
-            "doc:agent-integration"
-          ]
+          "evidence": ["doc:agent-integration"]
         },
         "benchmark": {
-          "evidence": [
-            "benchmark:agent-five-arm"
-          ]
+          "evidence": ["benchmark:agent-five-arm"]
         },
         "remoteCi": {
-          "evidence": [
-            "remote:agent",
-            "remote:ci"
-          ]
+          "evidence": ["remote:agent", "remote:ci"]
         }
       },
       "remainingLimitation": null
@@ -699,41 +479,25 @@
       "mandatory": true,
       "requirements": {
         "runtimeTest": {
-          "evidence": [
-            "test:browser-critical-flows"
-          ]
+          "evidence": ["test:browser-critical-flows"]
         },
         "negativeTest": {
-          "evidence": [
-            "failure:autosave-git-failure"
-          ]
+          "evidence": ["failure:autosave-git-failure"]
         },
         "integrationTest": {
-          "evidence": [
-            "integration:web-workspace"
-          ]
+          "evidence": ["integration:web-workspace"]
         },
         "recoveryTest": {
-          "evidence": [
-            "recovery:web-draft-state"
-          ]
+          "evidence": ["recovery:web-draft-state"]
         },
         "securityTest": {
-          "evidence": [
-            "security:web-space-boundaries"
-          ]
+          "evidence": ["security:web-space-boundaries"]
         },
         "operatorSurface": {
-          "evidence": [
-            "surface:web-workspace",
-            "surface:team-admin"
-          ]
+          "evidence": ["surface:web-workspace", "surface:team-admin"]
         },
         "docs": {
-          "evidence": [
-            "doc:team-context",
-            "doc:contributor-reviewer"
-          ]
+          "evidence": ["doc:team-context", "doc:contributor-reviewer"]
         },
         "benchmark": {
           "evidence": [],
@@ -741,10 +505,7 @@
           "rationale": "Human workflow acceptance is covered by critical browser flows rather than a synthetic performance ranking."
         },
         "remoteCi": {
-          "evidence": [
-            "remote:ci",
-            "remote:team-node"
-          ]
+          "evidence": ["remote:ci", "remote:team-node"]
         }
       },
       "remainingLimitation": null
@@ -755,9 +516,7 @@
       "mandatory": true,
       "requirements": {
         "runtimeTest": {
-          "evidence": [
-            "test:model-routing-runtime"
-          ]
+          "evidence": ["test:model-routing-runtime"]
         },
         "negativeTest": {
           "evidence": [
@@ -766,9 +525,7 @@
           ]
         },
         "integrationTest": {
-          "evidence": [
-            "integration:model-routing-compiler"
-          ]
+          "evidence": ["integration:model-routing-compiler"]
         },
         "recoveryTest": {
           "evidence": [],
@@ -776,19 +533,13 @@
           "rationale": "Model routing is deployment configuration and request execution; durable recovery is covered by source/profile state."
         },
         "securityTest": {
-          "evidence": [
-            "security:model-residency"
-          ]
+          "evidence": ["security:model-residency"]
         },
         "operatorSurface": {
-          "evidence": [
-            "surface:doctor-model-routing"
-          ]
+          "evidence": ["surface:doctor-model-routing"]
         },
         "docs": {
-          "evidence": [
-            "doc:enterprise-deployment"
-          ]
+          "evidence": ["doc:enterprise-deployment"]
         },
         "benchmark": {
           "evidence": [],
@@ -796,10 +547,7 @@
           "rationale": "Routing correctness is policy/failure behavior; provider quality is benchmarked by the consuming capabilities."
         },
         "remoteCi": {
-          "evidence": [
-            "remote:ci",
-            "remote:resilience"
-          ]
+          "evidence": ["remote:ci", "remote:resilience"]
         }
       },
       "remainingLimitation": null
@@ -810,9 +558,7 @@
       "mandatory": true,
       "requirements": {
         "runtimeTest": {
-          "evidence": [
-            "test:federation-runtime"
-          ]
+          "evidence": ["test:federation-runtime"]
         },
         "negativeTest": {
           "evidence": [
@@ -821,42 +567,25 @@
           ]
         },
         "integrationTest": {
-          "evidence": [
-            "integration:federation-two-node"
-          ]
+          "evidence": ["integration:federation-two-node"]
         },
         "recoveryTest": {
-          "evidence": [
-            "recovery:federation-peer-state"
-          ]
+          "evidence": ["recovery:federation-peer-state"]
         },
         "securityTest": {
-          "evidence": [
-            "security:federation-trust-scope"
-          ]
+          "evidence": ["security:federation-trust-scope"]
         },
         "operatorSurface": {
-          "evidence": [
-            "surface:federation-admin",
-            "surface:doctor-federation"
-          ]
+          "evidence": ["surface:federation-admin", "surface:doctor-federation"]
         },
         "docs": {
-          "evidence": [
-            "doc:federation"
-          ]
+          "evidence": ["doc:federation"]
         },
         "benchmark": {
-          "evidence": [
-            "benchmark:federation-partial-failure"
-          ]
+          "evidence": ["benchmark:federation-partial-failure"]
         },
         "remoteCi": {
-          "evidence": [
-            "remote:team-node",
-            "remote:resilience",
-            "remote:ci"
-          ]
+          "evidence": ["remote:team-node", "remote:resilience", "remote:ci"]
         }
       },
       "remainingLimitation": null
@@ -867,40 +596,25 @@
       "mandatory": true,
       "requirements": {
         "runtimeTest": {
-          "evidence": [
-            "test:doctor-runtime"
-          ]
+          "evidence": ["test:doctor-runtime"]
         },
         "negativeTest": {
-          "evidence": [
-            "failure:otel-unavailable"
-          ]
+          "evidence": ["failure:otel-unavailable"]
         },
         "integrationTest": {
-          "evidence": [
-            "integration:operations-runtime"
-          ]
+          "evidence": ["integration:operations-runtime"]
         },
         "recoveryTest": {
-          "evidence": [
-            "recovery:backup-restore-rebuild"
-          ]
+          "evidence": ["recovery:backup-restore-rebuild"]
         },
         "securityTest": {
-          "evidence": [
-            "security:secret-scan"
-          ]
+          "evidence": ["security:secret-scan"]
         },
         "operatorSurface": {
-          "evidence": [
-            "surface:cli-doctor"
-          ]
+          "evidence": ["surface:cli-doctor"]
         },
         "docs": {
-          "evidence": [
-            "doc:operations-recovery",
-            "doc:enterprise-deployment"
-          ]
+          "evidence": ["doc:operations-recovery", "doc:enterprise-deployment"]
         },
         "benchmark": {
           "evidence": [
