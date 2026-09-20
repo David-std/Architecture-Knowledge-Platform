@@ -19,7 +19,7 @@ import {
   type ModelResidency as ModelResidencyValue,
   type TrustTier,
 } from "@akp/contracts";
-import { withSpan } from "@akp/observability";
+import { OpenTelemetryBridge, withSpan } from "@akp/observability";
 import { resolveAuthorizedVaultScope, type Postgres } from "@akp/postgres";
 import { renderDocumentArtifactDraft } from "./document-artifact.js";
 import { assertEvidenceFragmentIntegrity } from "./evidence-fragment.js";
@@ -27,6 +27,8 @@ import {
   executePreparedGroundedKnowledgeCompilation,
   prepareGroundedKnowledgeCompilation,
 } from "./knowledge-compilation.js";
+
+const modelRouteTelemetry = new OpenTelemetryBridge();
 
 interface EvidenceRow {
   id: string;
@@ -435,6 +437,17 @@ export async function buildCompilationStage(
     structuredOutputRequired: boundary.structuredOutputRequired,
   });
   const routeMetadata = modelRouteMetadata(boundary, decision);
+  modelRouteTelemetry.counter("model_route_decisions_total", 1, {
+    role: "KNOWLEDGE_COMPILE",
+    residency: boundary.effectiveResidency,
+    outcome: decision.selected ? "selected" : "no_candidate",
+  });
+  for (const rejection of decision.rejected) {
+    modelRouteTelemetry.counter("model_route_rejections_total", 1, {
+      role: "KNOWLEDGE_COMPILE",
+      reason: rejection.reason,
+    });
+  }
   const pathPrefix = await loadRetrievalPathPrefix(db, input);
   if (!decision.selected) {
     return withSpan(
@@ -512,6 +525,11 @@ export async function buildCompilationStage(
         candidate: candidate.descriptor,
         outcome: "SUCCEEDED",
       });
+      modelRouteTelemetry.counter("model_provider_attempts_total", 1, {
+        role: "KNOWLEDGE_COMPILE",
+        outcome: "success",
+        degraded: String(index > 0),
+      });
       break;
     } catch (error) {
       const errorCode = knowledgeCompilerProviderFailureCode(error);
@@ -519,6 +537,11 @@ export async function buildCompilationStage(
         candidate: candidate.descriptor,
         outcome: "FAILED",
         ...(errorCode ? { errorCode } : {}),
+      });
+      modelRouteTelemetry.counter("model_provider_attempts_total", 1, {
+        role: "KNOWLEDGE_COMPILE",
+        outcome: "failure",
+        degraded: String(index > 0),
       });
       lastProviderError = error;
       const hasCompatibleFallback = index + 1 < decision.eligible.length;
@@ -529,6 +552,10 @@ export async function buildCompilationStage(
       ) {
         throw error;
       }
+      modelRouteTelemetry.counter("model_failovers_total", 1, {
+        role: "KNOWLEDGE_COMPILE",
+        residency: boundary.effectiveResidency,
+      });
     }
   }
   if (!compiled) {

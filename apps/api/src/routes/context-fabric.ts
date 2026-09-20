@@ -44,6 +44,7 @@ import {
   type Postgres,
   type WorkspaceSessionAccess,
 } from "@akp/postgres";
+import { OpenTelemetryBridge, withSpan } from "@akp/observability";
 import {
   actorOf,
   audit,
@@ -63,6 +64,24 @@ const DISCOVERY_MODES = new Set([
   "MIRROR_BUNDLE",
 ]);
 const PEER_TRUST_STATES = new Set(["DISCOVERED", "APPROVED", "DISABLED"]);
+const federationTelemetry = new OpenTelemetryBridge();
+
+type FederationTelemetryDirection = "inbound" | "outbound" | "fanout";
+type FederationTelemetryOutcome = "success" | "partial" | "failure";
+
+function recordFederationQuery(
+  direction: FederationTelemetryDirection,
+  outcome: FederationTelemetryOutcome,
+  startedAt: number,
+): void {
+  const attributes = { direction, outcome };
+  federationTelemetry.counter("federation_queries_total", 1, attributes);
+  federationTelemetry.histogram(
+    "federation_query_duration_ms",
+    Math.max(0, Date.now() - startedAt),
+    attributes,
+  );
+}
 
 function normalizeFederationEndpoint(value: unknown): string | null {
   if (typeof value !== "string") return null;
@@ -854,10 +873,18 @@ export function registerContextFabricRoutes(
       }
 
       const startedAt = Date.now();
-      const search = await app.inject({
-        method: "POST",
-        url: "/v1/search",
-        headers: {
+      const search = await withSpan(
+        "federation.query",
+        {
+          "akp.federation.direction": "inbound",
+          "akp.federation.schema_version": 1,
+          "akp.federation.vault_count": parsed.data.scope.vaultIds.length,
+        },
+        () =>
+          app.inject({
+            method: "POST",
+            url: "/v1/search",
+            headers: {
           ...(request.headers.authorization
             ? { authorization: request.headers.authorization }
             : {}),
@@ -866,15 +893,17 @@ export function registerContextFabricRoutes(
             ? { "x-csrf-token": String(request.headers["x-csrf-token"]) }
             : {}),
         },
-        payload: {
-          ...parsed.data.request,
-          spaceId: parsed.data.scope.spaceId,
-          vaultIds: parsed.data.scope.vaultIds,
-          federated: false,
-          limit: parsed.data.budget.maxResults,
-        },
-      });
+            payload: {
+              ...parsed.data.request,
+              spaceId: parsed.data.scope.spaceId,
+              vaultIds: parsed.data.scope.vaultIds,
+              federated: false,
+              limit: parsed.data.budget.maxResults,
+            },
+          }),
+      );
       if (search.statusCode !== 200) {
+        recordFederationQuery("inbound", "failure", startedAt);
         const body = search.json() as { code?: unknown };
         return reply.code(search.statusCode).send({
           code:
@@ -898,6 +927,7 @@ export function registerContextFabricRoutes(
         effectiveSpaceId !== parsed.data.scope.spaceId ||
         !sameStringSet(effectiveVaultIds, parsed.data.scope.vaultIds)
       ) {
+        recordFederationQuery("inbound", "failure", startedAt);
         return reply
           .code(403)
           .send({ code: "FEDERATION_SCOPE_NEGOTIATION_FAILED" });
@@ -921,6 +951,7 @@ export function registerContextFabricRoutes(
             byVault.get(preference.vaultId) !== preference.corpusRevision,
         );
         if (mismatch) {
+          recordFederationQuery("inbound", "failure", startedAt);
           return reply
             .code(409)
             .send({ code: "FEDERATION_REVISION_UNAVAILABLE" });
@@ -984,10 +1015,16 @@ export function registerContextFabricRoutes(
         parsed.data.budget.maxResponseBytes,
       );
       if (!bounded) {
+        recordFederationQuery("inbound", "failure", startedAt);
         return reply
           .code(422)
           .send({ code: "FEDERATION_RESPONSE_BUDGET_TOO_SMALL" });
       }
+      recordFederationQuery(
+        "inbound",
+        bounded.partial ? "partial" : "success",
+        startedAt,
+      );
       await audit(
         db,
         request,
@@ -1085,6 +1122,7 @@ export function registerContextFabricRoutes(
         budget: parsed.data.budget,
         revisionPreferences: parsed.data.revisionPreferences,
       });
+      const startedAt = Date.now();
       const controller = new AbortController();
       const timeout = setTimeout(
         () => controller.abort(),
@@ -1092,20 +1130,27 @@ export function registerContextFabricRoutes(
       );
       let remoteResponse: Response;
       try {
-        remoteResponse = await fetch(
-          `${endpoint}/v1/context-fabric/federation/query`,
+        remoteResponse = await withSpan(
+          "federation.query",
           {
-            method: "POST",
-            headers: {
-              authorization: `Bearer ${token}`,
-              "content-type": "application/json",
-            },
-            body: JSON.stringify(remoteRequest),
-            signal: controller.signal,
+            "akp.federation.direction": "outbound",
+            "akp.federation.schema_version": 1,
+            "akp.federation.vault_count": remoteRequest.scope.vaultIds.length,
           },
+          () =>
+            fetch(`${endpoint}/v1/context-fabric/federation/query`, {
+              method: "POST",
+              headers: {
+                authorization: `Bearer ${token}`,
+                "content-type": "application/json",
+              },
+              body: JSON.stringify(remoteRequest),
+              signal: controller.signal,
+            }),
         );
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") {
+          recordFederationQuery("outbound", "failure", startedAt);
           await markContextFabricPeerQueryFailure(
             db,
             peer.id,
@@ -1113,6 +1158,7 @@ export function registerContextFabricRoutes(
           );
           return reply.code(504).send({ code: "FEDERATION_PEER_TIMEOUT" });
         }
+        recordFederationQuery("outbound", "failure", startedAt);
         await markContextFabricPeerQueryFailure(
           db,
           peer.id,
@@ -1124,6 +1170,7 @@ export function registerContextFabricRoutes(
       }
 
       if (!remoteResponse.ok) {
+        recordFederationQuery("outbound", "failure", startedAt);
         await remoteResponse.body?.cancel().catch(() => undefined);
         await markContextFabricPeerQueryFailure(
           db,
@@ -1142,6 +1189,7 @@ export function registerContextFabricRoutes(
           remoteRequest.budget.maxResponseBytes,
         );
       } catch (error) {
+        recordFederationQuery("outbound", "failure", startedAt);
         const code =
           error instanceof Error &&
           /^FEDERATION_RESPONSE_[A-Z_]+$/.test(error.message)
@@ -1156,6 +1204,7 @@ export function registerContextFabricRoutes(
       }
       const remoteSchemaVersion = federationSchemaVersion(remoteBody);
       if (remoteSchemaVersion !== null && remoteSchemaVersion !== 1) {
+        recordFederationQuery("outbound", "failure", startedAt);
         await markContextFabricPeerQueryFailure(
           db,
           peer.id,
@@ -1168,6 +1217,7 @@ export function registerContextFabricRoutes(
       }
       const parsedRemote = FederationRemoteQueryResponse.safeParse(remoteBody);
       if (!parsedRemote.success) {
+        recordFederationQuery("outbound", "failure", startedAt);
         await markContextFabricPeerQueryFailure(
           db,
           peer.id,
@@ -1186,6 +1236,7 @@ export function registerContextFabricRoutes(
           remoteRequest.scope.vaultIds,
         )
       ) {
+        recordFederationQuery("outbound", "failure", startedAt);
         await markContextFabricPeerQueryFailure(
           db,
           peer.id,
@@ -1214,6 +1265,11 @@ export function registerContextFabricRoutes(
           ],
         });
       }
+      recordFederationQuery(
+        "outbound",
+        result.partial ? "partial" : "success",
+        startedAt,
+      );
       await audit(
         db,
         request,
@@ -1240,6 +1296,7 @@ export function registerContextFabricRoutes(
     "/v1/context-fabric/federation/fanout",
     { preHandler: requirePermission("knowledge:read") },
     async (request, reply) => {
+      const startedAt = Date.now();
       const parsed = FederationFanoutRequest.safeParse(request.body);
       if (!parsed.success) {
         return reply.code(400).send({
@@ -1263,6 +1320,7 @@ export function registerContextFabricRoutes(
         payload: { ...parsed.data.local, federated: false },
       });
       if (local.statusCode !== 200) {
+        recordFederationQuery("fanout", "failure", startedAt);
         const body = local.json() as { code?: unknown };
         return reply.code(local.statusCode).send({
           code:
@@ -1320,6 +1378,7 @@ export function registerContextFabricRoutes(
         attempt.ok ? [] : [{ peerId: attempt.peerId, code: attempt.code }],
       );
       if (parsed.data.requireAllPeers && failures.length) {
+        recordFederationQuery("fanout", "failure", startedAt);
         return reply.code(502).send({
           code: "FEDERATION_REQUIRED_PEER_FAILED",
           failures,
@@ -1347,6 +1406,11 @@ export function registerContextFabricRoutes(
           remotes.some((remote) => remote.response.partial),
         warnings,
       });
+      recordFederationQuery(
+        "fanout",
+        result.partial ? "partial" : "success",
+        startedAt,
+      );
       await audit(
         db,
         request,
