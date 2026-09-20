@@ -52,8 +52,8 @@ function artifact() {
 
 function compilerCandidate(
   configured: ConfiguredKnowledgeCompiler,
-  residency: "LOCAL_ONLY" | "ORG_APPROVED" | "EXTERNAL_ALLOWED" =
-    "EXTERNAL_ALLOWED",
+  residency:
+    "LOCAL_ONLY" | "ORG_APPROVED" | "EXTERNAL_ALLOWED" = "EXTERNAL_ALLOWED",
 ): KnowledgeCompilerRouteCandidate {
   return {
     policy: ModelRolePolicy.parse({

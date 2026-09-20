@@ -198,8 +198,7 @@ async function loadCompilerRoutingBoundary(
   const profileConstraint = profile.profile.modelRoleConstraints.find(
     (constraint) => constraint.role === "KNOWLEDGE_COMPILE",
   );
-  const profileResidency =
-    profileConstraint?.residency ?? "EXTERNAL_ALLOWED";
+  const profileResidency = profileConstraint?.residency ?? "EXTERNAL_ALLOWED";
 
   return {
     spaceResidency,
@@ -228,9 +227,7 @@ function modelRouteMetadata(
       profile: boundary.profileResidency,
     },
     structuredOutputRequired: boundary.structuredOutputRequired,
-    ...(decision.selected
-      ? { selected: decision.selected.descriptor }
-      : {}),
+    ...(decision.selected ? { selected: decision.selected.descriptor } : {}),
     rejected: decision.rejected,
   };
 }

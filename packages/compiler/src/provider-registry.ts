@@ -48,8 +48,7 @@ export interface KnowledgeCompilerRouteCandidate {
 }
 
 export type KnowledgeCompilerRouteRejectionReason =
-  | "RESIDENCY_INCOMPATIBLE"
-  | "STRUCTURED_OUTPUT_UNAVAILABLE";
+  "RESIDENCY_INCOMPATIBLE" | "STRUCTURED_OUTPUT_UNAVAILABLE";
 
 export interface KnowledgeCompilerRouteDecision {
   selected: KnowledgeCompilerRouteCandidate | null;
@@ -206,7 +205,9 @@ function validateOpenAICompatiblePolicy(policy: ModelRolePolicyValue): void {
 function resolvePolicyOrder(
   policies: ModelRolePolicyValue[],
 ): ModelRolePolicyValue[] {
-  const roots = policies.filter((policy) => policy.role === "KNOWLEDGE_COMPILE");
+  const roots = policies.filter(
+    (policy) => policy.role === "KNOWLEDGE_COMPILE",
+  );
   if (roots.length === 0) return [];
   if (roots.length > 1) {
     throw new KnowledgeCompilerUnavailableError(
@@ -245,9 +246,9 @@ function endpointBindings(
 ): Record<string, EndpointBinding> {
   const raw = env.AKP_MODEL_ENDPOINTS_JSON?.trim();
   if (!raw) return {};
-  const parsed = z.record(z.string().min(1), EndpointBinding).safeParse(
-    parseJson(raw, "AKP_MODEL_ENDPOINTS_JSON"),
-  );
+  const parsed = z
+    .record(z.string().min(1), EndpointBinding)
+    .safeParse(parseJson(raw, "AKP_MODEL_ENDPOINTS_JSON"));
   if (!parsed.success) {
     throw new KnowledgeCompilerUnavailableError(
       "AKP_MODEL_ENDPOINTS_JSON does not match the endpoint registry schema",
@@ -263,7 +264,9 @@ function candidateFromPolicy(
   env: KnowledgeCompilerEnvironment,
 ): KnowledgeCompilerRouteCandidate {
   validateOpenAICompatiblePolicy(policy);
-  if (!isModelResidencyCompatible(policy.dataResidency, endpoint.dataResidency)) {
+  if (
+    !isModelResidencyCompatible(policy.dataResidency, endpoint.dataResidency)
+  ) {
     throw new KnowledgeCompilerUnavailableError(
       `Endpoint ${endpointRef} residency ${endpoint.dataResidency} violates model-role policy ${policy.dataResidency}`,
     );
@@ -385,10 +388,7 @@ function legacyCandidate(
     maxRetries,
     concurrency,
     structuredOutputRequired: true,
-    dataResidency: legacyEndpointResidency(
-      baseUrl,
-      env.AKP_LLM_DATA_RESIDENCY,
-    ),
+    dataResidency: legacyEndpointResidency(baseUrl, env.AKP_LLM_DATA_RESIDENCY),
     degradationSafe: false,
   });
   const descriptor: KnowledgeCompilerDescriptor = {
@@ -401,9 +401,7 @@ function legacyCandidate(
     configurationHash: configurationHash(policy, endpointRef, {
       baseUrl,
       dataResidency: policy.dataResidency,
-      ...(env.AKP_LLM_API_KEY?.trim()
-        ? { apiKeyEnv: "AKP_LLM_API_KEY" }
-        : {}),
+      ...(env.AKP_LLM_API_KEY?.trim() ? { apiKeyEnv: "AKP_LLM_API_KEY" } : {}),
     }),
   };
   validateOpenAICompatiblePolicy(policy);
