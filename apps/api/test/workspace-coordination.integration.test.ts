@@ -687,7 +687,10 @@ describe("workspace coordination integration", () => {
     const importedHandoff = await app.inject({
       method: "POST",
       url: `/v1/sessions/${receiverSessionId}/handoffs/${inboxHandoff!.handoffEventId}/import`,
-      headers: receiverAgentHeaders,
+      headers: {
+        ...receiverAgentHeaders,
+        "idempotency-key": `handoff-import-${randomUUID()}`,
+      },
     });
     expect(importedHandoff.statusCode).toBe(201);
     expect(importedHandoff.json()).toMatchObject({
