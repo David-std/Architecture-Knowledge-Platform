@@ -645,7 +645,6 @@ describe("work and activity graph", () => {
     );
   });
 
-
   it("accepts the six canonical P2 activity derivation classes without conflating them", async () => {
     const object = await projectObject(
       sessionId,
