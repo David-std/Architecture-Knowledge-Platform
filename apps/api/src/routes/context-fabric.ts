@@ -1,5 +1,12 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import {
+  FederationPeerQueryRequest,
+  FederationRemoteQueryRequest,
+  FederationRemoteQueryResponse,
+  SearchHit,
+  type FederationRemoteQueryResponse as FederationRemoteQueryResponseType,
+} from "@akp/contracts";
 import {
   ConnectorCapabilities,
   connectorReadPlan,
@@ -13,6 +20,7 @@ import {
   applyWorkspaceOfflineDraft,
   getWorkspaceSessionForParticipant,
   getActiveKnowledgeProfileRevision,
+  getContextFabricPeerRuntime,
   listContextFabricPeers,
   listExternalObjectRefsForSession,
   isWorkActivityAction,
@@ -50,6 +58,93 @@ const DISCOVERY_MODES = new Set([
   "MIRROR_BUNDLE",
 ]);
 const PEER_TRUST_STATES = new Set(["DISCOVERED", "APPROVED", "DISABLED"]);
+
+function normalizeFederationEndpoint(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > 2048) return null;
+  try {
+    const url = new URL(trimmed);
+    const hostname = url.hostname.toLowerCase();
+    const loopback = ["localhost", "127.0.0.1", "::1", "[::1]"].includes(
+      hostname,
+    );
+    if (
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      (url.protocol !== "https:" && !(url.protocol === "http:" && loopback))
+    ) {
+      return null;
+    }
+    return url.toString().replace(/\/+$/u, "");
+  } catch {
+    return null;
+  }
+}
+
+function sameStringSet(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) return false;
+  const expected = new Set(left);
+  return right.every((value) => expected.has(value));
+}
+
+async function readBoundedFederationJson(
+  response: Response,
+  maxBytes: number,
+): Promise<unknown> {
+  if (!response.body) throw new Error("FEDERATION_RESPONSE_EMPTY");
+  const reader = response.body.getReader();
+  const chunks: Buffer[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        throw new Error("FEDERATION_RESPONSE_TOO_LARGE");
+      }
+      chunks.push(Buffer.from(value));
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
+    throw new Error("FEDERATION_RESPONSE_INVALID_JSON");
+  }
+}
+
+function boundedFederationResponse(
+  value: FederationRemoteQueryResponseType,
+  maxBytes: number,
+): FederationRemoteQueryResponseType | null {
+  let bounded = FederationRemoteQueryResponse.parse(value);
+  if (Buffer.byteLength(JSON.stringify(bounded), "utf8") <= maxBytes) {
+    return bounded;
+  }
+  const hits = [...bounded.hits];
+  const warnings = new Set(bounded.warnings);
+  warnings.add("FEDERATION_RESPONSE_TRUNCATED");
+  while (hits.length) {
+    hits.pop();
+    bounded = FederationRemoteQueryResponse.parse({
+      ...bounded,
+      partial: true,
+      warnings: [...warnings],
+      hits,
+    });
+    if (Buffer.byteLength(JSON.stringify(bounded), "utf8") <= maxBytes) {
+      return bounded;
+    }
+  }
+  return null;
+}
 
 function boundedObject(
   value: unknown,
@@ -172,6 +267,7 @@ export function registerContextFabricRoutes(
         claim?.nodeId ??
         (process.env.AKP_CONTEXT_FABRIC_NODE_ID?.trim() ||
           "local-context-node");
+      const remoteQueryEnabled = deploymentMode === "FEDERATED_ORG";
       return {
         schemaVersion: 1,
         deploymentMode,
@@ -198,10 +294,9 @@ export function registerContextFabricRoutes(
             domains: ["EPISTEMIC", "WORK"],
             authorizationBeforeTraversal: true,
           },
-          // P2 supports safe peer discovery only. Advertising REMOTE_QUERY or
-          // MIRROR_BUNDLE here would claim network behavior that belongs to
-          // later federation work.
-          federationModes: ["CATALOG_ONLY"],
+          federationModes: remoteQueryEnabled
+            ? ["CATALOG_ONLY", "REMOTE_QUERY"]
+            : ["CATALOG_ONLY"],
         },
         capabilities: {
           workspaceCoordination: true,
@@ -212,7 +307,7 @@ export function registerContextFabricRoutes(
           staleReconnectDisclosure: true,
           lastWriteWinsApprovedKnowledge: false,
           federationDiscovery: true,
-          federationRemoteQuery: false,
+          federationRemoteQuery: remoteQueryEnabled,
           writableDatabaseFileSync: false,
         },
         authorizedSpaces: actor?.spaceIds ?? [],
@@ -715,6 +810,355 @@ export function registerContextFabricRoutes(
     },
   );
 
+  app.post(
+    "/v1/context-fabric/federation/query",
+    { preHandler: requirePermission("knowledge:read") },
+    async (request, reply) => {
+      const parsed = FederationRemoteQueryRequest.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          code: "INVALID_FEDERATION_QUERY",
+          issues: parsed.error.issues,
+        });
+      }
+      const claim = await readContextFabricNodeClaim(db);
+      if (!claim || claim.deploymentMode !== "FEDERATED_ORG") {
+        return reply
+          .code(409)
+          .send({ code: "FEDERATION_REMOTE_QUERY_DISABLED" });
+      }
+      if (parsed.data.caller.nodeId === claim.nodeId) {
+        return reply.code(409).send({ code: "FEDERATION_SELF_QUERY_DENIED" });
+      }
+
+      const startedAt = Date.now();
+      const search = await app.inject({
+        method: "POST",
+        url: "/v1/search",
+        headers: {
+          ...(request.headers.authorization
+            ? { authorization: request.headers.authorization }
+            : {}),
+          ...(request.headers.cookie ? { cookie: request.headers.cookie } : {}),
+          ...(request.headers["x-csrf-token"]
+            ? { "x-csrf-token": String(request.headers["x-csrf-token"]) }
+            : {}),
+        },
+        payload: {
+          ...parsed.data.request,
+          spaceId: parsed.data.scope.spaceId,
+          vaultIds: parsed.data.scope.vaultIds,
+          federated: false,
+          limit: parsed.data.budget.maxResults,
+        },
+      });
+      if (search.statusCode !== 200) {
+        const body = search.json() as { code?: unknown };
+        return reply.code(search.statusCode).send({
+          code:
+            typeof body.code === "string"
+              ? body.code
+              : "FEDERATION_REMOTE_SEARCH_FAILED",
+        });
+      }
+      const searchBody = search.json() as Record<string, unknown>;
+      const effectiveScope =
+        searchBody.scope &&
+        typeof searchBody.scope === "object" &&
+        !Array.isArray(searchBody.scope)
+          ? (searchBody.scope as Record<string, unknown>)
+          : {};
+      const effectiveSpaceId = String(effectiveScope.spaceId ?? "");
+      const effectiveVaultIds = Array.isArray(effectiveScope.vaultIds)
+        ? effectiveScope.vaultIds.map(String)
+        : [];
+      if (
+        effectiveSpaceId !== parsed.data.scope.spaceId ||
+        !sameStringSet(effectiveVaultIds, parsed.data.scope.vaultIds)
+      ) {
+        return reply
+          .code(403)
+          .send({ code: "FEDERATION_SCOPE_NEGOTIATION_FAILED" });
+      }
+
+      if (parsed.data.revisionPreferences.length) {
+        const revisions = await db.pool.query<{
+          vault_id: string;
+          corpus_revision: string;
+        }>(
+          `select vault_id,corpus_revision
+             from vault_index_revisions
+            where space_id=$1 and vault_id=any($2::uuid[])`,
+          [parsed.data.scope.spaceId, parsed.data.scope.vaultIds],
+        );
+        const byVault = new Map(
+          revisions.rows.map((row) => [row.vault_id, row.corpus_revision]),
+        );
+        const mismatch = parsed.data.revisionPreferences.some(
+          (preference) =>
+            byVault.get(preference.vaultId) !== preference.corpusRevision,
+        );
+        if (mismatch) {
+          return reply
+            .code(409)
+            .send({ code: "FEDERATION_REVISION_UNAVAILABLE" });
+        }
+      }
+
+      const localHits = Array.isArray(searchBody.hits)
+        ? searchBody.hits.map((hit) => SearchHit.parse(hit))
+        : [];
+      const nodeRevision = process.env.AKP_BUILD_REVISION?.trim() || null;
+      const remoteHits = localHits.map((hit) => ({
+        ...hit,
+        remoteProvenance: {
+          nodeId: claim.nodeId,
+          nodeRevision,
+          documentRevision: hit.revision,
+          trust: hit.trust,
+          lifecycle: hit.lifecycle,
+        },
+      }));
+      const searchWarnings = Array.isArray(searchBody.warnings)
+        ? searchBody.warnings.filter(
+            (warning): warning is string => typeof warning === "string",
+          )
+        : [];
+      const elapsedMs = Date.now() - startedAt;
+      const warnings = new Set(searchWarnings);
+      const wallBudgetExceeded = elapsedMs > parsed.data.budget.maxWallMs;
+      if (wallBudgetExceeded) {
+        warnings.add("FEDERATION_WALL_BUDGET_EXCEEDED");
+      }
+      const stale =
+        remoteHits.some((hit) => hit.refreshStatus !== "CURRENT") ||
+        [...warnings].some((warning) => warning.includes("STALE"));
+      const responseValue = FederationRemoteQueryResponse.parse({
+        schemaVersion: 1,
+        requestId: parsed.data.caller.requestId,
+        remote: {
+          nodeId: claim.nodeId,
+          deploymentMode: claim.deploymentMode,
+          revision: nodeRevision,
+        },
+        scope: {
+          spaceId: effectiveSpaceId,
+          vaultIds: effectiveVaultIds,
+        },
+        partial: Boolean(searchBody.degraded) || wallBudgetExceeded,
+        stale,
+        warnings: [...warnings].slice(0, 100),
+        indexRevisions:
+          searchBody.indexRevisions &&
+          typeof searchBody.indexRevisions === "object" &&
+          !Array.isArray(searchBody.indexRevisions)
+            ? searchBody.indexRevisions
+            : {},
+        hits: remoteHits,
+        noAnswer: searchBody.noAnswer ?? null,
+      });
+      const bounded = boundedFederationResponse(
+        responseValue,
+        parsed.data.budget.maxResponseBytes,
+      );
+      if (!bounded) {
+        return reply
+          .code(422)
+          .send({ code: "FEDERATION_RESPONSE_BUDGET_TOO_SMALL" });
+      }
+      await audit(
+        db,
+        request,
+        "context_fabric.remote_query.serve",
+        "context_fabric_node",
+        claim.nodeId,
+        {
+          callerNodeId: parsed.data.caller.nodeId,
+          requestId: parsed.data.caller.requestId,
+          spaceId: parsed.data.scope.spaceId,
+          vaultCount: parsed.data.scope.vaultIds.length,
+          resultCount: bounded.hits.length,
+          partial: bounded.partial,
+          stale: bounded.stale,
+        },
+        parsed.data.scope.spaceId,
+      );
+      return bounded;
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    "/v1/context-fabric/peers/:id/query",
+    { preHandler: requirePermission("knowledge:read") },
+    async (request, reply) => {
+      if (!UUID_PATTERN.test(request.params.id)) {
+        return reply.code(404).send({ code: "FEDERATION_PEER_NOT_FOUND" });
+      }
+      const parsed = FederationPeerQueryRequest.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          code: "INVALID_FEDERATION_PEER_QUERY",
+          issues: parsed.error.issues,
+        });
+      }
+      const actor = actorOf(request);
+      if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
+      const claim = await readContextFabricNodeClaim(db);
+      if (!claim || claim.deploymentMode !== "FEDERATED_ORG") {
+        return reply
+          .code(409)
+          .send({ code: "FEDERATION_REMOTE_QUERY_DISABLED" });
+      }
+      const allowedSpaces = unrestrictedSpaceIdsForPermission(
+        actor,
+        "knowledge:read",
+      );
+      const peer = await getContextFabricPeerRuntime(
+        db,
+        request.params.id,
+        allowedSpaces,
+      );
+      if (!peer) {
+        return reply.code(404).send({ code: "FEDERATION_PEER_NOT_FOUND" });
+      }
+      if (
+        peer.trustState !== "APPROVED" ||
+        peer.discoveryMode !== "REMOTE_QUERY"
+      ) {
+        return reply
+          .code(409)
+          .send({ code: "FEDERATION_PEER_NOT_QUERYABLE" });
+      }
+      if (!peer.endpoint || !peer.credentialRef) {
+        return reply
+          .code(503)
+          .send({ code: "FEDERATION_PEER_CONFIGURATION_INCOMPLETE" });
+      }
+      const endpoint = normalizeFederationEndpoint(peer.endpoint);
+      const token = process.env[peer.credentialRef]?.trim();
+      if (!endpoint || !token) {
+        return reply
+          .code(503)
+          .send({ code: "FEDERATION_PEER_CREDENTIAL_UNAVAILABLE" });
+      }
+
+      const requestId = parsed.data.requestId ?? randomUUID();
+      const remoteRequest = FederationRemoteQueryRequest.parse({
+        schemaVersion: 1,
+        caller: { nodeId: claim.nodeId, requestId },
+        scope: parsed.data.scope,
+        request: parsed.data.request,
+        budget: parsed.data.budget,
+        revisionPreferences: parsed.data.revisionPreferences,
+      });
+      const controller = new AbortController();
+      const timeout = setTimeout(
+        () => controller.abort(),
+        remoteRequest.budget.maxWallMs,
+      );
+      let remoteResponse: Response;
+      try {
+        remoteResponse = await fetch(
+          `${endpoint}/v1/context-fabric/federation/query`,
+          {
+            method: "POST",
+            headers: {
+              authorization: `Bearer ${token}`,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify(remoteRequest),
+            signal: controller.signal,
+          },
+        );
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") {
+          return reply.code(504).send({ code: "FEDERATION_PEER_TIMEOUT" });
+        }
+        return reply.code(502).send({ code: "FEDERATION_PEER_UNAVAILABLE" });
+      } finally {
+        clearTimeout(timeout);
+      }
+
+      if (!remoteResponse.ok) {
+        await remoteResponse.body?.cancel().catch(() => undefined);
+        return reply.code(502).send({
+          code: `FEDERATION_PEER_HTTP_${remoteResponse.status}`,
+        });
+      }
+
+      let remoteBody: unknown;
+      try {
+        remoteBody = await readBoundedFederationJson(
+          remoteResponse,
+          remoteRequest.budget.maxResponseBytes,
+        );
+      } catch (error) {
+        const code =
+          error instanceof Error &&
+          /^FEDERATION_RESPONSE_[A-Z_]+$/.test(error.message)
+            ? error.message
+            : "FEDERATION_RESPONSE_INVALID";
+        return reply.code(502).send({ code });
+      }
+      const parsedRemote = FederationRemoteQueryResponse.safeParse(remoteBody);
+      if (!parsedRemote.success) {
+        return reply
+          .code(502)
+          .send({ code: "FEDERATION_RESPONSE_SCHEMA_INVALID" });
+      }
+      if (
+        parsedRemote.data.requestId !== requestId ||
+        parsedRemote.data.remote.nodeId !== peer.peerKey ||
+        parsedRemote.data.scope.spaceId !== remoteRequest.scope.spaceId ||
+        !sameStringSet(
+          parsedRemote.data.scope.vaultIds,
+          remoteRequest.scope.vaultIds,
+        )
+      ) {
+        return reply
+          .code(502)
+          .send({ code: "FEDERATION_PEER_IDENTITY_MISMATCH" });
+      }
+
+      let result = parsedRemote.data;
+      if (
+        peer.revision &&
+        result.remote.revision &&
+        peer.revision !== result.remote.revision
+      ) {
+        result = FederationRemoteQueryResponse.parse({
+          ...result,
+          stale: true,
+          warnings: [
+            ...new Set([
+              ...result.warnings,
+              "FEDERATION_PEER_REVISION_CHANGED",
+            ]),
+          ],
+        });
+      }
+      await audit(
+        db,
+        request,
+        "context_fabric.remote_query.call",
+        "context_fabric_peer",
+        peer.id,
+        {
+          peerKey: peer.peerKey,
+          requestId,
+          spaceId: result.scope.spaceId,
+          vaultCount: result.scope.vaultIds.length,
+          resultCount: result.hits.length,
+          partial: result.partial,
+          stale: result.stale,
+          remoteRevision: result.remote.revision,
+        },
+        peer.spaceId ?? undefined,
+      );
+      return result;
+    },
+  );
+
   app.get<{ Querystring: { spaceId?: string; vaultId?: string } }>(
     "/v1/context-fabric/peers",
     { preHandler: requirePermission("knowledge:read") },
@@ -831,6 +1275,12 @@ export function registerContextFabricRoutes(
       const discoveryMode = request.body?.discoveryMode ?? "CATALOG_ONLY";
       const trustState = request.body?.trustState ?? "DISCOVERED";
       const credentialRef = request.body?.credentialRef?.trim() || null;
+      const endpointSupplied =
+        typeof request.body?.endpoint === "string" &&
+        request.body.endpoint.trim().length > 0;
+      const endpoint = endpointSupplied
+        ? normalizeFederationEndpoint(request.body?.endpoint)
+        : null;
       const rawCapabilities = boundedObject(
         request.body?.capabilities,
         32 * 1024,
@@ -844,6 +1294,7 @@ export function registerContextFabricRoutes(
         !displayName ||
         !DISCOVERY_MODES.has(discoveryMode) ||
         !PEER_TRUST_STATES.has(trustState) ||
+        (endpointSupplied && !endpoint) ||
         (credentialRef !== null &&
           !/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(credentialRef)) ||
         !parsedCapabilities?.success
@@ -874,7 +1325,7 @@ export function registerContextFabricRoutes(
         spaceId,
         peerKey,
         displayName,
-        endpoint: request.body?.endpoint ?? null,
+        endpoint,
         discoveryMode: discoveryMode as
           "CATALOG_ONLY" | "REMOTE_QUERY" | "MIRROR_BUNDLE",
         trustState: trustState as "DISCOVERED" | "APPROVED" | "DISABLED",
