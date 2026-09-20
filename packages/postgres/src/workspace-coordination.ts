@@ -730,10 +730,7 @@ export async function claimWorkspaceWork(
         [input.sessionId, input.workKey],
       );
       const existingObjectRefId = existing.rows[0]?.object_ref_id ?? null;
-      if (
-        existingObjectRefId &&
-        existingObjectRefId !== input.objectRefId
-      ) {
+      if (existingObjectRefId && existingObjectRefId !== input.objectRefId) {
         throw workspaceError("WORK_CLAIM_OBJECT_CONFLICT", 409);
       }
     }

@@ -208,7 +208,8 @@ describe("work and activity graph", () => {
     });
     expect(state.statusCode).toBe(200);
     expect(
-      (state.json() as { claims: Array<{ objectRefId: string | null }> }).claims,
+      (state.json() as { claims: Array<{ objectRefId: string | null }> })
+        .claims,
     ).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ objectRefId: deployment.id }),
