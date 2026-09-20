@@ -580,6 +580,8 @@ export const ContextRequest = SearchRequest.extend({
   packetMode: ContextPacketMode.default("FULL_CONTEXT_PACKET"),
   contextLevel: ContextDisclosureLevel.default("L2"),
   reasoningMode: z.enum(["DIRECT", "PLAN"]).default("DIRECT"),
+  sessionId: z.string().uuid().optional(),
+  objectRefId: z.string().uuid().optional(),
 });
 export type ContextRequest = z.infer<typeof ContextRequest>;
 

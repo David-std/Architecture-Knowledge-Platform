@@ -3176,11 +3176,69 @@ export function registerSearchRoutes(
           )
           .send({ code });
       }
+
+      const contextSessionId = parsed.data.sessionId ?? null;
+      const contextObjectRefId = parsed.data.objectRefId ?? null;
+      if (contextObjectRefId && !contextSessionId) {
+        return reply
+          .code(400)
+          .send({ code: "CONTEXT_OBJECT_SESSION_REQUIRED" });
+      }
+      if (contextSessionId) {
+        if (
+          actor.principalKind === "AGENT_PROCESS" &&
+          actor.principalSessionId !== contextSessionId
+        ) {
+          return reply.code(404).send({ code: "SESSION_NOT_FOUND" });
+        }
+        const sessionScope = await db.pool.query<{
+          space_id: string;
+          vault_id: string;
+        }>(
+          `select s.space_id,s.vault_id
+             from agent_sessions s
+             join workspace_session_participants p
+               on p.session_id=s.id
+              and p.user_id=$2
+              and p.left_at is null
+            where s.id=$1
+            limit 1`,
+          [contextSessionId, actor.id],
+        );
+        const sessionRow = sessionScope.rows[0];
+        if (
+          !sessionRow ||
+          sessionRow.space_id !== requestedSpace ||
+          parsed.data.federated ||
+          vaultIds.length !== 1 ||
+          vaultIds[0] !== sessionRow.vault_id ||
+          accessByVault[sessionRow.vault_id]?.pathPrefix !== null
+        ) {
+          return reply.code(404).send({ code: "SESSION_NOT_FOUND" });
+        }
+        if (contextObjectRefId) {
+          const objectRef = await db.pool.query<{ id: string }>(
+            `select id
+               from external_object_refs
+              where id=$1 and session_id=$2 and vault_id=$3
+              limit 1`,
+            [contextObjectRefId, contextSessionId, sessionRow.vault_id],
+          );
+          if (!objectRef.rowCount) {
+            return reply
+              .code(404)
+              .send({ code: "EXTERNAL_OBJECT_REF_NOT_FOUND" });
+          }
+        }
+      }
+
       const {
         packetMode: _packetMode,
         contextLevel: requestedContextLevel,
         maxTokens: requestedMaxTokens,
         reasoningMode: requestedReasoningMode,
+        sessionId: _sessionId,
+        objectRefId: _objectRefId,
         ...contextSearchRequest
       } = parsed.data;
       const scopedRequest: SearchInput = {
@@ -4010,15 +4068,22 @@ export function registerSearchRoutes(
         await client.query("begin");
         await client.query(
           `
-          insert into context_packets(id, space_id, vault_id, actor_id, corpus_revision,
-                                      query_hash, packet_hash, request, packet, scope)
-          values ($1,$2,$3,$4,$5,encode(digest($6,'sha256'),'hex'),$7,$8::jsonb,$9::jsonb,$10::jsonb)
+          insert into context_packets(
+            id,space_id,vault_id,actor_id,session_id,object_ref_id,
+            corpus_revision,query_hash,packet_hash,request,packet,scope
+          )
+          values (
+            $1,$2,$3,$4,$5,$6,$7,encode(digest($8,'sha256'),'hex'),
+            $9,$10::jsonb,$11::jsonb,$12::jsonb
+          )
           `,
           [
             packet.packetId,
             requestedSpace,
             vaultIds.length === 1 ? vaultIds[0] : null,
             actor.id,
+            contextSessionId,
+            contextObjectRefId,
             packet.corpusRevision,
             parsed.data.query,
             packet.packetHash,

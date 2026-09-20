@@ -86,12 +86,22 @@ type AuditEvent = {
   created_at: string;
 };
 
+type ContextPacketSummary = {
+  id: string;
+  objectRefId: string | null;
+  packetHash: string;
+  corpusRevision: string;
+  createdAt: string;
+  expiresAt: string | null;
+};
+
 type SessionState = {
   session: Session;
   participants: Participant[];
   principals: Principal[];
   assignedPrincipals: string[];
   claims: Claim[];
+  contextPackets: ContextPacketSummary[];
   events: SessionEvent[];
   snapshotVersion: number;
   eventWindow: {
@@ -465,11 +475,34 @@ export default async function SessionObjectPage({
         </section>
         <section className="card">
           <h3>Retrieved context IDs</h3>
-          <p className="muted">
-            Bootstrap currently audits the context packet hash, but session
-            state does not expose a durable packet ID relation. This page does
-            not infer one from query text or timestamps.
-          </p>
+          {state.contextPackets.length ? (
+            <ul>
+              {state.contextPackets.map((packet) => (
+                <li key={packet.id}>
+                  packet <code>{short(packet.id)}</code>
+                  {packet.objectRefId ? (
+                    <>
+                      {" · "}
+                      <Link
+                        href={`/work/${packet.objectRefId}?sessionId=${state.session.id}`}
+                      >
+                        work object {short(packet.objectRefId)}
+                      </Link>
+                    </>
+                  ) : null}
+                  <br />
+                  <small className="muted">
+                    hash {short(packet.packetHash)} · corpus{" "}
+                    {short(packet.corpusRevision)} · {packet.createdAt}
+                  </small>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted">
+              No context packets are durably linked to this session yet.
+            </p>
+          )}
         </section>
       </div>
 

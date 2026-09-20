@@ -118,6 +118,22 @@ describe("workspace bootstrap conflict mapping", () => {
       contextRevisionSetHash: string;
     };
 
+    const workObject = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${createdBody.id}/external-refs`,
+      headers,
+      payload: {
+        provider: "github",
+        objectType: "issue",
+        externalId: "BOOTSTRAP-42",
+        title: "Bootstrap packet work item",
+        authority: "SYSTEM_OF_RECORD",
+        workObjectClass: "WORK_ITEM",
+      },
+    });
+    expect(workObject.statusCode, workObject.body).toBe(201);
+    const workObjectId = (workObject.json() as { id: string }).id;
+
     const relatedDecision = await app.inject({
       method: "POST",
       url: `/v1/sessions/${createdBody.id}/events`,
@@ -142,6 +158,7 @@ describe("workspace bootstrap conflict mapping", () => {
       payload: {
         query: "authorization revision",
         intent: "WORKFLOW_EXECUTION",
+        objectRefId: workObjectId,
       },
     });
     expect(first.statusCode).toBe(200);
@@ -209,6 +226,48 @@ describe("workspace bootstrap conflict mapping", () => {
       revision: firstBody.authorization.policyRevision,
     });
 
+    const stateAfterBootstrap = await app.inject({
+      method: "GET",
+      url: `/v1/sessions/${createdBody.id}/state`,
+      headers,
+    });
+    expect(stateAfterBootstrap.statusCode).toBe(200);
+    expect(
+      (
+        stateAfterBootstrap.json() as {
+          contextPackets: Array<{
+            id: string;
+            objectRefId: string | null;
+            packetHash: string;
+          }>;
+        }
+      ).contextPackets,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: expect.any(String),
+          objectRefId: workObjectId,
+          packetHash: expect.any(String),
+        }),
+      ]),
+    );
+
+    const persistedPacket = await db.pool.query<{
+      session_id: string;
+      object_ref_id: string | null;
+    }>(
+      `select session_id,object_ref_id
+         from context_packets
+        where session_id=$1 and object_ref_id=$2
+        order by created_at desc
+        limit 1`,
+      [createdBody.id, workObjectId],
+    );
+    expect(persistedPacket.rows[0]).toEqual({
+      session_id: createdBody.id,
+      object_ref_id: workObjectId,
+    });
+
     await db.pool.query(
       `update principals
           set policy_revision=policy_revision+1
@@ -223,6 +282,7 @@ describe("workspace bootstrap conflict mapping", () => {
       payload: {
         query: "authorization revision",
         intent: "WORKFLOW_EXECUTION",
+        objectRefId: workObjectId,
       },
     });
     expect(second.statusCode).toBe(200);
@@ -244,6 +304,28 @@ describe("workspace bootstrap conflict mapping", () => {
     expect(secondBody.effectiveRevisionSetHash).not.toBe(
       firstBody.effectiveRevisionSetHash,
     );
+  });
+
+  it("rejects an object-scoped context request without a workspace session", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/context",
+      headers,
+      payload: {
+        query: "orphaned object scope",
+        intent: "WORKFLOW_EXECUTION",
+        spaceId,
+        vaultId,
+        vaultIds: [],
+        federated: false,
+        mode: "SOURCE_BACKED",
+        objectRefId: randomUUID(),
+      },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({
+      code: "CONTEXT_OBJECT_SESSION_REQUIRED",
+    });
   });
 
   it("returns a typed conflict when the pinned context revision has drifted", async () => {

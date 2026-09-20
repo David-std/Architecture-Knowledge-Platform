@@ -46,6 +46,14 @@ type Claim = {
   leaseExpiresAt: string;
 };
 
+type ContextPacketSummary = {
+  id: string;
+  objectRefId: string | null;
+  packetHash: string;
+  corpusRevision: string;
+  createdAt: string;
+};
+
 type SessionState = {
   session: {
     id: string;
@@ -54,6 +62,7 @@ type SessionState = {
     contextRevisionSetHash: string | null;
   };
   claims: Claim[];
+  contextPackets: ContextPacketSummary[];
   contextRevision: {
     status: string;
   };
@@ -111,6 +120,9 @@ export default async function WorkObjectPage({
   );
   const objectClaims = state.claims.filter(
     (claim) => claim.objectRefId === object.id,
+  );
+  const contextPackets = state.contextPackets.filter(
+    (packet) => packet.objectRefId === object.id,
   );
 
   return (
@@ -274,6 +286,42 @@ export default async function WorkObjectPage({
         ) : (
           <p className="muted">
             No claims are explicitly linked to this work object.
+          </p>
+        )}
+      </section>
+
+      <h2>Context packets</h2>
+      <section className="card">
+        {contextPackets.length ? (
+          <table>
+            <thead>
+              <tr>
+                <th>Packet</th>
+                <th>Hash</th>
+                <th>Corpus revision</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              {contextPackets.map((packet) => (
+                <tr key={packet.id}>
+                  <td>
+                    <code>{short(packet.id)}</code>
+                  </td>
+                  <td>
+                    <code>{short(packet.packetHash)}</code>
+                  </td>
+                  <td>
+                    <code>{short(packet.corpusRevision)}</code>
+                  </td>
+                  <td>{packet.createdAt}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="muted">
+            No context packets are explicitly linked to this work object.
           </p>
         )}
       </section>

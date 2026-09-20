@@ -1344,6 +1344,14 @@ export async function workspaceSessionSnapshot(
   principals: Record<string, unknown>[];
   assignedPrincipals: string[];
   claims: WorkspaceClaim[];
+  contextPackets: Array<{
+    id: string;
+    objectRefId: string | null;
+    packetHash: string;
+    corpusRevision: string;
+    createdAt: Date;
+    expiresAt: Date | null;
+  }>;
   events: Record<string, unknown>[];
   snapshotVersion: number;
   eventWindow: {
@@ -1406,6 +1414,21 @@ export async function workspaceSessionSnapshot(
         order by work_key`,
       [sessionId],
     );
+    const contextPackets = await client.query<{
+      id: string;
+      object_ref_id: string | null;
+      packet_hash: string;
+      corpus_revision: string;
+      created_at: Date;
+      expires_at: Date | null;
+    }>(
+      `select id,object_ref_id,packet_hash,corpus_revision,created_at,expires_at
+         from context_packets
+        where session_id=$1
+        order by created_at desc,id
+        limit 200`,
+      [sessionId],
+    );
     const contextRevision = await workspaceContextRevisionState(
       client,
       sessionId,
@@ -1442,6 +1465,14 @@ export async function workspaceSessionSnapshot(
         .filter((principal) => String(principal.state) === "ACTIVE")
         .map((principal) => String(principal.id)),
       claims: claims.rows.map(normalizeClaim),
+      contextPackets: contextPackets.rows.map((packet) => ({
+        id: String(packet.id),
+        objectRefId: packet.object_ref_id ? String(packet.object_ref_id) : null,
+        packetHash: String(packet.packet_hash),
+        corpusRevision: String(packet.corpus_revision),
+        createdAt: new Date(packet.created_at),
+        expiresAt: packet.expires_at ? new Date(packet.expires_at) : null,
+      })),
       events: cleanEvents,
       snapshotVersion: session.coordinationVersion,
       contextRevision,

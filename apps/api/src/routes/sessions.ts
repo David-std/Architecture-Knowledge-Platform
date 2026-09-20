@@ -359,6 +359,7 @@ export function registerSessionRoutes(
       query?: string;
       intent?: string;
       packetMode?: "COMPACT_AGENT_PACKET" | "FULL_CONTEXT_PACKET";
+      objectRefId?: string;
     };
   }>(
     "/v1/sessions/:id/bootstrap",
@@ -394,6 +395,10 @@ export function registerSessionRoutes(
       const query = request.body?.query?.trim();
       if (query && Buffer.byteLength(query, "utf8") > 4096) {
         return reply.code(413).send({ code: "BOOTSTRAP_QUERY_TOO_LARGE" });
+      }
+      const objectRefId = request.body?.objectRefId?.trim();
+      if (objectRefId && !UUID_PATTERN.test(objectRefId)) {
+        return reply.code(400).send({ code: "INVALID_OBJECT_REF_ID" });
       }
 
       const authorizationPort = new PostgresAuthorizationPort(db);
@@ -511,6 +516,10 @@ export function registerSessionRoutes(
               intent: input.intent,
               spaceId: input.spaceId,
               vaultId: input.vaultId,
+              sessionId: input.sessionId,
+              ...(input.objectRefId
+                ? { objectRefId: input.objectRefId }
+                : {}),
               federated: false,
               mode: "SOURCE_BACKED",
               maxTokens: input.maxTokens,
@@ -541,6 +550,7 @@ export function registerSessionRoutes(
         {
           sessionId: session.id,
           actorId: actor.id,
+          ...(objectRefId ? { objectRefId } : {}),
           ...(query ? { query } : {}),
           intent: intent.data,
           mode: packetMode,

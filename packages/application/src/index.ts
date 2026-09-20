@@ -72,6 +72,7 @@ export interface BootstrapAuthorizationSnapshot {
 export interface BootstrapContextRequest {
   sessionId: string;
   actorId: string;
+  objectRefId?: string;
   query?: string;
   intent?: string;
   mode?: BootstrapContextMode;
@@ -127,6 +128,8 @@ export interface BootstrapContextPorts<TContextPacket = unknown> {
     intent: string,
   ): Promise<BootstrapKnowledgeProfile>;
   buildAuthorizedContext(input: {
+    sessionId: string;
+    objectRefId?: string;
     query: string;
     intent: string;
     spaceId: string;
@@ -192,6 +195,8 @@ export class BootstrapContext<TContextPacket = unknown> {
       intent,
     );
     const context = await this.ports.buildAuthorizedContext({
+      sessionId: snapshot.session.id,
+      ...(request.objectRefId ? { objectRefId: request.objectRefId } : {}),
       query: request.query?.trim() || snapshot.session.purpose,
       intent,
       spaceId: snapshot.session.spaceId,
