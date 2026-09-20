@@ -817,6 +817,7 @@ export function registerContextFabricRoutes(
       trustState?: string;
       capabilities?: unknown;
       revision?: string;
+      credentialRef?: string;
     };
   }>(
     "/v1/context-fabric/peers",
@@ -829,6 +830,7 @@ export function registerContextFabricRoutes(
       const displayName = safeText(request.body?.displayName, 200);
       const discoveryMode = request.body?.discoveryMode ?? "CATALOG_ONLY";
       const trustState = request.body?.trustState ?? "DISCOVERED";
+      const credentialRef = request.body?.credentialRef?.trim() || null;
       const rawCapabilities = boundedObject(
         request.body?.capabilities,
         32 * 1024,
@@ -842,6 +844,8 @@ export function registerContextFabricRoutes(
         !displayName ||
         !DISCOVERY_MODES.has(discoveryMode) ||
         !PEER_TRUST_STATES.has(trustState) ||
+        (credentialRef !== null &&
+          !/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(credentialRef)) ||
         !parsedCapabilities?.success
       ) {
         return reply.code(400).send({
@@ -876,6 +880,7 @@ export function registerContextFabricRoutes(
         trustState: trustState as "DISCOVERED" | "APPROVED" | "DISABLED",
         capabilities,
         revision: request.body?.revision ?? null,
+        credentialRef,
         lastSeenAt: new Date(),
       });
       await audit(

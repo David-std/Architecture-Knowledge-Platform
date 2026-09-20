@@ -536,6 +536,179 @@ export const SearchHit = z.object({
 });
 export type SearchHit = z.infer<typeof SearchHit>;
 
+export const FederationMode = z.enum([
+  "CATALOG_ONLY",
+  "REMOTE_QUERY",
+  "MIRROR_BUNDLE",
+]);
+export type FederationMode = z.infer<typeof FederationMode>;
+
+export const FederationRemoteQueryBudget = z
+  .object({
+    maxResults: z.number().int().min(1).max(100).default(20),
+    maxWallMs: z.number().int().min(100).max(60_000).default(5_000),
+    maxResponseBytes: z
+      .number()
+      .int()
+      .min(1_024)
+      .max(5_000_000)
+      .default(1_000_000),
+  })
+  .strict();
+export type FederationRemoteQueryBudget = z.infer<
+  typeof FederationRemoteQueryBudget
+>;
+
+export const FederationRevisionPreference = z
+  .object({
+    vaultId: z.string().uuid(),
+    corpusRevision: z.string().min(1).max(512),
+  })
+  .strict();
+export type FederationRevisionPreference = z.infer<
+  typeof FederationRevisionPreference
+>;
+
+export const FederationRemoteSearchInput = SearchRequest.pick({
+  query: true,
+  intent: true,
+  projectId: true,
+  truthConsistency: true,
+  types: true,
+  minimumTrust: true,
+  mode: true,
+}).strict();
+export type FederationRemoteSearchInput = z.infer<
+  typeof FederationRemoteSearchInput
+>;
+
+export const FederationRemoteQueryRequest = z
+  .object({
+    schemaVersion: z.literal(1),
+    caller: z
+      .object({
+        nodeId: z
+          .string()
+          .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/),
+        requestId: z.string().uuid(),
+      })
+      .strict(),
+    scope: z
+      .object({
+        spaceId: z.string().uuid(),
+        vaultIds: z.array(z.string().uuid()).min(1).max(20),
+      })
+      .strict()
+      .superRefine((scope, context) => {
+        if (new Set(scope.vaultIds).size !== scope.vaultIds.length) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["vaultIds"],
+            message: "federation scope contains duplicate vault identities",
+          });
+        }
+      }),
+    request: FederationRemoteSearchInput,
+    budget: FederationRemoteQueryBudget,
+    revisionPreferences: z
+      .array(FederationRevisionPreference)
+      .max(20)
+      .default([]),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const scoped = new Set(value.scope.vaultIds);
+    for (const [index, preference] of value.revisionPreferences.entries()) {
+      if (!scoped.has(preference.vaultId)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["revisionPreferences", index, "vaultId"],
+          message: "revision preference must target a requested vault",
+        });
+      }
+    }
+  });
+export type FederationRemoteQueryRequest = z.infer<
+  typeof FederationRemoteQueryRequest
+>;
+
+export const FederationPeerQueryRequest = FederationRemoteQueryRequest.omit({
+  caller: true,
+}).extend({
+  requestId: z.string().uuid().optional(),
+});
+export type FederationPeerQueryRequest = z.infer<
+  typeof FederationPeerQueryRequest
+>;
+
+export const FederationRemoteHit = SearchHit.extend({
+  remoteProvenance: z
+    .object({
+      nodeId: z
+        .string()
+        .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/),
+      nodeRevision: z.string().min(1).max(512).nullable(),
+      documentRevision: z.string().min(1),
+      trust: TrustTier,
+      lifecycle: Lifecycle,
+    })
+    .strict(),
+}).superRefine((hit, context) => {
+  if (hit.remoteProvenance.documentRevision !== hit.revision) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["remoteProvenance", "documentRevision"],
+      message: "remote provenance revision must match the returned hit",
+    });
+  }
+  if (hit.remoteProvenance.trust !== hit.trust) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["remoteProvenance", "trust"],
+      message: "federation cannot upgrade or rewrite remote trust",
+    });
+  }
+  if (hit.remoteProvenance.lifecycle !== hit.lifecycle) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["remoteProvenance", "lifecycle"],
+      message: "federation cannot rewrite remote lifecycle",
+    });
+  }
+});
+export type FederationRemoteHit = z.infer<typeof FederationRemoteHit>;
+
+export const FederationRemoteQueryResponse = z
+  .object({
+    schemaVersion: z.literal(1),
+    requestId: z.string().uuid(),
+    remote: z
+      .object({
+        nodeId: z
+          .string()
+          .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/),
+        deploymentMode: z.string().min(1).max(64),
+        revision: z.string().min(1).max(512).nullable(),
+      })
+      .strict(),
+    scope: z
+      .object({
+        spaceId: z.string().uuid(),
+        vaultIds: z.array(z.string().uuid()).min(1).max(20),
+      })
+      .strict(),
+    partial: z.boolean(),
+    stale: z.boolean(),
+    warnings: z.array(z.string().min(1).max(512)).max(100),
+    indexRevisions: z.record(z.string(), z.unknown()).default({}),
+    hits: z.array(FederationRemoteHit).max(100),
+    noAnswer: z.unknown().nullable().optional(),
+  })
+  .strict();
+export type FederationRemoteQueryResponse = z.infer<
+  typeof FederationRemoteQueryResponse
+>;
+
 export const ContextDisclosureLevel = z.enum(["L0", "L1", "L2", "L3"]);
 export type ContextDisclosureLevel = z.infer<typeof ContextDisclosureLevel>;
 

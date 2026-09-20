@@ -68,6 +68,11 @@ export interface ContextFabricPeerRecord {
   updatedAt: Date;
 }
 
+export interface ContextFabricPeerRuntimeRecord
+  extends ContextFabricPeerRecord {
+  credentialRef: string | null;
+}
+
 function fabricError(code: string, statusCode: number): Error {
   const error = new Error(code) as Error & {
     code?: string;
@@ -532,6 +537,7 @@ export async function upsertContextFabricPeer(
     trustState?: FederationPeerTrustState;
     capabilities: Record<string, unknown>;
     revision?: string | null;
+    credentialRef?: string | null;
     lastSeenAt?: Date | null;
   },
 ): Promise<ContextFabricPeerRecord> {
@@ -550,8 +556,8 @@ export async function upsertContextFabricPeer(
     const result = await client.query<Record<string, unknown>>(
       `insert into context_fabric_peers(
          organization_id,space_id,peer_key,display_name,endpoint,discovery_mode,
-         trust_state,capabilities,revision,last_seen_at
-       ) values($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10)
+         trust_state,capabilities,revision,credential_ref,last_seen_at
+       ) values($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11)
        on conflict(organization_id,peer_key) do update
          set space_id=excluded.space_id,
              display_name=excluded.display_name,
@@ -560,6 +566,7 @@ export async function upsertContextFabricPeer(
              trust_state=excluded.trust_state,
              capabilities=excluded.capabilities,
              revision=excluded.revision,
+             credential_ref=excluded.credential_ref,
              last_seen_at=excluded.last_seen_at,
              updated_at=now()
        returning *`,
@@ -573,6 +580,7 @@ export async function upsertContextFabricPeer(
         input.trustState ?? "DISCOVERED",
         JSON.stringify(input.capabilities),
         input.revision?.trim() || null,
+        input.credentialRef?.trim() || null,
         input.lastSeenAt ?? null,
       ],
     );
@@ -614,6 +622,37 @@ export async function listContextFabricPeers(
     [organizationId, spaceIds],
   );
   return result.rows.map(normalizePeer);
+}
+
+export async function getContextFabricPeerRuntime(
+  db: Postgres,
+  peerId: string,
+  authorizedSpaceIds: string[],
+): Promise<ContextFabricPeerRuntimeRecord | null> {
+  const result = await db.pool.query<Record<string, unknown>>(
+    `select p.*
+       from context_fabric_peers p
+      where p.id=$1
+        and (
+          p.space_id=any($2::uuid[])
+          or (
+            p.space_id is null
+            and p.organization_id in (
+              select distinct organization_id
+                from spaces
+               where id=any($2::uuid[])
+            )
+          )
+        )
+      limit 1`,
+    [peerId, authorizedSpaceIds],
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+  return {
+    ...normalizePeer(row),
+    credentialRef: row.credential_ref ? String(row.credential_ref) : null,
+  };
 }
 
 export type WorkObjectClass =
