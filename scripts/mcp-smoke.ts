@@ -356,12 +356,18 @@ try {
   const facadeSearchPayload = structuredToolResult(facadeSearch);
   const facadeSearchResult = facadeSearchPayload.result as
     Record<string, unknown> | undefined;
+  const facadeSearchNoAnswer = facadeSearchPayload.noAnswer;
+  const facadeSearchStatus = facadeSearchPayload.status;
   if (
     facadeSearchPayload.action !== "SEARCH" ||
-    facadeSearchPayload.status !== "OK" ||
+    (facadeSearchStatus !== "OK" && facadeSearchStatus !== "NO_ANSWER") ||
     facadeSearchPayload.delegatedTo !== "akp_search" ||
     !facadeSearchResult ||
-    !Array.isArray(facadeSearchResult.hits)
+    !Array.isArray(facadeSearchResult.hits) ||
+    (facadeSearchStatus === "NO_ANSWER" &&
+      (facadeSearchResult.hits.length !== 0 ||
+        !facadeSearchNoAnswer ||
+        typeof facadeSearchNoAnswer !== "object"))
   ) {
     throw new Error(
       `Unexpected akp_context SEARCH payload: ${JSON.stringify(facadeSearchPayload)}`,
