@@ -1,12 +1,15 @@
 import { createHash } from "node:crypto";
-import type {
-  GraphNodeIdentity,
-  GraphProjectionArtifact,
-  GraphProjectionRevision,
-  GraphRelationshipLifecycle,
-} from "@akp/contracts";
 import type { Postgres } from "./index.js";
 import { PostgresFederatedGraphStore } from "./federated-graph.js";
+
+type FederatedProjectionArtifact = Parameters<
+  PostgresFederatedGraphStore["build"]
+>[0];
+type GraphNodeIdentity =
+  FederatedProjectionArtifact["nodes"][number]["identity"];
+type GraphRelationshipLifecycle = NonNullable<
+  FederatedProjectionArtifact["edges"][number]["assertionLifecycle"]
+>;
 
 const EPISTEMIC_PROVIDER = "legacy-knowledge-relations";
 const EPISTEMIC_PROVIDER_VERSION = "v0.3-envelope-1";
@@ -43,7 +46,7 @@ export interface LegacyEpistemicProjectionInput {
 }
 
 export interface LegacyEpistemicProjectionPlan {
-  artifact: GraphProjectionArtifact;
+  artifact: FederatedProjectionArtifact;
   sourceDocumentCount: number;
   sourceRelationCount: number;
 }
@@ -194,7 +197,7 @@ export async function planLegacyEpistemicGraphProjection(
   );
   const revision = `epistemic:${sourceHash}`;
 
-  const artifact: GraphProjectionArtifact = {
+  const artifact: FederatedProjectionArtifact = {
     graphDomain: "EPISTEMIC",
     spaceId: input.spaceId,
     vaultId: input.vaultId,
@@ -281,7 +284,7 @@ export async function planLegacyEpistemicGraphProjection(
 export async function rebuildLegacyEpistemicGraphProjection(
   db: Postgres,
   input: LegacyEpistemicProjectionInput,
-): Promise<GraphProjectionRevision> {
+) {
   const plan = await planLegacyEpistemicGraphProjection(db, input);
   return new PostgresFederatedGraphStore(db).build(plan.artifact);
 }
