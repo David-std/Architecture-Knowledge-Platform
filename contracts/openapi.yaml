@@ -562,6 +562,32 @@ paths:
               schema:
                 $ref: "#/components/schemas/ContextPacketBudgetError"
 
+  /v1/workspace/handoffs/inbox:
+    get:
+      tags: [Sessions]
+      operationId: listWorkspaceHandoffInbox
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:read
+      description: >
+        List durable structured handoffs addressed to the authenticated user
+        within one authorized space and vault. AGENT_PROCESS callers remain
+        constrained to the vault bound into their credential.
+      parameters:
+        - name: spaceId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+        - name: vaultId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /v1/sessions:
     get:
       tags: [Sessions]
@@ -1102,6 +1128,35 @@ paths:
           description: Handoff note exceeds the bounded payload size.
         "422":
           description: Handoff target is not authorized for the full session vault.
+
+  /v1/sessions/{id}/handoffs/{handoffId}/import:
+    post:
+      tags: [Sessions]
+      operationId: importWorkspaceHandoff
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: workspace:handoff
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - name: handoffId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[1-9][0-9]*$"
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      description: >
+        Import one durable handoff addressed to the authenticated user into a
+        different authorized session in the same space and vault. The import
+        preserves source context revision metadata and records whether the
+        receiver is pinned to a different revision; it never copies transcript
+        state or publishes canonical knowledge.
+      responses:
+        "201": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /v1/sessions/{id}/events:
     post:

@@ -179,6 +179,7 @@ components:
             - CLAIM_HEARTBEAT
             - CLAIM_RELEASED
             - CLAIM_HANDOFF
+            - HANDOFF_IMPORTED
             - FINDING
             - BLOCKER
             - QUESTION

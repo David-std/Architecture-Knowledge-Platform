@@ -579,6 +579,12 @@ function agentProcessRouteAction(
   if (requestPath === "/v1/sessions" && method === "GET") {
     return "workspace:read";
   }
+  if (
+    requestPath === "/v1/workspace/handoffs/inbox" &&
+    method === "GET"
+  ) {
+    return "workspace:read";
+  }
   if (/^\/v1\/sessions\/[^/]+\/state$/.test(requestPath) && method === "GET") {
     return "workspace:read";
   }
@@ -614,6 +620,12 @@ function agentProcessRouteAction(
   }
   if (
     /^\/v1\/sessions\/[^/]+\/claims\/handoff$/.test(requestPath) &&
+    method === "POST"
+  ) {
+    return "workspace:handoff";
+  }
+  if (
+    /^\/v1\/sessions\/[^/]+\/handoffs\/[^/]+\/import$/.test(requestPath) &&
     method === "POST"
   ) {
     return "workspace:handoff";
