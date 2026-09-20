@@ -43,7 +43,8 @@
     "benchmark:scale": "node --expose-gc node_modules/tsx/dist/cli.mjs scripts/load-scale-benchmark.ts",
     "benchmark:concurrency": "tsx scripts/concurrency-benchmark.ts",
     "test:browser": "node --test scripts/browser-e2e.test.mjs",
-    "benchmark:scale:enterprise": "tsx scripts/enterprise-state-scale-benchmark.ts"
+    "benchmark:scale:enterprise": "tsx scripts/enterprise-state-scale-benchmark.ts",
+    "proof:capabilities": "tsx scripts/capability-acceptance-matrix.ts"
   },
   "devDependencies": {
     "@types/mime-types": "^3.0.1",
