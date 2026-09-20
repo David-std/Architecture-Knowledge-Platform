@@ -709,6 +709,77 @@ export type FederationRemoteQueryResponse = z.infer<
   typeof FederationRemoteQueryResponse
 >;
 
+export const FederationFanoutPeerRequest = z
+  .object({
+    peerId: z.string().uuid(),
+    query: FederationPeerQueryRequest,
+  })
+  .strict();
+export type FederationFanoutPeerRequest = z.infer<
+  typeof FederationFanoutPeerRequest
+>;
+
+export const FederationFanoutRequest = z
+  .object({
+    schemaVersion: z.literal(1),
+    local: SearchRequest,
+    peers: z.array(FederationFanoutPeerRequest).max(4).default([]),
+    requireAllPeers: z.boolean().default(false),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.local.federated) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["local", "federated"],
+        message: "federation fanout owns remote execution; local search must not recurse",
+      });
+    }
+    const peerIds = value.peers.map((peer) => peer.peerId);
+    if (new Set(peerIds).size !== peerIds.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["peers"],
+        message: "federation fanout contains duplicate peers",
+      });
+    }
+  });
+export type FederationFanoutRequest = z.infer<
+  typeof FederationFanoutRequest
+>;
+
+export const FederationFanoutResponse = z
+  .object({
+    schemaVersion: z.literal(1),
+    local: z.record(z.string(), z.unknown()),
+    remotes: z
+      .array(
+        z
+          .object({
+            peerId: z.string().uuid(),
+            response: FederationRemoteQueryResponse,
+          })
+          .strict(),
+      )
+      .max(4),
+    failures: z
+      .array(
+        z
+          .object({
+            peerId: z.string().uuid(),
+            code: z.string().regex(/^[A-Z][A-Z0-9_]*$/),
+          })
+          .strict(),
+      )
+      .max(4),
+    partial: z.boolean(),
+    warnings: z.array(z.string().min(1).max(512)).max(100),
+  })
+  .strict();
+export type FederationFanoutResponse = z.infer<
+  typeof FederationFanoutResponse
+>;
+
 export const ContextDisclosureLevel = z.enum(["L0", "L1", "L2", "L3"]);
 export type ContextDisclosureLevel = z.infer<typeof ContextDisclosureLevel>;
 

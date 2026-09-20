@@ -2512,6 +2512,30 @@ paths:
         "502": { $ref: "#/components/responses/ServerError" }
         "503": { $ref: "#/components/responses/ServiceUnavailable" }
 
+  /v1/context-fabric/federation/fanout:
+    post:
+      tags: [Governance]
+      operationId: fanoutFederationQuery
+      x-akp-permission: knowledge:read
+      description: >
+        Run the local search and up to four explicit peer queries. Peer
+        failures produce a partial response unless requireAllPeers is true.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FederationFanoutRequest" }
+      responses:
+        "200":
+          description: Local results plus successful remote responses and explicit failures.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FederationFanoutResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "502": { $ref: "#/components/responses/ServerError" }
+
   /v1/sessions/{id}/external-refs:
     get:
       tags: [Sessions]
@@ -4625,6 +4649,63 @@ components:
                       trust: { $ref: "#/components/schemas/TrustTier" }
                       lifecycle: { $ref: "#/components/schemas/Lifecycle" }
         noAnswer: {}
+    FederationFanoutPeerRequest:
+      type: object
+      additionalProperties: false
+      required: [peerId, query]
+      properties:
+        peerId: { type: string, format: uuid }
+        query: { $ref: "#/components/schemas/FederationPeerQueryRequest" }
+    FederationFanoutRequest:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, local]
+      properties:
+        schemaVersion: { type: integer, enum: [1] }
+        local: { $ref: "#/components/schemas/SearchRequest" }
+        peers:
+          type: array
+          maxItems: 4
+          uniqueItems: true
+          default: []
+          items:
+            { $ref: "#/components/schemas/FederationFanoutPeerRequest" }
+        requireAllPeers: { type: boolean, default: false }
+    FederationFanoutResponse:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, local, remotes, failures, partial, warnings]
+      properties:
+        schemaVersion: { type: integer, enum: [1] }
+        local: { type: object, additionalProperties: true }
+        remotes:
+          type: array
+          maxItems: 4
+          items:
+            type: object
+            additionalProperties: false
+            required: [peerId, response]
+            properties:
+              peerId: { type: string, format: uuid }
+              response:
+                { $ref: "#/components/schemas/FederationRemoteQueryResponse" }
+        failures:
+          type: array
+          maxItems: 4
+          items:
+            type: object
+            additionalProperties: false
+            required: [peerId, code]
+            properties:
+              peerId: { type: string, format: uuid }
+              code:
+                type: string
+                pattern: "^[A-Z][A-Z0-9_]*$"
+        partial: { type: boolean }
+        warnings:
+          type: array
+          maxItems: 100
+          items: { type: string, minLength: 1, maxLength: 512 }
     SearchRequest:
       type: object
       required: [query, spaceId]

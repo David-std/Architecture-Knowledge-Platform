@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
+  FederationFanoutRequest,
+  FederationFanoutResponse,
   FederationPeerQueryRequest,
   FederationRemoteQueryRequest,
   FederationRemoteQueryResponse,
@@ -1203,6 +1205,139 @@ export function registerContextFabricRoutes(
           remoteRevision: result.remote.revision,
         },
         peer.spaceId ?? undefined,
+      );
+      return result;
+    },
+  );
+
+  app.post(
+    "/v1/context-fabric/federation/fanout",
+    { preHandler: requirePermission("knowledge:read") },
+    async (request, reply) => {
+      const parsed = FederationFanoutRequest.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          code: "INVALID_FEDERATION_FANOUT",
+          issues: parsed.error.issues,
+        });
+      }
+      const forwardedHeaders = {
+        ...(request.headers.authorization
+          ? { authorization: request.headers.authorization }
+          : {}),
+        ...(request.headers.cookie ? { cookie: request.headers.cookie } : {}),
+        ...(request.headers["x-csrf-token"]
+          ? { "x-csrf-token": String(request.headers["x-csrf-token"]) }
+          : {}),
+      };
+      const local = await app.inject({
+        method: "POST",
+        url: "/v1/search",
+        headers: forwardedHeaders,
+        payload: { ...parsed.data.local, federated: false },
+      });
+      if (local.statusCode !== 200) {
+        const body = local.json() as { code?: unknown };
+        return reply.code(local.statusCode).send({
+          code:
+            typeof body.code === "string"
+              ? body.code
+              : "FEDERATION_LOCAL_SEARCH_FAILED",
+        });
+      }
+      const localBody = local.json() as Record<string, unknown>;
+
+      const remoteAttempts = await Promise.all(
+        parsed.data.peers.map(async (peerRequest) => {
+          const response = await app.inject({
+            method: "POST",
+            url: `/v1/context-fabric/peers/${peerRequest.peerId}/query`,
+            headers: forwardedHeaders,
+            payload: peerRequest.query,
+          });
+          if (response.statusCode !== 200) {
+            const body = response.json() as { code?: unknown };
+            return {
+              ok: false as const,
+              peerId: peerRequest.peerId,
+              code:
+                typeof body.code === "string" &&
+                /^[A-Z][A-Z0-9_]*$/.test(body.code)
+                  ? body.code
+                  : "FEDERATION_PEER_FAILED",
+            };
+          }
+          const parsedRemote = FederationRemoteQueryResponse.safeParse(
+            response.json(),
+          );
+          if (!parsedRemote.success) {
+            return {
+              ok: false as const,
+              peerId: peerRequest.peerId,
+              code: "FEDERATION_RESPONSE_SCHEMA_INVALID",
+            };
+          }
+          return {
+            ok: true as const,
+            peerId: peerRequest.peerId,
+            response: parsedRemote.data,
+          };
+        }),
+      );
+
+      const remotes = remoteAttempts.flatMap((attempt) =>
+        attempt.ok
+          ? [{ peerId: attempt.peerId, response: attempt.response }]
+          : [],
+      );
+      const failures = remoteAttempts.flatMap((attempt) =>
+        attempt.ok
+          ? []
+          : [{ peerId: attempt.peerId, code: attempt.code }],
+      );
+      if (parsed.data.requireAllPeers && failures.length) {
+        return reply.code(502).send({
+          code: "FEDERATION_REQUIRED_PEER_FAILED",
+          failures,
+        });
+      }
+      const warnings = [
+        ...failures.map(
+          (failure) =>
+            `FEDERATION_PEER_FAILED:${failure.peerId}:${failure.code}`,
+        ),
+        ...remotes.flatMap((remote) =>
+          remote.response.partial
+            ? [`FEDERATION_PEER_PARTIAL:${remote.peerId}`]
+            : [],
+        ),
+      ].slice(0, 100);
+      const result = FederationFanoutResponse.parse({
+        schemaVersion: 1,
+        local: localBody,
+        remotes,
+        failures,
+        partial:
+          Boolean(localBody.degraded) ||
+          failures.length > 0 ||
+          remotes.some((remote) => remote.response.partial),
+        warnings,
+      });
+      await audit(
+        db,
+        request,
+        "context_fabric.federation.fanout",
+        "context_fabric",
+        "fanout",
+        {
+          localSpaceId: parsed.data.local.spaceId,
+          peerCount: parsed.data.peers.length,
+          successCount: remotes.length,
+          failureCount: failures.length,
+          requireAllPeers: parsed.data.requireAllPeers,
+          partial: result.partial,
+        },
+        parsed.data.local.spaceId,
       );
       return result;
     },
