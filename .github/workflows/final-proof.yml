@@ -1,0 +1,39 @@
+name: final-proof
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  same-sha-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Collect same-SHA remote workflow proof
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          AKP_FINAL_PROOF_WORKFLOW_REPORT: reports/ci/final-proof-workflows.json
+        run: node scripts/final-proof-workflows.mjs
+      - name: Upload final-proof workflow evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: final-proof-workflows-${{ github.run_id }}
+          path: reports/ci/final-proof-workflows.json
+          if-no-files-found: error
+          retention-days: 30

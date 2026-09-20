@@ -111,9 +111,9 @@ jobs:
         shell: bash
         run: |
           set +e
-          pnpm benchmark:agent-arena > reports/ci/agent-five-arm-arena.log 2>&1
-          status=$?
-          cat reports/ci/agent-five-arm-arena.log
+          set -o pipefail
+          pnpm benchmark:agent-arena 2>&1 | tee reports/ci/agent-five-arm-arena.log
+          status=${PIPESTATUS[0]}
           if [ ! -f reports/ci/agent-five-arm-arena.json ]; then
             echo "Five-arm arena did not produce a report" >&2
             exit 1

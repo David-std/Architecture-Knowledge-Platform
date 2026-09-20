@@ -114,6 +114,7 @@ components:
             - OfflineDraftQueued
             - OfflineDraftReconciled
             - ContextFabricPeerRegistered
+            - ContextFabricPeerRevoked
             - PrincipalRevoked
         eventVersion: { type: integer, minimum: 1 }
         resourceId: { type: string, minLength: 1 }

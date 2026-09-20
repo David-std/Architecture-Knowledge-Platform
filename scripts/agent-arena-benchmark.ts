@@ -722,6 +722,7 @@ async function main(): Promise<void> {
 
   const observations: AgentArenaObservation[] = [];
   const details: Array<Record<string, unknown>> = [];
+  const totalObservations = taskFile.tasks.length * AGENT_ARENA_ARMS.length;
   try {
     for (const [taskIndex, task] of taskFile.tasks.entries()) {
       const offset = taskIndex % AGENT_ARENA_ARMS.length;
@@ -731,6 +732,19 @@ async function main(): Promise<void> {
       ];
       for (const arm of orderedArms) {
         const input = await inputForArm(arm, task, current);
+        const contextTokens = roughTokens(input.context);
+        console.log(
+          JSON.stringify({
+            event: "AGENT_ARENA_OBSERVATION_START",
+            taskId: task.id,
+            category: task.category,
+            arm,
+            completedObservations: observations.length,
+            totalObservations,
+            calls: input.calls,
+            contextTokens,
+          }),
+        );
         const completion = await complete(
           task,
           input,
@@ -749,7 +763,7 @@ async function main(): Promise<void> {
           category: task.category,
           arm,
           calls: input.calls,
-          contextTokens: roughTokens(input.context),
+          contextTokens,
           providerPromptTokens: completion.usage.promptTokens,
           providerCompletionTokens: completion.usage.completionTokens,
           latencyMs: input.latencyMs + completion.latencyMs,
@@ -764,6 +778,16 @@ async function main(): Promise<void> {
           completionFormatError: completion.formatError,
           modelOutput: completion.output,
         });
+        console.log(
+          JSON.stringify({
+            event: "AGENT_ARENA_OBSERVATION_COMPLETED",
+            taskId: task.id,
+            category: task.category,
+            arm,
+            completedObservations: observations.length,
+            totalObservations,
+          }),
+        );
       }
     }
 
