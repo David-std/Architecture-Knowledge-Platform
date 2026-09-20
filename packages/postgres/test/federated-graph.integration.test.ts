@@ -1449,9 +1449,9 @@ describe("federated multi-graph substrate integration", () => {
         await store.build(projection);
         const before = await normalizedState();
         expect(before.assertions).toHaveLength(2);
-        expect(before.assertions.map((value) => value.lifecycle).sort()).toEqual(
-          ["ACTIVE", "DISPUTED"],
-        );
+        expect(
+          before.assertions.map((value) => value.lifecycle).sort(),
+        ).toEqual(["ACTIVE", "DISPUTED"]);
 
         const paths = await store.neighbors({
           ...queryBase(fixture, {
@@ -1467,9 +1467,7 @@ describe("federated multi-graph substrate integration", () => {
           relation: "depends_on",
           authorizationPath: "allowed/catalog/payments",
         });
-        expect(paths[0]?.steps[0]?.assertion.id).toMatch(
-          /^[0-9a-f-]{36}$/i,
-        );
+        expect(paths[0]?.steps[0]?.assertion.id).toMatch(/^[0-9a-f-]{36}$/i);
 
         await db.pool.query(
           `delete from federated_graph_projection_revisions
@@ -1529,5 +1527,4 @@ describe("federated multi-graph substrate integration", () => {
       }
     },
   );
-
 });
