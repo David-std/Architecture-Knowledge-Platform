@@ -216,7 +216,7 @@ export function registerOperatorRoutes(
         db.pool.query(
           `select c.id,c.session_id,c.work_key,c.status,c.fencing_token,
                   c.lease_expires_at,c.updated_at,s.space_id,s.vault_id,
-                  p.kind owner_principal_kind,p.label owner_principal_label
+                  p.kind owner_principal_kind,p.display_name owner_principal_label
              from workspace_claims c
              join agent_sessions s on s.id=c.session_id
              join principals p on p.id=c.owner_principal_id

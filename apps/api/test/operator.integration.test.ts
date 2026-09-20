@@ -273,12 +273,12 @@ beforeAll(async () => {
        id,space_id,vault_id,graph_domain,scope_id,kind,canonical_key,revision,
        authorization_path,payload,payload_hash
      ) values
-       ($1,$4,$5,'CODE','repo:allowed','FUNCTION','src/a.ts::a',$8,
-        'projects/allowed/src/a.ts',$9::jsonb,$10),
-       ($2,$4,$5,'CODE','repo:allowed','FUNCTION','src/b.ts::b',$8,
-        'projects/allowed/src/b.ts',$11::jsonb,$12),
-       ($3,$4,$6,'CODE','repo:denied','FUNCTION','secret.ts::hidden',$8,
-        'projects/denied/secret.ts',$13::jsonb,$14)`,
+       ($1,$4,$5,'CODE','repo:allowed','FUNCTION','src/a.ts::a',$7,
+        'projects/allowed/src/a.ts',$8::jsonb,$9),
+       ($2,$4,$5,'CODE','repo:allowed','FUNCTION','src/b.ts::b',$7,
+        'projects/allowed/src/b.ts',$10::jsonb,$11),
+       ($3,$4,$6,'CODE','repo:denied','FUNCTION','secret.ts::hidden',$7,
+        'projects/denied/secret.ts',$12::jsonb,$13)`,
     [
       allowedFederatedA,
       allowedFederatedB,
@@ -286,7 +286,6 @@ beforeAll(async () => {
       spaceId,
       allowedVaultId,
       deniedVaultId,
-      "unused",
       codeRevision,
       JSON.stringify({ title: "Function A", path: "src/a.ts", lineStart: 10 }),
       createHash("sha256").update("p10-fed-a").digest("hex"),
