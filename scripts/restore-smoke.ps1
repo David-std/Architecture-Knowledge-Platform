@@ -20,15 +20,21 @@ if (-not $PostgresContainer) { throw "PostgreSQL Compose service must be running
 $source = Resolve-InputPath $BackupDirectory
 $manifestPath = Join-Path $source "manifest.json"
 if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
-  throw "Backup manifest is missing. Create a new v3 backup before running recovery smoke."
+  throw "Backup manifest is missing. Create a new v4 backup before running recovery smoke."
 }
 try {
   $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 } catch {
   throw "Backup manifest is not valid JSON: $($_.Exception.Message)"
 }
-if ($manifest.format -ne "akp-backup-v3" -or $null -eq $manifest.database -or $null -eq $manifest.files) {
-  throw "Backup manifest is too old or incomplete. Create a new v3 backup before running recovery smoke."
+if (
+  $manifest.format -ne "akp-backup-v4" -or
+  $null -eq $manifest.database -or
+  $null -eq $manifest.files -or
+  $null -eq $manifest.durableState -or
+  $null -eq $manifest.derivedState
+) {
+  throw "Backup manifest is too old or incomplete. Create a new v4 backup before running recovery smoke."
 }
 if ($null -eq $manifest.database.migrationCount -or [int]$manifest.database.migrationCount -lt 1) {
   throw "Backup manifest does not declare a valid database migration count. Create a new backup."
@@ -38,6 +44,41 @@ if ($expectedMigrations.Count -ne [int]$manifest.database.migrationCount) {
   throw "Backup manifest migration inventory does not match its declared count."
 }
 
+$requiredDurableTables = @(
+  "knowledge_profile_revisions",
+  "vaults",
+  "agent_sessions",
+  "workspace_context_revision_sets",
+  "workspace_claims",
+  "workspace_events",
+  "workspace_decision_candidates",
+  "reviews",
+  "truth_revision_heads",
+  "truth_revisions",
+  "truth_support_sets",
+  "temporal_facts",
+  "federated_graph_projection_revisions",
+  "assurance_findings",
+  "source_connector_registrations",
+  "source_connector_checkpoints",
+  "source_connector_events",
+  "context_fabric_peers"
+)
+$declaredDurableTables = @($manifest.durableState.includedViaPostgresDump)
+foreach ($requiredTable in $requiredDurableTables) {
+  if ($declaredDurableTables -notcontains $requiredTable) {
+    throw "Backup manifest does not declare required durable state table: $requiredTable"
+  }
+}
+if (
+  $manifest.durableState.federationConfiguration.credentialReferencesOnly -ne $true -or
+  $manifest.durableState.federationConfiguration.secretsIncluded -ne $false
+) {
+  throw "Backup manifest does not prove secret-free federation configuration handling."
+}
+if ($manifest.derivedState.reconciliationAction -ne "REBUILD_DERIVED_PROJECTIONS") {
+  throw "Backup manifest does not declare the supported derived-state reconciliation action."
+}
 $artifactNames = @()
 foreach ($entry in $manifest.files) {
   $name = [string]$entry.name
@@ -54,6 +95,20 @@ foreach ($entry in $manifest.files) {
 }
 foreach ($required in @("postgres.dump", "minio-data.tar", "configuration-metadata.json")) {
   if ($artifactNames -notcontains $required) { throw "Backup manifest is missing required artifact: $required" }
+}
+$configurationPath = Join-Path $source "configuration-metadata.json"
+try {
+  $configurationMetadata = Get-Content -LiteralPath $configurationPath -Raw | ConvertFrom-Json
+} catch {
+  throw "Configuration metadata is not valid JSON: $($_.Exception.Message)"
+}
+if (
+  $configurationMetadata.format -ne "akp-configuration-metadata-v3" -or
+  $configurationMetadata.secretsIncluded -ne $false -or
+  $configurationMetadata.federationCredentialMaterialIncluded -ne $false -or
+  $configurationMetadata.modelProviderSecretsIncluded -ne $false
+) {
+  throw "Configuration metadata does not prove secret-free recovery metadata."
 }
 $configuredManagedRepository = if (-not [string]::IsNullOrWhiteSpace($ManagedRepository)) {
   $ManagedRepository
@@ -93,6 +148,13 @@ try {
         [ordered]@{ name = $parts[0]; checksum = $parts[1] }
       }
   )
+  foreach ($requiredTable in $requiredDurableTables) {
+    $safeTable = $requiredTable.Replace("'", "''")
+    $present = (docker exec $PostgresContainer psql -U akp -d $database -At -v ON_ERROR_STOP=1 -c "select to_regclass('public.$safeTable') is not null;").Trim()
+    if ($LASTEXITCODE -ne 0 -or $present -ne "t") {
+      throw "Restored database is missing required durable state table: $requiredTable"
+    }
+  }
 } finally {
   & docker exec $PostgresContainer rm -f $dumpTemporaryPath *> $null
   & docker exec $PostgresContainer psql -U akp -d postgres -v ON_ERROR_STOP=1 -c "drop database if exists `"$database`";" *> $null
@@ -157,4 +219,7 @@ Write-Output (@{
   restoredMigrations = $restoredMigrations.Count
   restoredMinioFiles = $restoredObjectFiles
   gitBundleVerified = $gitRestoreVerified
+  durableStateTablesVerified = $requiredDurableTables.Count
+  derivedStateReconciliation = [string]$manifest.derivedState.reconciliationAction
+  federationSecretsIncluded = [bool]$manifest.durableState.federationConfiguration.secretsIncluded
 } | ConvertTo-Json)

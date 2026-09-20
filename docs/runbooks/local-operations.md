@@ -153,10 +153,22 @@ $env:AKP_MANAGED_REPO = 'D:\AKP\managed-knowledge'
   -SpaceId 00000000-0000-0000-0000-000000000003
 ```
 
-The backup set contains PostgreSQL, MinIO data and a managed Git bundle when
-configured, plus non-secret metadata. Restore verification uses isolated
-resources, checks the bundle in a newly cloned repository, verifies its expected
-main commit/files and proves that searchable derived state can be rebuilt.
+The v4 backup set contains PostgreSQL, MinIO data and a managed Git bundle when
+configured, plus explicitly non-secret configuration metadata. Its manifest
+declares the durable P11 state covered by the PostgreSQL dump: profile
+revisions/bindings, workspace pins/claims/events and promotion/review state,
+temporal facts/support sets, graph revision catalog, assurance findings,
+connector registrations/checkpoints/events and federation peer configuration.
+Federation credentials and model-provider secrets are never copied into
+configuration metadata; peer rows retain only credential references.
+
+Restore verification uses isolated resources, checks every declared durable
+table, validates migration parity, restores the Git bundle into a new repository
+and proves that searchable derived state can be rebuilt. Vector, graph,
+community and context-packet projections are rebuildable rather than canonical;
+after a real restore run `REBUILD_DERIVED_PROJECTIONS`, then use
+`pnpm akp doctor --format human` to verify revision parity, index health,
+connectors, federation peers and backup recency before normal traffic resumes.
 
 ## Open an imported vault in Obsidian
 
