@@ -382,6 +382,8 @@ export interface RetrievalExecutionOptions {
   graphPolicy?: Partial<GraphTraversalPolicy>;
   /** Optional P6.9 associative expansion policy; disabled unless GRAPH_PPR is enabled. */
   pprPolicy?: Partial<PersonalizedPageRankPolicy>;
+  /** Cooperative cancellation seam for bounded PPR work. */
+  pprShouldCancel?: () => boolean;
   graphScopes?: Array<{ vaultId: string; pathPrefix: string | null }>;
   allowVectorForBenchmark?: boolean;
   deterministicRerank?: boolean;
@@ -2391,6 +2393,9 @@ export async function queryKnowledge(
               weight,
             })),
             policy: pprPolicy,
+            ...(options.pprShouldCancel
+              ? { shouldCancel: options.pprShouldCancel }
+              : {}),
           });
           if (!pprResult.converged) {
             options.warningSink?.push("PPR_MAX_ITERATIONS_REACHED");

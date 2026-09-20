@@ -1361,4 +1361,56 @@ describe("workspace coordination integration", () => {
       Number((afterExpiry.json() as { fencingToken: number }).fencingToken),
     ).toBeGreaterThan(reacquiredClaim.fencingToken);
   });
+
+  it("rolls back a work claim if acquisition crashes before its coordination event commits", async () => {
+    const workKey = `p11:claim-crash:${randomUUID()}`;
+    await db.pool.query(`
+      create or replace function akp_test_claim_acquisition_crash()
+      returns trigger language plpgsql as $$
+      begin
+        if new.event_type='CLAIM_ACQUIRED' then
+          raise exception 'WORK_CLAIM_ACQUISITION_TEST_CRASH';
+        end if;
+        return new;
+      end;
+      $$
+    `);
+    await db.pool.query(`
+      create trigger akp_test_claim_acquisition_crash
+      before insert on workspace_events
+      for each row execute function akp_test_claim_acquisition_crash()
+    `);
+    try {
+      await expect(
+        claimWorkspaceWork(db, {
+          sessionId,
+          actorId: actorAId,
+          workKey,
+          leaseSeconds: 120,
+        }),
+      ).rejects.toThrow("WORK_CLAIM_ACQUISITION_TEST_CRASH");
+
+      const claim = await db.pool.query<{ count: number }>(
+        `select count(*)::int count from workspace_claims
+          where session_id=$1 and work_key=$2`,
+        [sessionId, workKey],
+      );
+      expect(claim.rows[0]?.count).toBe(0);
+      const event = await db.pool.query<{ count: number }>(
+        `select count(*)::int count from workspace_events
+          where session_id=$1 and event_type='CLAIM_ACQUIRED'
+            and payload->>'workKey'=$2`,
+        [sessionId, workKey],
+      );
+      expect(event.rows[0]?.count).toBe(0);
+    } finally {
+      await db.pool.query(
+        "drop trigger if exists akp_test_claim_acquisition_crash on workspace_events",
+      );
+      await db.pool.query(
+        "drop function if exists akp_test_claim_acquisition_crash()",
+      );
+    }
+  });
+
 });

@@ -53,7 +53,20 @@ jobs:
           git init -b main "$AKP_MANAGED_REPO"
           git -C "$AKP_MANAGED_REPO" config user.name "AKP Resilience CI"
           git -C "$AKP_MANAGED_REPO" config user.email "akp-resilience-ci@localhost"
-          git -C "$AKP_MANAGED_REPO" commit --allow-empty -m "test: initialize resilience repository"
+          mkdir -p "$AKP_MANAGED_REPO/managed"
+          cat > "$AKP_MANAGED_REPO/managed/resilience-restore-probe.md" <<'EOF'
+          ---
+          id: RESILIENCE-RESTORE-PROBE
+          title: Resilience Restore Probe
+          type: note
+          status: active
+          knowledge_layer: managed
+          ---
+
+          P11 recovery must restore this managed Git source and rebuild a searchable projection.
+          EOF
+          git -C "$AKP_MANAGED_REPO" add --all
+          git -C "$AKP_MANAGED_REPO" commit -m "test: initialize resilience repository"
       - run: pnpm db:migrate
       - run: pnpm auth:provision
       - name: Validate durable leasing, fencing, retry and quarantine
@@ -71,6 +84,22 @@ jobs:
           pnpm --filter @akp/api exec vitest run \
             --config vitest.integration.config.ts \
             test/source-connectors.integration.test.ts
+      - name: Validate P11 recovery and failure-injection boundaries
+        run: |
+          pnpm --filter @akp/api exec vitest run \
+            --config vitest.integration.config.ts \
+            test/workspace-coordination.integration.test.ts \
+            test/context-fabric.integration.test.ts \
+            test/temporal-truth-retrieval.integration.test.ts
+          pnpm --filter @akp/postgres exec vitest run \
+            test/federated-graph.integration.test.ts \
+            test/knowledge-profile-activation.integration.test.ts
+          pnpm --filter @akp/indexing exec vitest run \
+            test/community-index.integration.test.ts
+          pnpm --filter @akp/retrieval exec vitest run test/ppr.test.ts
+          pnpm --filter @akp/worker exec vitest run \
+            test/compilation-stage.test.ts \
+            test/truth-maintenance.test.ts
       - name: Validate idempotent redelivery, vector invariants and stale generations
         run: |
           pnpm --filter @akp/indexing exec vitest run \
@@ -181,6 +210,19 @@ jobs:
           expect_down postgres database postgres
           expect_down minio rawObjectStore minio
           expect_down extractor extractor extractor
+      - name: Validate backup restore then projection rebuild
+        shell: pwsh
+        run: |
+          ./scripts/backup.ps1 `
+            -OutputDirectory backups/resilience-recovery `
+            -ManagedRepository $env:AKP_MANAGED_REPO
+          ./scripts/restore-smoke.ps1 `
+            -BackupDirectory backups/resilience-recovery `
+            -ManagedRepository $env:AKP_MANAGED_REPO
+          ./scripts/verify-managed-git-restore.ps1 `
+            -BackupDirectory backups/resilience-recovery `
+            -SourceManagedRepository $env:AKP_MANAGED_REPO `
+            -SpaceId 00000000-0000-0000-0000-000000000003
       - name: Persist executed resilience matrix
         shell: bash
         run: |
@@ -227,7 +269,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: resilience-matrix-${{ github.run_id }}
-          path: reports/ci
+          path: |
+            reports/ci
+            backups/resilience-recovery/manifest.json
           if-no-files-found: ignore
           retention-days: 14
       - name: Stop API and disposable services

@@ -384,4 +384,133 @@ describe("knowledge profile activation integration", () => {
       }
     },
   );
+
+  it.skipIf(!databaseUrl)(
+    "rolls back profile activation when a late durable side effect fails",
+    async () => {
+      if (!databaseUrl) return;
+      const db = new Postgres(databaseUrl);
+      const vaultId = await createVault(db);
+      try {
+        const baseline = await draftAndValidate(
+          db,
+          vaultId,
+          DEFAULT_KNOWLEDGE_PROFILE_V1,
+          "NON_BREAKING",
+        );
+        await activateKnowledgeProfile(db, {
+          spaceId,
+          vaultId,
+          revisionId: baseline.draft.id,
+          dryRunId: baseline.dryRunId,
+          expectedProfileHash: baseline.material.profileHash,
+          expectedCorpusRevision: "activation-r1",
+          actorId,
+          traceId: "activation-crash-baseline",
+        });
+
+        const successor = await draftAndValidate(
+          db,
+          vaultId,
+          {
+            ...DEFAULT_KNOWLEDGE_PROFILE_V1,
+            version: "0.4-activation-crash",
+            displayName: "AKP v0.4 activation crash fixture",
+          },
+          "NON_BREAKING",
+          baseline.draft.id,
+        );
+
+        await db.pool.query(`
+          create or replace function akp_test_profile_activation_crash()
+          returns trigger language plpgsql as $$
+          begin
+            if new.action='schema.profile_activate' then
+              raise exception 'PROFILE_ACTIVATION_TEST_CRASH';
+            end if;
+            return new;
+          end;
+          $$
+        `);
+        await db.pool.query(`
+          create trigger akp_test_profile_activation_crash
+          before insert on audit_events
+          for each row execute function akp_test_profile_activation_crash()
+        `);
+        try {
+          await expect(
+            activateKnowledgeProfile(db, {
+              spaceId,
+              vaultId,
+              revisionId: successor.draft.id,
+              dryRunId: successor.dryRunId,
+              expectedProfileHash: successor.material.profileHash,
+              expectedCorpusRevision: "activation-r1",
+              actorId,
+              traceId: "activation-crash-successor",
+            }),
+          ).rejects.toThrow("PROFILE_ACTIVATION_TEST_CRASH");
+        } finally {
+          await db.pool.query(
+            "drop trigger if exists akp_test_profile_activation_crash on audit_events",
+          );
+          await db.pool.query(
+            "drop function if exists akp_test_profile_activation_crash()",
+          );
+        }
+
+        const binding = await db.pool.query<{
+          active_knowledge_profile_revision_id: string | null;
+        }>(
+          "select active_knowledge_profile_revision_id from vaults where id=$1",
+          [vaultId],
+        );
+        expect(binding.rows[0]?.active_knowledge_profile_revision_id).toBe(
+          baseline.draft.id,
+        );
+
+        const statuses = await db.pool.query<{ id: string; status: string }>(
+          `select id,status from knowledge_profile_revisions
+            where id=any($1::uuid[])`,
+          [[baseline.draft.id, successor.draft.id]],
+        );
+        const statusById = new Map(
+          statuses.rows.map((row) => [row.id, row.status]),
+        );
+        expect(statusById.get(baseline.draft.id)).toBe("ACTIVE");
+        expect(statusById.get(successor.draft.id)).toBe("VALIDATED");
+
+        const auditCount = await db.pool.query<{ count: string }>(
+          `select count(*)::text count from audit_events
+            where vault_id=$1 and action='schema.profile_activate'`,
+          [vaultId],
+        );
+        expect(Number(auditCount.rows[0]?.count ?? 0)).toBe(1);
+      } finally {
+        await db.pool
+          .query(
+            "drop trigger if exists akp_test_profile_activation_crash on audit_events",
+          )
+          .catch(() => undefined);
+        await db.pool
+          .query(
+            "drop function if exists akp_test_profile_activation_crash()",
+          )
+          .catch(() => undefined);
+        await db.pool.query(
+          "update vaults set active_knowledge_profile_revision_id=null where id=$1",
+          [vaultId],
+        );
+        await db.pool.query("delete from audit_events where vault_id=$1", [
+          vaultId,
+        ]);
+        await db.pool.query("delete from schema_dry_runs where vault_id=$1", [
+          vaultId,
+        ]);
+        await db.pool.query("delete from vaults where id=$1", [vaultId]);
+        await db.close();
+      }
+    },
+  );
+
 });

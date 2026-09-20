@@ -200,7 +200,10 @@ export function personalizedPageRank(input: {
   edges: readonly PersonalizedPageRankEdge[];
   seeds: readonly PersonalizedPageRankSeed[];
   policy?: Partial<PersonalizedPageRankPolicy>;
+  shouldCancel?: () => boolean;
 }): PersonalizedPageRankResult {
+  const cancelled = (): boolean => input.shouldCancel?.() === true;
+  if (cancelled()) throw new Error("PPR_CANCELLED");
   const policy = resolvePersonalizedPageRankPolicy(input.policy);
   const allowedDomains = new Set(policy.allowedGraphDomains);
   const allowedRelations = new Set(policy.allowedRelations);
@@ -319,6 +322,7 @@ export function personalizedPageRank(input: {
   const propagationProbability = 1 - policy.restartProbability;
 
   for (let iteration = 1; iteration <= policy.maxIterations; iteration += 1) {
+    if (cancelled()) throw new Error("PPR_CANCELLED");
     const next = new Map<string, number>();
     for (const nodeId of nodeIds) {
       next.set(

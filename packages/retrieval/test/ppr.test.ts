@@ -205,6 +205,45 @@ describe("personalized PageRank", () => {
     ).toThrow("PPR_SCOPE_VIOLATION");
   });
 
+  it("cooperatively cancels an in-flight PPR operation", () => {
+    let checks = 0;
+    expect(() =>
+      personalizedPageRank({
+        nodes: [
+          { id: "seed", scopeId: "vault", graphDomain: "EPISTEMIC" },
+          { id: "next", scopeId: "vault", graphDomain: "EPISTEMIC" },
+        ],
+        edges: [
+          {
+            fromNodeId: "seed",
+            toNodeId: "next",
+            scopeId: "vault",
+            relation: "supports",
+            weight: 1,
+          },
+          {
+            fromNodeId: "next",
+            toNodeId: "seed",
+            scopeId: "vault",
+            relation: "supports",
+            weight: 1,
+          },
+        ],
+        seeds: [{ nodeId: "seed", weight: 1 }],
+        policy: {
+          allowedRelations: ["supports"],
+          maxIterations: 250,
+          tolerance: 1e-20,
+        },
+        shouldCancel: () => {
+          checks += 1;
+          return checks >= 3;
+        },
+      }),
+    ).toThrow("PPR_CANCELLED");
+    expect(checks).toBeGreaterThanOrEqual(3);
+  });
+
   it("enforces node and policy bounds", () => {
     expect(() =>
       personalizedPageRank({

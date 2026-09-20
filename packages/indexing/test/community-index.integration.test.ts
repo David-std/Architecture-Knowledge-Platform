@@ -180,6 +180,56 @@ describe("community index PostgreSQL integration", () => {
         expect(repeated.revisionId).toBe(first.revisionId);
         expect(repeated.communityRevision).toBe(first.communityRevision);
 
+        await db.pool.query(`
+          create or replace function akp_test_community_build_failure()
+          returns trigger language plpgsql as $
+          begin
+            raise exception 'COMMUNITY_BUILD_TEST_FAILURE';
+          end;
+          $
+        `);
+        await db.pool.query(`
+          create trigger akp_test_community_build_failure
+          before insert on community_index_communities
+          for each row execute function akp_test_community_build_failure()
+        `);
+        try {
+          await expect(
+            rebuildCommunityIndex(db, {
+              spaceId,
+              vaultId,
+              graphRevision: "graph-failure",
+              resolution: 0.5,
+              randomSeed: 7,
+            }),
+          ).rejects.toThrow("COMMUNITY_BUILD_TEST_FAILURE");
+          const afterFailure = await db.pool.query<{
+            graph_revision: string;
+            status: string;
+            stale: boolean;
+          }>(
+            `select graph_revision,status,stale
+               from community_index_revisions
+              where space_id=$1 and vault_id=$2 and scope_id=$3
+              order by built_at,id`,
+            [spaceId, vaultId, `vault:${vaultId}`],
+          );
+          expect(afterFailure.rows).toEqual([
+            {
+              graph_revision: "graph-1",
+              status: "ACTIVE",
+              stale: false,
+            },
+          ]);
+        } finally {
+          await db.pool.query(
+            "drop trigger if exists akp_test_community_build_failure on community_index_communities",
+          );
+          await db.pool.query(
+            "drop function if exists akp_test_community_build_failure()",
+          );
+        }
+
         await db.pool.query(
           "update knowledge_relations set weight=10 where id=$1",
           [relationIds.get("bridge")],
