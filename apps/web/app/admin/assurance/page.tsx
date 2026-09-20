@@ -332,7 +332,11 @@ export default async function AssurancePage({
                         name="findingId"
                         value={finding.id}
                       />
-                      <select name="status" defaultValue={finding.status}>
+                      <select
+                        key={`${finding.id}:${finding.status}`}
+                        name="status"
+                        defaultValue={finding.status}
+                      >
                         <option value="OPEN">OPEN</option>
                         <option value="ACKNOWLEDGED">ACKNOWLEDGED</option>
                         <option value="RESOLVED">RESOLVED</option>
