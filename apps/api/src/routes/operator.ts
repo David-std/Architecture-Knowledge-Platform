@@ -342,7 +342,9 @@ export function registerOperatorRoutes(
         const row = token.rows[0];
         if (!row) return reply.code(404).send({ code: "CREDENTIAL_NOT_FOUND" });
         const declared = teamCredentialScopes(row.scopes);
-        const declaredSpaceIds = [...new Set(declared.map((entry) => entry.spaceId))];
+        const declaredSpaceIds = [
+          ...new Set(declared.map((entry) => entry.spaceId)),
+        ];
         if (
           !declaredSpaceIds.length ||
           !declaredSpaceIds.some((spaceId) => scope.spaces.includes(spaceId))

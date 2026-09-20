@@ -230,11 +230,14 @@ export default async function TeamAdminPage({
     if (!id || !["API_TOKEN", "PRINCIPAL_CREDENTIAL"].includes(kind)) {
       throw new Error("TEAM_CREDENTIAL_REQUIRED");
     }
-    await akp(`/v1/operator/team/credentials/${encodeURIComponent(id)}/revoke`, {
-      method: "POST",
-      headers: { "idempotency-key": `web-team-revoke-${randomUUID()}` },
-      body: JSON.stringify({ kind }),
-    });
+    await akp(
+      `/v1/operator/team/credentials/${encodeURIComponent(id)}/revoke`,
+      {
+        method: "POST",
+        headers: { "idempotency-key": `web-team-revoke-${randomUUID()}` },
+        body: JSON.stringify({ kind }),
+      },
+    );
     revalidatePath("/admin/team");
   }
 
@@ -242,8 +245,9 @@ export default async function TeamAdminPage({
     home?.pendingReviews.filter((review) => review.vault_id === selected?.id) ??
     [];
   const sessions =
-    home?.activeSessions.filter((session) => session.vault_id === selected?.id) ??
-    [];
+    home?.activeSessions.filter(
+      (session) => session.vault_id === selected?.id,
+    ) ?? [];
   const indexes =
     health?.indexes.filter((index) => index.vault_id === selected?.id) ?? [];
   const connectors =
