@@ -44,7 +44,8 @@
     "benchmark:concurrency": "tsx scripts/concurrency-benchmark.ts",
     "test:browser": "node --test scripts/browser-e2e.test.mjs",
     "benchmark:scale:enterprise": "tsx scripts/enterprise-state-scale-benchmark.ts",
-    "proof:capabilities": "tsx scripts/capability-acceptance-matrix.ts"
+    "proof:capabilities": "tsx scripts/capability-acceptance-matrix.ts",
+    "benchmark:agent-arena": "tsx scripts/agent-arena-benchmark.ts"
   },
   "devDependencies": {
     "@types/mime-types": "^3.0.1",
