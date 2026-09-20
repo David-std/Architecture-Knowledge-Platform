@@ -684,12 +684,13 @@ describe("workspace coordination integration", () => {
     });
     expect(inboxHandoff?.handoffEventId).toMatch(/^[1-9][0-9]*$/);
 
+    const handoffImportIdempotencyKey = `handoff-import-${randomUUID()}`;
     const importedHandoff = await app.inject({
       method: "POST",
       url: `/v1/sessions/${receiverSessionId}/handoffs/${inboxHandoff!.handoffEventId}/import`,
       headers: {
         ...receiverAgentHeaders,
-        "idempotency-key": `handoff-import-${randomUUID()}`,
+        "idempotency-key": handoffImportIdempotencyKey,
       },
     });
     expect(importedHandoff.statusCode).toBe(201);
@@ -711,7 +712,10 @@ describe("workspace coordination integration", () => {
     const importedAgain = await app.inject({
       method: "POST",
       url: `/v1/sessions/${receiverSessionId}/handoffs/${inboxHandoff!.handoffEventId}/import`,
-      headers: receiverAgentHeaders,
+      headers: {
+        ...receiverAgentHeaders,
+        "idempotency-key": handoffImportIdempotencyKey,
+      },
     });
     expect(importedAgain.statusCode).toBe(201);
     expect((importedAgain.json() as { event: { id: string } }).event.id).toBe(
