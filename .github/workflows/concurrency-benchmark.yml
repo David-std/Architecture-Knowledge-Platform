@@ -70,13 +70,34 @@ jobs:
           if (events.acceptance?.noForeignClaims !== true) {
             throw new Error("Event-worker benchmark claimed foreign deliveries.");
           }
+          if (api.acceptance?.agentSessionsExact !== true) {
+            throw new Error("API/worker benchmark did not materialize the declared concurrent agent sessions.");
+          }
+          for (const measurement of [api.api?.search, api.api?.context]) {
+            if (!Number.isFinite(measurement?.latency?.p99Ms)) {
+              throw new Error("API concurrency evidence is missing p99 latency.");
+            }
+          }
+          if (!Number.isFinite(api.workers?.latency?.p99Ms) || !Number.isFinite(api.workers?.queueLag?.p99Ms)) {
+            throw new Error("Ingest concurrency evidence is missing p99 latency or queue lag.");
+          }
+          if (!Number.isFinite(events.claims?.latency?.p99Ms) || !Number.isFinite(events.claims?.queueLag?.p99Ms)) {
+            throw new Error("Event-worker evidence is missing p99 latency or queue lag.");
+          }
+          if (!Number.isFinite(events.claims?.retryRatePerEvent)) {
+            throw new Error("Event-worker evidence is missing retry rate.");
+          }
           console.log(JSON.stringify({
             apiStatus: api.status,
             eventStatus: events.status,
             eventWorkers: events.workload.workers,
+            concurrentAgents: api.workload.concurrentAgents,
+            ingestQueueLagP99Ms: api.workers.queueLag.p99Ms,
             eventRetries: events.claims.retriedClaims,
             retryRatePerEvent: events.claims.retryRatePerEvent,
             eventP95Ms: events.claims.latency.p95Ms,
+            eventP99Ms: events.claims.latency.p99Ms,
+            eventQueueLagP99Ms: events.claims.queueLag.p99Ms,
           }, null, 2));
           NODE
       - name: Capture concurrency diagnostics
