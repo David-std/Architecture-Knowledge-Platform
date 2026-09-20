@@ -300,7 +300,9 @@ export default async function Home() {
             <ul>
               {home.activeSessions.slice(0, 10).map((session) => (
                 <li key={session.id}>
-                  <strong>{session.purpose}</strong>
+                  <Link href={`/sessions/${session.id}`}>
+                    <strong>{session.purpose}</strong>
+                  </Link>
                   <br />
                   <small>
                     {session.active_participants} participantes · revision{" "}
