@@ -5,10 +5,7 @@ describe("decisionReadiness", () => {
   it("does not count an unaccepted agent suggestion as considered", () => {
     const state = decisionReadiness({
       candidateStatus: "CONSULTATION",
-      alternatives: [
-        { status: "CONSIDERED" },
-        { status: "SUGGESTED" },
-      ],
+      alternatives: [{ status: "CONSIDERED" }, { status: "SUGGESTED" }],
       objections: [],
       consultations: [{ status: "RESPONDED" }],
     });
@@ -20,10 +17,7 @@ describe("decisionReadiness", () => {
   it("requires resolved objections before selection", () => {
     const blocked = decisionReadiness({
       candidateStatus: "CONSULTATION",
-      alternatives: [
-        { status: "CONSIDERED" },
-        { status: "CONSIDERED" },
-      ],
+      alternatives: [{ status: "CONSIDERED" }, { status: "CONSIDERED" }],
       objections: [{ status: "OPEN" }],
       consultations: [{ status: "RESPONDED" }],
     });
@@ -31,10 +25,7 @@ describe("decisionReadiness", () => {
 
     const ready = decisionReadiness({
       candidateStatus: "CONSULTATION",
-      alternatives: [
-        { status: "CONSIDERED" },
-        { status: "CONSIDERED" },
-      ],
+      alternatives: [{ status: "CONSIDERED" }, { status: "CONSIDERED" }],
       objections: [{ status: "RESOLVED" }],
       consultations: [{ status: "RESPONDED" }],
     });

@@ -59,26 +59,29 @@ export async function createDecision(formData: FormData) {
   const sessionId = required(formData, "sessionId");
   const href = listHref(sessionId);
   const created = await run<{ id: string }>(href, () =>
-    akp<{ id: string }>(`/v1/sessions/${encodeURIComponent(sessionId)}/decisions`, {
-      method: "POST",
-      body: JSON.stringify({
-        decisionAuthorityPrincipalId: required(
-          formData,
-          "decisionAuthorityPrincipalId",
-        ),
-        title: required(formData, "title"),
-        problem: required(formData, "problem"),
-        context: required(formData, "context"),
-        drivers: lines(formData, "drivers"),
-        qualityAttributes: lines(formData, "qualityAttributes"),
-        affectedRefs: lines(formData, "affectedRefs"),
-        evidenceRefs: lines(formData, "evidenceRefs"),
-        verificationPlan: required(formData, "verificationPlan"),
-        verificationDueAt: optional(formData, "verificationDueAt"),
-        decisionDeadline: optional(formData, "decisionDeadline"),
-        supersedesCandidateId: optional(formData, "supersedesCandidateId"),
-      }),
-    }),
+    akp<{ id: string }>(
+      `/v1/sessions/${encodeURIComponent(sessionId)}/decisions`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          decisionAuthorityPrincipalId: required(
+            formData,
+            "decisionAuthorityPrincipalId",
+          ),
+          title: required(formData, "title"),
+          problem: required(formData, "problem"),
+          context: required(formData, "context"),
+          drivers: lines(formData, "drivers"),
+          qualityAttributes: lines(formData, "qualityAttributes"),
+          affectedRefs: lines(formData, "affectedRefs"),
+          evidenceRefs: lines(formData, "evidenceRefs"),
+          verificationPlan: required(formData, "verificationPlan"),
+          verificationDueAt: optional(formData, "verificationDueAt"),
+          decisionDeadline: optional(formData, "decisionDeadline"),
+          supersedesCandidateId: optional(formData, "supersedesCandidateId"),
+        }),
+      },
+    ),
   );
   redirect(
     withMessage(
@@ -239,7 +242,9 @@ export async function captureDecision(formData: FormData) {
       { method: "POST", body: JSON.stringify({}) },
     ),
   );
-  redirect(withMessage(href, "notice", "Decision captured as workspace evidence"));
+  redirect(
+    withMessage(href, "notice", "Decision captured as workspace evidence"),
+  );
 }
 
 export async function promoteDecision(formData: FormData) {
@@ -247,20 +252,23 @@ export async function promoteDecision(formData: FormData) {
   const decisionId = required(formData, "decisionId");
   const href = detailHref(sessionId, decisionId);
   const promoted = await run<{ reviewId: string }>(href, () =>
-    akp<{ reviewId: string }>(`/v1/sessions/${encodeURIComponent(sessionId)}/promotions`, {
-      method: "POST",
-      body: JSON.stringify({
-        evidenceEventIds: [required(formData, "capturedEventId")],
-        summary: required(formData, "summary"),
-        changes: [
-          {
-            path: required(formData, "path"),
-            content: required(formData, "content"),
-            reason: required(formData, "reason"),
-          },
-        ],
-      }),
-    }),
+    akp<{ reviewId: string }>(
+      `/v1/sessions/${encodeURIComponent(sessionId)}/promotions`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          evidenceEventIds: [required(formData, "capturedEventId")],
+          summary: required(formData, "summary"),
+          changes: [
+            {
+              path: required(formData, "path"),
+              content: required(formData, "content"),
+              reason: required(formData, "reason"),
+            },
+          ],
+        }),
+      },
+    ),
   );
   redirect(`/reviews/${encodeURIComponent(promoted.reviewId)}`);
 }

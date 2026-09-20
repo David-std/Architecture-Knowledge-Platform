@@ -156,7 +156,8 @@ function promotionContent(
     candidate.problem,
     "",
     "## Decision",
-    selected?.description ?? "Selected alternative recorded in governed evidence.",
+    selected?.description ??
+      "Selected alternative recorded in governed evidence.",
     "",
     "## Consequences",
     candidate.consequences ?? "See captured decision evidence.",
@@ -198,9 +199,7 @@ export default async function DecisionPage({
     akp<DecisionSnapshot>(
       `/v1/sessions/${encodeURIComponent(sessionId)}/decisions/${encodeURIComponent(decisionId)}`,
     ),
-    akp<SessionState>(
-      `/v1/sessions/${encodeURIComponent(sessionId)}/state`,
-    ),
+    akp<SessionState>(`/v1/sessions/${encodeURIComponent(sessionId)}/state`),
     akp<OperatorMe>("/v1/operator/me"),
   ]);
   const { candidate, alternatives, objections, consultations } = snapshot;
@@ -262,7 +261,8 @@ export default async function DecisionPage({
           <p className="metric">{candidate.status}</p>
           <p>version {candidate.version}</p>
           <p>
-            authority <code>{short(candidate.decisionAuthorityPrincipalId)}</code>
+            authority{" "}
+            <code>{short(candidate.decisionAuthorityPrincipalId)}</code>
             {isAuthority ? " · you are the decision authority" : ""}
           </p>
           <p>
@@ -289,12 +289,8 @@ export default async function DecisionPage({
           <p className="metric">
             {readiness.selectionReady ? "READY" : "BLOCKED"}
           </p>
-          <p>
-            considered alternatives: {readiness.consideredAlternatives} / 2
-          </p>
-          <p>
-            responded consultations: {readiness.respondedConsultations} / 1
-          </p>
+          <p>considered alternatives: {readiness.consideredAlternatives} / 2</p>
+          <p>responded consultations: {readiness.respondedConsultations} / 1</p>
           <p>open objections: {readiness.openObjections}</p>
           <p className="muted">
             Agent suggestions count only after the human decision authority
@@ -330,8 +326,7 @@ export default async function DecisionPage({
           </p>
           {candidate.supersedesCandidateId ? (
             <p>
-              supersedes{" "}
-              <code>{short(candidate.supersedesCandidateId)}</code>
+              supersedes <code>{short(candidate.supersedesCandidateId)}</code>
             </p>
           ) : null}
           {candidate.supersededByCandidateId ? (
@@ -575,7 +570,9 @@ export default async function DecisionPage({
                 Selected alternative
                 <select name="alternativeId" required>
                   {alternatives
-                    .filter((alternative) => alternative.status === "CONSIDERED")
+                    .filter(
+                      (alternative) => alternative.status === "CONSIDERED",
+                    )
                     .map((alternative) => (
                       <option key={alternative.id} value={alternative.id}>
                         {alternative.title}
@@ -593,11 +590,17 @@ export default async function DecisionPage({
               </label>
               <label>
                 Effective from · ISO 8601, optional
-                <input name="effectiveFrom" placeholder="2026-10-01T00:00:00Z" />
+                <input
+                  name="effectiveFrom"
+                  placeholder="2026-10-01T00:00:00Z"
+                />
               </label>
               <label>
                 Effective until · ISO 8601, optional
-                <input name="effectiveUntil" placeholder="2027-10-01T00:00:00Z" />
+                <input
+                  name="effectiveUntil"
+                  placeholder="2027-10-01T00:00:00Z"
+                />
               </label>
               <button type="submit">Select for governed review</button>
             </form>
@@ -612,7 +615,10 @@ export default async function DecisionPage({
           {candidate.selectedAlternativeId ? (
             <>
               <p>
-                selected <strong>{selected?.title ?? short(candidate.selectedAlternativeId)}</strong>
+                selected{" "}
+                <strong>
+                  {selected?.title ?? short(candidate.selectedAlternativeId)}
+                </strong>
               </p>
               <p>{candidate.consequences}</p>
               <p className="muted">

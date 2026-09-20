@@ -54,8 +54,9 @@ export default async function DecisionsPage({
   const query = await searchParams;
   const sessionsResponse = await akp<{ sessions: Session[] }>("/v1/sessions");
   const selected =
-    sessionsResponse.sessions.find((session) => session.id === query.sessionId) ??
-    sessionsResponse.sessions[0];
+    sessionsResponse.sessions.find(
+      (session) => session.id === query.sessionId,
+    ) ?? sessionsResponse.sessions[0];
 
   if (!selected) {
     return (
@@ -71,9 +72,7 @@ export default async function DecisionsPage({
   }
 
   const [state, decisionsResponse] = await Promise.all([
-    akp<SessionState>(
-      `/v1/sessions/${encodeURIComponent(selected.id)}/state`,
-    ),
+    akp<SessionState>(`/v1/sessions/${encodeURIComponent(selected.id)}/state`),
     akp<{ decisions: Decision[] }>(
       `/v1/sessions/${encodeURIComponent(selected.id)}/decisions`,
     ),
@@ -141,7 +140,9 @@ export default async function DecisionsPage({
                     </td>
                     <td>{decision.status}</td>
                     <td>
-                      <code>{short(decision.decisionAuthorityPrincipalId)}</code>
+                      <code>
+                        {short(decision.decisionAuthorityPrincipalId)}
+                      </code>
                     </td>
                     <td>
                       {decision.reviewId ? (
@@ -217,11 +218,17 @@ export default async function DecisionsPage({
               </label>
               <label>
                 Verification due · ISO 8601, optional
-                <input name="verificationDueAt" placeholder="2026-10-01T12:00:00Z" />
+                <input
+                  name="verificationDueAt"
+                  placeholder="2026-10-01T12:00:00Z"
+                />
               </label>
               <label>
                 Decision deadline · ISO 8601, optional
-                <input name="decisionDeadline" placeholder="2026-10-01T12:00:00Z" />
+                <input
+                  name="decisionDeadline"
+                  placeholder="2026-10-01T12:00:00Z"
+                />
               </label>
               <label>
                 Supersedes candidate UUID · optional
