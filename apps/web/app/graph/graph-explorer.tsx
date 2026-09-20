@@ -235,8 +235,7 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
   const visualEdges = useMemo(
     () =>
       filteredEdges.filter(
-        (edge) =>
-          visualNodeIds.has(edge.from) && visualNodeIds.has(edge.to),
+        (edge) => visualNodeIds.has(edge.from) && visualNodeIds.has(edge.to),
       ),
     [filteredEdges, visualNodeIds],
   );
@@ -510,8 +509,9 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
           </div>
           <p id="graph-render-status" className="muted" role="status">
             Render visual: {visualNodes.length} de {filteredNodes.length} nodos
-            filtrados · {visualEdges.length} de {filteredEdges.length} relaciones.
-            Los cálculos de camino e impacto usan todo el set filtrado.
+            filtrados · {visualEdges.length} de {filteredEdges.length}{" "}
+            relaciones. Los cálculos de camino e impacto usan todo el set
+            filtrado.
             {filteredNodes.length > VISUAL_NODE_LIMIT
               ? " Usa el catálogo paginado para seleccionar nodos fuera del presupuesto visual inicial."
               : ""}
@@ -715,9 +715,9 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
         <h2>Catálogo de nodos</h2>
         <p className="muted">
           Página {effectiveCatalogPage} de {catalogPageCount} ·{" "}
-          {filteredNodes.length} nodos filtrados. Seleccionar un nodo lo mantiene
-          dentro del presupuesto visual aunque quede fuera de los primeros{" "}
-          {VISUAL_NODE_LIMIT}.
+          {filteredNodes.length} nodos filtrados. Seleccionar un nodo lo
+          mantiene dentro del presupuesto visual aunque quede fuera de los
+          primeros {VISUAL_NODE_LIMIT}.
         </p>
         {catalogNodes.length ? (
           <>
@@ -744,7 +744,9 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
                         aria-pressed={node.id === selectedId}
                         onClick={() => setSelectedId(node.id)}
                       >
-                        {node.id === selectedId ? "Seleccionado" : "Seleccionar"}
+                        {node.id === selectedId
+                          ? "Seleccionado"
+                          : "Seleccionar"}
                       </button>
                     </td>
                   </tr>
