@@ -19,6 +19,7 @@
 /knowledge/:id          approved document view
 /graph                   typed graph
 /evals                   retrieval and grounding scorecards
+/admin/team              scopes, memberships, principals, credential lifecycle and governance overview
 /admin/spaces            space and RBAC
 /admin/profiles          active/pending KnowledgeProfile governance
 /admin/health            jobs, index parity and backups

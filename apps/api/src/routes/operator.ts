@@ -1,8 +1,13 @@
 import type { FastifyInstance } from "fastify";
 import { getOpenTelemetryStatus } from "@akp/observability";
-import { resolveAuthorizedVaultScope, type Postgres } from "@akp/postgres";
+import {
+  resolveAuthorizedVaultScope,
+  revokeAgentProcessPrincipalInVaultScope,
+  type Postgres,
+} from "@akp/postgres";
 import {
   actorOf,
+  audit,
   requirePermission,
   unrestrictedSpaceIdsForPermission,
   type Actor,
@@ -31,6 +36,38 @@ function sanitizeOperationalValue(value: unknown): unknown {
 interface OperatorScope {
   spaces: string[];
   vaultIds: string[];
+}
+
+interface TeamCredentialScope {
+  spaceId: string;
+  pathPrefix: string | null;
+  permissions: string[];
+}
+
+const OPERATOR_UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function teamCredentialScopes(value: unknown): TeamCredentialScope[] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+  const spaces = (value as Record<string, unknown>).spaces;
+  if (!Array.isArray(spaces)) return [];
+  return spaces.flatMap((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+    const record = entry as Record<string, unknown>;
+    if (typeof record.spaceId !== "string") return [];
+    const pathPrefix =
+      record.pathPrefix === null
+        ? null
+        : typeof record.pathPrefix === "string"
+          ? record.pathPrefix
+          : null;
+    const permissions = Array.isArray(record.permissions)
+      ? record.permissions.filter(
+          (permission): permission is string => typeof permission === "string",
+        )
+      : [];
+    return [{ spaceId: record.spaceId, pathPrefix, permissions }];
+  });
 }
 
 async function operatorScope(
@@ -117,6 +154,277 @@ export function registerOperatorRoutes(
               })),
             }
           : null,
+      };
+    },
+  );
+
+  app.get(
+    "/v1/operator/team",
+    { preHandler: requirePermission("admin") },
+    async (request, reply) => {
+      const scope = await operatorScope(db, actorOf(request), "admin");
+      if (!scope.spaces.length) {
+        return reply.code(403).send({ code: "SPACE_SCOPE_DENIED" });
+      }
+      const [spaces, vaults, memberships, principals, apiTokens, credentials] =
+        await Promise.all([
+          db.pool.query(
+            `select id,organization_id,slug,name,visibility,created_at
+               from spaces
+              where id=any($1::uuid[])
+              order by name,id`,
+            [scope.spaces],
+          ),
+          db.pool.query(
+            `select id,space_id,vault_key,name,visibility,enabled,
+                    current_revision,created_at
+               from vaults
+              where id=any($1::uuid[])
+              order by name,id`,
+            [scope.vaultIds],
+          ),
+          db.pool.query(
+            `select m.id,m.user_id,m.space_id,m.role,m.path_prefix,
+                    u.email,u.display_name
+               from memberships m
+               join users u on u.id=m.user_id
+              where m.space_id=any($1::uuid[])
+              order by u.display_name,m.space_id,m.role,m.path_prefix nulls first`,
+            [scope.spaces],
+          ),
+          db.pool.query(
+            `select distinct p.id,p.kind,p.user_id,p.parent_principal_id,
+                    p.session_id,p.vault_id,p.display_name,p.allowed_actions,
+                    p.policy_revision,p.state,p.created_at,p.revoked_at
+               from principals p
+               left join agent_sessions s on s.id=p.session_id
+              where (
+                p.user_id in (
+                  select m.user_id from memberships m
+                   where m.space_id=any($1::uuid[])
+                )
+              ) or p.vault_id=any($2::uuid[])
+                 or (
+                   s.space_id=any($1::uuid[])
+                   and s.vault_id=any($2::uuid[])
+                 )
+              order by p.kind,p.display_name,p.id`,
+            [scope.spaces, scope.vaultIds],
+          ),
+          db.pool.query(
+            `select t.id,t.user_id,t.label,t.scopes,t.expires_at,t.revoked_at,
+                    t.created_at,u.email,u.display_name
+               from api_tokens t
+               join users u on u.id=t.user_id
+              where exists(
+                select 1 from memberships m
+                 where m.user_id=t.user_id
+                   and m.space_id=any($1::uuid[])
+              )
+              order by t.created_at desc,t.id`,
+            [scope.spaces],
+          ),
+          db.pool.query(
+            `select c.id,c.principal_id,c.user_id,c.label,c.scopes,
+                    c.allowed_actions,c.policy_revision,c.expires_at,
+                    c.revoked_at,c.created_at,p.kind principal_kind,
+                    p.vault_id,p.session_id,p.display_name principal_name,
+                    p.state principal_state
+               from principal_credentials c
+               join principals p on p.id=c.principal_id
+              where p.vault_id=any($1::uuid[])
+              order by c.created_at desc,c.id`,
+            [scope.vaultIds],
+          ),
+        ]);
+
+      const authorizedSpaces = new Set(scope.spaces);
+      const apiCredentials = apiTokens.rows.flatMap((row) => {
+        const declared = teamCredentialScopes(row.scopes);
+        const visible = declared.filter((entry) =>
+          authorizedSpaces.has(entry.spaceId),
+        );
+        if (!visible.length) return [];
+        const revocable =
+          declared.length > 0 &&
+          declared.every((entry) => authorizedSpaces.has(entry.spaceId));
+        return [
+          {
+            id: row.id,
+            kind: "API_TOKEN",
+            userId: row.user_id,
+            email: row.email,
+            displayName: row.display_name,
+            label: row.label,
+            scopes: visible,
+            expiresAt: row.expires_at,
+            revokedAt: row.revoked_at,
+            createdAt: row.created_at,
+            revocable,
+            crossScope: !revocable,
+          },
+        ];
+      });
+      const principalCredentials = credentials.rows.map((row) => {
+        const declared = teamCredentialScopes(row.scopes);
+        const visible = declared.filter((entry) =>
+          authorizedSpaces.has(entry.spaceId),
+        );
+        const revocable =
+          row.principal_kind === "AGENT_PROCESS" &&
+          scope.vaultIds.includes(String(row.vault_id)) &&
+          declared.length > 0 &&
+          declared.every((entry) => authorizedSpaces.has(entry.spaceId));
+        return {
+          id: row.id,
+          kind: "PRINCIPAL_CREDENTIAL",
+          principalId: row.principal_id,
+          principalKind: row.principal_kind,
+          principalName: row.principal_name,
+          principalState: row.principal_state,
+          vaultId: row.vault_id,
+          sessionId: row.session_id,
+          label: row.label,
+          scopes: visible,
+          allowedActions: row.allowed_actions,
+          policyRevision: row.policy_revision,
+          expiresAt: row.expires_at,
+          revokedAt: row.revoked_at,
+          createdAt: row.created_at,
+          revocable,
+          crossScope: !revocable,
+        };
+      });
+
+      return sanitizeOperationalValue({
+        generatedAt: new Date().toISOString(),
+        scope,
+        spaces: spaces.rows,
+        vaults: vaults.rows,
+        memberships: memberships.rows,
+        principals: principals.rows,
+        apiCredentials,
+        principalCredentials,
+      });
+    },
+  );
+
+  app.post<{
+    Params: { id: string };
+    Body: { kind?: string };
+  }>(
+    "/v1/operator/team/credentials/:id/revoke",
+    { preHandler: requirePermission("admin") },
+    async (request, reply) => {
+      const credentialId = request.params.id;
+      if (!OPERATOR_UUID_PATTERN.test(credentialId)) {
+        return reply.code(404).send({ code: "CREDENTIAL_NOT_FOUND" });
+      }
+      const kind = request.body?.kind?.trim().toUpperCase();
+      if (!["API_TOKEN", "PRINCIPAL_CREDENTIAL"].includes(kind ?? "")) {
+        return reply.code(400).send({ code: "INVALID_CREDENTIAL_KIND" });
+      }
+      const scope = await operatorScope(db, actorOf(request), "admin");
+      if (!scope.spaces.length) {
+        return reply.code(403).send({ code: "SPACE_SCOPE_DENIED" });
+      }
+      if (kind === "API_TOKEN") {
+        const token = await db.pool.query<{
+          id: string;
+          scopes: unknown;
+          revoked_at: Date | null;
+        }>(
+          `select id,scopes,revoked_at
+             from api_tokens
+            where id=$1`,
+          [credentialId],
+        );
+        const row = token.rows[0];
+        if (!row) return reply.code(404).send({ code: "CREDENTIAL_NOT_FOUND" });
+        const declared = teamCredentialScopes(row.scopes);
+        const declaredSpaceIds = [...new Set(declared.map((entry) => entry.spaceId))];
+        if (
+          !declaredSpaceIds.length ||
+          !declaredSpaceIds.some((spaceId) => scope.spaces.includes(spaceId))
+        ) {
+          return reply.code(404).send({ code: "CREDENTIAL_NOT_FOUND" });
+        }
+        if (
+          declaredSpaceIds.some((spaceId) => !scope.spaces.includes(spaceId))
+        ) {
+          return reply
+            .code(409)
+            .send({ code: "CREDENTIAL_CROSS_SCOPE_REVOKE_DENIED" });
+        }
+        await db.pool.query(
+          `update api_tokens
+              set revoked_at=coalesce(revoked_at,now())
+            where id=$1`,
+          [credentialId],
+        );
+        await audit(
+          db,
+          request,
+          "team.credential.revoke",
+          "api_token",
+          credentialId,
+          { scopeSpaceIds: declaredSpaceIds },
+          declaredSpaceIds[0],
+        );
+        return { id: credentialId, kind, revoked: true };
+      }
+
+      const credential = await db.pool.query<{
+        principal_id: string;
+        vault_id: string;
+        space_id: string;
+        scopes: unknown;
+      }>(
+        `select c.principal_id,c.scopes,p.vault_id,v.space_id
+           from principal_credentials c
+           join principals p on p.id=c.principal_id
+           join vaults v on v.id=p.vault_id
+          where c.id=$1
+            and p.kind='AGENT_PROCESS'
+            and p.vault_id=any($2::uuid[])
+          limit 1`,
+        [credentialId, scope.vaultIds],
+      );
+      const row = credential.rows[0];
+      if (!row) return reply.code(404).send({ code: "CREDENTIAL_NOT_FOUND" });
+      const declared = teamCredentialScopes(row.scopes);
+      const declaredSpaceIds = [...new Set(declared.map((entry) => entry.spaceId))];
+      if (
+        !declaredSpaceIds.length ||
+        declaredSpaceIds.some((spaceId) => !scope.spaces.includes(spaceId))
+      ) {
+        return reply
+          .code(409)
+          .send({ code: "CREDENTIAL_CROSS_SCOPE_REVOKE_DENIED" });
+      }
+      const principal = await revokeAgentProcessPrincipalInVaultScope(db, {
+        principalId: row.principal_id,
+        vaultIds: scope.vaultIds,
+      });
+      await audit(
+        db,
+        request,
+        "team.credential.revoke",
+        "principal",
+        principal.id,
+        { vaultId: row.vault_id, credentialId },
+        row.space_id,
+      );
+      return {
+        id: credentialId,
+        kind,
+        revoked: true,
+        principal: {
+          id: principal.id,
+          state: principal.state,
+          policyRevision: principal.policyRevision,
+          revokedAt: principal.revokedAt,
+        },
       };
     },
   );

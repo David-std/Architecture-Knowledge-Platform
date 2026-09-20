@@ -2802,6 +2802,49 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  /v1/operator/team:
+    get:
+      tags: [Governance]
+      operationId: getTeamAdminProjection
+      x-akp-permission: admin
+      description: >
+        Scoped Team Admin inventory. Returns memberships, principals and
+        credential metadata only inside unrestricted admin spaces/vaults.
+        Raw tokens and token hashes are never returned; cross-scope credentials
+        are clipped and marked non-revocable.
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/operator/team/credentials/{id}/revoke:
+    post:
+      tags: [Governance]
+      operationId: revokeTeamCredential
+      x-akp-permission: admin
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [kind]
+              properties:
+                kind:
+                  type: string
+                  enum: [API_TOKEN, PRINCIPAL_CREDENTIAL]
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
   /v1/operator/graph:
     get:
       tags: [Knowledge]

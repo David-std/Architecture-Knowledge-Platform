@@ -176,6 +176,87 @@ export async function createAgentProcessPrincipalCredential(
   }
 }
 
+export async function revokeAgentProcessPrincipalInVaultScope(
+  db: Postgres,
+  input: { principalId: string; vaultIds: string[] },
+): Promise<PrincipalRecord> {
+  if (!input.vaultIds.length) {
+    throw principalError("AGENT_PROCESS_NOT_FOUND", 404);
+  }
+  const client = await db.pool.connect();
+  try {
+    await client.query("begin");
+    const existing = await client.query<Record<string, unknown>>(
+      `select *
+         from principals
+        where id=$1
+          and kind='AGENT_PROCESS'
+          and vault_id=any($2::uuid[])
+        for update`,
+      [input.principalId, input.vaultIds],
+    );
+    const current = existing.rows[0];
+    if (!current) throw principalError("AGENT_PROCESS_NOT_FOUND", 404);
+    if (String(current.state) === "REVOKED") {
+      await client.query("commit");
+      return normalizePrincipal(current);
+    }
+    const revoked = await client.query<Record<string, unknown>>(
+      `update principals
+          set state='REVOKED',revoked_at=now(),policy_revision=policy_revision+1
+        where id=$1
+        returning *`,
+      [input.principalId],
+    );
+    const row = revoked.rows[0];
+    if (!row) throw principalError("AGENT_PROCESS_NOT_FOUND", 404);
+    await client.query(
+      `update principal_credentials
+          set revoked_at=coalesce(revoked_at,now())
+        where principal_id=$1`,
+      [input.principalId],
+    );
+    const scope = await client.query<{
+      space_id: string;
+      vault_id: string;
+    }>(
+      `select space_id,vault_id
+         from agent_sessions
+        where id=$1 and vault_id=$2`,
+      [row.session_id, row.vault_id],
+    );
+    const sessionScope = scope.rows[0];
+    if (!sessionScope) {
+      throw principalError("AGENT_PROCESS_SESSION_SCOPE_MISSING", 409);
+    }
+    await appendOutboxEvent(client, {
+      eventType: "PrincipalRevoked",
+      resourceId: String(row.id),
+      spaceId: sessionScope.space_id,
+      vaultId: sessionScope.vault_id,
+      correlationId: row.session_id ? String(row.session_id) : null,
+      payload: {
+        principalId: String(row.id),
+        parentPrincipalId: String(row.parent_principal_id),
+        sessionId: String(row.session_id),
+        kind: "AGENT_PROCESS",
+        policyRevision: Number(row.policy_revision),
+        revokedAt: row.revoked_at
+          ? new Date(String(row.revoked_at)).toISOString()
+          : new Date().toISOString(),
+        authority: "ADMIN_VAULT_SCOPE",
+      },
+    });
+    await client.query("commit");
+    return normalizePrincipal(row);
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function revokeAgentProcessPrincipal(
   db: Postgres,
   input: { principalId: string; parentPrincipalId: string },
