@@ -122,9 +122,7 @@
     "KnowledgeFieldDefinition": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "type"
-      ],
+      "required": ["type"],
       "properties": {
         "type": {
           "type": "string",
@@ -166,15 +164,11 @@
             }
           },
           "then": {
-            "required": [
-              "enumValues"
-            ]
+            "required": ["enumValues"]
           },
           "else": {
             "not": {
-              "required": [
-                "enumValues"
-              ]
+              "required": ["enumValues"]
             }
           }
         }
@@ -214,11 +208,7 @@
     "LifecycleTransitionDefinition": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "from",
-        "to",
-        "allowedActors"
-      ],
+      "required": ["from", "to", "allowedActors"],
       "properties": {
         "from": {
           "$ref": "#/$defs/SemanticName"
@@ -248,10 +238,7 @@
     "LifecycleDefinition": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "states",
-        "initial"
-      ],
+      "required": ["states", "initial"],
       "properties": {
         "states": {
           "type": "array",
@@ -309,9 +296,7 @@
     "ReviewPolicyDefinition": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "allowedRoles"
-      ],
+      "required": ["allowedRoles"],
       "properties": {
         "required": {
           "type": "boolean",
@@ -341,9 +326,7 @@
                 "const": true
               }
             },
-            "required": [
-              "required"
-            ]
+            "required": ["required"]
           },
           "then": {
             "properties": {
@@ -358,10 +341,7 @@
     "ArtifactContractDefinition": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "root",
-        "pathTemplate"
-      ],
+      "required": ["root", "pathTemplate"],
       "properties": {
         "root": {
           "type": "string",
@@ -383,10 +363,7 @@
     "RelationDefinition": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "from",
-        "to"
-      ],
+      "required": ["from", "to"],
       "properties": {
         "from": {
           "type": "array",
@@ -420,9 +397,7 @@
     "RetrievalProfilePolicy": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "allowedKinds"
-      ],
+      "required": ["allowedKinds"],
       "properties": {
         "allowedKinds": {
           "type": "array",
@@ -451,20 +426,10 @@
         "progressiveDisclosure": {
           "type": "array",
           "minItems": 1,
-          "default": [
-            "L0",
-            "L1",
-            "L2",
-            "L3"
-          ],
+          "default": ["L0", "L1", "L2", "L3"],
           "items": {
             "type": "string",
-            "enum": [
-              "L0",
-              "L1",
-              "L2",
-              "L3"
-            ]
+            "enum": ["L0", "L1", "L2", "L3"]
           }
         }
       }
@@ -472,9 +437,7 @@
     "PromotionPolicyDefinition": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "allowedTargetScopes"
-      ],
+      "required": ["allowedTargetScopes"],
       "properties": {
         "allowedTargetScopes": {
           "type": "array",
@@ -503,11 +466,7 @@
         "sourceChangeAction": {
           "type": "string",
           "default": "MARK_STALE",
-          "enum": [
-            "MARK_STALE",
-            "RECOMPILE",
-            "REVIEW_REQUIRED"
-          ]
+          "enum": ["MARK_STALE", "RECOMPILE", "REVIEW_REQUIRED"]
         },
         "staleAfterDays": {
           "type": "integer",
@@ -519,9 +478,7 @@
     "ConnectorProfilePolicy": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "allowedAccessModes"
-      ],
+      "required": ["allowedAccessModes"],
       "properties": {
         "allowedAccessModes": {
           "type": "array",
@@ -545,10 +502,7 @@
     "ModelRoleConstraint": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "role",
-        "residency"
-      ],
+      "required": ["role", "residency"],
       "properties": {
         "role": {
           "type": "string",
@@ -566,11 +520,7 @@
     },
     "ModelResidency": {
       "type": "string",
-      "enum": [
-        "LOCAL_ONLY",
-        "ORG_APPROVED",
-        "EXTERNAL_ALLOWED"
-      ]
+      "enum": ["LOCAL_ONLY", "ORG_APPROVED", "EXTERNAL_ALLOWED"]
     }
   }
 }

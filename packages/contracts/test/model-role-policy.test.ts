@@ -52,16 +52,16 @@ describe("ModelRolePolicy", () => {
     expect(isModelResidencyCompatible("ORG_APPROVED", "ORG_APPROVED")).toBe(
       true,
     );
-    expect(
-      isModelResidencyCompatible("ORG_APPROVED", "EXTERNAL_ALLOWED"),
-    ).toBe(false);
+    expect(isModelResidencyCompatible("ORG_APPROVED", "EXTERNAL_ALLOWED")).toBe(
+      false,
+    );
 
-    expect(
-      isModelResidencyCompatible("EXTERNAL_ALLOWED", "LOCAL_ONLY"),
-    ).toBe(true);
-    expect(
-      isModelResidencyCompatible("EXTERNAL_ALLOWED", "ORG_APPROVED"),
-    ).toBe(true);
+    expect(isModelResidencyCompatible("EXTERNAL_ALLOWED", "LOCAL_ONLY")).toBe(
+      true,
+    );
+    expect(isModelResidencyCompatible("EXTERNAL_ALLOWED", "ORG_APPROVED")).toBe(
+      true,
+    );
     expect(
       isModelResidencyCompatible("EXTERNAL_ALLOWED", "EXTERNAL_ALLOWED"),
     ).toBe(true);
@@ -78,11 +78,11 @@ describe("ModelRolePolicy", () => {
       dataResidency: "ORG_APPROVED",
     };
 
-    expect(
-      ModelRolePolicy.safeParse({ ...base, maxRetries: -1 }).success,
-    ).toBe(false);
-    expect(
-      ModelRolePolicy.safeParse({ ...base, concurrency: 0 }).success,
-    ).toBe(false);
+    expect(ModelRolePolicy.safeParse({ ...base, maxRetries: -1 }).success).toBe(
+      false,
+    );
+    expect(ModelRolePolicy.safeParse({ ...base, concurrency: 0 }).success).toBe(
+      false,
+    );
   });
 });
