@@ -58,6 +58,11 @@ const OFFLINE_EVENT_TYPES = new Set([
   "DECISION_CANDIDATE",
   "NOTE",
 ]);
+const OFFLINE_SNAPSHOT_STALE_AFTER_SECONDS = 15 * 60;
+const OFFLINE_UNAVAILABLE_LIVE_CHANNELS = [
+  "FEDERATION_REMOTE_QUERY",
+  "CONNECTOR_LIVE_READ",
+] as const;
 const DISCOVERY_MODES = new Set([
   "CATALOG_ONLY",
   "REMOTE_QUERY",
@@ -609,13 +614,56 @@ export function registerContextFabricRoutes(
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
       const state = await workspaceSessionSnapshot(db, session.id, actor.id);
       if (!state) return reply.code(404).send({ code: "SESSION_NOT_FOUND" });
+      const queuedDrafts = await listWorkspaceOfflineDrafts(
+        db,
+        session.id,
+        actor.id,
+      );
+      const queuedDraftCount = queuedDrafts.filter(
+        (draft) =>
+          draft.status === "QUEUED" || draft.status === "RECONCILE_REQUIRED",
+      ).length;
+      const nodeClaim = await readContextFabricNodeClaim(db);
       const capturedAt = new Date();
+      const staleAfter = new Date(
+        capturedAt.getTime() + OFFLINE_SNAPSHOT_STALE_AFTER_SECONDS * 1000,
+      );
       const pinnedAt = state.contextRevision.pinned?.pinnedAt ?? null;
       const sharedRevisionAgeSeconds = pinnedAt
         ? Math.max(
             0,
             Math.floor((capturedAt.getTime() - pinnedAt.getTime()) / 1000),
           )
+        : null;
+      const pinnedRevisionSet =
+        state.contextRevision.pinned?.revisionSet ?? null;
+      const snapshotManifest = pinnedRevisionSet
+        ? {
+            node: {
+              id: nodeClaim?.nodeId ?? null,
+              deploymentMode: nodeClaim?.deploymentMode ?? null,
+              claimed: Boolean(nodeClaim),
+            },
+            spaceId: session.spaceId,
+            vaultId: session.vaultId,
+            profileRevision: pinnedRevisionSet.profile,
+            policyRevision: pinnedRevisionSet.policy,
+            knowledgeGitRevision: pinnedRevisionSet.dimensions.knowledgeGit,
+            corpusRevision: pinnedRevisionSet.dimensions.corpus,
+            indexRevisionsAvailable: {
+              lexical: pinnedRevisionSet.dimensions.lexical,
+              vector: pinnedRevisionSet.dimensions.vector,
+              graph: pinnedRevisionSet.dimensions.graph,
+              contextPack: pinnedRevisionSet.dimensions.contextPack,
+              code: pinnedRevisionSet.dimensions.code,
+              runtime: pinnedRevisionSet.dimensions.runtime,
+              temporal: pinnedRevisionSet.dimensions.temporal,
+              community: pinnedRevisionSet.dimensions.community,
+            },
+            createdAt: capturedAt.toISOString(),
+            staleAfter: staleAfter.toISOString(),
+            expiresAt: staleAfter.toISOString(),
+          }
         : null;
       if (
         state.contextRevision.status !== "CURRENT" ||
@@ -632,6 +680,10 @@ export function registerContextFabricRoutes(
           pinnedRevisionSetHash:
             state.contextRevision.pinned?.revisionSetHash ?? null,
           currentRevisionSetHash: state.contextRevision.current.revisionSetHash,
+          snapshotRevisionSet: pinnedRevisionSet,
+          snapshotManifest,
+          unavailableLiveChannels: [...OFFLINE_UNAVAILABLE_LIVE_CHANNELS],
+          queuedDraftCount,
           mustRevalidateOnReconnect: true,
           context: null,
         });
@@ -659,6 +711,7 @@ export function registerContextFabricRoutes(
       }
       const context = bootstrap.json() as Record<string, unknown>;
       const serialized = JSON.stringify(context);
+      const snapshotHash = createHash("sha256").update(serialized).digest("hex");
       return {
         schemaVersion: 1,
         offline: true,
@@ -668,7 +721,19 @@ export function registerContextFabricRoutes(
         status: "CURRENT",
         pinnedRevisionSetHash: state.contextRevision.pinned.revisionSetHash,
         currentRevisionSetHash: state.contextRevision.current.revisionSetHash,
-        snapshotHash: createHash("sha256").update(serialized).digest("hex"),
+        snapshotRevisionSet: state.contextRevision.pinned.revisionSet,
+        snapshotManifest: {
+          ...snapshotManifest,
+          integrity: {
+            algorithm: "SHA-256",
+            scope: "CONTEXT_PACKET",
+            hash: snapshotHash,
+            signature: null,
+          },
+        },
+        unavailableLiveChannels: [...OFFLINE_UNAVAILABLE_LIVE_CHANNELS],
+        queuedDraftCount,
+        snapshotHash,
         mustRevalidateOnReconnect: true,
         context,
       };

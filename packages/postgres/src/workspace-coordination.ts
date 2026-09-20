@@ -26,6 +26,7 @@ export type WorkspaceEventType =
   | "CLAIM_HEARTBEAT"
   | "CLAIM_RELEASED"
   | "CLAIM_HANDOFF"
+  | "HANDOFF_IMPORTED"
   | "FINDING"
   | "BLOCKER"
   | "QUESTION"
@@ -43,6 +44,7 @@ export type WorkspaceUserEventType = Exclude<
   | "CLAIM_HEARTBEAT"
   | "CLAIM_RELEASED"
   | "CLAIM_HANDOFF"
+  | "HANDOFF_IMPORTED"
 >;
 
 function workspaceIntegrationEventType(
@@ -108,6 +110,39 @@ export interface StructuredWorkspaceHandoff {
   changedResourceRefs: string[];
   evidenceRefs: string[];
   questions: string[];
+}
+
+export interface WorkspaceHandoffInboxItem {
+  handoffEventId: string;
+  sourceSessionId: string;
+  spaceId: string;
+  vaultId: string;
+  workKey: string;
+  goal: string;
+  fromPrincipalId: string | null;
+  toPrincipalId: string | null;
+  summary: string;
+  completed: string[];
+  remaining: string[];
+  blockers: string[];
+  changedResourceRefs: string[];
+  evidenceRefs: string[];
+  questions: string[];
+  contextRevision: ContextRevisionSet | null;
+  contextRevisionSetHash: string | null;
+  createdAt: Date;
+}
+
+function recordPayload(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string")
+    : [];
 }
 
 function workspaceError(code: string, statusCode: number): Error {
@@ -213,24 +248,29 @@ const PREFIX_WORK_KEY_PATTERN = /^(.+)\/\*\*$/;
 
 export function workspaceWorkScope(value: string): WorkspaceWorkScope | null {
   if (value.length < 1 || value.length > 200) return null;
-  const prefix = PREFIX_WORK_KEY_PATTERN.exec(value);
-  if (prefix) {
-    const key = prefix[1];
-    if (!key || key.length > 197 || !EXACT_WORK_KEY_PATTERN.test(key))
-      return null;
-    const segments = key.split("/");
-    if (
-      segments.some(
-        (segment) => !segment || segment === "." || segment === "..",
-      )
-    ) {
-      return null;
-    }
-    return { mode: "PREFIX", key };
+  if (
+    value !== value.normalize("NFC") ||
+    value.includes("\\") ||
+    value.includes("//")
+  ) {
+    return null;
   }
-  return EXACT_WORK_KEY_PATTERN.test(value)
-    ? { mode: "EXACT", key: value }
-    : null;
+  const prefix = PREFIX_WORK_KEY_PATTERN.exec(value);
+  const key = prefix ? prefix[1] : value;
+  if (
+    !key ||
+    (prefix ? key.length > 197 : key.length > 200) ||
+    !EXACT_WORK_KEY_PATTERN.test(key)
+  ) {
+    return null;
+  }
+  const segments = key.split("/");
+  if (
+    segments.some((segment) => !segment || segment === "." || segment === "..")
+  ) {
+    return null;
+  }
+  return prefix ? { mode: "PREFIX", key } : { mode: "EXACT", key };
 }
 
 export function isWorkspaceWorkKey(value: string): boolean {
@@ -700,7 +740,8 @@ export async function claimWorkspaceWork(
     const sessionScope = await client.query<{
       space_id: string;
       vault_id: string;
-    }>("select space_id,vault_id from agent_sessions where id=$1", [
+      purpose: string;
+    }>("select space_id,vault_id,purpose from agent_sessions where id=$1", [
       input.sessionId,
     ]);
     const scope = sessionScope.rows[0];
@@ -1141,6 +1182,7 @@ export async function handoffWorkspaceWork(
               fromPrincipalId: actorPrincipalId,
               toPrincipalId: targetPrincipalId,
               workContextId: input.sessionId,
+              goal: String(scope.purpose),
               summary: input.handoff.summary,
               completed: input.handoff.completed,
               remaining: input.handoff.remaining,
@@ -1157,6 +1199,204 @@ export async function handoffWorkspaceWork(
     });
     await client.query("commit");
     return normalizeClaim(row);
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function listWorkspaceHandoffsForRecipient(
+  db: Postgres,
+  input: {
+    actorId: string;
+    spaceId: string;
+    vaultId: string;
+    limit?: number;
+  },
+): Promise<WorkspaceHandoffInboxItem[]> {
+  const limit = Math.max(1, Math.min(input.limit ?? 100, 200));
+  const result = await db.pool.query<Record<string, unknown>>(
+    `select e.id::text handoff_event_id,e.session_id source_session_id,
+            e.payload,e.created_at,s.space_id,s.vault_id,s.purpose
+       from workspace_events e
+       join agent_sessions s on s.id=e.session_id
+      where e.event_type='CLAIM_HANDOFF'
+        and e.payload->>'toUserId'=$1
+        and s.space_id=$2
+        and s.vault_id=$3
+      order by e.created_at desc,e.id desc
+      limit $4`,
+    [input.actorId, input.spaceId, input.vaultId, limit],
+  );
+  return result.rows.map((row) => {
+    const payload = recordPayload(row.payload);
+    return {
+      handoffEventId: String(row.handoff_event_id),
+      sourceSessionId: String(row.source_session_id),
+      spaceId: String(row.space_id),
+      vaultId: String(row.vault_id),
+      workKey: String(payload.workKey ?? ""),
+      goal: String(payload.goal ?? row.purpose ?? ""),
+      fromPrincipalId:
+        typeof payload.fromPrincipalId === "string"
+          ? payload.fromPrincipalId
+          : null,
+      toPrincipalId:
+        typeof payload.toPrincipalId === "string"
+          ? payload.toPrincipalId
+          : null,
+      summary: String(payload.summary ?? ""),
+      completed: stringList(payload.completed),
+      remaining: stringList(payload.remaining),
+      blockers: stringList(payload.blockers),
+      changedResourceRefs: stringList(payload.changedResourceRefs),
+      evidenceRefs: stringList(payload.evidenceRefs),
+      questions: stringList(payload.questions),
+      contextRevision:
+        payload.contextRevision &&
+        typeof payload.contextRevision === "object" &&
+        !Array.isArray(payload.contextRevision)
+          ? (payload.contextRevision as ContextRevisionSet)
+          : null,
+      contextRevisionSetHash:
+        typeof payload.contextRevisionSetHash === "string"
+          ? payload.contextRevisionSetHash
+          : null,
+      createdAt: new Date(String(row.created_at)),
+    };
+  });
+}
+
+export async function importWorkspaceHandoffToSession(
+  db: Postgres,
+  input: {
+    targetSessionId: string;
+    actorId: string;
+    handoffEventId: string;
+    actorPrincipalId?: string | null;
+  },
+): Promise<Record<string, unknown>> {
+  if (!/^[1-9][0-9]*$/.test(input.handoffEventId)) {
+    throw workspaceError("INVALID_HANDOFF_EVENT_ID", 400);
+  }
+  const client = await db.pool.connect();
+  try {
+    await client.query("begin");
+    const targetResult = await client.query<{
+      space_id: string;
+      vault_id: string;
+    }>(
+      `select s.space_id,s.vault_id
+         from agent_sessions s
+         join workspace_session_participants p
+           on p.session_id=s.id and p.user_id=$2 and p.left_at is null
+        where s.id=$1`,
+      [input.targetSessionId, input.actorId],
+    );
+    const target = targetResult.rows[0];
+    if (!target?.vault_id) throw workspaceError("SESSION_NOT_FOUND", 404);
+
+    const sourceResult = await client.query<Record<string, unknown>>(
+      `select e.id::text handoff_event_id,e.session_id source_session_id,
+              e.payload,e.created_at,s.purpose source_purpose,
+              s.space_id,s.vault_id
+         from workspace_events e
+         join agent_sessions s on s.id=e.session_id
+        where e.id=$1::bigint
+          and e.event_type='CLAIM_HANDOFF'
+          and e.payload->>'toUserId'=$2
+        limit 1`,
+      [input.handoffEventId, input.actorId],
+    );
+    const source = sourceResult.rows[0];
+    if (!source) throw workspaceError("WORKSPACE_HANDOFF_NOT_FOUND", 404);
+    if (String(source.source_session_id) === input.targetSessionId) {
+      throw workspaceError("WORKSPACE_HANDOFF_NEW_SESSION_REQUIRED", 409);
+    }
+    if (
+      String(source.space_id) !== target.space_id ||
+      String(source.vault_id) !== target.vault_id
+    ) {
+      throw workspaceError("WORKSPACE_HANDOFF_SCOPE_MISMATCH", 403);
+    }
+
+    await assertWorkspaceContextRevisionCurrent(
+      client,
+      input.targetSessionId,
+      target.space_id,
+      target.vault_id,
+    );
+    const receiverPinned = await loadPinnedWorkspaceContextRevisionSet(
+      client,
+      input.targetSessionId,
+    );
+    if (!receiverPinned) {
+      throw workspaceError("CONTEXT_REVISION_PIN_REQUIRED", 409);
+    }
+
+    const existing = await client.query<Record<string, unknown>>(
+      `select *
+         from workspace_events
+        where session_id=$1
+          and event_type='HANDOFF_IMPORTED'
+          and payload->>'sourceHandoffEventId'=$2
+        order by id desc
+        limit 1`,
+      [input.targetSessionId, input.handoffEventId],
+    );
+    if (existing.rows[0]) {
+      await client.query("commit");
+      return existing.rows[0];
+    }
+
+    const sourcePayload = recordPayload(source.payload);
+    const sourceRevisionHash =
+      typeof sourcePayload.contextRevisionSetHash === "string"
+        ? sourcePayload.contextRevisionSetHash
+        : null;
+    const event = await appendCoordinationEvent(client, {
+      sessionId: input.targetSessionId,
+      actorId: input.actorId,
+      actorPrincipalId: input.actorPrincipalId,
+      eventType: "HANDOFF_IMPORTED",
+      payload: {
+        sourceHandoffEventId: input.handoffEventId,
+        sourceSessionId: String(source.source_session_id),
+        workKey: String(sourcePayload.workKey ?? ""),
+        goal: String(sourcePayload.goal ?? source.source_purpose ?? ""),
+        fromPrincipalId:
+          typeof sourcePayload.fromPrincipalId === "string"
+            ? sourcePayload.fromPrincipalId
+            : null,
+        toPrincipalId:
+          typeof sourcePayload.toPrincipalId === "string"
+            ? sourcePayload.toPrincipalId
+            : null,
+        summary: String(sourcePayload.summary ?? ""),
+        completed: stringList(sourcePayload.completed),
+        remaining: stringList(sourcePayload.remaining),
+        blockers: stringList(sourcePayload.blockers),
+        changedResourceRefs: stringList(sourcePayload.changedResourceRefs),
+        evidenceRefs: stringList(sourcePayload.evidenceRefs),
+        questions: stringList(sourcePayload.questions),
+        sourceContextRevision:
+          sourcePayload.contextRevision &&
+          typeof sourcePayload.contextRevision === "object" &&
+          !Array.isArray(sourcePayload.contextRevision)
+            ? sourcePayload.contextRevision
+            : null,
+        sourceContextRevisionSetHash: sourceRevisionHash,
+        receiverContextRevisionSetHash: receiverPinned.revisionSetHash,
+        revisionMismatch:
+          sourceRevisionHash !== null &&
+          sourceRevisionHash !== receiverPinned.revisionSetHash,
+        sourceCreatedAt: new Date(String(source.created_at)).toISOString(),
+      },
+    });
+    await client.query("commit");
+    return event;
   } catch (error) {
     await client.query("rollback");
     throw error;

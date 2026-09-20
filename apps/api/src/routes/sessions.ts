@@ -19,12 +19,14 @@ import {
   createWorkspaceSession,
   getWorkspaceSessionForParticipant,
   handoffWorkspaceWork,
+  importWorkspaceHandoffToSession,
   heartbeatWorkspaceWork,
   releaseWorkspaceWork,
   updateWorkspaceWorkContext,
   getActiveKnowledgeProfileRevision,
   assertWorkspaceContextRevisionCurrent,
   isWorkspaceWorkKey,
+  listWorkspaceHandoffsForRecipient,
   listWorkspaceSessionsForParticipant,
   linkDecisionCandidateReviewInTransaction,
   PostgresAuthorizationPort,
@@ -237,6 +239,66 @@ export function registerSessionRoutes(
                 (session) => session.id === actor.principalSessionId,
               )
             : sessions,
+      };
+    },
+  );
+
+  app.get<{
+    Querystring: { spaceId?: string; vaultId?: string };
+  }>(
+    "/v1/workspace/handoffs/inbox",
+    {
+      preHandler: [
+        requirePermission("knowledge:read"),
+        requirePrincipalAction("workspace:read"),
+      ],
+    },
+    async (request, reply) => {
+      const actor = actorOf(request);
+      if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
+      const spaceId = request.query.spaceId?.trim();
+      const vaultId = request.query.vaultId?.trim();
+      if (!spaceId || !vaultId) {
+        return reply.code(400).send({ code: "VAULT_SCOPE_REQUIRED" });
+      }
+      if (
+        !unrestrictedSpaceIdsForPermission(actor, "knowledge:read").includes(
+          spaceId,
+        )
+      ) {
+        return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
+      }
+      if (
+        actor.principalKind === "AGENT_PROCESS" &&
+        actor.principalVaultId !== vaultId
+      ) {
+        return reply.code(403).send({ code: "PRINCIPAL_VAULT_SCOPE_DENIED" });
+      }
+      try {
+        const scope = await resolveAuthorizedVaultScope(db, {
+          userId: actor.id,
+          spaceId,
+          vaultId,
+          vaultIds: [vaultId],
+          permission: "knowledge:read",
+          federated: false,
+        });
+        if (scope.accessByVault[vaultId]?.pathPrefix !== null) {
+          return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
+        }
+      } catch (error) {
+        const code =
+          error instanceof Error ? error.message : "VAULT_ACCESS_DENIED";
+        return reply
+          .code(code === "VAULT_SCOPE_NOT_FOUND" ? 404 : 403)
+          .send({ code });
+      }
+      return {
+        handoffs: await listWorkspaceHandoffsForRecipient(db, {
+          actorId: actor.id,
+          spaceId,
+          vaultId,
+        }),
       };
     },
   );
@@ -1365,6 +1427,65 @@ export function registerSessionRoutes(
   );
 
   app.post<{
+    Params: { id: string; handoffId: string };
+  }>(
+    "/v1/sessions/:id/handoffs/:handoffId/import",
+    {
+      preHandler: [
+        requirePermission("knowledge:read"),
+        requirePrincipalAction("workspace:handoff"),
+      ],
+    },
+    async (request, reply) => {
+      if (!/^[1-9][0-9]*$/.test(request.params.handoffId)) {
+        return reply.code(400).send({ code: "INVALID_HANDOFF_EVENT_ID" });
+      }
+      const session = await authorizedSession(
+        db,
+        request,
+        reply,
+        request.params.id,
+      );
+      if (!session) return;
+      const actor = actorOf(request);
+      if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
+      try {
+        const event = await importWorkspaceHandoffToSession(db, {
+          targetSessionId: session.id,
+          actorId: actor.id,
+          handoffEventId: request.params.handoffId,
+          actorPrincipalId: actor.principalId,
+        });
+        await audit(
+          db,
+          request,
+          "workspace.handoff.import",
+          "agent_session",
+          session.id,
+          {
+            vaultId: session.vaultId,
+            sourceHandoffEventId: request.params.handoffId,
+            importedEventId: String(event.id),
+          },
+          session.spaceId,
+        );
+        return reply.code(201).send({ imported: true, event });
+      } catch (error) {
+        const status = Number(
+          (error as { statusCode?: unknown } | null)?.statusCode ?? 500,
+        );
+        const code =
+          error instanceof Error
+            ? error.message
+            : "WORKSPACE_HANDOFF_IMPORT_FAILED";
+        return reply
+          .code(status >= 400 && status < 600 ? status : 500)
+          .send({ code });
+      }
+    },
+  );
+
+  app.post<{
     Params: { id: string };
     Body: {
       label?: string;
@@ -1434,6 +1555,7 @@ export function registerSessionRoutes(
       };
       const token = randomBytes(32).toString("base64url");
       const tokenHash = createHash("sha256").update(token).digest("hex");
+      const expiresAt = new Date(Date.now() + durationMinutes * 60_000);
       const principal = await createAgentProcessPrincipalCredential(db, {
         parentPrincipalId: actor.principalId,
         userId: actor.id,
@@ -1442,7 +1564,7 @@ export function registerSessionRoutes(
         allowedActions,
         tokenHash,
         scopes,
-        expiresAt: new Date(Date.now() + durationMinutes * 60_000),
+        expiresAt,
       });
       await audit(
         db,
@@ -1454,7 +1576,13 @@ export function registerSessionRoutes(
         session.spaceId,
       );
       return reply.code(201).send({
-        principal,
+        principal: {
+          ...principal,
+          roles: [principal.kind],
+          scopes,
+          expiresAt: expiresAt.toISOString(),
+          revoked: principal.state === "REVOKED",
+        },
         token,
         authenticationKind: "PRINCIPAL_TOKEN",
       });
