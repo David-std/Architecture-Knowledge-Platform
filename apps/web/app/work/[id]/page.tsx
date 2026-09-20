@@ -306,9 +306,7 @@ export default async function WorkObjectPage({
                 <ul>
                   {serviceDependencies.map(({ event, related }) => (
                     <li key={event.id}>
-                      <Link
-                        href={`/work/${related.id}?sessionId=${sessionId}`}
-                      >
+                      <Link href={`/work/${related.id}?sessionId=${sessionId}`}>
                         {title(related, related.id)}
                       </Link>{" "}
                       <span className="badge">{event.derivation}</span>
@@ -328,9 +326,7 @@ export default async function WorkObjectPage({
                 <ul>
                   {serviceRepositories.map(({ event, related }) => (
                     <li key={event.id}>
-                      <Link
-                        href={`/work/${related.id}?sessionId=${sessionId}`}
-                      >
+                      <Link href={`/work/${related.id}?sessionId=${sessionId}`}>
                         {title(related, related.id)}
                       </Link>{" "}
                       <span className="badge">{event.derivation}</span>
@@ -350,9 +346,7 @@ export default async function WorkObjectPage({
                 <ul>
                   {serviceIncidents.map(({ event, related }) => (
                     <li key={event.id}>
-                      <Link
-                        href={`/work/${related.id}?sessionId=${sessionId}`}
-                      >
+                      <Link href={`/work/${related.id}?sessionId=${sessionId}`}>
                         {title(related, related.id)}
                       </Link>{" "}
                       <span className="badge">{event.derivation}</span>
@@ -403,9 +397,7 @@ export default async function WorkObjectPage({
                   ))}
                   {serviceRules.map(({ event, related }) => (
                     <li key={event.id}>
-                      <Link
-                        href={`/work/${related.id}?sessionId=${sessionId}`}
-                      >
+                      <Link href={`/work/${related.id}?sessionId=${sessionId}`}>
                         {title(related, related.id)}
                       </Link>{" "}
                       <span className="badge">RULE</span>{" "}
