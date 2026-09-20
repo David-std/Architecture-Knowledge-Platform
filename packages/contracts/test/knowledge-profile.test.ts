@@ -84,6 +84,32 @@ describe("KnowledgeProfileV1", () => {
     }
   });
 
+  it("rejects duplicate model-role constraints", () => {
+    const invalid = structuredClone(DEFAULT_KNOWLEDGE_PROFILE_V1);
+    invalid.modelRoleConstraints = [
+      {
+        role: "KNOWLEDGE_COMPILE",
+        residency: "LOCAL_ONLY",
+        structuredOutputRequired: true,
+      },
+      {
+        role: "KNOWLEDGE_COMPILE",
+        residency: "ORG_APPROVED",
+        structuredOutputRequired: false,
+      },
+    ];
+
+    const result = KnowledgeProfileV1.safeParse(invalid);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(
+        result.error.issues.some((issue) =>
+          issue.message.includes("model role constraint is duplicated"),
+        ),
+      ).toBe(true);
+    }
+  });
+
   it("rejects unsafe artifact paths", () => {
     const invalid = structuredClone(DEFAULT_KNOWLEDGE_PROFILE_V1);
     invalid.artifactContracts["markdown-v03"] = {

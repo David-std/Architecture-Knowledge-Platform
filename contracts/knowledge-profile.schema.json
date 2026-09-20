@@ -20,53 +20,98 @@
     "freshnessPolicy"
   ],
   "properties": {
-    "schemaVersion": { "const": 1 },
+    "schemaVersion": {
+      "const": 1
+    },
     "profileId": {
       "type": "string",
       "pattern": "^[a-z0-9][a-z0-9-]{1,62}$"
     },
-    "version": { "type": "string", "minLength": 1, "maxLength": 100 },
-    "displayName": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "displayName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
     "knowledgeKinds": {
       "type": "object",
       "minProperties": 1,
-      "propertyNames": { "$ref": "#/$defs/SemanticName" },
-      "additionalProperties": { "$ref": "#/$defs/KnowledgeKindDefinition" }
+      "propertyNames": {
+        "$ref": "#/$defs/SemanticName"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/KnowledgeKindDefinition"
+      }
     },
     "relationTypes": {
       "type": "object",
       "default": {},
-      "propertyNames": { "$ref": "#/$defs/SemanticName" },
-      "additionalProperties": { "$ref": "#/$defs/RelationDefinition" }
+      "propertyNames": {
+        "$ref": "#/$defs/SemanticName"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/RelationDefinition"
+      }
     },
     "lifecycles": {
       "type": "object",
-      "propertyNames": { "$ref": "#/$defs/SemanticName" },
-      "additionalProperties": { "$ref": "#/$defs/LifecycleDefinition" }
+      "propertyNames": {
+        "$ref": "#/$defs/SemanticName"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/LifecycleDefinition"
+      }
     },
     "evidencePolicies": {
       "type": "object",
-      "propertyNames": { "$ref": "#/$defs/SemanticName" },
-      "additionalProperties": { "$ref": "#/$defs/EvidencePolicyDefinition" }
+      "propertyNames": {
+        "$ref": "#/$defs/SemanticName"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/EvidencePolicyDefinition"
+      }
     },
     "reviewPolicies": {
       "type": "object",
-      "propertyNames": { "$ref": "#/$defs/SemanticName" },
-      "additionalProperties": { "$ref": "#/$defs/ReviewPolicyDefinition" }
+      "propertyNames": {
+        "$ref": "#/$defs/SemanticName"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/ReviewPolicyDefinition"
+      }
     },
     "artifactContracts": {
       "type": "object",
-      "propertyNames": { "$ref": "#/$defs/SemanticName" },
-      "additionalProperties": { "$ref": "#/$defs/ArtifactContractDefinition" }
+      "propertyNames": {
+        "$ref": "#/$defs/SemanticName"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/ArtifactContractDefinition"
+      }
     },
-    "retrievalPolicy": { "$ref": "#/$defs/RetrievalProfilePolicy" },
-    "promotionPolicy": { "$ref": "#/$defs/PromotionPolicyDefinition" },
-    "freshnessPolicy": { "$ref": "#/$defs/FreshnessPolicyDefinition" },
-    "connectorPolicy": { "$ref": "#/$defs/ConnectorProfilePolicy" },
+    "retrievalPolicy": {
+      "$ref": "#/$defs/RetrievalProfilePolicy"
+    },
+    "promotionPolicy": {
+      "$ref": "#/$defs/PromotionPolicyDefinition"
+    },
+    "freshnessPolicy": {
+      "$ref": "#/$defs/FreshnessPolicyDefinition"
+    },
+    "connectorPolicy": {
+      "$ref": "#/$defs/ConnectorProfilePolicy"
+    },
     "modelRoleConstraints": {
       "type": "array",
       "default": [],
-      "items": { "$ref": "#/$defs/ModelRoleConstraint" }
+      "items": {
+        "$ref": "#/$defs/ModelRoleConstraint"
+      },
+      "description": "Semantic per-role constraints. Runtime validation requires at most one constraint per role."
     }
   },
   "$defs": {
@@ -77,7 +122,9 @@
     "KnowledgeFieldDefinition": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["type"],
+      "required": [
+        "type"
+      ],
       "properties": {
         "type": {
           "type": "string",
@@ -91,19 +138,45 @@
             "json"
           ]
         },
-        "required": { "type": "boolean", "default": false },
+        "required": {
+          "type": "boolean",
+          "default": false
+        },
         "enumValues": {
           "type": "array",
           "minItems": 1,
-          "items": { "type": "string", "minLength": 1 }
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         },
-        "description": { "type": "string", "minLength": 1, "maxLength": 1000 }
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        }
       },
       "allOf": [
         {
-          "if": { "properties": { "type": { "const": "enum" } } },
-          "then": { "required": ["enumValues"] },
-          "else": { "not": { "required": ["enumValues"] } }
+          "if": {
+            "properties": {
+              "type": {
+                "const": "enum"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "enumValues"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "enumValues"
+              ]
+            }
+          }
         }
       ]
     },
@@ -120,51 +193,90 @@
         "fields": {
           "type": "object",
           "default": {},
-          "additionalProperties": { "$ref": "#/$defs/KnowledgeFieldDefinition" }
+          "additionalProperties": {
+            "$ref": "#/$defs/KnowledgeFieldDefinition"
+          }
         },
-        "lifecycle": { "$ref": "#/$defs/SemanticName" },
-        "evidencePolicy": { "$ref": "#/$defs/SemanticName" },
-        "reviewPolicy": { "$ref": "#/$defs/SemanticName" },
-        "artifactContract": { "$ref": "#/$defs/SemanticName" }
+        "lifecycle": {
+          "$ref": "#/$defs/SemanticName"
+        },
+        "evidencePolicy": {
+          "$ref": "#/$defs/SemanticName"
+        },
+        "reviewPolicy": {
+          "$ref": "#/$defs/SemanticName"
+        },
+        "artifactContract": {
+          "$ref": "#/$defs/SemanticName"
+        }
       }
     },
     "LifecycleTransitionDefinition": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["from", "to", "allowedActors"],
+      "required": [
+        "from",
+        "to",
+        "allowedActors"
+      ],
       "properties": {
-        "from": { "$ref": "#/$defs/SemanticName" },
-        "to": { "$ref": "#/$defs/SemanticName" },
+        "from": {
+          "$ref": "#/$defs/SemanticName"
+        },
+        "to": {
+          "$ref": "#/$defs/SemanticName"
+        },
         "allowedActors": {
           "type": "array",
           "minItems": 1,
-          "items": { "type": "string", "minLength": 1, "maxLength": 100 }
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
         },
-        "requiredEvidence": { "type": "boolean", "default": false },
-        "requiredReview": { "type": "boolean", "default": false }
+        "requiredEvidence": {
+          "type": "boolean",
+          "default": false
+        },
+        "requiredReview": {
+          "type": "boolean",
+          "default": false
+        }
       }
     },
     "LifecycleDefinition": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["states", "initial"],
+      "required": [
+        "states",
+        "initial"
+      ],
       "properties": {
         "states": {
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
-          "items": { "$ref": "#/$defs/SemanticName" }
+          "items": {
+            "$ref": "#/$defs/SemanticName"
+          }
         },
-        "initial": { "$ref": "#/$defs/SemanticName" },
+        "initial": {
+          "$ref": "#/$defs/SemanticName"
+        },
         "terminal": {
           "type": "array",
           "default": [],
-          "items": { "$ref": "#/$defs/SemanticName" }
+          "items": {
+            "$ref": "#/$defs/SemanticName"
+          }
         },
         "transitions": {
           "type": "array",
           "default": [],
-          "items": { "$ref": "#/$defs/LifecycleTransitionDefinition" }
+          "items": {
+            "$ref": "#/$defs/LifecycleTransitionDefinition"
+          }
         }
       }
     },
@@ -178,7 +290,10 @@
           "maximum": 100,
           "default": 1
         },
-        "requireSourceLocator": { "type": "boolean", "default": true },
+        "requireSourceLocator": {
+          "type": "boolean",
+          "default": true
+        },
         "minimumTrust": {
           "type": "string",
           "default": "MACHINE_SUPPORTED",
@@ -194,9 +309,14 @@
     "ReviewPolicyDefinition": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["allowedRoles"],
+      "required": [
+        "allowedRoles"
+      ],
       "properties": {
-        "required": { "type": "boolean", "default": true },
+        "required": {
+          "type": "boolean",
+          "default": true
+        },
         "minimumApprovals": {
           "type": "integer",
           "minimum": 0,
@@ -206,17 +326,31 @@
         "allowedRoles": {
           "type": "array",
           "minItems": 1,
-          "items": { "type": "string", "minLength": 1, "maxLength": 100 }
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
         }
       },
       "allOf": [
         {
           "if": {
-            "properties": { "required": { "const": true } },
-            "required": ["required"]
+            "properties": {
+              "required": {
+                "const": true
+              }
+            },
+            "required": [
+              "required"
+            ]
           },
           "then": {
-            "properties": { "minimumApprovals": { "minimum": 1 } }
+            "properties": {
+              "minimumApprovals": {
+                "minimum": 1
+              }
+            }
           }
         }
       ]
@@ -224,10 +358,21 @@
     "ArtifactContractDefinition": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["root", "pathTemplate"],
+      "required": [
+        "root",
+        "pathTemplate"
+      ],
       "properties": {
-        "root": { "type": "string", "minLength": 1, "maxLength": 500 },
-        "pathTemplate": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "root": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "pathTemplate": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
         "extension": {
           "type": "string",
           "pattern": "^\\.[A-Za-z0-9]+$",
@@ -238,58 +383,98 @@
     "RelationDefinition": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["from", "to"],
+      "required": [
+        "from",
+        "to"
+      ],
       "properties": {
         "from": {
           "type": "array",
           "minItems": 1,
-          "items": { "$ref": "#/$defs/SemanticName" }
+          "items": {
+            "$ref": "#/$defs/SemanticName"
+          }
         },
         "to": {
           "type": "array",
           "minItems": 1,
-          "items": { "$ref": "#/$defs/SemanticName" }
+          "items": {
+            "$ref": "#/$defs/SemanticName"
+          }
         },
-        "symmetric": { "type": "boolean", "default": false },
-        "evidenceRequired": { "type": "boolean", "default": false },
-        "description": { "type": "string", "minLength": 1, "maxLength": 1000 }
+        "symmetric": {
+          "type": "boolean",
+          "default": false
+        },
+        "evidenceRequired": {
+          "type": "boolean",
+          "default": false
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        }
       }
     },
     "RetrievalProfilePolicy": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["allowedKinds"],
+      "required": [
+        "allowedKinds"
+      ],
       "properties": {
         "allowedKinds": {
           "type": "array",
           "minItems": 1,
-          "items": { "$ref": "#/$defs/SemanticName" }
+          "items": {
+            "$ref": "#/$defs/SemanticName"
+          }
         },
         "relationAllowlist": {
           "type": "array",
           "default": [],
-          "items": { "$ref": "#/$defs/SemanticName" }
+          "items": {
+            "$ref": "#/$defs/SemanticName"
+          }
         },
         "mandatoryKindsByIntent": {
           "type": "object",
           "default": {},
           "additionalProperties": {
             "type": "array",
-            "items": { "$ref": "#/$defs/SemanticName" }
+            "items": {
+              "$ref": "#/$defs/SemanticName"
+            }
           }
         },
         "progressiveDisclosure": {
           "type": "array",
           "minItems": 1,
-          "default": ["L0", "L1", "L2", "L3"],
-          "items": { "type": "string", "enum": ["L0", "L1", "L2", "L3"] }
+          "default": [
+            "L0",
+            "L1",
+            "L2",
+            "L3"
+          ],
+          "items": {
+            "type": "string",
+            "enum": [
+              "L0",
+              "L1",
+              "L2",
+              "L3"
+            ]
+          }
         }
       }
     },
     "PromotionPolicyDefinition": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["allowedTargetScopes"],
+      "required": [
+        "allowedTargetScopes"
+      ],
       "properties": {
         "allowedTargetScopes": {
           "type": "array",
@@ -305,7 +490,10 @@
             ]
           }
         },
-        "reviewRequired": { "type": "boolean", "default": true }
+        "reviewRequired": {
+          "type": "boolean",
+          "default": true
+        }
       }
     },
     "FreshnessPolicyDefinition": {
@@ -315,15 +503,25 @@
         "sourceChangeAction": {
           "type": "string",
           "default": "MARK_STALE",
-          "enum": ["MARK_STALE", "RECOMPILE", "REVIEW_REQUIRED"]
+          "enum": [
+            "MARK_STALE",
+            "RECOMPILE",
+            "REVIEW_REQUIRED"
+          ]
         },
-        "staleAfterDays": { "type": "integer", "minimum": 1, "maximum": 36500 }
+        "staleAfterDays": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 36500
+        }
       }
     },
     "ConnectorProfilePolicy": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["allowedAccessModes"],
+      "required": [
+        "allowedAccessModes"
+      ],
       "properties": {
         "allowedAccessModes": {
           "type": "array",
@@ -338,21 +536,41 @@
             ]
           }
         },
-        "requirePermissionFidelity": { "type": "boolean", "default": true }
+        "requirePermissionFidelity": {
+          "type": "boolean",
+          "default": true
+        }
       }
     },
     "ModelRoleConstraint": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["role", "residency"],
+      "required": [
+        "role",
+        "residency"
+      ],
       "properties": {
-        "role": { "type": "string", "minLength": 1, "maxLength": 100 },
-        "residency": {
+        "role": {
           "type": "string",
-          "enum": ["LOCAL_ONLY", "ORG_APPROVED", "EXTERNAL_ALLOWED"]
+          "minLength": 1,
+          "maxLength": 100
         },
-        "structuredOutputRequired": { "type": "boolean", "default": false }
+        "residency": {
+          "$ref": "#/$defs/ModelResidency"
+        },
+        "structuredOutputRequired": {
+          "type": "boolean",
+          "default": false
+        }
       }
+    },
+    "ModelResidency": {
+      "type": "string",
+      "enum": [
+        "LOCAL_ONLY",
+        "ORG_APPROVED",
+        "EXTERNAL_ALLOWED"
+      ]
     }
   }
 }

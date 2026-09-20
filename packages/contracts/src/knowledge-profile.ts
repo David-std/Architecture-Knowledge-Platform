@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ConnectorAccessMode } from "./connector-capabilities.js";
+import { ModelResidency } from "./model-role-policy.js";
 import { TrustTier } from "./index.js";
 
 const ProfileId = z
@@ -258,8 +259,8 @@ export type ConnectorProfilePolicy = z.infer<typeof ConnectorProfilePolicy>;
 
 export const ModelRoleConstraint = z
   .object({
-    role: z.string().min(1).max(100),
-    residency: z.enum(["LOCAL_ONLY", "ORG_APPROVED", "EXTERNAL_ALLOWED"]),
+    role: z.string().trim().min(1).max(100),
+    residency: ModelResidency,
     structuredOutputRequired: z.boolean().default(false),
   })
   .strict();
@@ -302,6 +303,18 @@ export const KnowledgeProfileV1 = z
     const evidenceNames = new Set(Object.keys(profile.evidencePolicies));
     const reviewNames = new Set(Object.keys(profile.reviewPolicies));
     const artifactNames = new Set(Object.keys(profile.artifactContracts));
+    const modelRoles = new Set<string>();
+
+    for (const [index, constraint] of profile.modelRoleConstraints.entries()) {
+      if (modelRoles.has(constraint.role)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["modelRoleConstraints", index, "role"],
+          message: `model role constraint is duplicated: ${constraint.role}`,
+        });
+      }
+      modelRoles.add(constraint.role);
+    }
 
     if (kindNames.size === 0) {
       context.addIssue({

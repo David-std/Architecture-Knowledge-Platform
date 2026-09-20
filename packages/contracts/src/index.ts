@@ -1,6 +1,7 @@
 export * from "./temporal-truth.js";
 export * from "./code-graph.js";
 export * from "./connector-capabilities.js";
+export * from "./model-role-policy.js";
 import { z } from "zod";
 
 export const TrustTier = z.enum([

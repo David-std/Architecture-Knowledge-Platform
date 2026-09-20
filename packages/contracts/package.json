@@ -21,6 +21,10 @@
     "./connector-capabilities": {
       "types": "./dist/connector-capabilities.d.ts",
       "default": "./dist/connector-capabilities.js"
+    },
+    "./model-role-policy": {
+      "types": "./dist/model-role-policy.d.ts",
+      "default": "./dist/model-role-policy.js"
     }
   },
   "scripts": {
