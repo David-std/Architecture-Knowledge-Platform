@@ -79,6 +79,9 @@ describe("knowledge compiler provider registry", () => {
     });
 
     expect(decision.selected?.descriptor.model).toBe("local-fallback");
+    expect(decision.eligible.map((candidate) => candidate.descriptor.model)).toEqual([
+      "local-fallback",
+    ]);
     expect(decision.rejected).toEqual([
       {
         candidate: expect.objectContaining({ model: "external-primary" }),

@@ -53,6 +53,7 @@ export type KnowledgeCompilerRouteRejectionReason =
 
 export interface KnowledgeCompilerRouteDecision {
   selected: KnowledgeCompilerRouteCandidate | null;
+  eligible: KnowledgeCompilerRouteCandidate[];
   rejected: Array<{
     candidate: KnowledgeCompilerDescriptor;
     reason: KnowledgeCompilerRouteRejectionReason;
@@ -541,6 +542,7 @@ export function routeKnowledgeCompilerCandidates(
   },
 ): KnowledgeCompilerRouteDecision {
   const rejected: KnowledgeCompilerRouteDecision["rejected"] = [];
+  const eligible: KnowledgeCompilerRouteCandidate[] = [];
   for (const candidate of candidates) {
     if (
       !isModelResidencyCompatible(
@@ -564,9 +566,22 @@ export function routeKnowledgeCompilerCandidates(
       });
       continue;
     }
-    return { selected: candidate, rejected };
+    eligible.push(candidate);
   }
-  return { selected: null, rejected };
+  return {
+    selected: eligible[0] ?? null,
+    eligible,
+    rejected,
+  };
+}
+
+export function knowledgeCompilerProviderFailureCode(
+  error: unknown,
+): string | null {
+  if (!(error instanceof Error)) return null;
+  return /^COMPILER_PROVIDER_[A-Z0-9_]+$/.test(error.message)
+    ? error.message
+    : null;
 }
 
 /**

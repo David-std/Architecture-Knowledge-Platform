@@ -166,12 +166,14 @@ export class OpenAICompatibleKnowledgeCompiler implements KnowledgeCompilerPort 
       } catch (error) {
         lastError = error;
         const abort = error instanceof Error && error.name === "AbortError";
+        const networkFailure = error instanceof TypeError;
         const retryable =
           abort ||
-          (error instanceof TypeError && attempt < this.#options.maxRetries) ||
+          networkFailure ||
           (error instanceof Error && error.message.endsWith("_RETRYABLE"));
         if (!retryable || attempt === this.#options.maxRetries) {
           if (abort) throw new Error("COMPILER_PROVIDER_TIMEOUT");
+          if (networkFailure) throw new Error("COMPILER_PROVIDER_NETWORK");
           throw error;
         }
       } finally {

@@ -201,6 +201,167 @@ describe("compilation stage", () => {
     });
   });
 
+  it("falls back only after a normalized provider failure when degradation is safe", async () => {
+    const excerpt =
+      "Invalidate cached material when the authoritative revision changes.";
+    const excerptHash = createHash("sha256").update(excerpt).digest("hex");
+    const locator = {
+      kind: "paragraph",
+      source_hash: SOURCE_HASH,
+      path: `source:${SOURCE_ID}`,
+      paragraph: 1,
+      heading_path: ["Guidance"],
+    };
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({
+        rows: [{ schema_profile: {}, current_revision: "managed:8" }],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            space_model_residency: "EXTERNAL_ALLOWED",
+            source_model_residency: "EXTERNAL_ALLOWED",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: EVIDENCE_ID,
+            locator,
+            content_hash: excerptHash,
+            excerpt,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({
+        rows: [{ schema_profile: {}, current_revision: "managed:8" }],
+      });
+    const primaryCompile = vi.fn(async () => {
+      throw new Error("COMPILER_PROVIDER_TIMEOUT");
+    });
+    const fallbackCompile = vi.fn(async () => ({
+      identity: {
+        classification: "DISTINCT" as const,
+        candidates: [],
+        reason: "Fallback produced a grounded rule.",
+      },
+      evidenceCandidates: [
+        {
+          sourceArtifactId: ARTIFACT_ID,
+          locator,
+          excerptHash,
+        },
+      ],
+      knowledgeCandidates: [
+        {
+          candidateId: "candidate-fallback",
+          kind: "rule" as const,
+          statement:
+            "Invalidate cached material when the authoritative revision changes.",
+          scope: "Revision-addressed caches.",
+          evidenceIds: [EVIDENCE_ID],
+          confidence: 0.9,
+          proposedAction: "CREATE" as const,
+        },
+      ],
+      contradictions: [],
+      proposedFileChanges: [
+        {
+          candidateId: "candidate-fallback",
+          path: deriveKnowledgePath({
+            title:
+              "Invalidate cached material when the authoritative revision changes.",
+            kind: "rule",
+          }),
+          operation: "CREATE" as const,
+          content:
+            "---\nid: CACHE-FALLBACK\ntype: rule\nstatus: draft\n---\n\n# Cache invalidation\n\nInvalidate cached material when the authoritative revision changes.\n",
+          reasons: ["Grounded fallback rule."],
+          evidenceIds: [EVIDENCE_ID],
+        },
+      ],
+      impactedDocumentIds: [],
+      probes: [
+        {
+          question: "Is the fallback rule grounded?",
+          criticality: "CRITICAL" as const,
+          evidenceIds: [EVIDENCE_ID],
+        },
+      ],
+      warnings: [],
+      summary: "One grounded fallback rule for review.",
+    }));
+    const descriptor = (model: string, hash: string) => ({
+      role: "KNOWLEDGE_COMPILE",
+      provider: "openai-compatible" as const,
+      model,
+      endpointRef: model,
+      policyDataResidency: "EXTERNAL_ALLOWED" as const,
+      dataResidency: "EXTERNAL_ALLOWED" as const,
+      configurationHash: hash.repeat(64),
+    });
+    const candidate = (
+      model: string,
+      hash: string,
+      compile: typeof primaryCompile | typeof fallbackCompile,
+      degradationSafe: boolean,
+    ): KnowledgeCompilerRouteCandidate => {
+      const configured = {
+        compiler: { compile },
+        descriptor: descriptor(model, hash),
+      } satisfies ConfiguredKnowledgeCompiler;
+      return {
+        policy: ModelRolePolicy.parse({
+          role:
+            model === "primary" ? "KNOWLEDGE_COMPILE" : "KNOWLEDGE_COMPILE_FALLBACK",
+          provider: "openai-compatible",
+          model,
+          endpointRef: model,
+          timeoutMs: 30_000,
+          maxRetries: 0,
+          concurrency: 1,
+          structuredOutputRequired: true,
+          dataResidency: "EXTERNAL_ALLOWED",
+          degradationSafe,
+        }),
+        descriptor: configured.descriptor,
+        supportsStructuredOutput: true,
+        createConfigured: () => configured,
+      };
+    };
+    const db = { pool: { query } } as unknown as Postgres;
+
+    const output = await buildCompilationStage(db, stageInput(), [
+      candidate("primary", "1", primaryCompile, true),
+      candidate("fallback", "2", fallbackCompile, false),
+    ]);
+
+    expect(primaryCompile).toHaveBeenCalledOnce();
+    expect(fallbackCompile).toHaveBeenCalledOnce();
+    expect(output.metadata).toMatchObject({
+      mode: "GENERATIVE",
+      provider: { model: "fallback" },
+      modelRoute: {
+        selected: { model: "fallback" },
+        degraded: true,
+        attempts: [
+          {
+            candidate: { model: "primary" },
+            outcome: "FAILED",
+            errorCode: "COMPILER_PROVIDER_TIMEOUT",
+          },
+          {
+            candidate: { model: "fallback" },
+            outcome: "SUCCEEDED",
+          },
+        ],
+      },
+    });
+  });
+
   it("grounds generative compilation in evidence reloaded from the same vault", async () => {
     const excerpt =
       "Invalidate cached material when the authoritative revision changes.";

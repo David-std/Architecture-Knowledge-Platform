@@ -2,6 +2,7 @@ import {
   CompilationPlan,
   createKnowledgeCompilerRouteCandidates,
   defaultCompilerKnowledgeProfileContext,
+  knowledgeCompilerProviderFailureCode,
   durableCompilerKnowledgeProfileContext,
   routeKnowledgeCompilerCandidates,
   type CompilerKnowledgeProfileContext,
@@ -22,7 +23,10 @@ import { withSpan } from "@akp/observability";
 import { resolveAuthorizedVaultScope, type Postgres } from "@akp/postgres";
 import { renderDocumentArtifactDraft } from "./document-artifact.js";
 import { assertEvidenceFragmentIntegrity } from "./evidence-fragment.js";
-import { compileGroundedKnowledgeProposal } from "./knowledge-compilation.js";
+import {
+  executePreparedGroundedKnowledgeCompilation,
+  prepareGroundedKnowledgeCompilation,
+} from "./knowledge-compilation.js";
 
 interface EvidenceRow {
   id: string;
@@ -91,6 +95,12 @@ export interface CompilationStageMetadata {
     structuredOutputRequired: boolean;
     selected?: ConfiguredKnowledgeCompiler["descriptor"];
     rejected: KnowledgeCompilerRouteDecision["rejected"];
+    attempts: Array<{
+      candidate: ConfiguredKnowledgeCompiler["descriptor"];
+      outcome: "SUCCEEDED" | "FAILED";
+      errorCode?: string;
+    }>;
+    degraded: boolean;
   };
   retrievalChannels?: string[];
   retrievalWarnings?: string[];
@@ -229,6 +239,8 @@ function modelRouteMetadata(
     structuredOutputRequired: boundary.structuredOutputRequired,
     ...(decision.selected ? { selected: decision.selected.descriptor } : {}),
     rejected: decision.rejected,
+    attempts: [],
+    degraded: false,
   };
 }
 
@@ -452,7 +464,6 @@ export async function buildCompilationStage(
       },
     );
   }
-  const configured = decision.selected.createConfigured();
   const vaultId = input.vaultId;
   if (!vaultId) throw new Error("KNOWLEDGE_COMPILER_VAULT_REQUIRED");
 
@@ -460,32 +471,72 @@ export async function buildCompilationStage(
     ...input,
     vaultId,
   });
-  const compiled = await withSpan(
-    "compile.plan",
-    {
-      "akp.compiler.mode": "GENERATIVE",
-      "akp.vector.enabled": input.vectorEnabled,
+  const prepared = await prepareGroundedKnowledgeCompilation(db, {
+    source: {
+      sourceId: input.sourceId,
+      sourceArtifactId: input.sourceArtifactId,
+      sha256: input.sha256,
+      title: input.title,
+      mediaType: input.mediaType,
     },
-    () =>
-      compileGroundedKnowledgeProposal(db, configured, {
-        source: {
-          sourceId: input.sourceId,
-          sourceArtifactId: input.sourceArtifactId,
-          sha256: input.sha256,
-          title: input.title,
-          mediaType: input.mediaType,
+    documentArtifact: input.artifact,
+    evidence: [evidence],
+    knowledgeProfile: vault.knowledgeProfile,
+    schemaProfile: vault.schemaProfile,
+    corpusRevision: vault.corpusRevision,
+    spaceId: input.spaceId,
+    vaultId,
+    pathPrefix,
+    vectorEnabled: input.vectorEnabled,
+  });
+
+  let compiled:
+    | Awaited<ReturnType<typeof executePreparedGroundedKnowledgeCompilation>>
+    | undefined;
+  let lastProviderError: unknown;
+  for (const [index, candidate] of decision.eligible.entries()) {
+    try {
+      const configured = candidate.createConfigured();
+      compiled = await withSpan(
+        "compile.plan",
+        {
+          "akp.compiler.mode": "GENERATIVE",
+          "akp.vector.enabled": input.vectorEnabled,
+          "akp.compiler.degraded": index > 0,
         },
-        documentArtifact: input.artifact,
-        evidence: [evidence],
-        knowledgeProfile: vault.knowledgeProfile,
-        schemaProfile: vault.schemaProfile,
-        corpusRevision: vault.corpusRevision,
-        spaceId: input.spaceId,
-        vaultId,
-        pathPrefix,
-        vectorEnabled: input.vectorEnabled,
-      }),
-  );
+        () =>
+          executePreparedGroundedKnowledgeCompilation(configured, prepared),
+      );
+      routeMetadata.selected = candidate.descriptor;
+      routeMetadata.degraded = index > 0;
+      routeMetadata.attempts.push({
+        candidate: candidate.descriptor,
+        outcome: "SUCCEEDED",
+      });
+      break;
+    } catch (error) {
+      const errorCode = knowledgeCompilerProviderFailureCode(error);
+      routeMetadata.attempts.push({
+        candidate: candidate.descriptor,
+        outcome: "FAILED",
+        ...(errorCode ? { errorCode } : {}),
+      });
+      lastProviderError = error;
+      const hasCompatibleFallback = index + 1 < decision.eligible.length;
+      if (
+        !errorCode ||
+        candidate.policy.degradationSafe !== true ||
+        !hasCompatibleFallback
+      ) {
+        throw error;
+      }
+    }
+  }
+  if (!compiled) {
+    throw lastProviderError instanceof Error
+      ? lastProviderError
+      : new Error("COMPILER_PROVIDER_FAILED");
+  }
   const currentVault = await loadVaultContext(db, input.spaceId, vaultId);
   assertCompilerProfileBindingUnchanged(
     vault.knowledgeProfile,
