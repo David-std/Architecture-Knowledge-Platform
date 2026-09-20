@@ -25,10 +25,7 @@ import {
   MinioObjectStore,
   type RawObjectRef,
 } from "@akp/object-store";
-import {
-  CompilationPlan,
-  createConfiguredKnowledgeCompiler,
-} from "@akp/compiler";
+import { CompilationPlan } from "@akp/compiler";
 import { GitKnowledgeStore } from "@akp/git-store";
 import { validateMarkdownDocument } from "@akp/validation";
 import mime from "mime-types";
@@ -688,26 +685,22 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
     const title = String(
       payload.title ?? outputs.originalName ?? basename(sourceUri),
     );
-    const compilationStage = await buildCompilationStage(
-      db,
-      {
-        spaceId,
-        vaultId,
-        sourceId: String(outputs.sourceId),
-        sourceArtifactId: extracted.source_artifact_id,
-        evidenceId: extracted.evidence_id,
-        sha256: raw.sha256,
-        title,
-        mediaType: String(
-          outputs.mediaType ?? payload.mediaType ?? "application/octet-stream",
-        ),
-        extractor: artifactResult.extractor,
-        extractorVersion: artifactResult.extractorVersion,
-        artifact: artifactResult.artifact,
-        vectorEnabled: process.env.AKP_VECTOR_ENABLED === "true",
-      },
-      createConfiguredKnowledgeCompiler(process.env),
-    );
+    const compilationStage = await buildCompilationStage(db, {
+      spaceId,
+      vaultId,
+      sourceId: String(outputs.sourceId),
+      sourceArtifactId: extracted.source_artifact_id,
+      evidenceId: extracted.evidence_id,
+      sha256: raw.sha256,
+      title,
+      mediaType: String(
+        outputs.mediaType ?? payload.mediaType ?? "application/octet-stream",
+      ),
+      extractor: artifactResult.extractor,
+      extractorVersion: artifactResult.extractorVersion,
+      artifact: artifactResult.artifact,
+      vectorEnabled: process.env.AKP_VECTOR_ENABLED === "true",
+    });
     const plan = CompilationPlan.parse(compilationStage.plan);
     if (plan.disposition === "NO_MATERIAL" || !plan.proposedChanges.length) {
       await updateState(

@@ -4,8 +4,9 @@ import type { Postgres } from "@akp/postgres";
 import {
   deriveKnowledgePath,
   type ConfiguredKnowledgeCompiler,
+  type KnowledgeCompilerRouteCandidate,
 } from "@akp/compiler";
-import { DocumentArtifact } from "@akp/contracts";
+import { DocumentArtifact, ModelRolePolicy } from "@akp/contracts";
 import { buildCompilationStage } from "../src/compilation-stage.js";
 
 const SPACE_ID = "11111111-1111-4111-8111-111111111111";
@@ -49,6 +50,32 @@ function artifact() {
   });
 }
 
+function compilerCandidate(
+  configured: ConfiguredKnowledgeCompiler,
+  residency: "LOCAL_ONLY" | "ORG_APPROVED" | "EXTERNAL_ALLOWED" =
+    "EXTERNAL_ALLOWED",
+): KnowledgeCompilerRouteCandidate {
+  return {
+    policy: ModelRolePolicy.parse({
+      role: "KNOWLEDGE_COMPILE",
+      provider: "openai-compatible",
+      model: configured.descriptor.model,
+      endpointRef: configured.descriptor.endpointRef,
+      timeoutMs: 30_000,
+      maxRetries: 1,
+      concurrency: 1,
+      structuredOutputRequired: true,
+      dataResidency: residency,
+    }),
+    descriptor: { ...configured.descriptor, dataResidency: residency },
+    supportsStructuredOutput: true,
+    createConfigured: () => ({
+      ...configured,
+      descriptor: { ...configured.descriptor, dataResidency: residency },
+    }),
+  };
+}
+
 function stageInput() {
   return {
     spaceId: SPACE_ID,
@@ -73,14 +100,26 @@ describe("compilation stage", () => {
       .mockResolvedValueOnce({
         rows: [{ schema_profile: {}, current_revision: "managed:7" }],
       })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            space_model_residency: "EXTERNAL_ALLOWED",
+            source_model_residency: "EXTERNAL_ALLOWED",
+          },
+        ],
+      })
       .mockResolvedValueOnce({ rows: [] });
     const db = { pool: { query } } as unknown as Postgres;
 
     const output = await buildCompilationStage(db, stageInput(), null);
 
-    expect(output.metadata).toEqual({
+    expect(output.metadata).toMatchObject({
       mode: "SOURCE_SUMMARY_FALLBACK",
       reason: "GENERIC_COMPILER_DISABLED_OR_UNCONFIGURED",
+      modelRoute: {
+        requiredResidency: "EXTERNAL_ALLOWED",
+        rejected: [],
+      },
     });
     expect(output.plan).toMatchObject({
       sourceId: SOURCE_ID,
@@ -90,6 +129,67 @@ describe("compilation stage", () => {
     expect(output.plan.proposedChanges[0]?.evidenceIds).toEqual([EVIDENCE_ID]);
     expect(output.plan.probes[0]?.evidenceIds).toEqual([EVIDENCE_ID]);
     expect(output.plan.summary).toContain("no semantic compilation occurred");
+  });
+
+  it("never instantiates an external compiler for LOCAL_ONLY source data", async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({
+        rows: [{ schema_profile: {}, current_revision: "managed:8" }],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            space_model_residency: "EXTERNAL_ALLOWED",
+            source_model_residency: "LOCAL_ONLY",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [] });
+    const createConfigured = vi.fn(() => {
+      throw new Error("external compiler must not be instantiated");
+    });
+    const candidate: KnowledgeCompilerRouteCandidate = {
+      policy: ModelRolePolicy.parse({
+        role: "KNOWLEDGE_COMPILE",
+        provider: "openai-compatible",
+        model: "external-compiler",
+        endpointRef: "external",
+        timeoutMs: 30_000,
+        maxRetries: 1,
+        concurrency: 1,
+        structuredOutputRequired: true,
+        dataResidency: "EXTERNAL_ALLOWED",
+      }),
+      descriptor: {
+        role: "KNOWLEDGE_COMPILE",
+        provider: "openai-compatible",
+        model: "external-compiler",
+        endpointRef: "external",
+        dataResidency: "EXTERNAL_ALLOWED",
+        configurationHash: "e".repeat(64),
+      },
+      supportsStructuredOutput: true,
+      createConfigured,
+    };
+    const db = { pool: { query } } as unknown as Postgres;
+
+    const output = await buildCompilationStage(db, stageInput(), [candidate]);
+
+    expect(createConfigured).not.toHaveBeenCalled();
+    expect(output.metadata).toMatchObject({
+      mode: "SOURCE_SUMMARY_FALLBACK",
+      reason: "MODEL_ROUTE_NO_COMPATIBLE_CANDIDATE",
+      modelRoute: {
+        requiredResidency: "LOCAL_ONLY",
+        rejected: [
+          {
+            candidate: expect.objectContaining({ model: "external-compiler" }),
+            reason: "RESIDENCY_INCOMPATIBLE",
+          },
+        ],
+      },
+    });
   });
 
   it("grounds generative compilation in evidence reloaded from the same vault", async () => {
@@ -107,6 +207,14 @@ describe("compilation stage", () => {
       .fn()
       .mockResolvedValueOnce({
         rows: [{ schema_profile: {}, current_revision: "managed:8" }],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            space_model_residency: "EXTERNAL_ALLOWED",
+            source_model_residency: "EXTERNAL_ALLOWED",
+          },
+        ],
       })
       .mockResolvedValueOnce({
         rows: [
@@ -177,14 +285,19 @@ describe("compilation stage", () => {
     const configured = {
       compiler: { compile },
       descriptor: {
+        role: "KNOWLEDGE_COMPILE",
         provider: "openai-compatible" as const,
         model: "fixture-compiler",
-        baseUrl: "http://127.0.0.1:9999/v1",
+        endpointRef: "fixture",
+        dataResidency: "EXTERNAL_ALLOWED" as const,
+        configurationHash: "f".repeat(64),
       },
     } satisfies ConfiguredKnowledgeCompiler;
     const db = { pool: { query } } as unknown as Postgres;
 
-    const output = await buildCompilationStage(db, stageInput(), configured);
+    const output = await buildCompilationStage(db, stageInput(), [
+      compilerCandidate(configured),
+    ]);
 
     expect(output.metadata).toMatchObject({
       mode: "GENERATIVE",
@@ -235,7 +348,7 @@ describe("compilation stage", () => {
         },
       ],
     });
-    expect(query.mock.calls[1]?.[1]).toEqual([
+    expect(query.mock.calls[2]?.[1]).toEqual([
       EVIDENCE_ID,
       SPACE_ID,
       VAULT_ID,

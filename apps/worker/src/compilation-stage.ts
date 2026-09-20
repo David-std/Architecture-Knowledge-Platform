@@ -1,14 +1,21 @@
 import {
   CompilationPlan,
+  createKnowledgeCompilerRouteCandidates,
   defaultCompilerKnowledgeProfileContext,
   durableCompilerKnowledgeProfileContext,
+  routeKnowledgeCompilerCandidates,
   type CompilerKnowledgeProfileContext,
   type ConfiguredKnowledgeCompiler,
+  type KnowledgeCompilerRouteCandidate,
+  type KnowledgeCompilerRouteDecision,
   type KnowledgeCompilerResult,
 } from "@akp/compiler";
 import {
+  ModelResidency,
   StructuralLocator,
+  mostRestrictiveModelResidency,
   type DocumentArtifact,
+  type ModelResidency as ModelResidencyValue,
   type TrustTier,
 } from "@akp/contracts";
 import { withSpan } from "@akp/observability";
@@ -41,6 +48,19 @@ interface PriorSourceRow {
   current_revision: string;
 }
 
+interface ModelResidencyRow {
+  space_model_residency: string;
+  source_model_residency: string;
+}
+
+interface CompilerRoutingBoundary {
+  effectiveResidency: ModelResidencyValue;
+  spaceResidency: ModelResidencyValue;
+  sourceResidency: ModelResidencyValue;
+  profileResidency: ModelResidencyValue;
+  structuredOutputRequired: boolean;
+}
+
 export interface CompilationStageInput {
   spaceId: string;
   vaultId: string | null;
@@ -60,6 +80,18 @@ export interface CompilationStageInput {
 export interface CompilationStageMetadata {
   mode: "GENERATIVE" | "SOURCE_SUMMARY_FALLBACK";
   provider?: ConfiguredKnowledgeCompiler["descriptor"];
+  modelRoute?: {
+    role: "KNOWLEDGE_COMPILE";
+    requiredResidency: ModelResidencyValue;
+    boundaries: {
+      space: ModelResidencyValue;
+      source: ModelResidencyValue;
+      profile: ModelResidencyValue;
+    };
+    structuredOutputRequired: boolean;
+    selected?: ConfiguredKnowledgeCompiler["descriptor"];
+    rejected: KnowledgeCompilerRouteDecision["rejected"];
+  };
   retrievalChannels?: string[];
   retrievalWarnings?: string[];
   identity?: unknown;
@@ -138,6 +170,68 @@ async function loadVaultContext(
     schemaProfile: row.schema_profile ?? {},
     corpusRevision: row.current_revision ?? "managed:initial",
     knowledgeProfile: resolveCompilerProfileFromVault(row),
+  };
+}
+
+async function loadCompilerRoutingBoundary(
+  db: Postgres,
+  input: CompilationStageInput,
+  profile: CompilerKnowledgeProfileContext,
+): Promise<CompilerRoutingBoundary> {
+  const result = await db.pool.query<ModelResidencyRow>(
+    `
+    select s.model_residency space_model_residency,
+           src.model_residency source_model_residency
+      from spaces s
+      join sources src on src.space_id=s.id
+     where s.id=$1 and src.id=$2
+       and (($3::uuid is null and src.vault_id is null) or src.vault_id=$3::uuid)
+     limit 1
+    `,
+    [input.spaceId, input.sourceId, input.vaultId],
+  );
+  const row = result.rows[0];
+  if (!row) throw new Error("COMPILER_SOURCE_RESIDENCY_NOT_FOUND");
+
+  const spaceResidency = ModelResidency.parse(row.space_model_residency);
+  const sourceResidency = ModelResidency.parse(row.source_model_residency);
+  const profileConstraint = profile.profile.modelRoleConstraints.find(
+    (constraint) => constraint.role === "KNOWLEDGE_COMPILE",
+  );
+  const profileResidency =
+    profileConstraint?.residency ?? "EXTERNAL_ALLOWED";
+
+  return {
+    spaceResidency,
+    sourceResidency,
+    profileResidency,
+    effectiveResidency: mostRestrictiveModelResidency(
+      spaceResidency,
+      sourceResidency,
+      profileResidency,
+    ),
+    structuredOutputRequired:
+      profileConstraint?.structuredOutputRequired ?? false,
+  };
+}
+
+function modelRouteMetadata(
+  boundary: CompilerRoutingBoundary,
+  decision: KnowledgeCompilerRouteDecision,
+): NonNullable<CompilationStageMetadata["modelRoute"]> {
+  return {
+    role: "KNOWLEDGE_COMPILE",
+    requiredResidency: boundary.effectiveResidency,
+    boundaries: {
+      space: boundary.spaceResidency,
+      source: boundary.sourceResidency,
+      profile: boundary.profileResidency,
+    },
+    structuredOutputRequired: boundary.structuredOutputRequired,
+    ...(decision.selected
+      ? { selected: decision.selected.descriptor }
+      : {}),
+    rejected: decision.rejected,
   };
 }
 
@@ -315,11 +409,25 @@ async function sourceSummaryFallback(
 export async function buildCompilationStage(
   db: Postgres,
   input: CompilationStageInput,
-  configured: ConfiguredKnowledgeCompiler | null,
+  candidates?: KnowledgeCompilerRouteCandidate[] | null,
 ): Promise<CompilationStageOutput> {
   const vault = await loadVaultContext(db, input.spaceId, input.vaultId);
+  const boundary = await loadCompilerRoutingBoundary(
+    db,
+    input,
+    vault.knowledgeProfile,
+  );
+  const routeCandidates =
+    candidates === null
+      ? []
+      : (candidates ?? createKnowledgeCompilerRouteCandidates(process.env));
+  const decision = routeKnowledgeCompilerCandidates(routeCandidates, {
+    dataResidency: boundary.effectiveResidency,
+    structuredOutputRequired: boundary.structuredOutputRequired,
+  });
+  const routeMetadata = modelRouteMetadata(boundary, decision);
   const pathPrefix = await loadRetrievalPathPrefix(db, input);
-  if (!configured) {
+  if (!decision.selected) {
     return withSpan(
       "compile.plan",
       {
@@ -337,12 +445,17 @@ export async function buildCompilationStage(
           plan: await validateCompilationPlan(plan, "SOURCE_SUMMARY_FALLBACK"),
           metadata: {
             mode: "SOURCE_SUMMARY_FALLBACK",
-            reason: "GENERIC_COMPILER_DISABLED_OR_UNCONFIGURED",
+            modelRoute: routeMetadata,
+            reason:
+              routeCandidates.length === 0
+                ? "GENERIC_COMPILER_DISABLED_OR_UNCONFIGURED"
+                : "MODEL_ROUTE_NO_COMPATIBLE_CANDIDATE",
           },
         };
       },
     );
   }
+  const configured = decision.selected.createConfigured();
   const vaultId = input.vaultId;
   if (!vaultId) throw new Error("KNOWLEDGE_COMPILER_VAULT_REQUIRED");
 
@@ -386,6 +499,7 @@ export async function buildCompilationStage(
     metadata: {
       mode: "GENERATIVE",
       provider: compiled.provider,
+      modelRoute: routeMetadata,
       retrievalChannels: compiled.retrievalChannels,
       retrievalWarnings: compiled.retrievalWarnings,
       identity: compiled.result.identity,
