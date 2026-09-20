@@ -6,8 +6,9 @@ import {
   durableCompilerKnowledgeProfileContext,
   knowledgeProfileHash,
   type ConfiguredKnowledgeCompiler,
+  type KnowledgeCompilerRouteCandidate,
 } from "@akp/compiler";
-import { DocumentArtifact } from "@akp/contracts";
+import { DocumentArtifact, ModelRolePolicy } from "@akp/contracts";
 import {
   NEUTRAL_KNOWLEDGE_PROFILE_V1,
   canonicalKnowledgeProfileJson,
@@ -187,25 +188,44 @@ function configuredCompiler(
       summary: "One grounded proposal for review.",
     };
   });
-  return {
-    configured: {
-      compiler: { compile },
-      descriptor: {
-        provider: "openai-compatible" as const,
-        model: "fixture-compiler",
-        baseUrl: "http://127.0.0.1:9999/v1",
-      },
-    } satisfies ConfiguredKnowledgeCompiler,
-    compile,
+  const configured = {
+    compiler: { compile },
+    descriptor: {
+      role: "KNOWLEDGE_COMPILE",
+      provider: "openai-compatible" as const,
+      model: "fixture-compiler",
+      endpointRef: "fixture",
+      policyDataResidency: "EXTERNAL_ALLOWED" as const,
+      dataResidency: "EXTERNAL_ALLOWED" as const,
+      configurationHash: "f".repeat(64),
+    },
+  } satisfies ConfiguredKnowledgeCompiler;
+  const candidate: KnowledgeCompilerRouteCandidate = {
+    policy: ModelRolePolicy.parse({
+      role: "KNOWLEDGE_COMPILE",
+      provider: "openai-compatible",
+      model: "fixture-compiler",
+      endpointRef: "fixture",
+      timeoutMs: 30_000,
+      maxRetries: 0,
+      concurrency: 1,
+      structuredOutputRequired: true,
+      dataResidency: "EXTERNAL_ALLOWED",
+      degradationSafe: false,
+    }),
+    descriptor: configured.descriptor,
+    supportsStructuredOutput: true,
+    createConfigured: () => configured,
   };
+  return { configured, candidate, compile };
 }
 
 describe("active profile compiler integration", () => {
   it("passes the exact active profile revision and its allowed kinds to the provider", async () => {
     const { db } = dbWithNeutralProfile();
-    const { configured, compile } = configuredCompiler("note");
+    const { candidate, compile } = configuredCompiler("note");
 
-    const output = await buildCompilationStage(db, stageInput(), configured);
+    const output = await buildCompilationStage(db, stageInput(), [candidate]);
 
     expect(output.plan.disposition).toBe("NEW");
     expect(compile).toHaveBeenCalledOnce();
@@ -226,10 +246,10 @@ describe("active profile compiler integration", () => {
 
   it("rejects a model-emitted kind that the active profile does not declare", async () => {
     const { db } = dbWithNeutralProfile();
-    const { configured } = configuredCompiler("rule");
+    const { candidate } = configuredCompiler("rule");
 
     await expect(
-      buildCompilationStage(db, stageInput(), configured),
+      buildCompilationStage(db, stageInput(), [candidate]),
     ).rejects.toThrow(/COMPILER_KIND_NOT_ALLOWED:rule/);
   });
 
@@ -243,12 +263,12 @@ describe("active profile compiler integration", () => {
     const providerRelease = new Promise<void>((resolve) => {
       releaseProvider = resolve;
     });
-    const { configured, compile } = configuredCompiler("note", async () => {
+    const { candidate, compile } = configuredCompiler("note", async () => {
       signalProviderEntered();
       await providerRelease;
     });
 
-    const pending = buildCompilationStage(db, stageInput(), configured);
+    const pending = buildCompilationStage(db, stageInput(), [candidate]);
     await providerEntered;
     releaseProvider();
 

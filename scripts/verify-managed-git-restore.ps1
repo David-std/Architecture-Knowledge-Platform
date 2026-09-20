@@ -137,7 +137,7 @@ try {
   }
 
   $searchableUnits = [int](((Invoke-Checked "verify lexical search from rebuilt units" {
-    docker exec $PostgresContainer psql -U akp -d $PostgresDatabase -At -v ON_ERROR_STOP=1 -c "select count(*) from knowledge_units where vault_id='$vaultId' and lifecycle='ACTIVE' and to_tsvector('simple',coalesce(body,'')) @@ plainto_tsquery('simple','restore probe');"
+    docker exec $PostgresContainer psql -U akp -d $PostgresDatabase -At -v ON_ERROR_STOP=1 -c "select count(*) from knowledge_units where vault_id='$vaultId' and lifecycle='ACTIVE' and to_tsvector('simple',coalesce(body,'')) @@ plainto_tsquery('simple','restore');"
   }) | Out-String).Trim())
   if ($searchableUnits -lt 1) {
     throw "Restored managed repository could not rebuild a searchable probe."
