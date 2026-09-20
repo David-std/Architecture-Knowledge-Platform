@@ -493,9 +493,7 @@ describe("knowledge profile activation integration", () => {
           )
           .catch(() => undefined);
         await db.pool
-          .query(
-            "drop function if exists akp_test_profile_activation_crash()",
-          )
+          .query("drop function if exists akp_test_profile_activation_crash()")
           .catch(() => undefined);
         await db.pool.query(
           "update vaults set active_knowledge_profile_revision_id=null where id=$1",
@@ -512,5 +510,4 @@ describe("knowledge profile activation integration", () => {
       }
     },
   );
-
 });

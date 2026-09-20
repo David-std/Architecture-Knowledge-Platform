@@ -589,7 +589,8 @@ describe("team context fabric integration", () => {
       [spaceId],
     );
     const organizationId = organization.rows[0]?.organization_id;
-    if (!organizationId) throw new Error("FEDERATION_TEST_ORGANIZATION_MISSING");
+    if (!organizationId)
+      throw new Error("FEDERATION_TEST_ORGANIZATION_MISSING");
 
     const previousClaim = await db.pool.query<{
       node_id: string;
@@ -729,5 +730,4 @@ describe("team context fabric integration", () => {
       }
     }
   });
-
 });

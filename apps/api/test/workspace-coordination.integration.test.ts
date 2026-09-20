@@ -1412,5 +1412,4 @@ describe("workspace coordination integration", () => {
       );
     }
   });
-
 });
