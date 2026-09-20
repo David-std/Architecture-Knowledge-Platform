@@ -861,17 +861,26 @@ const WORK_ACTIVITY_ACTIONS: readonly WorkActivityAction[] = [
  */
 export type WorkActivityDerivation =
   | "SOURCE_EXPLICIT"
+  | "OBSERVED_ORDER"
+  | "CORRELATED"
+  | "INFERRED_HYPOTHESIS"
+  | "HUMAN_APPROVED_CAUSAL"
+  | "DYNAMICALLY_PROVEN"
+  // Legacy persisted values remain readable/appendable during v0.4 migration.
   | "OBSERVED_CORRELATION"
   | "MODEL_INFERRED"
-  | "HUMAN_ASSERTED"
-  | "DYNAMICALLY_PROVEN";
+  | "HUMAN_ASSERTED";
 
 const WORK_ACTIVITY_DERIVATIONS: readonly WorkActivityDerivation[] = [
   "SOURCE_EXPLICIT",
+  "OBSERVED_ORDER",
+  "CORRELATED",
+  "INFERRED_HYPOTHESIS",
+  "HUMAN_APPROVED_CAUSAL",
+  "DYNAMICALLY_PROVEN",
   "OBSERVED_CORRELATION",
   "MODEL_INFERRED",
   "HUMAN_ASSERTED",
-  "DYNAMICALLY_PROVEN",
 ];
 
 export type WorkActivityRelationKind =
@@ -911,8 +920,10 @@ const RELATIONAL_ACTIONS: readonly WorkActivityAction[] = [
  */
 const CAUSALITY_SUPPORTING_DERIVATIONS: readonly WorkActivityDerivation[] = [
   "SOURCE_EXPLICIT",
-  "HUMAN_ASSERTED",
+  "HUMAN_APPROVED_CAUSAL",
   "DYNAMICALLY_PROVEN",
+  // Legacy equivalent retained only for backward compatibility.
+  "HUMAN_ASSERTED",
 ];
 
 export interface WorkActivityEventRecord {

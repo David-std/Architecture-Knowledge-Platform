@@ -1472,6 +1472,16 @@
           "step": "Run API integration with a persisted report"
         }
       ]
+    },
+    "integration:p2-activity-derivation-contract": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
     }
   }
 }

@@ -321,19 +321,42 @@ describe("work and activity graph", () => {
         action: "REFERENCED",
         occurredAt: "2026-09-17T10:05:00.000Z",
         sourceSystem: "observability",
-        derivation: "OBSERVED_CORRELATION",
+        derivation: "OBSERVED_ORDER",
         actorExternalId: "correlator",
       },
     });
     expect(observed.statusCode).toBe(201);
     expect(observed.json()).toMatchObject({
-      derivation: "OBSERVED_CORRELATION",
+      derivation: "OBSERVED_ORDER",
+    });
+
+    const correlated = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/activity`,
+      headers,
+      payload: {
+        objectRefId: deployment.id,
+        targetRefId: incident.id,
+        action: "REFERENCED",
+        occurredAt: "2026-09-17T10:05:30.000Z",
+        sourceSystem: "correlation-engine",
+        derivation: "CORRELATED",
+        actorExternalId: "correlator",
+      },
+    });
+    expect(correlated.statusCode).toBe(201);
+    expect(correlated.json()).toMatchObject({
+      derivation: "CORRELATED",
     });
 
     // Asserting that the deploy *caused* the incident is a different claim.
     // Neither an observed ordering nor a model's guess can support it, however
     // often the two co-occur.
-    for (const derivation of ["OBSERVED_CORRELATION", "MODEL_INFERRED"]) {
+    for (const derivation of [
+      "OBSERVED_ORDER",
+      "CORRELATED",
+      "INFERRED_HYPOTHESIS",
+    ]) {
       const refused = await app.inject({
         method: "POST",
         url: `/v1/sessions/${sessionId}/activity`,
@@ -366,7 +389,7 @@ describe("work and activity graph", () => {
         action: "CAUSED",
         occurredAt: "2026-09-17T11:00:00.000Z",
         sourceSystem: "post-incident-review",
-        derivation: "HUMAN_ASSERTED",
+        derivation: "HUMAN_APPROVED_CAUSAL",
         actorExternalId: "responder",
         evidenceRefs: ["retro-77"],
       },
@@ -374,7 +397,7 @@ describe("work and activity graph", () => {
     expect(asserted.statusCode).toBe(201);
     expect(asserted.json()).toMatchObject({
       action: "CAUSED",
-      derivation: "HUMAN_ASSERTED",
+      derivation: "HUMAN_APPROVED_CAUSAL",
       evidenceRefs: ["retro-77"],
     });
 
@@ -385,7 +408,7 @@ describe("work and activity graph", () => {
         `insert into work_activity_events(
            space_id,vault_id,object_ref_id,target_ref_id,action,occurred_at,
            source_system,derivation,actor_external_id
-         ) values($1,$2,$3,$4,'CAUSED',now(),'direct','MODEL_INFERRED','bypass')`,
+         ) values($1,$2,$3,$4,'CAUSED',now(),'direct','INFERRED_HYPOTHESIS','bypass')`,
         [spaceId, vaultId, deployment.id, incident.id],
       ),
     ).rejects.toThrow(/causality_requires_support/i);
@@ -400,7 +423,7 @@ describe("work and activity graph", () => {
         action: "LINKED",
         occurredAt: "2026-09-17T11:10:00.000Z",
         sourceSystem: "manual",
-        derivation: "HUMAN_ASSERTED",
+        derivation: "HUMAN_APPROVED_CAUSAL",
         actorExternalId: "responder",
       },
     });
@@ -620,6 +643,42 @@ describe("work and activity graph", () => {
         "RULE",
       ]),
     );
+  });
+
+
+  it("accepts the six canonical P2 activity derivation classes without conflating them", async () => {
+    const object = await projectObject(
+      sessionId,
+      "issue",
+      "DERIVATION-CANONICAL-1",
+      "WORK_ITEM",
+    );
+    const canonicalDerivations = [
+      "SOURCE_EXPLICIT",
+      "OBSERVED_ORDER",
+      "CORRELATED",
+      "INFERRED_HYPOTHESIS",
+      "HUMAN_APPROVED_CAUSAL",
+      "DYNAMICALLY_PROVEN",
+    ] as const;
+
+    for (const [index, derivation] of canonicalDerivations.entries()) {
+      const response = await app.inject({
+        method: "POST",
+        url: `/v1/sessions/${sessionId}/activity`,
+        headers,
+        payload: {
+          objectRefId: object.id,
+          action: "COMMENTED",
+          occurredAt: `2026-09-17T14:0${index}:00.000Z`,
+          sourceSystem: "derivation-contract",
+          derivation,
+          actorExternalId: "contract-probe",
+        },
+      });
+      expect(response.statusCode, derivation).toBe(201);
+      expect(response.json()).toMatchObject({ derivation });
+    }
   });
 
   it("rejects malformed activity at the boundary", async () => {

@@ -55,6 +55,8 @@ A `ContextRevisionSet` is a reproducibility pin, not an authorization grant. Pro
 
 Promotion preserves source session, source revision, target scope, evidence versions and conflict-evaluation state. Candidate content cannot self-declare a stronger trust tier.
 
+Work/activity provenance uses six canonical derivation classes: `SOURCE_EXPLICIT`, `OBSERVED_ORDER`, `CORRELATED`, `INFERRED_HYPOTHESIS`, `HUMAN_APPROVED_CAUSAL` and `DYNAMICALLY_PROVEN`. Ordering, correlation and inferred hypotheses cannot support a causal `CAUSED` assertion. Causality requires an explicit source statement, human-approved causal evidence or dynamic proof. Legacy derivation names remain readable during v0.4 migration but are not the canonical contract.
+
 ## Degraded and offline behavior
 
 An offline snapshot carries its pinned revision and integrity hash. Its manifest records node/space/vault identity, profile and policy revisions, knowledge/corpus revisions, available index revisions, creation/expiry time, unavailable live channels and the count of queued local drafts. Live federation and live connector reads are explicitly unavailable while the packet is offline. Stale snapshots remain identifiable as offline/stale and do not silently return current-looking context.
