@@ -52,6 +52,18 @@ type Claim = {
   updatedAt: string;
 };
 
+type ExternalRef = {
+  id: string;
+  provider: string;
+  objectType: string;
+  externalId: string;
+  title: string | null;
+  authority: string;
+  workObjectClass: string | null;
+  sourceRevision: string | null;
+  updatedAt: string;
+};
+
 type SessionState = {
   session: Session;
   participants: Participant[];
@@ -109,10 +121,16 @@ export default async function SessionObjectPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const state = await akp<SessionState>(
-    `/v1/sessions/${encodeURIComponent(id)}/state`,
-  );
+  const [state, refsResponse] = await Promise.all([
+    akp<SessionState>(`/v1/sessions/${encodeURIComponent(id)}/state`),
+    akp<{ refs: ExternalRef[] }>(
+      `/v1/sessions/${encodeURIComponent(id)}/external-refs`,
+    ),
+  ]);
   const grouped = sessionObjectGroups(state.events);
+  const workRefs = refsResponse.refs.filter(
+    (ref) => ref.workObjectClass !== null,
+  );
 
   return (
     <main>
@@ -221,6 +239,46 @@ export default async function SessionObjectPage({
           )}
         </section>
       </div>
+
+      <h2>Work objects</h2>
+      <section className="card">
+        {workRefs.length ? (
+          <table>
+            <thead>
+              <tr>
+                <th>Object</th>
+                <th>Class</th>
+                <th>Provider</th>
+                <th>Authority</th>
+                <th>Revision</th>
+              </tr>
+            </thead>
+            <tbody>
+              {workRefs.map((ref) => (
+                <tr key={ref.id}>
+                  <td>
+                    <Link href={`/work/${ref.id}?sessionId=${state.session.id}`}>
+                      {ref.title?.trim() || ref.externalId}
+                    </Link>
+                    <br />
+                    <small className="muted">{ref.objectType}</small>
+                  </td>
+                  <td>{ref.workObjectClass}</td>
+                  <td>{ref.provider}</td>
+                  <td>{ref.authority}</td>
+                  <td>
+                    <code>{short(ref.sourceRevision)}</code>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="muted">
+            No typed work objects projected for this session.
+          </p>
+        )}
+      </section>
 
       <h2>Work claims</h2>
       <section className="card">
