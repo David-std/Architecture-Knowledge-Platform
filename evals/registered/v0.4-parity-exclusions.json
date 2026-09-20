@@ -10,19 +10,14 @@
           "id": "akp-code-context",
           "title": "Deterministic code graph and change-impact context",
           "classification": "IMPLEMENTED",
-          "requiredCapabilities": [
-            "code-context",
-            "federated-graph"
-          ],
+          "requiredCapabilities": ["code-context", "federated-graph"],
           "rationale": "AKP ships a revisioned CODE projection, bounded graph substrate, symbol/change-impact queries, failure semantics and recovery evidence."
         },
         {
           "id": "graphify-adapter",
           "title": "Graphify extraction adapter",
           "classification": "ADAPTER_PROVIDED",
-          "requiredCapabilities": [
-            "code-context"
-          ],
+          "requiredCapabilities": ["code-context"],
           "reference": "Graphify 0.9.63",
           "rationale": "AKP executes the pinned Graphify adapter in remote CI while keeping Graphify optional and derived-state only."
         },
@@ -94,9 +89,7 @@
           "id": "akp-temporal-truth",
           "title": "Bi-temporal truth and support maintenance",
           "classification": "IMPLEMENTED",
-          "requiredCapabilities": [
-            "temporal-truth"
-          ],
+          "requiredCapabilities": ["temporal-truth"],
           "rationale": "AKP provides current/as-of truth queries, support withdrawal, stale-derived rejection and durable truth revision state with recovery evidence."
         },
         {
@@ -142,9 +135,7 @@
           "id": "akp-connector-contract",
           "title": "Capability-declared connectors and authenticated inbox",
           "classification": "IMPLEMENTED",
-          "requiredCapabilities": [
-            "assurance-connectors"
-          ],
+          "requiredCapabilities": ["assurance-connectors"],
           "rationale": "AKP ships connector capability contracts, local/Git integration, authenticated webhook/inbox handling, checkpoints, replay/idempotency and assurance findings."
         },
         {

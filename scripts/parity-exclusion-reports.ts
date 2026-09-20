@@ -22,8 +22,7 @@ const capabilityPath = path.resolve(
 );
 const outputDirectory = path.resolve(
   root,
-  process.env.AKP_PARITY_EXCLUSION_DIR ??
-    "reports/ci/parity-exclusions",
+  process.env.AKP_PARITY_EXCLUSION_DIR ?? "reports/ci/parity-exclusions",
 );
 
 const [manifestRaw, capabilityRaw] = await Promise.all([

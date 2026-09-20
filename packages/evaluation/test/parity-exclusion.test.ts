@@ -31,7 +31,8 @@ function acceptance(
         title: "Capability A",
         mandatory: true,
         maturity,
-        cells: {} as CapabilityAcceptanceReport["capabilities"][number]["cells"],
+        cells:
+          {} as CapabilityAcceptanceReport["capabilities"][number]["cells"],
         remainingLimitation: null,
       },
     ],

@@ -35,8 +35,7 @@ export interface ParityExclusionManifest {
   domains: ParityExclusionDomainDefinition[];
 }
 
-export interface ParityExclusionItemResult
-  extends ParityExclusionItemDefinition {
+export interface ParityExclusionItemResult extends ParityExclusionItemDefinition {
   status: "SUPPORTED" | "EXCLUDED" | "FAILED";
   capabilityMaturity: Record<string, CapabilityMaturity>;
   failures: string[];
@@ -76,8 +75,7 @@ function isImplementedClassification(
   classification: ParityExclusionClassification,
 ): boolean {
   return (
-    classification === "IMPLEMENTED" ||
-    classification === "ADAPTER_PROVIDED"
+    classification === "IMPLEMENTED" || classification === "ADAPTER_PROVIDED"
   );
 }
 
