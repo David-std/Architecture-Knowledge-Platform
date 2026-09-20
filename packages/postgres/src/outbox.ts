@@ -92,6 +92,7 @@ export const INTEGRATION_EVENT_TYPES = [
   "OfflineDraftQueued",
   "OfflineDraftReconciled",
   "ContextFabricPeerRegistered",
+  "ContextFabricPeerRevoked",
   "PrincipalRevoked",
 ] as const;
 export type IntegrationEventType = (typeof INTEGRATION_EVENT_TYPES)[number];

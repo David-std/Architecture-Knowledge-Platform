@@ -885,14 +885,16 @@ export function registerContextFabricRoutes(
             method: "POST",
             url: "/v1/search",
             headers: {
-          ...(request.headers.authorization
-            ? { authorization: request.headers.authorization }
-            : {}),
-          ...(request.headers.cookie ? { cookie: request.headers.cookie } : {}),
-          ...(request.headers["x-csrf-token"]
-            ? { "x-csrf-token": String(request.headers["x-csrf-token"]) }
-            : {}),
-        },
+              ...(request.headers.authorization
+                ? { authorization: request.headers.authorization }
+                : {}),
+              ...(request.headers.cookie
+                ? { cookie: request.headers.cookie }
+                : {}),
+              ...(request.headers["x-csrf-token"]
+                ? { "x-csrf-token": String(request.headers["x-csrf-token"]) }
+                : {}),
+            },
             payload: {
               ...parsed.data.request,
               spaceId: parsed.data.scope.spaceId,
