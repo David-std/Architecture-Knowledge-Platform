@@ -3,6 +3,7 @@ export * from "./code-graph.js";
 export * from "./connector-capabilities.js";
 export * from "./model-role-policy.js";
 import { z } from "zod";
+import { ModelResidency } from "./model-role-policy.js";
 
 export const TrustTier = z.enum([
   "UNVERIFIED",
@@ -773,6 +774,7 @@ export const IngestRequest = z.object({
     .optional(),
   title: z.string().optional(),
   mediaType: z.string().optional(),
+  modelResidency: ModelResidency.optional(),
   documentIntelligence: DocumentIntelligenceIngestOptions.optional(),
   policy: z
     .enum(["REVIEW_REQUIRED", "ALLOW_LOW_RISK_AUTO_APPROVAL"])

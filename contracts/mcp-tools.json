@@ -1002,6 +1002,10 @@
           "sourceUri": { "type": "string", "minLength": 1 },
           "title": { "type": "string" },
           "mediaType": { "type": "string" },
+          "modelResidency": {
+            "type": "string",
+            "enum": ["LOCAL_ONLY", "ORG_APPROVED", "EXTERNAL_ALLOWED"]
+          },
           "expectedSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
           "idempotencyKey": {
             "type": "string",

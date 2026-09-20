@@ -4511,6 +4511,37 @@ components:
         graphProvenance:
           type: array
           items: { $ref: "#/components/schemas/GraphPathProvenance" }
+    DocumentIntelligenceIngestOptions:
+      type: object
+      additionalProperties: false
+      properties:
+        complexity:
+          type: string
+          enum:
+            [simple, digital, complex, scanned, formula, table-heavy, unknown]
+        ocrRequired: { type: boolean, default: false }
+        tables: { type: boolean, default: false }
+        formula: { type: boolean, default: false }
+        costPolicy:
+          type: string
+          enum: [NO_PAID, STANDARD, QUALITY]
+          default: STANDARD
+        privacyPolicy:
+          type: string
+          enum: [LOCAL_ONLY, LOCAL_PREFERRED, REMOTE_ALLOWED]
+          default: LOCAL_PREFERRED
+        language:
+          type: string
+          pattern: "^[A-Za-z][A-Za-z0-9_-]{1,31}$"
+        extractor:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9-]{0,99}$"
+        ocr: { type: boolean }
+        ocrEngine:
+          type: string
+          pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$"
+        forceFullPageOcr: { type: boolean }
+        timeoutSeconds: { type: integer, minimum: 1, maximum: 900 }
     IngestRequest:
       type: object
       required: [spaceId, vaultId, sourceUri]
@@ -4521,6 +4552,11 @@ components:
         expectedSha256: { type: string, pattern: "^[a-f0-9]{64}$" }
         title: { type: string }
         mediaType: { type: string }
+        modelResidency:
+          type: string
+          enum: [LOCAL_ONLY, ORG_APPROVED, EXTERNAL_ALLOWED]
+        documentIntelligence:
+          { $ref: "#/components/schemas/DocumentIntelligenceIngestOptions" }
         policy:
           type: string
           enum: [REVIEW_REQUIRED, ALLOW_LOW_RISK_AUTO_APPROVAL]

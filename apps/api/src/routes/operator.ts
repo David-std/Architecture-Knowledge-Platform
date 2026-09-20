@@ -169,7 +169,8 @@ export function registerOperatorRoutes(
       const [spaces, vaults, memberships, principals, apiTokens, credentials] =
         await Promise.all([
           db.pool.query(
-            `select id,organization_id,slug,name,visibility,created_at
+            `select id,organization_id,slug,name,visibility,model_residency,
+                    created_at
                from spaces
               where id=any($1::uuid[])
               order by name,id`,

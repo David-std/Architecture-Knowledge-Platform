@@ -58,6 +58,7 @@ import { buildCompilationStage } from "./compilation-stage.js";
 import { evaluateCompilationProbes } from "./compilation-probes.js";
 import { selectEvidenceFragment } from "./evidence-fragment.js";
 import { resolveAuthorizedLocalSource } from "./source-boundary.js";
+import { resolveSourceModelResidency } from "./source-model-residency.js";
 import {
   appendDocumentIntelligenceFormFields,
   parseDocumentIntelligenceOptions,
@@ -320,6 +321,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
         mime.lookup(sourcePath) ||
         "application/octet-stream",
     );
+    const modelResidency = resolveSourceModelResidency(payload);
     const raw = await objects.putImmutable({
       stream: createReadStream(sourcePath),
       mediaType,
@@ -342,31 +344,48 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
       raw.key,
       job.created_by ?? null,
       JSON.stringify({ bucket: raw.bucket, immutable: true }),
+      modelResidency,
     ];
     const source = vaultId
-      ? await db.pool.query<{ id: string }>(
+      ? await db.pool.query<{ id: string; model_residency: string }>(
           `
           insert into sources(
             space_id,vault_id,title,source_uri,media_type,sha256,byte_size,
-            object_key,created_by,metadata
+            object_key,created_by,metadata,model_residency
           )
-          values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)
+          values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11)
           on conflict (vault_id,sha256) where vault_id is not null
-            do update set source_uri=excluded.source_uri
-          returning id
+            do update set
+              source_uri=excluded.source_uri,
+              model_residency=case
+                when sources.model_residency='LOCAL_ONLY'
+                  or excluded.model_residency='LOCAL_ONLY' then 'LOCAL_ONLY'
+                when sources.model_residency='ORG_APPROVED'
+                  or excluded.model_residency='ORG_APPROVED' then 'ORG_APPROVED'
+                else 'EXTERNAL_ALLOWED'
+              end
+          returning id,model_residency
           `,
           sourceValues,
         )
-      : await db.pool.query<{ id: string }>(
+      : await db.pool.query<{ id: string; model_residency: string }>(
           `
           insert into sources(
             space_id,vault_id,title,source_uri,media_type,sha256,byte_size,
-            object_key,created_by,metadata
+            object_key,created_by,metadata,model_residency
           )
-          values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)
+          values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11)
           on conflict (space_id,sha256) where vault_id is null
-            do update set source_uri=excluded.source_uri
-          returning id
+            do update set
+              source_uri=excluded.source_uri,
+              model_residency=case
+                when sources.model_residency='LOCAL_ONLY'
+                  or excluded.model_residency='LOCAL_ONLY' then 'LOCAL_ONLY'
+                when sources.model_residency='ORG_APPROVED'
+                  or excluded.model_residency='ORG_APPROVED' then 'ORG_APPROVED'
+                else 'EXTERNAL_ALLOWED'
+              end
+          returning id,model_residency
           `,
           sourceValues,
         );
@@ -375,6 +394,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
       sourceId: source.rows[0]?.id,
       originalName: basename(sourcePath),
       mediaType,
+      modelResidency: source.rows[0]?.model_residency ?? modelResidency,
     });
     return;
   }

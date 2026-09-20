@@ -2,7 +2,7 @@ import "./instrumentation.js";
 import { config } from "dotenv";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { QueryIntent, SearchRequest } from "@akp/contracts";
+import { ModelResidency, QueryIntent, SearchRequest } from "@akp/contracts";
 import { McpContextRequest } from "./context-request.js";
 import { AkpContextInput, dispatchAkpContext } from "./context-facade.js";
 import {
@@ -730,6 +730,7 @@ export function createMcpServer(): McpServer {
         sourceUri: z.string().min(1),
         mediaType: z.string().optional(),
         title: z.string().optional(),
+        modelResidency: ModelResidency.optional(),
         expectedSha256: z
           .string()
           .regex(/^[a-f0-9]{64}$/)
