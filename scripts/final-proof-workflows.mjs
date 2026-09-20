@@ -41,7 +41,8 @@ async function githubJson(url, token) {
 }
 
 const repository = requiredEnv("GITHUB_REPOSITORY");
-const commit = requiredEnv("GITHUB_SHA");
+const commit =
+  process.env.AKP_FINAL_PROOF_COMMIT?.trim() || requiredEnv("GITHUB_SHA");
 const token = requiredEnv("GITHUB_TOKEN");
 const apiUrl = process.env.GITHUB_API_URL?.trim() || "https://api.github.com";
 const outputPath = path.resolve(
@@ -56,17 +57,63 @@ if (!/^[a-f0-9]{40}$/i.test(commit)) {
 const runsUrl = new URL(`${apiUrl}/repos/${repository}/actions/runs`);
 runsUrl.searchParams.set("head_sha", commit);
 runsUrl.searchParams.set("per_page", "100");
-const runsPayload = await githubJson(runsUrl, token);
-const runs = Array.isArray(runsPayload.workflow_runs)
-  ? runsPayload.workflow_runs
-  : [];
+
+const pollMs = Math.max(
+  5_000,
+  Number(process.env.AKP_FINAL_PROOF_POLL_MS ?? 15_000),
+);
+const waitMs = Math.max(
+  pollMs,
+  Number(process.env.AKP_FINAL_PROOF_WAIT_MS ?? 1_800_000),
+);
+const deadline = Date.now() + waitMs;
+
+async function sameShaRuns() {
+  const payload = await githubJson(runsUrl, token);
+  return Array.isArray(payload.workflow_runs) ? payload.workflow_runs : [];
+}
+
+function candidatesFor(runs, workflowName) {
+  return runs
+    .filter((run) => run?.name === workflowName && run?.head_sha === commit)
+    .sort((left, right) => Number(right?.id ?? 0) - Number(left?.id ?? 0));
+}
+
+let runs = [];
+for (;;) {
+  runs = await sameShaRuns();
+  const pending = [];
+  const terminalFailures = [];
+  for (const workflowName of requiredWorkflows) {
+    const candidates = candidatesFor(runs, workflowName);
+    const successful = candidates.some(
+      (run) => run?.status === "completed" && run?.conclusion === "success",
+    );
+    if (successful) continue;
+    const active = candidates.some((run) => run?.status !== "completed");
+    if (active || candidates.length === 0) {
+      pending.push(workflowName);
+    } else {
+      terminalFailures.push(workflowName);
+    }
+  }
+  if (terminalFailures.length > 0 || pending.length === 0) break;
+  if (Date.now() >= deadline) break;
+  console.log(
+    JSON.stringify({
+      status: "WAITING_FOR_SAME_SHA_WORKFLOWS",
+      commit,
+      pending,
+      remainingMs: Math.max(0, deadline - Date.now()),
+    }),
+  );
+  await new Promise((resolve) => setTimeout(resolve, pollMs));
+}
 
 const selectedRuns = [];
 const failures = [];
 for (const workflowName of requiredWorkflows) {
-  const candidates = runs
-    .filter((run) => run?.name === workflowName && run?.head_sha === commit)
-    .sort((left, right) => Number(right?.id ?? 0) - Number(left?.id ?? 0));
+  const candidates = candidatesFor(runs, workflowName);
   const successful = candidates.find(
     (run) => run?.status === "completed" && run?.conclusion === "success",
   );

@@ -46,6 +46,11 @@ jobs:
           enable-cache: true
           cache-dependency-glob: apps/extractor/uv.lock
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Install pinned Graphify for recovery rebuild
+        shell: bash
+        run: |
+          uv tool install graphifyy==0.9.63
+          echo "AKP_GRAPHIFY_EXECUTABLE=$(uv tool dir --bin)/graphify" >> "$GITHUB_ENV"
       - run: pnpm build
       - run: docker compose up -d --wait postgres minio extractor
       - run: |
@@ -53,7 +58,7 @@ jobs:
           git init -b main "$AKP_MANAGED_REPO"
           git -C "$AKP_MANAGED_REPO" config user.name "AKP Resilience CI"
           git -C "$AKP_MANAGED_REPO" config user.email "akp-resilience-ci@localhost"
-          mkdir -p "$AKP_MANAGED_REPO/managed"
+          mkdir -p "$AKP_MANAGED_REPO/managed" "$AKP_MANAGED_REPO/src"
           cat > "$AKP_MANAGED_REPO/managed/resilience-restore-probe.md" <<'EOF'
           ---
           id: RESILIENCE-RESTORE-PROBE
@@ -64,6 +69,15 @@ jobs:
           ---
 
           Recovery must restore this managed Git source and rebuild a searchable projection.
+          EOF
+          cat > "$AKP_MANAGED_REPO/src/resilience-code.ts" <<'EOF'
+          export function restoredDependency(): string {
+            return "resilience";
+          }
+
+          export function restoredCaller(): string {
+            return restoredDependency();
+          }
           EOF
           git -C "$AKP_MANAGED_REPO" add --all
           git -C "$AKP_MANAGED_REPO" commit -m "test: initialize resilience repository"
