@@ -38,6 +38,15 @@ if (!vault) {
   throw new Error(`Recovery proof vault was not found: ${vaultKey}`);
 }
 
+const principalResult = await client.query<{ id: string }>(
+  "select id from principals where kind='HUMAN' and user_id=$1 limit 1",
+  [adminId],
+);
+const adminPrincipalId = principalResult.rows[0]?.id;
+if (!adminPrincipalId) {
+  throw new Error("Recovery proof admin principal was not found.");
+}
+
 const profileRevisionId = randomUUID();
 const sessionId = randomUUID();
 const claimId = randomUUID();
@@ -114,19 +123,23 @@ try {
   );
   await client.query(
     `insert into workspace_claims(
-       id,session_id,work_key,owner_id,status,fencing_token,lease_expires_at
+       id,session_id,work_key,owner_id,owner_principal_id,status,
+       fencing_token,lease_expires_at
      ) values(
-       $1,$2,'recovery:workspace-sentinel',$3,'ACTIVE',7,now()+interval '1 hour'
+       $1,$2,'recovery:workspace-sentinel',$3,$4,'ACTIVE',7,
+       now()+interval '1 hour'
      )`,
-    [claimId, sessionId, adminId],
+    [claimId, sessionId, adminId, adminPrincipalId],
   );
   await client.query(
     `insert into workspace_events(
-       session_id,space_id,vault_id,actor_id,claim_id,event_type,payload
+       session_id,space_id,vault_id,actor_id,actor_principal_id,claim_id,
+       event_type,payload
      ) values(
-       $1,$2,$3,$4,$5,'NOTE','{"recoverySentinel":"workspace-event"}'::jsonb
+       $1,$2,$3,$4,$5,$6,'NOTE',
+       '{"recoverySentinel":"workspace-event"}'::jsonb
      )`,
-    [sessionId, vault.space_id, vault.id, adminId, claimId],
+    [sessionId, vault.space_id, vault.id, adminId, adminPrincipalId, claimId],
   );
   await client.query(
     `insert into workspace_offline_drafts(

@@ -12,6 +12,7 @@ const requiredWorkflows = [
   "document-intelligence-benchmark",
   "agent-ab",
   "agent-arena",
+  "domain-quality",
 ];
 
 function requiredEnv(name) {

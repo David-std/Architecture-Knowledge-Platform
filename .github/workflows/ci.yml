@@ -64,6 +64,7 @@ jobs:
         env:
           AKP_UPGRADE_DATABASE_URL: postgres://akp:akp@localhost:55432/akp_upgrade
         run: |
+          git fetch --no-tags --depth=1 origin a6bdcc38fdf026d6c353db096799366865011022
           docker compose exec -T postgres dropdb -U akp --if-exists akp_upgrade
           docker compose exec -T postgres createdb -U akp akp_upgrade
           pnpm proof:upgrade-migrations

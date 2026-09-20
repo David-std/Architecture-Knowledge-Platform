@@ -1,0 +1,107 @@
+name: domain-quality
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  registered-domain-quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: postgres://akp:akp@localhost:55432/akp
+      AKP_DOMAIN_QUALITY_REPORT: reports/ci/domain-quality-benchmark.json
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - run: pnpm build
+      - run: docker compose up -d --wait postgres
+      - run: pnpm db:migrate
+      - name: Execute registered domain quality benchmark
+        run: pnpm benchmark:domain-quality
+      - name: Validate registered domain quality evidence
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const report = JSON.parse(
+            readFileSync("reports/ci/domain-quality-benchmark.json", "utf8"),
+          );
+          const expected = new Set([
+            "graph-quality",
+            "code-quality",
+            "temporal-truth",
+            "reasoning-adversarial",
+            "federation-partial-failure",
+          ]);
+          if (
+            report.benchmark !== "AKP_REGISTERED_DOMAIN_QUALITY" ||
+            report.status !== "PROVEN" ||
+            report.claimPolicy?.externalParityClaimAllowed !== false ||
+            report.claimPolicy?.scenarioPassRateIsNotPrecisionOrRecall !== true ||
+            report.claimPolicy?.hiddenChainOfThoughtMeasured !== false
+          ) {
+            throw new Error("Domain quality claim policy or status is invalid.");
+          }
+          if (!Array.isArray(report.domains) || report.domains.length !== 5) {
+            throw new Error("Expected five registered domain benchmark groups.");
+          }
+          for (const domain of report.domains) {
+            if (!expected.delete(domain.id)) {
+              throw new Error("Unexpected or duplicate domain benchmark: " + domain.id);
+            }
+            if (
+              domain.status !== "PASSED" ||
+              domain.scenarioGroups < 1 ||
+              domain.passedScenarioGroups !== domain.scenarioGroups ||
+              domain.scenarioGroupPassRate !== 1 ||
+              !Number.isFinite(domain.durationMs) ||
+              !Array.isArray(domain.commands) ||
+              !Array.isArray(domain.limitations) ||
+              domain.limitations.length === 0
+            ) {
+              throw new Error("Incomplete domain benchmark evidence for " + domain.id);
+            }
+          }
+          if (expected.size !== 0) {
+            throw new Error("Missing domain benchmark groups.");
+          }
+          console.log(
+            JSON.stringify(
+              {
+                status: report.status,
+                domains: report.domains.map((domain) => ({
+                  id: domain.id,
+                  scenarioGroups: domain.scenarioGroups,
+                  durationMs: domain.durationMs,
+                })),
+              },
+              null,
+              2,
+            ),
+          );
+          NODE
+      - name: Upload registered domain quality evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: domain-quality-${{ github.run_id }}
+          path: reports/ci/domain-quality-benchmark.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Stop disposable services
+        if: always()
+        run: docker compose down -v --remove-orphans

@@ -1302,6 +1302,56 @@
           "step": "Verify PostgreSQL, MinIO and durable v0.4 state restore"
         }
       ]
+    },
+    "benchmark:code-quality": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Validate registered domain quality evidence"
+        }
+      ]
+    },
+    "benchmark:federation-partial-failure": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Validate registered domain quality evidence"
+        }
+      ]
+    },
+    "benchmark:graph-quality": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Validate registered domain quality evidence"
+        }
+      ]
+    },
+    "benchmark:reasoning-adversarial": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Validate registered domain quality evidence"
+        }
+      ]
+    },
+    "benchmark:temporal-truth": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Validate registered domain quality evidence"
+        }
+      ]
     }
   }
 }
