@@ -63,7 +63,9 @@ if (
   sourceMap.schemaVersion !== 1 ||
   manifest.release !== sourceMap.release
 ) {
-  throw new Error("Capability manifest and evidence source map are incompatible.");
+  throw new Error(
+    "Capability manifest and evidence source map are incompatible.",
+  );
 }
 if (
   workflowReport.schemaVersion !== 1 ||
@@ -92,7 +94,10 @@ for (const capabilityValue of capabilities) {
     `capability ${String(capability.id)} requirements`,
   );
   for (const requirementValue of Object.values(requirements)) {
-    const requirement = objectRecord(requirementValue, "capability requirement");
+    const requirement = objectRecord(
+      requirementValue,
+      "capability requirement",
+    );
     for (const id of Array.isArray(requirement.evidence)
       ? requirement.evidence
       : []) {
@@ -104,7 +109,10 @@ for (const capabilityValue of capabilities) {
   }
 }
 
-const sourceDefinitions = objectRecord(sourceMap.evidence, "evidence source map");
+const sourceDefinitions = objectRecord(
+  sourceMap.evidence,
+  "evidence source map",
+);
 for (const id of Object.keys(sourceDefinitions)) {
   if (!requiredEvidenceIds.has(id)) {
     throw new Error(`Evidence source map contains unknown ID ${id}.`);

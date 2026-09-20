@@ -54,18 +54,32 @@ jobs:
           git -C "$AKP_MANAGED_REPO" add --all
           git -C "$AKP_MANAGED_REPO" commit -m "test: seed managed restore probe"
       - run: pnpm db:migrate
+      - name: Import durable recovery proof document state
+        run: >-
+          pnpm akp vault import
+          --vault-path "$AKP_MANAGED_REPO"
+          --space-id 00000000-0000-0000-0000-000000000003
+          --vault-key recovery-proof-vault
+          --read-only
+          --report-dir reports/migration
+      - name: Seed durable v0.4 recovery sentinels
+        env:
+          AKP_RECOVERY_PROOF_VAULT_KEY: recovery-proof-vault
+          AKP_RECOVERY_PROOF_MANIFEST: reports/ci/recovery-state-seed.json
+        run: pnpm exec tsx scripts/seed-recovery-proof.ts
       - name: Create complete disposable recovery backup
         shell: pwsh
         run: >-
           ./scripts/backup.ps1
           -OutputDirectory backups/ci-recovery
           -ManagedRepository $env:AKP_MANAGED_REPO
-      - name: Verify PostgreSQL, MinIO and baseline Git restore smoke
+      - name: Verify PostgreSQL, MinIO and durable v0.4 state restore
         shell: pwsh
         run: >-
           ./scripts/restore-smoke.ps1
           -BackupDirectory backups/ci-recovery
           -ManagedRepository $env:AKP_MANAGED_REPO
+          -RecoveryStateManifest reports/ci/recovery-state-seed.json
       - name: Prove managed Git commit, files and searchable reindex after restore
         shell: pwsh
         run: >-
@@ -80,6 +94,7 @@ jobs:
           name: recovery-diagnostics-${{ github.run_id }}
           path: |
             backups/ci-recovery/manifest.json
+            reports/ci/recovery-state-seed.json
             reports/migration
           if-no-files-found: ignore
           retention-days: 7

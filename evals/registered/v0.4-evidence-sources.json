@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "release": "v0.4.0",
-  "policy": "Every listed source is required. Only directly matching runtime, integration, benchmark, recovery, security, documentation, or operator-surface evidence is mapped. Broad build/typecheck success is not accepted as behavioral proof. Unmapped evidence remains SKIPPED in final proof and therefore cannot raise capability maturity.",
+  "policy": "Every listed source is required. Behavioral evidence maps only to directly matching named execution steps; broad build/typecheck success is not accepted. Operator-surface evidence may map to the concrete maintained surface file because runtime/integration behavior is evaluated in separate acceptance columns. Unmapped evidence remains SKIPPED and cannot raise capability maturity.",
   "evidence": {
     "remote:ci": {
       "sources": [
@@ -960,6 +960,346 @@
           "workflow": "ci",
           "job": "typescript",
           "step": "Run critical browser E2E"
+        }
+      ]
+    },
+    "test:reasoning-runtime": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run reasoning adversarial proof"
+        }
+      ]
+    },
+    "failure:reasoning-invalid-operator": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run reasoning adversarial proof"
+        }
+      ]
+    },
+    "failure:reasoning-timeout": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run reasoning adversarial proof"
+        }
+      ]
+    },
+    "integration:reasoning-context": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run reasoning adversarial proof"
+        }
+      ]
+    },
+    "security:no-arbitrary-sql-cypher": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run reasoning adversarial proof"
+        }
+      ]
+    },
+    "test:model-routing-runtime": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run model routing and residency proof"
+        }
+      ]
+    },
+    "failure:external-model-unavailable": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run model routing and residency proof"
+        }
+      ]
+    },
+    "failure:model-residency-fallback": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run model routing and residency proof"
+        }
+      ]
+    },
+    "integration:model-routing-compiler": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run model routing and residency proof"
+        }
+      ]
+    },
+    "security:model-residency": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run model routing and residency proof"
+        }
+      ]
+    },
+    "failure:code-provider-crash": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run code graph failure proof"
+        }
+      ]
+    },
+    "failure:stale-code-sha": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run code graph failure proof"
+        }
+      ]
+    },
+    "failure:federated-invalid-payload": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run federation contract proof"
+        }
+      ]
+    },
+    "security:federation-trust-scope": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run federation contract proof"
+        }
+      ]
+    },
+    "failure:community-build-rollback": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "resilience-matrix",
+          "job": "injected-failures",
+          "step": "Validate recovery and failure-injection boundaries"
+        }
+      ]
+    },
+    "failure:federated-peer-unavailable": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "resilience-matrix",
+          "job": "injected-failures",
+          "step": "Validate recovery and failure-injection boundaries"
+        }
+      ]
+    },
+    "failure:graph-build-preserves-active": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "resilience-matrix",
+          "job": "injected-failures",
+          "step": "Validate recovery and failure-injection boundaries"
+        }
+      ]
+    },
+    "failure:ppr-cancel": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "resilience-matrix",
+          "job": "injected-failures",
+          "step": "Validate recovery and failure-injection boundaries"
+        }
+      ]
+    },
+    "security:ppr-no-leak": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "resilience-matrix",
+          "job": "injected-failures",
+          "step": "Validate recovery and failure-injection boundaries"
+        }
+      ]
+    },
+    "test:federation-runtime": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "resilience-matrix",
+          "job": "injected-failures",
+          "step": "Validate recovery and failure-injection boundaries"
+        }
+      ]
+    },
+    "failure:revoked-principal": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "failure:agent-revoked-mid-task": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "security:agent-scope": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "surface:profile-admin": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "apps/web/app/admin/profiles/page.tsx"
+        }
+      ]
+    },
+    "surface:team-admin": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "apps/web/app/admin/team/page.tsx"
+        }
+      ]
+    },
+    "surface:federation-admin": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "apps/web/app/admin/team/page.tsx"
+        }
+      ]
+    },
+    "surface:source-inspection": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "apps/web/app/sources/[id]/page.tsx"
+        }
+      ]
+    },
+    "surface:retrieval-diagnostics": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "apps/web/app/admin/health/page.tsx"
+        }
+      ]
+    },
+    "recovery:connector-state": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "recovery",
+          "job": "managed-git-restore",
+          "step": "Verify PostgreSQL, MinIO and durable v0.4 state restore"
+        }
+      ]
+    },
+    "recovery:durable-document-state": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "recovery",
+          "job": "managed-git-restore",
+          "step": "Verify PostgreSQL, MinIO and durable v0.4 state restore"
+        }
+      ]
+    },
+    "recovery:federation-peer-state": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "recovery",
+          "job": "managed-git-restore",
+          "step": "Verify PostgreSQL, MinIO and durable v0.4 state restore"
+        }
+      ]
+    },
+    "recovery:profile-state": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "recovery",
+          "job": "managed-git-restore",
+          "step": "Verify PostgreSQL, MinIO and durable v0.4 state restore"
+        }
+      ]
+    },
+    "recovery:truth-state": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "recovery",
+          "job": "managed-git-restore",
+          "step": "Verify PostgreSQL, MinIO and durable v0.4 state restore"
+        }
+      ]
+    },
+    "recovery:web-draft-state": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "recovery",
+          "job": "managed-git-restore",
+          "step": "Verify PostgreSQL, MinIO and durable v0.4 state restore"
+        }
+      ]
+    },
+    "recovery:workspace-state": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "recovery",
+          "job": "managed-git-restore",
+          "step": "Verify PostgreSQL, MinIO and durable v0.4 state restore"
         }
       ]
     }
