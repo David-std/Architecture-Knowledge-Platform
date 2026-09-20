@@ -928,10 +928,14 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
         .first()
         .fill("Browser E2E triage verified");
       await row.getByRole("button", { name: "Guardar" }).click();
-      await adminPage.waitForLoadState("networkidle");
       const updatedRow = adminPage.locator("tr", {
         hasText: "BROWSER_FRESHNESS_STALE",
       });
+      await updatedRow
+        .locator("td")
+        .nth(2)
+        .getByText("ACKNOWLEDGED", { exact: true })
+        .waitFor();
       assert.equal(
         await updatedRow.locator('select[name="status"]').inputValue(),
         "ACKNOWLEDGED",
