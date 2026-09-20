@@ -119,7 +119,7 @@ interface GraphRelationshipAssertion {
   provenance: GraphProvenanceEnvelope;
 }
 
-interface GraphProjectionRevision {
+export interface GraphProjectionRevision {
   id: string;
   graphDomain: GraphDomain;
   spaceId: string;

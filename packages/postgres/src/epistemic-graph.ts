@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 import type { Postgres } from "./index.js";
-import { PostgresFederatedGraphStore } from "./federated-graph.js";
+import {
+  PostgresFederatedGraphStore,
+  type GraphProjectionRevision,
+} from "./federated-graph.js";
 
 type FederatedProjectionArtifact = Parameters<
   PostgresFederatedGraphStore["build"]
@@ -284,7 +287,7 @@ export async function planLegacyEpistemicGraphProjection(
 export async function rebuildLegacyEpistemicGraphProjection(
   db: Postgres,
   input: LegacyEpistemicProjectionInput,
-) {
+): Promise<GraphProjectionRevision> {
   const plan = await planLegacyEpistemicGraphProjection(db, input);
-  return new PostgresFederatedGraphStore(db).build(plan.artifact);
+  return await new PostgresFederatedGraphStore(db).build(plan.artifact);
 }
