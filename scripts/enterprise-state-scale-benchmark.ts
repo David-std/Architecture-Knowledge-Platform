@@ -520,12 +520,7 @@ async function countFixture(fixture: Fixture): Promise<DimensionCounts> {
       (select count(*) from context_fabric_peers
         where organization_id=$4 and space_id=$1)::bigint
         as "federationPeers"`,
-    [
-      fixture.spaceId,
-      fixture.vaultId,
-      fixture.runId,
-      fixture.organizationId,
-    ],
+    [fixture.spaceId, fixture.vaultId, fixture.runId, fixture.organizationId],
   );
   const row = result.rows[0];
   if (!row) throw new Error("Enterprise benchmark counts unavailable");
@@ -745,9 +740,7 @@ async function main(): Promise<void> {
   let cleanupSucceeded = false;
   const results: TargetResult[] = [];
   const processMemoryBefore = memorySnapshot();
-  let poolPressure:
-    | Awaited<ReturnType<typeof measurePoolPressure>>
-    | undefined;
+  let poolPressure: Awaited<ReturnType<typeof measurePoolPressure>> | undefined;
 
   try {
     await client.query("begin");
@@ -841,8 +834,7 @@ async function main(): Promise<void> {
           addedEnterpriseRows,
           totalWriteMs: rounded(totalWriteMs),
           indexedWriteThroughputPerSecond: rounded(
-            addedEnterpriseRows /
-              Math.max(0.001, totalWriteMs / 1000),
+            addedEnterpriseRows / Math.max(0.001, totalWriteMs / 1000),
           ),
         },
         writesMs: {
@@ -861,7 +853,8 @@ async function main(): Promise<void> {
           before: memoryBefore,
           after: memoryAfter,
           rssDeltaBytes: memoryAfter.rssBytes - memoryBefore.rssBytes,
-          heapDeltaBytes: memoryAfter.heapUsedBytes - memoryBefore.heapUsedBytes,
+          heapDeltaBytes:
+            memoryAfter.heapUsedBytes - memoryBefore.heapUsedBytes,
         },
         storage: {
           before: storageBefore,
@@ -915,14 +908,13 @@ async function main(): Promise<void> {
     p99Reported:
       results.length > 0 &&
       results.every((result) =>
-        result.queryLatency.every(
-          (measurement) => Number.isFinite(measurement.latency.p99Ms),
+        result.queryLatency.every((measurement) =>
+          Number.isFinite(measurement.latency.p99Ms),
         ),
       ),
     poolBounded:
       Boolean(poolPressure) &&
-      (poolPressure?.maxTotalCount ?? 99) <=
-        (poolPressure?.poolMax ?? 0),
+      (poolPressure?.maxTotalCount ?? 99) <= (poolPressure?.poolMax ?? 0),
   };
   const status =
     !failure && Object.values(acceptance).every(Boolean) ? "PASSED" : "FAILED";
