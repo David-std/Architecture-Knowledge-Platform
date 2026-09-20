@@ -25,6 +25,17 @@ function lines(formData: FormData, name: string): string[] {
   ];
 }
 
+function values(formData: FormData, name: string): string[] {
+  return [
+    ...new Set(
+      formData
+        .getAll(name)
+        .map((entry) => String(entry).trim())
+        .filter(Boolean),
+    ),
+  ];
+}
+
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -74,6 +85,7 @@ export async function createDecision(formData: FormData) {
           drivers: lines(formData, "drivers"),
           qualityAttributes: lines(formData, "qualityAttributes"),
           affectedRefs: lines(formData, "affectedRefs"),
+          affectedObjectRefIds: values(formData, "affectedObjectRefIds"),
           evidenceRefs: lines(formData, "evidenceRefs"),
           verificationPlan: required(formData, "verificationPlan"),
           verificationDueAt: optional(formData, "verificationDueAt"),

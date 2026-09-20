@@ -18,6 +18,15 @@ type Principal = {
   state: string;
 };
 
+type ExternalRef = {
+  id: string;
+  provider: string;
+  objectType: string;
+  externalId: string;
+  title: string | null;
+  workObjectClass: string | null;
+};
+
 type SessionState = {
   session: Session;
   principals: Principal[];
@@ -71,14 +80,20 @@ export default async function DecisionsPage({
     );
   }
 
-  const [state, decisionsResponse] = await Promise.all([
+  const [state, decisionsResponse, refsResponse] = await Promise.all([
     akp<SessionState>(`/v1/sessions/${encodeURIComponent(selected.id)}/state`),
     akp<{ decisions: Decision[] }>(
       `/v1/sessions/${encodeURIComponent(selected.id)}/decisions`,
     ),
+    akp<{ refs: ExternalRef[] }>(
+      `/v1/sessions/${encodeURIComponent(selected.id)}/external-refs`,
+    ),
   ]);
   const humanPrincipals = state.principals.filter(
     (principal) => principal.kind === "HUMAN" && principal.state === "ACTIVE",
+  );
+  const workObjects = refsResponse.refs.filter(
+    (ref) => ref.workObjectClass !== null,
   );
 
   return (
@@ -212,6 +227,26 @@ export default async function DecisionsPage({
                 Affected refs · one per line
                 <textarea name="affectedRefs" />
               </label>
+              <fieldset>
+                <legend>Affected work objects</legend>
+                {workObjects.length ? (
+                  workObjects.map((ref) => (
+                    <label key={ref.id}>
+                      <input
+                        type="checkbox"
+                        name="affectedObjectRefIds"
+                        value={ref.id}
+                      />{" "}
+                      {ref.title?.trim() || ref.externalId} ·{" "}
+                      {ref.workObjectClass} · {ref.provider}
+                    </label>
+                  ))
+                ) : (
+                  <p className="muted">
+                    No typed work objects are projected in this session.
+                  </p>
+                )}
+              </fieldset>
               <label>
                 Verification plan
                 <textarea name="verificationPlan" required />

@@ -83,6 +83,7 @@ type Consultation = {
 
 type DecisionSnapshot = {
   candidate: Candidate;
+  affectedObjectRefIds: string[];
   alternatives: Alternative[];
   objections: Objection[];
   consultations: Consultation[];
@@ -314,6 +315,22 @@ export default async function DecisionPage({
           <p>{list(candidate.qualityAttributes)}</p>
           <h3>Affected refs</h3>
           <p>{list(candidate.affectedRefs)}</p>
+          <h3>Affected work objects</h3>
+          {snapshot.affectedObjectRefIds.length ? (
+            <ul>
+              {snapshot.affectedObjectRefIds.map((objectRefId) => (
+                <li key={objectRefId}>
+                  <Link
+                    href={`/work/${objectRefId}?sessionId=${sessionId}`}
+                  >
+                    work object {short(objectRefId)}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p>—</p>
+          )}
           <h3>Evidence refs</h3>
           <p>{list(candidate.evidenceRefs)}</p>
         </section>

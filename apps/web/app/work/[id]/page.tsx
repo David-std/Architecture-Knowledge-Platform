@@ -54,6 +54,24 @@ type ContextPacketSummary = {
   createdAt: string;
 };
 
+type SessionEvent = {
+  id: string | number;
+  event_type: string;
+  claim_id: string | null;
+  actor_principal_id: string | null;
+  payload: Record<string, unknown>;
+  created_at: string;
+};
+
+type Decision = {
+  id: string;
+  title: string;
+  status: string;
+  reviewId: string | null;
+  reviewStatus: string | null;
+  publishedRevision: string | null;
+};
+
 type SessionState = {
   session: {
     id: string;
@@ -63,6 +81,7 @@ type SessionState = {
   };
   claims: Claim[];
   contextPackets: ContextPacketSummary[];
+  events: SessionEvent[];
   contextRevision: {
     status: string;
   };
@@ -101,15 +120,21 @@ export default async function WorkObjectPage({
   if (!query.sessionId) notFound();
   const sessionId = query.sessionId;
 
-  const [refsResponse, activityResponse, state] = await Promise.all([
-    akp<{ refs: ExternalRef[] }>(
-      `/v1/sessions/${encodeURIComponent(sessionId)}/external-refs`,
-    ),
-    akp<{ events: Activity[] }>(
-      `/v1/sessions/${encodeURIComponent(sessionId)}/activity?objectRefId=${encodeURIComponent(id)}&limit=200`,
-    ),
-    akp<SessionState>(`/v1/sessions/${encodeURIComponent(sessionId)}/state`),
-  ]);
+  const [refsResponse, activityResponse, state, decisionsResponse] =
+    await Promise.all([
+      akp<{ refs: ExternalRef[] }>(
+        `/v1/sessions/${encodeURIComponent(sessionId)}/external-refs`,
+      ),
+      akp<{ events: Activity[] }>(
+        `/v1/sessions/${encodeURIComponent(sessionId)}/activity?objectRefId=${encodeURIComponent(id)}&limit=200`,
+      ),
+      akp<SessionState>(
+        `/v1/sessions/${encodeURIComponent(sessionId)}/state`,
+      ),
+      akp<{ decisions: Decision[] }>(
+        `/v1/sessions/${encodeURIComponent(sessionId)}/decisions?objectRefId=${encodeURIComponent(id)}`,
+      ),
+    ]);
 
   const object = refsResponse.refs.find((ref) => ref.id === id);
   if (!object) notFound();
@@ -124,6 +149,29 @@ export default async function WorkObjectPage({
   const contextPackets = state.contextPackets.filter(
     (packet) => packet.objectRefId === object.id,
   );
+  const claimIds = new Set(objectClaims.map((claim) => claim.id));
+  const findings = state.events.filter(
+    (event) => event.event_type === "FINDING" && Boolean(event.claim_id) &&
+      claimIds.has(String(event.claim_id)),
+  );
+  const terminalActivity = activityResponse.events.filter((event) =>
+    ["RESOLVED", "CLOSED"].includes(event.action),
+  );
+  const linkedCode = relational.flatMap((event) => {
+    const relatedId = relatedObjectId(event, object.id);
+    const related = relatedId ? byId.get(relatedId) : undefined;
+    return related &&
+      [
+        "PULL_REQUEST",
+        "CODE_REVIEW",
+        "REPOSITORY",
+        "BUILD",
+        "DEPLOYMENT",
+        "TEST_RUN",
+      ].includes(String(related.workObjectClass))
+      ? [{ event, related }]
+      : [];
+  });
 
   return (
     <main>
@@ -251,6 +299,137 @@ export default async function WorkObjectPage({
           </table>
         ) : (
           <p className="muted">No explicit object relations recorded.</p>
+        )}
+      </section>
+
+      <h2>Linked code / PR</h2>
+      <section className="card">
+        {linkedCode.length ? (
+          <table>
+            <thead>
+              <tr>
+                <th>Object</th>
+                <th>Class</th>
+                <th>Relation</th>
+                <th>Derivation</th>
+              </tr>
+            </thead>
+            <tbody>
+              {linkedCode.map(({ event, related }) => (
+                <tr key={event.id}>
+                  <td>
+                    <Link
+                      href={`/work/${related.id}?sessionId=${sessionId}`}
+                    >
+                      {title(related, related.id)}
+                    </Link>
+                  </td>
+                  <td>{related.workObjectClass}</td>
+                  <td>{event.action}</td>
+                  <td>
+                    <span className="badge">{event.derivation}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="muted">
+            No code, PR, review, build or deployment relation is explicitly
+            recorded for this object.
+          </p>
+        )}
+      </section>
+
+      <h2>Decisions</h2>
+      <section className="card">
+        {decisionsResponse.decisions.length ? (
+          <table>
+            <thead>
+              <tr>
+                <th>Decision</th>
+                <th>Status</th>
+                <th>Review / publication</th>
+              </tr>
+            </thead>
+            <tbody>
+              {decisionsResponse.decisions.map((decision) => (
+                <tr key={decision.id}>
+                  <td>
+                    <Link
+                      href={`/decisions/${decision.id}?sessionId=${sessionId}`}
+                    >
+                      {decision.title}
+                    </Link>
+                  </td>
+                  <td>{decision.status}</td>
+                  <td>
+                    {decision.reviewId ? (
+                      <Link href={`/reviews/${decision.reviewId}`}>
+                        {decision.reviewStatus ?? "review"}
+                      </Link>
+                    ) : decision.publishedRevision ? (
+                      <code>{short(decision.publishedRevision)}</code>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="muted">
+            No governed decisions are explicitly linked to this work object.
+          </p>
+        )}
+      </section>
+
+      <h2>Findings</h2>
+      <section className="card">
+        {findings.length ? (
+          <ul>
+            {findings.map((finding) => (
+              <li key={String(finding.id)}>
+                <strong>
+                  {display(finding.payload.title) !== "—"
+                    ? display(finding.payload.title)
+                    : display(finding.payload.summary)}
+                </strong>
+                <br />
+                <small className="muted">
+                  event {finding.id} · actor{" "}
+                  {short(finding.actor_principal_id)} · {finding.created_at}
+                </small>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="muted">
+            No findings are linked through a fenced claim for this object.
+          </p>
+        )}
+      </section>
+
+      <h2>Outcome</h2>
+      <section className="card">
+        {terminalActivity.length ? (
+          <ul>
+            {terminalActivity.map((event) => (
+              <li key={event.id}>
+                <span className="badge">{event.action}</span>{" "}
+                <span className="badge">{event.derivation}</span> ·{" "}
+                {event.occurredAt}
+                {Object.keys(event.payload).length ? (
+                  <pre>{JSON.stringify(event.payload, null, 2)}</pre>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="muted">
+            No explicit RESOLVED or CLOSED activity has been recorded.
+          </p>
         )}
       </section>
 

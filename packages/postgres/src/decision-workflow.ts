@@ -95,6 +95,7 @@ export interface DecisionConsultationRecord {
 
 export interface DecisionCandidateSnapshot {
   candidate: DecisionCandidateRecord;
+  affectedObjectRefIds: string[];
   alternatives: DecisionAlternativeRecord[];
   objections: DecisionObjectionRecord[];
   consultations: DecisionConsultationRecord[];
@@ -343,25 +344,36 @@ async function snapshotInTransaction(
   client: PostgresPoolClient,
   candidate: DecisionCandidateRecord,
 ): Promise<DecisionCandidateSnapshot> {
-  const [alternatives, objections, consultations] = await Promise.all([
-    client.query<Record<string, unknown>>(
-      `select * from workspace_decision_alternatives
-        where candidate_id=$1 order by created_at,id`,
-      [candidate.id],
-    ),
-    client.query<Record<string, unknown>>(
-      `select * from workspace_decision_objections
-        where candidate_id=$1 order by created_at,id`,
-      [candidate.id],
-    ),
-    client.query<Record<string, unknown>>(
-      `select * from workspace_decision_consultations
-        where candidate_id=$1 order by requested_at,id`,
-      [candidate.id],
-    ),
-  ]);
+  const [affectedObjects, alternatives, objections, consultations] =
+    await Promise.all([
+      client.query<{ object_ref_id: string }>(
+        `select object_ref_id
+           from workspace_decision_candidate_work_objects
+          where candidate_id=$1
+          order by object_ref_id`,
+        [candidate.id],
+      ),
+      client.query<Record<string, unknown>>(
+        `select * from workspace_decision_alternatives
+          where candidate_id=$1 order by created_at,id`,
+        [candidate.id],
+      ),
+      client.query<Record<string, unknown>>(
+        `select * from workspace_decision_objections
+          where candidate_id=$1 order by created_at,id`,
+        [candidate.id],
+      ),
+      client.query<Record<string, unknown>>(
+        `select * from workspace_decision_consultations
+          where candidate_id=$1 order by requested_at,id`,
+        [candidate.id],
+      ),
+    ]);
   return {
     candidate,
+    affectedObjectRefIds: affectedObjects.rows.map((row) =>
+      String(row.object_ref_id),
+    ),
     alternatives: alternatives.rows.map(alternativeRecord),
     objections: objections.rows.map(objectionRecord),
     consultations: consultations.rows.map(consultationRecord),
@@ -381,6 +393,7 @@ export async function createDecisionCandidate(
     drivers: string[];
     qualityAttributes: string[];
     affectedRefs: string[];
+    affectedObjectRefIds: string[];
     evidenceRefs: string[];
     verificationPlan: string;
     verificationDueAt?: Date | null;
@@ -402,6 +415,22 @@ export async function createDecisionCandidate(
       input.sessionId,
       input.decisionAuthorityPrincipalId,
     );
+    if (input.affectedObjectRefIds.length) {
+      const affectedObjects = await client.query<{ id: string }>(
+        `select id
+           from external_object_refs
+          where session_id=$1
+            and vault_id=$2
+            and id=any($3::uuid[])`,
+        [input.sessionId, scope.vaultId, input.affectedObjectRefIds],
+      );
+      if (
+        affectedObjects.rowCount !==
+        new Set(input.affectedObjectRefIds).size
+      ) {
+        throw decisionError("DECISION_AFFECTED_OBJECT_NOT_FOUND", 404);
+      }
+    }
     if (input.supersedesCandidateId) {
       const predecessor = await client.query(
         `select 1 from workspace_decision_candidates
@@ -441,6 +470,15 @@ export async function createDecisionCandidate(
     );
     const row = inserted.rows[0];
     if (!row) throw decisionError("DECISION_CANDIDATE_WRITE_FAILED", 500);
+    for (const objectRefId of input.affectedObjectRefIds) {
+      await client.query(
+        `insert into workspace_decision_candidate_work_objects(
+           candidate_id,object_ref_id
+         ) values($1,$2)
+         on conflict do nothing`,
+        [String(row.id), objectRefId],
+      );
+    }
     await client.query("commit");
     return candidateRecord(row);
   } catch (error) {
@@ -457,6 +495,7 @@ export async function listDecisionCandidates(
     sessionId: string;
     actorUserId: string;
     actorPrincipalId: string;
+    objectRefId?: string | null;
   },
 ): Promise<DecisionCandidateRecord[]> {
   const client = await db.pool.connect();
@@ -473,8 +512,17 @@ export async function listDecisionCandidates(
         where candidate.session_id=$1
           and candidate.space_id=$2
           and candidate.vault_id=$3
+          and (
+            $4::uuid is null
+            or exists(
+              select 1
+                from workspace_decision_candidate_work_objects affected
+               where affected.candidate_id=candidate.id
+                 and affected.object_ref_id=$4
+            )
+          )
         order by candidate.created_at,candidate.id`,
-      [input.sessionId, scope.spaceId, scope.vaultId],
+      [input.sessionId, scope.spaceId, scope.vaultId, input.objectRefId ?? null],
     );
     await client.query("commit");
     return result.rows.map(candidateRecord);
@@ -1013,6 +1061,7 @@ export async function captureDecisionCandidate(
         consultations: snapshot.consultations,
         evidenceRefs: snapshot.candidate.evidenceRefs,
         affectedRefs: snapshot.candidate.affectedRefs,
+        affectedObjectRefIds: snapshot.affectedObjectRefIds,
         consequences: snapshot.candidate.consequences,
         followUpActions: snapshot.candidate.followUpActions,
         verificationPlan: snapshot.candidate.verificationPlan,

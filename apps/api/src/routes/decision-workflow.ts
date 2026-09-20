@@ -148,7 +148,10 @@ export function registerDecisionWorkflowRoutes(
   app: FastifyInstance,
   db: Postgres,
 ): void {
-  app.get<{ Params: { id: string } }>(
+  app.get<{
+    Params: { id: string };
+    Querystring: { objectRefId?: string };
+  }>(
     "/v1/sessions/:id/decisions",
     {
       preHandler: [
@@ -166,12 +169,17 @@ export function registerDecisionWorkflowRoutes(
       if (!session) return;
       const actor = actorOf(request);
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
+      const objectRefId = request.query.objectRefId?.trim() || null;
+      if (objectRefId && !UUID_PATTERN.test(objectRefId)) {
+        return reply.code(400).send({ code: "INVALID_OBJECT_REF_ID" });
+      }
       try {
         return {
           decisions: await listDecisionCandidates(db, {
             sessionId: session.id,
             actorUserId: actor.id,
             actorPrincipalId: actor.principalId,
+            ...(objectRefId ? { objectRefId } : {}),
           }),
         };
       } catch (error) {
@@ -190,6 +198,7 @@ export function registerDecisionWorkflowRoutes(
       drivers?: string[];
       qualityAttributes?: string[];
       affectedRefs?: string[];
+      affectedObjectRefIds?: string[];
       evidenceRefs?: string[];
       verificationPlan?: string;
       verificationDueAt?: string | null;
@@ -237,6 +246,14 @@ export function registerDecisionWorkflowRoutes(
         max: 100,
         itemMax: 1_000,
       });
+      const affectedObjectRefIds = stringList(
+        request.body?.affectedObjectRefIds ?? [],
+        {
+          min: 0,
+          max: 100,
+          itemMax: 36,
+        },
+      );
       const evidenceRefs = stringList(request.body?.evidenceRefs, {
         min: 1,
         max: 100,
@@ -256,6 +273,8 @@ export function registerDecisionWorkflowRoutes(
         !drivers ||
         !qualityAttributes ||
         !affectedRefs ||
+        !affectedObjectRefIds ||
+        affectedObjectRefIds.some((value) => !UUID_PATTERN.test(value)) ||
         !evidenceRefs ||
         !verificationPlan ||
         verificationDueAt === undefined ||
@@ -276,6 +295,7 @@ export function registerDecisionWorkflowRoutes(
           drivers,
           qualityAttributes,
           affectedRefs,
+          affectedObjectRefIds,
           evidenceRefs,
           verificationPlan,
           verificationDueAt,
@@ -292,6 +312,7 @@ export function registerDecisionWorkflowRoutes(
             vaultId: session.vaultId,
             sessionId: session.id,
             decisionAuthorityPrincipalId,
+            affectedObjectRefIds,
             supersedesCandidateId,
           },
           session.spaceId,

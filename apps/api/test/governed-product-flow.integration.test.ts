@@ -751,6 +751,24 @@ describe("P2 governed product flow", () => {
     };
     const agentHeaders = { authorization: `Bearer ${agent.token}` };
 
+    const affectedWorkObject = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/external-refs`,
+      headers: actorAHeaders,
+      payload: {
+        provider: "github",
+        objectType: "issue",
+        externalId: "DECISION-WORK-42",
+        title: "Decision-linked work item",
+        authority: "SYSTEM_OF_RECORD",
+        workObjectClass: "WORK_ITEM",
+      },
+    });
+    expect(affectedWorkObject.statusCode, affectedWorkObject.body).toBe(201);
+    const affectedWorkObjectId = (
+      affectedWorkObject.json() as { id: string }
+    ).id;
+
     const createdDecision = await app.inject({
       method: "POST",
       url: `/v1/sessions/${sessionId}/decisions`,
@@ -774,6 +792,7 @@ describe("P2 governed product flow", () => {
           "auditability",
         ],
         affectedRefs: ["service:context-api", "work:connector-runtime"],
+        affectedObjectRefIds: [affectedWorkObjectId],
         evidenceRefs: ["fixture:connector-capabilities", "fixture:p2-flow"],
         verificationPlan:
           "Re-run the governed two-agent flow and verify that publication advances the canonical revision while stale sessions fail closed.",
@@ -791,6 +810,34 @@ describe("P2 governed product flow", () => {
       createdByPrincipalId: agent.principal.id,
       decisionAuthorityPrincipalId: reviewerPrincipalId,
       status: "DRAFT",
+    });
+
+    const filteredDecisions = await app.inject({
+      method: "GET",
+      url: `/v1/sessions/${sessionId}/decisions?objectRefId=${affectedWorkObjectId}`,
+      headers: actorAHeaders,
+    });
+    expect(filteredDecisions.statusCode).toBe(200);
+    expect(
+      (
+        filteredDecisions.json() as {
+          decisions: Array<{ id: string }>;
+        }
+      ).decisions,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: firstDecision.id }),
+      ]),
+    );
+
+    const decisionSnapshot = await app.inject({
+      method: "GET",
+      url: `/v1/sessions/${sessionId}/decisions/${firstDecision.id}`,
+      headers: actorAHeaders,
+    });
+    expect(decisionSnapshot.statusCode).toBe(200);
+    expect(decisionSnapshot.json()).toMatchObject({
+      affectedObjectRefIds: [affectedWorkObjectId],
     });
 
     const agentAlternative = await app.inject({
