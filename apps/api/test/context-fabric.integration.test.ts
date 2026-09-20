@@ -434,6 +434,7 @@ describe("team context fabric integration", () => {
         trustState: "APPROVED",
         capabilities: liveCapabilities,
         revision: "peer:remote:r1",
+        credentialRef: "AKP_TEST_FEDERATION_PEER_TOKEN",
       },
     });
     expect(remoteRegistration.statusCode).toBe(201);
@@ -445,9 +446,11 @@ describe("team context fabric integration", () => {
         trustState: "APPROVED",
       },
     });
-    const remotePeerId = String(
-      (remoteRegistration.json() as { peer: { id: string } }).peer.id,
-    );
+    const remoteRegistrationBody = remoteRegistration.json() as {
+      peer: { id: string };
+    };
+    expect(remoteRegistrationBody.peer).not.toHaveProperty("credentialRef");
+    const remotePeerId = String(remoteRegistrationBody.peer.id);
 
     const mirrorPeer = await upsertContextFabricPeer(db, {
       organizationId: organizationId!,
@@ -526,6 +529,43 @@ describe("team context fabric integration", () => {
       requiresLiveProvider: true,
       supportsOfflineRead: false,
     });
+
+    const revokedPeer = await app.inject({
+      method: "POST",
+      url: `/v1/context-fabric/peers/${remotePeerId}/revoke`,
+      headers: {
+        ...adminHeaders,
+        "idempotency-key": "p11-revoke-remote-peer",
+      },
+    });
+    expect(revokedPeer.statusCode).toBe(200);
+    expect(revokedPeer.json()).toMatchObject({
+      revoked: true,
+      peer: {
+        id: remotePeerId,
+        trustState: "DISABLED",
+      },
+    });
+    expect(
+      (revokedPeer.json() as { peer: Record<string, unknown> }).peer,
+    ).not.toHaveProperty("credentialRef");
+    const revokedState = await db.pool.query<{
+      trust_state: string;
+      credential_ref: string | null;
+    }>(
+      "select trust_state,credential_ref from context_fabric_peers where id=$1",
+      [remotePeerId],
+    );
+    expect(revokedState.rows[0]).toEqual({
+      trust_state: "DISABLED",
+      credential_ref: null,
+    });
+    const revokedOutbox = await db.pool.query<{ count: number }>(
+      `select count(*)::int count from event_outbox
+        where event_type='ContextFabricPeerRevoked' and resource_id=$1`,
+      [remotePeerId],
+    );
+    expect(revokedOutbox.rows[0]?.count).toBe(1);
 
     const afterDocuments = await db.pool.query<{ count: number }>(
       "select count(*)::int count from knowledge_documents where vault_id=$1",

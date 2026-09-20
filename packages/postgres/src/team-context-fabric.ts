@@ -733,6 +733,48 @@ export async function markContextFabricPeerQuerySuccess(
   );
 }
 
+export async function revokeContextFabricPeer(
+  db: Postgres,
+  peerId: string,
+): Promise<ContextFabricPeerRecord> {
+  const client = await db.pool.connect();
+  try {
+    await client.query("begin");
+    const result = await client.query<Record<string, unknown>>(
+      `update context_fabric_peers
+          set trust_state='DISABLED',
+              credential_ref=null,
+              failure_count=0,
+              circuit_open_until=null,
+              last_failure_code=null,
+              updated_at=now()
+        where id=$1
+        returning *`,
+      [peerId],
+    );
+    const row = result.rows[0];
+    if (!row) throw fabricError("FEDERATION_PEER_NOT_FOUND", 404);
+    await appendOutboxEvent(client, {
+      eventType: "ContextFabricPeerRevoked",
+      resourceId: String(row.id),
+      organizationId: String(row.organization_id),
+      spaceId: row.space_id ? String(row.space_id) : null,
+      payload: {
+        peerKey: String(row.peer_key),
+        trustState: "DISABLED",
+        revision: row.revision ? String(row.revision) : null,
+      },
+    });
+    await client.query("commit");
+    return normalizePeer(row);
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export type WorkObjectClass =
   | "GOAL"
   | "PROJECT"

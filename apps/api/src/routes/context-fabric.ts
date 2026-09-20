@@ -37,6 +37,7 @@ import {
   queueWorkspaceOfflineDraft,
   readContextFabricNodeClaim,
   resolveAuthorizedVaultScope,
+  revokeContextFabricPeer,
   upsertContextFabricPeer,
   upsertExternalObjectRef,
   workspaceSessionSnapshot,
@@ -92,6 +93,14 @@ function sameStringSet(left: string[], right: string[]): boolean {
   if (left.length !== right.length) return false;
   const expected = new Set(left);
   return right.every((value) => expected.has(value));
+}
+
+function federationSchemaVersion(value: unknown): number | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const schemaVersion = (value as Record<string, unknown>).schemaVersion;
+  return typeof schemaVersion === "number" && Number.isSafeInteger(schemaVersion)
+    ? schemaVersion
+    : null;
 }
 
 async function readBoundedFederationJson(
@@ -301,6 +310,7 @@ export function registerContextFabricRoutes(
           federationModes: remoteQueryEnabled
             ? ["CATALOG_ONLY", "REMOTE_QUERY"]
             : ["CATALOG_ONLY"],
+          federationSchemaVersions: [1],
         },
         capabilities: {
           workspaceCoordination: true,
@@ -818,6 +828,16 @@ export function registerContextFabricRoutes(
     "/v1/context-fabric/federation/query",
     { preHandler: requirePermission("knowledge:read") },
     async (request, reply) => {
+      const requestedSchemaVersion = federationSchemaVersion(request.body);
+      if (
+        requestedSchemaVersion !== null &&
+        requestedSchemaVersion !== 1
+      ) {
+        return reply.code(409).send({
+          code: "FEDERATION_SCHEMA_VERSION_UNSUPPORTED",
+          supportedSchemaVersions: [1],
+        });
+      }
       const parsed = FederationRemoteQueryRequest.safeParse(request.body);
       if (!parsed.success) {
         return reply.code(400).send({
@@ -1135,6 +1155,18 @@ export function registerContextFabricRoutes(
           "FEDERATION_RESPONSE_INVALID",
         );
         return reply.code(502).send({ code });
+      }
+      const remoteSchemaVersion = federationSchemaVersion(remoteBody);
+      if (remoteSchemaVersion !== null && remoteSchemaVersion !== 1) {
+        await markContextFabricPeerQueryFailure(
+          db,
+          peer.id,
+          "FEDERATION_PEER_SCHEMA_UNSUPPORTED",
+        );
+        return reply.code(502).send({
+          code: "FEDERATION_PEER_SCHEMA_UNSUPPORTED",
+          supportedSchemaVersions: [1],
+        });
       }
       const parsedRemote = FederationRemoteQueryResponse.safeParse(remoteBody);
       if (!parsedRemote.success) {
@@ -1530,6 +1562,45 @@ export function registerContextFabricRoutes(
         boundary: "DISCOVERY_METADATA_ONLY",
         networkContactPerformed: false,
       });
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    "/v1/context-fabric/peers/:id/revoke",
+    { preHandler: requirePermission("admin") },
+    async (request, reply) => {
+      if (!UUID_PATTERN.test(request.params.id)) {
+        return reply.code(404).send({ code: "FEDERATION_PEER_NOT_FOUND" });
+      }
+      const actor = actorOf(request);
+      if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
+      const allowedSpaces = unrestrictedSpaceIdsForPermission(actor, "admin");
+      const peer = await getContextFabricPeerRuntime(
+        db,
+        request.params.id,
+        allowedSpaces,
+      );
+      if (!peer) {
+        return reply.code(404).send({ code: "FEDERATION_PEER_NOT_FOUND" });
+      }
+      const revoked = await revokeContextFabricPeer(db, peer.id);
+      await audit(
+        db,
+        request,
+        "context_fabric.peer.revoke",
+        "context_fabric_peer",
+        peer.id,
+        {
+          peerKey: peer.peerKey,
+          previousTrustState: peer.trustState,
+          trustState: "DISABLED",
+        },
+        peer.spaceId ?? undefined,
+      );
+      return {
+        revoked: true,
+        peer: revoked,
+      };
     },
   );
 }

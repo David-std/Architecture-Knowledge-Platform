@@ -2512,6 +2512,23 @@ paths:
         "502": { $ref: "#/components/responses/ServerError" }
         "503": { $ref: "#/components/responses/ServiceUnavailable" }
 
+  /v1/context-fabric/peers/{id}/revoke:
+    post:
+      tags: [Governance]
+      operationId: revokeContextFabricPeer
+      x-akp-permission: admin
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      description: >
+        Disable the peer immediately and remove its outbound credential
+        reference. The referenced secret itself remains outside PostgreSQL.
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /v1/context-fabric/federation/fanout:
     post:
       tags: [Governance]
