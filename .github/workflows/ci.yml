@@ -128,9 +128,19 @@ jobs:
       - name: Run operator doctor diagnostics
         shell: bash
         run: |
-          set -o pipefail
+          set -euo pipefail
           mkdir -p reports/ci
-          pnpm akp doctor --format json 2>&1 | tee reports/ci/doctor-runtime.json
+          doctor_database="akp_doctor"
+          doctor_url="postgres://akp:akp@localhost:55432/$doctor_database"
+          cleanup_doctor_database() {
+            docker compose exec -T postgres dropdb -U akp --if-exists "$doctor_database" >/dev/null 2>&1 || true
+          }
+          trap cleanup_doctor_database EXIT
+          cleanup_doctor_database
+          docker compose exec -T postgres createdb -U akp "$doctor_database"
+          DATABASE_URL="$doctor_url" pnpm db:migrate
+          DATABASE_URL="$doctor_url" pnpm akp doctor --format json 2>&1 |
+            tee reports/ci/doctor-runtime.json
       - name: Verify Worker OpenTelemetry export
         shell: bash
         run: |
