@@ -41,7 +41,8 @@
     "benchmark:agent-ab": "tsx scripts/agent-ab-benchmark.ts",
     "benchmark:agent-context-ergonomics": "pnpm --filter @akp/contracts build && tsx scripts/agent-context-ergonomics-benchmark.ts",
     "benchmark:scale": "node --expose-gc node_modules/tsx/dist/cli.mjs scripts/load-scale-benchmark.ts",
-    "benchmark:concurrency": "tsx scripts/concurrency-benchmark.ts"
+    "benchmark:concurrency": "tsx scripts/concurrency-benchmark.ts",
+    "test:browser": "node --test scripts/browser-e2e.test.mjs"
   },
   "devDependencies": {
     "@types/mime-types": "^3.0.1",
@@ -52,7 +53,8 @@
     "tsx": "^4.0.0",
     "turbo": "^2.0.0",
     "typescript": "^5.7.0",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "playwright": "1.63.0"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

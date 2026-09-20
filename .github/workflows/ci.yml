@@ -67,6 +67,10 @@ jobs:
       - run: pnpm hygiene:validate
       - run: pnpm build
       - run: pnpm security:secrets
+      - name: Install pinned Chromium for browser E2E
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Run critical browser E2E
+        run: pnpm test:browser
       - name: Run temporal truth maintenance integration
         run: |
           mkdir -p reports/ci
