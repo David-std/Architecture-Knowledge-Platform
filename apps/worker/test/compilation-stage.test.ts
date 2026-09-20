@@ -67,11 +67,19 @@ function compilerCandidate(
       structuredOutputRequired: true,
       dataResidency: residency,
     }),
-    descriptor: { ...configured.descriptor, dataResidency: residency },
+    descriptor: {
+      ...configured.descriptor,
+      policyDataResidency: residency,
+      dataResidency: residency,
+    },
     supportsStructuredOutput: true,
     createConfigured: () => ({
       ...configured,
-      descriptor: { ...configured.descriptor, dataResidency: residency },
+      descriptor: {
+        ...configured.descriptor,
+        policyDataResidency: residency,
+        dataResidency: residency,
+      },
     }),
   };
 }
@@ -166,6 +174,7 @@ describe("compilation stage", () => {
         provider: "openai-compatible",
         model: "external-compiler",
         endpointRef: "external",
+        policyDataResidency: "EXTERNAL_ALLOWED",
         dataResidency: "EXTERNAL_ALLOWED",
         configurationHash: "e".repeat(64),
       },
@@ -289,6 +298,7 @@ describe("compilation stage", () => {
         provider: "openai-compatible" as const,
         model: "fixture-compiler",
         endpointRef: "fixture",
+        policyDataResidency: "EXTERNAL_ALLOWED" as const,
         dataResidency: "EXTERNAL_ALLOWED" as const,
         configurationHash: "f".repeat(64),
       },
