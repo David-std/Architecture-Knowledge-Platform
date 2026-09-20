@@ -22,6 +22,8 @@ import {
   getActiveKnowledgeProfileRevision,
   getContextFabricPeerRuntime,
   listContextFabricPeers,
+  markContextFabricPeerQueryFailure,
+  markContextFabricPeerQuerySuccess,
   listExternalObjectRefsForSession,
   isWorkActivityAction,
   isWorkObjectClass,
@@ -1029,6 +1031,22 @@ export function registerContextFabricRoutes(
           .code(409)
           .send({ code: "FEDERATION_PEER_NOT_QUERYABLE" });
       }
+      if (
+        peer.circuitOpenUntil &&
+        peer.circuitOpenUntil.getTime() > Date.now()
+      ) {
+        const retryAfterSeconds = Math.max(
+          1,
+          Math.ceil(
+            (peer.circuitOpenUntil.getTime() - Date.now()) / 1_000,
+          ),
+        );
+        reply.header("retry-after", String(retryAfterSeconds));
+        return reply.code(503).send({
+          code: "FEDERATION_PEER_CIRCUIT_OPEN",
+          retryAfterSeconds,
+        });
+      }
       if (!peer.endpoint || !peer.credentialRef) {
         return reply
           .code(503)
@@ -1072,8 +1090,18 @@ export function registerContextFabricRoutes(
         );
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") {
+          await markContextFabricPeerQueryFailure(
+            db,
+            peer.id,
+            "FEDERATION_PEER_TIMEOUT",
+          );
           return reply.code(504).send({ code: "FEDERATION_PEER_TIMEOUT" });
         }
+        await markContextFabricPeerQueryFailure(
+          db,
+          peer.id,
+          "FEDERATION_PEER_UNAVAILABLE",
+        );
         return reply.code(502).send({ code: "FEDERATION_PEER_UNAVAILABLE" });
       } finally {
         clearTimeout(timeout);
@@ -1081,6 +1109,11 @@ export function registerContextFabricRoutes(
 
       if (!remoteResponse.ok) {
         await remoteResponse.body?.cancel().catch(() => undefined);
+        await markContextFabricPeerQueryFailure(
+          db,
+          peer.id,
+          "FEDERATION_PEER_HTTP_ERROR",
+        );
         return reply.code(502).send({
           code: `FEDERATION_PEER_HTTP_${remoteResponse.status}`,
         });
@@ -1098,10 +1131,20 @@ export function registerContextFabricRoutes(
           /^FEDERATION_RESPONSE_[A-Z_]+$/.test(error.message)
             ? error.message
             : "FEDERATION_RESPONSE_INVALID";
+        await markContextFabricPeerQueryFailure(
+          db,
+          peer.id,
+          "FEDERATION_RESPONSE_INVALID",
+        );
         return reply.code(502).send({ code });
       }
       const parsedRemote = FederationRemoteQueryResponse.safeParse(remoteBody);
       if (!parsedRemote.success) {
+        await markContextFabricPeerQueryFailure(
+          db,
+          peer.id,
+          "FEDERATION_RESPONSE_SCHEMA_INVALID",
+        );
         return reply
           .code(502)
           .send({ code: "FEDERATION_RESPONSE_SCHEMA_INVALID" });
@@ -1115,11 +1158,17 @@ export function registerContextFabricRoutes(
           remoteRequest.scope.vaultIds,
         )
       ) {
+        await markContextFabricPeerQueryFailure(
+          db,
+          peer.id,
+          "FEDERATION_PEER_IDENTITY_MISMATCH",
+        );
         return reply
           .code(502)
           .send({ code: "FEDERATION_PEER_IDENTITY_MISMATCH" });
       }
 
+      await markContextFabricPeerQuerySuccess(db, peer.id);
       let result = parsedRemote.data;
       if (
         peer.revision &&

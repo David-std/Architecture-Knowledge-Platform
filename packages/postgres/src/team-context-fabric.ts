@@ -71,6 +71,10 @@ export interface ContextFabricPeerRecord {
 export interface ContextFabricPeerRuntimeRecord
   extends ContextFabricPeerRecord {
   credentialRef: string | null;
+  failureCount: number;
+  circuitOpenUntil: Date | null;
+  lastFailureCode: string | null;
+  lastSuccessAt: Date | null;
 }
 
 function fabricError(code: string, statusCode: number): Error {
@@ -652,7 +656,82 @@ export async function getContextFabricPeerRuntime(
   return {
     ...normalizePeer(row),
     credentialRef: row.credential_ref ? String(row.credential_ref) : null,
+    failureCount: Number(row.failure_count ?? 0),
+    circuitOpenUntil: row.circuit_open_until
+      ? new Date(String(row.circuit_open_until))
+      : null,
+    lastFailureCode: row.last_failure_code
+      ? String(row.last_failure_code)
+      : null,
+    lastSuccessAt: row.last_success_at
+      ? new Date(String(row.last_success_at))
+      : null,
   };
+}
+
+export function federationCircuitBackoffSeconds(failureCount: number): number {
+  if (!Number.isSafeInteger(failureCount) || failureCount < 0) {
+    throw new Error("FEDERATION_FAILURE_COUNT_INVALID");
+  }
+  if (failureCount < 3) return 0;
+  return Math.min(300, 2 ** Math.min(failureCount, 8));
+}
+
+export async function markContextFabricPeerQueryFailure(
+  db: Postgres,
+  peerId: string,
+  errorCode: string,
+): Promise<void> {
+  if (!/^[A-Z][A-Z0-9_]*$/.test(errorCode)) {
+    throw new Error("FEDERATION_FAILURE_CODE_INVALID");
+  }
+  const client = await db.pool.connect();
+  try {
+    await client.query("begin");
+    const current = await client.query<{ failure_count: number }>(
+      "select failure_count from context_fabric_peers where id=$1 for update",
+      [peerId],
+    );
+    const row = current.rows[0];
+    if (!row) throw fabricError("FEDERATION_PEER_NOT_FOUND", 404);
+    const failureCount = Number(row.failure_count ?? 0) + 1;
+    const backoffSeconds = federationCircuitBackoffSeconds(failureCount);
+    await client.query(
+      `update context_fabric_peers
+          set failure_count=$2,
+              last_failure_code=$3,
+              circuit_open_until=case
+                when $4::int > 0 then now()+make_interval(secs => $4)
+                else null
+              end,
+              updated_at=now()
+        where id=$1`,
+      [peerId, failureCount, errorCode, backoffSeconds],
+    );
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function markContextFabricPeerQuerySuccess(
+  db: Postgres,
+  peerId: string,
+): Promise<void> {
+  await db.pool.query(
+    `update context_fabric_peers
+        set failure_count=0,
+            circuit_open_until=null,
+            last_failure_code=null,
+            last_success_at=now(),
+            last_seen_at=now(),
+            updated_at=now()
+      where id=$1`,
+    [peerId],
+  );
 }
 
 export type WorkObjectClass =
