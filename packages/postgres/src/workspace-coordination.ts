@@ -1092,7 +1092,8 @@ export async function handoffWorkspaceWork(
     const sessionScope = await client.query<{
       space_id: string;
       vault_id: string;
-    }>("select space_id,vault_id from agent_sessions where id=$1", [
+      purpose: string | null;
+    }>("select space_id,vault_id,purpose from agent_sessions where id=$1", [
       input.sessionId,
     ]);
     const scope = sessionScope.rows[0];
