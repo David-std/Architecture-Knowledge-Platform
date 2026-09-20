@@ -14,6 +14,18 @@ const required = [
   "docs/architecture/database-erd.md",
   "docs/security/threat-model.md",
   "docs/runbooks/local-operations.md",
+  "docs/guides/team-context.md",
+  "docs/guides/enterprise-deployment.md",
+  "docs/guides/agent-integration.md",
+  "docs/guides/graph-model.md",
+  "docs/guides/code-context.md",
+  "docs/guides/temporal-truth.md",
+  "docs/guides/retrieval-context-engineering.md",
+  "docs/guides/knowledge-profiles.md",
+  "docs/guides/federation.md",
+  "docs/guides/contributor-reviewer.md",
+  "docs/guides/assurance-connectors.md",
+  "docs/guides/operations-recovery.md",
 ];
 for (const file of required) {
   await access(path.join(root, file)).catch(() =>
