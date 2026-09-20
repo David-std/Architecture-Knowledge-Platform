@@ -690,6 +690,9 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
 
     await browserStep(t, "7 agent claim and handoff", pages, async () => {
       await adminPage.goto(ADMIN_WEB + "/sessions/" + session.id);
+      await adminPage
+        .getByText("Browser handoff verified", { exact: true })
+        .waitFor();
       const body = await adminPage.locator("body").innerText();
       assert.match(body, /browser\/task-1/);
       assert.match(body, /Browser handoff verified/);
@@ -730,8 +733,7 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
         .getByRole("button", { name: "Save: crear draft Git" })
         .click();
       await adminPage
-        .getByText(/Draft Git|Review/i)
-        .first()
+        .getByRole("heading", { name: "Draft Git guardado", exact: true })
         .waitFor();
       const codes = await adminPage.locator("code").allTextContents();
       reviewId =
@@ -747,13 +749,19 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
       await seedReviewEvidence(db, reviewId);
       await adminPage.getByRole("button", { name: "Submit review" }).click();
       await adminPage
-        .getByText(/enviado|submitted|review/i)
+        .getByText(/Review enviado\./)
         .first()
         .waitFor();
     });
 
     await browserStep(t, "3 review approve with evidence", pages, async () => {
       await adminPage.goto(ADMIN_WEB + "/reviews/" + reviewId);
+      await adminPage
+        .getByText(
+          "Browser evidence proves the review workspace renders grounded context.",
+          { exact: true },
+        )
+        .waitFor();
       const body = await adminPage.locator("body").innerText();
       assert.match(
         body,
@@ -802,6 +810,11 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
       ).payload;
       deniedReviewId = proposal.reviewId;
       await readerPage.goto(READER_WEB + "/reviews/" + deniedReviewId);
+      await readerPage
+        .getByText("Esta sesión puede leer la revisión, pero no decidirla.", {
+          exact: true,
+        })
+        .waitFor();
       const body = await readerPage.locator("body").innerText();
       assert.match(body, /leer la revisión, pero no decidirla|no decidir/i);
       assert.equal(
@@ -885,6 +898,9 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
           "/admin/connectors?vaultId=" +
           encodeURIComponent(fixture.vaultId),
       );
+      await adminPage
+        .getByText("browser-e2e-connector", { exact: true })
+        .waitFor();
       const body = await adminPage.locator("body").innerText();
       assert.match(body, /browser-e2e-connector/);
       assert.match(body, /PROVIDER_TIMEOUT/);
