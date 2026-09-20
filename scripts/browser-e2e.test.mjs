@@ -560,9 +560,11 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
   let adminPage;
   let readerPage;
   let apiWasSpawned = false;
+  let databaseConnected = false;
 
   try {
     await db.connect();
+    databaseConnected = true;
     await setupDatabase(db);
 
     try {
@@ -955,6 +957,13 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
     ).catch(() => undefined);
 
     if (browser) await browser.close().catch(() => undefined);
+    if (databaseConnected) {
+      await db.query(
+        "update source_connector_registrations " +
+          "set state='DISABLED',updated_at=now() where id=$1",
+        [fixture.connectorId],
+      );
+    }
     await db.end().catch(() => undefined);
     for (const child of children.reverse()) {
       await stopService(child);
