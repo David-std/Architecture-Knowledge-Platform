@@ -19,6 +19,7 @@ export interface ExternalObjectRefRecord {
   title: string | null;
   authority: ExternalObjectAuthority;
   workObjectClass: WorkObjectClass | null;
+  owners: string[];
   metadata: Record<string, unknown>;
   observedAt: Date;
   updatedAt: Date;
@@ -102,6 +103,9 @@ function normalizeExternalRef(
       row.work_object_class === null || row.work_object_class === undefined
         ? null
         : (String(row.work_object_class) as WorkObjectClass),
+    owners: Array.isArray(row.owners)
+      ? (row.owners as unknown[]).map(String)
+      : [],
     metadata: recordObject(row.metadata),
     observedAt: new Date(String(row.observed_at)),
     updatedAt: new Date(String(row.updated_at)),
@@ -193,6 +197,7 @@ export async function upsertExternalObjectRef(
     title?: string | null;
     authority?: ExternalObjectAuthority;
     workObjectClass?: WorkObjectClass | null;
+    owners?: string[];
     metadata?: Record<string, unknown>;
     observedAt?: Date;
   },
@@ -208,9 +213,11 @@ export async function upsertExternalObjectRef(
     const result = await client.query<Record<string, unknown>>(
       `insert into external_object_refs(
          space_id,vault_id,session_id,provider,object_type,external_id,
-         canonical_url,source_revision,title,authority,metadata,observed_at,
-         work_object_class
-       ) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,$13)
+         canonical_url,source_revision,title,authority,metadata,owners,
+         observed_at,work_object_class
+       ) values(
+         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13,$14
+       )
        on conflict(vault_id,provider,object_type,external_id) do update
          set session_id=excluded.session_id,
              canonical_url=excluded.canonical_url,
@@ -219,6 +226,7 @@ export async function upsertExternalObjectRef(
              authority=excluded.authority,
              work_object_class=excluded.work_object_class,
              metadata=excluded.metadata,
+             owners=excluded.owners,
              observed_at=excluded.observed_at,
              updated_at=now()
        returning *`,
@@ -234,6 +242,7 @@ export async function upsertExternalObjectRef(
         input.title?.trim() || null,
         input.authority ?? "SYSTEM_OF_RECORD",
         JSON.stringify(input.metadata ?? {}),
+        JSON.stringify(input.owners ?? []),
         input.observedAt ?? new Date(),
         input.workObjectClass ?? null,
       ],
@@ -256,6 +265,7 @@ export async function upsertExternalObjectRef(
         workObjectClass: row.work_object_class
           ? String(row.work_object_class)
           : null,
+        owners: Array.isArray(row.owners) ? row.owners.map(String) : [],
         sourceRevision: row.source_revision
           ? String(row.source_revision)
           : null,
@@ -705,6 +715,25 @@ const WORK_ACTIVITY_DERIVATIONS: readonly WorkActivityDerivation[] = [
   "DYNAMICALLY_PROVEN",
 ];
 
+export type WorkActivityRelationKind =
+  | "DEPENDS_ON"
+  | "PROVIDES_TO"
+  | "CODE_REPOSITORY"
+  | "INCIDENT"
+  | "RUNS_ON"
+  | "RULE"
+  | "RELATED";
+
+const WORK_ACTIVITY_RELATION_KINDS: readonly WorkActivityRelationKind[] = [
+  "DEPENDS_ON",
+  "PROVIDES_TO",
+  "CODE_REPOSITORY",
+  "INCIDENT",
+  "RUNS_ON",
+  "RULE",
+  "RELATED",
+];
+
 /** Actions that assert a relationship, so they need something to relate to. */
 const RELATIONAL_ACTIONS: readonly WorkActivityAction[] = [
   "LINKED",
@@ -741,6 +770,7 @@ export interface WorkActivityEventRecord {
   recordedAt: Date;
   sourceSystem: string;
   derivation: WorkActivityDerivation;
+  relationKind: WorkActivityRelationKind | null;
   evidenceRefs: string[];
   payload: Record<string, unknown>;
 }
@@ -759,6 +789,12 @@ export function isWorkActivityDerivation(
   value: string,
 ): value is WorkActivityDerivation {
   return (WORK_ACTIVITY_DERIVATIONS as readonly string[]).includes(value);
+}
+
+export function isWorkActivityRelationKind(
+  value: string,
+): value is WorkActivityRelationKind {
+  return (WORK_ACTIVITY_RELATION_KINDS as readonly string[]).includes(value);
 }
 
 function normalizeActivity(
@@ -780,6 +816,10 @@ function normalizeActivity(
     recordedAt: new Date(String(row.recorded_at)),
     sourceSystem: String(row.source_system),
     derivation: String(row.derivation) as WorkActivityDerivation,
+    relationKind:
+      row.relation_kind === null || row.relation_kind === undefined
+        ? null
+        : (String(row.relation_kind) as WorkActivityRelationKind),
     evidenceRefs: Array.isArray(row.evidence_refs)
       ? (row.evidence_refs as unknown[]).map(String)
       : [],
@@ -808,6 +848,7 @@ export async function recordWorkActivity(
     occurredAt: Date;
     sourceSystem: string;
     derivation: WorkActivityDerivation;
+    relationKind?: WorkActivityRelationKind | null;
     actorPrincipalId?: string | null;
     actorExternalId?: string | null;
     evidenceRefs?: string[];
@@ -828,6 +869,14 @@ export async function recordWorkActivity(
   }
   if (RELATIONAL_ACTIONS.includes(input.action) && !input.targetRefId) {
     throw fabricError("WORK_ACTIVITY_TARGET_REQUIRED", 400);
+  }
+  if (
+    input.relationKind &&
+    (!isWorkActivityRelationKind(input.relationKind) ||
+      !input.targetRefId ||
+      !["LINKED", "REFERENCED"].includes(input.action))
+  ) {
+    throw fabricError("INVALID_WORK_ACTIVITY_RELATION_KIND", 400);
   }
   if (!input.actorPrincipalId && !input.actorExternalId) {
     throw fabricError("WORK_ACTIVITY_ACTOR_REQUIRED", 400);
@@ -867,8 +916,10 @@ export async function recordWorkActivity(
       `insert into work_activity_events(
          space_id,vault_id,object_ref_id,target_ref_id,session_id,
          actor_principal_id,actor_external_id,action,occurred_at,
-         source_system,derivation,evidence_refs,payload
-       ) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13::jsonb)
+         source_system,derivation,relation_kind,evidence_refs,payload
+       ) values(
+         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14::jsonb
+       )
        returning *`,
       [
         scope.spaceId,
@@ -882,6 +933,7 @@ export async function recordWorkActivity(
         input.occurredAt,
         sourceSystem,
         input.derivation,
+        input.relationKind ?? null,
         JSON.stringify(input.evidenceRefs ?? []),
         JSON.stringify(input.payload ?? {}),
       ],

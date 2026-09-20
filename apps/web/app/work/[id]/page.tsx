@@ -20,6 +20,7 @@ type ExternalRef = {
   title: string | null;
   authority: string;
   workObjectClass: string | null;
+  owners: string[];
   metadata: Record<string, unknown>;
   observedAt: string;
   updatedAt: string;
@@ -32,6 +33,7 @@ type Activity = WorkActivity & {
   occurredAt: string;
   recordedAt: string;
   sourceSystem: string;
+  relationKind: string | null;
   evidenceRefs: string[];
   payload: Record<string, unknown>;
 };
@@ -157,25 +159,52 @@ export default async function WorkObjectPage({
   const terminalActivity = activityResponse.events.filter((event) =>
     ["RESOLVED", "CLOSED"].includes(event.action),
   );
-  const linkedCode = relational.flatMap((event) => {
+  const relatedObjects = relational.flatMap((event) => {
     const relatedId = relatedObjectId(event, object.id);
     const related = relatedId ? byId.get(relatedId) : undefined;
-    return related &&
-      [
-        "PULL_REQUEST",
-        "CODE_REVIEW",
-        "REPOSITORY",
-        "BUILD",
-        "DEPLOYMENT",
-        "TEST_RUN",
-      ].includes(String(related.workObjectClass))
-      ? [{ event, related }]
-      : [];
+    return related ? [{ event, related }] : [];
   });
+  const linkedCode = relatedObjects.filter(({ related }) =>
+    [
+      "PULL_REQUEST",
+      "CODE_REVIEW",
+      "REPOSITORY",
+      "BUILD",
+      "DEPLOYMENT",
+      "TEST_RUN",
+    ].includes(String(related.workObjectClass)),
+  );
+  const isService = object.workObjectClass === "SERVICE";
+  const serviceDependencies = relatedObjects.filter(
+    ({ event }) => event.relationKind === "DEPENDS_ON",
+  );
+  const serviceRepositories = relatedObjects.filter(
+    ({ event }) => event.relationKind === "CODE_REPOSITORY",
+  );
+  const serviceIncidents = relatedObjects.filter(
+    ({ event }) => event.relationKind === "INCIDENT",
+  );
+  const serviceRules = relatedObjects.filter(
+    ({ event }) => event.relationKind === "RULE",
+  );
+  const runtimeObservations = activityResponse.events.filter(
+    (event) =>
+      !event.targetRefId &&
+      ["DEPLOYED", "ROLLED_BACK", "UPDATED", "ESCALATED"].includes(
+        event.action,
+      ),
+  );
+  const activeClaims = objectClaims.filter(
+    (claim) =>
+      claim.status === "ACTIVE" &&
+      new Date(claim.leaseExpiresAt).getTime() > Date.now(),
+  );
 
   return (
     <main>
-      <p className="muted">Object-centric workspace · Work object</p>
+      <p className="muted">
+        Object-centric workspace · {isService ? "Service" : "Work object"}
+      </p>
       <h1>{title(object, object.id)}</h1>
       <p>
         <Link href={`/sessions/${sessionId}`}>
@@ -223,6 +252,177 @@ export default async function WorkObjectPage({
         </section>
       </div>
 
+      {isService ? (
+        <>
+          <h2>Service overview</h2>
+          <div className="grid">
+            <section className="card">
+              <h3>Owners</h3>
+              {object.owners.length ? (
+                <ul>
+                  {object.owners.map((owner) => (
+                    <li key={owner}>{owner}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="muted">No source-provided owners.</p>
+              )}
+            </section>
+
+            <section className="card">
+              <h3>Freshness</h3>
+              <p>
+                observed {object.observedAt}
+                <br />
+                updated {object.updatedAt}
+                <br />
+                source revision <code>{short(object.sourceRevision)}</code>
+                <br />
+                context {state.contextRevision.status}
+              </p>
+            </section>
+
+            <section className="card">
+              <h3>Open work</h3>
+              {activeClaims.length ? (
+                <ul>
+                  {activeClaims.map((claim) => (
+                    <li key={claim.id}>
+                      <code>{claim.workKey}</code> · principal{" "}
+                      <code>{short(claim.ownerPrincipalId)}</code>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="muted">No active claims on this service.</p>
+              )}
+            </section>
+          </div>
+
+          <div className="grid">
+            <section className="card">
+              <h3>Dependencies</h3>
+              {serviceDependencies.length ? (
+                <ul>
+                  {serviceDependencies.map(({ event, related }) => (
+                    <li key={event.id}>
+                      <Link
+                        href={`/work/${related.id}?sessionId=${sessionId}`}
+                      >
+                        {title(related, related.id)}
+                      </Link>{" "}
+                      <span className="badge">{event.derivation}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="muted">
+                  No explicit DEPENDS_ON relations recorded.
+                </p>
+              )}
+            </section>
+
+            <section className="card">
+              <h3>Code repositories</h3>
+              {serviceRepositories.length ? (
+                <ul>
+                  {serviceRepositories.map(({ event, related }) => (
+                    <li key={event.id}>
+                      <Link
+                        href={`/work/${related.id}?sessionId=${sessionId}`}
+                      >
+                        {title(related, related.id)}
+                      </Link>{" "}
+                      <span className="badge">{event.derivation}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="muted">
+                  No explicit CODE_REPOSITORY relations recorded.
+                </p>
+              )}
+            </section>
+
+            <section className="card">
+              <h3>Incidents</h3>
+              {serviceIncidents.length ? (
+                <ul>
+                  {serviceIncidents.map(({ event, related }) => (
+                    <li key={event.id}>
+                      <Link
+                        href={`/work/${related.id}?sessionId=${sessionId}`}
+                      >
+                        {title(related, related.id)}
+                      </Link>{" "}
+                      <span className="badge">{event.derivation}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="muted">
+                  No explicit INCIDENT relations recorded.
+                </p>
+              )}
+            </section>
+          </div>
+
+          <div className="grid">
+            <section className="card">
+              <h3>Runtime observations</h3>
+              {runtimeObservations.length ? (
+                <ul>
+                  {runtimeObservations.map((event) => (
+                    <li key={event.id}>
+                      <span className="badge">{event.action}</span>{" "}
+                      <span className="badge">{event.derivation}</span> ·{" "}
+                      {event.occurredAt} · {event.sourceSystem}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="muted">
+                  No deployment, rollback, update or escalation observations.
+                </p>
+              )}
+            </section>
+
+            <section className="card">
+              <h3>Decisions / rules</h3>
+              {decisionsResponse.decisions.length || serviceRules.length ? (
+                <ul>
+                  {decisionsResponse.decisions.map((decision) => (
+                    <li key={decision.id}>
+                      <Link
+                        href={`/decisions/${decision.id}?sessionId=${sessionId}`}
+                      >
+                        {decision.title}
+                      </Link>{" "}
+                      <span className="badge">{decision.status}</span>
+                    </li>
+                  ))}
+                  {serviceRules.map(({ event, related }) => (
+                    <li key={event.id}>
+                      <Link
+                        href={`/work/${related.id}?sessionId=${sessionId}`}
+                      >
+                        {title(related, related.id)}
+                      </Link>{" "}
+                      <span className="badge">RULE</span>{" "}
+                      <span className="badge">{event.derivation}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="muted">
+                  No governed decisions or explicit RULE relations recorded.
+                </p>
+              )}
+            </section>
+          </div>
+        </>
+      ) : null}
+
       <h2>Source metadata</h2>
       <section className="card">
         {Object.keys(object.metadata).length ? (
@@ -264,6 +464,7 @@ export default async function WorkObjectPage({
               <tr>
                 <th>Direction</th>
                 <th>Action</th>
+                <th>Kind</th>
                 <th>Related object</th>
                 <th>Derivation</th>
                 <th>When</th>
@@ -277,6 +478,7 @@ export default async function WorkObjectPage({
                   <tr key={event.id}>
                     <td>{relationDirection(event, object.id)}</td>
                     <td>{event.action}</td>
+                    <td>{event.relationKind ?? "—"}</td>
                     <td>
                       {relatedId && related ? (
                         <Link

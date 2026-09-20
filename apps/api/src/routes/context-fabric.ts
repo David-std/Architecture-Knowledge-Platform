@@ -18,6 +18,7 @@ import {
   isWorkActivityAction,
   isWorkObjectClass,
   isWorkActivityDerivation,
+  isWorkActivityRelationKind,
   listWorkActivityForSession,
   listWorkspaceOfflineDrafts,
   recordWorkActivity,
@@ -74,6 +75,18 @@ function safeText(value: unknown, maxLength: number): string | null {
     return null;
   }
   return normalized;
+}
+
+function boundedStringList(
+  value: unknown,
+  maxItems: number,
+  maxLength: number,
+): string[] | null {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > maxItems) return null;
+  const normalized = value.map((entry) => safeText(entry, maxLength));
+  if (normalized.some((entry) => entry === null)) return null;
+  return [...new Set(normalized as string[])];
 }
 
 function sendFabricError(reply: FastifyReply, error: unknown) {
@@ -237,6 +250,7 @@ export function registerContextFabricRoutes(
       title?: string;
       authority?: "SYSTEM_OF_RECORD" | "REFERENCE" | "MIRRORED_PROJECTION";
       workObjectClass?: string;
+      owners?: string[];
       metadata?: Record<string, unknown>;
     };
   }>(
@@ -256,7 +270,8 @@ export function registerContextFabricRoutes(
       const objectType = safeText(request.body?.objectType, 80);
       const externalId = safeText(request.body?.externalId, 512);
       const metadata = boundedObject(request.body?.metadata ?? {});
-      if (!provider || !objectType || !externalId || !metadata) {
+      const owners = boundedStringList(request.body?.owners, 50, 256);
+      if (!provider || !objectType || !externalId || !metadata || !owners) {
         return reply.code(400).send({ code: "INVALID_EXTERNAL_OBJECT_REF" });
       }
       // The work class is what makes a reference traversable as work. It is
@@ -285,6 +300,7 @@ export function registerContextFabricRoutes(
           ? { authority: request.body.authority }
           : {}),
         ...(workObjectClass ? { workObjectClass } : {}),
+        owners,
         metadata,
       });
       await audit(
@@ -578,6 +594,7 @@ export function registerContextFabricRoutes(
       occurredAt?: string;
       sourceSystem?: string;
       derivation?: string;
+      relationKind?: string;
       actorExternalId?: string;
       evidenceRefs?: string[];
       payload?: Record<string, unknown>;
@@ -614,6 +631,12 @@ export function registerContextFabricRoutes(
           .code(400)
           .send({ code: "INVALID_WORK_ACTIVITY_DERIVATION" });
       }
+      const relationKind = request.body?.relationKind?.trim().toUpperCase();
+      if (relationKind && !isWorkActivityRelationKind(relationKind)) {
+        return reply
+          .code(400)
+          .send({ code: "INVALID_WORK_ACTIVITY_RELATION_KIND" });
+      }
       const sourceSystem = safeText(request.body?.sourceSystem, 80);
       if (!sourceSystem) {
         return reply
@@ -649,6 +672,7 @@ export function registerContextFabricRoutes(
           occurredAt,
           sourceSystem,
           derivation,
+          ...(relationKind ? { relationKind } : {}),
           // The recording principal is always attributed. An external actor id
           // from the source system is additional provenance, never a way to
           // record activity as somebody else.
@@ -671,6 +695,7 @@ export function registerContextFabricRoutes(
           sessionId: session.id,
           action: event.action,
           derivation: event.derivation,
+          relationKind: event.relationKind,
           objectRefId: event.objectRefId,
           targetRefId: event.targetRefId,
         },

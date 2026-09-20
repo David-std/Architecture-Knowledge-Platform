@@ -535,6 +535,8 @@ paths:
                       type: string
                       enum: [DIRECT, PLAN]
                       default: DIRECT
+                    sessionId: { type: string, format: uuid }
+                    objectRefId: { type: string, format: uuid }
                     maxTokens:
                       {
                         type: integer,
@@ -735,6 +737,16 @@ paths:
                     - MODEL_INFERRED
                     - HUMAN_ASSERTED
                     - DYNAMICALLY_PROVEN
+                relationKind:
+                  type: string
+                  enum:
+                    - DEPENDS_ON
+                    - PROVIDES_TO
+                    - CODE_REPOSITORY
+                    - INCIDENT
+                    - RUNS_ON
+                    - RULE
+                    - RELATED
                 actorExternalId: { type: string, minLength: 1, maxLength: 512 }
                 evidenceRefs:
                   type: array
@@ -799,6 +811,7 @@ paths:
                   type: string
                   default: COMPACT_AGENT_PACKET
                   enum: [COMPACT_AGENT_PACKET, FULL_CONTEXT_PACKET]
+                objectRefId: { type: string, format: uuid }
       responses:
         "200":
           description: >-
@@ -2503,6 +2516,10 @@ paths:
                       REPOSITORY,
                       SERVICE,
                     ]
+                owners:
+                  type: array
+                  maxItems: 50
+                  items: { type: string, minLength: 1, maxLength: 256 }
                 metadata: { type: object, additionalProperties: true }
       responses:
         "201":
@@ -3499,6 +3516,10 @@ paths:
       x-akp-principal-action: workspace:read
       parameters:
         - { $ref: "#/components/parameters/UuidId" }
+        - name: objectRefId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
       responses:
         "200": { $ref: "#/components/responses/ObjectResponse" }
         "401": { $ref: "#/components/responses/Unauthorized" }
@@ -3549,6 +3570,10 @@ paths:
                   type: array
                   maxItems: 100
                   items: { type: string, minLength: 1, maxLength: 1000 }
+                affectedObjectRefIds:
+                  type: array
+                  maxItems: 100
+                  items: { type: string, format: uuid }
                 evidenceRefs:
                   type: array
                   minItems: 1

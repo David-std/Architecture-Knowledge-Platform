@@ -304,7 +304,11 @@ export default async function SessionObjectPage({
                 <tr key={ref.id}>
                   <td>
                     <Link
-                      href={`/work/${ref.id}?sessionId=${state.session.id}`}
+                      href={
+                        ref.workObjectClass === "SERVICE"
+                          ? `/services/${ref.id}?sessionId=${state.session.id}`
+                          : `/work/${ref.id}?sessionId=${state.session.id}`
+                      }
                     >
                       {ref.title?.trim() || ref.externalId}
                     </Link>

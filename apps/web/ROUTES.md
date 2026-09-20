@@ -15,6 +15,7 @@
 /decisions/:id          alternatives, consultation, objections, selection and promotion
 /sessions/:id           object-centric agent session state, claims, captures and handoffs
 /work/:id               object-centric work item, source authority, relations and activity
+/services/:id           semantic Service page alias backed by the work-object renderer
 /knowledge/:id          approved document view
 /graph                   typed graph
 /evals                   retrieval and grounding scorecards

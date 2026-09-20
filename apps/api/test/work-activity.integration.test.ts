@@ -484,6 +484,144 @@ describe("work and activity graph", () => {
     expect(nonParticipant.statusCode).toBe(404);
   });
 
+  it("keeps service ownership and structural relations explicit", async () => {
+    const serviceResponse = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/external-refs`,
+      headers,
+      payload: {
+        provider: "catalog",
+        objectType: "service",
+        externalId: "payments-api",
+        title: "Payments API",
+        workObjectClass: "SERVICE",
+        authority: "SYSTEM_OF_RECORD",
+        owners: ["team:payments", "oncall:payments-primary"],
+      },
+    });
+    expect(serviceResponse.statusCode, serviceResponse.body).toBe(201);
+    const service = serviceResponse.json() as {
+      id: string;
+      owners: string[];
+    };
+    expect(service.owners).toEqual([
+      "team:payments",
+      "oncall:payments-primary",
+    ]);
+
+    const dependency = await projectObject(
+      sessionId,
+      "service",
+      "ledger-api",
+      "SERVICE",
+    );
+    const repository = await projectObject(
+      sessionId,
+      "repository",
+      "payments-repo",
+      "REPOSITORY",
+    );
+    const incident = await projectObject(
+      sessionId,
+      "incident",
+      "INC-4242",
+      "INCIDENT",
+    );
+    const rule = await projectObject(
+      sessionId,
+      "document",
+      "payments-slo",
+      "DOCUMENT",
+    );
+
+    for (const [targetRefId, relationKind] of [
+      [dependency.id, "DEPENDS_ON"],
+      [repository.id, "CODE_REPOSITORY"],
+      [incident.id, "INCIDENT"],
+      [rule.id, "RULE"],
+    ] as const) {
+      const relation = await app.inject({
+        method: "POST",
+        url: `/v1/sessions/${sessionId}/activity`,
+        headers,
+        payload: {
+          objectRefId: service.id,
+          targetRefId,
+          action: "LINKED",
+          occurredAt: "2026-09-19T18:00:00.000Z",
+          sourceSystem: "service-catalog",
+          derivation: "SOURCE_EXPLICIT",
+          relationKind,
+          actorExternalId: "catalog-sync",
+        },
+      });
+      expect(relation.statusCode, relation.body).toBe(201);
+      expect(relation.json()).toMatchObject({
+        objectRefId: service.id,
+        targetRefId,
+        action: "LINKED",
+        relationKind,
+        derivation: "SOURCE_EXPLICIT",
+      });
+    }
+
+    const runtimeObservation = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/activity`,
+      headers,
+      payload: {
+        objectRefId: service.id,
+        action: "DEPLOYED",
+        occurredAt: "2026-09-19T18:05:00.000Z",
+        sourceSystem: "deployment-controller",
+        derivation: "SOURCE_EXPLICIT",
+        actorExternalId: "deploy-bot",
+        payload: { environment: "production" },
+      },
+    });
+    expect(runtimeObservation.statusCode).toBe(201);
+
+    const invalidStructuralRelation = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/activity`,
+      headers,
+      payload: {
+        objectRefId: service.id,
+        action: "UPDATED",
+        occurredAt: "2026-09-19T18:06:00.000Z",
+        sourceSystem: "service-catalog",
+        derivation: "SOURCE_EXPLICIT",
+        relationKind: "DEPENDS_ON",
+        actorExternalId: "catalog-sync",
+      },
+    });
+    expect(invalidStructuralRelation.statusCode).toBe(400);
+    expect(invalidStructuralRelation.json()).toMatchObject({
+      code: "INVALID_WORK_ACTIVITY_RELATION_KIND",
+    });
+
+    const listed = await app.inject({
+      method: "GET",
+      url: `/v1/sessions/${sessionId}/activity?objectRefId=${service.id}`,
+      headers,
+    });
+    expect(listed.statusCode).toBe(200);
+    expect(
+      (
+        listed.json() as {
+          events: Array<{ relationKind: string | null }>;
+        }
+      ).events.map((event) => event.relationKind),
+    ).toEqual(
+      expect.arrayContaining([
+        "DEPENDS_ON",
+        "CODE_REPOSITORY",
+        "INCIDENT",
+        "RULE",
+      ]),
+    );
+  });
+
   it("rejects malformed activity at the boundary", async () => {
     const object = await projectObject(
       sessionId,
