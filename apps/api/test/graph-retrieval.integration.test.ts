@@ -189,15 +189,10 @@ async function cleanupGraph(
   await db.pool.query("delete from knowledge_documents where space_id=$1", [
     fixture.spaceId,
   ]);
-  await db.pool.query(
-    `delete from event_deliveries d
-       using event_outbox e
-       where d.event_id=e.event_id and e.space_id=$1`,
-    [fixture.spaceId],
-  );
-  await db.pool.query("delete from event_outbox where space_id=$1", [
-    fixture.spaceId,
-  ]);
+  // GraphRevision* events are append-only audit evidence. They deliberately
+  // retain organization/space/vault foreign keys, so this fixture must not
+  // mutate the outbox or delete those registry rows. The CI database is
+  // disposable; remove only mutable source data and derived graph state.
   await db.pool.query(
     "delete from federated_graph_projection_revisions where space_id=$1",
     [fixture.spaceId],
@@ -216,13 +211,6 @@ async function cleanupGraph(
     "delete from vault_index_revisions where vault_id=any($1::uuid[])",
     [vaultIds],
   );
-  await db.pool.query("delete from vaults where id=any($1::uuid[])", [
-    vaultIds,
-  ]);
-  await db.pool.query("delete from spaces where id=$1", [fixture.spaceId]);
-  await db.pool.query("delete from organizations where id=$1", [
-    fixture.organizationId,
-  ]);
 }
 
 function searchRequest(fixture: GraphFixture) {
