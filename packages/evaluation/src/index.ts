@@ -10,6 +10,7 @@ export * from "./offline.js";
 export * from "./curated.js";
 export * from "./agent-ab.js";
 export * from "./tool-ergonomics.js";
+export * from "./capability-acceptance.js";
 
 export interface RetrievalMetrics {
   recallAtK: number;
