@@ -99,6 +99,15 @@ export const SoftwareCatalogRelation = z.enum([
 ]);
 export type SoftwareCatalogRelation = z.infer<typeof SoftwareCatalogRelation>;
 
+export const EpistemicGraphRelation = z.enum([
+  "supports",
+  "contradicts",
+  "supersedes",
+  "implements",
+  "applies_to",
+]);
+export type EpistemicGraphRelation = z.infer<typeof EpistemicGraphRelation>;
+
 export const RuntimeGraphNodeKind = z.enum([
   "deployment",
   "environment",
@@ -127,9 +136,7 @@ export const RuntimeObservationWindow = z
       });
     }
   });
-export type RuntimeObservationWindow = z.infer<
-  typeof RuntimeObservationWindow
->;
+export type RuntimeObservationWindow = z.infer<typeof RuntimeObservationWindow>;
 
 export const RuntimeObservationEnvelope = z
   .object({

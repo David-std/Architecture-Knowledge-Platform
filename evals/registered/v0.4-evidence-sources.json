@@ -1490,6 +1490,12 @@
           "workflow": "ci",
           "job": "typescript",
           "step": "Run pnpm check"
+        },
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Execute registered domain quality benchmark"
         }
       ]
     },
@@ -1500,6 +1506,12 @@
           "workflow": "ci",
           "job": "typescript",
           "step": "Run pnpm check"
+        },
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Execute registered domain quality benchmark"
         }
       ]
     },
@@ -1510,6 +1522,12 @@
           "workflow": "ci",
           "job": "typescript",
           "step": "Run pnpm check"
+        },
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Execute registered domain quality benchmark"
         }
       ]
     },
@@ -1530,6 +1548,12 @@
           "workflow": "ci",
           "job": "typescript",
           "step": "Run pnpm check"
+        },
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Execute registered domain quality benchmark"
         }
       ]
     },
@@ -1540,6 +1564,12 @@
           "workflow": "ci",
           "job": "typescript",
           "step": "Run pnpm check"
+        },
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Execute registered domain quality benchmark"
         }
       ]
     },
@@ -1550,6 +1580,22 @@
           "workflow": "ci",
           "job": "typescript",
           "step": "Run pnpm check"
+        },
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Execute registered domain quality benchmark"
+        }
+      ]
+    },
+    "integration:p3-epistemic-v03-regression": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
         }
       ]
     }

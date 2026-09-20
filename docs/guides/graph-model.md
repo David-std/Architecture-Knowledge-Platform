@@ -14,6 +14,12 @@ Use direct source/truth retrieval when a single authoritative fact is enough. A 
 
 ## Configuration
 
+### Epistemic v0.3 compatibility projection
+
+The v0.3 epistemic source of truth remains `knowledge_documents` plus `knowledge_relations`. P3 does not replace that retrieval path. A deterministic compatibility adapter projects the currently authorized vault graph into the `EPISTEMIC` domain with the same relation names, source provenance string, document revision, authorization path and current corpus revision. The projection revision is a hash of normalized legacy source state, so rebuilding unchanged source data is idempotent and produces the same semantic graph.
+
+The registered regression fixture compares legacy retrieval before and after materializing this envelope and also compares the normalized legacy edge set with the federated EPISTEMIC edge set. The compatibility vocabulary explicitly retains `supports`, `contradicts`, `supersedes`, `implements` and `applies_to`.
+
 ### Specialized domain vocabulary
 
 The public contract keeps domain-specific vocabulary instead of treating every graph as anonymous `type` strings. The Software Catalog domain defines the canonical kinds `domain`, `system`, `service`, `component`, `api`, `resource`, `repository`, `team` and `person`, plus the relations `part_of`, `owned_by`, `provides`, `consumes`, `depends_on` and `implemented_by`. Catalog assertions are declared or curated state; they are not relabeled as live runtime topology.

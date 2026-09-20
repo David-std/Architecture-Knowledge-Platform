@@ -1509,23 +1509,31 @@ describe("federated multi-graph substrate integration", () => {
           [...new Set(catalogKinds.map((value) => value.identity.kind))].sort(),
         ).toEqual([...SoftwareCatalogNodeKind.options].sort());
 
-        const catalogPaths = await store.paths({
-          ...queryBase(fixture, {
-            vaults: [{ vaultId: fixture.vaultA, pathPrefix: "allowed" }],
-            domains: ["SOFTWARE_CATALOG"],
-            relations: [...SoftwareCatalogRelation.options],
-            direction: "both",
-            maxHops: 3,
-          }),
-          seed: { identity: catalogNodes.service },
-        });
-        const encounteredCatalogRelations = new Set(
-          catalogPaths.flatMap((path) =>
-            path.steps.map((step) => step.relation),
-          ),
-        );
+        const relationSeeds = {
+          part_of: catalogNodes.service,
+          owned_by: catalogNodes.service,
+          provides: catalogNodes.service,
+          consumes: catalogNodes.component,
+          depends_on: catalogNodes.service,
+          implemented_by: catalogNodes.service,
+        } satisfies Record<
+          (typeof SoftwareCatalogRelation.options)[number],
+          GraphNodeIdentity
+        >;
         for (const relation of SoftwareCatalogRelation.options) {
-          expect(encounteredCatalogRelations.has(relation), relation).toBe(true);
+          const neighbors = await store.neighbors({
+            ...queryBase(fixture, {
+              vaults: [{ vaultId: fixture.vaultA, pathPrefix: "allowed" }],
+              domains: ["SOFTWARE_CATALOG"],
+              relations: [relation],
+              direction: "outgoing",
+            }),
+            seed: { identity: relationSeeds[relation] },
+          });
+          expect(
+            neighbors.some((path) => path.steps[0]?.relation === relation),
+            relation,
+          ).toBe(true);
         }
 
         const runtimeScope = "runtime:specialized-fixture";
@@ -1890,9 +1898,9 @@ describe("federated multi-graph substrate integration", () => {
           "validated_by",
           "observed_by",
         ]);
-        expect(
-          path.steps.map((step) => step.to.identity.canonicalKey),
-        ).toEqual(["TokenService.rotate", "PaymentRotationTest", "TR-8"]);
+        expect(path.steps.map((step) => step.to.identity.canonicalKey)).toEqual(
+          ["TokenService.rotate", "PaymentRotationTest", "TR-8"],
+        );
         expect(path.revisionSet).toMatchObject({
           EPISTEMIC: decisionRevision,
           CODE: codeRevision,

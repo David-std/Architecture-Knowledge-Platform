@@ -1,7 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { GraphPathProvenance } from "@akp/contracts";
-import { Postgres } from "@akp/postgres";
+import { EpistemicGraphRelation, GraphPathProvenance } from "@akp/contracts";
+import {
+  Postgres,
+  PostgresFederatedGraphStore,
+  rebuildLegacyEpistemicGraphProjection,
+} from "@akp/postgres";
 import { rebuildCommunityIndex } from "@akp/indexing";
 import { planQuery } from "@akp/retrieval";
 import { queryKnowledge } from "../src/routes/search.js";
@@ -176,6 +180,23 @@ async function cleanupGraph(
   fixture: GraphFixture,
 ): Promise<void> {
   const vaultIds = [fixture.vaultId, fixture.foreignVaultId];
+  await db.pool.query("delete from event_outbox where space_id=$1", [
+    fixture.spaceId,
+  ]);
+  await db.pool.query(
+    "delete from federated_graph_projection_revisions where space_id=$1",
+    [fixture.spaceId],
+  );
+  await db.pool.query("delete from federated_graph_edges where space_id=$1", [
+    fixture.spaceId,
+  ]);
+  await db.pool.query(
+    "delete from federated_graph_relationship_assertions where space_id=$1",
+    [fixture.spaceId],
+  );
+  await db.pool.query("delete from federated_graph_nodes where space_id=$1", [
+    fixture.spaceId,
+  ]);
   await db.pool.query("delete from knowledge_relations where space_id=$1", [
     fixture.spaceId,
   ]);
@@ -826,6 +847,165 @@ describe("recursive graph retrieval PostgreSQL integration", () => {
             (hit) => (hit.graphProvenance?.length ?? 0) > 0,
           ),
         ).toBe(false);
+      } finally {
+        await cleanupGraph(db, fixture).catch(() => undefined);
+        await db.close();
+      }
+    },
+  );
+
+  it.skipIf(!databaseUrl)(
+    "projects the v0.3 epistemic graph without changing legacy retrieval results",
+    async () => {
+      if (!databaseUrl) return;
+      const fixture = graphFixture();
+      const db = new Postgres(databaseUrl);
+      try {
+        await seedGraph(db, fixture);
+        for (const [from, to, relation] of [
+          ["B", "E", EpistemicGraphRelation.parse("contradicts")],
+          ["D", "C", EpistemicGraphRelation.parse("supersedes")],
+          ["B", "C", EpistemicGraphRelation.parse("implements")],
+          ["E", "B", EpistemicGraphRelation.parse("applies_to")],
+        ] as const) {
+          await db.pool.query(
+            `insert into knowledge_relations(
+               space_id,from_document_id,to_document_id,relation_type,
+               weight,provenance
+             ) values($1,$2,$3,$4,1,'p3-epistemic-v03-regression')`,
+            [
+              fixture.spaceId,
+              fixture.documents[from],
+              fixture.documents[to],
+              relation,
+            ],
+          );
+        }
+
+        const legacyQuery = () =>
+          queryKnowledge(db, searchRequest(fixture), {
+            vaultIds: [fixture.vaultId],
+            channels: ["exact", "graph"],
+            plan: planQuery("GRAPH-A", "IMPACT_ANALYSIS", {
+              graphConsistent: true,
+            }),
+            graphPolicy: {
+              directionPolicy: "outgoing",
+              maxHops: 3,
+            },
+            graphScopes: [{ vaultId: fixture.vaultId, pathPrefix: null }],
+          });
+        const before = await legacyQuery();
+
+        const projection = await rebuildLegacyEpistemicGraphProjection(db, {
+          spaceId: fixture.spaceId,
+          vaultId: fixture.vaultId,
+        });
+        expect(projection).toMatchObject({
+          graphDomain: "EPISTEMIC",
+          vaultId: fixture.vaultId,
+          sourceRevision: fixture.corpusRevision,
+          lifecycle: "ACTIVE",
+          freshness: "FRESH",
+          provider: "legacy-knowledge-relations",
+          providerVersion: "v0.3-envelope-1",
+        });
+
+        const after = await legacyQuery();
+        expect(after).toEqual(before);
+
+        const legacyEdges = await db.pool.query<{
+          from_id: string;
+          to_id: string;
+          relation: string;
+        }>(
+          `select r.from_document_id::text from_id,
+                  r.to_document_id::text to_id,
+                  r.relation_type relation
+             from knowledge_relations r
+             join knowledge_documents source
+               on source.id=r.from_document_id
+              and source.space_id=r.space_id
+             join knowledge_documents target
+               on target.id=r.to_document_id
+              and target.space_id=r.space_id
+            where r.space_id=$1
+              and source.vault_id=$2
+              and target.vault_id=$2
+              and source.lifecycle in ('ACTIVE','DISPUTED')
+              and target.lifecycle in ('ACTIVE','DISPUTED')
+            order by from_id,to_id,relation`,
+          [fixture.spaceId, fixture.vaultId],
+        );
+        const relationAllowlist = [
+          ...new Set(legacyEdges.rows.map((row) => row.relation)),
+        ];
+        const graph = new PostgresFederatedGraphStore(db);
+        const nodes = await graph.findNodes({
+          authorization: {
+            spaceId: fixture.spaceId,
+            vaults: [{ vaultId: fixture.vaultId, pathPrefix: null }],
+            allowSpaceScoped: false,
+          },
+          domains: ["EPISTEMIC"],
+          freshnessPolicy: "FRESH_ONLY",
+          limit: 100,
+        });
+        const projectedEdges: Array<{
+          from_id: string;
+          to_id: string;
+          relation: string;
+        }> = [];
+        for (const relation of relationAllowlist) {
+          for (const source of nodes) {
+            const outgoing = await graph.neighbors({
+              authorization: {
+                spaceId: fixture.spaceId,
+                vaults: [{ vaultId: fixture.vaultId, pathPrefix: null }],
+                allowSpaceScoped: false,
+              },
+              domains: ["EPISTEMIC"],
+              relationAllowlist: [relation],
+              direction: "outgoing",
+              freshnessPolicy: "FRESH_ONLY",
+              bounds: {
+                maxHops: 1,
+                maxFanout: 100,
+                maxCandidates: 100,
+                timeBudgetMs: 5_000,
+              },
+              seed: { nodeId: source.id },
+            });
+            for (const path of outgoing) {
+              projectedEdges.push({
+                from_id: String(path.seed.payload.legacyDocumentId),
+                to_id: String(path.target.payload.legacyDocumentId),
+                relation: path.steps[0]!.relation,
+              });
+              expect(path.steps[0]!.assertion.provenance.sourceIds).toEqual(
+                expect.arrayContaining([
+                  expect.stringMatching(/^knowledge-relation:/),
+                  expect.stringMatching(/^legacy-provenance:/),
+                ]),
+              );
+            }
+          }
+        }
+        projectedEdges.sort((left, right) =>
+          [left.from_id, left.to_id, left.relation]
+            .join("|")
+            .localeCompare(
+              [right.from_id, right.to_id, right.relation].join("|"),
+            ),
+        );
+        expect(projectedEdges).toEqual(legacyEdges.rows);
+
+        const coreRelations = new Set(
+          projectedEdges.map((value) => value.relation),
+        );
+        for (const relation of EpistemicGraphRelation.options) {
+          expect(coreRelations.has(relation), relation).toBe(true);
+        }
       } finally {
         await cleanupGraph(db, fixture).catch(() => undefined);
         await db.close();

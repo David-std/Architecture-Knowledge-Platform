@@ -255,7 +255,8 @@
             "integration:p3-relationship-assertion",
             "integration:p3-graph-catalog",
             "integration:p3-domain-fixtures",
-            "integration:p3-cross-domain-provenance"
+            "integration:p3-cross-domain-provenance",
+            "integration:p3-epistemic-v03-regression"
           ]
         },
         "recoveryTest": {

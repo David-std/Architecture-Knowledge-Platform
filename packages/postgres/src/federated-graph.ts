@@ -2023,6 +2023,7 @@ export class PostgresFederatedGraphStore
             : right.nextNodeId,
         ) ||
         left.direction.localeCompare(right.direction) ||
+        left.edge.assertion_hash.localeCompare(right.edge.assertion_hash) ||
         left.edge.id.localeCompare(right.edge.id)
       );
     });

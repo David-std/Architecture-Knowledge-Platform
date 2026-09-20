@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  EpistemicGraphRelation,
   GraphCatalogEntry,
   GraphNodeIdentity,
   GraphPathResult,
@@ -58,6 +59,13 @@ describe("federated graph contracts", () => {
       "consumes",
       "depends_on",
       "implemented_by",
+    ]);
+    expect(EpistemicGraphRelation.options).toEqual([
+      "supports",
+      "contradicts",
+      "supersedes",
+      "implements",
+      "applies_to",
     ]);
     expect(RuntimeGraphNodeKind.options).toEqual(
       expect.arrayContaining([
