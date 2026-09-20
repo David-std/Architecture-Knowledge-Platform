@@ -11,6 +11,9 @@ export default function RootLayout({
   return (
     <html lang="es">
       <body>
+        <a className="skip-link" href="#main-content">
+          Saltar al contenido principal
+        </a>
         <div className="shell">
           <nav aria-label="Navegación principal">
             <h1>Architecture Knowledge Platform</h1>
@@ -33,7 +36,9 @@ export default function RootLayout({
             <Link href="/admin/audit">Auditoría</Link>
             <Link href="/login">Sesión</Link>
           </nav>
-          {children}
+          <div id="main-content" tabIndex={-1}>
+            {children}
+          </div>
         </div>
       </body>
     </html>

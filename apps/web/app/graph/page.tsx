@@ -22,6 +22,13 @@ export default async function GraphPage({
   const graph = graphQuery
     ? await akp<OperatorGraph>(`/v1/operator/graph?${graphQuery.toString()}`)
     : null;
+  const staleNodes =
+    graph?.nodes.filter(
+      (node) =>
+        !["CURRENT", "FRESH", "READY"].includes(
+          String(node.refresh_status).toUpperCase(),
+        ),
+    ) ?? [];
 
   return (
     <main style={{ width: "min(1500px, 100%)" }}>
@@ -62,6 +69,21 @@ export default async function GraphPage({
 
       {graph ? (
         <>
+          {graph.truncated || staleNodes.length ? (
+            <section className="card" role="status" style={{ marginTop: 16 }}>
+              <strong>Estado del grafo</strong>
+              <p>
+                {graph.truncated
+                  ? "La proyección fue truncada por el límite autorizado; aplica filtros o reduce el scope antes de interpretar cobertura total."
+                  : "La proyección está dentro del límite solicitado."}
+              </p>
+              <p>
+                Freshness: {staleNodes.length} nodo(s) no reportan
+                CURRENT/FRESH/READY. El detalle conserva el estado de cada nodo
+                y no se presenta como dato silenciosamente vigente.
+              </p>
+            </section>
+          ) : null}
           <div className="grid" style={{ marginTop: 16 }}>
             <div className="card">
               <span className="muted">Nodos</span>

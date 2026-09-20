@@ -62,6 +62,9 @@ interface Position {
   y: number;
 }
 
+const VISUAL_NODE_LIMIT = 80;
+const CATALOG_PAGE_SIZE = 25;
+
 function graphLayout(nodes: GraphNode[]): Map<string, Position> {
   const result = new Map<string, Position>();
   if (!nodes.length) return result;
@@ -176,6 +179,7 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
   const [impactDepth, setImpactDepth] = useState(1);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [catalogPage, setCatalogPage] = useState(1);
   const dragging = useRef<{
     x: number;
     y: number;
@@ -208,7 +212,44 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
       ),
     [graph.edges, enabledLayers, enabledRelations, visibleNodeIds],
   );
-  const positions = useMemo(() => graphLayout(filteredNodes), [filteredNodes]);
+  const visualNodes = useMemo(() => {
+    const bounded = filteredNodes.slice(0, VISUAL_NODE_LIMIT);
+    const included = new Set(bounded.map((node) => node.id));
+    for (const candidateId of [selectedId, targetId]) {
+      if (!candidateId || included.has(candidateId)) continue;
+      const candidate = filteredNodes.find((node) => node.id === candidateId);
+      if (!candidate) continue;
+      if (bounded.length >= VISUAL_NODE_LIMIT) {
+        const removed = bounded.pop();
+        if (removed) included.delete(removed.id);
+      }
+      bounded.push(candidate);
+      included.add(candidate.id);
+    }
+    return bounded;
+  }, [filteredNodes, selectedId, targetId]);
+  const visualNodeIds = useMemo(
+    () => new Set(visualNodes.map((node) => node.id)),
+    [visualNodes],
+  );
+  const visualEdges = useMemo(
+    () =>
+      filteredEdges.filter(
+        (edge) =>
+          visualNodeIds.has(edge.from) && visualNodeIds.has(edge.to),
+      ),
+    [filteredEdges, visualNodeIds],
+  );
+  const positions = useMemo(() => graphLayout(visualNodes), [visualNodes]);
+  const catalogPageCount = Math.max(
+    1,
+    Math.ceil(filteredNodes.length / CATALOG_PAGE_SIZE),
+  );
+  const effectiveCatalogPage = Math.min(catalogPage, catalogPageCount);
+  const catalogNodes = filteredNodes.slice(
+    (effectiveCatalogPage - 1) * CATALOG_PAGE_SIZE,
+    effectiveCatalogPage * CATALOG_PAGE_SIZE,
+  );
   const selected = graph.nodes.find((node) => node.id === selectedId) ?? null;
   const selectedPayload = selected?.payload ?? {};
   const path = useMemo(
@@ -439,18 +480,23 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
           <div style={{ display: "flex", gap: 8, padding: 8 }}>
             <button
               type="button"
+              aria-label="Acercar grafo"
+              title="Acercar"
               onClick={() => setZoom((value) => clamp(value * 1.2, 0.4, 2.5))}
             >
               +
             </button>
             <button
               type="button"
+              aria-label="Alejar grafo"
+              title="Alejar"
               onClick={() => setZoom((value) => clamp(value / 1.2, 0.4, 2.5))}
             >
               −
             </button>
             <button
               type="button"
+              aria-label="Centrar grafo"
               onClick={() => {
                 setZoom(1);
                 setPan({ x: 0, y: 0 });
@@ -458,12 +504,23 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
             >
               Centrar
             </button>
-            <span className="muted">{Math.round(zoom * 100)}%</span>
+            <span className="muted" aria-live="polite">
+              {Math.round(zoom * 100)}%
+            </span>
           </div>
+          <p id="graph-render-status" className="muted" role="status">
+            Render visual: {visualNodes.length} de {filteredNodes.length} nodos
+            filtrados · {visualEdges.length} de {filteredEdges.length} relaciones.
+            Los cálculos de camino e impacto usan todo el set filtrado.
+            {filteredNodes.length > VISUAL_NODE_LIMIT
+              ? " Usa el catálogo paginado para seleccionar nodos fuera del presupuesto visual inicial."
+              : ""}
+          </p>
           <svg
             viewBox="0 0 960 680"
             role="img"
             aria-label="Grafo de conocimiento interactivo"
+            aria-describedby="graph-render-status"
             style={{
               width: "100%",
               minHeight: 560,
@@ -498,7 +555,7 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
             }}
           >
             <g transform={`translate(${pan.x} ${pan.y}) scale(${zoom})`}>
-              {filteredEdges.map((edge) => {
+              {visualEdges.map((edge) => {
                 const from = positions.get(edge.from);
                 const to = positions.get(edge.to);
                 if (!from || !to) return null;
@@ -533,7 +590,7 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
                   </g>
                 );
               })}
-              {filteredNodes.map((node) => {
+              {visualNodes.map((node) => {
                 const position = positions.get(node.id);
                 if (!position) return null;
                 const selectedNode = node.id === selectedId;
@@ -653,6 +710,76 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
           )}
         </aside>
       </div>
+
+      <section className="card" style={{ marginTop: 16 }}>
+        <h2>Catálogo de nodos</h2>
+        <p className="muted">
+          Página {effectiveCatalogPage} de {catalogPageCount} ·{" "}
+          {filteredNodes.length} nodos filtrados. Seleccionar un nodo lo mantiene
+          dentro del presupuesto visual aunque quede fuera de los primeros{" "}
+          {VISUAL_NODE_LIMIT}.
+        </p>
+        {catalogNodes.length ? (
+          <>
+            <table>
+              <thead>
+                <tr>
+                  <th>Node</th>
+                  <th>Domain</th>
+                  <th>Type</th>
+                  <th>Freshness</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {catalogNodes.map((node) => (
+                  <tr key={node.id}>
+                    <td>{node.title}</td>
+                    <td>{node.graph_domain}</td>
+                    <td>{node.type}</td>
+                    <td>{node.refresh_status}</td>
+                    <td>
+                      <button
+                        type="button"
+                        aria-pressed={node.id === selectedId}
+                        onClick={() => setSelectedId(node.id)}
+                      >
+                        {node.id === selectedId ? "Seleccionado" : "Seleccionar"}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="inline-actions" style={{ marginTop: 12 }}>
+              <button
+                type="button"
+                disabled={effectiveCatalogPage <= 1}
+                onClick={() =>
+                  setCatalogPage(Math.max(1, effectiveCatalogPage - 1))
+                }
+              >
+                ← Anterior
+              </button>
+              <button
+                type="button"
+                disabled={effectiveCatalogPage >= catalogPageCount}
+                onClick={() =>
+                  setCatalogPage(
+                    Math.min(catalogPageCount, effectiveCatalogPage + 1),
+                  )
+                }
+              >
+                Siguiente →
+              </button>
+            </div>
+          </>
+        ) : (
+          <p className="muted" role="status">
+            No hay nodos que coincidan con los filtros actuales.
+          </p>
+        )}
+      </section>
     </div>
   );
 }
