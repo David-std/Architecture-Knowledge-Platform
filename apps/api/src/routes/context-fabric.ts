@@ -631,12 +631,22 @@ export function registerContextFabricRoutes(
           .code(400)
           .send({ code: "INVALID_WORK_ACTIVITY_DERIVATION" });
       }
-      const relationKind = request.body?.relationKind?.trim().toUpperCase();
-      if (relationKind && !isWorkActivityRelationKind(relationKind)) {
+      const requestedRelationKind = request.body?.relationKind
+        ?.trim()
+        .toUpperCase();
+      if (
+        requestedRelationKind &&
+        !isWorkActivityRelationKind(requestedRelationKind)
+      ) {
         return reply
           .code(400)
           .send({ code: "INVALID_WORK_ACTIVITY_RELATION_KIND" });
       }
+      const relationKind =
+        requestedRelationKind &&
+        isWorkActivityRelationKind(requestedRelationKind)
+          ? requestedRelationKind
+          : undefined;
       const sourceSystem = safeText(request.body?.sourceSystem, 80);
       if (!sourceSystem) {
         return reply
