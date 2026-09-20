@@ -280,7 +280,6 @@ afterAll(async () => {
   await db.pool.query(
     `delete from idempotency_records
       where actor_id=$1
-        and operation='POST /v1/operator/team/credentials/:id/revoke'
         and idempotency_key=any($2::text[])`,
     [
       adminId,
