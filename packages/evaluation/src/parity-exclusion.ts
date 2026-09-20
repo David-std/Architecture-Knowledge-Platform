@@ -168,7 +168,7 @@ export function evaluateParityExclusions(
         item.classification === "DEFERRED_WITH_REASON" ||
         item.classification === "BLOCKED_EXTERNAL" ||
         item.classification === "BENCHMARKED_NOT_ADOPTED";
-      const status =
+      const status: ParityExclusionItemResult["status"] =
         failures.length > 0 ? "FAILED" : excluded ? "EXCLUDED" : "SUPPORTED";
       for (const failure of failures) {
         reportFailures.push(`${domain.id}/${item.id}:${failure}`);
