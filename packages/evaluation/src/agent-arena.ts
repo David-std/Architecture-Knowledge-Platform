@@ -98,7 +98,9 @@ export function validateAgentArenaTasks(tasks: AgentArenaTask[]): void {
   const categories = new Set<AgentArenaCategory>();
   for (const task of tasks) {
     if (!task.id.trim() || ids.has(task.id)) {
-      throw new Error(`Agent arena task id is missing or duplicated: ${task.id}`);
+      throw new Error(
+        `Agent arena task id is missing or duplicated: ${task.id}`,
+      );
     }
     ids.add(task.id);
     if (!AGENT_ARENA_CATEGORIES.includes(task.category)) {

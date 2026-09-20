@@ -49,6 +49,8 @@ jobs:
           node-version: 24.20.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Build Agent arena contract dependency
+        run: pnpm --filter @akp/contracts build
       - name: Prepare Agent arena evidence directory
         run: mkdir -p reports/ci
       - name: Start Postgres with bounded registry retry

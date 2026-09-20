@@ -80,8 +80,7 @@ const taskPath = path.resolve(
     "evals/registered/agent-v0.4-product-tasks.json",
 );
 const outputPath = path.resolve(
-  process.env.AKP_AGENT_ARENA_REPORT ??
-    "reports/agent-ab/five-arm-arena.json",
+  process.env.AKP_AGENT_ARENA_REPORT ?? "reports/agent-ab/five-arm-arena.json",
 );
 
 function sha256(value: string): string {
@@ -115,7 +114,10 @@ function appendEvidence(
   target[citation] = existing;
 }
 
-function searchContext(response: SearchResponse, latencyMs: number): ArenaContext {
+function searchContext(
+  response: SearchResponse,
+  latencyMs: number,
+): ArenaContext {
   const citationEvidence: Record<string, string[]> = {};
   for (const hit of response.hits) {
     const evidence = [hit.title, hit.excerpt].filter(Boolean).join("\n");
@@ -226,7 +228,9 @@ function mergeContexts(contexts: readonly ArenaContext[]): ArenaContext {
   }
   return {
     context: contexts
-      .map((item, index) => "CONTEXT " + String(index + 1) + "\n" + item.context)
+      .map(
+        (item, index) => "CONTEXT " + String(index + 1) + "\n" + item.context,
+      )
       .join("\n\n"),
     allowedCitations: [
       ...new Set(contexts.flatMap((item) => item.allowedCitations)),
@@ -336,7 +340,11 @@ async function api(
   return raw ? JSON.parse(raw) : {};
 }
 
-function contextRequest(task: AgentArenaTask, current: Config, intent?: string) {
+function contextRequest(
+  task: AgentArenaTask,
+  current: Config,
+  intent?: string,
+) {
   return {
     query: task.retrievalQuery ?? task.query,
     intent: intent ?? task.intent,
@@ -384,14 +392,18 @@ async function expertContext(
       contextRequest(
         task,
         current,
-        task.category === "conceptual-synthesis" ? "GLOBAL_SYNTHESIS" : task.intent,
+        task.category === "conceptual-synthesis"
+          ? "GLOBAL_SYNTHESIS"
+          : task.intent,
       ),
     ),
   })) as ContextPacket;
   return packetContext(value, performance.now() - started);
 }
 
-function genericFacadeAction(task: AgentArenaTask): "SEARCH" | "VERIFY" | "EXPLAIN" {
+function genericFacadeAction(
+  task: AgentArenaTask,
+): "SEARCH" | "VERIFY" | "EXPLAIN" {
   if (task.category === "exact-lookup") return "SEARCH";
   if (task.category === "source-verification") return "VERIFY";
   return "EXPLAIN";
@@ -553,41 +565,47 @@ async function complete(
   let latencyMs = 0;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const started = performance.now();
-    const response = await fetch(current.providerBaseUrl + "/chat/completions", {
-      method: "POST",
-      headers: {
-        ...(current.providerApiKey
-          ? { authorization: "Bearer " + current.providerApiKey }
-          : {}),
-        "content-type": "application/json",
+    const response = await fetch(
+      current.providerBaseUrl + "/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          ...(current.providerApiKey
+            ? { authorization: "Bearer " + current.providerApiKey }
+            : {}),
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model: current.providerModel,
+          temperature: current.temperature,
+          max_tokens: current.maxOutputTokens,
+          messages: [
+            {
+              role: "system",
+              content:
+                "You are a controlled evaluation assistant. Use only supplied context and obey the output contract.",
+            },
+            {
+              role: "user",
+              content:
+                attempt === 0
+                  ? prompt
+                  : prompt +
+                    "\n\nFORMAT RETRY: return only ANSWER, ABSTAIN, CITATIONS and CLAIM lines.",
+            },
+          ],
+        }),
+        signal: AbortSignal.timeout(current.providerTimeoutMs),
       },
-      body: JSON.stringify({
-        model: current.providerModel,
-        temperature: current.temperature,
-        max_tokens: current.maxOutputTokens,
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are a controlled evaluation assistant. Use only supplied context and obey the output contract.",
-          },
-          {
-            role: "user",
-            content:
-              attempt === 0
-                ? prompt
-                : prompt +
-                  "\n\nFORMAT RETRY: return only ANSWER, ABSTAIN, CITATIONS and CLAIM lines.",
-          },
-        ],
-      }),
-      signal: AbortSignal.timeout(current.providerTimeoutMs),
-    });
+    );
     latencyMs += performance.now() - started;
     const raw = await response.text();
     if (!response.ok) {
       throw new Error(
-        "Provider request " + String(response.status) + ": " + raw.slice(0, 500),
+        "Provider request " +
+          String(response.status) +
+          ": " +
+          raw.slice(0, 500),
       );
     }
     const body = JSON.parse(raw) as Record<string, unknown>;
@@ -608,8 +626,7 @@ async function complete(
       ? (body.choices[0] as Record<string, unknown> | undefined)
       : undefined;
     const message = objectRecord(first?.message);
-    const content =
-      typeof message.content === "string" ? message.content : "";
+    const content = typeof message.content === "string" ? message.content : "";
     try {
       return {
         output: parseAnswer(content),

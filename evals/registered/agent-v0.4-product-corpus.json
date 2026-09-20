@@ -17,17 +17,9 @@
             "canonical data flow"
           ],
           "sourcePath": "ARCHITECTURE.md",
-          "related": [
-            "product-runtime-flows",
-            "product-c4",
-            "product-modules"
-          ],
-          "evidence": [
-            "repo://ARCHITECTURE.md"
-          ],
-          "citations": [
-            "repo://ARCHITECTURE.md"
-          ]
+          "related": ["product-runtime-flows", "product-c4", "product-modules"],
+          "evidence": ["repo://ARCHITECTURE.md"],
+          "citations": ["repo://ARCHITECTURE.md"]
         },
         {
           "id": "product-runtime-flows",
@@ -38,16 +30,9 @@
             "retrieval flow"
           ],
           "sourcePath": "docs/architecture/runtime-flows.md",
-          "related": [
-            "product-architecture-overview",
-            "product-c4"
-          ],
-          "evidence": [
-            "repo://docs/architecture/runtime-flows.md"
-          ],
-          "citations": [
-            "repo://docs/architecture/runtime-flows.md"
-          ]
+          "related": ["product-architecture-overview", "product-c4"],
+          "evidence": ["repo://docs/architecture/runtime-flows.md"],
+          "citations": ["repo://docs/architecture/runtime-flows.md"]
         },
         {
           "id": "product-c4",
@@ -58,16 +43,9 @@
             "system context"
           ],
           "sourcePath": "docs/architecture/c4.md",
-          "related": [
-            "product-architecture-overview",
-            "product-modules"
-          ],
-          "evidence": [
-            "repo://docs/architecture/c4.md"
-          ],
-          "citations": [
-            "repo://docs/architecture/c4.md"
-          ]
+          "related": ["product-architecture-overview", "product-modules"],
+          "evidence": ["repo://docs/architecture/c4.md"],
+          "citations": ["repo://docs/architecture/c4.md"]
         },
         {
           "id": "product-modules",
@@ -78,35 +56,18 @@
             "module boundaries"
           ],
           "sourcePath": "docs/architecture/modules.md",
-          "related": [
-            "product-c4"
-          ],
-          "evidence": [
-            "repo://docs/architecture/modules.md"
-          ],
-          "citations": [
-            "repo://docs/architecture/modules.md"
-          ]
+          "related": ["product-c4"],
+          "evidence": ["repo://docs/architecture/modules.md"],
+          "citations": ["repo://docs/architecture/modules.md"]
         },
         {
           "id": "product-code-context-guide",
           "title": "Code Context Guide",
-          "aliases": [
-            "code impact",
-            "blast radius",
-            "code graph context"
-          ],
+          "aliases": ["code impact", "blast radius", "code graph context"],
           "sourcePath": "docs/guides/code-context.md",
-          "related": [
-            "product-architecture-overview",
-            "product-runtime-flows"
-          ],
-          "evidence": [
-            "repo://docs/guides/code-context.md"
-          ],
-          "citations": [
-            "repo://docs/guides/code-context.md"
-          ]
+          "related": ["product-architecture-overview", "product-runtime-flows"],
+          "evidence": ["repo://docs/guides/code-context.md"],
+          "citations": ["repo://docs/guides/code-context.md"]
         },
         {
           "id": "product-temporal-truth-guide",
@@ -117,16 +78,9 @@
             "truth revisions"
           ],
           "sourcePath": "docs/guides/temporal-truth.md",
-          "related": [
-            "product-architecture-overview",
-            "product-runtime-flows"
-          ],
-          "evidence": [
-            "repo://docs/guides/temporal-truth.md"
-          ],
-          "citations": [
-            "repo://docs/guides/temporal-truth.md"
-          ]
+          "related": ["product-architecture-overview", "product-runtime-flows"],
+          "evidence": ["repo://docs/guides/temporal-truth.md"],
+          "citations": ["repo://docs/guides/temporal-truth.md"]
         },
         {
           "id": "product-retrieval-context-guide",
@@ -137,16 +91,9 @@
             "PPR community"
           ],
           "sourcePath": "docs/guides/retrieval-context-engineering.md",
-          "related": [
-            "product-architecture-overview",
-            "product-runtime-flows"
-          ],
-          "evidence": [
-            "repo://docs/guides/retrieval-context-engineering.md"
-          ],
-          "citations": [
-            "repo://docs/guides/retrieval-context-engineering.md"
-          ]
+          "related": ["product-architecture-overview", "product-runtime-flows"],
+          "evidence": ["repo://docs/guides/retrieval-context-engineering.md"],
+          "citations": ["repo://docs/guides/retrieval-context-engineering.md"]
         },
         {
           "id": "product-federation-guide",
@@ -157,16 +104,9 @@
             "federation partial failure"
           ],
           "sourcePath": "docs/guides/federation.md",
-          "related": [
-            "product-architecture-overview",
-            "operations-runbook"
-          ],
-          "evidence": [
-            "repo://docs/guides/federation.md"
-          ],
-          "citations": [
-            "repo://docs/guides/federation.md"
-          ]
+          "related": ["product-architecture-overview", "operations-runbook"],
+          "evidence": ["repo://docs/guides/federation.md"],
+          "citations": ["repo://docs/guides/federation.md"]
         }
       ]
     },
@@ -188,12 +128,8 @@
             "operations-error-book",
             "operations-audit-export"
           ],
-          "evidence": [
-            "repo://docs/runbooks/local-operations.md"
-          ],
-          "citations": [
-            "repo://docs/runbooks/local-operations.md"
-          ]
+          "evidence": ["repo://docs/runbooks/local-operations.md"],
+          "citations": ["repo://docs/runbooks/local-operations.md"]
         },
         {
           "id": "security-threat-model",
@@ -204,16 +140,9 @@
             "threat controls"
           ],
           "sourcePath": "docs/security/threat-model.md",
-          "related": [
-            "operations-runbook",
-            "operations-audit-export"
-          ],
-          "evidence": [
-            "repo://docs/security/threat-model.md"
-          ],
-          "citations": [
-            "repo://docs/security/threat-model.md"
-          ]
+          "related": ["operations-runbook", "operations-audit-export"],
+          "evidence": ["repo://docs/security/threat-model.md"],
+          "citations": ["repo://docs/security/threat-model.md"]
         },
         {
           "id": "operations-error-book",
@@ -224,15 +153,9 @@
             "regression evidence"
           ],
           "sourcePath": "docs/error-book.md",
-          "related": [
-            "operations-runbook"
-          ],
-          "evidence": [
-            "repo://docs/error-book.md"
-          ],
-          "citations": [
-            "repo://docs/error-book.md"
-          ]
+          "related": ["operations-runbook"],
+          "evidence": ["repo://docs/error-book.md"],
+          "citations": ["repo://docs/error-book.md"]
         },
         {
           "id": "operations-audit-export",
@@ -243,16 +166,9 @@
             "audit serializer"
           ],
           "sourcePath": "docs/architecture/audit-export.md",
-          "related": [
-            "operations-runbook",
-            "security-threat-model"
-          ],
-          "evidence": [
-            "repo://docs/architecture/audit-export.md"
-          ],
-          "citations": [
-            "repo://docs/architecture/audit-export.md"
-          ]
+          "related": ["operations-runbook", "security-threat-model"],
+          "evidence": ["repo://docs/architecture/audit-export.md"],
+          "citations": ["repo://docs/architecture/audit-export.md"]
         }
       ]
     }

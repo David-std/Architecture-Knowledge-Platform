@@ -1,8 +1,5 @@
 export type CompetitiveExecutionStatus =
-  | "EXECUTED"
-  | "REFERENCE_ONLY"
-  | "NOT_EXECUTED"
-  | "FAILED";
+  "EXECUTED" | "REFERENCE_ONLY" | "NOT_EXECUTED" | "FAILED";
 
 export interface CompetitiveMetric<T = number> {
   value: T | null;

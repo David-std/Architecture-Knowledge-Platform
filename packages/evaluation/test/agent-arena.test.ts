@@ -53,7 +53,9 @@ describe("five-arm agent arena", () => {
         answer: "The required fact is disputed.",
         abstain: false,
         citations: ["source-a"],
-        claims: [{ text: "required fact is disputed", citations: ["source-a"] }],
+        claims: [
+          { text: "required fact is disputed", citations: ["source-a"] },
+        ],
       },
       ["source-a"],
       "required disputed alternative",

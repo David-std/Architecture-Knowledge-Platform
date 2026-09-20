@@ -18,9 +18,7 @@ type ManifestSystem = {
   id: string;
   label: string;
   evidenceMode:
-    | "CURRENT_REGISTERED_RETRIEVAL"
-    | "REFERENCE_ONLY"
-    | "OPTIONAL_EXTERNAL";
+    "CURRENT_REGISTERED_RETRIEVAL" | "REFERENCE_ONLY" | "OPTIONAL_EXTERNAL";
   source: string;
   limitations: string[];
 };
@@ -173,11 +171,15 @@ function retrievalMetrics(run: RetrievalRun): CompetitiveRetrievalMetrics {
     contextPrecision:
       run.contextPrecisionCoverage > 0
         ? measured(run.meanContextPrecision)
-        : unmeasured("Registered dataset has no context-precision labels for this run."),
+        : unmeasured(
+            "Registered dataset has no context-precision labels for this run.",
+          ),
     claimSupportRecall:
       run.claimSupportRecallCoverage > 0
         ? measured(run.meanClaimSupportRecall)
-        : unmeasured("Registered dataset has no claim-support labels for this run."),
+        : unmeasured(
+            "Registered dataset has no claim-support labels for this run.",
+          ),
     citationPrecision:
       run.citationPrecisionCoverage > 0
         ? measured(run.meanCitationPrecision)
@@ -199,7 +201,9 @@ function retrievalMetrics(run: RetrievalRun): CompetitiveRetrievalMetrics {
   };
 }
 
-function markdown(report: ReturnType<typeof buildCompetitiveArenaReport>): string {
+function markdown(
+  report: ReturnType<typeof buildCompetitiveArenaReport>,
+): string {
   const lines = [
     "# Competitive arena",
     "",

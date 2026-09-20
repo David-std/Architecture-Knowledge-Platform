@@ -24,8 +24,7 @@ export const CAPABILITY_MATURITY_LADDER = [
   "PRODUCTIZED",
 ] as const;
 
-export type CapabilityMaturity =
-  (typeof CAPABILITY_MATURITY_LADDER)[number];
+export type CapabilityMaturity = (typeof CAPABILITY_MATURITY_LADDER)[number];
 
 export type EvidenceExecutionStatus = "PASSED" | "FAILED" | "SKIPPED";
 
@@ -64,10 +63,7 @@ export interface CapabilityAcceptanceManifest {
 }
 
 export type CapabilityCellStatus =
-  | "PROVEN"
-  | "FAILED"
-  | "UNPROVEN"
-  | "NOT_APPLICABLE";
+  "PROVEN" | "FAILED" | "UNPROVEN" | "NOT_APPLICABLE";
 
 export interface CapabilityCellResult {
   status: CapabilityCellStatus;
