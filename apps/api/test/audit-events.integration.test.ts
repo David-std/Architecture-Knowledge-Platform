@@ -80,7 +80,9 @@ describeDb("audit event resource filters", () => {
   afterAll(async () => {
     if (app) await app.close();
     if (!db) return;
-    await db.pool.query("delete from audit_events where vault_id=$1", [vaultId]);
+    await db.pool.query("delete from audit_events where vault_id=$1", [
+      vaultId,
+    ]);
     await db.pool.query("delete from api_tokens where token_hash=$1", [
       tokenHash,
     ]);
