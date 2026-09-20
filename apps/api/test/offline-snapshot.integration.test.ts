@@ -77,6 +77,9 @@ afterAll(async () => {
         "delete from audit_events where resource_id=$1 or metadata->>'sessionId'=$1",
         [sessionId],
       );
+      await db.pool.query("delete from context_packets where session_id=$1", [
+        sessionId,
+      ]);
       await db.pool.query("delete from agent_sessions where id=$1", [
         sessionId,
       ]);
