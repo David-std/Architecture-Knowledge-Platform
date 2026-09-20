@@ -131,10 +131,7 @@ try {
     scopeId: codeScope,
   });
   const codeActive = await graphStore.build(codePlan.projection);
-  if (
-    codeActive.lifecycle !== "ACTIVE" ||
-    codeActive.freshness !== "FRESH"
-  ) {
+  if (codeActive.lifecycle !== "ACTIVE" || codeActive.freshness !== "FRESH") {
     throw new Error("RESTORED_CODE_GRAPH_NOT_ACTIVE");
   }
 

@@ -122,9 +122,7 @@ function managedGitCheck(environment: DoctorEnvironment): DoctorCheck {
   };
 }
 
-export function modelRoutingCheck(
-  environment: DoctorEnvironment,
-): DoctorCheck {
+export function modelRoutingCheck(environment: DoctorEnvironment): DoctorCheck {
   const policyRaw = environment.AKP_MODEL_ROLE_POLICIES_JSON?.trim();
   const endpointRaw = environment.AKP_MODEL_ENDPOINTS_JSON?.trim();
 
@@ -167,12 +165,19 @@ export function modelRoutingCheck(
           throw new Error("MODEL_ROLE_POLICY_INVALID");
         }
         const endpoint = endpointMap[endpointRef];
-        if (!endpoint || typeof endpoint !== "object" || Array.isArray(endpoint)) {
+        if (
+          !endpoint ||
+          typeof endpoint !== "object" ||
+          Array.isArray(endpoint)
+        ) {
           throw new Error("MODEL_ENDPOINT_REF_UNRESOLVED");
         }
         const endpointResidency = (endpoint as Record<string, unknown>)
           .dataResidency;
-        if (typeof endpointResidency !== "string" || !endpointResidency.trim()) {
+        if (
+          typeof endpointResidency !== "string" ||
+          !endpointResidency.trim()
+        ) {
           throw new Error("MODEL_ENDPOINT_RESIDENCY_INVALID");
         }
         return {
@@ -207,7 +212,8 @@ export function modelRoutingCheck(
         status: "FAIL",
         summary: "Model routing configuration is invalid.",
         details: {
-          code: error instanceof Error ? error.message : "MODEL_ROUTING_INVALID",
+          code:
+            error instanceof Error ? error.message : "MODEL_ROUTING_INVALID",
           secretsExposed: false,
         },
       };

@@ -143,13 +143,12 @@ try {
     throw "Restored managed repository could not rebuild a searchable probe."
   }
 
-  $derivedReport = Resolve-InputPath (
-    if ($env:AKP_RESTORED_DERIVED_REPORT) {
-      $env:AKP_RESTORED_DERIVED_REPORT
-    } else {
-      "reports/ci/restored-derived-context.json"
-    }
-  )
+  $derivedReportInput = if ($env:AKP_RESTORED_DERIVED_REPORT) {
+    $env:AKP_RESTORED_DERIVED_REPORT
+  } else {
+    "reports/ci/restored-derived-context.json"
+  }
+  $derivedReport = Resolve-InputPath $derivedReportInput
   Invoke-Checked "rebuild graph, code graph and local agent context from restored authority" {
     pnpm exec tsx scripts/verify-restored-derived-context.ts "--repo=$temporaryRoot" "--commit=$actualRevision" "--space-id=$SpaceId" "--vault-id=$vaultId"
   } | Out-Null

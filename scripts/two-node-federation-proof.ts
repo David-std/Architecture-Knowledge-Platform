@@ -148,8 +148,7 @@ if (phase === "setup") {
     const provenancePreserved = hits.every((hit) => {
       const value = hit as Record<string, unknown>;
       const provenance = value.remoteProvenance as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
       return provenance?.nodeId === state.remoteNodeId;
     });
     if (!provenancePreserved) {
@@ -237,11 +236,7 @@ if (phase === "setup") {
       throw new Error("Two-node live phase evidence is missing.");
     }
     await mkdir(path.dirname(reportPath), { recursive: true });
-    await writeFile(
-      reportPath,
-      `${JSON.stringify(report, null, 2)}\n`,
-      "utf8",
-    );
+    await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
     console.log(JSON.stringify(report, null, 2));
   }
 }
