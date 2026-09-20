@@ -18,6 +18,7 @@ export interface KnowledgeCompilerEnvironment {
   readonly AKP_LLM_MODEL?: string;
   readonly AKP_LLM_TIMEOUT_MS?: string;
   readonly AKP_LLM_MAX_RETRIES?: string;
+  readonly AKP_LLM_MAX_OUTPUT_TOKENS?: string;
   readonly AKP_LLM_CONCURRENCY?: string;
   readonly AKP_LLM_ENDPOINT_REF?: string;
   readonly AKP_LLM_DATA_RESIDENCY?: string;
@@ -78,6 +79,71 @@ export class KnowledgeCompilerUnavailableError extends Error {
     super(message);
     this.name = "KnowledgeCompilerUnavailableError";
   }
+}
+
+interface KnowledgeCompilerConcurrencyGate {
+  limit: number;
+  active: number;
+  waiters: Array<() => void>;
+}
+
+const compilerConcurrencyGates = new Map<
+  string,
+  KnowledgeCompilerConcurrencyGate
+>();
+
+async function acquireCompilerConcurrency(
+  key: string,
+  limit: number,
+): Promise<() => void> {
+  let gate = compilerConcurrencyGates.get(key);
+  if (!gate) {
+    gate = { limit, active: 0, waiters: [] };
+    compilerConcurrencyGates.set(key, gate);
+  } else if (gate.limit !== limit) {
+    throw new KnowledgeCompilerUnavailableError(
+      "Model-role concurrency changed without a configuration-hash change",
+    );
+  }
+
+  if (gate.active >= gate.limit) {
+    await new Promise<void>((resolve) => gate!.waiters.push(resolve));
+  } else {
+    gate.active += 1;
+  }
+
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const next = gate!.waiters.shift();
+    if (next) {
+      next();
+      return;
+    }
+    gate!.active -= 1;
+    if (gate!.active === 0) compilerConcurrencyGates.delete(key);
+  };
+}
+
+export function limitKnowledgeCompilerConcurrency(
+  compiler: KnowledgeCompilerPort,
+  configurationHash: string,
+  concurrency: number,
+): KnowledgeCompilerPort {
+  return {
+    compile: async (input) => {
+      const release = await acquireCompilerConcurrency(
+        configurationHash,
+        concurrency,
+      );
+      try {
+        return await compiler.compile(input);
+      } finally {
+        release();
+      }
+    },
+  };
 }
 
 function positiveInteger(
@@ -200,6 +266,16 @@ function validateOpenAICompatiblePolicy(policy: ModelRolePolicyValue): void {
       "openai-compatible maxRetries must be between 0 and 3",
     );
   }
+  if (policy.maxInputTokens !== undefined) {
+    throw new KnowledgeCompilerUnavailableError(
+      "openai-compatible maxInputTokens requires an exact provider tokenizer adapter",
+    );
+  }
+  if (policy.costCeiling !== undefined) {
+    throw new KnowledgeCompilerUnavailableError(
+      "openai-compatible costCeiling requires provider cost accounting",
+    );
+  }
 }
 
 function resolvePolicyOrder(
@@ -293,14 +369,22 @@ function candidateFromPolicy(
           `Configured API-key environment variable is unavailable for endpointRef ${endpointRef}`,
         );
       }
+      const compiler = new OpenAICompatibleKnowledgeCompiler({
+        baseUrl: endpoint.baseUrl,
+        model: policy.model,
+        timeoutMs: policy.timeoutMs,
+        maxRetries: policy.maxRetries,
+        ...(policy.maxOutputTokens === undefined
+          ? {}
+          : { maxOutputTokens: policy.maxOutputTokens }),
+        ...(apiKey ? { apiKey } : {}),
+      });
       return {
-        compiler: new OpenAICompatibleKnowledgeCompiler({
-          baseUrl: endpoint.baseUrl,
-          model: policy.model,
-          timeoutMs: policy.timeoutMs,
-          maxRetries: policy.maxRetries,
-          ...(apiKey ? { apiKey } : {}),
-        }),
+        compiler: limitKnowledgeCompilerConcurrency(
+          compiler,
+          descriptor.configurationHash,
+          policy.concurrency,
+        ),
         descriptor,
       };
     },
@@ -377,6 +461,13 @@ function legacyCandidate(
     "AKP_LLM_CONCURRENCY",
     1,
   );
+  const maxOutputTokens = env.AKP_LLM_MAX_OUTPUT_TOKENS?.trim()
+    ? positiveInteger(
+        env.AKP_LLM_MAX_OUTPUT_TOKENS,
+        "AKP_LLM_MAX_OUTPUT_TOKENS",
+        1,
+      )
+    : undefined;
   const endpointRef =
     env.AKP_LLM_ENDPOINT_REF?.trim() || "legacy-knowledge-compile";
   const policy = ModelRolePolicy.parse({
@@ -387,6 +478,7 @@ function legacyCandidate(
     timeoutMs,
     maxRetries,
     concurrency,
+    ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
     structuredOutputRequired: true,
     dataResidency: legacyEndpointResidency(baseUrl, env.AKP_LLM_DATA_RESIDENCY),
     degradationSafe: false,
@@ -409,18 +501,26 @@ function legacyCandidate(
     policy,
     descriptor,
     supportsStructuredOutput: true,
-    createConfigured: () => ({
-      compiler: new OpenAICompatibleKnowledgeCompiler({
+    createConfigured: () => {
+      const compiler = new OpenAICompatibleKnowledgeCompiler({
         baseUrl,
         model,
         timeoutMs,
         maxRetries,
+        ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
         ...(env.AKP_LLM_API_KEY?.trim()
           ? { apiKey: env.AKP_LLM_API_KEY.trim() }
           : {}),
-      }),
-      descriptor,
-    }),
+      });
+      return {
+        compiler: limitKnowledgeCompilerConcurrency(
+          compiler,
+          descriptor.configurationHash,
+          concurrency,
+        ),
+        descriptor,
+      };
+    },
   };
 }
 

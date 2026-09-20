@@ -14,6 +14,7 @@ const OpenAICompatibleCompilerOptions = z
     model: z.string().min(1).max(300),
     timeoutMs: z.number().int().min(1_000).max(120_000).default(30_000),
     maxRetries: z.number().int().min(0).max(3).default(1),
+    maxOutputTokens: z.number().int().positive().max(1_000_000).optional(),
     temperature: z.number().min(0).max(1).default(0),
   })
   .strict();
@@ -96,6 +97,9 @@ export class OpenAICompatibleKnowledgeCompiler implements KnowledgeCompilerPort 
       model: this.#options.model,
       temperature: this.#options.temperature,
       response_format: { type: "json_object" },
+      ...(this.#options.maxOutputTokens === undefined
+        ? {}
+        : { max_tokens: this.#options.maxOutputTokens }),
       messages: [
         { role: "system", content: providerPrompt() },
         {
