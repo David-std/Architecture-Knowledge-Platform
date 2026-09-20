@@ -289,7 +289,6 @@ async function recordProviderTaskEvent(
   }
 }
 
-
 async function processJob(job: Record<string, unknown>): Promise<void> {
   const id = String(job.id);
   const state = String(job.state) as IngestState;

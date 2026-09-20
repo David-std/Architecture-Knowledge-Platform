@@ -504,8 +504,7 @@ export async function buildCompilationStage(
           "akp.vector.enabled": input.vectorEnabled,
           "akp.compiler.degraded": index > 0,
         },
-        () =>
-          executePreparedGroundedKnowledgeCompilation(configured, prepared),
+        () => executePreparedGroundedKnowledgeCompilation(configured, prepared),
       );
       routeMetadata.selected = candidate.descriptor;
       routeMetadata.degraded = index > 0;

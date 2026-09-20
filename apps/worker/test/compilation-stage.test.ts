@@ -316,7 +316,9 @@ describe("compilation stage", () => {
       return {
         policy: ModelRolePolicy.parse({
           role:
-            model === "primary" ? "KNOWLEDGE_COMPILE" : "KNOWLEDGE_COMPILE_FALLBACK",
+            model === "primary"
+              ? "KNOWLEDGE_COMPILE"
+              : "KNOWLEDGE_COMPILE_FALLBACK",
           provider: "openai-compatible",
           model,
           endpointRef: model,

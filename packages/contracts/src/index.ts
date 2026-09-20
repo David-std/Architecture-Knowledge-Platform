@@ -582,32 +582,32 @@ export type FederationRemoteSearchInput = z.infer<
   typeof FederationRemoteSearchInput
 >;
 
-export const FederationRemoteQueryRequest = z
+const FederationRemoteScope = z
+  .object({
+    spaceId: z.string().uuid(),
+    vaultIds: z.array(z.string().uuid()).min(1).max(20),
+  })
+  .strict()
+  .superRefine((scope, context) => {
+    if (new Set(scope.vaultIds).size !== scope.vaultIds.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["vaultIds"],
+        message: "federation scope contains duplicate vault identities",
+      });
+    }
+  });
+
+const FederationRemoteQueryRequestBase = z
   .object({
     schemaVersion: z.literal(1),
     caller: z
       .object({
-        nodeId: z
-          .string()
-          .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/),
+        nodeId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/),
         requestId: z.string().uuid(),
       })
       .strict(),
-    scope: z
-      .object({
-        spaceId: z.string().uuid(),
-        vaultIds: z.array(z.string().uuid()).min(1).max(20),
-      })
-      .strict()
-      .superRefine((scope, context) => {
-        if (new Set(scope.vaultIds).size !== scope.vaultIds.length) {
-          context.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ["vaultIds"],
-            message: "federation scope contains duplicate vault identities",
-          });
-        }
-      }),
+    scope: FederationRemoteScope,
     request: FederationRemoteSearchInput,
     budget: FederationRemoteQueryBudget,
     revisionPreferences: z
@@ -615,8 +615,10 @@ export const FederationRemoteQueryRequest = z
       .max(20)
       .default([]),
   })
-  .strict()
-  .superRefine((value, context) => {
+  .strict();
+
+export const FederationRemoteQueryRequest =
+  FederationRemoteQueryRequestBase.superRefine((value, context) => {
     const scoped = new Set(value.scope.vaultIds);
     for (const [index, preference] of value.revisionPreferences.entries()) {
       if (!scoped.has(preference.vaultId)) {
@@ -632,11 +634,24 @@ export type FederationRemoteQueryRequest = z.infer<
   typeof FederationRemoteQueryRequest
 >;
 
-export const FederationPeerQueryRequest = FederationRemoteQueryRequest.omit({
+export const FederationPeerQueryRequest = FederationRemoteQueryRequestBase.omit({
   caller: true,
-}).extend({
-  requestId: z.string().uuid().optional(),
-});
+})
+  .extend({
+    requestId: z.string().uuid().optional(),
+  })
+  .superRefine((value, context) => {
+    const scoped = new Set(value.scope.vaultIds);
+    for (const [index, preference] of value.revisionPreferences.entries()) {
+      if (!scoped.has(preference.vaultId)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["revisionPreferences", index, "vaultId"],
+          message: "revision preference must target a requested vault",
+        });
+      }
+    }
+  });
 export type FederationPeerQueryRequest = z.infer<
   typeof FederationPeerQueryRequest
 >;
@@ -644,9 +659,7 @@ export type FederationPeerQueryRequest = z.infer<
 export const FederationRemoteHit = SearchHit.extend({
   remoteProvenance: z
     .object({
-      nodeId: z
-        .string()
-        .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/),
+      nodeId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/),
       nodeRevision: z.string().min(1).max(512).nullable(),
       documentRevision: z.string().min(1),
       trust: TrustTier,
@@ -684,9 +697,7 @@ export const FederationRemoteQueryResponse = z
     requestId: z.string().uuid(),
     remote: z
       .object({
-        nodeId: z
-          .string()
-          .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/),
+        nodeId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/),
         deploymentMode: z.string().min(1).max(64),
         revision: z.string().min(1).max(512).nullable(),
       })
@@ -732,7 +743,8 @@ export const FederationFanoutRequest = z
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["local", "federated"],
-        message: "federation fanout owns remote execution; local search must not recurse",
+        message:
+          "federation fanout owns remote execution; local search must not recurse",
       });
     }
     const peerIds = value.peers.map((peer) => peer.peerId);
@@ -744,9 +756,7 @@ export const FederationFanoutRequest = z
       });
     }
   });
-export type FederationFanoutRequest = z.infer<
-  typeof FederationFanoutRequest
->;
+export type FederationFanoutRequest = z.infer<typeof FederationFanoutRequest>;
 
 export const FederationFanoutResponse = z
   .object({
@@ -776,9 +786,7 @@ export const FederationFanoutResponse = z
     warnings: z.array(z.string().min(1).max(512)).max(100),
   })
   .strict();
-export type FederationFanoutResponse = z.infer<
-  typeof FederationFanoutResponse
->;
+export type FederationFanoutResponse = z.infer<typeof FederationFanoutResponse>;
 
 export const ContextDisclosureLevel = z.enum(["L0", "L1", "L2", "L3"]);
 export type ContextDisclosureLevel = z.infer<typeof ContextDisclosureLevel>;

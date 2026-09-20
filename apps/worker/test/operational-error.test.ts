@@ -3,7 +3,9 @@ import { operationalErrorRecord } from "../src/operational-error.js";
 
 describe("operational error redaction", () => {
   it("preserves only explicit machine-safe provider codes", () => {
-    expect(operationalErrorRecord(new Error("COMPILER_PROVIDER_TIMEOUT"))).toEqual({
+    expect(
+      operationalErrorRecord(new Error("COMPILER_PROVIDER_TIMEOUT")),
+    ).toEqual({
       code: "COMPILER_PROVIDER_TIMEOUT",
       message: "COMPILER_PROVIDER_TIMEOUT",
     });

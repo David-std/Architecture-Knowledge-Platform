@@ -24,9 +24,7 @@ describe("federation contracts", () => {
         maxWallMs: 5_000,
         maxResponseBytes: 1_000_000,
       },
-      revisionPreferences: [
-        { vaultId: VAULT_ID, corpusRevision: "corpus:r1" },
-      ],
+      revisionPreferences: [{ vaultId: VAULT_ID, corpusRevision: "corpus:r1" }],
     };
     expect(FederationRemoteQueryRequest.parse(base).scope.vaultIds).toEqual([
       VAULT_ID,
@@ -42,13 +40,13 @@ describe("federation contracts", () => {
         ],
       }).success,
     ).toBe(false);
+    const { caller, ...peerBase } = base;
     expect(
       FederationPeerQueryRequest.parse({
-        ...base,
-        caller: undefined,
-        requestId: base.caller.requestId,
+        ...peerBase,
+        requestId: caller.requestId,
       }).requestId,
-    ).toBe(base.caller.requestId);
+    ).toBe(caller.requestId);
   });
 
   it("rejects any attempt to rewrite remote trust, lifecycle, or revision", () => {

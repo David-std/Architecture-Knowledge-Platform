@@ -4471,12 +4471,7 @@ components:
         maxWallMs:
           { type: integer, minimum: 100, maximum: 60000, default: 5000 }
         maxResponseBytes:
-          {
-            type: integer,
-            minimum: 1024,
-            maximum: 5000000,
-            default: 1000000,
-          }
+          { type: integer, minimum: 1024, maximum: 5000000, default: 1000000 }
     FederationRevisionPreference:
       type: object
       additionalProperties: false
@@ -4551,8 +4546,7 @@ components:
           type: array
           maxItems: 20
           default: []
-          items:
-            { $ref: "#/components/schemas/FederationRevisionPreference" }
+          items: { $ref: "#/components/schemas/FederationRevisionPreference" }
     FederationPeerQueryRequest:
       type: object
       additionalProperties: false
@@ -4578,8 +4572,7 @@ components:
           type: array
           maxItems: 20
           default: []
-          items:
-            { $ref: "#/components/schemas/FederationRevisionPreference" }
+          items: { $ref: "#/components/schemas/FederationRevisionPreference" }
     FederationRemoteQueryResponse:
       type: object
       additionalProperties: false
@@ -4668,8 +4661,7 @@ components:
           maxItems: 4
           uniqueItems: true
           default: []
-          items:
-            { $ref: "#/components/schemas/FederationFanoutPeerRequest" }
+          items: { $ref: "#/components/schemas/FederationFanoutPeerRequest" }
         requireAllPeers: { type: boolean, default: false }
     FederationFanoutResponse:
       type: object

@@ -1029,9 +1029,7 @@ export function registerContextFabricRoutes(
         peer.trustState !== "APPROVED" ||
         peer.discoveryMode !== "REMOTE_QUERY"
       ) {
-        return reply
-          .code(409)
-          .send({ code: "FEDERATION_PEER_NOT_QUERYABLE" });
+        return reply.code(409).send({ code: "FEDERATION_PEER_NOT_QUERYABLE" });
       }
       if (
         peer.circuitOpenUntil &&
@@ -1039,9 +1037,7 @@ export function registerContextFabricRoutes(
       ) {
         const retryAfterSeconds = Math.max(
           1,
-          Math.ceil(
-            (peer.circuitOpenUntil.getTime() - Date.now()) / 1_000,
-          ),
+          Math.ceil((peer.circuitOpenUntil.getTime() - Date.now()) / 1_000),
         );
         reply.header("retry-after", String(retryAfterSeconds));
         return reply.code(503).send({
@@ -1291,9 +1287,7 @@ export function registerContextFabricRoutes(
           : [],
       );
       const failures = remoteAttempts.flatMap((attempt) =>
-        attempt.ok
-          ? []
-          : [{ peerId: attempt.peerId, code: attempt.code }],
+        attempt.ok ? [] : [{ peerId: attempt.peerId, code: attempt.code }],
       );
       if (parsed.data.requireAllPeers && failures.length) {
         return reply.code(502).send({

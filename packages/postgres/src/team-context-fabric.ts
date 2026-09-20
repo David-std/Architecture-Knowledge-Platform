@@ -68,8 +68,7 @@ export interface ContextFabricPeerRecord {
   updatedAt: Date;
 }
 
-export interface ContextFabricPeerRuntimeRecord
-  extends ContextFabricPeerRecord {
+export interface ContextFabricPeerRuntimeRecord extends ContextFabricPeerRecord {
   credentialRef: string | null;
   failureCount: number;
   circuitOpenUntil: Date | null;
