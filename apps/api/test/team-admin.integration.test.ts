@@ -273,11 +273,6 @@ afterAll(async () => {
     [[ownCredentialId, crossCredentialId, agentPrincipalId]],
   );
   await db.pool.query(
-    `delete from event_outbox
-      where resource_id=$1 or correlation_id=$2`,
-    [agentPrincipalId, sessionId],
-  );
-  await db.pool.query(
     `delete from idempotency_records
       where actor_id=$1
         and idempotency_key=any($2::text[])`,
