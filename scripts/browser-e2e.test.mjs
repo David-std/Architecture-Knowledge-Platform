@@ -113,12 +113,9 @@ async function ensureApi() {
     await waitForUrl(API_URL + "/health/readiness", 1_500);
     return;
   } catch {
-    spawnService(
-      "api",
-      "pnpm",
-      ["--filter", "@akp/api", "start"],
-      { PORT: "8080" },
-    );
+    spawnService("api", "pnpm", ["--filter", "@akp/api", "start"], {
+      PORT: "8080",
+    });
     await waitForUrl(API_URL + "/health/readiness");
   }
 }
@@ -240,14 +237,11 @@ async function setupDatabase(db) {
     ],
   );
 
-  await db.query(
-    "insert into users(id,email,display_name) values($1,$2,$3)",
-    [
-      fixture.readerId,
-      fixture.readerId + "@browser-e2e.test",
-      "Browser Read Only",
-    ],
-  );
+  await db.query("insert into users(id,email,display_name) values($1,$2,$3)", [
+    fixture.readerId,
+    fixture.readerId + "@browser-e2e.test",
+    "Browser Read Only",
+  ]);
   await db.query(
     "insert into memberships(user_id,space_id,role,path_prefix) " +
       "values($1,$2,'VIEWER',null)",
@@ -604,7 +598,9 @@ test("critical browser workflows", async (t) => {
         remaining: ["Review evidence"],
         blockers: [],
         changedResourceRefs: ["browser/task-1"],
-        evidenceRefs: [bootstrap.context?.packetId ?? bootstrap.packetId ?? "packet"],
+        evidenceRefs: [
+          bootstrap.context?.packetId ?? bootstrap.packetId ?? "packet",
+        ],
         questions: ["Can the reader continue safely?"],
       },
     });
@@ -647,10 +643,7 @@ test("critical browser workflows", async (t) => {
         AKP_API_TOKEN: fixture.readerToken,
       },
     );
-    await Promise.all([
-      waitForUrl(ADMIN_WEB),
-      waitForUrl(READER_WEB),
-    ]);
+    await Promise.all([waitForUrl(ADMIN_WEB), waitForUrl(READER_WEB)]);
 
     browser = await chromium.launch({ headless: true });
     const adminContext = await browser.newContext();
@@ -685,43 +678,51 @@ test("critical browser workflows", async (t) => {
       await adminPage
         .locator('input[name="summary"]')
         .fill("Browser E2E governed authoring");
-      await adminPage
-        .locator('input[name="path"]')
-        .fill("browser/e2e-rule.md");
+      await adminPage.locator('input[name="path"]').fill("browser/e2e-rule.md");
       await adminPage
         .locator('input[name="reason"]')
         .fill("Browser E2E governed authoring flow");
-      await adminPage.locator('textarea[name="content"]').fill(
-        [
-          "---",
-          "id: BROWSER-E2E-RULE",
-          "type: rule",
-          "title: Browser E2E rule",
-          "status: ACTIVE",
-          "knowledge_layer: rules",
-          "---",
-          "",
-          "# Browser E2E rule",
-          "",
-          "A governed browser proposal must require human review.",
-        ].join("\n"),
-      );
+      await adminPage
+        .locator('textarea[name="content"]')
+        .fill(
+          [
+            "---",
+            "id: BROWSER-E2E-RULE",
+            "type: rule",
+            "title: Browser E2E rule",
+            "status: ACTIVE",
+            "knowledge_layer: rules",
+            "---",
+            "",
+            "# Browser E2E rule",
+            "",
+            "A governed browser proposal must require human review.",
+          ].join("\n"),
+        );
       await adminPage
         .getByRole("button", { name: "Save: crear draft Git" })
         .click();
-      await adminPage.getByText(/Draft Git|Review/i).first().waitFor();
+      await adminPage
+        .getByText(/Draft Git|Review/i)
+        .first()
+        .waitFor();
       const codes = await adminPage.locator("code").allTextContents();
       reviewId =
-        codes.find((value) =>
-          /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-            value.trim(),
-          ),
-        )?.trim() ?? "";
+        codes
+          .find((value) =>
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+              value.trim(),
+            ),
+          )
+          ?.trim() ?? "";
       assert.match(reviewId, /^[0-9a-f-]{36}$/i);
 
       await seedReviewEvidence(db, reviewId);
       await adminPage.getByRole("button", { name: "Submit review" }).click();
-      await adminPage.getByText(/enviado|submitted|review/i).first().waitFor();
+      await adminPage
+        .getByText(/enviado|submitted|review/i)
+        .first()
+        .waitFor();
     });
 
     await browserStep(t, "3 review approve with evidence", pages, async () => {
