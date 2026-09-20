@@ -765,9 +765,8 @@ describe("P2 governed product flow", () => {
       },
     });
     expect(affectedWorkObject.statusCode, affectedWorkObject.body).toBe(201);
-    const affectedWorkObjectId = (
-      affectedWorkObject.json() as { id: string }
-    ).id;
+    const affectedWorkObjectId = (affectedWorkObject.json() as { id: string })
+      .id;
 
     const createdDecision = await app.inject({
       method: "POST",

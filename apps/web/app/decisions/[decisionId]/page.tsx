@@ -320,9 +320,7 @@ export default async function DecisionPage({
             <ul>
               {snapshot.affectedObjectRefIds.map((objectRefId) => (
                 <li key={objectRefId}>
-                  <Link
-                    href={`/work/${objectRefId}?sessionId=${sessionId}`}
-                  >
+                  <Link href={`/work/${objectRefId}?sessionId=${sessionId}`}>
                     work object {short(objectRefId)}
                   </Link>
                 </li>

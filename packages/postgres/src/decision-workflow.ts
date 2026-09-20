@@ -425,8 +425,7 @@ export async function createDecisionCandidate(
         [input.sessionId, scope.vaultId, input.affectedObjectRefIds],
       );
       if (
-        affectedObjects.rowCount !==
-        new Set(input.affectedObjectRefIds).size
+        affectedObjects.rowCount !== new Set(input.affectedObjectRefIds).size
       ) {
         throw decisionError("DECISION_AFFECTED_OBJECT_NOT_FOUND", 404);
       }
@@ -522,7 +521,12 @@ export async function listDecisionCandidates(
             )
           )
         order by candidate.created_at,candidate.id`,
-      [input.sessionId, scope.spaceId, scope.vaultId, input.objectRefId ?? null],
+      [
+        input.sessionId,
+        scope.spaceId,
+        scope.vaultId,
+        input.objectRefId ?? null,
+      ],
     );
     await client.query("commit");
     return result.rows.map(candidateRecord);

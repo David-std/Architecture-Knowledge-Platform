@@ -128,9 +128,7 @@ export default async function WorkObjectPage({
       akp<{ events: Activity[] }>(
         `/v1/sessions/${encodeURIComponent(sessionId)}/activity?objectRefId=${encodeURIComponent(id)}&limit=200`,
       ),
-      akp<SessionState>(
-        `/v1/sessions/${encodeURIComponent(sessionId)}/state`,
-      ),
+      akp<SessionState>(`/v1/sessions/${encodeURIComponent(sessionId)}/state`),
       akp<{ decisions: Decision[] }>(
         `/v1/sessions/${encodeURIComponent(sessionId)}/decisions?objectRefId=${encodeURIComponent(id)}`,
       ),
@@ -151,7 +149,9 @@ export default async function WorkObjectPage({
   );
   const claimIds = new Set(objectClaims.map((claim) => claim.id));
   const findings = state.events.filter(
-    (event) => event.event_type === "FINDING" && Boolean(event.claim_id) &&
+    (event) =>
+      event.event_type === "FINDING" &&
+      Boolean(event.claim_id) &&
       claimIds.has(String(event.claim_id)),
   );
   const terminalActivity = activityResponse.events.filter((event) =>
@@ -318,9 +318,7 @@ export default async function WorkObjectPage({
               {linkedCode.map(({ event, related }) => (
                 <tr key={event.id}>
                   <td>
-                    <Link
-                      href={`/work/${related.id}?sessionId=${sessionId}`}
-                    >
+                    <Link href={`/work/${related.id}?sessionId=${sessionId}`}>
                       {title(related, related.id)}
                     </Link>
                   </td>
@@ -398,8 +396,8 @@ export default async function WorkObjectPage({
                 </strong>
                 <br />
                 <small className="muted">
-                  event {finding.id} · actor{" "}
-                  {short(finding.actor_principal_id)} · {finding.created_at}
+                  event {finding.id} · actor {short(finding.actor_principal_id)}{" "}
+                  · {finding.created_at}
                 </small>
               </li>
             ))}
