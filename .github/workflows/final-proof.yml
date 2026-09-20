@@ -47,6 +47,11 @@ jobs:
           AKP_CAPABILITY_ACCEPTANCE_JSON: reports/ci/capability-acceptance.json
           AKP_CAPABILITY_ACCEPTANCE_MARKDOWN: reports/ci/capability-acceptance.md
         run: pnpm proof:capabilities
+      - name: Generate parity and exclusion reports
+        env:
+          AKP_CAPABILITY_ACCEPTANCE_JSON: reports/ci/capability-acceptance.json
+          AKP_PARITY_EXCLUSION_DIR: reports/ci/parity-exclusions
+        run: pnpm proof:parity-exclusions
       - name: Upload final-proof evidence
         if: always()
         uses: actions/upload-artifact@v7
@@ -57,5 +62,6 @@ jobs:
             reports/ci/final-proof-evidence.json
             reports/ci/capability-acceptance.json
             reports/ci/capability-acceptance.md
+            reports/ci/parity-exclusions
           if-no-files-found: warn
           retention-days: 30

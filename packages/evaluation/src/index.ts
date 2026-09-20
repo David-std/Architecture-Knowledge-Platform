@@ -13,6 +13,7 @@ export * from "./tool-ergonomics.js";
 export * from "./capability-acceptance.js";
 export * from "./agent-arena.js";
 export * from "./competitive-arena.js";
+export * from "./parity-exclusion.js";
 
 export interface RetrievalMetrics {
   recallAtK: number;
