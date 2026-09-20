@@ -29,11 +29,26 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           AKP_FINAL_PROOF_WORKFLOW_REPORT: reports/ci/final-proof-workflows.json
         run: node scripts/final-proof-workflows.mjs
-      - name: Upload final-proof workflow evidence
+      - name: Build capability evidence ledger
+        env:
+          AKP_FINAL_PROOF_WORKFLOW_REPORT: reports/ci/final-proof-workflows.json
+          AKP_CAPABILITY_EVIDENCE_LEDGER: reports/ci/final-proof-evidence.json
+        run: pnpm proof:evidence
+      - name: Generate capability acceptance matrix
+        env:
+          AKP_CAPABILITY_EVIDENCE_LEDGER: reports/ci/final-proof-evidence.json
+          AKP_CAPABILITY_ACCEPTANCE_JSON: reports/ci/capability-acceptance.json
+          AKP_CAPABILITY_ACCEPTANCE_MARKDOWN: reports/ci/capability-acceptance.md
+        run: pnpm proof:capabilities
+      - name: Upload final-proof evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: final-proof-workflows-${{ github.run_id }}
-          path: reports/ci/final-proof-workflows.json
-          if-no-files-found: error
+          name: final-proof-${{ github.run_id }}
+          path: |
+            reports/ci/final-proof-workflows.json
+            reports/ci/final-proof-evidence.json
+            reports/ci/capability-acceptance.json
+            reports/ci/capability-acceptance.md
+          if-no-files-found: warn
           retention-days: 30

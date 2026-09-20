@@ -45,9 +45,7 @@ function canonicalChecksum(sql: string): string {
     .digest("hex");
 }
 
-const baseline = JSON.parse(
-  await readFile(baselinePath, "utf8"),
-) as Baseline;
+const baseline = JSON.parse(await readFile(baselinePath, "utf8")) as Baseline;
 if (
   baseline.schemaVersion !== 1 ||
   baseline.baselineVersion !== "v0.3.0" ||
@@ -88,10 +86,7 @@ try {
   `);
   for (const migrationPath of baseMigrationPaths) {
     const name = path.posix.basename(migrationPath);
-    const sql = await git([
-      "show",
-      `${baseline.baseCommit}:${migrationPath}`,
-    ]);
+    const sql = await git(["show", `${baseline.baseCommit}:${migrationPath}`]);
     const checksum = canonicalChecksum(sql);
     await seedClient.query("begin");
     try {
@@ -122,9 +117,7 @@ try {
   const applied = await verifyClient.query<{
     name: string;
     checksum: string | null;
-  }>(
-    "select name,checksum from schema_migrations order by name",
-  );
+  }>("select name,checksum from schema_migrations order by name");
   if (applied.rows.length !== currentMigrationNames.length) {
     throw new Error(
       `Expected ${currentMigrationNames.length} applied migrations after upgrade, found ${applied.rows.length}.`,

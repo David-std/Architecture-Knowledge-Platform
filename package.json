@@ -47,7 +47,8 @@
     "proof:capabilities": "tsx scripts/capability-acceptance-matrix.ts",
     "benchmark:agent-arena": "tsx scripts/agent-arena-benchmark.ts",
     "benchmark:competitive": "tsx scripts/competitive-arena-report.ts",
-    "proof:upgrade-migrations": "tsx scripts/verify-upgrade-migrations.ts"
+    "proof:upgrade-migrations": "tsx scripts/verify-upgrade-migrations.ts",
+    "proof:evidence": "node scripts/final-proof-evidence.mjs"
   },
   "devDependencies": {
     "@types/mime-types": "^3.0.1",

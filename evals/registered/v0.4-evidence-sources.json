@@ -1,0 +1,967 @@
+{
+  "schemaVersion": 1,
+  "release": "v0.4.0",
+  "policy": "Every listed source is required. Only directly matching runtime, integration, benchmark, recovery, security, documentation, or operator-surface evidence is mapped. Broad build/typecheck success is not accepted as behavioral proof. Unmapped evidence remains SKIPPED in final proof and therefore cannot raise capability maturity.",
+  "evidence": {
+    "remote:ci": {
+      "sources": [
+        {
+          "type": "WORKFLOW",
+          "workflow": "ci"
+        }
+      ]
+    },
+    "remote:recovery": {
+      "sources": [
+        {
+          "type": "WORKFLOW",
+          "workflow": "recovery"
+        }
+      ]
+    },
+    "remote:resilience": {
+      "sources": [
+        {
+          "type": "WORKFLOW",
+          "workflow": "resilience-matrix"
+        }
+      ]
+    },
+    "remote:team-node": {
+      "sources": [
+        {
+          "type": "WORKFLOW",
+          "workflow": "team-node"
+        }
+      ]
+    },
+    "remote:semantic": {
+      "sources": [
+        {
+          "type": "WORKFLOW",
+          "workflow": "semantic-retrieval"
+        }
+      ]
+    },
+    "remote:scale": {
+      "sources": [
+        {
+          "type": "WORKFLOW",
+          "workflow": "scale-benchmark"
+        }
+      ]
+    },
+    "remote:concurrency": {
+      "sources": [
+        {
+          "type": "WORKFLOW",
+          "workflow": "concurrency-benchmark"
+        }
+      ]
+    },
+    "remote:document-intelligence": {
+      "sources": [
+        {
+          "type": "WORKFLOW",
+          "workflow": "document-intelligence-benchmark"
+        }
+      ]
+    },
+    "remote:agent": {
+      "sources": [
+        {
+          "type": "WORKFLOW",
+          "workflow": "agent-ab"
+        },
+        {
+          "type": "WORKFLOW",
+          "workflow": "agent-arena"
+        }
+      ]
+    },
+    "doc:team-context": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "docs/guides/team-context.md"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm docs:validate"
+        }
+      ]
+    },
+    "doc:enterprise-deployment": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "docs/guides/enterprise-deployment.md"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm docs:validate"
+        }
+      ]
+    },
+    "doc:agent-integration": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "docs/guides/agent-integration.md"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm docs:validate"
+        }
+      ]
+    },
+    "doc:graph-model": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "docs/guides/graph-model.md"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm docs:validate"
+        }
+      ]
+    },
+    "doc:code-context": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "docs/guides/code-context.md"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm docs:validate"
+        }
+      ]
+    },
+    "doc:temporal-truth": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "docs/guides/temporal-truth.md"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm docs:validate"
+        }
+      ]
+    },
+    "doc:retrieval-context-engineering": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "docs/guides/retrieval-context-engineering.md"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm docs:validate"
+        }
+      ]
+    },
+    "doc:knowledge-profiles": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "docs/guides/knowledge-profiles.md"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm docs:validate"
+        }
+      ]
+    },
+    "doc:federation": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "docs/guides/federation.md"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm docs:validate"
+        }
+      ]
+    },
+    "doc:contributor-reviewer": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "docs/guides/contributor-reviewer.md"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm docs:validate"
+        }
+      ]
+    },
+    "doc:assurance-connectors": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "docs/guides/assurance-connectors.md"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm docs:validate"
+        }
+      ]
+    },
+    "doc:operations-recovery": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "docs/guides/operations-recovery.md"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm docs:validate"
+        }
+      ]
+    },
+    "benchmark:agent-five-arm": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "agent-arena",
+          "job": "five-arm-arena",
+          "step": "Validate five-arm evidence discipline"
+        }
+      ]
+    },
+    "benchmark:concurrency": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "concurrency-benchmark",
+          "job": "api-and-worker-concurrency",
+          "step": "Validate concurrency evidence dimensions"
+        }
+      ]
+    },
+    "benchmark:document-intelligence": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "document-intelligence-benchmark",
+          "job": "binary-fidelity-and-resources",
+          "step": "Validate benchmark evidence boundaries"
+        }
+      ]
+    },
+    "benchmark:enterprise-state": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "scale-benchmark",
+          "job": "enterprise-state-scale",
+          "step": "Validate enterprise-state evidence"
+        }
+      ]
+    },
+    "benchmark:retrieval-quality": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "semantic-retrieval",
+          "job": "real-multilingual-semantic-retrieval",
+          "step": "Execute registered public corpus retrieval benchmark"
+        }
+      ]
+    },
+    "benchmark:scale": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "scale-benchmark",
+          "job": "aggregate-scale-evidence",
+          "step": "Validate and aggregate exact scale matrix"
+        }
+      ]
+    },
+    "benchmark:semantic": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "semantic-retrieval",
+          "job": "real-multilingual-semantic-retrieval",
+          "step": "Execute pinned multilingual semantic retrieval end to end"
+        }
+      ]
+    },
+    "benchmark:semantic-isolation": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "semantic-retrieval",
+          "job": "real-multilingual-semantic-retrieval",
+          "step": "Validate filtered ANN evidence boundaries"
+        }
+      ]
+    },
+    "test:advanced-retrieval-runtime": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "semantic-retrieval",
+          "job": "real-multilingual-semantic-retrieval",
+          "step": "Execute retrieval matrix through the real runtime pipeline"
+        }
+      ]
+    },
+    "test:agent-context-runtime": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "agent-ab",
+          "job": "controlled-comparison",
+          "step": "Validate agent context tool ergonomics evidence"
+        }
+      ]
+    },
+    "test:assurance-connectors-runtime": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "resilience-matrix",
+          "job": "injected-failures",
+          "step": "Validate Continuous Assurance and authenticated connector boundaries"
+        }
+      ]
+    },
+    "test:authorization-runtime": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "semantic-retrieval",
+          "job": "real-multilingual-semantic-retrieval",
+          "step": "Validate filtered ANN evidence boundaries"
+        }
+      ]
+    },
+    "test:browser-critical-flows": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run critical browser E2E"
+        }
+      ]
+    },
+    "test:code-context-runtime": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "test:doctor-runtime": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run operator doctor diagnostics"
+        }
+      ]
+    },
+    "test:document-intelligence-runtime": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "document-intelligence-ocr-e2e",
+          "step": "Prove durable OCR ingest through API, worker, artifact and evidence"
+        }
+      ]
+    },
+    "test:graph-runtime": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "test:ingest-lifecycle": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "test:profile-runtime": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "test:temporal-truth-runtime": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run temporal truth maintenance integration"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "test:workspace-runtime": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "integration:assurance-connectors": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "resilience-matrix",
+          "job": "injected-failures",
+          "step": "Validate Continuous Assurance and authenticated connector boundaries"
+        }
+      ]
+    },
+    "integration:document-intelligence": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "integration:federated-graph": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "resilience-matrix",
+          "job": "injected-failures",
+          "step": "Validate recovery and failure-injection boundaries"
+        }
+      ]
+    },
+    "integration:graphify-live": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "code-graph-graphify",
+          "step": "Verify real Graphify adapter"
+        }
+      ]
+    },
+    "integration:mcp-context-facade": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "agent-ab",
+          "job": "controlled-comparison",
+          "step": "Validate agent context tool ergonomics evidence"
+        }
+      ]
+    },
+    "integration:multi-space-security": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "semantic-retrieval",
+          "job": "real-multilingual-semantic-retrieval",
+          "step": "Validate filtered ANN evidence boundaries"
+        }
+      ]
+    },
+    "integration:operations-runtime": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm verify:runtime"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run operator doctor diagnostics"
+        }
+      ]
+    },
+    "integration:product-lifecycle": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "integration:profile-governance": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "integration:retrieval-context": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "semantic-retrieval",
+          "job": "real-multilingual-semantic-retrieval",
+          "step": "Execute retrieval matrix through the real runtime pipeline"
+        }
+      ]
+    },
+    "integration:team-node": {
+      "sources": [
+        {
+          "type": "WORKFLOW",
+          "workflow": "team-node"
+        }
+      ]
+    },
+    "integration:temporal-truth": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "integration:web-workspace": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run critical browser E2E"
+        }
+      ]
+    },
+    "failure:autosave-git-failure": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run critical browser E2E"
+        }
+      ]
+    },
+    "failure:connector-checkpoint-window": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "resilience-matrix",
+          "job": "injected-failures",
+          "step": "Validate Continuous Assurance and authenticated connector boundaries"
+        }
+      ]
+    },
+    "failure:document-provider-unavailable": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "resilience-matrix",
+          "job": "injected-failures",
+          "step": "Validate unavailable document-intelligence provider fails closed"
+        }
+      ]
+    },
+    "failure:otel-unavailable": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "resilience-matrix",
+          "job": "injected-failures",
+          "step": "Start API with MCP absent and OpenTelemetry collector unreachable"
+        }
+      ]
+    },
+    "failure:profile-activation-rollback": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "failure:publication-compensation": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "resilience-matrix",
+          "job": "injected-failures",
+          "step": "Validate publication compensation and recovery"
+        }
+      ]
+    },
+    "failure:source-withdrawal-stale-index": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run temporal truth maintenance integration"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "failure:truth-changes-mid-query": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "failure:webhook-replay": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "resilience-matrix",
+          "job": "injected-failures",
+          "step": "Validate Continuous Assurance and authenticated connector boundaries"
+        }
+      ]
+    },
+    "failure:workspace-fencing": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "recovery:backup-restore-rebuild": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "resilience-matrix",
+          "job": "injected-failures",
+          "step": "Validate backup restore then projection rebuild"
+        }
+      ]
+    },
+    "recovery:derived-index-rebuild": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "resilience-matrix",
+          "job": "injected-failures",
+          "step": "Validate backup restore then projection rebuild"
+        }
+      ]
+    },
+    "recovery:managed-git-restore": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "recovery",
+          "job": "managed-git-restore",
+          "step": "Prove managed Git commit, files and searchable reindex after restore"
+        }
+      ]
+    },
+    "security:code-scope": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "security:connector-auth-replay": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "resilience-matrix",
+          "job": "injected-failures",
+          "step": "Validate Continuous Assurance and authenticated connector boundaries"
+        }
+      ]
+    },
+    "security:cross-space-retrieval": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "semantic-retrieval",
+          "job": "real-multilingual-semantic-retrieval",
+          "step": "Validate filtered ANN evidence boundaries"
+        }
+      ]
+    },
+    "security:cross-space-workspace": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "security:document-provider-boundary": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "python",
+          "step": "Run extractor suite with real local OCR tools"
+        }
+      ]
+    },
+    "security:profile-not-authority": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "security:scoped-ingest-review": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "security:secret-scan": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm security:secrets"
+        }
+      ]
+    },
+    "security:truth-scope": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "security:unauthorized-graph-hop": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "security:web-space-boundaries": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run critical browser E2E"
+        }
+      ]
+    },
+    "surface:agent-context": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "agent-ab",
+          "job": "controlled-comparison",
+          "step": "Validate agent context tool ergonomics evidence"
+        }
+      ]
+    },
+    "surface:assurance-admin": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run critical browser E2E"
+        }
+      ]
+    },
+    "surface:cli-doctor": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run operator doctor diagnostics"
+        }
+      ]
+    },
+    "surface:code-context": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run critical browser E2E"
+        }
+      ]
+    },
+    "surface:connector-admin": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run critical browser E2E"
+        }
+      ]
+    },
+    "surface:doctor-federation": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run operator doctor diagnostics"
+        }
+      ]
+    },
+    "surface:graph-explorer": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run critical browser E2E"
+        }
+      ]
+    },
+    "surface:mcp-akp-context": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "agent-ab",
+          "job": "controlled-comparison",
+          "step": "Validate agent context tool ergonomics evidence"
+        }
+      ]
+    },
+    "surface:source-review-publication": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run critical browser E2E"
+        }
+      ]
+    },
+    "surface:temporal-context": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run critical browser E2E"
+        }
+      ]
+    },
+    "surface:web-workspace": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run critical browser E2E"
+        }
+      ]
+    },
+    "surface:workspace-home": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run critical browser E2E"
+        }
+      ]
+    }
+  }
+}
