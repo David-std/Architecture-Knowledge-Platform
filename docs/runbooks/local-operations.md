@@ -155,7 +155,7 @@ $env:AKP_MANAGED_REPO = 'D:\AKP\managed-knowledge'
 
 The v4 backup set contains PostgreSQL, MinIO data and a managed Git bundle when
 configured, plus explicitly non-secret configuration metadata. Its manifest
-declares the durable P11 state covered by the PostgreSQL dump: profile
+declares the durable enterprise state covered by the PostgreSQL dump: profile
 revisions/bindings, workspace pins/claims/events and promotion/review state,
 temporal facts/support sets, graph revision catalog, assurance findings,
 connector registrations/checkpoints/events and federation peer configuration.
