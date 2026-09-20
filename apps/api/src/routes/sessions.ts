@@ -517,9 +517,7 @@ export function registerSessionRoutes(
               spaceId: input.spaceId,
               vaultId: input.vaultId,
               sessionId: input.sessionId,
-              ...(input.objectRefId
-                ? { objectRefId: input.objectRefId }
-                : {}),
+              ...(input.objectRefId ? { objectRefId: input.objectRefId } : {}),
               federated: false,
               mode: "SOURCE_BACKED",
               maxTokens: input.maxTokens,
