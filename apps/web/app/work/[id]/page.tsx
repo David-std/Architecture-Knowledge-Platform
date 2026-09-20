@@ -88,9 +88,7 @@ export default async function WorkObjectPage({
     akp<{ events: Activity[] }>(
       `/v1/sessions/${encodeURIComponent(sessionId)}/activity?objectRefId=${encodeURIComponent(id)}&limit=200`,
     ),
-    akp<SessionState>(
-      `/v1/sessions/${encodeURIComponent(sessionId)}/state`,
-    ),
+    akp<SessionState>(`/v1/sessions/${encodeURIComponent(sessionId)}/state`),
   ]);
 
   const object = refsResponse.refs.find((ref) => ref.id === id);
@@ -182,9 +180,9 @@ export default async function WorkObjectPage({
       <h2>Explicit relations</h2>
       <section className="card">
         <p className="muted">
-          Sólo aparecen relaciones registradas en Work/Activity. Una
-          correlación observada o inferencia de modelo conserva su derivation y
-          no se presenta como causalidad probada.
+          Sólo aparecen relaciones registradas en Work/Activity. Una correlación
+          observada o inferencia de modelo conserva su derivation y no se
+          presenta como causalidad probada.
         </p>
         {relational.length ? (
           <table>

@@ -257,7 +257,9 @@ export default async function SessionObjectPage({
               {workRefs.map((ref) => (
                 <tr key={ref.id}>
                   <td>
-                    <Link href={`/work/${ref.id}?sessionId=${state.session.id}`}>
+                    <Link
+                      href={`/work/${ref.id}?sessionId=${state.session.id}`}
+                    >
                       {ref.title?.trim() || ref.externalId}
                     </Link>
                     <br />
