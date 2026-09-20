@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 1,
+  "evidenceLevel": "REGISTERED_V0_4_PRODUCT_CORPUS",
+  "sourceCorpus": "architecture-knowledge-platform-v0.4-product-docs",
+  "tasks": [
+    {
+      "id": "arena-exact-federation-revocation",
+      "category": "exact-lookup",
+      "query": "Which product guide states what happens to a federated peer and its credential reference when the peer is revoked?",
+      "intent": "EXACT_LOOKUP",
+      "mandatoryTerms": [
+        "DISABLED",
+        "credential reference"
+      ],
+      "forbiddenTerms": [],
+      "retrievalQuery": "peer revocation credential reference",
+      "goldCitations": [
+        "repo://docs/guides/federation.md"
+      ]
+    },
+    {
+      "id": "arena-concept-canonical-authority",
+      "category": "conceptual-synthesis",
+      "query": "What remains canonical knowledge in AKP and which major context stores are rebuildable projections rather than authority?",
+      "intent": "GLOBAL_SYNTHESIS",
+      "mandatoryTerms": [
+        "approved Markdown",
+        "Git",
+        "rebuildable"
+      ],
+      "forbiddenTerms": [],
+      "retrievalQuery": "canonical architecture rebuildable projections",
+      "goldCitations": [
+        "repo://ARCHITECTURE.md"
+      ]
+    },
+    {
+      "id": "arena-workflow-publication-recovery",
+      "category": "workflow-execution",
+      "query": "What must happen if reviewed Git publication succeeds but PostgreSQL publication finalization fails, including the unsafe-attribution case?",
+      "intent": "WORKFLOW_EXECUTION",
+      "mandatoryTerms": [
+        "Git revert",
+        "CHANGES_REQUESTED",
+        "PUBLICATION_RECOVERY_REQUIRED"
+      ],
+      "forbiddenTerms": [],
+      "retrievalQuery": "publication recovery unsafe attribution",
+      "goldCitations": [
+        "repo://docs/architecture/runtime-flows.md"
+      ]
+    },
+    {
+      "id": "arena-source-sanitized-audit",
+      "category": "source-verification",
+      "query": "Which three content categories are deliberately omitted from sample ContextPacket files in a sanitized audit bundle?",
+      "intent": "SOURCE_VERIFICATION",
+      "mandatoryTerms": [
+        "query text",
+        "citations",
+        "section content"
+      ],
+      "forbiddenTerms": [],
+      "retrievalQuery": "sanitized audit bundle ContextPacket omitted",
+      "goldCitations": [
+        "repo://docs/architecture/audit-export.md"
+      ]
+    },
+    {
+      "id": "arena-code-impact-boundary",
+      "category": "project-code-impact",
+      "query": "Before a broad code change, what authority and revision boundaries must a code-impact result preserve, and what does the code graph not replace?",
+      "intent": "PROJECT_CODE",
+      "mandatoryTerms": [
+        "repository",
+        "commit",
+        "rebuildable projection"
+      ],
+      "forbiddenTerms": [],
+      "retrievalQuery": "code impact repository commit projection authority",
+      "goldCitations": [
+        "repo://docs/guides/code-context.md"
+      ]
+    },
+    {
+      "id": "arena-historical-as-of",
+      "category": "historical-as-of",
+      "query": "How does AKP answer an as-of question without mixing a later superseding fact into the historical answer?",
+      "intent": "CONCEPTUAL",
+      "mandatoryTerms": [
+        "valid",
+        "truth revision",
+        "support"
+      ],
+      "forbiddenTerms": [],
+      "retrievalQuery": "historical as-of valid truth revision support",
+      "goldCitations": [
+        "repo://docs/guides/temporal-truth.md"
+      ]
+    },
+    {
+      "id": "arena-conflicting-knowledge",
+      "category": "conflicting-knowledge",
+      "query": "How does AKP represent conflicting or disputed knowledge, including alternative support, without silently choosing a winner?",
+      "intent": "CONCEPTUAL",
+      "mandatoryTerms": [
+        "DISPUTED",
+        "alternative support"
+      ],
+      "conflictTerms": [
+        "DISPUTED",
+        "alternative support"
+      ],
+      "forbiddenTerms": [
+        "automatically trusted"
+      ],
+      "retrievalQuery": "disputed alternative support truth",
+      "goldCitations": [
+        "repo://docs/guides/temporal-truth.md"
+      ]
+    },
+    {
+      "id": "arena-no-answer-managed-cloud",
+      "category": "no-answer",
+      "query": "Which public cloud region hosts the managed production AKP SaaS service?",
+      "intent": "CONCEPTUAL",
+      "mandatoryTerms": [],
+      "forbiddenTerms": [],
+      "expectNoAnswer": true
+    }
+  ]
+}

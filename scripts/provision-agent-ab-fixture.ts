@@ -41,8 +41,11 @@ function sha256(value: string): string {
 }
 
 async function main(): Promise<void> {
+  const manifestPath =
+    process.env.AKP_AGENT_AB_CORPUS ??
+    "evals/registered/public-product-corpus.json";
   const manifest = JSON.parse(
-    await readFile("evals/registered/public-product-corpus.json", "utf8"),
+    await readFile(manifestPath, "utf8"),
   ) as RegisteredManifest;
   const db = new Postgres(databaseUrl);
   const documentIds = new Map<string, string>();
