@@ -55,6 +55,7 @@ import { buildCompilationStage } from "./compilation-stage.js";
 import { evaluateCompilationProbes } from "./compilation-probes.js";
 import { selectEvidenceFragment } from "./evidence-fragment.js";
 import { resolveAuthorizedLocalSource } from "./source-boundary.js";
+import { operationalErrorRecord } from "./operational-error.js";
 import { resolveSourceModelResidency } from "./source-model-residency.js";
 import {
   appendDocumentIntelligenceFormFields,
@@ -288,15 +289,6 @@ async function recordProviderTaskEvent(
   }
 }
 
-function providerTaskErrorMessage(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-  return message
-    .replace(
-      /(?:[A-Za-z]:[\\/]|\\\\|file:\/\/|\/(?:Users|home|tmp|var)\/)[^\s"']+/g,
-      "[REDACTED_PATH]",
-    )
-    .slice(0, 2_000);
-}
 
 async function processJob(job: Record<string, unknown>): Promise<void> {
   const id = String(job.id);
@@ -467,9 +459,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
           body: upload,
         });
         if (!response.ok) {
-          throw new Error(
-            `Extractor failed: ${response.status} ${await response.text()}`,
-          );
+          throw new Error(`EXTRACTOR_PROVIDER_HTTP_${response.status}`);
         }
         const extractedResponse = (await response.json()) as unknown;
         const expectedIdentity = {
@@ -490,7 +480,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
           ocrRequested:
             documentIntelligence.ocrRequired ||
             documentIntelligence.ocr === true,
-          message: providerTaskErrorMessage(error),
+          ...operationalErrorRecord(error),
         });
         throw error;
       }
@@ -837,6 +827,7 @@ async function handleFailure(
   job: Record<string, unknown>,
   error: unknown,
 ): Promise<void> {
+  const safeError = operationalErrorRecord(error);
   const attempts = Number(job.attempts ?? 0) + 1;
   const maxAttempts = Number(job.max_attempts ?? 5);
   const terminal = attempts >= maxAttempts;
@@ -863,9 +854,7 @@ async function handleFailure(
         job.id,
         terminal,
         attempts,
-        JSON.stringify({
-          message: error instanceof Error ? error.message : String(error),
-        }),
+        JSON.stringify(safeError),
         delaySeconds,
         workerId,
         version,
@@ -884,7 +873,7 @@ async function handleFailure(
           attempts,
           maxAttempts,
           delaySeconds,
-          message: String(error),
+          ...safeError,
         }),
       ],
     );
