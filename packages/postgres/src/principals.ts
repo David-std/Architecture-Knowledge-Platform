@@ -47,6 +47,7 @@ export interface PrincipalRecord {
   allowedActions: string[];
   policyRevision: number;
   state: "ACTIVE" | "REVOKED";
+  createdAt: Date;
   revokedAt: Date | null;
 }
 
@@ -76,6 +77,7 @@ function normalizePrincipal(row: Record<string, unknown>): PrincipalRecord {
       : [],
     policyRevision: Number(row.policy_revision),
     state: String(row.state) as PrincipalRecord["state"],
+    createdAt: new Date(String(row.created_at)),
     revokedAt: row.revoked_at ? new Date(String(row.revoked_at)) : null,
   };
 }

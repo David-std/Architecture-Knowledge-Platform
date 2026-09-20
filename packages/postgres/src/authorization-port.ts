@@ -17,7 +17,29 @@ export interface AuthorizationDecisionScope extends AuthorizedVaultScope {
   policyRevision: string;
 }
 
+export type AuthorizationDecisionStatus =
+  | "ALLOW"
+  | "DENY"
+  | "INDETERMINATE"
+  | "BACKEND_UNAVAILABLE";
+
+export type AuthorizationVaultScopeDecision =
+  | { status: "ALLOW"; scope: AuthorizationDecisionScope }
+  | {
+      status: Exclude<AuthorizationDecisionStatus, "ALLOW">;
+      code: string;
+      sourceCode: string;
+    };
+
+export type AuthorizationScopeResolver = (
+  db: Postgres,
+  request: AuthorizedVaultScopeRequest,
+) => Promise<AuthorizedVaultScope>;
+
 export interface AuthorizationPort {
+  resolveVaultScopeDecision(
+    request: AuthorizedVaultScopeRequest,
+  ): Promise<AuthorizationVaultScopeDecision>;
   resolveVaultScope(
     request: AuthorizedVaultScopeRequest,
   ): Promise<AuthorizationDecisionScope>;
@@ -29,6 +51,81 @@ export interface AuthorizationPort {
     scope: AuthorizedVaultScope,
     candidates: readonly T[],
   ): T[];
+}
+
+const DENY_CODES = new Set([
+  "VAULT_SCOPE_REQUIRED",
+  "VAULT_SCOPE_NOT_FOUND",
+  "VAULT_ACCESS_DENIED",
+  "FEDERATED_QUERY_REQUIRES_EXPLICIT_OPT_IN",
+]);
+
+const BACKEND_CODES = new Set([
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "ETIMEDOUT",
+  "57P01",
+  "57P02",
+  "57P03",
+]);
+
+function sourceErrorCode(error: unknown): string {
+  if (error && typeof error === "object") {
+    const candidate = (error as { code?: unknown }).code;
+    if (typeof candidate === "string" && candidate) return candidate;
+  }
+  return error instanceof Error && error.message
+    ? error.message
+    : "AUTHORIZATION_UNKNOWN_ERROR";
+}
+
+function authorizationFailureDecision(
+  error: unknown,
+): Exclude<AuthorizationVaultScopeDecision, { status: "ALLOW" }> {
+  const sourceCode = sourceErrorCode(error);
+  if (DENY_CODES.has(sourceCode)) {
+    return { status: "DENY", code: sourceCode, sourceCode };
+  }
+  if (
+    BACKEND_CODES.has(sourceCode) ||
+    sourceCode.startsWith("08") ||
+    /connection (?:terminated|refused|reset)|database.*unavailable/i.test(
+      error instanceof Error ? error.message : "",
+    )
+  ) {
+    return {
+      status: "BACKEND_UNAVAILABLE",
+      code: "AUTHORIZATION_BACKEND_UNAVAILABLE",
+      sourceCode,
+    };
+  }
+  return {
+    status: "INDETERMINATE",
+    code: "AUTHORIZATION_INDETERMINATE",
+    sourceCode,
+  };
+}
+
+function authorizationDecisionError(
+  decision: Exclude<AuthorizationVaultScopeDecision, { status: "ALLOW" }>,
+): Error {
+  const error = new Error(decision.code) as Error & {
+    code?: string;
+    statusCode?: number;
+    authorizationStatus?: AuthorizationDecisionStatus;
+    sourceCode?: string;
+  };
+  error.code = decision.code;
+  error.statusCode =
+    decision.status === "BACKEND_UNAVAILABLE" ||
+    decision.status === "INDETERMINATE"
+      ? 503
+      : 403;
+  error.authorizationStatus = decision.status;
+  error.sourceCode = decision.sourceCode;
+  return error;
 }
 
 export function authorizationDecisionRevision(
@@ -64,18 +161,43 @@ export function authorizationDecisionRevision(
  * Built-in authorization adapter. Retrieval/planning callers use the resolved
  * scope before candidate expansion; this is intentionally not a final-output
  * redaction layer. A pathless resource requires an unrestricted vault scope.
+ *
+ * Non-ALLOW outcomes are explicit so callers can distinguish a policy deny
+ * from an unknown decision or an unavailable authorization backend. The
+ * convenience resolveVaultScope method always fails closed for all three.
  */
 export class PostgresAuthorizationPort implements AuthorizationPort {
-  constructor(private readonly db: Postgres) {}
+  constructor(
+    private readonly db: Postgres,
+    private readonly scopeResolver: AuthorizationScopeResolver = (
+      database,
+      request,
+    ) => resolveAuthorizedVaultScope(database, request),
+  ) {}
+
+  async resolveVaultScopeDecision(
+    request: AuthorizedVaultScopeRequest,
+  ): Promise<AuthorizationVaultScopeDecision> {
+    try {
+      const scope = await this.scopeResolver(this.db, request);
+      return {
+        status: "ALLOW",
+        scope: {
+          ...scope,
+          policyRevision: authorizationDecisionRevision(request, scope),
+        },
+      };
+    } catch (error) {
+      return authorizationFailureDecision(error);
+    }
+  }
 
   async resolveVaultScope(
     request: AuthorizedVaultScopeRequest,
   ): Promise<AuthorizationDecisionScope> {
-    const scope = await resolveAuthorizedVaultScope(this.db, request);
-    return {
-      ...scope,
-      policyRevision: authorizationDecisionRevision(request, scope),
-    };
+    const decision = await this.resolveVaultScopeDecision(request);
+    if (decision.status === "ALLOW") return decision.scope;
+    throw authorizationDecisionError(decision);
   }
 
   canExpandResource(

@@ -2821,7 +2821,10 @@ export function registerSearchRoutes(
               ? 404
               : code === "VAULT_ACCESS_DENIED"
                 ? 403
-                : 400,
+                : code === "AUTHORIZATION_INDETERMINATE" ||
+                    code === "AUTHORIZATION_BACKEND_UNAVAILABLE"
+                  ? 503
+                  : 400,
           )
           .send({ code });
       }
@@ -3177,7 +3180,10 @@ export function registerSearchRoutes(
               ? 404
               : code === "VAULT_ACCESS_DENIED"
                 ? 403
-                : 400,
+                : code === "AUTHORIZATION_INDETERMINATE" ||
+                    code === "AUTHORIZATION_BACKEND_UNAVAILABLE"
+                  ? 503
+                  : 400,
           )
           .send({ code });
       }
