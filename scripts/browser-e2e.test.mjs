@@ -89,6 +89,7 @@ function spawnService(label, command, args, env = {}) {
     cwd: ROOT,
     env: { ...process.env, ...env },
     stdio: ["ignore", "pipe", "pipe"],
+    detached: process.platform !== "win32",
   });
   child.stdout.pipe(log);
   child.stderr.pipe(log);
@@ -106,6 +107,32 @@ function spawnService(label, command, args, env = {}) {
   });
   children.push(child);
   return child;
+}
+
+async function stopService(child) {
+  if (!child || child.exitCode !== null) return;
+  const exited = new Promise((resolve) => child.once("exit", resolve));
+  try {
+    if (process.platform !== "win32" && child.pid) {
+      process.kill(-child.pid, "SIGTERM");
+    } else {
+      child.kill("SIGTERM");
+    }
+  } catch {
+    return;
+  }
+  await Promise.race([exited, delay(2_000)]);
+  if (child.exitCode !== null) return;
+  try {
+    if (process.platform !== "win32" && child.pid) {
+      process.kill(-child.pid, "SIGKILL");
+    } else {
+      child.kill("SIGKILL");
+    }
+  } catch {
+    return;
+  }
+  await Promise.race([exited, delay(1_000)]);
 }
 
 async function ensureApi() {
@@ -137,6 +164,7 @@ async function apiJson(
     method,
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
+    signal: AbortSignal.timeout(15_000),
   });
   const text = await response.text();
   const payload = text ? JSON.parse(text) : null;
@@ -505,11 +533,13 @@ async function screenshot(page, name) {
 }
 
 async function browserStep(t, name, pages, fn) {
-  await t.test(name, async () => {
+  await t.test(name, { timeout: 45_000 }, async () => {
     const started = Date.now();
+    console.log(`[browser-e2e] START ${name}`);
     try {
       await fn();
       record(name, "PASSED", { durationMs: Date.now() - started });
+      console.log(`[browser-e2e] PASS ${name}`);
     } catch (error) {
       for (const [label, page] of Object.entries(pages)) {
         await screenshot(page, name + "-" + label);
@@ -523,7 +553,7 @@ async function browserStep(t, name, pages, fn) {
   });
 }
 
-test("critical browser workflows", async (t) => {
+test("critical browser workflows", { timeout: 300_000 }, async (t) => {
   await mkdir(REPORT_DIR, { recursive: true });
   const db = new Client({ connectionString: DATABASE_URL });
   let browser;
@@ -908,10 +938,10 @@ test("critical browser workflows", async (t) => {
     if (browser) await browser.close().catch(() => undefined);
     await db.end().catch(() => undefined);
     for (const child of children.reverse()) {
-      if (!child.killed) child.kill("SIGTERM");
+      await stopService(child);
     }
     if (apiWasSpawned) {
-      await delay(250);
+      console.log("[browser-e2e] disposable API stopped");
     }
   }
 });
