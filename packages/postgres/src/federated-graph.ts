@@ -51,11 +51,7 @@ type GraphProjectionLifecycle =
   "REQUESTED" | "BUILT" | "ACTIVE" | "STALE" | "FAILED";
 type GraphProjectionFreshness = "FRESH" | "STALE";
 type GraphCatalogStatus =
-  | "READY"
-  | "BUILDING"
-  | "STALE"
-  | "DEGRADED"
-  | "UNAVAILABLE";
+  "READY" | "BUILDING" | "STALE" | "DEGRADED" | "UNAVAILABLE";
 
 const GRAPH_CATALOG_CAPABILITIES: Readonly<
   Record<GraphDomain, readonly string[]>
@@ -1580,7 +1576,9 @@ export class PostgresFederatedGraphStore
 
     const grouped = new Map<string, CatalogProjectionRow[]>();
     for (const row of visible) {
-      const key = [row.graph_domain, row.scope_id, row.vault_id ?? ""].join("|");
+      const key = [row.graph_domain, row.scope_id, row.vault_id ?? ""].join(
+        "|",
+      );
       const entries = grouped.get(key) ?? [];
       entries.push(row);
       grouped.set(key, entries);

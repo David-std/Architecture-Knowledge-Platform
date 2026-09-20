@@ -4,6 +4,10 @@ import {
   GraphCatalogEntry,
   GraphPathResult,
   GraphProjectionRevision,
+  RuntimeGraphNodeKind,
+  RuntimeObservationEnvelope,
+  SoftwareCatalogNodeKind,
+  SoftwareCatalogRelation,
   type GraphDerivation,
   type GraphDomain,
   type GraphNodeIdentity,
@@ -194,6 +198,11 @@ function artifact(input: {
   vaultId: string | null;
   scopeId: string;
   revision: string;
+  sourceRevision?: string;
+  sourceHash?: string | null;
+  provider?: string;
+  providerVersion?: string | null;
+  configurationVersion?: string;
   nodes: readonly GraphProjectionNodeInput[];
   edges?: readonly GraphProjectionEdgeInput[];
 }): GraphProjectionArtifact {
@@ -203,11 +212,12 @@ function artifact(input: {
     vaultId: input.vaultId,
     scopeId: input.scopeId,
     revision: input.revision,
-    sourceRevision: `source:${input.revision}`,
-    sourceHash: null,
-    provider: "integration-fixture",
-    providerVersion: "1",
-    configurationVersion: "graph-config-v1",
+    sourceRevision: input.sourceRevision ?? `source:${input.revision}`,
+    sourceHash: input.sourceHash ?? null,
+    provider: input.provider ?? "integration-fixture",
+    providerVersion:
+      input.providerVersion === undefined ? "1" : input.providerVersion,
+    configurationVersion: input.configurationVersion ?? "graph-config-v1",
     nodes: input.nodes,
     edges: input.edges ?? [],
   };
@@ -1327,6 +1337,626 @@ describe("federated multi-graph substrate integration", () => {
       }
     },
   );
+
+  it.skipIf(!databaseUrl)(
+    "materializes the minimum software-catalog and runtime domain fixtures",
+    async () => {
+      if (!databaseUrl) return;
+      const db = new Postgres(databaseUrl);
+      const fixture = await createFixture(db);
+      const store = new PostgresFederatedGraphStore(db);
+      try {
+        const catalogScope = "catalog:specialized-fixture";
+        const catalogRevision = "catalog-specialized-r1";
+        const catalogNodes = {
+          domain: identity(
+            "SOFTWARE_CATALOG",
+            catalogScope,
+            SoftwareCatalogNodeKind.parse("domain"),
+            "payments",
+            catalogRevision,
+          ),
+          system: identity(
+            "SOFTWARE_CATALOG",
+            catalogScope,
+            SoftwareCatalogNodeKind.parse("system"),
+            "payments-platform",
+            catalogRevision,
+          ),
+          service: identity(
+            "SOFTWARE_CATALOG",
+            catalogScope,
+            SoftwareCatalogNodeKind.parse("service"),
+            "payments-api",
+            catalogRevision,
+          ),
+          component: identity(
+            "SOFTWARE_CATALOG",
+            catalogScope,
+            SoftwareCatalogNodeKind.parse("component"),
+            "ledger-adapter",
+            catalogRevision,
+          ),
+          api: identity(
+            "SOFTWARE_CATALOG",
+            catalogScope,
+            SoftwareCatalogNodeKind.parse("api"),
+            "payments-http",
+            catalogRevision,
+          ),
+          resource: identity(
+            "SOFTWARE_CATALOG",
+            catalogScope,
+            SoftwareCatalogNodeKind.parse("resource"),
+            "ledger-db",
+            catalogRevision,
+          ),
+          repository: identity(
+            "SOFTWARE_CATALOG",
+            catalogScope,
+            SoftwareCatalogNodeKind.parse("repository"),
+            "payments-repo",
+            catalogRevision,
+          ),
+          team: identity(
+            "SOFTWARE_CATALOG",
+            catalogScope,
+            SoftwareCatalogNodeKind.parse("team"),
+            "payments-team",
+            catalogRevision,
+          ),
+          person: identity(
+            "SOFTWARE_CATALOG",
+            catalogScope,
+            SoftwareCatalogNodeKind.parse("person"),
+            "alice",
+            catalogRevision,
+          ),
+        };
+        await store.build(
+          artifact({
+            graphDomain: "SOFTWARE_CATALOG",
+            spaceId: fixture.spaceId,
+            vaultId: fixture.vaultA,
+            scopeId: catalogScope,
+            revision: catalogRevision,
+            nodes: Object.entries(catalogNodes).map(([key, value]) =>
+              node(value, fixture.vaultA, `allowed/catalog/${key}`, {
+                name: value.canonicalKey,
+              }),
+            ),
+            edges: [
+              edge(
+                catalogNodes.system,
+                SoftwareCatalogRelation.parse("part_of"),
+                catalogNodes.domain,
+                "SOURCE_EXPLICIT",
+                catalogRevision,
+                { authorizationPath: "allowed/catalog/system" },
+              ),
+              edge(
+                catalogNodes.service,
+                SoftwareCatalogRelation.parse("part_of"),
+                catalogNodes.system,
+                "SOURCE_EXPLICIT",
+                catalogRevision,
+                { authorizationPath: "allowed/catalog/service" },
+              ),
+              edge(
+                catalogNodes.component,
+                SoftwareCatalogRelation.parse("part_of"),
+                catalogNodes.service,
+                "SOURCE_EXPLICIT",
+                catalogRevision,
+                { authorizationPath: "allowed/catalog/component" },
+              ),
+              edge(
+                catalogNodes.service,
+                SoftwareCatalogRelation.parse("owned_by"),
+                catalogNodes.team,
+                "SOURCE_EXPLICIT",
+                catalogRevision,
+                { authorizationPath: "allowed/catalog/service" },
+              ),
+              edge(
+                catalogNodes.service,
+                SoftwareCatalogRelation.parse("provides"),
+                catalogNodes.api,
+                "SOURCE_EXPLICIT",
+                catalogRevision,
+                { authorizationPath: "allowed/catalog/service" },
+              ),
+              edge(
+                catalogNodes.component,
+                SoftwareCatalogRelation.parse("consumes"),
+                catalogNodes.resource,
+                "SOURCE_EXPLICIT",
+                catalogRevision,
+                { authorizationPath: "allowed/catalog/component" },
+              ),
+              edge(
+                catalogNodes.service,
+                SoftwareCatalogRelation.parse("depends_on"),
+                catalogNodes.resource,
+                "SOURCE_EXPLICIT",
+                catalogRevision,
+                { authorizationPath: "allowed/catalog/service" },
+              ),
+              edge(
+                catalogNodes.service,
+                SoftwareCatalogRelation.parse("implemented_by"),
+                catalogNodes.repository,
+                "SOURCE_EXPLICIT",
+                catalogRevision,
+                { authorizationPath: "allowed/catalog/service" },
+              ),
+            ],
+          }),
+        );
+
+        const catalogKinds = await store.findNodes({
+          authorization: {
+            spaceId: fixture.spaceId,
+            vaults: [{ vaultId: fixture.vaultA, pathPrefix: "allowed" }],
+            allowSpaceScoped: false,
+          },
+          domains: ["SOFTWARE_CATALOG"],
+          kinds: [...SoftwareCatalogNodeKind.options],
+          freshnessPolicy: "FRESH_ONLY",
+          limit: 20,
+        });
+        expect(
+          [...new Set(catalogKinds.map((value) => value.identity.kind))].sort(),
+        ).toEqual([...SoftwareCatalogNodeKind.options].sort());
+
+        const catalogPaths = await store.paths({
+          ...queryBase(fixture, {
+            vaults: [{ vaultId: fixture.vaultA, pathPrefix: "allowed" }],
+            domains: ["SOFTWARE_CATALOG"],
+            relations: [...SoftwareCatalogRelation.options],
+            direction: "both",
+            maxHops: 3,
+          }),
+          seed: { identity: catalogNodes.service },
+        });
+        const encounteredCatalogRelations = new Set(
+          catalogPaths.flatMap((path) =>
+            path.steps.map((step) => step.relation),
+          ),
+        );
+        for (const relation of SoftwareCatalogRelation.options) {
+          expect(encounteredCatalogRelations.has(relation), relation).toBe(true);
+        }
+
+        const runtimeScope = "runtime:specialized-fixture";
+        const runtimeRevision = "runtime-window-r8";
+        const window = {
+          from: "2026-09-20T10:00:00.000Z",
+          to: "2026-09-20T10:05:00.000Z",
+        };
+        const runtimeNodes = {
+          deployment: identity(
+            "RUNTIME",
+            runtimeScope,
+            RuntimeGraphNodeKind.parse("deployment"),
+            "deploy-42",
+            runtimeRevision,
+          ),
+          environment: identity(
+            "RUNTIME",
+            runtimeScope,
+            RuntimeGraphNodeKind.parse("environment"),
+            "prod",
+            runtimeRevision,
+          ),
+          service: identity(
+            "RUNTIME",
+            runtimeScope,
+            RuntimeGraphNodeKind.parse("runtime-service"),
+            "payments-api",
+            runtimeRevision,
+          ),
+          call: identity(
+            "RUNTIME",
+            runtimeScope,
+            RuntimeGraphNodeKind.parse("runtime-call"),
+            "call-payments-ledger",
+            runtimeRevision,
+          ),
+          testRun: identity(
+            "RUNTIME",
+            runtimeScope,
+            RuntimeGraphNodeKind.parse("test-run"),
+            "TR-8",
+            runtimeRevision,
+          ),
+          alert: identity(
+            "RUNTIME",
+            runtimeScope,
+            RuntimeGraphNodeKind.parse("alert"),
+            "ALERT-8",
+            runtimeRevision,
+          ),
+        };
+        const observed = (extra: Record<string, unknown>) =>
+          RuntimeObservationEnvelope.parse({
+            window,
+            revision: "git:abc123",
+            deployment: "deploy-42",
+            ...extra,
+          });
+        await store.build(
+          artifact({
+            graphDomain: "RUNTIME",
+            spaceId: fixture.spaceId,
+            vaultId: fixture.vaultA,
+            scopeId: runtimeScope,
+            revision: runtimeRevision,
+            sourceRevision: "otel:window-8",
+            nodes: [
+              node(
+                runtimeNodes.deployment,
+                fixture.vaultA,
+                "allowed/runtime/deployment",
+                { revision: "git:abc123", environment: "prod" },
+              ),
+              node(
+                runtimeNodes.environment,
+                fixture.vaultA,
+                "allowed/runtime/environment",
+                { name: "prod" },
+              ),
+              node(
+                runtimeNodes.service,
+                fixture.vaultA,
+                "allowed/runtime/service",
+                { deployment: "deploy-42", revision: "git:abc123" },
+              ),
+              node(
+                runtimeNodes.call,
+                fixture.vaultA,
+                "allowed/runtime/call",
+                observed({ from: "payments-api", to: "ledger-api" }),
+              ),
+              node(
+                runtimeNodes.testRun,
+                fixture.vaultA,
+                "allowed/runtime/test-run",
+                observed({ test: "PaymentRotationTest", status: "passed" }),
+              ),
+              node(
+                runtimeNodes.alert,
+                fixture.vaultA,
+                "allowed/runtime/alert",
+                observed({ alertRef: "ALERT-8", severity: "warning" }),
+              ),
+            ],
+            edges: [
+              edge(
+                runtimeNodes.deployment,
+                "deployed_to",
+                runtimeNodes.environment,
+                "RUNTIME_OBSERVED",
+                runtimeRevision,
+                {
+                  authorizationPath: "allowed/runtime/deployment",
+                  validFrom: window.from,
+                  validTo: window.to,
+                },
+              ),
+              edge(
+                runtimeNodes.deployment,
+                "runs",
+                runtimeNodes.service,
+                "RUNTIME_OBSERVED",
+                runtimeRevision,
+                {
+                  authorizationPath: "allowed/runtime/deployment",
+                  validFrom: window.from,
+                  validTo: window.to,
+                },
+              ),
+              edge(
+                runtimeNodes.service,
+                "observed_call",
+                runtimeNodes.call,
+                "RUNTIME_OBSERVED",
+                runtimeRevision,
+                {
+                  authorizationPath: "allowed/runtime/service",
+                  validFrom: window.from,
+                  validTo: window.to,
+                },
+              ),
+              edge(
+                runtimeNodes.testRun,
+                "validated",
+                runtimeNodes.service,
+                "RUNTIME_OBSERVED",
+                runtimeRevision,
+                {
+                  authorizationPath: "allowed/runtime/test-run",
+                  validFrom: window.from,
+                  validTo: window.to,
+                },
+              ),
+              edge(
+                runtimeNodes.alert,
+                "observed_on",
+                runtimeNodes.service,
+                "RUNTIME_OBSERVED",
+                runtimeRevision,
+                {
+                  authorizationPath: "allowed/runtime/alert",
+                  validFrom: window.from,
+                  validTo: window.to,
+                },
+              ),
+            ],
+          }),
+        );
+
+        const runtimeKinds = await store.findNodes({
+          authorization: {
+            spaceId: fixture.spaceId,
+            vaults: [{ vaultId: fixture.vaultA, pathPrefix: "allowed" }],
+            allowSpaceScoped: false,
+          },
+          domains: ["RUNTIME"],
+          kinds: [
+            "deployment",
+            "environment",
+            "runtime-service",
+            "runtime-call",
+            "test-run",
+            "alert",
+          ],
+          freshnessPolicy: "FRESH_ONLY",
+          limit: 20,
+        });
+        expect(
+          [...new Set(runtimeKinds.map((value) => value.identity.kind))].sort(),
+        ).toEqual(
+          [
+            "alert",
+            "deployment",
+            "environment",
+            "runtime-call",
+            "runtime-service",
+            "test-run",
+          ].sort(),
+        );
+        for (const value of runtimeKinds.filter((candidate) =>
+          ["runtime-call", "test-run", "alert"].includes(
+            candidate.identity.kind,
+          ),
+        )) {
+          expect(
+            RuntimeObservationEnvelope.safeParse(value.payload).success,
+          ).toBe(true);
+        }
+      } finally {
+        await cleanupFixture(db, fixture).catch(() => undefined);
+        await db.close();
+      }
+    },
+  );
+
+  it.skipIf(!databaseUrl)(
+    "preserves ADR-17 cross-domain provenance and hides a private code intermediate",
+    async () => {
+      if (!databaseUrl) return;
+      const db = new Postgres(databaseUrl);
+      const fixture = await createFixture(db);
+      const store = new PostgresFederatedGraphStore(db);
+      try {
+        const decisionRevision = "decision-r17";
+        const codeRevision = "git-sha-a";
+        const runtimeRevision = "runtime-r8";
+        const decision = identity(
+          "EPISTEMIC",
+          "epistemic:adr-17",
+          "decision",
+          "ADR-17",
+          decisionRevision,
+        );
+        const rotate = identity(
+          "CODE",
+          "code:token-service",
+          "function",
+          "TokenService.rotate",
+          codeRevision,
+        );
+        const paymentRotationTest = identity(
+          "CODE",
+          "code:token-service",
+          "test",
+          "PaymentRotationTest",
+          codeRevision,
+        );
+        const testRun = identity(
+          "RUNTIME",
+          "runtime:test-run",
+          RuntimeGraphNodeKind.parse("test-run"),
+          "TR-8",
+          runtimeRevision,
+        );
+
+        await store.build(
+          artifact({
+            graphDomain: "RUNTIME",
+            spaceId: fixture.spaceId,
+            vaultId: fixture.vaultA,
+            scopeId: testRun.scopeId,
+            revision: runtimeRevision,
+            sourceRevision: "otel:test-run:TR-8",
+            nodes: [
+              node(
+                testRun,
+                fixture.vaultA,
+                "allowed/runtime/TR-8",
+                RuntimeObservationEnvelope.parse({
+                  observedAt: "2026-09-20T10:03:00.000Z",
+                  revision: codeRevision,
+                  deployment: "deploy-42",
+                  test: "PaymentRotationTest",
+                  status: "passed",
+                }),
+              ),
+            ],
+          }),
+        );
+        await store.build(
+          artifact({
+            graphDomain: "CODE",
+            spaceId: fixture.spaceId,
+            vaultId: fixture.vaultA,
+            scopeId: rotate.scopeId,
+            revision: codeRevision,
+            sourceRevision: "a".repeat(40),
+            nodes: [
+              node(rotate, fixture.vaultA, "private/code/TokenService.rotate", {
+                qualifiedName: "TokenService.rotate",
+              }),
+              node(
+                paymentRotationTest,
+                fixture.vaultA,
+                "allowed/tests/PaymentRotationTest",
+                { name: "PaymentRotationTest" },
+              ),
+            ],
+            edges: [
+              edge(
+                rotate,
+                "validated_by",
+                paymentRotationTest,
+                "STATICALLY_RESOLVED",
+                codeRevision,
+                { authorizationPath: "private/code/TokenService.rotate" },
+              ),
+              edge(
+                paymentRotationTest,
+                "observed_by",
+                testRun,
+                "RUNTIME_OBSERVED",
+                runtimeRevision,
+                {
+                  authorizationPath: "allowed/tests/PaymentRotationTest",
+                  validFrom: "2026-09-20T10:00:00.000Z",
+                  validTo: "2026-09-20T10:05:00.000Z",
+                },
+              ),
+            ],
+          }),
+        );
+        await store.build(
+          artifact({
+            graphDomain: "EPISTEMIC",
+            spaceId: fixture.spaceId,
+            vaultId: fixture.vaultA,
+            scopeId: decision.scopeId,
+            revision: decisionRevision,
+            nodes: [
+              node(decision, fixture.vaultA, "allowed/decisions/ADR-17", {
+                title: "Rotate payment tokens after privilege changes",
+              }),
+            ],
+            edges: [
+              edge(
+                decision,
+                "implemented_by",
+                rotate,
+                "HUMAN_ASSERTED",
+                decisionRevision,
+                { authorizationPath: "allowed/decisions/ADR-17" },
+              ),
+            ],
+          }),
+        );
+
+        const full = await store.paths({
+          ...queryBase(fixture, {
+            domains: ["EPISTEMIC", "CODE", "RUNTIME"],
+            relations: ["implemented_by", "validated_by", "observed_by"],
+            maxHops: 3,
+          }),
+          seed: { identity: decision },
+          target: { identity: testRun },
+        });
+        expect(full).toHaveLength(1);
+        const path = full[0]!;
+        expect(path.steps.map((step) => step.relation)).toEqual([
+          "implemented_by",
+          "validated_by",
+          "observed_by",
+        ]);
+        expect(
+          path.steps.map((step) => step.to.identity.canonicalKey),
+        ).toEqual(["TokenService.rotate", "PaymentRotationTest", "TR-8"]);
+        expect(path.revisionSet).toMatchObject({
+          EPISTEMIC: decisionRevision,
+          CODE: codeRevision,
+          RUNTIME: runtimeRevision,
+        });
+        expect(
+          path.steps.map((step) => ({
+            owner: step.assertion.ownerGraphDomain,
+            derivation: step.assertion.provenance.derivation,
+            revision: step.assertion.provenance.revision,
+          })),
+        ).toEqual([
+          {
+            owner: "EPISTEMIC",
+            derivation: "HUMAN_ASSERTED",
+            revision: decisionRevision,
+          },
+          {
+            owner: "CODE",
+            derivation: "STATICALLY_RESOLVED",
+            revision: codeRevision,
+          },
+          {
+            owner: "CODE",
+            derivation: "RUNTIME_OBSERVED",
+            revision: runtimeRevision,
+          },
+        ]);
+
+        const hiddenCodeNodeId = path.steps[0]!.to.id;
+        const restricted = await store.paths({
+          ...queryBase(fixture, {
+            vaults: [{ vaultId: fixture.vaultA, pathPrefix: "allowed" }],
+            domains: ["EPISTEMIC", "CODE", "RUNTIME"],
+            relations: ["implemented_by", "validated_by", "observed_by"],
+            maxHops: 3,
+          }),
+          seed: { identity: decision },
+          target: { identity: paymentRotationTest },
+        });
+        expect(restricted).toEqual([]);
+        const serializedRestricted = JSON.stringify(restricted);
+        expect(serializedRestricted).not.toContain("TokenService.rotate");
+        expect(serializedRestricted).not.toContain(hiddenCodeNodeId);
+        expect(
+          await store.findNodes({
+            authorization: {
+              spaceId: fixture.spaceId,
+              vaults: [{ vaultId: fixture.vaultA, pathPrefix: "allowed" }],
+              allowSpaceScoped: false,
+            },
+            domains: ["CODE"],
+            canonicalKeys: ["TokenService.rotate"],
+            freshnessPolicy: "FRESH_ONLY",
+            limit: 10,
+          }),
+        ).toEqual([]);
+      } finally {
+        await cleanupFixture(db, fixture).catch(() => undefined);
+        await db.close();
+      }
+    },
+  );
+
   it.skipIf(!databaseUrl)(
     "derives a permission-aware graph catalog from projection state",
     async () => {

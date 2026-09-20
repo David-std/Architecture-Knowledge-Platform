@@ -6,6 +6,10 @@ import {
   GraphProvenanceEnvelope,
   GraphRelationshipAssertion,
   GraphTraversalBounds,
+  RuntimeGraphNodeKind,
+  RuntimeObservationEnvelope,
+  SoftwareCatalogNodeKind,
+  SoftwareCatalogRelation,
   graphNodeIdentityKey,
 } from "../src/federated-graph.js";
 
@@ -32,6 +36,58 @@ describe("federated graph contracts", () => {
     expect(
       GraphCatalogEntry.safeParse({ ...entry, configHash: "not-a-hash" })
         .success,
+    ).toBe(false);
+  });
+
+  it("defines the minimum software-catalog and runtime vocabularies", () => {
+    expect(SoftwareCatalogNodeKind.options).toEqual([
+      "domain",
+      "system",
+      "service",
+      "component",
+      "api",
+      "resource",
+      "repository",
+      "team",
+      "person",
+    ]);
+    expect(SoftwareCatalogRelation.options).toEqual([
+      "part_of",
+      "owned_by",
+      "provides",
+      "consumes",
+      "depends_on",
+      "implemented_by",
+    ]);
+    expect(RuntimeGraphNodeKind.options).toEqual(
+      expect.arrayContaining([
+        "deployment",
+        "environment",
+        "runtime-service",
+        "runtime-call",
+        "test-run",
+        "alert",
+      ]),
+    );
+
+    const observation = RuntimeObservationEnvelope.parse({
+      window: {
+        from: "2026-09-20T10:00:00.000Z",
+        to: "2026-09-20T10:05:00.000Z",
+      },
+      revision: "git:abc123",
+      deployment: "deploy-42",
+      from: "payments-api",
+      to: "ledger-api",
+    });
+    expect(observation).toMatchObject({
+      revision: "git:abc123",
+      deployment: "deploy-42",
+      from: "payments-api",
+      to: "ledger-api",
+    });
+    expect(
+      RuntimeObservationEnvelope.safeParse({ revision: "git:abc123" }).success,
     ).toBe(false);
   });
 

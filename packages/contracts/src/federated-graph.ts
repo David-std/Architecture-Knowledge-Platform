@@ -76,6 +76,82 @@ export const GraphCatalogEntry = z.object({
 });
 export type GraphCatalogEntry = z.infer<typeof GraphCatalogEntry>;
 
+export const SoftwareCatalogNodeKind = z.enum([
+  "domain",
+  "system",
+  "service",
+  "component",
+  "api",
+  "resource",
+  "repository",
+  "team",
+  "person",
+]);
+export type SoftwareCatalogNodeKind = z.infer<typeof SoftwareCatalogNodeKind>;
+
+export const SoftwareCatalogRelation = z.enum([
+  "part_of",
+  "owned_by",
+  "provides",
+  "consumes",
+  "depends_on",
+  "implemented_by",
+]);
+export type SoftwareCatalogRelation = z.infer<typeof SoftwareCatalogRelation>;
+
+export const RuntimeGraphNodeKind = z.enum([
+  "deployment",
+  "environment",
+  "runtime-service",
+  "trace",
+  "span",
+  "runtime-call",
+  "test-run",
+  "coverage-observation",
+  "incident",
+  "alert",
+]);
+export type RuntimeGraphNodeKind = z.infer<typeof RuntimeGraphNodeKind>;
+
+export const RuntimeObservationWindow = z
+  .object({
+    from: z.string().datetime(),
+    to: z.string().datetime(),
+  })
+  .superRefine((value, context) => {
+    if (Date.parse(value.to) <= Date.parse(value.from)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["to"],
+        message: "runtime observation window.to must be after window.from",
+      });
+    }
+  });
+export type RuntimeObservationWindow = z.infer<
+  typeof RuntimeObservationWindow
+>;
+
+export const RuntimeObservationEnvelope = z
+  .object({
+    observedAt: z.string().datetime().optional(),
+    window: RuntimeObservationWindow.optional(),
+    revision: z.string().min(1).max(1024).optional(),
+    deployment: z.string().min(1).max(1024).optional(),
+  })
+  .passthrough()
+  .superRefine((value, context) => {
+    if (!value.observedAt && !value.window) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["observedAt"],
+        message: "runtime observation requires observedAt or window",
+      });
+    }
+  });
+export type RuntimeObservationEnvelope = z.infer<
+  typeof RuntimeObservationEnvelope
+>;
+
 export const GraphNodeIdentity = z.object({
   graphDomain: GraphDomain,
   scopeId: z.string().min(1).max(512),

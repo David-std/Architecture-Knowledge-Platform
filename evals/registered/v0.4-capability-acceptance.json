@@ -241,16 +241,21 @@
       "mandatory": true,
       "requirements": {
         "runtimeTest": {
-          "evidence": ["test:graph-runtime"]
+          "evidence": ["test:graph-runtime", "test:p3-runtime-domain-contract"]
         },
         "negativeTest": {
-          "evidence": ["failure:graph-build-preserves-active"]
+          "evidence": [
+            "failure:graph-build-preserves-active",
+            "failure:stale-code-sha"
+          ]
         },
         "integrationTest": {
           "evidence": [
             "integration:federated-graph",
             "integration:p3-relationship-assertion",
-            "integration:p3-graph-catalog"
+            "integration:p3-graph-catalog",
+            "integration:p3-domain-fixtures",
+            "integration:p3-cross-domain-provenance"
           ]
         },
         "recoveryTest": {
@@ -260,7 +265,10 @@
           ]
         },
         "securityTest": {
-          "evidence": ["security:unauthorized-graph-hop"]
+          "evidence": [
+            "security:unauthorized-graph-hop",
+            "security:p3-cross-domain-hidden-hop"
+          ]
         },
         "operatorSurface": {
           "evidence": ["surface:graph-explorer"]

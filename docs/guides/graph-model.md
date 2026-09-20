@@ -14,6 +14,12 @@ Use direct source/truth retrieval when a single authoritative fact is enough. A 
 
 ## Configuration
 
+### Specialized domain vocabulary
+
+The public contract keeps domain-specific vocabulary instead of treating every graph as anonymous `type` strings. The Software Catalog domain defines the canonical kinds `domain`, `system`, `service`, `component`, `api`, `resource`, `repository`, `team` and `person`, plus the relations `part_of`, `owned_by`, `provides`, `consumes`, `depends_on` and `implemented_by`. Catalog assertions are declared or curated state; they are not relabeled as live runtime topology.
+
+The Runtime domain separately defines deployments, environments, runtime services, traces/spans or aggregated runtime calls, test/coverage observations and incident/alert references. Runtime observations carry an observation timestamp or bounded window, and include source revision/deployment identifiers when those are available. Missing a runtime call in one observation window remains an observation of absence for that window; it does not erase or negate a declared catalog dependency.
+
 ### Capability catalog
 
 The federated graph store derives a permission-aware catalog from durable projection revisions instead of assuming every graph domain exists. Catalog entries expose domain/scope, active and source revisions, builder/version, a deterministic configuration hash, lifecycle-derived status, capabilities and last successful build. Path-scoped callers see an entry only when the projection contains at least one node inside their authorized prefix; a catalog lookup therefore cannot reveal a hidden repository or graph scope merely because its projection exists.
