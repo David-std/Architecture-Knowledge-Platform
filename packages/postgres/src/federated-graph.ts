@@ -36,6 +36,8 @@ type GraphDerivation = (typeof GRAPH_DERIVATIONS)[number];
 
 type GraphDirection = "outgoing" | "incoming" | "both";
 type GraphFreshnessPolicy = "FRESH_ONLY" | "ALLOW_STALE";
+
+export const MAX_GRAPH_NODE_LOOKUP_LIMIT = 1000;
 type GraphProjectionLifecycle =
   "REQUESTED" | "BUILT" | "ACTIVE" | "STALE" | "FAILED";
 type GraphProjectionFreshness = "FRESH" | "STALE";
@@ -1382,7 +1384,7 @@ export class PostgresFederatedGraphStore
     if (
       !Number.isInteger(input.limit) ||
       input.limit < 1 ||
-      input.limit > 1000
+      input.limit > MAX_GRAPH_NODE_LOOKUP_LIMIT
     ) {
       throw graphError("GRAPH_LOOKUP_LIMIT_INVALID");
     }

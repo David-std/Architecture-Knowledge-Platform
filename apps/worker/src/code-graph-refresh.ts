@@ -1,6 +1,10 @@
 import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
-import { PostgresFederatedGraphStore, type Postgres } from "@akp/postgres";
+import {
+  MAX_GRAPH_NODE_LOOKUP_LIMIT,
+  PostgresFederatedGraphStore,
+  type Postgres,
+} from "@akp/postgres";
 import {
   CodeGraphLifecycleCoordinator,
   GraphifyCodeGraphAdapter,
@@ -206,7 +210,7 @@ export function createCodeGraphRefreshHandlers(
                   commitSha: previousState.active.sourceRevision,
                 },
                 freshnessPolicy: "ALLOW_STALE",
-                limit: 10_000,
+                limit: MAX_GRAPH_NODE_LOOKUP_LIMIT,
               })
             : [];
         const repositoryPath = await authorizedProjectRoot(project.root_path);
