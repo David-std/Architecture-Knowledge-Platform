@@ -63,7 +63,7 @@ jobs:
           knowledge_layer: managed
           ---
 
-          P11 recovery must restore this managed Git source and rebuild a searchable projection.
+          Recovery must restore this managed Git source and rebuild a searchable projection.
           EOF
           git -C "$AKP_MANAGED_REPO" add --all
           git -C "$AKP_MANAGED_REPO" commit -m "test: initialize resilience repository"
@@ -84,7 +84,7 @@ jobs:
           pnpm --filter @akp/api exec vitest run \
             --config vitest.integration.config.ts \
             test/source-connectors.integration.test.ts
-      - name: Validate P11 recovery and failure-injection boundaries
+      - name: Validate recovery and failure-injection boundaries
         run: |
           pnpm --filter @akp/api exec vitest run \
             --config vitest.integration.config.ts \

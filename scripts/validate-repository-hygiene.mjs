@@ -139,7 +139,7 @@ const iterationResidue = [
   /^NEXT_STEPS\.md$/i,
   /^WORKLOG.*\.md$/i,
   /^SCRATCH.*\.md$/i,
-  /^TEMP.*\.md$/i,
+  /^TEMP(?:[_.-].*)?\.md$/i,
   /_DRAFT_PLAN\.md$/i,
   /_HANDOFF_TEMP\.md$/i,
   /^IMPLEMENTATION_NOTES_.*\.md$/i,

@@ -112,8 +112,16 @@ jobs:
         run: |
           set +e
           set -o pipefail
-          pnpm benchmark:agent-arena 2>&1 | tee reports/ci/agent-five-arm-arena.log
-          status=${PIPESTATUS[0]}
+          (
+            pnpm benchmark:agent-arena 2>&1 | tee reports/ci/agent-five-arm-arena.log
+          ) &
+          benchmark_pid=$!
+          while kill -0 "$benchmark_pid" 2>/dev/null; do
+            echo '{"event":"AGENT_ARENA_HEARTBEAT","status":"RUNNING"}'
+            sleep 30
+          done
+          wait "$benchmark_pid"
+          status=$?
           if [ ! -f reports/ci/agent-five-arm-arena.json ]; then
             echo "Five-arm arena did not produce a report" >&2
             exit 1

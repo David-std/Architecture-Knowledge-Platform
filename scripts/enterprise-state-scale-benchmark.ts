@@ -1,5 +1,5 @@
 /**
- * P11 enterprise-state scale benchmark.
+ * Enterprise-state scale benchmark.
  *
  * Complements the 1K-100K corpus harness with dimensions whose cardinality is
  * not proportional to document count: federated graph/code state, temporal
@@ -966,7 +966,7 @@ async function main(): Promise<void> {
       {
         dimension: "remote federation network throughput",
         reason:
-          "Peer catalog cardinality is measured here; network failure/timeout semantics belong to the P11 resilience suite.",
+          "Peer catalog cardinality is measured here; network failure/timeout semantics belong to the dedicated resilience suite.",
       },
     ],
     limitations: [
