@@ -101,7 +101,8 @@ td {
 }
 input,
 select,
-button {
+button,
+textarea {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 10px 12px;
@@ -110,6 +111,28 @@ button {
 }
 input {
   min-width: 360px;
+}
+textarea {
+  width: 100%;
+  min-height: 110px;
+  resize: vertical;
+}
+label {
+  display: grid;
+  gap: 6px;
+}
+.stack {
+  display: grid;
+  gap: 12px;
+}
+.inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.inline-actions input {
+  min-width: 0;
 }
 button {
   background: var(--accent);

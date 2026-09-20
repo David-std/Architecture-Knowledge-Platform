@@ -21,6 +21,7 @@ export default function RootLayout({
             <Link href="/ingest">Nueva ingesta</Link>
             <Link href="/jobs">Jobs</Link>
             <Link href="/reviews">Revisiones</Link>
+            <Link href="/decisions">Decisiones</Link>
             <Link href="/graph">Grafo</Link>
             <Link href="/evals">Evaluaciones</Link>
             <Link href="/admin/health">Salud</Link>

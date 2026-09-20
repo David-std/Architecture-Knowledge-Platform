@@ -264,6 +264,8 @@ export default async function Home() {
           ) : (
             <p className="muted">No hay revisiones pendientes.</p>
           )}
+          <Link href="/decisions">Architecture Decision Workspace →</Link>
+          <br />
           <Link href="/reviews">Abrir Review Workspace →</Link>
         </section>
 

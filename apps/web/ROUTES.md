@@ -11,6 +11,8 @@
 /jobs/:id               job transition history
 /reviews                review inbox
 /reviews/:id            diff, sources, impact, validation and approval
+/decisions              session-scoped architecture decision workspace
+/decisions/:id          alternatives, consultation, objections, selection and promotion
 /knowledge/:id          approved document view
 /graph                   typed graph
 /evals                   retrieval and grounding scorecards
