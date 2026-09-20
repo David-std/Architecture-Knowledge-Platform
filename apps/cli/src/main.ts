@@ -25,6 +25,7 @@ import {
   type JsonRecord,
   type PacketObservation,
 } from "./metrics.js";
+import { renderDoctorReport, runDoctor } from "./doctor.js";
 import {
   AUDIT_EXPORT_CONFIRMATION,
   AuditExportClientError,
@@ -701,15 +702,20 @@ vault
     );
   });
 
-program.command("doctor").action(async () => {
-  const result = await withDatabase(async (db) => ({
-    database: await db.health(),
-    node: process.version,
-    platform: process.platform,
-    cwd: process.cwd(),
-  }));
-  console.log(JSON.stringify(result, null, 2));
-});
+program
+  .command("doctor")
+  .option("--format <format>", "json or human", "json")
+  .action(async (options: { format: string }) => {
+    const report = await withDatabase((db) => runDoctor(db));
+    if (options.format === "json") {
+      printJson(report);
+    } else if (options.format === "human") {
+      console.log(renderDoctorReport(report));
+    } else {
+      throw new Error("doctor --format must be json or human");
+    }
+    if (report.overall === "FAIL") process.exitCode = 1;
+  });
 
 program.command("status").action(async () => {
   console.log(JSON.stringify(await api("/v1/status"), null, 2));

@@ -1,0 +1,765 @@
+import { existsSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import path from "node:path";
+import {
+  workspaceContextRevisionState,
+  type Postgres,
+} from "@akp/postgres";
+
+export type DoctorStatus = "OK" | "WARN" | "FAIL" | "UNKNOWN";
+
+export interface DoctorCheck {
+  id: string;
+  label: string;
+  status: DoctorStatus;
+  summary: string;
+  details?: Record<string, unknown>;
+}
+
+export interface DoctorReport {
+  schemaVersion: 1;
+  generatedAt: string;
+  overall: DoctorStatus;
+  checks: DoctorCheck[];
+}
+
+interface DoctorEnvironment {
+  readonly [key: string]: string | undefined;
+}
+
+function statusRank(status: DoctorStatus): number {
+  switch (status) {
+    case "FAIL":
+      return 4;
+    case "WARN":
+      return 3;
+    case "UNKNOWN":
+      return 2;
+    case "OK":
+      return 1;
+  }
+}
+
+export function overallDoctorStatus(
+  checks: readonly DoctorCheck[],
+): DoctorStatus {
+  return checks.reduce<DoctorStatus>(
+    (current, check) =>
+      statusRank(check.status) > statusRank(current) ? check.status : current,
+    "OK",
+  );
+}
+
+async function probeUrl(url: string): Promise<boolean> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 2_000);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    return response.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function safeCheck(
+  id: string,
+  label: string,
+  operation: () => Promise<DoctorCheck>,
+): Promise<DoctorCheck> {
+  try {
+    return await operation();
+  } catch {
+    return {
+      id,
+      label,
+      status: "FAIL",
+      summary: "Diagnostic query failed safely.",
+      details: { code: "DIAGNOSTIC_QUERY_FAILED" },
+    };
+  }
+}
+
+function managedGitCheck(environment: DoctorEnvironment): DoctorCheck {
+  const repository = environment.AKP_MANAGED_REPO?.trim();
+  if (!repository) {
+    return {
+      id: "managed-git",
+      label: "Managed Git",
+      status: "UNKNOWN",
+      summary: "AKP_MANAGED_REPO is not configured.",
+    };
+  }
+  const absolute = path.resolve(repository);
+  const inside = spawnSync(
+    "git",
+    ["-C", absolute, "rev-parse", "--is-inside-work-tree"],
+    { encoding: "utf8", windowsHide: true },
+  );
+  if (inside.status !== 0 || inside.stdout.trim() !== "true") {
+    return {
+      id: "managed-git",
+      label: "Managed Git",
+      status: "FAIL",
+      summary: "Configured managed repository is not a readable Git work tree.",
+      details: { configured: true },
+    };
+  }
+  const head = spawnSync("git", ["-C", absolute, "rev-parse", "HEAD"], {
+    encoding: "utf8",
+    windowsHide: true,
+  });
+  return {
+    id: "managed-git",
+    label: "Managed Git",
+    status: head.status === 0 ? "OK" : "FAIL",
+    summary:
+      head.status === 0
+        ? "Managed Git repository is readable."
+        : "Managed Git HEAD could not be resolved.",
+    details:
+      head.status === 0
+        ? { configured: true, head: head.stdout.trim() }
+        : { configured: true },
+  };
+}
+
+function backupCheck(
+  environment: DoctorEnvironment,
+  cwd: string,
+): DoctorCheck {
+  const configured = environment.AKP_BACKUP_DIR?.trim() || "backups/latest";
+  const backupDirectory = path.resolve(cwd, configured);
+  const manifestPath = path.join(backupDirectory, "manifest.json");
+  if (!existsSync(manifestPath)) {
+    return {
+      id: "backup-recency",
+      label: "Backup recency",
+      status: "WARN",
+      summary: "No backup manifest was found.",
+      details: { configuredDirectory: configured },
+    };
+  }
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  } catch {
+    return {
+      id: "backup-recency",
+      label: "Backup recency",
+      status: "FAIL",
+      summary: "Backup manifest is unreadable or invalid JSON.",
+      details: { configuredDirectory: configured },
+    };
+  }
+  const createdAt =
+    manifest &&
+    typeof manifest === "object" &&
+    !Array.isArray(manifest) &&
+    typeof (manifest as { createdAt?: unknown }).createdAt === "string"
+      ? (manifest as { createdAt: string }).createdAt
+      : null;
+  const createdMs = createdAt ? Date.parse(createdAt) : Number.NaN;
+  if (!Number.isFinite(createdMs)) {
+    return {
+      id: "backup-recency",
+      label: "Backup recency",
+      status: "FAIL",
+      summary: "Backup manifest does not contain a valid createdAt timestamp.",
+      details: { configuredDirectory: configured },
+    };
+  }
+  const configuredMax = Number(environment.AKP_BACKUP_MAX_AGE_HOURS ?? 24);
+  const maxAgeHours =
+    Number.isFinite(configuredMax) && configuredMax > 0 ? configuredMax : 24;
+  const ageHours = Math.max(0, (Date.now() - createdMs) / 3_600_000);
+  return {
+    id: "backup-recency",
+    label: "Backup recency",
+    status: ageHours <= maxAgeHours ? "OK" : "WARN",
+    summary:
+      ageHours <= maxAgeHours
+        ? "Latest backup is within the configured recency window."
+        : "Latest backup is older than the configured recency window.",
+    details: {
+      createdAt,
+      ageHours: Number(ageHours.toFixed(2)),
+      maxAgeHours,
+    },
+  };
+}
+
+async function contextParityCheck(db: Postgres): Promise<DoctorCheck> {
+  const sessions = await db.pool.query<{
+    id: string;
+    space_id: string;
+    vault_id: string;
+    total_count: number;
+  }>(
+    `select id,space_id,vault_id,count(*) over()::int total_count
+       from agent_sessions
+      where vault_id is not null
+      order by updated_at desc
+      limit 500`,
+  );
+  let current = 0;
+  let changed = 0;
+  let legacy = 0;
+  for (const session of sessions.rows) {
+    const state = await workspaceContextRevisionState(
+      db.pool,
+      session.id,
+      session.space_id,
+      session.vault_id,
+    );
+    if (state.status === "CURRENT") current += 1;
+    else if (state.status === "CHANGED") changed += 1;
+    else legacy += 1;
+  }
+  const total = sessions.rows[0]?.total_count ?? 0;
+  const truncated = total > sessions.rows.length;
+  return {
+    id: "context-revision-parity",
+    label: "Context revision parity",
+    status: changed > 0 || legacy > 0 || truncated ? "WARN" : "OK",
+    summary:
+      total === 0
+        ? "No vault-scoped workspace sessions require parity checks."
+        : changed === 0 && legacy === 0 && !truncated
+          ? "All inspected workspace pins match current authority revisions."
+          : "Some workspace pins require attention.",
+    details: {
+      inspected: sessions.rows.length,
+      total,
+      current,
+      changed,
+      legacyUnpinned: legacy,
+      truncated,
+    },
+  };
+}
+
+async function graphChecks(db: Postgres): Promise<{
+  graphs: DoctorCheck;
+  code: DoctorCheck;
+}> {
+  const result = await db.pool.query<{
+    graph_domain: string;
+    active: number;
+    stale: number;
+    failed: number;
+    latest_update: Date | null;
+  }>(
+    `select graph_domain,
+            count(*) filter(where lifecycle='ACTIVE')::int active,
+            count(*) filter(where lifecycle='STALE' or freshness='STALE')::int stale,
+            count(*) filter(where lifecycle='FAILED')::int failed,
+            max(updated_at) latest_update
+       from federated_graph_projection_revisions
+      group by graph_domain
+      order by graph_domain`,
+  );
+  const expected = [
+    "EPISTEMIC",
+    "SOFTWARE_CATALOG",
+    "CODE",
+    "RUNTIME",
+    "TEMPORAL",
+    "WORK",
+    "COMMUNITY",
+  ];
+  const byDomain = new Map(result.rows.map((row) => [row.graph_domain, row]));
+  const details = Object.fromEntries(
+    expected.map((domain) => {
+      const row = byDomain.get(domain);
+      return [
+        domain,
+        row
+          ? {
+              active: row.active,
+              stale: row.stale,
+              failed: row.failed,
+              latestUpdate: row.latest_update?.toISOString() ?? null,
+            }
+          : { active: 0, stale: 0, failed: 0, latestUpdate: null },
+      ];
+    }),
+  );
+  const anyFailure = result.rows.some((row) => row.failed > 0);
+  const anyStale = result.rows.some((row) => row.stale > 0);
+  const missingDomains = expected.filter((domain) => !byDomain.has(domain));
+  const graphs: DoctorCheck = {
+    id: "graph-domain-revisions",
+    label: "Graph domain revisions",
+    status: anyFailure ? "FAIL" : anyStale || missingDomains.length ? "WARN" : "OK",
+    summary:
+      result.rows.length === 0
+        ? "No graph projection revisions are present."
+        : anyFailure
+          ? "At least one graph domain has failed revisions."
+          : anyStale || missingDomains.length
+            ? "Graph revision coverage is incomplete or stale."
+            : "All graph domains have revision state without stale/failed rows.",
+    details: { domains: details, missingDomains },
+  };
+  const codeRow = byDomain.get("CODE");
+  const code: DoctorCheck = !codeRow
+    ? {
+        id: "code-graph-staleness",
+        label: "Code graph staleness",
+        status: "UNKNOWN",
+        summary: "No CODE graph revision has been recorded.",
+      }
+    : {
+        id: "code-graph-staleness",
+        label: "Code graph staleness",
+        status:
+          codeRow.failed > 0
+            ? "FAIL"
+            : codeRow.stale > 0 || codeRow.active === 0
+              ? "WARN"
+              : "OK",
+        summary:
+          codeRow.failed > 0
+            ? "CODE graph has failed revisions."
+            : codeRow.stale > 0 || codeRow.active === 0
+              ? "CODE graph is stale or has no active revision."
+              : "CODE graph has an active fresh revision.",
+        details: {
+          active: codeRow.active,
+          stale: codeRow.stale,
+          failed: codeRow.failed,
+          latestUpdate: codeRow.latest_update?.toISOString() ?? null,
+        },
+      };
+  return { graphs, code };
+}
+
+export async function runDoctor(
+  db: Postgres,
+  environment: DoctorEnvironment = process.env,
+  cwd = process.cwd(),
+): Promise<DoctorReport> {
+  const checks: DoctorCheck[] = [];
+
+  checks.push(
+    await safeCheck("database", "Database", async () => {
+      const healthy = await db.health();
+      return {
+        id: "database",
+        label: "Database",
+        status: healthy ? "OK" : "FAIL",
+        summary: healthy
+          ? "PostgreSQL is reachable."
+          : "PostgreSQL health probe failed.",
+      };
+    }),
+  );
+
+  checks.push(
+    await safeCheck("raw-object-store", "Raw object store", async () => {
+      const base =
+        environment.AKP_RAW_ENDPOINT?.trim() || "http://127.0.0.1:19000";
+      const healthy = await probeUrl(`${base.replace(/\/$/u, "")}/minio/health/live`);
+      return {
+        id: "raw-object-store",
+        label: "Raw object store",
+        status: healthy ? "OK" : "FAIL",
+        summary: healthy
+          ? "Raw object-store health endpoint is reachable."
+          : "Raw object-store health endpoint is unavailable.",
+      };
+    }),
+  );
+
+  checks.push(managedGitCheck(environment));
+
+  checks.push(
+    await safeCheck("outbox-jobs", "Outbox and jobs", async () => {
+      const result = await db.pool.query<{
+        quarantined: number;
+        retrying: number;
+        ingest_failed: number;
+        ingest_active: number;
+      }>(
+        `select
+          (select count(*)::int from event_deliveries where status='QUARANTINED') quarantined,
+          (select count(*)::int from event_deliveries where status='RETRY') retrying,
+          (select count(*)::int from ingest_jobs where state='FAILED') ingest_failed,
+          (select count(*)::int from ingest_jobs
+            where state not in ('FAILED','REVIEW_REQUIRED')
+              and cancelled_at is null) ingest_active`,
+      );
+      const row = result.rows[0]!;
+      return {
+        id: "outbox-jobs",
+        label: "Outbox and jobs",
+        status:
+          row.quarantined > 0
+            ? "FAIL"
+            : row.retrying > 0 || row.ingest_failed > 0
+              ? "WARN"
+              : "OK",
+        summary:
+          row.quarantined > 0
+            ? "Quarantined outbox deliveries require operator attention."
+            : row.retrying > 0 || row.ingest_failed > 0
+              ? "Retrying deliveries or failed ingest jobs are present."
+              : "No quarantined deliveries or failed ingest jobs were found.",
+        details: row,
+      };
+    }),
+  );
+
+  checks.push(
+    await safeCheck("active-profile", "Active profile", async () => {
+      const result = await db.pool.query<{
+        enabled_vaults: number;
+        durable_active: number;
+        default_profile: number;
+        invalid_binding: number;
+      }>(
+        `select
+          count(*) filter(where v.enabled)::int enabled_vaults,
+          count(*) filter(
+            where v.enabled and v.active_knowledge_profile_revision_id is not null
+              and p.status='ACTIVE'
+          )::int durable_active,
+          count(*) filter(
+            where v.enabled and v.active_knowledge_profile_revision_id is null
+          )::int default_profile,
+          count(*) filter(
+            where v.enabled and v.active_knowledge_profile_revision_id is not null
+              and (p.id is null or p.status<>'ACTIVE')
+          )::int invalid_binding
+        from vaults v
+        left join knowledge_profile_revisions p
+          on p.id=v.active_knowledge_profile_revision_id`,
+      );
+      const row = result.rows[0]!;
+      return {
+        id: "active-profile",
+        label: "Active profile",
+        status: row.invalid_binding > 0 ? "FAIL" : "OK",
+        summary:
+          row.invalid_binding > 0
+            ? "One or more vaults have an invalid active profile binding."
+            : "Active/default profile bindings are internally consistent.",
+        details: row,
+      };
+    }),
+  );
+
+  checks.push(
+    await safeCheck(
+      "context-revision-parity",
+      "Context revision parity",
+      () => contextParityCheck(db),
+    ),
+  );
+
+  checks.push(
+    await safeCheck("vector-generation", "Vector generation", async () => {
+      const result = await db.pool.query<{
+        total: number;
+        active: number;
+        stale: number;
+        failed: number;
+        building: number;
+      }>(
+        `select count(*)::int total,
+                count(*) filter(where status='ACTIVE')::int active,
+                count(*) filter(where status='STALE')::int stale,
+                count(*) filter(where status='FAILED')::int failed,
+                count(*) filter(where status in ('REQUESTED','BUILDING'))::int building
+           from embedding_generations`,
+      );
+      const row = result.rows[0]!;
+      const vectorEnabled = environment.AKP_VECTOR_ENABLED === "true";
+      return {
+        id: "vector-generation",
+        label: "Vector generation",
+        status:
+          row.failed > 0
+            ? "FAIL"
+            : vectorEnabled && row.active === 0
+              ? "WARN"
+              : row.stale > 0
+                ? "WARN"
+                : row.total === 0
+                  ? "UNKNOWN"
+                  : "OK",
+        summary:
+          row.failed > 0
+            ? "Failed embedding generations are present."
+            : vectorEnabled && row.active === 0
+              ? "Vector retrieval is enabled but no active generation exists."
+              : row.stale > 0
+                ? "Stale embedding generations are present."
+                : row.total === 0
+                  ? "No embedding generation has been recorded."
+                  : "Vector generation state is healthy.",
+        details: { ...row, vectorEnabled },
+      };
+    }),
+  );
+
+  const graphResult = await safeCheck(
+    "graph-domain-revisions",
+    "Graph domain revisions",
+    async () => (await graphChecks(db)).graphs,
+  );
+  checks.push(graphResult);
+  checks.push(
+    await safeCheck("code-graph-staleness", "Code graph staleness", async () => {
+      return (await graphChecks(db)).code;
+    }),
+  );
+
+  checks.push(
+    await safeCheck("truth-index", "Truth support/index health", async () => {
+      const result = await db.pool.query<{
+        truth_heads: number;
+        disputed_support_sets: number;
+        unhealthy_projection_items: number;
+      }>(
+        `select
+          (select count(*)::int from truth_revision_heads
+            where revision_hash is not null) truth_heads,
+          (select count(*)::int from truth_support_sets
+            where state='DISPUTED') disputed_support_sets,
+          (select count(*)::int from derived_truth_projection_items
+            where valid=false or state in ('UNSUPPORTED','UNANNOTATED'))
+            unhealthy_projection_items`,
+      );
+      const row = result.rows[0]!;
+      return {
+        id: "truth-index",
+        label: "Truth support/index health",
+        status:
+          row.unhealthy_projection_items > 0
+            ? "FAIL"
+            : row.disputed_support_sets > 0
+              ? "WARN"
+              : row.truth_heads === 0
+                ? "UNKNOWN"
+                : "OK",
+        summary:
+          row.unhealthy_projection_items > 0
+            ? "Invalid or unsupported derived truth items are present."
+            : row.disputed_support_sets > 0
+              ? "Disputed truth support sets are present."
+              : row.truth_heads === 0
+                ? "No published truth revision heads are present."
+                : "Truth support and derived projection health is consistent.",
+        details: row,
+      };
+    }),
+  );
+
+  checks.push(
+    await safeCheck("community-ppr", "Community/PPR status", async () => {
+      const result = await db.pool.query<{
+        total: number;
+        active: number;
+        stale: number;
+        failed: number;
+      }>(
+        `select count(*)::int total,
+                count(*) filter(where status='ACTIVE' and stale=false)::int active,
+                count(*) filter(where status='STALE' or stale=true)::int stale,
+                count(*) filter(where status='FAILED')::int failed
+           from community_index_revisions`,
+      );
+      const row = result.rows[0]!;
+      return {
+        id: "community-ppr",
+        label: "Community/PPR status",
+        status:
+          row.failed > 0
+            ? "FAIL"
+            : row.stale > 0
+              ? "WARN"
+              : row.total === 0
+                ? "UNKNOWN"
+                : "OK",
+        summary:
+          row.failed > 0
+            ? "Failed community revisions are present."
+            : row.stale > 0
+              ? "Stale community revisions are present."
+              : row.total === 0
+                ? "No community index revision is present; PPR has no durable job state."
+                : "Community revisions are healthy; PPR is evaluated on demand.",
+        details: { ...row, pprMode: "ON_DEMAND_NO_DURABLE_JOB_STATE" },
+      };
+    }),
+  );
+
+  checks.push(
+    await safeCheck("connectors", "Connectors", async () => {
+      const result = await db.pool.query<{
+        active: number;
+        disabled: number;
+        pending_events: number;
+        exhausted_events: number;
+      }>(
+        `select
+          (select count(*)::int from source_connector_registrations
+            where state='ACTIVE') active,
+          (select count(*)::int from source_connector_registrations
+            where state='DISABLED') disabled,
+          (select count(*)::int from source_connector_events
+            where status='PENDING') pending_events,
+          (select count(*)::int from source_connector_events
+            where status='PENDING'
+              and apply_attempts>=max_apply_attempts) exhausted_events`,
+      );
+      const row = result.rows[0]!;
+      return {
+        id: "connectors",
+        label: "Connectors",
+        status:
+          row.exhausted_events > 0
+            ? "FAIL"
+            : row.pending_events > 0
+              ? "WARN"
+              : "OK",
+        summary:
+          row.exhausted_events > 0
+            ? "Connector events exhausted their apply budget."
+            : row.pending_events > 0
+              ? "Connector events are pending application."
+              : "Connector inbox/checkpoint state has no pending failures.",
+        details: row,
+      };
+    }),
+  );
+
+  checks.push(
+    await safeCheck("federation-peers", "Federation peers", async () => {
+      const result = await db.pool.query<{
+        approved: number;
+        discovered: number;
+        disabled: number;
+        circuit_open: number;
+        degraded: number;
+      }>(
+        `select
+          count(*) filter(where trust_state='APPROVED')::int approved,
+          count(*) filter(where trust_state='DISCOVERED')::int discovered,
+          count(*) filter(where trust_state='DISABLED')::int disabled,
+          count(*) filter(
+            where circuit_open_until is not null and circuit_open_until>now()
+          )::int circuit_open,
+          count(*) filter(where failure_count>0)::int degraded
+         from context_fabric_peers`,
+      );
+      const row = result.rows[0]!;
+      return {
+        id: "federation-peers",
+        label: "Federation peers",
+        status:
+          row.circuit_open > 0
+            ? "FAIL"
+            : row.degraded > 0
+              ? "WARN"
+              : "OK",
+        summary:
+          row.circuit_open > 0
+            ? "One or more federation peer circuits are open."
+            : row.degraded > 0
+              ? "One or more federation peers have recent failures."
+              : "Federation peer health has no active failures.",
+        details: row,
+      };
+    }),
+  );
+
+  checks.push(
+    await safeCheck("otel-exporter", "OTel exporter", async () => {
+      const healthUrl = environment.AKP_OTEL_HEALTH_URL?.trim();
+      const configured =
+        Boolean(environment.OTEL_EXPORTER_OTLP_ENDPOINT?.trim()) ||
+        Boolean(environment.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT?.trim());
+      if (healthUrl) {
+        const healthy = await probeUrl(healthUrl);
+        return {
+          id: "otel-exporter",
+          label: "OTel exporter",
+          status: healthy ? "OK" : "FAIL",
+          summary: healthy
+            ? "Configured OTel health endpoint is reachable."
+            : "Configured OTel health endpoint is unavailable.",
+          details: { configured: true, healthProbeConfigured: true },
+        };
+      }
+      return configured
+        ? {
+            id: "otel-exporter",
+            label: "OTel exporter",
+            status: "UNKNOWN",
+            summary:
+              "OTel exporter is configured, but no AKP_OTEL_HEALTH_URL is available for a reliable health probe.",
+            details: { configured: true, healthProbeConfigured: false },
+          }
+        : {
+            id: "otel-exporter",
+            label: "OTel exporter",
+            status: "UNKNOWN",
+            summary: "No OTel exporter is configured.",
+            details: { configured: false, healthProbeConfigured: false },
+          };
+    }),
+  );
+
+  checks.push(backupCheck(environment, cwd));
+
+  checks.push(
+    await safeCheck(
+      "open-critical-findings",
+      "Open critical findings",
+      async () => {
+        const result = await db.pool.query<{ count: number }>(
+          `select count(*)::int count
+             from assurance_findings
+            where status='OPEN' and severity='CRITICAL'`,
+        );
+        const count = result.rows[0]?.count ?? 0;
+        return {
+          id: "open-critical-findings",
+          label: "Open critical findings",
+          status: count > 0 ? "FAIL" : "OK",
+          summary:
+            count > 0
+              ? "Open CRITICAL assurance findings require attention."
+              : "No open CRITICAL assurance findings were found.",
+          details: { count },
+        };
+      },
+    ),
+  );
+
+  return {
+    schemaVersion: 1,
+    generatedAt: new Date().toISOString(),
+    overall: overallDoctorStatus(checks),
+    checks,
+  };
+}
+
+export function renderDoctorReport(report: DoctorReport): string {
+  const lines = [
+    `AKP doctor: ${report.overall}`,
+    `Generated: ${report.generatedAt}`,
+    "",
+  ];
+  for (const check of report.checks) {
+    lines.push(`[${check.status}] ${check.label}: ${check.summary}`);
+    if (check.details && Object.keys(check.details).length > 0) {
+      lines.push(`  ${JSON.stringify(check.details)}`);
+    }
+  }
+  return lines.join("\n");
+}
