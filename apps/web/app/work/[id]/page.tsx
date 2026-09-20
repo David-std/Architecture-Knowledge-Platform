@@ -36,6 +36,16 @@ type Activity = WorkActivity & {
   payload: Record<string, unknown>;
 };
 
+type Claim = {
+  id: string;
+  workKey: string;
+  objectRefId: string | null;
+  ownerPrincipalId: string;
+  status: string;
+  fencingToken: number;
+  leaseExpiresAt: string;
+};
+
 type SessionState = {
   session: {
     id: string;
@@ -43,6 +53,7 @@ type SessionState = {
     workStatus: string;
     contextRevisionSetHash: string | null;
   };
+  claims: Claim[];
   contextRevision: {
     status: string;
   };
@@ -97,6 +108,9 @@ export default async function WorkObjectPage({
   const byId = new Map(refsResponse.refs.map((ref) => [ref.id, ref]));
   const relational = activityResponse.events.filter(
     (event) => relatedObjectId(event, object.id) !== null,
+  );
+  const objectClaims = state.claims.filter(
+    (claim) => claim.objectRefId === object.id,
   );
 
   return (
@@ -225,6 +239,42 @@ export default async function WorkObjectPage({
           </table>
         ) : (
           <p className="muted">No explicit object relations recorded.</p>
+        )}
+      </section>
+
+      <h2>Agents / claims</h2>
+      <section className="card">
+        {objectClaims.length ? (
+          <table>
+            <thead>
+              <tr>
+                <th>Principal</th>
+                <th>Status</th>
+                <th>Work key</th>
+                <th>Fence</th>
+                <th>Lease</th>
+              </tr>
+            </thead>
+            <tbody>
+              {objectClaims.map((claim) => (
+                <tr key={claim.id}>
+                  <td>
+                    <code>{short(claim.ownerPrincipalId)}</code>
+                  </td>
+                  <td>{claim.status}</td>
+                  <td>
+                    <code>{claim.workKey}</code>
+                  </td>
+                  <td>{claim.fencingToken}</td>
+                  <td>{claim.leaseExpiresAt}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="muted">
+            No claims are explicitly linked to this work object.
+          </p>
         )}
       </section>
 

@@ -89,6 +89,7 @@ export interface WorkspaceClaim {
   id: string;
   sessionId: string;
   workKey: string;
+  objectRefId: string | null;
   ownerId: string;
   ownerPrincipalId: string;
   status: "ACTIVE" | "RELEASED" | "COMPLETED";
@@ -183,6 +184,10 @@ function normalizeClaim(row: Record<string, unknown>): WorkspaceClaim {
     id: String(row.id),
     sessionId: String(row.session_id),
     workKey: String(row.work_key),
+    objectRefId:
+      row.object_ref_id === null || row.object_ref_id === undefined
+        ? null
+        : String(row.object_ref_id),
     ownerId: String(row.owner_id),
     ownerPrincipalId: String(row.owner_principal_id),
     status: String(row.status) as WorkspaceClaim["status"],
@@ -673,6 +678,7 @@ export async function claimWorkspaceWork(
     actorId: string;
     actorPrincipalId?: string | null;
     workKey: string;
+    objectRefId?: string | null;
     leaseSeconds: number;
   },
 ): Promise<WorkspaceClaim> {
@@ -705,6 +711,32 @@ export async function claimWorkspaceWork(
       scope.space_id,
       scope.vault_id,
     );
+    if (input.objectRefId) {
+      const workObject = await client.query<{ id: string }>(
+        `select id
+           from external_object_refs
+          where id=$1 and vault_id=$2 and session_id=$3
+          limit 1`,
+        [input.objectRefId, scope.vault_id, input.sessionId],
+      );
+      if (!workObject.rowCount) {
+        throw workspaceError("EXTERNAL_OBJECT_REF_NOT_FOUND", 404);
+      }
+      const existing = await client.query<{ object_ref_id: string | null }>(
+        `select object_ref_id
+           from workspace_claims
+          where session_id=$1 and work_key=$2
+          limit 1`,
+        [input.sessionId, input.workKey],
+      );
+      const existingObjectRefId = existing.rows[0]?.object_ref_id ?? null;
+      if (
+        existingObjectRefId &&
+        existingObjectRefId !== input.objectRefId
+      ) {
+        throw workspaceError("WORK_CLAIM_OBJECT_CONFLICT", 409);
+      }
+    }
     const actorPrincipalId = await resolveWorkspacePrincipalId(client, {
       sessionId: input.sessionId,
       userId: input.actorId,
@@ -738,12 +770,16 @@ export async function claimWorkspaceWork(
 
     const claimed = await client.query<Record<string, unknown>>(
       `insert into workspace_claims(
-         session_id,work_key,owner_id,owner_principal_id,status,fencing_token,
-         lease_expires_at,version
+         session_id,work_key,object_ref_id,owner_id,owner_principal_id,status,
+         fencing_token,lease_expires_at,version
        ) values(
-         $1,$2,$3,$4,'ACTIVE',1,now()+make_interval(secs => $5),1
+         $1,$2,$3,$4,$5,'ACTIVE',1,now()+make_interval(secs => $6),1
        )
        on conflict(session_id,work_key) do update set
+         object_ref_id=coalesce(
+           workspace_claims.object_ref_id,
+           excluded.object_ref_id
+         ),
          owner_id=excluded.owner_id,
          owner_principal_id=excluded.owner_principal_id,
          status='ACTIVE',
@@ -751,12 +787,20 @@ export async function claimWorkspaceWork(
          lease_expires_at=excluded.lease_expires_at,
          version=workspace_claims.version+1,
          updated_at=now()
-       where workspace_claims.status<>'ACTIVE'
-          or workspace_claims.lease_expires_at<=now()
+       where (
+              workspace_claims.status<>'ACTIVE'
+              or workspace_claims.lease_expires_at<=now()
+             )
+         and (
+              workspace_claims.object_ref_id is null
+              or excluded.object_ref_id is null
+              or workspace_claims.object_ref_id=excluded.object_ref_id
+             )
        returning *`,
       [
         input.sessionId,
         input.workKey,
+        input.objectRefId ?? null,
         input.actorId,
         actorPrincipalId,
         input.leaseSeconds,
@@ -772,6 +816,7 @@ export async function claimWorkspaceWork(
       eventType: "CLAIM_ACQUIRED",
       payload: {
         workKey: input.workKey,
+        objectRefId: input.objectRefId ?? null,
         scopeMode: requestedScope.mode,
         scopeKey: requestedScope.key,
         fencingToken: Number(row.fencing_token),

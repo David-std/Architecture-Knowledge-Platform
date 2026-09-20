@@ -184,6 +184,37 @@ describe("work and activity graph", () => {
     expect(deployment.workObjectClass).toBe("DEPLOYMENT");
     expect(incident.workObjectClass).toBe("INCIDENT");
 
+    const claimed = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/claims`,
+      headers,
+      payload: {
+        workKey: `external-ref:${deployment.id}`,
+        objectRefId: deployment.id,
+        leaseSeconds: 60,
+      },
+    });
+    expect(claimed.statusCode, claimed.body).toBe(201);
+    expect(claimed.json()).toMatchObject({
+      workKey: `external-ref:${deployment.id}`,
+      objectRefId: deployment.id,
+      status: "ACTIVE",
+    });
+
+    const state = await app.inject({
+      method: "GET",
+      url: `/v1/sessions/${sessionId}/state`,
+      headers,
+    });
+    expect(state.statusCode).toBe(200);
+    expect(
+      (state.json() as { claims: Array<{ objectRefId: string | null }> }).claims,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ objectRefId: deployment.id }),
+      ]),
+    );
+
     // A reference without a work class stays a plain projection. That is a
     // legitimate thing to store; it is simply not part of the work graph.
     const plain = await projectObject(
@@ -425,6 +456,21 @@ describe("work and activity graph", () => {
     });
     expect(crossVaultWrite.statusCode).toBe(404);
     expect(crossVaultWrite.json()).toMatchObject({
+      code: "EXTERNAL_OBJECT_REF_NOT_FOUND",
+    });
+
+    const crossVaultClaim = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${otherSessionId}/claims`,
+      headers: outsiderHeaders,
+      payload: {
+        workKey: `external-ref:${ours.id}`,
+        objectRefId: ours.id,
+        leaseSeconds: 60,
+      },
+    });
+    expect(crossVaultClaim.statusCode).toBe(404);
+    expect(crossVaultClaim.json()).toMatchObject({
       code: "EXTERNAL_OBJECT_REF_NOT_FOUND",
     });
 

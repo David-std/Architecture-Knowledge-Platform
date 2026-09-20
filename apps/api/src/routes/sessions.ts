@@ -46,8 +46,9 @@ import {
   unrestrictedSpaceIdsForPermission,
 } from "../auth.js";
 
-const PRINCIPAL_ID_PATTERN =
+const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const PRINCIPAL_ID_PATTERN = UUID_PATTERN;
 
 const WORK_CONTEXT_STATUSES = new Set([
   "OPEN",
@@ -1036,7 +1037,7 @@ export function registerSessionRoutes(
 
   app.post<{
     Params: { id: string };
-    Body: { workKey: string; leaseSeconds?: number };
+    Body: { workKey: string; objectRefId?: string; leaseSeconds?: number };
   }>(
     "/v1/sessions/:id/claims",
     {
@@ -1059,6 +1060,10 @@ export function registerSessionRoutes(
       if (!workKey || !isWorkspaceWorkKey(workKey)) {
         return reply.code(400).send({ code: "INVALID_WORK_KEY" });
       }
+      const objectRefId = request.body?.objectRefId?.trim();
+      if (objectRefId && !UUID_PATTERN.test(objectRefId)) {
+        return reply.code(400).send({ code: "INVALID_OBJECT_REF_ID" });
+      }
       const leaseSeconds = boundedLeaseSeconds(request.body.leaseSeconds);
       if (!leaseSeconds) {
         return reply.code(400).send({ code: "INVALID_CLAIM_LEASE" });
@@ -1068,6 +1073,7 @@ export function registerSessionRoutes(
         actorId: actor.id,
         actorPrincipalId: actor.principalId,
         workKey,
+        ...(objectRefId ? { objectRefId } : {}),
         leaseSeconds,
       });
       await audit(
@@ -1080,6 +1086,7 @@ export function registerSessionRoutes(
           vaultId: session.vaultId,
           claimId: claim.id,
           workKey,
+          objectRefId: claim.objectRefId,
           fencingToken: claim.fencingToken,
         },
         session.spaceId,
