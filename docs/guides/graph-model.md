@@ -37,7 +37,9 @@ Authorization is applied before graph traversal and every returned node remains 
 
 Relation allowlists and graph-domain allowlists constrain expansion. Arbitrary model-generated Cypher is not accepted as an execution path.
 
-Provenance records how an edge was derived, such as source-explicit, deterministic extraction, static resolution, runtime observation or model inference. A derived or model-inferred edge does not become canonical truth merely because it exists in a graph.
+Provenance records how a relationship was derived, such as source-explicit, deterministic extraction, static resolution, runtime observation or model inference. A derived or model-inferred relationship does not become canonical truth merely because it exists in a graph.
+
+Relationships that carry evidence, temporal validity, confidence or review state are persisted as first-class relationship assertions. The structural edge references that assertion; the assertion owns its lifecycle and provenance. Multiple assertions may describe the same endpoints and relation without being collapsed, so disputed or independently supported relationships remain inspectable instead of being flattened into one edge property bag. Current traversal accepts active and disputed assertions, while superseded or retired assertions do not become current paths.
 
 ## Degraded and offline behavior
 
@@ -49,7 +51,7 @@ Community and PPR results are derived orientation/ranking signals. They do not c
 
 A failed graph build does not replace the active good revision. The revision lifecycle separates requested, built, active, stale and failed states.
 
-Graph projections are rebuildable from canonical/source state. Backup manifests classify graph nodes/edges and community projections as derived state; after restore, run the supported projection rebuild and verify graph-domain health with `pnpm akp doctor --format human`.
+Graph projections are rebuildable from canonical/source state. The integration recovery fixture deletes projection rows, nodes, edges and relationship assertions, rebuilds the same deterministic source artifact, and requires normalized semantic graph equivalence; generated database UUIDs are not treated as graph meaning. Backup manifests classify graph nodes/edges and community projections as derived state; after restore, run the supported projection rebuild and verify graph-domain health with `pnpm akp doctor --format human`.
 
 ## Example
 

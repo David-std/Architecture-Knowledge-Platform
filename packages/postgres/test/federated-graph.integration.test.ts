@@ -98,6 +98,10 @@ async function cleanupFixture(db: Postgres, fixture: Fixture): Promise<void> {
     [spaces],
   );
   await db.pool.query(
+    "delete from federated_graph_relationship_assertions where space_id=any($1::uuid[])",
+    [spaces],
+  );
+  await db.pool.query(
     "delete from federated_graph_nodes where space_id=any($1::uuid[])",
     [spaces],
   );
@@ -1322,4 +1326,208 @@ describe("federated multi-graph substrate integration", () => {
       }
     },
   );
+  it.skipIf(!databaseUrl)(
+    "persists first-class relationship assertions and rebuilds to normalized graph equivalence",
+    async () => {
+      if (!databaseUrl) return;
+      const db = new Postgres(databaseUrl);
+      const fixture = await createFixture(db);
+      const store = new PostgresFederatedGraphStore(db);
+      try {
+        const scopeId = "catalog:rebuild-equivalence";
+        const revision = "catalog-rebuild-r1";
+        const serviceA = identity(
+          "SOFTWARE_CATALOG",
+          scopeId,
+          "service",
+          "payments-api",
+          revision,
+        );
+        const serviceB = identity(
+          "SOFTWARE_CATALOG",
+          scopeId,
+          "service",
+          "ledger-api",
+          revision,
+        );
+        const projection = artifact({
+          graphDomain: "SOFTWARE_CATALOG",
+          spaceId: fixture.spaceId,
+          vaultId: fixture.vaultA,
+          scopeId,
+          revision,
+          nodes: [
+            node(serviceA, fixture.vaultA, "allowed/catalog/payments", {
+              name: "Payments API",
+            }),
+            node(serviceB, fixture.vaultA, "allowed/catalog/ledger", {
+              name: "Ledger API",
+            }),
+          ],
+          edges: [
+            {
+              from: serviceA,
+              relation: "depends_on",
+              to: serviceB,
+              authorizationPath: "allowed/catalog/payments",
+              assertionLifecycle: "ACTIVE",
+              provenance: provenance("SOURCE_EXPLICIT", revision, {
+                sourceIds: ["catalog:declared"],
+                evidenceIds: ["evidence:catalog"],
+              }),
+            },
+            {
+              from: serviceA,
+              relation: "depends_on",
+              to: serviceB,
+              authorizationPath: "allowed/catalog/payments",
+              assertionLifecycle: "DISPUTED",
+              provenance: provenance("HUMAN_ASSERTED", revision, {
+                sourceIds: ["review:contradiction"],
+                evidenceIds: ["evidence:review"],
+              }),
+            },
+          ],
+        });
+
+        const normalizedState = async () => {
+          const nodes = await db.pool.query<{
+            kind: string;
+            canonical_key: string;
+            revision: string;
+            authorization_path: string | null;
+            payload: Record<string, unknown>;
+          }>(
+            `select kind,canonical_key,revision,authorization_path,payload
+               from federated_graph_nodes
+              where space_id=$1 and graph_domain='SOFTWARE_CATALOG'
+                and scope_id=$2
+              order by kind,canonical_key,revision,authorization_path nulls first`,
+            [fixture.spaceId, scopeId],
+          );
+          const assertions = await db.pool.query<{
+            from_kind: string;
+            from_key: string;
+            to_kind: string;
+            to_key: string;
+            relation_type: string;
+            authorization_path: string | null;
+            lifecycle: string;
+            derivation: string;
+            source_ids: string[];
+            evidence_ids: string[];
+            locator_refs: string[];
+            provenance_revision: string;
+            support_set_id: string | null;
+            confidence: number | null;
+            valid_from: string | null;
+            valid_to: string | null;
+            recorded_at: string;
+            assertion_hash: string;
+          }>(
+            `select
+               f.kind from_kind,f.canonical_key from_key,
+               t.kind to_kind,t.canonical_key to_key,
+               a.relation_type,a.authorization_path,a.lifecycle,a.derivation,
+               a.source_ids,a.evidence_ids,a.locator_refs,
+               a.provenance_revision,a.support_set_id,a.confidence,
+               a.valid_from::text,a.valid_to::text,a.recorded_at::text,
+               a.assertion_hash
+             from federated_graph_relationship_assertions a
+             join federated_graph_nodes f on f.id=a.from_node_id
+             join federated_graph_nodes t on t.id=a.to_node_id
+            where a.space_id=$1 and a.owner_graph_domain='SOFTWARE_CATALOG'
+              and f.scope_id=$2
+            order by
+              f.kind,f.canonical_key,t.kind,t.canonical_key,
+              a.relation_type,a.assertion_hash`,
+            [fixture.spaceId, scopeId],
+          );
+          return { nodes: nodes.rows, assertions: assertions.rows };
+        };
+
+        await store.build(projection);
+        const before = await normalizedState();
+        expect(before.assertions).toHaveLength(2);
+        expect(before.assertions.map((value) => value.lifecycle).sort()).toEqual(
+          ["ACTIVE", "DISPUTED"],
+        );
+
+        const paths = await store.neighbors({
+          ...queryBase(fixture, {
+            domains: ["SOFTWARE_CATALOG"],
+            relations: ["depends_on"],
+          }),
+          seed: { identity: serviceA },
+        });
+        expect(paths).toHaveLength(1);
+        expect(GraphPathResult.safeParse(paths[0]).success).toBe(true);
+        expect(paths[0]?.steps[0]?.assertion).toMatchObject({
+          ownerGraphDomain: "SOFTWARE_CATALOG",
+          relation: "depends_on",
+          authorizationPath: "allowed/catalog/payments",
+        });
+        expect(paths[0]?.steps[0]?.assertion.id).toMatch(
+          /^[0-9a-f-]{36}$/i,
+        );
+
+        await db.pool.query(
+          `delete from federated_graph_projection_revisions
+            where space_id=$1 and graph_domain='SOFTWARE_CATALOG'
+              and scope_id=$2`,
+          [fixture.spaceId, scopeId],
+        );
+        await db.pool.query(
+          `delete from federated_graph_edges e
+             using federated_graph_nodes f
+            where e.from_node_id=f.id and e.space_id=$1
+              and e.owner_graph_domain='SOFTWARE_CATALOG'
+              and f.scope_id=$2`,
+          [fixture.spaceId, scopeId],
+        );
+        await db.pool.query(
+          `delete from federated_graph_relationship_assertions a
+             using federated_graph_nodes f
+            where a.from_node_id=f.id and a.space_id=$1
+              and a.owner_graph_domain='SOFTWARE_CATALOG'
+              and f.scope_id=$2`,
+          [fixture.spaceId, scopeId],
+        );
+        await db.pool.query(
+          `delete from federated_graph_nodes
+            where space_id=$1 and graph_domain='SOFTWARE_CATALOG'
+              and scope_id=$2`,
+          [fixture.spaceId, scopeId],
+        );
+
+        expect(await normalizedState()).toEqual({
+          nodes: [],
+          assertions: [],
+        });
+
+        await store.build(projection);
+        const after = await normalizedState();
+        expect(after).toEqual(before);
+
+        const rebuiltPaths = await store.neighbors({
+          ...queryBase(fixture, {
+            domains: ["SOFTWARE_CATALOG"],
+            relations: ["depends_on"],
+          }),
+          seed: { identity: serviceA },
+        });
+        expect(rebuiltPaths).toHaveLength(1);
+        expect(rebuiltPaths[0]?.steps[0]?.assertion.provenance).toEqual(
+          paths[0]?.steps[0]?.assertion.provenance,
+        );
+        expect(rebuiltPaths[0]?.steps[0]?.assertion.lifecycle).toBe(
+          paths[0]?.steps[0]?.assertion.lifecycle,
+        );
+      } finally {
+        await cleanupFixture(db, fixture).catch(() => undefined);
+        await db.close();
+      }
+    },
+  );
+
 });

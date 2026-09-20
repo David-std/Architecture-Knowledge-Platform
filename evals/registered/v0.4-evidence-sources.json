@@ -1482,6 +1482,26 @@
           "step": "Run API integration with a persisted report"
         }
       ]
+    },
+    "integration:p3-relationship-assertion": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        }
+      ]
+    },
+    "recovery:p3-rebuild-normalized-equivalence": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        }
+      ]
     }
   }
 }

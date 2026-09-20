@@ -34,6 +34,15 @@ const GRAPH_DERIVATIONS = [
 ] as const;
 type GraphDerivation = (typeof GRAPH_DERIVATIONS)[number];
 
+const GRAPH_RELATIONSHIP_LIFECYCLES = [
+  "ACTIVE",
+  "DISPUTED",
+  "SUPERSEDED",
+  "RETIRED",
+] as const;
+type GraphRelationshipLifecycle =
+  (typeof GRAPH_RELATIONSHIP_LIFECYCLES)[number];
+
 type GraphDirection = "outgoing" | "incoming" | "both";
 type GraphFreshnessPolicy = "FRESH_ONLY" | "ALLOW_STALE";
 
@@ -61,6 +70,18 @@ interface GraphProvenanceEnvelope {
   validFrom?: string;
   validTo?: string;
   recordedAt: string;
+}
+
+interface GraphRelationshipAssertion {
+  id: string;
+  spaceId: string;
+  ownerGraphDomain: GraphDomain;
+  fromNodeId: string;
+  toNodeId: string;
+  relation: string;
+  authorizationPath: string | null;
+  lifecycle: GraphRelationshipLifecycle;
+  provenance: GraphProvenanceEnvelope;
 }
 
 interface GraphProjectionRevision {
@@ -101,6 +122,7 @@ interface GraphPathStep {
   relation: string;
   direction: "outgoing" | "incoming";
   to: GraphNodeRef;
+  assertion: GraphRelationshipAssertion;
   provenance: GraphProvenanceEnvelope;
 }
 
@@ -195,6 +217,7 @@ interface GraphProjectionEdgeInput {
   relation: string;
   to: GraphNodeIdentity;
   authorizationPath?: string | null;
+  assertionLifecycle?: GraphRelationshipLifecycle;
   provenance: GraphProvenanceEnvelope;
 }
 
@@ -255,6 +278,18 @@ function parseGraphDomain(value: unknown): GraphDomain {
     throw graphError("GRAPH_DOMAIN_INVALID");
   }
   return value as GraphDomain;
+}
+
+function parseGraphRelationshipLifecycle(
+  value: unknown,
+): GraphRelationshipLifecycle {
+  if (
+    typeof value !== "string" ||
+    !(GRAPH_RELATIONSHIP_LIFECYCLES as readonly string[]).includes(value)
+  ) {
+    throw graphError("GRAPH_RELATIONSHIP_LIFECYCLE_INVALID");
+  }
+  return value as GraphRelationshipLifecycle;
 }
 
 function parseGraphDirection(value: unknown): GraphDirection {
@@ -466,6 +501,7 @@ interface ActiveNodeRow {
 
 interface ActiveEdgeRow {
   id: string;
+  space_id: string;
   owner_graph_domain: GraphDomain;
   from_node_id: string;
   to_node_id: string;
@@ -481,6 +517,9 @@ interface ActiveEdgeRow {
   valid_from: Date | string | null;
   valid_to: Date | string | null;
   recorded_at: Date | string;
+  assertion_id: string;
+  assertion_lifecycle: GraphRelationshipLifecycle;
+  assertion_hash: string;
 }
 
 interface LoadedGraph {
@@ -662,6 +701,7 @@ function validateProjectionArtifact(input: GraphProjectionArtifact): void {
     const from = parseGraphNodeIdentity(edge.from);
     parseGraphNodeIdentity(edge.to);
     parseGraphProvenanceEnvelope(edge.provenance);
+    parseGraphRelationshipLifecycle(edge.assertionLifecycle ?? "ACTIVE");
     if (
       from.graphDomain !== input.graphDomain ||
       from.scopeId !== input.scopeId
@@ -791,6 +831,22 @@ function edgeProvenance(edge: ActiveEdgeRow) {
     ...(edge.valid_to ? { validTo: iso(edge.valid_to)! } : {}),
     recordedAt: iso(edge.recorded_at)!,
   });
+}
+
+function relationshipAssertion(
+  edge: ActiveEdgeRow,
+): GraphRelationshipAssertion {
+  return {
+    id: edge.assertion_id,
+    spaceId: edge.space_id,
+    ownerGraphDomain: edge.owner_graph_domain,
+    fromNodeId: edge.from_node_id,
+    toNodeId: edge.to_node_id,
+    relation: edge.relation_type,
+    authorizationPath: edge.authorization_path,
+    lifecycle: parseGraphRelationshipLifecycle(edge.assertion_lifecycle),
+    provenance: edgeProvenance(edge),
+  };
 }
 
 function relationAllowlist(values: readonly string[]): string[] {
@@ -1035,24 +1091,28 @@ export class PostgresFederatedGraphStore
           const relation = edge.relation.trim();
           const edgePath = authorizationPath(edge.authorizationPath ?? null);
           const provenanceHash = sha256(stableJson(provenance));
-          const inserted = await client.query<{
+          const assertionLifecycle = parseGraphRelationshipLifecycle(
+            edge.assertionLifecycle ?? "ACTIVE",
+          );
+          const assertionInserted = await client.query<{
             id: string;
             authorization_path: string | null;
+            lifecycle: GraphRelationshipLifecycle;
           }>(
-            `insert into federated_graph_edges(
+            `insert into federated_graph_relationship_assertions(
                space_id,owner_graph_domain,from_node_id,to_node_id,
-               relation_type,authorization_path,derivation,source_ids,
+               relation_type,authorization_path,lifecycle,derivation,source_ids,
                evidence_ids,locator_refs,provenance_revision,support_set_id,
-               confidence,valid_from,valid_to,recorded_at,provenance_hash
+               confidence,valid_from,valid_to,recorded_at,assertion_hash
              ) values(
-               $1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10::jsonb,$11,
-               $12,$13,$14,$15,$16,$17
+               $1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11::jsonb,$12,
+               $13,$14,$15,$16,$17,$18
              )
              on conflict(
                space_id,owner_graph_domain,from_node_id,to_node_id,
-               relation_type,provenance_revision,derivation,provenance_hash
+               relation_type,assertion_hash
              ) do nothing
-             returning id,authorization_path`,
+             returning id,authorization_path,lifecycle`,
             [
               input.spaceId,
               input.graphDomain,
@@ -1060,6 +1120,78 @@ export class PostgresFederatedGraphStore
               toId,
               relation,
               edgePath,
+              assertionLifecycle,
+              provenance.derivation,
+              JSON.stringify(provenance.sourceIds),
+              JSON.stringify(provenance.evidenceIds),
+              JSON.stringify(provenance.locatorRefs),
+              provenance.revision,
+              provenance.supportSetId ?? null,
+              provenance.confidence ?? null,
+              provenance.validFrom ?? null,
+              provenance.validTo ?? null,
+              provenance.recordedAt,
+              provenanceHash,
+            ],
+          );
+          let persistedAssertion = assertionInserted.rows[0];
+          if (!persistedAssertion) {
+            const existingAssertion = await client.query<{
+              id: string;
+              authorization_path: string | null;
+              lifecycle: GraphRelationshipLifecycle;
+            }>(
+              `select id,authorization_path,lifecycle
+                 from federated_graph_relationship_assertions
+                where space_id=$1 and owner_graph_domain=$2
+                  and from_node_id=$3 and to_node_id=$4
+                  and relation_type=$5 and assertion_hash=$6`,
+              [
+                input.spaceId,
+                input.graphDomain,
+                fromId,
+                toId,
+                relation,
+                provenanceHash,
+              ],
+            );
+            persistedAssertion = existingAssertion.rows[0];
+          }
+          if (
+            !persistedAssertion ||
+            persistedAssertion.authorization_path !== edgePath ||
+            persistedAssertion.lifecycle !== assertionLifecycle
+          ) {
+            throw graphError("GRAPH_RELATIONSHIP_ASSERTION_CONFLICT");
+          }
+
+          const inserted = await client.query<{
+            id: string;
+            authorization_path: string | null;
+            assertion_id: string;
+          }>(
+            `insert into federated_graph_edges(
+               space_id,owner_graph_domain,from_node_id,to_node_id,
+               relation_type,authorization_path,assertion_id,derivation,source_ids,
+               evidence_ids,locator_refs,provenance_revision,support_set_id,
+               confidence,valid_from,valid_to,recorded_at,provenance_hash
+             ) values(
+               $1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11::jsonb,$12,
+               $13,$14,$15,$16,$17,$18
+             )
+             on conflict(
+               space_id,owner_graph_domain,from_node_id,to_node_id,
+               relation_type,provenance_revision,derivation,provenance_hash
+             ) do nothing
+             returning id,authorization_path,assertion_id`,
+            [
+              input.spaceId,
+              input.graphDomain,
+              fromId,
+              toId,
+              relation,
+              edgePath,
+              persistedAssertion.id,
               provenance.derivation,
               JSON.stringify(provenance.sourceIds),
               JSON.stringify(provenance.evidenceIds),
@@ -1078,8 +1210,9 @@ export class PostgresFederatedGraphStore
             const existing = await client.query<{
               id: string;
               authorization_path: string | null;
+              assertion_id: string;
             }>(
-              `select id,authorization_path
+              `select id,authorization_path,assertion_id
                  from federated_graph_edges
                 where space_id=$1 and owner_graph_domain=$2
                   and from_node_id=$3 and to_node_id=$4
@@ -1098,7 +1231,11 @@ export class PostgresFederatedGraphStore
             );
             persisted = existing.rows[0];
           }
-          if (!persisted || persisted.authorization_path !== edgePath) {
+          if (
+            !persisted ||
+            persisted.authorization_path !== edgePath ||
+            persisted.assertion_id !== persistedAssertion.id
+          ) {
             throw graphError("GRAPH_EDGE_IDENTITY_CONFLICT");
           }
           await client.query(
@@ -1574,18 +1711,23 @@ export class PostgresFederatedGraphStore
     if (nodes.size > 0 && relations.length > 0) {
       const edges = await this.db.pool.query<ActiveEdgeRow>(
         `select distinct on (e.id)
-           e.id,e.owner_graph_domain,e.from_node_id,e.to_node_id,
-           e.relation_type,e.authorization_path,e.derivation,
-           e.source_ids,e.evidence_ids,e.locator_refs,e.provenance_revision,
-           e.support_set_id,e.confidence,e.valid_from,e.valid_to,e.recorded_at
+           e.id,a.space_id,a.owner_graph_domain,a.from_node_id,a.to_node_id,
+           a.relation_type,a.authorization_path,a.derivation,
+           a.source_ids,a.evidence_ids,a.locator_refs,a.provenance_revision,
+           a.support_set_id,a.confidence,a.valid_from,a.valid_to,a.recorded_at,
+           a.id assertion_id,a.lifecycle assertion_lifecycle,
+           a.assertion_hash
          from federated_graph_edges e
+         join federated_graph_relationship_assertions a
+           on a.id=e.assertion_id and a.space_id=e.space_id
          join federated_graph_projection_edges pe on pe.edge_id=e.id
          join federated_graph_projection_revisions pr
            on pr.id=pe.projection_revision_id
           and pr.space_id=e.space_id
           and pr.graph_domain=e.owner_graph_domain
         where e.space_id=$1
-          and e.relation_type=any($2::text[])
+          and a.relation_type=any($2::text[])
+          and a.lifecycle in ('ACTIVE','DISPUTED')
           and pr.lifecycle='ACTIVE'
           ${freshnessClause}
         order by e.id,pr.activated_at desc nulls last,pr.id`,
@@ -1619,6 +1761,7 @@ export class PostgresFederatedGraphStore
       graphNodeIdentityKey(nodes.get(left.to_node_id)!.identity).localeCompare(
         graphNodeIdentityKey(nodes.get(right.to_node_id)!.identity),
       ) ||
+      left.assertion_hash.localeCompare(right.assertion_hash) ||
       left.id.localeCompare(right.id);
     for (const edges of outgoing.values()) edges.sort(sortEdges);
     for (const edges of incoming.values()) {
@@ -1633,6 +1776,7 @@ export class PostgresFederatedGraphStore
               ? graphNodeIdentityKey(nodes.get(right.from_node_id)!.identity)
               : right.from_node_id,
           ) ||
+          left.assertion_hash.localeCompare(right.assertion_hash) ||
           left.id.localeCompare(right.id),
       );
     }
@@ -1746,6 +1890,7 @@ export class PostgresFederatedGraphStore
           relation: oriented.edge.relation_type,
           direction: oriented.direction,
           to,
+          assertion: relationshipAssertion(oriented.edge),
           provenance: edgeProvenance(oriented.edge),
         };
         const steps = [...current.steps, step];

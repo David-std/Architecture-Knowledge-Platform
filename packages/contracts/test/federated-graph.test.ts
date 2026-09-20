@@ -3,6 +3,7 @@ import {
   GraphNodeIdentity,
   GraphPathResult,
   GraphProvenanceEnvelope,
+  GraphRelationshipAssertion,
   GraphTraversalBounds,
   graphNodeIdentityKey,
 } from "../src/federated-graph.js";
@@ -59,6 +60,33 @@ describe("federated graph contracts", () => {
         validTo: "2026-09-18T00:00:00.000Z",
       }).success,
     ).toBe(false);
+  });
+
+  it("models relationship assertions as first-class lifecycle-bearing objects", () => {
+    const assertion = GraphRelationshipAssertion.parse({
+      id: "77777777-7777-4777-8777-777777777777",
+      spaceId: "22222222-2222-4222-8222-222222222222",
+      ownerGraphDomain: "SOFTWARE_CATALOG",
+      fromNodeId: "11111111-1111-4111-8111-111111111111",
+      toNodeId: "55555555-5555-4555-8555-555555555555",
+      relation: "depends_on",
+      authorizationPath: "catalog/payments",
+      lifecycle: "DISPUTED",
+      provenance: {
+        derivation: "SOURCE_EXPLICIT",
+        sourceIds: ["catalog-source-a", "catalog-source-b"],
+        evidenceIds: ["review-42"],
+        locatorRefs: [],
+        revision: "catalog:r1",
+        recordedAt,
+      },
+    });
+
+    expect(assertion.lifecycle).toBe("DISPUTED");
+    expect(assertion.provenance.sourceIds).toEqual([
+      "catalog-source-a",
+      "catalog-source-b",
+    ]);
   });
 
   it("rejects unbounded traversal requests", () => {
@@ -127,6 +155,24 @@ describe("federated graph contracts", () => {
           relation: "implemented_by",
           direction: "outgoing",
           to: target,
+          assertion: {
+            id: "77777777-7777-4777-8777-777777777777",
+            spaceId: "22222222-2222-4222-8222-222222222222",
+            ownerGraphDomain: "SOFTWARE_CATALOG",
+            fromNodeId: node.id,
+            toNodeId: target.id,
+            relation: "implemented_by",
+            authorizationPath: null,
+            lifecycle: "ACTIVE",
+            provenance: {
+              derivation: "HUMAN_ASSERTED",
+              sourceIds: ["catalog-entry"],
+              evidenceIds: ["review-42"],
+              locatorRefs: [],
+              revision: "bridge:r1",
+              recordedAt,
+            },
+          },
           provenance: {
             derivation: "HUMAN_ASSERTED",
             sourceIds: ["catalog-entry"],

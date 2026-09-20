@@ -23,6 +23,16 @@ export const GraphDerivation = z.enum([
 ]);
 export type GraphDerivation = z.infer<typeof GraphDerivation>;
 
+export const GraphRelationshipLifecycle = z.enum([
+  "ACTIVE",
+  "DISPUTED",
+  "SUPERSEDED",
+  "RETIRED",
+]);
+export type GraphRelationshipLifecycle = z.infer<
+  typeof GraphRelationshipLifecycle
+>;
+
 export const GraphDirection = z.enum(["outgoing", "incoming", "both"]);
 export type GraphDirection = z.infer<typeof GraphDirection>;
 
@@ -89,6 +99,21 @@ export const GraphProvenanceEnvelope = z
   });
 export type GraphProvenanceEnvelope = z.infer<typeof GraphProvenanceEnvelope>;
 
+export const GraphRelationshipAssertion = z.object({
+  id: z.string().uuid(),
+  spaceId: z.string().uuid(),
+  ownerGraphDomain: GraphDomain,
+  fromNodeId: z.string().uuid(),
+  toNodeId: z.string().uuid(),
+  relation: z.string().min(1).max(160),
+  authorizationPath: z.string().nullable(),
+  lifecycle: GraphRelationshipLifecycle,
+  provenance: GraphProvenanceEnvelope,
+});
+export type GraphRelationshipAssertion = z.infer<
+  typeof GraphRelationshipAssertion
+>;
+
 export const GraphProjectionRevision = z.object({
   id: z.string().uuid(),
   graphDomain: GraphDomain,
@@ -134,6 +159,7 @@ export const GraphPathStep = z.object({
   relation: z.string().min(1).max(160),
   direction: z.enum(["outgoing", "incoming"]),
   to: GraphNodeRef,
+  assertion: GraphRelationshipAssertion,
   provenance: GraphProvenanceEnvelope,
 });
 export type GraphPathStep = z.infer<typeof GraphPathStep>;
@@ -246,6 +272,7 @@ export interface GraphProjectionEdgeInput {
   relation: string;
   to: GraphNodeIdentity;
   authorizationPath?: string | null;
+  assertionLifecycle?: GraphRelationshipLifecycle;
   provenance: GraphProvenanceEnvelope;
 }
 
