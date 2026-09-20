@@ -1,7 +1,4 @@
-import {
-  ModelResidency,
-  mostRestrictiveModelResidency,
-} from "@akp/contracts";
+import { ModelResidency, mostRestrictiveModelResidency } from "@akp/contracts";
 import type { ModelResidency as ModelResidencyValue } from "@akp/contracts";
 
 export function resolveSourceModelResidency(
