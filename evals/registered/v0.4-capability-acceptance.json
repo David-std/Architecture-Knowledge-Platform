@@ -145,19 +145,32 @@
       "mandatory": true,
       "requirements": {
         "runtimeTest": {
-          "evidence": ["test:workspace-runtime"]
+          "evidence": [
+            "test:workspace-runtime",
+            "integration:p2-principal-audit-identities"
+          ]
         },
         "negativeTest": {
-          "evidence": ["failure:workspace-fencing"]
+          "evidence": [
+            "failure:workspace-fencing",
+            "failure:p2-work-scope-normalization"
+          ]
         },
         "integrationTest": {
-          "evidence": ["integration:team-node"]
+          "evidence": [
+            "integration:team-node",
+            "integration:p2-fresh-session-handoff",
+            "integration:p2-offline-snapshot-contract"
+          ]
         },
         "recoveryTest": {
           "evidence": ["recovery:workspace-state"]
         },
         "securityTest": {
-          "evidence": ["security:cross-space-workspace"]
+          "evidence": [
+            "security:cross-space-workspace",
+            "test:p2-authorization-decision-semantics"
+          ]
         },
         "operatorSurface": {
           "evidence": ["surface:workspace-home"]
@@ -180,10 +193,16 @@
       "mandatory": true,
       "requirements": {
         "runtimeTest": {
-          "evidence": ["test:authorization-runtime"]
+          "evidence": [
+            "test:authorization-runtime",
+            "test:p2-authorization-decision-semantics"
+          ]
         },
         "negativeTest": {
-          "evidence": ["failure:revoked-principal"]
+          "evidence": [
+            "failure:revoked-principal",
+            "test:p2-authorization-decision-semantics"
+          ]
         },
         "integrationTest": {
           "evidence": ["integration:multi-space-security"]
@@ -196,7 +215,8 @@
         "securityTest": {
           "evidence": [
             "security:cross-space-retrieval",
-            "security:unauthorized-graph-hop"
+            "security:unauthorized-graph-hop",
+            "test:p2-authorization-decision-semantics"
           ]
         },
         "operatorSurface": {

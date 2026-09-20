@@ -453,6 +453,56 @@
         }
       ]
     },
+    "test:p2-authorization-decision-semantics": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        }
+      ]
+    },
+    "integration:p2-principal-audit-identities": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "integration:p2-fresh-session-handoff": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "integration:p2-offline-snapshot-contract": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "failure:p2-work-scope-normalization": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
     "test:workspace-runtime": {
       "sources": [
         {

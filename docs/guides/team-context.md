@@ -38,7 +38,8 @@ For a shared node, use the base Compose file together with `docker-compose.team-
 4. Perform targeted retrieval, impact analysis or code/temporal context requests as needed.
 5. Capture findings, artifacts, decision candidates or notes as coordination state.
 6. Heartbeat or release the claim. For handoff, include completed work, remaining work, blockers, changed resources, evidence references and open questions.
-7. When a finding should become canonical knowledge, create a promotion request and send it through review. Workspace state itself never becomes approved knowledge automatically.
+7. A handoff addressed to another participant appears in that user's scoped handoff inbox. A newly created agent session can import the durable handoff without access to the prior transcript; the imported event preserves the source goal, source revision, changed resources, evidence, blockers and questions.
+8. When a finding should become canonical knowledge, create a promotion request and send it through review. Workspace state itself never becomes approved knowledge automatically.
 
 The Web workspace and MCP `akp_context` façade expose the same underlying boundaries rather than maintaining a second truth system.
 
@@ -46,7 +47,9 @@ The Web workspace and MCP `akp_context` façade expose the same underlying bound
 
 Authorization is evaluated before retrieval expansion. A valid workspace membership does not grant access to every vault or path in the space.
 
-`AGENT_PROCESS` principals are independent child principals. A child cannot reuse a human parent's claim fence, and normal agent credentials do not receive review, publication or administration authority unless explicitly provisioned.
+The authorization port has four explicit outcomes: `ALLOW`, `DENY`, `INDETERMINATE` and `BACKEND_UNAVAILABLE`. Protected content is returned only for `ALLOW`; every other outcome fails closed. Backend outage is not converted into ambient space membership or a broader vault scope.
+
+`AGENT_PROCESS` principals are independent child principals. Issuance exposes principal id, parent, session, roles, narrowed scopes, allowed actions, creation time, expiry, revocation state and policy revision. The token secret is returned only at creation; durable storage keeps only its hash. A child cannot reuse a human parent's claim fence, and normal agent credentials do not receive review, publication or administration authority unless explicitly provisioned.
 
 A `ContextRevisionSet` is a reproducibility pin, not an authorization grant. Profile configuration also constrains behavior but does not create runtime authority.
 
@@ -54,7 +57,7 @@ Promotion preserves source session, source revision, target scope, evidence vers
 
 ## Degraded and offline behavior
 
-An offline snapshot carries its pinned revision and integrity hash. Stale snapshots remain identifiable as offline/stale and do not silently return current-looking context.
+An offline snapshot carries its pinned revision and integrity hash. Its manifest records node/space/vault identity, profile and policy revisions, knowledge/corpus revisions, available index revisions, creation/expiry time, unavailable live channels and the count of queued local drafts. Live federation and live connector reads are explicitly unavailable while the packet is offline. Stale snapshots remain identifiable as offline/stale and do not silently return current-looking context.
 
 Offline coordination drafts include the exact base revision hash. On reconnect they can be applied only when the pin is still current; otherwise they move to reconciliation instead of using last-write-wins.
 
@@ -62,7 +65,7 @@ Optional retrieval channels may degrade explicitly, but a revision or authorizat
 
 ## Failure and recovery
 
-If a claim lease expires, a later writer must obtain a new fence. A stale writer cannot continue with the old fencing token.
+Claim scopes are NFC-normalized, reject backslashes, duplicate separators and traversal segments, and use case-sensitive canonical Git path semantics. If a claim lease expires, a later writer must obtain a new fence. A stale writer cannot continue with the old fencing token.
 
 If a context authority changes mid-operation, strict workflows return `CONTEXT_REVISION_CHANGED` and the participant should bootstrap again.
 
