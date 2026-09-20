@@ -9,7 +9,15 @@ export const AGENT_AB_REQUIRED_CATEGORIES = [
 
 export type AgentAbTaskCategory = (typeof AGENT_AB_REQUIRED_CATEGORIES)[number];
 
-export interface AgentAbTask {
+export interface AgentScoringTask {
+  id: string;
+  mandatoryTerms: string[];
+  forbiddenTerms?: string[];
+  goldCitations?: string[];
+  expectNoAnswer?: boolean;
+}
+
+export interface AgentAbTask extends AgentScoringTask {
   id: string;
   category: AgentAbTaskCategory;
   query: string;
@@ -227,7 +235,7 @@ export function validateAgentAbTasks(tasks: AgentAbTask[]): void {
 }
 
 export function scoreAgentAbOutput(
-  task: AgentAbTask,
+  task: AgentScoringTask,
   output: AgentAbModelOutput,
   allowedCitations: readonly string[],
   context = "",

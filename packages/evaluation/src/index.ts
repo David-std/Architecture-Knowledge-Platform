@@ -11,6 +11,7 @@ export * from "./curated.js";
 export * from "./agent-ab.js";
 export * from "./tool-ergonomics.js";
 export * from "./capability-acceptance.js";
+export * from "./agent-arena.js";
 
 export interface RetrievalMetrics {
   recallAtK: number;
