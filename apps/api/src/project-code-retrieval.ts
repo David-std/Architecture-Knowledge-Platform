@@ -221,26 +221,42 @@ export async function resolveProjectCodeRetrieval(
   }
 
   const graph = new PostgresFederatedGraphStore(db);
-  const state = await graph.revisionState(
-    "CODE",
-    input.spaceId,
-    identity.scopeId,
+  const catalog = await graph.catalog({
+    authorization: {
+      spaceId: input.spaceId,
+      vaults: [graphScope],
+      allowSpaceScoped: false,
+    },
+    domains: ["CODE"],
+    scopeIds: [identity.scopeId],
+  });
+  const entry = catalog.find(
+    (candidate) =>
+      candidate.domain === "CODE" &&
+      candidate.scopeId === identity.scopeId &&
+      candidate.vaultId === project.vault_id,
   );
-  const active = state.active;
-  if (!active) {
+  if (!entry?.activeRevision) {
     return unavailable(input.projectId, "CODE_GRAPH_NOT_READY", sourceRevision);
   }
   if (
-    active.freshness !== "FRESH" ||
-    active.sourceRevision.toLowerCase() !== sourceRevision
+    entry.status === "STALE" ||
+    entry.status === "UNAVAILABLE" ||
+    entry.sourceRevision?.toLowerCase() !== sourceRevision
   ) {
     return unavailable(
       input.projectId,
       "CODE_GRAPH_SOURCE_REVISION_STALE",
       sourceRevision,
-      active.revision,
+      entry.activeRevision,
     );
   }
+  const catalogWarnings =
+    entry.status === "DEGRADED"
+      ? ["CODE_GRAPH_CATALOG_DEGRADED"]
+      : entry.status === "BUILDING"
+        ? ["CODE_GRAPH_REBUILD_IN_PROGRESS"]
+        : [];
 
   const identifiers = queryIdentifiers(input.query);
   const selectorCandidates: Array<{ path: string; name?: string }> = [
@@ -269,9 +285,9 @@ export async function resolveProjectCodeRetrieval(
       projectId: input.projectId,
       available: true,
       candidates: [],
-      revision: active.revision,
+      revision: entry.activeRevision,
       sourceRevision,
-      warnings: [],
+      warnings: catalogWarnings,
     };
   }
 
@@ -369,8 +385,8 @@ export async function resolveProjectCodeRetrieval(
               citations: [...citations].sort(),
             },
           ],
-    revision: active.revision,
+    revision: entry.activeRevision,
     sourceRevision,
-    warnings: [],
+    warnings: catalogWarnings,
   };
 }

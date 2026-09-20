@@ -249,7 +249,8 @@
         "integrationTest": {
           "evidence": [
             "integration:federated-graph",
-            "integration:p3-relationship-assertion"
+            "integration:p3-relationship-assertion",
+            "integration:p3-graph-catalog"
           ]
         },
         "recoveryTest": {

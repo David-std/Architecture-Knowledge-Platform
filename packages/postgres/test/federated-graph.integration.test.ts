@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import {
+  GraphCatalogEntry,
   GraphPathResult,
   GraphProjectionRevision,
   type GraphDerivation,
@@ -1326,6 +1327,102 @@ describe("federated multi-graph substrate integration", () => {
       }
     },
   );
+  it.skipIf(!databaseUrl)(
+    "derives a permission-aware graph catalog from projection state",
+    async () => {
+      if (!databaseUrl) return;
+      const db = new Postgres(databaseUrl);
+      const fixture = await createFixture(db);
+      const store = new PostgresFederatedGraphStore(db);
+      try {
+        const scopeId = "catalog:capabilities";
+        const revision = "catalog-capability-r1";
+        const service = identity(
+          "SOFTWARE_CATALOG",
+          scopeId,
+          "service",
+          "payments-api",
+          revision,
+        );
+        await store.build(
+          artifact({
+            graphDomain: "SOFTWARE_CATALOG",
+            spaceId: fixture.spaceId,
+            vaultId: fixture.vaultA,
+            scopeId,
+            revision,
+            provider: "catalog-fixture",
+            providerVersion: "1.2.3",
+            configurationVersion: "catalog-config-v1",
+            nodes: [
+              node(service, fixture.vaultA, "allowed/catalog/payments", {
+                name: "Payments API",
+              }),
+            ],
+            edges: [],
+          }),
+        );
+
+        const full = await store.catalog({
+          authorization: {
+            spaceId: fixture.spaceId,
+            vaults: [{ vaultId: fixture.vaultA, pathPrefix: null }],
+            allowSpaceScoped: false,
+          },
+          domains: ["SOFTWARE_CATALOG"],
+          scopeIds: [scopeId],
+        });
+        expect(full).toHaveLength(1);
+        expect(GraphCatalogEntry.safeParse(full[0]).success).toBe(true);
+        expect(full[0]).toMatchObject({
+          domain: "SOFTWARE_CATALOG",
+          vaultId: fixture.vaultA,
+          scopeId,
+          activeRevision: revision,
+          sourceRevision: `source:${revision}`,
+          builder: "catalog-fixture",
+          builderVersion: "1.2.3",
+          status: "READY",
+        });
+        expect(full[0]?.configHash).toMatch(/^[a-f0-9]{64}$/);
+        expect(full[0]?.capabilities).toEqual(
+          expect.arrayContaining(["declared-topology", "typed-traversal"]),
+        );
+
+        const hidden = await store.catalog({
+          authorization: {
+            spaceId: fixture.spaceId,
+            vaults: [{ vaultId: fixture.vaultA, pathPrefix: "private" }],
+            allowSpaceScoped: false,
+          },
+          domains: ["SOFTWARE_CATALOG"],
+          scopeIds: [scopeId],
+        });
+        expect(hidden).toEqual([]);
+
+        await store.markStale(
+          "SOFTWARE_CATALOG",
+          fixture.spaceId,
+          scopeId,
+          "catalog source advanced",
+        );
+        const stale = await store.catalog({
+          authorization: {
+            spaceId: fixture.spaceId,
+            vaults: [{ vaultId: fixture.vaultA, pathPrefix: "allowed" }],
+            allowSpaceScoped: false,
+          },
+          domains: ["SOFTWARE_CATALOG"],
+          scopeIds: [scopeId],
+        });
+        expect(stale[0]?.status).toBe("STALE");
+      } finally {
+        await cleanupFixture(db, fixture).catch(() => undefined);
+        await db.close();
+      }
+    },
+  );
+
   it.skipIf(!databaseUrl)(
     "persists first-class relationship assertions and rebuilds to normalized graph equivalence",
     async () => {

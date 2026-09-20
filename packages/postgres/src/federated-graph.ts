@@ -50,6 +50,45 @@ export const MAX_GRAPH_NODE_LOOKUP_LIMIT = 1000;
 type GraphProjectionLifecycle =
   "REQUESTED" | "BUILT" | "ACTIVE" | "STALE" | "FAILED";
 type GraphProjectionFreshness = "FRESH" | "STALE";
+type GraphCatalogStatus =
+  | "READY"
+  | "BUILDING"
+  | "STALE"
+  | "DEGRADED"
+  | "UNAVAILABLE";
+
+const GRAPH_CATALOG_CAPABILITIES: Readonly<
+  Record<GraphDomain, readonly string[]>
+> = {
+  EPISTEMIC: ["typed-traversal", "provenance", "support"],
+  SOFTWARE_CATALOG: ["declared-topology", "ownership", "typed-traversal"],
+  CODE: ["symbol-structure", "typed-traversal", "impact"],
+  RUNTIME: ["runtime-observation", "temporal-window", "typed-traversal"],
+  TEMPORAL: ["temporal-validity", "typed-traversal"],
+  WORK: ["work-activity", "typed-traversal"],
+  COMMUNITY: ["derived-index", "typed-traversal"],
+};
+
+interface GraphCatalogEntry {
+  domain: GraphDomain;
+  spaceId: string;
+  vaultId: string | null;
+  scopeId: string;
+  activeRevision?: string;
+  sourceRevision?: string;
+  builder: string;
+  builderVersion: string;
+  configHash: string;
+  status: GraphCatalogStatus;
+  capabilities: string[];
+  lastSuccessfulBuild?: string;
+}
+
+interface GraphCatalogQuery {
+  authorization: GraphAuthorizationScope;
+  domains?: readonly GraphDomain[];
+  scopeIds?: readonly string[];
+}
 
 interface GraphNodeIdentity {
   graphDomain: GraphDomain;
@@ -482,6 +521,10 @@ interface ProjectionRow {
   last_successful_update: Date | string | null;
 }
 
+interface CatalogProjectionRow extends ProjectionRow {
+  node_paths: Array<string | null>;
+}
+
 interface ActiveNodeRow {
   id: string;
   space_id: string;
@@ -570,6 +613,41 @@ function sha256(value: string): string {
 function iso(value: Date | string | null): string | null {
   if (value === null) return null;
   return (value instanceof Date ? value : new Date(value)).toISOString();
+}
+
+function catalogStatus(
+  latest: GraphProjectionRevision,
+  active: GraphProjectionRevision | null,
+): GraphCatalogStatus {
+  if (!active) {
+    if (latest.lifecycle === "REQUESTED" || latest.lifecycle === "BUILT") {
+      return "BUILDING";
+    }
+    if (latest.freshness === "STALE" || latest.lifecycle === "STALE") {
+      return "STALE";
+    }
+    return "UNAVAILABLE";
+  }
+  if (active.freshness === "STALE") return "STALE";
+  if (latest.id !== active.id && latest.lifecycle === "FAILED") {
+    return "DEGRADED";
+  }
+  if (
+    latest.id !== active.id &&
+    (latest.lifecycle === "REQUESTED" || latest.lifecycle === "BUILT")
+  ) {
+    return "BUILDING";
+  }
+  return "READY";
+}
+
+function catalogConfigHash(configurationVersion: string): string {
+  const normalized = requiredString(
+    configurationVersion,
+    512,
+    "GRAPH_CONFIGURATION_VERSION_REQUIRED",
+  );
+  return /^[a-f0-9]{64}$/.test(normalized) ? normalized : sha256(normalized);
 }
 
 function mapProjection(row: ProjectionRow): GraphProjectionRevision {
@@ -1444,6 +1522,104 @@ export class PostgresFederatedGraphStore
       });
       return projection;
     });
+  }
+
+  async catalog(input: GraphCatalogQuery): Promise<GraphCatalogEntry[]> {
+    const domains = domainAllowlist(input.domains);
+    const prefixes = normalizeAuthorizationScope(input.authorization);
+    const scopeIds =
+      input.scopeIds === undefined
+        ? null
+        : input.scopeIds.map((scopeId) =>
+            requiredString(scopeId, 512, "GRAPH_SCOPE_REQUIRED"),
+          );
+    const vaultIds = [...prefixes.keys()];
+    const rows = await this.db.pool.query<CatalogProjectionRow>(
+      `select p.*,
+              coalesce(
+                jsonb_agg(distinct n.authorization_path)
+                  filter (where n.id is not null),
+                '[]'::jsonb
+              ) node_paths
+         from federated_graph_projection_revisions p
+         left join federated_graph_projection_nodes pn
+           on pn.projection_revision_id=p.id
+         left join federated_graph_nodes n
+           on n.id=pn.node_id and n.space_id=p.space_id
+        where p.space_id=$1
+          and p.graph_domain=any($2::text[])
+          and (
+            p.vault_id=any($3::uuid[])
+            or (p.vault_id is null and $4::boolean)
+          )
+          and ($5::text[] is null or p.scope_id=any($5::text[]))
+        group by p.id
+        order by
+          p.graph_domain,p.scope_id,p.vault_id nulls first,
+          p.requested_at desc,p.id desc`,
+      [
+        input.authorization.spaceId,
+        domains,
+        vaultIds,
+        input.authorization.allowSpaceScoped === true,
+        scopeIds,
+      ],
+    );
+
+    const visible = rows.rows.filter((row) => {
+      if (row.vault_id === null) {
+        return input.authorization.allowSpaceScoped === true;
+      }
+      if (!prefixes.has(row.vault_id)) return false;
+      const prefix = prefixes.get(row.vault_id) ?? null;
+      if (prefix === null) return true;
+      return row.node_paths.some(
+        (path) => path !== null && pathMatchesVaultPrefix(path, prefix),
+      );
+    });
+
+    const grouped = new Map<string, CatalogProjectionRow[]>();
+    for (const row of visible) {
+      const key = [row.graph_domain, row.scope_id, row.vault_id ?? ""].join("|");
+      const entries = grouped.get(key) ?? [];
+      entries.push(row);
+      grouped.set(key, entries);
+    }
+
+    return [...grouped.values()]
+      .map((entries) => {
+        const latest = mapProjection(entries[0]!);
+        const activeRow = entries.find((row) => row.lifecycle === "ACTIVE");
+        const active = activeRow ? mapProjection(activeRow) : null;
+        const basis = active ?? latest;
+        const status = catalogStatus(latest, active);
+        const lastSuccessfulBuild = entries
+          .map((row) => iso(row.last_successful_update))
+          .filter((value): value is string => value !== null)
+          .sort()
+          .at(-1);
+        return {
+          domain: basis.graphDomain,
+          spaceId: basis.spaceId,
+          vaultId: basis.vaultId,
+          scopeId: basis.scopeId,
+          ...(active ? { activeRevision: active.revision } : {}),
+          sourceRevision: basis.sourceRevision,
+          builder: basis.provider,
+          builderVersion: basis.providerVersion ?? "UNVERSIONED",
+          configHash: catalogConfigHash(basis.configurationVersion),
+          status,
+          capabilities: [...GRAPH_CATALOG_CAPABILITIES[basis.graphDomain]],
+          ...(lastSuccessfulBuild ? { lastSuccessfulBuild } : {}),
+        };
+      })
+      .sort((left, right) =>
+        [left.domain, left.scopeId, left.vaultId ?? ""]
+          .join("|")
+          .localeCompare(
+            [right.domain, right.scopeId, right.vaultId ?? ""].join("|"),
+          ),
+      );
   }
 
   async revisionState(

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  GraphCatalogEntry,
   GraphNodeIdentity,
   GraphPathResult,
   GraphProvenanceEnvelope,
@@ -11,6 +12,29 @@ import {
 const recordedAt = "2026-09-18T00:00:00.000Z";
 
 describe("federated graph contracts", () => {
+  it("validates graph catalog capability metadata without inventing availability", () => {
+    const entry = GraphCatalogEntry.parse({
+      domain: "CODE",
+      spaceId: "22222222-2222-4222-8222-222222222222",
+      vaultId: "33333333-3333-4333-8333-333333333333",
+      scopeId: "repo:payments",
+      activeRevision: "code:r1",
+      sourceRevision: "a".repeat(40),
+      builder: "graphify",
+      builderVersion: "0.9.63",
+      configHash: "b".repeat(64),
+      status: "READY",
+      capabilities: ["symbol-structure", "typed-traversal", "impact"],
+      lastSuccessfulBuild: recordedAt,
+    });
+
+    expect(entry.status).toBe("READY");
+    expect(
+      GraphCatalogEntry.safeParse({ ...entry, configHash: "not-a-hash" })
+        .success,
+    ).toBe(false);
+  });
+
   it("keeps identical display keys distinct across domains, scopes and revisions", () => {
     const epistemic = GraphNodeIdentity.parse({
       graphDomain: "EPISTEMIC",

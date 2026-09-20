@@ -14,6 +14,12 @@ Use direct source/truth retrieval when a single authoritative fact is enough. A 
 
 ## Configuration
 
+### Capability catalog
+
+The federated graph store derives a permission-aware catalog from durable projection revisions instead of assuming every graph domain exists. Catalog entries expose domain/scope, active and source revisions, builder/version, a deterministic configuration hash, lifecycle-derived status, capabilities and last successful build. Path-scoped callers see an entry only when the projection contains at least one node inside their authorized prefix; a catalog lookup therefore cannot reveal a hidden repository or graph scope merely because its projection exists.
+
+`READY` is directly usable. `BUILDING` keeps an existing active revision visible while a replacement is being built. `DEGRADED` reports a failed replacement while preserving a usable active revision. `STALE` and `UNAVAILABLE` fail closed for strict consumers. Project code retrieval consults this catalog before telling the query planner that the code channel is available; it no longer assumes that a `CODE` projection exists.
+
 Graph queries require an authorized space/vault scope, allowed graph domains, a relation allowlist, direction, freshness policy and hard traversal bounds.
 
 Runtime bounds include maximum hops, fanout, candidates and time budget. Search also applies hard caps before executing recursive expansion.

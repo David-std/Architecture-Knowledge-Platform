@@ -51,6 +51,31 @@ export type GraphProjectionLifecycle = z.infer<typeof GraphProjectionLifecycle>;
 export const GraphProjectionFreshness = z.enum(["FRESH", "STALE"]);
 export type GraphProjectionFreshness = z.infer<typeof GraphProjectionFreshness>;
 
+export const GraphCatalogStatus = z.enum([
+  "READY",
+  "BUILDING",
+  "STALE",
+  "DEGRADED",
+  "UNAVAILABLE",
+]);
+export type GraphCatalogStatus = z.infer<typeof GraphCatalogStatus>;
+
+export const GraphCatalogEntry = z.object({
+  domain: GraphDomain,
+  spaceId: z.string().uuid(),
+  vaultId: z.string().uuid().nullable(),
+  scopeId: z.string().min(1).max(512),
+  activeRevision: z.string().min(1).max(512).optional(),
+  sourceRevision: z.string().min(1).max(1024).optional(),
+  builder: z.string().min(1).max(160),
+  builderVersion: z.string().min(1).max(160),
+  configHash: z.string().regex(/^[a-f0-9]{64}$/),
+  status: GraphCatalogStatus,
+  capabilities: z.array(z.string().min(1).max(120)).max(32),
+  lastSuccessfulBuild: z.string().datetime().optional(),
+});
+export type GraphCatalogEntry = z.infer<typeof GraphCatalogEntry>;
+
 export const GraphNodeIdentity = z.object({
   graphDomain: GraphDomain,
   scopeId: z.string().min(1).max(512),
@@ -216,6 +241,12 @@ export interface GraphQueryBase {
   bounds: GraphTraversalBounds;
 }
 
+export interface GraphCatalogQuery {
+  authorization: GraphAuthorizationScope;
+  domains?: readonly GraphDomain[];
+  scopeIds?: readonly string[];
+}
+
 export interface GraphNodeLookupQuery {
   authorization: GraphAuthorizationScope;
   domains?: readonly GraphDomain[];
@@ -294,6 +325,10 @@ export interface GraphProjectionArtifact {
 export interface GraphIncrementalUpdate<TArtifact> {
   baseRevision: string;
   next: TArtifact;
+}
+
+export interface GraphCatalogPort {
+  catalog(input: GraphCatalogQuery): Promise<GraphCatalogEntry[]>;
 }
 
 export interface GraphQueryPort {

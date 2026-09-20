@@ -1502,6 +1502,16 @@
           "step": "Run pnpm check"
         }
       ]
+    },
+    "integration:p3-graph-catalog": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        }
+      ]
     }
   }
 }
