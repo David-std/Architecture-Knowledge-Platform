@@ -30,6 +30,7 @@ export interface KnowledgeCompilerDescriptor {
   provider: "openai-compatible";
   model: string;
   endpointRef: string;
+  policyDataResidency: ModelResidencyValue;
   dataResidency: ModelResidencyValue;
   configurationHash: string;
 }
@@ -61,6 +62,7 @@ export interface KnowledgeCompilerRouteDecision {
 const EndpointBinding = z
   .object({
     baseUrl: z.string().url(),
+    dataResidency: ModelResidency,
     apiKeyEnv: z
       .string()
       .regex(/^[A-Za-z_][A-Za-z0-9_]*$/)
@@ -142,6 +144,7 @@ function configurationHash(
           endpoint: {
             endpointRef,
             baseUrl: endpoint.baseUrl,
+            dataResidency: endpoint.dataResidency,
             apiKeyEnv: endpoint.apiKeyEnv ?? null,
           },
         }),
@@ -260,12 +263,18 @@ function candidateFromPolicy(
   env: KnowledgeCompilerEnvironment,
 ): KnowledgeCompilerRouteCandidate {
   validateOpenAICompatiblePolicy(policy);
+  if (!isModelResidencyCompatible(policy.dataResidency, endpoint.dataResidency)) {
+    throw new KnowledgeCompilerUnavailableError(
+      `Endpoint ${endpointRef} residency ${endpoint.dataResidency} violates model-role policy ${policy.dataResidency}`,
+    );
+  }
   const descriptor: KnowledgeCompilerDescriptor = {
     role: policy.role,
     provider: "openai-compatible",
     model: policy.model,
     endpointRef,
-    dataResidency: policy.dataResidency,
+    policyDataResidency: policy.dataResidency,
+    dataResidency: endpoint.dataResidency,
     configurationHash: configurationHash(policy, endpointRef, endpoint),
   };
   return {
@@ -382,20 +391,16 @@ function legacyCandidate(
     ),
     degradationSafe: false,
   });
-  const endpoint: EndpointBinding = {
-    baseUrl,
-    ...(env.AKP_LLM_API_KEY?.trim()
-      ? { apiKeyEnv: "__AKP_LEGACY_LLM_API_KEY" }
-      : {}),
-  };
   const descriptor: KnowledgeCompilerDescriptor = {
     role: policy.role,
     provider: "openai-compatible",
     model,
     endpointRef,
+    policyDataResidency: policy.dataResidency,
     dataResidency: policy.dataResidency,
     configurationHash: configurationHash(policy, endpointRef, {
       baseUrl,
+      dataResidency: policy.dataResidency,
       ...(env.AKP_LLM_API_KEY?.trim()
         ? { apiKeyEnv: "AKP_LLM_API_KEY" }
         : {}),
@@ -442,7 +447,7 @@ export function routeKnowledgeCompilerCandidates(
     if (
       !isModelResidencyCompatible(
         requirements.dataResidency,
-        candidate.policy.dataResidency,
+        candidate.descriptor.dataResidency,
       )
     ) {
       rejected.push({

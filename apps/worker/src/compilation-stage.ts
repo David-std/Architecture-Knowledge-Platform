@@ -388,7 +388,7 @@ async function sourceSummaryFallback(
         operation: prior ? "UPDATE" : "CREATE",
         content,
         reasons: [
-          "Generative compilation is disabled or unconfigured; preserve the immutable source as an inspectable review draft.",
+          "Generative compilation did not run under the effective model-routing policy; preserve the immutable source as an inspectable review draft.",
         ],
         evidenceIds: [input.evidenceId],
       },

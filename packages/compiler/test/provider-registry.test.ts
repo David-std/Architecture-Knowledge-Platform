@@ -26,6 +26,7 @@ describe("knowledge compiler provider registry", () => {
       provider: "openai-compatible",
       model: "local-compiler",
       endpointRef: "legacy-knowledge-compile",
+      policyDataResidency: "LOCAL_ONLY",
       dataResidency: "LOCAL_ONLY",
     });
     expect(configured?.descriptor.configurationHash).toMatch(/^[a-f0-9]{64}$/);
@@ -60,8 +61,14 @@ describe("knowledge compiler provider registry", () => {
         },
       ]),
       AKP_MODEL_ENDPOINTS_JSON: JSON.stringify({
-        external: { baseUrl: "https://models.example.test/v1" },
-        local: { baseUrl: "http://127.0.0.1:11434/v1" },
+        external: {
+          baseUrl: "https://models.example.test/v1",
+          dataResidency: "EXTERNAL_ALLOWED",
+        },
+        local: {
+          baseUrl: "http://127.0.0.1:11434/v1",
+          dataResidency: "LOCAL_ONLY",
+        },
       }),
     });
 
@@ -94,5 +101,27 @@ describe("knowledge compiler provider registry", () => {
         AKP_MODEL_ROLE_POLICIES_JSON: "not-json",
       }),
     ).toThrow(/valid JSON/);
+    expect(() =>
+      createKnowledgeCompilerRouteCandidates({
+        AKP_MODEL_ROLE_POLICIES_JSON: JSON.stringify([
+          {
+            role: "KNOWLEDGE_COMPILE",
+            provider: "openai-compatible",
+            model: "misbound-local",
+            endpointRef: "external",
+            timeoutMs: 30_000,
+            maxRetries: 1,
+            concurrency: 1,
+            dataResidency: "LOCAL_ONLY",
+          },
+        ]),
+        AKP_MODEL_ENDPOINTS_JSON: JSON.stringify({
+          external: {
+            baseUrl: "https://models.example.test/v1",
+            dataResidency: "EXTERNAL_ALLOWED",
+          },
+        }),
+      }),
+    ).toThrow(/violates model-role policy/);
   });
 });
