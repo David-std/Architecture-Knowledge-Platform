@@ -264,6 +264,9 @@ function config() {
   const providerTimeoutMs = Number(
     process.env.AKP_AGENT_AB_PROVIDER_TIMEOUT_MS ?? "120000",
   );
+  const contextBudgetTokens = Number(
+    process.env.AKP_AGENT_ARENA_CONTEXT_MAX_TOKENS ?? "2048",
+  );
 
   if (process.env.AKP_AGENT_ARENA_ENABLE !== "1") {
     reasons.push("AKP_AGENT_ARENA_ENABLE=1 was not set.");
@@ -298,6 +301,13 @@ function config() {
   ) {
     reasons.push("AKP_AGENT_AB_PROVIDER_TIMEOUT_MS is invalid.");
   }
+  if (
+    !Number.isSafeInteger(contextBudgetTokens) ||
+    contextBudgetTokens < 512 ||
+    contextBudgetTokens > 8192
+  ) {
+    reasons.push("AKP_AGENT_ARENA_CONTEXT_MAX_TOKENS is invalid.");
+  }
 
   return {
     ready: reasons.length === 0,
@@ -312,6 +322,7 @@ function config() {
     temperature,
     maxOutputTokens,
     providerTimeoutMs,
+    contextBudgetTokens,
   };
 }
 
@@ -344,6 +355,7 @@ function contextRequest(
   task: AgentArenaTask,
   current: Config,
   intent?: string,
+  maxTokens = current.contextBudgetTokens,
 ) {
   return {
     query: task.retrievalQuery ?? task.query,
@@ -354,7 +366,7 @@ function contextRequest(
     minimumTrust: "MACHINE_SUPPORTED",
     mode: "SOURCE_BACKED",
     limit: 20,
-    maxTokens: 8000,
+    maxTokens,
     packetMode: "COMPACT_AGENT_PACKET",
   };
 }
@@ -413,6 +425,7 @@ async function facadeCall(
   task: AgentArenaTask,
   current: Config,
   action: "SEARCH" | "VERIFY" | "EXPLAIN" | "GLOBAL" | "TEMPORAL",
+  maxTokens = current.contextBudgetTokens,
 ): Promise<ArenaContext> {
   const started = performance.now();
   const result = await dispatchAkpContext(
@@ -425,7 +438,7 @@ async function facadeCall(
       query: task.retrievalQuery ?? task.query,
       intent: task.intent,
       limit: 8,
-      maxTokens: 8000,
+      maxTokens,
       packetMode: "COMPACT_AGENT_PACKET",
       ...(action === "TEMPORAL"
         ? { temporal: { mode: "CURRENT", limit: 20 } }
@@ -462,11 +475,17 @@ async function enrichedFacadeContext(
   task: AgentArenaTask,
   current: Config,
 ): Promise<ArenaContext> {
-  const primary = await genericFacadeContext(task, current);
+  const perCallBudget = Math.floor(current.contextBudgetTokens / 2);
+  const primary = await facadeCall(
+    task,
+    current,
+    genericFacadeAction(task),
+    perCallBudget,
+  );
   const enrichment =
     task.category === "historical-as-of"
-      ? await facadeCall(task, current, "TEMPORAL")
-      : await facadeCall(task, current, "GLOBAL");
+      ? await facadeCall(task, current, "TEMPORAL", perCallBudget)
+      : await facadeCall(task, current, "GLOBAL", perCallBudget);
   return mergeContexts([primary, enrichment]);
 }
 
@@ -697,6 +716,14 @@ async function main(): Promise<void> {
     },
     arms: [...AGENT_ARENA_ARMS],
     contextTokenMethod: "CHAR_DIV_4_APPROXIMATE",
+    contextBudget: {
+      requestedTotalTokens: current.contextBudgetTokens,
+      singleCallPacketMaxTokens: current.contextBudgetTokens,
+      enrichedPerCallMaxTokens: Math.floor(current.contextBudgetTokens / 2),
+      rawSearchHitLimit: 8,
+      policy:
+        "Packet/facade arms share one requested context budget; two-call enriched arms split that budget evenly. Raw search remains hit-bounded and observed context size is reported.",
+    },
     instructionBundle: {
       sha256: AGENT_INSTRUCTION_BUNDLE.manifest.sha256,
       rules: AGENT_INSTRUCTION_BUNDLE.rules.length,
@@ -706,6 +733,7 @@ async function main(): Promise<void> {
       sameModelSettingsAcrossArms: true,
       sameTasksAcrossArms: true,
       deterministicSurfacePerArm: true,
+      boundedContextAcrossArms: true,
       superiorityClaimAllowed: false,
       mutationExecutionAllowed: false,
     },

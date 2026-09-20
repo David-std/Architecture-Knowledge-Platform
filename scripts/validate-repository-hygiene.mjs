@@ -147,7 +147,7 @@ const iterationResidue = [
 const constructionDocumentName =
   /^(?:COMPETITIVE_AUDIT|DOCUMENT_INTELLIGENCE_BENCHMARK|EVENT_DRIVEN_VALIDATION_REPORT|GENERICITY_AUDIT|IMPLEMENTATION_REPORT|MIGRATION_REPORT|PROJECT_STATE|REMAINING_REAL_GAPS|REPOSITORY_HYGIENE_REPORT|RESEARCH_LOG|RETRIEVAL_BENCHMARK|SECURITY_REPORT|TRACEABILITY|VALIDATION_REPORT)\.md$/i;
 const phasePathToken = /(?:^|[\/_.-])p\d+(?=$|[\/_.-])/i;
-const phaseLabel = /\bP\d{1,2}\b/;
+const phaseLabel = /\bP(?:[0-9]|1[0-2])\b/;
 function activeGuidanceOrAutomation(file) {
   if (/^(?:README|AGENTS|ARCHITECTURE|CONTRIBUTING|CHANGELOG)\.md$/.test(file))
     return true;

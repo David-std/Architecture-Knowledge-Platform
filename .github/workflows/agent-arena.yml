@@ -32,6 +32,7 @@ jobs:
       AKP_AGENT_AB_TEMPERATURE: "0"
       AKP_AGENT_AB_MAX_OUTPUT_TOKENS: "512"
       AKP_AGENT_AB_PROVIDER_TIMEOUT_MS: "180000"
+      AKP_AGENT_ARENA_CONTEXT_MAX_TOKENS: "2048"
       AKP_LOCAL_AGENT_MODEL: onnx-community/Qwen2.5-0.5B-Instruct
       AKP_LOCAL_AGENT_MODEL_REVISION: cc5cc01a65cc3ff17bdb73a7de33d879f62599b0
       AKP_LOCAL_AGENT_DTYPE: q4
@@ -170,10 +171,19 @@ jobs:
             report.claimPolicy?.realModelRequired !== true ||
             report.claimPolicy?.sameModelSettingsAcrossArms !== true ||
             report.claimPolicy?.sameTasksAcrossArms !== true ||
+            report.claimPolicy?.boundedContextAcrossArms !== true ||
             report.claimPolicy?.superiorityClaimAllowed !== false ||
             report.claimPolicy?.mutationExecutionAllowed !== false
           ) {
             throw new Error("Five-arm claim policy is incomplete.");
+          }
+          if (
+            report.contextBudget?.requestedTotalTokens !== 2048 ||
+            report.contextBudget?.singleCallPacketMaxTokens !== 2048 ||
+            report.contextBudget?.enrichedPerCallMaxTokens !== 1024 ||
+            report.contextBudget?.rawSearchHitLimit !== 8
+          ) {
+            throw new Error("Five-arm context budget policy is not pinned.");
           }
           if (
             report.execution?.provider?.model !==

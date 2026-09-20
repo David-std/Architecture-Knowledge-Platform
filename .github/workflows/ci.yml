@@ -60,6 +60,13 @@ jobs:
           git -C "$AKP_MANAGED_REPO" config user.email "akp-ci@localhost"
           git -C "$AKP_MANAGED_REPO" commit --allow-empty -m "chore: initialize managed knowledge for CI"
       - run: pnpm db:migrate
+      - name: Verify frozen v0.3 schema upgrade
+        env:
+          AKP_UPGRADE_DATABASE_URL: postgres://akp:akp@localhost:55432/akp_upgrade
+        run: |
+          docker compose exec -T postgres dropdb -U akp --if-exists akp_upgrade
+          docker compose exec -T postgres createdb -U akp akp_upgrade
+          pnpm proof:upgrade-migrations
       - run: pnpm auth:provision
       - run: pnpm check
       - run: pnpm contracts:validate
@@ -91,6 +98,12 @@ jobs:
           --space-id 00000000-0000-0000-0000-000000000003
           --read-only
       - run: pnpm verify:runtime
+      - name: Run operator doctor diagnostics
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p reports/ci
+          pnpm akp doctor --format json 2>&1 | tee reports/ci/doctor-runtime.json
       - name: Verify Worker OpenTelemetry export
         shell: bash
         run: |
