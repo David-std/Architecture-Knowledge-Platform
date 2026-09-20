@@ -33,6 +33,7 @@ let app: FastifyInstance;
 let db: Postgres;
 let sessionId = "";
 let releaseSessionId = "";
+let receiverSessionId = "";
 
 async function insertToken(
   userId: string,
@@ -165,7 +166,9 @@ beforeAll(async () => {
 afterAll(async () => {
   if (app) await app.close();
   if (db) {
-    for (const id of [sessionId, releaseSessionId].filter(Boolean)) {
+    for (const id of [sessionId, releaseSessionId, receiverSessionId].filter(
+      Boolean,
+    )) {
       await db.pool.query(
         "delete from audit_events where resource_type='agent_session' and resource_id=$1",
         [id],
@@ -396,6 +399,23 @@ describe("workspace coordination integration", () => {
       code: "INVALID_WORK_KEY",
     });
 
+    for (const invalidWorkKey of [
+      "packages/compiler/../web",
+      "packages\\compiler\\**",
+      "packages//compiler/**",
+    ]) {
+      const invalidNormalizedScope = await app.inject({
+        method: "POST",
+        url: `/v1/sessions/${sessionId}/claims`,
+        headers: actorBHeaders,
+        payload: { workKey: invalidWorkKey, leaseSeconds: 120 },
+      });
+      expect(invalidNormalizedScope.statusCode).toBe(400);
+      expect(invalidNormalizedScope.json()).toMatchObject({
+        code: "INVALID_WORK_KEY",
+      });
+    }
+
     const race = await Promise.all([
       app.inject({
         method: "POST",
@@ -579,6 +599,158 @@ describe("workspace coordination integration", () => {
         "WorkspaceHandoffCreated",
       ]),
     );
+
+    const receiverCreated = await app.inject({
+      method: "POST",
+      url: "/v1/sessions",
+      headers: actorBHeaders,
+      payload: {
+        spaceId,
+        vaultId,
+        purpose: "Fresh receiver session with no shared transcript",
+        contextBudget: 2048,
+      },
+    });
+    expect(receiverCreated.statusCode).toBe(201);
+    receiverSessionId = String(receiverCreated.json().id);
+
+    const receiverAgentIssued = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${receiverSessionId}/agent-processes`,
+      headers: actorBHeaders,
+      payload: {
+        label: "Fresh handoff receiver",
+        allowedActions: [
+          "workspace:read",
+          "workspace:handoff",
+          "knowledge:read",
+        ],
+      },
+    });
+    expect(receiverAgentIssued.statusCode).toBe(201);
+    const receiverAgent = receiverAgentIssued.json() as {
+      token: string;
+      principal: { id: string; sessionId: string };
+    };
+    expect(receiverAgent.principal.sessionId).toBe(receiverSessionId);
+    const receiverAgentHeaders = {
+      authorization: `Bearer ${receiverAgent.token}`,
+    };
+
+    const inbox = await app.inject({
+      method: "GET",
+      url:
+        `/v1/workspace/handoffs/inbox?spaceId=${spaceId}&vaultId=${vaultId}`,
+      headers: receiverAgentHeaders,
+    });
+    expect(inbox.statusCode).toBe(200);
+    const inboxBody = inbox.json() as {
+      handoffs: Array<{
+        handoffEventId: string;
+        sourceSessionId: string;
+        workKey: string;
+        goal: string;
+        summary: string;
+        completed: string[];
+        remaining: string[];
+        changedResourceRefs: string[];
+        evidenceRefs: string[];
+        questions: string[];
+        contextRevisionSetHash: string;
+      }>;
+    };
+    const inboxHandoff = inboxBody.handoffs.find(
+      (entry) =>
+        entry.sourceSessionId === sessionId &&
+        entry.workKey === "profile:compiler-boundary",
+    );
+    expect(inboxHandoff).toMatchObject({
+      sourceSessionId: sessionId,
+      workKey: "profile:compiler-boundary",
+      goal: "Coordinate an isolated two-actor implementation task",
+      summary:
+        "Compiler boundary finding is captured; continue validation and promotion from the shared workspace.",
+      completed: expect.arrayContaining([
+        "Claimed and isolated the compiler boundary.",
+      ]),
+      remaining: expect.arrayContaining([
+        "Validate the finding against the current governed context.",
+      ]),
+      changedResourceRefs: ["packages/compiler/**"],
+      evidenceRefs: ["workspace:finding:compiler-boundary"],
+      questions: [
+        "Does the promoted claim remain valid under the current pinned revision?",
+      ],
+      contextRevisionSetHash: createdSession.contextRevisionSetHash,
+    });
+    expect(inboxHandoff?.handoffEventId).toMatch(/^[1-9][0-9]*$/);
+
+    const importedHandoff = await app.inject({
+      method: "POST",
+      url:
+        `/v1/sessions/${receiverSessionId}/handoffs/${inboxHandoff!.handoffEventId}/import`,
+      headers: receiverAgentHeaders,
+    });
+    expect(importedHandoff.statusCode).toBe(201);
+    expect(importedHandoff.json()).toMatchObject({
+      imported: true,
+      event: {
+        event_type: "HANDOFF_IMPORTED",
+        payload: {
+          sourceHandoffEventId: inboxHandoff!.handoffEventId,
+          sourceSessionId: sessionId,
+          workKey: "profile:compiler-boundary",
+          goal: "Coordinate an isolated two-actor implementation task",
+          sourceContextRevisionSetHash: createdSession.contextRevisionSetHash,
+          revisionMismatch: false,
+        },
+      },
+    });
+
+    const importedAgain = await app.inject({
+      method: "POST",
+      url:
+        `/v1/sessions/${receiverSessionId}/handoffs/${inboxHandoff!.handoffEventId}/import`,
+      headers: receiverAgentHeaders,
+    });
+    expect(importedAgain.statusCode).toBe(201);
+    expect(
+      (importedAgain.json() as { event: { id: string } }).event.id,
+    ).toBe((importedHandoff.json() as { event: { id: string } }).event.id);
+
+    const receiverState = await app.inject({
+      method: "GET",
+      url: `/v1/sessions/${receiverSessionId}/state`,
+      headers: receiverAgentHeaders,
+    });
+    expect(receiverState.statusCode).toBe(200);
+    const importedEvent = (
+      receiverState.json() as {
+        events: Array<{
+          event_type: string;
+          payload: Record<string, unknown>;
+        }>;
+      }
+    ).events.find((event) => event.event_type === "HANDOFF_IMPORTED");
+    expect(importedEvent?.payload).toMatchObject({
+      goal: "Coordinate an isolated two-actor implementation task",
+      completed: expect.arrayContaining([
+        "Claimed and isolated the compiler boundary.",
+      ]),
+      remaining: expect.arrayContaining([
+        "Validate the finding against the current governed context.",
+      ]),
+      blockers: [],
+      changedResourceRefs: ["packages/compiler/**"],
+      evidenceRefs: ["workspace:finding:compiler-boundary"],
+      questions: [
+        "Does the promoted claim remain valid under the current pinned revision?",
+      ],
+      sourceContextRevisionSetHash: createdSession.contextRevisionSetHash,
+      receiverContextRevisionSetHash: createdSession.contextRevisionSetHash,
+      revisionMismatch: false,
+      sourceCreatedAt: expect.any(String),
+    });
 
     const staleOwner = await app.inject({
       method: "POST",

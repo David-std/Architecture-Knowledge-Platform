@@ -204,6 +204,11 @@ run("P2 principal identity", () => {
         vaultId: string;
         policyRevision: number;
         allowedActions: string[];
+        roles: string[];
+        scopes: { spaces?: Array<{ permissions?: string[] }> };
+        createdAt: string;
+        expiresAt: string;
+        revoked: boolean;
       };
     };
     expect(issuance.token.length).toBeGreaterThan(30);
@@ -217,6 +222,19 @@ run("P2 principal identity", () => {
     expect(issuance.principal.allowedActions).not.toContain(
       "workspace:manage-participants",
     );
+    expect(issuance.principal.roles).toEqual(["AGENT_PROCESS"]);
+    expect(issuance.principal.revoked).toBe(false);
+    expect(new Date(issuance.principal.createdAt).getTime()).toBeLessThanOrEqual(
+      Date.now(),
+    );
+    expect(new Date(issuance.principal.expiresAt).getTime()).toBeGreaterThan(
+      Date.now(),
+    );
+    expect(
+      issuance.principal.scopes.spaces?.flatMap(
+        (scope) => scope.permissions ?? [],
+      ),
+    ).not.toEqual(expect.arrayContaining(["knowledge:review", "admin"]));
 
     const humanPrincipal = await db.pool.query<{ id: string }>(
       "select id from principals where kind='HUMAN' and user_id=$1",
@@ -384,6 +402,62 @@ run("P2 principal identity", () => {
       actor_id: userId,
       principal_id: issuance.principal.id,
     });
+
+    const agentPrincipalIds = [issuance.principal.id];
+    for (const [index, workKey] of [
+      "agent:reviewer",
+      "agent:local-ci",
+    ].entries()) {
+      const extraIssued = await app.inject({
+        method: "POST",
+        url: `/v1/sessions/${sessionId}/agent-processes`,
+        headers: humanHeaders,
+        payload: {
+          label: `Distinct audit agent ${index + 2}`,
+          allowedActions: [
+            "workspace:read",
+            "workspace:claim",
+            "knowledge:read",
+          ],
+        },
+      });
+      expect(extraIssued.statusCode).toBe(201);
+      const extra = extraIssued.json() as {
+        token: string;
+        principal: { id: string; parentPrincipalId: string };
+      };
+      expect(extra.principal.parentPrincipalId).toBe(
+        humanPrincipal.rows[0]?.id,
+      );
+      expect(agentPrincipalIds).not.toContain(extra.principal.id);
+      agentPrincipalIds.push(extra.principal.id);
+
+      const extraClaim = await app.inject({
+        method: "POST",
+        url: `/v1/sessions/${sessionId}/claims`,
+        headers: { authorization: `Bearer ${extra.token}` },
+        payload: { workKey, leaseSeconds: 120 },
+      });
+      expect(extraClaim.statusCode).toBe(201);
+    }
+    const auditedPrincipals = await db.pool.query<{ principal_id: string }>(
+      `select distinct principal_id
+         from audit_events
+        where resource_type='agent_session'
+          and resource_id=$1
+          and principal_id is not null`,
+      [sessionId],
+    );
+    const distinctAuditPrincipals = new Set(
+      auditedPrincipals.rows.map((row) => row.principal_id),
+    );
+    expect(distinctAuditPrincipals.has(humanPrincipal.rows[0]!.id)).toBe(true);
+    for (const principalId of agentPrincipalIds) {
+      expect(distinctAuditPrincipals.has(principalId)).toBe(true);
+    }
+    expect(
+      new Set([humanPrincipal.rows[0]!.id, ...agentPrincipalIds]).size,
+    ).toBe(4);
 
     const revoked = await app.inject({
       method: "POST",

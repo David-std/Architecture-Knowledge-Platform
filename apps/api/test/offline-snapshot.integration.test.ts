@@ -126,6 +126,19 @@ async function createSession(purpose: string): Promise<{
 describe("offline context snapshot reconnect semantics", () => {
   it("captures one coherent revision, rejects stale reconnect, and revalidates through a new session", async () => {
     const r1Session = await createSession("Offline work pinned to R1");
+    const queuedDraft = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${r1Session.id}/offline-drafts`,
+      headers,
+      payload: {
+        clientDraftId: "snapshot-queued-draft",
+        baseRevisionSetHash: r1Session.contextRevisionSetHash,
+        eventType: "NOTE",
+        payload: { note: "queued while offline" },
+      },
+    });
+    expect(queuedDraft.statusCode).toBe(201);
+
     const capturedR1 = await app.inject({
       method: "POST",
       url: `/v1/sessions/${r1Session.id}/offline-snapshot`,
@@ -146,6 +159,32 @@ describe("offline context snapshot reconnect semantics", () => {
       snapshotHash: string;
       ageSeconds: number;
       mustRevalidateOnReconnect: boolean;
+      queuedDraftCount: number;
+      unavailableLiveChannels: string[];
+      snapshotRevisionSet: {
+        spaceId: string;
+        vaultId: string;
+        profile: { profileId: string };
+        policy: { revision: string };
+        dimensions: {
+          knowledgeGit: { status: string; revision: string | null };
+          corpus: { status: string; revision: string | null };
+        };
+      };
+      snapshotManifest: {
+        node: { claimed: boolean };
+        spaceId: string;
+        vaultId: string;
+        createdAt: string;
+        staleAfter: string;
+        expiresAt: string;
+        integrity: {
+          algorithm: string;
+          scope: string;
+          hash: string;
+          signature: null;
+        };
+      };
       context: Record<string, unknown>;
     };
     expect(r1Snapshot).toMatchObject({
@@ -156,6 +195,25 @@ describe("offline context snapshot reconnect semantics", () => {
       pinnedRevisionSetHash: r1Session.contextRevisionSetHash,
       currentRevisionSetHash: r1Session.contextRevisionSetHash,
       mustRevalidateOnReconnect: true,
+      queuedDraftCount: 1,
+      unavailableLiveChannels: [
+        "FEDERATION_REMOTE_QUERY",
+        "CONNECTOR_LIVE_READ",
+      ],
+      snapshotRevisionSet: {
+        spaceId,
+        vaultId,
+      },
+      snapshotManifest: {
+        spaceId,
+        vaultId,
+        integrity: {
+          algorithm: "SHA-256",
+          scope: "CONTEXT_PACKET",
+          hash: expect.stringMatching(/^[a-f0-9]{64}$/),
+          signature: null,
+        },
+      },
     });
     expect(r1Snapshot.snapshotHash).toBe(
       createHash("sha256")
@@ -164,6 +222,18 @@ describe("offline context snapshot reconnect semantics", () => {
     );
     expect(r1Snapshot.ageSeconds).toBeGreaterThanOrEqual(0);
     expect(r1Snapshot.ageSeconds).toBeLessThan(120);
+    expect(r1Snapshot.snapshotManifest.integrity.hash).toBe(
+      r1Snapshot.snapshotHash,
+    );
+    expect(
+      new Date(r1Snapshot.snapshotManifest.expiresAt).getTime(),
+    ).toBeGreaterThan(new Date(r1Snapshot.snapshotManifest.createdAt).getTime());
+    expect(r1Snapshot.snapshotRevisionSet.dimensions.knowledgeGit).toMatchObject(
+      { status: "AVAILABLE", revision: "offline:r1" },
+    );
+    expect(r1Snapshot.snapshotRevisionSet.policy.revision).toMatch(
+      /^[a-f0-9]{64}$/,
+    );
 
     await db.pool.query(
       "update vaults set current_revision='offline:r2' where id=$1",
@@ -189,6 +259,9 @@ describe("offline context snapshot reconnect semantics", () => {
       ageSeconds: number;
       mustRevalidateOnReconnect: boolean;
       changedDimensions: string[];
+      queuedDraftCount: number;
+      unavailableLiveChannels: string[];
+      snapshotRevisionSet: Record<string, unknown>;
       context: unknown;
     };
     expect(staleBody).toMatchObject({
@@ -197,6 +270,11 @@ describe("offline context snapshot reconnect semantics", () => {
       status: "CHANGED",
       pinnedRevisionSetHash: r1Session.contextRevisionSetHash,
       mustRevalidateOnReconnect: true,
+      queuedDraftCount: 1,
+      unavailableLiveChannels: [
+        "FEDERATION_REMOTE_QUERY",
+        "CONNECTOR_LIVE_READ",
+      ],
       context: null,
     });
     expect(staleBody.currentRevisionSetHash).not.toBe(
