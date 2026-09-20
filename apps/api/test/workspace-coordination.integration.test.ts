@@ -639,8 +639,7 @@ describe("workspace coordination integration", () => {
 
     const inbox = await app.inject({
       method: "GET",
-      url:
-        `/v1/workspace/handoffs/inbox?spaceId=${spaceId}&vaultId=${vaultId}`,
+      url: `/v1/workspace/handoffs/inbox?spaceId=${spaceId}&vaultId=${vaultId}`,
       headers: receiverAgentHeaders,
     });
     expect(inbox.statusCode).toBe(200);
@@ -687,8 +686,7 @@ describe("workspace coordination integration", () => {
 
     const importedHandoff = await app.inject({
       method: "POST",
-      url:
-        `/v1/sessions/${receiverSessionId}/handoffs/${inboxHandoff!.handoffEventId}/import`,
+      url: `/v1/sessions/${receiverSessionId}/handoffs/${inboxHandoff!.handoffEventId}/import`,
       headers: receiverAgentHeaders,
     });
     expect(importedHandoff.statusCode).toBe(201);
@@ -709,14 +707,13 @@ describe("workspace coordination integration", () => {
 
     const importedAgain = await app.inject({
       method: "POST",
-      url:
-        `/v1/sessions/${receiverSessionId}/handoffs/${inboxHandoff!.handoffEventId}/import`,
+      url: `/v1/sessions/${receiverSessionId}/handoffs/${inboxHandoff!.handoffEventId}/import`,
       headers: receiverAgentHeaders,
     });
     expect(importedAgain.statusCode).toBe(201);
-    expect(
-      (importedAgain.json() as { event: { id: string } }).event.id,
-    ).toBe((importedHandoff.json() as { event: { id: string } }).event.id);
+    expect((importedAgain.json() as { event: { id: string } }).event.id).toBe(
+      (importedHandoff.json() as { event: { id: string } }).event.id,
+    );
 
     const receiverState = await app.inject({
       method: "GET",

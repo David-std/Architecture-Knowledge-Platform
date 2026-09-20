@@ -18,10 +18,7 @@ export interface AuthorizationDecisionScope extends AuthorizedVaultScope {
 }
 
 export type AuthorizationDecisionStatus =
-  | "ALLOW"
-  | "DENY"
-  | "INDETERMINATE"
-  | "BACKEND_UNAVAILABLE";
+  "ALLOW" | "DENY" | "INDETERMINATE" | "BACKEND_UNAVAILABLE";
 
 export type AuthorizationVaultScopeDecision =
   | { status: "ALLOW"; scope: AuthorizationDecisionScope }

@@ -59,7 +59,9 @@ describe("PostgresAuthorizationPort", () => {
   it("exposes ALLOW, DENY, INDETERMINATE and BACKEND_UNAVAILABLE without falling open", async () => {
     const db = {} as Postgres;
     const allow = new PostgresAuthorizationPort(db, async () => scoped);
-    await expect(allow.resolveVaultScopeDecision(request)).resolves.toMatchObject({
+    await expect(
+      allow.resolveVaultScopeDecision(request),
+    ).resolves.toMatchObject({
       status: "ALLOW",
       scope: {
         vaultIds: ["vault-a"],
@@ -90,7 +92,9 @@ describe("PostgresAuthorizationPort", () => {
       code: "AUTHORIZATION_INDETERMINATE",
       sourceCode: "UNCLASSIFIED_POLICY_FAILURE",
     });
-    await expect(indeterminate.resolveVaultScope(request)).rejects.toMatchObject({
+    await expect(
+      indeterminate.resolveVaultScope(request),
+    ).rejects.toMatchObject({
       message: "AUTHORIZATION_INDETERMINATE",
       authorizationStatus: "INDETERMINATE",
       statusCode: 503,
