@@ -137,6 +137,7 @@ describeDb("workspace home operator projection", () => {
       scope: { vaultIds: string[] };
       projects: Array<Record<string, unknown>>;
       workItems: Array<Record<string, unknown>>;
+      generatedAt: string;
       pendingReviews: unknown[];
       assuranceFindings: unknown[];
       activeSessions: unknown[];
@@ -148,6 +149,8 @@ describeDb("workspace home operator projection", () => {
     };
     expect(body.scope.vaultIds).toContain(visibleVaultId);
     expect(body.scope.vaultIds).not.toContain(hiddenVaultId);
+    expect(body.generatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(body.projects[0]?.created_at).toEqual(expect.any(String));
     expect(body.workItems).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

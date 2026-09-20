@@ -16,6 +16,7 @@ const SENSITIVE_OPERATIONAL_KEY =
 
 function sanitizeOperationalValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sanitizeOperationalValue);
+  if (value instanceof Date) return value.toISOString();
   if (typeof value === "string") {
     return value.replaceAll(ABSOLUTE_OPERATIONAL_PATH, "[REDACTED_PATH]");
   }
