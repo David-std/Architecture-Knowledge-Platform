@@ -180,6 +180,21 @@ async function cleanupGraph(
   fixture: GraphFixture,
 ): Promise<void> {
   const vaultIds = [fixture.vaultId, fixture.foreignVaultId];
+  // Remove the legacy fixture first so a later derived-state cleanup failure
+  // cannot leak the deliberate cross-vault A -> X isolation edge into
+  // repository-wide runtime verification.
+  await db.pool.query("delete from knowledge_relations where space_id=$1", [
+    fixture.spaceId,
+  ]);
+  await db.pool.query("delete from knowledge_documents where space_id=$1", [
+    fixture.spaceId,
+  ]);
+  await db.pool.query(
+    `delete from event_deliveries d
+       using event_outbox e
+       where d.event_id=e.event_id and e.space_id=$1`,
+    [fixture.spaceId],
+  );
   await db.pool.query("delete from event_outbox where space_id=$1", [
     fixture.spaceId,
   ]);
@@ -195,12 +210,6 @@ async function cleanupGraph(
     [fixture.spaceId],
   );
   await db.pool.query("delete from federated_graph_nodes where space_id=$1", [
-    fixture.spaceId,
-  ]);
-  await db.pool.query("delete from knowledge_relations where space_id=$1", [
-    fixture.spaceId,
-  ]);
-  await db.pool.query("delete from knowledge_documents where space_id=$1", [
     fixture.spaceId,
   ]);
   await db.pool.query(
@@ -848,7 +857,7 @@ describe("recursive graph retrieval PostgreSQL integration", () => {
           ),
         ).toBe(false);
       } finally {
-        await cleanupGraph(db, fixture).catch(() => undefined);
+        await cleanupGraph(db, fixture);
         await db.close();
       }
     },
@@ -1007,7 +1016,7 @@ describe("recursive graph retrieval PostgreSQL integration", () => {
           expect(coreRelations.has(relation), relation).toBe(true);
         }
       } finally {
-        await cleanupGraph(db, fixture).catch(() => undefined);
+        await cleanupGraph(db, fixture);
         await db.close();
       }
     },
