@@ -64,6 +64,28 @@ type ExternalRef = {
   updatedAt: string;
 };
 
+type OperatorMe = {
+  actor: {
+    id: string;
+    memberships: Array<{
+      spaceId: string;
+      pathPrefix: string | null;
+      permissions: string[];
+    }>;
+  } | null;
+};
+
+type AuditEvent = {
+  id: string | number;
+  actor_id: string | null;
+  principal_id: string | null;
+  action: string;
+  resource_type: string;
+  resource_id: string | null;
+  trace_id: string | null;
+  created_at: string;
+};
+
 type SessionState = {
   session: Session;
   participants: Participant[];
@@ -121,16 +143,30 @@ export default async function SessionObjectPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const [state, refsResponse] = await Promise.all([
+  const [state, refsResponse, me] = await Promise.all([
     akp<SessionState>(`/v1/sessions/${encodeURIComponent(id)}/state`),
     akp<{ refs: ExternalRef[] }>(
       `/v1/sessions/${encodeURIComponent(id)}/external-refs`,
     ),
+    akp<OperatorMe>("/v1/operator/me"),
   ]);
   const grouped = sessionObjectGroups(state.events);
   const workRefs = refsResponse.refs.filter(
     (ref) => ref.workObjectClass !== null,
   );
+  const canReadAudit = Boolean(
+    me.actor?.memberships.some(
+      (membership) =>
+        membership.spaceId === state.session.spaceId &&
+        membership.pathPrefix === null &&
+        membership.permissions.includes("admin"),
+    ),
+  );
+  const auditResponse = canReadAudit
+    ? await akp<{ events: AuditEvent[] }>(
+        `/v1/audit-events?resourceType=agent_session&resourceId=${encodeURIComponent(id)}&limit=100`,
+      )
+    : { events: [] as AuditEvent[] };
 
   return (
     <main>
@@ -464,6 +500,47 @@ export default async function SessionObjectPage({
           </table>
         ) : (
           <p className="muted">No durable events.</p>
+        )}
+      </section>
+
+      <h2>Audit actions</h2>
+      <section className="card">
+        {!canReadAudit ? (
+          <p className="muted">
+            Audit actions require an unrestricted admin permission for this
+            space.
+          </p>
+        ) : auditResponse.events.length ? (
+          <table>
+            <thead>
+              <tr>
+                <th>Action</th>
+                <th>Principal</th>
+                <th>Actor</th>
+                <th>Created</th>
+                <th>Trace</th>
+              </tr>
+            </thead>
+            <tbody>
+              {auditResponse.events.map((event) => (
+                <tr key={String(event.id)}>
+                  <td>{event.action}</td>
+                  <td>
+                    <code>{short(event.principal_id)}</code>
+                  </td>
+                  <td>
+                    <code>{short(event.actor_id)}</code>
+                  </td>
+                  <td>{event.created_at}</td>
+                  <td>
+                    <code>{short(event.trace_id)}</code>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="muted">No audit actions recorded for this session.</p>
         )}
       </section>
     </main>
