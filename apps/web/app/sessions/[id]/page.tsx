@@ -96,13 +96,11 @@ function scalar(value: unknown): string {
 
 function captureTitle(event: SessionEvent): string {
   const payload = eventPayload(event.payload);
-  return (
-    scalar(payload.title) !== "—"
-      ? scalar(payload.title)
-      : scalar(payload.summary) !== "—"
-        ? scalar(payload.summary)
-        : event.event_type
-  );
+  return scalar(payload.title) !== "—"
+    ? scalar(payload.title)
+    : scalar(payload.summary) !== "—"
+      ? scalar(payload.summary)
+      : event.event_type;
 }
 
 export default async function SessionObjectPage({
@@ -160,9 +158,7 @@ export default async function SessionObjectPage({
             <code>{short(state.contextRevision.current.revisionSetHash)}</code>
           </p>
           {state.contextRevision.changedDimensions.length ? (
-            <p>
-              changed {state.contextRevision.changedDimensions.join(" · ")}
-            </p>
+            <p>changed {state.contextRevision.changedDimensions.join(" · ")}</p>
           ) : null}
         </section>
 
@@ -190,7 +186,9 @@ export default async function SessionObjectPage({
                 <li key={participant.user_id}>
                   <code>{short(participant.user_id)}</code> · {participant.role}
                   <br />
-                  <small className="muted">joined {participant.joined_at}</small>
+                  <small className="muted">
+                    joined {participant.joined_at}
+                  </small>
                 </li>
               ))}
             </ul>
@@ -284,15 +282,16 @@ export default async function SessionObjectPage({
                     )}
                     <br />
                     <small className="muted">
-                      event {event.id} · version{" "}
-                      {event.session_version ?? "—"}
+                      event {event.id} · version {event.session_version ?? "—"}
                     </small>
                   </li>
                 );
               })}
             </ul>
           ) : (
-            <p className="muted">No captured findings, artifacts or decisions.</p>
+            <p className="muted">
+              No captured findings, artifacts or decisions.
+            </p>
           )}
         </section>
 
@@ -307,8 +306,7 @@ export default async function SessionObjectPage({
                     <strong>{scalar(payload.summary)}</strong>
                     <br />
                     <small className="muted">
-                      event {event.id} · actor{" "}
-                      {short(event.actor_principal_id)}
+                      event {event.id} · actor {short(event.actor_principal_id)}
                     </small>
                   </li>
                 );

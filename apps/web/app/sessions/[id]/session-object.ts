@@ -10,9 +10,7 @@ export type SessionEvent = {
 export function sessionObjectGroups(events: SessionEvent[]) {
   return {
     captures: events.filter((event) =>
-      ["FINDING", "ARTIFACT", "DECISION_CANDIDATE"].includes(
-        event.event_type,
-      ),
+      ["FINDING", "ARTIFACT", "DECISION_CANDIDATE"].includes(event.event_type),
     ),
     handoffs: events.filter((event) => event.event_type === "CLAIM_HANDOFF"),
     blockers: events.filter((event) =>
