@@ -208,6 +208,39 @@ jobs:
           AKP_REGISTERED_RETRIEVAL_REPORT=reports/ci/registered-corpus-retrieval-benchmark.json \
             pnpm benchmark:retrieval:registered \
             2>&1 | tee reports/ci/registered-corpus-retrieval-benchmark.log
+      - name: Build honest competitive arena report
+        shell: bash
+        run: |
+          set -o pipefail
+          AKP_COMPETITIVE_RETRIEVAL_REPORT=reports/ci/registered-corpus-retrieval-benchmark.json \
+          AKP_COMPETITIVE_ARENA_REPORT=reports/ci/competitive-arena.json \
+          AKP_COMPETITIVE_ARENA_MARKDOWN=reports/ci/competitive-arena.md \
+            pnpm benchmark:competitive \
+            2>&1 | tee reports/ci/competitive-arena.log
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          const report = JSON.parse(
+            readFileSync("reports/ci/competitive-arena.json", "utf8"),
+          );
+          if (
+            report.superiorityClaimAllowed !== false ||
+            report.winner !== null ||
+            !report.coverage?.executed?.includes("akp-v0.4-baseline-channels")
+          ) {
+            throw new Error("Competitive arena evidence discipline failed.");
+          }
+          const falselyExecuted = (report.systems ?? []).filter(
+            (system) =>
+              system.id !== "akp-v0.4-baseline-channels" &&
+              system.executionStatus === "EXECUTED",
+          );
+          if (falselyExecuted.length) {
+            throw new Error(
+              "External/reference systems were falsely marked executed: " +
+                falselyExecuted.map((system) => system.id).join(", "),
+            );
+          }
+          NODE
       - name: Capture semantic retrieval diagnostics
         if: always()
         shell: bash

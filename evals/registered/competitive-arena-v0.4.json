@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "scope": "Registered AKP public-product retrieval corpus plus explicitly bounded comparator references.",
+  "systems": [
+    {
+      "id": "akp-v0.3-baseline",
+      "label": "AKP v0.3 baseline",
+      "evidenceMode": "REFERENCE_ONLY",
+      "source": "packages/evaluation/src/benchmark.ts#V03_RETRIEVAL_BASELINE",
+      "limitations": [
+        "Pinned historical reference only; current-process v0.4 results must not be relabelled as v0.3 execution."
+      ]
+    },
+    {
+      "id": "akp-v0.4-baseline-channels",
+      "label": "AKP v0.4 baseline channels",
+      "evidenceMode": "CURRENT_REGISTERED_RETRIEVAL",
+      "source": "registered-corpus-retrieval-benchmark.json",
+      "limitations": [
+        "Public product documentation only; not a private customer or production corpus.",
+        "Retrieval evidence does not by itself prove graph, code, temporal, truth or workspace metrics."
+      ]
+    },
+    {
+      "id": "graphify",
+      "label": "Graphify",
+      "evidenceMode": "REFERENCE_ONLY",
+      "source": "packages/project-adapter Graphify adapter and its checked-in tests",
+      "limitations": [
+        "Adapter behavior exists, but no same-corpus competitive run is executed by this arena."
+      ]
+    },
+    {
+      "id": "gitnexus",
+      "label": "GitNexus",
+      "evidenceMode": "OPTIONAL_EXTERNAL",
+      "source": "external comparator",
+      "limitations": [
+        "Not vendored; no comparable execution evidence is produced unless an external report is supplied."
+      ]
+    },
+    {
+      "id": "graphrag",
+      "label": "GraphRAG",
+      "evidenceMode": "OPTIONAL_EXTERNAL",
+      "source": "external comparator",
+      "limitations": [
+        "Not vendored; no comparable execution evidence is produced unless an external report is supplied."
+      ]
+    },
+    {
+      "id": "hipporag",
+      "label": "HippoRAG",
+      "evidenceMode": "OPTIONAL_EXTERNAL",
+      "source": "external comparator",
+      "limitations": [
+        "Not vendored; no comparable execution evidence is produced unless an external report is supplied."
+      ]
+    },
+    {
+      "id": "lightrag-r2r",
+      "label": "LightRAG/R2R selected retrieval paths",
+      "evidenceMode": "OPTIONAL_EXTERNAL",
+      "source": "external comparator",
+      "limitations": [
+        "Not vendored; no comparable execution evidence is produced unless an external report is supplied."
+      ]
+    },
+    {
+      "id": "graphiti",
+      "label": "Graphiti selected temporal scenarios",
+      "evidenceMode": "OPTIONAL_EXTERNAL",
+      "source": "external comparator",
+      "limitations": [
+        "Not vendored; temporal comparison requires a registered external scenario report."
+      ]
+    },
+    {
+      "id": "sage-swarmvault",
+      "label": "Sage/SwarmVault selected workflow scenarios",
+      "evidenceMode": "OPTIONAL_EXTERNAL",
+      "source": "external comparator",
+      "limitations": [
+        "Not vendored; workflow comparison requires a registered external scenario report."
+      ]
+    }
+  ]
+}
