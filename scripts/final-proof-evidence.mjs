@@ -74,12 +74,16 @@ if (
 ) {
   throw new Error("Same-SHA workflow report header is invalid.");
 }
+const expectedCommit =
+  process.env.AKP_FINAL_PROOF_COMMIT?.trim() ||
+  process.env.GITHUB_SHA?.trim() ||
+  null;
 if (
-  process.env.GITHUB_SHA &&
-  process.env.GITHUB_SHA.toLowerCase() !== workflowReport.commit.toLowerCase()
+  expectedCommit &&
+  expectedCommit.toLowerCase() !== workflowReport.commit.toLowerCase()
 ) {
   throw new Error(
-    `Workflow proof commit ${workflowReport.commit} does not match GITHUB_SHA ${process.env.GITHUB_SHA}.`,
+    `Workflow proof commit ${workflowReport.commit} does not match expected commit ${expectedCommit}.`,
   );
 }
 

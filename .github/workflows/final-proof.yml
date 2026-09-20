@@ -37,6 +37,7 @@ jobs:
         run: node scripts/final-proof-workflows.mjs
       - name: Build capability evidence ledger
         env:
+          AKP_FINAL_PROOF_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
           AKP_FINAL_PROOF_WORKFLOW_REPORT: reports/ci/final-proof-workflows.json
           AKP_CAPABILITY_EVIDENCE_LEDGER: reports/ci/final-proof-evidence.json
         run: pnpm proof:evidence
