@@ -539,12 +539,9 @@ test("critical browser workflows", async (t) => {
       await waitForUrl(API_URL + "/health/readiness", 1_500);
     } catch {
       apiWasSpawned = true;
-      spawnService(
-        "api",
-        "pnpm",
-        ["--filter", "@akp/api", "start"],
-        { PORT: "8080" },
-      );
+      spawnService("api", "pnpm", ["--filter", "@akp/api", "start"], {
+        PORT: "8080",
+      });
       await waitForUrl(API_URL + "/health/readiness");
     }
 
