@@ -182,11 +182,11 @@ describe("community index PostgreSQL integration", () => {
 
         await db.pool.query(`
           create or replace function akp_test_community_build_failure()
-          returns trigger language plpgsql as $
+          returns trigger language plpgsql as $akp$
           begin
             raise exception 'COMMUNITY_BUILD_TEST_FAILURE';
           end;
-          $
+          $akp$
         `);
         await db.pool.query(`
           create trigger akp_test_community_build_failure
