@@ -681,6 +681,9 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
 
     await browserStep(t, "1 bootstrap workspace", pages, async () => {
       await adminPage.goto(ADMIN_WEB + "/sessions/" + session.id);
+      await adminPage
+        .getByText("Browser E2E workspace bootstrap", { exact: true })
+        .waitFor();
       const body = await adminPage.locator("body").innerText();
       assert.match(body, /Browser E2E workspace bootstrap/);
       assert.match(body, /Retrieved context IDs/);
