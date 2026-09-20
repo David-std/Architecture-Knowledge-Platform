@@ -94,6 +94,14 @@ function dbWithNeutralProfile(postCompileRevisionId = PROFILE_REVISION_ID) {
     .mockResolvedValueOnce({
       rows: [
         {
+          space_model_residency: "EXTERNAL_ALLOWED",
+          source_model_residency: "EXTERNAL_ALLOWED",
+        },
+      ],
+    })
+    .mockResolvedValueOnce({
+      rows: [
+        {
           id: EVIDENCE_ID,
           locator: locator(),
           content_hash: EXCERPT_HASH,
@@ -246,6 +254,6 @@ describe("active profile compiler integration", () => {
 
     await expect(pending).rejects.toThrow("CONTEXT_REVISION_CHANGED");
     expect(compile).toHaveBeenCalledOnce();
-    expect(query).toHaveBeenCalledTimes(4);
+    expect(query).toHaveBeenCalledTimes(5);
   });
 });
