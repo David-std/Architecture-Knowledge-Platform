@@ -495,6 +495,39 @@ describe("API security boundaries", () => {
       });
       expect(deniedSearch.statusCode).toBe(200);
       expect(deniedSearch.json().hits).toHaveLength(0);
+
+      const allowedSearch = await app.inject({
+        method: "POST",
+        url: "/v1/search",
+        headers: limitedHeaders,
+        payload: {
+          query: allowedId,
+          spaceId: defaultSpace,
+          vaultId: defaultVaultId,
+          types: [],
+          minimumTrust: "UNVERIFIED",
+          mode: "COMPILED_ONLY",
+          limit: 10,
+        },
+      });
+      expect(allowedSearch.statusCode).toBe(200);
+      expect(allowedSearch.json().hits).toHaveLength(1);
+      expect(allowedSearch.json().hits[0]).toMatchObject({
+        documentId: documentIds[0],
+        vaultId: defaultVaultId,
+        retrievalTrace: {
+          authorization: {
+            decision: "ALLOW",
+            spaceId: defaultSpace,
+            vaultId: defaultVaultId,
+            pathRestricted: true,
+          },
+        },
+      });
+      expect(JSON.stringify(allowedSearch.json().hits[0].retrievalTrace)).not.toContain(
+        deniedId,
+      );
+
       expect(
         (
           await app.inject({

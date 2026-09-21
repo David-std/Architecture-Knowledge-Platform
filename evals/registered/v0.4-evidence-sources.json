@@ -1934,6 +1934,78 @@
           "path": "apps/worker/test/truth-maintenance.test.ts"
         }
       ]
+    },
+    "test:p6-retrieval-trace-contract": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        },
+        {
+          "type": "FILE",
+          "path": "packages/retrieval/test/rrf.test.ts"
+        },
+        {
+          "type": "FILE",
+          "path": "packages/retrieval/test/rerank.test.ts"
+        },
+        {
+          "type": "FILE",
+          "path": "packages/retrieval/test/context-packet.test.ts"
+        }
+      ]
+    },
+    "failure:p6-reranker-candidate-set": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        },
+        {
+          "type": "FILE",
+          "path": "packages/retrieval/test/rerank.test.ts"
+        }
+      ]
+    },
+    "integration:p6-retrieval-trace-e2e": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/test/query-transform.integration.test.ts"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/test/semantic-retrieval.integration.test.ts"
+        }
+      ]
+    },
+    "security:p6-retrieval-trace-scope": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/test/security.integration.test.ts"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/test/query-transform.integration.test.ts"
+        }
+      ]
     }
   }
 }

@@ -4874,6 +4874,119 @@ components:
         - properties:
             vaultIds: { type: array, minItems: 1 }
           required: [vaultIds]
+    RetrievalTraceGeneration:
+      type: object
+      additionalProperties: false
+      required: [kind, id]
+      properties:
+        kind:
+          type: string
+          enum: [LEXICAL, VECTOR, GRAPH, COMMUNITY, CONTEXT_PACK, CODE]
+        id: { type: string, minLength: 1, maxLength: 2048 }
+        provider: { type: string, minLength: 1, maxLength: 512 }
+        model: { type: string, minLength: 1, maxLength: 512 }
+        modelRevision: { type: string, minLength: 1, maxLength: 512 }
+        configurationHash: { type: string, pattern: "^[a-f0-9]{64}$" }
+    RetrievalTraceQueryTransform:
+      type: object
+      additionalProperties: false
+      required: [transformerId, kind, ordinal, reason]
+      properties:
+        transformerId: { type: string, minLength: 1, maxLength: 512 }
+        traceId: { type: string, format: uuid }
+        kind:
+          type: string
+          enum: [DECOMPOSITION, MULTI_QUERY, HYDE]
+        ordinal: { type: integer, minimum: 1 }
+        reason: { type: string, minLength: 1, maxLength: 1024 }
+    RetrievalTraceContribution:
+      type: object
+      additionalProperties: false
+      required: [channel, rank, channelWeight, reason]
+      properties:
+        channel: { type: string, minLength: 1, maxLength: 128 }
+        rank: { type: integer, minimum: 1 }
+        channelWeight: { type: number, minimum: 0 }
+        reason: { type: string, minLength: 1, maxLength: 2048 }
+        rawScore: { type: number }
+        candidateRevision: { type: [string, "null"] }
+        generation: { $ref: "#/components/schemas/RetrievalTraceGeneration" }
+        queryTransform:
+          { $ref: "#/components/schemas/RetrievalTraceQueryTransform" }
+        supportSetId: { type: string, minLength: 1, maxLength: 2048 }
+    RetrievalTrace:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          authorization,
+          truth,
+          temporal,
+          contributions,
+          fusion,
+          finalSelectionReason,
+        ]
+      properties:
+        authorization:
+          type: object
+          additionalProperties: false
+          required: [decision, spaceId, vaultId, pathRestricted]
+          properties:
+            decision: { type: string, enum: [ALLOW, SCOPED_INTERNAL] }
+            spaceId: { type: string, format: uuid }
+            vaultId: { type: string, format: uuid }
+            pathRestricted: { type: boolean }
+        truth:
+          type: object
+          additionalProperties: false
+          required: [state, consistency, revisionHash, capturedAt]
+          properties:
+            state:
+              type: string
+              enum: [SUPPORTED, DISPUTED, UNANNOTATED]
+            consistency:
+              type: string
+              enum: [STRICT, BEST_EFFORT]
+            revisionHash:
+              type: [string, "null"]
+              pattern: "^[a-f0-9]{64}$"
+            capturedAt: { type: string, format: date-time }
+        temporal:
+          type: object
+          additionalProperties: false
+          required: [lifecycle, refreshStatus]
+          properties:
+            lifecycle: { $ref: "#/components/schemas/Lifecycle" }
+            refreshStatus: { type: string, minLength: 1, maxLength: 128 }
+        contributions:
+          type: array
+          minItems: 1
+          maxItems: 32
+          items: { $ref: "#/components/schemas/RetrievalTraceContribution" }
+        fusion:
+          type: object
+          additionalProperties: false
+          required: [score, reasons]
+          properties:
+            score: { type: number }
+            reasons:
+              type: array
+              maxItems: 64
+              items: { type: string, minLength: 1, maxLength: 2048 }
+        rerank:
+          type: object
+          additionalProperties: false
+          required: [reranker, preRank, postRank, preScore, postScore]
+          properties:
+            reranker: { type: string, minLength: 1, maxLength: 512 }
+            preRank: { type: integer, minimum: 1 }
+            postRank: { type: integer, minimum: 1 }
+            preScore: { type: number }
+            postScore: { type: number }
+        finalSelectionReason:
+          type: string
+          minLength: 1
+          maxLength: 8192
     SearchHit:
       type: object
       required:
@@ -4941,6 +5054,9 @@ components:
             reranker: { type: string, minLength: 1 }
             preRank: { type: integer, minimum: 1 }
             postRank: { type: integer, minimum: 1 }
+            preScore: { type: number }
+            postScore: { type: number }
+        retrievalTrace: { $ref: "#/components/schemas/RetrievalTrace" }
         excerpt: { type: string }
         citations:
           type: array

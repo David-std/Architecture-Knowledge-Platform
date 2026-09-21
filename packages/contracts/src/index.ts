@@ -544,7 +544,7 @@ export const RetrievalTrace = z
   .object({
     authorization: z
       .object({
-        decision: z.literal("ALLOW"),
+        decision: z.enum(["ALLOW", "SCOPED_INTERNAL"]),
         spaceId: z.string().uuid(),
         vaultId: z.string().uuid(),
         pathRestricted: z.boolean(),

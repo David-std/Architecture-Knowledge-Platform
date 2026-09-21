@@ -407,19 +407,32 @@
       "mandatory": true,
       "requirements": {
         "runtimeTest": {
-          "evidence": ["test:advanced-retrieval-runtime"]
+          "evidence": [
+            "test:advanced-retrieval-runtime",
+            "test:p6-retrieval-trace-contract"
+          ]
         },
         "negativeTest": {
-          "evidence": ["failure:community-build-rollback", "failure:ppr-cancel"]
+          "evidence": [
+            "failure:community-build-rollback",
+            "failure:ppr-cancel",
+            "failure:p6-reranker-candidate-set"
+          ]
         },
         "integrationTest": {
-          "evidence": ["integration:retrieval-context"]
+          "evidence": [
+            "integration:retrieval-context",
+            "integration:p6-retrieval-trace-e2e"
+          ]
         },
         "recoveryTest": {
           "evidence": ["recovery:derived-index-rebuild"]
         },
         "securityTest": {
-          "evidence": ["security:ppr-no-leak"]
+          "evidence": [
+            "security:ppr-no-leak",
+            "security:p6-retrieval-trace-scope"
+          ]
         },
         "operatorSurface": {
           "evidence": ["surface:retrieval-diagnostics"]

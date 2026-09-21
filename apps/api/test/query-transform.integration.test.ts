@@ -240,6 +240,51 @@ describe("query transformation retrieval", () => {
           ),
         ).toBe(true);
         expect(warnings).not.toContain("QUERY_TRANSFORM_TRACE_NOT_PERSISTED");
+        expect(
+          withTransform.every(
+            (hit) =>
+              hit.retrievalTrace?.authorization.decision === "SCOPED_INTERNAL" &&
+              hit.retrievalTrace.authorization.spaceId === value.spaceId &&
+              hit.retrievalTrace.authorization.vaultId ===
+                value.authorizedVaultId &&
+              hit.retrievalTrace.authorization.pathRestricted === false &&
+              hit.retrievalTrace.truth.state === "UNANNOTATED" &&
+              hit.retrievalTrace.truth.consistency === "STRICT",
+          ),
+        ).toBe(true);
+        const transformTraceIds = new Set(
+          withTransform.flatMap((hit) =>
+            hit.retrievalTrace?.contributions.flatMap((contribution) =>
+              contribution.queryTransform
+                ? [contribution.queryTransform.traceId]
+                : [],
+            ) ?? [],
+          ),
+        );
+        expect(transformTraceIds.size).toBe(1);
+        expect([...transformTraceIds][0]).toMatch(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+        );
+        for (const hit of withTransform) {
+          const transformedContribution =
+            hit.retrievalTrace?.contributions.find(
+              (contribution) => contribution.queryTransform,
+            );
+          expect(transformedContribution?.queryTransform).toMatchObject({
+            transformerId: "deterministic-query-decomposition-v1",
+            kind: "DECOMPOSITION",
+            reason: "strong-delimiter decomposition",
+          });
+          expect(
+            transformedContribution?.queryTransform?.ordinal,
+          ).toBeGreaterThan(0);
+          expect(hit.retrievalTrace?.finalSelectionReason).toContain(
+            "lexical:transformed:DECOMPOSITION:",
+          );
+          expect(JSON.stringify(hit.retrievalTrace)).not.toContain(
+            value.unauthorizedVaultId,
+          );
+        }
 
         const trace = await db.pool.query<{
           original_query: string;

@@ -359,6 +359,38 @@ describe("semantic retrieval PostgreSQL integration", () => {
           unitId: fixture.primary.unitId,
           reasons: ["vector"],
         });
+        expect(primaryHits[0]?.retrievalTrace).toMatchObject({
+          authorization: {
+            decision: "SCOPED_INTERNAL",
+            spaceId: fixture.primary.spaceId,
+            vaultId: fixture.primary.vaultId,
+            pathRestricted: false,
+          },
+          truth: {
+            state: "UNANNOTATED",
+            consistency: "STRICT",
+          },
+          temporal: {
+            lifecycle: "ACTIVE",
+            refreshStatus: "CURRENT",
+          },
+          contributions: [
+            expect.objectContaining({
+              channel: "vector",
+              generation: {
+                kind: "VECTOR",
+                id: primaryGeneration.generationId,
+                provider: semanticDescriptor.provider,
+                model: semanticDescriptor.model,
+                modelRevision: semanticDescriptor.modelRevision,
+              },
+            }),
+          ],
+          finalSelectionReason: "vector",
+        });
+        expect(primaryHits[0]?.retrievalTrace?.fusion.score).toBe(
+          primaryHits[0]?.score,
+        );
         expect(primaryHits[0]?.documentId).not.toBe(
           fixture.secondVault.documentId,
         );

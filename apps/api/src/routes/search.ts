@@ -180,6 +180,14 @@ interface ExactSearchRow {
   match_reason: string;
 }
 
+interface QueryTransformContributionTrace {
+  transformerId: string;
+  traceId: string;
+  kind: QueryTransformationKind;
+  ordinal: number;
+  reason: string;
+}
+
 interface LexicalSearchRow {
   id: string;
   unit_id: string | null;
@@ -189,6 +197,7 @@ interface LexicalSearchRow {
   match_reason: string;
   query_variant_kind?: QueryTransformationKind;
   query_variant_ordinal?: number;
+  query_transform_trace?: QueryTransformContributionTrace;
 }
 
 interface DocumentChannelRow {
@@ -394,6 +403,8 @@ export interface RetrievalExecutionOptions {
   queryTransformMaxVariants?: number;
   queryTransformActorId?: string;
   queryTransformTraceId?: string;
+  /** True only after an outer authorization boundary resolved this scope. */
+  authorizationResolved?: boolean;
   /** Test/provider injection seam; production resolves the active descriptor. */
   queryEmbeddingService?: QueryEmbeddingService;
   /** Safe capability warnings accumulated without changing the legacy hit return type. */
@@ -592,6 +603,7 @@ interface VectorSearchRow {
   score: number;
   query_variant_kind?: QueryTransformationKind;
   query_variant_ordinal?: number;
+  query_transform_trace?: QueryTransformContributionTrace;
 }
 
 function vectorTruthRef(row: VectorSearchRow): string {
@@ -1014,6 +1026,7 @@ export function sanitizeEvidenceLocator(value: unknown): unknown {
 interface AssistedRetrievalQuery {
   query: string;
   variant?: QueryTransformationVariant;
+  trace?: QueryTransformContributionTrace;
 }
 
 async function transformedRetrievalQueries(input: {
@@ -1084,11 +1097,19 @@ async function transformedRetrievalQueries(input: {
       return [{ query: input.originalQuery }];
     }
 
+    const traceId = persisted.rows[0].id;
     return [
       { query: input.originalQuery },
       ...transformed.variants.map((variant) => ({
         query: variant.query,
         variant,
+        trace: {
+          transformerId: transformed.transformerId,
+          traceId,
+          kind: variant.kind,
+          ordinal: variant.ordinal,
+          reason: variant.reason,
+        },
       })),
     ];
   } catch (error) {
@@ -1201,6 +1222,15 @@ export async function queryKnowledge(
   const truthRevisionByVault = new Map(
     truthSnapshot.vaults.map((entry) => [entry.vaultId, entry]),
   );
+  type DerivedTraceState = "SUPPORTED" | "DISPUTED" | "UNANNOTATED";
+  const derivedTruthTraceByRef = new Map<
+    string,
+    { state: DerivedTraceState; supportSetId?: string }
+  >();
+  const derivedTruthTraceKey = (
+    kind: "VECTOR" | "COMMUNITY_REPORT" | "CONTEXT_FRAGMENT",
+    refValue: string,
+  ) => `${kind}:${refValue}`;
   const filterDerivedTruth = async <T extends { vault_id?: string }>(
     rows: readonly T[],
     input: {
@@ -1248,6 +1278,20 @@ export async function queryKnowledge(
             `TRUTH_SUPPORT_DISPUTED:${input.warningKind}:${input.warningId(row)}`,
           );
         }
+        const state: DerivedTraceState =
+          validation?.state === "SUPPORTED" ||
+          validation?.state === "DISPUTED" ||
+          validation?.state === "UNANNOTATED"
+            ? validation.state
+            : "UNANNOTATED";
+        const supportSetId = validation?.dependency?.supportSetId;
+        derivedTruthTraceByRef.set(
+          derivedTruthTraceKey(input.derivedStoreKind, input.ref(row)),
+          {
+            state,
+            ...(supportSetId ? { supportSetId } : {}),
+          },
+        );
         accepted.push(row);
       }
     }
@@ -1280,6 +1324,9 @@ export async function queryKnowledge(
     [spaceId, vaultIds],
   );
   const index = combineVaultIndexRows(indexRows.rows);
+  const indexRevisionByVault = new Map(
+    indexRows.rows.map((row) => [String(row.vault_id ?? ""), row]),
+  );
   const inferredCapabilities = plannerCapabilitiesForIndex(index, {
     vectorProviderAvailable:
       process.env.AKP_VECTOR_ENABLED === "true" ||
@@ -1586,6 +1633,9 @@ export async function queryKnowledge(
                 match_reason: `lexical:transformed:${assisted.variant.kind}:${row.match_reason}`,
                 query_variant_kind: assisted.variant.kind,
                 query_variant_ordinal: assisted.variant.ordinal,
+                ...(assisted.trace
+                  ? { query_transform_trace: assisted.trace }
+                  : {}),
               }
             : row,
         ),
@@ -1601,6 +1651,10 @@ export async function queryKnowledge(
   }
 
   const vector = { rows: [] as VectorSearchRow[] };
+  const vectorGenerationById = new Map<
+    string,
+    ActiveEmbeddingGenerationDescriptor
+  >();
   if (
     (process.env.AKP_VECTOR_ENABLED === "true" ||
       options.allowVectorForBenchmark) &&
@@ -1638,6 +1692,7 @@ export async function queryKnowledge(
       options.queryEmbeddingService ?? new QueryEmbeddingService();
     for (const generationRow of generations.rows) {
       const generation = activeDescriptor(generationRow);
+      vectorGenerationById.set(generation.generationId, generation);
       if (
         !Number.isSafeInteger(generation.dimensions) ||
         generation.dimensions < 1 ||
@@ -1701,6 +1756,9 @@ export async function queryKnowledge(
                     ...row,
                     query_variant_kind: assisted.variant.kind,
                     query_variant_ordinal: assisted.variant.ordinal,
+                    ...(assisted.trace
+                      ? { query_transform_trace: assisted.trace }
+                      : {}),
                   }
                 : row,
             ),
@@ -2468,6 +2526,12 @@ export async function queryKnowledge(
               scopeId: spaceId,
               documentId: candidate.nodeId,
               revision: graphRevision,
+              trace: {
+                generation: {
+                  kind: "GRAPH",
+                  id: graphRevision,
+                },
+              },
               selectionReason: "graph-ppr:associative",
             })),
           );
@@ -2500,6 +2564,13 @@ export async function queryKnowledge(
           documentId: String(row.id),
           ...(row.unit_id ? { unitId: String(row.unit_id) } : {}),
           revision: String(row.document_revision),
+          ...(row.query_transform_trace
+            ? {
+                trace: {
+                  queryTransform: row.query_transform_trace,
+                },
+              }
+            : {}),
           selectionReason: row.match_reason
             ? String(row.match_reason)
             : "lexical",
@@ -2514,6 +2585,44 @@ export async function queryKnowledge(
       documentId: String(row.id),
       ...(row.unit_id ? { unitId: String(row.unit_id) } : {}),
       revision: String(row.document_revision),
+      trace: {
+        ...(vectorGenerationById.get(row.generation_id)
+          ? {
+              generation: {
+                kind: "VECTOR" as const,
+                id: row.generation_id,
+                provider: vectorGenerationById.get(row.generation_id)!.provider,
+                model: vectorGenerationById.get(row.generation_id)!.model,
+                modelRevision:
+                  vectorGenerationById.get(row.generation_id)!.modelRevision,
+                ...(vectorGenerationById.get(row.generation_id)!
+                  .configurationHash
+                  ? {
+                      configurationHash:
+                        vectorGenerationById.get(row.generation_id)!
+                          .configurationHash,
+                    }
+                  : {}),
+              },
+            }
+          : {}),
+        ...(row.query_transform_trace
+          ? { queryTransform: row.query_transform_trace }
+          : {}),
+        ...(() => {
+          const truth = derivedTruthTraceByRef.get(
+            derivedTruthTraceKey("VECTOR", vectorTruthRef(row)),
+          );
+          return truth
+            ? {
+                truthState: truth.state,
+                ...(truth.supportSetId
+                  ? { supportSetId: truth.supportSetId }
+                  : {}),
+              }
+            : {};
+        })(),
+      },
       selectionReason: row.query_variant_kind
         ? `vector:transformed:${row.query_variant_kind}`
         : "vector",
@@ -2527,6 +2636,28 @@ export async function queryKnowledge(
       documentId: String(row.id),
       revision: String(row.document_revision),
       supportSetId: `${row.community_revision}:${row.community_key}`,
+      trace: {
+        generation: {
+          kind: "COMMUNITY" as const,
+          id: row.community_revision,
+        },
+        ...(() => {
+          const truth = derivedTruthTraceByRef.get(
+            derivedTruthTraceKey(
+              "COMMUNITY_REPORT",
+              communityTruthRef(row),
+            ),
+          );
+          return truth
+            ? {
+                truthState: truth.state,
+                ...(truth.supportSetId
+                  ? { supportSetId: truth.supportSetId }
+                  : {}),
+              }
+            : {};
+        })(),
+      },
       selectionReason:
         retrievalPolicy.graphMode === "DRIFT"
           ? "community:drift-routing"
@@ -2539,6 +2670,24 @@ export async function queryKnowledge(
       scopeId: spaceId,
       documentId: String(row.id),
       revision: String(row.document_revision),
+      ...(() => {
+        const truth = derivedTruthTraceByRef.get(
+          derivedTruthTraceKey(
+            "CONTEXT_FRAGMENT",
+            contextFragmentTruthRef(row),
+          ),
+        );
+        return truth
+          ? {
+              trace: {
+                truthState: truth.state,
+                ...(truth.supportSetId
+                  ? { supportSetId: truth.supportSetId }
+                  : {}),
+              },
+            }
+          : {};
+      })(),
       selectionReason: "context-pack:lexical-match",
     })),
     ...rawFallback.rows.map((row, index) => ({
@@ -2687,6 +2836,31 @@ export async function queryKnowledge(
       },
     ]),
   );
+  const generationForContribution = (
+    contribution: (typeof fused)[number]["contributions"][number],
+    vaultId: string,
+  ): NonNullable<SearchHit["retrievalTrace"]>["contributions"][number]["generation"] => {
+    if (contribution.trace?.generation) {
+      return contribution.trace.generation;
+    }
+    const revision = indexRevisionByVault.get(vaultId);
+    const channel = contribution.channel;
+    const generation =
+      channel === "lexical"
+        ? { kind: "LEXICAL" as const, id: revision?.lexical_revision }
+        : channel === "graph" || channel === "graph-ppr"
+          ? { kind: "GRAPH" as const, id: revision?.graph_revision }
+          : channel === "context-pack"
+            ? {
+                kind: "CONTEXT_PACK" as const,
+                id: revision?.context_pack_revision,
+              }
+            : null;
+    return generation?.id && String(generation.id).trim()
+      ? { kind: generation.kind, id: String(generation.id) }
+      : undefined;
+  };
+
   const results = fused
     .map((item): SearchHit | null => {
       const row = byId.get(item.id);
@@ -2739,12 +2913,64 @@ export async function queryKnowledge(
         ]),
       ];
       const matchedUnit = bestUnitByDocument.get(item.id);
+      const vaultId = String(row.vault_id);
+      const contributionTruthStates = item.contributions.flatMap(
+        (contribution) =>
+          contribution.trace?.truthState
+            ? [contribution.trace.truthState]
+            : [],
+      );
+      const truthState =
+        contributionTruthStates.includes("DISPUTED")
+          ? "DISPUTED"
+          : contributionTruthStates.includes("SUPPORTED")
+            ? "SUPPORTED"
+            : "UNANNOTATED";
+      const truthRevision = truthRevisionByVault.get(vaultId);
+      const traceContributions: NonNullable<
+        SearchHit["retrievalTrace"]
+      >["contributions"] = item.contributions.map((contribution) => {
+        const generation = generationForContribution(contribution, vaultId);
+        return {
+          channel: contribution.channel,
+          rank: contribution.rank,
+          channelWeight: contribution.channelWeight,
+          reason: contribution.reason,
+          ...(contribution.rawScore === undefined
+            ? {}
+            : { rawScore: contribution.rawScore }),
+          ...(contribution.candidateRevision === undefined
+            ? {}
+            : { candidateRevision: contribution.candidateRevision }),
+          ...(generation ? { generation } : {}),
+          ...(contribution.trace?.queryTransform
+            ? { queryTransform: contribution.trace.queryTransform }
+            : {}),
+          ...(contribution.trace?.supportSetId
+            ? { supportSetId: contribution.trace.supportSetId }
+            : {}),
+        };
+      });
+      const publicFusionContributions = item.contributions.map(
+        (contribution) => ({
+          channel: contribution.channel,
+          rank: contribution.rank,
+          channelWeight: contribution.channelWeight,
+          reason: contribution.reason,
+          ...(contribution.rawScore === undefined
+            ? {}
+            : { rawScore: contribution.rawScore }),
+          ...(contribution.candidateRevision === undefined
+            ? {}
+            : { candidateRevision: contribution.candidateRevision }),
+        }),
+      );
       const structuralContext = matchedUnit
         ? structuralContextByUnit.get(matchedUnit.unitId)
         : undefined;
       return {
         documentId: String(row.id),
-        vaultId: String(row.vault_id),
+        vaultId,
         ...matchedUnit,
         ...(structuralContext?.parentUnitId
           ? { parentUnitId: structuralContext.parentUnitId }
@@ -2771,7 +2997,33 @@ export async function queryKnowledge(
         refreshStatus: String(row.refresh_status),
         score: item.score,
         reasons: item.reasons,
-        fusionContributions: item.contributions,
+        fusionContributions: publicFusionContributions,
+        retrievalTrace: {
+          authorization: {
+            decision: options.authorizationResolved
+              ? "ALLOW"
+              : "SCOPED_INTERNAL",
+            spaceId,
+            vaultId,
+            pathRestricted: Boolean(options.pathAuthorizer),
+          },
+          truth: {
+            state: truthState,
+            consistency: truthConsistency,
+            revisionHash: truthRevision?.revisionHash ?? null,
+            capturedAt: truthSnapshot.capturedAt,
+          },
+          temporal: {
+            lifecycle: String(row.lifecycle) as SearchHit["lifecycle"],
+            refreshStatus: String(row.refresh_status),
+          },
+          contributions: traceContributions,
+          fusion: {
+            score: item.score,
+            reasons: item.reasons,
+          },
+          finalSelectionReason: item.reasons.join("; "),
+        },
         ...(graphProvenanceByCandidate.has(item.id)
           ? { graphProvenance: graphProvenanceByCandidate.get(item.id) }
           : {}),
@@ -2991,6 +3243,7 @@ export function registerSearchRoutes(
             : {}),
           warningSink: retrievalWarnings,
           availableChannelSink: availableChannels,
+          authorizationResolved: true,
           pathAuthorizer,
           truthConsistency: parsed.data.truthConsistency ?? "STRICT",
           truthStateSink: (state) => {
@@ -3430,6 +3683,7 @@ export function registerSearchRoutes(
             : {}),
           warningSink: retrievalWarnings,
           availableChannelSink: availableChannels,
+          authorizationResolved: true,
           pathAuthorizer,
           truthConsistency: parsed.data.truthConsistency ?? "STRICT",
           truthStateSink: (state) => {
@@ -3517,6 +3771,7 @@ export function registerSearchRoutes(
             : {}),
           warningSink: retrievalWarnings,
           availableChannelSink: availableChannels,
+          authorizationResolved: true,
           pathAuthorizer,
           truthConsistency: parsed.data.truthConsistency ?? "STRICT",
           truthStateSink: (state) => {
