@@ -114,10 +114,7 @@ describe.skipIf(!databaseUrl)("temporal truth store", () => {
       sourceEpisodeIds: [episodeA.id, episodeB.id],
       alternativeSupportGroups: [
         [`source_episode:${episodeA.id}`],
-        [
-          `source_episode:${episodeB.id}`,
-          `source_artifact:${artifactB}`,
-        ],
+        [`source_episode:${episodeB.id}`, `source_artifact:${artifactB}`],
       ],
     });
     const recorded = await store.recordFact({
