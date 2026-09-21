@@ -68,6 +68,36 @@ describe("safe search hit reranking", () => {
         trust: "ATTESTED",
         citations: ["evidence:retry-policy"],
         warnings: ["DISPUTED_SUPPORT_VISIBLE"],
+        retrievalTrace: {
+          authorization: {
+            decision: "ALLOW",
+            spaceId: "00000000-0000-4000-8000-000000000088",
+            vaultId: "00000000-0000-4000-8000-000000000099",
+            pathRestricted: true,
+          },
+          truth: {
+            state: "SUPPORTED",
+            consistency: "STRICT",
+            revisionHash: "a".repeat(64),
+            capturedAt: "2026-09-20T00:00:00.000Z",
+          },
+          temporal: {
+            lifecycle: "ACTIVE",
+            refreshStatus: "CURRENT",
+          },
+          contributions: [
+            {
+              channel: "lexical",
+              rank: 2,
+              channelWeight: 1,
+              reason: "lexical:title",
+              rawScore: 0.8,
+              candidateRevision: "corpus-1",
+            },
+          ],
+          fusion: { score: 1, reasons: ["rrf"] },
+          finalSelectionReason: "rrf",
+        },
       },
     );
     const input = [first, second];
@@ -100,7 +130,19 @@ describe("safe search hit reranking", () => {
         postRank: output.indexOf(candidate) + 1,
       });
       expect(candidate.rerankTrace?.preRank).toBeGreaterThan(0);
+      expect(candidate.rerankTrace?.preScore).toBeGreaterThan(0);
+      expect(candidate.rerankTrace?.postScore).toBe(candidate.score);
     }
+    expect(output[0]?.retrievalTrace?.rerank).toMatchObject({
+      reranker: DETERMINISTIC_LEXICAL_RERANKER,
+      preRank: 2,
+      postRank: 1,
+      preScore: 1,
+    });
+    expect(output[0]?.retrievalTrace?.rerank?.postScore).toBe(output[0]?.score);
+    expect(output[0]?.retrievalTrace?.finalSelectionReason).toContain(
+      "deterministic-lexical-rerank",
+    );
     expect(first.rerankTrace).toBeUndefined();
     expect(second.rerankTrace).toBeUndefined();
   });

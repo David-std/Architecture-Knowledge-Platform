@@ -488,6 +488,109 @@ export const GraphPathProvenance = z.object({
 });
 export type GraphPathProvenance = z.infer<typeof GraphPathProvenance>;
 
+export const RetrievalTraceGeneration = z
+  .object({
+    kind: z.enum([
+      "LEXICAL",
+      "VECTOR",
+      "GRAPH",
+      "COMMUNITY",
+      "CONTEXT_PACK",
+      "CODE",
+    ]),
+    id: z.string().min(1).max(2048),
+    provider: z.string().min(1).max(512).optional(),
+    model: z.string().min(1).max(512).optional(),
+    modelRevision: z.string().min(1).max(512).optional(),
+    configurationHash: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
+  })
+  .strict();
+export type RetrievalTraceGeneration = z.infer<
+  typeof RetrievalTraceGeneration
+>;
+
+export const RetrievalTraceQueryTransform = z
+  .object({
+    transformerId: z.string().min(1).max(512),
+    traceId: z.string().uuid().optional(),
+    kind: z.enum(["DECOMPOSITION", "MULTI_QUERY", "HYDE"]),
+    ordinal: z.number().int().positive(),
+    reason: z.string().min(1).max(1024),
+  })
+  .strict();
+export type RetrievalTraceQueryTransform = z.infer<
+  typeof RetrievalTraceQueryTransform
+>;
+
+export const RetrievalTraceContribution = z
+  .object({
+    channel: z.string().min(1).max(128),
+    rank: z.number().int().positive(),
+    channelWeight: z.number().nonnegative(),
+    reason: z.string().min(1).max(2048),
+    rawScore: z.number().finite().optional(),
+    candidateRevision: z.string().nullable().optional(),
+    generation: RetrievalTraceGeneration.optional(),
+    queryTransform: RetrievalTraceQueryTransform.optional(),
+    supportSetId: z.string().min(1).max(2048).optional(),
+  })
+  .strict();
+export type RetrievalTraceContribution = z.infer<
+  typeof RetrievalTraceContribution
+>;
+
+export const RetrievalTrace = z
+  .object({
+    authorization: z
+      .object({
+        decision: z.literal("ALLOW"),
+        spaceId: z.string().uuid(),
+        vaultId: z.string().uuid(),
+        pathRestricted: z.boolean(),
+      })
+      .strict(),
+    truth: z
+      .object({
+        state: z.enum(["SUPPORTED", "DISPUTED", "UNANNOTATED"]),
+        consistency: z.enum(["STRICT", "BEST_EFFORT"]),
+        revisionHash: z
+          .string()
+          .regex(/^[a-f0-9]{64}$/)
+          .nullable(),
+        capturedAt: z.string().datetime(),
+      })
+      .strict(),
+    temporal: z
+      .object({
+        lifecycle: Lifecycle,
+        refreshStatus: z.string().min(1).max(128),
+      })
+      .strict(),
+    contributions: z.array(RetrievalTraceContribution).min(1).max(32),
+    fusion: z
+      .object({
+        score: z.number().finite(),
+        reasons: z.array(z.string().min(1).max(2048)).max(64),
+      })
+      .strict(),
+    rerank: z
+      .object({
+        reranker: z.string().min(1).max(512),
+        preRank: z.number().int().positive(),
+        postRank: z.number().int().positive(),
+        preScore: z.number().finite(),
+        postScore: z.number().finite(),
+      })
+      .strict()
+      .optional(),
+    finalSelectionReason: z.string().min(1).max(8192),
+  })
+  .strict();
+export type RetrievalTrace = z.infer<typeof RetrievalTrace>;
+
 export const SearchHit = z.object({
   documentId: z.string().uuid(),
   vaultId: z.string().uuid(),
@@ -527,8 +630,11 @@ export const SearchHit = z.object({
       reranker: z.string().min(1),
       preRank: z.number().int().positive(),
       postRank: z.number().int().positive(),
+      preScore: z.number().finite().optional(),
+      postScore: z.number().finite().optional(),
     })
     .optional(),
+  retrievalTrace: RetrievalTrace.optional(),
   excerpt: z.string(),
   citations: z.array(z.string()),
   warnings: z.array(z.string()).optional(),
@@ -822,6 +928,7 @@ export const ContextSection = z.object({
   selectionReason: z.string(),
   sourceOrEvidenceIds: z.array(z.string()),
   graphProvenance: z.array(GraphPathProvenance).optional(),
+  retrievalTrace: RetrievalTrace.optional(),
 });
 export type ContextSection = z.infer<typeof ContextSection>;
 
@@ -933,6 +1040,7 @@ export const CompactContextSection = z.object({
   selectionReason: z.string(),
   score: z.number().optional(),
   graphProvenance: z.array(GraphPathProvenance).optional(),
+  retrievalTrace: RetrievalTrace.optional(),
 });
 export type CompactContextSection = z.infer<typeof CompactContextSection>;
 

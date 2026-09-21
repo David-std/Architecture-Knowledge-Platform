@@ -454,6 +454,9 @@ export function contextSectionFromCandidate(
     ...(hit.graphProvenance !== undefined
       ? { graphProvenance: hit.graphProvenance }
       : {}),
+    ...(hit.retrievalTrace !== undefined
+      ? { retrievalTrace: hit.retrievalTrace }
+      : {}),
   };
 }
 
@@ -491,6 +494,9 @@ function compactSection(section: BaseContextSection): CompactPacketSection {
     ...(section.graphProvenance === undefined
       ? {}
       : { graphProvenance: section.graphProvenance }),
+    ...(section.retrievalTrace === undefined
+      ? {}
+      : { retrievalTrace: section.retrievalTrace }),
   };
 }
 

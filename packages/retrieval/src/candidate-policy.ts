@@ -1,4 +1,4 @@
-import type { RankedChannel } from "./rrf.js";
+import type { RankedChannel, RankedItemTrace } from "./rrf.js";
 import type { RetrievalChannel } from "./query-planner.js";
 
 export type RetrievalCandidateChannel =
@@ -25,6 +25,7 @@ export interface RetrievalCandidate {
   unitId?: string;
   revision: string;
   supportSetId?: string;
+  trace?: RankedItemTrace;
   selectionReason: unknown;
 }
 
@@ -337,6 +338,7 @@ export function retrievalCandidatesToRankedChannels(
           ? { rawScore: candidate.rawScore }
           : {}),
         candidateRevision: candidate.revision,
+        ...(candidate.trace === undefined ? {} : { trace: candidate.trace }),
       })),
     });
   }

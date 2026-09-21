@@ -122,6 +122,65 @@ describe("buildContextPacket", () => {
     expect(compact.content[0]?.contextLevel).toBe("L1");
   });
 
+  it("preserves the first-class retrieval trace in full and compact context sections", () => {
+    const tracedHit = {
+      ...baseHit,
+      retrievalTrace: {
+        authorization: {
+          decision: "ALLOW" as const,
+          spaceId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          vaultId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          pathRestricted: true,
+        },
+        truth: {
+          state: "SUPPORTED" as const,
+          consistency: "STRICT" as const,
+          revisionHash: "a".repeat(64),
+          capturedAt: "2026-09-20T00:00:00.000Z",
+        },
+        temporal: {
+          lifecycle: "ACTIVE" as const,
+          refreshStatus: "CURRENT",
+        },
+        contributions: [
+          {
+            channel: "vector",
+            rank: 1,
+            channelWeight: 1,
+            reason: "vector",
+            rawScore: 0.91,
+            candidateRevision: "abc",
+            generation: {
+              kind: "VECTOR" as const,
+              id: "generation-1",
+              provider: "fixture-provider",
+              model: "fixture-model",
+              modelRevision: "r1",
+            },
+          },
+        ],
+        fusion: { score: 1 / 61, reasons: ["vector"] },
+        finalSelectionReason: "vector",
+      },
+    };
+    const pair = buildContextPacketPair({
+      request: requestFor("trace"),
+      intent: "CONCEPTUAL",
+      corpusRevision: "deadbeef",
+      maxTokens: 4_000,
+      candidates: [
+        { hit: tracedHit, content: "Traced context", kind: "concept" },
+      ],
+    });
+
+    expect(pair.full.sections[0]?.retrievalTrace).toEqual(
+      tracedHit.retrievalTrace,
+    );
+    expect(pair.compact.content[0]?.retrievalTrace).toEqual(
+      tracedHit.retrievalTrace,
+    );
+  });
+
   it("copies graph provenance and renders compact, de-duplicated paths", () => {
     const graphProvenance: GraphPathProvenance[] = [
       {

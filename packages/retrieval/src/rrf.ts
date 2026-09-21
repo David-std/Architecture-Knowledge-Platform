@@ -1,3 +1,33 @@
+export interface RankedTraceGeneration {
+  kind:
+    | "LEXICAL"
+    | "VECTOR"
+    | "GRAPH"
+    | "COMMUNITY"
+    | "CONTEXT_PACK"
+    | "CODE";
+  id: string;
+  provider?: string;
+  model?: string;
+  modelRevision?: string;
+  configurationHash?: string;
+}
+
+export interface RankedTraceQueryTransform {
+  transformerId: string;
+  traceId?: string;
+  kind: "DECOMPOSITION" | "MULTI_QUERY" | "HYDE";
+  ordinal: number;
+  reason: string;
+}
+
+export interface RankedItemTrace {
+  generation?: RankedTraceGeneration;
+  queryTransform?: RankedTraceQueryTransform;
+  supportSetId?: string;
+  truthState?: "SUPPORTED" | "DISPUTED" | "UNANNOTATED";
+}
+
 /** A ranked candidate emitted by one retrieval channel. */
 export interface RankedItem {
   id: string;
@@ -12,6 +42,8 @@ export interface RankedItem {
   /** Channel-native score retained for explanation only; never used by RRF. */
   rawScore?: number;
   candidateRevision?: string | null;
+  /** Explanation-only provenance; never participates in RRF score. */
+  trace?: RankedItemTrace;
 }
 
 /** Preferred production input: a named ranked list with one channel weight. */
@@ -29,6 +61,8 @@ export interface RrfContribution {
   /** Channel-native score retained for explanation only; never used by RRF. */
   rawScore?: number;
   candidateRevision?: string | null;
+  /** Explanation-only provenance retained from the winning channel row. */
+  trace?: RankedItemTrace;
 }
 
 export interface FusedItem {
@@ -74,6 +108,19 @@ function validateWeight(weight: unknown, fieldName: string): number {
   return weight;
 }
 
+function stableTraceKey(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableTraceKey).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => compareStrings(left, right))
+      .map(([key, entry]) => `${JSON.stringify(key)}:${stableTraceKey(entry)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "<undefined>";
+}
+
 function candidateRevisionKey(revision: string | null | undefined): string {
   return revision === undefined
     ? "<undefined>"
@@ -104,6 +151,7 @@ function compareCandidateRecords(
       candidateRevisionKey(left.candidateRevision),
       candidateRevisionKey(right.candidateRevision),
     ) ||
+    compareStrings(stableTraceKey(left.trace), stableTraceKey(right.trace)) ||
     compareStrings(left.id, right.id)
   );
 }
@@ -146,6 +194,12 @@ function normalizeRankedItem(
     (typeof item.rawScore !== "number" || !Number.isFinite(item.rawScore))
   ) {
     throw new Error("rawScore must be finite when provided");
+  }
+  if (
+    item.trace !== undefined &&
+    (!item.trace || typeof item.trace !== "object")
+  ) {
+    throw new Error("trace must be an object when provided");
   }
 
   // Only channelWeight (or the legacy weight alias) enters RRF. Arbitrary raw
@@ -238,6 +292,7 @@ export function reciprocalRankFusion(
         ...(item.candidateRevision !== undefined
           ? { candidateRevision: item.candidateRevision }
           : {}),
+        ...(item.trace !== undefined ? { trace: item.trace } : {}),
       };
       const current = fused.get(item.id) ?? {
         id: item.id,
@@ -261,7 +316,8 @@ export function reciprocalRankFusion(
         compareStrings(
           candidateRevisionKey(left.candidateRevision),
           candidateRevisionKey(right.candidateRevision),
-        ),
+        ) ||
+        compareStrings(stableTraceKey(left.trace), stableTraceKey(right.trace)),
     );
     // Sum in canonical contribution order so input channel order cannot
     // change floating-point rounding or tie ordering.

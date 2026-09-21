@@ -252,6 +252,69 @@ describe("reciprocalRankFusion", () => {
     });
   });
 
+  it("preserves explanation-only trace without letting it change RRF scoring or input-order determinism", () => {
+    const first = {
+      id: "a",
+      rank: 1,
+      channelWeight: 2,
+      reason: "vector",
+      rawScore: 0.9,
+      candidateRevision: "doc-r1",
+      trace: {
+        generation: {
+          kind: "VECTOR" as const,
+          id: "generation-1",
+          provider: "fixture",
+          model: "fixture-model",
+        },
+        queryTransform: {
+          transformerId: "fixture-transform",
+          kind: "DECOMPOSITION" as const,
+          ordinal: 1,
+          reason: "fixture variant",
+        },
+      },
+    };
+    const second = {
+      ...first,
+      trace: {
+        ...first.trace,
+        generation: {
+          ...first.trace.generation,
+          id: "generation-2",
+        },
+      },
+    };
+    const forward = reciprocalRankFusion([
+      { channel: "vector", items: [second, first] },
+    ]);
+    const reversed = reciprocalRankFusion([
+      { channel: "vector", items: [first, second] },
+    ]);
+
+    expect(forward).toEqual(reversed);
+    expect(forward[0]).toMatchObject({
+      id: "a",
+      score: 2 / 61,
+      contributions: [
+        {
+          channel: "vector",
+          rank: 1,
+          channelWeight: 2,
+          reason: "vector",
+          rawScore: 0.9,
+          candidateRevision: "doc-r1",
+          trace: {
+            generation: {
+              kind: "VECTOR",
+              id: "generation-1",
+            },
+          },
+        },
+      ],
+    });
+  });
+
   it("is independent of the order in which channels are supplied", () => {
     const lexical = {
       channel: "lexical",

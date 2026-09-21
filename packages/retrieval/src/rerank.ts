@@ -109,7 +109,26 @@ export function rerankSearchHits(
       reranker: reranker.id,
       preRank: preRankByDocument.get(hit.documentId) ?? index + 1,
       postRank: index + 1,
+      preScore: hit.score,
+      postScore: rerankScore,
     },
+    ...(hit.retrievalTrace
+      ? {
+          retrievalTrace: {
+            ...hit.retrievalTrace,
+            rerank: {
+              reranker: reranker.id,
+              preRank: preRankByDocument.get(hit.documentId) ?? index + 1,
+              postRank: index + 1,
+              preScore: hit.score,
+              postScore: rerankScore,
+            },
+            finalSelectionReason: [
+              ...new Set([...hit.reasons, reason]),
+            ].join("; "),
+          },
+        }
+      : {}),
   }));
 
   const outputIds = output.map((hit) => hit.documentId);
