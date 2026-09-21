@@ -110,10 +110,14 @@ describe.skipIf(!databaseUrl)("temporal truth store", () => {
     const support = await store.createSupportSet({
       spaceId,
       vaultId,
+      sourceArtifactIds: [artifactB],
       sourceEpisodeIds: [episodeA.id, episodeB.id],
       alternativeSupportGroups: [
         [`source_episode:${episodeA.id}`],
-        [`source_episode:${episodeB.id}`],
+        [
+          `source_episode:${episodeB.id}`,
+          `source_artifact:${artifactB}`,
+        ],
       ],
     });
     const recorded = await store.recordFact({
@@ -163,6 +167,10 @@ describe.skipIf(!databaseUrl)("temporal truth store", () => {
       truthState: "SUPPORTED_CURRENT",
     });
 
+    // Group 2 is conjunctive: the source artifact remains valid, so support
+    // must still fail when its source-episode member is withdrawn. Together
+    // with the surviving group 2 after A is withdrawn, this proves OR across
+    // alternative groups and AND within each group.
     const afterB = await store.withdrawSourceEpisode({
       spaceId,
       vaultId,
