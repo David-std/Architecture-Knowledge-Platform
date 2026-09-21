@@ -2020,6 +2020,30 @@
           "path": "packages/retrieval/src/rerank.ts"
         }
       ]
+    },
+    "benchmark:p6-ann-decision-deferred": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        },
+        {
+          "type": "STEP",
+          "workflow": "semantic-retrieval",
+          "job": "real-multilingual-semantic-retrieval",
+          "step": "Validate filtered ANN evidence boundaries"
+        },
+        {
+          "type": "FILE",
+          "path": "evals/registered/ann-decision.json"
+        },
+        {
+          "type": "FILE",
+          "path": "scripts/filtered-ann-baseline.ts"
+        }
+      ]
     }
   }
 }
