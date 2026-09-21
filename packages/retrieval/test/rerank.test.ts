@@ -4,6 +4,7 @@ import {
   DETERMINISTIC_LEXICAL_RERANKER,
   deterministicLexicalReranker,
   rerankSearchHits,
+  rerankSearchHitsSafely,
   type SearchHitReranker,
 } from "../src/rerank.js";
 
@@ -160,6 +161,103 @@ describe("safe search hit reranking", () => {
         deterministicLexicalReranker,
       ),
     ).toThrow("RERANK_DUPLICATE_CANDIDATE_ID");
+  });
+
+  it("falls back to fused order when an optional reranker returns an invalid score", () => {
+    const first = hit(
+      "00000000-0000-4000-8000-000000000005",
+      "Baseline first",
+      "Baseline first",
+      {
+        retrievalTrace: {
+          authorization: {
+            decision: "ALLOW",
+            spaceId: "00000000-0000-4000-8000-000000000088",
+            vaultId: "00000000-0000-4000-8000-000000000099",
+            pathRestricted: false,
+          },
+          truth: {
+            state: "SUPPORTED",
+            consistency: "STRICT",
+            revisionHash: "b".repeat(64),
+            capturedAt: "2026-09-21T00:00:00.000Z",
+          },
+          temporal: {
+            lifecycle: "ACTIVE",
+            refreshStatus: "CURRENT",
+          },
+          contributions: [
+            {
+              channel: "lexical",
+              rank: 1,
+              channelWeight: 1,
+              reason: "lexical:baseline",
+            },
+          ],
+          fusion: { score: 1, reasons: ["rrf"] },
+          finalSelectionReason: "rrf",
+        },
+      },
+    );
+    const second = hit(
+      "00000000-0000-4000-8000-000000000006",
+      "Baseline second",
+      "Baseline second",
+    );
+    const invalid: SearchHitReranker = {
+      id: DETERMINISTIC_LEXICAL_RERANKER,
+      score: () => ({ delta: Number.NaN, reason: "invalid" }),
+    };
+
+    const result = rerankSearchHitsSafely(
+      "baseline",
+      [first, second],
+      invalid,
+    );
+
+    expect(result.warning).toBe("RERANKER_FALLBACK:INVALID_SCORE");
+    expect(result.hits.map((candidate) => candidate.documentId)).toEqual([
+      first.documentId,
+      second.documentId,
+    ]);
+    expect(result.hits.map((candidate) => candidate.score)).toEqual([1, 1]);
+    expect(result.hits[0]?.warnings).toContain(
+      "RERANKER_FALLBACK:INVALID_SCORE",
+    );
+    expect(result.hits[0]?.retrievalTrace?.rerank).toBeUndefined();
+    expect(result.hits[0]?.retrievalTrace?.finalSelectionReason).toContain(
+      "RERANKER_FALLBACK:INVALID_SCORE",
+    );
+    expect(first.warnings).not.toContain("RERANKER_FALLBACK:INVALID_SCORE");
+  });
+
+  it("sanitizes provider exceptions and preserves the fused baseline", () => {
+    const baseline = [
+      hit(
+        "00000000-0000-4000-8000-000000000007",
+        "Provider baseline",
+        "Provider baseline",
+      ),
+    ];
+    const unavailable: SearchHitReranker = {
+      id: DETERMINISTIC_LEXICAL_RERANKER,
+      score: () => {
+        throw new Error("https://secret-provider.local/api timeout token=abc");
+      },
+    };
+
+    const result = rerankSearchHitsSafely(
+      "provider unavailable",
+      baseline,
+      unavailable,
+    );
+
+    expect(result.warning).toBe("RERANKER_FALLBACK:PROVIDER_ERROR");
+    expect(result.hits.map((candidate) => candidate.documentId)).toEqual(
+      baseline.map((candidate) => candidate.documentId),
+    );
+    expect(JSON.stringify(result)).not.toContain("secret-provider");
+    expect(JSON.stringify(result)).not.toContain("token=abc");
   });
 
   it("rejects invalid scorer output instead of corrupting rank state", () => {
