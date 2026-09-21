@@ -1201,15 +1201,10 @@ export async function queryKnowledge(
   const truthRevisionByVault = new Map(
     truthSnapshot.vaults.map((entry) => [entry.vaultId, entry]),
   );
-  const filterDerivedTruth = async <
-    T extends { vault_id?: string },
-  >(
+  const filterDerivedTruth = async <T extends { vault_id?: string }>(
     rows: readonly T[],
     input: {
-      derivedStoreKind:
-        | "VECTOR"
-        | "COMMUNITY_REPORT"
-        | "CONTEXT_FRAGMENT";
+      derivedStoreKind: "VECTOR" | "COMMUNITY_REPORT" | "CONTEXT_FRAGMENT";
       ref: (row: T) => string;
       warningKind: "VECTOR" | "COMMUNITY" | "CONTEXT_FRAGMENT";
       warningId: (row: T) => string;

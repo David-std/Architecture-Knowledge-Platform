@@ -1248,8 +1248,7 @@ describe.skipIf(!databaseUrl)("truth-valid vector retrieval", () => {
       spaceId: fixture.spaceId,
       vaultId: fixture.vaultId,
       derivedStoreKind: "CONTEXT_FRAGMENT",
-      derivedItemRef:
-        `context-fragment:${fixture.documentId}:${fixture.corpusRevision}`,
+      derivedItemRef: `context-fragment:${fixture.documentId}:${fixture.corpusRevision}`,
       supportSetId: fixture.supportSetId,
       truthRevisionHash: fixture.preWithdrawalRevisionHash,
       projectionRevision: fixture.corpusRevision,
