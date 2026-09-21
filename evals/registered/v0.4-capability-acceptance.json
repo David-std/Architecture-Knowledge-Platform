@@ -294,7 +294,8 @@
         "runtimeTest": {
           "evidence": [
             "test:code-context-runtime",
-            "test:p4-evidence-tier-transitions"
+            "test:p4-evidence-tier-transitions",
+            "test:p4-impact-partitions"
           ]
         },
         "negativeTest": {
@@ -305,7 +306,8 @@
             "failure:p4-code-graph-limits",
             "failure:p4-graphify-version-gate",
             "failure:p4-code-graph-active-preserved",
-            "failure:p4-code-ambiguity-preserved"
+            "failure:p4-code-ambiguity-preserved",
+            "failure:p4-delta-invalid-commit"
           ]
         },
         "integrationTest": {
@@ -313,7 +315,8 @@
             "integration:graphify-live",
             "integration:p4-graphify-provider-gate",
             "integration:p4-code-graph-lifecycle",
-            "integration:p4-symbol-reconciliation"
+            "integration:p4-symbol-reconciliation",
+            "integration:p4-commit-delta-impact"
           ]
         },
         "recoveryTest": {
@@ -322,7 +325,8 @@
         "securityTest": {
           "evidence": [
             "security:code-scope",
-            "security:p4-malicious-code-comments"
+            "security:p4-malicious-code-comments",
+            "security:p4-delta-root-redaction"
           ]
         },
         "operatorSurface": {

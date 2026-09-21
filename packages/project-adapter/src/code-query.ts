@@ -5,6 +5,7 @@ import type {
   GraphPathResult,
   GraphQueryPort,
 } from "@akp/contracts";
+import type { CodeGraphCandidateEdge } from "./code-graph-projection.js";
 
 export interface CodeSymbolSelector {
   repository: string;
@@ -41,6 +42,154 @@ export interface CodeChangeImpactResult {
   changedNodes: GraphNodeRef[];
   impacts: GraphImpactResult[];
   unmatchedPaths: string[];
+}
+
+export type CodeUncertainImpact =
+  | { kind: "GRAPH_PATH"; path: GraphPathResult }
+  | { kind: "CANDIDATE_EDGE"; candidate: CodeGraphCandidateEdge };
+
+export interface CodeImpactPartitions {
+  directStaticDependents: GraphPathResult[];
+  transitiveStaticDependents: GraphPathResult[];
+  tests: GraphPathResult[];
+  runtimeObservations: GraphPathResult[];
+  catalogImpacts: GraphPathResult[];
+  linkedRulesDecisions: GraphPathResult[];
+  uncertainAmbiguousImpacts: CodeUncertainImpact[];
+  otherContext: GraphPathResult[];
+}
+
+export interface CodeImpactReport {
+  impact: GraphImpactResult;
+  partitions: CodeImpactPartitions;
+}
+
+function pathKey(value: GraphPathResult): string {
+  return [
+    value.seed.id,
+    value.target.id,
+    ...value.steps.map(
+      (step) =>
+        step.from.id +
+        ":" +
+        step.relation +
+        ":" +
+        step.direction +
+        ":" +
+        step.to.id,
+    ),
+  ].join("|");
+}
+
+function uniquePaths(values: readonly GraphPathResult[]): GraphPathResult[] {
+  const seen = new Set<string>();
+  return values.filter((value) => {
+    const key = pathKey(value);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function uncertainPath(value: GraphPathResult): boolean {
+  return value.steps.some(
+    (step) =>
+      step.assertion.lifecycle !== "ACTIVE" ||
+      step.provenance.derivation === "MODEL_INFERRED",
+  );
+}
+
+export function partitionCodeImpact(
+  impact: GraphImpactResult,
+  candidates: readonly CodeGraphCandidateEdge[] = [],
+): CodeImpactPartitions {
+  const partitions: CodeImpactPartitions = {
+    directStaticDependents: [],
+    transitiveStaticDependents: [],
+    tests: [],
+    runtimeObservations: [],
+    catalogImpacts: [],
+    linkedRulesDecisions: [],
+    uncertainAmbiguousImpacts: candidates.map((candidate) => ({
+      kind: "CANDIDATE_EDGE" as const,
+      candidate,
+    })),
+    otherContext: [],
+  };
+
+  for (const affected of impact.affected) {
+    if (uncertainPath(affected)) {
+      partitions.uncertainAmbiguousImpacts.push({
+        kind: "GRAPH_PATH",
+        path: affected,
+      });
+      continue;
+    }
+    const domain = affected.target.identity.graphDomain;
+    const targetKind =
+      typeof affected.target.payload.kind === "string"
+        ? affected.target.payload.kind.toUpperCase()
+        : affected.target.identity.kind.toUpperCase();
+    const hasTestRelation = affected.steps.some(
+      (step) => step.relation.toLowerCase() === "tests",
+    );
+    if (domain === "RUNTIME") {
+      partitions.runtimeObservations.push(affected);
+    } else if (domain === "SOFTWARE_CATALOG") {
+      partitions.catalogImpacts.push(affected);
+    } else if (domain === "EPISTEMIC") {
+      partitions.linkedRulesDecisions.push(affected);
+    } else if (
+      domain === "CODE" &&
+      (targetKind === "TEST" || hasTestRelation)
+    ) {
+      partitions.tests.push(affected);
+    } else if (domain === "CODE" && affected.steps.length === 1) {
+      partitions.directStaticDependents.push(affected);
+    } else if (domain === "CODE" && affected.steps.length > 1) {
+      partitions.transitiveStaticDependents.push(affected);
+    } else {
+      partitions.otherContext.push(affected);
+    }
+  }
+  return partitions;
+}
+
+export function mergeCodeImpactPartitions(
+  values: readonly CodeImpactPartitions[],
+): CodeImpactPartitions {
+  const paths = (key: keyof Omit<
+    CodeImpactPartitions,
+    "uncertainAmbiguousImpacts"
+  >) => uniquePaths(values.flatMap((value) => value[key]));
+  const uncertain = values
+    .flatMap((value) => value.uncertainAmbiguousImpacts)
+    .filter((entry, position, all) => {
+      const key =
+        entry.kind === "CANDIDATE_EDGE"
+          ? "candidate:" + entry.candidate.id
+          : "path:" + pathKey(entry.path);
+      return (
+        all.findIndex((candidate) => {
+          const candidateKey =
+            candidate.kind === "CANDIDATE_EDGE"
+              ? "candidate:" + candidate.candidate.id
+              : "path:" + pathKey(candidate.path);
+          return candidateKey === key;
+        }) === position
+      );
+    });
+
+  return {
+    directStaticDependents: paths("directStaticDependents"),
+    transitiveStaticDependents: paths("transitiveStaticDependents"),
+    tests: paths("tests"),
+    runtimeObservations: paths("runtimeObservations"),
+    catalogImpacts: paths("catalogImpacts"),
+    linkedRulesDecisions: paths("linkedRulesDecisions"),
+    uncertainAmbiguousImpacts: uncertain,
+    otherContext: paths("otherContext"),
+  };
 }
 
 function codeQueryError(code: string): Error {

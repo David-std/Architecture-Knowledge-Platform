@@ -429,6 +429,21 @@ describe("code graph query API", () => {
           CODE: expect.any(String),
         },
       },
+      partitions: {
+        directStaticDependents: expect.any(Array),
+        transitiveStaticDependents: expect.any(Array),
+        tests: expect.arrayContaining([
+          expect.objectContaining({
+            target: expect.objectContaining({
+              payload: expect.objectContaining({ kind: "TEST" }),
+            }),
+          }),
+        ]),
+        runtimeObservations: [],
+        catalogImpacts: [],
+        linkedRulesDecisions: [],
+        uncertainAmbiguousImpacts: [],
+      },
     });
 
     const changeImpact = await app.inject({

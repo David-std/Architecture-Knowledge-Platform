@@ -6,7 +6,11 @@ import type {
   GraphPathResult,
   GraphQueryPort,
 } from "@akp/contracts";
-import { CodeGraphQueryService } from "../src/index.js";
+import {
+  CodeGraphQueryService,
+  mergeCodeImpactPartitions,
+  partitionCodeImpact,
+} from "../src/index.js";
 
 function node(input: {
   id?: string;
@@ -189,4 +193,144 @@ describe("CodeGraphQueryService", () => {
       ]),
     );
   });
+  it("partitions impact by evidence channel instead of flattening one score", () => {
+    const seed = node({ name: "charge", path: "src/charge.ts" });
+    const intermediate = node({ name: "middle", path: "src/middle.ts" });
+    const direct = node({ name: "caller", path: "src/caller.ts" });
+    const transitive = node({ name: "top", path: "src/top.ts" });
+    const testNode = {
+      ...node({ name: "charge test", path: "test/charge.test.ts" }),
+      payload: {
+        repository: "fixture",
+        commitSha: "1".repeat(40),
+        kind: "TEST",
+        name: "charge test",
+        path: "test/charge.test.ts",
+      },
+    } satisfies GraphNodeRef;
+    const runtimeNode = {
+      ...node({ name: "trace", path: "runtime/trace" }),
+      identity: {
+        ...seed.identity,
+        graphDomain: "RUNTIME" as const,
+        kind: "trace",
+        canonicalKey: "trace-1",
+      },
+      payload: { kind: "trace" },
+    } satisfies GraphNodeRef;
+    const catalogNode = {
+      ...node({ name: "payments", path: "catalog/payments" }),
+      identity: {
+        ...seed.identity,
+        graphDomain: "SOFTWARE_CATALOG" as const,
+        kind: "service",
+        canonicalKey: "payments",
+      },
+      payload: { kind: "service" },
+    } satisfies GraphNodeRef;
+    const ruleNode = {
+      ...node({ name: "ADR-17", path: "knowledge/adr-17" }),
+      identity: {
+        ...seed.identity,
+        graphDomain: "EPISTEMIC" as const,
+        kind: "decision",
+        canonicalKey: "ADR-17",
+      },
+      payload: { kind: "decision" },
+    } satisfies GraphNodeRef;
+
+    const step = (
+      from: GraphNodeRef,
+      to: GraphNodeRef,
+      relation: string,
+      derivation:
+        | "STATICALLY_RESOLVED"
+        | "MODEL_INFERRED" = "STATICALLY_RESOLVED",
+    ) => ({
+      from,
+      relation,
+      direction: "incoming" as const,
+      to,
+      assertion: {
+        id: randomUUID(),
+        spaceId: seed.spaceId,
+        ownerGraphDomain: from.identity.graphDomain,
+        fromNodeId: from.id,
+        toNodeId: to.id,
+        relation,
+        authorizationPath: from.authorizationPath,
+        lifecycle: "ACTIVE" as const,
+        provenance: {
+          derivation,
+          sourceIds: ["fixture"],
+          evidenceIds: [],
+          locatorRefs: [],
+          revision: "r1",
+          recordedAt: "2026-09-20T00:00:00.000Z",
+        },
+      },
+      provenance: {
+        derivation,
+        sourceIds: ["fixture"],
+        evidenceIds: [],
+        locatorRefs: [],
+        revision: "r1",
+        recordedAt: "2026-09-20T00:00:00.000Z",
+      },
+    });
+    const path = (
+      target: GraphNodeRef,
+      steps: GraphPathResult["steps"],
+    ): GraphPathResult => ({
+      seed,
+      target,
+      steps,
+      revisionSet: { CODE: "code-r1" },
+    });
+    const impact: GraphImpactResult = {
+      seed,
+      affected: [
+        path(direct, [step(seed, direct, "calls")]),
+        path(transitive, [
+          step(seed, intermediate, "calls"),
+          step(intermediate, transitive, "calls"),
+        ]),
+        path(testNode, [step(testNode, seed, "tests")]),
+        path(runtimeNode, [step(seed, runtimeNode, "runtime_observation")]),
+        path(catalogNode, [step(seed, catalogNode, "implemented_by")]),
+        path(ruleNode, [step(seed, ruleNode, "governed_by")]),
+        path(intermediate, [
+          step(seed, intermediate, "references", "MODEL_INFERRED"),
+        ]),
+      ],
+      revisionSet: { CODE: "code-r1" },
+    };
+
+    const partitions = partitionCodeImpact(impact, [
+      {
+        id: "candidate-1",
+        sourceId: "function:charge",
+        targetId: "function:other",
+        relation: "CALLS",
+        derivation: "AMBIGUOUS",
+        confidence: 0.5,
+      },
+    ]);
+    expect(partitions.directStaticDependents).toHaveLength(1);
+    expect(partitions.transitiveStaticDependents).toHaveLength(1);
+    expect(partitions.tests).toHaveLength(1);
+    expect(partitions.runtimeObservations).toHaveLength(1);
+    expect(partitions.catalogImpacts).toHaveLength(1);
+    expect(partitions.linkedRulesDecisions).toHaveLength(1);
+    expect(partitions.uncertainAmbiguousImpacts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "CANDIDATE_EDGE" }),
+        expect.objectContaining({ kind: "GRAPH_PATH" }),
+      ]),
+    );
+    expect(
+      mergeCodeImpactPartitions([partitions, partitions]).directStaticDependents,
+    ).toHaveLength(1);
+  });
+
 });

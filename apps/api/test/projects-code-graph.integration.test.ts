@@ -428,5 +428,216 @@ describe("project scan Code Graph request", () => {
           ),
       ),
     ).toBe(true);
+  it("derives commit delta impact from the authorized Git checkout and keeps ambiguity explicit", async () => {
+    expect(projectId).not.toBe("");
+    const identity = projectCodeGraphIdentity(vaultId, slug);
+    const baseSha = commit;
+    const git = (...args: string[]) =>
+      spawnSync("git", ["-C", root, ...args], {
+        encoding: "utf8",
+        windowsHide: true,
+      });
+
+    await writeFile(
+      path.join(root, "index.ts"),
+      [
+        "export function renamedEntry() { return 2; }",
+        "export function addedEntry() { return renamedEntry(); }",
+        "",
+      ].join("\n"),
+    );
+    await writeFile(
+      path.join(root, "extra.ts"),
+      "export class AddedService {}\n",
+    );
+    expect(git("add", "-A").status).toBe(0);
+    expect(git("commit", "-m", "delta head").status).toBe(0);
+    const headSha = git("rev-parse", "HEAD").stdout.trim();
+
+    const headArtifact: CodeGraphArtifact = {
+      schemaVersion: 1,
+      repository: identity.repository,
+      commitSha: headSha,
+      provider: "query-delta-fixture",
+      providerVersion: "1",
+      configurationHash: "8".repeat(64),
+      generatedAt: "2026-09-20T00:00:00.000Z",
+      languages: ["TypeScript"],
+      nodes: [
+        {
+          id: "function:renamedEntry",
+          kind: "FUNCTION",
+          name: "renamedEntry",
+          qualifiedName: "renamedEntry",
+          path: "index.ts",
+          lineStart: 1,
+          lineEnd: 1,
+        },
+        {
+          id: "function:addedEntry",
+          kind: "FUNCTION",
+          name: "addedEntry",
+          qualifiedName: "addedEntry",
+          path: "index.ts",
+          lineStart: 2,
+          lineEnd: 2,
+        },
+        {
+          id: "class:AddedService",
+          kind: "CLASS",
+          name: "AddedService",
+          qualifiedName: "AddedService",
+          path: "extra.ts",
+          lineStart: 1,
+          lineEnd: 1,
+        },
+      ],
+      edges: [
+        {
+          id: "edge:added-renamed",
+          sourceId: "function:addedEntry",
+          targetId: "function:renamedEntry",
+          relation: "CALLS",
+          derivation: "STATICALLY_RESOLVED",
+        },
+      ],
+      warnings: [],
+    };
+    await new PostgresFederatedGraphStore(db).build(
+      planCodeGraphProjection({
+        artifact: headArtifact,
+        spaceId,
+        vaultId,
+        scopeId: identity.scopeId,
+        authorizationPathPrefix: identity.authorizationPathPrefix,
+      }).projection,
+    );
+
+    const currentProject =
+      await db.pool.query<{ metadata: Record<string, unknown> }>(
+        "select metadata from projects where id=$1",
+        [projectId],
+      );
+    await db.pool.query(
+      "update projects set metadata=$2::jsonb where id=$1",
+      [
+        projectId,
+        JSON.stringify({
+          ...(currentProject.rows[0]?.metadata ?? {}),
+          commit: headSha,
+          codeGraph: {
+            ...identity,
+            status: "ACTIVE",
+            sourceRevision: headSha,
+            nodeCount: 3,
+            edgeCount: 1,
+            candidateEdges: [
+              {
+                id: "candidate:ambiguous-call",
+                sourceId: "function:addedEntry",
+                targetId: "function:renamedEntry",
+                relation: "CALLS",
+                derivation: "AMBIGUOUS",
+                confidence: 0.5,
+              },
+            ],
+            reconciliation: {
+              candidateCount: 1,
+              ambiguousCount: 1,
+              candidates: [
+                {
+                  relationship: "RENAMED_FROM",
+                  state: "AMBIGUOUS",
+                  confidence: 0.45,
+                  basis: ["SAME_POSITION"],
+                  from: {
+                    nodeId: "function:projectEntry",
+                    commitSha: baseSha,
+                    path: "index.ts",
+                    name: "projectEntry",
+                  },
+                  to: {
+                    nodeId: "function:renamedEntry",
+                    commitSha: headSha,
+                    path: "index.ts",
+                    name: "renamedEntry",
+                  },
+                },
+              ],
+            },
+          },
+        }),
+      ],
+    );
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/code/commit-delta-impact",
+      headers: { authorization: headers.authorization },
+      payload: {
+        spaceId,
+        vaultId,
+        freshnessPolicy: "FRESH_ONLY",
+        repository: identity.repository,
+        baseSha,
+        headSha,
+        options: { maxHops: 2 },
+      },
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const body = response.json() as Record<string, unknown>;
+    expect(body).toMatchObject({
+      baseSha,
+      headSha,
+      changeSet: {
+        fromCommitSha: baseSha,
+        toCommitSha: headSha,
+        added: ["extra.ts"],
+        modified: ["index.ts"],
+        deleted: [],
+        renamed: [],
+      },
+      removedSymbols: [
+        expect.objectContaining({
+          path: "index.ts",
+          name: "projectEntry",
+        }),
+      ],
+      addedSymbols: expect.arrayContaining([
+        expect.objectContaining({
+          path: "index.ts",
+          name: "renamedEntry",
+        }),
+        expect.objectContaining({
+          path: "index.ts",
+          name: "addedEntry",
+        }),
+        expect.objectContaining({
+          path: "extra.ts",
+          name: "AddedService",
+        }),
+      ]),
+      ambiguousRenameMapping: [
+        expect.objectContaining({
+          relationship: "RENAMED_FROM",
+          state: "AMBIGUOUS",
+          from: expect.objectContaining({ name: "projectEntry" }),
+          to: expect.objectContaining({ name: "renamedEntry" }),
+        }),
+      ],
+      directStaticDependents: expect.any(Array),
+      impactedTests: [],
+      runtimeObservations: [],
+      impactedServicesCatalog: [],
+      relevantRulesDecisions: [],
+      uncertainAmbiguousImpacts: [
+        expect.objectContaining({
+          kind: "CANDIDATE_EDGE",
+        }),
+      ],
+    });
+    expect(JSON.stringify(body)).not.toContain(root);
+  });
+
   });
 });
