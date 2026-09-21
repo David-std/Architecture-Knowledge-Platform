@@ -376,7 +376,8 @@
             "integration:temporal-truth",
             "integration:p5-community-context-fencing",
             "integration:p5-explicit-truth-states",
-            "integration:p5-vector-cleanup"
+            "integration:p5-vector-cleanup",
+            "integration:p5-cached-synthesis-support-validation"
           ]
         },
         "recoveryTest": {
