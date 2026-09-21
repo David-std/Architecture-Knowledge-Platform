@@ -745,6 +745,97 @@ describe("buildContextPacket", () => {
     expect(continuationSections.at(-1)).toEqual([fullContent]);
   });
 
+  it("defers optional graph metadata when tight compact evidence would otherwise disappear", () => {
+    const marker = "tight-marker";
+    const path = [
+      "11111111-1111-4111-8111-111111111111",
+      "22222222-2222-4222-8222-222222222222",
+      "33333333-3333-4333-8333-333333333333",
+      "44444444-4444-4444-8444-444444444444",
+      "55555555-5555-4555-8555-555555555555",
+      "66666666-6666-4666-8666-666666666666",
+    ];
+    const tracedHit: SearchHit = {
+      ...baseHit,
+      documentId: path[0] as string,
+      revision: "revision-1",
+      graphProvenance: [
+        {
+          channel: "graph",
+          seedDocumentId: path[0] as string,
+          targetDocumentId: path.at(-1) as string,
+          path: path.map((documentId, index) => ({
+            documentId,
+            document: `verbose-graph-node-${index}-${"g".repeat(180)}`,
+            ...(index < path.length - 1
+              ? { relation: "requires" as const, direction: "outgoing" as const }
+              : {}),
+          })),
+          hops: path.length - 1,
+          graphScore: 0.9,
+        },
+      ],
+      retrievalTrace: {
+        authorization: {
+          decision: "ALLOW",
+          spaceId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          vaultId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          pathRestricted: true,
+        },
+        truth: {
+          state: "SUPPORTED",
+          consistency: "STRICT",
+          revisionHash: "a".repeat(64),
+          capturedAt: "2026-09-21T00:00:00.000Z",
+        },
+        temporal: {
+          lifecycle: "ACTIVE",
+          refreshStatus: "CURRENT",
+        },
+        contributions: [
+          {
+            channel: "graph",
+            rank: 1,
+            channelWeight: 1,
+            reason: "graph",
+            rawScore: 0.9,
+            candidateRevision: "revision-1",
+          },
+        ],
+        fusion: { score: 0.9, reasons: ["graph"] },
+        finalSelectionReason: "graph",
+      },
+    };
+    const fullContent = `${"x".repeat(2_500)} ${marker} ${"y".repeat(2_500)}`;
+    const full = buildContextPacket({
+      request: requestFor(marker),
+      intent: "CONCEPTUAL",
+      corpusRevision: "deadbeef",
+      maxTokens: 20_000,
+      candidates: [{ hit: tracedHit, content: fullContent, kind: "concept" }],
+    });
+    const continuationSections: string[][] = [];
+
+    const compact = projectContextPacket(full, {
+      maxTokens: 1_000,
+      continuationSink: (payload) => {
+        continuationSections.push(
+          payload.sections.map((section) => section.content),
+        );
+      },
+    });
+
+    expect(compact.content).toHaveLength(1);
+    expect(compact.content[0]?.content).toContain(marker);
+    expect(compact.content[0]?.graphProvenance).toBeUndefined();
+    expect(compact.content[0]?.retrievalTrace).toBeDefined();
+    expect(
+      compact.content[0]?.retrievalTrace?.contributions[0],
+    ).not.toHaveProperty("candidateRevision");
+    expect(compact.budget.serializedTokens).toBeLessThanOrEqual(1_000);
+    expect(continuationSections.at(-1)).toEqual([fullContent]);
+  });
+
   it("projects a compact packet without losing identity, evidence, uncertainty or actions", () => {
     const packet = buildContextPacket({
       request: {

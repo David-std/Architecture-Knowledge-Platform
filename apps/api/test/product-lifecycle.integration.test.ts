@@ -961,6 +961,7 @@ describe("product lifecycle E2E", () => {
       compactBody.content.some((section) =>
         section.content.includes(revisionMarker),
       ),
+      JSON.stringify(compactBody),
     ).toBe(true);
     const persistedCompactSource = await db.pool.query<{
       packet_mode: string;

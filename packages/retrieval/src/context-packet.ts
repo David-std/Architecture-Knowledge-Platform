@@ -469,6 +469,10 @@ function metadataForSection(
 
 function compactRetrievalTrace(
   trace: NonNullable<BaseContextSection["retrievalTrace"]>,
+  options?: {
+    documentRevision?: string;
+    omitDuplicateCandidateRevision?: boolean;
+  },
 ): NonNullable<CompactPacketSection["retrievalTrace"]> {
   return {
     ...trace,
@@ -480,7 +484,9 @@ function compactRetrievalTrace(
       ...(contribution.rawScore === undefined
         ? {}
         : { rawScore: contribution.rawScore }),
-      ...(contribution.candidateRevision === undefined
+      ...(contribution.candidateRevision === undefined ||
+      (options?.omitDuplicateCandidateRevision === true &&
+        contribution.candidateRevision === options.documentRevision)
         ? {}
         : { candidateRevision: contribution.candidateRevision }),
       ...(contribution.generation
@@ -501,7 +507,11 @@ function compactRetrievalTrace(
   };
 }
 
-function compactSection(section: BaseContextSection): CompactPacketSection {
+function compactSection(
+  section: BaseContextSection,
+  options?: { tight?: boolean },
+): CompactPacketSection {
+  const tight = options?.tight === true;
   return {
     kind: section.kind,
     contextLevel: section.contextLevel,
@@ -512,25 +522,34 @@ function compactSection(section: BaseContextSection): CompactPacketSection {
       revision: section.documentRevision,
       document: section.document,
       ...(section.unitId ? { unitId: section.unitId } : {}),
-      ...(section.parentUnitId ? { parentUnitId: section.parentUnitId } : {}),
+      ...(!tight && section.parentUnitId
+        ? { parentUnitId: section.parentUnitId }
+        : {}),
       ...(section.unitType ? { unitType: section.unitType } : {}),
-      ...(section.parentUnitType
+      ...(!tight && section.parentUnitType
         ? { parentUnitType: section.parentUnitType }
         : {}),
-      ...(section.headingPath ? { headingPath: section.headingPath } : {}),
+      ...(!tight && section.headingPath
+        ? { headingPath: section.headingPath }
+        : {}),
     },
     content: section.content,
     references: section.sourceOrEvidenceIds,
     citations: section.sourceOrEvidenceIds,
     retrievalChannels: section.retrievalChannels ?? [],
     selectionReason: section.selectionReason,
-    ...(section.score === undefined ? {} : { score: section.score }),
-    ...(section.graphProvenance === undefined
-      ? {}
-      : { graphProvenance: section.graphProvenance }),
+    ...(!tight && section.score !== undefined ? { score: section.score } : {}),
+    ...(!tight && section.graphProvenance !== undefined
+      ? { graphProvenance: section.graphProvenance }
+      : {}),
     ...(section.retrievalTrace === undefined
       ? {}
-      : { retrievalTrace: compactRetrievalTrace(section.retrievalTrace) }),
+      : {
+          retrievalTrace: compactRetrievalTrace(section.retrievalTrace, {
+            documentRevision: section.documentRevision,
+            omitDuplicateCandidateRevision: tight,
+          }),
+        }),
   };
 }
 
@@ -1204,9 +1223,11 @@ export function projectContextPacket(
       : [];
   const omitted: BaseContextSection[] = [];
   const selected: BaseContextSection[] = [];
+  const tightSections = new Set<BaseContextSection>();
   const compactEnvelope = (
     sections: BaseContextSection[],
     omittedSections: BaseContextSection[],
+    tentativeTightSection?: BaseContextSection,
   ) => {
     const extraContinuation =
       omittedSections.length === 0
@@ -1219,7 +1240,12 @@ export function projectContextPacket(
       (continuation, index, all) =>
         all.findIndex((item) => item.handle === continuation.handle) === index,
     );
-    const content = sections.map(compactSection);
+    const content = sections.map((section) =>
+      compactSection(section, {
+        tight:
+          tightSections.has(section) || section === tentativeTightSection,
+      }),
+    );
     const compactBase = {
       packetMode: "COMPACT_AGENT_PACKET" as const,
       identity: {
@@ -1269,7 +1295,7 @@ export function projectContextPacket(
   const projectedSections = new Set<BaseContextSection>();
   const focusedProjectionThatFits = (
     section: BaseContextSection,
-  ): BaseContextSection | undefined => {
+  ): { section: BaseContextSection; tight: boolean } | undefined => {
     const needle = packet.query.trim();
     if (
       !needle ||
@@ -1279,36 +1305,45 @@ export function projectContextPacket(
     }
 
     const omittedWithOriginal = [...omitted, section];
-    let low = needle.length;
-    let high = Math.max(needle.length, section.content.length - 1);
-    let best: BaseContextSection | undefined;
+    const findProjection = (tight: boolean) => {
+      let low = needle.length;
+      let high = Math.max(needle.length, section.content.length - 1);
+      let best: BaseContextSection | undefined;
 
-    while (low <= high) {
-      const maxChars = Math.floor((low + high) / 2);
-      const projected = focusedQuerySection(section, needle, maxChars);
-      if (!projected) {
-        high = maxChars - 1;
-        continue;
-      }
-      const tentative = compactEnvelope(
-        [...selected, projected],
-        omittedWithOriginal,
-      );
-      try {
-        ensureBudgetFits(
-          tentative.compactBase,
-          tentative.provisionalBudget,
-          count,
+      while (low <= high) {
+        const maxChars = Math.floor((low + high) / 2);
+        const projected = focusedQuerySection(section, needle, maxChars);
+        if (!projected) {
+          high = maxChars - 1;
+          continue;
+        }
+        const tentative = compactEnvelope(
+          [...selected, projected],
+          omittedWithOriginal,
+          tight ? projected : undefined,
         );
-        best = projected;
-        low = maxChars + 1;
-      } catch (error) {
-        if (!(error instanceof ContextPacketBudgetError)) throw error;
-        high = maxChars - 1;
+        try {
+          ensureBudgetFits(
+            tentative.compactBase,
+            tentative.provisionalBudget,
+            count,
+          );
+          best = projected;
+          low = maxChars + 1;
+        } catch (error) {
+          if (!(error instanceof ContextPacketBudgetError)) throw error;
+          high = maxChars - 1;
+        }
       }
-    }
 
-    return best;
+      return best;
+    };
+
+    const regular = findProjection(false);
+    if (regular) return { section: regular, tight: false };
+
+    const tight = findProjection(true);
+    return tight ? { section: tight, tight: true } : undefined;
   };
 
   // Validate the compact envelope before attempting content selection.
@@ -1327,9 +1362,10 @@ export function projectContextPacket(
       if (error instanceof ContextPacketBudgetError) {
         const focused = focusedProjectionThatFits(section);
         if (focused) {
-          selected.push(focused);
+          selected.push(focused.section);
           omitted.push(section);
-          projectedSections.add(focused);
+          projectedSections.add(focused.section);
+          if (focused.tight) tightSections.add(focused.section);
         } else {
           omitted.push(section);
         }
@@ -1368,6 +1404,7 @@ export function projectContextPacket(
         throw error;
       }
       const removed = selected.pop() as BaseContextSection;
+      tightSections.delete(removed);
       if (!projectedSections.delete(removed)) {
         omitted.push(removed);
       }
