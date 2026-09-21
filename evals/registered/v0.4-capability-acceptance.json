@@ -300,13 +300,15 @@
             "failure:stale-code-sha",
             "failure:p4-code-graph-validator",
             "failure:p4-code-graph-limits",
-            "failure:p4-graphify-version-gate"
+            "failure:p4-graphify-version-gate",
+            "failure:p4-code-graph-active-preserved"
           ]
         },
         "integrationTest": {
           "evidence": [
             "integration:graphify-live",
-            "integration:p4-graphify-provider-gate"
+            "integration:p4-graphify-provider-gate",
+            "integration:p4-code-graph-lifecycle"
           ]
         },
         "recoveryTest": {

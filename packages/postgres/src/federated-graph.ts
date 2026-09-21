@@ -512,8 +512,11 @@ interface ProjectionRow {
   lifecycle: GraphProjectionRevision["lifecycle"];
   freshness: GraphProjectionRevision["freshness"];
   requested_at: Date | string;
+  building_at: Date | string | null;
+  ready_at: Date | string | null;
   built_at: Date | string | null;
   activated_at: Date | string | null;
+  retired_at: Date | string | null;
   last_successful_update: Date | string | null;
 }
 
@@ -616,7 +619,12 @@ function catalogStatus(
   active: GraphProjectionRevision | null,
 ): GraphCatalogStatus {
   if (!active) {
-    if (latest.lifecycle === "REQUESTED" || latest.lifecycle === "BUILT") {
+    if (
+      latest.lifecycle === "REQUESTED" ||
+      latest.lifecycle === "BUILDING" ||
+      latest.lifecycle === "READY" ||
+      latest.lifecycle === "BUILT"
+    ) {
       return "BUILDING";
     }
     if (latest.freshness === "STALE" || latest.lifecycle === "STALE") {
@@ -630,7 +638,10 @@ function catalogStatus(
   }
   if (
     latest.id !== active.id &&
-    (latest.lifecycle === "REQUESTED" || latest.lifecycle === "BUILT")
+    (latest.lifecycle === "REQUESTED" ||
+      latest.lifecycle === "BUILDING" ||
+      latest.lifecycle === "READY" ||
+      latest.lifecycle === "BUILT")
   ) {
     return "BUILDING";
   }
@@ -671,8 +682,11 @@ function mapProjection(row: ProjectionRow): GraphProjectionRevision {
     lifecycle: row.lifecycle,
     freshness: row.freshness,
     requestedAt: iso(row.requested_at)!,
+    buildingAt: iso(row.building_at),
+    readyAt: iso(row.ready_at),
     builtAt: iso(row.built_at),
     activatedAt: iso(row.activated_at),
+    retiredAt: iso(row.retired_at),
     lastSuccessfulUpdate: iso(row.last_successful_update),
   };
 }
@@ -1039,20 +1053,38 @@ export class PostgresFederatedGraphStore
     if (!projectionMetadataMatches(requestRow, input)) {
       throw graphError("GRAPH_PROJECTION_REVISION_CONFLICT");
     }
-    if (requestRow.lifecycle === "ACTIVE" || requestRow.lifecycle === "STALE") {
+    if (
+      requestRow.lifecycle === "ACTIVE" ||
+      requestRow.lifecycle === "RETIRED" ||
+      requestRow.lifecycle === "STALE"
+    ) {
       return mapProjection(requestRow);
     }
     if (requestRow.lifecycle !== "REQUESTED") {
       const reset = await this.db.pool.query<ProjectionRow>(
         `update federated_graph_projection_revisions
             set lifecycle='REQUESTED',freshness='FRESH',error=null,
-                requested_at=now(),built_at=null,activated_at=null,
+                requested_at=now(),building_at=null,ready_at=null,
+                built_at=null,activated_at=null,retired_at=null,
                 last_successful_update=null,updated_at=now()
           where id=$1
           returning *`,
         [requestRow.id],
       );
       requestRow = reset.rows[0] ?? requestRow;
+    }
+
+    const building = await this.db.pool.query<ProjectionRow>(
+      `update federated_graph_projection_revisions
+          set lifecycle='BUILDING',freshness='FRESH',building_at=now(),
+              error=null,updated_at=now()
+        where id=$1 and lifecycle='REQUESTED'
+        returning *`,
+      [requestRow.id],
+    );
+    requestRow = building.rows[0] ?? requestRow;
+    if (requestRow.lifecycle !== "BUILDING") {
+      throw graphError("GRAPH_PROJECTION_BUILDING_TRANSITION_FAILED");
     }
 
     try {
@@ -1070,8 +1102,15 @@ export class PostgresFederatedGraphStore
           true,
         );
         if (!locked) throw graphError("GRAPH_PROJECTION_REQUEST_FAILED");
-        if (locked.lifecycle === "ACTIVE" || locked.lifecycle === "STALE") {
+        if (
+          locked.lifecycle === "ACTIVE" ||
+          locked.lifecycle === "RETIRED" ||
+          locked.lifecycle === "STALE"
+        ) {
           return mapProjection(locked);
+        }
+        if (locked.lifecycle !== "BUILDING") {
+          throw graphError("GRAPH_PROJECTION_BUILDING_STATE_REQUIRED");
         }
 
         const nodeIds = new Map<string, string>();
@@ -1331,9 +1370,10 @@ export class PostgresFederatedGraphStore
 
         const built = await client.query<ProjectionRow>(
           `update federated_graph_projection_revisions
-              set lifecycle='BUILT',freshness='FRESH',built_at=now(),
-                  last_successful_update=now(),error=null,updated_at=now()
-            where id=$1
+              set lifecycle='READY',freshness='FRESH',built_at=now(),
+                  ready_at=now(),last_successful_update=now(),
+                  error=null,updated_at=now()
+            where id=$1 and lifecycle='BUILDING'
             returning *`,
           [locked.id],
         );
@@ -1376,7 +1416,8 @@ export class PostgresFederatedGraphStore
         );
         await client.query(
           `update federated_graph_projection_revisions
-              set lifecycle='STALE',freshness='STALE',updated_at=now()
+              set lifecycle='RETIRED',freshness='STALE',retired_at=now(),
+                  updated_at=now()
             where space_id=$1 and graph_domain=$2 and scope_id=$3
               and lifecycle='ACTIVE' and id<>$4`,
           [input.spaceId, input.graphDomain, input.scopeId, locked.id],
@@ -1385,7 +1426,7 @@ export class PostgresFederatedGraphStore
           `update federated_graph_projection_revisions
               set lifecycle='ACTIVE',freshness='FRESH',activated_at=now(),
                   last_successful_update=now(),updated_at=now()
-            where id=$1
+            where id=$1 and lifecycle='READY'
             returning *`,
           [locked.id],
         );
@@ -1427,7 +1468,7 @@ export class PostgresFederatedGraphStore
           `update federated_graph_projection_revisions
               set lifecycle='FAILED',freshness='STALE',
                   error=$2::jsonb,updated_at=now()
-            where id=$1 and lifecycle not in ('ACTIVE','STALE')`,
+            where id=$1 and lifecycle not in ('ACTIVE','RETIRED','STALE')`,
           [
             requestRow.id,
             JSON.stringify({

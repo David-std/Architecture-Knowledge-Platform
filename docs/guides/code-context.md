@@ -1,5 +1,11 @@
 # Code Context Guide
 
+## Code graph revision lifecycle
+
+A code-graph revision is requested first, enters `BUILDING` before provider-derived graph state is persisted, reaches `READY` only after its nodes and relationships validate, and is then activated by an atomic pointer swap. The previously active revision becomes `RETIRED` only in that activation transaction. A failed replacement becomes `FAILED`; it does not replace the prior active revision. If the repository advances before the replacement is ready, the prior active revision may remain queryable only as stale/degraded context according to the caller's freshness policy.
+
+Transition timestamps are retained on the projection revision (`requestedAt`, `buildingAt`, `readyAt`, `activatedAt`, `retiredAt`) so operators can distinguish extraction latency, readiness and activation rather than inferring them from one mutable status.
+
 ## Graphify provider and validation boundary
 
 The live code-graph adapter is audited against Graphify `graphifyy==0.9.63`, Apache-2.0, upstream commit `eaaec1abd99d3a7fb30301ccb49f4cc72ae34011`. The accepted full invocation is `extract . --code-only --no-viz --no-cluster`; incremental refresh uses `update . --no-cluster`. The code-only integration is treated as local and does not require network access. A different provider version fails the adapter gate until it is deliberately re-audited.

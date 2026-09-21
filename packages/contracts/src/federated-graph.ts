@@ -41,8 +41,11 @@ export type GraphFreshnessPolicy = z.infer<typeof GraphFreshnessPolicy>;
 
 export const GraphProjectionLifecycle = z.enum([
   "REQUESTED",
+  "BUILDING",
+  "READY",
   "BUILT",
   "ACTIVE",
+  "RETIRED",
   "STALE",
   "FAILED",
 ]);
@@ -240,8 +243,11 @@ export const GraphProjectionRevision = z.object({
   lifecycle: GraphProjectionLifecycle,
   freshness: GraphProjectionFreshness,
   requestedAt: z.string().datetime(),
+  buildingAt: z.string().datetime().nullable(),
+  readyAt: z.string().datetime().nullable(),
   builtAt: z.string().datetime().nullable(),
   activatedAt: z.string().datetime().nullable(),
+  retiredAt: z.string().datetime().nullable(),
   lastSuccessfulUpdate: z.string().datetime().nullable(),
 });
 export type GraphProjectionRevision = z.infer<typeof GraphProjectionRevision>;

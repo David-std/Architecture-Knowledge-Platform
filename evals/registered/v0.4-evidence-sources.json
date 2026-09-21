@@ -1644,6 +1644,26 @@
           "step": "Verify real Graphify adapter"
         }
       ]
+    },
+    "integration:p4-code-graph-lifecycle": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Execute registered domain quality benchmark"
+        }
+      ]
+    },
+    "failure:p4-code-graph-active-preserved": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Execute registered domain quality benchmark"
+        }
+      ]
     }
   }
 }

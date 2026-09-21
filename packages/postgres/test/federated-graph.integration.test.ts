@@ -528,7 +528,7 @@ describe("federated multi-graph substrate integration", () => {
           sourceRevision: "source:catalog-r1",
           provider: "integration-fixture",
           configurationVersion: "graph-config-v1",
-          lifecycle: "BUILT",
+          lifecycle: "READY",
           freshness: "FRESH",
         });
         expect(activatedEvent?.causation_id).toBe(builtEvent?.event_id);
@@ -680,6 +680,191 @@ describe("federated multi-graph substrate integration", () => {
         expect(declared).toBeDefined();
         expect(staticPath).toBeDefined();
         expect(runtime).toBeDefined();
+      } finally {
+        await cleanupFixture(db, fixture).catch(() => undefined);
+        await db.close();
+      }
+    },
+  );
+
+  it.skipIf(!databaseUrl)(
+    "moves CODE revisions through building and ready before atomic activation",
+    async () => {
+      if (!databaseUrl) return;
+      const db = new Postgres(databaseUrl);
+      const fixture = await createFixture(db);
+      const store = new PostgresFederatedGraphStore(db);
+      try {
+        const scopeId = "code:lifecycle-contract";
+        const firstNode = identity(
+          "CODE",
+          scopeId,
+          "function",
+          "TokenService.rotate",
+          "code-lifecycle-r1",
+        );
+        const first = await store.build(
+          artifact({
+            graphDomain: "CODE",
+            spaceId: fixture.spaceId,
+            vaultId: fixture.vaultA,
+            scopeId,
+            revision: "code-lifecycle-r1",
+            sourceRevision: "1".repeat(40),
+            provider: "graphify",
+            providerVersion: "0.9.63",
+            configurationVersion: "c".repeat(64),
+            nodes: [
+              node(
+                firstNode,
+                fixture.vaultA,
+                "allowed/code/TokenService.rotate",
+              ),
+            ],
+          }),
+        );
+        expect(first).toMatchObject({
+          lifecycle: "ACTIVE",
+          freshness: "FRESH",
+          sourceRevision: "1".repeat(40),
+        });
+        expect(first.buildingAt).toBeTruthy();
+        expect(first.readyAt).toBeTruthy();
+        expect(first.builtAt).toBeTruthy();
+        expect(first.activatedAt).toBeTruthy();
+        expect(first.retiredAt).toBeNull();
+        expect(Date.parse(first.buildingAt!)).toBeLessThanOrEqual(
+          Date.parse(first.readyAt!),
+        );
+        expect(Date.parse(first.readyAt!)).toBeLessThanOrEqual(
+          Date.parse(first.activatedAt!),
+        );
+
+        const secondNode = identity(
+          "CODE",
+          scopeId,
+          "function",
+          "TokenService.rotate",
+          "code-lifecycle-r2",
+        );
+        const second = await store.build(
+          artifact({
+            graphDomain: "CODE",
+            spaceId: fixture.spaceId,
+            vaultId: fixture.vaultA,
+            scopeId,
+            revision: "code-lifecycle-r2",
+            sourceRevision: "2".repeat(40),
+            provider: "graphify",
+            providerVersion: "0.9.63",
+            configurationVersion: "c".repeat(64),
+            nodes: [
+              node(
+                secondNode,
+                fixture.vaultA,
+                "allowed/code/TokenService.rotate",
+              ),
+            ],
+          }),
+        );
+        expect(second.lifecycle).toBe("ACTIVE");
+
+        const retired = await db.pool.query<{
+          lifecycle: string;
+          retired_at: Date | string | null;
+        }>(
+          `select lifecycle,retired_at
+             from federated_graph_projection_revisions
+            where id=$1`,
+          [first.id],
+        );
+        expect(retired.rows[0]?.lifecycle).toBe("RETIRED");
+        expect(retired.rows[0]?.retired_at).toBeTruthy();
+
+        const missing = identity(
+          "CODE",
+          scopeId,
+          "function",
+          "Missing.target",
+          "code-lifecycle-r3",
+        );
+        await expect(
+          store.build(
+            artifact({
+              graphDomain: "CODE",
+              spaceId: fixture.spaceId,
+              vaultId: fixture.vaultA,
+              scopeId,
+              revision: "code-lifecycle-r3",
+              sourceRevision: "3".repeat(40),
+              provider: "graphify",
+              providerVersion: "0.9.63",
+              configurationVersion: "c".repeat(64),
+              nodes: [
+                node(
+                  identity(
+                    "CODE",
+                    scopeId,
+                    "function",
+                    "TokenService.rotate",
+                    "code-lifecycle-r3",
+                  ),
+                  fixture.vaultA,
+                  "allowed/code/TokenService.rotate",
+                ),
+              ],
+              edges: [
+                edge(
+                  identity(
+                    "CODE",
+                    scopeId,
+                    "function",
+                    "TokenService.rotate",
+                    "code-lifecycle-r3",
+                  ),
+                  "calls",
+                  missing,
+                  "STATICALLY_RESOLVED",
+                  "code-lifecycle-r3",
+                  { authorizationPath: "allowed/code/TokenService.rotate" },
+                ),
+              ],
+            }),
+          ),
+        ).rejects.toThrow("GRAPH_EDGE_NODE_NOT_FOUND");
+
+        const state = await store.revisionState(
+          "CODE",
+          fixture.spaceId,
+          scopeId,
+        );
+        expect(state.active).toMatchObject({
+          id: second.id,
+          lifecycle: "ACTIVE",
+          sourceRevision: "2".repeat(40),
+        });
+        expect(state.requested).toMatchObject({
+          lifecycle: "FAILED",
+          sourceRevision: "3".repeat(40),
+        });
+        const failed = await db.pool.query<{
+          lifecycle: string;
+          building_at: Date | string | null;
+          ready_at: Date | string | null;
+          activated_at: Date | string | null;
+        }>(
+          `select lifecycle,building_at,ready_at,activated_at
+             from federated_graph_projection_revisions
+            where space_id=$1 and graph_domain='CODE' and scope_id=$2
+              and revision='code-lifecycle-r3'`,
+          [fixture.spaceId, scopeId],
+        );
+        expect(failed.rows[0]).toMatchObject({
+          lifecycle: "FAILED",
+          ready_at: null,
+          activated_at: null,
+        });
+        expect(failed.rows[0]?.building_at).toBeTruthy();
       } finally {
         await cleanupFixture(db, fixture).catch(() => undefined);
         await db.close();
