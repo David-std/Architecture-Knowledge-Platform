@@ -835,6 +835,10 @@ describe("buildContextPacket", () => {
     expect(
       compact.content[0]?.retrievalTrace?.contributions[0],
     ).not.toHaveProperty("candidateRevision");
+    expect(compact.content[0]?.references).toEqual([]);
+    expect(compact.content[0]?.citations).toEqual([]);
+    expect(compact.references).toEqual([]);
+    expect(compact.citations.length).toBeGreaterThan(0);
     expect(compact.budget.serializedTokens).toBeLessThanOrEqual(1_000);
     expect(continuationSections.at(-1)).toEqual([fullContent]);
   });

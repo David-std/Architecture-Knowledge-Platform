@@ -534,8 +534,11 @@ function compactSection(
         : {}),
     },
     content: section.content,
-    references: section.sourceOrEvidenceIds,
-    citations: section.sourceOrEvidenceIds,
+    // A tight projection keeps the complete evidence set once at packet level.
+    // The original section, including its per-section locators, remains
+    // retrievable through the continuation rather than displacing evidence.
+    references: tight ? [] : section.sourceOrEvidenceIds,
+    citations: tight ? [] : section.sourceOrEvidenceIds,
     retrievalChannels: section.retrievalChannels ?? [],
     selectionReason: section.selectionReason,
     ...(!tight && section.score !== undefined ? { score: section.score } : {}),
@@ -1240,10 +1243,11 @@ export function projectContextPacket(
       (continuation, index, all) =>
         all.findIndex((item) => item.handle === continuation.handle) === index,
     );
+    const isTightSection = (section: BaseContextSection) =>
+      tightSections.has(section) || section === tentativeTightSection;
+    const tightEnvelope = sections.some(isTightSection);
     const content = sections.map((section) =>
-      compactSection(section, {
-        tight: tightSections.has(section) || section === tentativeTightSection,
-      }),
+      compactSection(section, { tight: isTightSection(section) }),
     );
     const compactBase = {
       packetMode: "COMPACT_AGENT_PACKET" as const,
@@ -1259,7 +1263,10 @@ export function projectContextPacket(
         indexRevisions,
       },
       content,
-      references,
+      // citations is the canonical compact evidence list. Under tight budget,
+      // omit the duplicate references alias; the full packet/continuation
+      // retains every original per-section locator.
+      references: tightEnvelope ? [] : references,
       citations: references,
       searchedChannels,
       conflicts: packet.conflicts,
