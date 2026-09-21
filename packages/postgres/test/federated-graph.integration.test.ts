@@ -1154,7 +1154,7 @@ describe("federated multi-graph substrate integration", () => {
         expect(lifecycle.rows).toEqual([
           {
             revision: "stale-r1",
-            lifecycle: "STALE",
+            lifecycle: "RETIRED",
             freshness: "STALE",
           },
           {
