@@ -209,6 +209,7 @@ describe("temporal truth read boundary", () => {
         {
           id: newFactId,
           object: { version: "1.3" },
+          truthState: "SUPPORTED_CURRENT",
           queryRevisionHash: expect.any(String),
         },
       ],
@@ -223,6 +224,7 @@ describe("temporal truth read boundary", () => {
         {
           id: oldFactId,
           object: { version: "1.2" },
+          truthState: "SUPPORTED_CURRENT",
           queryRevisionHash: oldRevision,
         },
       ],
@@ -241,6 +243,7 @@ describe("temporal truth read boundary", () => {
           id: oldFactId,
           object: { version: "1.2" },
           recordedAt: "2026-01-01T00:00:00.000Z",
+          truthState: "SUPPORTED_CURRENT",
         },
       ],
     });
@@ -249,13 +252,23 @@ describe("temporal truth read boundary", () => {
 
   it("supports history, changed_since and support history without leaking other path scopes", async () => {
     const history = await query(
-      "/v1/truth/facts?mode=HISTORY&subjectRef=policy%3Atransport",
+      "/v1/truth/facts?mode=HISTORY&subjectRef=policy%3Atransport&validAt=2026-09-01T00%3A00%3A00.000Z",
     );
     expect(history.statusCode, history.body).toBe(200);
-    const historyBody = history.json() as { facts: Array<{ id: string }> };
+    const historyBody = history.json() as {
+      facts: Array<{ id: string; truthState: string }>;
+    };
     expect(historyBody.facts.map((fact) => fact.id)).toEqual(
       expect.arrayContaining([oldFactId, newFactId]),
     );
+    expect(
+      Object.fromEntries(
+        historyBody.facts.map((fact) => [fact.id, fact.truthState]),
+      ),
+    ).toMatchObject({
+      [oldFactId]: "SUPERSEDED",
+      [newFactId]: "SUPPORTED_CURRENT",
+    });
 
     const changed = await query(
       "/v1/truth/facts?mode=HISTORY&changedSince=2026-01-15T00%3A00%3A00.000Z",

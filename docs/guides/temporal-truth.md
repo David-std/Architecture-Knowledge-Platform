@@ -30,6 +30,19 @@ Derived-state dependencies identify vector, graph-summary, community-report, cac
 6. Query current, as-of or changed-since state against a captured truth revision.
 7. Validate derived candidates against support state before final ranking/context assembly.
 
+## Truth states returned by queries
+
+`supportState` continues to report whether the fact's evidence is `SUPPORTED`, `DISPUTED` or `UNSUPPORTED`. The additive `truthState` field combines that support evaluation with valid-time and supersession semantics at the query's captured truth revision:
+
+- `SUPPORTED_CURRENT` — valid now/as-of and supported.
+- `DISPUTED_CURRENT` — valid now/as-of but explicitly disputed.
+- `UNSUPPORTED_CURRENT` — temporally current but no longer supported; visible only in history mode because current queries suppress it.
+- `FUTURE_EFFECTIVE` — already recorded but not yet valid at the requested valid time.
+- `HISTORICAL` — outside its valid-time interval at the requested time.
+- `SUPERSEDED` — replaced by a fact whose supersession is visible and effective at the query revision/time.
+
+These are query-relative states. They do not mutate the append-only lifecycle stored on the fact.
+
 ## Security and governance boundaries
 
 Temporal rows are append-only by database trigger. Application code cannot rewrite history to manufacture current consistency.
@@ -42,7 +55,7 @@ Truth support is evidence/provenance state; a model cannot create an attested fa
 
 Strict truth consistency rejects or suppresses candidates whose captured truth/support revision is no longer valid. Best-effort mode may return bounded degradation warnings but cannot silently relabel stale derived context as current truth.
 
-Historical rows remain available even when current support changes. Derived vector/community/cache material may remain physically stored but is filtered or marked stale rather than deleted to fake freshness.
+Historical rows remain available even when current support changes. Derived vector/community/cache material is rejected by truth validation before rank/fusion acceptance when its support is stale. Vector rows may then be cleaned asynchronously, but the worker revalidates against the current truth head before deleting them and retains append-only dependency/projection history for audit and recovery.
 
 ## Failure and recovery
 
@@ -60,4 +73,4 @@ An as-of query can ask which deployment rule was valid on a given date. AKP reso
 
 AKP preserves temporal truth mechanics but cannot infer missing historical evidence. A gap remains a gap.
 
-Physical retention of old vectors or graph edges is intentional for recovery/reproducibility; correctness depends on revision/support validation at query time rather than destructive cleanup.
+Physical retention of historical dependency/projection metadata and rebuildable graph/community state is intentional for recovery and reproducibility. Some invalid vector rows may be physically cleaned after current-head revalidation; correctness never depends on that cleanup because revision/support validation happens at query time.

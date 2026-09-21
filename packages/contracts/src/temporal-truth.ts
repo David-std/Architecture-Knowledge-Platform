@@ -10,6 +10,16 @@ export const TruthSupportEvaluation = z.enum([
 ]);
 export type TruthSupportEvaluation = z.infer<typeof TruthSupportEvaluation>;
 
+export const TemporalFactTruthState = z.enum([
+  "SUPPORTED_CURRENT",
+  "DISPUTED_CURRENT",
+  "UNSUPPORTED_CURRENT",
+  "FUTURE_EFFECTIVE",
+  "HISTORICAL",
+  "SUPERSEDED",
+]);
+export type TemporalFactTruthState = z.infer<typeof TemporalFactTruthState>;
+
 export const TemporalFactLifecycle = z.enum(["ACTIVE", "DISPUTED"]);
 export type TemporalFactLifecycle = z.infer<typeof TemporalFactLifecycle>;
 
@@ -83,6 +93,7 @@ export type TemporalFact = z.infer<typeof TemporalFact>;
 
 export const TemporalFactView = TemporalFact.extend({
   supportState: TruthSupportEvaluation,
+  truthState: TemporalFactTruthState,
   queryRevisionHash: z
     .string()
     .regex(/^[a-f0-9]{64}$/)

@@ -1,5 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
 export type TruthSupportEvaluation = "SUPPORTED" | "DISPUTED" | "UNSUPPORTED";
+export type TemporalFactTruthState =
+  | "SUPPORTED_CURRENT"
+  | "DISPUTED_CURRENT"
+  | "UNSUPPORTED_CURRENT"
+  | "FUTURE_EFFECTIVE"
+  | "HISTORICAL"
+  | "SUPERSEDED";
 
 export interface SourceEpisode {
   id: string;
@@ -62,6 +69,7 @@ export interface TemporalFact {
 
 export interface TemporalFactView extends TemporalFact {
   supportState: TruthSupportEvaluation;
+  truthState: TemporalFactTruthState;
   queryRevisionHash: string | null;
   queryRevisionSeq: number;
 }
@@ -753,6 +761,25 @@ function normalizeFact(row: FactRow): TemporalFact {
     truthRevisionHash: row.truth_revision_hash,
     truthRevisionSeq: Number(row.truth_revision_seq),
   };
+}
+
+function temporalFactTruthState(
+  fact: TemporalFact,
+  supportState: TruthSupportEvaluation,
+  validAt: string,
+  superseded: boolean,
+): TemporalFactTruthState {
+  if (superseded) return "SUPERSEDED";
+  const validAtMs = new Date(validAt).getTime();
+  if (new Date(fact.validFrom).getTime() > validAtMs) {
+    return "FUTURE_EFFECTIVE";
+  }
+  if (fact.validTo && new Date(fact.validTo).getTime() <= validAtMs) {
+    return "HISTORICAL";
+  }
+  if (supportState === "DISPUTED") return "DISPUTED_CURRENT";
+  if (supportState === "UNSUPPORTED") return "UNSUPPORTED_CURRENT";
+  return "SUPPORTED_CURRENT";
 }
 
 function normalizedPath(path: string): string {
@@ -1685,6 +1712,29 @@ export class PostgresTemporalTruthStore {
         limit $4`,
       values,
     );
+    const factIds = result.rows.map((row) => row.id);
+    const superseded = factIds.length
+      ? await this.db.pool.query<{ old_fact_id: string }>(
+          `select distinct s.old_fact_id
+             from temporal_fact_supersessions s
+             join temporal_facts replacement on replacement.id=s.new_fact_id
+            where s.old_fact_id=any($1::uuid[])
+              and s.truth_revision_seq<=$2
+              and replacement.valid_from<=$3
+              and (replacement.valid_to is null or replacement.valid_to>$3)
+              and ($4::timestamptz is null or s.recorded_at<=$4)`,
+          [
+            factIds,
+            cutoff.seq,
+            validAt,
+            query.recordedAtOrBefore ?? null,
+          ],
+        )
+      : { rows: [] as Array<{ old_fact_id: string }> };
+    const supersededFactIds = new Set(
+      superseded.rows.map((row) => row.old_fact_id),
+    );
+
     const output: TemporalFactView[] = [];
     for (const row of result.rows) {
       const fact = normalizeFact(row);
@@ -1712,6 +1762,12 @@ export class PostgresTemporalTruthStore {
       output.push({
         ...fact,
         supportState,
+        truthState: temporalFactTruthState(
+          fact,
+          supportState,
+          validAt,
+          supersededFactIds.has(fact.id),
+        ),
         queryRevisionHash: cutoff.hash,
         queryRevisionSeq: cutoff.seq,
       });

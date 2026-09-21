@@ -138,7 +138,10 @@ describe.skipIf(!databaseUrl)("temporal truth store", () => {
       truthRevisionHash: recorded.revision.revisionHash,
     });
     expect(initial).toHaveLength(1);
-    expect(initial[0]).toMatchObject({ supportState: "SUPPORTED" });
+    expect(initial[0]).toMatchObject({
+      supportState: "SUPPORTED",
+      truthState: "SUPPORTED_CURRENT",
+    });
 
     const afterA = await store.withdrawSourceEpisode({
       spaceId,
@@ -155,7 +158,10 @@ describe.skipIf(!databaseUrl)("temporal truth store", () => {
       truthRevisionHash: afterA.revisionHash,
     });
     expect(stillSupported).toHaveLength(1);
-    expect(stillSupported[0]?.supportState).toBe("SUPPORTED");
+    expect(stillSupported[0]).toMatchObject({
+      supportState: "SUPPORTED",
+      truthState: "SUPPORTED_CURRENT",
+    });
 
     const afterB = await store.withdrawSourceEpisode({
       spaceId,
@@ -173,6 +179,22 @@ describe.skipIf(!databaseUrl)("temporal truth store", () => {
         truthRevisionHash: afterB.revisionHash,
       }),
     ).toEqual([]);
+    expect(
+      await store.listFacts({
+        spaceId,
+        vaultId,
+        subjectRef: "policy:admin-access",
+        predicate: "requires_mfa",
+        mode: "HISTORY",
+        validAt: "2025-02-01T00:00:00.000Z",
+        truthRevisionHash: afterB.revisionHash,
+      }),
+    ).toMatchObject([
+      {
+        supportState: "UNSUPPORTED",
+        truthState: "UNSUPPORTED_CURRENT",
+      },
+    ]);
 
     const historical = await store.listFacts({
       spaceId,
@@ -182,7 +204,12 @@ describe.skipIf(!databaseUrl)("temporal truth store", () => {
       validAt: "2025-02-01T00:00:00.000Z",
       truthRevisionHash: recorded.revision.revisionHash,
     });
-    expect(historical).toHaveLength(1);
+    expect(historical).toMatchObject([
+      {
+        supportState: "SUPPORTED",
+        truthState: "SUPPORTED_CURRENT",
+      },
+    ]);
     const history = await store.supportHistory(recorded.fact.id);
     expect(history.sourceWithdrawals).toHaveLength(2);
   });
@@ -229,7 +256,12 @@ describe.skipIf(!databaseUrl)("temporal truth store", () => {
         truthRevisionHash: recorded.revision.revisionHash,
         validAt: "2026-01-01T00:00:00.000Z",
       }),
-    ).toMatchObject([{ supportState: "SUPPORTED" }]);
+    ).toMatchObject([
+      {
+        supportState: "SUPPORTED",
+        truthState: "SUPPORTED_CURRENT",
+      },
+    ]);
 
     const invalidated = await store.invalidateEvidence({
       spaceId,
@@ -254,7 +286,12 @@ describe.skipIf(!databaseUrl)("temporal truth store", () => {
         truthRevisionHash: recorded.revision.revisionHash,
         validAt: "2026-01-01T00:00:00.000Z",
       }),
-    ).toMatchObject([{ supportState: "SUPPORTED" }]);
+    ).toMatchObject([
+      {
+        supportState: "SUPPORTED",
+        truthState: "SUPPORTED_CURRENT",
+      },
+    ]);
 
     const history = await store.supportHistory(recorded.fact.id);
     expect(history.evidenceInvalidations).toHaveLength(1);
@@ -321,9 +358,32 @@ describe.skipIf(!databaseUrl)("temporal truth store", () => {
       validAt: "2026-06-01T00:00:00.000Z",
       truthRevisionHash: future.revision.revisionHash,
     });
-    expect(beforeEffective.map((fact) => fact.object)).toEqual([
-      { version: "1.2" },
+    expect(beforeEffective).toMatchObject([
+      {
+        object: { version: "1.2" },
+        truthState: "SUPPORTED_CURRENT",
+      },
     ]);
+    const beforeEffectiveHistory = await store.listFacts({
+      spaceId,
+      vaultId,
+      subjectRef: "policy:transport",
+      predicate: "tls_minimum",
+      mode: "HISTORY",
+      validAt: "2026-06-01T00:00:00.000Z",
+      truthRevisionHash: future.revision.revisionHash,
+    });
+    expect(
+      Object.fromEntries(
+        beforeEffectiveHistory.map((fact) => [
+          (fact.object as { version: string }).version,
+          fact.truthState,
+        ]),
+      ),
+    ).toEqual({
+      "1.2": "SUPPORTED_CURRENT",
+      "1.3": "FUTURE_EFFECTIVE",
+    });
 
     const afterEffective = await store.listFacts({
       spaceId,
@@ -333,9 +393,32 @@ describe.skipIf(!databaseUrl)("temporal truth store", () => {
       validAt: "2027-02-01T00:00:00.000Z",
       truthRevisionHash: future.revision.revisionHash,
     });
-    expect(afterEffective.map((fact) => fact.object)).toEqual([
-      { version: "1.3" },
+    expect(afterEffective).toMatchObject([
+      {
+        object: { version: "1.3" },
+        truthState: "SUPPORTED_CURRENT",
+      },
     ]);
+    const afterEffectiveHistory = await store.listFacts({
+      spaceId,
+      vaultId,
+      subjectRef: "policy:transport",
+      predicate: "tls_minimum",
+      mode: "HISTORY",
+      validAt: "2027-02-01T00:00:00.000Z",
+      truthRevisionHash: future.revision.revisionHash,
+    });
+    expect(
+      Object.fromEntries(
+        afterEffectiveHistory.map((fact) => [
+          (fact.object as { version: string }).version,
+          fact.truthState,
+        ]),
+      ),
+    ).toEqual({
+      "1.2": "SUPERSEDED",
+      "1.3": "SUPPORTED_CURRENT",
+    });
 
     const late = await store.recordFact({
       spaceId,
@@ -346,6 +429,7 @@ describe.skipIf(!databaseUrl)("temporal truth store", () => {
       predicate: "effective_rule",
       object: { value: "older-but-learned-later" },
       validFrom: "2020-01-01T00:00:00.000Z",
+      validTo: "2021-01-01T00:00:00.000Z",
       supportSetId: support.id,
     });
     expect(
@@ -353,7 +437,7 @@ describe.skipIf(!databaseUrl)("temporal truth store", () => {
         spaceId,
         vaultId,
         subjectRef: "policy:legacy",
-        validAt: "2026-01-01T00:00:00.000Z",
+        validAt: "2020-06-01T00:00:00.000Z",
         truthRevisionHash: future.revision.revisionHash,
       }),
     ).toEqual([]);
@@ -362,10 +446,20 @@ describe.skipIf(!databaseUrl)("temporal truth store", () => {
         spaceId,
         vaultId,
         subjectRef: "policy:legacy",
+        validAt: "2020-06-01T00:00:00.000Z",
+        truthRevisionHash: late.revision.revisionHash,
+      }),
+    ).toMatchObject([{ truthState: "SUPPORTED_CURRENT" }]);
+    expect(
+      await store.listFacts({
+        spaceId,
+        vaultId,
+        subjectRef: "policy:legacy",
+        mode: "HISTORY",
         validAt: "2026-01-01T00:00:00.000Z",
         truthRevisionHash: late.revision.revisionHash,
       }),
-    ).toHaveLength(1);
+    ).toMatchObject([{ truthState: "HISTORICAL" }]);
   });
 
   it("keeps facts append-only and exposes disputed support", async () => {
@@ -402,7 +496,10 @@ describe.skipIf(!databaseUrl)("temporal truth store", () => {
       truthRevisionHash: recorded.revision.revisionHash,
       validAt: "2026-01-01T00:00:00.000Z",
     });
-    expect(facts[0]?.supportState).toBe("DISPUTED");
+    expect(facts[0]).toMatchObject({
+      supportState: "DISPUTED",
+      truthState: "DISPUTED_CURRENT",
+    });
     await expect(
       db.pool.query(
         "update temporal_facts set predicate='mutated' where id=$1",
