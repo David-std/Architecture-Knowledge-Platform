@@ -142,8 +142,7 @@ export function rerankSearchHits(
 }
 
 export type RerankFallbackWarning =
-  | "RERANKER_FALLBACK:INVALID_SCORE"
-  | "RERANKER_FALLBACK:PROVIDER_ERROR";
+  "RERANKER_FALLBACK:INVALID_SCORE" | "RERANKER_FALLBACK:PROVIDER_ERROR";
 
 export interface SafeRerankResult {
   hits: SearchHit[];
@@ -206,4 +205,3 @@ export function rerankSearchHitsSafely(
     };
   }
 }
-
