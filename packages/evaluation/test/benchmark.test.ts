@@ -21,10 +21,11 @@ describe("retrieval benchmark matrix", () => {
       "full-hybrid-rrf",
       "full-hybrid+rerank",
       "lexical+vector+graph+ppr",
+      "lexical+vector+graph+community-drift",
       "lexical+vector+graph+community-global",
       "lexical+vector+query-decomposition",
     ]);
-    expect(RETRIEVAL_BENCHMARK_MATRIX).toHaveLength(13);
+    expect(RETRIEVAL_BENCHMARK_MATRIX).toHaveLength(14);
     expect(
       RETRIEVAL_BENCHMARK_MATRIX.filter(({ channels }) =>
         channels.includes("vector"),
@@ -36,6 +37,14 @@ describe("retrieval benchmark matrix", () => {
       ),
     ).toMatchObject({
       associativePpr: true,
+      channels: ["lexical", "vector", "graph"],
+    });
+    expect(
+      RETRIEVAL_BENCHMARK_MATRIX.find(
+        ({ name }) => name === "lexical+vector+graph+community-drift",
+      ),
+    ).toMatchObject({
+      communityDrift: true,
       channels: ["lexical", "vector", "graph"],
     });
     expect(
