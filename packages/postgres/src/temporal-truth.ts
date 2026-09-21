@@ -1723,12 +1723,7 @@ export class PostgresTemporalTruthStore {
               and replacement.valid_from<=$3
               and (replacement.valid_to is null or replacement.valid_to>$3)
               and ($4::timestamptz is null or s.recorded_at<=$4)`,
-          [
-            factIds,
-            cutoff.seq,
-            validAt,
-            query.recordedAtOrBefore ?? null,
-          ],
+          [factIds, cutoff.seq, validAt, query.recordedAtOrBefore ?? null],
         )
       : { rows: [] as Array<{ old_fact_id: string }> };
     const supersededFactIds = new Set(
