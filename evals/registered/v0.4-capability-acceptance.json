@@ -292,7 +292,10 @@
       "mandatory": true,
       "requirements": {
         "runtimeTest": {
-          "evidence": ["test:code-context-runtime"]
+          "evidence": [
+            "test:code-context-runtime",
+            "test:p4-evidence-tier-transitions"
+          ]
         },
         "negativeTest": {
           "evidence": [
@@ -301,21 +304,26 @@
             "failure:p4-code-graph-validator",
             "failure:p4-code-graph-limits",
             "failure:p4-graphify-version-gate",
-            "failure:p4-code-graph-active-preserved"
+            "failure:p4-code-graph-active-preserved",
+            "failure:p4-code-ambiguity-preserved"
           ]
         },
         "integrationTest": {
           "evidence": [
             "integration:graphify-live",
             "integration:p4-graphify-provider-gate",
-            "integration:p4-code-graph-lifecycle"
+            "integration:p4-code-graph-lifecycle",
+            "integration:p4-symbol-reconciliation"
           ]
         },
         "recoveryTest": {
           "evidence": ["recovery:code-graph-rebuild"]
         },
         "securityTest": {
-          "evidence": ["security:code-scope"]
+          "evidence": [
+            "security:code-scope",
+            "security:p4-malicious-code-comments"
+          ]
         },
         "operatorSurface": {
           "evidence": ["surface:code-context"]
@@ -324,7 +332,11 @@
           "evidence": ["doc:code-context"]
         },
         "benchmark": {
-          "evidence": ["benchmark:code-quality", "benchmark:enterprise-state"]
+          "evidence": [
+            "benchmark:code-quality",
+            "benchmark:enterprise-state",
+            "benchmark:p4-graphify-incremental-equivalence"
+          ]
         },
         "remoteCi": {
           "evidence": ["remote:ci", "remote:scale"]

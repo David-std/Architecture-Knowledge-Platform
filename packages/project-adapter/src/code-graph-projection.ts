@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type {
   CodeGraphArtifact,
+  CodeGraphEdge,
   GraphProjectionArtifact,
   GraphProjectionEdgeInput,
   GraphProjectionNodeInput,
@@ -14,9 +15,20 @@ export interface CodeGraphProjectionInput {
   authorizationPathPrefix?: string;
 }
 
+export interface CodeGraphCandidateEdge {
+  id: string;
+  sourceId: string;
+  targetId: string;
+  relation: CodeGraphEdge["relation"];
+  derivation: Extract<CodeGraphEdge["derivation"], "INFERRED" | "AMBIGUOUS">;
+  confidence?: number;
+  locator?: CodeGraphEdge["locator"];
+}
+
 export interface CodeGraphProjectionPlan {
   projection: GraphProjectionArtifact;
   skippedCandidateEdgeIds: string[];
+  candidateEdges: CodeGraphCandidateEdge[];
 }
 
 function sha256(value: string): string {
@@ -136,6 +148,7 @@ export function planCodeGraphProjection(
   );
 
   const skippedCandidateEdgeIds: string[] = [];
+  const candidateEdges: CodeGraphCandidateEdge[] = [];
   const edges: GraphProjectionEdgeInput[] = [];
   for (const edge of input.artifact.edges) {
     if (
@@ -143,6 +156,17 @@ export function planCodeGraphProjection(
       edge.derivation !== "STATICALLY_RESOLVED"
     ) {
       skippedCandidateEdgeIds.push(edge.id);
+      candidateEdges.push({
+        id: edge.id,
+        sourceId: edge.sourceId,
+        targetId: edge.targetId,
+        relation: edge.relation,
+        derivation: edge.derivation,
+        ...(edge.confidence === undefined
+          ? {}
+          : { confidence: edge.confidence }),
+        ...(edge.locator ? { locator: edge.locator } : {}),
+      });
       continue;
     }
     const from = nodeById.get(edge.sourceId);
@@ -238,6 +262,9 @@ export function planCodeGraphProjection(
       nodes,
       edges,
     },
-    skippedCandidateEdgeIds,
+    skippedCandidateEdgeIds: skippedCandidateEdgeIds.sort(),
+    candidateEdges: candidateEdges.sort((left, right) =>
+      left.id.localeCompare(right.id),
+    ),
   };
 }

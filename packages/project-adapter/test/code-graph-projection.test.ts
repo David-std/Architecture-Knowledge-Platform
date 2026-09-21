@@ -47,6 +47,14 @@ const artifact: CodeGraphArtifact = {
       derivation: "INFERRED",
       confidence: 0.73,
     },
+    {
+      id: "ambiguous-edge",
+      sourceId: "entry",
+      targetId: "helper",
+      relation: "CALLS",
+      derivation: "AMBIGUOUS",
+      confidence: 0.51,
+    },
   ],
   warnings: [],
 };
@@ -86,7 +94,7 @@ describe("code graph projection", () => {
     });
   });
 
-  it("keeps inferred provider edges out of the authoritative graph instead of upgrading them", () => {
+  it("keeps inferred and ambiguous provider targets as candidates without activating them", () => {
     const plan = planCodeGraphProjection({
       artifact,
       spaceId: "00000000-0000-0000-0000-000000000003",
@@ -94,7 +102,28 @@ describe("code graph projection", () => {
       scopeId: "project:payments",
     });
 
-    expect(plan.skippedCandidateEdgeIds).toEqual(["candidate-edge"]);
+    expect(plan.skippedCandidateEdgeIds).toEqual([
+      "ambiguous-edge",
+      "candidate-edge",
+    ]);
+    expect(plan.candidateEdges).toEqual([
+      expect.objectContaining({
+        id: "ambiguous-edge",
+        sourceId: "entry",
+        targetId: "helper",
+        relation: "CALLS",
+        derivation: "AMBIGUOUS",
+        confidence: 0.51,
+      }),
+      expect.objectContaining({
+        id: "candidate-edge",
+        sourceId: "helper",
+        targetId: "entry",
+        relation: "REFERENCES",
+        derivation: "INFERRED",
+        confidence: 0.73,
+      }),
+    ]);
     expect(plan.projection.edges).toHaveLength(1);
     expect(
       plan.projection.edges.some(

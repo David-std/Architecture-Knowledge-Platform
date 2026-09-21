@@ -11,6 +11,38 @@ export type CodeEvidenceTier =
   | "RUNTIME_COVERED"
   | "DYNAMICALLY_PROVEN";
 
+export type CodeEvidenceTransitionSignal =
+  | "DETERMINISTIC_STATIC_EDGE"
+  | "MATCHING_RUNTIME_OBSERVATION"
+  | "EXPLICIT_DYNAMIC_PROOF"
+  | "MODEL_AGREEMENT";
+
+export function transitionCodeEvidenceTier(
+  current: CodeEvidenceTier,
+  signal: CodeEvidenceTransitionSignal,
+): CodeEvidenceTier {
+  if (signal === "MODEL_AGREEMENT") return current;
+  if (
+    signal === "DETERMINISTIC_STATIC_EDGE" &&
+    (current === "NO_SIGNAL" || current === "AI_CANDIDATE")
+  ) {
+    return "STATICALLY_LINKED";
+  }
+  if (
+    signal === "MATCHING_RUNTIME_OBSERVATION" &&
+    current === "STATICALLY_LINKED"
+  ) {
+    return "RUNTIME_COVERED";
+  }
+  if (
+    signal === "EXPLICIT_DYNAMIC_PROOF" &&
+    current === "RUNTIME_COVERED"
+  ) {
+    return "DYNAMICALLY_PROVEN";
+  }
+  return current;
+}
+
 export interface CodeLocator {
   repository: string;
   commit: string;

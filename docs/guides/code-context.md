@@ -12,6 +12,17 @@ The live code-graph adapter is audited against Graphify `graphifyy==0.9.63`, Apa
 
 Provider execution receives a minimal environment, an immutable Git snapshot, a controlled temporary working directory, a wall timeout and bounded stdout/stderr. Snapshot and output validation also enforce file-count, snapshot-byte, graph-byte, node-count and edge-count ceilings. Provider paths containing traversal, absolute escapes or control characters are rejected. Unknown explicit derivation kinds, unsupported provider schema versions, dangling edges and source line ranges outside the immutable file are rejected instead of being coerced into trusted code edges.
 
+## Incremental equivalence, candidates and evidence tiers
+
+Incremental Graphify refresh is accepted only when the normalized supported semantics for the head commit equal a clean full rebuild of the same head commit. The live provider CI records incremental and full elapsed time, node count and edge count while treating semantic equivalence, not speed, as the correctness gate.
+
+Provider edges marked `INFERRED` or `AMBIGUOUS` are not activated as authoritative graph relationships. AKP keeps a bounded candidate-target registry in project code-graph status so ambiguity remains inspectable without choosing a target. Cross-commit rename and move reconciliation likewise remains `CANDIDATE` or `AMBIGUOUS` unless deterministic provider evidence establishes stronger continuity.
+
+Evidence promotion is monotonic and proof-specific: deterministic static linkage may promote to `STATICALLY_LINKED`; a matching revision-scoped runtime observation may promote that to `RUNTIME_COVERED`; only an explicit stronger dynamic-proof policy may promote to `DYNAMICALLY_PROVEN`. Repeated model agreement never promotes evidence.
+
+Comments and docstrings are untrusted source text. A provider may expose their text as code context, but fields resembling instructions, permissions, tools, trust, profiles or canonical-knowledge authority are discarded by the canonical adapter and cannot mutate governance state.
+
+
 ## What this feature is
 
 Code Context projects an approved repository snapshot into the `CODE` graph domain and exposes symbols, dependencies and change-impact context alongside knowledge, runtime and temporal context.

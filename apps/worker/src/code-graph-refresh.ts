@@ -270,6 +270,9 @@ export function createCodeGraphRefreshHandlers(
           edgeCount: refreshed.artifact.edges.length,
           skippedCandidateEdgeCount:
             refreshed.plan.skippedCandidateEdgeIds.length,
+          candidateEdgeCount: refreshed.plan.candidateEdges.length,
+          candidateEdges: refreshed.plan.candidateEdges.slice(0, 128),
+          candidateEdgesTruncated: refreshed.plan.candidateEdges.length > 128,
           degradedDuringRefresh: refreshed.degradedDuringRefresh,
           reconciliation: {
             candidateCount: reconciliationCandidates.length,

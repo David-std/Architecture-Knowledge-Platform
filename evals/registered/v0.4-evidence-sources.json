@@ -1664,6 +1664,56 @@
           "step": "Execute registered domain quality benchmark"
         }
       ]
+    },
+    "test:p4-evidence-tier-transitions": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        }
+      ]
+    },
+    "failure:p4-code-ambiguity-preserved": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        }
+      ]
+    },
+    "integration:p4-symbol-reconciliation": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        }
+      ]
+    },
+    "security:p4-malicious-code-comments": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        }
+      ]
+    },
+    "benchmark:p4-graphify-incremental-equivalence": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "code-graph-graphify",
+          "step": "Verify real Graphify adapter"
+        }
+      ]
     }
   }
 }

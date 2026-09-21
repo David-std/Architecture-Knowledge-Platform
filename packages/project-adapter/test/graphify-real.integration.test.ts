@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import type { CodeGraphArtifact } from "@akp/contracts";
 import {
   GRAPHIFY_PROVIDER_GATE,
   GraphifyCodeGraphAdapter,
@@ -12,6 +13,30 @@ import {
 
 const roots: string[] = [];
 const realGraphifyEnabled = process.env.AKP_REAL_GRAPHIFY === "1";
+
+function supportedGraphSemantics(artifact: CodeGraphArtifact): unknown {
+  const stripExtensions = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(stripExtensions);
+    if (!value || typeof value !== "object") return value;
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([key]) => key !== "extensions")
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, nested]) => [key, stripExtensions(nested)]),
+    );
+  };
+  return stripExtensions({
+    schemaVersion: artifact.schemaVersion,
+    repository: artifact.repository,
+    commitSha: artifact.commitSha,
+    provider: artifact.provider,
+    providerVersion: artifact.providerVersion,
+    configurationHash: artifact.configurationHash,
+    languages: artifact.languages,
+    nodes: artifact.nodes,
+    edges: artifact.edges,
+  });
+}
 
 async function fixtureRepository(): Promise<{ root: string; commit: string }> {
   const root = await mkdtemp(path.join(tmpdir(), "akp-real-graphify-"));
@@ -166,10 +191,12 @@ describe("GraphifyCodeGraphAdapter real provider", () => {
         repositoryPath: root,
         commit: nextCommit,
       });
+      const incrementalStartedAt = Date.now();
       const updated = await adapter.analyze(nextSnapshot, {
         ...defaultCodeGraphOptions(),
         timeoutMs: 180_000,
       });
+      const incrementalMs = Date.now() - incrementalStartedAt;
 
       expect(updated.commitSha).toBe(nextCommit);
       expect(
@@ -186,7 +213,32 @@ describe("GraphifyCodeGraphAdapter real provider", () => {
             node.qualifiedName?.includes("multiply") === true,
         ),
       ).toBe(true);
+
+      const fullAdapter = new GraphifyCodeGraphAdapter({
+        executable,
+        incremental: false,
+      });
+      const fullStartedAt = Date.now();
+      const fullRebuild = await fullAdapter.analyze(nextSnapshot, {
+        ...defaultCodeGraphOptions(),
+        timeoutMs: 180_000,
+      });
+      const fullMs = Date.now() - fullStartedAt;
+      expect(supportedGraphSemantics(updated)).toEqual(
+        supportedGraphSemantics(fullRebuild),
+      );
+      console.info(
+        JSON.stringify({
+          status: "GRAPHIFY_INCREMENTAL_EQUIVALENCE",
+          baseCommit: commit,
+          headCommit: nextCommit,
+          incrementalMs,
+          fullMs,
+          nodeCount: updated.nodes.length,
+          edgeCount: updated.edges.length,
+        }),
+      );
     },
-    240_000,
+    300_000,
   );
 });
