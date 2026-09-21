@@ -307,8 +307,7 @@ describe("derived truth maintenance event boundary", () => {
         const activeGeneration = await embeddingManager.activate(
           requestedGeneration.generationId,
         );
-        const physicalVectorRef =
-          `vector:${activeGeneration.generationId}:${physicalUnitId}`;
+        const physicalVectorRef = `vector:${activeGeneration.generationId}:${physicalUnitId}`;
 
         const vectorRef = `vector:generation-a:${randomUUID()}`;
         const factBackedVectorRef = `vector:generation-fact:${randomUUID()}`;
