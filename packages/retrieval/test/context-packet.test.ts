@@ -620,11 +620,13 @@ describe("buildContextPacket", () => {
       kind: "VECTOR",
       id: "00000000-0000-4000-8000-000000000777",
     });
-    expect(
-      compact.content[0]?.retrievalTrace?.contributions[0]?.rawScore,
-    ).toBe(0.91);
+    expect(compact.content[0]?.retrievalTrace?.contributions[0]?.rawScore).toBe(
+      0.91,
+    );
     expect(compact.budget.serializedTokens).toBeLessThanOrEqual(1_000);
-    expect(full.sections[0]?.retrievalTrace?.contributions[0]?.generation).toMatchObject({
+    expect(
+      full.sections[0]?.retrievalTrace?.contributions[0]?.generation,
+    ).toMatchObject({
       provider: "provider-with-verbose-operational-metadata",
       model: "model-with-verbose-operational-metadata",
     });
