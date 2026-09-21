@@ -538,7 +538,8 @@
         "integrationTest": {
           "evidence": [
             "integration:retrieval-context",
-            "integration:p6-retrieval-trace-e2e"
+            "integration:p6-retrieval-trace-e2e",
+            "integration:p6-drift-routing"
           ]
         },
         "recoveryTest": {
@@ -566,7 +567,8 @@
           "evidence": [
             "benchmark:retrieval-quality",
             "benchmark:semantic",
-            "benchmark:p6-ann-decision-deferred"
+            "benchmark:p6-ann-decision-deferred",
+            "benchmark:p6-drift"
           ]
         },
         "remoteCi": {
