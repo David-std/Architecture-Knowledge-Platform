@@ -518,57 +518,54 @@ describe("project scan Code Graph request", () => {
     const currentProject = await db.pool.query<{
       metadata: Record<string, unknown>;
     }>("select metadata from projects where id=$1", [projectId]);
-    await db.pool.query(
-      "update projects set metadata=$2::jsonb where id=$1",
-      [
-        projectId,
-        JSON.stringify({
-          ...(currentProject.rows[0]?.metadata ?? {}),
-          commit: headSha,
-          codeGraph: {
-            ...identity,
-            status: "ACTIVE",
-            sourceRevision: headSha,
-            nodeCount: 3,
-            edgeCount: 1,
-            candidateEdges: [
+    await db.pool.query("update projects set metadata=$2::jsonb where id=$1", [
+      projectId,
+      JSON.stringify({
+        ...(currentProject.rows[0]?.metadata ?? {}),
+        commit: headSha,
+        codeGraph: {
+          ...identity,
+          status: "ACTIVE",
+          sourceRevision: headSha,
+          nodeCount: 3,
+          edgeCount: 1,
+          candidateEdges: [
+            {
+              id: "candidate:ambiguous-call",
+              sourceId: "function:addedEntry",
+              targetId: "function:renamedEntry",
+              relation: "CALLS",
+              derivation: "AMBIGUOUS",
+              confidence: 0.5,
+            },
+          ],
+          reconciliation: {
+            candidateCount: 1,
+            ambiguousCount: 1,
+            candidates: [
               {
-                id: "candidate:ambiguous-call",
-                sourceId: "function:addedEntry",
-                targetId: "function:renamedEntry",
-                relation: "CALLS",
-                derivation: "AMBIGUOUS",
-                confidence: 0.5,
+                relationship: "RENAMED_FROM",
+                state: "AMBIGUOUS",
+                confidence: 0.45,
+                basis: ["SAME_POSITION"],
+                from: {
+                  nodeId: "function:projectEntry",
+                  commitSha: baseSha,
+                  path: "index.ts",
+                  name: "projectEntry",
+                },
+                to: {
+                  nodeId: "function:renamedEntry",
+                  commitSha: headSha,
+                  path: "index.ts",
+                  name: "renamedEntry",
+                },
               },
             ],
-            reconciliation: {
-              candidateCount: 1,
-              ambiguousCount: 1,
-              candidates: [
-                {
-                  relationship: "RENAMED_FROM",
-                  state: "AMBIGUOUS",
-                  confidence: 0.45,
-                  basis: ["SAME_POSITION"],
-                  from: {
-                    nodeId: "function:projectEntry",
-                    commitSha: baseSha,
-                    path: "index.ts",
-                    name: "projectEntry",
-                  },
-                  to: {
-                    nodeId: "function:renamedEntry",
-                    commitSha: headSha,
-                    path: "index.ts",
-                    name: "renamedEntry",
-                  },
-                },
-              ],
-            },
           },
-        }),
-      ],
-    );
+        },
+      }),
+    ]);
 
     const response = await app.inject({
       method: "POST",
