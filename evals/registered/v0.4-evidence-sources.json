@@ -2006,6 +2006,20 @@
           "path": "apps/api/test/query-transform.integration.test.ts"
         }
       ]
+    },
+    "failure:p6-reranker-fallback": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        },
+        {
+          "type": "FILE",
+          "path": "packages/retrieval/src/rerank.ts"
+        }
+      ]
     }
   }
 }
