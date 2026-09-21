@@ -2528,7 +2528,7 @@ export async function queryKnowledge(
               revision: graphRevision,
               trace: {
                 generation: {
-                  kind: "GRAPH",
+                  kind: "GRAPH" as const,
                   id: graphRevision,
                 },
               },
