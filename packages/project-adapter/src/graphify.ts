@@ -343,8 +343,12 @@ export class GraphifyCodeGraphAdapter implements CodeGraphExtractionPort {
           warnings,
           executionMode,
           ...(previousCommitSha ? { previousCommitSha } : {}),
-          maxNodes: options.maxNodes,
-          maxEdges: options.maxEdges,
+          ...(options.maxNodes === undefined
+            ? {}
+            : { maxNodes: options.maxNodes }),
+          ...(options.maxEdges === undefined
+            ? {}
+            : { maxEdges: options.maxEdges }),
         });
 
         if (this.config.incremental) {
