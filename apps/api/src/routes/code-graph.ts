@@ -354,9 +354,21 @@ function candidateEdgesFromMetadata(
     : [];
   return raw
     .slice(0, 128)
-    .flatMap((candidate) => {
+    .flatMap((candidate): CodeGraphCandidateEdge[] => {
       const parsed = CandidateEdge.safeParse(candidate);
-      return parsed.success ? [parsed.data] : [];
+      if (!parsed.success) return [];
+      return [
+        {
+          id: parsed.data.id,
+          sourceId: parsed.data.sourceId,
+          targetId: parsed.data.targetId,
+          relation: parsed.data.relation,
+          derivation: parsed.data.derivation,
+          ...(parsed.data.confidence === undefined
+            ? {}
+            : { confidence: parsed.data.confidence }),
+        },
+      ];
     })
     .filter(
       (candidate) =>
