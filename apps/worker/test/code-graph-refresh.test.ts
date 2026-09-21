@@ -38,6 +38,7 @@ async function fixtureRepository(): Promise<{
   expect(git("config", "user.name", "AKP Worker Test").status).toBe(0);
   expect(git("config", "user.email", "akp-worker@localhost").status).toBe(0);
   await mkdir(path.join(root, "src"), { recursive: true });
+  await mkdir(path.join(root, "generated"), { recursive: true });
   await writeFile(
     path.join(root, "src", "entry.ts"),
     'import { helper } from "./helper.js";\nexport function entry() { return helper(); }\n',
@@ -45,6 +46,10 @@ async function fixtureRepository(): Promise<{
   await writeFile(
     path.join(root, "src", "helper.ts"),
     "export function helper() { return 1; }\n",
+  );
+  await writeFile(
+    path.join(root, "generated", "ignored.ts"),
+    "export const generatedOnly = true;\n",
   );
   expect(git("add", ".").status).toBe(0);
   expect(git("commit", "-m", "fixture").status).toBe(0);
@@ -239,6 +244,14 @@ describe.skipIf(!process.env.DATABASE_URL)(
           providerVersion: "0.9.63",
           nodeCount: 2,
           edgeCount: 1,
+          warningCount: 1,
+          warnings: [
+            {
+              code: "CODE_GRAPH_FILE_EXCLUDED",
+              path: "generated/ignored.ts",
+            },
+          ],
+          warningsTruncated: false,
           reconciliation: {
             candidateCount: 1,
             ambiguousCount: 0,

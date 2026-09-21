@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { Postgres } from "@akp/postgres";
 import {
+  graphChecks,
   modelRoutingCheck,
   overallDoctorStatus,
   renderDoctorReport,
@@ -108,5 +110,88 @@ describe("doctor rendering", () => {
     expect(rendered).toContain("AKP doctor: WARN");
     expect(rendered).toContain("[WARN] Backup recency");
     expect(rendered).toContain('\"ageHours\":48');
+  });
+
+  it("reports current CODE graph health without treating retired history as stale", async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("with ranked as")) {
+        return {
+          rows: [
+            {
+              graph_domain: "CODE",
+              active: 1,
+              stale: 0,
+              failed: 0,
+              building: 0,
+              retired: 1,
+              latest_update: new Date("2026-09-20T05:00:00.000Z"),
+            },
+          ],
+        };
+      }
+      if (sql.includes("from projects p")) {
+        return {
+          rows: [
+            {
+              repository: "akp-project:vault:payments",
+              slug: "payments",
+              requested_sha: "a".repeat(40),
+              active_graph_sha: "a".repeat(40),
+              active_freshness: "FRESH",
+              provider: "graphify",
+              provider_version: "0.9.63",
+              last_build: new Date("2026-09-20T05:00:00.000Z"),
+              node_count: 42,
+              edge_count: 51,
+              warning_count: "37",
+              warnings: [{ code: "CODE_GRAPH_FILE_EXCLUDED", path: "gen/a.ts" }],
+              last_failure_code: "GRAPHIFY_PROCESS_FAILED",
+              last_failure_at: new Date("2026-09-20T04:00:00.000Z"),
+            },
+          ],
+        };
+      }
+      throw new Error("UNEXPECTED_DOCTOR_QUERY");
+    });
+    const result = await graphChecks({
+      pool: { query },
+    } as unknown as Postgres);
+
+    expect(result.graphs).toMatchObject({
+      details: {
+        domains: {
+          CODE: {
+            active: 1,
+            stale: 0,
+            failed: 0,
+            retired: 1,
+          },
+        },
+      },
+    });
+    expect(result.code).toMatchObject({
+      status: "OK",
+      details: {
+        projects: [
+          {
+            repository: "akp-project:vault:payments",
+            requestedSha: "a".repeat(40),
+            activeGraphSha: "a".repeat(40),
+            stale: false,
+            provider: "graphify",
+            providerVersion: "0.9.63",
+            nodeCount: 42,
+            edgeCount: 51,
+            warningCount: 37,
+            lastFailure: {
+              code: "GRAPHIFY_PROCESS_FAILED",
+              unrecovered: false,
+            },
+            status: "OK",
+          },
+        ],
+      },
+    });
+    expect(JSON.stringify(result.code)).not.toContain("root_path");
   });
 });

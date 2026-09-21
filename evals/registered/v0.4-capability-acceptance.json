@@ -295,7 +295,8 @@
           "evidence": [
             "test:code-context-runtime",
             "test:p4-evidence-tier-transitions",
-            "test:p4-impact-partitions"
+            "test:p4-impact-partitions",
+            "test:p4-code-graph-doctor-state"
           ]
         },
         "negativeTest": {
@@ -307,7 +308,8 @@
             "failure:p4-graphify-version-gate",
             "failure:p4-code-graph-active-preserved",
             "failure:p4-code-ambiguity-preserved",
-            "failure:p4-delta-invalid-commit"
+            "failure:p4-delta-invalid-commit",
+            "failure:p4-retired-history-not-stale"
           ]
         },
         "integrationTest": {
@@ -330,7 +332,7 @@
           ]
         },
         "operatorSurface": {
-          "evidence": ["surface:code-context"]
+          "evidence": ["surface:code-context", "surface:p4-code-graph-doctor"]
         },
         "docs": {
           "evidence": ["doc:code-context"]

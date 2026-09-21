@@ -268,6 +268,12 @@ export function createCodeGraphRefreshHandlers(
             : {}),
           nodeCount: refreshed.artifact.nodes.length,
           edgeCount: refreshed.artifact.edges.length,
+          warningCount: refreshed.artifact.warnings.length,
+          warnings: refreshed.artifact.warnings.slice(0, 32).map((warning) => ({
+            code: warning.code,
+            ...(warning.path ? { path: warning.path } : {}),
+          })),
+          warningsTruncated: refreshed.artifact.warnings.length > 32,
           skippedCandidateEdgeCount:
             refreshed.plan.skippedCandidateEdgeIds.length,
           candidateEdgeCount: refreshed.plan.candidateEdges.length,

@@ -442,7 +442,7 @@ async function contextParityCheck(db: Postgres): Promise<DoctorCheck> {
   };
 }
 
-async function graphChecks(db: Postgres): Promise<{
+export async function graphChecks(db: Postgres): Promise<{
   graphs: DoctorCheck;
   code: DoctorCheck;
 }> {
@@ -451,14 +451,36 @@ async function graphChecks(db: Postgres): Promise<{
     active: number;
     stale: number;
     failed: number;
+    building: number;
+    retired: number;
     latest_update: Date | null;
   }>(
-    `select graph_domain,
+    `with ranked as (
+       select r.*,
+              row_number() over(
+                partition by space_id,graph_domain,scope_id
+                order by requested_at desc,id desc
+              ) as rn
+         from federated_graph_projection_revisions r
+     )
+     select graph_domain,
             count(*) filter(where lifecycle='ACTIVE')::int active,
-            count(*) filter(where lifecycle='STALE' or freshness='STALE')::int stale,
-            count(*) filter(where lifecycle='FAILED')::int failed,
+            count(*) filter(
+              where lifecycle='ACTIVE' and freshness='STALE'
+            )::int stale,
+            count(*) filter(
+              where rn=1 and lifecycle='FAILED'
+            )::int failed,
+            count(*) filter(
+              where rn=1 and lifecycle in (
+                'REQUESTED','BUILDING','READY','BUILT'
+              )
+            )::int building,
+            count(*) filter(
+              where lifecycle in ('RETIRED','STALE')
+            )::int retired,
             max(updated_at) latest_update
-       from federated_graph_projection_revisions
+       from ranked
       group by graph_domain
       order by graph_domain`,
   );
@@ -482,63 +504,219 @@ async function graphChecks(db: Postgres): Promise<{
               active: row.active,
               stale: row.stale,
               failed: row.failed,
+              building: row.building,
+              retired: row.retired,
               latestUpdate: row.latest_update?.toISOString() ?? null,
             }
-          : { active: 0, stale: 0, failed: 0, latestUpdate: null },
+          : {
+              active: 0,
+              stale: 0,
+              failed: 0,
+              building: 0,
+              retired: 0,
+              latestUpdate: null,
+            },
       ];
     }),
   );
   const anyFailure = result.rows.some((row) => row.failed > 0);
   const anyStale = result.rows.some((row) => row.stale > 0);
+  const anyBuilding = result.rows.some((row) => row.building > 0);
   const missingDomains = expected.filter((domain) => !byDomain.has(domain));
   const graphs: DoctorCheck = {
     id: "graph-domain-revisions",
     label: "Graph domain revisions",
     status: anyFailure
       ? "FAIL"
-      : anyStale || missingDomains.length
+      : anyStale || anyBuilding || missingDomains.length
         ? "WARN"
         : "OK",
     summary:
       result.rows.length === 0
         ? "No graph projection revisions are present."
         : anyFailure
-          ? "At least one graph domain has failed revisions."
-          : anyStale || missingDomains.length
-            ? "Graph revision coverage is incomplete or stale."
-            : "All graph domains have revision state without stale/failed rows.",
+          ? "At least one graph domain has an unrecovered latest failure."
+          : anyStale || anyBuilding || missingDomains.length
+            ? "Graph revision coverage is incomplete, building, or stale."
+            : "All graph domains have healthy current revision state.",
     details: { domains: details, missingDomains },
   };
-  const codeRow = byDomain.get("CODE");
-  const code: DoctorCheck = !codeRow
-    ? {
-        id: "code-graph-staleness",
-        label: "Code graph staleness",
-        status: "UNKNOWN",
-        summary: "No CODE graph revision has been recorded.",
-      }
-    : {
-        id: "code-graph-staleness",
-        label: "Code graph staleness",
-        status:
-          codeRow.failed > 0
-            ? "FAIL"
-            : codeRow.stale > 0 || codeRow.active === 0
-              ? "WARN"
-              : "OK",
-        summary:
-          codeRow.failed > 0
-            ? "CODE graph has failed revisions."
-            : codeRow.stale > 0 || codeRow.active === 0
-              ? "CODE graph is stale or has no active revision."
-              : "CODE graph has an active fresh revision.",
-        details: {
-          active: codeRow.active,
-          stale: codeRow.stale,
-          failed: codeRow.failed,
-          latestUpdate: codeRow.latest_update?.toISOString() ?? null,
-        },
-      };
+
+  const projects = await db.pool.query<{
+    repository: string | null;
+    slug: string;
+    requested_sha: string | null;
+    active_graph_sha: string | null;
+    active_freshness: string | null;
+    provider: string | null;
+    provider_version: string | null;
+    last_build: Date | string | null;
+    node_count: number;
+    edge_count: number;
+    warning_count: string | null;
+    warnings: unknown;
+    last_failure_code: string | null;
+    last_failure_at: Date | string | null;
+  }>(
+    `select
+        p.metadata#>>'{codeGraph,repository}' repository,
+        p.slug,
+        p.metadata->>'commit' requested_sha,
+        active.source_revision active_graph_sha,
+        active.freshness active_freshness,
+        active.provider,
+        active.provider_version,
+        active.last_successful_update last_build,
+        coalesce(
+          (select count(*)::int
+             from federated_graph_projection_nodes pn
+            where pn.projection_revision_id=active.id),
+          0
+        ) node_count,
+        coalesce(
+          (select count(*)::int
+             from federated_graph_projection_edges pe
+            where pe.projection_revision_id=active.id),
+          0
+        ) edge_count,
+        p.metadata#>>'{codeGraph,warningCount}' warning_count,
+        case
+          when jsonb_typeof(p.metadata#>'{codeGraph,warnings}')='array'
+            then p.metadata#>'{codeGraph,warnings}'
+          else '[]'::jsonb
+        end warnings,
+        failure.error->>'code' last_failure_code,
+        failure.updated_at last_failure_at
+      from projects p
+      left join lateral (
+        select r.*
+          from federated_graph_projection_revisions r
+         where r.space_id=p.space_id
+           and r.graph_domain='CODE'
+           and r.scope_id=p.metadata#>>'{codeGraph,scopeId}'
+           and r.lifecycle='ACTIVE'
+         order by r.activated_at desc nulls last,r.id desc
+         limit 1
+      ) active on true
+      left join lateral (
+        select r.error,r.updated_at
+          from federated_graph_projection_revisions r
+         where r.space_id=p.space_id
+           and r.graph_domain='CODE'
+           and r.scope_id=p.metadata#>>'{codeGraph,scopeId}'
+           and r.lifecycle='FAILED'
+         order by r.updated_at desc,r.id desc
+         limit 1
+      ) failure on true
+     where p.metadata#>>'{codeGraph,scopeId}' is not null
+     order by p.space_id,p.vault_id,p.slug
+     limit 201`,
+  );
+  const truncated = projects.rows.length > 200;
+  const codeProjects = projects.rows.slice(0, 200).map((row) => {
+    const lastBuild =
+      row.last_build === null
+        ? null
+        : (row.last_build instanceof Date
+            ? row.last_build
+            : new Date(row.last_build)
+          ).toISOString();
+    const lastFailureAt =
+      row.last_failure_at === null
+        ? null
+        : (row.last_failure_at instanceof Date
+            ? row.last_failure_at
+            : new Date(row.last_failure_at)
+          ).toISOString();
+    const warnings = Array.isArray(row.warnings)
+      ? row.warnings.slice(0, 32).flatMap((warning) => {
+          if (
+            !warning ||
+            typeof warning !== "object" ||
+            Array.isArray(warning)
+          ) {
+            return [];
+          }
+          const value = warning as Record<string, unknown>;
+          if (typeof value.code !== "string") return [];
+          return [
+            {
+              code: value.code.slice(0, 160),
+              ...(typeof value.path === "string"
+                ? { path: value.path.slice(0, 4096) }
+                : {}),
+            },
+          ];
+        })
+      : [];
+    const warningCount =
+      row.warning_count && /^\d{1,9}$/u.test(row.warning_count)
+        ? Number(row.warning_count)
+        : warnings.length;
+    const stale =
+      !row.active_graph_sha ||
+      !row.requested_sha ||
+      row.active_graph_sha.toLowerCase() !== row.requested_sha.toLowerCase() ||
+      row.active_freshness !== "FRESH";
+    const unrecoveredFailure =
+      lastFailureAt !== null &&
+      (lastBuild === null ||
+        Date.parse(lastFailureAt) > Date.parse(lastBuild));
+    const status: DoctorStatus =
+      !row.active_graph_sha && unrecoveredFailure
+        ? "FAIL"
+        : stale || unrecoveredFailure
+          ? "WARN"
+          : "OK";
+    return {
+      repository: row.repository,
+      slug: row.slug,
+      requestedSha: row.requested_sha,
+      activeGraphSha: row.active_graph_sha,
+      stale,
+      provider: row.provider,
+      providerVersion: row.provider_version,
+      lastBuild,
+      nodeCount: row.node_count,
+      edgeCount: row.edge_count,
+      warningCount,
+      warnings,
+      lastFailure: row.last_failure_code
+        ? {
+            code: row.last_failure_code.slice(0, 160),
+            at: lastFailureAt,
+            unrecovered: unrecoveredFailure,
+          }
+        : null,
+      status,
+    };
+  });
+  const codeStatus: DoctorStatus =
+    codeProjects.some((project) => project.status === "FAIL")
+      ? "FAIL"
+      : codeProjects.some((project) => project.status === "WARN") || truncated
+        ? "WARN"
+        : codeProjects.length === 0
+          ? "UNKNOWN"
+          : "OK";
+  const code: DoctorCheck = {
+    id: "code-graph-staleness",
+    label: "Code graph projects",
+    status: codeStatus,
+    summary:
+      codeProjects.length === 0
+        ? "No managed project CODE graph has been recorded."
+        : codeStatus === "FAIL"
+          ? "At least one project CODE graph has no active replacement after a failure."
+          : codeStatus === "WARN"
+            ? "At least one project CODE graph is stale, degraded, or omitted by the diagnostic bound."
+            : "Managed project CODE graphs match their requested immutable revisions.",
+    details: {
+      projects: codeProjects,
+      truncated,
+      inspected: codeProjects.length,
+    },
+  };
   return { graphs, code };
 }
 

@@ -1754,6 +1754,40 @@
           "step": "Run API integration with a persisted report"
         }
       ]
+    },
+    "test:p4-code-graph-doctor-state": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        }
+      ]
+    },
+    "failure:p4-retired-history-not-stale": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        }
+      ]
+    },
+    "surface:p4-code-graph-doctor": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run operator doctor diagnostics"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/cli/src/doctor.ts"
+        }
+      ]
     }
   }
 }
