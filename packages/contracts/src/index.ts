@@ -508,9 +508,7 @@ export const RetrievalTraceGeneration = z
       .optional(),
   })
   .strict();
-export type RetrievalTraceGeneration = z.infer<
-  typeof RetrievalTraceGeneration
->;
+export type RetrievalTraceGeneration = z.infer<typeof RetrievalTraceGeneration>;
 
 export const RetrievalTraceQueryTransform = z
   .object({

@@ -1,11 +1,5 @@
 export interface RankedTraceGeneration {
-  kind:
-    | "LEXICAL"
-    | "VECTOR"
-    | "GRAPH"
-    | "COMMUNITY"
-    | "CONTEXT_PACK"
-    | "CODE";
+  kind: "LEXICAL" | "VECTOR" | "GRAPH" | "COMMUNITY" | "CONTEXT_PACK" | "CODE";
   id: string;
   provider?: string;
   model?: string;

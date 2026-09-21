@@ -123,9 +123,9 @@ export function rerankSearchHits(
               preScore: hit.score,
               postScore: rerankScore,
             },
-            finalSelectionReason: [
-              ...new Set([...hit.reasons, reason]),
-            ].join("; "),
+            finalSelectionReason: [...new Set([...hit.reasons, reason])].join(
+              "; ",
+            ),
           },
         }
       : {}),
