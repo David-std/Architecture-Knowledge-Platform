@@ -428,6 +428,8 @@ describe("project scan Code Graph request", () => {
           ),
       ),
     ).toBe(true);
+  });
+
   it("derives commit delta impact from the authorized Git checkout and keeps ambiguity explicit", async () => {
     expect(projectId).not.toBe("");
     const identity = projectCodeGraphIdentity(vaultId, slug);
@@ -513,11 +515,9 @@ describe("project scan Code Graph request", () => {
       }).projection,
     );
 
-    const currentProject =
-      await db.pool.query<{ metadata: Record<string, unknown> }>(
-        "select metadata from projects where id=$1",
-        [projectId],
-      );
+    const currentProject = await db.pool.query<{
+      metadata: Record<string, unknown>;
+    }>("select metadata from projects where id=$1", [projectId]);
     await db.pool.query(
       "update projects set metadata=$2::jsonb where id=$1",
       [
@@ -637,7 +637,5 @@ describe("project scan Code Graph request", () => {
       ],
     });
     expect(JSON.stringify(body)).not.toContain(root);
-  });
-
   });
 });

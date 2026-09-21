@@ -28,7 +28,6 @@ Impact reporting keeps evidence classes separate instead of collapsing them into
 
 For managed projects, commit-delta impact is derived server-side from an authorized local Git checkout. AKP verifies immutable base and head SHAs, computes a bounded rename-aware Git change set, derives added/removed/changed symbols from those commits, and fences the head SHA to the current active CODE graph revision. Client-supplied changed paths are not used as authority for this delta mode. Local checkout paths are never returned. Cross-commit symbol rename or move mappings remain explicit candidate or ambiguous reconciliation records rather than stable identity assertions.
 
-
 ## What this feature is
 
 Code Context projects an approved repository snapshot into the `CODE` graph domain and exposes symbols, dependencies and change-impact context alongside knowledge, runtime and temporal context.

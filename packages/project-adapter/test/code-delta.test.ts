@@ -30,9 +30,9 @@ describe("code commit delta", () => {
     roots.push(root);
     expect(git(root, "init", "-b", "main").status).toBe(0);
     expect(git(root, "config", "user.name", "AKP Delta Test").status).toBe(0);
-    expect(git(root, "config", "user.email", "akp-delta@localhost").status).toBe(
-      0,
-    );
+    expect(
+      git(root, "config", "user.email", "akp-delta@localhost").status,
+    ).toBe(0);
     await mkdir(path.join(root, "src"), { recursive: true });
     await writeFile(
       path.join(root, "src", "service.ts"),
@@ -145,9 +145,9 @@ describe("code commit delta", () => {
     roots.push(root);
     expect(git(root, "init", "-b", "main").status).toBe(0);
     expect(git(root, "config", "user.name", "AKP Delta Test").status).toBe(0);
-    expect(git(root, "config", "user.email", "akp-delta@localhost").status).toBe(
-      0,
-    );
+    expect(
+      git(root, "config", "user.email", "akp-delta@localhost").status,
+    ).toBe(0);
     await writeFile(path.join(root, "a.ts"), "export function a() {}\n");
     expect(git(root, "add", ".").status).toBe(0);
     expect(git(root, "commit", "-m", "base").status).toBe(0);

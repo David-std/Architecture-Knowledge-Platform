@@ -244,8 +244,7 @@ describe("CodeGraphQueryService", () => {
       to: GraphNodeRef,
       relation: string,
       derivation:
-        | "STATICALLY_RESOLVED"
-        | "MODEL_INFERRED" = "STATICALLY_RESOLVED",
+        "STATICALLY_RESOLVED" | "MODEL_INFERRED" = "STATICALLY_RESOLVED",
     ) => ({
       from,
       relation,
@@ -329,8 +328,8 @@ describe("CodeGraphQueryService", () => {
       ]),
     );
     expect(
-      mergeCodeImpactPartitions([partitions, partitions]).directStaticDependents,
+      mergeCodeImpactPartitions([partitions, partitions])
+        .directStaticDependents,
     ).toHaveLength(1);
   });
-
 });

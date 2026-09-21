@@ -33,11 +33,7 @@ function deltaError(code: string): Error {
   return error;
 }
 
-function git(
-  root: string,
-  args: string[],
-  maxBuffer = MAX_DIFF_BYTES,
-) {
+function git(root: string, args: string[], maxBuffer = MAX_DIFF_BYTES) {
   return spawnSync("git", ["-C", root, ...args], {
     encoding: "utf8",
     windowsHide: true,
@@ -121,7 +117,8 @@ function parseNameStatus(value: string): CodeChangeSet {
       )
       .sort(
         (left, right) =>
-          left.from.localeCompare(right.from) || left.to.localeCompare(right.to),
+          left.from.localeCompare(right.from) ||
+          left.to.localeCompare(right.to),
       ),
   });
 }
@@ -233,12 +230,14 @@ export function computeCodeCommitDelta(input: {
   for (const file of changeSet.deleted) {
     const before = sourceAt(root, baseSha, file);
     if (before.warning) warnings.push(before.warning);
-    if (before.content !== null) removedSymbols.push(...symbols(file, before.content));
+    if (before.content !== null)
+      removedSymbols.push(...symbols(file, before.content));
   }
   for (const file of changeSet.added) {
     const after = sourceAt(root, headSha, file);
     if (after.warning) warnings.push(after.warning);
-    if (after.content !== null) addedSymbols.push(...symbols(file, after.content));
+    if (after.content !== null)
+      addedSymbols.push(...symbols(file, after.content));
   }
   for (const rename of changeSet.renamed) {
     const [before, after] = [

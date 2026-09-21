@@ -158,10 +158,9 @@ export function partitionCodeImpact(
 export function mergeCodeImpactPartitions(
   values: readonly CodeImpactPartitions[],
 ): CodeImpactPartitions {
-  const paths = (key: keyof Omit<
-    CodeImpactPartitions,
-    "uncertainAmbiguousImpacts"
-  >) => uniquePaths(values.flatMap((value) => value[key]));
+  const paths = (
+    key: keyof Omit<CodeImpactPartitions, "uncertainAmbiguousImpacts">,
+  ) => uniquePaths(values.flatMap((value) => value[key]));
   const uncertain = values
     .flatMap((value) => value.uncertainAmbiguousImpacts)
     .filter((entry, position, all) => {

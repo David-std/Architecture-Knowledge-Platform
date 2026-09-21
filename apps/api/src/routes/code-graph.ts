@@ -262,7 +262,9 @@ async function authorizedProjectRoot(rootPath: string): Promise<string> {
     await Promise.all(
       configuredProjectRoots().map(async (root) => {
         const resolved = await realpath(root).catch(() => null);
-        const rootInfo = resolved ? await stat(resolved).catch(() => null) : null;
+        const rootInfo = resolved
+          ? await stat(resolved).catch(() => null)
+          : null;
         return resolved && rootInfo?.isDirectory() ? resolved : null;
       }),
     )
@@ -386,7 +388,11 @@ function ambiguousRenameMapping(
     : [];
   const output: Array<Record<string, unknown>> = [];
   for (const candidate of candidates.slice(0, 128)) {
-    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+    if (
+      !candidate ||
+      typeof candidate !== "object" ||
+      Array.isArray(candidate)
+    ) {
       continue;
     }
     const value = candidate as Record<string, unknown>;
