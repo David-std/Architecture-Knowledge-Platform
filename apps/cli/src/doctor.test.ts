@@ -144,7 +144,9 @@ describe("doctor rendering", () => {
               node_count: 42,
               edge_count: 51,
               warning_count: "37",
-              warnings: [{ code: "CODE_GRAPH_FILE_EXCLUDED", path: "gen/a.ts" }],
+              warnings: [
+                { code: "CODE_GRAPH_FILE_EXCLUDED", path: "gen/a.ts" },
+              ],
               last_failure_code: "GRAPHIFY_PROCESS_FAILED",
               last_failure_at: new Date("2026-09-20T04:00:00.000Z"),
             },

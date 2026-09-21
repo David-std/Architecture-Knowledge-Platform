@@ -660,8 +660,7 @@ export async function graphChecks(db: Postgres): Promise<{
       row.active_freshness !== "FRESH";
     const unrecoveredFailure =
       lastFailureAt !== null &&
-      (lastBuild === null ||
-        Date.parse(lastFailureAt) > Date.parse(lastBuild));
+      (lastBuild === null || Date.parse(lastFailureAt) > Date.parse(lastBuild));
     const status: DoctorStatus =
       !row.active_graph_sha && unrecoveredFailure
         ? "FAIL"
@@ -691,14 +690,15 @@ export async function graphChecks(db: Postgres): Promise<{
       status,
     };
   });
-  const codeStatus: DoctorStatus =
-    codeProjects.some((project) => project.status === "FAIL")
-      ? "FAIL"
-      : codeProjects.some((project) => project.status === "WARN") || truncated
-        ? "WARN"
-        : codeProjects.length === 0
-          ? "UNKNOWN"
-          : "OK";
+  const codeStatus: DoctorStatus = codeProjects.some(
+    (project) => project.status === "FAIL",
+  )
+    ? "FAIL"
+    : codeProjects.some((project) => project.status === "WARN") || truncated
+      ? "WARN"
+      : codeProjects.length === 0
+        ? "UNKNOWN"
+        : "OK";
   const code: DoctorCheck = {
     id: "code-graph-staleness",
     label: "Code graph projects",
