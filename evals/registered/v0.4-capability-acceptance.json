@@ -416,7 +416,8 @@
           "evidence": [
             "failure:community-build-rollback",
             "failure:ppr-cancel",
-            "failure:p6-reranker-candidate-set"
+            "failure:p6-reranker-candidate-set",
+            "failure:p6-reranker-fallback"
           ]
         },
         "integrationTest": {
