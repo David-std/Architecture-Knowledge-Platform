@@ -48,7 +48,14 @@ type GraphFreshnessPolicy = "FRESH_ONLY" | "ALLOW_STALE";
 
 export const MAX_GRAPH_NODE_LOOKUP_LIMIT = 1000;
 type GraphProjectionLifecycle =
-  "REQUESTED" | "BUILT" | "ACTIVE" | "STALE" | "FAILED";
+  | "REQUESTED"
+  | "BUILDING"
+  | "READY"
+  | "BUILT"
+  | "ACTIVE"
+  | "RETIRED"
+  | "STALE"
+  | "FAILED";
 type GraphProjectionFreshness = "FRESH" | "STALE";
 type GraphCatalogStatus =
   "READY" | "BUILDING" | "STALE" | "DEGRADED" | "UNAVAILABLE";
@@ -134,8 +141,11 @@ export interface GraphProjectionRevision {
   lifecycle: GraphProjectionLifecycle;
   freshness: GraphProjectionFreshness;
   requestedAt: string;
+  buildingAt: string | null;
+  readyAt: string | null;
   builtAt: string | null;
   activatedAt: string | null;
+  retiredAt: string | null;
   lastSuccessfulUpdate: string | null;
 }
 
