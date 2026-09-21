@@ -524,9 +524,9 @@ describe("API security boundaries", () => {
           },
         },
       });
-      expect(JSON.stringify(allowedSearch.json().hits[0].retrievalTrace)).not.toContain(
-        deniedId,
-      );
+      expect(
+        JSON.stringify(allowedSearch.json().hits[0].retrievalTrace),
+      ).not.toContain(deniedId);
 
       expect(
         (

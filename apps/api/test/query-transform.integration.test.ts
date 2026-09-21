@@ -243,7 +243,8 @@ describe("query transformation retrieval", () => {
         expect(
           withTransform.every(
             (hit) =>
-              hit.retrievalTrace?.authorization.decision === "SCOPED_INTERNAL" &&
+              hit.retrievalTrace?.authorization.decision ===
+                "SCOPED_INTERNAL" &&
               hit.retrievalTrace.authorization.spaceId === value.spaceId &&
               hit.retrievalTrace.authorization.vaultId ===
                 value.authorizedVaultId &&
@@ -253,12 +254,13 @@ describe("query transformation retrieval", () => {
           ),
         ).toBe(true);
         const transformTraceIds = new Set(
-          withTransform.flatMap((hit) =>
-            hit.retrievalTrace?.contributions.flatMap((contribution) =>
-              contribution.queryTransform
-                ? [contribution.queryTransform.traceId]
-                : [],
-            ) ?? [],
+          withTransform.flatMap(
+            (hit) =>
+              hit.retrievalTrace?.contributions.flatMap((contribution) =>
+                contribution.queryTransform
+                  ? [contribution.queryTransform.traceId]
+                  : [],
+              ) ?? [],
           ),
         );
         expect(transformTraceIds.size).toBe(1);

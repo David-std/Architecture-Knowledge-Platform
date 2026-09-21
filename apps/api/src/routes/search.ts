@@ -2593,14 +2593,14 @@ export async function queryKnowledge(
                 id: row.generation_id,
                 provider: vectorGenerationById.get(row.generation_id)!.provider,
                 model: vectorGenerationById.get(row.generation_id)!.model,
-                modelRevision:
-                  vectorGenerationById.get(row.generation_id)!.modelRevision,
+                modelRevision: vectorGenerationById.get(row.generation_id)!
+                  .modelRevision,
                 ...(vectorGenerationById.get(row.generation_id)!
                   .configurationHash
                   ? {
-                      configurationHash:
-                        vectorGenerationById.get(row.generation_id)!
-                          .configurationHash,
+                      configurationHash: vectorGenerationById.get(
+                        row.generation_id,
+                      )!.configurationHash,
                     }
                   : {}),
               },
@@ -2643,10 +2643,7 @@ export async function queryKnowledge(
         },
         ...(() => {
           const truth = derivedTruthTraceByRef.get(
-            derivedTruthTraceKey(
-              "COMMUNITY_REPORT",
-              communityTruthRef(row),
-            ),
+            derivedTruthTraceKey("COMMUNITY_REPORT", communityTruthRef(row)),
           );
           return truth
             ? {
@@ -2839,7 +2836,9 @@ export async function queryKnowledge(
   const generationForContribution = (
     contribution: (typeof fused)[number]["contributions"][number],
     vaultId: string,
-  ): NonNullable<SearchHit["retrievalTrace"]>["contributions"][number]["generation"] => {
+  ): NonNullable<
+    SearchHit["retrievalTrace"]
+  >["contributions"][number]["generation"] => {
     if (contribution.trace?.generation) {
       return contribution.trace.generation;
     }
@@ -2916,16 +2915,13 @@ export async function queryKnowledge(
       const vaultId = String(row.vault_id);
       const contributionTruthStates = item.contributions.flatMap(
         (contribution) =>
-          contribution.trace?.truthState
-            ? [contribution.trace.truthState]
-            : [],
+          contribution.trace?.truthState ? [contribution.trace.truthState] : [],
       );
-      const truthState =
-        contributionTruthStates.includes("DISPUTED")
-          ? "DISPUTED"
-          : contributionTruthStates.includes("SUPPORTED")
-            ? "SUPPORTED"
-            : "UNANNOTATED";
+      const truthState = contributionTruthStates.includes("DISPUTED")
+        ? "DISPUTED"
+        : contributionTruthStates.includes("SUPPORTED")
+          ? "SUPPORTED"
+          : "UNANNOTATED";
       const truthRevision = truthRevisionByVault.get(vaultId);
       const traceContributions: NonNullable<
         SearchHit["retrievalTrace"]
