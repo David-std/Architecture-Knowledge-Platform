@@ -140,3 +140,70 @@ export function rerankSearchHits(
   }
   return output;
 }
+
+export type RerankFallbackWarning =
+  | "RERANKER_FALLBACK:INVALID_SCORE"
+  | "RERANKER_FALLBACK:PROVIDER_ERROR";
+
+export interface SafeRerankResult {
+  hits: SearchHit[];
+  warning?: RerankFallbackWarning;
+}
+
+function fallbackWarning(error: unknown): RerankFallbackWarning {
+  return error instanceof Error && error.message === "RERANK_SCORE_INVALID"
+    ? "RERANKER_FALLBACK:INVALID_SCORE"
+    : "RERANKER_FALLBACK:PROVIDER_ERROR";
+}
+
+function markRerankFallback(
+  hit: SearchHit,
+  warning: RerankFallbackWarning,
+): SearchHit {
+  return {
+    ...hit,
+    warnings: [...new Set([...(hit.warnings ?? []), warning])],
+    ...(hit.retrievalTrace
+      ? {
+          retrievalTrace: {
+            ...hit.retrievalTrace,
+            finalSelectionReason: [
+              hit.retrievalTrace.finalSelectionReason,
+              warning,
+            ].join("; "),
+          },
+        }
+      : {}),
+  };
+}
+
+/**
+ * Optional rerankers are not availability dependencies for retrieval.
+ *
+ * Provider/scorer failure preserves the already-authorized, truth-valid fused
+ * order and records a stable warning. Duplicate baseline identities are an
+ * internal invariant violation, not a provider degradation, and still fail
+ * hard.
+ */
+export function rerankSearchHitsSafely(
+  query: string,
+  hits: readonly SearchHit[],
+  reranker: SearchHitReranker,
+): SafeRerankResult {
+  try {
+    return { hits: rerankSearchHits(query, hits, reranker) };
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === "RERANK_DUPLICATE_CANDIDATE_ID"
+    ) {
+      throw error;
+    }
+    const warning = fallbackWarning(error);
+    return {
+      hits: hits.map((hit) => markRerankFallback(hit, warning)),
+      warning,
+    };
+  }
+}
+
