@@ -12,9 +12,9 @@ import {
 
 describe("project evidence tiers", () => {
   it("promotes evidence only through explicit stronger proof signals", () => {
-    expect(
-      transitionCodeEvidenceTier("AI_CANDIDATE", "MODEL_AGREEMENT"),
-    ).toBe("AI_CANDIDATE");
+    expect(transitionCodeEvidenceTier("AI_CANDIDATE", "MODEL_AGREEMENT")).toBe(
+      "AI_CANDIDATE",
+    );
     expect(
       transitionCodeEvidenceTier(
         "AI_CANDIDATE",
@@ -22,10 +22,7 @@ describe("project evidence tiers", () => {
       ),
     ).toBe("AI_CANDIDATE");
     expect(
-      transitionCodeEvidenceTier(
-        "AI_CANDIDATE",
-        "DETERMINISTIC_STATIC_EDGE",
-      ),
+      transitionCodeEvidenceTier("AI_CANDIDATE", "DETERMINISTIC_STATIC_EDGE"),
     ).toBe("STATICALLY_LINKED");
     expect(
       transitionCodeEvidenceTier(
@@ -34,10 +31,7 @@ describe("project evidence tiers", () => {
       ),
     ).toBe("RUNTIME_COVERED");
     expect(
-      transitionCodeEvidenceTier(
-        "RUNTIME_COVERED",
-        "EXPLICIT_DYNAMIC_PROOF",
-      ),
+      transitionCodeEvidenceTier("RUNTIME_COVERED", "EXPLICIT_DYNAMIC_PROOF"),
     ).toBe("DYNAMICALLY_PROVEN");
     expect(
       transitionCodeEvidenceTier("STATICALLY_LINKED", "MODEL_AGREEMENT"),

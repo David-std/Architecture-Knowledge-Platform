@@ -22,7 +22,6 @@ Evidence promotion is monotonic and proof-specific: deterministic static linkage
 
 Comments and docstrings are untrusted source text. A provider may expose their text as code context, but fields resembling instructions, permissions, tools, trust, profiles or canonical-knowledge authority are discarded by the canonical adapter and cannot mutate governance state.
 
-
 ## What this feature is
 
 Code Context projects an approved repository snapshot into the `CODE` graph domain and exposes symbols, dependencies and change-impact context alongside knowledge, runtime and temporal context.

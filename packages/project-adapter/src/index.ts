@@ -34,10 +34,7 @@ export function transitionCodeEvidenceTier(
   ) {
     return "RUNTIME_COVERED";
   }
-  if (
-    signal === "EXPLICIT_DYNAMIC_PROOF" &&
-    current === "RUNTIME_COVERED"
-  ) {
+  if (signal === "EXPLICIT_DYNAMIC_PROOF" && current === "RUNTIME_COVERED") {
     return "DYNAMICALLY_PROVEN";
   }
   return current;
