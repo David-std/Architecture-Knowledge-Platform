@@ -37,7 +37,7 @@ import {
   rehydrateStructuralContext,
   reciprocalRankFusion,
   validateQueryTransformationResult,
-  rerankSearchHits,
+  rerankSearchHitsSafely,
   resolvePersonalizedPageRankPolicy,
   resolveRetrievalPolicy,
   resolveSearchHitReranker,
@@ -3043,9 +3043,13 @@ export async function queryKnowledge(
         ? DETERMINISTIC_LEXICAL_RERANKER
         : undefined),
   );
-  const finalResults = (
-    reranker ? rerankSearchHits(input.query, results, reranker) : results
-  ).slice(0, input.limit);
+  const rerankResult = reranker
+    ? rerankSearchHitsSafely(input.query, results, reranker)
+    : { hits: results };
+  if (rerankResult.warning) {
+    options.warningSink?.push(rerankResult.warning);
+  }
+  const finalResults = rerankResult.hits.slice(0, input.limit);
   await finalizeTruthSnapshot();
   return finalResults;
 }
