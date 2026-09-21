@@ -18,7 +18,9 @@ Search requests define query/intent, authorized space/vault scope, minimum trust
 
 `AKP_VECTOR_ENABLED` controls optional vector retrieval. Embedding generations are versioned; a query uses the compatible active generation or degrades explicitly.
 
-Graph traversal is bounded by hops, fanout, candidates and time. Community/PPR policies bound nodes, iterations, allowed domains/relations, score threshold and per-scope caps.
+Graph traversal is bounded by hops, fanout, candidates and time. Community/PPR policies bound nodes, iterations, allowed domains/relations, score threshold and per-scope caps. DRIFT uses exact/lexical/vector seeds to orient the active community index, excludes those seed documents from the community expansion, and contributes only the additional truth-valid members through normal fusion. GLOBAL community routing remains a separate corpus-wide mode.
+
+The registered retrieval arena measures DRIFT as its own feature-on configuration alongside GLOBAL community routing and PPR. Those results are comparative evidence only; they do not select a production default, and community summaries remain non-citable derived indexes.
 
 Context packets enforce token/budget constraints and support compact/full modes plus continuation rather than unbounded vault loading.
 
