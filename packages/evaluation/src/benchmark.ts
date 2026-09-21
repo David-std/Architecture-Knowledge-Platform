@@ -17,6 +17,8 @@ export interface BenchmarkConfiguration {
   associativePpr?: boolean;
   /** Execute GLOBAL routing over the versioned Leiden community index. */
   communityGlobal?: boolean;
+  /** Execute seed-oriented DRIFT routing over the versioned community index. */
+  communityDrift?: boolean;
   /** Optional P6.7 deterministic query-decomposition experiment. */
   queryDecomposition?: boolean;
 }
@@ -86,6 +88,12 @@ const RETRIEVAL_BENCHMARK_MATRIX_SOURCE: readonly BenchmarkConfiguration[] = [
     channels: ["lexical", "vector", "graph"],
     allowVectorForBenchmark: true,
     associativePpr: true,
+  },
+  {
+    name: "lexical+vector+graph+community-drift",
+    channels: ["lexical", "vector", "graph"],
+    allowVectorForBenchmark: true,
+    communityDrift: true,
   },
   {
     name: "lexical+vector+graph+community-global",
