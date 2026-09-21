@@ -370,6 +370,7 @@ function benchmarkConfigurations(): BenchmarkConfiguration[] {
     "full-hybrid-rrf",
     "full-hybrid+rerank",
     "lexical+vector+graph+ppr",
+    "lexical+vector+graph+community-drift",
     "lexical+vector+graph+community-global",
     "lexical+vector+query-decomposition",
   ]);
@@ -462,16 +463,25 @@ async function executeCase(
               },
             },
           }
-        : configuration.communityGlobal
+        : configuration.communityDrift
           ? {
               retrievalPolicy: {
-                graphMode: "GLOBAL" as const,
+                graphMode: "DRIFT" as const,
                 channels: {
                   COMMUNITY: { enabled: true, weight: 1.1 },
                 },
               },
             }
-          : {}),
+          : configuration.communityGlobal
+            ? {
+                retrievalPolicy: {
+                  graphMode: "GLOBAL" as const,
+                  channels: {
+                    COMMUNITY: { enabled: true, weight: 1.1 },
+                  },
+                },
+              }
+            : {}),
       ...(configuration.queryDecomposition
         ? { queryTransformer: new DeterministicQueryDecomposer() }
         : {}),
