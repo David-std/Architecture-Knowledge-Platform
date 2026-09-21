@@ -22,6 +22,8 @@ Graph traversal is bounded by hops, fanout, candidates and time. Community/PPR p
 
 The registered retrieval arena measures DRIFT as its own feature-on configuration alongside GLOBAL community routing and PPR. Those results are comparative evidence only; they do not select a production default, and community summaries remain non-citable derived indexes.
 
+Vector access-path selection is also evidence-gated. AKP has dimension-specific HNSW indexes and a filtered ANN fixture that measures exact-vs-HNSW recall, latency and leakage under vault/path predicates, but the registered real product corpus is still too small to select a production index policy. Production queries therefore provide the authorized/truth-valid filters plus `ORDER BY <=> LIMIT` and leave the physical access path to the PostgreSQL planner. AKP does not label that path `EXACT_SCAN`, `HNSW` or `IVFFlat` unless an observed plan and a representative benchmark justify doing so.
+
 Context packets enforce token/budget constraints and support compact/full modes plus continuation rather than unbounded vault loading.
 
 ## Normal workflow
