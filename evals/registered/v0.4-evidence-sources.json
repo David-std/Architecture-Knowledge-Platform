@@ -1788,6 +1788,138 @@
           "path": "apps/cli/src/doctor.ts"
         }
       ]
+    },
+    "test:p5-bitemporal-valid-recorded-time": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/test/temporal-truth-query.integration.test.ts"
+        }
+      ]
+    },
+    "test:p5-support-alternative-groups": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run temporal truth maintenance integration"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        },
+        {
+          "type": "FILE",
+          "path": "packages/postgres/test/temporal-truth.integration.test.ts"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/worker/test/truth-maintenance.test.ts"
+        }
+      ]
+    },
+    "failure:p5-derived-support-before-fusion": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/test/temporal-truth-retrieval.integration.test.ts"
+        }
+      ]
+    },
+    "failure:p5-physical-cleanup-race": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run temporal truth maintenance integration"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/test/temporal-truth-retrieval.integration.test.ts"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/worker/test/truth-maintenance.test.ts"
+        }
+      ]
+    },
+    "failure:p5-snapshot-change-mid-query": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/test/temporal-truth-retrieval.integration.test.ts"
+        }
+      ]
+    },
+    "integration:p5-community-context-fencing": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/test/temporal-truth-retrieval.integration.test.ts"
+        }
+      ]
+    },
+    "integration:p5-explicit-truth-states": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/test/temporal-truth-query.integration.test.ts"
+        }
+      ]
+    },
+    "integration:p5-vector-cleanup": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run temporal truth maintenance integration"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/worker/test/truth-maintenance.test.ts"
+        }
+      ]
     }
   }
 }

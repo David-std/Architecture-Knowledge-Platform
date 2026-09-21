@@ -356,16 +356,28 @@
       "mandatory": true,
       "requirements": {
         "runtimeTest": {
-          "evidence": ["test:temporal-truth-runtime"]
+          "evidence": [
+            "test:temporal-truth-runtime",
+            "test:p5-bitemporal-valid-recorded-time",
+            "test:p5-support-alternative-groups"
+          ]
         },
         "negativeTest": {
           "evidence": [
             "failure:source-withdrawal-stale-index",
-            "failure:truth-changes-mid-query"
+            "failure:truth-changes-mid-query",
+            "failure:p5-derived-support-before-fusion",
+            "failure:p5-physical-cleanup-race",
+            "failure:p5-snapshot-change-mid-query"
           ]
         },
         "integrationTest": {
-          "evidence": ["integration:temporal-truth"]
+          "evidence": [
+            "integration:temporal-truth",
+            "integration:p5-community-context-fencing",
+            "integration:p5-explicit-truth-states",
+            "integration:p5-vector-cleanup"
+          ]
         },
         "recoveryTest": {
           "evidence": ["recovery:truth-state"]
