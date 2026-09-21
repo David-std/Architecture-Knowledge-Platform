@@ -2018,6 +2018,10 @@
         {
           "type": "FILE",
           "path": "packages/retrieval/src/rerank.ts"
+        },
+        {
+          "type": "FILE",
+          "path": "packages/retrieval/test/rerank.test.ts"
         }
       ]
     },
@@ -2042,6 +2046,38 @@
         {
           "type": "FILE",
           "path": "scripts/filtered-ann-baseline.ts"
+        }
+      ]
+    },
+    "integration:p6-drift-routing": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/test/graph-retrieval.integration.test.ts"
+        }
+      ]
+    },
+    "benchmark:p6-drift": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "semantic-retrieval",
+          "job": "real-multilingual-semantic-retrieval",
+          "step": "Execute registered public corpus retrieval benchmark"
+        },
+        {
+          "type": "FILE",
+          "path": "scripts/registered-corpus-retrieval-benchmark.ts"
+        },
+        {
+          "type": "FILE",
+          "path": "packages/evaluation/src/benchmark.ts"
         }
       ]
     }
