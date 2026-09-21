@@ -350,9 +350,8 @@ export function validateReasoningPlan(
           `${step.operator} cannot consume ${reasoningOutputKind(source.operator)} from ${reference}`,
         );
       }
-      consumerCounts.set(reference, (consumerCounts.get(reference) ?? 0) + 1);
     }
-    for (const dependency of step.dependsOn) {
+    for (const dependency of new Set(step.dependsOn)) {
       if (!priorSteps.has(dependency)) {
         issue(
           issues,
@@ -360,7 +359,12 @@ export function validateReasoningPlan(
           `${stepPath}.dependsOn`,
           `dependency ${dependency} must exist earlier in the plan`,
         );
+        continue;
       }
+      consumerCounts.set(
+        dependency,
+        (consumerCounts.get(dependency) ?? 0) + 1,
+      );
     }
 
     if (

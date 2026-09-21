@@ -88,6 +88,9 @@ export interface ReasoningTraceSink {
 
 export interface ReasoningExecutorOptions {
   ports: ReasoningOperatorPorts;
+  externalPeerPorts?: (
+    peerId: string,
+  ) => ReasoningOperatorPorts | undefined;
   traceSink?: ReasoningTraceSink;
   signal?: AbortSignal;
   now?: () => number;
@@ -318,7 +321,11 @@ export async function executeReasoningPlan(
       continue;
     }
 
-    const port = options.ports[step.operator];
+    const targetPorts =
+      step.executionTarget.kind === "LOCAL"
+        ? options.ports
+        : options.externalPeerPorts?.(step.executionTarget.peerId);
+    const port = targetPorts?.[step.operator];
     budget.attemptedSteps += 1;
     if (!port) {
       budget.failedSteps += 1;
@@ -334,7 +341,10 @@ export async function executeReasoningPlan(
         resultRefs: [],
         elapsedMs: Math.max(0, now() - stepStartedAt),
         warnings: [],
-        errorCode: "REASONING_OPERATOR_UNAVAILABLE",
+        errorCode:
+          step.executionTarget.kind === "EXTERNAL_PEER" && !targetPorts
+            ? "REASONING_EXTERNAL_PEER_EXECUTOR_UNAVAILABLE"
+            : "REASONING_OPERATOR_UNAVAILABLE",
         budgetAfter: copyBudget(budget, now(), startedAtMs),
       });
       continue;

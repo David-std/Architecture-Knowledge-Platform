@@ -392,6 +392,64 @@ describe("reasoning executor", () => {
     });
   });
 
+  it("never executes an external-peer step through local operator ports", async () => {
+    const plan: ReasoningPlan = {
+      schemaVersion: 1,
+      query: "remote lookup",
+      intent: "CONCEPTUAL",
+      revisionSet: revisions(),
+      steps: [
+        {
+          id: "remote",
+          dependsOn: [],
+          executionTarget: { kind: "EXTERNAL_PEER", peerId: "peer-1" },
+          operator: "SEARCH_LEXICAL",
+          args: { query: "remote", limit: 5 },
+        },
+      ],
+      budget: {
+        maxSteps: 1,
+        maxWallMs: 10_000,
+        maxTokens: 100,
+        maxCost: 1,
+      },
+    };
+    const permittedContext = {
+      ...validationContext(),
+      policy: {
+        ...validationContext().policy,
+        allowExternalPeers: true,
+        allowedExternalPeerIds: ["peer-1"],
+      },
+    };
+    const local = vi.fn(async () => documentValue("doc:local"));
+    const remote = vi.fn(async () => documentValue("doc:remote"));
+
+    const unavailable = await executeReasoningPlan(plan, permittedContext, {
+      ports: { SEARCH_LEXICAL: local },
+    });
+    expect(unavailable.status).toBe("FAILED");
+    if (unavailable.status === "REJECTED") {
+      throw new Error("unexpected rejection");
+    }
+    expect(local).not.toHaveBeenCalled();
+    expect(unavailable.trace.steps[0]).toMatchObject({
+      status: "FAILED",
+      errorCode: "REASONING_EXTERNAL_PEER_EXECUTOR_UNAVAILABLE",
+    });
+
+    const routed = await executeReasoningPlan(plan, permittedContext, {
+      ports: { SEARCH_LEXICAL: local },
+      externalPeerPorts: (peerId) => {
+        expect(peerId).toBe("peer-1");
+        return { SEARCH_LEXICAL: remote };
+      },
+    });
+    expect(routed.status).toBe("SUCCESS");
+    expect(local).not.toHaveBeenCalled();
+    expect(remote).toHaveBeenCalledTimes(1);
+  });
+
   it("falls back deterministically when the planner is unavailable or proposes an invalid plan", async () => {
     const fallback = vi.fn(async (reason: string) => ({
       source: "direct-retrieval",

@@ -294,6 +294,39 @@ describe("safe reasoning plan schema and validation", () => {
     }
   });
 
+  it("counts declared dependency branches toward the fanout budget", () => {
+    const plan = validPlan();
+    plan.steps = [
+      {
+        id: "seed",
+        dependsOn: [],
+        operator: "SEARCH_LEXICAL",
+        args: { query: "seed", limit: 10 },
+      },
+      {
+        id: "branch-a",
+        dependsOn: ["seed"],
+        operator: "SEARCH_LEXICAL",
+        args: { query: "branch a", limit: 10 },
+      },
+      {
+        id: "branch-b",
+        dependsOn: ["seed"],
+        operator: "SEARCH_LEXICAL",
+        args: { query: "branch b", limit: 10 },
+      },
+    ] as typeof plan.steps;
+    plan.budget.maxSteps = 3;
+
+    const result = validateReasoningPlan(plan, context({ maxFanout: 1 }));
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issues.map((entry) => entry.code)).toContain(
+        "REASONING_PLAN_BRANCH_FANOUT_EXCEEDED",
+      );
+    }
+  });
+
   it("rejects unauthorized vaults, stale revisions and path/project/raw access", () => {
     const stale = validPlan();
     stale.revisionSet = revisions({
