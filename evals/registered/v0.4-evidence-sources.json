@@ -1598,6 +1598,52 @@
           "step": "Run API integration with a persisted report"
         }
       ]
+    },
+    "failure:p4-code-graph-validator": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        }
+      ]
+    },
+    "failure:p4-code-graph-limits": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        }
+      ]
+    },
+    "failure:p4-graphify-version-gate": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "code-graph-graphify",
+          "step": "Verify real Graphify adapter"
+        }
+      ]
+    },
+    "integration:p4-graphify-provider-gate": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "code-graph-graphify",
+          "step": "Verify real Graphify adapter"
+        }
+      ]
     }
   }
 }

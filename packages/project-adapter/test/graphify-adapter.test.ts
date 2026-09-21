@@ -65,7 +65,7 @@ async function fakeGraphify(
       'import path from "node:path";',
       "const args = process.argv.slice(2);",
       "if (process.env.OPENAI_API_KEY) process.exit(42);",
-      'if (args.includes("--version")) { console.log("graphify 0.9.99"); process.exit(0); }',
+      'if (args.includes("--version")) { console.log("graphify 0.9.63"); process.exit(0); }',
       'if (args[0] !== "extract" && args[0] !== "update") process.exit(43);',
       'await appendFile(new URL("./provider-command.log", import.meta.url), args[0] + "\\n");',
       'if (args[0] === "update") { try { await access(path.join(process.cwd(), "graphify-out", "graph.json")); } catch { process.exit(44); } }',
@@ -292,6 +292,152 @@ describe("GraphifyCodeGraphAdapter", () => {
     ).rejects.toThrow("CODE_GRAPH_PATH_ESCAPE");
   });
 
+  it("rejects an unaudited provider version before extraction", async () => {
+    const { root, commit } = await gitRepository();
+    const snapshot = await createCodeSnapshot({
+      repositoryPath: root,
+      commit,
+    });
+    const script = path.join(root, "wrong-version-graphify.mjs");
+    await writeFile(
+      script,
+      [
+        "const args = process.argv.slice(2);",
+        'if (args.includes("--version")) { console.log("graphify 0.9.65"); process.exit(0); }',
+        "process.exit(0);",
+      ].join("\n"),
+    );
+    const adapter = new GraphifyCodeGraphAdapter({
+      executable: process.execPath,
+      executableArgs: [script],
+    });
+
+    await expect(
+      adapter.analyze(snapshot, defaultCodeGraphOptions()),
+    ).rejects.toThrow("GRAPHIFY_VERSION_GATE_MISMATCH");
+  });
+
+  it("rejects unsupported schema, unknown derivation, invalid lines and graph count bombs", async () => {
+    const { root, commit } = await gitRepository();
+    const snapshot = await createCodeSnapshot({
+      repositoryPath: root,
+      commit,
+    });
+
+    for (const fixture of [
+      {
+        code: "GRAPHIFY_SCHEMA_VERSION_UNSUPPORTED",
+        graph: { schemaVersion: 2, nodes: [], edges: [] },
+        options: defaultCodeGraphOptions(),
+      },
+      {
+        code: "GRAPHIFY_DERIVATION_UNKNOWN",
+        graph: {
+          nodes: [
+            {
+              id: "a",
+              label: "a",
+              node_type: "function",
+              source_file: "src/a.ts",
+              source_location: "L1",
+            },
+            {
+              id: "b",
+              label: "b",
+              node_type: "function",
+              source_file: "src/b.ts",
+              source_location: "L1",
+            },
+          ],
+          edges: [
+            {
+              source: "a",
+              target: "b",
+              relation: "calls",
+              confidence: "MODEL_SAYS_SO",
+            },
+          ],
+        },
+        options: defaultCodeGraphOptions(),
+      },
+      {
+        code: "GRAPHIFY_LINE_RANGE_OUTSIDE_FILE",
+        graph: {
+          nodes: [
+            {
+              id: "a",
+              label: "a",
+              node_type: "function",
+              source_file: "src/a.ts",
+              source_location: "L999",
+            },
+          ],
+          edges: [],
+        },
+        options: defaultCodeGraphOptions(),
+      },
+      {
+        code: "CODE_GRAPH_NODE_COUNT_LIMIT",
+        graph: {
+          nodes: [
+            {
+              id: "a",
+              label: "a",
+              node_type: "function",
+              source_file: "src/a.ts",
+              source_location: "L1",
+            },
+            {
+              id: "b",
+              label: "b",
+              node_type: "function",
+              source_file: "src/b.ts",
+              source_location: "L1",
+            },
+          ],
+          edges: [],
+        },
+        options: { ...defaultCodeGraphOptions(), maxNodes: 1 },
+      },
+    ]) {
+      const script = await fakeGraphify(root, fixture.graph);
+      const adapter = new GraphifyCodeGraphAdapter({
+        executable: process.execPath,
+        executableArgs: [script],
+      });
+      await expect(adapter.analyze(snapshot, fixture.options)).rejects.toThrow(
+        fixture.code,
+      );
+    }
+  });
+
+  it("rejects hidden snapshot truncation and configured file-count limits", async () => {
+    const { root, commit } = await gitRepository();
+    const snapshot = await createCodeSnapshot({
+      repositoryPath: root,
+      commit,
+    });
+    const script = await fakeGraphify(root, { nodes: [], edges: [] });
+    const adapter = new GraphifyCodeGraphAdapter({
+      executable: process.execPath,
+      executableArgs: [script],
+    });
+
+    await expect(
+      adapter.analyze(snapshot, {
+        ...defaultCodeGraphOptions(),
+        maxFiles: 1,
+      }),
+    ).rejects.toThrow("CODE_GRAPH_FILE_COUNT_LIMIT");
+
+    await expect(
+      adapter.analyze(
+        { ...snapshot, truncated: true, eligibleFileCount: 6_000 },
+        defaultCodeGraphOptions(),
+      ),
+    ).rejects.toThrow("CODE_GRAPH_FILE_COUNT_LIMIT");
+  });
+
   it("fails closed when the provider exits nonzero", async () => {
     const { root, commit } = await gitRepository();
     const snapshot = await createCodeSnapshot({
@@ -303,7 +449,7 @@ describe("GraphifyCodeGraphAdapter", () => {
       script,
       [
         "const args = process.argv.slice(2);",
-        'if (args.includes("--version")) { console.log("graphify 0.9.99"); process.exit(0); }',
+        'if (args.includes("--version")) { console.log("graphify 0.9.63"); process.exit(0); }',
         'console.error("synthetic extraction failure");',
         "process.exit(23);",
       ].join("\n"),
@@ -355,7 +501,7 @@ describe("GraphifyCodeGraphAdapter", () => {
       script,
       [
         "const args = process.argv.slice(2);",
-        'if (args.includes("--version")) { console.log("graphify 0.9.99"); process.exit(0); }',
+        'if (args.includes("--version")) { console.log("graphify 0.9.63"); process.exit(0); }',
         'if (args[0] !== "extract") process.exit(43);',
         'process.stdout.write("x".repeat(4096));',
       ].join("\n"),

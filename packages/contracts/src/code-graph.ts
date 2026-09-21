@@ -133,6 +133,7 @@ export const CodeSnapshotFile = z.object({
   path: z.string().min(1).max(4096),
   contentHash: z.string().regex(/^[a-f0-9]{64}$/),
   bytes: z.number().int().nonnegative(),
+  lineCount: z.number().int().positive().optional(),
 });
 export type CodeSnapshotFile = z.infer<typeof CodeSnapshotFile>;
 
@@ -142,6 +143,8 @@ export const CodeSnapshot = z.object({
   commitSha: z.string().regex(/^[a-f0-9]{40}$/i),
   treeHash: z.string().regex(/^[a-f0-9]{40}$/i),
   files: z.array(CodeSnapshotFile).max(100000),
+  eligibleFileCount: z.number().int().nonnegative().max(100000).optional(),
+  truncated: z.boolean().optional(),
 });
 export type CodeSnapshot = z.infer<typeof CodeSnapshot>;
 
@@ -172,6 +175,15 @@ export const CodeGraphOptions = z.object({
     .int()
     .positive()
     .max(512 * 1024 * 1024),
+  maxFiles: z.number().int().positive().max(100000).optional(),
+  maxSnapshotBytes: z
+    .number()
+    .int()
+    .positive()
+    .max(2 * 1024 * 1024 * 1024)
+    .optional(),
+  maxNodes: z.number().int().positive().max(2_000_000).optional(),
+  maxEdges: z.number().int().positive().max(4_000_000).optional(),
   providerConfiguration: z.record(z.string(), z.unknown()).default({}),
 });
 export type CodeGraphOptions = z.infer<typeof CodeGraphOptions>;

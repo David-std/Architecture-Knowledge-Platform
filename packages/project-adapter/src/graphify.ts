@@ -28,12 +28,27 @@ import {
   safeGraphifyEnvironment,
 } from "./graphify-process.js";
 
+export const GRAPHIFY_PROVIDER_GATE = {
+  packageName: "graphifyy",
+  version: "0.9.63",
+  license: "Apache-2.0",
+  upstreamCommit: "eaaec1abd99d3a7fb30301ccb49f4cc72ae34011",
+  sourceDistributionSha256:
+    "0d2073903f6cc79a67eae27e1cb9284323da6b29555ecef5c2e35b7a4a1d2a5b",
+  invocation: {
+    full: ["extract", ".", "--code-only", "--no-viz", "--no-cluster"],
+    incremental: ["update", ".", "--no-cluster"],
+    networkRequired: false,
+  },
+} as const;
+
 export interface GraphifyCodeGraphAdapterConfig {
   executable: string;
   executableArgs?: readonly string[];
   workingRoot?: string;
   keepWorkspace?: boolean;
   incremental?: boolean;
+  expectedVersion?: string;
 }
 
 type GraphifyExecutionMode = "FULL" | "INCREMENTAL" | "FULL_FALLBACK";
@@ -82,6 +97,10 @@ export function defaultCodeGraphOptions(): CodeGraphOptions {
     timeoutMs: 5 * 60 * 1000,
     maxProcessOutputBytes: 16 * 1024 * 1024,
     maxGraphBytes: 128 * 1024 * 1024,
+    maxFiles: 5_000,
+    maxSnapshotBytes: 256 * 1024 * 1024,
+    maxNodes: 500_000,
+    maxEdges: 1_000_000,
     providerConfiguration: {},
   });
 }
@@ -103,6 +122,8 @@ export class GraphifyCodeGraphAdapter implements CodeGraphExtractionPort {
       executable: config.executable.trim(),
       executableArgs: [...(config.executableArgs ?? [])],
       incremental: config.incremental === true,
+      expectedVersion:
+        config.expectedVersion?.trim() || GRAPHIFY_PROVIDER_GATE.version,
     };
   }
 
@@ -162,6 +183,14 @@ export class GraphifyCodeGraphAdapter implements CodeGraphExtractionPort {
     const providerVersion = parseGraphifyVersion(
       versionResult.stdout + "\n" + versionResult.stderr,
     );
+    if (providerVersion !== this.config.expectedVersion) {
+      if (!this.config.keepWorkspace) {
+        await rm(workspace, { recursive: true, force: true }).catch(
+          () => undefined,
+        );
+      }
+      throw graphifyError("GRAPHIFY_VERSION_GATE_MISMATCH");
+    }
     const configHash = configurationHash({
       adapter: "akp-graphify-v2",
       provider: "graphify",
@@ -314,6 +343,8 @@ export class GraphifyCodeGraphAdapter implements CodeGraphExtractionPort {
           warnings,
           executionMode,
           ...(previousCommitSha ? { previousCommitSha } : {}),
+          maxNodes: options.maxNodes,
+          maxEdges: options.maxEdges,
         });
 
         if (this.config.incremental) {

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  GRAPHIFY_PROVIDER_GATE,
   GraphifyCodeGraphAdapter,
   createCodeSnapshot,
   defaultCodeGraphOptions,
@@ -81,6 +82,15 @@ describe("GraphifyCodeGraphAdapter real provider", () => {
         commit,
       });
 
+      expect(GRAPHIFY_PROVIDER_GATE).toMatchObject({
+        packageName: "graphifyy",
+        version: "0.9.63",
+        license: "Apache-2.0",
+        upstreamCommit: "eaaec1abd99d3a7fb30301ccb49f4cc72ae34011",
+        invocation: {
+          networkRequired: false,
+        },
+      });
       const adapter = new GraphifyCodeGraphAdapter({
         executable,
         incremental: true,

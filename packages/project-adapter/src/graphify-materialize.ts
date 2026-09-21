@@ -129,6 +129,24 @@ export async function materializeCodeSnapshot(
   workspace: string,
 ): Promise<MaterializedCodeSnapshot> {
   const repositoryPath = path.resolve(snapshot.repositoryPath);
+  const maxFiles = options.maxFiles ?? 5_000;
+  const maxSnapshotBytes = options.maxSnapshotBytes ?? 256 * 1024 * 1024;
+  const eligibleFileCount = snapshot.eligibleFileCount ?? snapshot.files.length;
+  if (
+    snapshot.truncated === true ||
+    eligibleFileCount > maxFiles ||
+    snapshot.files.length > maxFiles
+  ) {
+    throw graphifyError("CODE_GRAPH_FILE_COUNT_LIMIT");
+  }
+  const snapshotBytes = snapshot.files.reduce(
+    (total, file) => total + file.bytes,
+    0,
+  );
+  if (snapshotBytes > maxSnapshotBytes) {
+    throw graphifyError("CODE_GRAPH_SNAPSHOT_BYTES_LIMIT");
+  }
+
   const verified = gitText(repositoryPath, [
     "rev-parse",
     "--verify",

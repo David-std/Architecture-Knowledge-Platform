@@ -8,6 +8,7 @@ export interface ProjectFileInventory {
   path: string;
   language: string;
   bytes: number;
+  lineCount: number;
   sha256: string;
   isTest: boolean;
 }
@@ -51,6 +52,7 @@ export interface ProjectSnapshot {
   changedFiles: string[];
   architectureRules: ArchitectureRuleResult[];
   evidence: CodeEvidence[];
+  eligibleFileCount: number;
   truncated: boolean;
 }
 
@@ -164,7 +166,10 @@ export async function createCodeSnapshot(input: {
       path: file.path,
       contentHash: file.sha256,
       bytes: file.bytes,
+      lineCount: file.lineCount,
     })),
+    eligibleFileCount: project.eligibleFileCount,
+    truncated: project.truncated,
   };
 }
 
@@ -219,6 +224,7 @@ export async function buildProjectSnapshot(input: {
       path: relativePath,
       language: language(relativePath),
       bytes: Buffer.byteLength(content),
+      lineCount: content.split(/\r?\n/).length,
       sha256: createHash("sha256").update(content).digest("hex"),
       isTest: testFile(relativePath),
     });
@@ -325,6 +331,7 @@ export async function buildProjectSnapshot(input: {
     changedFiles,
     architectureRules,
     evidence,
+    eligibleFileCount: allFiles.length,
     truncated: allFiles.length > selected.length,
   };
 }

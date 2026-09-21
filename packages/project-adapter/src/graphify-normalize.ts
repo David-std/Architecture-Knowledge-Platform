@@ -14,6 +14,7 @@ import type {
 } from "@akp/contracts";
 
 export interface GraphifyPayload {
+  schemaVersion?: unknown;
   directed?: unknown;
   multigraph?: unknown;
   nodes?: unknown;
@@ -107,6 +108,9 @@ function cleanString(
 }
 
 function normalizeRelativePath(value: string): string {
+  if (/[\u0000-\u001f\u007f]/u.test(value)) {
+    throw graphifyError("CODE_GRAPH_PATH_CONTROL_CHARACTER");
+  }
   const normalized = path.posix.normalize(value.replaceAll("\\", "/"));
   if (
     !normalized ||
@@ -156,7 +160,10 @@ function providerEndpointId(value: unknown): string {
   throw graphifyError("GRAPHIFY_EDGE_ENDPOINT_INVALID");
 }
 
-function sourceLines(value: unknown): {
+function sourceLines(
+  value: unknown,
+  maximumLine?: number,
+): {
   lineStart?: number;
   lineEnd?: number;
 } {
@@ -165,10 +172,18 @@ function sourceLines(value: unknown): {
   if (!match?.[1]) return {};
   const start = Number(match[1]);
   const end = Number(match[2] ?? match[1]);
-  if (!Number.isInteger(start) || start < 1 || !Number.isInteger(end)) {
-    return {};
+  if (
+    !Number.isInteger(start) ||
+    start < 1 ||
+    !Number.isInteger(end) ||
+    end < start
+  ) {
+    throw graphifyError("GRAPHIFY_LINE_RANGE_INVALID");
   }
-  return { lineStart: start, lineEnd: Math.max(start, end) };
+  if (maximumLine !== undefined && (start > maximumLine || end > maximumLine)) {
+    throw graphifyError("GRAPHIFY_LINE_RANGE_OUTSIDE_FILE");
+  }
+  return { lineStart: start, lineEnd: end };
 }
 
 function extensionLanguage(relativePath: string): string | undefined {
@@ -268,6 +283,7 @@ function relation(value: unknown): {
 }
 
 function derivation(value: unknown): CodeGraphEdgeDerivation {
+  if (value === undefined || value === null || value === "") return "AMBIGUOUS";
   if (typeof value !== "string") return "AMBIGUOUS";
   switch (value.trim().toUpperCase()) {
     case "EXTRACTED":
@@ -279,7 +295,7 @@ function derivation(value: unknown): CodeGraphEdgeDerivation {
     case "AMBIGUOUS":
       return "AMBIGUOUS";
     default:
-      return "AMBIGUOUS";
+      throw graphifyError("GRAPHIFY_DERIVATION_UNKNOWN");
   }
 }
 
@@ -342,6 +358,13 @@ export function parseGraphifyPayload(value: unknown): GraphifyPayload {
     throw graphifyError("GRAPHIFY_OUTPUT_INVALID");
   }
   const payload = value as GraphifyPayload;
+  if (
+    payload.schemaVersion !== undefined &&
+    payload.schemaVersion !== 1 &&
+    payload.schemaVersion !== "1"
+  ) {
+    throw graphifyError("GRAPHIFY_SCHEMA_VERSION_UNSUPPORTED");
+  }
   if (!Array.isArray(payload.nodes)) {
     throw graphifyError("GRAPHIFY_OUTPUT_NODES_INVALID");
   }
@@ -361,11 +384,21 @@ export function normalizeGraphifyArtifact(input: {
   warnings: CodeGraphWarning[];
   executionMode: "FULL" | "INCREMENTAL" | "FULL_FALLBACK";
   previousCommitSha?: string;
+  maxNodes?: number;
+  maxEdges?: number;
 }): CodeGraphArtifact {
   const rawNodes = input.raw.nodes as GraphifyNode[];
   const rawEdges = (
     Array.isArray(input.raw.edges) ? input.raw.edges : input.raw.links
   ) as GraphifyEdge[];
+  const maxNodes = input.maxNodes ?? 500_000;
+  const maxEdges = input.maxEdges ?? 1_000_000;
+  if (rawNodes.length > maxNodes) {
+    throw graphifyError("CODE_GRAPH_NODE_COUNT_LIMIT");
+  }
+  if (rawEdges.length > maxEdges) {
+    throw graphifyError("CODE_GRAPH_EDGE_COUNT_LIMIT");
+  }
   const snapshotFiles = new Map(
     input.snapshot.files.map((file) => [file.path.replaceAll("\\", "/"), file]),
   );
@@ -389,6 +422,7 @@ export function normalizeGraphifyArtifact(input: {
     if (!file) throw graphifyError("GRAPHIFY_NODE_OUTSIDE_SNAPSHOT");
     const lines = sourceLines(
       rawNode.source_location ?? rawNode.sourceLocation,
+      file.lineCount,
     );
     const name = cleanString(rawNode.label ?? rawNode.name ?? rawNode.id, 1024);
     const kind = nodeKind(rawNode, relativePath);
@@ -452,6 +486,7 @@ export function normalizeGraphifyArtifact(input: {
   }
 
   const edges: CodeGraphEdge[] = [];
+  const edgeIds = new Set<string>();
   for (const rawEdge of rawEdges) {
     if (!rawEdge || typeof rawEdge !== "object") {
       throw graphifyError("GRAPHIFY_EDGE_INVALID");
@@ -471,7 +506,6 @@ export function normalizeGraphifyArtifact(input: {
       rawEdge.relation ?? rawEdge.type ?? rawEdge.kind ?? rawEdge.label,
     );
     const mappedDerivation = derivation(rawEdge.confidence);
-    const edgeLines = sourceLines(rawEdge.source_location);
     let locator: CodeLocator | undefined;
     if (typeof rawEdge.source_file === "string" && rawEdge.source_file.trim()) {
       const relativePath = providerPath(
@@ -480,6 +514,7 @@ export function normalizeGraphifyArtifact(input: {
       );
       const file = snapshotFiles.get(relativePath);
       if (!file) throw graphifyError("GRAPHIFY_EDGE_OUTSIDE_SNAPSHOT");
+      const edgeLines = sourceLines(rawEdge.source_location, file.lineCount);
       locator = {
         repository: input.snapshot.repository,
         commitSha: input.snapshot.commitSha,
@@ -497,6 +532,10 @@ export function normalizeGraphifyArtifact(input: {
       derivation: mappedDerivation,
       ...(locator ? { locator } : {}),
     });
+    if (edgeIds.has(id)) {
+      throw graphifyError("CODE_GRAPH_EDGE_ID_DUPLICATE");
+    }
+    edgeIds.add(id);
     edges.push({
       id,
       sourceId,

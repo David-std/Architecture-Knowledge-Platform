@@ -1,5 +1,11 @@
 # Code Context Guide
 
+## Graphify provider and validation boundary
+
+The live code-graph adapter is audited against Graphify `graphifyy==0.9.63`, Apache-2.0, upstream commit `eaaec1abd99d3a7fb30301ccb49f4cc72ae34011`. The accepted full invocation is `extract . --code-only --no-viz --no-cluster`; incremental refresh uses `update . --no-cluster`. The code-only integration is treated as local and does not require network access. A different provider version fails the adapter gate until it is deliberately re-audited.
+
+Provider execution receives a minimal environment, an immutable Git snapshot, a controlled temporary working directory, a wall timeout and bounded stdout/stderr. Snapshot and output validation also enforce file-count, snapshot-byte, graph-byte, node-count and edge-count ceilings. Provider paths containing traversal, absolute escapes or control characters are rejected. Unknown explicit derivation kinds, unsupported provider schema versions, dangling edges and source line ranges outside the immutable file are rejected instead of being coerced into trusted code edges.
+
 ## What this feature is
 
 Code Context projects an approved repository snapshot into the `CODE` graph domain and exposes symbols, dependencies and change-impact context alongside knowledge, runtime and temporal context.
