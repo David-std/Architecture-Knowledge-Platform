@@ -716,6 +716,35 @@ describe("buildContextPacket", () => {
     expect(compactWithRule.content[0]?.kind).toBe("rule");
   });
 
+  it("keeps an exact query window when the full direct section exceeds the compact budget", () => {
+    const marker = "needle-marker";
+    const fullContent = `${"x".repeat(4_000)} ${marker} ${"y".repeat(4_000)}`;
+    const full = buildContextPacket({
+      request: requestFor(marker),
+      intent: "CONCEPTUAL",
+      corpusRevision: "deadbeef",
+      maxTokens: 20_000,
+      candidates: [{ hit: baseHit, content: fullContent, kind: "concept" }],
+    });
+    const continuationSections: string[][] = [];
+
+    const compact = projectContextPacket(full, {
+      maxTokens: 1_000,
+      continuationSink: (payload) => {
+        continuationSections.push(
+          payload.sections.map((section) => section.content),
+        );
+      },
+    });
+
+    expect(compact.content).toHaveLength(1);
+    expect(compact.content[0]?.content).toContain(marker);
+    expect(compact.content[0]?.content).not.toBe(fullContent);
+    expect(compact.budget.serializedTokens).toBeLessThanOrEqual(1_000);
+    expect(compact.continuations).toHaveLength(1);
+    expect(continuationSections.at(-1)).toEqual([fullContent]);
+  });
+
   it("projects a compact packet without losing identity, evidence, uncertainty or actions", () => {
     const packet = buildContextPacket({
       request: {

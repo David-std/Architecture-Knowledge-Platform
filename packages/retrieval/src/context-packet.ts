@@ -1157,6 +1157,28 @@ function compactProjectionOrder(
     .map(({ section }) => section);
 }
 
+function focusedQuerySection(
+  section: BaseContextSection,
+  query: string,
+  maxChars: number,
+): BaseContextSection | undefined {
+  const needle = query.trim();
+  if (!needle || maxChars < needle.length) return undefined;
+
+  const match = section.content.toLowerCase().indexOf(needle.toLowerCase());
+  if (match < 0) return undefined;
+
+  const surroundingChars = maxChars - needle.length;
+  let start = Math.max(0, match - Math.floor(surroundingChars / 2));
+  let end = Math.min(section.content.length, start + maxChars);
+  start = Math.max(0, end - maxChars);
+
+  const content = section.content.slice(start, end);
+  return content.toLowerCase().includes(needle.toLowerCase())
+    ? { ...section, content }
+    : undefined;
+}
+
 export function projectContextPacket(
   packet: BuiltContextPacket | ContextPacket,
   options?: {
@@ -1244,6 +1266,51 @@ export function projectContextPacket(
     return { compactBase, provisionalBudget };
   };
 
+  const projectedSections = new Set<BaseContextSection>();
+  const focusedProjectionThatFits = (
+    section: BaseContextSection,
+  ): BaseContextSection | undefined => {
+    const needle = packet.query.trim();
+    if (
+      !needle ||
+      !section.content.toLowerCase().includes(needle.toLowerCase())
+    ) {
+      return undefined;
+    }
+
+    const omittedWithOriginal = [...omitted, section];
+    let low = needle.length;
+    let high = Math.max(needle.length, section.content.length - 1);
+    let best: BaseContextSection | undefined;
+
+    while (low <= high) {
+      const maxChars = Math.floor((low + high) / 2);
+      const projected = focusedQuerySection(section, needle, maxChars);
+      if (!projected) {
+        high = maxChars - 1;
+        continue;
+      }
+      const tentative = compactEnvelope(
+        [...selected, projected],
+        omittedWithOriginal,
+      );
+      try {
+        ensureBudgetFits(
+          tentative.compactBase,
+          tentative.provisionalBudget,
+          count,
+        );
+        best = projected;
+        low = maxChars + 1;
+      } catch (error) {
+        if (!(error instanceof ContextPacketBudgetError)) throw error;
+        high = maxChars - 1;
+      }
+    }
+
+    return best;
+  };
+
   // Validate the compact envelope before attempting content selection.
   const empty = compactEnvelope([], []);
   ensureBudgetFits(empty.compactBase, empty.provisionalBudget, count);
@@ -1258,7 +1325,14 @@ export function projectContextPacket(
       selected.push(section);
     } catch (error) {
       if (error instanceof ContextPacketBudgetError) {
-        omitted.push(section);
+        const focused = focusedProjectionThatFits(section);
+        if (focused) {
+          selected.push(focused);
+          omitted.push(section);
+          projectedSections.add(focused);
+        } else {
+          omitted.push(section);
+        }
         continue;
       }
       throw error;
@@ -1293,7 +1367,10 @@ export function projectContextPacket(
       ) {
         throw error;
       }
-      omitted.push(selected.pop() as BaseContextSection);
+      const removed = selected.pop() as BaseContextSection;
+      if (!projectedSections.delete(removed)) {
+        omitted.push(removed);
+      }
       final = compactEnvelope(selected, omitted);
     }
   }
