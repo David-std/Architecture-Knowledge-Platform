@@ -54,6 +54,8 @@ Context packets expose bounded locators/citations and sanitize unsafe local-path
 
 Optional channels can fail independently. The response records requested/effective channels and warnings while deterministic permitted channels continue.
 
+Reranking is optional. If the reranker throws through its provider boundary or emits an invalid score, AKP preserves the already-authorized, truth-valid fused order and records a stable `RERANKER_FALLBACK:*` warning. Raw provider errors are not copied into result metadata. Duplicate baseline candidate identities still fail as an internal invariant violation instead of being hidden as provider degradation.
+
 If vector generation is absent or incompatible, lexical/graph paths may still serve the request. If strict truth/context revision changes during execution, the operation fails or restarts rather than mixing revisions.
 
 Offline snapshots retain a bounded packet at a pinned revision; stale snapshots disclose staleness and do not masquerade as fresh retrieval.
