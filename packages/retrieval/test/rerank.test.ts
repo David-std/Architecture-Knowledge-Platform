@@ -209,11 +209,7 @@ describe("safe search hit reranking", () => {
       score: () => ({ delta: Number.NaN, reason: "invalid" }),
     };
 
-    const result = rerankSearchHitsSafely(
-      "baseline",
-      [first, second],
-      invalid,
-    );
+    const result = rerankSearchHitsSafely("baseline", [first, second], invalid);
 
     expect(result.warning).toBe("RERANKER_FALLBACK:INVALID_SCORE");
     expect(result.hits.map((candidate) => candidate.documentId)).toEqual([
