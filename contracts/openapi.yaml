@@ -393,6 +393,32 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
         "409": { $ref: "#/components/responses/Conflict" }
+  /v1/code/commit-delta-impact:
+    post:
+      tags: [Code]
+      operationId: analyzeCodeCommitDeltaImpact
+      x-akp-permission: knowledge:read
+      x-akp-principal-action: knowledge:read
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              {
+                $ref: "#/components/schemas/CodeScopedCommitDeltaImpactRequest",
+              }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "408":
+          description: Bounded graph query exceeded its time budget.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409": { $ref: "#/components/responses/Conflict" }
   /v1/code/tests:
     post:
       tags: [Code]
@@ -4445,6 +4471,30 @@ components:
           minItems: 1
           maxItems: 500
           items: { type: string, minLength: 1, maxLength: 4096 }
+        options: { $ref: "#/components/schemas/CodeImpactOptions" }
+    CodeScopedCommitDeltaImpactRequest:
+      type: object
+      additionalProperties: false
+      required: [spaceId, repository, baseSha, headSha]
+      properties:
+        spaceId: { type: string, format: uuid }
+        vaultId: { type: string, format: uuid }
+        vaultIds:
+          type: array
+          maxItems: 100
+          items: { type: string, format: uuid }
+        federated: { type: boolean, default: false }
+        freshnessPolicy:
+          type: string
+          enum: [FRESH_ONLY, ALLOW_STALE]
+          default: FRESH_ONLY
+        repository: { type: string, minLength: 1, maxLength: 2048 }
+        baseSha:
+          type: string
+          pattern: "^[a-fA-F0-9]{40}$"
+        headSha:
+          type: string
+          pattern: "^[a-fA-F0-9]{40}$"
         options: { $ref: "#/components/schemas/CodeImpactOptions" }
     Error:
       type: object
