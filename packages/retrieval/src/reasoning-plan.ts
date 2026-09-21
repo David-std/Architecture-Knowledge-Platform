@@ -361,10 +361,7 @@ export function validateReasoningPlan(
         );
         continue;
       }
-      consumerCounts.set(
-        dependency,
-        (consumerCounts.get(dependency) ?? 0) + 1,
-      );
+      consumerCounts.set(dependency, (consumerCounts.get(dependency) ?? 0) + 1);
     }
 
     if (

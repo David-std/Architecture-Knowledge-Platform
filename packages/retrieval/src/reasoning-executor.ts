@@ -88,9 +88,7 @@ export interface ReasoningTraceSink {
 
 export interface ReasoningExecutorOptions {
   ports: ReasoningOperatorPorts;
-  externalPeerPorts?: (
-    peerId: string,
-  ) => ReasoningOperatorPorts | undefined;
+  externalPeerPorts?: (peerId: string) => ReasoningOperatorPorts | undefined;
   traceSink?: ReasoningTraceSink;
   signal?: AbortSignal;
   now?: () => number;
