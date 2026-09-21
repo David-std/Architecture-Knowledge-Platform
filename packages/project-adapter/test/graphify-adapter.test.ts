@@ -142,7 +142,7 @@ describe("GraphifyCodeGraphAdapter", () => {
       schemaVersion: 1,
       commitSha: commit,
       provider: "graphify",
-      providerVersion: "0.9.99",
+      providerVersion: "0.9.63",
       languages: ["TypeScript"],
     });
     expect(artifact.configurationHash).toMatch(/^[a-f0-9]{64}$/);
