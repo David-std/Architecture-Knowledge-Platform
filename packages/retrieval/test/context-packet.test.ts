@@ -650,6 +650,72 @@ describe("buildContextPacket", () => {
     });
   });
 
+  it("keeps direct query evidence in a tight compact packet without displacing rules", () => {
+    const unrelatedHit: SearchHit = {
+      ...baseHit,
+      score: 100,
+    };
+    const directHit: SearchHit = {
+      ...baseHit,
+      documentId: "22222222-2222-4222-8222-222222222222",
+      score: 1,
+    };
+    const full = buildContextPacket({
+      request: requestFor("needle-marker"),
+      intent: "CONCEPTUAL",
+      corpusRevision: "deadbeef",
+      maxTokens: 20_000,
+      candidates: [
+        {
+          hit: unrelatedHit,
+          content: `unrelated ${"x".repeat(1_200)}`,
+          kind: "concept",
+        },
+        {
+          hit: directHit,
+          content: `needle-marker ${"y".repeat(1_200)}`,
+          kind: "concept",
+        },
+      ],
+    });
+
+    expect(full.sections[0]?.content).toContain("unrelated");
+
+    const compact = projectContextPacket(full, { maxTokens: 1_000 });
+
+    expect(
+      compact.content.some((section) =>
+        section.content.includes("needle-marker"),
+      ),
+    ).toBe(true);
+    expect(compact.budget.serializedTokens).toBeLessThanOrEqual(1_000);
+    expect(compact.continuations.length).toBeGreaterThan(0);
+
+    const withRule = buildContextPacket({
+      request: requestFor("needle-marker"),
+      intent: "CONCEPTUAL",
+      corpusRevision: "deadbeef",
+      maxTokens: 20_000,
+      candidates: [
+        {
+          hit: unrelatedHit,
+          content: `mandatory policy ${"r".repeat(1_200)}`,
+          kind: "rule",
+          mandatory: true,
+        },
+        {
+          hit: directHit,
+          content: `needle-marker ${"y".repeat(1_200)}`,
+          kind: "concept",
+        },
+      ],
+    });
+    const compactWithRule = projectContextPacket(withRule, {
+      maxTokens: 1_000,
+    });
+    expect(compactWithRule.content[0]?.kind).toBe("rule");
+  });
+
   it("projects a compact packet without losing identity, evidence, uncertainty or actions", () => {
     const packet = buildContextPacket({
       request: {

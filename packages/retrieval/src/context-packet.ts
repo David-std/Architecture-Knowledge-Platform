@@ -1130,6 +1130,33 @@ export function buildContextPacket(
  * repeated against the compact wire envelope, so the projection has its own
  * hard budget and never reports a larger effective limit.
  */
+function compactProjectionOrder(
+  packet: BuiltContextPacket | ContextPacket,
+  sections: BaseContextSection[],
+): BaseContextSection[] {
+  if (packet.conflicts.length > 0) return sections;
+
+  const query = packet.query.trim().toLowerCase();
+  if (!query) return sections;
+
+  return sections
+    .map((section, index) => ({ section, index }))
+    .sort((left, right) => {
+      const leftRule = left.section.kind === "rule";
+      const rightRule = right.section.kind === "rule";
+      if (leftRule !== rightRule) return Number(rightRule) - Number(leftRule);
+
+      const leftDirect = left.section.content.toLowerCase().includes(query);
+      const rightDirect = right.section.content.toLowerCase().includes(query);
+      if (leftDirect !== rightDirect) {
+        return Number(rightDirect) - Number(leftDirect);
+      }
+
+      return left.index - right.index;
+    })
+    .map(({ section }) => section);
+}
+
 export function projectContextPacket(
   packet: BuiltContextPacket | ContextPacket,
   options?: {
@@ -1142,7 +1169,10 @@ export function projectContextPacket(
   const maxTokens = Number.isFinite(options?.maxTokens)
     ? requestedMaxTokens(options?.maxTokens ?? 1)
     : packet.budget.maxTokens;
-  const fullSections = packet.sections as BaseContextSection[];
+  const fullSections = compactProjectionOrder(
+    packet,
+    packet.sections as BaseContextSection[],
+  );
   const references = [...new Set(packet.citations)].sort();
   const indexRevisions = packet.indexRevisions;
   const searchedChannels = [...new Set(packet.searchedChannels)];
