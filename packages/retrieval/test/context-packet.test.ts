@@ -176,9 +176,27 @@ describe("buildContextPacket", () => {
     expect(pair.full.sections[0]?.retrievalTrace).toEqual(
       tracedHit.retrievalTrace,
     );
-    expect(pair.compact.content[0]?.retrievalTrace).toEqual(
-      tracedHit.retrievalTrace,
-    );
+    expect(pair.compact.content[0]?.retrievalTrace).toEqual({
+      ...tracedHit.retrievalTrace,
+      contributions: [
+        {
+          ...tracedHit.retrievalTrace.contributions[0],
+          generation: {
+            kind: "VECTOR",
+            id: "generation-1",
+          },
+        },
+      ],
+    });
+    expect(
+      pair.compact.content[0]?.retrievalTrace?.contributions[0]?.generation,
+    ).not.toHaveProperty("provider");
+    expect(
+      pair.compact.content[0]?.retrievalTrace?.contributions[0]?.generation,
+    ).not.toHaveProperty("model");
+    expect(
+      pair.compact.content[0]?.retrievalTrace?.contributions[0]?.generation,
+    ).not.toHaveProperty("modelRevision");
   });
 
   it("copies graph provenance and renders compact, de-duplicated paths", () => {
