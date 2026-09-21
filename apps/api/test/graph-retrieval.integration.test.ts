@@ -394,6 +394,9 @@ describe("recursive graph retrieval PostgreSQL integration", () => {
           ),
         );
         expect(driftCommunityHits.length).toBeGreaterThan(0);
+        expect(driftCommunityHits.map((hit) => hit.documentId)).not.toContain(
+          fixture.documents.A,
+        );
         expect(
           driftCommunityHits.every((hit) =>
             hit.reasons.includes("community:drift-routing"),
