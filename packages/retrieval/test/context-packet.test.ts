@@ -768,7 +768,10 @@ describe("buildContextPacket", () => {
             documentId,
             document: `verbose-graph-node-${index}-${"g".repeat(180)}`,
             ...(index < path.length - 1
-              ? { relation: "requires" as const, direction: "outgoing" as const }
+              ? {
+                  relation: "requires" as const,
+                  direction: "outgoing" as const,
+                }
               : {}),
           })),
           hops: path.length - 1,

@@ -1242,8 +1242,7 @@ export function projectContextPacket(
     );
     const content = sections.map((section) =>
       compactSection(section, {
-        tight:
-          tightSections.has(section) || section === tentativeTightSection,
+        tight: tightSections.has(section) || section === tentativeTightSection,
       }),
     );
     const compactBase = {
