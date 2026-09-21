@@ -551,6 +551,85 @@ describe("buildContextPacket", () => {
     );
   });
 
+  it("keeps compact retrieval provenance without letting verbose model metadata displace content", () => {
+    const tracedHit: SearchHit = {
+      ...baseHit,
+      retrievalTrace: {
+        authorization: {
+          decision: "ALLOW",
+          spaceId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          vaultId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          pathRestricted: true,
+        },
+        truth: {
+          state: "SUPPORTED",
+          consistency: "STRICT",
+          revisionHash: "a".repeat(64),
+          capturedAt: "2026-09-21T00:00:00.000Z",
+        },
+        temporal: {
+          lifecycle: "ACTIVE",
+          refreshStatus: "CURRENT",
+        },
+        contributions: [
+          {
+            channel: "vector",
+            rank: 1,
+            channelWeight: 1,
+            reason: "vector",
+            rawScore: 0.91,
+            candidateRevision: "revision-1",
+            generation: {
+              kind: "VECTOR",
+              id: "00000000-0000-4000-8000-000000000777",
+              provider: "provider-with-verbose-operational-metadata",
+              model: "model-with-verbose-operational-metadata",
+              modelRevision: "model-revision-with-verbose-operational-metadata",
+              configurationHash: "b".repeat(64),
+            },
+          },
+        ],
+        fusion: {
+          score: 1 / 61,
+          reasons: ["vector"],
+        },
+        finalSelectionReason: "vector",
+      },
+    };
+    const full = buildContextPacket({
+      request: requestFor("compact trace"),
+      intent: "CONCEPTUAL",
+      corpusRevision: "deadbeef",
+      maxTokens: 20_000,
+      candidates: [
+        {
+          hit: tracedHit,
+          content: "The content remains the primary compact payload.",
+          kind: "concept",
+        },
+      ],
+    });
+
+    const compact = projectContextPacket(full, { maxTokens: 1_000 });
+
+    expect(compact.content).toHaveLength(1);
+    expect(compact.content[0]?.content).toContain("primary compact payload");
+    expect(
+      compact.content[0]?.retrievalTrace?.contributions[0]?.generation,
+    ).toEqual({
+      kind: "VECTOR",
+      id: "00000000-0000-4000-8000-000000000777",
+    });
+    expect(
+      compact.content[0]?.retrievalTrace?.contributions[0]?.rawScore,
+    ).toBe(0.91);
+    expect(compact.budget.serializedTokens).toBeLessThanOrEqual(1_000);
+    expect(full.sections[0]?.retrievalTrace?.contributions[0]?.generation).toMatchObject({
+      provider: "provider-with-verbose-operational-metadata",
+      model: "model-with-verbose-operational-metadata",
+    });
+  });
+
   it("projects a compact packet without losing identity, evidence, uncertainty or actions", () => {
     const packet = buildContextPacket({
       request: {

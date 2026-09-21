@@ -377,13 +377,13 @@ describe("semantic retrieval PostgreSQL integration", () => {
           contributions: [
             expect.objectContaining({
               channel: "vector",
-              generation: {
+              generation: expect.objectContaining({
                 kind: "VECTOR",
                 id: primaryGeneration.generationId,
                 provider: semanticDescriptor.provider,
                 model: semanticDescriptor.model,
                 modelRevision: semanticDescriptor.modelRevision,
-              },
+              }),
             }),
           ],
           finalSelectionReason: "vector",

@@ -40,6 +40,8 @@ Every selected search candidate carries a bounded first-class retrieval trace fr
 
 This trace is operational provenance, not model chain-of-thought. It contains no hidden reasoning tokens or provider deliberation. Channels that do not have a real generation identifier leave that field absent rather than inventing one. HTTP requests that passed the authorization boundary record `ALLOW`; lower-level already-scoped library calls record `SCOPED_INTERNAL` rather than pretending an authorization decision occurred. RRF never uses trace metadata as ranking input.
 
+The full ContextPacket retains the full trace. Its compact agent projection preserves the channel/rank/raw score, generation kind/id, query transform, support, authorization, truth/temporal state, fusion, rerank and final reason, but omits optional provider/model/configuration labels from generation descriptors so operational metadata cannot crowd evidence text out of a small compact budget.
+
 ## Security and governance boundaries
 
 Authorization filtering precedes graph/vector/community expansion. A high score cannot override scope, lifecycle, trust or support policy.

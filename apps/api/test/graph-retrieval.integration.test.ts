@@ -908,8 +908,25 @@ describe("recursive graph retrieval PostgreSQL integration", () => {
           providerVersion: "v0.3-envelope-1",
         });
 
+        const stableLegacyResult = (
+          hits: Awaited<ReturnType<typeof legacyQuery>>,
+        ) =>
+          hits.map((hit) =>
+            hit.retrievalTrace
+              ? {
+                  ...hit,
+                  retrievalTrace: {
+                    ...hit.retrievalTrace,
+                    truth: {
+                      ...hit.retrievalTrace.truth,
+                      capturedAt: "<query-capture-time>",
+                    },
+                  },
+                }
+              : hit,
+          );
         const after = await legacyQuery();
-        expect(after).toEqual(before);
+        expect(stableLegacyResult(after)).toEqual(stableLegacyResult(before));
 
         const legacyEdges = await db.pool.query<{
           from_id: string;

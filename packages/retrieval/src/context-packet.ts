@@ -467,6 +467,40 @@ function metadataForSection(
   return metadata;
 }
 
+function compactRetrievalTrace(
+  trace: NonNullable<BaseContextSection["retrievalTrace"]>,
+): NonNullable<CompactPacketSection["retrievalTrace"]> {
+  return {
+    ...trace,
+    contributions: trace.contributions.map((contribution) => ({
+      channel: contribution.channel,
+      rank: contribution.rank,
+      channelWeight: contribution.channelWeight,
+      reason: contribution.reason,
+      ...(contribution.rawScore === undefined
+        ? {}
+        : { rawScore: contribution.rawScore }),
+      ...(contribution.candidateRevision === undefined
+        ? {}
+        : { candidateRevision: contribution.candidateRevision }),
+      ...(contribution.generation
+        ? {
+            generation: {
+              kind: contribution.generation.kind,
+              id: contribution.generation.id,
+            },
+          }
+        : {}),
+      ...(contribution.queryTransform
+        ? { queryTransform: contribution.queryTransform }
+        : {}),
+      ...(contribution.supportSetId
+        ? { supportSetId: contribution.supportSetId }
+        : {}),
+    })),
+  };
+}
+
 function compactSection(section: BaseContextSection): CompactPacketSection {
   return {
     kind: section.kind,
@@ -496,7 +530,7 @@ function compactSection(section: BaseContextSection): CompactPacketSection {
       : { graphProvenance: section.graphProvenance }),
     ...(section.retrievalTrace === undefined
       ? {}
-      : { retrievalTrace: section.retrievalTrace }),
+      : { retrievalTrace: compactRetrievalTrace(section.retrievalTrace) }),
   };
 }
 
