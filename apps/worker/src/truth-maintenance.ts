@@ -68,7 +68,12 @@ export function createTruthMaintenanceHandlers(
           "akp.truth.invalidation_reason": input.reason,
         },
         async () => {
-          await store.rebuildDerivedProjection(input);
+          const projection = await store.rebuildDerivedProjection(input);
+          await store.cleanupInvalidDerivedItems({
+            projectionRevisionId: projection.id,
+            spaceId: input.spaceId,
+            vaultId: input.vaultId,
+          });
         },
       );
     },

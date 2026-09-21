@@ -240,8 +240,34 @@ export interface DerivedTruthProjectionQuery {
   derivedItemRefs?: string[];
 }
 
+export interface CleanupDerivedTruthProjectionInput {
+  projectionRevisionId: string;
+  spaceId: string;
+  vaultId: string;
+}
+
+export interface DerivedTruthCleanupResult {
+  projectionRevisionId: string;
+  candidates: number;
+  revalidatedUnsupported: number;
+  removedVectors: number;
+  preservedVectors: number;
+  skippedMalformedRefs: number;
+}
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HASH64 = /^[a-f0-9]{64}$/;
+const VECTOR_DERIVED_REF =
+  /^vector:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+
+function parseVectorDerivedRef(
+  value: string,
+): { generationId: string; unitId: string } | null {
+  const match = VECTOR_DERIVED_REF.exec(value);
+  return match?.[1] && match[2]
+    ? { generationId: match[1], unitId: match[2] }
+    : null;
+}
 
 function requiredUuid(value: string, code: string): string {
   if (!UUID.test(value)) throw new Error(code);
@@ -2250,6 +2276,123 @@ export class PostgresTemporalTruthStore {
       }
       await client.query("commit");
       return normalizeDerivedProjectionRevision(inserted.rows[0]);
+    } catch (error) {
+      await client.query("rollback").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async cleanupInvalidDerivedItems(
+    rawInput: CleanupDerivedTruthProjectionInput,
+  ): Promise<DerivedTruthCleanupResult> {
+    const projectionRevisionId = requiredUuid(
+      rawInput.projectionRevisionId,
+      "TRUTH_PROJECTION_REVISION_ID_INVALID",
+    );
+    const spaceId = requiredUuid(rawInput.spaceId, "TRUTH_SPACE_ID_INVALID");
+    const vaultId = requiredUuid(rawInput.vaultId, "TRUTH_VAULT_ID_INVALID");
+    const projection = await this.db.pool.query<{
+      space_id: string;
+      vault_id: string;
+    }>(
+      `select space_id,vault_id
+         from derived_truth_projection_revisions
+        where id=$1
+        limit 1`,
+      [projectionRevisionId],
+    );
+    const projectionRow = projection.rows[0];
+    if (!projectionRow) {
+      throw new Error("TRUTH_DERIVED_PROJECTION_NOT_FOUND");
+    }
+    if (
+      projectionRow.space_id !== spaceId ||
+      projectionRow.vault_id !== vaultId
+    ) {
+      throw new Error("TRUTH_DERIVED_PROJECTION_SCOPE_MISMATCH");
+    }
+
+    const invalid = await this.db.pool.query<{ derived_item_ref: string }>(
+      `select derived_item_ref
+         from derived_truth_projection_items
+        where projection_revision_id=$1
+          and space_id=$2 and vault_id=$3
+          and derived_store_kind='VECTOR'
+          and valid=false
+        order by derived_item_ref
+        limit 5001`,
+      [projectionRevisionId, spaceId, vaultId],
+    );
+    if (invalid.rows.length > 5000) {
+      throw new Error("TRUTH_DERIVED_CLEANUP_ITEM_LIMIT_EXCEEDED");
+    }
+    const parsed = invalid.rows.flatMap((row) => {
+      const value = parseVectorDerivedRef(row.derived_item_ref);
+      return value ? [{ ref: row.derived_item_ref, ...value }] : [];
+    });
+    const skippedMalformedRefs = invalid.rows.length - parsed.length;
+    if (parsed.length === 0) {
+      return {
+        projectionRevisionId,
+        candidates: invalid.rows.length,
+        revalidatedUnsupported: 0,
+        removedVectors: 0,
+        preservedVectors: 0,
+        skippedMalformedRefs,
+      };
+    }
+
+    const client = await this.db.pool.connect();
+    try {
+      await client.query("begin");
+      const head = await client.query<{ revision_hash: string | null }>(
+        `select revision_hash
+           from truth_revision_heads
+          where space_id=$1 and vault_id=$2
+          for share`,
+        [spaceId, vaultId],
+      );
+      const currentTruthRevision = head.rows[0]?.revision_hash;
+      if (!currentTruthRevision) {
+        throw new Error("TRUTH_REVISION_HEAD_NOT_FOUND");
+      }
+      const validations = await this.validateDerivedItems({
+        spaceId,
+        vaultId,
+        derivedStoreKind: "VECTOR",
+        derivedItemRefs: parsed.map((item) => item.ref),
+        truthRevisionHash: currentTruthRevision,
+      });
+      const unsupported = new Set(
+        validations
+          .filter((validation) => validation.valid === false)
+          .map((validation) => validation.derivedItemRef),
+      );
+      let removedVectors = 0;
+      let preservedVectors = 0;
+      for (const item of parsed) {
+        if (!unsupported.has(item.ref)) {
+          preservedVectors += 1;
+          continue;
+        }
+        const removed = await client.query(
+          `delete from unit_embeddings
+            where generation_id=$1 and unit_id=$2`,
+          [item.generationId, item.unitId],
+        );
+        removedVectors += removed.rowCount ?? 0;
+      }
+      await client.query("commit");
+      return {
+        projectionRevisionId,
+        candidates: invalid.rows.length,
+        revalidatedUnsupported: unsupported.size,
+        removedVectors,
+        preservedVectors,
+        skippedMalformedRefs,
+      };
     } catch (error) {
       await client.query("rollback").catch(() => undefined);
       throw error;

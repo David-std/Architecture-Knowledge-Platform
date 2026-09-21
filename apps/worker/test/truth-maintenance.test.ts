@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
+import { EmbeddingGenerationManager } from "@akp/indexing";
 import {
   Postgres,
   PostgresTemporalTruthStore,
@@ -226,6 +227,89 @@ describe("derived truth maintenance event boundary", () => {
           vaultId,
           factIds: [aOnlyFact.fact.id],
         });
+
+        const physicalDocumentId = randomUUID();
+        const physicalUnitId = randomUUID();
+        const physicalContentHash = "d".repeat(64);
+        await db.pool.query(
+          `insert into knowledge_documents(
+             id,space_id,vault_id,path,external_id,title,type,lifecycle,
+             trust_tier,current_revision,body_cache,frontmatter,aliases,
+             raw_links,layer,content_hash,token_estimate
+           ) values(
+             $1,$2,$3,$4,$5,'Truth cleanup vector','note','ACTIVE',
+             'HUMAN_REVIEWED','truth-maint:r0','cleanup vector',
+             '{}'::jsonb,'{}','[]'::jsonb,'concept',$6,4
+           )`,
+          [
+            physicalDocumentId,
+            spaceId,
+            vaultId,
+            `truth-cleanup/${physicalDocumentId}.md`,
+            `TRUTH-CLEANUP-${physicalDocumentId.slice(0, 8)}`,
+            "e".repeat(64),
+          ],
+        );
+        await db.pool.query(
+          `insert into knowledge_units(
+             id,document_id,space_id,vault_id,unit_key,unit_type,heading_path,
+             body,content_hash,corpus_revision,lifecycle,trust_tier,source_ids,
+             token_estimate,parent_unit_id,document_revision,permissions,locator,
+             structural_order,container_only,embedding_eligible
+           ) values(
+             $1,$2,$3,$4,$5,'PARAGRAPH','{}','cleanup vector',$6,
+             'truth-maint:r0','ACTIVE','HUMAN_REVIEWED','{}',4,null,
+             'truth-maint:r0','{}'::jsonb,'{}'::jsonb,1,false,true
+           )`,
+          [
+            physicalUnitId,
+            physicalDocumentId,
+            spaceId,
+            vaultId,
+            `truth-cleanup-${physicalUnitId.slice(0, 8)}`,
+            physicalContentHash,
+          ],
+        );
+        await db.pool.query(
+          `insert into vault_index_revisions(
+             space_id,vault_id,corpus_revision,lexical_revision,vector_revision,
+             graph_revision,context_pack_revision,status,warnings
+           ) values(
+             $1,$2,'truth-maint:r0','truth-maint:r0',null,
+             'truth-maint:r0','truth-maint:r0','CONSISTENT','[]'::jsonb
+           )`,
+          [spaceId, vaultId],
+        );
+        const embeddingManager = new EmbeddingGenerationManager(db);
+        const requestedGeneration = await embeddingManager.request({
+          spaceId,
+          vaultId,
+          corpusRevision: "truth-maint:r0",
+          descriptor: {
+            provider: "truth-maintenance-test",
+            model: "cleanup-vector",
+            modelRevision: "r1",
+            dimensions: 3,
+            normalization: "l2",
+            inputStrategy: "semantic-query-passage-v1",
+            configurationVersion: "p5-cleanup-v1",
+            runtime: "test",
+          },
+        });
+        await embeddingManager.build(requestedGeneration.generationId);
+        await embeddingManager.writeEmbedding({
+          generationId: requestedGeneration.generationId,
+          unitId: physicalUnitId,
+          contentHash: physicalContentHash,
+          embedding: [1, 0, 0],
+        });
+        await embeddingManager.ready(requestedGeneration.generationId, 1);
+        const activeGeneration = await embeddingManager.activate(
+          requestedGeneration.generationId,
+        );
+        const physicalVectorRef =
+          `vector:${activeGeneration.generationId}:${physicalUnitId}`;
+
         const vectorRef = `vector:generation-a:${randomUUID()}`;
         const factBackedVectorRef = `vector:generation-fact:${randomUUID()}`;
         const synthesisRef = `synthesis:conclusion:${randomUUID()}`;
@@ -250,12 +334,29 @@ describe("derived truth maintenance event boundary", () => {
         await store.registerDerivedDependency({
           spaceId,
           vaultId,
+          derivedStoreKind: "VECTOR",
+          derivedItemRef: physicalVectorRef,
+          supportSetId: aOnlySupport.id,
+          truthRevisionHash: aOnlyFact.revision.revisionHash,
+          projectionRevision: "truth-maint:r0",
+        });
+        await store.registerDerivedDependency({
+          spaceId,
+          vaultId,
           derivedStoreKind: "CACHED_SYNTHESIS",
           derivedItemRef: synthesisRef,
           supportSetId: conclusionSupport.id,
           truthRevisionHash: fact.revision.revisionHash,
           projectionRevision: "synthesis:r1",
         });
+
+        const physicalBefore = await db.pool.query<{ count: string }>(
+          `select count(*)::text count
+             from unit_embeddings
+            where generation_id=$1 and unit_id=$2`,
+          [activeGeneration.generationId, physicalUnitId],
+        );
+        expect(physicalBefore.rows[0]?.count).toBe("1");
 
         const withdrawn = await store.withdrawSourceEpisode({
           spaceId,
@@ -306,7 +407,12 @@ describe("derived truth maintenance event boundary", () => {
           spaceId,
           vaultId,
           truthRevisionHash: withdrawn.revisionHash,
-          derivedItemRefs: [vectorRef, factBackedVectorRef, synthesisRef],
+          derivedItemRefs: [
+            vectorRef,
+            factBackedVectorRef,
+            physicalVectorRef,
+            synthesisRef,
+          ],
         });
         const byRef = new Map(
           projected.map((item) => [item.derivedItemRef, item]),
@@ -320,6 +426,14 @@ describe("derived truth maintenance event boundary", () => {
           resourceId: episodeA.id,
         });
         expect(byRef.get(factBackedVectorRef)).toMatchObject({
+          derivedStoreKind: "VECTOR",
+          state: "UNSUPPORTED",
+          valid: false,
+          triggerEventId: targetEvent.event_id,
+          reason: "SOURCE_WITHDRAWN",
+          resourceId: episodeA.id,
+        });
+        expect(byRef.get(physicalVectorRef)).toMatchObject({
           derivedStoreKind: "VECTOR",
           state: "UNSUPPORTED",
           valid: false,
@@ -387,6 +501,23 @@ describe("derived truth maintenance event boundary", () => {
         );
         expect(physical.rows[0]?.count).toBe("3");
 
+        const physicalAfter = await db.pool.query<{ count: string }>(
+          `select count(*)::text count
+             from unit_embeddings
+            where generation_id=$1 and unit_id=$2`,
+          [activeGeneration.generationId, physicalUnitId],
+        );
+        expect(physicalAfter.rows[0]?.count).toBe("0");
+        const historicalDependency = await db.pool.query<{ count: string }>(
+          `select count(*)::text count
+             from derived_truth_dependencies
+            where space_id=$1 and vault_id=$2
+              and derived_store_kind='VECTOR'
+              and derived_item_ref=$3`,
+          [spaceId, vaultId, physicalVectorRef],
+        );
+        expect(historicalDependency.rows[0]?.count).toBe("1");
+
         const projectionId = projected[0]?.projectionRevisionId;
         expect(projectionId).toBeTruthy();
         const replayed = await store.rebuildDerivedProjection({
@@ -402,6 +533,16 @@ describe("derived truth maintenance event boundary", () => {
               : new Date(targetEvent.occurred_at).toISOString(),
         });
         expect(replayed.id).toBe(projectionId);
+        if (!projectionId) throw new Error("truth projection missing");
+        const replayCleanup = await store.cleanupInvalidDerivedItems({
+          projectionRevisionId: projectionId,
+          spaceId,
+          vaultId,
+        });
+        expect(replayCleanup).toMatchObject({
+          removedVectors: 0,
+          revalidatedUnsupported: 1,
+        });
         const projectionCount = await db.pool.query<{ count: string }>(
           `select count(*)::text count
              from derived_truth_projection_revisions
