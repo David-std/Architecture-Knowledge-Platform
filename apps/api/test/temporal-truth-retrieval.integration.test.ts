@@ -7,6 +7,7 @@ import {
   type RequestEmbeddingGeneration,
 } from "@akp/indexing";
 import {
+  planQuery,
   QueryEmbeddingService,
   type EmbeddingInputRole,
   type EmbeddingProvider,
@@ -34,8 +35,11 @@ const descriptor: RequestEmbeddingGeneration["descriptor"] = {
 interface Fixture {
   spaceId: string;
   vaultId: string;
+  documentId: string;
   unitId: string;
   generationId: string;
+  corpusRevision: string;
+  supportSetId: string;
   sourceEpisodeId: string;
   preWithdrawalRevisionHash: string;
   store: PostgresTemporalTruthStore;
@@ -224,8 +228,11 @@ async function seedFixture(label: string): Promise<Fixture> {
   return {
     spaceId,
     vaultId,
+    documentId,
     unitId,
     generationId: active.generationId,
+    corpusRevision,
+    supportSetId: support.id,
     sourceEpisodeId: episode.id,
     preWithdrawalRevisionHash: fact.revision.revisionHash,
     store,
@@ -1119,6 +1126,178 @@ describe.skipIf(!databaseUrl)("truth-valid vector retrieval", () => {
         truth_revision_hash: fixture.newRevisionHash,
       }),
     ]);
+  });
+
+  it("rejects a stale community summary before fusion while the physical community remains", async () => {
+    const fixture = await seedFixture("Community derived truth");
+    const revisionId = randomUUID();
+    const communityRevision = `truth-community-${randomUUID()}`;
+    const communityKey = `community:p5-${randomUUID()}`;
+    await db.pool.query(
+      `insert into community_index_revisions(
+         id,space_id,vault_id,scope_id,community_revision,graph_revision,
+         algorithm,algorithm_version,objective,resolution,random_seed,quality,
+         hierarchy,lifecycle,status,stale,activated_at
+       ) values(
+         $1,$2,$3,$4,$5,$6,'LEIDEN','p5-test','CPM',0.5,7,1,
+         '{}'::jsonb,'DERIVED_INDEX','ACTIVE',false,now()
+       )`,
+      [
+        revisionId,
+        fixture.spaceId,
+        fixture.vaultId,
+        `vault:${fixture.vaultId}`,
+        communityRevision,
+        fixture.corpusRevision,
+      ],
+    );
+    await db.pool.query(
+      `insert into community_index_communities(
+         revision_id,community_key,ordinal,member_count,summary,
+         summary_lifecycle,citable,support_set,hierarchy
+       ) values(
+         $1,$2,0,1,$3,'DERIVED_INDEX',false,'{}'::jsonb,'{}'::jsonb
+       )`,
+      [revisionId, communityKey, "panoramic omega support"],
+    );
+    await db.pool.query(
+      `insert into community_index_memberships(
+         revision_id,document_id,community_key,hierarchy
+       ) values($1,$2,$3,'{}'::jsonb)`,
+      [revisionId, fixture.documentId, communityKey],
+    );
+    await fixture.store.registerDerivedDependency({
+      spaceId: fixture.spaceId,
+      vaultId: fixture.vaultId,
+      derivedStoreKind: "COMMUNITY_REPORT",
+      derivedItemRef: `community:${communityRevision}:${communityKey}`,
+      supportSetId: fixture.supportSetId,
+      truthRevisionHash: fixture.preWithdrawalRevisionHash,
+      projectionRevision: communityRevision,
+    });
+
+    const request = {
+      ...searchInput(fixture.spaceId, fixture.vaultId),
+      query: "panoramic omega support",
+    };
+    const plan = planQuery(request.query, "GLOBAL_SYNTHESIS", {
+      vectorAvailable: false,
+      graphConsistent: true,
+      communityAvailable: true,
+    });
+    const before = await queryKnowledge(db, request, {
+      vaultIds: [fixture.vaultId],
+      plan,
+      graphScopes: [{ vaultId: fixture.vaultId, pathPrefix: null }],
+      retrievalPolicy: {
+        channels: { COMMUNITY: { enabled: true, weight: 1.1 } },
+      },
+    });
+    expect(
+      before.some((hit) =>
+        hit.fusionContributions?.some(
+          (contribution) => contribution.channel === "community",
+        ),
+      ),
+    ).toBe(true);
+
+    await fixture.store.withdrawSourceEpisode({
+      spaceId: fixture.spaceId,
+      vaultId: fixture.vaultId,
+      sourceEpisodeId: fixture.sourceEpisodeId,
+      reason: "Community summary support withdrawn",
+    });
+    const warnings: string[] = [];
+    const after = await queryKnowledge(db, request, {
+      vaultIds: [fixture.vaultId],
+      plan,
+      graphScopes: [{ vaultId: fixture.vaultId, pathPrefix: null }],
+      retrievalPolicy: {
+        channels: { COMMUNITY: { enabled: true, weight: 1.1 } },
+      },
+      warningSink: warnings,
+    });
+    expect(
+      after.some((hit) =>
+        hit.fusionContributions?.some(
+          (contribution) => contribution.channel === "community",
+        ),
+      ),
+    ).toBe(false);
+    expect(warnings).toContain(
+      `TRUTH_SUPPORT_REJECTED:COMMUNITY:${communityKey}`,
+    );
+    const physical = await db.pool.query<{ count: string }>(
+      `select count(*)::text count
+         from community_index_communities
+        where revision_id=$1 and community_key=$2`,
+      [revisionId, communityKey],
+    );
+    expect(physical.rows[0]?.count).toBe("1");
+  });
+
+  it("rejects a stale context fragment before fusion while the document remains", async () => {
+    const fixture = await seedFixture("Context fragment truth");
+    await db.pool.query(
+      `update knowledge_documents
+          set layer='context-pack',type='context-pack'
+        where id=$1 and space_id=$2 and vault_id=$3`,
+      [fixture.documentId, fixture.spaceId, fixture.vaultId],
+    );
+    await fixture.store.registerDerivedDependency({
+      spaceId: fixture.spaceId,
+      vaultId: fixture.vaultId,
+      derivedStoreKind: "CONTEXT_FRAGMENT",
+      derivedItemRef:
+        `context-fragment:${fixture.documentId}:${fixture.corpusRevision}`,
+      supportSetId: fixture.supportSetId,
+      truthRevisionHash: fixture.preWithdrawalRevisionHash,
+      projectionRevision: fixture.corpusRevision,
+    });
+
+    const before = await queryKnowledge(
+      db,
+      searchInput(fixture.spaceId, fixture.vaultId),
+      {
+        vaultIds: [fixture.vaultId],
+        channels: ["context-pack"],
+      },
+    );
+    expect(before).toHaveLength(1);
+    expect(before[0]?.documentId).toBe(fixture.documentId);
+    expect(
+      before[0]?.fusionContributions?.some(
+        (contribution) => contribution.channel === "context-pack",
+      ),
+    ).toBe(true);
+
+    await fixture.store.withdrawSourceEpisode({
+      spaceId: fixture.spaceId,
+      vaultId: fixture.vaultId,
+      sourceEpisodeId: fixture.sourceEpisodeId,
+      reason: "Context fragment support withdrawn",
+    });
+    const warnings: string[] = [];
+    const after = await queryKnowledge(
+      db,
+      searchInput(fixture.spaceId, fixture.vaultId),
+      {
+        vaultIds: [fixture.vaultId],
+        channels: ["context-pack"],
+        warningSink: warnings,
+      },
+    );
+    expect(after).toEqual([]);
+    expect(warnings).toContain(
+      `TRUTH_SUPPORT_REJECTED:CONTEXT_FRAGMENT:${fixture.documentId}`,
+    );
+    const physical = await db.pool.query<{ count: string }>(
+      `select count(*)::text count
+         from knowledge_documents
+        where id=$1 and layer='context-pack'`,
+      [fixture.documentId],
+    );
+    expect(physical.rows[0]?.count).toBe("1");
   });
 
   it("returns the captured snapshot with a warning in best-effort mode", async () => {

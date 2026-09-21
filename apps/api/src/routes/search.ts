@@ -194,9 +194,11 @@ interface LexicalSearchRow {
 interface DocumentChannelRow {
   id: string;
   document_revision: string;
+  vault_id?: string;
 }
 
 interface CommunityCandidateRow extends DocumentChannelRow {
+  vault_id: string;
   community_key: string;
   community_revision: string;
   orientation_score: number;
@@ -594,6 +596,14 @@ interface VectorSearchRow {
 
 function vectorTruthRef(row: VectorSearchRow): string {
   return `vector:${row.generation_id}:${row.unit_id}`;
+}
+
+function communityTruthRef(row: CommunityCandidateRow): string {
+  return `community:${row.community_revision}:${row.community_key}`;
+}
+
+function contextFragmentTruthRef(row: DocumentChannelRow): string {
+  return `context-fragment:${row.id}:${row.document_revision}`;
 }
 
 function activeDescriptor(
@@ -1188,6 +1198,66 @@ export async function queryKnowledge(
     "STRICT";
   const truthStore = new PostgresTemporalTruthStore(db);
   const truthSnapshot = await truthStore.captureSnapshot(spaceId, vaultIds);
+  const truthRevisionByVault = new Map(
+    truthSnapshot.vaults.map((entry) => [entry.vaultId, entry]),
+  );
+  const filterDerivedTruth = async <
+    T extends { vault_id?: string },
+  >(
+    rows: readonly T[],
+    input: {
+      derivedStoreKind:
+        | "VECTOR"
+        | "COMMUNITY_REPORT"
+        | "CONTEXT_FRAGMENT";
+      ref: (row: T) => string;
+      warningKind: "VECTOR" | "COMMUNITY" | "CONTEXT_FRAGMENT";
+      warningId: (row: T) => string;
+      telemetryChannel: "vector" | "community" | "context-pack";
+    },
+  ): Promise<T[]> => {
+    const accepted: T[] = [];
+    for (const vaultId of vaultIds) {
+      const scopedRows = rows.filter((row) => row.vault_id === vaultId);
+      if (scopedRows.length === 0) continue;
+      const snapshotEntry = truthRevisionByVault.get(vaultId);
+      const validations = await truthStore.validateDerivedItems({
+        spaceId,
+        vaultId,
+        derivedStoreKind: input.derivedStoreKind,
+        derivedItemRefs: scopedRows.map(input.ref),
+        ...(snapshotEntry?.revisionHash
+          ? { truthRevisionHash: snapshotEntry.revisionHash }
+          : {}),
+      });
+      const validationByRef = new Map(
+        validations.map((validation) => [
+          validation.derivedItemRef,
+          validation,
+        ]),
+      );
+      for (const row of scopedRows) {
+        const validation = validationByRef.get(input.ref(row));
+        if (validation?.valid === false) {
+          options.warningSink?.push(
+            `TRUTH_SUPPORT_REJECTED:${input.warningKind}:${input.warningId(row)}`,
+          );
+          telemetry.counter("truth_candidate_rejected", 1, {
+            channel: input.telemetryChannel,
+            state: validation.state,
+          });
+          continue;
+        }
+        if (validation?.state === "DISPUTED") {
+          options.warningSink?.push(
+            `TRUTH_SUPPORT_DISPUTED:${input.warningKind}:${input.warningId(row)}`,
+          );
+        }
+        accepted.push(row);
+      }
+    }
+    return accepted;
+  };
   const finalizeTruthSnapshot = async (): Promise<RetrievalTruthState> => {
     const changedDuringQuery =
       !(await truthStore.snapshotUnchanged(truthSnapshot));
@@ -1655,50 +1725,17 @@ export async function queryKnowledge(
   }
 
   if (vector.rows.length > 0) {
-    const truthRevisionByVault = new Map(
-      truthSnapshot.vaults.map((entry) => [entry.vaultId, entry]),
-    );
-    const truthValidRows: VectorSearchRow[] = [];
-    for (const vaultId of vaultIds) {
-      const scopedRows = vector.rows.filter((row) => row.vault_id === vaultId);
-      if (scopedRows.length === 0) continue;
-      const snapshotEntry = truthRevisionByVault.get(vaultId);
-      const validations = await truthStore.validateDerivedItems({
-        spaceId,
-        vaultId,
+    vector.rows.splice(
+      0,
+      vector.rows.length,
+      ...(await filterDerivedTruth(vector.rows, {
         derivedStoreKind: "VECTOR",
-        derivedItemRefs: scopedRows.map(vectorTruthRef),
-        ...(snapshotEntry?.revisionHash
-          ? { truthRevisionHash: snapshotEntry.revisionHash }
-          : {}),
-      });
-      const validationByRef = new Map(
-        validations.map((validation) => [
-          validation.derivedItemRef,
-          validation,
-        ]),
-      );
-      for (const row of scopedRows) {
-        const validation = validationByRef.get(vectorTruthRef(row));
-        if (validation?.valid === false) {
-          options.warningSink?.push(
-            `TRUTH_SUPPORT_REJECTED:VECTOR:${row.unit_id}`,
-          );
-          telemetry.counter("truth_candidate_rejected", 1, {
-            channel: "vector",
-            state: validation.state,
-          });
-          continue;
-        }
-        if (validation?.state === "DISPUTED") {
-          options.warningSink?.push(
-            `TRUTH_SUPPORT_DISPUTED:VECTOR:${row.unit_id}`,
-          );
-        }
-        truthValidRows.push(row);
-      }
-    }
-    vector.rows.splice(0, vector.rows.length, ...truthValidRows);
+        ref: vectorTruthRef,
+        warningKind: "VECTOR",
+        warningId: (row) => row.unit_id,
+        telemetryChannel: "vector",
+      })),
+    );
   }
   recordRetrievalCandidates("vector", vector.rows.length);
 
@@ -1761,7 +1798,7 @@ export async function queryKnowledge(
              where $5::text='GLOBAL'
                 or dc.community_key is not null
           )
-          select d.id,d.current_revision document_revision,
+          select d.id,d.vault_id,d.current_revision document_revision,
                  o.community_key,o.community_revision,
                  (
                    100 * o.seed_match +
@@ -1797,7 +1834,15 @@ export async function queryKnowledge(
           ],
         ),
       );
-      communityCandidates.push(...routed.rows);
+      communityCandidates.push(
+        ...(await filterDerivedTruth(routed.rows, {
+          derivedStoreKind: "COMMUNITY_REPORT",
+          ref: communityTruthRef,
+          warningKind: "COMMUNITY",
+          warningId: (row) => row.community_key,
+          telemetryChannel: "community",
+        })),
+      );
     } catch (error) {
       const code =
         error instanceof Error ? error.message : "COMMUNITY_ROUTING_FAILED";
@@ -1810,7 +1855,7 @@ export async function queryKnowledge(
     ? await db.pool.query<DocumentChannelRow>(
         `
           with query as (select plainto_tsquery('simple',$2) terms)
-          select d.id,d.current_revision document_revision
+          select d.id,d.vault_id,d.current_revision document_revision
             from knowledge_documents d
             cross join query
            where d.space_id=$1
@@ -1827,6 +1872,19 @@ export async function queryKnowledge(
         [spaceId, input.query, Math.max(input.limit, 10)],
       )
     : { rows: [] as DocumentChannelRow[] };
+  if (contextPack.rows.length > 0) {
+    contextPack.rows.splice(
+      0,
+      contextPack.rows.length,
+      ...(await filterDerivedTruth(contextPack.rows, {
+        derivedStoreKind: "CONTEXT_FRAGMENT",
+        ref: contextFragmentTruthRef,
+        warningKind: "CONTEXT_FRAGMENT",
+        warningId: (row) => row.id,
+        telemetryChannel: "context-pack",
+      })),
+    );
+  }
   if (channels.has("context-pack")) {
     options.availableChannelSink?.add("context-pack");
   }
