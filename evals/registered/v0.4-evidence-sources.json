@@ -1920,6 +1920,20 @@
           "path": "apps/worker/test/truth-maintenance.test.ts"
         }
       ]
+    },
+    "integration:p5-cached-synthesis-support-validation": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run temporal truth maintenance integration"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/worker/test/truth-maintenance.test.ts"
+        }
+      ]
     }
   }
 }
