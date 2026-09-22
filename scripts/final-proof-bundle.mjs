@@ -121,7 +121,10 @@ const reportSpecs = [
         "enterprise-state-scale-benchmark.json",
         "scale/enterprise-state-scale-benchmark.json",
       ],
-      ["enterprise-scale-combinations.json", "scale/enterprise-scale-combinations.json"],
+      [
+        "enterprise-scale-combinations.json",
+        "scale/enterprise-scale-combinations.json",
+      ],
     ],
   },
   {

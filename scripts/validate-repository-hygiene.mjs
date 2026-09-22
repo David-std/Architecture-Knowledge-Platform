@@ -147,7 +147,8 @@ const iterationResidue = [
 const constructionDocumentName =
   /^(?:COMPETITIVE_AUDIT|DOCUMENT_INTELLIGENCE_BENCHMARK|EVENT_DRIVEN_VALIDATION_REPORT|GENERICITY_AUDIT|IMPLEMENTATION_REPORT|MIGRATION_REPORT|PROJECT_STATE|REMAINING_REAL_GAPS|REPOSITORY_HYGIENE_REPORT|RESEARCH_LOG|RETRIEVAL_BENCHMARK|SECURITY_REPORT|TRACEABILITY|VALIDATION_REPORT)\.md$/i;
 const phasePathToken = /(?:^|[\/_.-])p\d+(?=$|[\/_.-])/i;
-const phaseLabel = /\bP(?:[0-9]|1[0-2])(?:\.\d+)?\b|(?:^|[^A-Za-z0-9])p(?:[0-9]|1[0-2])[-_:]/;
+const phaseLabel =
+  /\bP(?:[0-9]|1[0-2])(?:\.\d+)?\b|(?:^|[^A-Za-z0-9])p(?:[0-9]|1[0-2])[-_:]/;
 const dateCodedPath = /(?:^|[\/_.-])20\d{2}(?:[-_.]?\d{2}){2}(?=$|[\/_.-])/;
 const smokeToken = /\bsmoke\b/i;
 const constructionMarker = /\b(?:TODO|FIXME|HACK)\b/;
