@@ -157,6 +157,8 @@ const constructionNarrative =
 const assistantToolResidue = /\b(?:ChatGPT|Codex|Claude)\b/i;
 const legacyVerificationToken =
   /\b(?:final-proof|recovery-proof|federation-proof|two-node-proof)\b/i;
+const legacyProofCommand =
+  /\bproof:(?:baseline-evidence|capabilities|upgrade-migrations|evidence|parity-exclusions)\b/i;
 function activeGuidanceOrAutomation(file) {
   if (/^(?:README|AGENTS|ARCHITECTURE|CONTRIBUTING|CHANGELOG)\.md$/.test(file))
     return true;
@@ -273,6 +275,8 @@ for (const entry of entries) {
       failures.push(`ASSISTANT_TOOL_RESIDUE ${entry.path}`);
     if (legacyVerificationToken.test(content))
       failures.push(`LEGACY_VERIFICATION_TERMINOLOGY ${entry.path}`);
+    if (legacyProofCommand.test(content))
+      failures.push(`LEGACY_PROOF_COMMAND ${entry.path}`);
   }
 }
 
