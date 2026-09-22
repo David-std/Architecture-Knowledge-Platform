@@ -595,7 +595,7 @@
           "type": "STEP",
           "workflow": "ci",
           "job": "typescript",
-          "step": "Run concurrency race proof"
+          "step": "Run concurrency race verification"
         }
       ]
     },
@@ -1029,7 +1029,7 @@
           "type": "STEP",
           "workflow": "ci",
           "job": "typescript",
-          "step": "Run reasoning adversarial proof"
+          "step": "Run reasoning adversarial verification"
         }
       ]
     },
@@ -1039,7 +1039,7 @@
           "type": "STEP",
           "workflow": "ci",
           "job": "typescript",
-          "step": "Run reasoning adversarial proof"
+          "step": "Run reasoning adversarial verification"
         }
       ]
     },
@@ -1049,7 +1049,7 @@
           "type": "STEP",
           "workflow": "ci",
           "job": "typescript",
-          "step": "Run reasoning adversarial proof"
+          "step": "Run reasoning adversarial verification"
         }
       ]
     },
@@ -1059,7 +1059,7 @@
           "type": "STEP",
           "workflow": "ci",
           "job": "typescript",
-          "step": "Run reasoning adversarial proof"
+          "step": "Run reasoning adversarial verification"
         },
         {
           "type": "FILE",
@@ -1073,7 +1073,7 @@
           "type": "STEP",
           "workflow": "ci",
           "job": "typescript",
-          "step": "Run reasoning adversarial proof"
+          "step": "Run reasoning adversarial verification"
         }
       ]
     },
@@ -1083,7 +1083,7 @@
           "type": "STEP",
           "workflow": "ci",
           "job": "typescript",
-          "step": "Run reasoning adversarial proof"
+          "step": "Run reasoning adversarial verification"
         }
       ]
     },
@@ -1093,7 +1093,7 @@
           "type": "STEP",
           "workflow": "ci",
           "job": "typescript",
-          "step": "Run model routing and residency proof"
+          "step": "Run model routing and residency verification"
         }
       ]
     },
@@ -1103,7 +1103,7 @@
           "type": "STEP",
           "workflow": "ci",
           "job": "typescript",
-          "step": "Run model routing and residency proof"
+          "step": "Run model routing and residency verification"
         }
       ]
     },
@@ -1113,7 +1113,7 @@
           "type": "STEP",
           "workflow": "ci",
           "job": "typescript",
-          "step": "Run model routing and residency proof"
+          "step": "Run model routing and residency verification"
         }
       ]
     },
@@ -1123,7 +1123,7 @@
           "type": "STEP",
           "workflow": "ci",
           "job": "typescript",
-          "step": "Run model routing and residency proof"
+          "step": "Run model routing and residency verification"
         }
       ]
     },
@@ -1133,7 +1133,7 @@
           "type": "STEP",
           "workflow": "ci",
           "job": "typescript",
-          "step": "Run model routing and residency proof"
+          "step": "Run model routing and residency verification"
         }
       ]
     },
@@ -1143,7 +1143,7 @@
           "type": "STEP",
           "workflow": "ci",
           "job": "typescript",
-          "step": "Run code graph failure proof"
+          "step": "Run code graph failure verification"
         }
       ]
     },
@@ -1153,7 +1153,7 @@
           "type": "STEP",
           "workflow": "ci",
           "job": "typescript",
-          "step": "Run code graph failure proof"
+          "step": "Run code graph failure verification"
         }
       ]
     },
@@ -1163,7 +1163,7 @@
           "type": "STEP",
           "workflow": "ci",
           "job": "typescript",
-          "step": "Run federation contract proof"
+          "step": "Run federation contract verification"
         }
       ]
     },
@@ -1191,7 +1191,7 @@
           "type": "STEP",
           "workflow": "ci",
           "job": "typescript",
-          "step": "Run federation contract proof"
+          "step": "Run federation contract verification"
         }
       ]
     },
@@ -1291,7 +1291,7 @@
           "type": "STEP",
           "workflow": "ci",
           "job": "typescript",
-          "step": "Run MCP instruction integrity proof"
+          "step": "Run MCP instruction integrity verification"
         }
       ]
     },
@@ -2355,7 +2355,7 @@
           "type": "STEP",
           "workflow": "ci",
           "job": "typescript",
-          "step": "Run model routing and residency proof"
+          "step": "Run model routing and residency verification"
         }
       ]
     },
@@ -2365,7 +2365,7 @@
           "type": "STEP",
           "workflow": "ci",
           "job": "typescript",
-          "step": "Run model routing and residency proof"
+          "step": "Run model routing and residency verification"
         }
       ]
     },
@@ -2375,7 +2375,7 @@
           "type": "STEP",
           "workflow": "ci",
           "job": "typescript",
-          "step": "Run model routing and residency proof"
+          "step": "Run model routing and residency verification"
         }
       ]
     },
@@ -2385,7 +2385,7 @@
           "type": "STEP",
           "workflow": "ci",
           "job": "typescript",
-          "step": "Run model routing and residency proof"
+          "step": "Run model routing and residency verification"
         }
       ]
     },

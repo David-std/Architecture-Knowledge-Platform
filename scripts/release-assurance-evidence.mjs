@@ -14,13 +14,13 @@ const sourceMapPath = path.resolve(
 );
 const workflowReportPath = path.resolve(
   root,
-  process.env.AKP_FINAL_PROOF_WORKFLOW_REPORT ??
-    "reports/ci/final-proof-workflows.json",
+  process.env.AKP_RELEASE_ASSURANCE_WORKFLOW_REPORT ??
+    "reports/ci/release-assurance-workflows.json",
 );
 const outputPath = path.resolve(
   root,
   process.env.AKP_CAPABILITY_EVIDENCE_LEDGER ??
-    "reports/ci/final-proof-evidence.json",
+    "reports/ci/release-assurance-evidence.json",
 );
 
 function objectRecord(value, label) {
@@ -75,7 +75,7 @@ if (
   throw new Error("Same-SHA workflow report header is invalid.");
 }
 const expectedCommit =
-  process.env.AKP_FINAL_PROOF_COMMIT?.trim() ||
+  process.env.AKP_RELEASE_ASSURANCE_COMMIT?.trim() ||
   process.env.GITHUB_SHA?.trim() ||
   null;
 if (
@@ -83,7 +83,7 @@ if (
   expectedCommit.toLowerCase() !== workflowReport.commit.toLowerCase()
 ) {
   throw new Error(
-    `Workflow proof commit ${workflowReport.commit} does not match expected commit ${expectedCommit}.`,
+    `Workflow assurance commit ${workflowReport.commit} does not match expected commit ${expectedCommit}.`,
   );
 }
 

@@ -21,8 +21,8 @@ jobs:
       AKP_TWO_NODE_REMOTE_DATABASE_URL: postgres://akp:akp@127.0.0.1:55432/akp_federation_node_b
       AKP_TWO_NODE_LOCAL_URL: http://127.0.0.1:18100
       AKP_TWO_NODE_REMOTE_URL: http://127.0.0.1:18101
-      AKP_TWO_NODE_REMOTE_NODE_ID: federation-proof-b
-      AKP_TWO_NODE_REMOTE_REVISION: two-node-proof-b-r1
+      AKP_TWO_NODE_REMOTE_NODE_ID: federation-node-b
+      AKP_TWO_NODE_REMOTE_REVISION: two-node-verification-b-r1
       AKP_TWO_NODE_REMOTE_TOKEN_REF: AKP_TWO_NODE_B_TOKEN
       AKP_TWO_NODE_STATE: reports/ci/two-node-state.json
       AKP_TWO_NODE_FEDERATION_REPORT: reports/ci/two-node-federation.json
@@ -64,7 +64,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p reports/ci
-          DATABASE_URL="$AKP_TWO_NODE_REMOTE_DATABASE_URL"           PORT=18101           AKP_API_HOST=127.0.0.1           AKP_CONTEXT_FABRIC_MODE=FEDERATED_ORG           AKP_CONTEXT_FABRIC_NODE_ID=federation-proof-b           AKP_BUILD_REVISION=two-node-proof-b-r1             pnpm --filter @akp/api exec node --import tsx src/server.ts               > reports/ci/federation-node-b.log 2>&1 &
+          DATABASE_URL="$AKP_TWO_NODE_REMOTE_DATABASE_URL"           PORT=18101           AKP_API_HOST=127.0.0.1           AKP_CONTEXT_FABRIC_MODE=FEDERATED_ORG           AKP_CONTEXT_FABRIC_NODE_ID=federation-node-b           AKP_BUILD_REVISION=two-node-verification-b-r1             pnpm --filter @akp/api exec node --import tsx src/server.ts               > reports/ci/federation-node-b.log 2>&1 &
           echo $! > reports/ci/federation-node-b.pid
           for attempt in $(seq 1 60); do
             if curl --fail --silent http://127.0.0.1:18101/health/liveness >/dev/null; then
@@ -77,7 +77,7 @@ jobs:
       - name: Start local federation node
         shell: bash
         run: |
-          DATABASE_URL="$AKP_TWO_NODE_LOCAL_DATABASE_URL"           PORT=18100           AKP_API_HOST=127.0.0.1           AKP_CONTEXT_FABRIC_MODE=FEDERATED_ORG           AKP_CONTEXT_FABRIC_NODE_ID=federation-proof-a           AKP_BUILD_REVISION=two-node-proof-a-r1           AKP_TWO_NODE_B_TOKEN="$AKP_TWO_NODE_REMOTE_TOKEN"             pnpm --filter @akp/api exec node --import tsx src/server.ts               > reports/ci/federation-node-a.log 2>&1 &
+          DATABASE_URL="$AKP_TWO_NODE_LOCAL_DATABASE_URL"           PORT=18100           AKP_API_HOST=127.0.0.1           AKP_CONTEXT_FABRIC_MODE=FEDERATED_ORG           AKP_CONTEXT_FABRIC_NODE_ID=federation-node-a           AKP_BUILD_REVISION=two-node-verification-a-r1           AKP_TWO_NODE_B_TOKEN="$AKP_TWO_NODE_REMOTE_TOKEN"             pnpm --filter @akp/api exec node --import tsx src/server.ts               > reports/ci/federation-node-a.log 2>&1 &
           echo $! > reports/ci/federation-node-a.pid
           for attempt in $(seq 1 60); do
             if curl --fail --silent http://127.0.0.1:18100/health/liveness >/dev/null; then
@@ -88,9 +88,9 @@ jobs:
           cat reports/ci/federation-node-a.log
           exit 1
       - name: Configure remote peer
-        run: pnpm exec tsx scripts/two-node-federation-proof.ts --phase=setup
+        run: pnpm exec tsx scripts/two-node-federation-verification.ts --scenario=setup
       - name: Execute live two-node federation query
-        run: pnpm exec tsx scripts/two-node-federation-proof.ts --phase=live
+        run: pnpm exec tsx scripts/two-node-federation-verification.ts --scenario=live
       - name: Stop remote node and exercise partial failure
         shell: bash
         run: |
@@ -101,7 +101,7 @@ jobs:
             fi
             sleep 1
           done
-          pnpm exec tsx scripts/two-node-federation-proof.ts --phase=dead
+          pnpm exec tsx scripts/two-node-federation-verification.ts --scenario=dead
       - name: Validate real two-node federation evidence
         run: |
           node --input-type=module <<'NODE'
@@ -138,7 +138,7 @@ jobs:
           path: reports/ci
           if-no-files-found: error
           retention-days: 30
-      - name: Stop two-node proof services
+      - name: Stop two-node verification services
         if: always()
         shell: bash
         run: |

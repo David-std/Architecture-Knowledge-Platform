@@ -17,7 +17,7 @@ const manifestPath = path.resolve(
 const ledgerPath = path.resolve(
   repositoryRoot,
   process.env.AKP_CAPABILITY_EVIDENCE_LEDGER ??
-    "reports/ci/final-proof-evidence.json",
+    "reports/ci/release-assurance-evidence.json",
 );
 const jsonOutput = path.resolve(
   repositoryRoot,

@@ -177,7 +177,7 @@ try {
   const token = `recovery-agent-context-${randomUUID()}`;
   await db.pool.query(
     `insert into api_tokens(user_id,token_hash,label,scopes)
-     values($1,$2,'recovery agent context proof',$3::jsonb)`,
+     values($1,$2,'recovery agent context verification',$3::jsonb)`,
     [
       adminUserId,
       sha256(token),

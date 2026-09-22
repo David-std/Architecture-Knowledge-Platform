@@ -57,6 +57,6 @@ The v0.4 product surface is intentionally bounded. These limitations are part of
 
 ## Verification
 
-Repository gates cover formatting, contracts, documentation, repository hygiene, type/unit checks, integration behavior, secret scanning and production builds. Additional maintained workflows exercise semantic retrieval, domain quality, Document Intelligence, team-node behavior, concurrency, resilience, scale, federation, long-context placement, agent behavior, recovery and same-revision final proof.
+Repository gates cover formatting, contracts, documentation, repository hygiene, type/unit checks, integration behavior, secret scanning and production builds. Additional maintained workflows exercise semantic retrieval, domain quality, Document Intelligence, team-node behavior, concurrency, resilience, scale, federation, long-context placement, agent behavior, recovery and same-revision release assurance.
 
 For the operating model, see the [Workspace Operating Model](guides/workspace-operating-model.md). For setup and operations, see [Operations & Recovery](guides/operations-recovery.md). For trust boundaries and residual risks, see the [threat model](security/threat-model.md).

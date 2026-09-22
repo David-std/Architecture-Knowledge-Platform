@@ -32,20 +32,20 @@ $PostgresContainer = if ($PostgresContainer) { $PostgresContainer } else { (dock
 if (-not $PostgresContainer) { throw "PostgreSQL Compose service must be running" }
 $source = Resolve-InputPath $BackupDirectory
 $manifestPath = Join-Path $source "manifest.json"
-$recoveryProof = $null
+$recoveryVerification = $null
 if (-not [string]::IsNullOrWhiteSpace($RecoveryStateManifest)) {
   $recoveryStatePath = Resolve-InputPath $RecoveryStateManifest
   if (-not (Test-Path -LiteralPath $recoveryStatePath -PathType Leaf)) {
     throw "Recovery state manifest is missing: $recoveryStatePath"
   }
   try {
-    $recoveryProof = Get-Content -LiteralPath $recoveryStatePath -Raw | ConvertFrom-Json
+    $recoveryVerification = Get-Content -LiteralPath $recoveryStatePath -Raw | ConvertFrom-Json
   } catch {
     throw "Recovery state manifest is not valid JSON: $($_.Exception.Message)"
   }
   if (
-    $recoveryProof.schemaVersion -ne 1 -or
-    $recoveryProof.evidenceLevel -ne "DURABLE_RECOVERY_SENTINELS"
+    $recoveryVerification.schemaVersion -ne 1 -or
+    $recoveryVerification.evidenceLevel -ne "DURABLE_RECOVERY_SENTINELS"
   ) {
     throw "Recovery state manifest is incompatible."
   }
@@ -197,10 +197,10 @@ try {
     }
   }
 
-  if ($null -ne $recoveryProof) {
-    $expected = $recoveryProof.expected
-    $vaultId = [string]$recoveryProof.vaultId
-    $spaceId = [string]$recoveryProof.spaceId
+  if ($null -ne $recoveryVerification) {
+    $expected = $recoveryVerification.expected
+    $vaultId = [string]$recoveryVerification.vaultId
+    $spaceId = [string]$recoveryVerification.spaceId
     if (
       $vaultId -notmatch '^[0-9a-fA-F-]{36}$' -or
       $spaceId -notmatch '^[0-9a-fA-F-]{36}$'
@@ -219,7 +219,7 @@ try {
     }
 
     $sessionPurpose = Invoke-RestoredScalar -Database $database -Sql "select purpose from agent_sessions where id='$($expected.sessionId)' and vault_id='$vaultId';"
-    if ($sessionPurpose -ne "Recovery proof workspace") {
+    if ($sessionPurpose -ne "Recovery verification workspace") {
       throw "Restored workspace session sentinel is missing."
     }
 
@@ -362,7 +362,7 @@ Write-Output (@{
   gitHeadRevisionVerified = (-not $bundleRequired) -or $gitRestoreVerified
   canonicalGitRevision = if ($bundleRequired) { [string]$manifest.managedRepository.headRevision } else { $null }
   durableStateTablesVerified = $requiredDurableTables.Count
-  durableRecoverySentinelsVerified = ($null -ne $recoveryProof)
+  durableRecoverySentinelsVerified = ($null -ne $recoveryVerification)
   derivedStateReconciliation = [string]$manifest.derivedState.reconciliationAction
   federationSecretsIncluded = [bool]$manifest.durableState.federationConfiguration.secretsIncluded
 } | ConvertTo-Json)

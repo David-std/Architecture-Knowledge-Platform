@@ -13,25 +13,25 @@ const args = new Map(
     return [key, rest.join("=")] as const;
   }),
 );
-const phase = args.get("--phase");
-if (!["setup", "live", "dead"].includes(phase ?? "")) {
-  throw new Error("--phase must be setup, live or dead.");
+const scenario = args.get("--scenario");
+if (!["setup", "live", "dead"].includes(scenario ?? "")) {
+  throw new Error("--scenario must be setup, live or dead.");
 }
 
 const databaseUrl = process.env.AKP_TWO_NODE_LOCAL_DATABASE_URL;
 const localToken = process.env.AKP_TWO_NODE_LOCAL_TOKEN;
 const remoteTokenRef = process.env.AKP_TWO_NODE_REMOTE_TOKEN_REF;
 if (!databaseUrl || !localToken || !remoteTokenRef) {
-  throw new Error("Two-node proof environment is incomplete.");
+  throw new Error("Two-node verification environment is incomplete.");
 }
 
 const localUrl = process.env.AKP_TWO_NODE_LOCAL_URL ?? "http://127.0.0.1:18100";
 const remoteUrl =
   process.env.AKP_TWO_NODE_REMOTE_URL ?? "http://127.0.0.1:18101";
 const remoteNodeId =
-  process.env.AKP_TWO_NODE_REMOTE_NODE_ID ?? "federation-proof-b";
+  process.env.AKP_TWO_NODE_REMOTE_NODE_ID ?? "federation-node-b";
 const remoteRevision =
-  process.env.AKP_TWO_NODE_REMOTE_REVISION ?? "two-node-proof-b-r1";
+  process.env.AKP_TWO_NODE_REMOTE_REVISION ?? "two-node-verification-b-r1";
 const statePath = path.resolve(
   process.env.AKP_TWO_NODE_STATE ?? "reports/ci/two-node-state.json",
 );
@@ -64,7 +64,7 @@ async function request(
         },
         budget: {
           maxResults: 5,
-          maxWallMs: phase === "dead" ? 1000 : 5000,
+          maxWallMs: scenario === "dead" ? 1000 : 5000,
           maxResponseBytes: 1000000,
         },
         revisionPreferences: [],
@@ -79,7 +79,7 @@ async function request(
   };
 }
 
-if (phase === "setup") {
+if (scenario === "setup") {
   const db = new Postgres(databaseUrl);
   try {
     const before = await db.pool.query<{ count: number }>(
@@ -89,7 +89,7 @@ if (phase === "setup") {
       organizationId,
       spaceId,
       peerKey: remoteNodeId,
-      displayName: "Two-node federation proof peer",
+      displayName: "Two-node federation verification peer",
       endpoint: remoteUrl,
       discoveryMode: "REMOTE_QUERY",
       trustState: "APPROVED",
@@ -134,7 +134,7 @@ if (phase === "setup") {
     live?: Record<string, unknown>;
   };
 
-  if (phase === "live") {
+  if (scenario === "live") {
     const result = await request(state.peerId);
     if (result.status !== 200) {
       throw new Error(
@@ -216,7 +216,7 @@ if (phase === "setup") {
       schemaVersion: 1,
       evidenceLevel: "REAL_TWO_NODE_FEDERATION",
       status: "PROVEN",
-      localNode: "federation-proof-a",
+      localNode: "federation-node-a",
       remoteNode: state.remoteNodeId,
       remoteVaultId: state.remoteVaultId,
       liveQuery: state.live ?? null,
@@ -233,7 +233,7 @@ if (phase === "setup") {
       generatedAt: new Date().toISOString(),
     };
     if (!report.liveQuery) {
-      throw new Error("Two-node live phase evidence is missing.");
+      throw new Error("Two-node live scenario evidence is missing.");
     }
     await mkdir(path.dirname(reportPath), { recursive: true });
     await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");

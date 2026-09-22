@@ -17,19 +17,19 @@ const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "..");
 const workflowReportPath = path.resolve(
   root,
-  process.env.AKP_FINAL_PROOF_WORKFLOW_REPORT ??
-    "reports/ci/final-proof-workflows.json",
+  process.env.AKP_RELEASE_ASSURANCE_WORKFLOW_REPORT ??
+    "reports/ci/release-assurance-workflows.json",
 );
 const outputDir = path.resolve(
   root,
-  process.env.AKP_FINAL_PROOF_PACKAGE_DIR ?? "reports/ci/final-proof-package",
+  process.env.AKP_RELEASE_ASSURANCE_PACKAGE_DIR ?? "reports/ci/release-assurance-package",
 );
 const repository =
   process.env.GITHUB_REPOSITORY?.trim() ||
-  process.env.AKP_FINAL_PROOF_REPOSITORY?.trim();
+  process.env.AKP_RELEASE_ASSURANCE_REPOSITORY?.trim();
 const token = process.env.GITHUB_TOKEN?.trim();
 const expectedCommit =
-  process.env.AKP_FINAL_PROOF_COMMIT?.trim() ||
+  process.env.AKP_RELEASE_ASSURANCE_COMMIT?.trim() ||
   process.env.GITHUB_SHA?.trim() ||
   null;
 
@@ -158,12 +158,12 @@ const reportSpecs = [
 
 const localFiles = [
   [
-    "reports/ci/final-proof-workflows.json",
-    "same-sha/final-proof-workflows.json",
+    "reports/ci/release-assurance-workflows.json",
+    "same-sha/release-assurance-workflows.json",
   ],
   [
-    "reports/ci/final-proof-evidence.json",
-    "same-sha/final-proof-evidence.json",
+    "reports/ci/release-assurance-evidence.json",
+    "same-sha/release-assurance-evidence.json",
   ],
   [
     "reports/ci/capability-acceptance.json",
@@ -312,7 +312,7 @@ if (
   expectedCommit.toLowerCase() !== workflowReport.commit.toLowerCase()
 ) {
   throw new Error(
-    `Final proof package commit ${workflowReport.commit} does not match expected commit ${expectedCommit}.`,
+    `Release assurance package commit ${workflowReport.commit} does not match expected commit ${expectedCommit}.`,
   );
 }
 const workflowByName = new Map(
@@ -350,7 +350,7 @@ for (const relative of await walkFiles(parityDestination)) {
 }
 
 const temporaryDirectory = await mkdtemp(
-  path.join(os.tmpdir(), "akp-final-proof-"),
+  path.join(os.tmpdir(), "akp-release-assurance-"),
 );
 try {
   const artifactCache = new Map();
@@ -423,7 +423,7 @@ const duplicateOutputs = records
   .filter((value, index, values) => values.indexOf(value) !== index);
 if (duplicateOutputs.length > 0) {
   throw new Error(
-    `Final proof package contains duplicate outputs: ${[
+    `Release assurance package contains duplicate outputs: ${[
       ...new Set(duplicateOutputs),
     ].join(", ")}`,
   );
@@ -431,7 +431,7 @@ if (duplicateOutputs.length > 0) {
 
 const packageIndex = {
   schemaVersion: 1,
-  evidenceLevel: "SAME_SHA_FINAL_PROOF_PACKAGE",
+  evidenceLevel: "SAME_SHA_RELEASE_ASSURANCE_PACKAGE",
   repository,
   commit: workflowReport.commit,
   generatedAt: new Date().toISOString(),

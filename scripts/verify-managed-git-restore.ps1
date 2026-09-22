@@ -66,7 +66,7 @@ $expectedFiles = @(
     Sort-Object
 )
 if ($expectedFiles.Count -lt 1) {
-  throw "The managed restore proof requires at least one tracked file."
+  throw "The managed restore verification requires at least one tracked file."
 }
 
 $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) "akp-managed-restore-$([guid]::NewGuid().ToString('N'))"
@@ -153,12 +153,12 @@ try {
     pnpm exec tsx scripts/verify-restored-derived-context.ts "--repo=$temporaryRoot" "--commit=$actualRevision" "--space-id=$SpaceId" "--vault-id=$vaultId"
   } | Out-Null
   if (-not (Test-Path -LiteralPath $derivedReport -PathType Leaf)) {
-    throw "Restored derived-context proof report is missing: $derivedReport"
+    throw "Restored derived-context verification report is missing: $derivedReport"
   }
   try {
     $derived = Get-Content -LiteralPath $derivedReport -Raw | ConvertFrom-Json
   } catch {
-    throw "Restored derived-context proof report is invalid JSON: $($_.Exception.Message)"
+    throw "Restored derived-context verification report is invalid JSON: $($_.Exception.Message)"
   }
   if (
     $derived.status -ne "PROVEN" -or

@@ -75,19 +75,19 @@ jobs:
           git -C "$AKP_MANAGED_REPO" add --all
           git -C "$AKP_MANAGED_REPO" commit -m "test: seed managed restore probe"
       - run: pnpm db:migrate
-      - name: Import durable recovery proof document state
+      - name: Import durable recovery verification document state
         run: >-
           pnpm akp vault import
           --vault-path "$AKP_MANAGED_REPO"
           --space-id 00000000-0000-0000-0000-000000000003
-          --vault-key recovery-proof-vault
+          --vault-key recovery-verification-vault
           --read-only
           --report-dir reports/migration
       - name: Seed durable v0.4 recovery sentinels
         env:
-          AKP_RECOVERY_PROOF_VAULT_KEY: recovery-proof-vault
-          AKP_RECOVERY_PROOF_MANIFEST: reports/ci/recovery-state-seed.json
-        run: pnpm exec tsx scripts/seed-recovery-proof.ts
+          AKP_RECOVERY_VERIFICATION_VAULT_KEY: recovery-verification-vault
+          AKP_RECOVERY_VERIFICATION_MANIFEST: reports/ci/recovery-state-seed.json
+        run: pnpm exec tsx scripts/seed-recovery-verification.ts
       - name: Create complete disposable recovery backup
         shell: pwsh
         run: >-
@@ -101,7 +101,7 @@ jobs:
           -BackupDirectory backups/ci-recovery
           -ManagedRepository $env:AKP_MANAGED_REPO
           -RecoveryStateManifest reports/ci/recovery-state-seed.json
-      - name: Prove managed Git commit, files and searchable reindex after restore
+      - name: Verify managed Git commit, files and searchable reindex after restore
         shell: pwsh
         env:
           AKP_RESTORED_DERIVED_REPORT: reports/ci/restored-derived-context.json

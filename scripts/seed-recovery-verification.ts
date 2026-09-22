@@ -8,9 +8,9 @@ const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is required.");
 
 const vaultKey =
-  process.env.AKP_RECOVERY_PROOF_VAULT_KEY ?? "recovery-proof-vault";
+  process.env.AKP_RECOVERY_VERIFICATION_VAULT_KEY ?? "recovery-verification-vault";
 const outputPath = path.resolve(
-  process.env.AKP_RECOVERY_PROOF_MANIFEST ??
+  process.env.AKP_RECOVERY_VERIFICATION_MANIFEST ??
     "reports/ci/recovery-state-seed.json",
 );
 const adminId = "00000000-0000-0000-0000-000000000002";
@@ -35,7 +35,7 @@ const vaultResult = await client.query<{
 );
 const vault = vaultResult.rows[0];
 if (!vault) {
-  throw new Error(`Recovery proof vault was not found: ${vaultKey}`);
+  throw new Error(`Recovery verification vault was not found: ${vaultKey}`);
 }
 
 const principalResult = await client.query<{ id: string }>(
@@ -44,7 +44,7 @@ const principalResult = await client.query<{ id: string }>(
 );
 const adminPrincipalId = principalResult.rows[0]?.id;
 if (!adminPrincipalId) {
-  throw new Error("Recovery proof admin principal was not found.");
+  throw new Error("Recovery verification admin principal was not found.");
 }
 
 const profileRevisionId = randomUUID();
@@ -64,7 +64,7 @@ let handoffEventId: string | null = null;
 let promotionEventId: string | null = null;
 
 const canonicalProfile = JSON.stringify({
-  profileId: "recovery-proof",
+  profileId: "recovery-verification",
   version: "1.0.0",
   purpose: "durable recovery sentinel",
 });
@@ -75,9 +75,9 @@ const revisionSet = {
 };
 const revisionSetJson = JSON.stringify(revisionSet);
 const revisionSetHash = sha256(revisionSetJson);
-const sourceRevisionHash = sha256("recovery-proof-source-revision");
-const truthRevisionHash = sha256("recovery-proof-truth-revision");
-const connectorPayloadHash = sha256("recovery-proof-connector-event");
+const sourceRevisionHash = sha256("recovery-verification-source-revision");
+const truthRevisionHash = sha256("recovery-verification-truth-revision");
+const connectorPayloadHash = sha256("recovery-verification-connector-event");
 
 await client.query("begin");
 try {
@@ -87,7 +87,7 @@ try {
        status,compatibility_class,created_by,validation_report,validated_at,
        activated_at
      ) values(
-       $1,$2,$3,'recovery-proof','1.0.0',$4,$5,'ACTIVE','NON_BREAKING',$6,
+       $1,$2,$3,'recovery-verification','1.0.0',$4,$5,'ACTIVE','NON_BREAKING',$6,
        '{"recoverySentinel":true}'::jsonb,now(),now()
      )`,
     [
@@ -110,7 +110,7 @@ try {
     `insert into agent_sessions(
        id,space_id,actor_id,purpose,context_budget,state,vault_id
      ) values(
-       $1,$2,$3,'Recovery proof workspace',4096,
+       $1,$2,$3,'Recovery verification workspace',4096,
        '{"recoverySentinel":true}'::jsonb,$4
      )`,
     [sessionId, vault.space_id, adminId, vault.id],
@@ -163,7 +163,7 @@ try {
       claimId,
       JSON.stringify({
         recoverySentinel: "handoff",
-        summary: "Recovery proof structured handoff",
+        summary: "Recovery verification structured handoff",
         completed: ["seed durable state"],
         remaining: ["verify restore"],
         blockers: [],
@@ -176,7 +176,7 @@ try {
   );
   handoffEventId = handoffEvent.rows[0]?.id ?? null;
   if (!handoffEventId) {
-    throw new Error("Recovery proof handoff sentinel was not created.");
+    throw new Error("Recovery verification handoff sentinel was not created.");
   }
 
   const promotionEvent = await client.query<{ id: string }>(
@@ -205,7 +205,7 @@ try {
   );
   promotionEventId = promotionEvent.rows[0]?.id ?? null;
   if (!promotionEventId) {
-    throw new Error("Recovery proof promotion sentinel was not created.");
+    throw new Error("Recovery verification promotion sentinel was not created.");
   }
 
   await client.query(
@@ -238,7 +238,7 @@ try {
        last_successful_update
      ) values(
        $1,$2,$3,'EPISTEMIC','recovery:graph-sentinel',
-       'recovery-graph-v1',$4,$5,'recovery-proof','1','recovery-v1','ACTIVE',
+       'recovery-graph-v1',$4,$5,'recovery-verification','1','recovery-v1','ACTIVE',
        'FRESH',now()-interval '4 seconds',now()-interval '3 seconds',
        now()-interval '2 seconds',now()-interval '2 seconds',
        now()-interval '1 second',now()-interval '1 second'
@@ -248,7 +248,7 @@ try {
       vault.space_id,
       vault.id,
       vault.current_revision,
-      sha256("recovery-proof-graph-source"),
+      sha256("recovery-verification-graph-source"),
     ],
   );
 
@@ -259,14 +259,14 @@ try {
        completed_at,result_summary
      ) values(
        $1,$2,$3,'MANUAL',array['GROUNDING']::text[],'COMPLETED',
-       'recovery-proof-assurance',$4,$5,'{"detectorIndex":1}'::jsonb,
+       'recovery-verification-assurance',$4,$5,'{"detectorIndex":1}'::jsonb,
        now()-interval '1 second',now(),
        '{"recoverySentinel":true}'::jsonb
      )`,
     [assuranceRunId, vault.space_id, vault.id, adminId, adminPrincipalId],
   );
   const assuranceFindingKey = sha256(
-    `GROUNDING\u001fRECOVERY_SENTINEL\u001f${vault.id}\u001frecovery-proof`,
+    `GROUNDING\u001fRECOVERY_SENTINEL\u001f${vault.id}\u001frecovery-verification`,
   );
   await client.query(
     `insert into assurance_findings(
@@ -276,9 +276,9 @@ try {
        proposed_action,revision_set
      ) values(
        $1,$2,$3,$4::uuid,'GROUNDING','INFO',$5,'RECOVERY_SENTINEL',
-       'recovery-proof','RECOVERY_SENTINEL','Recovery proof assurance finding',
+       'recovery-verification','RECOVERY_SENTINEL','Recovery verification assurance finding',
        '[]'::jsonb,'{"recoverySentinel":true}'::jsonb,'1.0.0','GROUNDING',
-       ($4::uuid)::text,'["recovery-proof"]'::jsonb,'[]'::jsonb,'OPEN',null,$6::jsonb
+       ($4::uuid)::text,'["recovery-verification"]'::jsonb,'[]'::jsonb,'OPEN',null,$6::jsonb
      )`,
     [
       assuranceFindingId,
@@ -295,8 +295,8 @@ try {
        id,space_id,vault_id,connector_key,source_system,public_key_pem,
        descriptor,state,created_by_user_id
      ) values(
-       $1,$2,$3,'recovery-proof-connector','recovery-proof',
-       '-----BEGIN PUBLIC KEY----- RECOVERY-PROOF-KEY-MATERIAL -----END PUBLIC KEY-----',
+       $1,$2,$3,'recovery-verification-connector','recovery-verification',
+       '-----BEGIN PUBLIC KEY----- RECOVERY-VERIFICATION-KEY-MATERIAL -----END PUBLIC KEY-----',
        '{"recoverySentinel":true}'::jsonb,'ACTIVE',$4
      )`,
     [connectorId, vault.space_id, vault.id, adminId],
@@ -327,7 +327,7 @@ try {
        discovery_mode,trust_state,capabilities,revision,last_seen_at,
        credential_ref,failure_count,last_failure_code
      ) values(
-       $1,$2,$3,'recovery-proof-peer','Recovery Proof Peer',
+       $1,$2,$3,'recovery-verification-peer','Recovery Proof Peer',
        'https://recovery-peer.example.test','REMOTE_QUERY','APPROVED',
        '{"query":true,"recoverySentinel":true}'::jsonb,'peer:recovery:1',
        now(),'AKP_RECOVERY_PEER_TOKEN',2,'FEDERATION_PEER_TIMEOUT'
@@ -340,7 +340,7 @@ try {
        id,space_id,vault_id,revision_seq,revision_hash,parent_revision_hash,
        reason,resource_type,resource_id
      ) values(
-       $1,$2,$3,1,$4,null,'recovery proof','RECOVERY_SENTINEL',
+       $1,$2,$3,1,$4,null,'recovery verification','RECOVERY_SENTINEL',
        'truth-recovery-sentinel'
      )`,
     [truthRevisionId, vault.space_id, vault.id, truthRevisionHash],
@@ -358,7 +358,7 @@ try {
        truth_revision_hash,truth_revision_seq
      ) values(
        $1,$2,$3,'recovery:truth','managed/restore-probe.md',
-       'recovery-proof','survives_restore',
+       'recovery-verification','survives_restore',
        '{"value":true,"recoverySentinel":true}'::jsonb,
        now()-interval '1 minute',now(),$4,'ACTIVE',$5,1
      )`,

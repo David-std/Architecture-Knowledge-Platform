@@ -43,12 +43,12 @@ async function githubJson(url, token) {
 
 const repository = requiredEnv("GITHUB_REPOSITORY");
 const commit =
-  process.env.AKP_FINAL_PROOF_COMMIT?.trim() || requiredEnv("GITHUB_SHA");
+  process.env.AKP_RELEASE_ASSURANCE_COMMIT?.trim() || requiredEnv("GITHUB_SHA");
 const token = requiredEnv("GITHUB_TOKEN");
 const apiUrl = process.env.GITHUB_API_URL?.trim() || "https://api.github.com";
 const outputPath = path.resolve(
-  process.env.AKP_FINAL_PROOF_WORKFLOW_REPORT ??
-    "reports/ci/final-proof-workflows.json",
+  process.env.AKP_RELEASE_ASSURANCE_WORKFLOW_REPORT ??
+    "reports/ci/release-assurance-workflows.json",
 );
 
 if (!/^[a-f0-9]{40}$/i.test(commit)) {
@@ -61,11 +61,11 @@ runsUrl.searchParams.set("per_page", "100");
 
 const pollMs = Math.max(
   5_000,
-  Number(process.env.AKP_FINAL_PROOF_POLL_MS ?? 15_000),
+  Number(process.env.AKP_RELEASE_ASSURANCE_POLL_MS ?? 15_000),
 );
 const waitMs = Math.max(
   pollMs,
-  Number(process.env.AKP_FINAL_PROOF_WAIT_MS ?? 1_800_000),
+  Number(process.env.AKP_RELEASE_ASSURANCE_WAIT_MS ?? 1_800_000),
 );
 const deadline = Date.now() + waitMs;
 
@@ -176,7 +176,7 @@ for (const workflowName of requiredWorkflows) {
 
 const report = {
   schemaVersion: 1,
-  evidenceLevel: "SAME_SHA_REMOTE_WORKFLOW_PROOF",
+  evidenceLevel: "SAME_SHA_REMOTE_WORKFLOW_ASSURANCE",
   repository,
   commit,
   generatedAt: new Date().toISOString(),

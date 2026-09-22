@@ -67,23 +67,23 @@ jobs:
           git fetch --no-tags --depth=1 origin a6bdcc38fdf026d6c353db096799366865011022
           docker compose exec -T postgres dropdb -U akp --if-exists akp_upgrade
           docker compose exec -T postgres createdb -U akp akp_upgrade
-          pnpm proof:upgrade-migrations
+          pnpm verify:upgrade-migrations
       - run: pnpm auth:provision
       - name: Run pnpm check
         run: pnpm check
-      - name: Run reasoning adversarial proof
+      - name: Run reasoning adversarial verification
         run: |
           pnpm --filter @akp/api exec vitest run test/reasoning-runtime.test.ts
           pnpm --filter @akp/retrieval exec vitest run \
             test/reasoning-executor.test.ts \
             test/reasoning-plan.test.ts \
             test/reasoning-planner.test.ts
-      - name: Run MCP instruction integrity proof
+      - name: Run MCP instruction integrity verification
         run: |
           pnpm --filter @akp/mcp exec vitest run \
             test/instruction-bundle.test.ts \
             test/context-facade.test.ts
-      - name: Run model routing and residency proof
+      - name: Run model routing and residency verification
         run: |
           pnpm --filter @akp/contracts exec vitest run test/model-role-policy.test.ts
           pnpm --filter @akp/compiler exec vitest run test/model-role-runtime.test.ts
@@ -93,13 +93,13 @@ jobs:
             test/compilation-stage.test.ts
           pnpm --filter @akp/indexing exec vitest run \
             test/community-index.integration.test.ts
-      - name: Run code graph failure proof
+      - name: Run code graph failure verification
         run: |
           pnpm --filter @akp/project-adapter exec vitest run \
             test/code-graph-lifecycle.test.ts
           pnpm --filter @akp/worker exec vitest run \
             test/code-graph-refresh.test.ts
-      - name: Run federation contract proof
+      - name: Run federation contract verification
         run: |
           pnpm --filter @akp/contracts exec vitest run \
             test/federation.test.ts \
@@ -111,7 +111,7 @@ jobs:
           pnpm --filter @akp/api exec vitest run \
             test/graph-retrieval.integration.test.ts \
             test/context-fabric.integration.test.ts
-      - name: Run concurrency race proof
+      - name: Run concurrency race verification
         run: |
           pnpm --filter @akp/postgres exec vitest run \
             test/knowledge-profile-activation.integration.test.ts \

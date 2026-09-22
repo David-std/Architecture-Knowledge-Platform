@@ -184,7 +184,7 @@ jobs:
         run: |
           set -o pipefail
           AKP_BASELINE_EVIDENCE_REPORT=reports/ci/baseline-evidence.json \
-            pnpm proof:baseline-evidence \
+            pnpm assurance:baseline-evidence \
             2>&1 | tee reports/ci/baseline-evidence.log
       - name: Validate incremental vector update evidence
         shell: bash

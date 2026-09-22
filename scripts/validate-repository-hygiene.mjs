@@ -152,6 +152,11 @@ const phaseLabel =
 const dateCodedPath = /(?:^|[\/_.-])20\d{2}(?:[-_.]?\d{2}){2}(?=$|[\/_.-])/;
 const smokeToken = /\bsmoke\b/i;
 const constructionMarker = /\b(?:TODO|FIXME|HACK)\b/;
+const constructionNarrative =
+  /\b(?:later|next)\s+(?:[A-Za-z-]+\s+){0,2}phase\b|\bin this phase\b/i;
+const assistantToolResidue = /\b(?:ChatGPT|Codex|Claude)\b/i;
+const legacyVerificationToken =
+  /\b(?:final-proof|recovery-proof|federation-proof|two-node-proof)\b/i;
 function activeGuidanceOrAutomation(file) {
   if (/^(?:README|AGENTS|ARCHITECTURE|CONTRIBUTING|CHANGELOG)\.md$/.test(file))
     return true;
@@ -235,6 +240,8 @@ for (const entry of entries) {
     failures.push(`DATE_CODED_PATH ${entry.path}`);
   if (smokeToken.test(entry.path))
     failures.push(`SMOKE_NAMING_RESIDUE ${entry.path}`);
+  if (legacyVerificationToken.test(entry.path))
+    failures.push(`LEGACY_VERIFICATION_NAMING ${entry.path}`);
   if (/^reports\/.*\.json$/i.test(entry.path))
     failures.push(`GENERATED_REPORT_TRACKED ${entry.path}`);
 
@@ -260,6 +267,12 @@ for (const entry of entries) {
       failures.push(`SMOKE_TERMINOLOGY_RESIDUE ${entry.path}`);
     if (constructionMarker.test(content))
       failures.push(`CONSTRUCTION_MARKER ${entry.path}`);
+    if (constructionNarrative.test(content))
+      failures.push(`CONSTRUCTION_NARRATIVE ${entry.path}`);
+    if (assistantToolResidue.test(content))
+      failures.push(`ASSISTANT_TOOL_RESIDUE ${entry.path}`);
+    if (legacyVerificationToken.test(content))
+      failures.push(`LEGACY_VERIFICATION_TERMINOLOGY ${entry.path}`);
   }
 }
 
