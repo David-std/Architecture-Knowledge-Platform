@@ -22,7 +22,6 @@ The platform is conservative by default. Optional model, vector and document-int
 
 Imported vaults are treated as external inputs. Source-specific curation rules belong in explicit import profiles or fixtures and must not alter generic platform behavior.
 
-
 ## v0.4 release limitations
 
 The v0.4 product surface is intentionally bounded. These limitations are part of the release contract rather than hidden follow-up work:
