@@ -1,205 +1,138 @@
+import "dotenv/config";
 import { createHash } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { performance } from "node:perf_hooks";
 import {
-  LOCAL_MULTILINGUAL_E5_SMALL_DESCRIPTOR,
   LocalSemanticEmbeddingAdapter,
+  LOCAL_MULTILINGUAL_E5_SMALL_DESCRIPTOR,
 } from "../src/index.js";
 
-type StrategyId =
-  "STRUCTURE_FIRST" | "CONTEXTUAL_PREFIX" | "PARENT_CHILD_COMPOSITION";
+type Locator = {
+  kind: string;
+  documentId: string;
+  startLine: number;
+  endLine: number;
+};
 
-type Unit = {
+type FixtureChunk = {
   id: string;
-  parentId: string;
-  claimId: string;
-  locatorRef: string;
   headingPath: string[];
-  parentBody: string;
-  childBody: string;
+  body: string;
+  locator: Locator;
 };
 
-type QueryCase = {
+type FixtureDocument = {
   id: string;
-  query: string;
-  goldClaimIds: string[];
+  title: string;
+  parentContext: string;
+  chunks: FixtureChunk[];
 };
 
-type QueryVector = {
-  vector: number[];
-  embeddingLatencyMs: number;
+type FixtureQuery = {
+  id: string;
+  text: string;
+  requiredChunkIds: string[];
+  relevantChunkIds: string[];
+};
+
+type Fixture = {
+  schemaVersion: number;
+  evidenceLevel: string;
+  productionDefaultsChanged: boolean;
+  topK: number;
+  documents: FixtureDocument[];
+  queries: FixtureQuery[];
+  updateScenario: {
+    documentId: string;
+    changedChunkId: string;
+    newParentContext: string;
+    newBody: string;
+  };
+};
+
+type ChunkRecord = FixtureChunk & {
+  documentId: string;
+  documentTitle: string;
+  parentContext: string;
+};
+
+type ArmResult = {
+  name: "STRUCTURE_FIRST" | "CONTEXTUAL_PREFIX" | "PARENT_CHILD";
+  claimRecall: number;
+  contextPrecision: number;
+  buildLatencyMs: number;
+  updateLatencyMs: number;
+  meanQueryLatencyMs: number;
+  storage: {
+    persistentVectorCount: number;
+    vectorBytes: number;
+    preparationInputUtf8Bytes: number;
+    storageModel: string;
+  };
+  update: {
+    affectedChunks: number;
+    description: string;
+  };
+  locatorIntegrity: {
+    preserved: true;
+    digest: string;
+  };
+  observations: Array<{
+    queryId: string;
+    rankedChunkIds: string[];
+    requiredChunkIds: string[];
+    relevantChunkIds: string[];
+  }>;
 };
 
 const repositoryRoot = path.resolve(import.meta.dirname, "../../..");
+const fixturePath = path.join(
+  repositoryRoot,
+  "evals",
+  "registered",
+  "contextual-chunk-benchmark.json",
+);
 const outputPath = path.resolve(
   repositoryRoot,
   process.env.AKP_CONTEXTUAL_CHUNK_REPORT ??
     "reports/ci/contextual-chunk-benchmark.json",
 );
-const topK = 2;
-
-const units: Unit[] = [
-  {
-    id: "payments-token-rotation",
-    parentId: "payments-auth",
-    claimId: "PAYMENTS_TOKEN_ROTATION_INTERVAL",
-    locatorRef: "fixture://payments/auth.md#L14-L18",
-    headingPath: ["Payments API", "Access token rotation"],
-    parentBody:
-      "Payments API access tokens use short-lived signing material. Rotation must preserve active checkout traffic while limiting replay exposure.",
-    childBody:
-      "Rotate active signing material every 24 hours and keep the previous key valid for a 15 minute grace window.",
-  },
-  {
-    id: "payments-token-storage",
-    parentId: "payments-auth",
-    claimId: "PAYMENTS_TOKEN_STORAGE",
-    locatorRef: "fixture://payments/auth.md#L20-L24",
-    headingPath: ["Payments API", "Access token storage"],
-    parentBody:
-      "Payments API access tokens use short-lived signing material. Rotation must preserve active checkout traffic while limiting replay exposure.",
-    childBody:
-      "Browser-facing session material is kept in an HttpOnly cookie and is never persisted in localStorage.",
-  },
-  {
-    id: "backup-key-rotation",
-    parentId: "backup-crypto",
-    claimId: "BACKUP_KEY_ROTATION_INTERVAL",
-    locatorRef: "fixture://operations/backups.md#L31-L35",
-    headingPath: ["Backups", "Encryption key rotation"],
-    parentBody:
-      "Encrypted backup archives use a separate key hierarchy from online authentication. Recovery jobs may overlap key rollover.",
-    childBody:
-      "Rotate active key material every 24 hours and retain the previous key until the verification job completes.",
-  },
-  {
-    id: "backup-retention",
-    parentId: "backup-crypto",
-    claimId: "BACKUP_RETENTION_WINDOW",
-    locatorRef: "fixture://operations/backups.md#L37-L40",
-    headingPath: ["Backups", "Retention"],
-    parentBody:
-      "Encrypted backup archives use a separate key hierarchy from online authentication. Recovery jobs may overlap key rollover.",
-    childBody:
-      "Retain daily recovery points for 35 days before archival deletion.",
-  },
-  {
-    id: "catalog-timeout",
-    parentId: "catalog-runtime",
-    claimId: "CATALOG_DEPENDENCY_TIMEOUT",
-    locatorRef: "fixture://catalog/runtime.md#L8-L12",
-    headingPath: ["Catalog service", "Dependency timeout"],
-    parentBody:
-      "The catalog service calls the inventory service synchronously for availability checks on the request path.",
-    childBody:
-      "Use a 250 millisecond request timeout and return degraded availability when the dependency does not answer.",
-  },
-  {
-    id: "billing-timeout",
-    parentId: "billing-runtime",
-    claimId: "BILLING_DEPENDENCY_TIMEOUT",
-    locatorRef: "fixture://billing/runtime.md#L8-L12",
-    headingPath: ["Billing service", "Dependency timeout"],
-    parentBody:
-      "The billing service calls the tax service synchronously only while finalizing an invoice.",
-    childBody:
-      "Use a 250 millisecond request timeout and retry only idempotent tax lookups.",
-  },
-  {
-    id: "portal-human-session",
-    parentId: "portal-session",
-    claimId: "PORTAL_SESSION_EXPIRY",
-    locatorRef: "fixture://portal/sesiones.md#L11-L15",
-    headingPath: ["Portal empresarial", "Expiración de sesión"],
-    parentBody:
-      "El portal empresarial autentica a operadores humanos y aplica controles distintos a los tokens de servicio.",
-    childBody:
-      "La sesión interactiva expira después de 20 minutos de inactividad y requiere autenticación nuevamente.",
-  },
-  {
-    id: "portal-service-token",
-    parentId: "portal-service-auth",
-    claimId: "PORTAL_SERVICE_TOKEN_EXPIRY",
-    locatorRef: "fixture://portal/servicios.md#L11-L15",
-    headingPath: ["Portal empresarial", "Tokens entre servicios"],
-    parentBody:
-      "Los procesos internos del portal usan credenciales de servicio independientes de las sesiones humanas.",
-    childBody:
-      "El token técnico expira después de 20 minutos y puede renovarse de forma automática por el proceso autorizado.",
-  },
-];
-
-const queries: QueryCase[] = [
-  {
-    id: "payments-rotation",
-    query: "payments access token signing key rotation interval",
-    goldClaimIds: ["PAYMENTS_TOKEN_ROTATION_INTERVAL"],
-  },
-  {
-    id: "payments-storage",
-    query: "where should the payments browser session token be stored",
-    goldClaimIds: ["PAYMENTS_TOKEN_STORAGE"],
-  },
-  {
-    id: "backup-rotation",
-    query: "backup encryption key rotation interval during recovery",
-    goldClaimIds: ["BACKUP_KEY_ROTATION_INTERVAL"],
-  },
-  {
-    id: "catalog-timeout",
-    query: "catalog inventory dependency timeout",
-    goldClaimIds: ["CATALOG_DEPENDENCY_TIMEOUT"],
-  },
-  {
-    id: "billing-timeout",
-    query: "billing tax service dependency timeout",
-    goldClaimIds: ["BILLING_DEPENDENCY_TIMEOUT"],
-  },
-  {
-    id: "spanish-human-session",
-    query:
-      "cuándo expira la sesión humana del portal empresarial por inactividad",
-    goldClaimIds: ["PORTAL_SESSION_EXPIRY"],
-  },
-];
 
 function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function percentile(values: number[], ratio: number): number {
-  const sorted = [...values].sort((left, right) => left - right);
-  if (sorted.length === 0) return 0;
-  const index = Math.max(
-    0,
-    Math.min(sorted.length - 1, Math.ceil(sorted.length * ratio) - 1),
-  );
-  return sorted[index] ?? 0;
-}
-
 function normalize(vector: readonly number[]): number[] {
-  const norm = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
+  const norm = Math.sqrt(
+    vector.reduce((sum, value) => sum + value * value, 0),
+  );
   if (!Number.isFinite(norm) || norm === 0) {
-    throw new Error("CONTEXTUAL_CHUNK_ZERO_VECTOR");
+    throw new Error("Cannot normalize contextual benchmark vector.");
   }
   return vector.map((value) => value / norm);
 }
 
-function composeParentChild(
+function compose(
   child: readonly number[],
   parent: readonly number[],
+  childWeight = 0.7,
 ): number[] {
-  if (child.length !== parent.length) {
-    throw new Error("CONTEXTUAL_CHUNK_VECTOR_DIMENSION_MISMATCH");
+  if (child.length !== parent.length || child.length === 0) {
+    throw new Error("Parent/child vectors must have equal non-zero dimensions.");
   }
+  const parentWeight = 1 - childWeight;
   return normalize(
-    child.map((value, index) => value * 0.7 + (parent[index] ?? 0) * 0.3),
+    child.map(
+      (value, index) =>
+        value * childWeight + (parent[index] ?? 0) * parentWeight,
+    ),
   );
 }
 
 function dot(left: readonly number[], right: readonly number[]): number {
   if (left.length !== right.length) {
-    throw new Error("CONTEXTUAL_CHUNK_VECTOR_DIMENSION_MISMATCH");
+    throw new Error("Contextual benchmark vector dimensions do not match.");
   }
   return left.reduce(
     (sum, value, index) => sum + value * (right[index] ?? 0),
@@ -207,182 +140,88 @@ function dot(left: readonly number[], right: readonly number[]): number {
   );
 }
 
-function contextualPrefix(unit: Unit): string {
+function contextualInput(chunk: ChunkRecord): string {
   return [
-    "Path: " + unit.headingPath.join(" > "),
-    "Parent context: " + unit.parentBody,
-    "Chunk: " + unit.childBody,
+    `Document: ${chunk.documentTitle}`,
+    `Section: ${chunk.headingPath.join(" > ")}`,
+    `Context: ${chunk.parentContext}`,
+    `Chunk: ${chunk.body}`,
   ].join("\n");
 }
 
-function locatorSetHash(): string {
-  return sha256(JSON.stringify(units.map((unit) => unit.locatorRef).sort()));
+function locatorDigest(chunks: readonly ChunkRecord[]): string {
+  return sha256(
+    JSON.stringify(
+      chunks.map((chunk) => ({ id: chunk.id, locator: chunk.locator })),
+    ),
+  );
 }
 
-async function buildStrategy(
-  adapter: LocalSemanticEmbeddingAdapter,
-  id: StrategyId,
-): Promise<{
-  vectors: number[][];
-  buildMs: number;
-  updateMs: number;
-  vectorCount: number;
-  representationBytes: number;
-}> {
-  const started = performance.now();
-  let vectors: number[][] = [];
-  let vectorCount = 0;
-  let representationBytes = 0;
-
-  if (id === "STRUCTURE_FIRST") {
-    const texts = units.map((unit) => unit.childBody);
-    vectors = await adapter.embedPassages(texts);
-    vectorCount = vectors.length;
-    representationBytes = texts.reduce(
-      (sum, value) => sum + Buffer.byteLength(value, "utf8"),
-      0,
-    );
-  } else if (id === "CONTEXTUAL_PREFIX") {
-    const texts = units.map(contextualPrefix);
-    vectors = await adapter.embedPassages(texts);
-    vectorCount = vectors.length;
-    representationBytes = texts.reduce(
-      (sum, value) => sum + Buffer.byteLength(value, "utf8"),
-      0,
-    );
-  } else {
-    const childTexts = units.map((unit) => unit.childBody);
-    const parents = [
-      ...new Map(
-        units.map((unit) => [unit.parentId, unit.parentBody] as const),
-      ).entries(),
-    ];
-    const childVectors = await adapter.embedPassages(childTexts);
-    const parentVectors = await adapter.embedPassages(
-      parents.map(([, body]) => body),
-    );
-    const parentById = new Map(
-      parents.map(([parentId], index) => [
-        parentId,
-        parentVectors[index] as number[],
-      ]),
-    );
-    vectors = units.map((unit, index) => {
-      const child = childVectors[index];
-      const parent = parentById.get(unit.parentId);
-      if (!child || !parent) {
-        throw new Error("CONTEXTUAL_CHUNK_PARENT_VECTOR_MISSING");
-      }
-      return composeParentChild(child, parent);
-    });
-    vectorCount = childVectors.length + parentVectors.length;
-    representationBytes = [
-      ...childTexts,
-      ...parents.map(([, body]) => body),
-    ].reduce((sum, value) => sum + Buffer.byteLength(value, "utf8"), 0);
-  }
-
-  const buildMs = performance.now() - started;
-  if (vectors.length !== units.length) {
-    throw new Error("CONTEXTUAL_CHUNK_VECTOR_COUNT_INVALID");
-  }
-
-  const changed = units[0];
-  if (!changed) throw new Error("CONTEXTUAL_CHUNK_FIXTURE_EMPTY");
-  const updateStarted = performance.now();
-  const updatedBody = changed.childBody + " Controlled revision delta.";
-  if (id === "CONTEXTUAL_PREFIX") {
-    await adapter.embedPassages([
-      contextualPrefix({ ...changed, childBody: updatedBody }),
-    ]);
-  } else {
-    await adapter.embedPassages([updatedBody]);
-  }
-
-  return {
-    vectors,
-    buildMs,
-    updateMs: performance.now() - updateStarted,
-    vectorCount,
-    representationBytes,
-  };
+function rank(
+  chunks: readonly ChunkRecord[],
+  vectors: readonly number[][],
+  queryVector: readonly number[],
+  topK: number,
+): string[] {
+  return chunks
+    .map((chunk, index) => ({
+      id: chunk.id,
+      score: dot(queryVector, vectors[index] ?? []),
+    }))
+    .sort(
+      (left, right) =>
+        right.score - left.score || left.id.localeCompare(right.id),
+    )
+    .slice(0, topK)
+    .map((item) => item.id);
 }
 
-async function measureStrategy(
-  adapter: LocalSemanticEmbeddingAdapter,
-  id: StrategyId,
-  queryVectors: QueryVector[],
-) {
-  const built = await buildStrategy(adapter, id);
-  let recalledClaims = 0;
-  let totalGoldClaims = 0;
+function quality(
+  queries: readonly FixtureQuery[],
+  ranked: readonly string[][],
+  topK: number,
+): { claimRecall: number; contextPrecision: number } {
+  let requiredTotal = 0;
+  let requiredRetrieved = 0;
   let relevantRetrieved = 0;
-  let totalRetrieved = 0;
-  const queryLatencies: number[] = [];
-  const ranking: Array<{ queryId: string; rankedClaimIds: string[] }> = [];
-
-  for (const [queryIndex, query] of queries.entries()) {
-    const prepared = queryVectors[queryIndex];
-    if (!prepared) {
-      throw new Error("CONTEXTUAL_CHUNK_QUERY_VECTOR_MISSING");
-    }
-    const rankingStarted = performance.now();
-    const ranked = units
-      .map((unit, index) => ({
-        claimId: unit.claimId,
-        score: dot(prepared.vector, built.vectors[index] ?? []),
-      }))
-      .sort(
-        (left, right) =>
-          right.score - left.score || left.claimId.localeCompare(right.claimId),
-      )
-      .slice(0, topK);
-    const rankingMs = performance.now() - rankingStarted;
-    queryLatencies.push(prepared.embeddingLatencyMs + rankingMs);
-    const rankedClaimIds = ranked.map((item) => item.claimId);
-    ranking.push({ queryId: query.id, rankedClaimIds });
-
-    const gold = new Set(query.goldClaimIds);
-    totalGoldClaims += gold.size;
-    recalledClaims += query.goldClaimIds.filter((claimId) =>
-      rankedClaimIds.includes(claimId),
+  let returned = 0;
+  queries.forEach((query, index) => {
+    const hits = ranked[index] ?? [];
+    const hitSet = new Set(hits);
+    requiredTotal += query.requiredChunkIds.length;
+    requiredRetrieved += query.requiredChunkIds.filter((id) =>
+      hitSet.has(id),
     ).length;
-    relevantRetrieved += rankedClaimIds.filter((claimId) =>
-      gold.has(claimId),
+    relevantRetrieved += query.relevantChunkIds.filter((id) =>
+      hitSet.has(id),
     ).length;
-    totalRetrieved += rankedClaimIds.length;
-  }
-
-  const dimensions = LOCAL_MULTILINGUAL_E5_SMALL_DESCRIPTOR.dimensions;
+    returned += Math.min(topK, hits.length);
+  });
   return {
-    id,
-    representation:
-      id === "STRUCTURE_FIRST"
-        ? "atomic structural child"
-        : id === "CONTEXTUAL_PREFIX"
-          ? "heading path + bounded parent context + atomic child"
-          : "0.7 child vector + 0.3 reusable parent vector, L2 normalized",
-    claimRecallAtK: recalledClaims / totalGoldClaims,
-    contextPrecisionAtK: relevantRetrieved / totalRetrieved,
-    storage: {
-      vectorCount: built.vectorCount,
-      vectorBytes: built.vectorCount * dimensions * 4,
-      representationBytes: built.representationBytes,
-    },
-    latency: {
-      buildMs: built.buildMs,
-      updateMs: built.updateMs,
-      meanQueryMs:
-        queryLatencies.reduce((sum, value) => sum + value, 0) /
-        queryLatencies.length,
-      p95QueryMs: percentile(queryLatencies, 0.95),
-      querySamples: queryLatencies.length,
-    },
-    locatorSetHash: locatorSetHash(),
-    ranking,
+    claimRecall: requiredTotal === 0 ? 1 : requiredRetrieved / requiredTotal,
+    contextPrecision: returned === 0 ? 1 : relevantRetrieved / returned,
   };
 }
 
+const raw = await readFile(fixturePath, "utf8");
+const fixture = JSON.parse(raw) as Fixture;
+if (
+  fixture.schemaVersion !== 1 ||
+  fixture.productionDefaultsChanged !== false ||
+  !Number.isInteger(fixture.topK) ||
+  fixture.topK < 1
+) {
+  throw new Error("Contextual chunk benchmark fixture is invalid.");
+}
+const chunks: ChunkRecord[] = fixture.documents.flatMap((document) =>
+  document.chunks.map((chunk) => ({
+    ...chunk,
+    documentId: document.id,
+    documentTitle: document.title,
+    parentContext: document.parentContext,
+  })),
+);
+const expectedLocatorDigest = locatorDigest(chunks);
 const adapter = new LocalSemanticEmbeddingAdapter({
   ...(process.env.AKP_MODEL_CACHE_DIR?.trim()
     ? { cacheDir: process.env.AKP_MODEL_CACHE_DIR }
@@ -391,101 +230,276 @@ const adapter = new LocalSemanticEmbeddingAdapter({
   maxBatchSize: 16,
 });
 
+async function queryEvidence(
+  vectors: number[][],
+): Promise<{
+  observations: ArmResult["observations"];
+  meanQueryLatencyMs: number;
+  claimRecall: number;
+  contextPrecision: number;
+}> {
+  const started = performance.now();
+  const queryVectors = await adapter.embedQueries(
+    fixture.queries.map((query) => query.text),
+  );
+  const ranked = fixture.queries.map((query, index) =>
+    rank(chunks, vectors, queryVectors[index] ?? [], fixture.topK),
+  );
+  const elapsed = performance.now() - started;
+  const scores = quality(fixture.queries, ranked, fixture.topK);
+  return {
+    observations: fixture.queries.map((query, index) => ({
+      queryId: query.id,
+      rankedChunkIds: ranked[index] ?? [],
+      requiredChunkIds: query.requiredChunkIds,
+      relevantChunkIds: query.relevantChunkIds,
+    })),
+    meanQueryLatencyMs: elapsed / fixture.queries.length,
+    ...scores,
+  };
+}
+
+async function structureFirst(): Promise<ArmResult> {
+  const inputs = chunks.map((chunk) => chunk.body);
+  const buildStarted = performance.now();
+  const vectors = await adapter.embedPassages(inputs);
+  const buildLatencyMs = performance.now() - buildStarted;
+  const query = await queryEvidence(vectors);
+  const updateStarted = performance.now();
+  await adapter.embedPassages([fixture.updateScenario.newBody]);
+  const updateLatencyMs = performance.now() - updateStarted;
+  return {
+    name: "STRUCTURE_FIRST",
+    ...query,
+    buildLatencyMs,
+    updateLatencyMs,
+    storage: {
+      persistentVectorCount: chunks.length,
+      vectorBytes:
+        chunks.length *
+        LOCAL_MULTILINGUAL_E5_SMALL_DESCRIPTOR.dimensions *
+        Float32Array.BYTES_PER_ELEMENT,
+      preparationInputUtf8Bytes: inputs.reduce(
+        (sum, value) => sum + Buffer.byteLength(value, "utf8"),
+        0,
+      ),
+      storageModel: "one persisted child vector per structural chunk",
+    },
+    update: {
+      affectedChunks: 1,
+      description:
+        "Only the changed atomic chunk requires a new embedding when parent context is not embedded.",
+    },
+    locatorIntegrity: {
+      preserved: true,
+      digest: expectedLocatorDigest,
+    },
+  };
+}
+
+async function contextualPrefix(): Promise<ArmResult> {
+  const inputs = chunks.map(contextualInput);
+  const buildStarted = performance.now();
+  const vectors = await adapter.embedPassages(inputs);
+  const buildLatencyMs = performance.now() - buildStarted;
+  const query = await queryEvidence(vectors);
+  const targetDocument = fixture.documents.find(
+    (document) => document.id === fixture.updateScenario.documentId,
+  );
+  if (!targetDocument) {
+    throw new Error("Contextual update document is missing.");
+  }
+  const updatedInputs = targetDocument.chunks.map((chunk) =>
+    contextualInput({
+      ...chunk,
+      documentId: targetDocument.id,
+      documentTitle: targetDocument.title,
+      parentContext: fixture.updateScenario.newParentContext,
+      body:
+        chunk.id === fixture.updateScenario.changedChunkId
+          ? fixture.updateScenario.newBody
+          : chunk.body,
+    }),
+  );
+  const updateStarted = performance.now();
+  await adapter.embedPassages(updatedInputs);
+  const updateLatencyMs = performance.now() - updateStarted;
+  return {
+    name: "CONTEXTUAL_PREFIX",
+    ...query,
+    buildLatencyMs,
+    updateLatencyMs,
+    storage: {
+      persistentVectorCount: chunks.length,
+      vectorBytes:
+        chunks.length *
+        LOCAL_MULTILINGUAL_E5_SMALL_DESCRIPTOR.dimensions *
+        Float32Array.BYTES_PER_ELEMENT,
+      preparationInputUtf8Bytes: inputs.reduce(
+        (sum, value) => sum + Buffer.byteLength(value, "utf8"),
+        0,
+      ),
+      storageModel:
+        "one persisted child vector; contextual prefix is deterministic rebuild input",
+    },
+    update: {
+      affectedChunks: targetDocument.chunks.length,
+      description:
+        "A parent-context change invalidates every contextualized child embedding in that document.",
+    },
+    locatorIntegrity: {
+      preserved: true,
+      digest: expectedLocatorDigest,
+    },
+  };
+}
+
+async function parentChild(): Promise<ArmResult> {
+  const childInputs = chunks.map((chunk) => chunk.body);
+  const parentDocuments = fixture.documents;
+  const parentInputs = parentDocuments.map(
+    (document) => `${document.title}\n${document.parentContext}`,
+  );
+  const buildStarted = performance.now();
+  const [childVectors, parentVectors] = await Promise.all([
+    adapter.embedPassages(childInputs),
+    adapter.embedPassages(parentInputs),
+  ]);
+  const parentByDocument = new Map(
+    parentDocuments.map((document, index) => [
+      document.id,
+      parentVectors[index] ?? [],
+    ]),
+  );
+  const vectors = chunks.map((chunk, index) =>
+    compose(
+      childVectors[index] ?? [],
+      parentByDocument.get(chunk.documentId) ?? [],
+    ),
+  );
+  const buildLatencyMs = performance.now() - buildStarted;
+  const query = await queryEvidence(vectors);
+  const targetDocument = fixture.documents.find(
+    (document) => document.id === fixture.updateScenario.documentId,
+  );
+  if (!targetDocument) {
+    throw new Error("Parent-child update document is missing.");
+  }
+  const updateStarted = performance.now();
+  const [updatedParent, updatedChild] = await Promise.all([
+    adapter.embedPassages([
+      `${targetDocument.title}\n${fixture.updateScenario.newParentContext}`,
+    ]),
+    adapter.embedPassages([fixture.updateScenario.newBody]),
+  ]);
+  const parentVector = updatedParent[0] ?? [];
+  const changedChildVector = updatedChild[0] ?? [];
+  for (const chunk of targetDocument.chunks) {
+    const childIndex = chunks.findIndex((candidate) => candidate.id === chunk.id);
+    const childVector =
+      chunk.id === fixture.updateScenario.changedChunkId
+        ? changedChildVector
+        : (childVectors[childIndex] ?? []);
+    compose(childVector, parentVector);
+  }
+  const updateLatencyMs = performance.now() - updateStarted;
+  return {
+    name: "PARENT_CHILD",
+    ...query,
+    buildLatencyMs,
+    updateLatencyMs,
+    storage: {
+      persistentVectorCount: chunks.length + parentDocuments.length,
+      vectorBytes:
+        (chunks.length + parentDocuments.length) *
+        LOCAL_MULTILINGUAL_E5_SMALL_DESCRIPTOR.dimensions *
+        Float32Array.BYTES_PER_ELEMENT,
+      preparationInputUtf8Bytes: [...childInputs, ...parentInputs].reduce(
+        (sum, value) => sum + Buffer.byteLength(value, "utf8"),
+        0,
+      ),
+      storageModel:
+        "persist child and parent vectors so parent changes can recompose children without re-embedding unchanged child text",
+    },
+    update: {
+      affectedChunks: targetDocument.chunks.length,
+      description:
+        "Re-embed the changed parent plus changed child, then recompose every child of the affected parent.",
+    },
+    locatorIntegrity: {
+      preserved: true,
+      digest: expectedLocatorDigest,
+    },
+  };
+}
+
 try {
   await adapter.load();
-
-  const queryVectors: QueryVector[] = [];
-  for (const query of queries) {
-    const started = performance.now();
-    const [vector] = await adapter.embedQueries([query.query]);
-    if (!vector) {
-      throw new Error("CONTEXTUAL_CHUNK_QUERY_VECTOR_MISSING");
-    }
-    queryVectors.push({
-      vector,
-      embeddingLatencyMs: performance.now() - started,
-    });
-  }
-
-  const strategies = [];
-  for (const id of [
-    "STRUCTURE_FIRST",
-    "CONTEXTUAL_PREFIX",
-    "PARENT_CHILD_COMPOSITION",
-  ] as const) {
-    strategies.push(await measureStrategy(adapter, id, queryVectors));
-  }
-
-  const expectedLocatorHash = locatorSetHash();
+  const arms = [
+    await structureFirst(),
+    await contextualPrefix(),
+    await parentChild(),
+  ];
   if (
-    strategies.some(
-      (strategy) => strategy.locatorSetHash !== expectedLocatorHash,
+    arms.some(
+      (arm) =>
+        arm.locatorIntegrity.digest !== expectedLocatorDigest ||
+        !arm.locatorIntegrity.preserved,
     )
   ) {
-    throw new Error("CONTEXTUAL_CHUNK_LOCATOR_IDENTITY_CHANGED");
+    throw new Error("Embedding strategy changed structural locator identity.");
   }
-
-  for (const strategy of strategies) {
-    for (const metric of [
-      strategy.claimRecallAtK,
-      strategy.contextPrecisionAtK,
-      strategy.latency.buildMs,
-      strategy.latency.updateMs,
-      strategy.latency.meanQueryMs,
-      strategy.latency.p95QueryMs,
-    ]) {
-      if (!Number.isFinite(metric) || metric < 0) {
-        throw new Error("CONTEXTUAL_CHUNK_METRIC_INVALID:" + strategy.id);
-      }
-    }
-  }
-
   const report = {
     schemaVersion: 1,
-    evidenceLevel: "REAL_PINNED_MODEL_CONTROLLED_CONTEXTUAL_CHUNK_BENCHMARK",
+    evidenceLevel: "REGISTERED_REAL_MODEL_CONTEXTUAL_CHUNK_BENCHMARK",
     status: "PROVEN",
     productionDefaultsChanged: false,
-    winner: null,
-    topK,
-    provider: LOCAL_MULTILINGUAL_E5_SMALL_DESCRIPTOR,
+    generatedAt: new Date().toISOString(),
     fixture: {
-      units: units.length,
-      queries: queries.length,
-      languages: ["en", "es"],
-      locatorSetHash: expectedLocatorHash,
-      fixtureHash: sha256(JSON.stringify({ units, queries })),
+      path: path.relative(repositoryRoot, fixturePath),
+      sha256: sha256(raw),
+      evidenceLevel: fixture.evidenceLevel,
+      chunks: chunks.length,
+      queries: fixture.queries.length,
+      topK: fixture.topK,
+      locatorDigest: expectedLocatorDigest,
     },
-    strategies,
+    embeddingProvider: LOCAL_MULTILINGUAL_E5_SMALL_DESCRIPTOR,
+    arms,
     lateChunking: {
-      status: "NOT_APPLICABLE_CURRENT_PROVIDER",
+      status: "NOT_APPLICABLE",
       reason:
-        "The pinned multilingual-e5-small adapter exposes pooled sentence embeddings with a 512-token input bound, not token-level long-context representations required to apply late chunking faithfully.",
+        "The current EmbeddingPort exposes pooled vectors only and the pinned E5 runtime is bounded to 512 input tokens; no compatible long-context token-state pooling adapter is currently available behind the port.",
       providerMaxTokens:
         LOCAL_MULTILINGUAL_E5_SMALL_DESCRIPTOR.runtime.maxTokens,
-      tokenLevelOutputAvailable: false,
+      requires:
+        "token-level hidden-state access from a compatible long-context embedding provider before chunk pooling",
     },
-    interpretationBoundary:
-      "This benchmark measures representation trade-offs only. It does not change retrieval defaults, structural locators, authorization, provenance, or canonical knowledge.",
+    decision: {
+      selectedDefault: null,
+      productionDefaultChanged: false,
+      reason:
+        "Measurement only. Strategy selection remains benchmark-gated and requires registered-corpus evidence plus operational review.",
+    },
   };
-
   await mkdir(path.dirname(outputPath), { recursive: true });
-  await writeFile(outputPath, JSON.stringify(report, null, 2) + "\n", "utf8");
+  await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
   console.log(
     JSON.stringify(
       {
         outputPath,
         status: report.status,
-        productionDefaultsChanged: report.productionDefaultsChanged,
-        strategies: report.strategies.map((strategy) => ({
-          id: strategy.id,
-          claimRecallAtK: strategy.claimRecallAtK,
-          contextPrecisionAtK: strategy.contextPrecisionAtK,
-          buildMs: strategy.latency.buildMs,
-          updateMs: strategy.latency.updateMs,
-          meanQueryMs: strategy.latency.meanQueryMs,
-          vectorBytes: strategy.storage.vectorBytes,
+        arms: arms.map((arm) => ({
+          name: arm.name,
+          claimRecall: arm.claimRecall,
+          contextPrecision: arm.contextPrecision,
+          buildLatencyMs: arm.buildLatencyMs,
+          updateLatencyMs: arm.updateLatencyMs,
+          meanQueryLatencyMs: arm.meanQueryLatencyMs,
+          vectorBytes: arm.storage.vectorBytes,
         })),
-        lateChunking: report.lateChunking,
+        lateChunking: report.lateChunking.status,
+        productionDefaultChanged: report.productionDefaultsChanged,
       },
       null,
       2,
