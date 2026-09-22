@@ -8,7 +8,8 @@ const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is required.");
 
 const vaultKey =
-  process.env.AKP_RECOVERY_VERIFICATION_VAULT_KEY ??\n  "recovery-verification-vault";
+  process.env.AKP_RECOVERY_VERIFICATION_VAULT_KEY ??
+  "recovery-verification-vault";
 const outputPath = path.resolve(
   process.env.AKP_RECOVERY_VERIFICATION_MANIFEST ??
     "reports/ci/recovery-state-seed.json",
@@ -205,7 +206,9 @@ try {
   );
   promotionEventId = promotionEvent.rows[0]?.id ?? null;
   if (!promotionEventId) {
-    throw new Error(\n      "Recovery verification promotion sentinel was not created.",\n    );
+    throw new Error(
+      "Recovery verification promotion sentinel was not created.",
+    );
   }
 
   await client.query(
