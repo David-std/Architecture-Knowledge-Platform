@@ -78,6 +78,11 @@ jobs:
             test/reasoning-executor.test.ts \
             test/reasoning-plan.test.ts \
             test/reasoning-planner.test.ts
+      - name: Run MCP instruction integrity proof
+        run: |
+          pnpm --filter @akp/mcp exec vitest run \
+            test/instruction-bundle.test.ts \
+            test/context-facade.test.ts
       - name: Run model routing and residency proof
         run: |
           pnpm --filter @akp/contracts exec vitest run test/model-role-policy.test.ts

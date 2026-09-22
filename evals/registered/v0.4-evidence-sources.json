@@ -1275,6 +1275,16 @@
         }
       ]
     },
+    "security:agent-instruction-integrity": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run MCP instruction integrity proof"
+        }
+      ]
+    },
     "surface:profile-admin": {
       "sources": [
         {

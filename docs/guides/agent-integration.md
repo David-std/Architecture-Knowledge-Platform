@@ -20,6 +20,10 @@ Agents use the same API boundary as other clients:
 - Bearer credentials are provisioned with explicit `AKP_API_TOKEN_SCOPES`.
 - The target space and vault must be authorized for the credential.
 - Shared work should bootstrap a workspace session so the agent receives a revision pin.
+- `AKP_AGENT_INSTRUCTION_EXPECTED_SHA256` optionally pins the expected canonical instruction-content digest.
+- `AKP_AGENT_INSTRUCTION_INTEGRITY_MODE` is `STRICT` by default; `WARN` keeps the MCP server available while surfacing a digest mismatch in the instruction resource.
+
+The instruction digest covers the versioned capabilities, rules and lifecycle content rather than `generatedAt`, so unchanged instructions retain the same address across restarts. Clients should recompute the fetched bundle digest and compare it with both the manifest/URI digest and any deployment-pinned expected digest.
 
 For controlled evaluation, agent benchmarks additionally configure a fixed provider/model, temperature and output-token budget. Those benchmark settings do not change production defaults.
 

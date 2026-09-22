@@ -8,6 +8,8 @@ import { AkpContextInput, dispatchAkpContext } from "./context-facade.js";
 import {
   AGENT_INSTRUCTION_BUNDLE,
   AGENT_INSTRUCTION_RESOURCE_URI,
+  verifyAgentInstructionBundle,
+  type AgentInstructionIntegrityMode,
 } from "./instruction-bundle.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -24,6 +26,31 @@ config({
 const apiBase = process.env.AKP_API_URL ?? "http://127.0.0.1:8080";
 const token = process.env.AKP_API_TOKEN;
 if (!token) throw new Error("AKP_API_TOKEN is required for MCP.");
+
+function instructionIntegrityMode(): AgentInstructionIntegrityMode {
+  const value = (
+    process.env.AKP_AGENT_INSTRUCTION_INTEGRITY_MODE ?? "STRICT"
+  )
+    .trim()
+    .toUpperCase();
+  if (value !== "WARN" && value !== "STRICT") {
+    throw new Error("AKP_AGENT_INSTRUCTION_INTEGRITY_MODE_INVALID");
+  }
+  return value;
+}
+
+const instructionIntegrity = verifyAgentInstructionBundle(
+  AGENT_INSTRUCTION_BUNDLE,
+  {
+    ...(process.env.AKP_AGENT_INSTRUCTION_EXPECTED_SHA256?.trim()
+      ? {
+          expectedSha256:
+            process.env.AKP_AGENT_INSTRUCTION_EXPECTED_SHA256.trim(),
+        }
+      : {}),
+    mode: instructionIntegrityMode(),
+  },
+);
 
 async function api(route: string, init?: RequestInit): Promise<unknown> {
   const routeTemplate =
@@ -137,7 +164,10 @@ export function createMcpServer(): McpServer {
         {
           uri: uri.href,
           mimeType: "application/json",
-          text: JSON.stringify(AGENT_INSTRUCTION_BUNDLE),
+          text: JSON.stringify({
+            ...AGENT_INSTRUCTION_BUNDLE,
+            integrity: instructionIntegrity,
+          }),
         },
       ],
     }),

@@ -579,7 +579,10 @@
           "evidence": ["recovery:offline-agent-context"]
         },
         "securityTest": {
-          "evidence": ["security:agent-scope"]
+          "evidence": [
+            "security:agent-scope",
+            "security:agent-instruction-integrity"
+          ]
         },
         "operatorSurface": {
           "evidence": ["surface:mcp-akp-context"]

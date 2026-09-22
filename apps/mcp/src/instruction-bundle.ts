@@ -15,6 +15,16 @@ export interface AgentInstructionBundle {
   lifecycle: string[];
 }
 
+export type AgentInstructionIntegrityMode = "WARN" | "STRICT";
+
+export interface AgentInstructionIntegrityResult {
+  valid: boolean;
+  computedSha256: string;
+  claimedSha256: string;
+  expectedSha256: string | null;
+  warnings: string[];
+}
+
 const AGENT_RULES = [
   "Bootstrap or search AKP before making an architectural decision.",
   "Run impact analysis before a broad refactor or change that may affect dependent knowledge or code.",
@@ -56,33 +66,79 @@ function canonicalJson(value: unknown): string {
     .join(",")}}`;
 }
 
+function instructionContent(bundle: AgentInstructionBundle) {
+  return {
+    schemaVersion: bundle.manifest.schemaVersion,
+    platformVersion: bundle.manifest.platformVersion,
+    contextApiVersion: bundle.manifest.contextApiVersion,
+    capabilities: bundle.manifest.capabilities,
+    rules: bundle.rules,
+    lifecycle: bundle.lifecycle,
+  };
+}
+
+export function computeAgentInstructionBundleSha256(
+  bundle: AgentInstructionBundle,
+): string {
+  return createHash("sha256")
+    .update(canonicalJson(instructionContent(bundle)))
+    .digest("hex");
+}
+
+export function verifyAgentInstructionBundle(
+  bundle: AgentInstructionBundle,
+  options: {
+    expectedSha256?: string;
+    mode?: AgentInstructionIntegrityMode;
+  } = {},
+): AgentInstructionIntegrityResult {
+  const mode = options.mode ?? "STRICT";
+  const expectedSha256 = options.expectedSha256?.trim().toLowerCase() ?? null;
+  if (expectedSha256 !== null && !/^[a-f0-9]{64}$/u.test(expectedSha256)) {
+    throw new Error("AGENT_INSTRUCTION_EXPECTED_DIGEST_INVALID");
+  }
+
+  const computedSha256 = computeAgentInstructionBundleSha256(bundle);
+  const claimedSha256 = bundle.manifest.sha256.toLowerCase();
+  const warnings: string[] = [];
+
+  if (claimedSha256 !== computedSha256) {
+    warnings.push("AGENT_INSTRUCTION_BUNDLE_HASH_MISMATCH");
+  }
+  if (expectedSha256 !== null && expectedSha256 !== computedSha256) {
+    warnings.push("AGENT_INSTRUCTION_EXPECTED_DIGEST_MISMATCH");
+  }
+
+  if (mode === "STRICT" && warnings.length > 0) {
+    throw new Error(warnings[0]);
+  }
+
+  return {
+    valid: warnings.length === 0,
+    computedSha256,
+    claimedSha256,
+    expectedSha256,
+    warnings,
+  };
+}
+
 export function createAgentInstructionBundle(
   generatedAt = new Date().toISOString(),
 ): AgentInstructionBundle {
-  const payload = {
-    schemaVersion: 1 as const,
-    platformVersion: "0.4.0",
-    contextApiVersion: "v1",
-    generatedAt,
-    capabilities: [...CAPABILITIES],
+  const bundle: AgentInstructionBundle = {
+    manifest: {
+      schemaVersion: 1,
+      platformVersion: "0.4.0",
+      contextApiVersion: "v1",
+      generatedAt,
+      sha256: "",
+      capabilities: [...CAPABILITIES],
+    },
     rules: [...AGENT_RULES],
     lifecycle: [...AGENT_LIFECYCLE],
   };
-  const sha256 = createHash("sha256")
-    .update(canonicalJson(payload))
-    .digest("hex");
-  return {
-    manifest: {
-      schemaVersion: payload.schemaVersion,
-      platformVersion: payload.platformVersion,
-      contextApiVersion: payload.contextApiVersion,
-      generatedAt: payload.generatedAt,
-      sha256,
-      capabilities: payload.capabilities,
-    },
-    rules: payload.rules,
-    lifecycle: payload.lifecycle,
-  };
+  bundle.manifest.sha256 = computeAgentInstructionBundleSha256(bundle);
+  return bundle;
 }
 
 export const AGENT_INSTRUCTION_BUNDLE = createAgentInstructionBundle();

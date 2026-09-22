@@ -8,6 +8,10 @@ import {
   PostgresFederatedGraphStore,
 } from "../packages/postgres/src/index.js";
 import { planCodeGraphProjection } from "../packages/project-adapter/src/index.js";
+import {
+  verifyAgentInstructionBundle,
+  type AgentInstructionBundle,
+} from "../apps/mcp/src/instruction-bundle.js";
 
 const client = new Client({ name: "akp-smoke", version: "0.1.0" });
 let agentContextDb: Postgres | null = null;
@@ -193,13 +197,22 @@ try {
   if (!instructionText || !("text" in instructionText)) {
     throw new Error("AKP instruction resource returned no JSON text.");
   }
-  const instructionBundle = JSON.parse(String(instructionText.text)) as {
-    manifest?: { sha256?: string };
-    rules?: unknown[];
+  const instructionBundle = JSON.parse(
+    String(instructionText.text),
+  ) as AgentInstructionBundle & {
+    integrity?: { valid?: boolean; warnings?: string[] };
   };
   const resourceDigest = instructionResource.uri.split("/").at(-1);
+  if (!resourceDigest) {
+    throw new Error("AKP instruction resource URI has no digest.");
+  }
+  const verifiedInstruction = verifyAgentInstructionBundle(instructionBundle, {
+    expectedSha256: resourceDigest,
+    mode: "STRICT",
+  });
   if (
-    instructionBundle.manifest?.sha256 !== resourceDigest ||
+    !verifiedInstruction.valid ||
+    instructionBundle.integrity?.valid !== true ||
     !Array.isArray(instructionBundle.rules) ||
     instructionBundle.rules.length < 7
   ) {
