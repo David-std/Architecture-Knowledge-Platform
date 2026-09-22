@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { akp } from "../../../lib/api";
 import {
+  compareDependencyPerspectives,
   relatedObjectId,
   relationDirection,
   type WorkActivity,
@@ -178,6 +179,12 @@ export default async function WorkObjectPage({
   const serviceDependencies = relatedObjects.filter(
     ({ event }) => event.relationKind === "DEPENDS_ON",
   );
+  const dependencyComparison = compareDependencyPerspectives(
+    serviceDependencies.map(({ event, related }) => ({
+      relatedId: related.id,
+      derivation: event.derivation,
+    })),
+  );
   const serviceRepositories = relatedObjects.filter(
     ({ event }) => event.relationKind === "CODE_REPOSITORY",
   );
@@ -318,6 +325,38 @@ export default async function WorkObjectPage({
                   No explicit DEPENDS_ON relations recorded.
                 </p>
               )}
+              <h4>Declared / static / observed comparison</h4>
+              {dependencyComparison.length ? (
+                <ul>
+                  {dependencyComparison.map((row) => {
+                    const related = byId.get(row.relatedId);
+                    return (
+                      <li key={row.relatedId}>
+                        {title(related, row.relatedId)} ·{" "}
+                        <span className="badge">
+                          declared {row.declared ? "yes" : "no"}
+                        </span>{" "}
+                        <span className="badge">
+                          static {row.static ? "yes" : "no"}
+                        </span>{" "}
+                        <span className="badge">
+                          observed {row.observed ? "yes" : "no"}
+                        </span>{" "}
+                        <span className="badge">{row.status}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <p className="muted">
+                  No classified dependency perspectives are available.
+                </p>
+              )}
+              <small className="muted">
+                PERSPECTIVE_GAP means the declared, static and runtime views do
+                not all report the same dependency. It can represent a real
+                disagreement or a perspective that has not observed it yet.
+              </small>
             </section>
 
             <section className="card">
