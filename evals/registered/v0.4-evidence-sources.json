@@ -2186,6 +2186,74 @@
           "path": "scripts/competitive-arena-report.ts"
         }
       ]
+    },
+    "benchmark:temporal-truth-final-scenarios": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Validate registered temporal truth metric evidence"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        },
+        {
+          "type": "FILE",
+          "path": "scripts/registered-temporal-truth-metrics.ts"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/test/temporal-truth-retrieval.integration.test.ts"
+        }
+      ]
+    },
+    "benchmark:enterprise-adversarial-scenarios": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Validate registered workspace and team metric evidence"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        },
+        {
+          "type": "STEP",
+          "workflow": "federation-two-node",
+          "job": "real-two-node",
+          "step": "Validate real two-node federation evidence"
+        },
+        {
+          "type": "FILE",
+          "path": "scripts/registered-workspace-team-metrics.ts"
+        },
+        {
+          "type": "FILE",
+          "path": "packages/indexing/test/multivault-isolation.integration.test.ts"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/test/security.integration.test.ts"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/test/context-fabric.integration.test.ts"
+        }
+      ]
     }
   }
 }

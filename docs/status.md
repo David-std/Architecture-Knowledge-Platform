@@ -22,6 +22,18 @@ The platform is conservative by default. Optional model, vector and document-int
 
 Imported vaults are treated as external inputs. Source-specific curation rules belong in explicit import profiles or fixtures and must not alter generic platform behavior.
 
+
+## v0.4 release limitations
+
+The v0.4 product surface is intentionally bounded. These limitations are part of the release contract rather than hidden follow-up work:
+
+- The connector framework ships real local/Git and authenticated generic webhook/inbox paths. Additional vendor-specific live connectors remain optional integrations and are not implied by the generic connector contract.
+- Community/global retrieval is implemented and benchmarked, but the registered public product corpus is small. Those measurements do not establish a universal production default or broad-corpus community quality guarantee.
+- Code Graph extraction through Graphify is pinned to the provider version exercised by CI. Language coverage and extraction behavior are therefore version-bound to that tested provider rather than claimed for arbitrary Graphify releases.
+- Federation proves bounded node discovery, remote query, provenance, scope enforcement, timeout/circuit behavior and a real two-node path. It is not a claim of multi-region high availability or globally replicated control-plane consensus.
+- Late-interaction retrieval is not retained as a production channel in the registered v0.4 matrix. No latency, storage or quality advantage is claimed for a channel that was not adopted and comparably executed.
+- Optional model and document providers remain environment-dependent. An unavailable optional provider must stay explicitly degraded or unproven rather than becoming a synthetic PASS.
+
 ## Known operational limits
 
 - The default deployment is local-first and binds services to loopback. Direct hostile multi-tenant or internet exposure requires additional deployment controls.

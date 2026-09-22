@@ -182,7 +182,8 @@
         "benchmark": {
           "evidence": [
             "benchmark:concurrency",
-            "benchmark:workspace-team-quality-metrics"
+            "benchmark:workspace-team-quality-metrics",
+            "benchmark:enterprise-adversarial-scenarios"
           ]
         },
         "remoteCi": {
@@ -403,7 +404,8 @@
         "benchmark": {
           "evidence": [
             "benchmark:temporal-truth",
-            "benchmark:temporal-truth-quality-metrics"
+            "benchmark:temporal-truth-quality-metrics",
+            "benchmark:temporal-truth-final-scenarios"
           ]
         },
         "remoteCi": {
@@ -695,7 +697,10 @@
           "evidence": ["doc:federation"]
         },
         "benchmark": {
-          "evidence": ["benchmark:federation-partial-failure"]
+          "evidence": [
+            "benchmark:federation-partial-failure",
+            "benchmark:enterprise-adversarial-scenarios"
+          ]
         },
         "remoteCi": {
           "evidence": ["remote:team-node", "remote:resilience", "remote:ci"]

@@ -82,6 +82,25 @@ for (const guide of productGuides) {
   }
 }
 
+const releaseStatus = await readFile(path.join(root, "docs/status.md"), "utf8");
+const requiredReleaseLimitations = [
+  "vendor-specific live connectors",
+  "registered public product corpus is small",
+  "version-bound to that tested provider",
+  "not a claim of multi-region high availability",
+  "Late-interaction retrieval is not retained",
+];
+if (!releaseStatus.includes("## v0.4 release limitations")) {
+  failures.push("docs/status.md: missing v0.4 release limitations section");
+}
+for (const limitation of requiredReleaseLimitations) {
+  if (!releaseStatus.includes(limitation)) {
+    failures.push(
+      `docs/status.md: missing explicit v0.4 limitation marker "${limitation}"`,
+    );
+  }
+}
+
 const markdownFiles = await fg(["*.md", "docs/**/*.md", "reports/**/*.md"], {
   cwd: root,
   onlyFiles: true,
