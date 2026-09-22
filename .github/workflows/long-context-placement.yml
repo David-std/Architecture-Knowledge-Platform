@@ -15,15 +15,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
-      AKP_LOCAL_AGENT_MODEL: onnx-community/Qwen2.5-0.5B-Instruct
-      AKP_LOCAL_AGENT_MODEL_REVISION: cc5cc01a65cc3ff17bdb73a7de33d879f62599b0
+      AKP_LOCAL_AGENT_MODEL: onnx-community/SmolLM2-135M-Instruct-ONNX
+      AKP_LOCAL_AGENT_MODEL_REVISION: b8a5c0f183b78c55955a5364f610c36668b5e681
       AKP_LOCAL_AGENT_DTYPE: q4
       AKP_LOCAL_AGENT_PORT: "18082"
-      AKP_CONTEXT_TOKENIZER_MODEL: onnx-community/Qwen2.5-0.5B-Instruct
-      AKP_CONTEXT_TOKENIZER_REVISION: cc5cc01a65cc3ff17bdb73a7de33d879f62599b0
+      AKP_CONTEXT_TOKENIZER_MODEL: onnx-community/SmolLM2-135M-Instruct-ONNX
+      AKP_CONTEXT_TOKENIZER_REVISION: b8a5c0f183b78c55955a5364f610c36668b5e681
       AKP_LONG_CONTEXT_PROVIDER_BASE_URL: http://127.0.0.1:18082
-      AKP_LONG_CONTEXT_PROVIDER_MODEL: onnx-community/Qwen2.5-0.5B-Instruct
-      AKP_LONG_CONTEXT_MODEL_MAX_TOKENS: "32768"
+      AKP_LONG_CONTEXT_PROVIDER_MODEL: onnx-community/SmolLM2-135M-Instruct-ONNX
+      AKP_LONG_CONTEXT_MODEL_MAX_TOKENS: "8192"
       AKP_LONG_CONTEXT_TARGET_MIN_RATIO: "0.70"
       AKP_LONG_CONTEXT_TARGET_MAX_RATIO: "0.78"
       AKP_LONG_CONTEXT_PLACEMENT_REPORT: reports/ci/long-context-placement.json
@@ -80,9 +80,10 @@ jobs:
             throw new Error("Long-context benchmark evidence discipline failed.");
           }
           if (
-            report.model?.id !== "onnx-community/Qwen2.5-0.5B-Instruct" ||
-            report.model?.revision !== "cc5cc01a65cc3ff17bdb73a7de33d879f62599b0" ||
-            report.model?.contextWindowTokens !== 32768 ||
+            report.model?.id !== "onnx-community/SmolLM2-135M-Instruct-ONNX" ||
+            report.model?.revision !== "b8a5c0f183b78c55955a5364f610c36668b5e681" ||
+            report.model?.contextWindowTokens !== 8192 ||
+            provider.model !== report.model.id ||
             provider.revision !== report.model.revision ||
             provider.dtype !== "q4"
           ) {
