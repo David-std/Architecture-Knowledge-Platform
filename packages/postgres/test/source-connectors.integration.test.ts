@@ -303,31 +303,38 @@ describeDb("source connector no-gap inbox", () => {
       payloadHash: hash("event-concurrent-duplicate-100"),
     };
 
-    const receipts = await Promise.all([
-      appendSourceConnectorEvent(db, input),
-      appendSourceConnectorEvent(db, input),
-    ]);
+    try {
+      const receipts = await Promise.all([
+        appendSourceConnectorEvent(db, input),
+        appendSourceConnectorEvent(db, input),
+      ]);
 
-    expect(receipts.map((receipt) => receipt.duplicate).sort()).toEqual([
-      false,
-      true,
-    ]);
-    expect(new Set(receipts.map((receipt) => receipt.id))).toHaveSize(1);
+      expect(receipts.map((receipt) => receipt.duplicate).sort()).toEqual([
+        false,
+        true,
+      ]);
+      expect(new Set(receipts.map((receipt) => receipt.id)).size).toBe(1);
 
-    const persisted = await db.pool.query<{
-      count: number;
-      payload_hashes: number;
-    }>(
-      `select count(*)::int count,
-              count(distinct payload_hash)::int payload_hashes
-         from source_connector_events
-        where connector_id=$1 and event_id=$2`,
-      [connectorId, input.eventId],
-    );
-    expect(persisted.rows[0]).toEqual({
-      count: 1,
-      payload_hashes: 1,
-    });
+      const persisted = await db.pool.query<{
+        count: number;
+        payload_hashes: number;
+      }>(
+        `select count(*)::int count,
+                count(distinct payload_hash)::int payload_hashes
+           from source_connector_events
+          where connector_id=$1 and event_id=$2`,
+        [connectorId, input.eventId],
+      );
+      expect(persisted.rows[0]).toEqual({
+        count: 1,
+        payload_hashes: 1,
+      });
+    } finally {
+      await db.pool.query(
+        "delete from source_connector_events where connector_id=$1 and event_id=$2",
+        [connectorId, input.eventId],
+      );
+    }
   });
 
   it("persists apply retries, exhausts to REJECTED, and never advances the checkpoint", async () => {

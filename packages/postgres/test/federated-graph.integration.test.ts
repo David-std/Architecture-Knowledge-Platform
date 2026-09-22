@@ -1275,6 +1275,11 @@ describe("federated multi-graph substrate integration", () => {
             lifecycle: "ACTIVE",
             freshness: "FRESH",
           },
+          {
+            revision: "stale-r3",
+            lifecycle: "FAILED",
+            freshness: "STALE",
+          },
         ]);
 
         await db.pool.query(
