@@ -227,9 +227,12 @@ try {
 
   const clusters = await db.pool.query<{
     id: string;
+    topic: string;
+    status: string;
     members: string[];
   }>(
-    `select c.id,array_agg(distinct all_members.document_id)::uuid[] members
+    `select c.id,c.topic,c.status,
+            array_agg(distinct all_members.document_id)::uuid[] members
        from contradiction_clusters c
        join contradiction_members matched on matched.cluster_id=c.id
        join contradiction_members all_members on all_members.cluster_id=c.id
@@ -237,7 +240,7 @@ try {
         and c.space_id=$2
         and c.vault_id=$3
         and c.status <> 'RESOLVED'
-      group by c.id
+      group by c.id,c.topic,c.status
       order by c.id`,
     [hits.map((hit) => hit.documentId), spaceId, vaultId],
   );
@@ -257,6 +260,7 @@ try {
       content: hit.excerpt,
       kind: "source" as const,
     })),
+    conflicts: clusters.rows.map((row) => `${row.topic} (${row.status})`),
     materialConflicts,
     searchedChannels: ["exact", "lexical"],
     retrievalConfiguration: {
