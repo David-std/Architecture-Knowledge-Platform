@@ -722,16 +722,11 @@ try {
     codeScope,
     "REGISTERED stale detection fixture",
   );
-  let staleRejected = false;
-  try {
-    await code.symbol(
-      { authorization, freshnessPolicy: "FRESH_ONLY" },
-      { repository, commitSha, qualifiedName: "Service.handle" },
-    );
-  } catch (error) {
-    staleRejected =
-      error instanceof Error && error.message === "CODE_SYMBOL_NOT_FOUND";
-  }
+  const staleSymbols = await code.symbol(
+    { authorization, freshnessPolicy: "FRESH_ONLY" },
+    { repository, commitSha, qualifiedName: "Service.handle" },
+  );
+  const staleRejected = staleSymbols.length === 0;
   const staleDetection = rate(
     staleRejected ? 1 : 0,
     1,

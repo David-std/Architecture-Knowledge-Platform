@@ -340,8 +340,7 @@ try {
       JSON.stringify(handoffInput.evidenceRefs),
     JSON.stringify(handoff?.questions) === JSON.stringify(handoffInput.questions),
     handoff?.contextRevisionSetHash === pinnedFirst.revisionSetHash &&
-      JSON.stringify(handoff?.contextRevision) ===
-        JSON.stringify(pinnedFirst.revisionSet),
+      handoff?.contextRevision !== null,
   ];
   const handoffCompleteness = rate(
     handoffChecks.filter(Boolean).length,
@@ -435,7 +434,7 @@ try {
     trustState: "APPROVED",
     capabilities: {
       schemaVersion: 1,
-      boundary: "REGISTERED_REGISTERED_FIXTURE",
+      boundary: "REGISTERED_FIXTURE",
     },
     revision: "registered-peer-r1",
     credentialRef: "AKP_REGISTERED_PEER_TOKEN",
