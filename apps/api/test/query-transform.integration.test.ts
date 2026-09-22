@@ -387,7 +387,9 @@ describe("query transformation retrieval", () => {
           queryTransformer: transformer,
         });
 
-        expect(hits.map((hit) => hit.documentId)).toContain(value.tlsDocumentId);
+        expect(hits.map((hit) => hit.documentId)).toContain(
+          value.tlsDocumentId,
+        );
         expect(
           hits.some((hit) => hit.documentId === value.secretDocumentId),
         ).toBe(false);
@@ -407,7 +409,9 @@ describe("query transformation retrieval", () => {
         expect(packet.status).toBe("SUPPORTED");
         expect(packet.sections.length).toBeGreaterThan(0);
         expect(JSON.stringify(packet.sections)).not.toContain("QuantumShieldX");
-        expect(JSON.stringify(packet.citations)).not.toContain("QuantumShieldX");
+        expect(JSON.stringify(packet.citations)).not.toContain(
+          "QuantumShieldX",
+        );
         expect(packet.citations.length).toBeGreaterThan(0);
 
         const trace = await db.pool.query<{

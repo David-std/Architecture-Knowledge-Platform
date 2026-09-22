@@ -38,7 +38,9 @@ const fixturePath = path.join(
 );
 
 async function loadPlacementRegression(): Promise<PlacementRegression> {
-  const pack = JSON.parse(await readFile(fixturePath, "utf8")) as RegressionPack;
+  const pack = JSON.parse(
+    await readFile(fixturePath, "utf8"),
+  ) as RegressionPack;
   const candidate = pack.cases.find(
     (item) => item.kind === "CONTEXT_PLACEMENT_AND_MANDATORY_CONSTRAINTS",
   );
@@ -130,9 +132,9 @@ describe("registered P0 ContextPacket correctness", () => {
     );
     expect(selectedTitles.has("conflict-current")).toBe(true);
     expect(selectedTitles.has("conflict-peer")).toBe(true);
-    expect(
-      continuationSections.flat().includes("continuation-detail"),
-    ).toBe(true);
+    expect(continuationSections.flat().includes("continuation-detail")).toBe(
+      true,
+    );
 
     expect(
       packet.requiredActions.slice(0, regression.requiredActions.length),
