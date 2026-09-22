@@ -128,7 +128,9 @@ try {
   );
 
   for (const [index, document] of documents.entries()) {
-    const contentHash = createHash("sha256").update(document.body).digest("hex");
+    const contentHash = createHash("sha256")
+      .update(document.body)
+      .digest("hex");
     await db.pool.query(
       `insert into knowledge_documents(
          id,space_id,vault_id,path,external_id,aliases,title,type,lifecycle,
@@ -267,7 +269,9 @@ try {
     section.document.externalId ? [section.document.externalId] : [],
   );
   const retrievedCitations = [
-    ...new Set(packet.sections.flatMap((section) => section.sourceOrEvidenceIds)),
+    ...new Set(
+      packet.sections.flatMap((section) => section.sourceOrEvidenceIds),
+    ),
   ];
   const goldDocuments = ["tls-current", "tls-legacy"];
   const goldCitations = [

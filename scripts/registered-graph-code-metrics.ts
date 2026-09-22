@@ -11,7 +11,10 @@ import type {
   GraphProjectionNodeInput,
   GraphProvenanceEnvelope,
 } from "../packages/contracts/src/index.js";
-import { Postgres, PostgresFederatedGraphStore } from "../packages/postgres/src/index.js";
+import {
+  Postgres,
+  PostgresFederatedGraphStore,
+} from "../packages/postgres/src/index.js";
 import { CodeGraphQueryService } from "../packages/project-adapter/src/index.js";
 import {
   detectLeidenCommunities,
