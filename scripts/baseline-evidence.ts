@@ -179,10 +179,7 @@ if (!/^[a-f0-9]{40}$/iu.test(akpCommit)) {
   throw new Error("Current AKP commit is not a full Git SHA.");
 }
 
-const agentModel = workflowEnv(
-  agentWorkflowRaw,
-  "AKP_LOCAL_AGENT_MODEL",
-);
+const agentModel = workflowEnv(agentWorkflowRaw, "AKP_LOCAL_AGENT_MODEL");
 const agentModelRevision = workflowEnv(
   agentWorkflowRaw,
   "AKP_LOCAL_AGENT_MODEL_REVISION",
@@ -196,11 +193,9 @@ const tokenizerRevision = workflowEnv(
   agentWorkflowRaw,
   "AKP_CONTEXT_TOKENIZER_REVISION",
 );
-const documentIntelligenceVersion =
-  lockedLinuxDoclingVersion(extractorLockRaw);
-const packageManager = (
-  JSON.parse(packageRaw) as { packageManager?: string }
-).packageManager;
+const documentIntelligenceVersion = lockedLinuxDoclingVersion(extractorLockRaw);
+const packageManager = (JSON.parse(packageRaw) as { packageManager?: string })
+  .packageManager;
 if (!packageManager) {
   throw new Error("Root package manager version is missing.");
 }
@@ -254,18 +249,15 @@ const configurationDescriptor = {
 };
 const configurationHash = sha256(JSON.stringify(configurationDescriptor));
 const providerVersions = {
-  semanticEmbeddingRuntime:
-    `${semanticProvider.runtime.library}@${semanticProvider.runtime.libraryVersion}`,
+  semanticEmbeddingRuntime: `${semanticProvider.runtime.library}@${semanticProvider.runtime.libraryVersion}`,
   contextTokenizerRuntime: "@huggingface/transformers@4.2.0",
   documentIntelligenceLinux: `docling@${documentIntelligenceVersion}`,
   packageManager,
 };
 const modelVersions = {
-  semanticEmbedding:
-    `${semanticProvider.model}@${semanticProvider.modelRevision}`,
+  semanticEmbedding: `${semanticProvider.model}@${semanticProvider.modelRevision}`,
   contextTokenizer: `${tokenizerModel}@${tokenizerRevision}`,
-  agentEvaluation:
-    `${agentModel}@${agentModelRevision}#${agentDtype}`,
+  agentEvaluation: `${agentModel}@${agentModelRevision}#${agentDtype}`,
 };
 
 const report = {
