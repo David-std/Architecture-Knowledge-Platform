@@ -104,9 +104,7 @@ function sha256(value: string): string {
 }
 
 function normalize(vector: readonly number[]): number[] {
-  const norm = Math.sqrt(
-    vector.reduce((sum, value) => sum + value * value, 0),
-  );
+  const norm = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
   if (!Number.isFinite(norm) || norm === 0) {
     throw new Error("Cannot normalize contextual benchmark vector.");
   }
@@ -119,7 +117,9 @@ function compose(
   childWeight = 0.7,
 ): number[] {
   if (child.length !== parent.length || child.length === 0) {
-    throw new Error("Parent/child vectors must have equal non-zero dimensions.");
+    throw new Error(
+      "Parent/child vectors must have equal non-zero dimensions.",
+    );
   }
   const parentWeight = 1 - childWeight;
   return normalize(
@@ -230,9 +230,7 @@ const adapter = new LocalSemanticEmbeddingAdapter({
   maxBatchSize: 16,
 });
 
-async function queryEvidence(
-  vectors: number[][],
-): Promise<{
+async function queryEvidence(vectors: number[][]): Promise<{
   observations: ArmResult["observations"];
   meanQueryLatencyMs: number;
   claimRecall: number;
@@ -395,7 +393,9 @@ async function parentChild(): Promise<ArmResult> {
   const parentVector = updatedParent[0] ?? [];
   const changedChildVector = updatedChild[0] ?? [];
   for (const chunk of targetDocument.chunks) {
-    const childIndex = chunks.findIndex((candidate) => candidate.id === chunk.id);
+    const childIndex = chunks.findIndex(
+      (candidate) => candidate.id === chunk.id,
+    );
     const childVector =
       chunk.id === fixture.updateScenario.changedChunkId
         ? changedChildVector
