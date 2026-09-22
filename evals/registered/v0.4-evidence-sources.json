@@ -2108,6 +2108,20 @@
           "path": "scripts/p12-domain-metrics-benchmark.ts"
         }
       ]
+    },
+    "benchmark:p12-temporal-metrics": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Validate P12 temporal truth metric evidence"
+        },
+        {
+          "type": "FILE",
+          "path": "scripts/p12-temporal-metrics-benchmark.ts"
+        }
+      ]
     }
   }
 }

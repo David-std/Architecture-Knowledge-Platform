@@ -505,7 +505,8 @@
         },
         "benchmark": {
           "evidence": [
-            "benchmark:temporal-truth"
+            "benchmark:temporal-truth",
+            "benchmark:p12-temporal-metrics"
           ]
         },
         "remoteCi": {
