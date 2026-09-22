@@ -204,7 +204,7 @@ jobs:
             maxPoolWaiting: report.dbPoolPressure?.maxWaitingCount,
           }, null, 2));
           NODE
-      - name: Build workspace for P11 integration probes
+      - name: Build workspace for bounded integration probes
         run: pnpm build
       - name: Execute bounded scale combination probes
         shell: bash
@@ -361,7 +361,7 @@ jobs:
               (scenario) => scenario.status !== "PASSED",
             )
           ) {
-            throw new Error("P11 bounded scale combination probes did not pass.");
+            throw new Error("Bounded scale combination probes did not pass.");
           }
 
           const combined = {
