@@ -251,13 +251,7 @@ try {
        now()-interval '1 second',now(),
        '{"recoverySentinel":true}'::jsonb
      )`,
-    [
-      assuranceRunId,
-      vault.space_id,
-      vault.id,
-      adminId,
-      adminPrincipalId,
-    ],
+    [assuranceRunId, vault.space_id, vault.id, adminId, adminPrincipalId],
   );
   const assuranceFindingKey = sha256(
     `GROUNDING\u001fRECOVERY_SENTINEL\u001f${vault.id}\u001frecovery-proof`,
@@ -269,10 +263,10 @@ try {
        detector_version,category,scope_id,target_ids,support_set_ids,status,
        proposed_action,revision_set
      ) values(
-       $1,$2,$3,$4,'GROUNDING','INFO',$5,'RECOVERY_SENTINEL',
+       $1,$2,$3,$4::uuid,'GROUNDING','INFO',$5,'RECOVERY_SENTINEL',
        'recovery-proof','RECOVERY_SENTINEL','Recovery proof assurance finding',
        '[]'::jsonb,'{"recoverySentinel":true}'::jsonb,'1.0.0','GROUNDING',
-       $4::text,'["recovery-proof"]'::jsonb,'[]'::jsonb,'OPEN',null,$6::jsonb
+       ($4::uuid)::text,'["recovery-proof"]'::jsonb,'[]'::jsonb,'OPEN',null,$6::jsonb
      )`,
     [
       assuranceFindingId,
