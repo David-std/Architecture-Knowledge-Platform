@@ -2043,6 +2043,56 @@
         }
       ]
     },
+    "failure:p6-hyde-untrusted-transform": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/test/query-transform.integration.test.ts"
+        }
+      ]
+    },
+    "benchmark:p6-contextual-chunks": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "semantic-retrieval",
+          "job": "real-multilingual-semantic-retrieval",
+          "step": "Benchmark contextual chunk embedding strategies"
+        },
+        {
+          "type": "FILE",
+          "path": "evals/registered/contextual-chunk-benchmark.json"
+        },
+        {
+          "type": "FILE",
+          "path": "packages/retrieval/scripts/contextual-chunk-benchmark.ts"
+        }
+      ]
+    },
+    "benchmark:p6-long-context-placement": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "long-context-placement",
+          "job": "long-context-placement",
+          "step": "Benchmark mandatory evidence placement near model context threshold"
+        },
+        {
+          "type": "FILE",
+          "path": "packages/retrieval/scripts/long-context-placement-benchmark.ts"
+        },
+        {
+          "type": "FILE",
+          "path": ".github/workflows/long-context-placement.yml"
+        }
+      ]
+    },
     "benchmark:p6-ann-decision-deferred": {
       "sources": [
         {

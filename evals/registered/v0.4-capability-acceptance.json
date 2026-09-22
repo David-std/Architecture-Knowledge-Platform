@@ -429,6 +429,7 @@
           "evidence": [
             "failure:community-build-rollback",
             "failure:ppr-cancel",
+            "failure:p6-hyde-untrusted-transform",
             "failure:p6-reranker-candidate-set",
             "failure:p6-reranker-fallback"
           ]
@@ -459,6 +460,8 @@
           "evidence": [
             "benchmark:retrieval-quality",
             "benchmark:semantic",
+            "benchmark:p6-contextual-chunks",
+            "benchmark:p6-long-context-placement",
             "benchmark:p6-ann-decision-deferred",
             "benchmark:p6-drift",
             "benchmark:retrieval-diagnostic-quality",
