@@ -120,9 +120,7 @@ const packet = buildContextPacket({
   conflicts: ["transport-policy (OPEN)"],
   materialConflicts,
   continuationSink: (payload) => {
-    continuationSections.push(
-      payload.sections.map((section) => section.title),
-    );
+    continuationSections.push(payload.sections.map((section) => section.title));
   },
   candidates,
 });
@@ -148,17 +146,19 @@ const checks = {
   oversizedSourceDidNotMonopolizeBudget:
     !selectedTitleSet.has("oversized-source"),
   continuationEmitted: packet.continuations.length > 0,
-  continuationDetailRetainedOutOfBand:
-    continuationTitles.includes("continuation-detail"),
+  continuationDetailRetainedOutOfBand: continuationTitles.includes(
+    "continuation-detail",
+  ),
   requiredActionOrderPreserved:
-    JSON.stringify(requiredPrefix) === JSON.stringify(regression.requiredActions),
+    JSON.stringify(requiredPrefix) ===
+    JSON.stringify(regression.requiredActions),
   compactRequiredActionOrderPreserved:
     JSON.stringify(compactRequiredPrefix) ===
     JSON.stringify(regression.requiredActions),
-  retrievedContentDoesNotContainRequiredActions: regression.requiredActions.every(
-    (action) =>
+  retrievedContentDoesNotContainRequiredActions:
+    regression.requiredActions.every((action) =>
       packet.sections.every((section) => !section.content.includes(action)),
-  ),
+    ),
   untrustedContentBoundaryPresent: packet.requiredActions.includes(
     UNTRUSTED_RETRIEVED_CONTENT_ACTION,
   ),
@@ -167,9 +167,7 @@ const failures = Object.entries(checks)
   .filter(([, passed]) => !passed)
   .map(([name]) => name);
 if (failures.length > 0) {
-  throw new Error(
-    `CONTEXT_PLACEMENT_BASELINE_FAILED:${failures.join(",")}`,
-  );
+  throw new Error(`CONTEXT_PLACEMENT_BASELINE_FAILED:${failures.join(",")}`);
 }
 
 const report = {
