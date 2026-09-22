@@ -52,6 +52,13 @@ jobs:
           AKP_CAPABILITY_ACCEPTANCE_JSON: reports/ci/capability-acceptance.json
           AKP_PARITY_EXCLUSION_DIR: reports/ci/parity-exclusions
         run: pnpm proof:parity-exclusions
+      - name: Assemble same-SHA final proof package
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          AKP_FINAL_PROOF_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+          AKP_FINAL_PROOF_WORKFLOW_REPORT: reports/ci/final-proof-workflows.json
+          AKP_FINAL_PROOF_PACKAGE_DIR: reports/ci/final-proof-package
+        run: node scripts/final-proof-bundle.mjs
       - name: Upload final-proof evidence
         if: always()
         uses: actions/upload-artifact@v7
@@ -63,5 +70,6 @@ jobs:
             reports/ci/capability-acceptance.json
             reports/ci/capability-acceptance.md
             reports/ci/parity-exclusions
+            reports/ci/final-proof-package
           if-no-files-found: warn
           retention-days: 30
