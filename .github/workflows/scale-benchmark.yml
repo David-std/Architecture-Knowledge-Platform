@@ -206,7 +206,7 @@ jobs:
           NODE
       - name: Build workspace for P11 integration probes
         run: pnpm build
-      - name: Execute bounded P11 scale combination probes
+      - name: Execute bounded scale combination probes
         shell: bash
         run: |
           set -euo pipefail

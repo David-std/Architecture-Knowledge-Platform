@@ -595,7 +595,7 @@
           "type": "STEP",
           "workflow": "ci",
           "job": "typescript",
-          "step": "Run P11 concurrency race proof"
+          "step": "Run concurrency race proof"
         }
       ]
     },
@@ -2435,7 +2435,7 @@
           "type": "STEP",
           "workflow": "scale-benchmark",
           "job": "enterprise-state-scale",
-          "step": "Execute bounded P11 scale combination probes"
+          "step": "Execute bounded scale combination probes"
         },
         {
           "type": "STEP",

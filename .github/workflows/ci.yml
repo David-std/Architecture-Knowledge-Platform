@@ -111,7 +111,7 @@ jobs:
           pnpm --filter @akp/api exec vitest run \
             test/graph-retrieval.integration.test.ts \
             test/context-fabric.integration.test.ts
-      - name: Run P11 concurrency race proof
+      - name: Run concurrency race proof
         run: |
           pnpm --filter @akp/postgres exec vitest run \
             test/knowledge-profile-activation.integration.test.ts \
