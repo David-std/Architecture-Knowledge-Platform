@@ -925,6 +925,32 @@ function channelAllowedByMode(
   return true;
 }
 
+/**
+ * Search mode is an execution boundary in addition to intent. A RAW_ONLY
+ * request must retain an authorized raw fallback even when its semantic intent
+ * (for example CONCEPTUAL) normally plans only exact/lexical channels.
+ *
+ * Authorization remains fail-closed: this only enables the channel when the
+ * plan's resolved capabilities already allow RAW retrieval. SQL raw scopes are
+ * still applied before ranking/limits by queryKnowledge.
+ */
+export function reconcilePlanWithSearchMode(
+  plan: QueryPlan,
+  mode: SearchInput["mode"],
+): QueryPlan {
+  if (
+    mode !== "RAW_ONLY" ||
+    plan.capabilities.rawAllowed !== true ||
+    plan.channels.includes("raw")
+  ) {
+    return plan;
+  }
+  return {
+    ...plan,
+    channels: [...plan.channels, "raw"],
+  };
+}
+
 function channelAllowedByCapabilities(
   channel: RetrievalChannel,
   capabilities: QueryPlannerCapabilities,
@@ -1489,17 +1515,19 @@ export async function queryKnowledge(
       Boolean(index.vector_revision),
     ...(options.plannerCapabilities ?? {}),
   };
-  const plan =
+  const plan = reconcilePlanWithSearchMode(
     options.plan ??
-    planQuery(input.query, {
-      ...(input.intent ? { requestedIntent: input.intent } : {}),
-      capabilities,
-      queryShape: {
-        permissionSensitiveFederated: input.federated || vaultIds.length > 1,
-        ...(input.projectId ? { ticketWorkProcess: true } : {}),
-        ...(input.mode === "PROJECT_CODE" ? { codeSymbolOrPath: true } : {}),
-      },
-    });
+      planQuery(input.query, {
+        ...(input.intent ? { requestedIntent: input.intent } : {}),
+        capabilities,
+        queryShape: {
+          permissionSensitiveFederated: input.federated || vaultIds.length > 1,
+          ...(input.projectId ? { ticketWorkProcess: true } : {}),
+          ...(input.mode === "PROJECT_CODE" ? { codeSymbolOrPath: true } : {}),
+        },
+      }),
+    input.mode,
+  );
   const effectiveStrategy = options.retrievalPolicy?.graphMode ?? plan.strategy;
   const retrievalPolicy = resolveRetrievalPolicy({
     ...(options.retrievalPolicy ?? {}),
@@ -3447,18 +3475,21 @@ export function registerSearchRoutes(
         // No project code adapter is registered in the current runtime.
         codeAdapterAvailable: projectCode?.available ?? false,
       });
-      const plan = planQuery(parsed.data.query, {
-        ...(parsed.data.intent ? { requestedIntent: parsed.data.intent } : {}),
-        capabilities,
-        queryShape: {
-          permissionSensitiveFederated:
-            parsed.data.federated || vaultIds.length > 1,
-          ...(parsed.data.projectId ? { ticketWorkProcess: true } : {}),
-          ...(parsed.data.mode === "PROJECT_CODE"
-            ? { codeSymbolOrPath: true }
-            : {}),
-        },
-      });
+      const plan = reconcilePlanWithSearchMode(
+        planQuery(parsed.data.query, {
+          ...(parsed.data.intent ? { requestedIntent: parsed.data.intent } : {}),
+          capabilities,
+          queryShape: {
+            permissionSensitiveFederated:
+              parsed.data.federated || vaultIds.length > 1,
+            ...(parsed.data.projectId ? { ticketWorkProcess: true } : {}),
+            ...(parsed.data.mode === "PROJECT_CODE"
+              ? { codeSymbolOrPath: true }
+              : {}),
+          },
+        }),
+        parsed.data.mode,
+      );
       const retrievalWarnings: string[] = [
         ...plan.omittedChannels.map(
           (channel) => `PLAN_CHANNEL_OMITTED:${channel}`,
@@ -3883,18 +3914,21 @@ export function registerSearchRoutes(
           parsed.data.mode !== "COMPILED_ONLY" && rawScopes.length > 0,
         codeAdapterAvailable: projectCode?.available ?? false,
       });
-      const plan = planQuery(parsed.data.query, {
-        ...(parsed.data.intent ? { requestedIntent: parsed.data.intent } : {}),
-        capabilities,
-        queryShape: {
-          permissionSensitiveFederated:
-            parsed.data.federated || vaultIds.length > 1,
-          ...(parsed.data.projectId ? { ticketWorkProcess: true } : {}),
-          ...(parsed.data.mode === "PROJECT_CODE"
-            ? { codeSymbolOrPath: true }
-            : {}),
-        },
-      });
+      const plan = reconcilePlanWithSearchMode(
+        planQuery(parsed.data.query, {
+          ...(parsed.data.intent ? { requestedIntent: parsed.data.intent } : {}),
+          capabilities,
+          queryShape: {
+            permissionSensitiveFederated:
+              parsed.data.federated || vaultIds.length > 1,
+            ...(parsed.data.projectId ? { ticketWorkProcess: true } : {}),
+            ...(parsed.data.mode === "PROJECT_CODE"
+              ? { codeSymbolOrPath: true }
+              : {}),
+          },
+        }),
+        parsed.data.mode,
+      );
       const intent = plan.intent;
       const maxTokens = contextBudgetForIntent(intent, requestedMaxTokens);
       const retrievalWarnings: string[] = [
