@@ -240,6 +240,81 @@ jobs:
                 falselyExecuted.map((system) => system.id).join(", "),
             );
           }
+          const reproducibility = report.benchmarkEvidence?.reproducibility;
+          if (
+            typeof reproducibility?.tool?.repositoryUrl !== "string" ||
+            typeof reproducibility?.tool?.versionOrCommit !== "string" ||
+            reproducibility.tool.versionOrCommit !== process.env.GITHUB_SHA ||
+            typeof reproducibility?.tool?.licenseObserved !== "string" ||
+            !/^[a-f0-9]{64}$/.test(reproducibility?.fixture?.sha256 ?? "") ||
+            !/^[a-f0-9]{64}$/.test(
+              reproducibility?.configuration?.sha256 ?? "",
+            ) ||
+            typeof reproducibility?.environment?.node !== "string" ||
+            typeof reproducibility?.environment?.postgres !== "string" ||
+            !Number.isInteger(reproducibility?.environment?.logicalCpuCount) ||
+            reproducibility.environment.logicalCpuCount < 1 ||
+            !Number.isFinite(reproducibility?.environment?.totalMemoryBytes) ||
+            reproducibility.environment.totalMemoryBytes <= 0 ||
+            reproducibility?.invocation !==
+              "pnpm benchmark:retrieval:registered"
+          ) {
+            throw new Error(
+              "Competitive benchmark reproducibility descriptor is incomplete.",
+            );
+          }
+          const ablation = report.benchmarkEvidence?.ablation;
+          const requiredStages = new Set([
+            "BASELINE_EXACT_LEXICAL",
+            "ADD_DENSE",
+            "ADD_TYPED_GRAPH",
+            "ADD_RERANK",
+            "ADD_PPR",
+            "ADD_COMMUNITY",
+          ]);
+          for (const entry of ablation?.entries ?? []) {
+            if (!requiredStages.delete(entry.stage)) {
+              throw new Error(
+                "Unexpected or duplicate retrieval ablation stage: " +
+                  String(entry.stage),
+              );
+            }
+            for (const value of [
+              entry.quality?.recallAt10,
+              entry.quality?.mrr,
+              entry.quality?.ndcgAt10,
+              entry.deltaVsBaseline?.recallAt10,
+              entry.deltaVsBaseline?.mrr,
+              entry.deltaVsBaseline?.ndcgAt10,
+              entry.latency?.meanMs,
+              entry.latency?.deltaVsBaselineMs,
+              entry.storage?.attributedBytes,
+            ]) {
+              if (!Number.isFinite(value)) {
+                throw new Error(
+                  "Retrieval ablation contains an unmeasured required value.",
+                );
+              }
+            }
+            if (entry.storage.attributedBytes < 0) {
+              throw new Error("Retrieval ablation storage cost is negative.");
+            }
+          }
+          if (requiredStages.size !== 0) {
+            throw new Error(
+              "Retrieval ablation is missing stages: " +
+                [...requiredStages].join(", "),
+            );
+          }
+          if (
+            ablation?.optionalChannels?.lateInteraction?.status !==
+              "NOT_RETAINED" ||
+            typeof ablation.optionalChannels.lateInteraction.reason !== "string"
+          ) {
+            throw new Error(
+              "Late-interaction ablation status must remain explicit.",
+            );
+          }
           NODE
       - name: Capture semantic retrieval diagnostics
         if: always()

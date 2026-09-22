@@ -2150,6 +2150,24 @@
           "path": "scripts/registered-retrieval-diagnostics.ts"
         }
       ]
+    },
+    "benchmark:retrieval-ablation-reproducibility": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "semantic-retrieval",
+          "job": "real-multilingual-semantic-retrieval",
+          "step": "Build honest competitive arena report"
+        },
+        {
+          "type": "FILE",
+          "path": "scripts/registered-corpus-retrieval-benchmark.ts"
+        },
+        {
+          "type": "FILE",
+          "path": "scripts/competitive-arena-report.ts"
+        }
+      ]
     }
   }
 }

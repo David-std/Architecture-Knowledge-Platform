@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import {
@@ -90,6 +91,14 @@ type RuntimeObservation = BenchmarkObservation & {
   fusionReasons: Record<string, string[]>;
 };
 
+type StorageSnapshot = {
+  documentsBytes: number;
+  unitsBytes: number;
+  relationsBytes: number;
+  communityBytes: number;
+  embeddingsBytes: number;
+};
+
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is required");
 
@@ -107,6 +116,71 @@ const outputPath = path.resolve(
 
 function sha256(value: string | Buffer): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function numeric(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`Expected finite numeric value, received ${String(value)}`);
+  }
+  return parsed;
+}
+
+async function storageSnapshot(db: Postgres): Promise<StorageSnapshot> {
+  const result = await db.pool.query(
+    `
+    select
+      pg_total_relation_size('public.knowledge_documents'::regclass)::bigint documents_bytes,
+      pg_total_relation_size('public.knowledge_units'::regclass)::bigint units_bytes,
+      pg_total_relation_size('public.knowledge_relations'::regclass)::bigint relations_bytes,
+      (
+        pg_total_relation_size('public.community_index_revisions'::regclass) +
+        pg_total_relation_size('public.community_index_communities'::regclass) +
+        pg_total_relation_size('public.community_index_memberships'::regclass)
+      )::bigint community_bytes,
+      pg_total_relation_size('public.unit_embeddings'::regclass)::bigint embeddings_bytes
+    `,
+  );
+  const row = result.rows[0];
+  if (!row) throw new Error("PostgreSQL did not return storage evidence.");
+  return {
+    documentsBytes: numeric(row.documents_bytes),
+    unitsBytes: numeric(row.units_bytes),
+    relationsBytes: numeric(row.relations_bytes),
+    communityBytes: numeric(row.community_bytes),
+    embeddingsBytes: numeric(row.embeddings_bytes),
+  };
+}
+
+function storageDelta(after: StorageSnapshot, before: StorageSnapshot) {
+  const delta = {
+    documentsBytes: after.documentsBytes - before.documentsBytes,
+    unitsBytes: after.unitsBytes - before.unitsBytes,
+    relationsBytes: after.relationsBytes - before.relationsBytes,
+    communityBytes: after.communityBytes - before.communityBytes,
+    embeddingsBytes: after.embeddingsBytes - before.embeddingsBytes,
+  };
+  for (const [name, value] of Object.entries(delta)) {
+    if (!Number.isFinite(value) || value < 0) {
+      throw new Error(`Registered storage delta is invalid for ${name}.`);
+    }
+  }
+  return delta;
+}
+
+function resourceRequirements(configuration: BenchmarkConfiguration) {
+  return {
+    lexical: configuration.channels.includes("lexical"),
+    vector: configuration.channels.includes("vector"),
+    typedGraph: configuration.channels.includes("graph"),
+    contextPack: configuration.channels.includes("context-pack"),
+    rerank: Boolean(configuration.deterministicRerank),
+    associativePpr: Boolean(configuration.associativePpr),
+    community:
+      Boolean(configuration.communityGlobal) ||
+      Boolean(configuration.communityDrift),
+    queryDecomposition: Boolean(configuration.queryDecomposition),
+  };
 }
 
 function resolveRepositoryPath(sourcePath: string): string {
@@ -561,8 +635,16 @@ async function main(): Promise<void> {
   });
 
   try {
+    const postgresVersionResult = await db.pool.query<{ server_version: string }>(
+      "show server_version",
+    );
+    const postgresVersion =
+      postgresVersionResult.rows[0]?.server_version ?? "UNKNOWN";
+    const storageBeforeFixture = await storageSnapshot(db);
     await seedCorpus(db, dataset.manifest, fixture);
+    const storageAfterFixture = await storageSnapshot(db);
     await buildCommunityIndexes(db, dataset.manifest, fixture);
+    const storageAfterCommunities = await storageSnapshot(db);
     await adapter.load();
     const generations = await buildRealEmbeddings(
       db,
@@ -570,11 +652,13 @@ async function main(): Promise<void> {
       fixture,
       adapter,
     );
+    const storageAfterEmbeddings = await storageSnapshot(db);
     const queryEmbeddingService = new QueryEmbeddingService(
       async () => adapter,
     );
+    const configurations = benchmarkConfigurations();
     const runs = [];
-    for (const configuration of benchmarkConfigurations()) {
+    for (const configuration of configurations) {
       const observations: RuntimeObservation[] = [];
       for (const testCase of dataset.cases) {
         observations.push(
@@ -611,6 +695,179 @@ async function main(): Promise<void> {
     }
 
     const candidateDecision = selectBenchmarkDefault(runs);
+    const baselineRun = runs.find(
+      (run) => run.configurationName === "exact+lexical",
+    );
+    if (!baselineRun) {
+      throw new Error("Registered benchmark requires exact+lexical baseline.");
+    }
+
+    const fixtureStorage = storageDelta(
+      storageAfterFixture,
+      storageBeforeFixture,
+    );
+    const communityStorage = storageDelta(
+      storageAfterCommunities,
+      storageAfterFixture,
+    );
+    const embeddingStorage = storageDelta(
+      storageAfterEmbeddings,
+      storageAfterCommunities,
+    );
+    const storageComponents = {
+      corpusDocumentsAndUnits:
+        fixtureStorage.documentsBytes + fixtureStorage.unitsBytes,
+      typedGraphRelations: fixtureStorage.relationsBytes,
+      communityIndex: communityStorage.communityBytes,
+      vectorIndex: embeddingStorage.embeddingsBytes,
+    };
+    const attributedStorageBytes = (
+      configuration: BenchmarkConfiguration,
+    ): number => {
+      const requirements = resourceRequirements(configuration);
+      return (
+        storageComponents.corpusDocumentsAndUnits +
+        (requirements.typedGraph ? storageComponents.typedGraphRelations : 0) +
+        (requirements.vector ? storageComponents.vectorIndex : 0) +
+        (requirements.community ? storageComponents.communityIndex : 0)
+      );
+    };
+
+    const ablationStages = [
+      { stage: "BASELINE_EXACT_LEXICAL", configuration: "exact+lexical" },
+      { stage: "ADD_DENSE", configuration: "lexical+vector" },
+      {
+        stage: "ADD_TYPED_GRAPH",
+        configuration: "lexical+vector+graph",
+      },
+      { stage: "ADD_RERANK", configuration: "full-hybrid+rerank" },
+      {
+        stage: "ADD_PPR",
+        configuration: "lexical+vector+graph+ppr",
+      },
+      {
+        stage: "ADD_COMMUNITY",
+        configuration: "lexical+vector+graph+community-global",
+      },
+    ] as const;
+    const ablationEntries = ablationStages.map((entry, index) => {
+      const run = runs.find(
+        (candidate) => candidate.configurationName === entry.configuration,
+      );
+      const configuration = configurations.find(
+        (candidate) => candidate.name === entry.configuration,
+      );
+      if (!run || !configuration) {
+        throw new Error(
+          `Registered ablation configuration missing: ${entry.configuration}`,
+        );
+      }
+      const previous =
+        index === 0
+          ? baselineRun
+          : runs.find(
+              (candidate) =>
+                candidate.configurationName ===
+                ablationStages[index - 1]!.configuration,
+            );
+      if (!previous) {
+        throw new Error(
+          `Registered ablation predecessor missing: ${entry.configuration}`,
+        );
+      }
+      return {
+        stage: entry.stage,
+        configuration: entry.configuration,
+        requirements: resourceRequirements(configuration),
+        quality: {
+          recallAt10: run.meanRecallAt10,
+          mrr: run.meanReciprocalRank,
+          ndcgAt10: run.meanNdcgAt10,
+        },
+        deltaVsBaseline: {
+          recallAt10: run.meanRecallAt10 - baselineRun.meanRecallAt10,
+          mrr: run.meanReciprocalRank - baselineRun.meanReciprocalRank,
+          ndcgAt10: run.meanNdcgAt10 - baselineRun.meanNdcgAt10,
+        },
+        deltaVsPrevious: {
+          recallAt10: run.meanRecallAt10 - previous.meanRecallAt10,
+          mrr: run.meanReciprocalRank - previous.meanReciprocalRank,
+          ndcgAt10: run.meanNdcgAt10 - previous.meanNdcgAt10,
+        },
+        latency: {
+          meanMs: run.meanLatencyMs,
+          deltaVsBaselineMs:
+            run.meanLatencyMs - baselineRun.meanLatencyMs,
+          deltaVsPreviousMs: run.meanLatencyMs - previous.meanLatencyMs,
+        },
+        storage: {
+          attributedBytes: attributedStorageBytes(configuration),
+          attribution:
+            "Sum of measured PostgreSQL total-relation-size deltas for shared persisted components required by this configuration; not an isolated deployment total.",
+        },
+      };
+    });
+
+    const sortedFixtureHashes = Object.entries(dataset.hashes).sort(
+      ([left], [right]) => left.localeCompare(right),
+    );
+    const fixtureHash = sha256(JSON.stringify(sortedFixtureHashes));
+    const configurationHash = sha256(
+      JSON.stringify(
+        configurations.map((configuration) => ({
+          ...configuration,
+          channels: [...configuration.channels],
+        })),
+      ),
+    );
+    const cpu = os.cpus();
+    const reproducibility = {
+      tool: {
+        repositoryUrl:
+          "https://github.com/David-std/Architecture-Knowledge-Platform",
+        versionOrCommit:
+          process.env.GITHUB_SHA ?? "UNAVAILABLE_OUTSIDE_CI",
+        licenseObserved: "NOT_DECLARED_IN_REPOSITORY",
+      },
+      configuration: {
+        sha256: configurationHash,
+        configurations: configurations.map((configuration) => ({
+          ...configuration,
+          channels: [...configuration.channels],
+        })),
+      },
+      environment: {
+        node: process.version,
+        postgres: postgresVersion,
+        platform: os.platform(),
+        release: os.release(),
+        architecture: os.arch(),
+        logicalCpuCount: cpu.length,
+        cpuModel: cpu[0]?.model ?? "UNKNOWN",
+        totalMemoryBytes: os.totalmem(),
+        runnerEnvironment: process.env.RUNNER_ENVIRONMENT ?? null,
+      },
+      fixture: {
+        sha256: fixtureHash,
+        fileHashes: Object.fromEntries(sortedFixtureHashes),
+      },
+      invocation: "pnpm benchmark:retrieval:registered",
+    };
+    const ablation = {
+      baseline: "exact+lexical",
+      entries: ablationEntries,
+      storageComponents,
+      optionalChannels: {
+        lateInteraction: {
+          status: "NOT_RETAINED",
+          reason:
+            "No late-interaction production channel is retained in the registered v0.4 retrieval matrix; the Deep Spec makes this ablation conditional on retention.",
+        },
+      },
+      claimBoundary:
+        "Ablation deltas describe this registered public-product corpus and current CI environment only; they do not select a production default.",
+    };
+
     const report = {
       schemaVersion: 2,
       generatedAt: new Date().toISOString(),
@@ -635,9 +892,11 @@ async function main(): Promise<void> {
       },
       runtime: {
         node: process.version,
-        postgres: "DATABASE_URL-backed disposable PostgreSQL",
+        postgres: postgresVersion,
         queryImplementation: "apps/api/src/routes/search.ts#queryKnowledge",
       },
+      reproducibility,
+      ablation,
       dataset: {
         name: dataset.manifest.name,
         sourceEvidenceLevel: dataset.manifest.evidenceLevel,
@@ -687,6 +946,18 @@ async function main(): Promise<void> {
           cases: dataset.cases.length,
           candidateDecision,
           productionDefault: report.productionDefault,
+          reproducibility: {
+            commit: report.reproducibility.tool.versionOrCommit,
+            fixtureHash: report.reproducibility.fixture.sha256,
+            configurationHash: report.reproducibility.configuration.sha256,
+          },
+          ablation: report.ablation.entries.map((entry) => ({
+            stage: entry.stage,
+            configuration: entry.configuration,
+            deltaRecallAt10: entry.deltaVsBaseline.recallAt10,
+            deltaLatencyMs: entry.latency.deltaVsBaselineMs,
+            attributedStorageBytes: entry.storage.attributedBytes,
+          })),
           configurations: runs.map((run) => ({
             name: run.configurationName,
             recallAt10: run.meanRecallAt10,

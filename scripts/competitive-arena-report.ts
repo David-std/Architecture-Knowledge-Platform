@@ -57,6 +57,8 @@ type RetrievalRun = {
 type RetrievalReport = {
   schemaVersion: number;
   evidence?: { level?: string; limitations?: string[] };
+  reproducibility?: Record<string, unknown>;
+  ablation?: Record<string, unknown>;
   runs: RetrievalRun[];
 };
 
@@ -304,7 +306,17 @@ async function main(): Promise<void> {
     );
   });
 
-  const report = buildCompetitiveArenaReport(systems, manifest.scope);
+  const arena = buildCompetitiveArenaReport(systems, manifest.scope);
+  const report = {
+    ...arena,
+    benchmarkEvidence:
+      retrievalReport === null
+        ? null
+        : {
+            reproducibility: retrievalReport.reproducibility ?? null,
+            ablation: retrievalReport.ablation ?? null,
+          },
+  };
   await mkdir(path.dirname(outputPath), { recursive: true });
   await mkdir(path.dirname(markdownPath), { recursive: true });
   await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
