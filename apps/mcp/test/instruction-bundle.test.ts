@@ -62,9 +62,7 @@ describe("agent instruction bundle", () => {
   });
 
   it("recomputes content integrity and supports WARN or STRICT expected-digest policy", () => {
-    const bundle = createAgentInstructionBundle(
-      "2026-09-19T21:15:00.000Z",
-    );
+    const bundle = createAgentInstructionBundle("2026-09-19T21:15:00.000Z");
     expect(
       verifyAgentInstructionBundle(bundle, {
         expectedSha256: bundle.manifest.sha256,

@@ -28,9 +28,7 @@ const token = process.env.AKP_API_TOKEN;
 if (!token) throw new Error("AKP_API_TOKEN is required for MCP.");
 
 function instructionIntegrityMode(): AgentInstructionIntegrityMode {
-  const value = (
-    process.env.AKP_AGENT_INSTRUCTION_INTEGRITY_MODE ?? "STRICT"
-  )
+  const value = (process.env.AKP_AGENT_INSTRUCTION_INTEGRITY_MODE ?? "STRICT")
     .trim()
     .toUpperCase();
   if (value !== "WARN" && value !== "STRICT") {
