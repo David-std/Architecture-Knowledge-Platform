@@ -485,9 +485,6 @@ try {
       derivedTruthKinds: derivedRefs.map((entry) => entry.kind),
     },
     temporal,
-    deferredToNextREGISTEREDSlice: {
-      workspaceTeamMetrics: true,
-    },
   };
 
   await mkdir(path.dirname(outputPath), { recursive: true });
