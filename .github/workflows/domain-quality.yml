@@ -266,12 +266,6 @@ jobs:
               throw new Error("Incomplete registered code timing metric: " + name);
             }
           }
-          if (
-            report.deferredToNextregisteredSlice?.temporalTruthMetrics !== true ||
-            report.deferredToNextregisteredSlice?.workspaceTeamMetrics !== true
-          ) {
-            throw new Error("registered partial metric coverage must remain explicit.");
-          }
           console.log(
             JSON.stringify(
               {

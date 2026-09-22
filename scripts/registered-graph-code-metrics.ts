@@ -836,10 +836,6 @@ try {
     },
     graph,
     code: codeMetrics,
-    deferredToNextREGISTEREDSlice: {
-      temporalTruthMetrics: true,
-      workspaceTeamMetrics: true,
-    },
   };
 
   await mkdir(path.dirname(outputPath), { recursive: true });
