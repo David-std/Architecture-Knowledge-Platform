@@ -279,8 +279,7 @@ for (const entry of entries) {
       failures.push(`LEGACY_VERIFICATION_TERMINOLOGY ${entry.path}`);
     if (legacyProofCommand.test(content))
       failures.push(`LEGACY_PROOF_COMMAND ${entry.path}`);
-    if (labResidue.test(content))
-      failures.push(`LAB_RESIDUE ${entry.path}`);
+    if (labResidue.test(content)) failures.push(`LAB_RESIDUE ${entry.path}`);
   }
 }
 
