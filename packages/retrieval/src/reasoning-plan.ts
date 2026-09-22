@@ -14,6 +14,239 @@ export type ReasoningOutputKind =
   | "RAW_CONTENT"
   | "CONTEXT_PACKET";
 
+export type ReasoningGraphDomain =
+  | "EPISTEMIC"
+  | "CODE"
+  | "TEMPORAL"
+  | "COMMUNITY"
+  | "WORK";
+
+export type ReasoningSourceDomain = "AUTHORIZED_SOURCE_ARTIFACT";
+export type ReasoningOperatorCapability = "RAW_READ";
+
+export interface ReasoningOperatorContract {
+  inputSchema: {
+    schemaVersion: 1;
+    operator: ReasoningOperator;
+  };
+  inputKinds: readonly ReasoningOutputKind[] | null;
+  outputKind: ReasoningOutputKind;
+  outputReferenceSchema: "STRING_ARRAY";
+  requiredCapability: ReasoningOperatorCapability | null;
+  allowedGraphDomains: readonly ReasoningGraphDomain[];
+  allowedSourceDomains: readonly ReasoningSourceDomain[];
+  /** Static estimate in the same abstract units as maxCost and value.cost. */
+  estimatedCost: number;
+  timeoutMs: number;
+  maxResults: number;
+}
+
+function operatorContract(
+  operator: ReasoningOperator,
+  contract: Omit<ReasoningOperatorContract, "inputSchema">,
+): ReasoningOperatorContract {
+  return {
+    inputSchema: { schemaVersion: 1, operator },
+    ...contract,
+  };
+}
+
+export const REASONING_OPERATOR_CONTRACTS = {
+  RESOLVE_ENTITY: operatorContract("RESOLVE_ENTITY", {
+    inputKinds: null,
+    outputKind: "DOCUMENT_SET",
+    outputReferenceSchema: "STRING_ARRAY",
+    requiredCapability: null,
+    allowedGraphDomains: ["EPISTEMIC"],
+    allowedSourceDomains: [],
+    estimatedCost: 0.15,
+    timeoutMs: 10_000,
+    maxResults: 100,
+  }),
+  EXACT_LOOKUP: operatorContract("EXACT_LOOKUP", {
+    inputKinds: null,
+    outputKind: "DOCUMENT_SET",
+    outputReferenceSchema: "STRING_ARRAY",
+    requiredCapability: null,
+    allowedGraphDomains: ["EPISTEMIC"],
+    allowedSourceDomains: [],
+    estimatedCost: 0.1,
+    timeoutMs: 10_000,
+    maxResults: 100,
+  }),
+  SEARCH_LEXICAL: operatorContract("SEARCH_LEXICAL", {
+    inputKinds: null,
+    outputKind: "DOCUMENT_SET",
+    outputReferenceSchema: "STRING_ARRAY",
+    requiredCapability: null,
+    allowedGraphDomains: ["EPISTEMIC"],
+    allowedSourceDomains: [],
+    estimatedCost: 0.15,
+    timeoutMs: 10_000,
+    maxResults: 100,
+  }),
+  SEARCH_VECTOR: operatorContract("SEARCH_VECTOR", {
+    inputKinds: null,
+    outputKind: "DOCUMENT_SET",
+    outputReferenceSchema: "STRING_ARRAY",
+    requiredCapability: null,
+    allowedGraphDomains: ["EPISTEMIC"],
+    allowedSourceDomains: [],
+    estimatedCost: 0.2,
+    timeoutMs: 15_000,
+    maxResults: 100,
+  }),
+  SEARCH_CODE: operatorContract("SEARCH_CODE", {
+    inputKinds: null,
+    outputKind: "DOCUMENT_SET",
+    outputReferenceSchema: "STRING_ARRAY",
+    requiredCapability: null,
+    allowedGraphDomains: ["CODE", "EPISTEMIC"],
+    allowedSourceDomains: [],
+    estimatedCost: 0.2,
+    timeoutMs: 15_000,
+    maxResults: 100,
+  }),
+  TRAVERSE_TYPED: operatorContract("TRAVERSE_TYPED", {
+    inputKinds: ["DOCUMENT_SET"],
+    outputKind: "DOCUMENT_SET",
+    outputReferenceSchema: "STRING_ARRAY",
+    requiredCapability: null,
+    allowedGraphDomains: ["EPISTEMIC"],
+    allowedSourceDomains: [],
+    estimatedCost: 0.25,
+    timeoutMs: 15_000,
+    maxResults: 500,
+  }),
+  PPR_EXPAND: operatorContract("PPR_EXPAND", {
+    inputKinds: ["DOCUMENT_SET"],
+    outputKind: "DOCUMENT_SET",
+    outputReferenceSchema: "STRING_ARRAY",
+    requiredCapability: null,
+    allowedGraphDomains: ["EPISTEMIC"],
+    allowedSourceDomains: [],
+    estimatedCost: 0.35,
+    timeoutMs: 15_000,
+    maxResults: 500,
+  }),
+  COMMUNITY_SEARCH: operatorContract("COMMUNITY_SEARCH", {
+    inputKinds: null,
+    outputKind: "DOCUMENT_SET",
+    outputReferenceSchema: "STRING_ARRAY",
+    requiredCapability: null,
+    allowedGraphDomains: ["COMMUNITY", "EPISTEMIC"],
+    allowedSourceDomains: [],
+    estimatedCost: 0.25,
+    timeoutMs: 15_000,
+    maxResults: 100,
+  }),
+  TEMPORAL_AT: operatorContract("TEMPORAL_AT", {
+    inputKinds: ["DOCUMENT_SET"],
+    outputKind: "DOCUMENT_SET",
+    outputReferenceSchema: "STRING_ARRAY",
+    requiredCapability: null,
+    allowedGraphDomains: ["TEMPORAL"],
+    allowedSourceDomains: [],
+    estimatedCost: 0.2,
+    timeoutMs: 10_000,
+    maxResults: 500,
+  }),
+  FILTER_SCOPE: operatorContract("FILTER_SCOPE", {
+    inputKinds: ["DOCUMENT_SET"],
+    outputKind: "DOCUMENT_SET",
+    outputReferenceSchema: "STRING_ARRAY",
+    requiredCapability: null,
+    allowedGraphDomains: [],
+    allowedSourceDomains: [],
+    estimatedCost: 0.05,
+    timeoutMs: 5_000,
+    maxResults: 500,
+  }),
+  JOIN_EVIDENCE: operatorContract("JOIN_EVIDENCE", {
+    inputKinds: ["DOCUMENT_SET"],
+    outputKind: "DOCUMENT_SET",
+    outputReferenceSchema: "STRING_ARRAY",
+    requiredCapability: null,
+    allowedGraphDomains: [],
+    allowedSourceDomains: [],
+    estimatedCost: 0.05,
+    timeoutMs: 5_000,
+    maxResults: 500,
+  }),
+  COMPARE: operatorContract("COMPARE", {
+    inputKinds: ["DOCUMENT_SET", "AGGREGATE", "COMPARISON"],
+    outputKind: "COMPARISON",
+    outputReferenceSchema: "STRING_ARRAY",
+    requiredCapability: null,
+    allowedGraphDomains: [],
+    allowedSourceDomains: [],
+    estimatedCost: 0.05,
+    timeoutMs: 5_000,
+    maxResults: 1_000,
+  }),
+  AGGREGATE: operatorContract("AGGREGATE", {
+    inputKinds: ["DOCUMENT_SET", "COMPARISON"],
+    outputKind: "AGGREGATE",
+    outputReferenceSchema: "STRING_ARRAY",
+    requiredCapability: null,
+    allowedGraphDomains: [],
+    allowedSourceDomains: [],
+    estimatedCost: 0.05,
+    timeoutMs: 5_000,
+    maxResults: 1_000,
+  }),
+  CALCULATE: operatorContract("CALCULATE", {
+    inputKinds: ["DOCUMENT_SET", "AGGREGATE"],
+    outputKind: "AGGREGATE",
+    outputReferenceSchema: "STRING_ARRAY",
+    requiredCapability: null,
+    allowedGraphDomains: [],
+    allowedSourceDomains: [],
+    estimatedCost: 0.05,
+    timeoutMs: 5_000,
+    maxResults: 1_000,
+  }),
+  VERIFY_SUPPORT: operatorContract("VERIFY_SUPPORT", {
+    inputKinds: ["DOCUMENT_SET"],
+    outputKind: "DOCUMENT_SET",
+    outputReferenceSchema: "STRING_ARRAY",
+    requiredCapability: null,
+    allowedGraphDomains: [],
+    allowedSourceDomains: [],
+    estimatedCost: 0.05,
+    timeoutMs: 5_000,
+    maxResults: 500,
+  }),
+  LOAD_RAW: operatorContract("LOAD_RAW", {
+    inputKinds: ["DOCUMENT_SET"],
+    outputKind: "RAW_CONTENT",
+    outputReferenceSchema: "STRING_ARRAY",
+    requiredCapability: "RAW_READ",
+    allowedGraphDomains: [],
+    allowedSourceDomains: ["AUTHORIZED_SOURCE_ARTIFACT"],
+    estimatedCost: 0.2,
+    timeoutMs: 15_000,
+    maxResults: 100,
+  }),
+  BUILD_CONTEXT: operatorContract("BUILD_CONTEXT", {
+    inputKinds: ["DOCUMENT_SET", "COMPARISON", "AGGREGATE", "RAW_CONTENT"],
+    outputKind: "CONTEXT_PACKET",
+    outputReferenceSchema: "STRING_ARRAY",
+    requiredCapability: null,
+    allowedGraphDomains: [],
+    allowedSourceDomains: [],
+    estimatedCost: 0.15,
+    timeoutMs: 10_000,
+    maxResults: 1,
+  }),
+} satisfies Record<ReasoningOperator, ReasoningOperatorContract>;
+
+export function reasoningOperatorContract(
+  operator: ReasoningOperator,
+): ReasoningOperatorContract {
+  return REASONING_OPERATOR_CONTRACTS[operator];
+}
+
 export interface ReasoningPlanValidationPolicy {
   authorizedSpaceId: string;
   authorizedVaultIds: readonly string[];
@@ -63,30 +296,7 @@ const DEFAULT_LIMITS = Object.freeze({
 export function reasoningOutputKind(
   operator: ReasoningOperator,
 ): ReasoningOutputKind {
-  switch (operator) {
-    case "RESOLVE_ENTITY":
-    case "EXACT_LOOKUP":
-    case "SEARCH_LEXICAL":
-    case "SEARCH_VECTOR":
-    case "SEARCH_CODE":
-    case "TRAVERSE_TYPED":
-    case "PPR_EXPAND":
-    case "COMMUNITY_SEARCH":
-    case "TEMPORAL_AT":
-    case "FILTER_SCOPE":
-    case "JOIN_EVIDENCE":
-    case "VERIFY_SUPPORT":
-      return "DOCUMENT_SET";
-    case "COMPARE":
-      return "COMPARISON";
-    case "AGGREGATE":
-    case "CALCULATE":
-      return "AGGREGATE";
-    case "LOAD_RAW":
-      return "RAW_CONTENT";
-    case "BUILD_CONTEXT":
-      return "CONTEXT_PACKET";
-  }
+  return reasoningOperatorContract(operator).outputKind;
 }
 
 export function reasoningReferencedStepIds(step: ReasoningStep): string[] {
@@ -121,36 +331,8 @@ export function reasoningReferencedStepIds(step: ReasoningStep): string[] {
 function allowedInputKinds(
   operator: ReasoningOperator,
 ): ReadonlySet<ReasoningOutputKind> | null {
-  switch (operator) {
-    case "TRAVERSE_TYPED":
-    case "PPR_EXPAND":
-    case "TEMPORAL_AT":
-    case "FILTER_SCOPE":
-    case "JOIN_EVIDENCE":
-    case "VERIFY_SUPPORT":
-    case "LOAD_RAW":
-      return new Set(["DOCUMENT_SET"]);
-    case "COMPARE":
-      return new Set(["DOCUMENT_SET", "AGGREGATE", "COMPARISON"]);
-    case "AGGREGATE":
-      return new Set(["DOCUMENT_SET", "COMPARISON"]);
-    case "CALCULATE":
-      return new Set(["DOCUMENT_SET", "AGGREGATE"]);
-    case "BUILD_CONTEXT":
-      return new Set([
-        "DOCUMENT_SET",
-        "COMPARISON",
-        "AGGREGATE",
-        "RAW_CONTENT",
-      ]);
-    case "RESOLVE_ENTITY":
-    case "EXACT_LOOKUP":
-    case "SEARCH_LEXICAL":
-    case "SEARCH_VECTOR":
-    case "SEARCH_CODE":
-    case "COMMUNITY_SEARCH":
-      return null;
-  }
+  const inputKinds = reasoningOperatorContract(operator).inputKinds;
+  return inputKinds ? new Set(inputKinds) : null;
 }
 
 function comparableRevisionSet(
@@ -282,6 +464,7 @@ export function validateReasoningPlan(
 
   const priorSteps = new Map<string, ReasoningStep>();
   const consumerCounts = new Map<string, number>();
+  let estimatedCost = 0;
   const allowedPeers = new Set(policy.allowedExternalPeerIds ?? []);
   const allowedRoles = policy.allowedModelRoles
     ? new Set(policy.allowedModelRoles)
@@ -298,6 +481,19 @@ export function validateReasoningPlan(
 
   for (const [index, step] of plan.steps.entries()) {
     const stepPath = `steps.${index}`;
+    const contract = reasoningOperatorContract(step.operator);
+    estimatedCost += contract.estimatedCost;
+    if (
+      contract.requiredCapability === "RAW_READ" &&
+      policy.rawAllowed !== true
+    ) {
+      issue(
+        issues,
+        "REASONING_PLAN_RAW_DENIED",
+        `${stepPath}.operator`,
+        "raw loading is not allowed by policy",
+      );
+    }
     if (priorSteps.has(step.id)) {
       issue(
         issues,
@@ -445,14 +641,6 @@ export function validateReasoningPlan(
         "typed graph hop count exceeds policy",
       );
     }
-    if (step.operator === "LOAD_RAW" && policy.rawAllowed !== true) {
-      issue(
-        issues,
-        "REASONING_PLAN_RAW_DENIED",
-        `${stepPath}.operator`,
-        "raw loading is not allowed by policy",
-      );
-    }
     if (
       step.operator === "SEARCH_CODE" &&
       step.args.projectId &&
@@ -510,6 +698,18 @@ export function validateReasoningPlan(
     }
 
     priorSteps.set(step.id, step);
+  }
+
+  if (
+    plan.budget.maxCost !== undefined &&
+    estimatedCost > plan.budget.maxCost
+  ) {
+    issue(
+      issues,
+      "REASONING_PLAN_ESTIMATED_COST_EXCEEDED",
+      "budget.maxCost",
+      "estimated operator cost exceeds the plan cost budget",
+    );
   }
 
   for (const [stepId, consumers] of consumerCounts) {

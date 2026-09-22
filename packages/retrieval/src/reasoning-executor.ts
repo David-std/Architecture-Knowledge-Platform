@@ -5,6 +5,7 @@ import type {
   ReasoningStep,
 } from "@akp/contracts";
 import {
+  reasoningOperatorContract,
   reasoningOutputKind,
   reasoningReferencedStepIds,
   validateReasoningPlan,
@@ -215,6 +216,7 @@ async function invokeWithDeadline<T>(
   work: Promise<T>,
   controller: AbortController,
   remainingMs: number,
+  timeoutCode = "REASONING_PLAN_WALL_BUDGET_EXCEEDED",
 ): Promise<T> {
   if (remainingMs <= 0) {
     controller.abort();
@@ -227,7 +229,7 @@ async function invokeWithDeadline<T>(
       new Promise<T>((_resolve, reject) => {
         timer = setTimeout(() => {
           controller.abort();
-          reject(new Error("REASONING_PLAN_WALL_BUDGET_EXCEEDED"));
+          reject(new Error(timeoutCode));
         }, remainingMs);
       }),
     ]);
@@ -366,6 +368,12 @@ export async function executeReasoningPlan(
     }
 
     const remainingMs = deadlineMs - now();
+    const contract = reasoningOperatorContract(step.operator);
+    const operatorTimeoutMs = Math.min(remainingMs, contract.timeoutMs);
+    const timeoutCode =
+      contract.timeoutMs < remainingMs
+        ? "REASONING_OPERATOR_TIMEOUT"
+        : "REASONING_PLAN_WALL_BUDGET_EXCEEDED";
     const { controller, cleanup } = linkedController(options.signal);
     const inputs = new Map(
       inputStepIds
@@ -389,12 +397,22 @@ export async function executeReasoningPlan(
           budget: copyBudget(budget, now(), startedAtMs),
         }),
         controller,
-        remainingMs,
+        operatorTimeoutMs,
+        timeoutCode,
       );
       await assertRevisionStable(options.revisionGuard);
       const expectedKind = reasoningOutputKind(step.operator);
       if (value.kind !== expectedKind) {
         throw new Error("REASONING_OPERATOR_OUTPUT_KIND_MISMATCH");
+      }
+      if (
+        !Array.isArray(value.refs) ||
+        value.refs.some((reference) => typeof reference !== "string")
+      ) {
+        throw new Error("REASONING_OPERATOR_OUTPUT_REFERENCE_INVALID");
+      }
+      if (value.refs.length > contract.maxResults) {
+        throw new Error("REASONING_OPERATOR_RESULT_LIMIT_EXCEEDED");
       }
 
       const tokenUsage = finiteNonNegative(value.tokenUsage);

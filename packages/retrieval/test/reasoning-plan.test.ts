@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { ReasoningPlan, type ContextRevisionSet } from "@akp/contracts";
-import { validateReasoningPlan } from "../src/reasoning-plan.js";
+import {
+  ReasoningOperator,
+  ReasoningPlan,
+  type ContextRevisionSet,
+} from "@akp/contracts";
+import {
+  REASONING_OPERATOR_CONTRACTS,
+  reasoningOperatorContract,
+  validateReasoningPlan,
+} from "../src/reasoning-plan.js";
 
 const SPACE_ID = "00000000-0000-4000-8000-000000000001";
 const VAULT_ID = "00000000-0000-4000-8000-000000000002";
@@ -119,6 +127,50 @@ function context(overrides: Record<string, unknown> = {}) {
 }
 
 describe("safe reasoning plan schema and validation", () => {
+  it("defines an exhaustive bounded contract for every reasoning operator", () => {
+    expect(Object.keys(REASONING_OPERATOR_CONTRACTS).sort()).toEqual(
+      [...ReasoningOperator.options].sort(),
+    );
+    for (const operator of ReasoningOperator.options) {
+      const contract = reasoningOperatorContract(operator);
+      expect(contract.inputSchema).toEqual({
+        schemaVersion: 1,
+        operator,
+      });
+      expect(contract.outputReferenceSchema).toBe("STRING_ARRAY");
+      expect(contract.estimatedCost).toBeGreaterThan(0);
+      expect(contract.timeoutMs).toBeGreaterThan(0);
+      expect(contract.timeoutMs).toBeLessThanOrEqual(30_000);
+      expect(contract.maxResults).toBeGreaterThan(0);
+    }
+    expect(reasoningOperatorContract("LOAD_RAW")).toMatchObject({
+      requiredCapability: "RAW_READ",
+      allowedSourceDomains: ["AUTHORIZED_SOURCE_ARTIFACT"],
+      maxResults: 100,
+    });
+    expect(reasoningOperatorContract("SEARCH_CODE").allowedGraphDomains).toEqual(
+      ["CODE", "EPISTEMIC"],
+    );
+  });
+
+  it("rejects a plan whose static operator estimate already exceeds maxCost", () => {
+    const plan = validPlan();
+    const estimated = plan.steps.reduce(
+      (sum, step) =>
+        sum + reasoningOperatorContract(step.operator).estimatedCost,
+      0,
+    );
+    plan.budget.maxCost = Math.max(0, estimated - 0.01);
+
+    const result = validateReasoningPlan(plan, context());
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issues.map((entry) => entry.code)).toContain(
+        "REASONING_PLAN_ESTIMATED_COST_EXCEEDED",
+      );
+    }
+  });
+
   it("accepts a typed impact plan bound to the current revision set", () => {
     const result = validateReasoningPlan(validPlan(), context());
     expect(result.ok).toBe(true);

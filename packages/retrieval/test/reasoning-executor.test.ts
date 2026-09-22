@@ -379,6 +379,110 @@ describe("reasoning executor", () => {
     expect(later).not.toHaveBeenCalled();
   });
 
+  it("enforces the operator timeout independently of the plan wall budget", async () => {
+    vi.useFakeTimers();
+    try {
+      const plan: ReasoningPlan = {
+        schemaVersion: 1,
+        query: "slow bounded lookup",
+        intent: "CONCEPTUAL",
+        revisionSet: revisions(),
+        steps: [
+          {
+            id: "slow",
+            dependsOn: [],
+            executionTarget: { kind: "LOCAL" },
+            operator: "SEARCH_LEXICAL",
+            args: { query: "slow", limit: 5 },
+          },
+          {
+            id: "later",
+            dependsOn: [],
+            executionTarget: { kind: "LOCAL" },
+            operator: "SEARCH_LEXICAL",
+            args: { query: "later", limit: 5 },
+          },
+        ],
+        budget: {
+          maxSteps: 2,
+          maxWallMs: 30_000,
+          maxTokens: 1_000,
+          maxCost: 1,
+        },
+      };
+      const later = vi.fn(async () => documentValue("doc:later"));
+      const execution = executeReasoningPlan(plan, validationContext(), {
+        ports: {
+          SEARCH_LEXICAL: async ({ step, signal }) => {
+            if (step.id === "later") return later();
+            await new Promise<void>((resolve) => {
+              signal.addEventListener("abort", () => resolve(), { once: true });
+            });
+            throw new Error("PORT_OBSERVED_ABORT");
+          },
+        },
+      });
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      const result = await execution;
+
+      expect(result.status).toBe("PARTIAL");
+      if (result.status === "REJECTED") {
+        throw new Error("unexpected rejection");
+      }
+      expect(result.trace.steps[0]).toMatchObject({
+        stepId: "slow",
+        status: "FAILED",
+        errorCode: "REASONING_OPERATOR_TIMEOUT",
+      });
+      expect(later).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("rejects operator output that exceeds the contract result cap", async () => {
+    const plan: ReasoningPlan = {
+      schemaVersion: 1,
+      query: "bounded lexical results",
+      intent: "CONCEPTUAL",
+      revisionSet: revisions(),
+      steps: [
+        {
+          id: "search",
+          dependsOn: [],
+          executionTarget: { kind: "LOCAL" },
+          operator: "SEARCH_LEXICAL",
+          args: { query: "bounded", limit: 100 },
+        },
+      ],
+      budget: {
+        maxSteps: 1,
+        maxWallMs: 10_000,
+        maxTokens: 1_000,
+        maxCost: 1,
+      },
+    };
+
+    const result = await executeReasoningPlan(plan, validationContext(), {
+      ports: {
+        SEARCH_LEXICAL: async () => ({
+          kind: "DOCUMENT_SET",
+          refs: Array.from({ length: 101 }, (_, index) => `doc:${index}`),
+          payload: [],
+        }),
+      },
+    });
+
+    expect(result.status).toBe("FAILED");
+    if (result.status === "REJECTED") throw new Error("unexpected rejection");
+    expect(result.trace.steps[0]).toMatchObject({
+      stepId: "search",
+      status: "FAILED",
+      errorCode: "REASONING_OPERATOR_RESULT_LIMIT_EXCEEDED",
+    });
+  });
+
   it("halts later steps when actual token usage exceeds the validated runtime budget", async () => {
     const plan: ReasoningPlan = {
       schemaVersion: 1,
