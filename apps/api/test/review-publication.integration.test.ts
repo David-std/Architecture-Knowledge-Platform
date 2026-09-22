@@ -548,7 +548,9 @@ describe("review publication integration", () => {
         ],
       ],
     );
-    expect(Object.fromEntries(events.rows.map((row) => [row.event_type, row.count]))).toEqual({
+    expect(
+      Object.fromEntries(events.rows.map((row) => [row.event_type, row.count])),
+    ).toEqual({
       KnowledgePublished: 1,
       CorpusRevisionPublished: 1,
       LexicalIndexUpdateRequested: 1,

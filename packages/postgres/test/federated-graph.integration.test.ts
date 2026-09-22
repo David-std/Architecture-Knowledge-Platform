@@ -897,11 +897,7 @@ describe("federated multi-graph substrate integration", () => {
             scopeId,
             revision: baseRevision,
             nodes: [
-              node(
-                baseIdentity,
-                fixture.vaultA,
-                "allowed/code/RaceTarget.run",
-              ),
+              node(baseIdentity, fixture.vaultA, "allowed/code/RaceTarget.run"),
             ],
           }),
         );
@@ -940,9 +936,7 @@ describe("federated multi-graph substrate integration", () => {
           }),
         ]);
         const fulfilled = results.filter(
-          (
-            result,
-          ): result is PromiseFulfilledResult<GraphProjectionRevision> =>
+          (result): result is PromiseFulfilledResult<GraphProjectionRevision> =>
             result.status === "fulfilled",
         );
         const rejected = results.filter(
@@ -973,9 +967,7 @@ describe("federated multi-graph substrate integration", () => {
             order by revision`,
           [fixture.spaceId, scopeId],
         );
-        expect(
-          rows.rows.filter((row) => row.lifecycle === "ACTIVE"),
-        ).toEqual([
+        expect(rows.rows.filter((row) => row.lifecycle === "ACTIVE")).toEqual([
           expect.objectContaining({
             revision: fulfilled[0]?.value.revision,
           }),
