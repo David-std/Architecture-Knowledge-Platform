@@ -22,13 +22,14 @@ import {
   upsertContextFabricPeer,
   workspaceContextRevisionState,
   workspacePromotionEvidence,
-} from "@akp/postgres";
+} from "../packages/postgres/src/index.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is required.");
 
 const outputPath = path.resolve(
-  process.env.AKP_REGISTERED_WORKSPACE_TEAM_METRICS_REPORT ?? "reports/ci/registered-workspace-team-metrics.json",
+  process.env.AKP_REGISTERED_WORKSPACE_TEAM_METRICS_REPORT ??
+    "reports/ci/registered-workspace-team-metrics.json",
 );
 
 type RateMetric = {
@@ -49,7 +50,11 @@ function rate(
   evidence: string,
   limitation: string,
 ): RateMetric {
-  if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator <= 0) {
+  if (
+    !Number.isFinite(numerator) ||
+    !Number.isFinite(denominator) ||
+    denominator <= 0
+  ) {
     throw new Error("REGISTERED_TEAM_METRIC_DENOMINATOR_INVALID");
   }
   return {
@@ -331,14 +336,17 @@ try {
   );
   const handoffChecks = [
     handoff?.summary === handoffInput.summary,
-    JSON.stringify(handoff?.completed) === JSON.stringify(handoffInput.completed),
-    JSON.stringify(handoff?.remaining) === JSON.stringify(handoffInput.remaining),
+    JSON.stringify(handoff?.completed) ===
+      JSON.stringify(handoffInput.completed),
+    JSON.stringify(handoff?.remaining) ===
+      JSON.stringify(handoffInput.remaining),
     JSON.stringify(handoff?.blockers) === JSON.stringify(handoffInput.blockers),
     JSON.stringify(handoff?.changedResourceRefs) ===
       JSON.stringify(handoffInput.changedResourceRefs),
     JSON.stringify(handoff?.evidenceRefs) ===
       JSON.stringify(handoffInput.evidenceRefs),
-    JSON.stringify(handoff?.questions) === JSON.stringify(handoffInput.questions),
+    JSON.stringify(handoff?.questions) ===
+      JSON.stringify(handoffInput.questions),
     handoff?.contextRevisionSetHash === pinnedFirst.revisionSetHash &&
       handoff?.contextRevision !== null,
   ];
@@ -416,7 +424,8 @@ try {
     Number(currentDraft.status === "QUEUED") +
       Number(
         changedState.status === "CHANGED" &&
-          changedState.pinned?.revisionSetHash === pinnedFirst.revisionSetHash &&
+          changedState.pinned?.revisionSetHash ===
+            pinnedFirst.revisionSetHash &&
           staleDraft.status === "RECONCILE_REQUIRED",
       ),
     2,
@@ -554,16 +563,14 @@ try {
   if (status !== "PROVEN") process.exitCode = 1;
 } finally {
   await db.pool
-    .query(
-      "delete from event_outbox where space_id=any($1::uuid[])",
-      [[primarySpaceId, otherSpaceId]],
-    )
+    .query("delete from event_outbox where space_id=any($1::uuid[])", [
+      [primarySpaceId, otherSpaceId],
+    ])
     .catch(() => undefined);
   await db.pool
-    .query(
-      "delete from spaces where id=any($1::uuid[])",
-      [[primarySpaceId, otherSpaceId]],
-    )
+    .query("delete from spaces where id=any($1::uuid[])", [
+      [primarySpaceId, otherSpaceId],
+    ])
     .catch(() => undefined);
   await db.pool
     .query("delete from users where id=any($1::uuid[])", [[actorA, actorB]])

@@ -2,7 +2,7 @@ import "dotenv/config";
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { Postgres, PostgresTemporalTruthStore } from "@akp/postgres";
+import { Postgres, PostgresTemporalTruthStore } from "../packages/postgres/src/index.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is required.");
@@ -30,7 +30,11 @@ function rate(
   evidence: string,
   limitation: string,
 ): RateMetric {
-  if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator <= 0) {
+  if (
+    !Number.isFinite(numerator) ||
+    !Number.isFinite(denominator) ||
+    denominator <= 0
+  ) {
     throw new Error("REGISTERED_TEMPORAL_METRIC_DENOMINATOR_INVALID");
   }
   return {
@@ -50,7 +54,10 @@ function ids(values: Array<{ id: string }>): Set<string> {
   return new Set(values.map((value) => value.id));
 }
 
-function sameSet(actual: ReadonlySet<string>, expected: ReadonlySet<string>): boolean {
+function sameSet(
+  actual: ReadonlySet<string>,
+  expected: ReadonlySet<string>,
+): boolean {
   return (
     actual.size === expected.size &&
     [...actual].every((value) => expected.has(value))
@@ -488,7 +495,10 @@ try {
         status,
         outputPath,
         temporal: Object.fromEntries(
-          Object.entries(temporal).map(([name, metric]) => [name, metric.value]),
+          Object.entries(temporal).map(([name, metric]) => [
+            name,
+            metric.value,
+          ]),
         ),
       },
       null,

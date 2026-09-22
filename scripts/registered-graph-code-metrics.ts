@@ -10,13 +10,13 @@ import type {
   GraphProjectionEdgeInput,
   GraphProjectionNodeInput,
   GraphProvenanceEnvelope,
-} from "@akp/contracts";
-import { Postgres, PostgresFederatedGraphStore } from "@akp/postgres";
-import { CodeGraphQueryService } from "@akp/project-adapter";
+} from "../packages/contracts/src/index.js";
+import { Postgres, PostgresFederatedGraphStore } from "../packages/postgres/src/index.js";
+import { CodeGraphQueryService } from "../packages/project-adapter/src/index.js";
 import {
   detectLeidenCommunities,
   personalizedPageRank,
-} from "@akp/retrieval";
+} from "../packages/retrieval/src/index.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is required.");
@@ -54,7 +54,11 @@ function rate(
   evidence: string,
   limitation: string,
 ): RateMetric {
-  if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator <= 0) {
+  if (
+    !Number.isFinite(numerator) ||
+    !Number.isFinite(denominator) ||
+    denominator <= 0
+  ) {
     throw new Error("REGISTERED_METRIC_DENOMINATOR_INVALID");
   }
   return {
@@ -203,13 +207,7 @@ const service = identity(
   "code:service",
   codeRevision,
 );
-const auth = identity(
-  "CODE",
-  codeScope,
-  "function",
-  "code:auth",
-  codeRevision,
-);
+const auth = identity("CODE", codeScope, "function", "code:auth", codeRevision);
 const repositoryNode = identity(
   "CODE",
   codeScope,
@@ -217,13 +215,7 @@ const repositoryNode = identity(
   "code:repository",
   codeRevision,
 );
-const testNode = identity(
-  "CODE",
-  codeScope,
-  "test",
-  "code:test",
-  codeRevision,
-);
+const testNode = identity("CODE", codeScope, "test", "code:test", codeRevision);
 const hidden = identity(
   "CODE",
   codeScope,

@@ -54,14 +54,17 @@ const actualProductGuides = (
   })
 ).sort();
 const expectedProductGuides = [...productGuides].sort();
-if (JSON.stringify(actualProductGuides) !== JSON.stringify(expectedProductGuides)) {
+if (
+  JSON.stringify(actualProductGuides) !== JSON.stringify(expectedProductGuides)
+) {
   const expected = new Set(expectedProductGuides);
   const actual = new Set(actualProductGuides);
   for (const guide of expectedProductGuides) {
     if (!actual.has(guide)) failures.push(`missing product guide: ${guide}`);
   }
   for (const guide of actualProductGuides) {
-    if (!expected.has(guide)) failures.push(`unexpected product guide: ${guide}`);
+    if (!expected.has(guide))
+      failures.push(`unexpected product guide: ${guide}`);
   }
 }
 for (const guide of productGuides) {
