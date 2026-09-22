@@ -94,14 +94,17 @@ function workflowEnv(source: string, name: string): string {
 }
 
 function lockedLinuxDoclingVersion(source: string): string {
-  const match =
-    /\{ name = "docling", version = "([^"]+)",[^}]*marker = "sys_platform != 'darwin'" \}/u.exec(
-      source,
-    );
-  if (!match?.[1]) {
-    throw new Error("Unable to resolve the locked Linux Docling version.");
+  for (const line of source.split(/\r?\n/u)) {
+    if (
+      !line.includes('{ name = "docling"') ||
+      !line.includes(`marker = "sys_platform != 'darwin'"`)
+    ) {
+      continue;
+    }
+    const version = /\bversion = "([^"]+)"/u.exec(line)?.[1];
+    if (version) return version;
   }
-  return match[1];
+  throw new Error("Unable to resolve the locked Linux Docling version.");
 }
 
 const paths = {
