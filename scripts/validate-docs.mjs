@@ -4,6 +4,20 @@ import fg from "fast-glob";
 
 const root = process.cwd();
 const failures = [];
+const productGuides = [
+  ...productGuides,
+];
+const requiredGuideSections = [
+  "What this feature is",
+  "When to use it",
+  "Configuration",
+  "Normal workflow",
+  "Security and governance boundaries",
+  "Degraded and offline behavior",
+  "Failure and recovery",
+  "Example",
+  "Limitations",
+];
 const required = [
   "README.md",
   "ARCHITECTURE.md",
@@ -31,6 +45,38 @@ for (const file of required) {
   await access(path.join(root, file)).catch(() =>
     failures.push(`missing required document: ${file}`),
   );
+}
+
+const actualProductGuides = (
+  await fg(["docs/guides/*.md"], {
+    cwd: root,
+    onlyFiles: true,
+  })
+).sort();
+const expectedProductGuides = [...productGuides].sort();
+if (JSON.stringify(actualProductGuides) !== JSON.stringify(expectedProductGuides)) {
+  const expected = new Set(expectedProductGuides);
+  const actual = new Set(actualProductGuides);
+  for (const guide of expectedProductGuides) {
+    if (!actual.has(guide)) failures.push(`missing product guide: ${guide}`);
+  }
+  for (const guide of actualProductGuides) {
+    if (!expected.has(guide)) failures.push(`unexpected product guide: ${guide}`);
+  }
+}
+for (const guide of productGuides) {
+  const raw = await readFile(path.join(root, guide), "utf8");
+  const headings = new Set(
+    raw
+      .split(/\r?\n/)
+      .map((line) => /^##\s+(.+?)\s*$/.exec(line)?.[1] ?? null)
+      .filter(Boolean),
+  );
+  for (const section of requiredGuideSections) {
+    if (!headings.has(section)) {
+      failures.push(`${guide}: missing required guide section "${section}"`);
+    }
+  }
 }
 
 const markdownFiles = await fg(["*.md", "docs/**/*.md", "reports/**/*.md"], {
@@ -70,6 +116,8 @@ console.log(
   JSON.stringify({
     status: failures.length ? "FAILED" : "PASSED",
     markdownFiles: markdownFiles.length,
+    productGuides: actualProductGuides.length,
+    requiredGuideSections: requiredGuideSections.length,
     failures,
   }),
 );
