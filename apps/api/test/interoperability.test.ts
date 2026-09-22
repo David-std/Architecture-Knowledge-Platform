@@ -249,7 +249,7 @@ describe("OKF v0.2 interoperability", () => {
     const base = bundle().documents[0]!;
     const first = {
       ...base,
-      id: "FOREIGN-P1",
+      id: "FOREIGN-A",
       externalId: "PROC-1",
       title: "Procedure one",
       sourcePath: "knowledge/procedures/one.md",
@@ -257,7 +257,7 @@ describe("OKF v0.2 interoperability", () => {
     };
     const second = {
       ...base,
-      id: "FOREIGN-P2",
+      id: "FOREIGN-B",
       externalId: "PROC-2",
       title: "Procedure two",
       sourcePath: "knowledge/procedures/two.md",
@@ -267,15 +267,15 @@ describe("OKF v0.2 interoperability", () => {
       documents: [first, second],
       relations: [
         {
-          fromId: "FOREIGN-P1",
-          toId: "FOREIGN-P2",
+          fromId: "FOREIGN-A",
+          toId: "FOREIGN-B",
           type: "follows",
           weight: 1,
           provenance: "foreign-cycle",
         },
         {
-          fromId: "FOREIGN-P2",
-          toId: "FOREIGN-P1",
+          fromId: "FOREIGN-B",
+          toId: "FOREIGN-A",
           type: "follows",
           weight: 1,
           provenance: "foreign-cycle",

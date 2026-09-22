@@ -1539,7 +1539,7 @@ describe("workspace coordination integration", () => {
   });
 
   it("rolls back a work claim if acquisition crashes before its coordination event commits", async () => {
-    const workKey = `p11:claim-crash:${randomUUID()}`;
+    const workKey = `claim-crash:${randomUUID()}`;
     await db.pool.query(`
       create or replace function akp_test_claim_acquisition_crash()
       returns trigger language plpgsql as $$

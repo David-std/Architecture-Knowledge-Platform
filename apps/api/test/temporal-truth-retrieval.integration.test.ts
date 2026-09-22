@@ -1132,14 +1132,14 @@ describe.skipIf(!databaseUrl)("truth-valid vector retrieval", () => {
     const fixture = await seedFixture("Community derived truth");
     const revisionId = randomUUID();
     const communityRevision = `truth-community-${randomUUID()}`;
-    const communityKey = `community:p5-${randomUUID()}`;
+    const communityKey = `community:temporal-${randomUUID()}`;
     await db.pool.query(
       `insert into community_index_revisions(
          id,space_id,vault_id,scope_id,community_revision,graph_revision,
          algorithm,algorithm_version,objective,resolution,random_seed,quality,
          hierarchy,lifecycle,status,stale,activated_at
        ) values(
-         $1,$2,$3,$4,$5,$6,'LEIDEN','p5-test','CPM',0.5,7,1,
+         $1,$2,$3,$4,$5,$6,'LEIDEN','temporal-test','CPM',0.5,7,1,
          '{}'::jsonb,'DERIVED_INDEX','ACTIVE',false,now()
        )`,
       [

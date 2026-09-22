@@ -25,7 +25,7 @@ beforeAll(async () => {
   db = new Postgres(process.env.DATABASE_URL);
   await db.pool.query(
     `insert into api_tokens(user_id,token_hash,label,scopes)
-     values($1,$2,'P1 profile governance integration',$3::jsonb)`,
+     values($1,$2,'Profile governance integration',$3::jsonb)`,
     [
       adminId,
       tokenHash,
@@ -44,7 +44,7 @@ beforeAll(async () => {
     db,
     {
       vaultKey: `profile-govern-${randomUUID().slice(0, 8)}`,
-      name: "P1 profile governance vault",
+      name: "Profile governance vault",
       spaceId,
       visibility: "PRIVATE",
       gitRepository: null,
@@ -101,7 +101,7 @@ describe("KnowledgeProfile governance surfaces", () => {
     const candidate = {
       ...DEFAULT_KNOWLEDGE_PROFILE_V1,
       version: "0.4-governance-validate",
-      displayName: "P1 governance validation profile",
+      displayName: "Governance validation profile",
     };
     const response = await app.inject({
       method: "POST",
@@ -141,7 +141,7 @@ describe("KnowledgeProfile governance surfaces", () => {
     const candidate = {
       ...DEFAULT_KNOWLEDGE_PROFILE_V1,
       version: "0.4-governance-list",
-      displayName: "P1 governance list profile",
+      displayName: "Governance list profile",
     };
     const dryRun = await app.inject({
       method: "POST",

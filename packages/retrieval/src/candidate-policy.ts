@@ -96,7 +96,7 @@ export const DEFAULT_RETRIEVAL_POLICY: RetrievalPolicy = {
   truthValidation: "STRICT",
   graphMode: "LOCAL",
   // Compatibility default for the current bounded full-context assembler.
-  // Progressive L0-L3 assembly semantics are introduced separately in P6.14.
+  // Progressive L0-L3 assembly semantics are governed by the context assembly policy.
   contextLevel: "L2",
 };
 

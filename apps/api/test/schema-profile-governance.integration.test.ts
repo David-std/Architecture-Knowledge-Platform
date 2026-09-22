@@ -26,7 +26,7 @@ beforeAll(async () => {
 
   await db.pool.query(
     `insert into api_tokens(user_id,token_hash,label,scopes)
-     values($1,$2,'P1 profile governance integration',$3::jsonb)`,
+     values($1,$2,'Profile governance integration',$3::jsonb)`,
     [
       adminId,
       tokenHash,
@@ -54,7 +54,7 @@ beforeAll(async () => {
     db,
     {
       vaultKey: `profile-governance-${randomUUID().slice(0, 8)}`,
-      name: "P1 profile governance vault",
+      name: "Profile governance vault",
       spaceId,
       visibility: "PRIVATE",
       gitRepository: null,

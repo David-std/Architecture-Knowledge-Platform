@@ -45,7 +45,7 @@ async function loadPlacementRegression(): Promise<PlacementRegression> {
     (item) => item.kind === "CONTEXT_PLACEMENT_AND_MANDATORY_CONSTRAINTS",
   );
   if (!candidate) {
-    throw new Error("Missing context placement P0 regression case.");
+    throw new Error("Missing context placement regression case.");
   }
   return candidate as unknown as PlacementRegression;
 }
@@ -54,25 +54,25 @@ function documentId(index: number): string {
   return `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`;
 }
 
-describe("registered P0 ContextPacket correctness", () => {
+describe("registered ContextPacket correctness", () => {
   it("retains mandatory actions while prioritizing rules and truncating oversized evidence", async () => {
     const regression = await loadPlacementRegression();
     const candidates = regression.candidates.map((candidate, index) => ({
       hit: {
         documentId: documentId(index),
         vaultId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-        revision: "p0-placement",
+        revision: "context-placement",
         title: candidate.id,
         type: "benchmark",
         document: {
-          externalId: `p0:${candidate.id}`,
+          externalId: `context:${candidate.id}`,
           path: `benchmarks/${candidate.id}.md`,
           title: candidate.id,
         },
         trust: "HUMAN_REVIEWED" as const,
         lifecycle: "ACTIVE" as const,
         score: candidate.score,
-        reasons: ["p0-context-placement"],
+        reasons: ["context-placement"],
         excerpt: candidate.content ?? "oversized evidence",
         citations: [`source:${candidate.id}`],
       },
@@ -107,7 +107,7 @@ describe("registered P0 ContextPacket correctness", () => {
         limit: 20,
       },
       intent: "WORKFLOW_EXECUTION",
-      corpusRevision: "p0-context-placement",
+      corpusRevision: "context-placement",
       maxTokens: 2_000,
       requiredActions: regression.requiredActions,
       conflicts: ["transport-policy (OPEN)"],

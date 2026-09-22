@@ -8,7 +8,7 @@ const run = databaseUrl ? describe : describe.skip;
 const tokenHash = (value: string) =>
   createHash("sha256").update(value).digest("hex");
 
-run("P2 principal credential expiry", () => {
+run("principal credential expiry", () => {
   const db = new Postgres(databaseUrl!);
   const app = buildServer();
   const humanToken = `principal-expiry-${randomUUID()}`;

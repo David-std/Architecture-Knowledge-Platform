@@ -8,9 +8,9 @@ const actorAId = randomUUID();
 const actorBId = randomUUID();
 const reviewerId = randomUUID();
 const vaultId = randomUUID();
-const actorAToken = `p2-flow-a-${randomUUID()}`;
-const actorBToken = `p2-flow-b-${randomUUID()}`;
-const reviewerToken = `p2-flow-reviewer-${randomUUID()}`;
+const actorAToken = `governed-flow-a-${randomUUID()}`;
+const actorBToken = `governed-flow-b-${randomUUID()}`;
+const reviewerToken = `governed-flow-reviewer-${randomUUID()}`;
 const tokenHash = (token: string) =>
   createHash("sha256").update(token).digest("hex");
 const actorAHeaders = { authorization: `Bearer ${actorAToken}` };
@@ -50,20 +50,20 @@ beforeAll(async () => {
     `insert into vaults(
        id,space_id,canonical_path,name,read_only,current_revision,vault_key,
        local_path,visibility,enabled
-     ) values($1,$2,$3,$4,false,'p2-flow:r1',$5,$3,'TEAM',true)`,
+     ) values($1,$2,$3,$4,false,'governed-flow:r1',$5,$3,'TEAM',true)`,
     [
       vaultId,
       spaceId,
-      `/tmp/p2-flow-${vaultId}`,
-      "P2 product flow integration vault",
-      `p2-flow-${vaultId.slice(0, 8)}`,
+      `/tmp/governed-flow-${vaultId}`,
+      "Governed product flow integration vault",
+      `governed-flow-${vaultId.slice(0, 8)}`,
     ],
   );
   await db.pool.query(
     `insert into users(id,email,display_name) values
-      ($1,$2,'P2 Agent Parent A'),
-      ($3,$4,'P2 Agent Parent B'),
-      ($5,$6,'P2 Human Reviewer')`,
+      ($1,$2,'Agent Parent A'),
+      ($3,$4,'Agent Parent B'),
+      ($5,$6,'Human Reviewer')`,
     [
       actorAId,
       `${actorAId}@example.test`,
@@ -120,7 +120,7 @@ afterAll(async () => {
   if (db) await db.close();
 });
 
-describe("P2 governed product flow", () => {
+describe("governed product flow", () => {
   it("coordinates two agent principals, denies agent approval, publishes by human review, and exposes R2", async () => {
     const created = await app.inject({
       method: "POST",
@@ -129,7 +129,7 @@ describe("P2 governed product flow", () => {
       payload: {
         spaceId,
         vaultId,
-        purpose: "P2 normative two-agent flow",
+        purpose: "Normative two-agent flow",
         contextBudget: 4096,
       },
     });
@@ -144,7 +144,7 @@ describe("P2 governed product flow", () => {
     const sessionId = initialSession.id;
     expect(
       initialSession.contextRevisionSet.dimensions.knowledgeGit.revision,
-    ).toBe("p2-flow:r1");
+    ).toBe("governed-flow:r1");
 
     const joined = await app.inject({
       method: "POST",
@@ -159,7 +159,7 @@ describe("P2 governed product flow", () => {
       url: `/v1/sessions/${sessionId}/agent-processes`,
       headers: actorAHeaders,
       payload: {
-        label: "P2 normative Agent A",
+        label: "Normative Agent A",
         durationMinutes: 30,
         allowedActions: [
           "workspace:read",
@@ -183,7 +183,7 @@ describe("P2 governed product flow", () => {
       url: `/v1/sessions/${sessionId}/agent-processes`,
       headers: actorBHeaders,
       payload: {
-        label: "P2 normative Agent B",
+        label: "Normative Agent B",
         durationMinutes: 30,
         allowedActions: [
           "workspace:read",
@@ -362,7 +362,7 @@ describe("P2 governed product flow", () => {
         fencingToken: 1,
         payload: {
           summary: "Compiler publication boundary requires governed review.",
-          evidence: "p2-product-flow-fixture",
+          evidence: "governed-product-flow-fixture",
         },
       },
     });
@@ -532,11 +532,11 @@ describe("P2 governed product flow", () => {
         summary: trustEscalationSummary,
         changes: [
           {
-            path: `knowledge/p2-trust-escalation-${vaultId.slice(0, 8)}.md`,
+            path: `knowledge/trust-escalation-${vaultId.slice(0, 8)}.md`,
             content:
               "---\ntype: claim\nstatus: proposed\nknowledge_layer: project\ntrust_tier: attested\n---\n# Forged attestation\n\nThis candidate deliberately attempts to claim a trust authority stronger than the governed human review can confer. It must be rejected before a review draft or canonical publication is created.\n",
             reason:
-              "Adversarial P2 proof that proposal content cannot manufacture ATTESTED trust.",
+              "Adversarial verification that proposal content cannot manufacture ATTESTED trust.",
           },
         ],
       },
@@ -566,7 +566,7 @@ describe("P2 governed product flow", () => {
         summary: "Promote compiler publication boundary",
         changes: [
           {
-            path: `knowledge/p2-compiler-boundary-${vaultId.slice(0, 8)}.md`,
+            path: `knowledge/compiler-boundary-${vaultId.slice(0, 8)}.md`,
             content:
               "---\ntype: claim\nstatus: proposed\nknowledge_layer: project\n---\n# Compiler publication boundary\n\nCanonical publication requires governed human review. This candidate is promoted from durable workspace evidence and must not become approved knowledge through agent agreement or session memory alone.\n",
             reason:
@@ -734,7 +734,7 @@ describe("P2 governed product flow", () => {
       url: `/v1/sessions/${sessionId}/agent-processes`,
       headers: actorAHeaders,
       payload: {
-        label: "P2 decision-preparation agent",
+        label: "Decision-preparation agent",
         durationMinutes: 30,
         allowedActions: [
           "workspace:read",
@@ -792,7 +792,7 @@ describe("P2 governed product flow", () => {
         ],
         affectedRefs: ["service:context-api", "work:connector-runtime"],
         affectedObjectRefIds: [affectedWorkObjectId],
-        evidenceRefs: ["fixture:connector-capabilities", "fixture:p2-flow"],
+        evidenceRefs: ["fixture:connector-capabilities", "fixture:governed-flow"],
         verificationPlan:
           "Re-run the governed two-agent flow and verify that publication advances the canonical revision while stale sessions fail closed.",
         decisionDeadline: new Date(Date.now() + 86_400_000).toISOString(),
@@ -1060,7 +1060,7 @@ describe("P2 governed product flow", () => {
           {
             path: `20-knowledge/generated/decision/context-delivery-${vaultId.slice(0, 8)}.md`,
             content:
-              "---\nid: P2-CONTEXT-DELIVERY\ntype: decision\nstatus: proposed\nknowledge_layer: project\n---\n# Context delivery mode\n\nUse an indexed governed projection only when connector capabilities preserve the source authorization boundary. The alternative originated as an agent suggestion, was explicitly considered by the human decision authority, received independent consultation, and resolved its open objection before entering governed review.\n",
+              "---\nid: CONTEXT-DELIVERY\ntype: decision\nstatus: proposed\nknowledge_layer: project\n---\n# Context delivery mode\n\nUse an indexed governed projection only when connector capabilities preserve the source authorization boundary. The alternative originated as an agent suggestion, was explicitly considered by the human decision authority, received independent consultation, and resolved its open objection before entering governed review.\n",
             reason:
               "Promote only the captured consultative decision through human review.",
           },
@@ -1273,7 +1273,7 @@ describe("P2 governed product flow", () => {
           {
             path: `20-knowledge/generated/decision/rejected-lifecycle-${vaultId.slice(0, 8)}.md`,
             content:
-              "---\nid: P2-REJECTED-LIFECYCLE\ntype: decision\nstatus: proposed\nknowledge_layer: project\n---\n# Rejected lifecycle candidate\n\nThis candidate exists only to prove that review rejection and structured decision rejection remain one durable transition.\n",
+              "---\nid: REJECTED-LIFECYCLE\ntype: decision\nstatus: proposed\nknowledge_layer: project\n---\n# Rejected lifecycle candidate\n\nThis candidate exists only to prove that review rejection and structured decision rejection remain one durable transition.\n",
             reason:
               "Exercise the negative governance path without publishing canonical knowledge.",
           },
@@ -1431,7 +1431,7 @@ describe("P2 governed product flow", () => {
           {
             path: `20-knowledge/generated/decision/context-delivery-v2-${vaultId.slice(0, 8)}.md`,
             content:
-              "---\nid: P2-CONTEXT-DELIVERY-V2\ntype: decision\nstatus: proposed\nknowledge_layer: project\n---\n# Context delivery mode v2\n\nUse a bounded hybrid cache only where permission fidelity is preserved and stale state is explicitly disclosed. This replacement was consulted independently and is not authoritative until the governed human review publishes it.\n",
+              "---\nid: CONTEXT-DELIVERY-V2\ntype: decision\nstatus: proposed\nknowledge_layer: project\n---\n# Context delivery mode v2\n\nUse a bounded hybrid cache only where permission fidelity is preserved and stale state is explicitly disclosed. This replacement was consulted independently and is not authoritative until the governed human review publishes it.\n",
             reason:
               "Publish the replacement through the existing review authority.",
           },

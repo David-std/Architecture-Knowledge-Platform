@@ -27,7 +27,7 @@ beforeAll(async () => {
   db = new Postgres(process.env.DATABASE_URL);
   await db.pool.query(
     `insert into api_tokens(user_id,token_hash,label,scopes)
-     values($1,$2,'P2 software delivery profile integration',$3::jsonb)`,
+     values($1,$2,'Software delivery profile integration',$3::jsonb)`,
     [
       adminId,
       tokenHash,

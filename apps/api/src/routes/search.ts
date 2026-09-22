@@ -471,12 +471,12 @@ export interface RetrievalExecutionOptions {
     "context-pack" | "exact" | "lexical" | "vector" | "graph" | "raw" | "code"
   >;
   plan?: QueryPlan;
-  /** P6 typed retrieval policy; legacy execution options remain compatible. */
+  /** Typed retrieval policy; legacy execution options remain compatible. */
   retrievalPolicy?: RetrievalPolicyInput;
   /** Runtime capability snapshot. Production callers must provide all fields. */
   plannerCapabilities?: Partial<QueryPlannerCapabilities>;
   graphPolicy?: Partial<GraphTraversalPolicy>;
-  /** Optional P6.9 associative expansion policy; disabled unless GRAPH_PPR is enabled. */
+  /** Optional associative expansion policy; disabled unless GRAPH_PPR is enabled. */
   pprPolicy?: Partial<PersonalizedPageRankPolicy>;
   /** Cooperative cancellation seam for bounded PPR work. */
   pprShouldCancel?: () => boolean;
@@ -485,7 +485,7 @@ export interface RetrievalExecutionOptions {
   rawScopes?: Array<{ vaultId: string; pathPrefix: string | null }>;
   allowVectorForBenchmark?: boolean;
   deterministicRerank?: boolean;
-  /** Optional P6.7 query assistance. It never receives authorization/truth controls. */
+  /** Optional query assistance. It never receives authorization/truth controls. */
   queryTransformer?: QueryTransformerPort;
   queryTransformMaxVariants?: number;
   queryTransformActorId?: string;

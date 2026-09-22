@@ -87,20 +87,20 @@ function packetCandidate(content: string, suffix: string): PacketCandidate {
     hit: {
       documentId: `11111111-1111-4111-8111-11111111111${suffix}`,
       vaultId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-      revision: "p0-baseline",
+      revision: "tokenizer-baseline",
       title: `Tokenizer baseline ${suffix}`,
       type: "benchmark",
       document: {
-        externalId: `p0-tokenizer-${suffix}`,
+        externalId: `tokenizer-${suffix}`,
         path: `benchmarks/tokenizer-${suffix}.md`,
         title: `Tokenizer baseline ${suffix}`,
       },
       trust: "HUMAN_REVIEWED",
       lifecycle: "ACTIVE",
       score: 1,
-      reasons: ["p0-tokenizer-baseline"],
+      reasons: ["tokenizer-baseline"],
       excerpt: content,
-      citations: [`p0-tokenizer-source-${suffix}`],
+      citations: [`tokenizer-source-${suffix}`],
     },
     content,
     kind: "concept",
@@ -121,7 +121,7 @@ function buildPacket(content: string, suffix: string, tokenizer?: Tokenizer) {
       limit: 10,
     },
     intent: "CONCEPTUAL",
-    corpusRevision: "p0-context-tokenizer-baseline",
+    corpusRevision: "context-tokenizer-baseline",
     maxTokens: 32_000,
     candidates: [packetCandidate(content, suffix)],
     ...(tokenizer ? { tokenizer } : {}),
@@ -130,7 +130,7 @@ function buildPacket(content: string, suffix: string, tokenizer?: Tokenizer) {
 
 const loaded = await loadTokenizationCase();
 if (loaded.file.productionDefaultsChanged !== false) {
-  throw new Error("P0 tokenizer baseline must not change production defaults.");
+  throw new Error("Tokenizer baseline must not change production defaults.");
 }
 
 const tokenizer = await AutoTokenizer.from_pretrained(model, { revision });

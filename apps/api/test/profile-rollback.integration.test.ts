@@ -75,7 +75,7 @@ beforeAll(async () => {
   db = new Postgres(process.env.DATABASE_URL);
   await db.pool.query(
     `insert into api_tokens(user_id,token_hash,label,scopes)
-     values($1,$2,'P1 profile rollback API',$3::jsonb)`,
+     values($1,$2,'Profile rollback API',$3::jsonb)`,
     [
       adminId,
       tokenHash,
@@ -94,7 +94,7 @@ beforeAll(async () => {
     db,
     {
       vaultKey: `profile-rollback-api-${randomUUID().slice(0, 8)}`,
-      name: "P1 profile rollback API vault",
+      name: "Profile rollback API vault",
       spaceId,
       visibility: "PRIVATE",
       gitRepository: null,
@@ -163,7 +163,7 @@ describe("KnowledgeProfile rollback API", () => {
       {
         ...DEFAULT_KNOWLEDGE_PROFILE_V1,
         version: "0.4-profile-rollback-api-successor",
-        displayName: "P1 profile rollback API successor",
+        displayName: "Profile rollback API successor",
       },
       baseline.revision.id,
     );

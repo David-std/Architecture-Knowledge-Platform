@@ -24,7 +24,7 @@ beforeAll(async () => {
   db = new Postgres(process.env.DATABASE_URL);
   await db.pool.query(
     `insert into api_tokens(user_id,token_hash,label,scopes)
-     values($1,$2,'P1 profile activation integration',$3::jsonb)`,
+     values($1,$2,'Profile activation integration',$3::jsonb)`,
     [
       adminId,
       tokenHash,
@@ -44,7 +44,7 @@ beforeAll(async () => {
     db,
     {
       vaultKey: `profile-activate-${randomUUID().slice(0, 8)}`,
-      name: "P1 profile activation vault",
+      name: "Profile activation vault",
       spaceId,
       visibility: "PRIVATE",
       gitRepository: null,

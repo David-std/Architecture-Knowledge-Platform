@@ -237,7 +237,7 @@ describe("recursive graph retrieval PostgreSQL integration", () => {
       try {
         await seedGraph(db, fixture);
 
-        // P8 §31.5: same alias in two vaults must never escape the
+        // Access-boundary regression: same alias in two vaults must never escape the
         // explicitly authorized vault during exact/alias retrieval.
         await db.pool.query(
           "update knowledge_documents set aliases=array['shared-boundary-alias'] where id=any($1::uuid[])",
@@ -415,7 +415,7 @@ describe("recursive graph retrieval PostgreSQL integration", () => {
           ),
         );
         expect(driftCommunityHits.length).toBeGreaterThan(0);
-        // P8 §31.5: a community built over the full vault must not surface
+        // Access-boundary regression: a community built over the full vault must not surface
         // members hidden by the active path scope.
         expect(driftCommunityHits.map((hit) => hit.documentId)).not.toContain(
           fixture.documents.S,
@@ -898,7 +898,7 @@ describe("recursive graph retrieval PostgreSQL integration", () => {
             `insert into knowledge_relations(
                space_id,from_document_id,to_document_id,relation_type,
                weight,provenance
-             ) values($1,$2,$3,$4,1,'p3-epistemic-v03-regression')`,
+             ) values($1,$2,$3,$4,1,'epistemic-v03-regression')`,
             [
               fixture.spaceId,
               fixture.documents[from],

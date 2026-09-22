@@ -246,7 +246,10 @@ for (const entry of entries) {
     failures.push(`SMOKE_NAMING_RESIDUE ${entry.path}`);
   if (legacyVerificationToken.test(entry.path))
     failures.push(`LEGACY_VERIFICATION_NAMING ${entry.path}`);
-  if (/^reports\/.*\.json$/i.test(entry.path))
+  if (
+    entry.path !== classificationPath &&
+    /^reports\/.*\.json$/i.test(entry.path)
+  )
     failures.push(`GENERATED_REPORT_TRACKED ${entry.path}`);
 
   if (!isTextCandidate(entry.path)) continue;

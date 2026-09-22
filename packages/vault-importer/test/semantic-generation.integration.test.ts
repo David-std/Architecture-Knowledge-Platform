@@ -211,7 +211,7 @@ integration("vault importer semantic generation integration", () => {
   beforeAll(async () => {
     if (!databaseUrl) return;
     db = new Postgres(databaseUrl);
-    fixtureRoot = await mkdtemp(path.join(tmpdir(), "akp-importer-p1-"));
+    fixtureRoot = await mkdtemp(path.join(tmpdir(), "akp-importer-semantic-"));
     await writeFile(
       path.join(fixtureRoot, "semantic-note.md"),
       [
@@ -501,7 +501,7 @@ integration("vault importer semantic generation integration", () => {
       "insert into organizations(id,slug,name) values($1,$2,$3)",
       [
         isolatedOrganizationId,
-        `p1-org-${isolatedOrganizationId.slice(0, 8)}`,
+        `semantic-org-${isolatedOrganizationId.slice(0, 8)}`,
         "semantic importer isolation organization",
       ],
     );
@@ -512,7 +512,7 @@ integration("vault importer semantic generation integration", () => {
       [
         isolatedSpaceId,
         isolatedOrganizationId,
-        `p1-space-${isolatedSpaceId.slice(0, 8)}`,
+        `semantic-space-${isolatedSpaceId.slice(0, 8)}`,
         "semantic importer isolation space",
         fixtureRoot,
       ],

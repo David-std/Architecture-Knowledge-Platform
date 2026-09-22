@@ -229,7 +229,7 @@ afterAll(async () => {
   else process.env.AKP_MANAGED_REPO = previousManagedRepository;
 });
 
-describe("P1 OKF interoperability", () => {
+describe("OKF interoperability", () => {
   it("creates a review-first candidate and never promotes foreign trust", async () => {
     const response = await app.inject({
       method: "POST",
