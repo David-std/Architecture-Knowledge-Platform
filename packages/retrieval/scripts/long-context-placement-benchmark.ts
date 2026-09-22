@@ -25,8 +25,9 @@ type ChatTokenizer = {
       tokenize: true;
       add_generation_prompt: true;
       return_tensor: false;
+      return_dict: false;
     },
-  ): { length: number } | number[];
+  ): number[];
 };
 
 type ProviderResponse = {
@@ -216,6 +217,7 @@ function exactChatTokens(
     tokenize: true,
     add_generation_prompt: true,
     return_tensor: false,
+    return_dict: false,
   });
   if (!encoded || typeof encoded.length !== "number") {
     throw new Error("Target tokenizer did not return tokenized chat input.");
