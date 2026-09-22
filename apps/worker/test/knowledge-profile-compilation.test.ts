@@ -95,6 +95,7 @@ function dbWithNeutralProfile(postCompileRevisionId = PROFILE_REVISION_ID) {
     .mockResolvedValueOnce({
       rows: [
         {
+          organization_model_residency: "EXTERNAL_ALLOWED",
           space_model_residency: "EXTERNAL_ALLOWED",
           source_model_residency: "EXTERNAL_ALLOWED",
         },
