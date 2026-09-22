@@ -17,6 +17,10 @@ const productGuides = [
   "docs/guides/contributor-reviewer.md",
   "docs/guides/assurance-connectors.md",
   "docs/guides/operations-recovery.md",
+  "docs/guides/workspace-operating-model.md",
+  "docs/guides/connector-contract.md",
+  "docs/guides/coordination-plane.md",
+  "docs/guides/software-delivery-workspace-profile.md",
 ];
 const requiredGuideSections = [
   "What this feature is",
@@ -29,6 +33,41 @@ const requiredGuideSections = [
   "Example",
   "Limitations",
 ];
+const requiredGuideTopics = {
+  "docs/guides/workspace-operating-model.md": [
+    "systems of record",
+    "work claim",
+    "handoff",
+    "incident",
+    "deployment",
+    "approved akp knowledge",
+  ],
+  "docs/guides/connector-contract.md": [
+    "mirror_indexed",
+    "remote_federated",
+    "source_acl_exact",
+    "deletion",
+    "freshness",
+    "write-back",
+  ],
+  "docs/guides/coordination-plane.md": [
+    "workcontext",
+    "blackboard",
+    "lease",
+    "fencing",
+    "handoff",
+    "canonical knowledge",
+  ],
+  "docs/guides/software-delivery-workspace-profile.md": [
+    "decisioncandidate",
+    "pullrequest",
+    "incident",
+    "build",
+    "deployment",
+    "testrun",
+    "externalobjectref",
+  ],
+};
 const required = [
   "README.md",
   "ARCHITECTURE.md",
@@ -78,6 +117,12 @@ for (const guide of productGuides) {
   for (const section of requiredGuideSections) {
     if (!headings.has(section)) {
       failures.push(`${guide}: missing required guide section "${section}"`);
+    }
+  }
+  const normalizedGuide = raw.toLowerCase();
+  for (const topic of requiredGuideTopics[guide] ?? []) {
+    if (!normalizedGuide.includes(topic)) {
+      failures.push(`${guide}: missing required product topic "${topic}"`);
     }
   }
 }

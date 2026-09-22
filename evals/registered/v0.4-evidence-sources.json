@@ -2456,6 +2456,62 @@
           "step": "Run access boundary controlled probes"
         }
       ]
+    },
+    "doc:workspace-operating-model": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "docs/guides/workspace-operating-model.md"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm docs:validate"
+        }
+      ]
+    },
+    "doc:connector-contract": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "docs/guides/connector-contract.md"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm docs:validate"
+        }
+      ]
+    },
+    "doc:coordination-plane": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "docs/guides/coordination-plane.md"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm docs:validate"
+        }
+      ]
+    },
+    "doc:software-delivery-workspace-profile": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "docs/guides/software-delivery-workspace-profile.md"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm docs:validate"
+        }
+      ]
     }
   }
 }
