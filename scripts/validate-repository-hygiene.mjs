@@ -261,6 +261,7 @@ for (const entry of entries) {
     entry.path === "scripts/validate-docs.mjs" ||
     entry.path === "pnpm-lock.yaml" ||
     entry.path.endsWith("/uv.lock") ||
+    /^db\/migrations\//.test(entry.path) ||
     /^evals\/fixtures\//.test(entry.path) ||
     /^test\/fixtures\//.test(entry.path);
 
