@@ -550,17 +550,23 @@ function sameStringSet(left: readonly string[], right: readonly string[]) {
   return left.every((value) => rightSet.has(value));
 }
 
+function modeAllowsDocumentKind(
+  mode: SearchInput["mode"],
+  layer: string,
+  type: string,
+): boolean {
+  const raw = layer === "resource" || type === "raw-resource";
+  if (mode === "RAW_ONLY") return raw;
+  if (mode === "COMPILED_ONLY") return !raw && layer !== "source";
+  if (mode === "SOURCE_BACKED") return !raw;
+  return true;
+}
+
 function modeAllowsCurrentDocument(
   mode: SearchInput["mode"],
   row: CurrentContextDocumentRow,
 ): boolean {
-  const raw = row.layer === "resource" || row.type === "raw-resource";
-  if (mode === "RAW_ONLY") return raw;
-  if (mode === "COMPILED_ONLY") {
-    return row.layer !== "resource" && row.layer !== "source";
-  }
-  if (mode === "SOURCE_BACKED") return !raw;
-  return true;
+  return modeAllowsDocumentKind(mode, row.layer, row.type);
 }
 
 /**
@@ -878,6 +884,17 @@ export function plannerCapabilitiesForIndex(
     codeAdapterAvailable: policy.codeAdapterAvailable,
     contextPackAvailable: revisionIsCurrent(index, "context_pack_revision"),
   };
+}
+
+function channelAllowedByMode(
+  channel: RetrievalChannel,
+  mode: SearchInput["mode"],
+): boolean {
+  if (mode === "RAW_ONLY") {
+    return channel !== "code" && channel !== "context-pack";
+  }
+  if (mode === "COMPILED_ONLY") return channel !== "raw";
+  return true;
 }
 
 function channelAllowedByCapabilities(
@@ -1481,15 +1498,48 @@ export async function queryKnowledge(
     options.rawScopes,
     options.authorizationResolved === true,
   );
+  const rawAuthorizationJson =
+    options.authorizationResolved === true
+      ? JSON.stringify(
+          rawScopes.map((scope) => ({
+            vault_id: scope.vaultId,
+            path_prefix: scope.pathPrefix,
+          })),
+        )
+      : null;
+  const rawAuthorizationClause = (alias: string, parameter: number) => {
+    const parameterRef = "$" + String(parameter);
+    return `and (
+      ${parameterRef}::jsonb is null
+      or not (${alias}layer='resource' or ${alias}type='raw-resource')
+      or exists(
+        select 1
+          from jsonb_to_recordset(
+            coalesce(${parameterRef}::jsonb,'[]'::jsonb)
+          ) as raw_scope(vault_id uuid,path_prefix text)
+         where raw_scope.vault_id=${alias}vault_id
+           and (
+             raw_scope.path_prefix is null
+             or ${alias}path=raw_scope.path_prefix
+             or starts_with(${alias}path,raw_scope.path_prefix || '/')
+           )
+      )
+    )`;
+  };
   const requestedByPolicy = options.channels ?? plan.channels;
   const requestedChannels = requestedByPolicy.filter(
     (channel) =>
       runtimeChannelEnabled(retrievalPolicy, channel) &&
+      channelAllowedByMode(channel, input.mode) &&
       channelAllowedByCapabilities(channel, effectiveCapabilities),
   );
   for (const channel of requestedByPolicy) {
     if (!runtimeChannelEnabled(retrievalPolicy, channel)) {
       options.warningSink?.push(`CHANNEL_POLICY_DISABLED:${channel}`);
+      continue;
+    }
+    if (!channelAllowedByMode(channel, input.mode)) {
+      options.warningSink?.push(`CHANNEL_MODE_UNAVAILABLE:${channel}`);
       continue;
     }
     if (!requestedChannels.includes(channel)) {
@@ -1506,13 +1556,13 @@ export async function queryKnowledge(
     options.warningSink?.push(warning);
   }
   const channels = new Set(consistency.channels);
-  const modeClause =
+  const modeClause = (alias = "") =>
     input.mode === "RAW_ONLY"
-      ? "and (layer = 'resource' or type = 'raw-resource')"
+      ? `and (${alias}layer='resource' or ${alias}type='raw-resource')`
       : input.mode === "COMPILED_ONLY"
-        ? "and layer not in ('resource', 'source')"
+        ? `and ${alias}layer not in ('resource','source') and ${alias}type<>'raw-resource'`
         : input.mode === "SOURCE_BACKED"
-          ? "and not (layer = 'resource' or type = 'raw-resource')"
+          ? `and not (${alias}layer='resource' or ${alias}type='raw-resource')`
           : "";
   const lifecycleClause =
     input.mode === "DRAFT_INCLUDED"
@@ -1578,7 +1628,8 @@ export async function queryKnowledge(
              or lower(d.title)=lower($2)
              or lower(d.path)=lower($2)
            )
-           ${modeClause}
+           ${modeClause("d.")}
+           ${rawAuthorizationClause("d.", 4)}
          order by
            case
              when lower(d.external_id)=lower($2) then 0
@@ -1592,7 +1643,12 @@ export async function queryKnowledge(
            d.id
          limit $3
         `,
-          [spaceId, input.query, Math.max(input.limit * 2, 20)],
+          [
+            spaceId,
+            input.query,
+            Math.max(input.limit * 2, 20),
+            rawAuthorizationJson,
+          ],
         ),
       )
     : { rows: [] as ExactSearchRow[] };
@@ -1628,7 +1684,8 @@ export async function queryKnowledge(
                and d.lifecycle ${lifecycleClause}
                and ${trustClause("d.")}
                and d.refresh_status not in ('STALE_BLOCKED','INVALID')
-               ${modeClause}
+               ${modeClause("d.")}
+               ${rawAuthorizationClause("d.", 4)}
                and (
                  d.lexical_search_vector @@ query.terms
                  or d.lexical_symbol_vector @@ query.symbol_terms
@@ -1717,7 +1774,12 @@ export async function queryKnowledge(
            order by score desc,id,unit_id nulls last
            limit $3
           `,
-          [spaceId, assisted.query, Math.max(input.limit * 3, 30)],
+          [
+            spaceId,
+            assisted.query,
+            Math.max(input.limit * 3, 30),
+            rawAuthorizationJson,
+          ],
         ),
       );
       lexicalRows.push(
@@ -1829,7 +1891,8 @@ export async function queryKnowledge(
                  and d.lifecycle ${lifecycleClause}
                  and ${trustClause("d.")}
                  and d.refresh_status not in ('STALE_BLOCKED','INVALID')
-                 ${modeClause}
+                 ${modeClause("d.")}
+                 ${rawAuthorizationClause("d.", 6)}
                order by e.embedding::vector(${dimensions}) <=> $3::vector(${dimensions}),
                         u.document_id,u.id
                limit $5
@@ -1840,6 +1903,7 @@ export async function queryKnowledge(
                 toPgVector(queryVector),
                 generation.vaultId,
                 Math.max(input.limit * 3, 30),
+                rawAuthorizationJson,
               ],
             ),
           );
@@ -1963,7 +2027,8 @@ export async function queryKnowledge(
              and d.lifecycle ${lifecycleClause}
              and ${trustClause("d.")}
              and d.refresh_status not in ('STALE_BLOCKED','INVALID')
-             ${modeClause}
+             ${modeClause("d.")}
+             ${rawAuthorizationClause("d.", 7)}
              and not (
                $5::text='DRIFT'
                and cardinality($4::uuid[]) > 0
@@ -1979,6 +2044,7 @@ export async function queryKnowledge(
             driftSeeds,
             retrievalPolicy.graphMode,
             Math.max(input.limit * 4, 40),
+            rawAuthorizationJson,
           ],
         ),
       );
@@ -2056,6 +2122,7 @@ export async function queryKnowledge(
              and ${trustClause("d.")}
              and d.refresh_status not in ('STALE_BLOCKED','INVALID')
              and (d.layer in ('source','resource') or d.type='raw-resource')
+             ${modeClause("d.")}
              and exists(
                select 1
                  from raw_scopes scope
@@ -2150,6 +2217,8 @@ export async function queryKnowledge(
                  and d.lifecycle ${lifecycleClause}
                  and ${trustClause("d.")}
                  and d.refresh_status not in ('STALE_BLOCKED','INVALID')
+                 ${modeClause("d.")}
+                 ${rawAuthorizationClause("d.", 12)}
                  and (
                    scope.path_prefix is null
                    or d.path=scope.path_prefix
@@ -2185,6 +2254,10 @@ export async function queryKnowledge(
                  and ${trustClause("edge_to.")}
                  and edge_from.refresh_status not in ('STALE_BLOCKED','INVALID')
                  and edge_to.refresh_status not in ('STALE_BLOCKED','INVALID')
+                 ${modeClause("edge_from.")}
+                 ${modeClause("edge_to.")}
+                 ${rawAuthorizationClause("edge_from.", 12)}
+                 ${rawAuthorizationClause("edge_to.", 12)}
                  and $7::text in ('outgoing','both')
                  and (
                    scope.path_prefix is null
@@ -2226,6 +2299,10 @@ export async function queryKnowledge(
                  and ${trustClause("edge_to.")}
                  and edge_from.refresh_status not in ('STALE_BLOCKED','INVALID')
                  and edge_to.refresh_status not in ('STALE_BLOCKED','INVALID')
+                 ${modeClause("edge_from.")}
+                 ${modeClause("edge_to.")}
+                 ${rawAuthorizationClause("edge_from.", 12)}
+                 ${rawAuthorizationClause("edge_to.", 12)}
                  and $7::text in ('incoming','both')
                  and (
                    scope.path_prefix is null
@@ -2285,6 +2362,8 @@ export async function queryKnowledge(
                  and next_doc.lifecycle ${lifecycleClause}
                  and ${trustClause("next_doc.")}
                  and next_doc.refresh_status not in ('STALE_BLOCKED','INVALID')
+                 ${modeClause("next_doc.")}
+                 ${rawAuthorizationClause("next_doc.", 12)}
                where gp.hops < $3::integer
                  and not (next_doc.id=any(gp.visited_document_ids))
             ),
@@ -2352,6 +2431,7 @@ export async function queryKnowledge(
                 graphPolicy.maxPathsPerCandidate,
                 graphPolicy.maxCandidates,
                 GRAPH_HARD_MAX_FANOUT,
+                rawAuthorizationJson,
               ],
             ),
           )
@@ -2992,6 +3072,11 @@ export async function queryKnowledge(
       if (
         !row ||
         (TRUST_RANK[String(row.trust_tier)] ?? 0) < minimumTrust ||
+        !modeAllowsDocumentKind(
+          input.mode,
+          String(row.layer),
+          String(row.type),
+        ) ||
         (options.pathAuthorizer &&
           !options.pathAuthorizer(rowPath, rowVaultId)) ||
         (rawDocument && !pathAllowedByScopes(rowPath, rowVaultId, rawScopes))

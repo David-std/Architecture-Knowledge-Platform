@@ -556,7 +556,17 @@ describe("API security boundaries", () => {
     const deniedDocumentId = randomUUID();
     const clusterId = randomUUID();
     const conflictTopic = `raw scope conflict ${suffix}`;
-    const documentIds = [allowedDocumentId, deniedDocumentId];
+    const crowdMarker = `rawcrowd${suffix.replaceAll("-", "")}`;
+    const crowdAllowedDocumentId = randomUUID();
+    const crowdDeniedDocumentIds = Array.from({ length: 35 }, () =>
+      randomUUID(),
+    );
+    const documentIds = [
+      allowedDocumentId,
+      deniedDocumentId,
+      crowdAllowedDocumentId,
+      ...crowdDeniedDocumentIds,
+    ];
     const packetIds: string[] = [];
 
     await db.pool.query(
@@ -610,6 +620,46 @@ describe("API security boundaries", () => {
         createHash("sha256").update(`denied-raw-${suffix}`).digest("hex"),
       ],
     );
+    const crowdFixtures = [
+      {
+        id: crowdAllowedDocumentId,
+        path: `shared/raw/crowd-allowed-${suffix}.md`,
+        externalId: `RAW-CROWD-ALLOWED-${suffix}`,
+        title: "Allowed crowd source",
+        body: `Authorized raw evidence ${crowdMarker}.`,
+      },
+      ...crowdDeniedDocumentIds.map((id, index) => ({
+        id,
+        path: `private/raw/crowd-denied-${index}-${suffix}.md`,
+        externalId: `RAW-CROWD-DENIED-${index}-${suffix}`,
+        title: `${crowdMarker} denied raw source ${index}`,
+        body: `Denied raw evidence ${crowdMarker} ${index}.`,
+      })),
+    ];
+    for (const fixture of crowdFixtures) {
+      await db.pool.query(
+        `insert into knowledge_documents(
+           id,space_id,vault_id,path,external_id,title,type,lifecycle,trust_tier,
+           current_revision,body_cache,frontmatter,aliases,layer,content_hash,
+           token_estimate,raw_links,refresh_status
+         ) values(
+           $1,$2,$3,$4,$5,$6,'raw-resource','ACTIVE','HUMAN_REVIEWED',
+           'raw-scope',$7,'{}'::jsonb,'{}','resource',$8,10,'[]'::jsonb,
+           'CURRENT'
+         )`,
+        [
+          fixture.id,
+          defaultSpace,
+          defaultVaultId,
+          fixture.path,
+          fixture.externalId,
+          fixture.title,
+          fixture.body,
+          createHash("sha256").update(fixture.body).digest("hex"),
+        ],
+      );
+    }
+
     await db.pool.query(
       `insert into contradiction_clusters(
          id,space_id,vault_id,topic,status
@@ -658,6 +708,25 @@ describe("API security boundaries", () => {
       expect(deniedSearch.statusCode, deniedSearch.body).toBe(200);
       expect(deniedSearch.json().hits).toHaveLength(0);
       expect(JSON.stringify(deniedSearch.json())).not.toContain(deniedId);
+
+      const crowdedSearch = await app.inject({
+        method: "POST",
+        url: "/v1/search",
+        headers: scopedHeaders,
+        payload: {
+          ...requestFor(crowdMarker),
+          intent: "CONCEPTUAL",
+          limit: 1,
+        },
+      });
+      expect(crowdedSearch.statusCode, crowdedSearch.body).toBe(200);
+      expect(crowdedSearch.json().hits).toHaveLength(1);
+      expect(crowdedSearch.json().hits[0]?.documentId).toBe(
+        crowdAllowedDocumentId,
+      );
+      expect(JSON.stringify(crowdedSearch.json().hits)).not.toContain(
+        "RAW-CROWD-DENIED",
+      );
 
       const allowedContext = await app.inject({
         method: "POST",
