@@ -52,7 +52,8 @@
     "benchmark:domain-quality": "tsx scripts/domain-quality-benchmark.ts",
     "proof:parity-exclusions": "tsx scripts/parity-exclusion-reports.ts",
     "benchmark:p12-domain-metrics": "tsx scripts/p12-domain-metrics-benchmark.ts",
-    "benchmark:p12-temporal-metrics": "tsx scripts/p12-temporal-metrics-benchmark.ts"
+    "benchmark:p12-temporal-metrics": "tsx scripts/p12-temporal-metrics-benchmark.ts",
+    "benchmark:p12-team-metrics": "tsx scripts/p12-team-metrics-benchmark.ts"
   },
   "devDependencies": {
     "@types/mime-types": "^3.0.1",

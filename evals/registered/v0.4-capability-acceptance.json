@@ -240,7 +240,8 @@
         },
         "benchmark": {
           "evidence": [
-            "benchmark:concurrency"
+            "benchmark:concurrency",
+            "benchmark:p12-team-metrics"
           ]
         },
         "remoteCi": {

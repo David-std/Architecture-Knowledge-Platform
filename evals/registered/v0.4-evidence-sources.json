@@ -2122,6 +2122,20 @@
           "path": "scripts/p12-temporal-metrics-benchmark.ts"
         }
       ]
+    },
+    "benchmark:p12-team-metrics": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Validate P12 workspace and team metric evidence"
+        },
+        {
+          "type": "FILE",
+          "path": "scripts/p12-team-metrics-benchmark.ts"
+        }
+      ]
     }
   }
 }
