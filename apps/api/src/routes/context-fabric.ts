@@ -1155,10 +1155,7 @@ export function registerContextFabricRoutes(
       ) {
         return reply.code(409).send({ code: "FEDERATION_PEER_NOT_QUERYABLE" });
       }
-      if (
-        peer.spaceId === null ||
-        peer.spaceId !== parsed.data.scope.spaceId
-      ) {
+      if (peer.spaceId === null || peer.spaceId !== parsed.data.scope.spaceId) {
         return reply.code(403).send({ code: "FEDERATION_PEER_SCOPE_DENIED" });
       }
       if (peer.contextApiVersion !== parsed.data.schemaVersion) {

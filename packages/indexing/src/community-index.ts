@@ -285,9 +285,7 @@ async function loadCommunitySummaryBoundary(
   const organizationResidency = ModelResidency.parse(
     scopeRow.organization_model_residency,
   );
-  const spaceResidency = ModelResidency.parse(
-    scopeRow.space_model_residency,
-  );
+  const spaceResidency = ModelResidency.parse(scopeRow.space_model_residency);
 
   const sourceResult =
     documentIds.length === 0
