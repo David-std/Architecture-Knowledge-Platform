@@ -3477,7 +3477,9 @@ export function registerSearchRoutes(
       });
       const plan = reconcilePlanWithSearchMode(
         planQuery(parsed.data.query, {
-          ...(parsed.data.intent ? { requestedIntent: parsed.data.intent } : {}),
+          ...(parsed.data.intent
+            ? { requestedIntent: parsed.data.intent }
+            : {}),
           capabilities,
           queryShape: {
             permissionSensitiveFederated:
@@ -3916,7 +3918,9 @@ export function registerSearchRoutes(
       });
       const plan = reconcilePlanWithSearchMode(
         planQuery(parsed.data.query, {
-          ...(parsed.data.intent ? { requestedIntent: parsed.data.intent } : {}),
+          ...(parsed.data.intent
+            ? { requestedIntent: parsed.data.intent }
+            : {}),
           capabilities,
           queryShape: {
             permissionSensitiveFederated:
