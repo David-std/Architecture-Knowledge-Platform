@@ -55,12 +55,14 @@ interface PriorSourceRow {
 }
 
 interface ModelResidencyRow {
+  organization_model_residency: string;
   space_model_residency: string;
   source_model_residency: string;
 }
 
 interface CompilerRoutingBoundary {
   effectiveResidency: ModelResidencyValue;
+  organizationResidency: ModelResidencyValue;
   spaceResidency: ModelResidencyValue;
   sourceResidency: ModelResidencyValue;
   profileResidency: ModelResidencyValue;
@@ -90,6 +92,7 @@ export interface CompilationStageMetadata {
     role: "KNOWLEDGE_COMPILE";
     requiredResidency: ModelResidencyValue;
     boundaries: {
+      organization: ModelResidencyValue;
       space: ModelResidencyValue;
       source: ModelResidencyValue;
       profile: ModelResidencyValue;
@@ -192,9 +195,11 @@ async function loadCompilerRoutingBoundary(
 ): Promise<CompilerRoutingBoundary> {
   const result = await db.pool.query<ModelResidencyRow>(
     `
-    select s.model_residency space_model_residency,
+    select o.model_residency organization_model_residency,
+           s.model_residency space_model_residency,
            src.model_residency source_model_residency
       from spaces s
+      join organizations o on o.id=s.organization_id
       join sources src on src.space_id=s.id
      where s.id=$1 and src.id=$2
        and (($3::uuid is null and src.vault_id is null) or src.vault_id=$3::uuid)
@@ -205,6 +210,9 @@ async function loadCompilerRoutingBoundary(
   const row = result.rows[0];
   if (!row) throw new Error("COMPILER_SOURCE_RESIDENCY_NOT_FOUND");
 
+  const organizationResidency = ModelResidency.parse(
+    row.organization_model_residency,
+  );
   const spaceResidency = ModelResidency.parse(row.space_model_residency);
   const sourceResidency = ModelResidency.parse(row.source_model_residency);
   const profileConstraint = profile.profile.modelRoleConstraints.find(
@@ -213,12 +221,14 @@ async function loadCompilerRoutingBoundary(
   const profileResidency = profileConstraint?.residency ?? "EXTERNAL_ALLOWED";
 
   return {
+    organizationResidency,
     spaceResidency,
     sourceResidency,
     profileResidency,
     effectiveResidency: mostRestrictiveModelResidency(
-      spaceResidency,
       sourceResidency,
+      organizationResidency,
+      spaceResidency,
       profileResidency,
     ),
     structuredOutputRequired:
@@ -234,6 +244,7 @@ function modelRouteMetadata(
     role: "KNOWLEDGE_COMPILE",
     requiredResidency: boundary.effectiveResidency,
     boundaries: {
+      organization: boundary.organizationResidency,
       space: boundary.spaceResidency,
       source: boundary.sourceResidency,
       profile: boundary.profileResidency,

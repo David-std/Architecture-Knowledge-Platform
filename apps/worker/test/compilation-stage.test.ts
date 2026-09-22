@@ -149,6 +149,7 @@ describe("compilation stage", () => {
       .mockResolvedValueOnce({
         rows: [
           {
+            organization_model_residency: "EXTERNAL_ALLOWED",
             space_model_residency: "EXTERNAL_ALLOWED",
             source_model_residency: "EXTERNAL_ALLOWED",
           },
@@ -186,6 +187,7 @@ describe("compilation stage", () => {
       .mockResolvedValueOnce({
         rows: [
           {
+            organization_model_residency: "EXTERNAL_ALLOWED",
             space_model_residency: "EXTERNAL_ALLOWED",
             source_model_residency: "LOCAL_ONLY",
           },
@@ -239,6 +241,77 @@ describe("compilation stage", () => {
     });
   });
 
+  it("applies organization LOCAL_ONLY before role and fallback preference", async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({
+        rows: [{ schema_profile: {}, current_revision: "managed:org-policy" }],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            organization_model_residency: "LOCAL_ONLY",
+            space_model_residency: "EXTERNAL_ALLOWED",
+            source_model_residency: "EXTERNAL_ALLOWED",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [] });
+    const createConfigured = vi.fn(() => {
+      throw new Error("organization policy must reject external compiler");
+    });
+    const candidate: KnowledgeCompilerRouteCandidate = {
+      policy: ModelRolePolicy.parse({
+        role: "KNOWLEDGE_COMPILE",
+        provider: "openai-compatible",
+        model: "external-org-compiler",
+        endpointRef: "external-org",
+        timeoutMs: 30_000,
+        maxRetries: 1,
+        concurrency: 1,
+        structuredOutputRequired: true,
+        dataResidency: "EXTERNAL_ALLOWED",
+      }),
+      descriptor: {
+        role: "KNOWLEDGE_COMPILE",
+        provider: "openai-compatible",
+        model: "external-org-compiler",
+        endpointRef: "external-org",
+        policyDataResidency: "EXTERNAL_ALLOWED",
+        dataResidency: "EXTERNAL_ALLOWED",
+        configurationHash: "9".repeat(64),
+      },
+      supportsStructuredOutput: true,
+      createConfigured,
+    };
+    const db = { pool: { query } } as unknown as Postgres;
+
+    const output = await buildCompilationStage(db, stageInput(), [candidate]);
+
+    expect(createConfigured).not.toHaveBeenCalled();
+    expect(output.metadata).toMatchObject({
+      mode: "SOURCE_SUMMARY_FALLBACK",
+      reason: "MODEL_ROUTE_NO_COMPATIBLE_CANDIDATE",
+      modelRoute: {
+        requiredResidency: "LOCAL_ONLY",
+        boundaries: {
+          organization: "LOCAL_ONLY",
+          space: "EXTERNAL_ALLOWED",
+          source: "EXTERNAL_ALLOWED",
+          profile: "EXTERNAL_ALLOWED",
+        },
+        rejected: [
+          {
+            candidate: expect.objectContaining({
+              model: "external-org-compiler",
+            }),
+            reason: "RESIDENCY_INCOMPATIBLE",
+          },
+        ],
+      },
+    });
+  });
+
   it("falls back only after a normalized provider failure when degradation is safe", async () => {
     const excerpt =
       "Invalidate cached material when the authoritative revision changes.";
@@ -258,6 +331,7 @@ describe("compilation stage", () => {
       .mockResolvedValueOnce({
         rows: [
           {
+            organization_model_residency: "EXTERNAL_ALLOWED",
             space_model_residency: "EXTERNAL_ALLOWED",
             source_model_residency: "EXTERNAL_ALLOWED",
           },
@@ -421,6 +495,7 @@ describe("compilation stage", () => {
       .mockResolvedValueOnce({
         rows: [
           {
+            organization_model_residency: "EXTERNAL_ALLOWED",
             space_model_residency: "EXTERNAL_ALLOWED",
             source_model_residency: "EXTERNAL_ALLOWED",
           },

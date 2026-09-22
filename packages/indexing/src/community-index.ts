@@ -58,6 +58,7 @@ interface CommunityRelationRow {
 
 interface CommunitySummaryBoundary {
   effectiveResidency: ModelResidencyValue;
+  organizationResidency: ModelResidencyValue;
   spaceResidency: ModelResidencyValue;
   sourceResidencies: ModelResidencyValue[];
   profileResidency: ModelResidencyValue;
@@ -139,6 +140,10 @@ function summaryConfigurationHash(input: {
         ? DETERMINISTIC_SUMMARY_VERSION
         : "model-role-runtime-v1",
     requiredResidency: input.boundary.effectiveResidency,
+    organizationResidency: input.boundary.organizationResidency,
+    spaceResidency: input.boundary.spaceResidency,
+    sourceResidencies: [...input.boundary.sourceResidencies].sort(),
+    profileResidency: input.boundary.profileResidency,
     structuredOutputRequired: input.boundary.structuredOutputRequired,
     descriptor: input.descriptor
       ? {
@@ -262,13 +267,27 @@ async function loadCommunitySummaryBoundary(
   options: RebuildCommunityIndexOptions,
   documentIds: readonly string[],
 ): Promise<CommunitySummaryBoundary> {
-  const space = await db.pool.query<{ model_residency: string }>(
-    "select model_residency from spaces where id=$1",
+  const scope = await db.pool.query<{
+    organization_model_residency: string;
+    space_model_residency: string;
+  }>(
+    `
+    select o.model_residency organization_model_residency,
+           s.model_residency space_model_residency
+      from spaces s
+      join organizations o on o.id=s.organization_id
+     where s.id=$1
+    `,
     [options.spaceId],
   );
-  const spaceRow = space.rows[0];
-  if (!spaceRow) throw new Error("COMMUNITY_SPACE_NOT_FOUND");
-  const spaceResidency = ModelResidency.parse(spaceRow.model_residency);
+  const scopeRow = scope.rows[0];
+  if (!scopeRow) throw new Error("COMMUNITY_SPACE_NOT_FOUND");
+  const organizationResidency = ModelResidency.parse(
+    scopeRow.organization_model_residency,
+  );
+  const spaceResidency = ModelResidency.parse(
+    scopeRow.space_model_residency,
+  );
 
   const sourceResult =
     documentIds.length === 0
@@ -303,14 +322,16 @@ async function loadCommunitySummaryBoundary(
   const profileResidency = profileConstraint?.residency ?? "EXTERNAL_ALLOWED";
 
   return {
+    organizationResidency,
     spaceResidency,
     sourceResidencies,
     profileResidency,
     structuredOutputRequired:
       profileConstraint?.structuredOutputRequired ?? false,
     effectiveResidency: mostRestrictiveModelResidency(
-      spaceResidency,
       ...sourceResidencies,
+      organizationResidency,
+      spaceResidency,
       profileResidency,
     ),
   };
@@ -793,6 +814,7 @@ export async function rebuildCommunityIndex(
     summaryCandidates.length === 0
       ? {
           effectiveResidency: "EXTERNAL_ALLOWED",
+          organizationResidency: "EXTERNAL_ALLOWED",
           spaceResidency: "EXTERNAL_ALLOWED",
           sourceResidencies: [],
           profileResidency: "EXTERNAL_ALLOWED",

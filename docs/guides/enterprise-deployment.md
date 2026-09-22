@@ -53,7 +53,7 @@ Tokens are scoped by space, path and permission. Do not use an administrative wh
 
 Raw source bytes and provider output have no publication authority. Canonical knowledge still requires governed review and Git publication.
 
-Model residency is enforced from the most restrictive applicable source, space and profile boundary. An endpoint registered as externally allowed cannot satisfy a local-only route merely because a model policy is mislabeled.
+Model residency is enforced from the most restrictive applicable source/data, organization, space and profile boundary. Organization policy is an enterprise-wide upper constraint; a space or source may tighten it further, while role configuration and fallback preference can never relax it. An endpoint registered as externally allowed cannot satisfy a local-only route merely because a model policy is mislabeled.
 
 Do not place provider API keys, federation bearer tokens or signed URLs in persisted policy or diagnostics.
 

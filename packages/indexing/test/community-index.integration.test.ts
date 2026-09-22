@@ -183,8 +183,8 @@ describe("community index PostgreSQL integration", () => {
         expect(repeated.summaryMode).toBe("DETERMINISTIC");
 
         await db.pool.query(
-          "update spaces set model_residency='LOCAL_ONLY' where id=$1",
-          [spaceId],
+          "update organizations set model_residency='LOCAL_ONLY' where id=$1",
+          [organizationId],
         );
         const localGenerate = vi
           .fn()
@@ -292,8 +292,8 @@ describe("community index PostgreSQL integration", () => {
           [spaceId, vaultId],
         );
         await db.pool.query(
-          "update spaces set model_residency='EXTERNAL_ALLOWED' where id=$1",
-          [spaceId],
+          "update organizations set model_residency='EXTERNAL_ALLOWED' where id=$1",
+          [organizationId],
         );
 
         await db.pool.query(`
