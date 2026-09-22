@@ -22,8 +22,7 @@ const workflowReportPath = path.resolve(
 );
 const outputDir = path.resolve(
   root,
-  process.env.AKP_FINAL_PROOF_PACKAGE_DIR ??
-    "reports/ci/final-proof-package",
+  process.env.AKP_FINAL_PROOF_PACKAGE_DIR ?? "reports/ci/final-proof-package",
 );
 const repository =
   process.env.GITHUB_REPOSITORY?.trim() ||
@@ -52,10 +51,7 @@ const reportSpecs = [
         "runtime-retrieval-benchmark.json",
         "competitive/runtime-retrieval-benchmark.json",
       ],
-      [
-        "filtered-ann-baseline.json",
-        "competitive/filtered-ann-baseline.json",
-      ],
+      ["filtered-ann-baseline.json", "competitive/filtered-ann-baseline.json"],
       [
         "contextual-chunk-benchmark.json",
         "competitive/contextual-chunk-benchmark.json",
@@ -66,7 +62,10 @@ const reportSpecs = [
     workflow: "domain-quality",
     artifact: (runId) => `domain-quality-${runId}`,
     files: [
-      ["domain-quality-benchmark.json", "quality/domain-quality-benchmark.json"],
+      [
+        "domain-quality-benchmark.json",
+        "quality/domain-quality-benchmark.json",
+      ],
       [
         "registered-graph-code-metrics.json",
         "quality/registered-graph-code-metrics.json",
@@ -88,19 +87,14 @@ const reportSpecs = [
   {
     workflow: "agent-arena",
     artifact: (runId) => `agent-arena-${runId}`,
-    files: [
-      ["agent-five-arm-arena.json", "agents/agent-five-arm-arena.json"],
-    ],
+    files: [["agent-five-arm-arena.json", "agents/agent-five-arm-arena.json"]],
   },
   {
     workflow: "agent-ab",
     artifact: (runId) => `agent-ab-${runId}`,
     files: [
       ["agent-ab-benchmark.json", "agents/agent-ab-benchmark.json"],
-      [
-        "agent-context-ergonomics.json",
-        "agents/agent-context-ergonomics.json",
-      ],
+      ["agent-context-ergonomics.json", "agents/agent-context-ergonomics.json"],
       [
         "context-tokenizer-baseline.json",
         "agents/context-tokenizer-baseline.json",
@@ -164,7 +158,10 @@ const localFiles = [
     "reports/ci/final-proof-workflows.json",
     "same-sha/final-proof-workflows.json",
   ],
-  ["reports/ci/final-proof-evidence.json", "same-sha/final-proof-evidence.json"],
+  [
+    "reports/ci/final-proof-evidence.json",
+    "same-sha/final-proof-evidence.json",
+  ],
   [
     "reports/ci/capability-acceptance.json",
     "acceptance/capability-acceptance.json",
