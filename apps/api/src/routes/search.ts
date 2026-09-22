@@ -372,7 +372,7 @@ function rawScopesForActor(
 }
 
 function requiresSourceRead(layer: string, type: string): boolean {
-  return layer === "source" || layer === "resource" || type === "raw-resource";
+  return layer === "resource" || type === "raw-resource";
 }
 
 function normalizeGraphPolicy(
