@@ -301,12 +301,7 @@ const mandatoryContent = [
 ].join(" ");
 const targetMinTokens = Math.floor(modelContextWindowTokens * targetMinRatio);
 const targetMaxTokens = Math.floor(modelContextWindowTokens * targetMaxRatio);
-const mandatoryCandidate = packetCandidate(
-  0,
-  mandatoryContent,
-  "rule",
-  true,
-);
+const mandatoryCandidate = packetCandidate(0, mandatoryContent, "rule", true);
 const previewSection = (candidate: PacketCandidate) => ({
   title: candidate.hit.title,
   content: candidate.content,
@@ -314,15 +309,17 @@ const previewSection = (candidate: PacketCandidate) => ({
 });
 
 let tunedCandidates: PacketCandidate[] | null = null;
-let tuning:
-  | {
-      fillerCount: number;
-      fillerRepetitions: number;
-      previewTokenCounts: Record<Placement, number>;
-    }
-  | null = null;
+let tuning: {
+  fillerCount: number;
+  fillerRepetitions: number;
+  previewTokenCounts: Record<Placement, number>;
+} | null = null;
 
-for (let fillerCount = 3; fillerCount <= 12 && !tunedCandidates; fillerCount += 1) {
+for (
+  let fillerCount = 3;
+  fillerCount <= 12 && !tunedCandidates;
+  fillerCount += 1
+) {
   let low = 1;
   let high = 128;
   let repetitions: number | null = null;
@@ -511,7 +508,8 @@ const report = {
     revision,
     providerModel,
     contextWindowTokens: modelContextWindowTokens,
-    contextWindowSource: "AutoConfig.max_position_embeddings at pinned revision",
+    contextWindowSource:
+      "AutoConfig.max_position_embeddings at pinned revision",
     evaluationRole: "PLACEMENT_EVALUATION_ONLY",
     generalizationAllowed: false,
     temperature: 0,
