@@ -172,6 +172,13 @@ jobs:
           AKP_CONTEXT_PLACEMENT_REPORT=reports/ci/context-placement-baseline.json \
             pnpm benchmark:context-placement \
             2>&1 | tee reports/ci/context-placement-baseline.log
+      - name: Benchmark contextual chunk embedding strategies
+        shell: bash
+        run: |
+          set -o pipefail
+          AKP_CONTEXTUAL_CHUNK_REPORT=reports/ci/contextual-chunk-benchmark.json \
+            pnpm benchmark:contextual-chunks \
+            2>&1 | tee reports/ci/contextual-chunk-benchmark.log
       - name: Generate consolidated baseline evidence envelope
         shell: bash
         run: |
