@@ -84,6 +84,11 @@ const RETRIEVAL_BENCHMARK_MATRIX_SOURCE: readonly BenchmarkConfiguration[] = [
     deterministicRerank: true,
   },
   {
+    name: "lexical+vector+graph",
+    channels: ["lexical", "vector", "graph"],
+    allowVectorForBenchmark: true,
+  },
+  {
     name: "lexical+vector+graph+ppr",
     channels: ["lexical", "vector", "graph"],
     allowVectorForBenchmark: true,

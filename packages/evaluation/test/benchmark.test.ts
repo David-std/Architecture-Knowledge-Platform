@@ -20,17 +20,26 @@ describe("retrieval benchmark matrix", () => {
       "context-pack+lexical+graph",
       "full-hybrid-rrf",
       "full-hybrid+rerank",
+      "lexical+vector+graph",
       "lexical+vector+graph+ppr",
       "lexical+vector+graph+community-drift",
       "lexical+vector+graph+community-global",
       "lexical+vector+query-decomposition",
     ]);
-    expect(RETRIEVAL_BENCHMARK_MATRIX).toHaveLength(14);
+    expect(RETRIEVAL_BENCHMARK_MATRIX).toHaveLength(15);
     expect(
       RETRIEVAL_BENCHMARK_MATRIX.filter(({ channels }) =>
         channels.includes("vector"),
       ).every(({ allowVectorForBenchmark }) => allowVectorForBenchmark),
     ).toBe(true);
+    expect(
+      RETRIEVAL_BENCHMARK_MATRIX.find(
+        ({ name }) => name === "lexical+vector+graph",
+      ),
+    ).toMatchObject({
+      channels: ["lexical", "vector", "graph"],
+      allowVectorForBenchmark: true,
+    });
     expect(
       RETRIEVAL_BENCHMARK_MATRIX.find(
         ({ name }) => name === "lexical+vector+graph+ppr",
