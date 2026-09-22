@@ -60,6 +60,20 @@ The maintained tests cover malicious/out-of-root paths, provider crash, ambiguit
 
 For malicious comments/docstrings, the Code Graph path deliberately has no LLM prompt surface: the real-provider CI runs Graphify in local `--code-only` mode and the adapter supplies a sanitized environment without LLM API keys. The existing adapter test explicitly sets an `OPENAI_API_KEY` sentinel and succeeds only when that key does not reach the provider. Comments can be parsed as source text, but they cannot gain model authority through this adapter.
 
+## Release-wide limitations
+
+These limitations apply to the v0.4 evidence set as a whole and are intentionally not converted into positive product claims:
+
+- External comparator families without a same-task, same-fixture executable report remain reference-only or `DEFERRED_WITH_REASON`; AKP does not reuse README or paper scores as current parity evidence.
+- Registered retrieval quality is measured on the small public AKP product-documentation corpus. It is not evidence of domain-general or private-customer retrieval superiority.
+- Monetary provider cost is not measured for the local registered retrieval provider and must remain unmeasured rather than being interpreted as zero.
+- The generic connector contract, local/Git source path and authenticated webhook/inbox are productized; first-party adapters for every vendor system of record are not.
+- Graphify language/extraction coverage follows the pinned reviewed adapter/provider version. Clustering remains disabled in the Code Graph provider path because AKP owns community indexing separately.
+- Federation proof uses two isolated API/database nodes on one CI host. It proves protocol, scope and failure semantics, not WAN performance or multi-region high availability.
+- PPR is an on-demand bounded retrieval operation rather than a durable background job; cooperative cancellation is proven at the request boundary.
+- Late-interaction retrieval is not retained in the v0.4 production matrix and therefore remains explicitly outside the ablation path.
+- Agent A/B and five-arm arena evidence records losses, invalid outputs and unsupported claims from the pinned local model; those results do not establish global agent-quality superiority.
+
 ## Deliberate non-claims
 
 - Graphify/GitNexus community detection is not an active AKP product capability.

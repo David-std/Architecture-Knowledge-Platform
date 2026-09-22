@@ -261,6 +261,22 @@ jobs:
                 falselyExecuted.map((system) => system.id).join(", "),
             );
           }
+          const currentSystem = (report.systems ?? []).find(
+            (system) => system.id === "akp-v0.4-baseline-channels",
+          );
+          for (const run of currentSystem?.retrievalRuns ?? []) {
+            const providerCost = run.metrics?.providerCost;
+            if (
+              providerCost?.measured !== false ||
+              providerCost?.value !== null ||
+              typeof providerCost?.reason !== "string" ||
+              !providerCost.reason.includes("does not measure")
+            ) {
+              throw new Error(
+                "Unmeasured provider monetary cost was relabelled as a measured value.",
+              );
+            }
+          }
           const reproducibility = report.benchmarkEvidence?.reproducibility;
           if (
             typeof reproducibility?.tool?.repositoryUrl !== "string" ||

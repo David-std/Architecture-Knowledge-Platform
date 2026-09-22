@@ -199,7 +199,9 @@ function retrievalMetrics(run: RetrievalRun): CompetitiveRetrievalMetrics {
     latencyP95Ms:
       p95 === null ? unmeasured("No latency samples.") : measured(p95),
     contextTokens: measured(run.meanEstimatedTokens),
-    providerCost: measured(0),
+    providerCost: unmeasured(
+      "The registered retrieval benchmark uses a local provider and does not measure monetary provider cost.",
+    ),
   };
 }
 
