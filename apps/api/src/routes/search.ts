@@ -574,9 +574,7 @@ function sameGraphScopeSet(
   right: readonly GraphScope[],
 ): boolean {
   const stable = (scopes: readonly GraphScope[]) =>
-    scopes.map(
-      (scope) => `${scope.vaultId}:${scope.pathPrefix ?? ""}`,
-    );
+    scopes.map((scope) => `${scope.vaultId}:${scope.pathPrefix ?? ""}`);
   return sameStringSet(stable(left), stable(right));
 }
 
@@ -4139,23 +4137,22 @@ export function registerSearchRoutes(
                 ) {
                   return false;
                 }
-                const currentScope =
-                  await new PostgresAuthorizationPort(db).resolveVaultScope({
-                    userId: actor.id,
-                    spaceId: requestedSpace,
-                    permission: "knowledge:read",
-                    ...(principalVaultId
-                      ? { vaultId: principalVaultId }
-                      : parsed.data.vaultId
-                        ? { vaultId: parsed.data.vaultId }
-                        : {}),
-                    vaultIds: principalVaultId
-                      ? [principalVaultId]
-                      : parsed.data.vaultIds,
-                    federated: principalVaultId
-                      ? false
-                      : parsed.data.federated,
-                  });
+                const currentScope = await new PostgresAuthorizationPort(
+                  db,
+                ).resolveVaultScope({
+                  userId: actor.id,
+                  spaceId: requestedSpace,
+                  permission: "knowledge:read",
+                  ...(principalVaultId
+                    ? { vaultId: principalVaultId }
+                    : parsed.data.vaultId
+                      ? { vaultId: parsed.data.vaultId }
+                      : {}),
+                  vaultIds: principalVaultId
+                    ? [principalVaultId]
+                    : parsed.data.vaultIds,
+                  federated: principalVaultId ? false : parsed.data.federated,
+                });
                 if (
                   !sameStringSet(currentScope.vaultIds, vaultIds) ||
                   !sameAuthorizedVaultAccess(
@@ -4205,9 +4202,7 @@ export function registerSearchRoutes(
                       reasoningProfileVersions.get(
                         String(row.vault_id ?? ""),
                       ) !==
-                      String(
-                        row.retrieval_configuration_version ?? "rrf-v1",
-                      ),
+                      String(row.retrieval_configuration_version ?? "rrf-v1"),
                   )
                 ) {
                   return false;
