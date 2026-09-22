@@ -57,6 +57,9 @@ const peerId = randomUUID();
 const truthRevisionId = randomUUID();
 const truthSupportSetId = randomUUID();
 const temporalFactId = randomUUID();
+const graphProjectionRevisionId = randomUUID();
+const assuranceRunId = randomUUID();
+const assuranceFindingId = randomUUID();
 
 const canonicalProfile = JSON.stringify({
   profileId: "recovery-proof",
@@ -141,8 +144,60 @@ try {
      )`,
     [sessionId, vault.space_id, vault.id, adminId, adminPrincipalId, claimId],
   );
+  const handoffEvent = await client.query<{ id: string }>(
+    `insert into workspace_events(
+       session_id,space_id,vault_id,actor_id,actor_principal_id,claim_id,
+       event_type,payload,session_version
+     ) values(
+       $1,$2,$3,$4,$5,$6,'CLAIM_HANDOFF',$7::jsonb,2
+     )
+     returning id::text`,
+    [
+      sessionId,
+      vault.space_id,
+      vault.id,
+      adminId,
+      adminPrincipalId,
+      claimId,
+      JSON.stringify({
+        recoverySentinel: "handoff",
+        summary: "Recovery proof structured handoff",
+        completed: ["seed durable state"],
+        remaining: ["verify restore"],
+        blockers: [],
+        changedResourceRefs: ["managed/restore-probe.md"],
+        evidenceRefs: [],
+        questions: [],
+        contextRevision: revisionSet,
+      }),
+    ],
+  );
+  const promotionEvent = await client.query<{ id: string }>(
+    `insert into workspace_events(
+       session_id,space_id,vault_id,actor_id,actor_principal_id,claim_id,
+       event_type,payload,session_version
+     ) values(
+       $1,$2,$3,$4,$5,null,'PROMOTION_REQUESTED',$6::jsonb,3
+     )
+     returning id::text`,
+    [
+      sessionId,
+      vault.space_id,
+      vault.id,
+      adminId,
+      adminPrincipalId,
+      JSON.stringify({
+        recoverySentinel: "promotion",
+        sourceScope: "PROJECT",
+        targetScope: "TEAM",
+        sourceEventIds: [],
+        evidenceRefs: [],
+        requestedStatus: "REVIEW_REQUIRED",
+      }),
+    ],
+  );
   await client.query(
-    "update agent_sessions set coordination_version=1 where id=$1",
+    "update agent_sessions set coordination_version=3 where id=$1",
     [sessionId],
   );
   await client.query(
@@ -160,6 +215,72 @@ try {
       vault.id,
       adminId,
       revisionSetHash,
+    ],
+  );
+
+  await client.query(
+    `insert into federated_graph_projection_revisions(
+       id,space_id,vault_id,graph_domain,scope_id,revision,source_revision,
+       source_hash,provider,provider_version,configuration_version,lifecycle,
+       freshness,requested_at,building_at,ready_at,built_at,activated_at,
+       last_successful_update
+     ) values(
+       $1,$2,$3,'EPISTEMIC','recovery:graph-sentinel',
+       'recovery-graph-v1',$4,$5,'recovery-proof','1','recovery-v1','ACTIVE',
+       'FRESH',now()-interval '4 seconds',now()-interval '3 seconds',
+       now()-interval '2 seconds',now()-interval '2 seconds',
+       now()-interval '1 second',now()-interval '1 second'
+     )`,
+    [
+      graphProjectionRevisionId,
+      vault.space_id,
+      vault.id,
+      vault.current_revision,
+      sha256("recovery-proof-graph-source"),
+    ],
+  );
+
+  await client.query(
+    `insert into assurance_runs(
+       id,space_id,vault_id,trigger,detectors,status,idempotency_key,
+       requested_by_user_id,requested_by_principal_id,cursor,started_at,
+       completed_at,result_summary
+     ) values(
+       $1,$2,$3,'MANUAL',array['GROUNDING']::text[],'COMPLETED',
+       'recovery-proof-assurance',$4,$5,'{"detectorIndex":1}'::jsonb,
+       now()-interval '1 second',now(),
+       '{"recoverySentinel":true}'::jsonb
+     )`,
+    [
+      assuranceRunId,
+      vault.space_id,
+      vault.id,
+      adminId,
+      adminPrincipalId,
+    ],
+  );
+  const assuranceFindingKey = sha256(
+    `GROUNDING\u001fRECOVERY_SENTINEL\u001f${vault.id}\u001frecovery-proof`,
+  );
+  await client.query(
+    `insert into assurance_findings(
+       id,run_id,space_id,vault_id,detector,severity,finding_key,
+       subject_kind,subject_id,code,summary,evidence_refs,metadata,
+       detector_version,category,scope_id,target_ids,support_set_ids,status,
+       proposed_action,revision_set
+     ) values(
+       $1,$2,$3,$4,'GROUNDING','INFO',$5,'RECOVERY_SENTINEL',
+       'recovery-proof','RECOVERY_SENTINEL','Recovery proof assurance finding',
+       '[]'::jsonb,'{"recoverySentinel":true}'::jsonb,'1.0.0','GROUNDING',
+       $4::text,'["recovery-proof"]'::jsonb,'[]'::jsonb,'OPEN',null,$6::jsonb
+     )`,
+    [
+      assuranceFindingId,
+      assuranceRunId,
+      vault.space_id,
+      vault.id,
+      assuranceFindingKey,
+      revisionSetJson,
     ],
   );
 
@@ -274,6 +395,10 @@ const manifest = {
     sessionId,
     claimId,
     offlineDraftId,
+    handoffEventId: handoffEvent.rows[0]?.id,
+    promotionEventId: promotionEvent.rows[0]?.id,
+    graphProjectionRevisionId,
+    assuranceFindingId,
     connectorId,
     connectorEventId,
     connectorCheckpoint: 7,

@@ -79,9 +79,11 @@ $requiredDurableTables = @(
   "knowledge_profile_revisions",
   "vaults",
   "agent_sessions",
+  "workspace_session_participants",
   "workspace_context_revision_sets",
   "workspace_claims",
   "workspace_events",
+  "workspace_offline_drafts",
   "workspace_decision_candidates",
   "reviews",
   "truth_revision_heads",
@@ -89,7 +91,9 @@ $requiredDurableTables = @(
   "truth_support_sets",
   "temporal_facts",
   "federated_graph_projection_revisions",
+  "assurance_runs",
   "assurance_findings",
+  "assurance_finding_events",
   "source_connector_registrations",
   "source_connector_checkpoints",
   "source_connector_events",
@@ -221,6 +225,31 @@ try {
     $claimFence = Invoke-RestoredScalar -Database $database -Sql "select fencing_token from workspace_claims where id='$($expected.claimId)' and session_id='$($expected.sessionId)';"
     if ([int64]$claimFence -ne 7) {
       throw "Restored workspace claim sentinel has the wrong fence."
+    }
+
+    $profileBinding = Invoke-RestoredScalar -Database $database -Sql "select coalesce(active_knowledge_profile_revision_id::text,'') from vaults where id='$vaultId';"
+    if ($profileBinding -ne [string]$expected.profileRevisionId) {
+      throw "Restored active profile binding differs."
+    }
+
+    $handoffType = Invoke-RestoredScalar -Database $database -Sql "select event_type from workspace_events where id=$($expected.handoffEventId) and session_id='$($expected.sessionId)';"
+    if ($handoffType -ne "CLAIM_HANDOFF") {
+      throw "Restored structured handoff sentinel is missing."
+    }
+
+    $promotionType = Invoke-RestoredScalar -Database $database -Sql "select event_type from workspace_events where id=$($expected.promotionEventId) and session_id='$($expected.sessionId)';"
+    if ($promotionType -ne "PROMOTION_REQUESTED") {
+      throw "Restored promotion request sentinel is missing."
+    }
+
+    $graphLifecycle = Invoke-RestoredScalar -Database $database -Sql "select lifecycle from federated_graph_projection_revisions where id='$($expected.graphProjectionRevisionId)' and vault_id='$vaultId';"
+    if ($graphLifecycle -ne "ACTIVE") {
+      throw "Restored graph revision sentinel is missing or inactive."
+    }
+
+    $assuranceStatus = Invoke-RestoredScalar -Database $database -Sql "select status from assurance_findings where id='$($expected.assuranceFindingId)' and vault_id='$vaultId';"
+    if ($assuranceStatus -ne "OPEN") {
+      throw "Restored assurance finding sentinel is missing."
     }
 
     $draftStatus = Invoke-RestoredScalar -Database $database -Sql "select status from workspace_offline_drafts where id='$($expected.offlineDraftId)' and session_id='$($expected.sessionId)';"
