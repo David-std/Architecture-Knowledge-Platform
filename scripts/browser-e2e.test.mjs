@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
-import { mkdir, rename, writeFile } from "node:fs/promises";
+import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { setTimeout as delay } from "node:timers/promises";
@@ -714,11 +714,8 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
           ["-C", MANAGED_REPO, "rev-parse", "HEAD"],
           { encoding: "utf8" },
         ).trim();
-        const gitDirectory = path.join(MANAGED_REPO, ".git");
-        const disabledGitDirectory = path.join(
-          MANAGED_REPO,
-          ".git-browser-e2e-disabled",
-        );
+        const disabledRepository =
+          MANAGED_REPO + ".browser-e2e-disabled";
         const recoverySummary = "Browser E2E autosave recovery";
         const recoveryContent = [
           "---",
@@ -769,8 +766,14 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
           },
         );
 
-        await rename(gitDirectory, disabledGitDirectory);
+        await rm(disabledRepository, { recursive: true, force: true });
+        await rename(MANAGED_REPO, disabledRepository);
         try {
+          await writeFile(
+            MANAGED_REPO,
+            "browser-e2e managed repository unavailable\n",
+            "utf8",
+          );
           await adminPage
             .getByRole("button", { name: "Save: crear draft Git" })
             .click();
@@ -779,7 +782,8 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
             .getByText(/Save rechazado:/)
             .waitFor();
         } finally {
-          await rename(disabledGitDirectory, gitDirectory);
+          await rm(MANAGED_REPO, { recursive: true, force: true });
+          await rename(disabledRepository, MANAGED_REPO);
         }
 
         assert.equal(
