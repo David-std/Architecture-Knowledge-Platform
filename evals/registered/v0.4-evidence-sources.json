@@ -789,7 +789,7 @@
           "type": "STEP",
           "workflow": "recovery",
           "job": "managed-git-restore",
-          "step": "Prove managed Git commit, files and searchable reindex after restore"
+          "step": "Verify managed Git commit, files and searchable reindex after restore"
         }
       ]
     },
@@ -1471,7 +1471,7 @@
           "type": "STEP",
           "workflow": "recovery",
           "job": "managed-git-restore",
-          "step": "Prove managed Git commit, files and searchable reindex after restore"
+          "step": "Verify managed Git commit, files and searchable reindex after restore"
         }
       ]
     },
@@ -1481,7 +1481,7 @@
           "type": "STEP",
           "workflow": "recovery",
           "job": "managed-git-restore",
-          "step": "Prove managed Git commit, files and searchable reindex after restore"
+          "step": "Verify managed Git commit, files and searchable reindex after restore"
         }
       ]
     },
@@ -1491,7 +1491,7 @@
           "type": "STEP",
           "workflow": "recovery",
           "job": "managed-git-restore",
-          "step": "Prove managed Git commit, files and searchable reindex after restore"
+          "step": "Verify managed Git commit, files and searchable reindex after restore"
         }
       ]
     },
