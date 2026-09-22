@@ -60,6 +60,8 @@ const temporalFactId = randomUUID();
 const graphProjectionRevisionId = randomUUID();
 const assuranceRunId = randomUUID();
 const assuranceFindingId = randomUUID();
+let handoffEventId: string | null = null;
+let promotionEventId: string | null = null;
 
 const canonicalProfile = JSON.stringify({
   profileId: "recovery-proof",
@@ -172,6 +174,11 @@ try {
       }),
     ],
   );
+  handoffEventId = handoffEvent.rows[0]?.id ?? null;
+  if (!handoffEventId) {
+    throw new Error("Recovery proof handoff sentinel was not created.");
+  }
+
   const promotionEvent = await client.query<{ id: string }>(
     `insert into workspace_events(
        session_id,space_id,vault_id,actor_id,actor_principal_id,claim_id,
@@ -196,6 +203,11 @@ try {
       }),
     ],
   );
+  promotionEventId = promotionEvent.rows[0]?.id ?? null;
+  if (!promotionEventId) {
+    throw new Error("Recovery proof promotion sentinel was not created.");
+  }
+
   await client.query(
     "update agent_sessions set coordination_version=3 where id=$1",
     [sessionId],
@@ -389,8 +401,8 @@ const manifest = {
     sessionId,
     claimId,
     offlineDraftId,
-    handoffEventId: handoffEvent.rows[0]?.id,
-    promotionEventId: promotionEvent.rows[0]?.id,
+    handoffEventId,
+    promotionEventId,
     graphProjectionRevisionId,
     assuranceFindingId,
     connectorId,
