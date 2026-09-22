@@ -1,4 +1,4 @@
--- P8 durable source-connector apply retries.
+-- Durable source-connector apply retries.
 --
 -- The signed inbox already preserves event order and checkpoint continuity.
 -- These columns make transient projection failures observable/retryable without

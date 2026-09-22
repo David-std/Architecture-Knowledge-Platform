@@ -26,7 +26,7 @@ Core health dependencies are PostgreSQL, raw object storage and the extractor. O
 2. Run `pnpm akp doctor --format human` for a broad operational diagnosis.
 3. Inspect durable jobs, outbox retries/quarantine, profile/revision parity, vector/graph/truth/community state, connectors, federation peers and critical findings.
 4. Capture a backup to a new/empty directory.
-5. Run isolated restore smoke and managed-Git restore verification.
+5. Run isolated restore verification and managed-Git restore verification.
 6. Rebuild derived projections when the manifest declares `REBUILD_DERIVED_PROJECTIONS`.
 7. Run doctor again and validate retrieval/runtime gates before resuming normal shared traffic.
 
@@ -50,7 +50,7 @@ An unavailable optional vector/model/federation provider can degrade only when t
 
 ## Failure and recovery
 
-Backup v4 includes PostgreSQL, MinIO data, a managed Git bundle when configured and non-secret metadata. Restore smoke verifies hashes, migrations and required durable tables in an isolated database/volume.
+Backup v4 includes PostgreSQL, MinIO data, a managed Git bundle when configured and non-secret metadata. Restore verification checks hashes, migrations and required durable tables in an isolated database/volume.
 
 Managed-Git restore clones the bundle into a new repository, verifies revision/file inventory and proves that searchable derived state can be rebuilt.
 

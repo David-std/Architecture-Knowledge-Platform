@@ -453,7 +453,7 @@
         }
       ]
     },
-    "test:p2-authorization-decision-semantics": {
+    "test:authorization-decision-semantics": {
       "sources": [
         {
           "type": "STEP",
@@ -463,7 +463,7 @@
         }
       ]
     },
-    "integration:p2-principal-audit-identities": {
+    "integration:principal-audit-identities": {
       "sources": [
         {
           "type": "STEP",
@@ -473,7 +473,7 @@
         }
       ]
     },
-    "integration:p2-fresh-session-handoff": {
+    "integration:fresh-session-handoff": {
       "sources": [
         {
           "type": "STEP",
@@ -483,7 +483,7 @@
         }
       ]
     },
-    "integration:p2-offline-snapshot-contract": {
+    "integration:offline-snapshot-contract": {
       "sources": [
         {
           "type": "STEP",
@@ -493,7 +493,7 @@
         }
       ]
     },
-    "failure:p2-work-scope-normalization": {
+    "failure:work-scope-normalization": {
       "sources": [
         {
           "type": "STEP",
@@ -589,7 +589,7 @@
         }
       ]
     },
-    "integration:p11-concurrency-races": {
+    "integration:concurrency-races": {
       "sources": [
         {
           "type": "STEP",
@@ -1053,7 +1053,7 @@
         }
       ]
     },
-    "security:p7-load-raw-resource-boundary": {
+    "security:load-raw-resource-boundary": {
       "sources": [
         {
           "type": "STEP",
@@ -1505,7 +1505,7 @@
         }
       ]
     },
-    "test:p1-interop-adversarial": {
+    "test:interop-adversarial": {
       "sources": [
         {
           "type": "STEP",
@@ -1515,7 +1515,7 @@
         }
       ]
     },
-    "integration:p1-interop-roundtrip": {
+    "integration:interop-roundtrip": {
       "sources": [
         {
           "type": "STEP",
@@ -1525,7 +1525,7 @@
         }
       ]
     },
-    "integration:p2-activity-derivation-contract": {
+    "integration:activity-derivation-contract": {
       "sources": [
         {
           "type": "STEP",
@@ -1535,7 +1535,7 @@
         }
       ]
     },
-    "integration:p3-relationship-assertion": {
+    "integration:relationship-assertion": {
       "sources": [
         {
           "type": "STEP",
@@ -1551,7 +1551,7 @@
         }
       ]
     },
-    "recovery:p3-rebuild-normalized-equivalence": {
+    "recovery:rebuild-normalized-equivalence": {
       "sources": [
         {
           "type": "STEP",
@@ -1567,7 +1567,7 @@
         }
       ]
     },
-    "integration:p3-graph-catalog": {
+    "integration:graph-catalog": {
       "sources": [
         {
           "type": "STEP",
@@ -1583,7 +1583,7 @@
         }
       ]
     },
-    "test:p3-runtime-domain-contract": {
+    "test:runtime-domain-contract": {
       "sources": [
         {
           "type": "STEP",
@@ -1593,23 +1593,7 @@
         }
       ]
     },
-    "integration:p3-domain-fixtures": {
-      "sources": [
-        {
-          "type": "STEP",
-          "workflow": "ci",
-          "job": "typescript",
-          "step": "Run pnpm check"
-        },
-        {
-          "type": "STEP",
-          "workflow": "domain-quality",
-          "job": "registered-domain-quality",
-          "step": "Execute registered domain quality benchmark"
-        }
-      ]
-    },
-    "integration:p3-cross-domain-provenance": {
+    "integration:domain-fixtures": {
       "sources": [
         {
           "type": "STEP",
@@ -1625,7 +1609,7 @@
         }
       ]
     },
-    "security:p3-cross-domain-hidden-hop": {
+    "integration:cross-domain-provenance": {
       "sources": [
         {
           "type": "STEP",
@@ -1641,7 +1625,23 @@
         }
       ]
     },
-    "integration:p3-epistemic-v03-regression": {
+    "security:cross-domain-hidden-hop": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        },
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Execute registered domain quality benchmark"
+        }
+      ]
+    },
+    "integration:epistemic-v03-regression": {
       "sources": [
         {
           "type": "STEP",
@@ -1651,7 +1651,7 @@
         }
       ]
     },
-    "failure:p4-code-graph-validator": {
+    "failure:code-graph-validator": {
       "sources": [
         {
           "type": "STEP",
@@ -1661,7 +1661,7 @@
         }
       ]
     },
-    "failure:p4-code-graph-limits": {
+    "failure:code-graph-limits": {
       "sources": [
         {
           "type": "STEP",
@@ -1671,7 +1671,7 @@
         }
       ]
     },
-    "failure:p4-graphify-version-gate": {
+    "failure:graphify-version-gate": {
       "sources": [
         {
           "type": "STEP",
@@ -1687,7 +1687,7 @@
         }
       ]
     },
-    "integration:p4-graphify-provider-gate": {
+    "integration:graphify-provider-gate": {
       "sources": [
         {
           "type": "STEP",
@@ -1697,7 +1697,7 @@
         }
       ]
     },
-    "integration:p4-code-graph-lifecycle": {
+    "integration:code-graph-lifecycle": {
       "sources": [
         {
           "type": "STEP",
@@ -1707,7 +1707,7 @@
         }
       ]
     },
-    "failure:p4-code-graph-active-preserved": {
+    "failure:code-graph-active-preserved": {
       "sources": [
         {
           "type": "STEP",
@@ -1717,7 +1717,7 @@
         }
       ]
     },
-    "test:p4-evidence-tier-transitions": {
+    "test:evidence-tier-transitions": {
       "sources": [
         {
           "type": "STEP",
@@ -1727,7 +1727,7 @@
         }
       ]
     },
-    "failure:p4-code-ambiguity-preserved": {
+    "failure:code-ambiguity-preserved": {
       "sources": [
         {
           "type": "STEP",
@@ -1737,7 +1737,7 @@
         }
       ]
     },
-    "integration:p4-symbol-reconciliation": {
+    "integration:symbol-reconciliation": {
       "sources": [
         {
           "type": "STEP",
@@ -1747,7 +1747,7 @@
         }
       ]
     },
-    "security:p4-malicious-code-comments": {
+    "security:malicious-code-comments": {
       "sources": [
         {
           "type": "STEP",
@@ -1757,7 +1757,7 @@
         }
       ]
     },
-    "benchmark:p4-graphify-incremental-equivalence": {
+    "benchmark:graphify-incremental-equivalence": {
       "sources": [
         {
           "type": "STEP",
@@ -1767,7 +1767,7 @@
         }
       ]
     },
-    "test:p4-impact-partitions": {
+    "test:impact-partitions": {
       "sources": [
         {
           "type": "STEP",
@@ -1777,7 +1777,7 @@
         }
       ]
     },
-    "failure:p4-delta-invalid-commit": {
+    "failure:delta-invalid-commit": {
       "sources": [
         {
           "type": "STEP",
@@ -1787,7 +1787,7 @@
         }
       ]
     },
-    "integration:p4-commit-delta-impact": {
+    "integration:commit-delta-impact": {
       "sources": [
         {
           "type": "STEP",
@@ -1797,7 +1797,7 @@
         }
       ]
     },
-    "security:p4-delta-root-redaction": {
+    "security:delta-root-redaction": {
       "sources": [
         {
           "type": "STEP",
@@ -1807,7 +1807,7 @@
         }
       ]
     },
-    "test:p4-code-graph-doctor-state": {
+    "test:code-graph-doctor-state": {
       "sources": [
         {
           "type": "STEP",
@@ -1817,7 +1817,7 @@
         }
       ]
     },
-    "failure:p4-retired-history-not-stale": {
+    "failure:retired-history-not-stale": {
       "sources": [
         {
           "type": "STEP",
@@ -1827,7 +1827,7 @@
         }
       ]
     },
-    "surface:p4-code-graph-doctor": {
+    "surface:code-graph-doctor": {
       "sources": [
         {
           "type": "STEP",
@@ -1841,7 +1841,7 @@
         }
       ]
     },
-    "test:p5-bitemporal-valid-recorded-time": {
+    "test:bitemporal-valid-recorded-time": {
       "sources": [
         {
           "type": "STEP",
@@ -1855,7 +1855,7 @@
         }
       ]
     },
-    "test:p5-support-alternative-groups": {
+    "test:support-alternative-groups": {
       "sources": [
         {
           "type": "STEP",
@@ -1879,7 +1879,7 @@
         }
       ]
     },
-    "failure:p5-derived-support-before-fusion": {
+    "failure:derived-support-before-fusion": {
       "sources": [
         {
           "type": "STEP",
@@ -1893,7 +1893,7 @@
         }
       ]
     },
-    "failure:p5-physical-cleanup-race": {
+    "failure:physical-cleanup-race": {
       "sources": [
         {
           "type": "STEP",
@@ -1917,7 +1917,7 @@
         }
       ]
     },
-    "failure:p5-snapshot-change-mid-query": {
+    "failure:snapshot-change-mid-query": {
       "sources": [
         {
           "type": "STEP",
@@ -1931,7 +1931,7 @@
         }
       ]
     },
-    "integration:p5-community-context-fencing": {
+    "integration:community-context-fencing": {
       "sources": [
         {
           "type": "STEP",
@@ -1945,7 +1945,7 @@
         }
       ]
     },
-    "integration:p5-explicit-truth-states": {
+    "integration:explicit-truth-states": {
       "sources": [
         {
           "type": "STEP",
@@ -1959,7 +1959,7 @@
         }
       ]
     },
-    "integration:p5-vector-cleanup": {
+    "integration:vector-cleanup": {
       "sources": [
         {
           "type": "STEP",
@@ -1973,7 +1973,7 @@
         }
       ]
     },
-    "integration:p5-cached-synthesis-support-validation": {
+    "integration:cached-synthesis-support-validation": {
       "sources": [
         {
           "type": "STEP",
@@ -1987,7 +1987,7 @@
         }
       ]
     },
-    "test:p6-retrieval-trace-contract": {
+    "test:retrieval-trace-contract": {
       "sources": [
         {
           "type": "STEP",
@@ -2009,7 +2009,7 @@
         }
       ]
     },
-    "failure:p6-reranker-candidate-set": {
+    "failure:reranker-candidate-set": {
       "sources": [
         {
           "type": "STEP",
@@ -2023,7 +2023,7 @@
         }
       ]
     },
-    "integration:p6-retrieval-trace-e2e": {
+    "integration:retrieval-trace-e2e": {
       "sources": [
         {
           "type": "STEP",
@@ -2041,7 +2041,7 @@
         }
       ]
     },
-    "security:p6-retrieval-trace-scope": {
+    "security:retrieval-trace-scope": {
       "sources": [
         {
           "type": "STEP",
@@ -2059,7 +2059,7 @@
         }
       ]
     },
-    "failure:p6-reranker-fallback": {
+    "failure:reranker-fallback": {
       "sources": [
         {
           "type": "STEP",
@@ -2077,7 +2077,7 @@
         }
       ]
     },
-    "failure:p6-hyde-untrusted-transform": {
+    "failure:hyde-untrusted-transform": {
       "sources": [
         {
           "type": "STEP",
@@ -2091,7 +2091,7 @@
         }
       ]
     },
-    "benchmark:p6-contextual-chunks": {
+    "benchmark:contextual-chunks": {
       "sources": [
         {
           "type": "STEP",
@@ -2109,7 +2109,7 @@
         }
       ]
     },
-    "benchmark:p6-long-context-placement": {
+    "benchmark:long-context-placement": {
       "sources": [
         {
           "type": "STEP",
@@ -2127,7 +2127,7 @@
         }
       ]
     },
-    "benchmark:p6-ann-decision-deferred": {
+    "benchmark:ann-decision-deferred": {
       "sources": [
         {
           "type": "STEP",
@@ -2151,7 +2151,7 @@
         }
       ]
     },
-    "integration:p6-drift-routing": {
+    "integration:drift-routing": {
       "sources": [
         {
           "type": "STEP",
@@ -2165,7 +2165,7 @@
         }
       ]
     },
-    "benchmark:p6-drift": {
+    "benchmark:drift": {
       "sources": [
         {
           "type": "STEP",
@@ -2339,7 +2339,7 @@
         }
       ]
     },
-    "security:p8-access-boundary-controlled-probes": {
+    "security:access-boundary-controlled-probes": {
       "sources": [
         {
           "type": "STEP",
@@ -2417,7 +2417,7 @@
         }
       ]
     },
-    "benchmark:p11-scale-combinations": {
+    "benchmark:scale-combinations": {
       "sources": [
         {
           "type": "STEP",

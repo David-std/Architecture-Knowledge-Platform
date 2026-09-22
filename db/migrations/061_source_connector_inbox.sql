@@ -1,4 +1,4 @@
--- P8 authenticated source connector inbox with no-gap checkpoints.
+-- Authenticated source connector inbox with no-gap checkpoints.
 
 create table source_connector_registrations (
   id uuid primary key default gen_random_uuid(),

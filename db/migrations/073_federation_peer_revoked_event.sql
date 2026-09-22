@@ -1,4 +1,4 @@
--- P11.7 federation peer revocation is a first-class durable integration event.
+-- Federation peer revocation is a first-class durable integration event.
 -- Keep the database constraint aligned with the typed event vocabulary so
 -- revocation state and its outbox signal commit atomically.
 

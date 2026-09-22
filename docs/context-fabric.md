@@ -13,7 +13,7 @@ AKP v0.4 keeps three planes separate:
 - `SOLO_LOCAL` — one local AKP instance;
 - `GIT_SYNC_SMALL_TEAM` — approved Markdown may travel through normal Git workflows, while writable PostgreSQL/vector state remains local to each AKP node;
 - `TEAM_NODE` — the recommended shared-team pattern: one authorized AKP API/worker/PostgreSQL node owns shared coordination and derived state;
-- `FEDERATED_ORG` — Team Nodes may publish discovery metadata for separately authorized federation. Remote query/import remains disabled until the federation phase supplies its authorization and trust contracts.
+- `FEDERATED_ORG` — Team Nodes may publish discovery metadata for separately authorized federation. Remote query/import remains disabled until the federation runtime is explicitly configured with its authorization and trust contracts.
 
 Set `AKP_CONTEXT_FABRIC_NODE_ID` to a stable operator-visible node identifier. The API reports the effective mode and supported boundaries at `GET /v1/context-fabric/capabilities`.
 
@@ -100,7 +100,7 @@ The current server intentionally applies only coordination event types (`FINDING
 
 ## Federated multi-graph substrate
 
-The graph substrate is derived, rebuildable context state; it is not a replacement for governed Markdown, source records or system-of-record objects. It keeps the graph domains distinct: `EPISTEMIC`, `SOFTWARE_CATALOG`, `CODE`, `RUNTIME`, `TEMPORAL`, `WORK` and `COMMUNITY`. Support in the storage contract does not imply that every domain already has a product-facing producer or query experience. In particular, community/PPR production belongs to the later retrieval phase and is not advertised by the current Context Fabric discovery manifest.
+The graph substrate is derived, rebuildable context state; it is not a replacement for governed Markdown, source records or system-of-record objects. It keeps the graph domains distinct: `EPISTEMIC`, `SOFTWARE_CATALOG`, `CODE`, `RUNTIME`, `TEMPORAL`, `WORK` and `COMMUNITY`. Support in the storage contract does not imply that every domain already has a product-facing producer or query experience. In particular, community/PPR production belongs to the retrieval subsystem and is advertised only where the active capability manifest supports it.
 
 Node identity is revision-aware and namespaced by graph domain, scope, kind, canonical key and revision. Display names are not global identifiers. Cross-domain edges retain their own derivation, source/evidence locators, provenance revision, optional support set/confidence and valid-time metadata, so declared catalog structure, static code structure and observed runtime behavior can disagree without being flattened into one generic fact.
 
@@ -114,7 +114,7 @@ The maintained integration fixture preserves domain disagreement explicitly: the
 
 `context_fabric_peers` and `/v1/context-fabric/peers` are discovery metadata only. Registering a peer performs no network request. A peer can declare a discovery mode and capability manifest, but the current Team Context Fabric contract does not allow a discovered endpoint to become an authorization bypass, remote retrieval source, write boundary, or trust upgrade.
 
-The API returns `boundary: DISCOVERY_METADATA_ONLY` and `networkContactPerformed: false` for peer registration. The node discovery manifest advertises only `CATALOG_ONLY` federation in the current Team Context Fabric contract and the capability flag `federationRemoteQuery` remains false. Therefore peer metadata cannot return or materialize remote knowledge objects in this phase; remote query/import policy belongs to the federation phase and must preserve remote provenance, trust and local authorization.
+The API returns `boundary: DISCOVERY_METADATA_ONLY` and `networkContactPerformed: false` for peer registration. The node discovery manifest advertises only `CATALOG_ONLY` federation in the current Team Context Fabric contract and the capability flag `federationRemoteQuery` remains false. Therefore peer metadata cannot return or materialize remote knowledge objects through the discovery boundary; remote query/import is handled by the federation runtime and must preserve remote provenance, trust and local authorization.
 
 ## Operational verification
 

@@ -146,7 +146,7 @@ verification evidence exists.
 ```powershell
 $env:AKP_MANAGED_REPO = 'D:\AKP\managed-knowledge'
 & .\scripts\backup.ps1 -OutputDirectory backups\release-candidate
-& .\scripts\restore-smoke.ps1 -BackupDirectory backups\release-candidate
+& .\scripts\verify-restore.ps1 -BackupDirectory backups\release-candidate
 & .\scripts\verify-managed-git-restore.ps1 `
   -BackupDirectory backups\release-candidate `
   -SourceManagedRepository $env:AKP_MANAGED_REPO `
@@ -203,5 +203,5 @@ docker compose config --quiet
 git diff --check
 ```
 
-Broad retrieval/document/agent/load comparisons are final validation evidence,
+Broad retrieval/document/agent/load comparisons are release validation evidence,
 not a reason to weaken focused correctness gates.

@@ -66,7 +66,7 @@ query parameters, map malformed parameters to `400`, path-scope denials to
 
 Raw bytes are a separate, higher-risk capability and are never included in the
 sanitized audit ZIP or transferred through MCP. The API exposes these routes
-only when `AKP_ENABLE_RAW_EVIDENCE_EXPORT=true` (the current baseline keeps this
+only when `AKP_ENABLE_RAW_EVIDENCE_EXPORT=true` (the default configuration keeps this
 flag `false`) and all raw object-store
 credentials are supplied explicitly:
 

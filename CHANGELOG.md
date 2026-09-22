@@ -15,8 +15,8 @@ Notable user-visible and architectural changes are recorded here. Validation tra
 - Added generic connector capability contracts, authenticated connector ingestion, continuous assurance and bounded organization federation.
 - Added role-aware model routing and data-residency enforcement, including fail-closed `LOCAL_ONLY` behavior.
 - Expanded the human workspace for work, service, agent-session, review, decision, graph, temporal, team and degraded-state workflows.
-- Added same-revision capability acceptance, domain-quality, federation, scale/concurrency, agent and final-proof workflows with explicit limitation reporting.
-- Completed the v0.4 product documentation set and strengthened repository hygiene so product surfaces no longer depend on phase, agent-session or workstation artifacts.
+- Added same-revision capability acceptance, domain-quality, federation, scale/concurrency, agent and release-assurance workflows with explicit limitation reporting.
+- Completed the v0.4 product documentation set and strengthened repository hygiene requirements.
 
 ## 0.3.0 — Product completion
 

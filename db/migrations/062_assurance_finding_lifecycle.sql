@@ -1,4 +1,4 @@
--- P8.2/P8.10: persistent finding identity, lifecycle and spec-aligned contract.
+-- Persistent finding identity, lifecycle and contract alignment.
 
 alter table assurance_runs
   drop constraint if exists assurance_runs_detectors_nonempty;
@@ -186,6 +186,6 @@ create index assurance_finding_events_finding_idx
   on assurance_finding_events(finding_id,created_at,id);
 
 comment on table assurance_findings is
-  'Persistent P8 Continuous Assurance findings. Identity survives repeated detector runs; first/last seen and authorized lifecycle state are retained.';
+  'Persistent Continuous Assurance findings. Identity survives repeated detector runs; first/last seen and authorized lifecycle state are retained.';
 comment on table assurance_finding_events is
   'Append-only lifecycle/audit history for assurance findings and operator action requests.';

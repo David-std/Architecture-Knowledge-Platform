@@ -13,7 +13,7 @@ import {
   type AgentInstructionBundle,
 } from "../apps/mcp/src/instruction-bundle.js";
 
-const client = new Client({ name: "akp-smoke", version: "0.1.0" });
+const client = new Client({ name: "akp-verification", version: "0.1.0" });
 let agentContextDb: Postgres | null = null;
 const transport = new StdioClientTransport({
   command: process.execPath,
@@ -288,7 +288,7 @@ try {
   const spaceId = firstVault?.space_id ?? firstVault?.spaceId;
   if (typeof vaultId !== "string" || typeof spaceId !== "string") {
     throw new Error(
-      `MCP smoke requires one authorized VaultRegistry entry: ${JSON.stringify(listedPayload)}`,
+      `MCP verification requires one authorized VaultRegistry entry: ${JSON.stringify(listedPayload)}`,
     );
   }
 

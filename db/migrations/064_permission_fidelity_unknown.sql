@@ -1,4 +1,4 @@
--- P8.6/P8.11 explicit unknown permission fidelity.
+-- Explicit unknown permission fidelity.
 --
 -- UNKNOWN is deliberately distinct from NONE:
 -- NONE says the source declares no reusable ACL fidelity;

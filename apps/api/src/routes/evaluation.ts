@@ -550,7 +550,7 @@ export async function runRetrievalBenchmark(
         "Diagnostic only; requires an explicit grounded-answer evaluator and is unscored by this retrieval-only API runner.",
       noAnswerAccuracy: "Accuracy over cases explicitly labelled as no-answer.",
       legacyEvidenceRecall:
-        "Existing benchmark field; when gold_evidence is absent it uses a cited-relevant-document proxy and must not be reported as P6.15 claim-support recall.",
+        "Existing benchmark field; when gold_evidence is absent it uses a cited-relevant-document proxy and must not be reported as claim-support recall.",
       legacyCitationPrecision:
         "Existing benchmark field may use a cited-relevant-hit proxy for default-selection compatibility; diagnostic citationPrecision does not.",
       unsupportedClaimRate:

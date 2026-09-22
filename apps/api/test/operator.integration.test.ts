@@ -39,9 +39,9 @@ beforeAll(async () => {
 
   await db.pool.query(
     `insert into users(id,email,display_name)
-     values($1,$2,'P6 operator viewer')
+     values($1,$2,'operator viewer')
      on conflict(id) do nothing`,
-    [viewerId, `p6-${viewerId}@localhost`],
+    [viewerId, `operator-${viewerId}@localhost`],
   );
   await db.pool.query(
     `insert into memberships(user_id,space_id,role,path_prefix)
@@ -51,7 +51,7 @@ beforeAll(async () => {
   );
   await db.pool.query(
     `insert into api_tokens(user_id,token_hash,label,scopes)
-     values($1,$2,'P6 operator integration',$3::jsonb)`,
+     values($1,$2,'operator integration',$3::jsonb)`,
     [
       viewerId,
       tokenHash,
@@ -70,13 +70,13 @@ beforeAll(async () => {
   const allowedVault = await registerVault(
     db,
     {
-      vaultKey: `p6-allowed-${randomUUID().slice(0, 8)}`,
-      name: "P6 allowed vault",
+      vaultKey: `operator-allowed-${randomUUID().slice(0, 8)}`,
+      name: "allowed operator vault",
       spaceId,
       visibility: "PRIVATE",
       gitRepository: null,
       defaultBranch: "main",
-      localPath: path.join(tmpdir(), `p6-allowed-${randomUUID()}`),
+      localPath: path.join(tmpdir(), `operator-allowed-${randomUUID()}`),
       contentRoots: ["."],
       sourceRoots: [],
       schemaProfile: {},
@@ -96,13 +96,13 @@ beforeAll(async () => {
   const deniedVault = await registerVault(
     db,
     {
-      vaultKey: `p6-denied-${randomUUID().slice(0, 8)}`,
-      name: "P6 denied vault",
+      vaultKey: `operator-denied-${randomUUID().slice(0, 8)}`,
+      name: "denied operator vault",
       spaceId,
       visibility: "PRIVATE",
       gitRepository: null,
       defaultBranch: "main",
-      localPath: path.join(tmpdir(), `p6-denied-${randomUUID()}`),
+      localPath: path.join(tmpdir(), `operator-denied-${randomUUID()}`),
       contentRoots: ["."],
       sourceRoots: [],
       schemaProfile: {},
@@ -217,9 +217,9 @@ beforeAll(async () => {
        id,space_id,vault_id,path,external_id,title,type,lifecycle,trust_tier,current_revision,
        body_cache,frontmatter,aliases,layer,raw_links
      ) values
-       ($1,$4,$5,'p6/a.md','P6-A','Allowed A','concept','ACTIVE','HUMAN_REVIEWED','p6-r1','A','{}','{}','compiled','[]'),
-       ($2,$4,$5,'p6/b.md','P6-B','Allowed B','decision','ACTIVE','MACHINE_SUPPORTED','p6-r1','B','{}','{}','compiled','[]'),
-       ($3,$4,$6,'p6/denied.md','P6-DENIED','Denied node','concept','ACTIVE','ATTESTED','p6-r1','D','{}','{}','compiled','[]')`,
+       ($1,$4,$5,'operator/a.md','OP-A','Allowed A','concept','ACTIVE','HUMAN_REVIEWED','operator-r1','A','{}','{}','compiled','[]'),
+       ($2,$4,$5,'operator/b.md','OP-B','Allowed B','decision','ACTIVE','MACHINE_SUPPORTED','operator-r1','B','{}','{}','compiled','[]'),
+       ($3,$4,$6,'operator/denied.md','OP-DENIED','Denied node','concept','ACTIVE','ATTESTED','operator-r1','D','{}','{}','compiled','[]')`,
     [
       allowedNodeA,
       allowedNodeB,
@@ -233,8 +233,8 @@ beforeAll(async () => {
     `insert into knowledge_relations(
        space_id,from_document_id,to_document_id,relation_type,weight,provenance
      ) values
-       ($1,$2,$3,'supports',1,'p6-test'),
-       ($1,$2,$4,'related_to',1,'p6-cross-vault-test')`,
+       ($1,$2,$3,'supports',1,'operator-test'),
+       ($1,$2,$4,'related_to',1,'operator-cross-vault-test')`,
     [spaceId, allowedNodeA, allowedNodeB, deniedNode],
   );
 
@@ -244,7 +244,7 @@ beforeAll(async () => {
   allowedFederatedB = randomUUID();
   deniedFederatedNode = randomUUID();
   allowedFederatedEdge = randomUUID();
-  const codeRevision = "p10-code-r1";
+  const codeRevision = "code-context-r1";
   const sourceRevision = "a".repeat(40);
 
   await db.pool.query(
@@ -253,9 +253,9 @@ beforeAll(async () => {
        provider,configuration_version,lifecycle,freshness,built_at,activated_at,
        last_successful_update
      ) values
-       ($1,$3,$4,'CODE','repo:allowed',$6,$7,'fixture','p10-test',
+       ($1,$3,$4,'CODE','repo:allowed',$6,$7,'fixture','code-context-test',
         'ACTIVE','FRESH',now(),now(),now()),
-       ($2,$3,$5,'CODE','repo:denied',$6,$7,'fixture','p10-test',
+       ($2,$3,$5,'CODE','repo:denied',$6,$7,'fixture','code-context-test',
         'ACTIVE','FRESH',now(),now(),now())`,
     [
       allowedProjectionId,
@@ -288,11 +288,11 @@ beforeAll(async () => {
       deniedVaultId,
       codeRevision,
       JSON.stringify({ title: "Function A", path: "src/a.ts", lineStart: 10 }),
-      createHash("sha256").update("p10-fed-a").digest("hex"),
+      createHash("sha256").update("federation-a").digest("hex"),
       JSON.stringify({ title: "Function B", path: "src/b.ts", lineStart: 20 }),
-      createHash("sha256").update("p10-fed-b").digest("hex"),
+      createHash("sha256").update("federation-b").digest("hex"),
       JSON.stringify({ title: "Hidden", path: "secret.ts", lineStart: 1 }),
-      createHash("sha256").update("p10-fed-hidden").digest("hex"),
+      createHash("sha256").update("federation-hidden").digest("hex"),
     ],
   );
 
@@ -326,7 +326,7 @@ beforeAll(async () => {
       allowedFederatedB,
       JSON.stringify([{ path: "src/a.ts", startLine: 10, endLine: 10 }]),
       codeRevision,
-      createHash("sha256").update("p10-fed-edge").digest("hex"),
+      createHash("sha256").update("federation-edge").digest("hex"),
     ],
   );
   await db.pool.query(
@@ -355,7 +355,7 @@ afterAll(async () => {
     [[allowedFederatedA, allowedFederatedB, deniedFederatedNode]],
   );
   await db.pool.query(
-    "delete from knowledge_relations where provenance in ('p6-test','p6-cross-vault-test')",
+    "delete from knowledge_relations where provenance in ('operator-test','operator-cross-vault-test')",
   );
   await db.pool.query(
     "delete from knowledge_documents where id=any($1::uuid[])",
@@ -389,7 +389,7 @@ afterAll(async () => {
   await db.close();
 });
 
-describe("P6 operator projections", () => {
+describe("operator projections", () => {
   it("keeps multi-layer graph data inside the authorized vault and honors as_of", async () => {
     const response = await app.inject({
       method: "GET",

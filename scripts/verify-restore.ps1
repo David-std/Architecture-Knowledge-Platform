@@ -51,7 +51,7 @@ if (-not [string]::IsNullOrWhiteSpace($RecoveryStateManifest)) {
   }
 }
 if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
-  throw "Backup manifest is missing. Create a new v4 backup before running recovery smoke."
+  throw "Backup manifest is missing. Create a new v4 backup before running recovery verification."
 }
 try {
   $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
@@ -65,7 +65,7 @@ if (
   $null -eq $manifest.durableState -or
   $null -eq $manifest.derivedState
 ) {
-  throw "Backup manifest is too old or incomplete. Create a new v4 backup before running recovery smoke."
+  throw "Backup manifest is too old or incomplete. Create a new v4 backup before running recovery verification."
 }
 if ($null -eq $manifest.database.migrationCount -or [int]$manifest.database.migrationCount -lt 1) {
   throw "Backup manifest does not declare a valid database migration count. Create a new backup."
@@ -163,7 +163,7 @@ if (
   throw "Backup manifest does not declare the canonical managed Git revision."
 }
 
-$database = "akp_restore_smoke_$([guid]::NewGuid().ToString('N'))"
+$database = "akp_restore_verify_$([guid]::NewGuid().ToString('N'))"
 $dumpTemporaryPath = "/tmp/akp-restore-$([guid]::NewGuid().ToString('N')).dump"
 $restoredDocuments = 0
 $restoredMigrations = @()
@@ -307,7 +307,7 @@ for ($index = 0; $index -lt $expectedMigrations.Count; $index += 1) {
   }
 }
 
-$restoreVolume = "akp-restore-smoke-$([guid]::NewGuid().ToString('N'))"
+$restoreVolume = "akp-restore-verify-$([guid]::NewGuid().ToString('N'))"
 $restoreHelper = "akp-restore-helper-$([guid]::NewGuid().ToString('N'))"
 $restoredObjectFiles = 0
 try {

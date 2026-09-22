@@ -10,7 +10,7 @@ import { importVaultReadOnly } from "../src/index.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const spaceId = "00000000-0000-0000-0000-000000000003";
-const vaultKey = `p1-importer-${randomUUID().slice(0, 8)}`;
+const vaultKey = `semantic-importer-${randomUUID().slice(0, 8)}`;
 
 const environmentKeys = [
   "NODE_ENV",
@@ -62,13 +62,13 @@ function useFailingOpenAIProvider(baseUrl: string): void {
   process.env.AKP_VECTOR_ENABLED = "true";
   process.env.AKP_EMBEDDING_PROVIDER = "openai-compatible";
   process.env.AKP_EMBEDDING_BASE_URL = baseUrl;
-  process.env.AKP_EMBEDDING_MODEL = "p1-importer-failure-model";
-  process.env.AKP_EMBEDDING_MODEL_REVISION = "p1-importer-failure-v1";
+  process.env.AKP_EMBEDDING_MODEL = "semantic-importer-failure-model";
+  process.env.AKP_EMBEDDING_MODEL_REVISION = "semantic-importer-failure-v1";
   process.env.AKP_EMBEDDING_DIMENSIONS = "64";
   process.env.AKP_EMBEDDING_NORMALIZATION = "provider-defined";
   process.env.AKP_EMBEDDING_INPUT_STRATEGY = "none";
   process.env.AKP_EMBEDDING_CONFIGURATION_VERSION =
-    "p1-importer-failure-config-v1";
+    "semantic-importer-failure-config-v1";
   process.env.AKP_EMBEDDING_TIMEOUT_MS = "1000";
   process.env.AKP_EMBEDDING_MAX_RETRIES = "0";
 }
@@ -78,13 +78,13 @@ function useBlockingOpenAIProvider(baseUrl: string): void {
   process.env.AKP_VECTOR_ENABLED = "true";
   process.env.AKP_EMBEDDING_PROVIDER = "openai-compatible";
   process.env.AKP_EMBEDDING_BASE_URL = baseUrl;
-  process.env.AKP_EMBEDDING_MODEL = "p1-importer-race-model";
-  process.env.AKP_EMBEDDING_MODEL_REVISION = "p1-importer-race-v1";
+  process.env.AKP_EMBEDDING_MODEL = "semantic-importer-race-model";
+  process.env.AKP_EMBEDDING_MODEL_REVISION = "semantic-importer-race-v1";
   process.env.AKP_EMBEDDING_DIMENSIONS = "64";
   process.env.AKP_EMBEDDING_NORMALIZATION = "provider-defined";
   process.env.AKP_EMBEDDING_INPUT_STRATEGY = "none";
   process.env.AKP_EMBEDDING_CONFIGURATION_VERSION =
-    "p1-importer-race-config-v1";
+    "semantic-importer-race-config-v1";
   process.env.AKP_EMBEDDING_TIMEOUT_MS = "10000";
   process.env.AKP_EMBEDDING_MAX_RETRIES = "0";
 }
@@ -216,7 +216,7 @@ integration("vault importer semantic generation integration", () => {
       path.join(fixtureRoot, "semantic-note.md"),
       [
         "---",
-        "id: CLM-P1-IMPORT-001",
+        "id: CLM-SEMANTIC-IMPORT-001",
         "type: claim",
         "layer: claim",
         "status: active",
@@ -502,7 +502,7 @@ integration("vault importer semantic generation integration", () => {
       [
         isolatedOrganizationId,
         `p1-org-${isolatedOrganizationId.slice(0, 8)}`,
-        "P1 importer isolation organization",
+        "semantic importer isolation organization",
       ],
     );
     await db.pool.query(
@@ -513,7 +513,7 @@ integration("vault importer semantic generation integration", () => {
         isolatedSpaceId,
         isolatedOrganizationId,
         `p1-space-${isolatedSpaceId.slice(0, 8)}`,
-        "P1 importer isolation space",
+        "semantic importer isolation space",
         fixtureRoot,
       ],
     );
@@ -544,7 +544,7 @@ integration("vault importer semantic generation integration", () => {
       semanticPath,
       [
         "---",
-        "id: CLM-P1-IMPORT-001",
+        "id: CLM-SEMANTIC-IMPORT-001",
         "type: claim",
         "layer: claim",
         "status: active",
@@ -762,7 +762,7 @@ integration("vault importer semantic generation integration", () => {
         racePath,
         [
           "---",
-          "id: CLM-P1-IMPORT-001",
+          "id: CLM-SEMANTIC-IMPORT-001",
           "type: claim",
           "layer: claim",
           "status: active",

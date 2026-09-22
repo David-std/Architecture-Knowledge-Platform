@@ -179,7 +179,7 @@ jobs:
           OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=ci,service.namespace=akp \
           OTEL_METRIC_EXPORT_INTERVAL=1000 \
           pnpm --filter @akp/worker exec node --import tsx --input-type=module -e \
-            'await import("./src/instrumentation.ts"); const { withSpan, shutdownOpenTelemetry } = await import("@akp/observability"); try { await withSpan("worker.telemetry.smoke", { "akp.ci.smoke": true }, async () => undefined); } finally { await shutdownOpenTelemetry(); }'
+            'await import("./src/instrumentation.ts"); const { withSpan, shutdownOpenTelemetry } = await import("@akp/observability"); try { await withSpan("worker.telemetry.verify", { "akp.ci.verify": true }, async () => undefined); } finally { await shutdownOpenTelemetry(); }'
       - run: OTEL_TRACES_EXPORTER=otlp OTEL_METRICS_EXPORTER=otlp OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=ci,service.namespace=akp OTEL_METRIC_EXPORT_INTERVAL=1000 pnpm --filter @akp/api dev > api.log 2>&1 &
       - run: |
           for i in $(seq 1 30); do
@@ -196,12 +196,12 @@ jobs:
           pnpm exec tsx scripts/telemetry-command.ts backup
           pwsh -NoProfile -File scripts/backup.ps1
           -OutputDirectory backups/ci
-      - name: Run traced restore smoke
+      - name: Run traced restore verification
         shell: bash
         run: >-
           OTEL_TRACES_EXPORTER=otlp OTEL_METRICS_EXPORTER=otlp OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=ci,service.namespace=akp OTEL_METRIC_EXPORT_INTERVAL=1000
           pnpm exec tsx scripts/telemetry-command.ts restore
-          pwsh -NoProfile -File scripts/restore-smoke.ps1
+          pwsh -NoProfile -File scripts/verify-restore.ps1
           -BackupDirectory backups/ci
       - name: Verify OpenTelemetry runtime evidence
         shell: bash

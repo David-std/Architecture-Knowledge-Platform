@@ -112,7 +112,7 @@ if (collectorLog) {
     workerService: /service\.name\s*:\s*Str\(akp-worker\)/i.test(log),
     mcpService: /service\.name\s*:\s*Str\(akp-mcp\)/i.test(log),
     retrievalMetric: /\bName\s*:\s*retrieval_requests\b/i.test(log),
-    workerSmokeSpan: /\bName\s*:\s*worker\.telemetry\.smoke\b/i.test(log),
+    workerVerificationSpan: /\bName\s*:\s*worker\.telemetry\.verify\b/i.test(log),
     mcpToolSpan: /\bName\s*:\s*mcp\.tool\b/i.test(log),
     backupSpan: /\bName\s*:\s*backup\b/i.test(log),
     restoreSpan: /\bName\s*:\s*restore\b/i.test(log),

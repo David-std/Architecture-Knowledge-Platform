@@ -123,7 +123,7 @@ flowchart LR
   Policy --> Packet["Budgeted ContextPacket"]
 ```
 
-The 19-case synthetic and 13-case curated-fixture runners leave the production
+The maintained synthetic and curated evaluation suites leave the production
 default unset. Vector remains disabled until a held-out production-like
 evaluation justifies it. Packets retain retrieval channels/reasons, corpus and
 index revisions, citations, conflicts, gaps and continuation handles.
@@ -172,6 +172,6 @@ flowchart LR
   Git["Managed Git bundle"] --> Set
   Config["Non-secret configuration"] --> Set
   Set --> Hash["Per-file SHA-256"]
-  Hash --> Isolated["Isolated restore smoke"]
+  Hash --> Isolated["Isolated restore verification"]
   Isolated --> Checks["Applied migration manifest + Git/MinIO integrity + rebuild checks"]
 ```

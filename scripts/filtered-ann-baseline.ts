@@ -158,7 +158,7 @@ async function insertRows(client: PoolClient, rows: ProbeRow[]): Promise<void> {
       return `($${offset + 1}::uuid,$${offset + 2},$${offset + 3},$${offset + 4},$${offset + 5}::vector(64))`;
     });
     await client.query(
-      `insert into p0_filtered_ann_probe(vault_id,path,external_id,content,embedding)
+      `insert into filtered_ann_probe(vault_id,path,external_id,content,embedding)
        values ${tuples.join(",")}`,
       values,
     );
@@ -211,7 +211,7 @@ async function search(
   const result = await client.query<SearchRow>(
     `select id::text,vault_id::text,path,external_id,
             (embedding <=> $1::vector(64))::float8 as distance
-       from p0_filtered_ann_probe
+       from filtered_ann_probe
       where vault_id=$2::uuid and path like $3
       order by embedding <=> $1::vector(64)
       limit $4`,
@@ -228,7 +228,7 @@ async function explain(
   const result = await client.query<{ "QUERY PLAN": unknown }>(
     `explain (format json)
      select id
-       from p0_filtered_ann_probe
+       from filtered_ann_probe
       where vault_id='${vaultA}'::uuid and path like '${pathPattern}'
       order by embedding <=> '${vectorLiteral(query)}'::vector(64)
       limit ${topK}`,
@@ -261,10 +261,10 @@ async function measureScenario(
   await configureMode(client, mode);
   const [fixtureCount, eligibleCount] = await Promise.all([
     client.query<{ count: string }>(
-      "select count(*)::text as count from p0_filtered_ann_probe",
+      "select count(*)::text as count from filtered_ann_probe",
     ),
     client.query<{ count: string }>(
-      "select count(*)::text as count from p0_filtered_ann_probe where vault_id=$1::uuid and path like $2",
+      "select count(*)::text as count from filtered_ann_probe where vault_id=$1::uuid and path like $2",
       [vaultA, pathPattern],
     ),
   ]);
@@ -326,7 +326,7 @@ try {
     throw new Error("pgvector extension is not installed.");
 
   await client.query(`
-    create temp table p0_filtered_ann_probe(
+    create temp table filtered_ann_probe(
       id bigserial primary key,
       vault_id uuid not null,
       path text not null,
@@ -337,7 +337,7 @@ try {
   `);
   const fixture = buildRows();
   await insertRows(client, fixture.rows);
-  await client.query("analyze p0_filtered_ann_probe");
+  await client.query("analyze filtered_ann_probe");
 
   await configureMode(client, "EXACT");
   const exactVault = [] as SearchRow[][];
@@ -348,9 +348,9 @@ try {
   }
 
   await client.query(
-    "create index p0_filtered_ann_hnsw_idx on p0_filtered_ann_probe using hnsw (embedding vector_cosine_ops)",
+    "create index filtered_ann_hnsw_idx on filtered_ann_probe using hnsw (embedding vector_cosine_ops)",
   );
-  await client.query("analyze p0_filtered_ann_probe");
+  await client.query("analyze filtered_ann_probe");
 
   const measurements: ScenarioMeasurement[] = [];
   measurements.push(
@@ -393,13 +393,13 @@ try {
     );
   }
 
-  await client.query("drop index p0_filtered_ann_hnsw_idx");
+  await client.query("drop index filtered_ann_hnsw_idx");
   await client.query(`
-    create index p0_filtered_ann_authorized_idx
-      on p0_filtered_ann_probe using hnsw (embedding vector_cosine_ops)
+    create index filtered_ann_authorized_idx
+      on filtered_ann_probe using hnsw (embedding vector_cosine_ops)
       where vault_id='${vaultA}'::uuid and path like 'authorized/%'
   `);
-  await client.query("analyze p0_filtered_ann_probe");
+  await client.query("analyze filtered_ann_probe");
   measurements.push(
     await measureScenario(
       client,
@@ -423,7 +423,7 @@ try {
 
   const report = {
     schemaVersion: 1,
-    evidenceLevel: "P0_FILTERED_ANN_BASELINE",
+    evidenceLevel: "FILTERED_ANN_BASELINE",
     status: "PROVEN",
     productionDefaultChanged: false,
     productionIndexSelected: false,

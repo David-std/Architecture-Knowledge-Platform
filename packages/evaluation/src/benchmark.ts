@@ -19,7 +19,7 @@ export interface BenchmarkConfiguration {
   communityGlobal?: boolean;
   /** Execute seed-oriented DRIFT routing over the versioned community index. */
   communityDrift?: boolean;
-  /** Optional P6.7 deterministic query-decomposition experiment. */
+  /** Optional deterministic query-decomposition evaluation. */
   queryDecomposition?: boolean;
 }
 
@@ -160,7 +160,7 @@ export interface BenchmarkObservation {
 export interface BenchmarkCaseMetrics {
   recallAt5: number;
   recallAt10: number;
-  /** Explicit P6.15 name; equal to recallAt10 for this top-10 benchmark. */
+  /** Claim-support recall is equal to recallAt10 for this top-10 benchmark. */
   retrievalRecall: number;
   precisionAt10: number;
   reciprocalRank: number;

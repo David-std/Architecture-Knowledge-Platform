@@ -12,9 +12,9 @@ import { Postgres, grantVaultMembership, registerVault } from "@akp/postgres";
 const execFileAsync = promisify(execFile);
 const defaultSpace = "00000000-0000-0000-0000-000000000003";
 const admin = "00000000-0000-0000-0000-000000000002";
-const vaultKey = `p5-ocr-${randomUUID().slice(0, 12)}`;
-const eventConsumer = `p5-ocr-${randomUUID()}`;
-const token = `p5-ocr-${randomUUID()}`;
+const vaultKey = `ocr-e2e-${randomUUID().slice(0, 12)}`;
+const eventConsumer = `ocr-e2e-${randomUUID()}`;
+const token = `ocr-e2e-${randomUUID()}`;
 const tokenHash = createHash("sha256").update(token).digest("hex");
 const headers = { authorization: `Bearer ${token}` };
 
@@ -129,7 +129,7 @@ beforeAll(async () => {
     throw new Error("DATABASE_URL is required for integration tests.");
   }
   process.env.NODE_ENV = "test";
-  fixtureRoot = await mkdtemp(path.join(tmpdir(), "akp-p5-ocr-"));
+  fixtureRoot = await mkdtemp(path.join(tmpdir(), "akp-ocr-e2e-"));
   sourceRoot = path.join(fixtureRoot, "captured-sources");
   managedRepository = path.join(fixtureRoot, "managed-repository");
   await mkdir(sourceRoot, { recursive: true });
@@ -142,7 +142,7 @@ beforeAll(async () => {
     db,
     {
       vaultKey,
-      name: "P5 OCR E2E",
+      name: "OCR E2E",
       spaceId: defaultSpace,
       gitRepository: null,
       defaultBranch: "main",
@@ -184,7 +184,7 @@ beforeAll(async () => {
     [
       admin,
       tokenHash,
-      "P5 OCR integration",
+      "OCR integration",
       JSON.stringify({
         spaces: [
           {
@@ -225,7 +225,7 @@ afterAll(async () => {
   else process.env.AKP_EVENT_CONSUMER = previousEnvironment.eventConsumer;
 });
 
-describe("P5 document intelligence E2E", () => {
+describe("document intelligence E2E", () => {
   it("ingests a scanned-policy PDF through real local OCR with grounded provenance", async () => {
     const marker = "AKP OCR E2E 481516";
     const sourcePath = path.join(sourceRoot, `scanned-${randomUUID()}.pdf`);
@@ -242,7 +242,7 @@ describe("P5 document intelligence E2E", () => {
         vaultId,
         sourceUri: sourcePath,
         expectedSha256: sha256,
-        title: "P5 OCR E2E",
+        title: "OCR E2E",
         mediaType: "application/pdf",
         documentIntelligence: {
           complexity: "scanned",

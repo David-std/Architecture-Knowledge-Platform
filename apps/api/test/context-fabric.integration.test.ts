@@ -423,7 +423,7 @@ describe("team context fabric integration", () => {
       url: "/v1/context-fabric/peers",
       headers: {
         ...adminHeaders,
-        "idempotency-key": "p2-hostile-remote-peer",
+        "idempotency-key": "hostile-remote-peer",
       },
       payload: {
         spaceId,
@@ -537,7 +537,7 @@ describe("team context fabric integration", () => {
       url: `/v1/context-fabric/peers/${remotePeerId}/revoke`,
       headers: {
         ...adminHeaders,
-        "idempotency-key": "p11-revoke-remote-peer",
+        "idempotency-key": "revoke-remote-peer",
       },
     });
     expect(revokedPeer.statusCode).toBe(200);

@@ -1,4 +1,4 @@
--- P8 Continuous Assurance durable work and normalized findings.
+-- Continuous Assurance durable work and normalized findings.
 
 create table assurance_runs (
   id uuid primary key default gen_random_uuid(),
@@ -96,7 +96,7 @@ create index assurance_findings_run_idx
   on assurance_findings(run_id,created_at);
 
 comment on table assurance_runs is
-  'P8 durable, idempotent, lease-fenced Continuous Assurance work. Cursor state is resumable and scoped to one vault.';
+  'Durable, idempotent, lease-fenced Continuous Assurance work. Cursor state is resumable and scoped to one vault.';
 
 comment on table assurance_findings is
   'Normalized Continuous Assurance findings with evidence references; findings are diagnostics, never canonical knowledge.';

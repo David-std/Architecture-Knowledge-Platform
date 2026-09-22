@@ -147,7 +147,10 @@ const iterationResidue = [
 const constructionDocumentName =
   /^(?:COMPETITIVE_AUDIT|DOCUMENT_INTELLIGENCE_BENCHMARK|EVENT_DRIVEN_VALIDATION_REPORT|GENERICITY_AUDIT|IMPLEMENTATION_REPORT|MIGRATION_REPORT|PROJECT_STATE|REMAINING_REAL_GAPS|REPOSITORY_HYGIENE_REPORT|RESEARCH_LOG|RETRIEVAL_BENCHMARK|SECURITY_REPORT|TRACEABILITY|VALIDATION_REPORT)\.md$/i;
 const phasePathToken = /(?:^|[\/_.-])p\d+(?=$|[\/_.-])/i;
-const phaseLabel = /\bP(?:[0-9]|1[0-2])\b/;
+const phaseLabel = /\bP(?:[0-9]|1[0-2])(?:\.\d+)?\b|(?:^|[^A-Za-z0-9])p(?:[0-9]|1[0-2])[-_:]/;
+const dateCodedPath = /(?:^|[\/_.-])20\d{2}(?:[-_.]?\d{2}){2}(?=$|[\/_.-])/;
+const smokeToken = /\bsmoke\b/i;
+const constructionMarker = /\b(?:TODO|FIXME|HACK)\b/;
 function activeGuidanceOrAutomation(file) {
   if (/^(?:README|AGENTS|ARCHITECTURE|CONTRIBUTING|CHANGELOG)\.md$/.test(file))
     return true;
@@ -227,6 +230,10 @@ for (const entry of entries) {
     failures.push(`ASSURANCE_LAYOUT_NOT_RELEASE_ORIENTED ${entry.path}`);
   if (phasePathToken.test(entry.path))
     failures.push(`PHASE_CODED_PATH ${entry.path}`);
+  if (dateCodedPath.test(entry.path))
+    failures.push(`DATE_CODED_PATH ${entry.path}`);
+  if (smokeToken.test(entry.path))
+    failures.push(`SMOKE_NAMING_RESIDUE ${entry.path}`);
   if (/^reports\/.*\.json$/i.test(entry.path))
     failures.push(`GENERATED_REPORT_TRACKED ${entry.path}`);
 
@@ -235,12 +242,23 @@ for (const entry of entries) {
 
   if (activeGuidanceOrAutomation(entry.path)) {
     failures.push(...portabilityFailures(entry.path, content));
-    if (
-      entry.path !== "scripts/validate-repository-hygiene.mjs" &&
-      phaseLabel.test(content)
-    ) {
-      failures.push(`PHASE_LABEL_IN_GUIDANCE_OR_AUTOMATION ${entry.path}`);
-    }
+  }
+
+  const constructionScanExcluded =
+    entry.path === "scripts/validate-repository-hygiene.mjs" ||
+    entry.path === "scripts/validate-docs.mjs" ||
+    entry.path === "pnpm-lock.yaml" ||
+    entry.path.endsWith("/uv.lock") ||
+    /^evals\/fixtures\//.test(entry.path) ||
+    /^test\/fixtures\//.test(entry.path);
+
+  if (!constructionScanExcluded) {
+    if (phaseLabel.test(content))
+      failures.push(`PHASE_LABEL_RESIDUE ${entry.path}`);
+    if (smokeToken.test(content))
+      failures.push(`SMOKE_TERMINOLOGY_RESIDUE ${entry.path}`);
+    if (constructionMarker.test(content))
+      failures.push(`CONSTRUCTION_MARKER ${entry.path}`);
   }
 }
 
@@ -258,9 +276,18 @@ for (const file of files.filter(
     failures.push(`GENERICITY_FIXED_UUID ${file}`);
 }
 
-const payload = `${JSON.stringify({ schemaVersion: 3, files: entries }, null, 2)}\n`;
-if (process.argv.includes("--write"))
+const payload = `${JSON.stringify({ schemaVersion: 4, files: entries }, null, 2)}\n`;
+if (process.argv.includes("--write")) {
   writeFileSync(path.join(root, classificationPath), payload, "utf8");
+} else if (existsSync(path.join(root, classificationPath))) {
+  const currentClassification = readFileSync(
+    path.join(root, classificationPath),
+    "utf8",
+  );
+  if (currentClassification !== payload) {
+    failures.push(`STALE_CLASSIFICATION ${classificationPath}`);
+  }
+}
 
 if (failures.length > 0) {
   console.error(JSON.stringify({ status: "FAILED", failures }, null, 2));

@@ -100,7 +100,7 @@
         "api_mcp_web_ergonomics": {
           "status": "PARTIALLY_PROVEN",
           "evidence": [".github/workflows/ci.yml"],
-          "limitation": "Runtime/API smoke evidence exists, but this capability has no dedicated operator-ergonomics benchmark."
+          "limitation": "Runtime/API execution evidence exists, but this capability has no dedicated operator-ergonomics benchmark."
         },
         "operator_user_docs": {
           "status": "PROVEN",

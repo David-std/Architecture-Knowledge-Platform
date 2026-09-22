@@ -5,8 +5,8 @@
 
 ## Context
 
-The initial Web adapter reused a server-side API token. That supported a local
-smoke but did not provide a human session lifecycle or CSRF boundary. Schema
+The initial Web adapter reused a server-side API token. That supported local route verification
+but did not provide a human session lifecycle or CSRF boundary. Schema
 governance also existed only as policy text, so compatibility and affected
 document counts could not be executed before a migration.
 

@@ -118,7 +118,7 @@ export function createCodeKnowledgeLinkHandlers(
         sourceHash: link.mapping_hash,
         provider: "human-reviewed-code-link",
         providerVersion: "1",
-        configurationVersion: "p4-rule-decision-bridge-v1",
+        configurationVersion: "rule-decision-bridge-v1",
         nodes: [
           {
             identity: knowledgeIdentity,

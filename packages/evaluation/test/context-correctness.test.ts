@@ -50,7 +50,7 @@ describe("context correctness regression contract", () => {
     const pack = await loadPack();
     expect(pack.schemaVersion).toBe(1);
     expect(pack.productionDefaultsChanged).toBe(false);
-    expect(pack.evidenceLevel).toBe("P0_REGRESSION_SPEC");
+    expect(pack.evidenceLevel).toBe("CONTEXT_CORRECTNESS_REGRESSION");
 
     const temporal = caseOf(pack, "TEMPORAL_TRUTH_CONTRADICTION");
     const token = caseOf(pack, "TOKENIZATION_AND_EXACT_IDENTIFIER");

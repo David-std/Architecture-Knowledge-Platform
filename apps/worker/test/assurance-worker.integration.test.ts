@@ -80,7 +80,7 @@ describeDb("continuous assurance detector execution", () => {
       idempotencyKey: `all-detectors-${randomUUID()}`,
       maxAttempts: 1,
     });
-    const workerId = `assurance-detector-smoke-${randomUUID()}`;
+    const workerId = `assurance-detector-verification-${randomUUID()}`;
     const claimed = await claimNextAssuranceRun(db, workerId, 60, {
       runId: run.id,
     });

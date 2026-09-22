@@ -10,7 +10,7 @@ pnpm benchmark:scale
 
 Generated reports are written below `reports/scale/` and are ignored by Git. Results describe only the executed environment and workload; they are not production capacity or service-level guarantees.
 
-## P11 enterprise scale suite
+## Enterprise scale suite
 
 The scale workflow combines two complementary synthetic suites:
 

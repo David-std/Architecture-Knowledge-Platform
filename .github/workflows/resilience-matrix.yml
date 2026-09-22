@@ -230,7 +230,7 @@ jobs:
           ./scripts/backup.ps1 `
             -OutputDirectory backups/resilience-recovery `
             -ManagedRepository $env:AKP_MANAGED_REPO
-          ./scripts/restore-smoke.ps1 `
+          ./scripts/verify-restore.ps1 `
             -BackupDirectory backups/resilience-recovery `
             -ManagedRepository $env:AKP_MANAGED_REPO
           ./scripts/verify-managed-git-restore.ps1 `

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "evidenceLevel": "P0_REGRESSION_SPEC",
+  "evidenceLevel": "CONTEXT_CORRECTNESS_REGRESSION",
   "productionDefaultsChanged": false,
   "cases": [
     {

@@ -1,4 +1,4 @@
--- P2.19 canonical activity derivation vocabulary.
+-- Canonical activity derivation vocabulary.
 --
 -- Keep legacy persisted values accepted during the v0.4 migration window, but
 -- add the six contract-level epistemic classes explicitly. The causal guard

@@ -6,7 +6,7 @@ This directory keeps a concise, durable summary of the v0.4 release assurance bo
 
 A release claim is accepted only when it maps to a maintained runtime, negative/security test, integration path, operator surface, documentation and benchmark/recovery evidence where applicable. The Capability Acceptance Matrix is generated from registered evidence rather than a manually assigned maturity label.
 
-The final-proof workflow gathers same-revision reports and verifies their hashes before producing the release package. Missing, failed or skipped mandatory evidence cannot be replaced by a prose assertion.
+Release assurance gathers same-revision reports and verifies their hashes before producing the release package. Missing, failed or skipped mandatory evidence cannot be replaced by a prose assertion.
 
 Permanent evidence families include:
 
@@ -20,7 +20,7 @@ Permanent evidence families include:
 - graph/code, temporal, workspace/team and retrieval diagnostic quality;
 - Agent A/B and multi-arm agent arena;
 - managed-Git/database/object restore and derived-state rebuild;
-- final capability acceptance, parity/exclusion and limitation reports.
+- release capability acceptance, parity/exclusion and limitation reports.
 
 ## Capability boundary
 
@@ -69,4 +69,4 @@ The Code Graph path uses a pinned reviewed Graphify provider and keeps provider-
 - [Enterprise Deployment](../../../guides/enterprise-deployment.md)
 - [Operations & Recovery](../../../guides/operations-recovery.md)
 
-Release history remains recoverable from Git. This summary intentionally describes supported product evidence rather than the sequence of experiments used to reach it.
+Release history remains recoverable from Git. This summary intentionally describes supported product evidence rather than the implementation history used to reach it.

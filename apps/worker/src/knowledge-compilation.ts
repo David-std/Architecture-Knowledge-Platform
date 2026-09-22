@@ -199,7 +199,7 @@ async function exactAndLexicalCandidates(
 
 /**
  * Expand source-relevant exact/lexical seeds through the active semantic
- * generation. This deliberately reuses already-persisted P1 vectors instead
+ * generation. This deliberately reuses already-persisted source vectors instead
  * of loading an embedding provider into the ingest worker. Every compared
  * vector belongs to the same active generation and vault/corpus revision.
  */

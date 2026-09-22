@@ -21,7 +21,7 @@
     "auth:provision": "tsx scripts/provision-local-token.ts",
     "akp": "tsx apps/cli/src/main.ts",
     "verify:runtime": "tsx scripts/verify-runtime.ts",
-    "test:mcp": "tsx scripts/mcp-smoke.ts",
+    "test:mcp": "tsx scripts/verify-mcp.ts",
     "check": "npm run lint && npm run typecheck && npm run boundaries && npm run test",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

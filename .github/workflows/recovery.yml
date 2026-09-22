@@ -97,7 +97,7 @@ jobs:
       - name: Verify PostgreSQL, MinIO and durable v0.4 state restore
         shell: pwsh
         run: >-
-          ./scripts/restore-smoke.ps1
+          ./scripts/verify-restore.ps1
           -BackupDirectory backups/ci-recovery
           -ManagedRepository $env:AKP_MANAGED_REPO
           -RecoveryStateManifest reports/ci/recovery-state-seed.json

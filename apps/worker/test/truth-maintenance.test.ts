@@ -293,7 +293,7 @@ describe("derived truth maintenance event boundary", () => {
             dimensions: 3,
             normalization: "l2",
             inputStrategy: "semantic-query-passage-v1",
-            configurationVersion: "p5-cleanup-v1",
+            configurationVersion: "truth-cleanup-v1",
             runtime: "test",
           },
         });

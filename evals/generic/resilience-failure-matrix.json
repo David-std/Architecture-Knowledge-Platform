@@ -130,7 +130,7 @@
     {
       "id": "backup-restore-projection-rebuild",
       "expectedOutcome": "The v4 backup restores declared durable state and managed Git into isolated resources, then rebuilds a searchable projection from restored canonical authority.",
-      "evidence": ".github/workflows/resilience-matrix.yml; scripts/restore-smoke.ps1; scripts/verify-managed-git-restore.ps1"
+      "evidence": ".github/workflows/resilience-matrix.yml; scripts/verify-restore.ps1; scripts/verify-managed-git-restore.ps1"
     }
   ],
   "limitations": [
@@ -138,6 +138,6 @@
     "The post-side-effect crash case is scoped to the idempotent indexing consumer and does not claim exactly-once semantics for arbitrary external systems.",
     "Provider unavailability is injected at the document-intelligence routing boundary.",
     "The MCP scenario proves independence of the core API while MCP is absent; it does not emulate a connected MCP client losing its transport mid-request.",
-    "PPR is currently an in-process, on-demand retrieval operation rather than a durable queued job; P11 proves cooperative cancellation semantics at the bounded operation boundary."
+    "PPR is currently an in-process, on-demand retrieval operation rather than a durable queued job; the resilience matrix proves cooperative cancellation semantics at the bounded operation boundary."
   ]
 }

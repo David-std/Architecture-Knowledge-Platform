@@ -1,4 +1,4 @@
--- P2.11 durable fresh-session handoff import. Extend the append-only workspace
+-- Durable fresh-session handoff import. Extend the append-only workspace
 -- event vocabulary without rewriting or mutating existing coordination events.
 alter table workspace_events
   drop constraint if exists workspace_events_event_type_check;
