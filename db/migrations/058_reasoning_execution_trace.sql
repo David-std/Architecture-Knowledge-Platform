@@ -1,4 +1,4 @@
--- Durable P7 reasoning execution metadata.
+-- Durable reasoning execution metadata.
 --
 -- Stores execution structure, hashes, result references, revisions, timings,
 -- warnings and budget usage only. Query text, retrieved payload content and
@@ -40,4 +40,4 @@ create index reasoning_execution_traces_plan_idx
   on reasoning_execution_traces(plan_id,created_at desc);
 
 comment on table reasoning_execution_traces is
-  'Auditable P7 reasoning execution metadata only; excludes query text, retrieved payloads and hidden chain-of-thought.';
+  'Auditable reasoning execution metadata only; excludes query text, retrieved payloads and hidden chain-of-thought.';

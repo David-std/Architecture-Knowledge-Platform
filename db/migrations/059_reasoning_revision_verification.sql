@@ -1,4 +1,4 @@
--- Final revision verification for durable P7 reasoning traces.
+-- Revision verification for durable reasoning traces.
 --
 -- Execution metadata is persisted before the final revision fence. A trace is
 -- usable as current-plan evidence only after the route confirms that the

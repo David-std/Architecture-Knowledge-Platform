@@ -62,7 +62,7 @@ function operators(intent: QueryIntent, capabilities = {}) {
 }
 
 describe("deterministic reasoning planner", () => {
-  it("produces validator-clean plans for every P7 exit scenario", () => {
+  it("produces validator-clean plans for every reasoning exit scenario", () => {
     expect(operators("CONCEPTUAL")).toEqual([
       "SEARCH_LEXICAL",
       "VERIFY_SUPPORT",
