@@ -1156,6 +1156,19 @@ export function registerContextFabricRoutes(
         return reply.code(409).send({ code: "FEDERATION_PEER_NOT_QUERYABLE" });
       }
       if (
+        peer.spaceId === null ||
+        peer.spaceId !== parsed.data.scope.spaceId
+      ) {
+        return reply.code(403).send({ code: "FEDERATION_PEER_SCOPE_DENIED" });
+      }
+      if (peer.contextApiVersion !== parsed.data.schemaVersion) {
+        return reply.code(409).send({
+          code: "FEDERATION_PEER_SCHEMA_UNSUPPORTED",
+          peerContextApiVersion: peer.contextApiVersion,
+          supportedSchemaVersions: [1],
+        });
+      }
+      if (
         peer.circuitOpenUntil &&
         peer.circuitOpenUntil.getTime() > Date.now()
       ) {
@@ -1615,6 +1628,7 @@ export function registerContextFabricRoutes(
       displayName?: string;
       endpoint?: string;
       discoveryMode?: string;
+      contextApiVersion?: number;
       trustState?: string;
       capabilities?: unknown;
       revision?: string;
@@ -1630,6 +1644,7 @@ export function registerContextFabricRoutes(
       const peerKey = safeText(request.body?.peerKey, 128);
       const displayName = safeText(request.body?.displayName, 200);
       const discoveryMode = request.body?.discoveryMode ?? "CATALOG_ONLY";
+      const contextApiVersion = request.body?.contextApiVersion ?? 1;
       const trustState = request.body?.trustState ?? "DISCOVERED";
       const credentialRef = request.body?.credentialRef?.trim() || null;
       const endpointSupplied =
@@ -1650,6 +1665,9 @@ export function registerContextFabricRoutes(
         !peerKey ||
         !displayName ||
         !DISCOVERY_MODES.has(discoveryMode) ||
+        !Number.isInteger(contextApiVersion) ||
+        contextApiVersion < 1 ||
+        contextApiVersion > 32767 ||
         !PEER_TRUST_STATES.has(trustState) ||
         (endpointSupplied && !endpoint) ||
         (credentialRef !== null &&
@@ -1685,6 +1703,7 @@ export function registerContextFabricRoutes(
         endpoint,
         discoveryMode: discoveryMode as
           "CATALOG_ONLY" | "REMOTE_QUERY" | "MIRROR_BUNDLE",
+        contextApiVersion,
         trustState: trustState as "DISCOVERED" | "APPROVED" | "DISABLED",
         capabilities,
         revision: request.body?.revision ?? null,
@@ -1697,7 +1716,13 @@ export function registerContextFabricRoutes(
         "context_fabric.peer.upsert",
         "context_fabric_peer",
         peer.id,
-        { spaceId, peerKey, discoveryMode, trustState },
+        {
+          spaceId,
+          peerKey,
+          discoveryMode,
+          contextApiVersion,
+          trustState,
+        },
         spaceId,
       );
       const persistedCapabilities = ConnectorCapabilities.parse(

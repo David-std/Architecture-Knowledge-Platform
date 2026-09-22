@@ -60,6 +60,7 @@ export interface ContextFabricPeerRecord {
   displayName: string;
   endpoint: string | null;
   discoveryMode: FederationDiscoveryMode;
+  contextApiVersion: number;
   trustState: FederationPeerTrustState;
   capabilities: Record<string, unknown>;
   revision: string | null;
@@ -154,6 +155,7 @@ function normalizePeer(row: Record<string, unknown>): ContextFabricPeerRecord {
     displayName: String(row.display_name),
     endpoint: row.endpoint ? String(row.endpoint) : null,
     discoveryMode: String(row.discovery_mode) as FederationDiscoveryMode,
+    contextApiVersion: Number(row.context_api_version),
     trustState: String(row.trust_state) as FederationPeerTrustState,
     capabilities: recordObject(row.capabilities),
     revision: row.revision ? String(row.revision) : null,
@@ -537,6 +539,7 @@ export async function upsertContextFabricPeer(
     displayName: string;
     endpoint?: string | null;
     discoveryMode?: FederationDiscoveryMode;
+    contextApiVersion?: number;
     trustState?: FederationPeerTrustState;
     capabilities: Record<string, unknown>;
     revision?: string | null;
@@ -559,13 +562,15 @@ export async function upsertContextFabricPeer(
     const result = await client.query<Record<string, unknown>>(
       `insert into context_fabric_peers(
          organization_id,space_id,peer_key,display_name,endpoint,discovery_mode,
-         trust_state,capabilities,revision,credential_ref,last_seen_at
-       ) values($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11)
+         context_api_version,trust_state,capabilities,revision,credential_ref,
+         last_seen_at
+       ) values($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12)
        on conflict(organization_id,peer_key) do update
          set space_id=excluded.space_id,
              display_name=excluded.display_name,
              endpoint=excluded.endpoint,
              discovery_mode=excluded.discovery_mode,
+             context_api_version=excluded.context_api_version,
              trust_state=excluded.trust_state,
              capabilities=excluded.capabilities,
              revision=excluded.revision,
@@ -580,6 +585,7 @@ export async function upsertContextFabricPeer(
         input.displayName,
         input.endpoint?.trim() || null,
         input.discoveryMode ?? "CATALOG_ONLY",
+        input.contextApiVersion ?? 1,
         input.trustState ?? "DISCOVERED",
         JSON.stringify(input.capabilities),
         input.revision?.trim() || null,
@@ -597,6 +603,7 @@ export async function upsertContextFabricPeer(
       payload: {
         peerKey: String(row.peer_key),
         discoveryMode: String(row.discovery_mode),
+        contextApiVersion: Number(row.context_api_version),
         trustState: String(row.trust_state),
         revision: row.revision ? String(row.revision) : null,
         boundary: "DISCOVERY_METADATA_ONLY",

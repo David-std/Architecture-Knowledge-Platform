@@ -2388,6 +2388,34 @@
           "step": "Run model routing and residency proof"
         }
       ]
+    },
+    "failure:federation-peer-scope-version": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run access boundary controlled probes"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/test/context-fabric.integration.test.ts"
+        }
+      ]
+    },
+    "security:federation-peer-scope-version": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run access boundary controlled probes"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/test/context-fabric.integration.test.ts"
+        }
+      ]
     }
   }
 }

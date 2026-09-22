@@ -14,13 +14,13 @@ Do not use federation as a database replication mechanism or as a way to bypass 
 
 ## Configuration
 
-Run participating nodes in `FEDERATED_ORG` with stable node identities. Register peers with endpoint, discovery mode, trust state, bounded capability metadata and an optional `credentialRef`.
+Run participating nodes in `FEDERATED_ORG` with stable node identities. Register peers with endpoint, discovery mode, trust state, Context API version, bounded capability metadata and an optional `credentialRef`. A peer registration is scoped to its persisted `spaceId`; that space and the single `discoveryMode` are the allowed scope/mode contract for outbound use.
 
 `credentialRef` is the name of an environment variable resolved by the API process. The token itself is not stored in PostgreSQL and is not returned by peer APIs.
 
 Peer endpoints reject embedded credentials, query strings and fragments. HTTPS is required except for loopback HTTP development endpoints.
 
-Remote-query schema version 1 carries caller node/request identity, requested space/vault scope, query, budget and optional revision preferences.
+Remote-query schema version 1 carries caller node/request identity, requested space/vault scope, query, budget and optional revision preferences. Before resolving a peer credential or contacting its endpoint, AKP verifies that the requested space matches the peer's persisted scope and that the requested schema version matches the peer's persisted Context API version.
 
 ## Normal workflow
 

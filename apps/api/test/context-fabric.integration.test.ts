@@ -443,6 +443,7 @@ describe("team context fabric integration", () => {
       networkContactPerformed: false,
       peer: {
         discoveryMode: "REMOTE_QUERY",
+        contextApiVersion: 1,
         trustState: "APPROVED",
       },
     });
@@ -493,6 +494,7 @@ describe("team context fabric integration", () => {
       payload: {
         boundary: "DISCOVERY_METADATA_ONLY",
         discoveryMode: "MIRROR_BUNDLE",
+        contextApiVersion: 1,
         trustState: "DISCOVERED",
       },
     });
@@ -997,6 +999,43 @@ describe("team context fabric integration", () => {
       expect(hostCalls.get("peer-success.example.test")).toBe(1);
       expect(hostCalls.get("peer-timeout.example.test")).toBe(1);
       expect(hostCalls.get("peer-denied.example.test")).toBe(1);
+
+      const wrongSpace = await app.inject({
+        method: "POST",
+        url: `/v1/context-fabric/peers/${successPeer.id}/query`,
+        headers,
+        payload: {
+          ...peerQuery("must not disclose another space"),
+          scope: { spaceId: randomUUID(), vaultIds: [vaultId] },
+        },
+      });
+      expect(wrongSpace.statusCode).toBe(403);
+      expect(wrongSpace.json()).toEqual({
+        code: "FEDERATION_PEER_SCOPE_DENIED",
+      });
+      expect(hostCalls.get("peer-success.example.test")).toBe(1);
+
+      await db.pool.query(
+        "update context_fabric_peers set context_api_version=2 where id=$1",
+        [successPeer.id],
+      );
+      const incompatibleVersion = await app.inject({
+        method: "POST",
+        url: `/v1/context-fabric/peers/${successPeer.id}/query`,
+        headers,
+        payload: peerQuery("must not call an incompatible peer version"),
+      });
+      expect(incompatibleVersion.statusCode).toBe(409);
+      expect(incompatibleVersion.json()).toEqual({
+        code: "FEDERATION_PEER_SCHEMA_UNSUPPORTED",
+        peerContextApiVersion: 2,
+        supportedSchemaVersions: [1],
+      });
+      expect(hostCalls.get("peer-success.example.test")).toBe(1);
+      await db.pool.query(
+        "update context_fabric_peers set context_api_version=1 where id=$1",
+        [successPeer.id],
+      );
 
       for (let attempt = 0; attempt < 2; attempt += 1) {
         const timeout = await app.inject({

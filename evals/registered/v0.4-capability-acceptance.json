@@ -889,7 +889,8 @@
           "evidence": [
             "failure:federated-peer-unavailable",
             "failure:federated-invalid-payload",
-            "failure:federated-scope-overreturn"
+            "failure:federated-scope-overreturn",
+            "failure:federation-peer-scope-version"
           ]
         },
         "integrationTest": {
@@ -904,7 +905,8 @@
         },
         "securityTest": {
           "evidence": [
-            "security:federation-trust-scope"
+            "security:federation-trust-scope",
+            "security:federation-peer-scope-version"
           ]
         },
         "operatorSurface": {
