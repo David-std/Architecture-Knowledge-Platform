@@ -53,17 +53,16 @@ const outputPath = path.resolve(
 );
 const model =
   process.env.AKP_CONTEXT_TOKENIZER_MODEL ??
-  "onnx-community/Qwen2.5-0.5B-Instruct";
+  "onnx-community/SmolLM2-135M-Instruct-ONNX";
 const revision =
   process.env.AKP_CONTEXT_TOKENIZER_REVISION ??
-  "cc5cc01a65cc3ff17bdb73a7de33d879f62599b0";
+  "b8a5c0f183b78c55955a5364f610c36668b5e681";
 const providerBaseUrl = (
   process.env.AKP_LONG_CONTEXT_PROVIDER_BASE_URL ?? ""
 ).replace(/\/$/u, "");
-const providerModel =
-  process.env.AKP_LONG_CONTEXT_PROVIDER_MODEL ?? model;
+const providerModel = process.env.AKP_LONG_CONTEXT_PROVIDER_MODEL ?? model;
 const modelContextWindowTokens = Number(
-  process.env.AKP_LONG_CONTEXT_MODEL_MAX_TOKENS ?? "32768",
+  process.env.AKP_LONG_CONTEXT_MODEL_MAX_TOKENS ?? "8192",
 );
 const targetMinRatio = Number(
   process.env.AKP_LONG_CONTEXT_TARGET_MIN_RATIO ?? "0.70",
@@ -82,8 +81,13 @@ function validateConfiguration(): void {
   if (!providerBaseUrl) {
     throw new Error("AKP_LONG_CONTEXT_PROVIDER_BASE_URL is required.");
   }
-  if (!Number.isInteger(modelContextWindowTokens) || modelContextWindowTokens < 1024) {
-    throw new Error("AKP_LONG_CONTEXT_MODEL_MAX_TOKENS must be a positive integer.");
+  if (
+    !Number.isInteger(modelContextWindowTokens) ||
+    modelContextWindowTokens < 1024
+  ) {
+    throw new Error(
+      "AKP_LONG_CONTEXT_MODEL_MAX_TOKENS must be a positive integer.",
+    );
   }
   if (
     !Number.isFinite(targetMinRatio) ||
@@ -225,9 +229,7 @@ function exactChatTokens(
   return encoded.length;
 }
 
-async function callProvider(
-  messages: ChatMessage[],
-): Promise<{
+async function callProvider(messages: ChatMessage[]): Promise<{
   content: string;
   latencyMs: number;
   providerEvidence: ProviderResponse["provider_evidence"];
@@ -336,12 +338,8 @@ if (allFillers.length < 3) {
   throw new Error("Long-context packet did not retain enough filler sections.");
 }
 
-const targetMinTokens = Math.floor(
-  modelContextWindowTokens * targetMinRatio,
-);
-const targetMaxTokens = Math.floor(
-  modelContextWindowTokens * targetMaxRatio,
-);
+const targetMinTokens = Math.floor(modelContextWindowTokens * targetMinRatio);
+const targetMaxTokens = Math.floor(modelContextWindowTokens * targetMaxRatio);
 
 let selectedFillers = allFillers;
 let tokenCounts: Record<Placement, number> | null = null;
@@ -369,7 +367,9 @@ for (let count = allFillers.length; count >= 1; count -= 1) {
   }
 }
 if (!tokenCounts) {
-  throw new Error("Unable to fit long-context projections below target maximum.");
+  throw new Error(
+    "Unable to fit long-context projections below target maximum.",
+  );
 }
 if (Math.min(...Object.values(tokenCounts)) < targetMinTokens) {
   throw new Error(
@@ -389,11 +389,7 @@ const evidenceSetHash = sha256(JSON.stringify(evidenceSet));
 const observations = [];
 for (const placement of ["EARLY", "MIDDLE", "LATE"] as const) {
   const messages = messagesFor(mandatorySection, selectedFillers, placement);
-  const ordered = orderedSections(
-    mandatorySection,
-    selectedFillers,
-    placement,
-  );
+  const ordered = orderedSections(mandatorySection, selectedFillers, placement);
   const result = await callProvider(messages);
   const promptTokens = exactChatTokens(tokenizer, messages);
   const position = ordered.findIndex(
