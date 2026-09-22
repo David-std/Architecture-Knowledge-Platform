@@ -497,7 +497,10 @@
           "rationale": "Reasoning plans are bounded request execution and do not own canonical durable state."
         },
         "securityTest": {
-          "evidence": ["security:no-arbitrary-sql-cypher"]
+          "evidence": [
+            "security:no-arbitrary-sql-cypher",
+            "security:p7-load-raw-resource-boundary"
+          ]
         },
         "operatorSurface": {
           "evidence": ["surface:agent-context"]

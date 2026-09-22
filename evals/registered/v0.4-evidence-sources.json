@@ -1043,6 +1043,20 @@
         }
       ]
     },
+    "security:p7-load-raw-resource-boundary": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run reasoning adversarial proof"
+        },
+        {
+          "type": "FILE",
+          "path": "packages/retrieval/test/reasoning-plan.test.ts"
+        }
+      ]
+    },
     "integration:reasoning-context": {
       "sources": [
         {

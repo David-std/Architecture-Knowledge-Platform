@@ -327,6 +327,45 @@ describe("safe reasoning plan schema and validation", () => {
     }
   });
 
+  it("rejects arbitrary LOAD_RAW resource locators while accepting source IDs", () => {
+    const safe = validPlan();
+    safe.steps = [
+      {
+        id: "raw",
+        dependsOn: [],
+        operator: "LOAD_RAW",
+        args: {
+          sourceIds: ["00000000-0000-4000-8000-000000000004"],
+          maxBytes: 1_000,
+        },
+      },
+    ] as typeof safe.steps;
+    expect(ReasoningPlan.safeParse(safe).success).toBe(true);
+
+    const attacks: Array<Record<string, unknown>> = [
+      { sourceIds: ["../../etc/passwd"], maxBytes: 1_000 },
+      { sourceIds: [], maxBytes: 1_000, path: "../../etc/passwd" },
+      { sourceIds: [], maxBytes: 1_000, url: "file:///etc/passwd" },
+      {
+        sourceIds: [],
+        maxBytes: 1_000,
+        url: "http://169.254.169.254/latest/meta-data/",
+      },
+    ];
+    for (const args of attacks) {
+      const attacked = validPlan();
+      attacked.steps = [
+        {
+          id: "raw",
+          dependsOn: [],
+          operator: "LOAD_RAW",
+          args,
+        },
+      ] as typeof attacked.steps;
+      expect(ReasoningPlan.safeParse(attacked).success).toBe(false);
+    }
+  });
+
   it("rejects unauthorized vaults, stale revisions and path/project/raw access", () => {
     const stale = validPlan();
     stale.revisionSet = revisions({
