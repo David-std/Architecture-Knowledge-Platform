@@ -776,7 +776,7 @@ describe("team context fabric integration", () => {
     }
   });
 
-  it("times out a dead federation peer and persists only a safe failure code", async () => {
+  it("returns explicit partial fanout and opens the dead-peer circuit without another network call", async () => {
     const organization = await db.pool.query<{ organization_id: string }>(
       "select organization_id from spaces where id=$1",
       [spaceId],
@@ -828,8 +828,24 @@ describe("team context fabric integration", () => {
       degradation: { onUnavailable: "FAIL_CLOSED" },
       health: "HEALTHY",
     });
-    const credentialRef = "AKP_TEST_FEDERATION_TIMEOUT_TOKEN";
-    const peer = await upsertContextFabricPeer(db, {
+
+    const successCredentialRef = "AKP_TEST_FEDERATION_SUCCESS_TOKEN";
+    const timeoutCredentialRef = "AKP_TEST_FEDERATION_TIMEOUT_TOKEN";
+    const deniedCredentialRef = "AKP_TEST_FEDERATION_DENIED_TOKEN";
+    const successPeer = await upsertContextFabricPeer(db, {
+      organizationId,
+      spaceId,
+      peerKey: `success-peer-${randomUUID()}`,
+      displayName: "Federation success fixture",
+      endpoint: "https://peer-success.example.test",
+      discoveryMode: "REMOTE_QUERY",
+      trustState: "APPROVED",
+      capabilities: capability,
+      revision: "peer:success:r1",
+      credentialRef: successCredentialRef,
+      lastSeenAt: new Date(),
+    });
+    const timeoutPeer = await upsertContextFabricPeer(db, {
       organizationId,
       spaceId,
       peerKey: `timeout-peer-${randomUUID()}`,
@@ -838,69 +854,194 @@ describe("team context fabric integration", () => {
       discoveryMode: "REMOTE_QUERY",
       trustState: "APPROVED",
       capabilities: capability,
-      credentialRef,
+      revision: "peer:timeout:r1",
+      credentialRef: timeoutCredentialRef,
       lastSeenAt: new Date(),
     });
-    peerIds.push(peer.id);
+    const deniedPeer = await upsertContextFabricPeer(db, {
+      organizationId,
+      spaceId,
+      peerKey: `denied-peer-${randomUUID()}`,
+      displayName: "Federation unauthorized fixture",
+      endpoint: "https://peer-denied.example.test",
+      discoveryMode: "REMOTE_QUERY",
+      trustState: "APPROVED",
+      capabilities: capability,
+      revision: "peer:denied:r1",
+      credentialRef: deniedCredentialRef,
+      lastSeenAt: new Date(),
+    });
+    peerIds.push(successPeer.id, timeoutPeer.id, deniedPeer.id);
 
-    const previousToken = process.env[credentialRef];
-    process.env[credentialRef] = "integration-timeout-token";
+    const previousTokens = new Map(
+      [successCredentialRef, timeoutCredentialRef, deniedCredentialRef].map(
+        (name) => [name, process.env[name]] as const,
+      ),
+    );
+    process.env[successCredentialRef] = "integration-success-token";
+    process.env[timeoutCredentialRef] = "integration-timeout-token";
+    process.env[deniedCredentialRef] = "integration-denied-token";
+
+    const hostCalls = new Map<string, number>();
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
-      .mockImplementation(async (_input, init) => {
-        const signal = init?.signal;
-        await new Promise<never>((_resolve, reject) => {
-          const abort = () => {
-            const error = new Error("aborted");
-            error.name = "AbortError";
-            reject(error);
+      .mockImplementation(async (input, init) => {
+        const hostname = new URL(String(input)).hostname;
+        hostCalls.set(hostname, (hostCalls.get(hostname) ?? 0) + 1);
+
+        if (hostname === "peer-success.example.test") {
+          const remoteRequest = JSON.parse(String(init?.body)) as {
+            caller: { requestId: string };
+            scope: { spaceId: string; vaultIds: string[] };
           };
-          if (signal?.aborted) {
-            abort();
-            return;
-          }
-          signal?.addEventListener("abort", abort, { once: true });
-        });
-        throw new Error("FEDERATION_TIMEOUT_STUB_UNREACHABLE");
+          return new Response(
+            JSON.stringify({
+              schemaVersion: 1,
+              requestId: remoteRequest.caller.requestId,
+              remote: {
+                nodeId: successPeer.peerKey,
+                deploymentMode: "FEDERATED_ORG",
+                revision: "peer:success:r1",
+              },
+              scope: remoteRequest.scope,
+              partial: false,
+              stale: false,
+              warnings: [],
+              indexRevisions: {},
+              hits: [],
+              noAnswer: null,
+            }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            },
+          );
+        }
+
+        if (hostname === "peer-denied.example.test") {
+          return new Response("forbidden", { status: 403 });
+        }
+
+        if (hostname === "peer-timeout.example.test") {
+          const signal = init?.signal;
+          await new Promise<never>((_resolve, reject) => {
+            const abort = () => {
+              const error = new Error("aborted");
+              error.name = "AbortError";
+              reject(error);
+            };
+            if (signal?.aborted) {
+              abort();
+              return;
+            }
+            signal?.addEventListener("abort", abort, { once: true });
+          });
+        }
+
+        throw new Error(`UNEXPECTED_FEDERATION_TEST_HOST:${hostname}`);
       });
 
+    const peerQuery = (query: string) => ({
+      schemaVersion: 1,
+      scope: { spaceId, vaultIds: [vaultId] },
+      request: { query },
+      budget: {
+        maxResults: 5,
+        maxWallMs: 100,
+        maxResponseBytes: 4096,
+      },
+      revisionPreferences: [],
+    });
+
     try {
-      const response = await app.inject({
+      const fanout = await app.inject({
         method: "POST",
-        url: `/v1/context-fabric/peers/${peer.id}/query`,
+        url: "/v1/context-fabric/federation/fanout",
         headers,
         payload: {
           schemaVersion: 1,
-          scope: { spaceId, vaultIds: [vaultId] },
-          request: { query: "federation timeout probe" },
-          budget: {
-            maxResults: 5,
-            maxWallMs: 100,
-            maxResponseBytes: 4096,
+          local: {
+            query: "federation partial fanout probe",
+            spaceId,
+            vaultIds: [vaultId],
+            mode: "SOURCE_BACKED",
+            limit: 5,
           },
-          revisionPreferences: [],
+          peers: [
+            { peerId: successPeer.id, query: peerQuery("success peer") },
+            { peerId: timeoutPeer.id, query: peerQuery("timeout peer") },
+            { peerId: deniedPeer.id, query: peerQuery("denied peer") },
+          ],
+          requireAllPeers: false,
         },
       });
-      expect(response.statusCode).toBe(504);
-      expect(response.json()).toEqual({ code: "FEDERATION_PEER_TIMEOUT" });
-      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(fanout.statusCode, fanout.body).toBe(200);
+      expect(fanout.json()).toMatchObject({
+        schemaVersion: 1,
+        partial: true,
+        remotes: [
+          {
+            peerId: successPeer.id,
+            response: {
+              remote: { nodeId: successPeer.peerKey },
+              partial: false,
+              stale: false,
+            },
+          },
+        ],
+        failures: [
+          { peerId: timeoutPeer.id, code: "FEDERATION_PEER_TIMEOUT" },
+          { peerId: deniedPeer.id, code: "FEDERATION_PEER_HTTP_403" },
+        ],
+      });
+      expect(hostCalls.get("peer-success.example.test")).toBe(1);
+      expect(hostCalls.get("peer-timeout.example.test")).toBe(1);
+      expect(hostCalls.get("peer-denied.example.test")).toBe(1);
+
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const timeout = await app.inject({
+          method: "POST",
+          url: `/v1/context-fabric/peers/${timeoutPeer.id}/query`,
+          headers,
+          payload: peerQuery(`circuit timeout ${attempt + 1}`),
+        });
+        expect(timeout.statusCode).toBe(504);
+        expect(timeout.json()).toEqual({ code: "FEDERATION_PEER_TIMEOUT" });
+      }
+      expect(hostCalls.get("peer-timeout.example.test")).toBe(3);
+
+      const circuitOpen = await app.inject({
+        method: "POST",
+        url: `/v1/context-fabric/peers/${timeoutPeer.id}/query`,
+        headers,
+        payload: peerQuery("must be blocked by open circuit"),
+      });
+      expect(circuitOpen.statusCode).toBe(503);
+      expect(circuitOpen.json()).toMatchObject({
+        code: "FEDERATION_PEER_CIRCUIT_OPEN",
+      });
+      expect(hostCalls.get("peer-timeout.example.test")).toBe(3);
 
       const health = await db.pool.query<{
         failure_count: number;
         last_failure_code: string | null;
+        circuit_open_until: Date | null;
       }>(
-        `select failure_count,last_failure_code
+        `select failure_count,last_failure_code,circuit_open_until
            from context_fabric_peers where id=$1`,
-        [peer.id],
+        [timeoutPeer.id],
       );
       expect(health.rows[0]).toMatchObject({
-        failure_count: 1,
+        failure_count: 3,
         last_failure_code: "FEDERATION_PEER_TIMEOUT",
       });
+      expect(health.rows[0]?.circuit_open_until).toBeInstanceOf(Date);
     } finally {
       fetchMock.mockRestore();
-      if (previousToken === undefined) delete process.env[credentialRef];
-      else process.env[credentialRef] = previousToken;
+      for (const [name, value] of previousTokens) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
       const prior = previousClaim.rows[0];
       if (prior) {
         await db.pool.query(
@@ -922,5 +1063,4 @@ describe("team context fabric integration", () => {
         );
       }
     }
-  });
-});
+  });});
