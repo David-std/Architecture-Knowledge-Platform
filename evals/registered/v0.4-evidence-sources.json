@@ -589,6 +589,16 @@
         }
       ]
     },
+    "integration:p11-concurrency-races": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run P11 concurrency race proof"
+        }
+      ]
+    },
     "integration:product-lifecycle": {
       "sources": [
         {

@@ -108,6 +108,19 @@ jobs:
           pnpm --filter @akp/api exec vitest run \
             test/graph-retrieval.integration.test.ts \
             test/context-fabric.integration.test.ts
+      - name: Run P11 concurrency race proof
+        run: |
+          pnpm --filter @akp/postgres exec vitest run \
+            test/knowledge-profile-activation.integration.test.ts \
+            test/federated-graph.integration.test.ts \
+            test/source-connectors.integration.test.ts \
+            -t "serializes concurrent successor activation|serializes concurrent graph generation activation|deduplicates the same connector event under concurrent delivery"
+          pnpm --filter @akp/api exec vitest run \
+            --config vitest.integration.config.ts \
+            test/workspace-coordination.integration.test.ts \
+            test/temporal-truth-retrieval.integration.test.ts \
+            test/review-publication.integration.test.ts \
+            -t "coordinates two authorized actors with durable fencing|rejects a stale vector before ranking after support withdrawal|serializes concurrent approval publication"
       - run: pnpm contracts:validate
       - run: pnpm docs:validate
       - run: pnpm hygiene:validate

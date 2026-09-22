@@ -496,6 +496,69 @@ describe("review publication integration", () => {
     expect(indexed.rows[0]?.count).toBe(0);
   });
 
+  it("serializes concurrent approval publication and emits one publication lifecycle", async () => {
+    const repository = repositoryFor("concurrent-approval");
+    const proposal = await propose(repository, "concurrent-approval");
+
+    const responses = await Promise.all([
+      decide(proposal.reviewId, "APPROVE", "concurrent approval A"),
+      decide(proposal.reviewId, "APPROVE", "concurrent approval B"),
+    ]);
+    expect(responses.map((response) => response.statusCode).sort()).toEqual([
+      200, 409,
+    ]);
+    const conflict = responses.find((response) => response.statusCode === 409);
+    expect([
+      "PUBLICATION_LOCKED",
+      "REVIEW_ALREADY_DECIDED",
+      "REVIEW_APPROVAL_CONTEXT_CHANGED",
+    ]).toContain(conflict?.json().code);
+
+    const persisted = await db.pool.query<{
+      status: string;
+      merged_commit: string | null;
+    }>("select status,merged_commit from reviews where id=$1", [
+      proposal.reviewId,
+    ]);
+    expect(persisted.rows[0]).toMatchObject({
+      status: "APPROVED",
+      merged_commit: expect.any(String),
+    });
+
+    const events = await db.pool.query<{
+      event_type: string;
+      count: number;
+    }>(
+      `select event_type,count(*)::int count
+         from event_outbox
+        where resource_id=$1
+          and event_type=any($2::text[])
+        group by event_type
+        order by event_type`,
+      [
+        proposal.reviewId,
+        [
+          "KnowledgePublished",
+          "CorpusRevisionPublished",
+          "LexicalIndexUpdateRequested",
+          "VectorIndexUpdateRequested",
+          "GraphIndexUpdateRequested",
+          "ContextPackInvalidationRequested",
+          "ImpactedEvalRunRequested",
+        ],
+      ],
+    );
+    expect(Object.fromEntries(events.rows.map((row) => [row.event_type, row.count]))).toEqual({
+      KnowledgePublished: 1,
+      CorpusRevisionPublished: 1,
+      LexicalIndexUpdateRequested: 1,
+      VectorIndexUpdateRequested: 1,
+      GraphIndexUpdateRequested: 1,
+      ContextPackInvalidationRequested: 1,
+      ImpactedEvalRunRequested: 1,
+    });
+  });
+
   it("preserves review feedback, creates a new validated draft revision, resubmits, and approves it", async () => {
     const repository = repositoryFor("requested-changes");
     const proposal = await propose(repository, "requested-changes");

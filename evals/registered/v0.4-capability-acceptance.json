@@ -732,7 +732,10 @@
           "evidence": ["failure:otel-unavailable"]
         },
         "integrationTest": {
-          "evidence": ["integration:operations-runtime"]
+          "evidence": [
+            "integration:operations-runtime",
+            "integration:p11-concurrency-races"
+          ]
         },
         "recoveryTest": {
           "evidence": ["recovery:backup-restore-rebuild"]
