@@ -290,6 +290,91 @@ function normalizeGraphScopes(
   return [...scopesByVault.values()];
 }
 
+function normalizeRawScopes(
+  vaultIds: readonly string[],
+  rawScopes:
+    readonly { vaultId: string; pathPrefix: string | null }[] | undefined,
+  requireExplicit: boolean,
+): GraphScope[] {
+  const allowedVaults = new Set(vaultIds);
+  const source =
+    rawScopes ??
+    (requireExplicit
+      ? []
+      : vaultIds.map((vaultId) => ({ vaultId, pathPrefix: null })));
+  const seen = new Set<string>();
+  const normalized: GraphScope[] = [];
+  for (const scope of source) {
+    if (
+      typeof scope?.vaultId !== "string" ||
+      !allowedVaults.has(scope.vaultId) ||
+      (scope.pathPrefix !== null && typeof scope.pathPrefix !== "string")
+    ) {
+      continue;
+    }
+    const pathPrefix = normalizeVaultPathPrefix(scope.pathPrefix);
+    if (pathPrefix === undefined) continue;
+    const key = `${scope.vaultId}:${pathPrefix ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    normalized.push({ vaultId: scope.vaultId, pathPrefix });
+  }
+  return normalized;
+}
+
+function pathAllowedByScopes(
+  relativePath: string,
+  vaultId: string,
+  scopes: readonly GraphScope[],
+): boolean {
+  return scopes.some(
+    (scope) =>
+      scope.vaultId === vaultId &&
+      pathMatchesVaultPrefix(relativePath, scope.pathPrefix),
+  );
+}
+
+function rawScopesForActor(
+  actor: NonNullable<ReturnType<typeof actorOf>>,
+  spaceId: string,
+  accessByVault: AuthorizedVaultScope["accessByVault"],
+): GraphScope[] {
+  const knowledgePrefixes = pathPrefixesForPermission(
+    actor,
+    spaceId,
+    "knowledge:read",
+  );
+  const sourcePrefixes = pathPrefixesForPermission(
+    actor,
+    spaceId,
+    "source:read",
+  );
+  const scopes: GraphScope[] = [];
+  for (const [vaultId, access] of Object.entries(accessByVault)) {
+    if (!access.permissions.includes("source:read")) continue;
+    for (const knowledgePrefix of knowledgePrefixes) {
+      for (const sourcePrefix of sourcePrefixes) {
+        const actorPrefix = intersectVaultPathPrefixes(
+          knowledgePrefix,
+          sourcePrefix,
+        );
+        if (actorPrefix === undefined) continue;
+        const pathPrefix = intersectVaultPathPrefixes(
+          actorPrefix,
+          access.pathPrefix,
+        );
+        if (pathPrefix === undefined) continue;
+        scopes.push({ vaultId, pathPrefix });
+      }
+    }
+  }
+  return normalizeRawScopes(Object.keys(accessByVault), scopes, true);
+}
+
+function requiresSourceRead(layer: string, type: string): boolean {
+  return layer === "source" || layer === "resource" || type === "raw-resource";
+}
+
 function normalizeGraphPolicy(
   input: Partial<GraphTraversalPolicy> | undefined,
   plan: QueryPlan,
@@ -396,6 +481,8 @@ export interface RetrievalExecutionOptions {
   /** Cooperative cancellation seam for bounded PPR work. */
   pprShouldCancel?: () => boolean;
   graphScopes?: Array<{ vaultId: string; pathPrefix: string | null }>;
+  /** Authorized source/resource path scopes. Production callers pass these explicitly. */
+  rawScopes?: Array<{ vaultId: string; pathPrefix: string | null }>;
   allowVectorForBenchmark?: boolean;
   deterministicRerank?: boolean;
   /** Optional P6.7 query assistance. It never receives authorization/truth controls. */
@@ -529,6 +616,7 @@ async function readableContextSnapshot(
   } catch {
     return null;
   }
+  const rawScopes = rawScopesForActor(actor, row.space_id, accessByVault);
 
   const documentIds = [
     ...new Set(sections.map((section) => section.documentId)),
@@ -569,7 +657,9 @@ async function readableContextSnapshot(
       (TRUST_RANK[current.trust_tier] ?? -1) < minimumTrust ||
       !modeAllowsCurrentDocument(contextRequest.mode, current) ||
       !pathMatchesVaultPrefix(current.path, vaultAccess.pathPrefix) ||
-      !hasPathAccess(actor, row.space_id, "knowledge:read", current.path)
+      !hasPathAccess(actor, row.space_id, "knowledge:read", current.path) ||
+      (requiresSourceRead(current.layer, current.type) &&
+        !pathAllowedByScopes(current.path, current.vault_id, rawScopes))
     ) {
       return null;
     }
@@ -1386,6 +1476,11 @@ export async function queryKnowledge(
       ? []
       : options.graphScopes,
   );
+  const rawScopes = normalizeRawScopes(
+    vaultIds,
+    options.rawScopes,
+    options.authorizationResolved === true,
+  );
   const requestedByPolicy = options.channels ?? plan.channels;
   const requestedChannels = requestedByPolicy.filter(
     (channel) =>
@@ -1942,10 +2037,16 @@ export async function queryKnowledge(
     options.availableChannelSink?.add("context-pack");
   }
 
-  const rawFallback = channels.has("raw")
-    ? await db.pool.query<DocumentChannelRow>(
-        `
-          with query as (select plainto_tsquery('simple',$2) terms)
+  const rawFallback =
+    channels.has("raw") && rawScopes.length > 0
+      ? await db.pool.query<DocumentChannelRow>(
+          `
+          with query as (select plainto_tsquery('simple',$2) terms),
+          raw_scopes as (
+            select scope.vault_id,scope.path_prefix
+              from jsonb_to_recordset($4::jsonb)
+                as scope(vault_id uuid,path_prefix text)
+          )
           select d.id,d.current_revision document_revision
             from knowledge_documents d
             cross join query
@@ -1955,15 +2056,35 @@ export async function queryKnowledge(
              and ${trustClause("d.")}
              and d.refresh_status not in ('STALE_BLOCKED','INVALID')
              and (d.layer in ('source','resource') or d.type='raw-resource')
+             and exists(
+               select 1
+                 from raw_scopes scope
+                where scope.vault_id=d.vault_id
+                  and (
+                    scope.path_prefix is null
+                    or d.path=scope.path_prefix
+                    or starts_with(d.path,scope.path_prefix || '/')
+                  )
+             )
              and d.lexical_search_vector @@ query.terms
            order by d.trust_tier desc,
                     ts_rank_cd(d.lexical_search_vector,query.terms) desc,
                     d.path,d.id
            limit $3
           `,
-        [spaceId, input.query, Math.max(input.limit, 10)],
-      )
-    : { rows: [] as DocumentChannelRow[] };
+          [
+            spaceId,
+            input.query,
+            Math.max(input.limit, 10),
+            JSON.stringify(
+              rawScopes.map((scope) => ({
+                vault_id: scope.vaultId,
+                path_prefix: scope.pathPrefix,
+              })),
+            ),
+          ],
+        )
+      : { rows: [] as DocumentChannelRow[] };
   if (channels.has("raw")) options.availableChannelSink?.add("raw");
 
   const codeFallback: { rows: CodeChannelRow[] } = channels.has("code")
@@ -2863,11 +2984,17 @@ export async function queryKnowledge(
   const results = fused
     .map((item): SearchHit | null => {
       const row = byId.get(item.id);
+      const rowPath = String(row?.path ?? "");
+      const rowVaultId = String(row?.vault_id ?? "");
+      const rawDocument =
+        row !== undefined &&
+        requiresSourceRead(String(row.layer), String(row.type));
       if (
         !row ||
         (TRUST_RANK[String(row.trust_tier)] ?? 0) < minimumTrust ||
         (options.pathAuthorizer &&
-          !options.pathAuthorizer(String(row.path), String(row.vault_id)))
+          !options.pathAuthorizer(rowPath, rowVaultId)) ||
+        (rawDocument && !pathAllowedByScopes(rowPath, rowVaultId, rawScopes))
       )
         return null;
       const documentCitations = ["source", "resource"].includes(
@@ -3161,6 +3288,11 @@ export function registerSearchRoutes(
           hasPathAccess(actor, requestedSpace, "knowledge:read", documentPath)
         );
       };
+      const rawScopes = rawScopesForActor(
+        actor,
+        requestedSpace,
+        accessByVault,
+      );
       let projectCode;
       try {
         projectCode = await resolveProjectCodeRetrieval(db, {
@@ -3202,8 +3334,7 @@ export function registerSearchRoutes(
           indexRows.rows,
         ),
         rawAllowed:
-          parsed.data.mode !== "COMPILED_ONLY" &&
-          hasSpaceAccess(actor, requestedSpace, "source:read"),
+          parsed.data.mode !== "COMPILED_ONLY" && rawScopes.length > 0,
         // No project code adapter is registered in the current runtime.
         codeAdapterAvailable: projectCode?.available ?? false,
       });
@@ -3233,6 +3364,7 @@ export function registerSearchRoutes(
           plan,
           vaultIds,
           graphScopes,
+          rawScopes,
           ...(projectCode ? { codeCandidates: projectCode.candidates } : {}),
           ...(dependencies.queryTransformer
             ? {
@@ -3586,6 +3718,11 @@ export function registerSearchRoutes(
           hasPathAccess(actor, requestedSpace, "knowledge:read", documentPath)
         );
       };
+      const rawScopes = rawScopesForActor(
+        actor,
+        requestedSpace,
+        accessByVault,
+      );
       let projectCode;
       try {
         projectCode = await resolveProjectCodeRetrieval(db, {
@@ -3638,8 +3775,7 @@ export function registerSearchRoutes(
           indexRows.rows,
         ),
         rawAllowed:
-          parsed.data.mode !== "COMPILED_ONLY" &&
-          hasSpaceAccess(actor, requestedSpace, "source:read"),
+          parsed.data.mode !== "COMPILED_ONLY" && rawScopes.length > 0,
         codeAdapterAvailable: projectCode?.available ?? false,
       });
       const plan = planQuery(parsed.data.query, {
@@ -3673,6 +3809,7 @@ export function registerSearchRoutes(
           plan,
           vaultIds,
           graphScopes,
+          rawScopes,
           ...(projectCode ? { codeCandidates: projectCode.candidates } : {}),
           ...(dependencies.queryTransformer
             ? {
@@ -3761,6 +3898,7 @@ export function registerSearchRoutes(
           plan: operatorPlan,
           vaultIds,
           graphScopes,
+          rawScopes,
           ...(projectCode ? { codeCandidates: projectCode.candidates } : {}),
           ...(dependencies.queryTransformer
             ? {

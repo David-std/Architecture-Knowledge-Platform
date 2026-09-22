@@ -546,6 +546,167 @@ describe("API security boundaries", () => {
     }
   });
 
+  it("intersects RAW retrieval with the narrower source-read path scope", async () => {
+    const suffix = randomUUID();
+    const token = `akp-raw-scope-${suffix}`;
+    const hash = createHash("sha256").update(token).digest("hex");
+    const allowedId = `RAW-SCOPE-ALLOWED-${suffix}`;
+    const deniedId = `RAW-SCOPE-DENIED-${suffix}`;
+    const allowedDocumentId = randomUUID();
+    const deniedDocumentId = randomUUID();
+    const documentIds = [allowedDocumentId, deniedDocumentId];
+    let packetId: string | undefined;
+
+    await db.pool.query(
+      `insert into api_tokens(user_id,token_hash,label,scopes)
+       values($1,$2,'raw scope integration',$3::jsonb)`,
+      [
+        admin,
+        hash,
+        JSON.stringify({
+          spaces: [
+            {
+              spaceId: defaultSpace,
+              pathPrefix: null,
+              permissions: ["knowledge:read"],
+            },
+            {
+              spaceId: defaultSpace,
+              pathPrefix: "shared/raw",
+              permissions: ["source:read"],
+            },
+          ],
+        }),
+      ],
+    );
+    await db.pool.query(
+      `
+      insert into knowledge_documents(
+        id,space_id,vault_id,path,external_id,title,type,lifecycle,trust_tier,
+        current_revision,body_cache,frontmatter,aliases,layer,content_hash,
+        token_estimate,raw_links,refresh_status
+      ) values
+        ($1,$3,$4,$5,$6,'Allowed raw source','raw-resource','ACTIVE',
+         'HUMAN_REVIEWED','raw-scope',$7,'{}'::jsonb,'{}','resource',$8,10,
+         '[]'::jsonb,'CURRENT'),
+        ($2,$3,$4,$9,$10,'Denied raw source','raw-resource','ACTIVE',
+         'HUMAN_REVIEWED','raw-scope',$11,'{}'::jsonb,'{}','resource',$12,10,
+         '[]'::jsonb,'CURRENT')
+      `,
+      [
+        allowedDocumentId,
+        deniedDocumentId,
+        defaultSpace,
+        defaultVaultId,
+        `shared/raw/allowed-${suffix}.md`,
+        allowedId,
+        `Allowed raw evidence ${suffix}.`,
+        createHash("sha256").update(`allowed-raw-${suffix}`).digest("hex"),
+        `private/raw/denied-${suffix}.md`,
+        deniedId,
+        `Denied raw evidence ${suffix} must not be disclosed.`,
+        createHash("sha256").update(`denied-raw-${suffix}`).digest("hex"),
+      ],
+    );
+    const scopedHeaders = { authorization: `Bearer ${token}` };
+    const requestFor = (query: string) => ({
+      query,
+      intent: "EXACT_LOOKUP",
+      spaceId: defaultSpace,
+      vaultId: defaultVaultId,
+      vaultIds: [],
+      federated: false,
+      types: [],
+      minimumTrust: "UNVERIFIED",
+      mode: "RAW_ONLY",
+      limit: 10,
+    });
+
+    try {
+      const allowedSearch = await app.inject({
+        method: "POST",
+        url: "/v1/search",
+        headers: scopedHeaders,
+        payload: requestFor(allowedId),
+      });
+      expect(allowedSearch.statusCode, allowedSearch.body).toBe(200);
+      expect(allowedSearch.json().hits).toHaveLength(1);
+      expect(allowedSearch.json().hits[0]?.documentId).toBe(allowedDocumentId);
+
+      const deniedSearch = await app.inject({
+        method: "POST",
+        url: "/v1/search",
+        headers: scopedHeaders,
+        payload: requestFor(deniedId),
+      });
+      expect(deniedSearch.statusCode, deniedSearch.body).toBe(200);
+      expect(deniedSearch.json().hits).toHaveLength(0);
+      expect(JSON.stringify(deniedSearch.json())).not.toContain(deniedId);
+
+      const allowedContext = await app.inject({
+        method: "POST",
+        url: "/v1/context",
+        headers: scopedHeaders,
+        payload: { ...requestFor(allowedId), maxTokens: 4_000 },
+      });
+      expect(allowedContext.statusCode, allowedContext.body).toBe(200);
+      expect(allowedContext.json().sections).toHaveLength(1);
+      expect(allowedContext.json().sections[0]?.documentId).toBe(
+        allowedDocumentId,
+      );
+      packetId = allowedContext.json().packetId as string;
+      expect(packetId).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      );
+
+      const deniedContext = await app.inject({
+        method: "POST",
+        url: "/v1/context",
+        headers: scopedHeaders,
+        payload: { ...requestFor(deniedId), maxTokens: 4_000 },
+      });
+      expect(deniedContext.statusCode, deniedContext.body).toBe(200);
+      expect(deniedContext.json().sections).toHaveLength(0);
+      expect(JSON.stringify(deniedContext.json())).not.toContain(deniedId);
+
+      await db.pool.query(
+        `update api_tokens
+            set scopes=$2::jsonb
+          where token_hash=$1`,
+        [
+          hash,
+          JSON.stringify({
+            spaces: [
+              {
+                spaceId: defaultSpace,
+                pathPrefix: null,
+                permissions: ["knowledge:read"],
+              },
+            ],
+          }),
+        ],
+      );
+      const revokedPacket = await app.inject({
+        method: "GET",
+        url: `/v1/generated-context-packets/${packetId}`,
+        headers: scopedHeaders,
+      });
+      expect(revokedPacket.statusCode).toBe(404);
+      expect(JSON.stringify(revokedPacket.json())).not.toContain(allowedId);
+    } finally {
+      if (packetId) {
+        await db.pool.query("delete from context_packets where id=$1", [
+          packetId,
+        ]);
+      }
+      await db.pool.query("delete from api_tokens where token_hash=$1", [hash]);
+      await db.pool.query(
+        "delete from knowledge_documents where id=any($1::uuid[])",
+        [documentIds],
+      );
+    }
+  });
+
   it("keeps impact traversal outbound and rejects unauthorized or inactive bridges at every hop", async () => {
     const suffix = randomUUID();
     const token = `akp-impact-scope-${suffix}`;
