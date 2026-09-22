@@ -83,6 +83,10 @@ jobs:
             report.model?.id !== "onnx-community/SmolLM2-135M-Instruct-ONNX" ||
             report.model?.revision !== "b8a5c0f183b78c55955a5364f610c36668b5e681" ||
             report.model?.contextWindowTokens !== 8192 ||
+            report.model?.contextWindowSource !==
+              "AutoConfig.max_position_embeddings at pinned revision" ||
+            report.model?.evaluationRole !== "PLACEMENT_EVALUATION_ONLY" ||
+            report.model?.generalizationAllowed !== false ||
             provider.model !== report.model.id ||
             provider.revision !== report.model.revision ||
             provider.dtype !== "q4"

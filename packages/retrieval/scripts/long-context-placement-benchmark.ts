@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
-import { AutoTokenizer } from "@huggingface/transformers";
+import { AutoConfig, AutoTokenizer } from "@huggingface/transformers";
 import {
   buildContextPacket,
   type PacketCandidate,
@@ -266,9 +266,24 @@ async function callProvider(
 
 validateConfiguration();
 
-const tokenizer = (await AutoTokenizer.from_pretrained(model, {
-  revision,
-})) as unknown as ChatTokenizer;
+const [loadedTokenizer, loadedModelConfig] = await Promise.all([
+  AutoTokenizer.from_pretrained(model, { revision }),
+  AutoConfig.from_pretrained(model, { revision }),
+]);
+const tokenizer = loadedTokenizer as unknown as ChatTokenizer;
+const declaredContextWindowTokens = Number(
+  loadedModelConfig.max_position_embeddings,
+);
+if (
+  !Number.isSafeInteger(declaredContextWindowTokens) ||
+  declaredContextWindowTokens !== modelContextWindowTokens
+) {
+  throw new Error(
+    `Pinned model context window mismatch: config=${String(
+      declaredContextWindowTokens,
+    )}, expected=${String(modelContextWindowTokens)}`,
+  );
+}
 const tokenizerPort: Tokenizer = {
   id: `huggingface:${model}@${revision}`,
   label: `${model} tokenizer at ${revision}`,
@@ -284,7 +299,7 @@ const mandatoryContent = [
 ].join(" ");
 const candidates: PacketCandidate[] = [
   packetCandidate(0, mandatoryContent, "rule", true),
-  ...Array.from({ length: 48 }, (_, index) =>
+  ...Array.from({ length: 64 }, (_, index) =>
     packetCandidate(index + 1, fillerContent(index + 1), "concept"),
   ),
 ];
@@ -409,13 +424,15 @@ const report = {
   productionDefaultsChanged: false,
   recommendedAssemblyOrdering: null,
   claimBoundary:
-    "The three arms are evaluation-only projections of the same authorized ContextPacket evidence set. They do not mutate the source packet or production assembly ordering.",
+    "The three arms are evaluation-only projections of the same authorized ContextPacket evidence set. The pinned SmolLM2 model is selected only for runner-feasible placement measurement and does not replace the Agent A/B model. Results are model-specific and do not mutate the source packet or production assembly ordering.",
   model: {
     id: model,
     revision,
     providerModel,
     contextWindowTokens: modelContextWindowTokens,
-    contextWindowSource: "pinned model configuration",
+    contextWindowSource: "AutoConfig.max_position_embeddings at pinned revision",
+    evaluationRole: "PLACEMENT_EVALUATION_ONLY",
+    generalizationAllowed: false,
     temperature: 0,
     maxOutputTokens,
   },
