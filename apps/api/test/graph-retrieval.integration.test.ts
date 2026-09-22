@@ -237,6 +237,27 @@ describe("recursive graph retrieval PostgreSQL integration", () => {
       try {
         await seedGraph(db, fixture);
 
+        // P8 §31.5: same alias in two vaults must never escape the
+        // explicitly authorized vault during exact/alias retrieval.
+        await db.pool.query(
+          "update knowledge_documents set aliases=array['shared-boundary-alias'] where id=any($1::uuid[])",
+          [[fixture.documents.A, fixture.documents.X]],
+        );
+        const aliasScoped = await queryKnowledge(
+          db,
+          { ...searchRequest(fixture), query: "shared-boundary-alias" },
+          {
+            vaultIds: [fixture.vaultId],
+            channels: ["exact"],
+          },
+        );
+        expect(aliasScoped.map((hit) => hit.documentId)).toContain(
+          fixture.documents.A,
+        );
+        expect(aliasScoped.map((hit) => hit.documentId)).not.toContain(
+          fixture.documents.X,
+        );
+
         const threeHop = await queryKnowledge(db, searchRequest(fixture), {
           vaultIds: [fixture.vaultId],
           channels: ["exact", "graph"],
@@ -394,6 +415,11 @@ describe("recursive graph retrieval PostgreSQL integration", () => {
           ),
         );
         expect(driftCommunityHits.length).toBeGreaterThan(0);
+        // P8 §31.5: a community built over the full vault must not surface
+        // members hidden by the active path scope.
+        expect(driftCommunityHits.map((hit) => hit.documentId)).not.toContain(
+          fixture.documents.S,
+        );
         expect(driftCommunityHits.map((hit) => hit.documentId)).not.toContain(
           fixture.documents.A,
         );

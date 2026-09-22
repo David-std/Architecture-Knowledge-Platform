@@ -2318,6 +2318,16 @@
           "path": "apps/api/test/context-fabric.integration.test.ts"
         }
       ]
+    },
+    "security:p8-access-boundary-controlled-probes": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run P8 access boundary controlled probes"
+        }
+      ]
     }
   }
 }
