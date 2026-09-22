@@ -422,6 +422,12 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
                     revision {edge.provenance_revision ?? "—"} · support{" "}
                     {edge.support_set_id ?? "—"}
                   </small>
+                  <br />
+                  <small>
+                    Validity {edge.valid_from ?? "unbounded"} →{" "}
+                    {edge.valid_to ?? "open"} · Recorded{" "}
+                    {edge.recorded_at ?? "unknown"}
+                  </small>
                   <details>
                     <summary>Provenance / evidence</summary>
                     <pre>

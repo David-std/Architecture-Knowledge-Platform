@@ -981,6 +981,10 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
       const body = await adminPage.locator("body").innerText();
       assert.match(body, /STATICALLY_RESOLVED/);
       assert.match(body, /CODE/);
+      assert.match(
+        body,
+        /Validity 2026-06-01T00:00:00\.000Z → open · Recorded 2026-06-01T00:00:00\.000Z/,
+      );
     });
 
     await browserStep(t, "6 temporal as-of view", pages, async () => {
@@ -1005,6 +1009,8 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
         })
         .waitFor();
       const body = await adminPage.locator("body").innerText();
+      assert.match(body, /HISTORICAL SNAPSHOT/);
+      assert.match(body, /Query effective time/);
       assert.match(body, /2026-01-01T00:00:00.000Z/);
     });
 

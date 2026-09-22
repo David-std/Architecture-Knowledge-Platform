@@ -113,8 +113,18 @@ export default async function GraphPage({
               </small>
             </div>
             <div className="card">
-              <span className="muted">as_of</span>
-              <p>{graph.asOf ?? "CURRENT"}</p>
+              <span className="muted">Temporal mode</span>
+              <p className="metric">
+                {graph.asOf ? "HISTORICAL SNAPSHOT" : "CURRENT SNAPSHOT"}
+              </p>
+              {graph.asOf ? (
+                <small>
+                  Query effective time{" "}
+                  <time dateTime={graph.asOf}>{graph.asOf}</time>
+                </small>
+              ) : (
+                <small>No historical as_of filter.</small>
+              )}
             </div>
           </div>
 
