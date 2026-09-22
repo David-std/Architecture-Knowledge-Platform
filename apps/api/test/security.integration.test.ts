@@ -671,9 +671,11 @@ describe("API security boundaries", () => {
       expect(allowedPacket.sections[0]?.documentId).toBe(allowedDocumentId);
       expect(JSON.stringify(allowedPacket.sections)).not.toContain(deniedId);
       expect(allowedPacket.conflicts).toContain(`${conflictTopic} (OPEN)`);
-      expect(allowedPacket.gaps).toContain(
-        expect.stringContaining("authorization/truth policy"),
-      );
+      expect(
+        allowedPacket.gaps.some((gap: string) =>
+          gap.includes("authorization/truth policy"),
+        ),
+      ).toBe(true);
       packetIds.push(allowedPacket.packetId as string);
       expect(packetIds[0]).toMatch(
         /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i,
