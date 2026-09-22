@@ -792,7 +792,10 @@ describe("governed product flow", () => {
         ],
         affectedRefs: ["service:context-api", "work:connector-runtime"],
         affectedObjectRefIds: [affectedWorkObjectId],
-        evidenceRefs: ["fixture:connector-capabilities", "fixture:governed-flow"],
+        evidenceRefs: [
+          "fixture:connector-capabilities",
+          "fixture:governed-flow",
+        ],
         verificationPlan:
           "Re-run the governed two-agent flow and verify that publication advances the canonical revision while stale sessions fail closed.",
         decisionDeadline: new Date(Date.now() + 86_400_000).toISOString(),
