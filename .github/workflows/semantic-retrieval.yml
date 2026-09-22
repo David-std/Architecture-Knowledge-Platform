@@ -172,6 +172,13 @@ jobs:
           AKP_CONTEXT_PLACEMENT_REPORT=reports/ci/context-placement-baseline.json \
             pnpm benchmark:context-placement \
             2>&1 | tee reports/ci/context-placement-baseline.log
+      - name: Generate consolidated baseline evidence envelope
+        shell: bash
+        run: |
+          set -o pipefail
+          AKP_BASELINE_EVIDENCE_REPORT=reports/ci/baseline-evidence.json \
+            pnpm proof:baseline-evidence \
+            2>&1 | tee reports/ci/baseline-evidence.log
       - name: Validate incremental vector update evidence
         shell: bash
         run: |
