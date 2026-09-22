@@ -11,10 +11,7 @@
       "chunks": [
         {
           "id": "payments-stale-signal",
-          "headingPath": [
-            "Payments API",
-            "Browser session rotation"
-          ],
+          "headingPath": ["Payments API", "Browser session rotation"],
           "body": "The stale rotation signal is ERR_AUTH_ROTATION_STALE.",
           "locator": {
             "kind": "benchmark",
@@ -25,10 +22,7 @@
         },
         {
           "id": "payments-owner",
-          "headingPath": [
-            "Payments API",
-            "Browser session rotation"
-          ],
+          "headingPath": ["Payments API", "Browser session rotation"],
           "body": "The application security team owns this control.",
           "locator": {
             "kind": "benchmark",
@@ -39,10 +33,7 @@
         },
         {
           "id": "payments-cookie",
-          "headingPath": [
-            "Payments API",
-            "Browser session storage"
-          ],
+          "headingPath": ["Payments API", "Browser session storage"],
           "body": "Session tokens are delivered in Secure, HttpOnly, SameSite cookies.",
           "locator": {
             "kind": "benchmark",
@@ -60,10 +51,7 @@
       "chunks": [
         {
           "id": "identity-stale-signal",
-          "headingPath": [
-            "Identity Gateway",
-            "Service account rotation"
-          ],
+          "headingPath": ["Identity Gateway", "Service account rotation"],
           "body": "The stale rotation signal is ERR_IDENTITY_KEY_STALE.",
           "locator": {
             "kind": "benchmark",
@@ -74,10 +62,7 @@
         },
         {
           "id": "identity-owner",
-          "headingPath": [
-            "Identity Gateway",
-            "Service account rotation"
-          ],
+          "headingPath": ["Identity Gateway", "Service account rotation"],
           "body": "The identity platform team owns this control.",
           "locator": {
             "kind": "benchmark",
@@ -88,10 +73,7 @@
         },
         {
           "id": "identity-hsm",
-          "headingPath": [
-            "Identity Gateway",
-            "Key storage"
-          ],
+          "headingPath": ["Identity Gateway", "Key storage"],
           "body": "Service-account keys are stored in the organization HSM.",
           "locator": {
             "kind": "benchmark",
@@ -109,10 +91,7 @@
       "chunks": [
         {
           "id": "payments-rollback",
-          "headingPath": [
-            "Payments API",
-            "Deployment rollback"
-          ],
+          "headingPath": ["Payments API", "Deployment rollback"],
           "body": "Rollback is mandatory when authorization failures exceed two percent for five minutes.",
           "locator": {
             "kind": "benchmark",
@@ -130,10 +109,7 @@
       "chunks": [
         {
           "id": "identity-recovery-es",
-          "headingPath": [
-            "Pasarela de identidad",
-            "Recuperación"
-          ],
+          "headingPath": ["Pasarela de identidad", "Recuperación"],
           "body": "El código de recuperación es ERR_ROTACION_IDENTIDAD.",
           "locator": {
             "kind": "benchmark",
@@ -149,72 +125,44 @@
     {
       "id": "payments-error",
       "text": "Which stale rotation error applies to Payments API browser sessions?",
-      "requiredChunkIds": [
-        "payments-stale-signal"
-      ],
-      "relevantChunkIds": [
-        "payments-stale-signal"
-      ]
+      "requiredChunkIds": ["payments-stale-signal"],
+      "relevantChunkIds": ["payments-stale-signal"]
     },
     {
       "id": "identity-error",
       "text": "Which stale rotation error applies to Identity Gateway service-account keys?",
-      "requiredChunkIds": [
-        "identity-stale-signal"
-      ],
-      "relevantChunkIds": [
-        "identity-stale-signal"
-      ]
+      "requiredChunkIds": ["identity-stale-signal"],
+      "relevantChunkIds": ["identity-stale-signal"]
     },
     {
       "id": "payments-owner",
       "text": "Who owns the Payments API browser-session rotation control?",
-      "requiredChunkIds": [
-        "payments-owner"
-      ],
-      "relevantChunkIds": [
-        "payments-owner"
-      ]
+      "requiredChunkIds": ["payments-owner"],
+      "relevantChunkIds": ["payments-owner"]
     },
     {
       "id": "identity-owner",
       "text": "Who owns Identity Gateway service-account rotation?",
-      "requiredChunkIds": [
-        "identity-owner"
-      ],
-      "relevantChunkIds": [
-        "identity-owner"
-      ]
+      "requiredChunkIds": ["identity-owner"],
+      "relevantChunkIds": ["identity-owner"]
     },
     {
       "id": "payments-cookie",
       "text": "How are Payments API browser session tokens delivered?",
-      "requiredChunkIds": [
-        "payments-cookie"
-      ],
-      "relevantChunkIds": [
-        "payments-cookie"
-      ]
+      "requiredChunkIds": ["payments-cookie"],
+      "relevantChunkIds": ["payments-cookie"]
     },
     {
       "id": "payments-rollback",
       "text": "What rollback threshold applies to a Payments API production deployment?",
-      "requiredChunkIds": [
-        "payments-rollback"
-      ],
-      "relevantChunkIds": [
-        "payments-rollback"
-      ]
+      "requiredChunkIds": ["payments-rollback"],
+      "relevantChunkIds": ["payments-rollback"]
     },
     {
       "id": "identity-recovery-es",
       "text": "¿Cuál es el código de recuperación del incidente de rotación de la pasarela de identidad?",
-      "requiredChunkIds": [
-        "identity-recovery-es"
-      ],
-      "relevantChunkIds": [
-        "identity-recovery-es"
-      ]
+      "requiredChunkIds": ["identity-recovery-es"],
+      "relevantChunkIds": ["identity-recovery-es"]
     }
   ],
   "updateScenario": {

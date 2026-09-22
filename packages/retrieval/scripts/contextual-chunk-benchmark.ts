@@ -7,9 +7,7 @@ import {
 } from "../src/index.js";
 
 type StrategyId =
-  | "STRUCTURE_FIRST"
-  | "CONTEXTUAL_PREFIX"
-  | "PARENT_CHILD_COMPOSITION";
+  "STRUCTURE_FIRST" | "CONTEXTUAL_PREFIX" | "PARENT_CHILD_COMPOSITION";
 
 type Unit = {
   id: string;
@@ -180,9 +178,7 @@ function percentile(values: number[], ratio: number): number {
 }
 
 function normalize(vector: readonly number[]): number[] {
-  const norm = Math.sqrt(
-    vector.reduce((sum, value) => sum + value * value, 0),
-  );
+  const norm = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
   if (!Number.isFinite(norm) || norm === 0) {
     throw new Error("CONTEXTUAL_CHUNK_ZERO_VECTOR");
   }
@@ -197,9 +193,7 @@ function composeParentChild(
     throw new Error("CONTEXTUAL_CHUNK_VECTOR_DIMENSION_MISMATCH");
   }
   return normalize(
-    child.map(
-      (value, index) => value * 0.7 + (parent[index] ?? 0) * 0.3,
-    ),
+    child.map((value, index) => value * 0.7 + (parent[index] ?? 0) * 0.3),
   );
 }
 
@@ -222,9 +216,7 @@ function contextualPrefix(unit: Unit): string {
 }
 
 function locatorSetHash(): string {
-  return sha256(
-    JSON.stringify(units.map((unit) => unit.locatorRef).sort()),
-  );
+  return sha256(JSON.stringify(units.map((unit) => unit.locatorRef).sort()));
 }
 
 async function buildStrategy(
@@ -287,10 +279,7 @@ async function buildStrategy(
     representationBytes = [
       ...childTexts,
       ...parents.map(([, body]) => body),
-    ].reduce(
-      (sum, value) => sum + Buffer.byteLength(value, "utf8"),
-      0,
-    );
+    ].reduce((sum, value) => sum + Buffer.byteLength(value, "utf8"), 0);
   }
 
   const buildMs = performance.now() - started;
@@ -453,8 +442,7 @@ try {
 
   const report = {
     schemaVersion: 1,
-    evidenceLevel:
-      "REAL_PINNED_MODEL_CONTROLLED_CONTEXTUAL_CHUNK_BENCHMARK",
+    evidenceLevel: "REAL_PINNED_MODEL_CONTROLLED_CONTEXTUAL_CHUNK_BENCHMARK",
     status: "PROVEN",
     productionDefaultsChanged: false,
     winner: null,
