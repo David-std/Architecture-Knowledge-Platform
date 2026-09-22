@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { ModelRoleRouteCandidate } from "@akp/compiler";
 import { Postgres } from "@akp/postgres";
 import { rebuildCommunityIndex } from "../src/community-index.js";
 
@@ -179,6 +180,121 @@ describe("community index PostgreSQL integration", () => {
         expect(repeated.reused).toBe(true);
         expect(repeated.revisionId).toBe(first.revisionId);
         expect(repeated.communityRevision).toBe(first.communityRevision);
+        expect(repeated.summaryMode).toBe("DETERMINISTIC");
+
+        await db.pool.query(
+          "update spaces set model_residency='LOCAL_ONLY' where id=$1",
+          [spaceId],
+        );
+        const localGenerate = vi
+          .fn()
+          .mockRejectedValue(new Error("MODEL_PROVIDER_NETWORK"));
+        const localFactory = vi.fn(() => ({ generate: localGenerate }));
+        const externalFactory = vi.fn(() => ({
+          generate: vi.fn().mockResolvedValue({
+            text: "External summary must never execute.",
+          }),
+        }));
+        const summaryCandidates: ModelRoleRouteCandidate[] = [
+          {
+            policy: {
+              role: "COMMUNITY_SUMMARY",
+              provider: "openai-compatible",
+              model: "local-summary",
+              endpointRef: "local",
+              timeoutMs: 5_000,
+              maxRetries: 0,
+              concurrency: 1,
+              dataResidency: "LOCAL_ONLY",
+              fallbackRolesOrModels: ["external-summary"],
+              degradationSafe: true,
+            },
+            descriptor: {
+              role: "COMMUNITY_SUMMARY",
+              provider: "openai-compatible",
+              model: "local-summary",
+              endpointRef: "local",
+              policyDataResidency: "LOCAL_ONLY",
+              dataResidency: "LOCAL_ONLY",
+              configurationHash: "a".repeat(64),
+            },
+            supportsStructuredOutput: true,
+            createTextGenerator: localFactory,
+          },
+          {
+            policy: {
+              role: "COMMUNITY_SUMMARY_EXTERNAL",
+              provider: "openai-compatible",
+              model: "external-summary",
+              endpointRef: "external",
+              timeoutMs: 5_000,
+              maxRetries: 0,
+              concurrency: 1,
+              dataResidency: "EXTERNAL_ALLOWED",
+              degradationSafe: true,
+            },
+            descriptor: {
+              role: "COMMUNITY_SUMMARY_EXTERNAL",
+              provider: "openai-compatible",
+              model: "external-summary",
+              endpointRef: "external",
+              policyDataResidency: "EXTERNAL_ALLOWED",
+              dataResidency: "EXTERNAL_ALLOWED",
+              configurationHash: "b".repeat(64),
+            },
+            supportsStructuredOutput: true,
+            createTextGenerator: externalFactory,
+          },
+        ];
+
+        await expect(
+          rebuildCommunityIndex(db, {
+            spaceId,
+            vaultId,
+            graphRevision: "graph-model-failure",
+            resolution: 0.5,
+            randomSeed: 7,
+            summaryCandidates,
+          }),
+        ).rejects.toThrow("MODEL_PROVIDER_NETWORK");
+        expect(localFactory).toHaveBeenCalledOnce();
+        expect(localGenerate).toHaveBeenCalledOnce();
+        expect(externalFactory).not.toHaveBeenCalled();
+
+        const afterModelFailure = await db.pool.query<{
+          graph_revision: string;
+          status: string;
+          stale: boolean;
+          error: { code?: string } | null;
+        }>(
+          `select graph_revision,status,stale,error
+             from community_index_revisions
+            where space_id=$1 and vault_id=$2 and scope_id=$3
+            order by built_at,id`,
+          [spaceId, vaultId, `vault:${vaultId}`],
+        );
+        expect(afterModelFailure.rows).toEqual([
+          {
+            graph_revision: "graph-1",
+            status: "ACTIVE",
+            stale: false,
+            error: null,
+          },
+          {
+            graph_revision: "graph-model-failure",
+            status: "FAILED",
+            stale: true,
+            error: { code: "MODEL_PROVIDER_NETWORK" },
+          },
+        ]);
+        await db.pool.query(
+          "delete from community_index_revisions where space_id=$1 and vault_id=$2 and status='FAILED'",
+          [spaceId, vaultId],
+        );
+        await db.pool.query(
+          "update spaces set model_residency='EXTERNAL_ALLOWED' where id=$1",
+          [spaceId],
+        );
 
         await db.pool.query(`
           create or replace function akp_test_community_build_failure()
@@ -207,8 +323,9 @@ describe("community index PostgreSQL integration", () => {
             graph_revision: string;
             status: string;
             stale: boolean;
+            error: { code?: string } | null;
           }>(
-            `select graph_revision,status,stale
+            `select graph_revision,status,stale,error
                from community_index_revisions
               where space_id=$1 and vault_id=$2 and scope_id=$3
               order by built_at,id`,
@@ -219,6 +336,13 @@ describe("community index PostgreSQL integration", () => {
               graph_revision: "graph-1",
               status: "ACTIVE",
               stale: false,
+              error: null,
+            },
+            {
+              graph_revision: "graph-failure",
+              status: "FAILED",
+              stale: true,
+              error: { code: "COMMUNITY_BUILD_TEST_FAILURE" },
             },
           ]);
         } finally {
@@ -227,6 +351,10 @@ describe("community index PostgreSQL integration", () => {
           );
           await db.pool.query(
             "drop function if exists akp_test_community_build_failure()",
+          );
+          await db.pool.query(
+            "delete from community_index_revisions where space_id=$1 and vault_id=$2 and status='FAILED'",
+            [spaceId, vaultId],
           );
         }
 
@@ -267,6 +395,95 @@ describe("community index PostgreSQL integration", () => {
             stale: false,
           },
         ]);
+
+        const modelGenerate = vi.fn().mockResolvedValue({
+          text: "Model-assisted community orientation.",
+          usage: { inputTokens: 20, outputTokens: 6, totalTokens: 26 },
+        });
+        const modelCandidate: ModelRoleRouteCandidate = {
+          policy: {
+            role: "COMMUNITY_SUMMARY",
+            provider: "openai-compatible",
+            model: "local-summary-success",
+            endpointRef: "local-success",
+            timeoutMs: 5_000,
+            maxRetries: 0,
+            concurrency: 1,
+            dataResidency: "LOCAL_ONLY",
+            degradationSafe: false,
+          },
+          descriptor: {
+            role: "COMMUNITY_SUMMARY",
+            provider: "openai-compatible",
+            model: "local-summary-success",
+            endpointRef: "local-success",
+            policyDataResidency: "LOCAL_ONLY",
+            dataResidency: "LOCAL_ONLY",
+            configurationHash: "c".repeat(64),
+          },
+          supportsStructuredOutput: true,
+          createTextGenerator: () => ({ generate: modelGenerate }),
+        };
+        const modelBuilt = await rebuildCommunityIndex(db, {
+          spaceId,
+          vaultId,
+          graphRevision: "graph-2",
+          resolution: 0.5,
+          randomSeed: 7,
+          summaryCandidates: [modelCandidate],
+        });
+        expect(modelBuilt).toMatchObject({
+          reused: false,
+          summaryMode: "MODEL",
+          degraded: false,
+          summaryProvider: {
+            model: "local-summary-success",
+            dataResidency: "LOCAL_ONLY",
+          },
+        });
+        expect(modelBuilt.communityRevision).not.toBe(second.communityRevision);
+        expect(modelGenerate).toHaveBeenCalledTimes(2);
+
+        const modelRevision = await db.pool.query<{
+          hierarchy: {
+            summaryGeneration?: {
+              mode?: string;
+              role?: string;
+              model?: string;
+              configurationHash?: string;
+            };
+          };
+        }>(
+          "select hierarchy from community_index_revisions where id=$1",
+          [modelBuilt.revisionId],
+        );
+        expect(modelRevision.rows[0]?.hierarchy.summaryGeneration).toMatchObject({
+          mode: "MODEL",
+          role: "COMMUNITY_SUMMARY",
+          model: "local-summary-success",
+          configurationHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        });
+
+        const modelCommunities = await db.pool.query<{
+          summary: string;
+          summary_lifecycle: string;
+          citable: boolean;
+        }>(
+          `select summary,summary_lifecycle,citable
+             from community_index_communities
+            where revision_id=$1
+            order by ordinal`,
+          [modelBuilt.revisionId],
+        );
+        expect(modelCommunities.rows).toHaveLength(2);
+        expect(
+          modelCommunities.rows.every(
+            (community) =>
+              community.summary === "Model-assisted community orientation." &&
+              community.summary_lifecycle === "DERIVED_INDEX" &&
+              community.citable === false,
+          ),
+        ).toBe(true);
       } finally {
         await db.pool.query(
           "delete from community_index_revisions where space_id=$1",

@@ -312,6 +312,12 @@ importers:
 
   packages/indexing:
     dependencies:
+      "@akp/compiler":
+        specifier: "*"
+        version: link:../compiler
+      "@akp/contracts":
+        specifier: "*"
+        version: link:../contracts
       "@akp/git-store":
         specifier: "*"
         version: link:../git-store

@@ -12,6 +12,8 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@akp/compiler": "*",
+    "@akp/contracts": "*",
     "@akp/git-store": "*",
     "@akp/observability": "*",
     "@akp/postgres": "*",
