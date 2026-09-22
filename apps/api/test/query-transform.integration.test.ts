@@ -339,6 +339,7 @@ describe("query transformation retrieval", () => {
         await db.close();
       }
     },
+  );
 
   it.skipIf(!databaseUrl)(
     "keeps unsupported HyDE technology in transform provenance instead of trusted context",
