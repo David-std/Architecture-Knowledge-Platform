@@ -28,8 +28,12 @@
         "security-guide-v3": 0.9318
       },
       "expectations": {
-        "current": ["security-guide-v3"],
-        "asOfBeforeChange": ["security-guide-v1"],
+        "current": [
+          "security-guide-v3"
+        ],
+        "asOfBeforeChange": [
+          "security-guide-v1"
+        ],
         "mustNotResolveBy": "DENSE_SCORE_ONLY",
         "mustExposeContradiction": true,
         "readTimeSupportValidationRequired": true
@@ -58,7 +62,11 @@
         "approximateFallbackMustBeLabeled": true,
         "serializedContextPacketMeasured": true,
         "exactOrLexicalIdentifierChannelRequired": true,
-        "benchmarkLanguages": ["en", "es", "code"]
+        "benchmarkLanguages": [
+          "en",
+          "es",
+          "code"
+        ]
       }
     },
     {
@@ -98,7 +106,10 @@
       "id": "two-agent-structured-handoff-and-promotion",
       "kind": "TWO_AGENT_WORKSPACE_HANDOFF",
       "task": "Refactor compiler review flow while updating the Web review experience.",
-      "principals": ["agent-a", "agent-b"],
+      "principals": [
+        "agent-a",
+        "agent-b"
+      ],
       "claims": [
         {
           "principal": "agent-a",
@@ -163,7 +174,10 @@
         "after": "src/auth/token-service.ts#TokenService.rotate",
         "mustRemainCandidateWhenAmbiguous": true
       },
-      "excludedPaths": ["vendor/generated-client.ts", "dist/bundle.min.js"],
+      "excludedPaths": [
+        "vendor/generated-client.ts",
+        "dist/bundle.min.js"
+      ],
       "ambiguousCall": "src/compat/adapter.ts#refresh -> refresh",
       "expectations": {
         "crossFilePathPresent": true,
@@ -220,7 +234,11 @@
           "statusAfter": "ACTIVE"
         }
       ],
-      "staleDerivedStateRetainedPhysically": ["VECTOR", "COMMUNITY", "CACHE"],
+      "staleDerivedStateRetainedPhysically": [
+        "VECTOR",
+        "COMMUNITY",
+        "CACHE"
+      ],
       "expectations": {
         "conclusionMayRemainViaIndependentSourceB": true,
         "sourceACitationRemovedFromCurrentExplanation": true,
@@ -241,7 +259,8 @@
           "id": "governance-rule",
           "kind": "rule",
           "score": 0.2,
-          "content": "Only explicitly authorized vault paths may contribute context."
+          "content": "Only explicitly authorized vault paths may contribute context.",
+          "mandatory": true
         },
         {
           "id": "high-score-concept",
@@ -254,6 +273,26 @@
           "kind": "source",
           "score": 0.98,
           "contentRepeat": 12000
+        },
+        {
+          "id": "conflict-current",
+          "kind": "source",
+          "score": 0.72,
+          "content": "Current transport policy requires TLS 1.3 for production service-to-service traffic.",
+          "conflictGroup": "transport-policy"
+        },
+        {
+          "id": "conflict-peer",
+          "kind": "source",
+          "score": 0.71,
+          "content": "A second current authorized source still requires TLS 1.2 for the same production traffic.",
+          "conflictGroup": "transport-policy"
+        },
+        {
+          "id": "continuation-detail",
+          "kind": "concept",
+          "score": 0.15,
+          "contentRepeat": 6000
         }
       ],
       "expectations": {
@@ -262,7 +301,9 @@
         "requiredActionsRetainedInCompactPacket": true,
         "requiredActionOrderPreserved": true,
         "truncatedEvidenceUsesContinuation": true,
-        "mandatoryActionsNeverMoveIntoRetrievedContent": true
+        "mandatoryActionsNeverMoveIntoRetrievedContent": true,
+        "materialConflictCoverageRequired": true,
+        "continuationDetailRetainedOutOfBand": true
       }
     }
   ]

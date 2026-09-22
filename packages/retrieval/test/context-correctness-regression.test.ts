@@ -14,6 +14,8 @@ type PlacementCandidate = {
   score: number;
   content?: string;
   contentRepeat?: number;
+  mandatory?: boolean;
+  conflictGroup?: string;
 };
 
 type PlacementRegression = {
@@ -77,7 +79,20 @@ describe("registered P0 ContextPacket correctness", () => {
       content:
         candidate.content ?? "x".repeat(candidate.contentRepeat ?? 12_000),
       kind: candidate.kind,
+      ...(candidate.mandatory ? { mandatory: true } : {}),
     }));
+
+    const conflictGroups = new Map<string, string[]>();
+    regression.candidates.forEach((candidate, index) => {
+      if (!candidate.conflictGroup) return;
+      const ids = conflictGroups.get(candidate.conflictGroup) ?? [];
+      ids.push(documentId(index));
+      conflictGroups.set(candidate.conflictGroup, ids);
+    });
+    const materialConflicts = [...conflictGroups.entries()].map(
+      ([id, documentIds]) => ({ id, documentIds }),
+    );
+    const continuationSections: string[][] = [];
 
     const packet = buildContextPacket({
       request: {
@@ -95,6 +110,13 @@ describe("registered P0 ContextPacket correctness", () => {
       corpusRevision: "p0-context-placement",
       maxTokens: 2_000,
       requiredActions: regression.requiredActions,
+      conflicts: ["transport-policy (OPEN)"],
+      materialConflicts,
+      continuationSink: (payload) => {
+        continuationSections.push(
+          payload.sections.map((section) => section.title),
+        );
+      },
       candidates,
     });
 
@@ -104,6 +126,15 @@ describe("registered P0 ContextPacket correctness", () => {
       packet.sections.some((section) => section.title === "oversized-source"),
     ).toBe(false);
     expect(packet.continuations.length).toBeGreaterThan(0);
+    expect(packet.conflicts).toContain("transport-policy (OPEN)");
+    const selectedTitles = new Set(
+      packet.sections.map((section) => section.title),
+    );
+    expect(selectedTitles.has("conflict-current")).toBe(true);
+    expect(selectedTitles.has("conflict-peer")).toBe(true);
+    expect(
+      continuationSections.flat().includes("continuation-detail"),
+    ).toBe(true);
 
     expect(
       packet.requiredActions.slice(0, regression.requiredActions.length),
