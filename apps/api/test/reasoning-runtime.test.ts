@@ -187,6 +187,41 @@ describe("reasoning application runtime", () => {
     });
   }
 
+  it("treats SEARCH_CODE injection-shaped text strictly as search data", async () => {
+    const injection = "x'); DROP TABLE facts; --";
+    const invocations: ReasoningRetrievalInvocation[] = [];
+
+    const result = await executeApplicationReasoning({
+      request: { ...request("PROJECT_CODE"), query: injection },
+      revisionSet: revisions(),
+      validationContext: validationContext(),
+      capabilities: capabilities("PROJECT_CODE"),
+      corpusRevision: "corpus-1",
+      indexRevisions: {
+        corpus: "corpus-1",
+        lexical: "corpus-1",
+        codeGraph: "corpus-1",
+      },
+      retrieve: async (invocation) => {
+        invocations.push(invocation);
+        return [hit("code-injection")];
+      },
+    });
+
+    expect(result.execution.status).toBe("SUCCESS");
+    expect(invocations).toHaveLength(1);
+    expect(invocations[0]).toEqual({
+      kind: "SEARCH_CODE",
+      query: injection,
+      limit: 20,
+    });
+    expect(Object.keys(invocations[0] ?? {})).toEqual([
+      "kind",
+      "query",
+      "limit",
+    ]);
+  });
+
   it("propagates revision drift as a hard halt instead of partial context", async () => {
     let guardChecks = 0;
     let retrievalCalls = 0;
