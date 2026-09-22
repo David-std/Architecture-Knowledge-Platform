@@ -32,25 +32,25 @@ jobs:
       - run: pnpm db:migrate
       - name: Execute registered domain quality benchmark
         run: pnpm benchmark:domain-quality
-      - name: Execute P12 graph and code metric benchmark
+      - name: Execute registered graph and code metric benchmark
         env:
-          AKP_P12_DOMAIN_METRICS_REPORT: reports/ci/p12-domain-metrics.json
-        run: pnpm benchmark:p12-domain-metrics
-      - name: Execute P12 temporal truth metric benchmark
+          AKP_REGISTERED_GRAPH_CODE_METRICS_REPORT: reports/ci/registered-graph-code-metrics.json
+        run: pnpm benchmark:registered-graph-code-metrics
+      - name: Execute registered temporal truth metric benchmark
         env:
-          AKP_P12_TEMPORAL_METRICS_REPORT: reports/ci/p12-temporal-metrics.json
-        run: pnpm benchmark:p12-temporal-metrics
-      - name: Execute P12 workspace and team metric benchmark
+          AKP_REGISTERED_TEMPORAL_TRUTH_METRICS_REPORT: reports/ci/registered-temporal-truth-metrics.json
+        run: pnpm benchmark:registered-temporal-truth-metrics
+      - name: Execute registered workspace and team metric benchmark
         env:
-          AKP_P12_TEAM_METRICS_REPORT: reports/ci/p12-team-metrics.json
-        run: pnpm benchmark:p12-team-metrics
-      - name: Validate P12 workspace and team metric evidence
+          AKP_REGISTERED_WORKSPACE_TEAM_METRICS_REPORT: reports/ci/registered-workspace-team-metrics.json
+        run: pnpm benchmark:registered-workspace-team-metrics
+      - name: Validate registered workspace and team metric evidence
         run: |
           node --input-type=module <<'NODE'
           import { readFileSync } from "node:fs";
 
           const report = JSON.parse(
-            readFileSync("reports/ci/p12-team-metrics.json", "utf8"),
+            readFileSync("reports/ci/registered-workspace-team-metrics.json", "utf8"),
           );
           const zeroMetrics = [
             "crossSpaceLeakRate",
@@ -66,7 +66,7 @@ jobs:
             "federationPartialFailure",
           ];
           if (
-            report.benchmark !== "AKP_P12_REGISTERED_WORKSPACE_TEAM_METRICS" ||
+            report.benchmark !== "AKP_REGISTERED_WORKSPACE_TEAM_METRICS" ||
             report.status !== "PROVEN" ||
             report.evidenceLevel !== "REGISTERED_SYNTHETIC_RUNTIME_FIXTURE" ||
             report.claimPolicy?.externalParityClaimAllowed !== false ||
@@ -75,7 +75,7 @@ jobs:
             report.claimPolicy?.zeroLeakageClaimScope !== "REGISTERED_FIXTURE_ONLY" ||
             report.fixture?.teamInheritanceSanity !== true
           ) {
-            throw new Error("P12 workspace/team metric claim boundary is invalid.");
+            throw new Error("registered workspace/team metric claim boundary is invalid.");
           }
           for (const name of zeroMetrics) {
             const metric = report.team?.[name];
@@ -85,7 +85,7 @@ jobs:
               metric.sampleCount < 1 ||
               metric.scope !== "REGISTERED_FIXTURE"
             ) {
-              throw new Error("P12 zero-rate metric failed: " + name);
+              throw new Error("registered zero-rate metric failed: " + name);
             }
           }
           for (const name of positiveMetrics) {
@@ -96,7 +96,7 @@ jobs:
               metric.sampleCount < 1 ||
               metric.scope !== "REGISTERED_FIXTURE"
             ) {
-              throw new Error("P12 positive team metric failed: " + name);
+              throw new Error("registered positive team metric failed: " + name);
             }
           }
           console.log(
@@ -111,13 +111,13 @@ jobs:
             ),
           );
           NODE
-      - name: Validate P12 temporal truth metric evidence
+      - name: Validate registered temporal truth metric evidence
         run: |
           node --input-type=module <<'NODE'
           import { readFileSync } from "node:fs";
 
           const report = JSON.parse(
-            readFileSync("reports/ci/p12-temporal-metrics.json", "utf8"),
+            readFileSync("reports/ci/registered-temporal-truth-metrics.json", "utf8"),
           );
           const required = [
             "currentTruthAccuracy",
@@ -130,14 +130,14 @@ jobs:
             "mixedRevisionDetection",
           ];
           if (
-            report.benchmark !== "AKP_P12_REGISTERED_TEMPORAL_TRUTH_METRICS" ||
+            report.benchmark !== "AKP_REGISTERED_TEMPORAL_TRUTH_METRICS" ||
             report.status !== "PROVEN" ||
             report.evidenceLevel !== "REGISTERED_SYNTHETIC_RUNTIME_FIXTURE" ||
             report.claimPolicy?.externalParityClaimAllowed !== false ||
             report.claimPolicy?.fixtureRatesAreProductionRates !== false ||
             report.claimPolicy?.scenarioPassRateRelabelledAsAccuracy !== false
           ) {
-            throw new Error("P12 temporal metric claim boundary is invalid.");
+            throw new Error("registered temporal metric claim boundary is invalid.");
           }
           for (const name of required) {
             const metric = report.temporal?.[name];
@@ -147,33 +147,33 @@ jobs:
               metric.sampleCount < 1 ||
               metric.scope !== "REGISTERED_FIXTURE"
             ) {
-              throw new Error("Incomplete P12 temporal metric: " + name);
+              throw new Error("Incomplete registered temporal metric: " + name);
             }
           }
-          if (report.deferredToNextP12Slice?.workspaceTeamMetrics !== true) {
-            throw new Error("P12 workspace/team metric deferral must remain explicit.");
+          if (report.deferredToNextregisteredSlice?.workspaceTeamMetrics !== true) {
+            throw new Error("registered workspace/team metric deferral must remain explicit.");
           }
           console.log(
             JSON.stringify({ status: report.status, temporalMetrics: required.length }, null, 2),
           );
           NODE
-      - name: Validate P12 graph and code metric evidence
+      - name: Validate registered graph and code metric evidence
         run: |
           node --input-type=module <<'NODE'
           import { readFileSync } from "node:fs";
 
           const report = JSON.parse(
-            readFileSync("reports/ci/p12-domain-metrics.json", "utf8"),
+            readFileSync("reports/ci/registered-graph-code-metrics.json", "utf8"),
           );
           if (
-            report.benchmark !== "AKP_P12_REGISTERED_DOMAIN_METRICS" ||
+            report.benchmark !== "AKP_REGISTERED_GRAPH_CODE_METRICS" ||
             report.status !== "PROVEN" ||
             report.evidenceLevel !== "REGISTERED_SYNTHETIC_RUNTIME_FIXTURE" ||
             report.claimPolicy?.externalParityClaimAllowed !== false ||
             report.claimPolicy?.fixtureRatesAreProductionRates !== false ||
             report.claimPolicy?.scenarioPassRateRelabelledAsPrecisionRecall !== false
           ) {
-            throw new Error("P12 graph/code metric claim boundary is invalid.");
+            throw new Error("registered graph/code metric claim boundary is invalid.");
           }
           const graphRatios = [
             "typedPathPrecision",
@@ -197,7 +197,7 @@ jobs:
           for (const name of graphRatios) {
             const metric = report.graph?.[name];
             if (metric?.measured !== true || metric.value !== 1 || metric.sampleCount < 1) {
-              throw new Error("Incomplete P12 graph metric: " + name);
+              throw new Error("Incomplete registered graph metric: " + name);
             }
           }
           if (
@@ -205,12 +205,12 @@ jobs:
             report.graph.unauthorizedPathRate.value !== 0 ||
             report.graph.unauthorizedPathRate.sampleCount < 1
           ) {
-            throw new Error("P12 unauthorized-path rate must be zero in the registered fixture.");
+            throw new Error("registered unauthorized-path rate must be zero in the registered fixture.");
           }
           for (const name of codeRatios) {
             const metric = report.code?.[name];
             if (metric?.measured !== true || metric.value !== 1 || metric.sampleCount < 1) {
-              throw new Error("Incomplete P12 code metric: " + name);
+              throw new Error("Incomplete registered code metric: " + name);
             }
           }
           for (const name of ["buildTimeMs", "incrementalUpdateTimeMs"]) {
@@ -221,14 +221,14 @@ jobs:
               metric.value < 0 ||
               metric.unit !== "ms"
             ) {
-              throw new Error("Incomplete P12 code timing metric: " + name);
+              throw new Error("Incomplete registered code timing metric: " + name);
             }
           }
           if (
-            report.deferredToNextP12Slice?.temporalTruthMetrics !== true ||
-            report.deferredToNextP12Slice?.workspaceTeamMetrics !== true
+            report.deferredToNextregisteredSlice?.temporalTruthMetrics !== true ||
+            report.deferredToNextregisteredSlice?.workspaceTeamMetrics !== true
           ) {
-            throw new Error("P12 partial metric coverage must remain explicit.");
+            throw new Error("registered partial metric coverage must remain explicit.");
           }
           console.log(
             JSON.stringify(
@@ -311,9 +311,9 @@ jobs:
           name: domain-quality-${{ github.run_id }}
           path: |
             reports/ci/domain-quality-benchmark.json
-            reports/ci/p12-domain-metrics.json
-            reports/ci/p12-temporal-metrics.json
-            reports/ci/p12-team-metrics.json
+            reports/ci/registered-graph-code-metrics.json
+            reports/ci/registered-temporal-truth-metrics.json
+            reports/ci/registered-workspace-team-metrics.json
           if-no-files-found: error
           retention-days: 30
       - name: Stop disposable services

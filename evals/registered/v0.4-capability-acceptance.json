@@ -241,7 +241,7 @@
         "benchmark": {
           "evidence": [
             "benchmark:concurrency",
-            "benchmark:p12-team-metrics"
+            "benchmark:workspace-team-quality-metrics"
           ]
         },
         "remoteCi": {
@@ -366,7 +366,7 @@
           "evidence": [
             "benchmark:graph-quality",
             "benchmark:enterprise-state",
-            "benchmark:p12-graph-metrics"
+            "benchmark:graph-quality-metrics"
           ]
         },
         "remoteCi": {
@@ -442,7 +442,7 @@
             "benchmark:code-quality",
             "benchmark:enterprise-state",
             "benchmark:p4-graphify-incremental-equivalence",
-            "benchmark:p12-code-metrics"
+            "benchmark:code-quality-metrics"
           ]
         },
         "remoteCi": {
@@ -507,7 +507,7 @@
         "benchmark": {
           "evidence": [
             "benchmark:temporal-truth",
-            "benchmark:p12-temporal-metrics"
+            "benchmark:temporal-truth-quality-metrics"
           ]
         },
         "remoteCi": {

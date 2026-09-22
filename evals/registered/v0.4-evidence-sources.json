@@ -2081,59 +2081,59 @@
         }
       ]
     },
-    "benchmark:p12-graph-metrics": {
+    "benchmark:graph-quality-metrics": {
       "sources": [
         {
           "type": "STEP",
           "workflow": "domain-quality",
           "job": "registered-domain-quality",
-          "step": "Validate P12 graph and code metric evidence"
+          "step": "Validate registered graph and code metric evidence"
         },
         {
           "type": "FILE",
-          "path": "scripts/p12-domain-metrics-benchmark.ts"
+          "path": "scripts/registered-graph-code-metrics.ts"
         }
       ]
     },
-    "benchmark:p12-code-metrics": {
+    "benchmark:code-quality-metrics": {
       "sources": [
         {
           "type": "STEP",
           "workflow": "domain-quality",
           "job": "registered-domain-quality",
-          "step": "Validate P12 graph and code metric evidence"
+          "step": "Validate registered graph and code metric evidence"
         },
         {
           "type": "FILE",
-          "path": "scripts/p12-domain-metrics-benchmark.ts"
+          "path": "scripts/registered-graph-code-metrics.ts"
         }
       ]
     },
-    "benchmark:p12-temporal-metrics": {
+    "benchmark:temporal-truth-quality-metrics": {
       "sources": [
         {
           "type": "STEP",
           "workflow": "domain-quality",
           "job": "registered-domain-quality",
-          "step": "Validate P12 temporal truth metric evidence"
+          "step": "Validate registered temporal truth metric evidence"
         },
         {
           "type": "FILE",
-          "path": "scripts/p12-temporal-metrics-benchmark.ts"
+          "path": "scripts/registered-temporal-truth-metrics.ts"
         }
       ]
     },
-    "benchmark:p12-team-metrics": {
+    "benchmark:workspace-team-quality-metrics": {
       "sources": [
         {
           "type": "STEP",
           "workflow": "domain-quality",
           "job": "registered-domain-quality",
-          "step": "Validate P12 workspace and team metric evidence"
+          "step": "Validate registered workspace and team metric evidence"
         },
         {
           "type": "FILE",
-          "path": "scripts/p12-team-metrics-benchmark.ts"
+          "path": "scripts/registered-workspace-team-metrics.ts"
         }
       ]
     }

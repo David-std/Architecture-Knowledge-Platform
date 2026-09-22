@@ -22,8 +22,8 @@ const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is required.");
 
 const outputPath = path.resolve(
-  process.env.AKP_P12_DOMAIN_METRICS_REPORT ??
-    "reports/ci/p12-domain-metrics.json",
+  process.env.AKP_REGISTERED_GRAPH_CODE_METRICS_REPORT ??
+    "reports/ci/registered-graph-code-metrics.json",
 );
 
 type RateMetric = {
@@ -55,7 +55,7 @@ function rate(
   limitation: string,
 ): RateMetric {
   if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator <= 0) {
-    throw new Error("P12_METRIC_DENOMINATOR_INVALID");
+    throw new Error("REGISTERED_METRIC_DENOMINATOR_INVALID");
   }
   return {
     measured: true,
@@ -76,7 +76,7 @@ function duration(
   limitation: string,
 ): DurationMetric {
   if (!Number.isFinite(value) || value < 0) {
-    throw new Error("P12_DURATION_INVALID");
+    throw new Error("REGISTERED_DURATION_INVALID");
   }
   return {
     measured: true,
@@ -125,8 +125,8 @@ function node(
 function provenance(revision: string): GraphProvenanceEnvelope {
   return {
     derivation: "STATICALLY_RESOLVED",
-    sourceIds: [`p12-source:${revision}`],
-    evidenceIds: [`p12-evidence:${revision}`],
+    sourceIds: [`registered-source:${revision}`],
+    evidenceIds: [`registered-evidence:${revision}`],
     locatorRefs: [],
     revision,
     recordedAt: "2026-09-21T00:00:00.000Z",
@@ -164,11 +164,11 @@ function artifact(input: {
     vaultId: input.vaultId,
     scopeId: input.scopeId,
     revision: input.revision,
-    sourceRevision: `p12-source:${input.revision}`,
+    sourceRevision: `registered-source:${input.revision}`,
     sourceHash: null,
-    provider: "p12-domain-metrics",
+    provider: "registered-domain-metrics",
     providerVersion: "1",
-    configurationVersion: "p12-domain-metrics-v1",
+    configurationVersion: "registered-domain-metrics-v1",
     nodes: input.nodes,
     edges: input.edges,
   };
@@ -180,12 +180,12 @@ const code = new CodeGraphQueryService(store);
 const organizationId = randomUUID();
 const spaceId = randomUUID();
 const vaultId = randomUUID();
-const codeScope = "code:p12-domain-metrics";
-const epistemicScope = "epistemic:p12-domain-metrics";
-const codeRevision = "p12-code-r1";
-const nextCodeRevision = "p12-code-r2";
-const decisionRevision = "p12-decision-r1";
-const repository = "fixture/p12";
+const codeScope = "code:registered-domain-metrics";
+const epistemicScope = "epistemic:registered-domain-metrics";
+const codeRevision = "registered-code-r1";
+const nextCodeRevision = "registered-code-r2";
+const decisionRevision = "registered-decision-r1";
+const repository = "fixture/registered";
 const commitSha = "1111111111111111111111111111111111111111";
 const nextCommitSha = "2222222222222222222222222222222222222222";
 
@@ -247,31 +247,31 @@ const graphBounds = {
 try {
   await db.pool.query(
     `insert into organizations(id,slug,name)
-     values($1,$2,'P12 domain metrics')`,
-    [organizationId, `p12-metrics-${organizationId.slice(0, 8)}`],
+     values($1,$2,'REGISTERED domain metrics')`,
+    [organizationId, `registered-metrics-${organizationId.slice(0, 8)}`],
   );
   await db.pool.query(
     `insert into spaces(
        id,organization_id,slug,name,visibility,knowledge_repo_path
-     ) values($1,$2,$3,'P12 metrics space','PRIVATE',$4)`,
+     ) values($1,$2,$3,'REGISTERED metrics space','PRIVATE',$4)`,
     [
       spaceId,
       organizationId,
-      `p12-metrics-${spaceId.slice(0, 8)}`,
-      `/tmp/p12-metrics-${spaceId}`,
+      `registered-metrics-${spaceId.slice(0, 8)}`,
+      `/tmp/registered-metrics-${spaceId}`,
     ],
   );
   await db.pool.query(
     `insert into vaults(
        id,space_id,canonical_path,name,read_only,current_revision,
        vault_key,local_path,visibility,enabled
-     ) values($1,$2,$3,'P12 metrics vault',true,$4,$5,$3,'PRIVATE',true)`,
+     ) values($1,$2,$3,'REGISTERED metrics vault',true,$4,$5,$3,'PRIVATE',true)`,
     [
       vaultId,
       spaceId,
-      `/tmp/p12-metrics-vault-${vaultId}`,
+      `/tmp/registered-metrics-vault-${vaultId}`,
       commitSha,
-      `p12-metrics-${vaultId.slice(0, 8)}`,
+      `registered-metrics-${vaultId.slice(0, 8)}`,
     ],
   );
 
@@ -504,29 +504,29 @@ try {
 
   const ppr = personalizedPageRank({
     nodes: [
-      { id: "seed", scopeId: "p12", graphDomain: "EPISTEMIC" },
-      { id: "strong", scopeId: "p12", graphDomain: "EPISTEMIC" },
-      { id: "weak", scopeId: "p12", graphDomain: "EPISTEMIC" },
+      { id: "seed", scopeId: "registered", graphDomain: "EPISTEMIC" },
+      { id: "strong", scopeId: "registered", graphDomain: "EPISTEMIC" },
+      { id: "weak", scopeId: "registered", graphDomain: "EPISTEMIC" },
     ],
     edges: [
       {
         fromNodeId: "seed",
         toNodeId: "strong",
-        scopeId: "p12",
+        scopeId: "registered",
         relation: "supports",
         weight: 4,
       },
       {
         fromNodeId: "seed",
         toNodeId: "weak",
-        scopeId: "p12",
+        scopeId: "registered",
         relation: "supports",
         weight: 1,
       },
       {
         fromNodeId: "strong",
         toNodeId: "seed",
-        scopeId: "p12",
+        scopeId: "registered",
         relation: "supports",
         weight: 1,
       },
@@ -720,7 +720,7 @@ try {
     "CODE",
     spaceId,
     codeScope,
-    "P12 stale detection fixture",
+    "REGISTERED stale detection fixture",
   );
   let staleRejected = false;
   try {
@@ -826,7 +826,7 @@ try {
 
   const report = {
     schemaVersion: 1,
-    benchmark: "AKP_P12_REGISTERED_DOMAIN_METRICS",
+    benchmark: "AKP_REGISTERED_GRAPH_CODE_METRICS",
     commit: process.env.GITHUB_SHA ?? null,
     generatedAt: new Date().toISOString(),
     evidenceLevel: "REGISTERED_SYNTHETIC_RUNTIME_FIXTURE",
@@ -846,7 +846,7 @@ try {
     },
     graph,
     code: codeMetrics,
-    deferredToNextP12Slice: {
+    deferredToNextREGISTEREDSlice: {
       temporalTruthMetrics: true,
       workspaceTeamMetrics: true,
     },

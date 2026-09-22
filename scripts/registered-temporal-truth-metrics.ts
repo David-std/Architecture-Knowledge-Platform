@@ -8,8 +8,8 @@ const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is required.");
 
 const outputPath = path.resolve(
-  process.env.AKP_P12_TEMPORAL_METRICS_REPORT ??
-    "reports/ci/p12-temporal-metrics.json",
+  process.env.AKP_REGISTERED_TEMPORAL_TRUTH_METRICS_REPORT ??
+    "reports/ci/registered-temporal-truth-metrics.json",
 );
 
 type RateMetric = {
@@ -31,7 +31,7 @@ function rate(
   limitation: string,
 ): RateMetric {
   if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator <= 0) {
-    throw new Error("P12_TEMPORAL_METRIC_DENOMINATOR_INVALID");
+    throw new Error("REGISTERED_TEMPORAL_METRIC_DENOMINATOR_INVALID");
   }
   return {
     measured: true,
@@ -87,18 +87,18 @@ const sourceRows = [
 try {
   await db.pool.query(
     `insert into organizations(id,slug,name)
-     values($1,$2,'P12 temporal metrics')`,
-    [organizationId, `p12-temporal-${organizationId.slice(0, 8)}`],
+     values($1,$2,'REGISTERED temporal metrics')`,
+    [organizationId, `registered-temporal-${organizationId.slice(0, 8)}`],
   );
   await db.pool.query(
     `insert into spaces(
        id,organization_id,slug,name,visibility,knowledge_repo_path
-     ) values($1,$2,$3,'P12 temporal metrics space','PRIVATE',$4)`,
+     ) values($1,$2,$3,'REGISTERED temporal metrics space','PRIVATE',$4)`,
     [
       spaceId,
       organizationId,
-      `p12-temporal-${spaceId.slice(0, 8)}`,
-      `/tmp/p12-temporal-${spaceId}`,
+      `registered-temporal-${spaceId.slice(0, 8)}`,
+      `/tmp/registered-temporal-${spaceId}`,
     ],
   );
   await db.pool.query(
@@ -106,14 +106,14 @@ try {
        id,space_id,canonical_path,name,read_only,current_revision,vault_key,
        local_path,visibility,enabled
      ) values(
-       $1,$2,$3,'P12 temporal metrics vault',true,'p12-truth:r0',
+       $1,$2,$3,'REGISTERED temporal metrics vault',true,'registered-truth:r0',
        $4,$3,'PRIVATE',true
      )`,
     [
       vaultId,
       spaceId,
-      `/tmp/p12-temporal-vault-${vaultId}`,
-      `p12-temporal-${vaultId.slice(0, 8)}`,
+      `/tmp/registered-temporal-vault-${vaultId}`,
+      `registered-temporal-${vaultId.slice(0, 8)}`,
     ],
   );
 
@@ -129,10 +129,10 @@ try {
         source.sourceId,
         spaceId,
         vaultId,
-        `P12 source ${source.suffix}`,
-        `https://example.test/p12/${source.suffix}`,
+        `REGISTERED source ${source.suffix}`,
+        `https://example.test/registered/${source.suffix}`,
         source.hash,
-        `p12/${source.suffix}.txt`,
+        `registered/${source.suffix}.txt`,
       ],
     );
     await db.pool.query(
@@ -140,12 +140,12 @@ try {
          id,source_id,kind,object_key,source_hash,extractor,extractor_version,
          quality,metadata
        ) values(
-         $1,$2,'normalized',$3,$4,'p12-fixture','1','HIGH','{}'::jsonb
+         $1,$2,'normalized',$3,$4,'registered-fixture','1','HIGH','{}'::jsonb
        )`,
       [
         source.artifactId,
         source.sourceId,
-        `p12/${source.suffix}.json`,
+        `registered/${source.suffix}.json`,
         source.hash,
       ],
     );
@@ -292,7 +292,7 @@ try {
     spaceId,
     vaultId,
     sourceEpisodeId: episodeA.id,
-    reason: "P12 withdraw A",
+    reason: "REGISTERED withdraw A",
   });
   const afterAQuery = await store.listFacts({
     spaceId,
@@ -318,7 +318,7 @@ try {
     spaceId,
     vaultId,
     sourceEpisodeId: episodeB.id,
-    reason: "P12 withdraw B",
+    reason: "REGISTERED withdraw B",
   });
   const afterBQuery = await store.listFacts({
     spaceId,
@@ -366,9 +366,9 @@ try {
   });
 
   const derivedRefs = [
-    { kind: "VECTOR" as const, ref: "vector:p12:unit" },
-    { kind: "COMMUNITY_REPORT" as const, ref: "community:p12:summary" },
-    { kind: "CACHED_SYNTHESIS" as const, ref: "cache:p12:synthesis" },
+    { kind: "VECTOR" as const, ref: "vector:registered:unit" },
+    { kind: "COMMUNITY_REPORT" as const, ref: "community:registered:summary" },
+    { kind: "CACHED_SYNTHESIS" as const, ref: "cache:registered:synthesis" },
   ];
   for (const item of derivedRefs) {
     await store.registerDerivedDependency({
@@ -379,7 +379,7 @@ try {
       supportSetId: derivedSupport.id,
       sourceRevisionHashes: ["d".repeat(64)],
       truthRevisionHash: derivedFact.revision.revisionHash,
-      projectionRevision: `p12:${item.kind.toLowerCase()}:r1`,
+      projectionRevision: `registered:${item.kind.toLowerCase()}:r1`,
     });
   }
   const snapshot = await store.captureSnapshot(spaceId, [vaultId]);
@@ -387,13 +387,13 @@ try {
     spaceId,
     vaultId,
     sourceEpisodeId: episodeC.id,
-    reason: "P12 derived support withdrawal",
+    reason: "REGISTERED derived support withdrawal",
   });
   const vectorValidation = await store.validateDerivedItems({
     spaceId,
     vaultId,
     derivedStoreKind: "VECTOR",
-    derivedItemRefs: ["vector:p12:unit"],
+    derivedItemRefs: ["vector:registered:unit"],
     truthRevisionHash: withdrawnDerived.revisionHash,
     validAt: "2026-09-01T00:00:00.000Z",
   });
@@ -456,7 +456,7 @@ try {
     : "FAILED";
   const report = {
     schemaVersion: 1,
-    benchmark: "AKP_P12_REGISTERED_TEMPORAL_TRUTH_METRICS",
+    benchmark: "AKP_REGISTERED_TEMPORAL_TRUTH_METRICS",
     commit: process.env.GITHUB_SHA ?? null,
     generatedAt: new Date().toISOString(),
     evidenceLevel: "REGISTERED_SYNTHETIC_RUNTIME_FIXTURE",
@@ -475,7 +475,7 @@ try {
       derivedTruthKinds: derivedRefs.map((entry) => entry.kind),
     },
     temporal,
-    deferredToNextP12Slice: {
+    deferredToNextREGISTEREDSlice: {
       workspaceTeamMetrics: true,
     },
   };

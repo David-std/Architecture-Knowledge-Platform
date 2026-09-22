@@ -28,7 +28,7 @@ const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is required.");
 
 const outputPath = path.resolve(
-  process.env.AKP_P12_TEAM_METRICS_REPORT ?? "reports/ci/p12-team-metrics.json",
+  process.env.AKP_REGISTERED_WORKSPACE_TEAM_METRICS_REPORT ?? "reports/ci/registered-workspace-team-metrics.json",
 );
 
 type RateMetric = {
@@ -50,7 +50,7 @@ function rate(
   limitation: string,
 ): RateMetric {
   if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator <= 0) {
-    throw new Error("P12_TEAM_METRIC_DENOMINATOR_INVALID");
+    throw new Error("REGISTERED_TEAM_METRIC_DENOMINATOR_INVALID");
   }
   return {
     measured: true,
@@ -81,23 +81,23 @@ const actorB = randomUUID();
 try {
   await db.pool.query(
     `insert into organizations(id,slug,name)
-     values($1,$2,'P12 team metrics')`,
-    [organizationId, `p12-team-${organizationId.slice(0, 8)}`],
+     values($1,$2,'REGISTERED team metrics')`,
+    [organizationId, `registered-team-${organizationId.slice(0, 8)}`],
   );
   await db.pool.query(
     `insert into spaces(
        id,organization_id,slug,name,visibility,knowledge_repo_path
      ) values
-       ($1,$3,$4,'P12 primary team space','PRIVATE',$5),
-       ($2,$3,$6,'P12 other team space','PRIVATE',$7)`,
+       ($1,$3,$4,'REGISTERED primary team space','PRIVATE',$5),
+       ($2,$3,$6,'REGISTERED other team space','PRIVATE',$7)`,
     [
       primarySpaceId,
       otherSpaceId,
       organizationId,
-      `p12-primary-${primarySpaceId.slice(0, 8)}`,
-      `/tmp/p12-primary-${primarySpaceId}`,
-      `p12-other-${otherSpaceId.slice(0, 8)}`,
-      `/tmp/p12-other-${otherSpaceId}`,
+      `registered-primary-${primarySpaceId.slice(0, 8)}`,
+      `/tmp/registered-primary-${primarySpaceId}`,
+      `registered-other-${otherSpaceId.slice(0, 8)}`,
+      `/tmp/registered-other-${otherSpaceId}`,
     ],
   );
   await db.pool.query(
@@ -105,17 +105,17 @@ try {
        id,space_id,canonical_path,name,read_only,current_revision,vault_key,
        local_path,visibility,enabled
      ) values
-       ($1,$3,$4,'P12 private vault',true,'p12-workspace:r1',$5,$4,'PRIVATE',true),
-       ($2,$6,$7,'P12 other vault',true,'p12-other:r1',$8,$7,'PRIVATE',true)`,
+       ($1,$3,$4,'REGISTERED private vault',true,'registered-workspace:r1',$5,$4,'PRIVATE',true),
+       ($2,$6,$7,'REGISTERED other vault',true,'registered-other:r1',$8,$7,'PRIVATE',true)`,
     [
       primaryVaultId,
       otherVaultId,
       primarySpaceId,
-      `/tmp/p12-private-${primaryVaultId}`,
-      `p12-private-${primaryVaultId.slice(0, 8)}`,
+      `/tmp/registered-private-${primaryVaultId}`,
+      `registered-private-${primaryVaultId.slice(0, 8)}`,
       otherSpaceId,
-      `/tmp/p12-other-vault-${otherVaultId}`,
-      `p12-other-${otherVaultId.slice(0, 8)}`,
+      `/tmp/registered-other-vault-${otherVaultId}`,
+      `registered-other-${otherVaultId.slice(0, 8)}`,
     ],
   );
   for (const [userId, label] of [
@@ -124,7 +124,7 @@ try {
   ] as const) {
     await db.pool.query(
       "insert into users(id,email,display_name) values($1,$2,$3)",
-      [userId, `${userId}@example.test`, `P12 ${label}`],
+      [userId, `${userId}@example.test`, `REGISTERED ${label}`],
     );
   }
 
@@ -153,7 +153,7 @@ try {
     spaceId: primarySpaceId,
     vaultId: primaryVaultId,
     actorId: actorA,
-    purpose: "P12 workspace handoff and fencing fixture",
+    purpose: "REGISTERED workspace handoff and fencing fixture",
     contextBudget: 2048,
   });
   await addWorkspaceParticipant(db, {
@@ -166,7 +166,7 @@ try {
     spaceId: otherSpaceId,
     vaultId: otherVaultId,
     actorId: actorB,
-    purpose: "P12 cross-space isolation fixture",
+    purpose: "REGISTERED cross-space isolation fixture",
     contextBudget: 1024,
   });
   const leakedSessions = await listWorkspaceSessionsForParticipant(
@@ -201,7 +201,7 @@ try {
     "Repeated reads of the durable workspace_context_revision_sets pin",
     "Reproducibility is measured for one freshly created registered workspace.",
   );
-  if (!pinnedFirst) throw new Error("P12_PINNED_CONTEXT_MISSING");
+  if (!pinnedFirst) throw new Error("REGISTERED_PINNED_CONTEXT_MISSING");
 
   const principalRows = await db.pool.query<{ id: string; user_id: string }>(
     `select id,user_id
@@ -214,14 +214,14 @@ try {
     principalRows.rows.map((row) => [row.user_id, row.id]),
   );
   const principalA = principalByUser.get(actorA);
-  if (!principalA) throw new Error("P12_HUMAN_PRINCIPAL_A_MISSING");
+  if (!principalA) throw new Error("REGISTERED_HUMAN_PRINCIPAL_A_MISSING");
 
-  const processToken = `p12-agent-${randomUUID()}`;
+  const processToken = `registered-agent-${randomUUID()}`;
   const agent = await createAgentProcessPrincipalCredential(db, {
     parentPrincipalId: principalA,
     userId: actorA,
     sessionId: session.id,
-    displayName: "P12 revoked agent",
+    displayName: "REGISTERED revoked agent",
     allowedActions: ["workspace:read", "workspace:event:append"],
     tokenHash: createHash("sha256").update(processToken).digest("hex"),
     scopes: {
@@ -246,7 +246,7 @@ try {
       actorId: actorA,
       actorPrincipalId: agent.id,
       eventType: "NOTE",
-      payload: { p12: "revoked-agent-must-not-write" },
+      payload: { registered: "revoked-agent-must-not-write" },
     });
   } catch (error) {
     revokedDenied = errorCode(error) === "WORKSPACE_PRINCIPAL_SCOPE_DENIED";
@@ -278,11 +278,11 @@ try {
 
   const handoffInput = {
     summary: "Compiler reasoning work is ready for receiver validation.",
-    completed: ["P7 reasoning constraints hardened."],
-    remaining: ["Validate P12 workspace metrics."],
+    completed: ["reasoning constraints hardened."],
+    remaining: ["Validate REGISTERED workspace metrics."],
     blockers: ["No known blocker."],
     changedResourceRefs: ["packages/compiler/**"],
-    evidenceRefs: ["benchmark:p12-team-metrics"],
+    evidenceRefs: ["benchmark:workspace-team-quality-metrics"],
     questions: ["Does the receiver observe the exact pinned context revision?"],
   };
   const handedOff = await handoffWorkspaceWork(db, {
@@ -302,7 +302,7 @@ try {
       claimId: claim.id,
       fencingToken: claim.fencingToken,
       eventType: "FINDING",
-      payload: { p12: "stale-fence-write" },
+      payload: { registered: "stale-fence-write" },
     });
   } catch (error) {
     staleFenceDenied = errorCode(error) === "WORK_CLAIM_FENCE_STALE";
@@ -354,13 +354,13 @@ try {
     sessionId: session.id,
     actorId: actorA,
     eventType: "FINDING",
-    payload: { summary: "P12 promotable finding" },
+    payload: { summary: "REGISTERED promotable finding" },
   });
   const note = await appendWorkspaceEvent(db, {
     sessionId: session.id,
     actorId: actorA,
     eventType: "NOTE",
-    payload: { summary: "P12 non-promotable note" },
+    payload: { summary: "REGISTERED non-promotable note" },
   });
   const promotion = await workspacePromotionEvidence(db, {
     sessionId: session.id,
@@ -390,13 +390,13 @@ try {
   const currentDraft = await queueWorkspaceOfflineDraft(db, {
     sessionId: session.id,
     actorId: actorA,
-    clientDraftId: "p12-current-draft",
+    clientDraftId: "registered-current-draft",
     baseRevisionSetHash: pinnedFirst.revisionSetHash,
     eventType: "FINDING",
     payload: { summary: "Current offline draft" },
   });
   await db.pool.query(
-    "update vaults set current_revision='p12-workspace:r2' where id=$1",
+    "update vaults set current_revision='registered-workspace:r2' where id=$1",
     [primaryVaultId],
   );
   const changedState = await workspaceContextRevisionState(
@@ -408,7 +408,7 @@ try {
   const staleDraft = await queueWorkspaceOfflineDraft(db, {
     sessionId: session.id,
     actorId: actorA,
-    clientDraftId: "p12-stale-draft",
+    clientDraftId: "registered-stale-draft",
     baseRevisionSetHash: pinnedFirst.revisionSetHash,
     eventType: "FINDING",
     payload: { summary: "Stale offline draft" },
@@ -428,17 +428,17 @@ try {
   const peer = await upsertContextFabricPeer(db, {
     organizationId,
     spaceId: primarySpaceId,
-    peerKey: `p12-peer-${randomUUID()}`,
-    displayName: "P12 partial failure peer",
+    peerKey: `registered-peer-${randomUUID()}`,
+    displayName: "REGISTERED partial failure peer",
     endpoint: "https://peer.invalid.example",
     discoveryMode: "REMOTE_QUERY",
     trustState: "APPROVED",
     capabilities: {
       schemaVersion: 1,
-      boundary: "P12_REGISTERED_FIXTURE",
+      boundary: "REGISTERED_REGISTERED_FIXTURE",
     },
-    revision: "p12-peer-r1",
-    credentialRef: "AKP_P12_PEER_TOKEN",
+    revision: "registered-peer-r1",
+    credentialRef: "AKP_REGISTERED_PEER_TOKEN",
     lastSeenAt: new Date(),
   });
   await markContextFabricPeerQueryFailure(
@@ -513,7 +513,7 @@ try {
 
   const report = {
     schemaVersion: 1,
-    benchmark: "AKP_P12_REGISTERED_WORKSPACE_TEAM_METRICS",
+    benchmark: "AKP_REGISTERED_WORKSPACE_TEAM_METRICS",
     commit: process.env.GITHUB_SHA ?? null,
     generatedAt: new Date().toISOString(),
     evidenceLevel: "REGISTERED_SYNTHETIC_RUNTIME_FIXTURE",
