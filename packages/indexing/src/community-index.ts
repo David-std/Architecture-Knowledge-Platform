@@ -227,10 +227,7 @@ function safeFailureCode(error: unknown): string {
   if (error instanceof CommunitySummaryBuildError) return error.code;
   const provider = modelRoleProviderFailureCode(error);
   if (provider) return provider;
-  if (
-    error instanceof Error &&
-    /^[A-Z][A-Z0-9_]{2,120}$/.test(error.message)
-  ) {
+  if (error instanceof Error && /^[A-Z][A-Z0-9_]{2,120}$/.test(error.message)) {
     return error.message;
   }
   return "COMMUNITY_BUILD_FAILED";
@@ -303,8 +300,7 @@ async function loadCommunitySummaryBoundary(
   const profileConstraint = profile.modelRoleConstraints.find(
     (constraint) => constraint.role === COMMUNITY_SUMMARY_ROLE,
   );
-  const profileResidency =
-    profileConstraint?.residency ?? "EXTERNAL_ALLOWED";
+  const profileResidency = profileConstraint?.residency ?? "EXTERNAL_ALLOWED";
 
   return {
     spaceResidency,
@@ -793,11 +789,9 @@ export async function rebuildCommunityIndex(
   const documentById = new Map(
     documents.rows.map((document) => [document.id, document] as const),
   );
-  const boundary = await loadCommunitySummaryBoundary(
-    db,
-    options,
-    [...documentIds],
-  );
+  const boundary = await loadCommunitySummaryBoundary(db, options, [
+    ...documentIds,
+  ]);
 
   let summaryBuild: CommunitySummaryBuild;
   try {
@@ -850,12 +844,7 @@ export async function rebuildCommunityIndex(
     nodes,
     edges,
   });
-  const current = await activeRevision(
-    db,
-    options,
-    scopeId,
-    communityRevision,
-  );
+  const current = await activeRevision(db, options, scopeId, communityRevision);
   if (current?.status === "ACTIVE" && current.stale === false) {
     return {
       revisionId: current.id,

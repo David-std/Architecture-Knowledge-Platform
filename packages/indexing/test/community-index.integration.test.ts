@@ -453,11 +453,12 @@ describe("community index PostgreSQL integration", () => {
               configurationHash?: string;
             };
           };
-        }>(
-          "select hierarchy from community_index_revisions where id=$1",
-          [modelBuilt.revisionId],
-        );
-        expect(modelRevision.rows[0]?.hierarchy.summaryGeneration).toMatchObject({
+        }>("select hierarchy from community_index_revisions where id=$1", [
+          modelBuilt.revisionId,
+        ]);
+        expect(
+          modelRevision.rows[0]?.hierarchy.summaryGeneration,
+        ).toMatchObject({
           mode: "MODEL",
           role: "COMMUNITY_SUMMARY",
           model: "local-summary-success",

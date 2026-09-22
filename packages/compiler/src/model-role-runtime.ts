@@ -53,8 +53,7 @@ export interface ModelRoleRouteCandidate {
 }
 
 export type ModelRoleRouteRejectionReason =
-  | "RESIDENCY_INCOMPATIBLE"
-  | "STRUCTURED_OUTPUT_UNAVAILABLE";
+  "RESIDENCY_INCOMPATIBLE" | "STRUCTURED_OUTPUT_UNAVAILABLE";
 
 export interface ModelRoleRouteDecision {
   selected: ModelRoleRouteCandidate | null;
@@ -280,7 +279,9 @@ function isRetryableStatus(status: number): boolean {
   return status === 408 || status === 409 || status === 429 || status >= 500;
 }
 
-function usageFromResponse(value: unknown): ModelTextGenerationUsage | undefined {
+function usageFromResponse(
+  value: unknown,
+): ModelTextGenerationUsage | undefined {
   if (!value || typeof value !== "object") return undefined;
   const usage = (value as { usage?: unknown }).usage;
   if (!usage || typeof usage !== "object" || Array.isArray(usage)) {
@@ -388,11 +389,10 @@ class OpenAICompatibleTextGenerator implements ModelTextGenerator {
           } catch {
             throw new Error("MODEL_PROVIDER_RESPONSE_INVALID");
           }
+          const usage = usageFromResponse(responseJson);
           return {
             text: contentFromResponse(responseJson),
-            ...(usageFromResponse(responseJson)
-              ? { usage: usageFromResponse(responseJson) }
-              : {}),
+            ...(usage ? { usage } : {}),
           };
         }
       } catch (error) {
