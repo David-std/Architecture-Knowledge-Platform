@@ -4,6 +4,20 @@ Notable user-visible and architectural changes are recorded here. Validation tra
 
 ## Unreleased
 
+- Evolved AKP into a governed enterprise Context Workspace while preserving Git-backed approved Markdown as canonical knowledge.
+- Added versioned Knowledge Profiles and a first-party Software Delivery Workspace Profile.
+- Added Team Context with independent agent principals, revision pinning, work claims, lease/fencing, structured handoffs, offline snapshots and governed promotion.
+- Added a federated multi-graph substrate for epistemic, catalog, code, runtime, temporal, work and community domains without flattening their semantics.
+- Added deterministic Code Graph extraction/querying, impact analysis and static/runtime evidence separation.
+- Added bi-temporal truth, support-set invalidation and truth-valid retrieval that rejects stale derived evidence before fusion.
+- Expanded retrieval with query-shape routing, contextual-chunk evaluation, community/PPR/global/DRIFT modes, reranking, retrieval traces and long-context placement evidence.
+- Added bounded typed reasoning plans and a compact agent context façade over the existing governed use cases.
+- Added generic connector capability contracts, authenticated connector ingestion, continuous assurance and bounded organization federation.
+- Added role-aware model routing and data-residency enforcement, including fail-closed `LOCAL_ONLY` behavior.
+- Expanded the human workspace for work, service, agent-session, review, decision, graph, temporal, team and degraded-state workflows.
+- Added same-revision capability acceptance, domain-quality, federation, scale/concurrency, agent and final-proof workflows with explicit limitation reporting.
+- Completed the v0.4 product documentation set and strengthened repository hygiene so product surfaces no longer depend on phase, agent-session or workstation artifacts.
+
 ## 0.3.0 — Product completion
 
 - Expanded the operator console with search, graph, source, durable-job, review, evaluation and health views.

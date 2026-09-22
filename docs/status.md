@@ -1,26 +1,36 @@
 # Product status
 
-Architecture Knowledge Platform is under active pre-1.0 development. The current tree provides the complete local workflow for ingesting sources, compiling reviewed knowledge, querying it through bounded retrieval and operating the system through API, Web, CLI and MCP surfaces.
+Architecture Knowledge Platform is under active pre-1.0 development. The v0.4 tree is a governed local-first Context Workspace / Context Fabric for humans and agents. It connects approved knowledge, software, work and runtime context while keeping provenance, authorization, revisioning and human review explicit.
 
 ## Supported today
 
-- Multi-vault registration, membership and path-scoped authorization.
-- Read-only vault import and immutable source ingestion.
-- Deterministic extraction for supported local document types with optional provider adapters.
-- Lexical retrieval, optional semantic retrieval, graph traversal and bounded context packets.
-- Git-backed proposals, review, validation, publication and rollback.
-- Durable jobs, event delivery, retries, quarantine and reconciliation.
-- Incremental lexical/vector/graph/context projection updates.
-- Append-only temporal truth with valid-time/recorded-time queries, pre-fusion derived-support validation and versioned truth-maintenance projections.
-- Evaluation packs, retrieval benchmarks and regression tracking.
-- Operator search, graph, source, job, review, evaluation and health views.
-- OpenTelemetry instrumentation, audit export, backup and isolated restore workflows.
+- Multi-vault spaces, path-scoped authorization, human/service/agent principals and explicit revocation.
+- Versioned Knowledge Profiles with validation, compatibility/impact analysis, activation and review-first interoperability.
+- Team Context sessions with pinned revisions, claims, lease/fencing, structured handoffs, offline snapshots and governed promotion.
+- A first-party Software Delivery Workspace Profile covering work, software, decisions, incidents, builds, deployments and tests.
+- Read-only vault import, immutable source ingestion and structured Document Intelligence with optional provider adapters.
+- Exact/alias and lexical retrieval, optional multilingual semantic retrieval, typed graph/code traversal, reranking and bounded ContextPackets.
+- Federated graph domains for epistemic, software catalog, code, runtime, temporal, work and rebuildable community projections.
+- Deterministic Code Graph querying for symbols, callers/callees, paths, explanation, impact, change-impact and tests.
+- Append-only bi-temporal truth, point-in-time queries, support validation, supersession/invalidation and stale-derived suppression before fusion.
+- Community/PPR, GLOBAL and DRIFT-style retrieval as derived orientation channels that never become citation authority.
+- Typed bounded reasoning plans with allowlisted operators and deterministic fallback when a planner model is unavailable.
+- Git-backed proposals, collaborative decision/review workflows, validation, publication and rollback.
+- Continuous Assurance for grounding, freshness, contradictions, access boundaries and related maintenance findings.
+- Generic connector capability contracts plus authenticated webhook/inbox ingestion, checkpoints, deletion and permission-fidelity semantics.
+- Bounded federation with remote provenance, scope/version checks, timeout/circuit behavior and partial-result semantics.
+- Role-aware model routing and residency policy with explicit fail-closed/degraded behavior.
+- Human workspace views for active work, services, agent sessions, reviews, decisions, graph/temporal context, team administration and health.
+- API, CLI and MCP surfaces over the same governed application rules.
+- OpenTelemetry instrumentation, audit export, backup/restore, scale/concurrency and reproducible quality/evaluation workflows.
 
 ## Defaults and optional capabilities
 
 The platform is conservative by default. Optional model, vector and document-intelligence providers are not silently enabled. Provider endpoints and credentials are deployment configuration, not source content. A provider may be available without being selected as the production default.
 
-Imported vaults are treated as external inputs. Source-specific curation rules belong in explicit import profiles or fixtures and must not alter generic platform behavior.
+Graph, vector, community and model enhancements do not override authorization, lifecycle, temporal validity or support/truth checks. If an optional channel cannot satisfy those boundaries it is omitted or reported as degraded.
+
+Imported vaults and connector payloads are external inputs. Source-specific curation belongs in explicit profiles, connector mappings or fixtures and must not alter generic platform behavior.
 
 ## v0.4 release limitations
 
@@ -37,13 +47,16 @@ The v0.4 product surface is intentionally bounded. These limitations are part of
 
 - The default deployment is local-first and binds services to loopback. Direct hostile multi-tenant or internet exposure requires additional deployment controls.
 - Authorization is enforced at the application layer; database row-level security is not the primary isolation boundary.
-- Raw backups are integrity-checked but encryption and remote replication remain deployment responsibilities.
-- Optional retrieval and extraction quality depends on the selected provider and corpus; synthetic or fixture benchmarks are not broad quality guarantees.
-- Derived truth-maintenance projections are rebuildable operational state. Retrieval validates support against the captured truth revision before RRF even when that projection is missing or delayed; physical historical vectors/dependencies are not deleted to manufacture freshness.
+- Backup encryption, remote replication, WORM storage, OIDC/MFA and public-edge hardening remain deployment responsibilities.
+- Federation evidence covers bounded team/organization nodes, not multi-region HA or global consensus.
+- Registered public evaluation corpora are intentionally small and do not establish universal retrieval/agent superiority.
+- PPR is an on-demand bounded retrieval operation rather than a durable background service.
+- Late interaction is excluded from the production matrix rather than silently represented by another retrieval channel.
+- Optional retrieval, model and extraction quality depends on the selected provider and corpus; unexecuted comparisons stay unmeasured.
 - Human review remains the authority for canonical publication; generated content and provider responses are untrusted until validated and approved.
 
 ## Verification
 
-Repository gates cover formatting, contracts, documentation, repository hygiene, type/unit checks, integration behavior, secret scanning and production builds. Runtime-focused changes are additionally exercised with disposable infrastructure, and recovery changes are validated by restoring PostgreSQL, object storage and managed Git into isolated resources.
+Repository gates cover formatting, contracts, documentation, repository hygiene, type/unit checks, integration behavior, secret scanning and production builds. Additional maintained workflows exercise semantic retrieval, domain quality, Document Intelligence, team-node behavior, concurrency, resilience, scale, federation, long-context placement, agent behavior, recovery and same-revision final proof.
 
-For setup and operations, see [the local operations runbook](runbooks/local-operations.md). For trust boundaries and residual risks, see [the threat model](security/threat-model.md).
+For the operating model, see the [Workspace Operating Model](guides/workspace-operating-model.md). For setup and operations, see [Operations & Recovery](guides/operations-recovery.md). For trust boundaries and residual risks, see the [threat model](security/threat-model.md).
