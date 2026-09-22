@@ -49,6 +49,71 @@ jobs:
             pnpm benchmark:capability-baseline \
             2>&1 | tee reports/ci/v0.3-capability-maturity-baseline.log
       - run: pnpm build
+      - name: Benchmark contextual chunk representations
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p reports/ci "$AKP_MODEL_CACHE_DIR"
+          AKP_CONTEXTUAL_CHUNK_REPORT=reports/ci/contextual-chunk-benchmark.json \
+            pnpm benchmark:contextual-chunking \
+            2>&1 | tee reports/ci/contextual-chunk-benchmark.log
+      - name: Validate contextual chunk evidence
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const report = JSON.parse(
+            readFileSync("reports/ci/contextual-chunk-benchmark.json", "utf8"),
+          );
+          if (
+            report.status !== "PROVEN" ||
+            report.productionDefaultsChanged !== false ||
+            report.winner !== null
+          ) {
+            throw new Error("Contextual chunk benchmark evidence discipline failed.");
+          }
+          const requiredStrategies = new Set([
+            "STRUCTURE_FIRST",
+            "CONTEXTUAL_PREFIX",
+            "PARENT_CHILD_COMPOSITION",
+          ]);
+          for (const strategy of report.strategies ?? []) {
+            requiredStrategies.delete(strategy.id);
+            for (const value of [
+              strategy.claimRecallAtK,
+              strategy.contextPrecisionAtK,
+              strategy.storage?.vectorBytes,
+              strategy.storage?.representationBytes,
+              strategy.latency?.buildMs,
+              strategy.latency?.updateMs,
+              strategy.latency?.meanQueryMs,
+              strategy.latency?.p95QueryMs,
+            ]) {
+              if (!Number.isFinite(value) || value < 0) {
+                throw new Error("Contextual chunk benchmark contains an invalid metric.");
+              }
+            }
+            if (strategy.locatorSetHash !== report.fixture?.locatorSetHash) {
+              throw new Error("Embedding strategy changed structural locator identity.");
+            }
+          }
+          if (requiredStrategies.size !== 0) {
+            throw new Error(
+              "Missing contextual chunk strategies: " +
+                [...requiredStrategies].join(", "),
+            );
+          }
+          if (
+            report.lateChunking?.status !==
+              "NOT_APPLICABLE_CURRENT_PROVIDER" ||
+            report.lateChunking?.tokenLevelOutputAvailable !== false ||
+            !Number.isInteger(report.lateChunking?.providerMaxTokens) ||
+            typeof report.lateChunking?.reason !== "string"
+          ) {
+            throw new Error("Late chunking applicability was not reported honestly.");
+          }
+          NODE
       - run: docker compose up -d --wait postgres
       - run: pnpm db:migrate
       - name: Characterize filtered ANN recall under vault and path authorization
