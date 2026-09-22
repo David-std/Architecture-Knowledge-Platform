@@ -1,4 +1,4 @@
--- Field-aware lexical projections for the field-aware lexical retrieval path.
+-- Field-aware lexical projections for the P3 retrieval path.
 --
 -- PostgreSQL's built-in `simple` configuration is deliberately used here. It
 -- keeps tokenisation deterministic and domain-agnostic, while the stored
