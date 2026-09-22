@@ -83,6 +83,7 @@ jobs:
           pnpm --filter @akp/contracts exec vitest run test/model-role-policy.test.ts
           pnpm --filter @akp/worker exec vitest run \
             test/source-model-residency.test.ts \
+            test/document-intelligence-request.test.ts \
             test/compilation-stage.test.ts
       - name: Run code graph failure proof
         run: |

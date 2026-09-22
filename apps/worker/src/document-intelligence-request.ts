@@ -1,6 +1,8 @@
 import {
   DocumentIntelligenceIngestOptions,
+  ModelResidency,
   type DocumentIntelligenceIngestOptions as DocumentIntelligenceOptions,
+  type ModelResidency as ModelResidencyValue,
 } from "@akp/contracts";
 
 export function parseDocumentIntelligenceOptions(
@@ -19,8 +21,16 @@ export function documentIntelligenceFormFields(
   payload: Record<string, unknown>,
   jobId: string,
   parsedOptions?: DocumentIntelligenceOptions,
+  persistedModelResidency?: ModelResidencyValue,
 ): Record<string, string> {
   const options = parsedOptions ?? parseDocumentIntelligenceOptions(payload);
+  const modelResidency =
+    persistedModelResidency ??
+    (payload.modelResidency === undefined
+      ? "EXTERNAL_ALLOWED"
+      : ModelResidency.parse(payload.modelResidency));
+  const privacyPolicy =
+    modelResidency === "LOCAL_ONLY" ? "LOCAL_ONLY" : options.privacyPolicy;
   const configuration: Record<string, unknown> = {
     ...(options.language ? { language: options.language } : {}),
     ...(options.extractor ? { extractor: options.extractor } : {}),
@@ -41,7 +51,7 @@ export function documentIntelligenceFormFields(
     tables: String(options.tables),
     formula: String(options.formula),
     cost_policy: options.costPolicy,
-    privacy_policy: options.privacyPolicy,
+    privacy_policy: privacyPolicy,
     ingest_job_id: jobId,
     configuration_json: JSON.stringify(configuration),
   };
@@ -52,9 +62,15 @@ export function appendDocumentIntelligenceFormFields(
   payload: Record<string, unknown>,
   jobId: string,
   parsedOptions?: DocumentIntelligenceOptions,
+  persistedModelResidency?: ModelResidencyValue,
 ): void {
   for (const [name, value] of Object.entries(
-    documentIntelligenceFormFields(payload, jobId, parsedOptions),
+    documentIntelligenceFormFields(
+      payload,
+      jobId,
+      parsedOptions,
+      persistedModelResidency,
+    ),
   )) {
     form.set(name, value);
   }

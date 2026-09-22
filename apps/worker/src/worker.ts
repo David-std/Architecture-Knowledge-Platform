@@ -26,6 +26,7 @@ import {
   type RawObjectRef,
 } from "@akp/object-store";
 import { CompilationPlan } from "@akp/compiler";
+import { ModelResidency } from "@akp/contracts";
 import { GitKnowledgeStore } from "@akp/git-store";
 import { validateMarkdownDocument } from "@akp/validation";
 import mime from "mime-types";
@@ -431,11 +432,15 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
       upload.set("source_id", String(outputs.sourceId));
       upload.set("media_type", mediaType);
       upload.set("expected_sha256", raw.sha256);
+      const persistedModelResidency = ModelResidency.parse(
+        outputs.modelResidency ?? resolveSourceModelResidency(payload),
+      );
       appendDocumentIntelligenceFormFields(
         upload,
         payload,
         id,
         documentIntelligence,
+        persistedModelResidency,
       );
       await recordProviderTaskEvent(id, state, "PROVIDER_TASK_STARTED", {
         attempt,
