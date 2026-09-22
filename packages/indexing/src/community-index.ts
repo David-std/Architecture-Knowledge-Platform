@@ -422,14 +422,11 @@ function recordModelUsage(
 }
 
 async function buildCommunitySummaries(
-  options: RebuildCommunityIndexOptions,
   partition: CommunityPartition,
   documentById: ReadonlyMap<string, CommunityDocumentRow>,
   boundary: CommunitySummaryBoundary,
+  candidates: readonly ModelRoleRouteCandidate[],
 ): Promise<CommunitySummaryBuild> {
-  const candidates =
-    options.summaryCandidates ??
-    createModelRoleRouteCandidates(COMMUNITY_SUMMARY_ROLE, process.env);
   if (candidates.length === 0) {
     const metadata: CommunitySummaryMetadata = {
       mode: "DETERMINISTIC",
@@ -789,17 +786,27 @@ export async function rebuildCommunityIndex(
   const documentById = new Map(
     documents.rows.map((document) => [document.id, document] as const),
   );
-  const boundary = await loadCommunitySummaryBoundary(db, options, [
-    ...documentIds,
-  ]);
+  const summaryCandidates =
+    options.summaryCandidates ??
+    createModelRoleRouteCandidates(COMMUNITY_SUMMARY_ROLE, process.env);
+  const boundary: CommunitySummaryBoundary =
+    summaryCandidates.length === 0
+      ? {
+          effectiveResidency: "EXTERNAL_ALLOWED",
+          spaceResidency: "EXTERNAL_ALLOWED",
+          sourceResidencies: [],
+          profileResidency: "EXTERNAL_ALLOWED",
+          structuredOutputRequired: false,
+        }
+      : await loadCommunitySummaryBoundary(db, options, [...documentIds]);
 
   let summaryBuild: CommunitySummaryBuild;
   try {
     summaryBuild = await buildCommunitySummaries(
-      options,
       partition,
       documentById,
       boundary,
+      summaryCandidates,
     );
   } catch (error) {
     const metadata =

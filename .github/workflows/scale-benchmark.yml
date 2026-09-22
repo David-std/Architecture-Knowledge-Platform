@@ -181,15 +181,18 @@ jobs:
           if (!last || last.target !== 5000) {
             throw new Error("Enterprise-state suite did not reach target 5000.");
           }
-          for (const key of [
-            "epistemicGraphNodes",
-            "codeSymbols",
-            "temporalFacts",
-            "workItems",
-          ]) {
-            if (last.observed?.[key] !== 5000) {
-              throw new Error(`Enterprise-state dimension ${key} is not exact.`);
-            }
+          if (
+            JSON.stringify(last.observed) !== JSON.stringify(last.expected)
+          ) {
+            throw new Error(
+              `Enterprise-state final dimensions are not exact: ${JSON.stringify({
+                expected: last.expected,
+                observed: last.observed,
+              })}`,
+            );
+          }
+          if ((last.observed?.agentSessions ?? 0) < 20) {
+            throw new Error("Enterprise-state suite did not retain at least 20 agent sessions.");
           }
           if (!Array.isArray(last.queryLatency) || last.queryLatency.length < 6) {
             throw new Error("Enterprise-state query evidence is incomplete.");
@@ -200,6 +203,47 @@ jobs:
             iterations: report.execution.iterations,
             maxPoolWaiting: report.dbPoolPressure?.maxWaitingCount,
           }, null, 2));
+          NODE
+      - name: Execute bounded P11 scale combination probes
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --filter @akp/indexing exec vitest run \
+            test/community-index.integration.test.ts \
+            2>&1 | tee reports/ci/p11-community-rebuild-under-reads.log
+          pnpm --filter @akp/worker exec vitest run \
+            test/truth-maintenance.test.ts \
+            -t "rebuilds only affected current truth while preserving historical dependencies" \
+            2>&1 | tee reports/ci/p11-truth-invalidation-burst.log
+          node --input-type=module <<'NODE'
+          import { writeFileSync } from "node:fs";
+          const report = {
+            schemaVersion: "akp.p11-scale-combinations.v1",
+            generatedAt: new Date().toISOString(),
+            status: "PASSED",
+            evidenceLevel: "BOUNDED_INTEGRATION_FIXTURES",
+            scenarios: [
+              {
+                id: "community-rebuild-under-ongoing-reads",
+                status: "PASSED",
+                fixture:
+                  "Existing ACTIVE community revision remains readable while a replacement rebuild is blocked at a controlled model-summary barrier; activation swaps only after rebuild completion.",
+              },
+              {
+                id: "truth-invalidations-burst",
+                status: "PASSED",
+                fixture:
+                  "Twelve durable DerivedSupportInvalidationRequested events are claimed by four workers and must each produce one successful delivery and projection revision.",
+              },
+            ],
+            claimBoundary:
+              "These are bounded local PostgreSQL integration stress fixtures, not production capacity SLOs.",
+          };
+          writeFileSync(
+            "reports/ci/p11-scale-combinations.json",
+            `${JSON.stringify(report, null, 2)}\n`,
+            "utf8",
+          );
           NODE
       - name: Capture enterprise-state diagnostics
         if: always()
@@ -300,6 +344,23 @@ jobs:
           if (enterprise.status !== "PASSED") {
             throw new Error("Enterprise-state scale evidence did not pass.");
           }
+          const combinationProbes = JSON.parse(
+            readFileSync(
+              "reports/enterprise-state/p11-scale-combinations.json",
+              "utf8",
+            ),
+          );
+          if (
+            combinationProbes.status !== "PASSED" ||
+            combinationProbes.evidenceLevel !== "BOUNDED_INTEGRATION_FIXTURES" ||
+            !Array.isArray(combinationProbes.scenarios) ||
+            combinationProbes.scenarios.length !== 2 ||
+            combinationProbes.scenarios.some(
+              (scenario) => scenario.status !== "PASSED",
+            )
+          ) {
+            throw new Error("P11 bounded scale combination probes did not pass.");
+          }
 
           const combined = {
             schemaVersion: "akp.scale-benchmark-matrix.v2",
@@ -331,6 +392,7 @@ jobs:
               dbPoolPressure: enterprise.dbPoolPressure,
               limitations: enterprise.limitations,
             },
+            combinationProbes,
             shards: reports.map((report) => ({
               target: report.execution.targets[0],
               generatedAt: report.generatedAt,

@@ -74,7 +74,7 @@ const ingestWorkers = positiveInteger(
 );
 const concurrentAgents = positiveInteger(
   process.env.AKP_CONCURRENCY_AGENTS,
-  searchConcurrency + contextConcurrency + ingestWorkers,
+  Math.max(20, searchConcurrency + contextConcurrency + ingestWorkers),
 );
 
 function positiveInteger(value: string | undefined, fallback: number): number {

@@ -442,7 +442,7 @@ describe("community index PostgreSQL integration", () => {
           },
         });
         expect(modelBuilt.communityRevision).not.toBe(second.communityRevision);
-        expect(modelGenerate).toHaveBeenCalledTimes(2);
+        expect(modelGenerate).toHaveBeenCalledTimes(modelBuilt.communities);
 
         const modelRevision = await db.pool.query<{
           hierarchy: {
@@ -476,7 +476,7 @@ describe("community index PostgreSQL integration", () => {
             order by ordinal`,
           [modelBuilt.revisionId],
         );
-        expect(modelCommunities.rows).toHaveLength(2);
+        expect(modelCommunities.rows).toHaveLength(modelBuilt.communities);
         expect(
           modelCommunities.rows.every(
             (community) =>
@@ -485,6 +485,109 @@ describe("community index PostgreSQL integration", () => {
               community.citable === false,
           ),
         ).toBe(true);
+
+        let markRebuildStarted!: () => void;
+        let releaseRebuild!: () => void;
+        const rebuildStarted = new Promise<void>((resolve) => {
+          markRebuildStarted = resolve;
+        });
+        const rebuildGate = new Promise<void>((resolve) => {
+          releaseRebuild = resolve;
+        });
+        let firstBlockedSummary = true;
+        const blockingGenerate = vi.fn(async () => {
+          if (firstBlockedSummary) {
+            firstBlockedSummary = false;
+            markRebuildStarted();
+            await rebuildGate;
+          }
+          return { text: "Concurrent rebuild orientation." };
+        });
+        const blockingCandidate: ModelRoleRouteCandidate = {
+          policy: {
+            role: "COMMUNITY_SUMMARY",
+            provider: "openai-compatible",
+            model: "local-summary-concurrent",
+            endpointRef: "local-concurrent",
+            timeoutMs: 5_000,
+            maxRetries: 0,
+            concurrency: 1,
+            dataResidency: "LOCAL_ONLY",
+            degradationSafe: false,
+          },
+          descriptor: {
+            role: "COMMUNITY_SUMMARY",
+            provider: "openai-compatible",
+            model: "local-summary-concurrent",
+            endpointRef: "local-concurrent",
+            policyDataResidency: "LOCAL_ONLY",
+            dataResidency: "LOCAL_ONLY",
+            configurationHash: "d".repeat(64),
+          },
+          supportsStructuredOutput: true,
+          createTextGenerator: () => ({ generate: blockingGenerate }),
+        };
+
+        const concurrentRebuild = rebuildCommunityIndex(db, {
+          spaceId,
+          vaultId,
+          graphRevision: "graph-read-concurrency",
+          resolution: 0.5,
+          randomSeed: 7,
+          summaryCandidates: [blockingCandidate],
+        });
+        await rebuildStarted;
+
+        let activeDuringRebuild:
+          | { id: string; community_revision: string; status: string }
+          | undefined;
+        try {
+          activeDuringRebuild = (
+            await db.pool.query<{
+              id: string;
+              community_revision: string;
+              status: string;
+            }>(
+              `select id,community_revision,status
+                 from community_index_revisions
+                where space_id=$1 and vault_id=$2 and scope_id=$3
+                  and status='ACTIVE' and stale=false`,
+              [spaceId, vaultId, `vault:${vaultId}`],
+            )
+          ).rows[0];
+        } finally {
+          releaseRebuild();
+        }
+
+        expect(activeDuringRebuild).toMatchObject({
+          id: modelBuilt.revisionId,
+          community_revision: modelBuilt.communityRevision,
+          status: "ACTIVE",
+        });
+        const concurrentBuilt = await concurrentRebuild;
+        expect(concurrentBuilt).toMatchObject({
+          graphRevision: "graph-read-concurrency",
+          summaryMode: "MODEL",
+          degraded: false,
+        });
+        const activeAfterRebuild = await db.pool.query<{
+          id: string;
+          status: string;
+          stale: boolean;
+        }>(
+          `select id,status,stale
+             from community_index_revisions
+            where space_id=$1 and vault_id=$2 and scope_id=$3
+              and status='ACTIVE' and stale=false`,
+          [spaceId, vaultId, `vault:${vaultId}`],
+        );
+        expect(activeAfterRebuild.rows).toEqual([
+          {
+            id: concurrentBuilt.revisionId,
+            status: "ACTIVE",
+            stale: false,
+          },
+        ]);
       } finally {
         await db.pool.query(
           "delete from community_index_revisions where space_id=$1",

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { EmbeddingGenerationManager } from "@akp/indexing";
 import {
+  appendOutboxEvent,
   Postgres,
   PostgresTemporalTruthStore,
   type OutboxEventRecord,
@@ -549,6 +550,77 @@ describe("derived truth maintenance event boundary", () => {
           [targetEvent.event_id],
         );
         expect(projectionCount.rows[0]?.count).toBe("1");
+
+        const burstEvents: OutboxEventRecord[] = [];
+        for (let index = 0; index < 12; index += 1) {
+          burstEvents.push(
+            await appendOutboxEvent(db, {
+              eventType: "DerivedSupportInvalidationRequested",
+              resourceId: episodeA.id,
+              spaceId,
+              vaultId,
+              correlationId: `truth-burst-${index}`,
+              payload: {
+                reason: "SOURCE_WITHDRAWN",
+                sourceEpisodeId: episodeA.id,
+                truthRevisionHash: withdrawn.revisionHash,
+              },
+            }),
+          );
+        }
+
+        const burstWorkers = [
+          worker,
+          ...Array.from(
+            { length: 3 },
+            (_, index) =>
+              new DurableEventWorker(db, {
+                consumerName,
+                workerId: `${consumerName}:burst-${index + 1}`,
+                handlers,
+                listenNotify: false,
+                maxAttempts: 2,
+                leaseSeconds: 20,
+              }),
+          ),
+        ];
+        let burstClaims = 0;
+        for (let round = 0; round < burstEvents.length + 4; round += 1) {
+          const handled = await Promise.all(
+            burstWorkers.map((candidate) => candidate.runOnce()),
+          );
+          burstClaims += handled.filter(Boolean).length;
+          if (handled.every((value) => value === false)) break;
+        }
+        expect(burstClaims).toBe(burstEvents.length);
+
+        const burstEventIds = burstEvents.map((event) => event.eventId);
+        const burstDelivery = await db.pool.query<{
+          succeeded: number;
+          quarantined: number;
+          attempts: number;
+        }>(
+          `select
+             count(*) filter(where status='SUCCEEDED')::int succeeded,
+             count(*) filter(where status='QUARANTINED')::int quarantined,
+             coalesce(sum(attempts),0)::int attempts
+             from event_deliveries
+            where consumer_name=$1 and event_id=any($2::uuid[])`,
+          [consumerName, burstEventIds],
+        );
+        expect(burstDelivery.rows[0]).toEqual({
+          succeeded: burstEvents.length,
+          quarantined: 0,
+          attempts: burstEvents.length,
+        });
+
+        const burstProjections = await db.pool.query<{ count: number }>(
+          `select count(*)::int count
+             from derived_truth_projection_revisions
+            where trigger_event_id=any($1::uuid[])`,
+          [burstEventIds],
+        );
+        expect(burstProjections.rows[0]?.count).toBe(burstEvents.length);
       } finally {
         await db.pool
           .query("delete from event_deliveries where consumer_name=$1", [

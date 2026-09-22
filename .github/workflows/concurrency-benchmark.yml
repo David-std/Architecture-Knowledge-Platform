@@ -73,6 +73,9 @@ jobs:
           if (api.acceptance?.agentSessionsExact !== true) {
             throw new Error("API/worker benchmark did not materialize the declared concurrent agent sessions.");
           }
+          if ((api.workload?.concurrentAgents ?? 0) < 20) {
+            throw new Error("API/worker benchmark must exercise at least 20 concurrent agent sessions.");
+          }
           for (const measurement of [api.api?.search, api.api?.context]) {
             if (!Number.isFinite(measurement?.latency?.p99Ms)) {
               throw new Error("API concurrency evidence is missing p99 latency.");
