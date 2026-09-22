@@ -767,7 +767,8 @@
           "evidence": [
             "benchmark:scale",
             "benchmark:enterprise-state",
-            "benchmark:concurrency"
+            "benchmark:concurrency",
+            "benchmark:p11-scale-combinations"
           ]
         },
         "remoteCi": {

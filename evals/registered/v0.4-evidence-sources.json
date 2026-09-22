@@ -2416,6 +2416,46 @@
           "path": "apps/api/test/context-fabric.integration.test.ts"
         }
       ]
+    },
+    "benchmark:p11-scale-combinations": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "scale-benchmark",
+          "job": "aggregate-scale-evidence",
+          "step": "Validate and aggregate exact scale matrix"
+        },
+        {
+          "type": "STEP",
+          "workflow": "scale-benchmark",
+          "job": "enterprise-state-scale",
+          "step": "Validate enterprise-state evidence"
+        },
+        {
+          "type": "STEP",
+          "workflow": "scale-benchmark",
+          "job": "enterprise-state-scale",
+          "step": "Execute bounded P11 scale combination probes"
+        },
+        {
+          "type": "STEP",
+          "workflow": "semantic-retrieval",
+          "job": "real-multilingual-semantic-retrieval",
+          "step": "Validate filtered ANN evidence boundaries"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "code-graph-graphify",
+          "step": "Verify real Graphify adapter"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run access boundary controlled probes"
+        }
+      ]
     }
   }
 }
