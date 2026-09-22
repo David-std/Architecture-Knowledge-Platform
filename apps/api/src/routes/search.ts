@@ -4251,7 +4251,13 @@ export function registerSearchRoutes(
             allowedContextLifecycles.has(String(row.lifecycle)) &&
             (TRUST_RANK[String(row.trust_tier)] ?? -1) >= contextMinimumTrust &&
             modeAllowsCurrentDocument(scopedRequest.mode, current) &&
-            pathAuthorizer(String(row.path), String(row.vault_id))
+            pathAuthorizer(String(row.path), String(row.vault_id)) &&
+            (!requiresSourceRead(String(row.layer), String(row.type)) ||
+              pathAllowedByScopes(
+                String(row.path),
+                String(row.vault_id),
+                rawScopes,
+              ))
           );
         })
         .map((row) => {

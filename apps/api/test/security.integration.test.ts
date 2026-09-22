@@ -554,8 +554,10 @@ describe("API security boundaries", () => {
     const deniedId = `RAW-SCOPE-DENIED-${suffix}`;
     const allowedDocumentId = randomUUID();
     const deniedDocumentId = randomUUID();
+    const clusterId = randomUUID();
+    const conflictTopic = `raw scope conflict ${suffix}`;
     const documentIds = [allowedDocumentId, deniedDocumentId];
-    let packetId: string | undefined;
+    const packetIds: string[] = [];
 
     await db.pool.query(
       `insert into api_tokens(user_id,token_hash,label,scopes)
@@ -608,6 +610,20 @@ describe("API security boundaries", () => {
         createHash("sha256").update(`denied-raw-${suffix}`).digest("hex"),
       ],
     );
+    await db.pool.query(
+      `insert into contradiction_clusters(
+         id,space_id,vault_id,topic,status
+       ) values($1,$2,$3,$4,'OPEN')`,
+      [clusterId, defaultSpace, defaultVaultId, conflictTopic],
+    );
+    await db.pool.query(
+      `insert into contradiction_members(
+         cluster_id,document_id,authority,scope
+       ) values
+         ($1,$2,'integration','raw-scope'),
+         ($1,$3,'integration','raw-scope')`,
+      [clusterId, allowedDocumentId, deniedDocumentId],
+    );
     const scopedHeaders = { authorization: `Bearer ${token}` };
     const requestFor = (query: string) => ({
       query,
@@ -650,13 +666,17 @@ describe("API security boundaries", () => {
         payload: { ...requestFor(allowedId), maxTokens: 4_000 },
       });
       expect(allowedContext.statusCode, allowedContext.body).toBe(200);
-      expect(allowedContext.json().sections).toHaveLength(1);
-      expect(allowedContext.json().sections[0]?.documentId).toBe(
-        allowedDocumentId,
+      const allowedPacket = allowedContext.json();
+      expect(allowedPacket.sections).toHaveLength(1);
+      expect(allowedPacket.sections[0]?.documentId).toBe(allowedDocumentId);
+      expect(JSON.stringify(allowedPacket.sections)).not.toContain(deniedId);
+      expect(allowedPacket.conflicts).toContain(`${conflictTopic} (OPEN)`);
+      expect(allowedPacket.gaps).toContain(
+        expect.stringContaining("authorization/truth policy"),
       );
-      packetId = allowedContext.json().packetId as string;
-      expect(packetId).toMatch(
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      packetIds.push(allowedPacket.packetId as string);
+      expect(packetIds[0]).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i,
       );
 
       const deniedContext = await app.inject({
@@ -672,6 +692,7 @@ describe("API security boundaries", () => {
       expect(deniedPacket.citations).toHaveLength(0);
       expect(JSON.stringify(deniedPacket.sections)).not.toContain(deniedId);
       expect(JSON.stringify(deniedPacket.citations)).not.toContain(deniedId);
+      packetIds.push(deniedPacket.packetId as string);
 
       await db.pool.query(
         `update api_tokens
@@ -692,17 +713,25 @@ describe("API security boundaries", () => {
       );
       const revokedPacket = await app.inject({
         method: "GET",
-        url: `/v1/generated-context-packets/${packetId}`,
+        url: `/v1/generated-context-packets/${packetIds[0]}`,
         headers: scopedHeaders,
       });
       expect(revokedPacket.statusCode).toBe(404);
       expect(JSON.stringify(revokedPacket.json())).not.toContain(allowedId);
     } finally {
-      if (packetId) {
-        await db.pool.query("delete from context_packets where id=$1", [
-          packetId,
-        ]);
+      if (packetIds.length > 0) {
+        await db.pool.query(
+          "delete from context_packets where id=any($1::uuid[])",
+          [packetIds],
+        );
       }
+      await db.pool.query(
+        "delete from contradiction_members where cluster_id=$1",
+        [clusterId],
+      );
+      await db.pool.query("delete from contradiction_clusters where id=$1", [
+        clusterId,
+      ]);
       await db.pool.query("delete from api_tokens where token_hash=$1", [hash]);
       await db.pool.query(
         "delete from knowledge_documents where id=any($1::uuid[])",
