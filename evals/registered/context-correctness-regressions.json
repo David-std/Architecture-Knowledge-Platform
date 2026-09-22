@@ -28,8 +28,12 @@
         "security-guide-v3": 0.9318
       },
       "expectations": {
-        "current": ["security-guide-v3"],
-        "asOfBeforeChange": ["security-guide-v1"],
+        "current": [
+          "security-guide-v3"
+        ],
+        "asOfBeforeChange": [
+          "security-guide-v1"
+        ],
         "mustNotResolveBy": "DENSE_SCORE_ONLY",
         "mustExposeContradiction": true,
         "readTimeSupportValidationRequired": true
@@ -41,7 +45,7 @@
       "samples": {
         "english": "Rotate the authentication token before deployment.",
         "spanish": "Rota el token de autenticación antes del despliegue.",
-        "code": "AuthTokenRotationPolicy.rotate_access_token(user_id)",
+        "code": "AuthTokenRotationPolicy.rotate_access_token(user_id); rotateAccessToken(userId); throw ERR_AUTH_ROTATION_STALE",
         "path": "/services/auth/src/token-rotation-policy.ts"
       },
       "identifiers": [
@@ -49,14 +53,20 @@
         "rotate_access_token",
         "auth-token-rotation",
         "user_id",
-        "5f4dcc3b-5aa7-4f4f-8a23-112233445566"
+        "5f4dcc3b-5aa7-4f4f-8a23-112233445566",
+        "rotateAccessToken",
+        "ERR_AUTH_ROTATION_STALE"
       ],
       "expectations": {
         "exactModelTokenizerPreferred": true,
         "approximateFallbackMustBeLabeled": true,
         "serializedContextPacketMeasured": true,
         "exactOrLexicalIdentifierChannelRequired": true,
-        "benchmarkLanguages": ["en", "es", "code"]
+        "benchmarkLanguages": [
+          "en",
+          "es",
+          "code"
+        ]
       }
     },
     {
@@ -96,7 +106,10 @@
       "id": "two-agent-structured-handoff-and-promotion",
       "kind": "TWO_AGENT_WORKSPACE_HANDOFF",
       "task": "Refactor compiler review flow while updating the Web review experience.",
-      "principals": ["agent-a", "agent-b"],
+      "principals": [
+        "agent-a",
+        "agent-b"
+      ],
       "claims": [
         {
           "principal": "agent-a",
@@ -161,7 +174,10 @@
         "after": "src/auth/token-service.ts#TokenService.rotate",
         "mustRemainCandidateWhenAmbiguous": true
       },
-      "excludedPaths": ["vendor/generated-client.ts", "dist/bundle.min.js"],
+      "excludedPaths": [
+        "vendor/generated-client.ts",
+        "dist/bundle.min.js"
+      ],
       "ambiguousCall": "src/compat/adapter.ts#refresh -> refresh",
       "expectations": {
         "crossFilePathPresent": true,
@@ -218,7 +234,11 @@
           "statusAfter": "ACTIVE"
         }
       ],
-      "staleDerivedStateRetainedPhysically": ["VECTOR", "COMMUNITY", "CACHE"],
+      "staleDerivedStateRetainedPhysically": [
+        "VECTOR",
+        "COMMUNITY",
+        "CACHE"
+      ],
       "expectations": {
         "conclusionMayRemainViaIndependentSourceB": true,
         "sourceACitationRemovedFromCurrentExplanation": true,

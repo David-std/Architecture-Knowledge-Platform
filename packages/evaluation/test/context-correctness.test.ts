@@ -14,6 +14,7 @@ interface RegressionCase {
   id: string;
   kind: string;
   denseScores?: Record<string, number>;
+  identifiers?: string[];
   expectations: Record<string, unknown>;
 }
 
@@ -80,6 +81,16 @@ describe("context correctness regression contract", () => {
       serializedContextPacketMeasured: true,
       exactOrLexicalIdentifierChannelRequired: true,
     });
+    expect(token.identifiers).toEqual(
+      expect.arrayContaining([
+        "AuthTokenRotationPolicy",
+        "rotate_access_token",
+        "rotateAccessToken",
+        "auth-token-rotation",
+        "ERR_AUTH_ROTATION_STALE",
+        "5f4dcc3b-5aa7-4f4f-8a23-112233445566",
+      ]),
+    );
 
     expectFlags(multivault, {
       authorizationSeparatesCandidatesBeforeRanking: true,
