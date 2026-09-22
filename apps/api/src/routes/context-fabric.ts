@@ -1315,6 +1315,22 @@ export function registerContextFabricRoutes(
           .code(502)
           .send({ code: "FEDERATION_PEER_IDENTITY_MISMATCH" });
       }
+      const requestedVaultIds = new Set(remoteRequest.scope.vaultIds);
+      if (
+        parsedRemote.data.hits.some(
+          (hit) => !requestedVaultIds.has(hit.vaultId),
+        )
+      ) {
+        recordFederationQuery("outbound", "failure", startedAt);
+        await markContextFabricPeerQueryFailure(
+          db,
+          peer.id,
+          "FEDERATION_PEER_SCOPE_OVERRETURN",
+        );
+        return reply
+          .code(502)
+          .send({ code: "FEDERATION_PEER_SCOPE_OVERRETURN" });
+      }
 
       await markContextFabricPeerQuerySuccess(db, peer.id);
       let result = parsedRemote.data;

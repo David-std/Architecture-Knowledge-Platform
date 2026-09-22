@@ -583,6 +583,198 @@ describe("team context fabric integration", () => {
     expect(remoteMaterialization.rows[0]?.count).toBe(0);
   });
 
+  it("fails closed when a peer over-returns a hit outside the requested vault scope", async () => {
+    const organization = await db.pool.query<{ organization_id: string }>(
+      "select organization_id from spaces where id=$1",
+      [spaceId],
+    );
+    const organizationId = organization.rows[0]?.organization_id;
+    if (!organizationId) {
+      throw new Error("FEDERATION_TEST_ORGANIZATION_MISSING");
+    }
+
+    const previousClaim = await db.pool.query<{
+      node_id: string;
+      deployment_mode: string;
+      claimed_at: Date;
+      last_seen_at: Date;
+      adopted_from: string | null;
+    }>(
+      `select node_id,deployment_mode,claimed_at,last_seen_at,adopted_from
+         from context_fabric_node_claim where singleton=true`,
+    );
+    await db.pool.query(
+      `insert into context_fabric_node_claim(
+         singleton,node_id,deployment_mode,claimed_at,last_seen_at,adopted_from
+       ) values(true,'integration-federation-node','FEDERATED_ORG',now(),now(),null)
+       on conflict(singleton) do update
+         set node_id=excluded.node_id,
+             deployment_mode=excluded.deployment_mode,
+             last_seen_at=now(),
+             adopted_from=null`,
+    );
+
+    const capabilities = ConnectorCapabilities.parse({
+      schemaVersion: 1,
+      accessMode: "REFERENCE_LIVE",
+      permissionFidelity: "SOURCE_ACL_EXACT",
+      syncFidelity: "APPEND",
+      incrementalSync: false,
+      deletionPropagation: "NONE",
+      cursorOrWebhook: false,
+      sourceAuthority: "REFERENCE",
+      writeBack: "NONE",
+      identityMapping: "EXACT",
+      dataResidency: "EXTERNAL",
+      replayable: false,
+      auditTrail: "METADATA_ONLY",
+      rateLimit: {
+        kind: "DECLARED",
+        requestsPerMinute: 120,
+        onExceeded: "FAIL_CLOSED",
+      },
+      degradation: { onUnavailable: "FAIL_CLOSED" },
+      health: "HEALTHY",
+    });
+    const credentialRef = "AKP_TEST_FEDERATION_OVERRETURN_TOKEN";
+    const peer = await upsertContextFabricPeer(db, {
+      organizationId,
+      spaceId,
+      peerKey: `overreturn-peer-${randomUUID()}`,
+      displayName: "Federation over-return fixture",
+      endpoint: "https://peer-overreturn.example.test",
+      discoveryMode: "REMOTE_QUERY",
+      trustState: "APPROVED",
+      capabilities,
+      revision: "peer:overreturn:r1",
+      credentialRef,
+      lastSeenAt: new Date(),
+    });
+    peerIds.push(peer.id);
+    const previousToken = process.env[credentialRef];
+    process.env[credentialRef] = "integration-overreturn-token";
+    const rogueVaultId = randomUUID();
+    const rogueDocumentId = randomUUID();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (_input, init) => {
+        const remoteRequest = JSON.parse(String(init?.body)) as {
+          caller: { requestId: string };
+          scope: { spaceId: string; vaultIds: string[] };
+        };
+        return new Response(
+          JSON.stringify({
+            schemaVersion: 1,
+            requestId: remoteRequest.caller.requestId,
+            remote: {
+              nodeId: peer.peerKey,
+              deploymentMode: "FEDERATED_ORG",
+              revision: "peer:overreturn:r1",
+            },
+            scope: remoteRequest.scope,
+            partial: false,
+            stale: false,
+            warnings: [],
+            indexRevisions: {},
+            hits: [
+              {
+                documentId: rogueDocumentId,
+                vaultId: rogueVaultId,
+                document: {
+                  externalId: "unauthorized-object",
+                  path: "private/unauthorized-object.md",
+                  title: "Unauthorized over-return",
+                },
+                revision: "rogue:r1",
+                title: "Unauthorized over-return",
+                type: "note",
+                trust: "HUMAN_REVIEWED",
+                lifecycle: "ACTIVE",
+                refreshStatus: "CURRENT",
+                score: 1,
+                reasons: ["remote-over-return"],
+                excerpt: "This hit is structurally valid but outside the requested vault.",
+                citations: [],
+                remoteProvenance: {
+                  nodeId: peer.peerKey,
+                  nodeRevision: "peer:overreturn:r1",
+                  documentRevision: "rogue:r1",
+                  trust: "HUMAN_REVIEWED",
+                  lifecycle: "ACTIVE",
+                },
+              },
+            ],
+            noAnswer: null,
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      },
+    );
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: `/v1/context-fabric/peers/${peer.id}/query`,
+        headers,
+        payload: {
+          schemaVersion: 1,
+          scope: { spaceId, vaultIds: [vaultId] },
+          request: { query: "federation over-return probe" },
+          budget: {
+            maxResults: 5,
+            maxWallMs: 5_000,
+            maxResponseBytes: 32_768,
+          },
+          revisionPreferences: [],
+        },
+      });
+      expect(response.statusCode).toBe(502);
+      expect(response.json()).toEqual({
+        code: "FEDERATION_PEER_SCOPE_OVERRETURN",
+      });
+      expect(fetchMock).toHaveBeenCalledOnce();
+
+      const health = await db.pool.query<{
+        failure_count: number;
+        last_failure_code: string | null;
+      }>(
+        `select failure_count,last_failure_code
+           from context_fabric_peers where id=$1`,
+        [peer.id],
+      );
+      expect(health.rows[0]).toMatchObject({
+        failure_count: 1,
+        last_failure_code: "FEDERATION_PEER_SCOPE_OVERRETURN",
+      });
+    } finally {
+      fetchMock.mockRestore();
+      if (previousToken === undefined) delete process.env[credentialRef];
+      else process.env[credentialRef] = previousToken;
+      const prior = previousClaim.rows[0];
+      if (prior) {
+        await db.pool.query(
+          `update context_fabric_node_claim
+              set node_id=$1,deployment_mode=$2,claimed_at=$3,last_seen_at=$4,
+                  adopted_from=$5
+            where singleton=true`,
+          [
+            prior.node_id,
+            prior.deployment_mode,
+            prior.claimed_at,
+            prior.last_seen_at,
+            prior.adopted_from,
+          ],
+        );
+      } else {
+        await db.pool.query(
+          "delete from context_fabric_node_claim where singleton=true",
+        );
+      }
+    }
+  });
+
   it("times out a dead federation peer and persists only a safe failure code", async () => {
     const organization = await db.pool.query<{ organization_id: string }>(
       "select organization_id from spaces where id=$1",

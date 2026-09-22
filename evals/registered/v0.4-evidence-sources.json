@@ -1143,6 +1143,24 @@
         }
       ]
     },
+    "failure:federated-scope-overreturn": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/src/routes/context-fabric.ts"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/test/context-fabric.integration.test.ts"
+        }
+      ]
+    },
     "security:federation-trust-scope": {
       "sources": [
         {

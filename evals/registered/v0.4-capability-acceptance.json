@@ -675,7 +675,8 @@
         "negativeTest": {
           "evidence": [
             "failure:federated-peer-unavailable",
-            "failure:federated-invalid-payload"
+            "failure:federated-invalid-payload",
+            "failure:federated-scope-overreturn"
           ]
         },
         "integrationTest": {
