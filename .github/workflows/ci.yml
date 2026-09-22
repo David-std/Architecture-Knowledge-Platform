@@ -86,10 +86,13 @@ jobs:
       - name: Run model routing and residency proof
         run: |
           pnpm --filter @akp/contracts exec vitest run test/model-role-policy.test.ts
+          pnpm --filter @akp/compiler exec vitest run test/model-role-runtime.test.ts
           pnpm --filter @akp/worker exec vitest run \
             test/source-model-residency.test.ts \
             test/document-intelligence-request.test.ts \
             test/compilation-stage.test.ts
+          pnpm --filter @akp/indexing exec vitest run \
+            test/community-index.integration.test.ts
       - name: Run code graph failure proof
         run: |
           pnpm --filter @akp/project-adapter exec vitest run \

@@ -2348,6 +2348,46 @@
           "step": "Run access boundary controlled probes"
         }
       ]
+    },
+    "test:community-summary-model-routing": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run model routing and residency proof"
+        }
+      ]
+    },
+    "failure:community-summary-local-only": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run model routing and residency proof"
+        }
+      ]
+    },
+    "integration:community-summary-model": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run model routing and residency proof"
+        }
+      ]
+    },
+    "security:community-summary-residency": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run model routing and residency proof"
+        }
+      ]
     }
   }
 }
