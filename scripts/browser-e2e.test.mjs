@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { setTimeout as delay } from "node:timers/promises";
@@ -703,6 +703,117 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
       assert.match(body, /Browser handoff verified/);
       assert.match(body, /Handoffs/);
     });
+
+    await browserStep(
+      t,
+      "2a author autosave survives Git failure",
+      pages,
+      async () => {
+        const canonicalHeadBefore = execFileSync(
+          "git",
+          ["-C", MANAGED_REPO, "rev-parse", "HEAD"],
+          { encoding: "utf8" },
+        ).trim();
+        const gitDirectory = path.join(MANAGED_REPO, ".git");
+        const disabledGitDirectory = path.join(
+          MANAGED_REPO,
+          ".git-browser-e2e-disabled",
+        );
+        const recoverySummary = "Browser E2E autosave recovery";
+        const recoveryContent = [
+          "---",
+          "id: BROWSER-E2E-RECOVERY",
+          "type: rule",
+          "title: Browser E2E recovery",
+          "status: ACTIVE",
+          "knowledge_layer: rules",
+          "---",
+          "",
+          "# Browser E2E recovery",
+          "",
+          "Local recovery must survive a failed governed Git save.",
+        ].join("\n");
+
+        await adminPage.goto(ADMIN_WEB + "/author");
+        await adminPage
+          .locator('select[name="vaultId"]')
+          .selectOption(fixture.vaultId);
+        await adminPage.locator('input[name="summary"]').fill(recoverySummary);
+        await adminPage
+          .locator('input[name="path"]')
+          .fill("browser/e2e-recovery.md");
+        await adminPage
+          .locator('input[name="reason"]')
+          .fill("Prove autosave recovery after Git failure");
+        await adminPage
+          .locator('textarea[name="content"]')
+          .fill(recoveryContent);
+
+        await adminPage.waitForFunction(
+          ({ expectedSummary, expectedContent }) => {
+            const raw = window.localStorage.getItem("akp.author.recovery.v1");
+            if (!raw) return false;
+            try {
+              const parsed = JSON.parse(raw);
+              return (
+                parsed.summary === expectedSummary &&
+                parsed.content === expectedContent
+              );
+            } catch {
+              return false;
+            }
+          },
+          {
+            expectedSummary: recoverySummary,
+            expectedContent: recoveryContent,
+          },
+        );
+
+        await rename(gitDirectory, disabledGitDirectory);
+        try {
+          await adminPage
+            .getByRole("button", { name: "Save: crear draft Git" })
+            .click();
+          await adminPage
+            .getByRole("alert")
+            .getByText(/Save rechazado:/)
+            .waitFor();
+        } finally {
+          await rename(disabledGitDirectory, gitDirectory);
+        }
+
+        assert.equal(
+          execFileSync("git", ["-C", MANAGED_REPO, "rev-parse", "HEAD"], {
+            encoding: "utf8",
+          }).trim(),
+          canonicalHeadBefore,
+        );
+
+        await adminPage.reload();
+        await adminPage
+          .getByText(/Recovery local restaurado\./)
+          .first()
+          .waitFor();
+        assert.equal(
+          await adminPage.locator('input[name="summary"]').inputValue(),
+          recoverySummary,
+        );
+        assert.equal(
+          await adminPage.locator('textarea[name="content"]').inputValue(),
+          recoveryContent,
+        );
+        assert.equal(
+          execFileSync("git", ["-C", MANAGED_REPO, "rev-parse", "HEAD"], {
+            encoding: "utf8",
+          }).trim(),
+          canonicalHeadBefore,
+        );
+
+        await adminPage
+          .getByRole("button", { name: "Descartar recovery local" })
+          .click();
+      },
+    );
 
     let reviewId = "";
     await browserStep(t, "2 author save and submit", pages, async () => {
