@@ -32,6 +32,95 @@ jobs:
       - run: pnpm db:migrate
       - name: Execute registered domain quality benchmark
         run: pnpm benchmark:domain-quality
+      - name: Execute P12 graph and code metric benchmark
+        env:
+          AKP_P12_DOMAIN_METRICS_REPORT: reports/ci/p12-domain-metrics.json
+        run: pnpm benchmark:p12-domain-metrics
+      - name: Validate P12 graph and code metric evidence
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const report = JSON.parse(
+            readFileSync("reports/ci/p12-domain-metrics.json", "utf8"),
+          );
+          if (
+            report.benchmark !== "AKP_P12_REGISTERED_DOMAIN_METRICS" ||
+            report.status !== "PROVEN" ||
+            report.evidenceLevel !== "REGISTERED_SYNTHETIC_RUNTIME_FIXTURE" ||
+            report.claimPolicy?.externalParityClaimAllowed !== false ||
+            report.claimPolicy?.fixtureRatesAreProductionRates !== false ||
+            report.claimPolicy?.scenarioPassRateRelabelledAsPrecisionRecall !== false
+          ) {
+            throw new Error("P12 graph/code metric claim boundary is invalid.");
+          }
+          const graphRatios = [
+            "typedPathPrecision",
+            "multiHopRecall",
+            "pprAssociativeRecall",
+            "globalCommunityCoverage",
+            "bridgeAccuracy",
+            "staleEdgeSuppression",
+            "pathExplainability",
+          ];
+          const codeRatios = [
+            "symbolResolution",
+            "callersCalleesCorrectness",
+            "dependencyPathPrecision",
+            "blastRadiusRecall",
+            "changeImpactRecall",
+            "testLinkageAccuracy",
+            "ruleDecisionBridgePrecision",
+            "staleDetection",
+          ];
+          for (const name of graphRatios) {
+            const metric = report.graph?.[name];
+            if (metric?.measured !== true || metric.value !== 1 || metric.sampleCount < 1) {
+              throw new Error("Incomplete P12 graph metric: " + name);
+            }
+          }
+          if (
+            report.graph?.unauthorizedPathRate?.measured !== true ||
+            report.graph.unauthorizedPathRate.value !== 0 ||
+            report.graph.unauthorizedPathRate.sampleCount < 1
+          ) {
+            throw new Error("P12 unauthorized-path rate must be zero in the registered fixture.");
+          }
+          for (const name of codeRatios) {
+            const metric = report.code?.[name];
+            if (metric?.measured !== true || metric.value !== 1 || metric.sampleCount < 1) {
+              throw new Error("Incomplete P12 code metric: " + name);
+            }
+          }
+          for (const name of ["buildTimeMs", "incrementalUpdateTimeMs"]) {
+            const metric = report.code?.[name];
+            if (
+              metric?.measured !== true ||
+              !Number.isFinite(metric.value) ||
+              metric.value < 0 ||
+              metric.unit !== "ms"
+            ) {
+              throw new Error("Incomplete P12 code timing metric: " + name);
+            }
+          }
+          if (
+            report.deferredToNextP12Slice?.temporalTruthMetrics !== true ||
+            report.deferredToNextP12Slice?.workspaceTeamMetrics !== true
+          ) {
+            throw new Error("P12 partial metric coverage must remain explicit.");
+          }
+          console.log(
+            JSON.stringify(
+              {
+                status: report.status,
+                graphMetrics: graphRatios.length + 1,
+                codeMetrics: codeRatios.length + 2,
+              },
+              null,
+              2,
+            ),
+          );
+          NODE
       - name: Validate registered domain quality evidence
         run: |
           node --input-type=module <<'NODE'
@@ -99,7 +188,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: domain-quality-${{ github.run_id }}
-          path: reports/ci/domain-quality-benchmark.json
+          path: |
+            reports/ci/domain-quality-benchmark.json
+            reports/ci/p12-domain-metrics.json
           if-no-files-found: error
           retention-days: 30
       - name: Stop disposable services

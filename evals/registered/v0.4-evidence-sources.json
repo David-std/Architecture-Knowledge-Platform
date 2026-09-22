@@ -2080,6 +2080,34 @@
           "path": "packages/evaluation/src/benchmark.ts"
         }
       ]
+    },
+    "benchmark:p12-graph-metrics": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Validate P12 graph and code metric evidence"
+        },
+        {
+          "type": "FILE",
+          "path": "scripts/p12-domain-metrics-benchmark.ts"
+        }
+      ]
+    },
+    "benchmark:p12-code-metrics": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Validate P12 graph and code metric evidence"
+        },
+        {
+          "type": "FILE",
+          "path": "scripts/p12-domain-metrics-benchmark.ts"
+        }
+      ]
     }
   }
 }
