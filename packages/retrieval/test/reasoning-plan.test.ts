@@ -133,10 +133,8 @@ describe("safe reasoning plan schema and validation", () => {
     );
     for (const operator of ReasoningOperator.options) {
       const contract = reasoningOperatorContract(operator);
-      expect(contract.inputSchema).toEqual({
-        schemaVersion: 1,
-        operator,
-      });
+      expect(contract.inputSchema.shape.operator.value).toBe(operator);
+      expect(typeof contract.inputSchema.safeParse).toBe("function");
       expect(contract.outputReferenceSchema).toBe("STRING_ARRAY");
       expect(contract.estimatedCost).toBeGreaterThan(0);
       expect(contract.timeoutMs).toBeGreaterThan(0);
@@ -151,6 +149,38 @@ describe("safe reasoning plan schema and validation", () => {
     expect(
       reasoningOperatorContract("SEARCH_CODE").allowedGraphDomains,
     ).toEqual(["CODE", "EPISTEMIC"]);
+  });
+
+  it("binds each registry entry to the strict executable schema for that operator", () => {
+    const schema = reasoningOperatorContract("SEARCH_CODE").inputSchema;
+    const step = {
+      id: "code",
+      dependsOn: [],
+      executionTarget: { kind: "LOCAL" as const },
+      operator: "SEARCH_CODE" as const,
+      args: {
+        query: "x'); DROP TABLE facts; --",
+        limit: 20,
+        projectId: PROJECT_ID,
+      },
+    };
+
+    expect(schema.safeParse(step).success).toBe(true);
+    expect(
+      schema.safeParse({
+        ...step,
+        operator: "SEARCH_LEXICAL",
+      }).success,
+    ).toBe(false);
+    expect(
+      schema.safeParse({
+        ...step,
+        args: {
+          ...step.args,
+          sql: "DROP TABLE facts",
+        },
+      }).success,
+    ).toBe(false);
   });
 
   it("rejects a plan whose static operator estimate already exceeds maxCost", () => {

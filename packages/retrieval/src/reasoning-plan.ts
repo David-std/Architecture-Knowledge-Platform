@@ -1,10 +1,10 @@
 import {
   ReasoningPlan,
+  ReasoningStep,
   type ContextRevisionSet,
   type ReasoningModelRole,
   type ReasoningOperator,
   type ReasoningPlan as ReasoningPlanValue,
-  type ReasoningStep,
 } from "@akp/contracts";
 
 export type ReasoningOutputKind =
@@ -20,11 +20,10 @@ export type ReasoningGraphDomain =
 export type ReasoningSourceDomain = "AUTHORIZED_SOURCE_ARTIFACT";
 export type ReasoningOperatorCapability = "RAW_READ";
 
+type ReasoningStepSchema = (typeof ReasoningStep)["options"][number];
+
 export interface ReasoningOperatorContract {
-  inputSchema: {
-    schemaVersion: 1;
-    operator: ReasoningOperator;
-  };
+  inputSchema: ReasoningStepSchema;
   inputKinds: readonly ReasoningOutputKind[] | null;
   outputKind: ReasoningOutputKind;
   outputReferenceSchema: "STRING_ARRAY";
@@ -37,12 +36,24 @@ export interface ReasoningOperatorContract {
   maxResults: number;
 }
 
+function reasoningStepSchemaFor(
+  operator: ReasoningOperator,
+): ReasoningStepSchema {
+  const schema = ReasoningStep.options.find(
+    (candidate) => candidate.shape.operator.value === operator,
+  );
+  if (!schema) {
+    throw new Error(`missing executable reasoning schema for ${operator}`);
+  }
+  return schema;
+}
+
 function operatorContract(
   operator: ReasoningOperator,
   contract: Omit<ReasoningOperatorContract, "inputSchema">,
 ): ReasoningOperatorContract {
   return {
-    inputSchema: { schemaVersion: 1, operator },
+    inputSchema: reasoningStepSchemaFor(operator),
     ...contract,
   };
 }
@@ -478,6 +489,15 @@ export function validateReasoningPlan(
   for (const [index, step] of plan.steps.entries()) {
     const stepPath = `steps.${index}`;
     const contract = reasoningOperatorContract(step.operator);
+    if (!contract.inputSchema.safeParse(step).success) {
+      issue(
+        issues,
+        "REASONING_OPERATOR_CONTRACT_SCHEMA_MISMATCH",
+        stepPath,
+        `operator ${step.operator} does not match its registered input schema`,
+      );
+      continue;
+    }
     estimatedCost += contract.estimatedCost;
     if (
       contract.requiredCapability === "RAW_READ" &&
