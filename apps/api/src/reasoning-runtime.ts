@@ -13,6 +13,7 @@ import {
   type ReasoningExecutionValue,
   type ReasoningOperatorPorts,
   type ReasoningPlanExecutionResult,
+  type ReasoningRevisionGuard,
   type ReasoningPlanValidationContext,
   type ReasoningTraceSink,
   type Tokenizer,
@@ -68,6 +69,7 @@ export interface ApplicationReasoningInput {
   retrievalConfiguration?: Record<string, unknown>;
   retrieve: ReasoningRetrievalDelegate;
   traceSink?: ReasoningTraceSink;
+  revisionGuard?: ReasoningRevisionGuard;
   tokenizer?: Tokenizer;
   contextLevel?: "L0" | "L1" | "L2" | "L3";
   contextMaxTokens?: number;
@@ -583,6 +585,7 @@ export async function executeApplicationReasoning(
   const execution = await executeReasoningPlan(plan, input.validationContext, {
     ports: createApplicationReasoningPorts(input),
     ...(input.traceSink ? { traceSink: input.traceSink } : {}),
+    ...(input.revisionGuard ? { revisionGuard: input.revisionGuard } : {}),
   });
   if (execution.status === "REJECTED") {
     throw new Error("REASONING_PLAN_VALIDATION_FAILED");

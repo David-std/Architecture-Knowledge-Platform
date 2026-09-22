@@ -86,10 +86,13 @@ export interface ReasoningTraceSink {
   persist(trace: ReasoningExecutionTrace): Promise<void>;
 }
 
+export type ReasoningRevisionGuard = () => boolean | Promise<boolean>;
+
 export interface ReasoningExecutorOptions {
   ports: ReasoningOperatorPorts;
   externalPeerPorts?: (peerId: string) => ReasoningOperatorPorts | undefined;
   traceSink?: ReasoningTraceSink;
+  revisionGuard?: ReasoningRevisionGuard;
   signal?: AbortSignal;
   now?: () => number;
 }
@@ -248,6 +251,18 @@ function linkedController(parent: AbortSignal | undefined): {
   };
 }
 
+async function assertRevisionStable(
+  guard: ReasoningRevisionGuard | undefined,
+): Promise<void> {
+  if (!guard) return;
+  try {
+    if (await guard()) return;
+  } catch {
+    // Strict reasoning cannot continue when the revision fence is indeterminate.
+  }
+  throw new Error("CONTEXT_REVISION_CHANGED");
+}
+
 function allInputIds(step: ReasoningStep): string[] {
   return [...new Set([...step.dependsOn, ...reasoningReferencedStepIds(step)])];
 }
@@ -319,6 +334,8 @@ export async function executeReasoningPlan(
       continue;
     }
 
+    await assertRevisionStable(options.revisionGuard);
+
     const targetPorts =
       step.executionTarget.kind === "LOCAL"
         ? options.ports
@@ -374,6 +391,7 @@ export async function executeReasoningPlan(
         controller,
         remainingMs,
       );
+      await assertRevisionStable(options.revisionGuard);
       const expectedKind = reasoningOutputKind(step.operator);
       if (value.kind !== expectedKind) {
         throw new Error("REASONING_OPERATOR_OUTPUT_KIND_MISMATCH");
@@ -439,6 +457,10 @@ export async function executeReasoningPlan(
     } catch (error) {
       budget.failedSteps += 1;
       const errorCode = safeCode(error, "REASONING_OPERATOR_FAILED");
+      if (errorCode === "CONTEXT_REVISION_CHANGED") {
+        controller.abort();
+        throw new Error("CONTEXT_REVISION_CHANGED");
+      }
       if (
         errorCode === "REASONING_PLAN_WALL_BUDGET_EXCEEDED" ||
         errorCode === "REASONING_PLAN_ABORTED"

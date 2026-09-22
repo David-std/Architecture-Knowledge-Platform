@@ -283,6 +283,102 @@ describe("reasoning executor", () => {
     });
   });
 
+  it("hard-stops when the revision fence changes between operators", async () => {
+    const plan: ReasoningPlan = {
+      schemaVersion: 1,
+      query: "revision-sensitive lookup",
+      intent: "CONCEPTUAL",
+      revisionSet: revisions(),
+      steps: [
+        {
+          id: "first",
+          dependsOn: [],
+          executionTarget: { kind: "LOCAL" },
+          operator: "SEARCH_LEXICAL",
+          args: { query: "first", limit: 5 },
+        },
+        {
+          id: "second",
+          dependsOn: [],
+          executionTarget: { kind: "LOCAL" },
+          operator: "SEARCH_LEXICAL",
+          args: { query: "second", limit: 5 },
+        },
+      ],
+      budget: {
+        maxSteps: 2,
+        maxWallMs: 10_000,
+        maxTokens: 100,
+        maxCost: 1,
+      },
+    };
+    let guardChecks = 0;
+    const first = vi.fn(async () => documentValue("doc:first"));
+    const second = vi.fn(async () => documentValue("doc:second"));
+
+    await expect(
+      executeReasoningPlan(plan, validationContext(), {
+        ports: {
+          SEARCH_LEXICAL: async ({ step }) =>
+            step.id === "first" ? first() : second(),
+        },
+        revisionGuard: async () => {
+          guardChecks += 1;
+          return guardChecks < 3;
+        },
+      }),
+    ).rejects.toThrow("CONTEXT_REVISION_CHANGED");
+
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).not.toHaveBeenCalled();
+    expect(guardChecks).toBe(3);
+  });
+
+  it("rethrows operator revision drift instead of degrading to partial", async () => {
+    const plan: ReasoningPlan = {
+      schemaVersion: 1,
+      query: "operator revision drift",
+      intent: "CONCEPTUAL",
+      revisionSet: revisions(),
+      steps: [
+        {
+          id: "drift",
+          dependsOn: [],
+          executionTarget: { kind: "LOCAL" },
+          operator: "SEARCH_LEXICAL",
+          args: { query: "drift", limit: 5 },
+        },
+        {
+          id: "later",
+          dependsOn: [],
+          executionTarget: { kind: "LOCAL" },
+          operator: "SEARCH_LEXICAL",
+          args: { query: "later", limit: 5 },
+        },
+      ],
+      budget: {
+        maxSteps: 2,
+        maxWallMs: 10_000,
+        maxTokens: 100,
+        maxCost: 1,
+      },
+    };
+    const later = vi.fn(async () => documentValue("doc:later"));
+
+    await expect(
+      executeReasoningPlan(plan, validationContext(), {
+        ports: {
+          SEARCH_LEXICAL: async ({ step }) => {
+            if (step.id === "later") return later();
+            throw new Error("CONTEXT_REVISION_CHANGED");
+          },
+        },
+      }),
+    ).rejects.toThrow("CONTEXT_REVISION_CHANGED");
+
+    expect(later).not.toHaveBeenCalled();
+  });
+
   it("halts later steps when actual token usage exceeds the validated runtime budget", async () => {
     const plan: ReasoningPlan = {
       schemaVersion: 1,

@@ -550,6 +550,36 @@ function sameStringSet(left: readonly string[], right: readonly string[]) {
   return left.every((value) => rightSet.has(value));
 }
 
+function sameAuthorizedVaultAccess(
+  left: AuthorizedVaultScope["accessByVault"],
+  right: AuthorizedVaultScope["accessByVault"],
+): boolean {
+  const leftVaultIds = Object.keys(left);
+  const rightVaultIds = Object.keys(right);
+  if (!sameStringSet(leftVaultIds, rightVaultIds)) return false;
+  return leftVaultIds.every((vaultId) => {
+    const expected = left[vaultId];
+    const current = right[vaultId];
+    return (
+      expected !== undefined &&
+      current !== undefined &&
+      expected.pathPrefix === current.pathPrefix &&
+      sameStringSet(expected.permissions, current.permissions)
+    );
+  });
+}
+
+function sameGraphScopeSet(
+  left: readonly GraphScope[],
+  right: readonly GraphScope[],
+): boolean {
+  const stable = (scopes: readonly GraphScope[]) =>
+    scopes.map(
+      (scope) => `${scope.vaultId}:${scope.pathPrefix ?? ""}`,
+    );
+  return sameStringSet(stable(left), stable(right));
+}
+
 function modeAllowsDocumentKind(
   mode: SearchInput["mode"],
   layer: string,
@@ -4069,6 +4099,145 @@ export function registerSearchRoutes(
               indexRows.rows,
               reasoningConfigurationVersion,
             );
+            const reasoningTruthStore = new PostgresTemporalTruthStore(db);
+            const reasoningTruthSnapshot =
+              await reasoningTruthStore.captureSnapshot(
+                requestedSpace,
+                vaultIds,
+              );
+            const reasoningProfileVersions = new Map(
+              indexRows.rows.map((row) => [
+                String(row.vault_id ?? ""),
+                String(row.retrieval_configuration_version ?? "rrf-v1"),
+              ]),
+            );
+            const reasoningRevisionGuard = async () => {
+              try {
+                const principalState = await db.pool.query<{
+                  policy_revision: number;
+                  state: string;
+                  parent_state: string | null;
+                }>(
+                  `
+                  select p.policy_revision,p.state,parent.state parent_state
+                    from principals p
+                    left join principals parent
+                      on parent.id=p.parent_principal_id
+                   where p.id=$1
+                   limit 1
+                  `,
+                  [actor.principalId],
+                );
+                const currentPrincipal = principalState.rows[0];
+                if (
+                  !currentPrincipal ||
+                  currentPrincipal.state !== "ACTIVE" ||
+                  (actor.parentPrincipalId &&
+                    currentPrincipal.parent_state !== "ACTIVE") ||
+                  Number(currentPrincipal.policy_revision) !==
+                    actor.principalPolicyRevision
+                ) {
+                  return false;
+                }
+                const currentScope =
+                  await new PostgresAuthorizationPort(db).resolveVaultScope({
+                    userId: actor.id,
+                    spaceId: requestedSpace,
+                    permission: "knowledge:read",
+                    ...(principalVaultId
+                      ? { vaultId: principalVaultId }
+                      : parsed.data.vaultId
+                        ? { vaultId: parsed.data.vaultId }
+                        : {}),
+                    vaultIds: principalVaultId
+                      ? [principalVaultId]
+                      : parsed.data.vaultIds,
+                    federated: principalVaultId
+                      ? false
+                      : parsed.data.federated,
+                  });
+                if (
+                  !sameStringSet(currentScope.vaultIds, vaultIds) ||
+                  !sameAuthorizedVaultAccess(
+                    accessByVault,
+                    currentScope.accessByVault,
+                  )
+                ) {
+                  return false;
+                }
+                const currentRawScopes = rawScopesForActor(
+                  actor,
+                  requestedSpace,
+                  currentScope.accessByVault,
+                );
+                if (!sameGraphScopeSet(rawScopes, currentRawScopes)) {
+                  return false;
+                }
+                const currentIndexRows = await db.pool.query(
+                  `
+                  select i.vault_id,i.corpus_revision,i.lexical_revision,
+                         i.vector_revision,i.graph_revision,
+                         i.context_pack_revision,i.status,i.warnings,
+                         i.retrieval_configuration_version,
+                         (
+                           select c.community_revision
+                             from community_index_revisions c
+                            where c.space_id=i.space_id
+                              and c.vault_id=i.vault_id
+                              and c.status='ACTIVE' and c.stale=false
+                              and c.graph_revision=i.graph_revision
+                            order by c.activated_at desc nulls last,
+                                     c.updated_at desc
+                            limit 1
+                         ) community_revision
+                    from vault_index_revisions i
+                   where i.space_id=$1 and i.vault_id=any($2::uuid[])
+                   order by i.vault_id
+                  `,
+                  [requestedSpace, vaultIds],
+                );
+                if (currentIndexRows.rows.length !== vaultIds.length) {
+                  return false;
+                }
+                if (
+                  currentIndexRows.rows.some(
+                    (row) =>
+                      reasoningProfileVersions.get(
+                        String(row.vault_id ?? ""),
+                      ) !==
+                      String(
+                        row.retrieval_configuration_version ?? "rrf-v1",
+                      ),
+                  )
+                ) {
+                  return false;
+                }
+                const currentCombinedIndex = combineVaultIndexRows(
+                  currentIndexRows.rows,
+                );
+                const currentRevisionSet = reasoningRevisionSetFromRows(
+                  requestedSpace,
+                  currentIndexRows.rows,
+                  String(
+                    currentCombinedIndex.retrieval_configuration_version ??
+                      "rrf-v1",
+                  ),
+                );
+                if (
+                  !sameReasoningRevisionSet(
+                    reasoningRevisionSet,
+                    currentRevisionSet,
+                  )
+                ) {
+                  return false;
+                }
+                return reasoningTruthStore.snapshotUnchanged(
+                  reasoningTruthSnapshot,
+                );
+              } catch {
+                return false;
+              }
+            };
             const reasoned = await executeApplicationReasoning({
               request: { ...scopedRequest, intent },
               revisionSet: reasoningRevisionSet,
@@ -4118,6 +4287,7 @@ export function registerSearchRoutes(
                 source: "v1-context",
               },
               retrieve: reasoningRetrieval,
+              revisionGuard: reasoningRevisionGuard,
               traceSink: {
                 persist: async (trace) => {
                   await db.pool.query(
@@ -4196,6 +4366,9 @@ export function registerSearchRoutes(
             if (
               !sameReasoningRevisionSet(reasoningRevisionSet, finalRevisionSet)
             ) {
+              throw new Error("CONTEXT_REVISION_CHANGED");
+            }
+            if (!(await reasoningRevisionGuard())) {
               throw new Error("CONTEXT_REVISION_CHANGED");
             }
             const verifiedTrace = await db.pool.query(

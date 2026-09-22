@@ -187,6 +187,33 @@ describe("reasoning application runtime", () => {
     });
   }
 
+  it("propagates revision drift as a hard halt instead of partial context", async () => {
+    let guardChecks = 0;
+    let retrievalCalls = 0;
+
+    await expect(
+      executeApplicationReasoning({
+        request: request("CONCEPTUAL"),
+        revisionSet: revisions(),
+        validationContext: validationContext(),
+        capabilities: capabilities("CONCEPTUAL"),
+        corpusRevision: "corpus-1",
+        indexRevisions: { corpus: "corpus-1" },
+        revisionGuard: async () => {
+          guardChecks += 1;
+          return guardChecks < 3;
+        },
+        retrieve: async () => {
+          retrievalCalls += 1;
+          return [hit("revision-guard")];
+        },
+      }),
+    ).rejects.toThrow("CONTEXT_REVISION_CHANGED");
+
+    expect(retrievalCalls).toBe(1);
+    expect(guardChecks).toBe(3);
+  });
+
   it("filters unsupported hits before context assembly", async () => {
     const trusted = hit("trusted");
     const untrusted = hit("untrusted", {
