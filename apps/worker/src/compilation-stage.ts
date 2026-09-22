@@ -246,6 +246,20 @@ function modelRouteMetadata(
   };
 }
 
+export function modelProviderMetricAttributes(
+  candidate: KnowledgeCompilerRouteCandidate,
+  status: "success" | "failure",
+  fallbackUsed: boolean,
+): Record<string, string> {
+  return {
+    role: candidate.descriptor.role,
+    provider: candidate.descriptor.provider,
+    model: candidate.descriptor.model,
+    status,
+    fallback_used: String(fallbackUsed),
+  };
+}
+
 function assertCompilerProfileBindingUnchanged(
   before: CompilerKnowledgeProfileContext,
   after: CompilerKnowledgeProfileContext,
@@ -508,6 +522,7 @@ export async function buildCompilationStage(
     | undefined;
   let lastProviderError: unknown;
   for (const [index, candidate] of decision.eligible.entries()) {
+    const attemptStartedAt = performance.now();
     try {
       const configured = candidate.createConfigured();
       compiled = await withSpan(
@@ -525,11 +540,21 @@ export async function buildCompilationStage(
         candidate: candidate.descriptor,
         outcome: "SUCCEEDED",
       });
-      modelRouteTelemetry.counter("model_provider_attempts_total", 1, {
-        role: "KNOWLEDGE_COMPILE",
-        outcome: "success",
-        degraded: String(index > 0),
-      });
+      const successAttributes = modelProviderMetricAttributes(
+        candidate,
+        "success",
+        index > 0,
+      );
+      modelRouteTelemetry.counter(
+        "model_provider_attempts_total",
+        1,
+        successAttributes,
+      );
+      modelRouteTelemetry.histogram(
+        "model_provider_attempt_latency_ms",
+        Math.max(0, performance.now() - attemptStartedAt),
+        successAttributes,
+      );
       break;
     } catch (error) {
       const errorCode = knowledgeCompilerProviderFailureCode(error);
@@ -538,11 +563,21 @@ export async function buildCompilationStage(
         outcome: "FAILED",
         ...(errorCode ? { errorCode } : {}),
       });
-      modelRouteTelemetry.counter("model_provider_attempts_total", 1, {
-        role: "KNOWLEDGE_COMPILE",
-        outcome: "failure",
-        degraded: String(index > 0),
-      });
+      const failureAttributes = modelProviderMetricAttributes(
+        candidate,
+        "failure",
+        index > 0,
+      );
+      modelRouteTelemetry.counter(
+        "model_provider_attempts_total",
+        1,
+        failureAttributes,
+      );
+      modelRouteTelemetry.histogram(
+        "model_provider_attempt_latency_ms",
+        Math.max(0, performance.now() - attemptStartedAt),
+        failureAttributes,
+      );
       lastProviderError = error;
       const hasCompatibleFallback = index + 1 < decision.eligible.length;
       if (

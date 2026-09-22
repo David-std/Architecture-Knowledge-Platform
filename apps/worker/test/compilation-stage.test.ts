@@ -7,7 +7,10 @@ import {
   type KnowledgeCompilerRouteCandidate,
 } from "@akp/compiler";
 import { DocumentArtifact, ModelRolePolicy } from "@akp/contracts";
-import { buildCompilationStage } from "../src/compilation-stage.js";
+import {
+  buildCompilationStage,
+  modelProviderMetricAttributes,
+} from "../src/compilation-stage.js";
 
 const SPACE_ID = "11111111-1111-4111-8111-111111111111";
 const VAULT_ID = "22222222-2222-4222-8222-222222222222";
@@ -102,6 +105,41 @@ function stageInput() {
 }
 
 describe("compilation stage", () => {
+  it("emits bounded provider telemetry dimensions without endpoint or source labels", () => {
+    const candidate = compilerCandidate(
+      {
+        compiler: { compile: vi.fn() },
+        descriptor: {
+          role: "KNOWLEDGE_COMPILE",
+          provider: "openai-compatible",
+          model: "local-compiler",
+          endpointRef: "private-endpoint-ref",
+          policyDataResidency: "LOCAL_ONLY",
+          dataResidency: "LOCAL_ONLY",
+          configurationHash: "f".repeat(64),
+        },
+      },
+      "LOCAL_ONLY",
+    );
+
+    const attributes = modelProviderMetricAttributes(
+      candidate,
+      "success",
+      true,
+    );
+
+    expect(attributes).toEqual({
+      role: "KNOWLEDGE_COMPILE",
+      provider: "openai-compatible",
+      model: "local-compiler",
+      status: "success",
+      fallback_used: "true",
+    });
+    expect(JSON.stringify(attributes)).not.toContain("private-endpoint-ref");
+    expect(JSON.stringify(attributes)).not.toContain(SOURCE_ID);
+    expect(JSON.stringify(attributes)).not.toContain(VAULT_ID);
+  });
+
   it("keeps the provenance-preserving source-summary fallback explicit", async () => {
     const query = vi
       .fn()
