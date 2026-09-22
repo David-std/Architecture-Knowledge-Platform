@@ -412,7 +412,10 @@ describe("query transformation retrieval", () => {
         expect(JSON.stringify(packet.citations)).not.toContain(
           "QuantumShieldX",
         );
-        expect(packet.citations.length).toBeGreaterThan(0);
+        expect(packet.citations).toEqual([]);
+        expect(packet.requiredActions).toContain(
+          "Do not claim vault authority without evidence.",
+        );
 
         const trace = await db.pool.query<{
           transform_kind: string;
@@ -435,7 +438,7 @@ describe("query transformation retrieval", () => {
         expect(trace.rows[0]?.variants[0]?.query).toContain("QuantumShieldX");
         expect(
           packet.sections.every(
-            (section) => section.sourceOrEvidenceIds.length > 0,
+            (section) => section.sourceOrEvidenceIds.length === 0,
           ),
         ).toBe(true);
       } finally {
