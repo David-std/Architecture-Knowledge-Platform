@@ -148,9 +148,9 @@ describe("safe reasoning plan schema and validation", () => {
       allowedSourceDomains: ["AUTHORIZED_SOURCE_ARTIFACT"],
       maxResults: 100,
     });
-    expect(reasoningOperatorContract("SEARCH_CODE").allowedGraphDomains).toEqual(
-      ["CODE", "EPISTEMIC"],
-    );
+    expect(
+      reasoningOperatorContract("SEARCH_CODE").allowedGraphDomains,
+    ).toEqual(["CODE", "EPISTEMIC"]);
   });
 
   it("rejects a plan whose static operator estimate already exceeds maxCost", () => {

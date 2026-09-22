@@ -15,11 +15,7 @@ export type ReasoningOutputKind =
   | "CONTEXT_PACKET";
 
 export type ReasoningGraphDomain =
-  | "EPISTEMIC"
-  | "CODE"
-  | "TEMPORAL"
-  | "COMMUNITY"
-  | "WORK";
+  "EPISTEMIC" | "CODE" | "TEMPORAL" | "COMMUNITY" | "WORK";
 
 export type ReasoningSourceDomain = "AUTHORIZED_SOURCE_ARTIFACT";
 export type ReasoningOperatorCapability = "RAW_READ";
