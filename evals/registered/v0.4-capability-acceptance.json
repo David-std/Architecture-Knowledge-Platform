@@ -450,10 +450,7 @@
           "evidence": ["recovery:derived-index-rebuild"]
         },
         "securityTest": {
-          "evidence": [
-            "security:ppr-no-leak",
-            "security:retrieval-trace-scope"
-          ]
+          "evidence": ["security:ppr-no-leak", "security:retrieval-trace-scope"]
         },
         "operatorSurface": {
           "evidence": ["surface:retrieval-diagnostics"]
