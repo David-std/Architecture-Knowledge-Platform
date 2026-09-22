@@ -873,6 +873,127 @@ describe("federated multi-graph substrate integration", () => {
   );
 
   it.skipIf(!databaseUrl)(
+    "serializes concurrent graph generation activation against one base revision",
+    async () => {
+      if (!databaseUrl) return;
+      const db = new Postgres(databaseUrl);
+      const fixture = await createFixture(db);
+      const store = new PostgresFederatedGraphStore(db);
+      try {
+        const scopeId = "code:activation-race";
+        const baseRevision = "activation-race-r1";
+        const baseIdentity = identity(
+          "CODE",
+          scopeId,
+          "function",
+          "RaceTarget.run",
+          baseRevision,
+        );
+        const base = await store.build(
+          artifact({
+            graphDomain: "CODE",
+            spaceId: fixture.spaceId,
+            vaultId: fixture.vaultA,
+            scopeId,
+            revision: baseRevision,
+            nodes: [
+              node(
+                baseIdentity,
+                fixture.vaultA,
+                "allowed/code/RaceTarget.run",
+              ),
+            ],
+          }),
+        );
+        expect(base.lifecycle).toBe("ACTIVE");
+
+        const successor = (revision: string) =>
+          artifact({
+            graphDomain: "CODE",
+            spaceId: fixture.spaceId,
+            vaultId: fixture.vaultA,
+            scopeId,
+            revision,
+            nodes: [
+              node(
+                identity(
+                  "CODE",
+                  scopeId,
+                  "function",
+                  "RaceTarget.run",
+                  revision,
+                ),
+                fixture.vaultA,
+                "allowed/code/RaceTarget.run",
+              ),
+            ],
+          });
+
+        const results = await Promise.allSettled([
+          store.update({
+            baseRevision,
+            next: successor("activation-race-r2"),
+          }),
+          store.update({
+            baseRevision,
+            next: successor("activation-race-r3"),
+          }),
+        ]);
+        const fulfilled = results.filter(
+          (
+            result,
+          ): result is PromiseFulfilledResult<GraphProjectionRevision> =>
+            result.status === "fulfilled",
+        );
+        const rejected = results.filter(
+          (result): result is PromiseRejectedResult =>
+            result.status === "rejected",
+        );
+
+        expect(fulfilled).toHaveLength(1);
+        expect(rejected).toHaveLength(1);
+        expect(String(rejected[0]?.reason)).toContain(
+          "GRAPH_PROJECTION_BASE_REVISION_CHANGED",
+        );
+
+        const state = await store.revisionState(
+          "CODE",
+          fixture.spaceId,
+          scopeId,
+        );
+        expect(state.activeRevision).toBe(fulfilled[0]?.value.revision);
+
+        const rows = await db.pool.query<{
+          revision: string;
+          lifecycle: string;
+        }>(
+          `select revision,lifecycle
+             from federated_graph_projection_revisions
+            where space_id=$1 and graph_domain='CODE' and scope_id=$2
+            order by revision`,
+          [fixture.spaceId, scopeId],
+        );
+        expect(
+          rows.rows.filter((row) => row.lifecycle === "ACTIVE"),
+        ).toEqual([
+          expect.objectContaining({
+            revision: fulfilled[0]?.value.revision,
+          }),
+        ]);
+        expect(
+          rows.rows.find((row) => row.revision === baseRevision),
+        ).toMatchObject({ lifecycle: "RETIRED" });
+        expect(
+          rows.rows.filter((row) => row.lifecycle === "FAILED"),
+        ).toHaveLength(1);
+      } finally {
+        await cleanupFixture(db, fixture).catch(() => undefined);
+        await db.close();
+      }
+    },
+  );
+
+  it.skipIf(!databaseUrl)(
     "keeps identities scoped across vaults, rejects cross-space bridges, and governs stale revision use",
     async () => {
       if (!databaseUrl) return;

@@ -1027,6 +1027,7 @@ export class PostgresFederatedGraphStore
 
   async build(
     input: GraphProjectionArtifact,
+    expectedBaseRevision?: string,
   ): Promise<GraphProjectionRevision> {
     validateProjectionArtifact(input);
     const requested = await this.db.pool.query<ProjectionRow>(
@@ -1103,6 +1104,21 @@ export class PostgresFederatedGraphStore
           "select pg_advisory_xact_lock(hashtextextended($1,0))",
           [`${input.spaceId}|${input.graphDomain}|${input.scopeId}`],
         );
+        if (expectedBaseRevision !== undefined) {
+          const activeBase = await client.query<{ revision: string }>(
+            `select revision
+               from federated_graph_projection_revisions
+              where space_id=$1 and graph_domain=$2 and scope_id=$3
+                and lifecycle='ACTIVE'
+              order by activated_at desc nulls last,id desc
+              limit 1
+              for update`,
+            [input.spaceId, input.graphDomain, input.scopeId],
+          );
+          if (activeBase.rows[0]?.revision !== expectedBaseRevision) {
+            throw graphError("GRAPH_PROJECTION_BASE_REVISION_CHANGED");
+          }
+        }
         const locked = await projectionRow(
           client,
           input.spaceId,
@@ -1495,15 +1511,7 @@ export class PostgresFederatedGraphStore
     baseRevision: string;
     next: GraphProjectionArtifact;
   }): Promise<GraphProjectionRevision> {
-    const state = await this.revisionState(
-      input.next.graphDomain,
-      input.next.spaceId,
-      input.next.scopeId,
-    );
-    if (state.activeRevision !== input.baseRevision) {
-      throw graphError("GRAPH_PROJECTION_BASE_REVISION_CHANGED");
-    }
-    return this.build(input.next);
+    return this.build(input.next, input.baseRevision);
   }
 
   async markStale(
