@@ -714,8 +714,7 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
           ["-C", MANAGED_REPO, "rev-parse", "HEAD"],
           { encoding: "utf8" },
         ).trim();
-        const disabledRepository =
-          MANAGED_REPO + ".browser-e2e-disabled";
+        const disabledRepository = MANAGED_REPO + ".browser-e2e-disabled";
         const recoverySummary = "Browser E2E autosave recovery";
         const recoveryContent = [
           "---",
