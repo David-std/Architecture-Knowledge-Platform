@@ -165,6 +165,13 @@ jobs:
           AKP_RUNTIME_RETRIEVAL_REPORT=reports/ci/runtime-retrieval-benchmark.json \
             pnpm benchmark:retrieval:runtime \
             2>&1 | tee reports/ci/runtime-retrieval-benchmark.log
+      - name: Measure baseline ContextPacket placement
+        shell: bash
+        run: |
+          set -o pipefail
+          AKP_CONTEXT_PLACEMENT_REPORT=reports/ci/context-placement-baseline.json \
+            pnpm benchmark:context-placement \
+            2>&1 | tee reports/ci/context-placement-baseline.log
       - name: Validate incremental vector update evidence
         shell: bash
         run: |
