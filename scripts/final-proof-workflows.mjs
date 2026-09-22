@@ -11,6 +11,7 @@ const requiredWorkflows = [
   "concurrency-benchmark",
   "document-intelligence-benchmark",
   "agent-ab",
+  "long-context-placement",
   "agent-arena",
   "domain-quality",
   "federation-two-node",

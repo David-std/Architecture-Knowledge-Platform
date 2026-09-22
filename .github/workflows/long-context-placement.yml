@@ -1,0 +1,179 @@
+name: long-context-placement
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  long-context-placement:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      AKP_LOCAL_AGENT_MODEL: onnx-community/Qwen2.5-0.5B-Instruct
+      AKP_LOCAL_AGENT_MODEL_REVISION: cc5cc01a65cc3ff17bdb73a7de33d879f62599b0
+      AKP_LOCAL_AGENT_DTYPE: q4
+      AKP_LOCAL_AGENT_PORT: "18082"
+      AKP_CONTEXT_TOKENIZER_MODEL: onnx-community/Qwen2.5-0.5B-Instruct
+      AKP_CONTEXT_TOKENIZER_REVISION: cc5cc01a65cc3ff17bdb73a7de33d879f62599b0
+      AKP_LONG_CONTEXT_PROVIDER_BASE_URL: http://127.0.0.1:18082
+      AKP_LONG_CONTEXT_PROVIDER_MODEL: onnx-community/Qwen2.5-0.5B-Instruct
+      AKP_LONG_CONTEXT_MODEL_MAX_TOKENS: "32768"
+      AKP_LONG_CONTEXT_TARGET_MIN_RATIO: "0.70"
+      AKP_LONG_CONTEXT_TARGET_MAX_RATIO: "0.78"
+      AKP_LONG_CONTEXT_PLACEMENT_REPORT: reports/ci/long-context-placement.json
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Prepare long-context evidence directory
+        run: mkdir -p reports/ci
+      - name: Start pinned local real-model provider
+        shell: bash
+        run: |
+          pnpm --filter @akp/retrieval exec tsx scripts/local-agent-provider.ts \
+            > reports/ci/long-context-provider.log 2>&1 &
+          echo $! > reports/ci/long-context-provider.pid
+          for attempt in $(seq 1 120); do
+            if curl --fail --silent http://127.0.0.1:18082/health \
+              > reports/ci/long-context-provider-health.json; then
+              cat reports/ci/long-context-provider-health.json
+              exit 0
+            fi
+            sleep 5
+          done
+          cat reports/ci/long-context-provider.log >&2
+          exit 1
+      - name: Benchmark mandatory evidence placement near model context threshold
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm benchmark:long-context-placement \
+            2>&1 | tee reports/ci/long-context-placement.log
+      - name: Validate long-context placement evidence
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const report = JSON.parse(
+            readFileSync("reports/ci/long-context-placement.json", "utf8"),
+          );
+          const provider = JSON.parse(
+            readFileSync("reports/ci/long-context-provider-health.json", "utf8"),
+          );
+          if (
+            report.status !== "PROVEN" ||
+            report.productionDefaultsChanged !== false ||
+            report.recommendedAssemblyOrdering !== null
+          ) {
+            throw new Error("Long-context benchmark evidence discipline failed.");
+          }
+          if (
+            report.model?.id !== "onnx-community/Qwen2.5-0.5B-Instruct" ||
+            report.model?.revision !== "cc5cc01a65cc3ff17bdb73a7de33d879f62599b0" ||
+            report.model?.contextWindowTokens !== 32768 ||
+            provider.revision !== report.model.revision ||
+            provider.dtype !== "q4"
+          ) {
+            throw new Error("Long-context benchmark did not use the pinned model configuration.");
+          }
+          if (
+            report.tokenizer?.quality !== "EXACT" ||
+            report.tokenizer?.approximate !== false ||
+            report.tokenizer?.chatTemplateApplied !== true
+          ) {
+            throw new Error("Long-context benchmark did not use the exact chat tokenizer.");
+          }
+          const observations = Array.isArray(report.observations)
+            ? report.observations
+            : [];
+          if (observations.length !== 3) {
+            throw new Error("Long-context benchmark must contain exactly three placement arms.");
+          }
+          const placements = new Set(observations.map((item) => item.placement));
+          for (const required of ["EARLY", "MIDDLE", "LATE"]) {
+            if (!placements.has(required)) {
+              throw new Error(`Missing long-context placement arm ${required}.`);
+            }
+          }
+          const evidenceHashes = new Set(
+            observations.map((item) => item.evidenceSetHash),
+          );
+          if (evidenceHashes.size !== 1) {
+            throw new Error("Long-context arms did not use the same evidence set.");
+          }
+          for (const observation of observations) {
+            if (
+              !Number.isFinite(observation.promptTokens) ||
+              observation.contextWindowUtilization < report.target.minRatio ||
+              observation.contextWindowUtilization > report.target.maxRatio ||
+              typeof observation.constraintRecalled !== "boolean" ||
+              !Number.isFinite(observation.latencyMs)
+            ) {
+              throw new Error(`Invalid long-context observation ${observation.placement}.`);
+            }
+          }
+          if (
+            !Number.isFinite(report.aggregate?.constraintRecall) ||
+            report.aggregate.constraintRecall < 0 ||
+            report.aggregate.constraintRecall > 1
+          ) {
+            throw new Error("Long-context aggregate recall is invalid.");
+          }
+          console.log(
+            JSON.stringify(
+              {
+                status: report.status,
+                model: report.model,
+                sourcePacket: report.sourcePacket,
+                observations: observations.map((item) => ({
+                  placement: item.placement,
+                  promptTokens: item.promptTokens,
+                  contextWindowUtilization: item.contextWindowUtilization,
+                  mandatorySectionFraction: item.mandatorySectionFraction,
+                  constraintRecalled: item.constraintRecalled,
+                  latencyMs: item.latencyMs,
+                })),
+                aggregate: report.aggregate,
+              },
+              null,
+              2,
+            ),
+          );
+          NODE
+      - name: Capture long-context diagnostics
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          if [ -f reports/ci/long-context-provider.log ]; then
+            tail -n 300 reports/ci/long-context-provider.log \
+              > reports/ci/long-context-provider-tail.log
+          fi
+      - name: Upload long-context evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: long-context-placement-${{ github.run_id }}
+          path: reports/ci
+          if-no-files-found: error
+          retention-days: 14
+      - name: Stop local provider
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          if [ -f reports/ci/long-context-provider.pid ]; then
+            kill "$(cat reports/ci/long-context-provider.pid)" 2>/dev/null
+          fi
