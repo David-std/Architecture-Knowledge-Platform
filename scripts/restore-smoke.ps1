@@ -156,6 +156,437 @@ $bundleRequired = [bool]$configuredManagedRepository -or [bool]$manifest.managed
 if ($bundleRequired -and $artifactNames -notcontains "managed-knowledge.bundle") {
   throw "Managed repository recovery is required but the verified bundle is absent."
 }
+if (
+  $bundleRequired -and
+  [string]$manifest.managedRepository.headRevision -notmatch '^[a-fA-F0-9]{40}
+
+$database = "akp_restore_smoke_$([guid]::NewGuid().ToString('N'))"
+$dumpTemporaryPath = "/tmp/akp-restore-$([guid]::NewGuid().ToString('N')).dump"
+$restoredDocuments = 0
+$restoredMigrations = @()
+try {
+  docker exec $PostgresContainer psql -U akp -d postgres -v ON_ERROR_STOP=1 -c "create database `"$database`";"
+  if ($LASTEXITCODE -ne 0) { throw "Could not create isolated restore database." }
+  docker cp (Join-Path $source "postgres.dump") "${PostgresContainer}:$dumpTemporaryPath"
+  if ($LASTEXITCODE -ne 0) { throw "Could not copy PostgreSQL recovery dump." }
+  docker exec $PostgresContainer pg_restore -U akp -d $database --no-owner $dumpTemporaryPath
+  if ($LASTEXITCODE -ne 0) { throw "PostgreSQL recovery restore failed." }
+  $documentResult = docker exec $PostgresContainer psql -U akp -d $database -At -v ON_ERROR_STOP=1 -c "select count(*) from knowledge_documents;"
+  if ($LASTEXITCODE -ne 0) { throw "Could not count restored knowledge documents." }
+  $restoredDocuments = [int]$documentResult.Trim()
+  $migrationRows = @(docker exec $PostgresContainer psql -U akp -d $database -At -F '|' -v ON_ERROR_STOP=1 -c "select name || '|' || coalesce(checksum,'') from schema_migrations order by name;")
+  if ($LASTEXITCODE -ne 0) { throw "Could not read restored migration inventory." }
+  $restoredMigrations = @(
+    $migrationRows |
+      ForEach-Object { $_.ToString().Trim() } |
+      Where-Object { $_ } |
+      ForEach-Object {
+        $parts = $_ -split '\|', 2
+        if ($parts.Count -ne 2) { throw "Restored migration inventory has an invalid row." }
+        [ordered]@{ name = $parts[0]; checksum = $parts[1] }
+      }
+  )
+  foreach ($requiredTable in $requiredDurableTables) {
+    $safeTable = $requiredTable.Replace("'", "''")
+    $present = (docker exec $PostgresContainer psql -U akp -d $database -At -v ON_ERROR_STOP=1 -c "select to_regclass('public.$safeTable') is not null;").Trim()
+    if ($LASTEXITCODE -ne 0 -or $present -ne "t") {
+      throw "Restored database is missing required durable state table: $requiredTable"
+    }
+  }
+
+  if ($null -ne $recoveryProof) {
+    $expected = $recoveryProof.expected
+    $vaultId = [string]$recoveryProof.vaultId
+    $spaceId = [string]$recoveryProof.spaceId
+    if (
+      $vaultId -notmatch '^[0-9a-fA-F-]{36}$' -or
+      $spaceId -notmatch '^[0-9a-fA-F-]{36}$'
+    ) {
+      throw "Recovery state manifest contains an invalid scope."
+    }
+
+    $documentCount = [int](Invoke-RestoredScalar -Database $database -Sql "select count(*) from knowledge_documents where vault_id='$vaultId';")
+    if ($documentCount -lt [int]$expected.minimumKnowledgeDocuments) {
+      throw "Restored document state is below the recovery sentinel minimum."
+    }
+
+    $profileStatus = Invoke-RestoredScalar -Database $database -Sql "select status from knowledge_profile_revisions where id='$($expected.profileRevisionId)' and vault_id='$vaultId';"
+    if ($profileStatus -ne "ACTIVE") {
+      throw "Restored profile sentinel is missing or inactive."
+    }
+
+    $sessionPurpose = Invoke-RestoredScalar -Database $database -Sql "select purpose from agent_sessions where id='$($expected.sessionId)' and vault_id='$vaultId';"
+    if ($sessionPurpose -ne "Recovery proof workspace") {
+      throw "Restored workspace session sentinel is missing."
+    }
+
+    $revisionHash = Invoke-RestoredScalar -Database $database -Sql "select revision_set_hash from workspace_context_revision_sets where session_id='$($expected.sessionId)' and vault_id='$vaultId';"
+    if ($revisionHash -notmatch '^[a-f0-9]{64}$') {
+      throw "Restored context revision sentinel is missing."
+    }
+
+    $claimFence = Invoke-RestoredScalar -Database $database -Sql "select fencing_token from workspace_claims where id='$($expected.claimId)' and session_id='$($expected.sessionId)';"
+    if ([int64]$claimFence -ne 7) {
+      throw "Restored workspace claim sentinel has the wrong fence."
+    }
+
+    $profileBinding = Invoke-RestoredScalar -Database $database -Sql "select coalesce(active_knowledge_profile_revision_id::text,'') from vaults where id='$vaultId';"
+    if ($profileBinding -ne [string]$expected.profileRevisionId) {
+      throw "Restored active profile binding differs."
+    }
+
+    $handoffType = Invoke-RestoredScalar -Database $database -Sql "select event_type from workspace_events where id=$($expected.handoffEventId) and session_id='$($expected.sessionId)';"
+    if ($handoffType -ne "CLAIM_HANDOFF") {
+      throw "Restored structured handoff sentinel is missing."
+    }
+
+    $promotionType = Invoke-RestoredScalar -Database $database -Sql "select event_type from workspace_events where id=$($expected.promotionEventId) and session_id='$($expected.sessionId)';"
+    if ($promotionType -ne "PROMOTION_REQUESTED") {
+      throw "Restored promotion request sentinel is missing."
+    }
+
+    $graphLifecycle = Invoke-RestoredScalar -Database $database -Sql "select lifecycle from federated_graph_projection_revisions where id='$($expected.graphProjectionRevisionId)' and vault_id='$vaultId';"
+    if ($graphLifecycle -ne "ACTIVE") {
+      throw "Restored graph revision sentinel is missing or inactive."
+    }
+
+    $assuranceStatus = Invoke-RestoredScalar -Database $database -Sql "select status from assurance_findings where id='$($expected.assuranceFindingId)' and vault_id='$vaultId';"
+    if ($assuranceStatus -ne "OPEN") {
+      throw "Restored assurance finding sentinel is missing."
+    }
+
+    $draftStatus = Invoke-RestoredScalar -Database $database -Sql "select status from workspace_offline_drafts where id='$($expected.offlineDraftId)' and session_id='$($expected.sessionId)';"
+    if ($draftStatus -ne "QUEUED") {
+      throw "Restored offline draft sentinel is missing."
+    }
+
+    $checkpoint = Invoke-RestoredScalar -Database $database -Sql "select applied_sequence from source_connector_checkpoints where connector_id='$($expected.connectorId)';"
+    if ([int64]$checkpoint -ne [int64]$expected.connectorCheckpoint) {
+      throw "Restored connector checkpoint sentinel differs."
+    }
+
+    $connectorEventStatus = Invoke-RestoredScalar -Database $database -Sql "select status from source_connector_events where id='$($expected.connectorEventId)' and connector_id='$($expected.connectorId)';"
+    if ($connectorEventStatus -ne "PENDING") {
+      throw "Restored connector event sentinel is missing."
+    }
+
+    $peer = Invoke-RestoredScalar -Database $database -Sql "select coalesce(credential_ref,'') || '|' || failure_count::text from context_fabric_peers where id='$($expected.peerId)' and space_id='$spaceId';"
+    if ($peer -ne "$($expected.peerCredentialRef)|$($expected.peerFailureCount)") {
+      throw "Restored federation peer sentinel differs."
+    }
+
+    $truthHead = Invoke-RestoredScalar -Database $database -Sql "select revision_hash from truth_revision_heads where vault_id='$vaultId';"
+    if ($truthHead -ne [string]$expected.truthRevisionHash) {
+      throw "Restored truth revision head differs."
+    }
+
+    $truthFact = Invoke-RestoredScalar -Database $database -Sql "select lifecycle from temporal_facts where id='$($expected.temporalFactId)' and support_set_id='$($expected.truthSupportSetId)';"
+    if ($truthFact -ne "ACTIVE") {
+      throw "Restored temporal truth sentinel is missing."
+    }
+  }
+} finally {
+  & docker exec $PostgresContainer rm -f $dumpTemporaryPath *> $null
+  & docker exec $PostgresContainer psql -U akp -d postgres -v ON_ERROR_STOP=1 -c "drop database if exists `"$database`";" *> $null
+}
+# An empty but migrated installation is a valid recovery target. The count
+# query above still proves that the restored schema contains the canonical
+# knowledge_documents table; populated-corpus checks belong to the runtime
+# verification/evaluation gates, not to backup integrity.
+if ($restoredMigrations.Count -ne [int]$manifest.database.migrationCount) {
+  throw "Restored migration count ($($restoredMigrations.Count)) does not equal backup manifest count ($($manifest.database.migrationCount))."
+}
+for ($index = 0; $index -lt $expectedMigrations.Count; $index += 1) {
+  $expected = $expectedMigrations[$index]
+  $actual = $restoredMigrations[$index]
+  if ($expected.name -ne $actual.name -or [string]$expected.checksum -ne [string]$actual.checksum) {
+    throw "Restored migration inventory differs from the verified backup manifest at position $index."
+  }
+}
+
+$restoreVolume = "akp-restore-smoke-$([guid]::NewGuid().ToString('N'))"
+$restoreHelper = "akp-restore-helper-$([guid]::NewGuid().ToString('N'))"
+$restoredObjectFiles = 0
+try {
+  docker volume create $restoreVolume | Out-Null
+  docker create --name $restoreHelper -v "${restoreVolume}:/restore" busybox:1.37 sh -c "sleep 300" | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "Restore helper creation failed" }
+  docker start $restoreHelper | Out-Null
+  docker cp (Join-Path $source "minio-data.tar") "${restoreHelper}:/tmp/minio-data.tar"
+  docker exec $restoreHelper tar -xf /tmp/minio-data.tar -C /restore
+  if ($LASTEXITCODE -ne 0) { throw "MinIO restore extraction failed" }
+  $restoredObjectFiles = [int](docker exec $restoreHelper sh -c "find /restore -type f | wc -l").Trim()
+  if ($restoredObjectFiles -lt 1) { throw "Restored MinIO archive contains no files" }
+} finally {
+  docker rm -f $restoreHelper 2>$null | Out-Null
+  docker volume rm $restoreVolume 2>$null | Out-Null
+}
+
+$gitBundle = Join-Path $source "managed-knowledge.bundle"
+$gitRestoreVerified = $false
+if ($artifactNames -contains "managed-knowledge.bundle") {
+  $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) "akp-git-restore-$([guid]::NewGuid())"
+  try {
+    git bundle verify $gitBundle
+    if ($LASTEXITCODE -ne 0) { throw "Managed Git bundle verification failed" }
+    git clone $gitBundle $temporaryRoot | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Managed Git bundle restore failed" }
+    git -C $temporaryRoot fsck --full
+    if ($LASTEXITCODE -ne 0) { throw "Managed Git bundle integrity check failed" }
+    $restoredHeadRevision = (git -C $temporaryRoot rev-parse HEAD).Trim().ToLowerInvariant()
+    if ($LASTEXITCODE -ne 0 -or $restoredHeadRevision -notmatch '^[a-f0-9]{40}
+  } finally {
+    $resolvedTemporary = [IO.Path]::GetFullPath($temporaryRoot)
+    $safeTemporaryRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
+    if ($resolvedTemporary.StartsWith($safeTemporaryRoot, [StringComparison]::OrdinalIgnoreCase)) {
+      Remove-Item -LiteralPath $resolvedTemporary -Recurse -Force -ErrorAction SilentlyContinue
+    }
+  }
+}
+
+Write-Output (@{
+  status = "PASSED"
+  restoredKnowledgeDocuments = $restoredDocuments
+  restoredMigrations = $restoredMigrations.Count
+  restoredMinioFiles = $restoredObjectFiles
+  gitBundleVerified = $gitRestoreVerified
+  gitHeadRevisionVerified = (-not $bundleRequired) -or $gitRestoreVerified
+  canonicalGitRevision = if ($bundleRequired) { [string]$manifest.managedRepository.headRevision } else { $null }
+  durableStateTablesVerified = $requiredDurableTables.Count
+  durableRecoverySentinelsVerified = ($null -ne $recoveryProof)
+  derivedStateReconciliation = [string]$manifest.derivedState.reconciliationAction
+  federationSecretsIncluded = [bool]$manifest.durableState.federationConfiguration.secretsIncluded
+} | ConvertTo-Json)
+
+) {
+  throw "Backup manifest does not declare the canonical managed Git revision."
+}
+
+$database = "akp_restore_smoke_$([guid]::NewGuid().ToString('N'))"
+$dumpTemporaryPath = "/tmp/akp-restore-$([guid]::NewGuid().ToString('N')).dump"
+$restoredDocuments = 0
+$restoredMigrations = @()
+try {
+  docker exec $PostgresContainer psql -U akp -d postgres -v ON_ERROR_STOP=1 -c "create database `"$database`";"
+  if ($LASTEXITCODE -ne 0) { throw "Could not create isolated restore database." }
+  docker cp (Join-Path $source "postgres.dump") "${PostgresContainer}:$dumpTemporaryPath"
+  if ($LASTEXITCODE -ne 0) { throw "Could not copy PostgreSQL recovery dump." }
+  docker exec $PostgresContainer pg_restore -U akp -d $database --no-owner $dumpTemporaryPath
+  if ($LASTEXITCODE -ne 0) { throw "PostgreSQL recovery restore failed." }
+  $documentResult = docker exec $PostgresContainer psql -U akp -d $database -At -v ON_ERROR_STOP=1 -c "select count(*) from knowledge_documents;"
+  if ($LASTEXITCODE -ne 0) { throw "Could not count restored knowledge documents." }
+  $restoredDocuments = [int]$documentResult.Trim()
+  $migrationRows = @(docker exec $PostgresContainer psql -U akp -d $database -At -F '|' -v ON_ERROR_STOP=1 -c "select name || '|' || coalesce(checksum,'') from schema_migrations order by name;")
+  if ($LASTEXITCODE -ne 0) { throw "Could not read restored migration inventory." }
+  $restoredMigrations = @(
+    $migrationRows |
+      ForEach-Object { $_.ToString().Trim() } |
+      Where-Object { $_ } |
+      ForEach-Object {
+        $parts = $_ -split '\|', 2
+        if ($parts.Count -ne 2) { throw "Restored migration inventory has an invalid row." }
+        [ordered]@{ name = $parts[0]; checksum = $parts[1] }
+      }
+  )
+  foreach ($requiredTable in $requiredDurableTables) {
+    $safeTable = $requiredTable.Replace("'", "''")
+    $present = (docker exec $PostgresContainer psql -U akp -d $database -At -v ON_ERROR_STOP=1 -c "select to_regclass('public.$safeTable') is not null;").Trim()
+    if ($LASTEXITCODE -ne 0 -or $present -ne "t") {
+      throw "Restored database is missing required durable state table: $requiredTable"
+    }
+  }
+
+  if ($null -ne $recoveryProof) {
+    $expected = $recoveryProof.expected
+    $vaultId = [string]$recoveryProof.vaultId
+    $spaceId = [string]$recoveryProof.spaceId
+    if (
+      $vaultId -notmatch '^[0-9a-fA-F-]{36}$' -or
+      $spaceId -notmatch '^[0-9a-fA-F-]{36}$'
+    ) {
+      throw "Recovery state manifest contains an invalid scope."
+    }
+
+    $documentCount = [int](Invoke-RestoredScalar -Database $database -Sql "select count(*) from knowledge_documents where vault_id='$vaultId';")
+    if ($documentCount -lt [int]$expected.minimumKnowledgeDocuments) {
+      throw "Restored document state is below the recovery sentinel minimum."
+    }
+
+    $profileStatus = Invoke-RestoredScalar -Database $database -Sql "select status from knowledge_profile_revisions where id='$($expected.profileRevisionId)' and vault_id='$vaultId';"
+    if ($profileStatus -ne "ACTIVE") {
+      throw "Restored profile sentinel is missing or inactive."
+    }
+
+    $sessionPurpose = Invoke-RestoredScalar -Database $database -Sql "select purpose from agent_sessions where id='$($expected.sessionId)' and vault_id='$vaultId';"
+    if ($sessionPurpose -ne "Recovery proof workspace") {
+      throw "Restored workspace session sentinel is missing."
+    }
+
+    $revisionHash = Invoke-RestoredScalar -Database $database -Sql "select revision_set_hash from workspace_context_revision_sets where session_id='$($expected.sessionId)' and vault_id='$vaultId';"
+    if ($revisionHash -notmatch '^[a-f0-9]{64}$') {
+      throw "Restored context revision sentinel is missing."
+    }
+
+    $claimFence = Invoke-RestoredScalar -Database $database -Sql "select fencing_token from workspace_claims where id='$($expected.claimId)' and session_id='$($expected.sessionId)';"
+    if ([int64]$claimFence -ne 7) {
+      throw "Restored workspace claim sentinel has the wrong fence."
+    }
+
+    $profileBinding = Invoke-RestoredScalar -Database $database -Sql "select coalesce(active_knowledge_profile_revision_id::text,'') from vaults where id='$vaultId';"
+    if ($profileBinding -ne [string]$expected.profileRevisionId) {
+      throw "Restored active profile binding differs."
+    }
+
+    $handoffType = Invoke-RestoredScalar -Database $database -Sql "select event_type from workspace_events where id=$($expected.handoffEventId) and session_id='$($expected.sessionId)';"
+    if ($handoffType -ne "CLAIM_HANDOFF") {
+      throw "Restored structured handoff sentinel is missing."
+    }
+
+    $promotionType = Invoke-RestoredScalar -Database $database -Sql "select event_type from workspace_events where id=$($expected.promotionEventId) and session_id='$($expected.sessionId)';"
+    if ($promotionType -ne "PROMOTION_REQUESTED") {
+      throw "Restored promotion request sentinel is missing."
+    }
+
+    $graphLifecycle = Invoke-RestoredScalar -Database $database -Sql "select lifecycle from federated_graph_projection_revisions where id='$($expected.graphProjectionRevisionId)' and vault_id='$vaultId';"
+    if ($graphLifecycle -ne "ACTIVE") {
+      throw "Restored graph revision sentinel is missing or inactive."
+    }
+
+    $assuranceStatus = Invoke-RestoredScalar -Database $database -Sql "select status from assurance_findings where id='$($expected.assuranceFindingId)' and vault_id='$vaultId';"
+    if ($assuranceStatus -ne "OPEN") {
+      throw "Restored assurance finding sentinel is missing."
+    }
+
+    $draftStatus = Invoke-RestoredScalar -Database $database -Sql "select status from workspace_offline_drafts where id='$($expected.offlineDraftId)' and session_id='$($expected.sessionId)';"
+    if ($draftStatus -ne "QUEUED") {
+      throw "Restored offline draft sentinel is missing."
+    }
+
+    $checkpoint = Invoke-RestoredScalar -Database $database -Sql "select applied_sequence from source_connector_checkpoints where connector_id='$($expected.connectorId)';"
+    if ([int64]$checkpoint -ne [int64]$expected.connectorCheckpoint) {
+      throw "Restored connector checkpoint sentinel differs."
+    }
+
+    $connectorEventStatus = Invoke-RestoredScalar -Database $database -Sql "select status from source_connector_events where id='$($expected.connectorEventId)' and connector_id='$($expected.connectorId)';"
+    if ($connectorEventStatus -ne "PENDING") {
+      throw "Restored connector event sentinel is missing."
+    }
+
+    $peer = Invoke-RestoredScalar -Database $database -Sql "select coalesce(credential_ref,'') || '|' || failure_count::text from context_fabric_peers where id='$($expected.peerId)' and space_id='$spaceId';"
+    if ($peer -ne "$($expected.peerCredentialRef)|$($expected.peerFailureCount)") {
+      throw "Restored federation peer sentinel differs."
+    }
+
+    $truthHead = Invoke-RestoredScalar -Database $database -Sql "select revision_hash from truth_revision_heads where vault_id='$vaultId';"
+    if ($truthHead -ne [string]$expected.truthRevisionHash) {
+      throw "Restored truth revision head differs."
+    }
+
+    $truthFact = Invoke-RestoredScalar -Database $database -Sql "select lifecycle from temporal_facts where id='$($expected.temporalFactId)' and support_set_id='$($expected.truthSupportSetId)';"
+    if ($truthFact -ne "ACTIVE") {
+      throw "Restored temporal truth sentinel is missing."
+    }
+  }
+} finally {
+  & docker exec $PostgresContainer rm -f $dumpTemporaryPath *> $null
+  & docker exec $PostgresContainer psql -U akp -d postgres -v ON_ERROR_STOP=1 -c "drop database if exists `"$database`";" *> $null
+}
+# An empty but migrated installation is a valid recovery target. The count
+# query above still proves that the restored schema contains the canonical
+# knowledge_documents table; populated-corpus checks belong to the runtime
+# verification/evaluation gates, not to backup integrity.
+if ($restoredMigrations.Count -ne [int]$manifest.database.migrationCount) {
+  throw "Restored migration count ($($restoredMigrations.Count)) does not equal backup manifest count ($($manifest.database.migrationCount))."
+}
+for ($index = 0; $index -lt $expectedMigrations.Count; $index += 1) {
+  $expected = $expectedMigrations[$index]
+  $actual = $restoredMigrations[$index]
+  if ($expected.name -ne $actual.name -or [string]$expected.checksum -ne [string]$actual.checksum) {
+    throw "Restored migration inventory differs from the verified backup manifest at position $index."
+  }
+}
+
+$restoreVolume = "akp-restore-smoke-$([guid]::NewGuid().ToString('N'))"
+$restoreHelper = "akp-restore-helper-$([guid]::NewGuid().ToString('N'))"
+$restoredObjectFiles = 0
+try {
+  docker volume create $restoreVolume | Out-Null
+  docker create --name $restoreHelper -v "${restoreVolume}:/restore" busybox:1.37 sh -c "sleep 300" | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "Restore helper creation failed" }
+  docker start $restoreHelper | Out-Null
+  docker cp (Join-Path $source "minio-data.tar") "${restoreHelper}:/tmp/minio-data.tar"
+  docker exec $restoreHelper tar -xf /tmp/minio-data.tar -C /restore
+  if ($LASTEXITCODE -ne 0) { throw "MinIO restore extraction failed" }
+  $restoredObjectFiles = [int](docker exec $restoreHelper sh -c "find /restore -type f | wc -l").Trim()
+  if ($restoredObjectFiles -lt 1) { throw "Restored MinIO archive contains no files" }
+} finally {
+  docker rm -f $restoreHelper 2>$null | Out-Null
+  docker volume rm $restoreVolume 2>$null | Out-Null
+}
+
+$gitBundle = Join-Path $source "managed-knowledge.bundle"
+$gitRestoreVerified = $false
+if ($artifactNames -contains "managed-knowledge.bundle") {
+  $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) "akp-git-restore-$([guid]::NewGuid())"
+  try {
+    git bundle verify $gitBundle
+    if ($LASTEXITCODE -ne 0) { throw "Managed Git bundle verification failed" }
+    git clone $gitBundle $temporaryRoot | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Managed Git bundle restore failed" }
+    git -C $temporaryRoot fsck --full
+    if ($LASTEXITCODE -ne 0) { throw "Managed Git bundle integrity check failed" }
+    $gitRestoreVerified = $true
+  } finally {
+    $resolvedTemporary = [IO.Path]::GetFullPath($temporaryRoot)
+    $safeTemporaryRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
+    if ($resolvedTemporary.StartsWith($safeTemporaryRoot, [StringComparison]::OrdinalIgnoreCase)) {
+      Remove-Item -LiteralPath $resolvedTemporary -Recurse -Force -ErrorAction SilentlyContinue
+    }
+  }
+}
+
+Write-Output (@{
+  status = "PASSED"
+  restoredKnowledgeDocuments = $restoredDocuments
+  restoredMigrations = $restoredMigrations.Count
+  restoredMinioFiles = $restoredObjectFiles
+  gitBundleVerified = $gitRestoreVerified
+  durableStateTablesVerified = $requiredDurableTables.Count
+  durableRecoverySentinelsVerified = ($null -ne $recoveryProof)
+  derivedStateReconciliation = [string]$manifest.derivedState.reconciliationAction
+  federationSecretsIncluded = [bool]$manifest.durableState.federationConfiguration.secretsIncluded
+} | ConvertTo-Json)
+) {
+      throw "Could not resolve restored managed Git HEAD."
+    }
+    if ($restoredHeadRevision -ne ([string]$manifest.managedRepository.headRevision).ToLowerInvariant()) {
+      throw "Restored managed Git HEAD does not match the backup manifest canonical revision."
+    }
+    $gitRestoreVerified = $true
+  } finally {
+    $resolvedTemporary = [IO.Path]::GetFullPath($temporaryRoot)
+    $safeTemporaryRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
+    if ($resolvedTemporary.StartsWith($safeTemporaryRoot, [StringComparison]::OrdinalIgnoreCase)) {
+      Remove-Item -LiteralPath $resolvedTemporary -Recurse -Force -ErrorAction SilentlyContinue
+    }
+  }
+}
+
+Write-Output (@{
+  status = "PASSED"
+  restoredKnowledgeDocuments = $restoredDocuments
+  restoredMigrations = $restoredMigrations.Count
+  restoredMinioFiles = $restoredObjectFiles
+  gitBundleVerified = $gitRestoreVerified
+  durableStateTablesVerified = $requiredDurableTables.Count
+  durableRecoverySentinelsVerified = ($null -ne $recoveryProof)
+  derivedStateReconciliation = [string]$manifest.derivedState.reconciliationAction
+  federationSecretsIncluded = [bool]$manifest.durableState.federationConfiguration.secretsIncluded
+} | ConvertTo-Json)
+
+) {
+  throw "Backup manifest does not declare the canonical managed Git revision."
+}
 
 $database = "akp_restore_smoke_$([guid]::NewGuid().ToString('N'))"
 $dumpTemporaryPath = "/tmp/akp-restore-$([guid]::NewGuid().ToString('N')).dump"

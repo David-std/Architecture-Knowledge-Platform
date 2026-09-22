@@ -67,6 +67,7 @@ $configuredManagedRepository = if (-not [string]::IsNullOrWhiteSpace($ManagedRep
   $null
 }
 $managedRepositoryPresent = $false
+$managedRepositoryHeadRevision = $null
 $managedPath = $null
 if ($configuredManagedRepository) {
   $managedPath = Resolve-InputPath $configuredManagedRepository
@@ -78,6 +79,173 @@ if ($configuredManagedRepository) {
   }) | Out-String).Trim()
   if ($isGit -ne "true") {
     throw "AKP_MANAGED_REPO must be a Git work tree: $managedPath"
+  }
+  $managedRepositoryHeadRevision = ((Invoke-ExternalChecked "read managed repository HEAD" {
+    git -C $managedPath rev-parse HEAD
+  }) | Out-String).Trim().ToLowerInvariant()
+  if ($managedRepositoryHeadRevision -notmatch '^[a-f0-9]{40}
+
+$migrationRows = @(Invoke-ExternalChecked "read applied migration inventory" {
+  docker exec $PostgresContainer psql -U akp -d $PostgresDatabase -At -F '|' -v ON_ERROR_STOP=1 -c "select name || '|' || coalesce(checksum,'') from schema_migrations order by name;"
+})
+$migrations = @(
+  $migrationRows |
+    ForEach-Object { $_.ToString().Trim() } |
+    Where-Object { $_ } |
+    ForEach-Object {
+      $parts = $_ -split '\|', 2
+      if ($parts.Count -ne 2 -or [string]::IsNullOrWhiteSpace($parts[0])) {
+        throw "Applied migration inventory has an invalid row."
+      }
+      [ordered]@{ name = $parts[0]; checksum = $parts[1] }
+    }
+)
+if ($migrations.Count -lt 1) {
+  throw "The platform database contains no applied migrations; refusing to create a recovery artifact."
+}
+$artifactNames = @("postgres.dump", "minio-data.tar", "configuration-metadata.json")
+
+$durableStateTables = @(
+  "knowledge_profile_revisions",
+  "vaults",
+  "agent_sessions",
+  "workspace_session_participants",
+  "workspace_context_revision_sets",
+  "workspace_claims",
+  "workspace_events",
+  "workspace_offline_drafts",
+  "workspace_decision_candidates",
+  "reviews",
+  "truth_revision_heads",
+  "truth_revisions",
+  "truth_support_sets",
+  "temporal_facts",
+  "federated_graph_projection_revisions",
+  "assurance_runs",
+  "assurance_findings",
+  "assurance_finding_events",
+  "source_connector_registrations",
+  "source_connector_checkpoints",
+  "source_connector_events",
+  "context_fabric_peers"
+)
+$rebuildableProjectionTables = @(
+  "embedding_generations",
+  "unit_embeddings",
+  "federated_graph_nodes",
+  "federated_graph_edges",
+  "community_index_revisions",
+  "community_index_communities",
+  "community_index_memberships",
+  "context_packets"
+)
+docker exec $PostgresContainer pg_dump -U akp -d $PostgresDatabase -Fc -f /tmp/akp-backup.dump
+if ($LASTEXITCODE -ne 0) { throw "pg_dump failed" }
+docker cp "${PostgresContainer}:/tmp/akp-backup.dump" (Join-Path $target "postgres.dump")
+if ($LASTEXITCODE -ne 0) { throw "docker cp for PostgreSQL backup failed" }
+docker exec $PostgresContainer rm -f /tmp/akp-backup.dump
+
+$minioData = Join-Path $target "minio-data.tar"
+$inspectJson = @(docker inspect $MinioContainer 2>&1)
+if ($LASTEXITCODE -ne 0) {
+  $detail = ($inspectJson | Out-String).Trim()
+  throw "Could not inspect MinIO container.$(if ($detail) { " Detail: $detail" })"
+}
+try {
+  $inspect = $inspectJson | ConvertFrom-Json
+  $minioVolume = @(
+    $inspect[0].Mounts |
+      Where-Object { $_.Destination -eq "/data" -and $_.Type -eq "volume" } |
+      Select-Object -ExpandProperty Name
+  ) | Select-Object -First 1
+} catch {
+  throw "Could not parse MinIO container mounts: $($_.Exception.Message)"
+}
+if ([string]::IsNullOrWhiteSpace($minioVolume)) {
+  throw "Could not resolve MinIO data volume"
+}
+$helper = "akp-backup-$([guid]::NewGuid().ToString('N'))"
+try {
+  docker create --name $helper -v "${minioVolume}:/data:ro" busybox:1.37 sh -c "sleep 300" | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "Backup helper creation failed" }
+  docker start $helper | Out-Null
+  docker exec $helper tar -cf /tmp/akp-minio.tar -C /data .
+  if ($LASTEXITCODE -ne 0) { throw "MinIO archive failed" }
+  docker cp "${helper}:/tmp/akp-minio.tar" $minioData
+  if ($LASTEXITCODE -ne 0) { throw "docker cp for MinIO backup failed" }
+} finally {
+  docker rm -f $helper 2>$null | Out-Null
+}
+
+if ($managedRepositoryPresent) {
+  $bundlePath = Join-Path $target "managed-knowledge.bundle"
+  Invoke-ExternalChecked "create managed knowledge Git bundle" {
+    git -C $managedPath bundle create $bundlePath --all
+  } | Out-Null
+  Invoke-ExternalChecked "verify managed knowledge Git bundle" {
+    git -C $managedPath bundle verify $bundlePath
+  } | Out-Null
+  $artifactNames += "managed-knowledge.bundle"
+}
+
+$configuration = [ordered]@{
+  format = "akp-configuration-metadata-v3"
+  managedRepositoryPresent = [bool]$managedRepositoryPresent
+  vectorEnabled = ($env:AKP_VECTOR_ENABLED -eq "true")
+  ingestRootsConfigured = -not [string]::IsNullOrWhiteSpace($env:AKP_INGEST_ROOTS)
+  projectRootsConfigured = -not [string]::IsNullOrWhiteSpace($env:AKP_PROJECT_ROOTS)
+  secretsIncluded = $false
+  federationCredentialMaterialIncluded = $false
+  modelProviderSecretsIncluded = $false
+}
+$configuration | ConvertTo-Json -Depth 5 |
+  Set-Content -LiteralPath (Join-Path $target "configuration-metadata.json") -Encoding utf8
+
+$files = @(
+  foreach ($name in $artifactNames) {
+    $artifact = Join-Path $target $name
+    if (-not (Test-Path -LiteralPath $artifact -PathType Leaf)) {
+      throw "Expected backup artifact was not created: $name"
+    }
+    $item = Get-Item -LiteralPath $artifact
+    [ordered]@{
+      name = $name
+      bytes = $item.Length
+      sha256 = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
+    }
+  }
+)
+$manifest = [ordered]@{
+  format = "akp-backup-v4"
+  createdAt = (Get-Date).ToUniversalTime().ToString("o")
+  database = [ordered]@{
+    migrationCount = $migrations.Count
+    migrations = @($migrations)
+  }
+  durableState = [ordered]@{
+    includedViaPostgresDump = @($durableStateTables)
+    federationConfiguration = [ordered]@{
+      credentialReferencesOnly = $true
+      secretsIncluded = $false
+    }
+  }
+  derivedState = [ordered]@{
+    rebuildableTables = @($rebuildableProjectionTables)
+    reconciliationAction = "REBUILD_DERIVED_PROJECTIONS"
+    canonicalAuthority = "MANAGED_GIT_AND_DURABLE_SOURCE_STATE"
+  }
+  managedRepository = [ordered]@{
+    configured = [bool]$managedRepositoryPresent
+    bundleIncluded = [bool]$managedRepositoryPresent
+    headRevision = $managedRepositoryHeadRevision
+  }
+  files = $files
+}
+$manifest | ConvertTo-Json -Depth 8 |
+  Set-Content -LiteralPath (Join-Path $target "manifest.json") -Encoding utf8
+Write-Output ($manifest | ConvertTo-Json -Depth 8)
+) {
+    throw "AKP_MANAGED_REPO HEAD is not a canonical 40-character Git revision."
   }
   $managedRepositoryPresent = $true
 }
