@@ -523,7 +523,7 @@ export function createModelRoleRouteCandidates(
 }
 
 export function routeModelRoleCandidates(
-  candidates: ModelRoleRouteCandidate[],
+  candidates: readonly ModelRoleRouteCandidate[],
   requirements: {
     dataResidency: ModelResidencyValue;
     structuredOutputRequired?: boolean;
