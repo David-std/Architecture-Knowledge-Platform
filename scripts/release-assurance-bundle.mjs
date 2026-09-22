@@ -22,7 +22,7 @@ const workflowReportPath = path.resolve(
 );
 const outputDir = path.resolve(
   root,
-  process.env.AKP_RELEASE_ASSURANCE_PACKAGE_DIR ?? "reports/ci/release-assurance-package",
+  process.env.AKP_RELEASE_ASSURANCE_PACKAGE_DIR ??\n    "reports/ci/release-assurance-package",
 );
 const repository =
   process.env.GITHUB_REPOSITORY?.trim() ||
