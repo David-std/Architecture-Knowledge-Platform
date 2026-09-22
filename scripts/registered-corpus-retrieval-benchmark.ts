@@ -635,9 +635,9 @@ async function main(): Promise<void> {
   });
 
   try {
-    const postgresVersionResult = await db.pool.query<{ server_version: string }>(
-      "show server_version",
-    );
+    const postgresVersionResult = await db.pool.query<{
+      server_version: string;
+    }>("show server_version");
     const postgresVersion =
       postgresVersionResult.rows[0]?.server_version ?? "UNKNOWN";
     const storageBeforeFixture = await storageSnapshot(db);
@@ -796,8 +796,7 @@ async function main(): Promise<void> {
         },
         latency: {
           meanMs: run.meanLatencyMs,
-          deltaVsBaselineMs:
-            run.meanLatencyMs - baselineRun.meanLatencyMs,
+          deltaVsBaselineMs: run.meanLatencyMs - baselineRun.meanLatencyMs,
           deltaVsPreviousMs: run.meanLatencyMs - previous.meanLatencyMs,
         },
         storage: {
@@ -825,8 +824,7 @@ async function main(): Promise<void> {
       tool: {
         repositoryUrl:
           "https://github.com/David-std/Architecture-Knowledge-Platform",
-        versionOrCommit:
-          process.env.GITHUB_SHA ?? "UNAVAILABLE_OUTSIDE_CI",
+        versionOrCommit: process.env.GITHUB_SHA ?? "UNAVAILABLE_OUTSIDE_CI",
         licenseObserved: "NOT_DECLARED_IN_REPOSITORY",
       },
       configuration: {

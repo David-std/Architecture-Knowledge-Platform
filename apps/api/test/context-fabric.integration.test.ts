@@ -655,8 +655,9 @@ describe("team context fabric integration", () => {
     process.env[credentialRef] = "integration-overreturn-token";
     const rogueVaultId = randomUUID();
     const rogueDocumentId = randomUUID();
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(
-      async (_input, init) => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async (_input, init) => {
         const remoteRequest = JSON.parse(String(init?.body)) as {
           caller: { requestId: string };
           scope: { spaceId: string; vaultIds: string[] };
@@ -692,7 +693,8 @@ describe("team context fabric integration", () => {
                 refreshStatus: "CURRENT",
                 score: 1,
                 reasons: ["remote-over-return"],
-                excerpt: "This hit is structurally valid but outside the requested vault.",
+                excerpt:
+                  "This hit is structurally valid but outside the requested vault.",
                 citations: [],
                 remoteProvenance: {
                   nodeId: peer.peerKey,
@@ -710,8 +712,7 @@ describe("team context fabric integration", () => {
             headers: { "content-type": "application/json" },
           },
         );
-      },
-    );
+      });
 
     try {
       const response = await app.inject({
