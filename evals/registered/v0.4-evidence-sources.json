@@ -2136,6 +2136,20 @@
           "path": "scripts/registered-workspace-team-metrics.ts"
         }
       ]
+    },
+    "benchmark:retrieval-diagnostic-quality": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Validate registered retrieval diagnostic evidence"
+        },
+        {
+          "type": "FILE",
+          "path": "scripts/registered-retrieval-diagnostics.ts"
+        }
+      ]
     }
   }
 }

@@ -458,7 +458,8 @@
             "benchmark:retrieval-quality",
             "benchmark:semantic",
             "benchmark:p6-ann-decision-deferred",
-            "benchmark:p6-drift"
+            "benchmark:p6-drift",
+            "benchmark:retrieval-diagnostic-quality"
           ]
         },
         "remoteCi": {

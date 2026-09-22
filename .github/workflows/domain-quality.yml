@@ -44,6 +44,51 @@ jobs:
         env:
           AKP_REGISTERED_WORKSPACE_TEAM_METRICS_REPORT: reports/ci/registered-workspace-team-metrics.json
         run: pnpm benchmark:registered-workspace-team-metrics
+      - name: Execute registered retrieval diagnostic benchmark
+        env:
+          AKP_REGISTERED_RETRIEVAL_DIAGNOSTICS_REPORT: reports/ci/registered-retrieval-diagnostics.json
+        run: pnpm benchmark:registered-retrieval-diagnostics
+      - name: Validate registered retrieval diagnostic evidence
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const report = JSON.parse(
+            readFileSync("reports/ci/registered-retrieval-diagnostics.json", "utf8"),
+          );
+          const required = [
+            "contextPrecision",
+            "claimSupportRecall",
+            "citationPrecision",
+            "contradictionRecall",
+          ];
+          if (
+            report.benchmark !== "AKP_REGISTERED_RETRIEVAL_DIAGNOSTICS" ||
+            report.status !== "PROVEN" ||
+            report.evidenceLevel !== "REGISTERED_DIAGNOSTIC_RUNTIME_FIXTURE" ||
+            report.claimPolicy?.productionQualityClaimAllowed !== false ||
+            report.claimPolicy?.externalParityClaimAllowed !== false ||
+            report.claimPolicy?.diagnosticFixtureRatesAreProductionRates !== false ||
+            report.claimPolicy?.rankedDocumentPrecisionRelabelledAsContextPrecision !== false ||
+            report.claimPolicy?.retrievalRecallRelabelledAsContradictionRecall !== false
+          ) {
+            throw new Error("Registered retrieval diagnostic claim boundary is invalid.");
+          }
+          for (const name of required) {
+            const metric = report.metrics?.[name];
+            if (
+              metric?.measured !== true ||
+              metric.value !== 1 ||
+              metric.sampleCount < 1 ||
+              metric.scope !== "REGISTERED_DIAGNOSTIC_FIXTURE"
+            ) {
+              throw new Error("Incomplete registered retrieval diagnostic metric: " + name);
+            }
+          }
+          console.log(
+            JSON.stringify({ status: report.status, diagnosticMetrics: required.length }, null, 2),
+          );
+          NODE
       - name: Validate registered workspace and team metric evidence
         run: |
           node --input-type=module <<'NODE'
@@ -314,6 +359,7 @@ jobs:
             reports/ci/registered-graph-code-metrics.json
             reports/ci/registered-temporal-truth-metrics.json
             reports/ci/registered-workspace-team-metrics.json
+            reports/ci/registered-retrieval-diagnostics.json
           if-no-files-found: error
           retention-days: 30
       - name: Stop disposable services

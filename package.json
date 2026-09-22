@@ -53,7 +53,8 @@
     "proof:parity-exclusions": "tsx scripts/parity-exclusion-reports.ts",
     "benchmark:registered-graph-code-metrics": "tsx scripts/registered-graph-code-metrics.ts",
     "benchmark:registered-temporal-truth-metrics": "tsx scripts/registered-temporal-truth-metrics.ts",
-    "benchmark:registered-workspace-team-metrics": "tsx scripts/registered-workspace-team-metrics.ts"
+    "benchmark:registered-workspace-team-metrics": "tsx scripts/registered-workspace-team-metrics.ts",
+    "benchmark:registered-retrieval-diagnostics": "tsx scripts/registered-retrieval-diagnostics.ts"
   },
   "devDependencies": {
     "@types/mime-types": "^3.0.1",
