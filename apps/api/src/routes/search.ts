@@ -3288,11 +3288,7 @@ export function registerSearchRoutes(
           hasPathAccess(actor, requestedSpace, "knowledge:read", documentPath)
         );
       };
-      const rawScopes = rawScopesForActor(
-        actor,
-        requestedSpace,
-        accessByVault,
-      );
+      const rawScopes = rawScopesForActor(actor, requestedSpace, accessByVault);
       let projectCode;
       try {
         projectCode = await resolveProjectCodeRetrieval(db, {
@@ -3718,11 +3714,7 @@ export function registerSearchRoutes(
           hasPathAccess(actor, requestedSpace, "knowledge:read", documentPath)
         );
       };
-      const rawScopes = rawScopesForActor(
-        actor,
-        requestedSpace,
-        accessByVault,
-      );
+      const rawScopes = rawScopesForActor(actor, requestedSpace, accessByVault);
       let projectCode;
       try {
         projectCode = await resolveProjectCodeRetrieval(db, {
