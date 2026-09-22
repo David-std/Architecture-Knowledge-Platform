@@ -2,7 +2,12 @@ import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import type { SearchRequest } from "@akp/contracts";
 import { Postgres } from "@akp/postgres";
-import { DeterministicQueryDecomposer, planQuery } from "@akp/retrieval";
+import {
+  buildContextPacket,
+  DeterministicQueryDecomposer,
+  planQuery,
+  type QueryTransformerPort,
+} from "@akp/retrieval";
 import { queryKnowledge } from "../src/routes/search.js";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -334,5 +339,105 @@ describe("query transformation retrieval", () => {
         await db.close();
       }
     },
+
+  it.skipIf(!databaseUrl)(
+    "keeps unsupported HyDE technology in transform provenance instead of trusted context",
+    async () => {
+      if (!databaseUrl) return;
+      const value = fixture();
+      const db = new Postgres(databaseUrl);
+      const query = "What transport rotation guidance is actually supported?";
+      const transformer: QueryTransformerPort = {
+        id: "adversarial-hyde-unsupported-technology-v1",
+        kind: "HYDE",
+        async transform(input) {
+          return {
+            transformerId: "adversarial-hyde-unsupported-technology-v1",
+            originalQuery: input.originalQuery,
+            variants: [
+              {
+                ordinal: 1,
+                kind: "HYDE",
+                query:
+                  "QuantumShieldX is the approved production TLS rotation control.",
+                reason: "adversarial unsupported hypothetical",
+              },
+              {
+                ordinal: 2,
+                kind: "HYDE",
+                query: "TLS rotation policy",
+                reason: "evidence-seeking hypothetical",
+              },
+            ],
+          };
+        },
+      };
+
+      try {
+        await seed(db, value);
+        const plan = planQuery(query, {
+          requestedIntent: "CONCEPTUAL",
+          capabilities,
+        });
+        const hits = await queryKnowledge(db, request(value, query), {
+          channels: ["lexical"],
+          plan,
+          vaultIds: [value.authorizedVaultId],
+          queryTransformer: transformer,
+        });
+
+        expect(hits.map((hit) => hit.documentId)).toContain(value.tlsDocumentId);
+        expect(
+          hits.some((hit) => hit.documentId === value.secretDocumentId),
+        ).toBe(false);
+
+        const packet = buildContextPacket({
+          request: request(value, query),
+          intent: "CONCEPTUAL",
+          corpusRevision: value.revision,
+          maxTokens: 4_000,
+          candidates: hits.map((hit) => ({
+            hit,
+            content: hit.excerpt,
+            kind: "concept" as const,
+          })),
+        });
+
+        expect(packet.status).toBe("SUPPORTED");
+        expect(packet.sections.length).toBeGreaterThan(0);
+        expect(JSON.stringify(packet.sections)).not.toContain("QuantumShieldX");
+        expect(JSON.stringify(packet.citations)).not.toContain("QuantumShieldX");
+        expect(packet.citations.length).toBeGreaterThan(0);
+
+        const trace = await db.pool.query<{
+          transform_kind: string;
+          transformer_id: string;
+          variants: Array<{ ordinal: number; kind: string; query: string }>;
+        }>(
+          `
+          select transform_kind,transformer_id,variants
+            from retrieval_query_traces
+           where space_id=$1 and transformer_id=$2
+           order by created_at desc
+           limit 1
+          `,
+          [value.spaceId, transformer.id],
+        );
+        expect(trace.rows[0]).toMatchObject({
+          transform_kind: "HYDE",
+          transformer_id: transformer.id,
+        });
+        expect(trace.rows[0]?.variants[0]?.query).toContain("QuantumShieldX");
+        expect(
+          packet.sections.every(
+            (section) => section.sourceOrEvidenceIds.length > 0,
+          ),
+        ).toBe(true);
+      } finally {
+        await cleanup(db, value);
+        await db.close();
+      }
+    },
+  );
   );
 });

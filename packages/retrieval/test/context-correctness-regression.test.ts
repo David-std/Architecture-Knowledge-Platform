@@ -38,9 +38,7 @@ const fixturePath = path.join(
 );
 
 async function loadPlacementRegression(): Promise<PlacementRegression> {
-  const pack = JSON.parse(
-    await readFile(fixturePath, "utf8"),
-  ) as RegressionPack;
+  const pack = JSON.parse(await readFile(fixturePath, "utf8")) as RegressionPack;
   const candidate = pack.cases.find(
     (item) => item.kind === "CONTEXT_PLACEMENT_AND_MANDATORY_CONSTRAINTS",
   );
