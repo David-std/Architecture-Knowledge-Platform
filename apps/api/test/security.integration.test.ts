@@ -666,8 +666,12 @@ describe("API security boundaries", () => {
         payload: { ...requestFor(deniedId), maxTokens: 4_000 },
       });
       expect(deniedContext.statusCode, deniedContext.body).toBe(200);
-      expect(deniedContext.json().sections).toHaveLength(0);
-      expect(JSON.stringify(deniedContext.json())).not.toContain(deniedId);
+      const deniedPacket = deniedContext.json();
+      expect(deniedPacket.query).toBe(deniedId);
+      expect(deniedPacket.sections).toHaveLength(0);
+      expect(deniedPacket.citations).toHaveLength(0);
+      expect(JSON.stringify(deniedPacket.sections)).not.toContain(deniedId);
+      expect(JSON.stringify(deniedPacket.citations)).not.toContain(deniedId);
 
       await db.pool.query(
         `update api_tokens
