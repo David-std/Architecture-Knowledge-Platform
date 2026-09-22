@@ -100,8 +100,8 @@ function validateConfiguration(): void {
   }
 }
 
-function fillerContent(index: number): string {
-  return Array.from({ length: 72 }, (_, item) => {
+function fillerContent(index: number, repetitions: number): string {
+  return Array.from({ length: repetitions }, (_, item) => {
     const sequence = String(item + 1).padStart(2, "0");
     return [
       `Operational evidence block ${index}-${sequence} records routine service health,`,
@@ -299,12 +299,102 @@ const mandatoryContent = [
   `The exact deployment authorization code is ${requiredCode}.`,
   `When asked for the deployment authorization code, the supported answer is ${requiredCode}.`,
 ].join(" ");
-const candidates: PacketCandidate[] = [
-  packetCandidate(0, mandatoryContent, "rule", true),
-  ...Array.from({ length: 64 }, (_, index) =>
-    packetCandidate(index + 1, fillerContent(index + 1), "concept"),
-  ),
-];
+const targetMinTokens = Math.floor(modelContextWindowTokens * targetMinRatio);
+const targetMaxTokens = Math.floor(modelContextWindowTokens * targetMaxRatio);
+const mandatoryCandidate = packetCandidate(
+  0,
+  mandatoryContent,
+  "rule",
+  true,
+);
+const previewSection = (candidate: PacketCandidate) => ({
+  title: candidate.hit.title,
+  content: candidate.content,
+  sourceOrEvidenceIds: candidate.hit.citations,
+});
+
+let tunedCandidates: PacketCandidate[] | null = null;
+let tuning:
+  | {
+      fillerCount: number;
+      fillerRepetitions: number;
+      previewTokenCounts: Record<Placement, number>;
+    }
+  | null = null;
+
+for (let fillerCount = 3; fillerCount <= 12 && !tunedCandidates; fillerCount += 1) {
+  let low = 1;
+  let high = 128;
+  let repetitions: number | null = null;
+
+  while (low <= high) {
+    const midpoint = Math.floor((low + high) / 2);
+    const previewFillers = Array.from({ length: fillerCount }, (_, index) =>
+      previewSection(
+        packetCandidate(
+          index + 1,
+          fillerContent(index + 1, midpoint),
+          "concept",
+        ),
+      ),
+    );
+    const earlyTokens = exactChatTokens(
+      tokenizer,
+      messagesFor(previewSection(mandatoryCandidate), previewFillers, "EARLY"),
+    );
+    if (earlyTokens < targetMinTokens) {
+      low = midpoint + 1;
+      continue;
+    }
+    if (earlyTokens > targetMaxTokens) {
+      high = midpoint - 1;
+      continue;
+    }
+    repetitions = midpoint;
+    break;
+  }
+
+  if (repetitions === null) continue;
+  const fillers = Array.from({ length: fillerCount }, (_, index) =>
+    packetCandidate(
+      index + 1,
+      fillerContent(index + 1, repetitions),
+      "concept",
+    ),
+  );
+  const fillerSections = fillers.map(previewSection);
+  const mandatoryPreview = previewSection(mandatoryCandidate);
+  const previewTokenCounts: Record<Placement, number> = {
+    EARLY: exactChatTokens(
+      tokenizer,
+      messagesFor(mandatoryPreview, fillerSections, "EARLY"),
+    ),
+    MIDDLE: exactChatTokens(
+      tokenizer,
+      messagesFor(mandatoryPreview, fillerSections, "MIDDLE"),
+    ),
+    LATE: exactChatTokens(
+      tokenizer,
+      messagesFor(mandatoryPreview, fillerSections, "LATE"),
+    ),
+  };
+  const previewValues = Object.values(previewTokenCounts);
+  if (
+    Math.min(...previewValues) < targetMinTokens ||
+    Math.max(...previewValues) > targetMaxTokens
+  ) {
+    continue;
+  }
+
+  tunedCandidates = [mandatoryCandidate, ...fillers];
+  tuning = { fillerCount, fillerRepetitions: repetitions, previewTokenCounts };
+}
+
+if (!tunedCandidates || !tuning) {
+  throw new Error(
+    `Unable to auto-tune long-context evidence into target range ${targetMinTokens}-${targetMaxTokens} tokens.`,
+  );
+}
 
 const sourcePacket = buildContextPacket({
   request: {
@@ -321,59 +411,54 @@ const sourcePacket = buildContextPacket({
   intent: "WORKFLOW_EXECUTION",
   corpusRevision: "long-context-placement",
   maxTokens: 31_000,
-  candidates,
+  candidates: tunedCandidates,
   tokenizer: tokenizerPort,
 });
 
+if (
+  sourcePacket.sections.length !== tunedCandidates.length ||
+  sourcePacket.continuations.length !== 0
+) {
+  throw new Error(
+    `Auto-tuned source packet did not retain the complete evidence set: selected=${sourcePacket.sections.length}, expected=${tunedCandidates.length}, continuations=${sourcePacket.continuations.length}.`,
+  );
+}
 const mandatorySection = sourcePacket.sections.find(
   (section) => section.title === "mandatory-deployment-constraint",
 );
 if (!mandatorySection) {
   throw new Error("Mandatory long-context evidence was not selected.");
 }
-const allFillers = sourcePacket.sections.filter(
+const selectedFillers = sourcePacket.sections.filter(
   (section) => section.title !== mandatorySection.title,
 );
-if (allFillers.length < 3) {
-  throw new Error("Long-context packet did not retain enough filler sections.");
-}
-
-const targetMinTokens = Math.floor(modelContextWindowTokens * targetMinRatio);
-const targetMaxTokens = Math.floor(modelContextWindowTokens * targetMaxRatio);
-
-let selectedFillers = allFillers;
-let tokenCounts: Record<Placement, number> | null = null;
-for (let count = allFillers.length; count >= 1; count -= 1) {
-  const subset = allFillers.slice(0, count);
-  const counts = {
-    EARLY: exactChatTokens(
-      tokenizer,
-      messagesFor(mandatorySection, subset, "EARLY"),
-    ),
-    MIDDLE: exactChatTokens(
-      tokenizer,
-      messagesFor(mandatorySection, subset, "MIDDLE"),
-    ),
-    LATE: exactChatTokens(
-      tokenizer,
-      messagesFor(mandatorySection, subset, "LATE"),
-    ),
-  };
-  const values = Object.values(counts);
-  if (Math.max(...values) <= targetMaxTokens) {
-    selectedFillers = subset;
-    tokenCounts = counts;
-    break;
-  }
-}
-if (!tokenCounts) {
+if (selectedFillers.length !== tuning.fillerCount) {
   throw new Error(
-    "Unable to fit long-context projections below target maximum.",
+    `Auto-tuned filler count changed during canonical packet assembly: selected=${selectedFillers.length}, expected=${tuning.fillerCount}.`,
   );
 }
-if (Math.min(...Object.values(tokenCounts)) < targetMinTokens) {
+
+const tokenCounts: Record<Placement, number> = {
+  EARLY: exactChatTokens(
+    tokenizer,
+    messagesFor(mandatorySection, selectedFillers, "EARLY"),
+  ),
+  MIDDLE: exactChatTokens(
+    tokenizer,
+    messagesFor(mandatorySection, selectedFillers, "MIDDLE"),
+  ),
+  LATE: exactChatTokens(
+    tokenizer,
+    messagesFor(mandatorySection, selectedFillers, "LATE"),
+  ),
+};
+const tokenValues = Object.values(tokenCounts);
+if (
+  Math.min(...tokenValues) < targetMinTokens ||
+  Math.max(...tokenValues) > targetMaxTokens
+) {
   throw new Error(
-    `Long-context packet is not near the target threshold: ${JSON.stringify(tokenCounts)}`,
+    `Canonical long-context packet moved outside target threshold: ${JSON.stringify(tokenCounts)}.`,
   );
 }
 
@@ -443,6 +528,10 @@ const report = {
     maxRatio: targetMaxRatio,
     minTokens: targetMinTokens,
     maxTokens: targetMaxTokens,
+    autoTunedWithExactTokenizer: true,
+    fillerCount: tuning.fillerCount,
+    fillerRepetitions: tuning.fillerRepetitions,
+    previewTokenCounts: tuning.previewTokenCounts,
   },
   sourcePacket: {
     packetId: sourcePacket.packetId,
