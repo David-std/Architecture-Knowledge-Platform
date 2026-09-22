@@ -98,7 +98,7 @@ jobs:
             test/federation-fanout.test.ts
           pnpm --filter @akp/postgres exec vitest run \
             test/federation-circuit.test.ts
-      - name: Run P8 access boundary controlled probes
+      - name: Run access boundary controlled probes
         run: |
           pnpm --filter @akp/api exec vitest run \
             test/graph-retrieval.integration.test.ts \

@@ -2325,7 +2325,7 @@
           "type": "STEP",
           "workflow": "ci",
           "job": "typescript",
-          "step": "Run P8 access boundary controlled probes"
+          "step": "Run access boundary controlled probes"
         }
       ]
     }
