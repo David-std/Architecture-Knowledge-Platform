@@ -301,7 +301,9 @@ for (const file of files.filter(
 const payload = `${JSON.stringify({ schemaVersion: 4, files: entries }, null, 2)}\n`;
 if (process.argv.includes("--write")) {
   writeFileSync(path.join(root, classificationPath), payload, "utf8");
-} else if (existsSync(path.join(root, classificationPath))) {
+} else if (!existsSync(path.join(root, classificationPath))) {
+  failures.push(`MISSING_CLASSIFICATION ${classificationPath}`);
+} else {
   const currentClassification = readFileSync(
     path.join(root, classificationPath),
     "utf8",
