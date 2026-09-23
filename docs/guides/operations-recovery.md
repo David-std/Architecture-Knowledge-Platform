@@ -6,6 +6,27 @@ AKP operations combine liveness/readiness, OpenTelemetry, durable job/outbox dia
 
 The recovery contract distinguishes durable authority/state from rebuildable derived projections. PostgreSQL and source/managed-Git state are restored; vector, graph, community and context projections can be reconciled/rebuilt from that durable authority.
 
+## Recovery boundary
+
+```text
+PostgreSQL + raw objects + managed Git + non-secret config
+                         │
+                         ▼
+                 manifested backup
+                 hashes + inventory
+                         │
+                         ▼
+                  isolated restore
+                         │
+             ┌───────────┴───────────┐
+             ▼                       ▼
+       durable state            derived state
+          restored              rebuilt/reconciled
+             └───────────┬───────────┘
+                         ▼
+                 doctor + runtime gates
+```
+
 ## When to use it
 
 Use this guide for routine health checks, deployment changes, dependency outages, backup verification, disaster-recovery drills and post-restore validation.

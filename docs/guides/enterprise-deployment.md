@@ -6,6 +6,35 @@ AKP supports local and shared-node deployments while preserving a local-first se
 
 The deployment model separates service availability from model/provider availability. Optional LLM, embedding and document-intelligence providers are selected explicitly and may have stricter data-residency boundaries than the deployment as a whole.
 
+## Deployment topology
+
+```text
+ Developer laptop / browser / coding agent
+                  │
+             HTTPS / MCP
+                  │
+                  ▼
+      ┌─────────────────────────────┐
+      │ AKP Team Context Node       │
+      │ Web · API · MCP · Worker    │
+      │ PostgreSQL + pgvector       │
+      │ Raw object storage          │
+      │ Governed Git knowledge      │
+      └──────────────┬──────────────┘
+                     │
+             bounded federation
+                     │
+                     ▼
+              Org hub / peers
+```
+
+| Mode                  | Shared writable state       | Intended use                               |
+| --------------------- | --------------------------- | ------------------------------------------ |
+| `SOLO_LOCAL`          | local workstation           | one developer / private context            |
+| `GIT_SYNC_SMALL_TEAM` | derived state remains local | small team sharing canonical Git knowledge |
+| `TEAM_NODE`           | one authoritative node      | normal shared-team deployment              |
+| `FEDERATED_ORG`       | one authority per node      | independently governed teams/org domains   |
+
 ## When to use it
 
 Use a Team Node when multiple authorized users or agents need shared workspace state, common indexes and one database authority.

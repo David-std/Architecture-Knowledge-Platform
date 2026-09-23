@@ -8,6 +8,28 @@ AKP represents a `WorkContext` through the durable workspace/session aggregate: 
 
 A transcript is neither required nor sufficient to reconstruct the task.
 
+## Separation of concerns
+
+```text
+SYSTEM OF RECORD TASK
+GitHub / Jira / Linear / AKP-native WorkItem
+              │
+              ▼
+┌──────────────────────────────────┐
+│ WORKSPACE COORDINATION           │
+│ WorkContext · claims · leases    │
+│ blockers · findings · artifacts │
+│ presence · structured handoffs   │
+└───────────────┬──────────────────┘
+                │ selected evidence-backed finding
+                ▼
+        promotion + review
+                │
+                ▼
+DURABLE APPROVED KNOWLEDGE
+claims / rules / decisions in Git
+```
+
 ## When to use it
 
 Use the coordination plane when multiple participants can touch related work, when a task may be resumed later, when a fresh agent must continue from a handoff, or when concurrent writers need explicit ownership of a bounded scope.

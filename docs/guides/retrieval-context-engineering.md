@@ -6,6 +6,38 @@ AKP retrieval combines bounded exact, lexical, optional vector, graph, code, com
 
 The system separates candidate generation, policy filtering, ranking/fusion and context assembly. Citations, revision metadata, gaps, conflicts and degradation warnings travel with the result so callers can distinguish evidence from ranking signals.
 
+## Correctness before ranking
+
+```text
+principal + authorized scopes
+            │
+            ▼
+temporal / profile / revision constraints
+            │
+            ▼
+query shape + intent
+            │
+            ▼
+permitted candidate channels
+            │
+            ▼
+exact · lexical · vector · code · graph · temporal · raw
+            │
+            ▼
+support / truth / freshness validation
+            │
+            ▼
+fusion → optional rerank → dedupe/diversity/conflict coverage
+            │
+            ▼
+bounded Evidence-aware ContextPacket
+            │
+            ▼
+final revision-set verification
+```
+
+Similarity and ranking answer relevance questions; they do not override authorization, lifecycle, temporal validity or support.
+
 ## When to use it
 
 Use `/v1/search` for ranked evidence/document lookup. Use `/v1/context` or the agent façade when a task needs a bounded packet that combines evidence, policy context, conflicts, required actions and continuation handles.

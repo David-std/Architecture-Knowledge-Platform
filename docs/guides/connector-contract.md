@@ -8,6 +8,15 @@ Each connector declares an access mode, permission fidelity, synchronization fid
 
 Supported access modes are `MIRROR_INDEXED`, `REMOTE_FEDERATED`, `REFERENCE_LIVE` and `HYBRID_CACHE`.
 
+## Access modes
+
+| Mode               | Primary read                 | Local content | Live provider          | Offline behavior                         |
+| ------------------ | ---------------------------- | ------------- | ---------------------- | ---------------------------------------- |
+| `MIRROR_INDEXED`   | local index                  | full mirror   | not required for reads | supported within mirror freshness policy |
+| `REMOTE_FEDERATED` | remote query                 | none          | required               | unavailable                              |
+| `REFERENCE_LIVE`   | pointer + live expansion     | none          | required               | unavailable                              |
+| `HYBRID_CACHE`     | bounded cache + revalidation | bounded cache | normally required      | explicit stale policy only               |
+
 ## When to use it
 
 Use this contract whenever AKP ingests, references, queries or acts on a system outside its canonical Git/raw-source boundary.

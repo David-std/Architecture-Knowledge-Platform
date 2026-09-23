@@ -6,6 +6,19 @@ AKP federation lets independently authorized nodes discover peers and, in `FEDER
 
 Supported discovery modes are `CATALOG_ONLY`, `REMOTE_QUERY` and the reserved `MIRROR_BUNDLE`. The current executable federation path is remote query; mirror import is not advertised as an executed capability until its import/revocation semantics are implemented.
 
+## Node boundary
+
+```text
+┌──────────────────┐      bounded remote query      ┌──────────────────┐
+│ Team Node A      │ ─────────────────────────────▶ │ Team Node B      │
+│ local authority  │ ◀───────────────────────────── │ local authority  │
+└────────┬─────────┘   provenance + remote revision └────────┬─────────┘
+         │                                                    │
+         └──────────── local authorization remains ───────────┘
+
+Remote trust is preserved; it is never silently upgraded to local trust.
+```
+
 ## When to use it
 
 Use federation when separate Team Nodes must remain operationally independent but need explicitly authorized cross-node context. Use ordinary multi-vault retrieval when the data belongs to one node and one authorization authority.

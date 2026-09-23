@@ -72,6 +72,30 @@ erDiagram
   }
 ```
 
+## v0.4 durable-state domains
+
+The core ERD above shows the original authority/runtime backbone. v0.4 adds durable workspace, profile, graph, temporal, assurance, connector and federation state through append-only migrations. This conceptual map names the main table families; migration SQL remains authoritative for columns and constraints.
+
+```mermaid
+flowchart TD
+  Space["spaces / vaults"] --> Profile["knowledge_profile_revisions"]
+  Space --> Principal["principals / principal_credentials"]
+  Space --> Work["workspace_session_participants<br/>workspace_claims<br/>workspace_events<br/>workspace_context_revision_sets"]
+  Work --> External["external_object_refs<br/>workspace_offline_drafts"]
+  Work --> Decision["workspace_decision_candidates<br/>alternatives / objections / consultations"]
+  Space --> Graph["federated_graph_projection_revisions<br/>nodes / edges / relationship assertions"]
+  Graph --> CodeLink["code_knowledge_links"]
+  Space --> Truth["truth_revisions / truth_revision_heads<br/>source_episodes / truth_support_sets<br/>temporal_facts / withdrawals / invalidations"]
+  Truth --> Derived["derived_truth_projection_revisions / items"]
+  Graph --> Community["community_index_revisions<br/>communities / memberships"]
+  Space --> Retrieval["retrieval_query_traces<br/>reasoning_execution_traces"]
+  Space --> Assurance["assurance_runs / assurance_findings"]
+  Space --> Connector["source_connector_registrations<br/>checkpoints / events / objects"]
+  Space --> Peer["context_fabric_peers<br/>federation credential / health state"]
+```
+
+These records remain split by responsibility: workspace state is not canonical knowledge; graph/community/retrieval state is derived or operational; truth/support records preserve temporal and evidence semantics rather than rewriting approved Git history.
+
 `API_TOKENS.scopes` and `WEB_SESSIONS.scopes` contain a `TokenScopeSet` JSON
 object (`spaces[]` with `spaceId`, `pathPrefix` and `permissions`). A null
 `pathPrefix` denotes whole-space access; a relative path is narrower. Session

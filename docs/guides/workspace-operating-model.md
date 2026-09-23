@@ -12,6 +12,32 @@ Derived search indexes, graphs, summaries and ContextPackets are rebuildable con
 
 The first-party operating model is software-delivery oriented. It connects goals and work items to repositories, pull requests, builds, deployments, tests, incidents, decisions, services and authorized context without flattening those objects into one generic graph.
 
+## Authority model
+
+```text
+┌─────────────────────────┐
+│ SYSTEMS OF RECORD       │
+│ GitHub · Jira · CI/CD   │
+│ observability · catalog │
+└────────────┬────────────┘
+             │ authorized projection/reference
+             ▼
+┌─────────────────────────┐
+│ COORDINATION STATE      │
+│ claims · blockers       │
+│ findings · handoffs     │
+└────────────┬────────────┘
+             │ explicit promotion + review
+             ▼
+┌───────────────────────────┐
+│ DURABLE APPROVED KNOWLEDGE│
+│ claims · rules · decisions│
+│ Markdown + managed Git    │
+└───────────────────────────┘
+```
+
+This separation is the core reason AKP can coordinate work without becoming another issue tracker or treating agent notes as truth.
+
 ## When to use it
 
 Use the workspace operating model when a task spans more than one knowledge source or participant, when work must survive a handoff, or when a change needs context from software structure, current decisions, runtime evidence or external work items.
@@ -49,6 +75,17 @@ Connector capability, permission fidelity, freshness and source authority influe
 10. A later bootstrap sees the new approved revision; old strict sessions detect revision drift.
 
 Incident and deployment flows use the same model: source-of-record event, affected services/runtime evidence, recent changes, current rules/decisions, owners, work state and governed follow-up knowledge.
+
+## Software-delivery workflow map
+
+| Workflow   | Context path                                                                                   |
+| ---------- | ---------------------------------------------------------------------------------------------- |
+| Start work | ticket/goal → bootstrap → rules/decisions → service/catalog → code impact → history/handoffs   |
+| Implement  | claim → edits → code delta → tests/runtime evidence → findings → handoff                       |
+| Review     | PR/change → blast radius → rules/decisions → test evidence → contradictions → reviewer context |
+| Decide     | candidate → drivers/alternatives/evidence → consultation → review → approved decision          |
+| Incident   | incident → services/runtime → recent deploy/change → runbooks/decisions → owners/work          |
+| Deploy     | change → build/tests → policy gates → deployment → runtime observation → rollback/incident     |
 
 ## Security and governance boundaries
 

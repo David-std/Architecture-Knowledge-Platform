@@ -10,6 +10,32 @@ Team Context is AKP's shared coordination layer for people and agent processes. 
 
 A workspace session pins a `ContextRevisionSet`. The pin makes handoffs reproducible and lets AKP detect when profile, truth or index authorities changed while work was in progress.
 
+## Mental model
+
+```text
+┌─────────────────────────┐
+│ SYSTEMS OF RECORD       │
+│ GitHub · Jira · CI/CD   │
+│ observability · catalog │
+└────────────┬────────────┘
+             │ authorized projection/reference
+             ▼
+┌─────────────────────────┐
+│ COORDINATION STATE      │
+│ claims · blockers       │
+│ findings · handoffs     │
+└────────────┬────────────┘
+             │ explicit promotion + review
+             ▼
+┌───────────────────────────┐
+│ DURABLE APPROVED KNOWLEDGE│
+│ claims · rules · decisions│
+│ Markdown + managed Git    │
+└───────────────────────────┘
+```
+
+A `ContextRevisionSet` makes the shared read reproducible; it does not promote coordination state or broaden authorization.
+
 ## When to use it
 
 Use Team Context when more than one participant must work against a common authorized view of a space or vault, when a task needs resumable handoff, or when findings may later be promoted through review.
@@ -42,6 +68,23 @@ For a shared node, use the base Compose file together with `docker-compose.team-
 8. When a finding should become canonical knowledge, create a promotion request and send it through review. Workspace state itself never becomes approved knowledge automatically.
 
 The Web workspace and MCP `akp_context` façade expose the same underlying boundaries rather than maintaining a second truth system.
+
+## Lifecycle at a glance
+
+```text
+┌────────────┐   ┌────────────┐   ┌────────────┐   ┌────────────────┐
+│ READ       │ → │ WORK       │ → │ VERIFY     │ → │ CAPTURE/HANDOFF│
+│ bootstrap  │   │ code/tools │   │ support    │   │ durable state  │
+└────────────┘   └────────────┘   └────────────┘   └───────┬────────┘
+                                                              │
+                                                    durable knowledge?
+                                                              │
+                                                              ▼
+┌────────────┐   ┌────────────┐   ┌────────────┐   ┌────────────┐
+│ EVOLVE     │ ← │ PUBLISH    │ ← │ REVIEW     │ ← │ PROMOTE    │
+│ next read  │   │ Git+events │   │ human/policy│  │ candidate  │
+└────────────┘   └────────────┘   └────────────┘   └────────────┘
+```
 
 ## Security and governance boundaries
 

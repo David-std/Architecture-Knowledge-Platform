@@ -6,6 +6,30 @@ A Knowledge Profile is a versioned semantic contract for how a vault represents 
 
 Profiles shape compiler, review and retrieval behavior. They do not grant runtime authorization.
 
+## Profile lifecycle
+
+```text
+DRAFT
+  │
+  ▼
+VALIDATED
+  │
+  ├── breaking / policy-gated ──► REVIEW_REQUIRED
+  │                                 │
+  └─────────────────────────────────┘
+                  │
+                  ▼
+               ACTIVE
+                  │
+                  ▼
+             SUPERSEDED
+                  │
+                  ▼
+               RETIRED
+```
+
+Compatibility is classified before activation; a non-empty corpus is never silently reinterpreted under an incompatible profile.
+
 ## When to use it
 
 Use a profile when a domain needs semantics beyond the neutral default, when a schema change must be reviewed before it affects an existing corpus, or when connector/model behavior must be constrained per vault.

@@ -6,6 +6,26 @@ AKP v0.4 keeps three planes separate:
 - shared work coordination lives in durable PostgreSQL workspace state;
 - derived retrieval/index state is rebuildable and never becomes canonical by synchronization.
 
+## Context hierarchy
+
+```text
+PERSONAL
+  │ explicit promotion
+  ▼
+PROJECT
+  │ explicit promotion
+  ▼
+TEAM / DOMAIN
+  │ explicit promotion
+  ▼
+ORGANIZATION / CENTRAL
+
+EXTERNAL_FEDERATED
+  └─ read/import candidate only; remote trust is preserved
+```
+
+Scope inheritance is policy-driven, not folder-driven. A narrower project decision is not silently overwritten by broader shared knowledge.
+
 ## Deployment modes
 
 `AKP_CONTEXT_FABRIC_MODE` declares the operator-visible deployment mode:
@@ -20,6 +40,26 @@ Set `AKP_CONTEXT_FABRIC_NODE_ID` to a stable operator-visible node identifier. T
 Do **not** synchronize a writable PostgreSQL data directory, pgvector database, cache, or derived graph through Git, OneDrive, Syncthing, Dropbox, or another file-synchronization mechanism. Shared derived state belongs to the Team Context Node. Approved knowledge can be reconstructed from governed Git and raw/source records according to the existing backup/recovery contract.
 
 ### Running a Team Context Node
+
+```text
+ Developer laptop / browser / coding agent
+                  │
+             HTTPS / MCP
+                  │
+                  ▼
+      ┌─────────────────────────────┐
+      │ AKP Team Context Node       │
+      │ Web · API · MCP · Worker    │
+      │ PostgreSQL + pgvector       │
+      │ Raw object storage          │
+      │ Governed Git knowledge      │
+      └──────────────┬──────────────┘
+                     │
+             bounded federation
+                     │
+                     ▼
+              Org hub / peers
+```
 
 `TEAM_NODE` is an executable topology, not only a declared mode. `docker-compose.yml` provides the infrastructure a node runs on; `docker-compose.team-node.yml` adds the services that constitute the node itself — one API, one worker and one web surface, built from the same revision by the root `Dockerfile` and pointed at that one infrastructure:
 
@@ -75,6 +115,25 @@ Governed proposal content cannot manufacture a stronger trust authority through 
 Normal `AGENT_PROCESS` credentials can read/coordinate and may receive `knowledge:propose`; they do not receive `knowledge:review`, publication, or administrative authority. Their bearer credential is bounded by its own expiry and policy revision. A derived agent also remains subordinate to its recorded human authority root: once that parent principal is no longer active, the child credential is invalid even if the child principal row itself has not yet been revoked. Expired credentials and credentials whose parent authority has been revoked must fail closed on the next request rather than retaining ambient session authority.
 
 Revoking an `AGENT_PROCESS` updates its principal and credentials and appends `PrincipalRevoked` to the causal outbox in the same database transaction, including session, vault and new principal policy revision. Downstream coordination can therefore react to revocation without polling a partially updated authority state.
+
+## Read-capture-review-evolve
+
+```text
+┌────────────┐   ┌────────────┐   ┌────────────┐   ┌────────────────┐
+│ READ       │ → │ WORK       │ → │ VERIFY     │ → │ CAPTURE/HANDOFF│
+│ bootstrap  │   │ code/tools │   │ support    │   │ durable state  │
+└────────────┘   └────────────┘   └────────────┘   └───────┬────────┘
+                                                              │
+                                                    durable knowledge?
+                                                              │
+                                                              ▼
+┌────────────┐   ┌────────────┐   ┌────────────┐   ┌────────────┐
+│ EVOLVE     │ ← │ PUBLISH    │ ← │ REVIEW     │ ← │ PROMOTE    │
+│ next read  │   │ Git+events │   │ human/policy│  │ candidate  │
+└────────────┘   └────────────┘   └────────────┘   └────────────┘
+```
+
+This is the workspace boundary in compact form: work memory can survive sessions, but durable shared knowledge still crosses an explicit promotion/review boundary.
 
 ## External system-of-record references
 

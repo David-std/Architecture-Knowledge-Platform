@@ -6,6 +6,32 @@ AKP exposes agent-facing context through expert MCP tools and the lower-entropy 
 
 AKP also exposes an integrity-addressed generated instruction bundle. Its rules tell an agent when to bootstrap, retrieve, run impact analysis, capture findings, hand off and request promotion.
 
+## Agent path
+
+```text
+Coding agent / IDE / custom MCP client
+                       │
+                    stdio MCP
+                       │
+                       ▼
+               ┌───────────────┐
+               │ apps/mcp      │
+               │ akp_context   │
+               └───────┬───────┘
+                       │ HTTP + scoped token
+                       ▼
+               ┌───────────────┐
+               │ AKP API       │
+               │ auth + truth  │
+               │ revisions     │
+               └───────┬───────┘
+                       │
+                       ▼
+                 Context Fabric
+```
+
+The MCP process is a stdio client adapter, not a second context authority.
+
 ## When to use it
 
 Use `akp_context` for general-purpose agents that benefit from a compact surface. Use expert tools when the caller needs direct control over a specialized operation and understands its contract.
@@ -34,6 +60,23 @@ The generated lifecycle is: `BOOTSTRAP -> WORK -> TARGETED_RETRIEVAL -> IMPACT_C
 Useful `akp_context` actions include `BOOTSTRAP`, `SEARCH`, `EXPLAIN`, `IMPACT`, `CODE`, `TEMPORAL`, `GLOBAL`, `VERIFY` and `STATUS`. Mutating actions such as capture/task coordination remain governed and should not be selected for read-only tasks.
 
 A factual architectural answer should cite source-backed context. Findings that matter beyond the current task should be captured first and promoted only through review when they belong in canonical knowledge.
+
+## Task lifecycle
+
+```text
+┌────────────┐   ┌────────────┐   ┌────────────┐   ┌────────────────┐
+│ READ       │ → │ WORK       │ → │ VERIFY     │ → │ CAPTURE/HANDOFF│
+│ bootstrap  │   │ code/tools │   │ support    │   │ durable state  │
+└────────────┘   └────────────┘   └────────────┘   └───────┬────────┘
+                                                              │
+                                                    durable knowledge?
+                                                              │
+                                                              ▼
+┌────────────┐   ┌────────────┐   ┌────────────┐   ┌────────────┐
+│ EVOLVE     │ ← │ PUBLISH    │ ← │ REVIEW     │ ← │ PROMOTE    │
+│ next read  │   │ Git+events │   │ human/policy│  │ candidate  │
+└────────────┘   └────────────┘   └────────────┘   └────────────┘
+```
 
 ## Security and governance boundaries
 

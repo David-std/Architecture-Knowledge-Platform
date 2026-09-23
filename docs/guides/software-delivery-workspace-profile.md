@@ -8,6 +8,25 @@ Its object families cover workspace/project/goal, team/person/agent, domain/syst
 
 Relations include ownership/membership, composition, API consumption, dependencies, implementation, impact, links/resolution/blocking, supersession, discussion/decision/motivation, deployment/testing/observation, change/touch/assignment/review/approval.
 
+## Object model at a glance
+
+```text
+Workspace / Project / Goal
+        │
+        ├── Team / Person / Agent
+        ├── Domain / System / Service / Component / API / Resource
+        ├── Repository / Branch / Commit / PullRequest / Review
+        ├── Issue / WorkItem / Incident / Change
+        ├── Build / Deployment / Environment
+        ├── Test / TestRun
+        ├── Runbook / Document
+        ├── Decision / DecisionCandidate
+        ├── Meeting / Channel / Message / Comment
+        └── WorkTask / WorkSession / Handoff
+```
+
+The profile gives these objects portable semantics; connector-specific fields remain adapter concerns.
+
 ## When to use it
 
 Use this profile when AKP supports software delivery, architecture, review, incident or deployment work and the generic profile would otherwise force each installation to invent the same vocabulary.

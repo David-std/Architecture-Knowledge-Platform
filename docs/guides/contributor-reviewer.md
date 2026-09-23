@@ -6,6 +6,30 @@ AKP separates contribution from approval. Contributors can submit sources, compi
 
 Approved canonical knowledge is managed Markdown in Git. Generated/provider output, workspace findings and connector projections are candidate or operational state until the review lifecycle explicitly publishes them.
 
+## Publication boundary
+
+```text
+source / finding / authored draft
+             │
+             ▼
+       candidate change
+             │
+             ▼
+deterministic validation + evidence
+             │
+             ▼
+       isolated Git diff
+             │
+             ▼
+       human/policy review
+        │ approve   │ reject/change
+        ▼           └───────────────► candidate state
+managed Git publication
+        │
+        ▼
+derived projections rebuild/update
+```
+
 ## When to use it
 
 Use the contribution/review workflow whenever a proposed change should become shared canonical knowledge. Use workspace findings or notes when information is useful for current work but is not yet ready for publication.

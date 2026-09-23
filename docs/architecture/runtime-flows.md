@@ -105,28 +105,51 @@ converges to the rollback revision through the normal durable lifecycle.
 ## Retrieval and ContextPacket
 
 ```mermaid
-flowchart LR
-  Q["Scoped query"] --> Planner["Deterministic intent planner"]
-  Planner --> Exact
-  Planner --> FTS["PostgreSQL FTS"]
-  Planner --> Vector["pgvector, feature-flagged"]
-  Planner --> Graph["Typed graph"]
-  Planner --> Packs["Context-pack router"]
-  Planner --> Fallback["Raw/code fallback"]
-  Exact --> RRF
-  FTS --> RRF
-  Vector --> RRF
-  Graph --> RRF
-  Packs --> RRF
-  Fallback --> RRF
-  RRF --> Policy["RBAC + lifecycle + trust + freshness"]
-  Policy --> Packet["Budgeted ContextPacket"]
+flowchart TD
+  Q["Query + principal"] --> Scope["Resolve authorized scopes/resources"]
+  Scope --> Constraints["Profile + temporal + revision constraints"]
+  Constraints --> Planner["Intent / query-shape planner"]
+  Planner --> Exact["Exact / alias"]
+  Planner --> FTS["Lexical / FTS"]
+  Planner --> Vector["Vector, optional"]
+  Planner --> Code["Code / symbol"]
+  Planner --> Graph["Typed graph / PPR / community"]
+  Planner --> Temporal["Temporal"]
+  Planner --> Raw["Raw/source fallback"]
+  Exact --> Truth["Lifecycle + support + truth + freshness validation"]
+  FTS --> Truth
+  Vector --> Truth
+  Code --> Truth
+  Graph --> Truth
+  Temporal --> Truth
+  Raw --> Truth
+  Truth --> Fusion["RRF / bounded fusion"]
+  Fusion --> Rerank["Optional rerank"]
+  Rerank --> Assemble["Dedupe + diversity + conflict coverage"]
+  Assemble --> Packet["Evidence-aware ContextPacket"]
+  Packet --> Verify["Final revision-set verification"]
 ```
 
-The maintained synthetic and curated evaluation suites leave the production
-default unset. Vector remains disabled until a held-out production-like
-evaluation justifies it. Packets retain retrieval channels/reasons, corpus and
-index revisions, citations, conflicts, gaps and continuation handles.
+Authorization constrains candidate generation before graph/vector/community expansion. Truth-valid retrieval rejects stale or unsupported derived candidates before they can displace valid candidates during fusion or reranking. Optional channels may degrade independently, but they cannot resurrect candidates rejected by authorization, lifecycle, temporal or support policy.
+
+## Workspace coordination and promotion
+
+```text
+┌────────────┐   ┌────────────┐   ┌────────────┐   ┌────────────────┐
+│ READ       │ → │ WORK       │ → │ VERIFY     │ → │ CAPTURE/HANDOFF│
+│ bootstrap  │   │ code/tools │   │ support    │   │ durable state  │
+└────────────┘   └────────────┘   └────────────┘   └───────┬────────┘
+                                                              │
+                                                    durable knowledge?
+                                                              │
+                                                              ▼
+┌────────────┐   ┌────────────┐   ┌────────────┐   ┌────────────┐
+│ EVOLVE     │ ← │ PUBLISH    │ ← │ REVIEW     │ ← │ PROMOTE    │
+│ next read  │   │ Git+events │   │ human/policy│  │ candidate  │
+└────────────┘   └────────────┘   └────────────┘   └────────────┘
+```
+
+Work claims and handoffs are durable coordination state. Promotion creates a governed review candidate; only the existing review/publication path can produce approved managed-Git knowledge.
 
 ## Browser authentication
 

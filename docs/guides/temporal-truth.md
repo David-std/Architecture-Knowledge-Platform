@@ -6,6 +6,28 @@ Temporal Truth is AKP's append-only bi-temporal substrate for facts, support, so
 
 `truth_revision_heads` points to the latest immutable truth revision for each vault. Facts reference support sets, source episodes and the revision that introduced them. Supersessions, withdrawals and evidence invalidations are separate immutable records.
 
+## Truth-valid read path
+
+```text
+immutable source episode
+        │
+        ▼
+TruthSupportSet ───────────────┐
+        │                      │
+        ▼                      │
+bi-temporal fact               │
+valid time + recorded time     │
+        │                      │
+        ├── current query      ├── support validation
+        ├── as-of query        │
+        └── changed-since      │
+                               ▼
+                    stale derived candidate?
+                         │ yes        │ no
+                         ▼            ▼
+                       reject      rank/fuse
+```
+
 ## When to use it
 
 Use temporal queries for current-truth questions, historical/as-of questions, changed-since analysis, withdrawal behavior and cases where multiple support paths or disputed facts matter.

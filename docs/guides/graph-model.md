@@ -6,6 +6,25 @@ AKP maintains a federated graph substrate as derived, rebuildable context state.
 
 The graph keeps domains distinct: `EPISTEMIC`, `SOFTWARE_CATALOG`, `CODE`, `RUNTIME`, `TEMPORAL`, `WORK` and `COMMUNITY`. Nodes are revisioned identities; edges carry typed relations and provenance describing derivation, source/evidence references, revision, time and optional confidence.
 
+## Domain layout
+
+```text
+ Epistemic      Software Catalog      Work / Activity
+     │                 │                    │
+     ├─────────────────┼────────────────────┤
+     │                 │                    │
+   Code             Runtime              Temporal
+     │                 │                    │
+     └──────────────┬──┴───────────┬────────┘
+                    │              │
+                 PPR/paths      Community
+                    └──────┬───────┘
+                           ▼
+                  bounded graph query
+```
+
+The graph substrate federates domains through typed bridges while preserving their different derivation and authority semantics.
+
 ## When to use it
 
 Use graph queries when a task needs bounded multi-hop relationships, change impact, dependency paths, cross-domain context or structural evidence that is not represented well by plain lexical retrieval.

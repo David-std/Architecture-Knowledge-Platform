@@ -6,6 +6,25 @@ A code-graph revision is requested first, enters `BUILDING` before provider-deri
 
 Transition timestamps are retained on the projection revision (`requestedAt`, `buildingAt`, `readyAt`, `activatedAt`, `retiredAt`) so operators can distinguish extraction latency, readiness and activation rather than inferring them from one mutable status.
 
+## Projection lifecycle
+
+```text
+repository SHA A ──► ACTIVE graph A
+       │
+new repository SHA B
+       │
+       ▼
+ graph A becomes STALE
+       │
+       ▼
+ build graph B
+   │ success        │ failure
+   ▼                ▼
+activate B       retain A as labelled stale/degraded fallback
+```
+
+A stale graph can be useful as explicitly degraded context, but it is never relabelled as current for a different commit.
+
 ## Graphify provider and validation boundary
 
 The live code-graph adapter is audited against Graphify `graphifyy==0.9.63`, Apache-2.0, upstream commit `eaaec1abd99d3a7fb30301ccb49f4cc72ae34011`. The accepted full invocation is `extract . --code-only --no-viz --no-cluster`; incremental refresh uses `update . --no-cluster`. The code-only integration is treated as local and does not require network access. A different provider version fails the adapter gate until it is deliberately re-audited.
