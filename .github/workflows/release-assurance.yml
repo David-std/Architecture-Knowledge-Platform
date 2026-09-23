@@ -1,0 +1,75 @@
+name: release-assurance
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  same-sha-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Collect same-SHA workflow assurance
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          AKP_RELEASE_ASSURANCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+          AKP_RELEASE_ASSURANCE_POLL_MS: "15000"
+          AKP_RELEASE_ASSURANCE_WAIT_MS: "1800000"
+          AKP_RELEASE_ASSURANCE_WORKFLOW_REPORT: reports/ci/release-assurance-workflows.json
+        run: node scripts/release-assurance-workflows.mjs
+      - name: Build capability evidence ledger
+        env:
+          AKP_RELEASE_ASSURANCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+          AKP_RELEASE_ASSURANCE_WORKFLOW_REPORT: reports/ci/release-assurance-workflows.json
+          AKP_CAPABILITY_EVIDENCE_LEDGER: reports/ci/release-assurance-evidence.json
+        run: pnpm assurance:evidence
+      - name: Generate capability acceptance matrix
+        env:
+          AKP_CAPABILITY_EVIDENCE_LEDGER: reports/ci/release-assurance-evidence.json
+          AKP_CAPABILITY_ACCEPTANCE_JSON: reports/ci/capability-acceptance.json
+          AKP_CAPABILITY_ACCEPTANCE_MARKDOWN: reports/ci/capability-acceptance.md
+        run: pnpm assurance:capabilities
+      - name: Generate parity and exclusion reports
+        env:
+          AKP_CAPABILITY_ACCEPTANCE_JSON: reports/ci/capability-acceptance.json
+          AKP_PARITY_EXCLUSION_DIR: reports/ci/parity-exclusions
+        run: pnpm assurance:parity-exclusions
+      - name: Assemble same-SHA release assurance package
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          AKP_RELEASE_ASSURANCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+          AKP_RELEASE_ASSURANCE_WORKFLOW_REPORT: reports/ci/release-assurance-workflows.json
+          AKP_RELEASE_ASSURANCE_PACKAGE_DIR: reports/ci/release-assurance-package
+        run: node scripts/release-assurance-bundle.mjs
+      - name: Upload release assurance evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-assurance-${{ github.run_id }}
+          path: |
+            reports/ci/release-assurance-workflows.json
+            reports/ci/release-assurance-evidence.json
+            reports/ci/capability-acceptance.json
+            reports/ci/capability-acceptance.md
+            reports/ci/parity-exclusions
+            reports/ci/release-assurance-package
+          if-no-files-found: warn
+          retention-days: 30

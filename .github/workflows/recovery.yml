@@ -3,6 +3,10 @@ name: recovery
 on:
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   managed-git-restore:
     runs-on: ubuntu-latest
@@ -24,7 +28,19 @@ jobs:
         with:
           node-version: 24.20.0
           cache: pnpm
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          version: 0.12.7
+          enable-cache: true
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Install pinned Graphify for recovery rebuild
+        shell: bash
+        run: |
+          uv tool install graphifyy==0.9.63
+          echo "AKP_GRAPHIFY_EXECUTABLE=$(uv tool dir --bin)/graphify" >> "$GITHUB_ENV"
       - run: pnpm build
       - run: docker compose up -d --wait postgres minio
       - name: Create disposable managed repository with a searchable restore probe
@@ -35,7 +51,7 @@ jobs:
           git init -b main "$AKP_MANAGED_REPO"
           git -C "$AKP_MANAGED_REPO" config user.name "AKP Recovery CI"
           git -C "$AKP_MANAGED_REPO" config user.email "akp-recovery-ci@localhost"
-          mkdir -p "$AKP_MANAGED_REPO/managed"
+          mkdir -p "$AKP_MANAGED_REPO/managed" "$AKP_MANAGED_REPO/src"
           cat > "$AKP_MANAGED_REPO/managed/restore-probe.md" <<'EOF'
           ---
           id: RECOVERY-RESTORE-PROBE
@@ -47,23 +63,48 @@ jobs:
 
           This restore probe must become searchable after the managed Git bundle is restored into a new repository.
           EOF
+          cat > "$AKP_MANAGED_REPO/src/recovery-code.ts" <<'EOF'
+          export function restoredDependency(): string {
+            return "restore";
+          }
+
+          export function restoredCaller(): string {
+            return restoredDependency();
+          }
+          EOF
           git -C "$AKP_MANAGED_REPO" add --all
           git -C "$AKP_MANAGED_REPO" commit -m "test: seed managed restore probe"
       - run: pnpm db:migrate
+      - name: Import durable recovery verification document state
+        run: >-
+          pnpm akp vault import
+          --vault-path "$AKP_MANAGED_REPO"
+          --space-id 00000000-0000-0000-0000-000000000003
+          --vault-key recovery-verification-vault
+          --read-only
+          --report-dir reports/migration
+      - name: Seed durable v0.4 recovery sentinels
+        env:
+          AKP_RECOVERY_VERIFICATION_VAULT_KEY: recovery-verification-vault
+          AKP_RECOVERY_VERIFICATION_MANIFEST: reports/ci/recovery-state-seed.json
+        run: pnpm exec tsx scripts/seed-recovery-verification.ts
       - name: Create complete disposable recovery backup
         shell: pwsh
         run: >-
           ./scripts/backup.ps1
           -OutputDirectory backups/ci-recovery
           -ManagedRepository $env:AKP_MANAGED_REPO
-      - name: Verify PostgreSQL, MinIO and baseline Git restore smoke
+      - name: Verify PostgreSQL, MinIO and durable v0.4 state restore
         shell: pwsh
         run: >-
-          ./scripts/restore-smoke.ps1
+          ./scripts/verify-restore.ps1
           -BackupDirectory backups/ci-recovery
           -ManagedRepository $env:AKP_MANAGED_REPO
-      - name: Prove managed Git commit, files and searchable reindex after restore
+          -RecoveryStateManifest reports/ci/recovery-state-seed.json
+      - name: Verify managed Git commit, files and searchable reindex after restore
         shell: pwsh
+        env:
+          AKP_RESTORED_DERIVED_REPORT: reports/ci/restored-derived-context.json
         run: >-
           ./scripts/verify-managed-git-restore.ps1
           -BackupDirectory backups/ci-recovery
@@ -76,6 +117,8 @@ jobs:
           name: recovery-diagnostics-${{ github.run_id }}
           path: |
             backups/ci-recovery/manifest.json
+            reports/ci/recovery-state-seed.json
+            reports/ci/restored-derived-context.json
             reports/migration
           if-no-files-found: ignore
           retention-days: 7

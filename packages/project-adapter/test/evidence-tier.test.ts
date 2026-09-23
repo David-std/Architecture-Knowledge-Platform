@@ -7,9 +7,37 @@ import {
   DeterministicProjectAdapter,
   buildProjectSnapshot,
   maySupportVerifiedClaim,
+  transitionCodeEvidenceTier,
 } from "../src/index.js";
 
 describe("project evidence tiers", () => {
+  it("promotes evidence only through explicit stronger proof signals", () => {
+    expect(transitionCodeEvidenceTier("AI_CANDIDATE", "MODEL_AGREEMENT")).toBe(
+      "AI_CANDIDATE",
+    );
+    expect(
+      transitionCodeEvidenceTier(
+        "AI_CANDIDATE",
+        "MATCHING_RUNTIME_OBSERVATION",
+      ),
+    ).toBe("AI_CANDIDATE");
+    expect(
+      transitionCodeEvidenceTier("AI_CANDIDATE", "DETERMINISTIC_STATIC_EDGE"),
+    ).toBe("STATICALLY_LINKED");
+    expect(
+      transitionCodeEvidenceTier(
+        "STATICALLY_LINKED",
+        "MATCHING_RUNTIME_OBSERVATION",
+      ),
+    ).toBe("RUNTIME_COVERED");
+    expect(
+      transitionCodeEvidenceTier("RUNTIME_COVERED", "EXPLICIT_DYNAMIC_PROOF"),
+    ).toBe("DYNAMICALLY_PROVEN");
+    expect(
+      transitionCodeEvidenceTier("STATICALLY_LINKED", "MODEL_AGREEMENT"),
+    ).toBe("STATICALLY_LINKED");
+  });
+
   it("does not promote a regex annotation to verified evidence", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "akp-project-"));
     await writeFile(

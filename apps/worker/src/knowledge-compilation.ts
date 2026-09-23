@@ -2,8 +2,10 @@ import {
   CompilationPlan,
   ExistingKnowledgeCandidate,
   KnowledgeCompilerInput,
+  allowedCompilerKnowledgeKinds,
   resultToCompilationPlan,
   type CompilerEvidence,
+  type CompilerKnowledgeProfileContext,
   type ConfiguredKnowledgeCompiler,
   type KnowledgeCompilerInput as KnowledgeCompilerInputType,
   type KnowledgeCompilerResult,
@@ -197,7 +199,7 @@ async function exactAndLexicalCandidates(
 
 /**
  * Expand source-relevant exact/lexical seeds through the active semantic
- * generation. This deliberately reuses already-persisted P1 vectors instead
+ * generation. This deliberately reuses already-persisted source vectors instead
  * of loading an embedding provider into the ingest worker. Every compared
  * vector belongs to the same active generation and vault/corpus revision.
  */
@@ -394,6 +396,7 @@ export interface GroundedCompilationRequest {
   };
   documentArtifact: DocumentArtifact;
   evidence: CompilerEvidence[];
+  knowledgeProfile: CompilerKnowledgeProfileContext;
   schemaProfile: Record<string, unknown>;
   corpusRevision: string;
   spaceId: string;
@@ -403,20 +406,22 @@ export interface GroundedCompilationRequest {
   pathPrefix?: string | null;
 }
 
-export interface GroundedCompilationResult {
+export interface PreparedGroundedCompilation {
   input: KnowledgeCompilerInputType;
-  result: KnowledgeCompilerResult;
-  plan: CompilationPlan;
   retrievalWarnings: string[];
   retrievalChannels: string[];
+}
+
+export interface GroundedCompilationResult extends PreparedGroundedCompilation {
+  result: KnowledgeCompilerResult;
+  plan: CompilationPlan;
   provider: ConfiguredKnowledgeCompiler["descriptor"];
 }
 
-export async function compileGroundedKnowledgeProposal(
+export async function prepareGroundedKnowledgeCompilation(
   db: Postgres,
-  configured: ConfiguredKnowledgeCompiler,
   request: GroundedCompilationRequest,
-): Promise<GroundedCompilationResult> {
+): Promise<PreparedGroundedCompilation> {
   const primaryEvidence = request.evidence[0];
   if (!primaryEvidence) throw new Error("COMPILER_EVIDENCE_REQUIRED");
   const retrieval = await withSpan(
@@ -444,10 +449,14 @@ export async function compileGroundedKnowledgeProposal(
     documentArtifact: request.documentArtifact,
     evidence: request.evidence,
     existingCandidates: retrieval.candidates,
+    knowledgeProfile: request.knowledgeProfile,
     schemaProfile: request.schemaProfile,
     policy: {
       reviewRequired: true,
       allowDirectPublication: false,
+      allowedKnowledgeKinds: allowedCompilerKnowledgeKinds(
+        request.knowledgeProfile.profile,
+      ),
     },
     budget: {
       maxInputCharacters: 80_000,
@@ -460,21 +469,42 @@ export async function compileGroundedKnowledgeProposal(
     spaceId: request.spaceId,
     vaultId: request.vaultId,
   });
+  return {
+    input,
+    retrievalWarnings: retrieval.warnings,
+    retrievalChannels: retrieval.channels,
+  };
+}
+
+export async function executePreparedGroundedKnowledgeCompilation(
+  configured: ConfiguredKnowledgeCompiler,
+  prepared: PreparedGroundedCompilation,
+): Promise<GroundedCompilationResult> {
   let result: KnowledgeCompilerResult;
   try {
-    result = await configured.compiler.compile(input);
+    result = await configured.compiler.compile(prepared.input);
   } catch (error) {
     telemetry.counter("provider_failures", 1, {
-      provider: "knowledge-compiler",
+      provider: configured.descriptor.provider,
+      role: configured.descriptor.role,
     });
     throw error;
   }
   return {
-    input,
+    ...prepared,
     result,
-    plan: CompilationPlan.parse(resultToCompilationPlan(input, result)),
-    retrievalWarnings: retrieval.warnings,
-    retrievalChannels: retrieval.channels,
+    plan: CompilationPlan.parse(
+      resultToCompilationPlan(prepared.input, result),
+    ),
     provider: configured.descriptor,
   };
+}
+
+export async function compileGroundedKnowledgeProposal(
+  db: Postgres,
+  configured: ConfiguredKnowledgeCompiler,
+  request: GroundedCompilationRequest,
+): Promise<GroundedCompilationResult> {
+  const prepared = await prepareGroundedKnowledgeCompilation(db, request);
+  return executePreparedGroundedKnowledgeCompilation(configured, prepared);
 }

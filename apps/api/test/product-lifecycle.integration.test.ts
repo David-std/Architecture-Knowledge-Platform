@@ -472,6 +472,8 @@ beforeAll(async () => {
     contextTokenizer: {
       id: "e2e-char4",
       label: "E2E deterministic char/4 tokenizer",
+      quality: "APPROXIMATE" as const,
+      approximate: true,
       count: (text: string) => Math.ceil(text.length / 4),
     },
   });
@@ -519,12 +521,33 @@ describe("product lifecycle E2E", () => {
       impact_manifest?: {
         proposedChanges?: Array<{ path?: string; content?: string }>;
       };
+      comments: Array<Record<string, unknown>>;
+      evidenceDetails: Array<Record<string, unknown>>;
+      assuranceFindings: Array<Record<string, unknown>>;
+      graphImpact: Array<Record<string, unknown>>;
+      codeImpact: Array<Record<string, unknown>>;
+      temporalImpact: {
+        head: Record<string, unknown> | null;
+        facts: Array<Record<string, unknown>>;
+      };
+      affectedEvals: Array<Record<string, unknown>>;
+      affectedTests: Array<Record<string, unknown>>;
     };
     expect(pendingReviewBody).toMatchObject({
       id: firstReviewId,
       status: "PENDING",
       vault_id: vaultId,
     });
+    expect(pendingReviewBody.comments).toEqual(expect.any(Array));
+    expect(pendingReviewBody.evidenceDetails).toEqual(expect.any(Array));
+    expect(pendingReviewBody.assuranceFindings).toEqual(expect.any(Array));
+    expect(pendingReviewBody.graphImpact).toEqual(expect.any(Array));
+    expect(pendingReviewBody.codeImpact).toEqual(expect.any(Array));
+    expect(pendingReviewBody.temporalImpact).toMatchObject({
+      facts: expect.any(Array),
+    });
+    expect(pendingReviewBody.affectedEvals).toEqual(expect.any(Array));
+    expect(pendingReviewBody.affectedTests).toEqual(expect.any(Array));
 
     const originalChange =
       pendingReviewBody.impact_manifest?.proposedChanges?.[0];
@@ -580,6 +603,28 @@ describe("product lifecycle E2E", () => {
     });
 
     await runWorkerDrain();
+
+    const publishedReview = await app.inject({
+      method: "GET",
+      url: `/v1/reviews/${firstReviewId}`,
+      headers,
+    });
+    expect(publishedReview.statusCode, publishedReview.body).toBe(200);
+    const publishedReviewBody = publishedReview.json() as {
+      affectedEvals: Array<{
+        run_id?: string | null;
+        status?: string | null;
+      }>;
+    };
+    expect(publishedReviewBody.affectedEvals.length).toBeGreaterThan(0);
+    expect(
+      publishedReviewBody.affectedEvals.some(
+        (evaluation) =>
+          typeof evaluation.run_id === "string" &&
+          typeof evaluation.status === "string",
+      ),
+    ).toBe(true);
+
     const indexed = await db.pool.query<{
       state: string;
       source_id: string;
@@ -718,7 +763,12 @@ describe("product lifecycle E2E", () => {
       sections: Array<{ content: string; vaultId: string }>;
       citations: string[];
       budget: {
-        tokenizer: { id: string; approximate: boolean; source: string };
+        tokenizer: {
+          id: string;
+          quality: "EXACT" | "APPROXIMATE";
+          approximate: boolean;
+          source: string;
+        };
       };
     };
     expect(contextBody).toMatchObject({
@@ -727,7 +777,8 @@ describe("product lifecycle E2E", () => {
       budget: {
         tokenizer: {
           id: "e2e-char4",
-          approximate: false,
+          quality: "APPROXIMATE",
+          approximate: true,
           source: "injected",
         },
       },
@@ -740,6 +791,135 @@ describe("product lifecycle E2E", () => {
       ),
     ).toBe(true);
     expect(contextBody.citations.length).toBeGreaterThan(0);
+
+    const reasonedContext = await app.inject({
+      method: "POST",
+      url: "/v1/context",
+      headers,
+      payload: {
+        query: revisionMarker,
+        intent: "CONCEPTUAL",
+        spaceId: defaultSpace,
+        vaultId,
+        reasoningMode: "PLAN",
+        maxTokens: 2_000,
+      },
+    });
+    expect(reasonedContext.statusCode, reasonedContext.body).toBe(200);
+    const reasonedContextBody = reasonedContext.json() as {
+      retrievalConfiguration: {
+        reasoning: {
+          requested: string;
+          execution: string;
+          trace: {
+            planId: string;
+            status: string;
+            steps: Array<{ operator: string; status: string }>;
+          };
+        };
+      };
+      sections: Array<{ content: string }>;
+    };
+    expect(reasonedContextBody.retrievalConfiguration.reasoning).toMatchObject({
+      requested: "PLAN",
+      execution: "PLAN",
+      trace: {
+        status: "SUCCESS",
+      },
+    });
+    expect(
+      reasonedContextBody.retrievalConfiguration.reasoning.trace.steps.at(-1),
+    ).toMatchObject({
+      operator: "BUILD_CONTEXT",
+      status: "SUCCESS",
+    });
+    expect(
+      reasonedContextBody.sections.some((section) =>
+        section.content.includes(revisionMarker),
+      ),
+    ).toBe(true);
+
+    const persistedReasoning = await db.pool.query<{
+      status: string;
+      intent: string;
+      steps: Array<{ operator: string; status: string }>;
+      vault_ids: string[];
+      revision_verified: boolean;
+    }>(
+      `select status,intent,steps,vault_ids,revision_verified
+         from reasoning_execution_traces
+        where space_id=$1 and plan_id=$2
+        order by created_at desc
+        limit 1`,
+      [
+        defaultSpace,
+        reasonedContextBody.retrievalConfiguration.reasoning.trace.planId,
+      ],
+    );
+    expect(persistedReasoning.rows[0]).toMatchObject({
+      status: "SUCCESS",
+      intent: "CONCEPTUAL",
+      vault_ids: [vaultId],
+      revision_verified: true,
+    });
+    expect(persistedReasoning.rows[0]?.steps.at(-1)).toMatchObject({
+      operator: "BUILD_CONTEXT",
+      status: "SUCCESS",
+    });
+
+    const catalogContext = await app.inject({
+      method: "POST",
+      url: "/v1/context",
+      headers,
+      payload: {
+        query: revisionMarker,
+        spaceId: defaultSpace,
+        vaultId,
+        contextLevel: "L0",
+        maxTokens: 2_000,
+      },
+    });
+    expect(catalogContext.statusCode, catalogContext.body).toBe(200);
+    const catalogBody = catalogContext.json() as {
+      requestedContextLevel: string;
+      sections: Array<{ contextLevel: string; content: string }>;
+    };
+    expect(catalogBody.requestedContextLevel).toBe("L0");
+    expect(catalogBody.sections.length).toBeGreaterThan(0);
+    expect(
+      catalogBody.sections.every(
+        (section) =>
+          section.contextLevel === "L0" &&
+          section.content.includes("revision="),
+      ),
+    ).toBe(true);
+
+    const fullContext = await app.inject({
+      method: "POST",
+      url: "/v1/context",
+      headers,
+      payload: {
+        query: revisionMarker,
+        spaceId: defaultSpace,
+        vaultId,
+        contextLevel: "L3",
+        maxTokens: 8_000,
+      },
+    });
+    expect(fullContext.statusCode, fullContext.body).toBe(200);
+    const fullContextBody = fullContext.json() as {
+      requestedContextLevel: string;
+      sections: Array<{ contextLevel: string; content: string }>;
+    };
+    expect(fullContextBody.requestedContextLevel).toBe("L3");
+    expect(
+      fullContextBody.sections.some(
+        (section) =>
+          section.contextLevel === "L3" &&
+          section.content.includes(revisionMarker),
+      ),
+    ).toBe(true);
+
     const contextRow = await db.pool.query<{
       vault_id: string;
       corpus_revision: string;
@@ -781,6 +961,7 @@ describe("product lifecycle E2E", () => {
       compactBody.content.some((section) =>
         section.content.includes(revisionMarker),
       ),
+      JSON.stringify(compactBody),
     ).toBe(true);
     const persistedCompactSource = await db.pool.query<{
       packet_mode: string;

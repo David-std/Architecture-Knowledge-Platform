@@ -1,7 +1,8 @@
 # Implemented web routes
 
 ```text
-/                       dashboard
+/                       workspace home (projects/work/reviews/agents/health)
+/author                 browser recovery + governed Git draft + review submit
 /search                 query and context packet inspector
 /sources                source registry
 /sources/:id            raw/derivative/evidence view
@@ -10,10 +11,17 @@
 /jobs/:id               job transition history
 /reviews                review inbox
 /reviews/:id            diff, sources, impact, validation and approval
+/decisions              session-scoped architecture decision workspace
+/decisions/:id          alternatives, consultation, objections, selection and promotion
+/sessions/:id           object-centric agent session state, claims, captures and handoffs
+/work/:id               object-centric work item, source authority, relations and activity
+/services/:id           semantic Service page alias backed by the work-object renderer
 /knowledge/:id          approved document view
 /graph                   typed graph
 /evals                   retrieval and grounding scorecards
+/admin/team              scopes, memberships, principals, credential lifecycle and governance overview
 /admin/spaces            space and RBAC
+/admin/profiles          active/pending KnowledgeProfile governance
 /admin/health            jobs, index parity and backups
 /admin/audit             scoped audit-event viewer
 /login                   token-to-HttpOnly-session exchange

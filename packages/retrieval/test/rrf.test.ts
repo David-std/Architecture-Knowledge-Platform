@@ -149,15 +149,15 @@ describe("reciprocalRankFusion", () => {
     });
   });
 
-  it("ignores a raw score and keeps equal-score ties deterministic", () => {
-    const withRawScore = {
+  it("retains a raw score for explanation without letting it affect RRF", () => {
+    const withRawScore: RankedItem = {
       id: "a",
       rank: 1,
       channel: "lexical",
       channelWeight: 1,
       reason: "title",
-      score: 100000,
-    } as unknown as RankedItem;
+      rawScore: 100000,
+    };
     const result = reciprocalRankFusion([
       {
         channel: "lexical",
@@ -165,7 +165,15 @@ describe("reciprocalRankFusion", () => {
       },
       {
         channel: "vector",
-        items: [{ id: "b", rank: 1, channelWeight: 1, reason: "embedding" }],
+        items: [
+          {
+            id: "b",
+            rank: 1,
+            channelWeight: 1,
+            reason: "embedding",
+            rawScore: 0.42,
+          },
+        ],
       },
     ]);
 
@@ -173,10 +181,22 @@ describe("reciprocalRankFusion", () => {
       expect.objectContaining({
         id: "a",
         score: 1 / 61,
+        contributions: [
+          expect.objectContaining({
+            channel: "lexical",
+            rawScore: 100000,
+          }),
+        ],
       }),
       expect.objectContaining({
         id: "b",
         score: 1 / 61,
+        contributions: [
+          expect.objectContaining({
+            channel: "vector",
+            rawScore: 0.42,
+          }),
+        ],
       }),
     ]);
   });
@@ -229,6 +249,69 @@ describe("reciprocalRankFusion", () => {
     expect(forward[0]?.contributions[0]).toMatchObject({
       reason: "a-reason",
       candidateRevision: "a-revision",
+    });
+  });
+
+  it("preserves explanation-only trace without letting it change RRF scoring or input-order determinism", () => {
+    const first = {
+      id: "a",
+      rank: 1,
+      channelWeight: 2,
+      reason: "vector",
+      rawScore: 0.9,
+      candidateRevision: "doc-r1",
+      trace: {
+        generation: {
+          kind: "VECTOR" as const,
+          id: "generation-1",
+          provider: "fixture",
+          model: "fixture-model",
+        },
+        queryTransform: {
+          transformerId: "fixture-transform",
+          kind: "DECOMPOSITION" as const,
+          ordinal: 1,
+          reason: "fixture variant",
+        },
+      },
+    };
+    const second = {
+      ...first,
+      trace: {
+        ...first.trace,
+        generation: {
+          ...first.trace.generation,
+          id: "generation-2",
+        },
+      },
+    };
+    const forward = reciprocalRankFusion([
+      { channel: "vector", items: [second, first] },
+    ]);
+    const reversed = reciprocalRankFusion([
+      { channel: "vector", items: [first, second] },
+    ]);
+
+    expect(forward).toEqual(reversed);
+    expect(forward[0]).toMatchObject({
+      id: "a",
+      score: 2 / 61,
+      contributions: [
+        {
+          channel: "vector",
+          rank: 1,
+          channelWeight: 2,
+          reason: "vector",
+          rawScore: 0.9,
+          candidateRevision: "doc-r1",
+          trace: {
+            generation: {
+              kind: "VECTOR",
+              id: "generation-1",
+            },
+          },
+        },
+      ],
     });
   });
 

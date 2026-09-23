@@ -38,6 +38,9 @@ export function registerWebAuthRoutes(
       const actor = actorOf(request);
       if (!actor)
         return reply.code(401).send({ code: "AUTHENTICATION_REQUIRED" });
+      if (actor.principalKind !== "HUMAN") {
+        return reply.code(403).send({ code: "PRINCIPAL_WEB_SESSION_DENIED" });
+      }
       if (actor.authenticationKind !== "API_TOKEN") {
         return reply.code(409).send({ code: "SESSION_ALREADY_ACTIVE" });
       }
@@ -97,6 +100,13 @@ export function registerWebAuthRoutes(
             roles: actor.roles,
             spaceIds: actor.spaceIds,
             authenticationKind: actor.authenticationKind,
+            principalId: actor.principalId,
+            principalKind: actor.principalKind,
+            parentPrincipalId: actor.parentPrincipalId,
+            principalSessionId: actor.principalSessionId,
+            principalVaultId: actor.principalVaultId,
+            principalAllowedActions: actor.principalAllowedActions,
+            principalPolicyRevision: actor.principalPolicyRevision,
           }
         : null,
     };

@@ -17,6 +17,7 @@ type Stats = {
   minMs: number;
   p50Ms: number;
   p95Ms: number;
+  p99Ms: number;
   maxMs: number;
   meanMs: number;
 };
@@ -73,6 +74,7 @@ function summarize(samples: number[]): Stats {
     minMs: rounded(minimum),
     p50Ms: rounded(percentile(0.5)),
     p95Ms: rounded(percentile(0.95)),
+    p99Ms: rounded(percentile(0.99)),
     maxMs: rounded(maximum),
     meanMs: rounded(
       samples.reduce((total, value) => total + value, 0) / samples.length,
@@ -87,6 +89,7 @@ async function main(): Promise<void> {
   const parentByChild = new Map<string, string>();
   const retryTargets = new Set<string>();
   const latencies: number[] = [];
+  const queueLagSamples: number[] = [];
   const claimCounts = new Map<string, number>();
   const successCounts = new Map<string, number>();
   const foreignClaims: string[] = [];
@@ -156,6 +159,12 @@ async function main(): Promise<void> {
           latencies.push(performance.now() - claimStarted);
           if (!claim) return;
 
+          const occurredAt = new Date(claim.event.occurredAt);
+          if (!Number.isNaN(occurredAt.getTime())) {
+            queueLagSamples.push(
+              Math.max(0, Date.now() - occurredAt.getTime()),
+            );
+          }
           const eventId = claim.event.eventId;
           if (!expected.has(eventId)) {
             foreignClaims.push(eventId);
@@ -280,6 +289,7 @@ async function main(): Promise<void> {
         retryRatePerClaim: rounded(retries / Math.max(1, totalClaims)),
         throughputSucceededPerSecond: rounded(eventIds.length / elapsedSeconds),
         latency: summarize(latencies),
+        queueLag: summarize(queueLagSamples),
       },
       leaseContention: {
         workers: workerCount,
@@ -296,7 +306,7 @@ async function main(): Promise<void> {
         "SKIP LOCKED lease contention and fencing through the production outbox claim/ack functions",
         "Parent-before-child causal eligibility under concurrent delivery",
         "Controlled zero-delay RETRY transitions through the production failure path",
-        "Retry rate, claim p50/p95 latency, successful-delivery throughput and duplicate-success detection",
+        "Retry rate, queue lag, claim p50/p95/p99 latency, successful-delivery throughput and duplicate-success detection",
       ],
       notMeasured: [
         "Domain handler execution or external side effects after a delivery is claimed",

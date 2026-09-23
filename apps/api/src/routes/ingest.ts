@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import type { Postgres, AppendOutboxEventInput } from "@akp/postgres";
-import { IngestRequest } from "@akp/contracts";
+import { IngestRequest, mostRestrictiveModelResidency } from "@akp/contracts";
 import {
   actorOf,
   audit,
@@ -204,8 +204,18 @@ export function registerIngestRoutes(app: FastifyInstance, db: Postgres): void {
         });
       }
 
+      const effectiveModelResidency = mostRestrictiveModelResidency(
+        parsed.data.modelResidency ?? "EXTERNAL_ALLOWED",
+        parsed.data.documentIntelligence?.privacyPolicy === "LOCAL_ONLY"
+          ? "LOCAL_ONLY"
+          : "EXTERNAL_ALLOWED",
+      );
       const id = randomUUID();
-      const payload = { ...parsed.data, sourceUri: canonicalSource };
+      const payload = {
+        ...parsed.data,
+        modelResidency: effectiveModelResidency,
+        sourceUri: canonicalSource,
+      };
       const actorId = actorOf(request)?.id;
       const client = await db.pool.connect();
       try {
@@ -231,6 +241,7 @@ export function registerIngestRoutes(app: FastifyInstance, db: Postgres): void {
             JSON.stringify({
               sourceUri: canonicalSource,
               documentIntelligence: parsed.data.documentIntelligence ?? null,
+              modelResidency: effectiveModelResidency,
             }),
           ],
         );
@@ -245,6 +256,7 @@ export function registerIngestRoutes(app: FastifyInstance, db: Postgres): void {
             sourceUri: canonicalSource,
             title: parsed.data.title ?? null,
             mediaType: parsed.data.mediaType ?? null,
+            modelResidency: effectiveModelResidency,
           },
         });
         await appendEvent(client, {
@@ -259,6 +271,7 @@ export function registerIngestRoutes(app: FastifyInstance, db: Postgres): void {
             sourceUri: canonicalSource,
             expectedSha256: parsed.data.expectedSha256 ?? null,
             documentIntelligence: parsed.data.documentIntelligence ?? null,
+            modelResidency: effectiveModelResidency,
           },
         });
         await client.query("commit");
@@ -278,6 +291,7 @@ export function registerIngestRoutes(app: FastifyInstance, db: Postgres): void {
           vaultId: parsed.data.vaultId,
           sourceUri: canonicalSource,
           documentIntelligence: parsed.data.documentIntelligence ?? null,
+          modelResidency: effectiveModelResidency,
         },
         parsed.data.spaceId,
       );

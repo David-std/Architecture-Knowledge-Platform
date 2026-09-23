@@ -11,8 +11,13 @@ import { pipeline } from "node:stream/promises";
 import {
   Postgres,
   appendOutboxEvent,
+  applyNextSourceConnectorEvent,
+  claimContextFabricNode,
+  claimNextAssuranceRun,
   claimNextIngestJob,
+  resolveContextFabricIdentity,
   runKnowledgeLint,
+  submitAssuranceRun,
 } from "@akp/postgres";
 import { transitionIngest, type IngestState } from "@akp/domain";
 import {
@@ -20,15 +25,17 @@ import {
   MinioObjectStore,
   type RawObjectRef,
 } from "@akp/object-store";
-import {
-  CompilationPlan,
-  createConfiguredKnowledgeCompiler,
-} from "@akp/compiler";
+import { CompilationPlan } from "@akp/compiler";
+import { ModelResidency } from "@akp/contracts";
 import { GitKnowledgeStore } from "@akp/git-store";
 import { validateMarkdownDocument } from "@akp/validation";
 import mime from "mime-types";
 import { DurableEventWorker } from "./event-worker.js";
 import { createIndexEventHandlers } from "./event-handlers.js";
+import { createTruthMaintenanceHandlers } from "./truth-maintenance.js";
+import { createCodeGraphRefreshHandlers } from "./code-graph-refresh.js";
+import { createCodeKnowledgeLinkHandlers } from "./code-knowledge-link.js";
+import { createContinuousAssuranceEventHandlers } from "./assurance-events.js";
 import { lifecycleEventForState } from "./lifecycle.js";
 import {
   DEFAULT_WORKER_DRAIN_DEADLINE_MS,
@@ -36,6 +43,10 @@ import {
   WorkerDrainError,
   type WorkerDrainSummary,
 } from "./drain.js";
+import {
+  runClaimedAssuranceRun,
+  SUPPORTED_ASSURANCE_DETECTORS,
+} from "./assurance-worker.js";
 import {
   DOCUMENT_ARTIFACT_SCHEMA_VERSION,
   parseCanonicalExtractionResponse,
@@ -45,6 +56,8 @@ import { buildCompilationStage } from "./compilation-stage.js";
 import { evaluateCompilationProbes } from "./compilation-probes.js";
 import { selectEvidenceFragment } from "./evidence-fragment.js";
 import { resolveAuthorizedLocalSource } from "./source-boundary.js";
+import { operationalErrorRecord } from "./operational-error.js";
+import { resolveSourceModelResidency } from "./source-model-residency.js";
 import {
   appendDocumentIntelligenceFormFields,
   parseDocumentIntelligenceOptions,
@@ -73,6 +86,10 @@ const eventWorker = new DurableEventWorker(db, {
   leaseSeconds: Number(process.env.AKP_EVENT_LEASE_SECONDS ?? 60),
   handlers: {
     ...createIndexEventHandlers(db, git),
+    ...createTruthMaintenanceHandlers(db),
+    ...createCodeGraphRefreshHandlers(db),
+    ...createCodeKnowledgeLinkHandlers(db),
+    ...createContinuousAssuranceEventHandlers(db),
     // The ingest job remains the durable work record.  This handler turns the
     // event into a prompt for the existing claim loop while preserving the
     // event's idempotent delivery semantics.
@@ -127,6 +144,13 @@ async function runScheduledLintIfDue(force = false): Promise<void> {
         String(space.vault_id),
         "SCHEDULED",
       );
+      await submitAssuranceRun(db, {
+        spaceId: String(space.id),
+        vaultId: String(space.vault_id),
+        trigger: "SCHEDULED",
+        detectors: [...SUPPORTED_ASSURANCE_DETECTORS],
+        idempotencyKey: `scheduled:${Math.floor(Date.now() / lintIntervalMs)}`,
+      });
     }
   }
 }
@@ -266,16 +290,6 @@ async function recordProviderTaskEvent(
   }
 }
 
-function providerTaskErrorMessage(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-  return message
-    .replace(
-      /(?:[A-Za-z]:[\\/]|\\\\|file:\/\/|\/(?:Users|home|tmp|var)\/)[^\s"']+/g,
-      "[REDACTED_PATH]",
-    )
-    .slice(0, 2_000);
-}
-
 async function processJob(job: Record<string, unknown>): Promise<void> {
   const id = String(job.id);
   const state = String(job.state) as IngestState;
@@ -296,6 +310,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
         mime.lookup(sourcePath) ||
         "application/octet-stream",
     );
+    const modelResidency = resolveSourceModelResidency(payload);
     const raw = await objects.putImmutable({
       stream: createReadStream(sourcePath),
       mediaType,
@@ -318,31 +333,48 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
       raw.key,
       job.created_by ?? null,
       JSON.stringify({ bucket: raw.bucket, immutable: true }),
+      modelResidency,
     ];
     const source = vaultId
-      ? await db.pool.query<{ id: string }>(
+      ? await db.pool.query<{ id: string; model_residency: string }>(
           `
           insert into sources(
             space_id,vault_id,title,source_uri,media_type,sha256,byte_size,
-            object_key,created_by,metadata
+            object_key,created_by,metadata,model_residency
           )
-          values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)
+          values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11)
           on conflict (vault_id,sha256) where vault_id is not null
-            do update set source_uri=excluded.source_uri
-          returning id
+            do update set
+              source_uri=excluded.source_uri,
+              model_residency=case
+                when sources.model_residency='LOCAL_ONLY'
+                  or excluded.model_residency='LOCAL_ONLY' then 'LOCAL_ONLY'
+                when sources.model_residency='ORG_APPROVED'
+                  or excluded.model_residency='ORG_APPROVED' then 'ORG_APPROVED'
+                else 'EXTERNAL_ALLOWED'
+              end
+          returning id,model_residency
           `,
           sourceValues,
         )
-      : await db.pool.query<{ id: string }>(
+      : await db.pool.query<{ id: string; model_residency: string }>(
           `
           insert into sources(
             space_id,vault_id,title,source_uri,media_type,sha256,byte_size,
-            object_key,created_by,metadata
+            object_key,created_by,metadata,model_residency
           )
-          values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)
+          values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11)
           on conflict (space_id,sha256) where vault_id is null
-            do update set source_uri=excluded.source_uri
-          returning id
+            do update set
+              source_uri=excluded.source_uri,
+              model_residency=case
+                when sources.model_residency='LOCAL_ONLY'
+                  or excluded.model_residency='LOCAL_ONLY' then 'LOCAL_ONLY'
+                when sources.model_residency='ORG_APPROVED'
+                  or excluded.model_residency='ORG_APPROVED' then 'ORG_APPROVED'
+                else 'EXTERNAL_ALLOWED'
+              end
+          returning id,model_residency
           `,
           sourceValues,
         );
@@ -351,6 +383,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
       sourceId: source.rows[0]?.id,
       originalName: basename(sourcePath),
       mediaType,
+      modelResidency: source.rows[0]?.model_residency ?? modelResidency,
     });
     return;
   }
@@ -399,11 +432,15 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
       upload.set("source_id", String(outputs.sourceId));
       upload.set("media_type", mediaType);
       upload.set("expected_sha256", raw.sha256);
+      const persistedModelResidency = ModelResidency.parse(
+        outputs.modelResidency ?? resolveSourceModelResidency(payload),
+      );
       appendDocumentIntelligenceFormFields(
         upload,
         payload,
         id,
         documentIntelligence,
+        persistedModelResidency,
       );
       await recordProviderTaskEvent(id, state, "PROVIDER_TASK_STARTED", {
         attempt,
@@ -426,9 +463,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
           body: upload,
         });
         if (!response.ok) {
-          throw new Error(
-            `Extractor failed: ${response.status} ${await response.text()}`,
-          );
+          throw new Error(`EXTRACTOR_PROVIDER_HTTP_${response.status}`);
         }
         const extractedResponse = (await response.json()) as unknown;
         const expectedIdentity = {
@@ -449,7 +484,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
           ocrRequested:
             documentIntelligence.ocrRequired ||
             documentIntelligence.ocr === true,
-          message: providerTaskErrorMessage(error),
+          ...operationalErrorRecord(error),
         });
         throw error;
       }
@@ -644,26 +679,22 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
     const title = String(
       payload.title ?? outputs.originalName ?? basename(sourceUri),
     );
-    const compilationStage = await buildCompilationStage(
-      db,
-      {
-        spaceId,
-        vaultId,
-        sourceId: String(outputs.sourceId),
-        sourceArtifactId: extracted.source_artifact_id,
-        evidenceId: extracted.evidence_id,
-        sha256: raw.sha256,
-        title,
-        mediaType: String(
-          outputs.mediaType ?? payload.mediaType ?? "application/octet-stream",
-        ),
-        extractor: artifactResult.extractor,
-        extractorVersion: artifactResult.extractorVersion,
-        artifact: artifactResult.artifact,
-        vectorEnabled: process.env.AKP_VECTOR_ENABLED === "true",
-      },
-      createConfiguredKnowledgeCompiler(process.env),
-    );
+    const compilationStage = await buildCompilationStage(db, {
+      spaceId,
+      vaultId,
+      sourceId: String(outputs.sourceId),
+      sourceArtifactId: extracted.source_artifact_id,
+      evidenceId: extracted.evidence_id,
+      sha256: raw.sha256,
+      title,
+      mediaType: String(
+        outputs.mediaType ?? payload.mediaType ?? "application/octet-stream",
+      ),
+      extractor: artifactResult.extractor,
+      extractorVersion: artifactResult.extractorVersion,
+      artifact: artifactResult.artifact,
+      vectorEnabled: process.env.AKP_VECTOR_ENABLED === "true",
+    });
     const plan = CompilationPlan.parse(compilationStage.plan);
     if (plan.disposition === "NO_MATERIAL" || !plan.proposedChanges.length) {
       await updateState(
@@ -800,6 +831,7 @@ async function handleFailure(
   job: Record<string, unknown>,
   error: unknown,
 ): Promise<void> {
+  const safeError = operationalErrorRecord(error);
   const attempts = Number(job.attempts ?? 0) + 1;
   const maxAttempts = Number(job.max_attempts ?? 5);
   const terminal = attempts >= maxAttempts;
@@ -826,9 +858,7 @@ async function handleFailure(
         job.id,
         terminal,
         attempts,
-        JSON.stringify({
-          message: error instanceof Error ? error.message : String(error),
-        }),
+        JSON.stringify(safeError),
         delaySeconds,
         workerId,
         version,
@@ -847,7 +877,7 @@ async function handleFailure(
           attempts,
           maxAttempts,
           delaySeconds,
-          message: String(error),
+          ...safeError,
         }),
       ],
     );
@@ -907,6 +937,13 @@ async function runClaimedJob(job: Record<string, unknown>): Promise<void> {
 
 async function loop(): Promise<WorkerDrainSummary | undefined> {
   const drain = process.env.AKP_WORKER_DRAIN === "true";
+  // The worker writes the shared derived state a Team Context Node owns, so it
+  // claims the node identity before draining anything rather than after.
+  const identity = resolveContextFabricIdentity();
+  await claimContextFabricNode(db, {
+    ...identity,
+    adopt: process.env.AKP_CONTEXT_FABRIC_NODE_ADOPT === "true",
+  });
   await eventWorker.register();
   await runScheduledLintIfDue(process.env.AKP_LINT_RUN_ONCE === "true");
   if (drain) {
@@ -921,10 +958,22 @@ async function loop(): Promise<WorkerDrainSummary | undefined> {
       ),
       runEventOnce: () => eventWorker.runOnce(),
       runIngestJob: runClaimedJob,
+      assuranceWorkerId: `${workerId}:assurance`,
+      runAssuranceRun: async (run) => {
+        await runClaimedAssuranceRun(db, run, `${workerId}:assurance`);
+      },
     });
   }
   for (;;) {
     const eventHandled = await eventWorker.runOnce();
+    const connectorEvent = await applyNextSourceConnectorEvent(db);
+    if (connectorEvent) continue;
+    const assuranceWorkerId = `${workerId}:assurance`;
+    const assurance = await claimNextAssuranceRun(db, assuranceWorkerId, 60);
+    if (assurance) {
+      await runClaimedAssuranceRun(db, assurance, assuranceWorkerId);
+      continue;
+    }
     const job = await claimNextIngestJob(db, workerId, 60);
     if (!job) {
       await runScheduledLintIfDue();

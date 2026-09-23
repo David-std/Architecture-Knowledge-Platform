@@ -11,23 +11,34 @@ export default function RootLayout({
   return (
     <html lang="es">
       <body>
+        <a className="skip-link" href="#main-content">
+          Saltar al contenido principal
+        </a>
         <div className="shell">
           <nav aria-label="Navegación principal">
             <h1>Architecture Knowledge Platform</h1>
-            <Link href="/">Estado</Link>
+            <Link href="/">Workspace</Link>
+            <Link href="/author">Authoring</Link>
             <Link href="/search">Búsqueda</Link>
             <Link href="/sources">Fuentes</Link>
             <Link href="/ingest">Nueva ingesta</Link>
             <Link href="/jobs">Jobs</Link>
             <Link href="/reviews">Revisiones</Link>
+            <Link href="/decisions">Decisiones</Link>
             <Link href="/graph">Grafo</Link>
             <Link href="/evals">Evaluaciones</Link>
+            <Link href="/admin/team">Team Admin</Link>
             <Link href="/admin/health">Salud</Link>
+            <Link href="/admin/assurance">Assurance</Link>
+            <Link href="/admin/connectors">Connectors</Link>
             <Link href="/admin/spaces">Espacios</Link>
+            <Link href="/admin/profiles">Perfiles</Link>
             <Link href="/admin/audit">Auditoría</Link>
             <Link href="/login">Sesión</Link>
           </nav>
-          {children}
+          <div id="main-content" tabIndex={-1}>
+            {children}
+          </div>
         </div>
       </body>
     </html>

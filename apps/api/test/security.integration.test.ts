@@ -226,6 +226,8 @@ describe("API security boundaries", () => {
     const vaultId = randomUUID();
     const vaultKey = `scope-boundary-${vaultId.slice(0, 8)}`;
     const reviewId = randomUUID();
+    const privateDocumentId = randomUUID();
+    const privateExternalId = `PRIVATE-PERSONAL-${suffix}`;
     await db.pool.query(
       `
       insert into vaults(
@@ -240,7 +242,68 @@ describe("API security boundaries", () => {
         vaultKey,
       ],
     );
+    await db.pool.query(
+      `
+      insert into knowledge_documents(
+        id,space_id,vault_id,path,external_id,title,type,lifecycle,trust_tier,
+        current_revision,body_cache,frontmatter,aliases,layer,content_hash,
+        token_estimate,raw_links,refresh_status
+      ) values(
+        $1,$2,$3,'personal/private-note.md',$4,'Private personal fixture',
+        'note','ACTIVE','HUMAN_REVIEWED','fixture:private-personal',
+        $5,'{}'::jsonb,'{}','concept',$6,12,'[]'::jsonb,'CURRENT'
+      )
+      `,
+      [
+        privateDocumentId,
+        defaultSpace,
+        vaultId,
+        privateExternalId,
+        `Private personal content ${suffix} must never leak into a team-wide search without an explicit vault grant.`,
+        createHash("sha256").update(`private-personal-${suffix}`).digest("hex"),
+      ],
+    );
     try {
+      const teamWideSearch = await app.inject({
+        method: "POST",
+        url: "/v1/search",
+        headers,
+        payload: {
+          query: privateExternalId,
+          spaceId: defaultSpace,
+          vaultIds: [],
+          federated: true,
+          types: [],
+          minimumTrust: "UNVERIFIED",
+          mode: "COMPILED_ONLY",
+          limit: 10,
+        },
+      });
+      expect(teamWideSearch.statusCode).toBe(200);
+      expect(teamWideSearch.json().hits).toHaveLength(0);
+      expect(teamWideSearch.json().scope.vaultIds).not.toContain(vaultId);
+
+      const explicitlyRequestedPrivate = await app.inject({
+        method: "POST",
+        url: "/v1/search",
+        headers,
+        payload: {
+          query: privateExternalId,
+          spaceId: defaultSpace,
+          vaultId,
+          vaultIds: [],
+          federated: false,
+          types: [],
+          minimumTrust: "UNVERIFIED",
+          mode: "COMPILED_ONLY",
+          limit: 10,
+        },
+      });
+      expect(explicitlyRequestedPrivate.statusCode).toBe(403);
+      expect(explicitlyRequestedPrivate.json()).toMatchObject({
+        code: "VAULT_ACCESS_DENIED",
+      });
+
       const withoutGrant = await app.inject({
         method: "POST",
         url: "/v1/proposals",
@@ -330,6 +393,9 @@ describe("API security boundaries", () => {
       expect(reviewerWithoutGrant.statusCode).toBe(403);
       expect(reviewerWithoutGrant.json().code).toBe("PATH_SCOPE_DENIED");
     } finally {
+      await db.pool.query("delete from knowledge_documents where id=$1", [
+        privateDocumentId,
+      ]);
       await db.pool.query("delete from review_comments where review_id=$1", [
         reviewId,
       ]);
@@ -337,7 +403,9 @@ describe("API security boundaries", () => {
       await db.pool.query("delete from vault_memberships where vault_id=$1", [
         vaultId,
       ]);
-      await db.pool.query("delete from vaults where id=$1", [vaultId]);
+      await db.pool.query("update vaults set enabled=false where id=$1", [
+        vaultId,
+      ]);
     }
   });
 
@@ -427,6 +495,39 @@ describe("API security boundaries", () => {
       });
       expect(deniedSearch.statusCode).toBe(200);
       expect(deniedSearch.json().hits).toHaveLength(0);
+
+      const allowedSearch = await app.inject({
+        method: "POST",
+        url: "/v1/search",
+        headers: limitedHeaders,
+        payload: {
+          query: allowedId,
+          spaceId: defaultSpace,
+          vaultId: defaultVaultId,
+          types: [],
+          minimumTrust: "UNVERIFIED",
+          mode: "COMPILED_ONLY",
+          limit: 10,
+        },
+      });
+      expect(allowedSearch.statusCode).toBe(200);
+      expect(allowedSearch.json().hits).toHaveLength(1);
+      expect(allowedSearch.json().hits[0]).toMatchObject({
+        documentId: documentIds[0],
+        vaultId: defaultVaultId,
+        retrievalTrace: {
+          authorization: {
+            decision: "ALLOW",
+            spaceId: defaultSpace,
+            vaultId: defaultVaultId,
+            pathRestricted: true,
+          },
+        },
+      });
+      expect(
+        JSON.stringify(allowedSearch.json().hits[0].retrievalTrace),
+      ).not.toContain(deniedId);
+
       expect(
         (
           await app.inject({
@@ -437,6 +538,271 @@ describe("API security boundaries", () => {
         ).statusCode,
       ).toBe(403);
     } finally {
+      await db.pool.query("delete from api_tokens where token_hash=$1", [hash]);
+      await db.pool.query(
+        "delete from knowledge_documents where id=any($1::uuid[])",
+        [documentIds],
+      );
+    }
+  });
+
+  it("intersects RAW retrieval with the narrower source-read path scope", async () => {
+    const suffix = randomUUID();
+    const token = `akp-raw-scope-${suffix}`;
+    const hash = createHash("sha256").update(token).digest("hex");
+    const allowedId = `RAW-SCOPE-ALLOWED-${suffix}`;
+    const deniedId = `RAW-SCOPE-DENIED-${suffix}`;
+    const allowedDocumentId = randomUUID();
+    const deniedDocumentId = randomUUID();
+    const clusterId = randomUUID();
+    const conflictTopic = `raw scope conflict ${suffix}`;
+    const crowdMarker = `rawcrowd${suffix.replaceAll("-", "")}`;
+    const crowdAllowedDocumentId = randomUUID();
+    const crowdDeniedDocumentIds = Array.from({ length: 35 }, () =>
+      randomUUID(),
+    );
+    const documentIds = [
+      allowedDocumentId,
+      deniedDocumentId,
+      crowdAllowedDocumentId,
+      ...crowdDeniedDocumentIds,
+    ];
+    const packetIds: string[] = [];
+
+    await db.pool.query(
+      `insert into api_tokens(user_id,token_hash,label,scopes)
+       values($1,$2,'raw scope integration',$3::jsonb)`,
+      [
+        admin,
+        hash,
+        JSON.stringify({
+          spaces: [
+            {
+              spaceId: defaultSpace,
+              pathPrefix: null,
+              permissions: ["knowledge:read"],
+            },
+            {
+              spaceId: defaultSpace,
+              pathPrefix: "shared/raw",
+              permissions: ["source:read"],
+            },
+          ],
+        }),
+      ],
+    );
+    await db.pool.query(
+      `
+      insert into knowledge_documents(
+        id,space_id,vault_id,path,external_id,title,type,lifecycle,trust_tier,
+        current_revision,body_cache,frontmatter,aliases,layer,content_hash,
+        token_estimate,raw_links,refresh_status
+      ) values
+        ($1,$3,$4,$5,$6,'Allowed raw source','raw-resource','ACTIVE',
+         'HUMAN_REVIEWED','raw-scope',$7,'{}'::jsonb,'{}','resource',$8,10,
+         '[]'::jsonb,'CURRENT'),
+        ($2,$3,$4,$9,$10,'Denied raw source','raw-resource','ACTIVE',
+         'HUMAN_REVIEWED','raw-scope',$11,'{}'::jsonb,'{}','resource',$12,10,
+         '[]'::jsonb,'CURRENT')
+      `,
+      [
+        allowedDocumentId,
+        deniedDocumentId,
+        defaultSpace,
+        defaultVaultId,
+        `shared/raw/allowed-${suffix}.md`,
+        allowedId,
+        `Allowed raw evidence ${suffix}.`,
+        createHash("sha256").update(`allowed-raw-${suffix}`).digest("hex"),
+        `private/raw/denied-${suffix}.md`,
+        deniedId,
+        `Denied raw evidence ${suffix} must not be disclosed.`,
+        createHash("sha256").update(`denied-raw-${suffix}`).digest("hex"),
+      ],
+    );
+    const crowdFixtures = [
+      {
+        id: crowdAllowedDocumentId,
+        path: `shared/raw/crowd-allowed-${suffix}.md`,
+        externalId: `RAW-CROWD-ALLOWED-${suffix}`,
+        title: "Allowed crowd source",
+        body: `Authorized raw evidence ${crowdMarker}.`,
+      },
+      ...crowdDeniedDocumentIds.map((id, index) => ({
+        id,
+        path: `private/raw/crowd-denied-${index}-${suffix}.md`,
+        externalId: `RAW-CROWD-DENIED-${index}-${suffix}`,
+        title: `${crowdMarker} denied raw source ${index}`,
+        body: `Denied raw evidence ${crowdMarker} ${index}.`,
+      })),
+    ];
+    for (const fixture of crowdFixtures) {
+      await db.pool.query(
+        `insert into knowledge_documents(
+           id,space_id,vault_id,path,external_id,title,type,lifecycle,trust_tier,
+           current_revision,body_cache,frontmatter,aliases,layer,content_hash,
+           token_estimate,raw_links,refresh_status
+         ) values(
+           $1,$2,$3,$4,$5,$6,'raw-resource','ACTIVE','HUMAN_REVIEWED',
+           'raw-scope',$7,'{}'::jsonb,'{}','resource',$8,10,'[]'::jsonb,
+           'CURRENT'
+         )`,
+        [
+          fixture.id,
+          defaultSpace,
+          defaultVaultId,
+          fixture.path,
+          fixture.externalId,
+          fixture.title,
+          fixture.body,
+          createHash("sha256").update(fixture.body).digest("hex"),
+        ],
+      );
+    }
+
+    await db.pool.query(
+      `insert into contradiction_clusters(
+         id,space_id,vault_id,topic,status
+       ) values($1,$2,$3,$4,'OPEN')`,
+      [clusterId, defaultSpace, defaultVaultId, conflictTopic],
+    );
+    await db.pool.query(
+      `insert into contradiction_members(
+         cluster_id,document_id,authority,scope
+       ) values
+         ($1,$2,'integration','raw-scope'),
+         ($1,$3,'integration','raw-scope')`,
+      [clusterId, allowedDocumentId, deniedDocumentId],
+    );
+    const scopedHeaders = { authorization: `Bearer ${token}` };
+    const requestFor = (query: string) => ({
+      query,
+      intent: "EXACT_LOOKUP",
+      spaceId: defaultSpace,
+      vaultId: defaultVaultId,
+      vaultIds: [],
+      federated: false,
+      types: [],
+      minimumTrust: "UNVERIFIED",
+      mode: "RAW_ONLY",
+      limit: 10,
+    });
+
+    try {
+      const allowedSearch = await app.inject({
+        method: "POST",
+        url: "/v1/search",
+        headers: scopedHeaders,
+        payload: requestFor(allowedId),
+      });
+      expect(allowedSearch.statusCode, allowedSearch.body).toBe(200);
+      expect(allowedSearch.json().hits).toHaveLength(1);
+      expect(allowedSearch.json().hits[0]?.documentId).toBe(allowedDocumentId);
+
+      const deniedSearch = await app.inject({
+        method: "POST",
+        url: "/v1/search",
+        headers: scopedHeaders,
+        payload: requestFor(deniedId),
+      });
+      expect(deniedSearch.statusCode, deniedSearch.body).toBe(200);
+      expect(deniedSearch.json().hits).toHaveLength(0);
+      expect(JSON.stringify(deniedSearch.json())).not.toContain(deniedId);
+
+      const crowdedSearch = await app.inject({
+        method: "POST",
+        url: "/v1/search",
+        headers: scopedHeaders,
+        payload: {
+          ...requestFor(crowdMarker),
+          intent: "CONCEPTUAL",
+          limit: 1,
+        },
+      });
+      expect(crowdedSearch.statusCode, crowdedSearch.body).toBe(200);
+      expect(crowdedSearch.json().hits).toHaveLength(1);
+      expect(crowdedSearch.json().hits[0]?.documentId).toBe(
+        crowdAllowedDocumentId,
+      );
+      expect(JSON.stringify(crowdedSearch.json().hits)).not.toContain(
+        "RAW-CROWD-DENIED",
+      );
+
+      const allowedContext = await app.inject({
+        method: "POST",
+        url: "/v1/context",
+        headers: scopedHeaders,
+        payload: { ...requestFor(allowedId), maxTokens: 4_000 },
+      });
+      expect(allowedContext.statusCode, allowedContext.body).toBe(200);
+      const allowedPacket = allowedContext.json();
+      expect(allowedPacket.sections).toHaveLength(1);
+      expect(allowedPacket.sections[0]?.documentId).toBe(allowedDocumentId);
+      expect(JSON.stringify(allowedPacket.sections)).not.toContain(deniedId);
+      expect(allowedPacket.conflicts).toContain(`${conflictTopic} (OPEN)`);
+      expect(
+        allowedPacket.gaps.some((gap: string) =>
+          gap.includes("authorization/truth policy"),
+        ),
+      ).toBe(true);
+      packetIds.push(allowedPacket.packetId as string);
+      expect(packetIds[0]).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      );
+
+      const deniedContext = await app.inject({
+        method: "POST",
+        url: "/v1/context",
+        headers: scopedHeaders,
+        payload: { ...requestFor(deniedId), maxTokens: 4_000 },
+      });
+      expect(deniedContext.statusCode, deniedContext.body).toBe(200);
+      const deniedPacket = deniedContext.json();
+      expect(deniedPacket.query).toBe(deniedId);
+      expect(deniedPacket.sections).toHaveLength(0);
+      expect(deniedPacket.citations).toHaveLength(0);
+      expect(JSON.stringify(deniedPacket.sections)).not.toContain(deniedId);
+      expect(JSON.stringify(deniedPacket.citations)).not.toContain(deniedId);
+      packetIds.push(deniedPacket.packetId as string);
+
+      await db.pool.query(
+        `update api_tokens
+            set scopes=$2::jsonb
+          where token_hash=$1`,
+        [
+          hash,
+          JSON.stringify({
+            spaces: [
+              {
+                spaceId: defaultSpace,
+                pathPrefix: null,
+                permissions: ["knowledge:read"],
+              },
+            ],
+          }),
+        ],
+      );
+      const revokedPacket = await app.inject({
+        method: "GET",
+        url: `/v1/generated-context-packets/${packetIds[0]}`,
+        headers: scopedHeaders,
+      });
+      expect(revokedPacket.statusCode).toBe(404);
+      expect(JSON.stringify(revokedPacket.json())).not.toContain(allowedId);
+    } finally {
+      if (packetIds.length > 0) {
+        await db.pool.query(
+          "delete from context_packets where id=any($1::uuid[])",
+          [packetIds],
+        );
+      }
+      await db.pool.query(
+        "delete from contradiction_members where cluster_id=$1",
+        [clusterId],
+      );
+      await db.pool.query("delete from contradiction_clusters where id=$1", [
+        clusterId,
+      ]);
       await db.pool.query("delete from api_tokens where token_hash=$1", [hash]);
       await db.pool.query(
         "delete from knowledge_documents where id=any($1::uuid[])",
@@ -1231,7 +1597,9 @@ describe("API security boundaries", () => {
         "delete from idempotency_records where idempotency_key=$1",
         [key],
       );
-      await db.pool.query("delete from vaults where id=$1", [vaultId]);
+      await db.pool.query("update vaults set enabled=false where id=$1", [
+        vaultId,
+      ]);
     }
   });
 
@@ -1387,6 +1755,158 @@ describe("API security boundaries", () => {
         "delete from knowledge_documents where id=any($1::uuid[])",
         [[sourceId, dependentId]],
       );
+    }
+  });
+
+  it("assembles both authorized sides of an open material conflict even when exact retrieval seeds only one side", async () => {
+    const vaultId = randomUUID();
+    const leftId = randomUUID();
+    const rightId = randomUUID();
+    const clusterId = randomUUID();
+    const revision = "fixture:context-conflict";
+    const leftExternalId = `CONFLICT-SEED-${leftId.slice(0, 8).toUpperCase()}`;
+    const rightExternalId = `CONFLICT-COUNTERPART-${rightId
+      .slice(0, 8)
+      .toUpperCase()}`;
+    try {
+      await db.pool.query(
+        `insert into vaults(
+           id,space_id,canonical_path,name,read_only,current_revision,
+           vault_key,local_path,visibility,enabled
+         ) values($1,$2,$3,'Context conflict fixture',true,$4,$5,$3,'PRIVATE',true)`,
+        [
+          vaultId,
+          defaultSpace,
+          path.join(allowedRoot, `context-conflict-${vaultId}`),
+          revision,
+          `context-conflict-${vaultId.slice(0, 8)}`,
+        ],
+      );
+      await db.pool.query(
+        `insert into vault_memberships(
+           user_id,vault_id,role,path_prefix,permissions
+         ) values($1,$2,'ADMIN',null,'["knowledge:read","source:read"]'::jsonb)`,
+        [admin, vaultId],
+      );
+      for (const fixture of [
+        {
+          id: leftId,
+          externalId: leftExternalId,
+          title: "Conflict side A",
+          path: "shared/conflict-side-a.md",
+          body: "Side A says retry attempts must stop after three failures.",
+        },
+        {
+          id: rightId,
+          externalId: rightExternalId,
+          title: "Conflict side B",
+          path: "shared/conflict-side-b.md",
+          body: "Side B says retry attempts may continue through five failures.",
+        },
+      ]) {
+        await db.pool.query(
+          `insert into knowledge_documents(
+             id,space_id,vault_id,path,external_id,title,type,lifecycle,
+             trust_tier,current_revision,body_cache,frontmatter,aliases,
+             layer,raw_links
+           ) values(
+             $1,$2,$3,$4,$5,$6,'source','ACTIVE','HUMAN_REVIEWED',$7,$8,
+             '{}'::jsonb,'{}'::text[],'source','[]'::jsonb
+           )`,
+          [
+            fixture.id,
+            defaultSpace,
+            vaultId,
+            fixture.path,
+            fixture.externalId,
+            fixture.title,
+            revision,
+            fixture.body,
+          ],
+        );
+      }
+      await db.pool.query(
+        `insert into vault_index_revisions(
+           space_id,vault_id,corpus_revision,lexical_revision,graph_revision,
+           context_pack_revision,status,warnings
+         ) values($1,$2,$3,$3,$3,$3,'CONSISTENT','[]'::jsonb)`,
+        [defaultSpace, vaultId, revision],
+      );
+      await db.pool.query(
+        `insert into contradiction_clusters(
+           id,space_id,vault_id,topic,status
+         ) values($1,$2,$3,'context assembly conflict','OPEN')`,
+        [clusterId, defaultSpace, vaultId],
+      );
+      await db.pool.query(
+        `insert into contradiction_members(
+           cluster_id,document_id,authority,scope
+         ) values
+           ($1,$2,'integration','context'),
+           ($1,$3,'integration','context')`,
+        [clusterId, leftId, rightId],
+      );
+
+      const response = await app.inject({
+        method: "POST",
+        url: "/v1/context",
+        headers,
+        payload: {
+          query: leftExternalId,
+          intent: "EXACT_LOOKUP",
+          spaceId: defaultSpace,
+          vaultId,
+          maxTokens: 4_000,
+        },
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      const packet = response.json() as {
+        conflicts: string[];
+        gaps: string[];
+        sections: Array<{
+          documentId: string;
+          content: string;
+          sourceOrEvidenceIds: string[];
+          selectionReason: string;
+        }>;
+      };
+      expect(packet.conflicts).toContain("context assembly conflict (OPEN)");
+      expect(packet.gaps).not.toContain(
+        expect.stringContaining("authorization/truth policy"),
+      );
+      expect(
+        new Set(packet.sections.map((section) => section.documentId)),
+      ).toEqual(new Set([leftId, rightId]));
+      const counterpart = packet.sections.find(
+        (section) => section.documentId === rightId,
+      );
+      expect(counterpart?.content).toContain(
+        "retry attempts may continue through five failures",
+      );
+      expect(counterpart?.sourceOrEvidenceIds).toContain(
+        `shared/conflict-side-b.md@${revision}`,
+      );
+      expect(counterpart?.selectionReason).toContain(
+        "context:material-conflict-counterpart",
+      );
+    } finally {
+      await db.pool.query("delete from context_packets where vault_id=$1", [
+        vaultId,
+      ]);
+      await db.pool.query("delete from contradiction_clusters where id=$1", [
+        clusterId,
+      ]);
+      await db.pool.query("delete from knowledge_documents where vault_id=$1", [
+        vaultId,
+      ]);
+      await db.pool.query(
+        "delete from vault_index_revisions where vault_id=$1",
+        [vaultId],
+      );
+      await db.pool.query("delete from vault_memberships where vault_id=$1", [
+        vaultId,
+      ]);
+      await db.pool.query("delete from vaults where id=$1", [vaultId]);
     }
   });
 

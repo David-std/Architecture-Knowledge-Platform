@@ -1,0 +1,152 @@
+{
+  "schemaVersion": 1,
+  "release": "v0.4.0",
+  "domains": [
+    {
+      "id": "code-graph",
+      "title": "Code Graph",
+      "items": [
+        {
+          "id": "akp-code-context",
+          "title": "Deterministic code graph and change-impact context",
+          "classification": "IMPLEMENTED",
+          "requiredCapabilities": ["code-context", "federated-graph"],
+          "rationale": "AKP ships a revisioned CODE projection, bounded graph substrate, symbol/change-impact queries, failure semantics and recovery evidence."
+        },
+        {
+          "id": "graphify-adapter",
+          "title": "Graphify extraction adapter",
+          "classification": "ADAPTER_PROVIDED",
+          "requiredCapabilities": ["code-context"],
+          "reference": "Graphify 0.9.63",
+          "rationale": "AKP executes the pinned Graphify adapter in remote CI while keeping Graphify optional and derived-state only."
+        },
+        {
+          "id": "external-code-graph-families",
+          "title": "GitNexus / GraphCoder / RepoGraph same-task parity",
+          "classification": "DEFERRED_WITH_REASON",
+          "requiredCapabilities": [],
+          "reference": "GitNexus / GraphCoder / RepoGraph families",
+          "rationale": "No same-task-set executable adapter for these external systems is part of v0.4, so AKP makes no parity or superiority claim from README or heterogeneous results."
+        }
+      ]
+    },
+    {
+      "id": "enterprise-workspace-context",
+      "title": "Enterprise Workspace / Context",
+      "items": [
+        {
+          "id": "akp-enterprise-context-workspace",
+          "title": "Scoped Team Context Workspace and operator UX",
+          "classification": "IMPLEMENTED",
+          "requiredCapabilities": [
+            "team-context-workspace",
+            "workspace-web",
+            "authorization-isolation"
+          ],
+          "rationale": "AKP provides durable sessions, revision pins, claims/handoffs, scoped principals, governed promotion and human/team Web surfaces."
+        },
+        {
+          "id": "external-workspace-comparators",
+          "title": "External agent-workspace same-flow comparison",
+          "classification": "DEFERRED_WITH_REASON",
+          "requiredCapabilities": [],
+          "reference": "Sage / SwarmVault selected workflow scenarios",
+          "rationale": "The registered competitive arena does not execute these external systems on the same governed workspace flow, so v0.4 leaves the comparison explicit and unclaimed."
+        }
+      ]
+    },
+    {
+      "id": "retrieval-context-engineering",
+      "title": "Retrieval & Context Engineering",
+      "items": [
+        {
+          "id": "akp-retrieval-context",
+          "title": "Bounded retrieval, context assembly and safe reasoning",
+          "classification": "IMPLEMENTED",
+          "requiredCapabilities": [
+            "advanced-retrieval",
+            "safe-reasoning",
+            "agent-context"
+          ],
+          "rationale": "AKP ships exact/lexical/vector/typed-graph retrieval, bounded context assembly, a typed reasoning plan runtime and an agent context facade with registered evaluation."
+        },
+        {
+          "id": "external-retrieval-comparators",
+          "title": "External retrieval-system same-corpus comparison",
+          "classification": "DEFERRED_WITH_REASON",
+          "requiredCapabilities": [],
+          "reference": "GraphRAG / HippoRAG / LightRAG-R2R",
+          "rationale": "External comparators remain NOT_EXECUTED unless same-corpus evidence is supplied; v0.4 does not copy published benchmark scores into AKP claims."
+        }
+      ]
+    },
+    {
+      "id": "temporal-truth",
+      "title": "Temporal Truth",
+      "items": [
+        {
+          "id": "akp-temporal-truth",
+          "title": "Bi-temporal truth and support maintenance",
+          "classification": "IMPLEMENTED",
+          "requiredCapabilities": ["temporal-truth"],
+          "rationale": "AKP provides current/as-of truth queries, support withdrawal, stale-derived rejection and durable truth revision state with recovery evidence."
+        },
+        {
+          "id": "graphiti-temporal-comparison",
+          "title": "Graphiti same-scenario temporal comparison",
+          "classification": "DEFERRED_WITH_REASON",
+          "requiredCapabilities": [],
+          "reference": "Graphiti selected temporal scenarios",
+          "rationale": "The competitive manifest requires a registered external temporal scenario report before any comparison can be treated as executed."
+        }
+      ]
+    },
+    {
+      "id": "coordination-plane",
+      "title": "Coordination Plane",
+      "items": [
+        {
+          "id": "akp-coordination-plane",
+          "title": "Durable claims, work context, handoff and agent resume",
+          "classification": "IMPLEMENTED",
+          "requiredCapabilities": [
+            "team-context-workspace",
+            "agent-context",
+            "workspace-web"
+          ],
+          "rationale": "AKP separates system-of-record objects, coordination state and approved knowledge while providing leases/fencing, handoffs, promotion review and context bootstrap."
+        },
+        {
+          "id": "external-coordination-comparators",
+          "title": "External multi-agent coordination same-flow comparison",
+          "classification": "DEFERRED_WITH_REASON",
+          "requiredCapabilities": [],
+          "reference": "Sage / SwarmVault selected workflow scenarios",
+          "rationale": "No same-flow executable external run is registered for v0.4; the Agent Arena compares AKP access arms rather than relabelling an external coordination product as executed."
+        }
+      ]
+    },
+    {
+      "id": "connectors",
+      "title": "Connectors",
+      "items": [
+        {
+          "id": "akp-connector-contract",
+          "title": "Capability-declared connectors and authenticated inbox",
+          "classification": "IMPLEMENTED",
+          "requiredCapabilities": ["assurance-connectors"],
+          "rationale": "AKP ships connector capability contracts, local/Git integration, authenticated webhook/inbox handling, checkpoints, replay/idempotency and assurance findings."
+        },
+        {
+          "id": "vendor-specific-connectors",
+          "title": "First-party adapters for every external system of record",
+          "classification": "DEFERRED_WITH_REASON",
+          "requiredCapabilities": [],
+          "reference": "GitHub / GitLab / Jira / Linear / Slack / Teams families",
+          "rationale": "v0.4 defines the interoperable connector contract and minimum real adapters but does not claim first-party production adapters for every named external system."
+        }
+      ]
+    }
+  ]
+}

@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  adm-zip: 0.6.0
+  adm-zip: 0.6.1
   postcss: 8.5.25
   sharp: 0.35.4
   fast-uri: 4.1.3
@@ -62,6 +62,9 @@ importers:
       dependency-cruiser:
         specifier: ^16.0.0
         version: 16.10.4
+      playwright:
+        specifier: 1.63.0
+        version: 1.63.0
       prettier:
         specifier: ^3.0.0
         version: 3.9.6
@@ -80,6 +83,9 @@ importers:
 
   apps/api:
     dependencies:
+      "@akp/application":
+        specifier: "*"
+        version: link:../../packages/application
       "@akp/audit-export":
         specifier: "*"
         version: link:../../packages/audit-export
@@ -239,6 +245,9 @@ importers:
       "@akp/postgres":
         specifier: "*"
         version: link:../../packages/postgres
+      "@akp/project-adapter":
+        specifier: "*"
+        version: link:../../packages/project-adapter
       "@akp/validation":
         specifier: "*"
         version: link:../../packages/validation
@@ -303,6 +312,12 @@ importers:
 
   packages/indexing:
     dependencies:
+      "@akp/compiler":
+        specifier: "*"
+        version: link:../compiler
+      "@akp/contracts":
+        specifier: "*"
+        version: link:../contracts
       "@akp/git-store":
         specifier: "*"
         version: link:../git-store
@@ -401,6 +416,12 @@ importers:
       "@huggingface/transformers":
         specifier: 4.2.0
         version: 4.2.0(@types/node@24.13.3)
+      ngraph.graph:
+        specifier: 20.1.2
+        version: 20.1.2
+      ngraph.leiden:
+        specifier: 0.3.0
+        version: 0.3.0
 
   packages/validation:
     dependencies:
@@ -2363,10 +2384,10 @@ packages:
     engines: { node: ">=0.4.0" }
     hasBin: true
 
-  adm-zip@0.6.0:
+  adm-zip@0.6.1:
     resolution:
       {
-        integrity: sha512-XleryMhbuksdKtofnWZ9Sk+4CUTbms4Mb/EU32SZwToAyZ5RgVos/ki8n+yr0LWHOGKuakbXTuuYNHLQjhddgg==,
+        integrity: sha512-Xwrja8nx9e5o2N1my4DsKCeKpdrnACyr1wtbPxBDgGzKzKyE9kRtBFA8mWldI+RVlD7CBZNWY/wQ2+ydwOR6kQ==,
       }
     engines: { node: ">=14.0" }
 
@@ -3749,6 +3770,49 @@ packages:
         integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==,
       }
 
+  dotparser@1.1.1:
+    resolution:
+      {
+        integrity: sha512-8ojhUts0HbLnXJgjTiJOddwVVBUk6hg4SJ5kGiuhzgK/f+y79TiWvICwx1oCWlVbBC8YI3nEaIQg9fjGYbGBXw==,
+      }
+
+  ngraph.events@1.4.0:
+    resolution:
+      {
+        integrity: sha512-NeDGI4DSyjBNBRtA86222JoYietsmCXbs8CEB0dZ51Xeh4lhVl1y3wpWLumczvnha8sFQIW4E0vvVWwgmX2mGw==,
+      }
+
+  ngraph.fromdot@7.1.0:
+    resolution:
+      {
+        integrity: sha512-LGwhlKNbW+4Wwyf1vJewbY2iSbvEsgWKUOXjqihdsCZ+F4q4gh9mdklz66SLfL92pKPj6fL+IYdXgluoKD34Nw==,
+      }
+
+  ngraph.graph@20.1.2:
+    resolution:
+      {
+        integrity: sha512-W/G3GBR3Y5UxMLHTUCPP9v+pbtpzwuAEIqP5oZV+9IwgxAIEZwh+Foc60iPc1idlnK7Zxu0p3puxAyNmDvBd0Q==,
+      }
+
+  ngraph.leiden@0.3.0:
+    resolution:
+      {
+        integrity: sha512-cF20r8cnwVnr6V74fPQX8rkeIJ5uEuJ44kOYx+D1V2Bx09JthS9pASXAZ0pt+c8iuEmq4Q4N9dN93bKIOBrVkg==,
+      }
+    hasBin: true
+
+  ngraph.random@1.2.0:
+    resolution:
+      {
+        integrity: sha512-4EUeAGbB2HWX9njd6bP6tciN6ByJfoaAvmVL9QTaZSeXrW46eNGA9GajiXiPBbvFqxUWFkEbyo6x5qsACUuVfA==,
+      }
+
+  ngraph.todot@4.1.0:
+    resolution:
+      {
+        integrity: sha512-sf3G9j+Ap0Z4zDbHv7xYfph+r3Te1mY3XX55bz1ORu3zodmU9jKn/T4JzYuYGLMX8dSOGr5bgQKTh8p2ECPKqA==,
+      }
+
   nanoid@3.3.18:
     resolution:
       {
@@ -4072,6 +4136,22 @@ packages:
         integrity: sha512-9ZhXKM/rw350N1ovuWHbGxnGh/SNJ4cnxHiM0rxE4VN41wsg8P8zWn9hv/buK00RP4WvlOyr/RBDiptyxVbkZQ==,
       }
     engines: { node: ">=0.10.0" }
+
+  playwright-core@1.63.0:
+    resolution:
+      {
+        integrity: sha512-rYCsBF/M5HjUch52bbtVONEFjv6Xu8sm8h72dNlR5bzIE1fvC/bxgspzkjSfU+MweEMmPM8KJebG6nnyxo5mCg==,
+      }
+    engines: { node: ">=20" }
+    hasBin: true
+
+  playwright@1.63.0:
+    resolution:
+      {
+        integrity: sha512-+7ziBLidS4NaNCdt57SUDT+wYmmd5fmiQejUic/kb+YsYSCPyOOE9sebzMjNmQrsnNpDJqd4WHvV/8lfKfUDUg==,
+      }
+    engines: { node: ">=20" }
+    hasBin: true
 
   prettier@3.9.6:
     resolution:
@@ -6301,7 +6381,7 @@ snapshots:
 
   acorn@8.18.0: {}
 
-  adm-zip@0.6.0: {}
+  adm-zip@0.6.1: {}
 
   agent-base@7.1.4: {}
 
@@ -7086,6 +7166,29 @@ snapshots:
 
   ms@2.1.3: {}
 
+  dotparser@1.1.1: {}
+
+  ngraph.events@1.4.0: {}
+
+  ngraph.fromdot@7.1.0:
+    dependencies:
+      dotparser: 1.1.1
+      ngraph.graph: 20.1.2
+
+  ngraph.graph@20.1.2:
+    dependencies:
+      ngraph.events: 1.4.0
+
+  ngraph.leiden@0.3.0:
+    dependencies:
+      ngraph.fromdot: 7.1.0
+      ngraph.random: 1.2.0
+      ngraph.todot: 4.1.0
+
+  ngraph.random@1.2.0: {}
+
+  ngraph.todot@4.1.0: {}
+
   nanoid@3.3.18: {}
 
   negotiator@1.0.0: {}
@@ -7148,7 +7251,7 @@ snapshots:
 
   onnxruntime-node@1.24.3:
     dependencies:
-      adm-zip: 0.6.0
+      adm-zip: 0.6.1
       global-agent: 3.0.0
       onnxruntime-common: 1.24.3
 
@@ -7260,6 +7363,12 @@ snapshots:
   postgres-interval@1.2.0:
     dependencies:
       xtend: 4.0.2
+
+  playwright-core@1.63.0: {}
+
+  playwright@1.63.0:
+    dependencies:
+      playwright-core: 1.63.0
 
   prettier@3.9.6: {}
 

@@ -66,6 +66,7 @@ type Stats = {
   minMs: number;
   p50Ms: number;
   p95Ms: number;
+  p99Ms: number;
   maxMs: number;
   meanMs: number;
 };
@@ -312,6 +313,7 @@ function summarize(samples: number[]): Stats {
     minMs: roundMs(minimum),
     p50Ms: roundMs(percentile(0.5)),
     p95Ms: roundMs(percentile(0.95)),
+    p99Ms: roundMs(percentile(0.99)),
     maxMs: roundMs(maximum),
     meanMs: roundMs(
       samples.reduce((total, sample) => total + sample, 0) / samples.length,

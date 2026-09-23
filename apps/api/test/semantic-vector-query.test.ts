@@ -100,9 +100,12 @@ describe("semantic vector query", () => {
             return {
               rows: [
                 {
+                  generation_id: generationId,
+                  vault_id: vaultId,
                   id: documentId,
                   unit_id: unitId,
                   unit_type: "PARAGRAPH",
+                  document_revision: "revision-1",
                   score: 0.91,
                 },
               ],
@@ -174,7 +177,7 @@ describe("semantic vector query", () => {
       );
       expect(vectorCall?.sql).toContain("vector(3)");
       expect(vectorCall?.sql).toContain(
-        "not (layer = 'resource' or type = 'raw-resource')",
+        "not (d.layer='resource' or d.type='raw-resource')",
       );
       expect(vectorCall?.values?.[0]).toBe(generationId);
     } finally {
@@ -583,7 +586,7 @@ describe("semantic vector query", () => {
       );
       expect(vectorCall?.values?.[0]).toBe(previousGenerationId);
       expect(vectorCall?.sql).toContain(
-        "(layer = 'resource' or type = 'raw-resource')",
+        "(d.layer='resource' or d.type='raw-resource')",
       );
       expect(availableChannels.has("vector")).toBe(true);
       expect(warnings).toContain("INDEX_REVISION_STALE:vector");

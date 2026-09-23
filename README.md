@@ -1,17 +1,34 @@
 # Architecture Knowledge Platform
 
-Architecture Knowledge Platform (AKP) is a local-first system for turning heterogeneous technical sources into reviewed, traceable knowledge. Approved Markdown in Git is canonical; PostgreSQL, lexical/vector search, graph relations, context packets and operational state are derived or rebuildable projections.
+Architecture Knowledge Platform (AKP) is a local-first, governed context workspace for humans and AI agents. It connects approved knowledge, software structure, work state, runtime observations and external systems without replacing their authority.
+
+Approved Markdown in managed Git is canonical knowledge. PostgreSQL, lexical/vector indexes, specialized graphs, community/PPR state, ContextPackets and caches are operational or derived state that can be rebuilt.
 
 ## What the platform provides
 
-- Read-only import of one or more registered knowledge vaults.
-- Durable ingestion of immutable source material with provider-neutral extraction.
-- Lexical, semantic and graph retrieval with vault and path isolation.
-- Grounded context packets with citations, conflicts and gaps.
-- Proposal, review, validation, publication and rollback workflows backed by Git.
-- Evaluation packs, retrieval benchmarks and regression tracking.
-- Operator surfaces through Web, API, CLI and MCP.
-- Audit export, observability, backup and isolated restore tooling.
+- Versioned Knowledge Profiles, including a first-party Software Delivery Workspace Profile.
+- Shared Team Context with pinned revisions, scoped human/agent principals, work claims, lease/fencing, structured handoffs and offline snapshots.
+- Permission-aware exact, lexical and optional semantic retrieval with bounded ContextPackets, progressive disclosure and retrieval traces.
+- Specialized Epistemic, Software Catalog, Code, Runtime, Temporal, Work and Community graph domains instead of one ambiguous everything-graph.
+- Deterministic code intelligence through a bounded Graphify adapter, plus symbol, path, callers/callees, impact, change-impact, test and evidence queries.
+- Bi-temporal truth, point-in-time retrieval, supersession/invalidation and support validation before ranking.
+- Optional community/PPR/global/DRIFT retrieval, reranking and query transformations behind explicit policy and benchmark gates.
+- Typed bounded reasoning plans with allowlisted operators rather than arbitrary model-generated SQL, Cypher, shell or filesystem writes.
+- Governed proposal, review, publication and rollback workflows backed by Git.
+- Generic connector contracts, authenticated webhook/inbox ingestion and bounded node federation with preserved remote provenance.
+- Role-aware model routing and residency enforcement with explicit degraded behavior.
+- Continuous Assurance, operator diagnostics, OpenTelemetry, backup/restore and reproducible evaluation workflows.
+- Human surfaces through Web plus API, CLI and MCP interfaces over the same application rules.
+
+## Architecture boundary
+
+AKP keeps three planes separate:
+
+- **Data / context plane** — sources, approved knowledge, projections, specialized graphs and connectors.
+- **Workspace coordination plane** — active tasks, claims, findings, blockers, artifacts and handoffs.
+- **Governance / control plane** — identity, authorization, profiles, review, publication, temporal truth, audit, model policy and federation policy.
+
+External systems remain systems of record for the objects they own. Workspace state is not approved knowledge, and a derived summary or high retrieval score never creates authority.
 
 ## Requirements
 
@@ -39,6 +56,8 @@ pnpm --filter @akp/web dev
 ```
 
 Local services bind to loopback by default. Configure credentials, allowed source roots and optional providers in `.env`; do not commit private values.
+
+For a shared deployment, follow the [Enterprise Deployment Guide](docs/guides/enterprise-deployment.md) and [Team Context Guide](docs/guides/team-context.md) instead of synchronizing writable database files between workstations.
 
 ## Import a vault
 
@@ -68,17 +87,28 @@ pnpm build
 pnpm test:integration
 ```
 
-Extractor changes also require Ruff, mypy and pytest under Python 3.12. Runtime and recovery changes should additionally exercise migrations, API/MCP/Web smoke checks and backup/restore.
+Runtime, provider and recovery changes also use the relevant maintained benchmark, resilience and restore workflows. A green typecheck alone is not capability evidence.
 
 ## Documentation
 
+Start with:
+
 - [Architecture](ARCHITECTURE.md)
 - [Current capabilities and limits](docs/status.md)
-- [Local operations](docs/runbooks/local-operations.md)
+- [Workspace Operating Model](docs/guides/workspace-operating-model.md)
+- [Software Delivery Workspace Profile](docs/guides/software-delivery-workspace-profile.md)
+- [Coordination Plane](docs/guides/coordination-plane.md)
+- [Connector Contract](docs/guides/connector-contract.md)
+- [Retrieval & Context Engineering](docs/guides/retrieval-context-engineering.md)
+- [Graph Model](docs/guides/graph-model.md)
+- [Temporal Truth](docs/guides/temporal-truth.md)
+- [Agent Integration](docs/guides/agent-integration.md)
+- [Federation](docs/guides/federation.md)
+- [Operations & Recovery](docs/guides/operations-recovery.md)
 - [Threat model](docs/security/threat-model.md)
 - [Contributing](CONTRIBUTING.md)
 - [Release history](CHANGELOG.md)
 
 ## Design boundary
 
-Imported vaults and raw sources are inputs, not product configuration. The platform does not assume a particular course, organization, repository layout or personal workstation. Source-specific conventions belong in explicit import profiles or evaluation fixtures, never in the generic runtime core.
+Imported vaults, source content, model output and connector payloads are inputs, not product configuration or authority. The generic runtime does not assume a particular organization, corpus, repository layout, course or developer workstation.

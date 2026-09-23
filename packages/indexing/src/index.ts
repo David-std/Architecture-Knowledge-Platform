@@ -12,10 +12,12 @@ import {
   parseKnowledgeUnits,
 } from "@akp/retrieval";
 import { withSpan } from "@akp/observability";
+import { rebuildCommunityIndex } from "./community-index.js";
 import { buildEmbeddingIndex } from "./embedding-index.js";
 
 export * from "./embedding-generation.js";
 export * from "./embedding-index.js";
+export * from "./community-index.js";
 
 export interface ManagedChange {
   path: string;
@@ -40,6 +42,8 @@ export interface SynchronizeManagedPathsResult {
 export interface IncrementalIndexResult extends SynchronizeManagedPathsResult {
   relationCount: number;
   corpusRevision: string;
+  communityRevision: string;
+  communities: number;
   documentsRebuilt: number;
   unitsRebuilt: number;
   embeddingsReused: number;
@@ -970,6 +974,12 @@ export async function incrementalIndex(
       );
     }
 
+    const communityIndex = await rebuildCommunityIndex(db, {
+      spaceId: options.spaceId,
+      vaultId: options.vaultId,
+      graphRevision: corpusRevision,
+    });
+
     const vectorEnabled = process.env.AKP_VECTOR_ENABLED === "true";
     let provider: ReturnType<typeof createConfiguredEmbeddingProvider> = null;
     let vectorWarning = vectorEnabled
@@ -1048,6 +1058,8 @@ export async function incrementalIndex(
       ...result,
       relationCount,
       corpusRevision,
+      communityRevision: communityIndex.communityRevision,
+      communities: communityIndex.communities,
       ...stats,
     };
   } catch (error) {

@@ -1,0 +1,795 @@
+{
+  "schemaVersion": 1,
+  "release": "v0.4.0",
+  "maturityLadder": [
+    "DESIGNED",
+    "FUNCTIONAL",
+    "INTEGRATED",
+    "HARDENED",
+    "OPERABLE",
+    "BENCHMARKED",
+    "DOCUMENTED",
+    "PRODUCTIZED"
+  ],
+  "columns": [
+    "runtimeTest",
+    "negativeTest",
+    "integrationTest",
+    "recoveryTest",
+    "securityTest",
+    "operatorSurface",
+    "docs",
+    "benchmark",
+    "remoteCi"
+  ],
+  "capabilities": [
+    {
+      "id": "durable-ingest-publication",
+      "title": "Durable ingest, review and Git publication",
+      "mandatory": true,
+      "requirements": {
+        "runtimeTest": {
+          "evidence": ["test:ingest-lifecycle"]
+        },
+        "negativeTest": {
+          "evidence": ["failure:publication-compensation"]
+        },
+        "integrationTest": {
+          "evidence": ["integration:product-lifecycle"]
+        },
+        "recoveryTest": {
+          "evidence": ["recovery:managed-git-restore"]
+        },
+        "securityTest": {
+          "evidence": ["security:scoped-ingest-review"]
+        },
+        "operatorSurface": {
+          "evidence": ["surface:source-review-publication"]
+        },
+        "docs": {
+          "evidence": ["doc:contributor-reviewer", "doc:operations-recovery"]
+        },
+        "benchmark": {
+          "evidence": ["benchmark:concurrency", "benchmark:scale"]
+        },
+        "remoteCi": {
+          "evidence": ["remote:ci", "remote:recovery", "remote:resilience"]
+        }
+      },
+      "remainingLimitation": null
+    },
+    {
+      "id": "document-intelligence",
+      "title": "Document intelligence and OCR",
+      "mandatory": true,
+      "requirements": {
+        "runtimeTest": {
+          "evidence": ["test:document-intelligence-runtime"]
+        },
+        "negativeTest": {
+          "evidence": ["failure:document-provider-unavailable"]
+        },
+        "integrationTest": {
+          "evidence": ["integration:document-intelligence"]
+        },
+        "recoveryTest": {
+          "evidence": ["recovery:durable-document-state"]
+        },
+        "securityTest": {
+          "evidence": ["security:document-provider-boundary"]
+        },
+        "operatorSurface": {
+          "evidence": ["surface:source-inspection"]
+        },
+        "docs": {
+          "evidence": ["doc:enterprise-deployment", "doc:operations-recovery"]
+        },
+        "benchmark": {
+          "evidence": ["benchmark:document-intelligence"]
+        },
+        "remoteCi": {
+          "evidence": ["remote:document-intelligence", "remote:ci"]
+        }
+      },
+      "remainingLimitation": "Optional provider quality remains environment-dependent; unavailable providers must remain explicitly unproven."
+    },
+    {
+      "id": "knowledge-profiles",
+      "title": "Versioned Knowledge Profiles and governed activation",
+      "mandatory": true,
+      "requirements": {
+        "runtimeTest": {
+          "evidence": ["test:profile-runtime"]
+        },
+        "negativeTest": {
+          "evidence": [
+            "failure:profile-activation-rollback",
+            "test:interop-adversarial"
+          ]
+        },
+        "integrationTest": {
+          "evidence": [
+            "integration:profile-governance",
+            "integration:interop-roundtrip"
+          ]
+        },
+        "recoveryTest": {
+          "evidence": ["recovery:profile-state"]
+        },
+        "securityTest": {
+          "evidence": [
+            "security:profile-not-authority",
+            "test:interop-adversarial"
+          ]
+        },
+        "operatorSurface": {
+          "evidence": ["surface:profile-admin"]
+        },
+        "docs": {
+          "evidence": ["doc:knowledge-profiles"]
+        },
+        "benchmark": {
+          "evidence": [],
+          "required": false,
+          "rationale": "Profile governance is configuration correctness rather than a standalone performance benchmark."
+        },
+        "remoteCi": {
+          "evidence": ["remote:ci", "remote:resilience"]
+        }
+      },
+      "remainingLimitation": null
+    },
+    {
+      "id": "team-context-workspace",
+      "title": "Team context, pinned revisions, claims and handoffs",
+      "mandatory": true,
+      "requirements": {
+        "runtimeTest": {
+          "evidence": [
+            "test:workspace-runtime",
+            "integration:principal-audit-identities"
+          ]
+        },
+        "negativeTest": {
+          "evidence": [
+            "failure:workspace-fencing",
+            "failure:work-scope-normalization"
+          ]
+        },
+        "integrationTest": {
+          "evidence": [
+            "integration:team-node",
+            "integration:fresh-session-handoff",
+            "integration:offline-snapshot-contract",
+            "integration:activity-derivation-contract"
+          ]
+        },
+        "recoveryTest": {
+          "evidence": ["recovery:workspace-state"]
+        },
+        "securityTest": {
+          "evidence": [
+            "security:cross-space-workspace",
+            "test:authorization-decision-semantics"
+          ]
+        },
+        "operatorSurface": {
+          "evidence": ["surface:workspace-home"]
+        },
+        "docs": {
+          "evidence": [
+            "doc:team-context",
+            "doc:workspace-operating-model",
+            "doc:coordination-plane",
+            "doc:software-delivery-workspace-profile"
+          ]
+        },
+        "benchmark": {
+          "evidence": [
+            "benchmark:concurrency",
+            "benchmark:workspace-team-quality-metrics",
+            "benchmark:enterprise-adversarial-scenarios"
+          ]
+        },
+        "remoteCi": {
+          "evidence": ["remote:team-node", "remote:ci"]
+        }
+      },
+      "remainingLimitation": null
+    },
+    {
+      "id": "authorization-isolation",
+      "title": "Authorization and multi-space isolation",
+      "mandatory": true,
+      "requirements": {
+        "runtimeTest": {
+          "evidence": [
+            "test:authorization-runtime",
+            "test:authorization-decision-semantics"
+          ]
+        },
+        "negativeTest": {
+          "evidence": [
+            "failure:revoked-principal",
+            "test:authorization-decision-semantics"
+          ]
+        },
+        "integrationTest": {
+          "evidence": ["integration:multi-space-security"]
+        },
+        "recoveryTest": {
+          "evidence": [],
+          "required": false,
+          "rationale": "Authorization is evaluated synchronously and owns no independent recovery queue."
+        },
+        "securityTest": {
+          "evidence": [
+            "security:cross-space-retrieval",
+            "security:unauthorized-graph-hop",
+            "test:authorization-decision-semantics"
+          ]
+        },
+        "operatorSurface": {
+          "evidence": ["surface:team-admin"]
+        },
+        "docs": {
+          "evidence": ["doc:enterprise-deployment", "doc:team-context"]
+        },
+        "benchmark": {
+          "evidence": ["benchmark:semantic-isolation"]
+        },
+        "remoteCi": {
+          "evidence": ["remote:semantic", "remote:team-node", "remote:ci"]
+        }
+      },
+      "remainingLimitation": null
+    },
+    {
+      "id": "federated-graph",
+      "title": "Typed federated graph substrate",
+      "mandatory": true,
+      "requirements": {
+        "runtimeTest": {
+          "evidence": ["test:graph-runtime", "test:runtime-domain-contract"]
+        },
+        "negativeTest": {
+          "evidence": [
+            "failure:graph-build-preserves-active",
+            "failure:stale-code-sha"
+          ]
+        },
+        "integrationTest": {
+          "evidence": [
+            "integration:federated-graph",
+            "integration:relationship-assertion",
+            "integration:graph-catalog",
+            "integration:domain-fixtures",
+            "integration:cross-domain-provenance",
+            "integration:epistemic-v03-regression"
+          ]
+        },
+        "recoveryTest": {
+          "evidence": [
+            "recovery:graph-rebuild",
+            "recovery:rebuild-normalized-equivalence"
+          ]
+        },
+        "securityTest": {
+          "evidence": [
+            "security:unauthorized-graph-hop",
+            "security:cross-domain-hidden-hop"
+          ]
+        },
+        "operatorSurface": {
+          "evidence": ["surface:graph-explorer"]
+        },
+        "docs": {
+          "evidence": ["doc:graph-model"]
+        },
+        "benchmark": {
+          "evidence": [
+            "benchmark:graph-quality",
+            "benchmark:enterprise-state",
+            "benchmark:graph-quality-metrics"
+          ]
+        },
+        "remoteCi": {
+          "evidence": ["remote:ci", "remote:scale", "remote:resilience"]
+        }
+      },
+      "remainingLimitation": null
+    },
+    {
+      "id": "code-context",
+      "title": "Code graph and change-impact context",
+      "mandatory": true,
+      "requirements": {
+        "runtimeTest": {
+          "evidence": [
+            "test:code-context-runtime",
+            "test:evidence-tier-transitions",
+            "test:impact-partitions",
+            "test:code-graph-doctor-state"
+          ]
+        },
+        "negativeTest": {
+          "evidence": [
+            "failure:code-provider-crash",
+            "failure:stale-code-sha",
+            "failure:code-graph-validator",
+            "failure:code-graph-limits",
+            "failure:graphify-version-gate",
+            "failure:code-graph-active-preserved",
+            "failure:code-ambiguity-preserved",
+            "failure:delta-invalid-commit",
+            "failure:retired-history-not-stale"
+          ]
+        },
+        "integrationTest": {
+          "evidence": [
+            "integration:graphify-live",
+            "integration:graphify-provider-gate",
+            "integration:code-graph-lifecycle",
+            "integration:symbol-reconciliation",
+            "integration:commit-delta-impact"
+          ]
+        },
+        "recoveryTest": {
+          "evidence": ["recovery:code-graph-rebuild"]
+        },
+        "securityTest": {
+          "evidence": [
+            "security:code-scope",
+            "security:malicious-code-comments",
+            "security:delta-root-redaction"
+          ]
+        },
+        "operatorSurface": {
+          "evidence": ["surface:code-context", "surface:code-graph-doctor"]
+        },
+        "docs": {
+          "evidence": ["doc:code-context"]
+        },
+        "benchmark": {
+          "evidence": [
+            "benchmark:code-quality",
+            "benchmark:enterprise-state",
+            "benchmark:graphify-incremental-equivalence",
+            "benchmark:code-quality-metrics"
+          ]
+        },
+        "remoteCi": {
+          "evidence": ["remote:ci", "remote:scale"]
+        }
+      },
+      "remainingLimitation": null
+    },
+    {
+      "id": "temporal-truth",
+      "title": "Bi-temporal truth and support validation",
+      "mandatory": true,
+      "requirements": {
+        "runtimeTest": {
+          "evidence": [
+            "test:temporal-truth-runtime",
+            "test:bitemporal-valid-recorded-time",
+            "test:support-alternative-groups"
+          ]
+        },
+        "negativeTest": {
+          "evidence": [
+            "failure:source-withdrawal-stale-index",
+            "failure:truth-changes-mid-query",
+            "failure:derived-support-before-fusion",
+            "failure:physical-cleanup-race",
+            "failure:snapshot-change-mid-query"
+          ]
+        },
+        "integrationTest": {
+          "evidence": [
+            "integration:temporal-truth",
+            "integration:community-context-fencing",
+            "integration:explicit-truth-states",
+            "integration:vector-cleanup",
+            "integration:cached-synthesis-support-validation"
+          ]
+        },
+        "recoveryTest": {
+          "evidence": ["recovery:truth-state"]
+        },
+        "securityTest": {
+          "evidence": ["security:truth-scope"]
+        },
+        "operatorSurface": {
+          "evidence": ["surface:temporal-context"]
+        },
+        "docs": {
+          "evidence": ["doc:temporal-truth"]
+        },
+        "benchmark": {
+          "evidence": [
+            "benchmark:temporal-truth",
+            "benchmark:temporal-truth-quality-metrics",
+            "benchmark:temporal-truth-final-scenarios"
+          ]
+        },
+        "remoteCi": {
+          "evidence": ["remote:ci", "remote:semantic", "remote:resilience"]
+        }
+      },
+      "remainingLimitation": null
+    },
+    {
+      "id": "advanced-retrieval",
+      "title": "Advanced retrieval, community, PPR and context assembly",
+      "mandatory": true,
+      "requirements": {
+        "runtimeTest": {
+          "evidence": [
+            "test:advanced-retrieval-runtime",
+            "test:retrieval-trace-contract"
+          ]
+        },
+        "negativeTest": {
+          "evidence": [
+            "failure:community-build-rollback",
+            "failure:ppr-cancel",
+            "failure:hyde-untrusted-transform",
+            "failure:reranker-candidate-set",
+            "failure:reranker-fallback"
+          ]
+        },
+        "integrationTest": {
+          "evidence": [
+            "integration:retrieval-context",
+            "integration:retrieval-trace-e2e",
+            "integration:drift-routing"
+          ]
+        },
+        "recoveryTest": {
+          "evidence": ["recovery:derived-index-rebuild"]
+        },
+        "securityTest": {
+          "evidence": ["security:ppr-no-leak", "security:retrieval-trace-scope"]
+        },
+        "operatorSurface": {
+          "evidence": ["surface:retrieval-diagnostics"]
+        },
+        "docs": {
+          "evidence": ["doc:retrieval-context-engineering"]
+        },
+        "benchmark": {
+          "evidence": [
+            "benchmark:retrieval-quality",
+            "benchmark:semantic",
+            "benchmark:contextual-chunks",
+            "benchmark:long-context-placement",
+            "benchmark:ann-decision-deferred",
+            "benchmark:drift",
+            "benchmark:retrieval-diagnostic-quality",
+            "benchmark:retrieval-ablation-reproducibility"
+          ]
+        },
+        "remoteCi": {
+          "evidence": ["remote:semantic", "remote:scale", "remote:ci"]
+        }
+      },
+      "remainingLimitation": null
+    },
+    {
+      "id": "safe-reasoning",
+      "title": "Validated bounded reasoning plans",
+      "mandatory": true,
+      "requirements": {
+        "runtimeTest": {
+          "evidence": ["test:reasoning-runtime"]
+        },
+        "negativeTest": {
+          "evidence": [
+            "failure:reasoning-invalid-operator",
+            "failure:reasoning-timeout"
+          ]
+        },
+        "integrationTest": {
+          "evidence": ["integration:reasoning-context"]
+        },
+        "recoveryTest": {
+          "evidence": [],
+          "required": false,
+          "rationale": "Reasoning plans are bounded request execution and do not own canonical durable state."
+        },
+        "securityTest": {
+          "evidence": [
+            "security:no-arbitrary-sql-cypher",
+            "security:load-raw-resource-boundary"
+          ]
+        },
+        "operatorSurface": {
+          "evidence": ["surface:agent-context"]
+        },
+        "docs": {
+          "evidence": [
+            "doc:agent-integration",
+            "doc:retrieval-context-engineering"
+          ]
+        },
+        "benchmark": {
+          "evidence": ["benchmark:reasoning-adversarial"]
+        },
+        "remoteCi": {
+          "evidence": ["remote:ci"]
+        }
+      },
+      "remainingLimitation": null
+    },
+    {
+      "id": "assurance-connectors",
+      "title": "Continuous assurance and durable connectors",
+      "mandatory": true,
+      "requirements": {
+        "runtimeTest": {
+          "evidence": ["test:assurance-connectors-runtime"]
+        },
+        "negativeTest": {
+          "evidence": [
+            "failure:webhook-replay",
+            "failure:connector-checkpoint-window"
+          ]
+        },
+        "integrationTest": {
+          "evidence": ["integration:assurance-connectors"]
+        },
+        "recoveryTest": {
+          "evidence": ["recovery:connector-state"]
+        },
+        "securityTest": {
+          "evidence": [
+            "security:connector-auth-replay",
+            "security:access-boundary-controlled-probes"
+          ]
+        },
+        "operatorSurface": {
+          "evidence": ["surface:assurance-admin", "surface:connector-admin"]
+        },
+        "docs": {
+          "evidence": ["doc:assurance-connectors", "doc:connector-contract"]
+        },
+        "benchmark": {
+          "evidence": ["benchmark:concurrency"]
+        },
+        "remoteCi": {
+          "evidence": ["remote:ci", "remote:resilience"]
+        }
+      },
+      "remainingLimitation": null
+    },
+    {
+      "id": "agent-context",
+      "title": "Agent context façade and instruction integration",
+      "mandatory": true,
+      "requirements": {
+        "runtimeTest": {
+          "evidence": ["test:agent-context-runtime"]
+        },
+        "negativeTest": {
+          "evidence": ["failure:agent-revoked-mid-task"]
+        },
+        "integrationTest": {
+          "evidence": ["integration:mcp-context-facade"]
+        },
+        "recoveryTest": {
+          "evidence": ["recovery:offline-agent-context"]
+        },
+        "securityTest": {
+          "evidence": [
+            "security:agent-scope",
+            "security:agent-instruction-integrity"
+          ]
+        },
+        "operatorSurface": {
+          "evidence": ["surface:mcp-akp-context"]
+        },
+        "docs": {
+          "evidence": ["doc:agent-integration"]
+        },
+        "benchmark": {
+          "evidence": ["benchmark:agent-five-arm"]
+        },
+        "remoteCi": {
+          "evidence": ["remote:agent", "remote:ci"]
+        }
+      },
+      "remainingLimitation": null
+    },
+    {
+      "id": "workspace-web",
+      "title": "Human workspace, review and team administration Web UX",
+      "mandatory": true,
+      "requirements": {
+        "runtimeTest": {
+          "evidence": ["test:browser-critical-flows"]
+        },
+        "negativeTest": {
+          "evidence": ["failure:autosave-git-failure"]
+        },
+        "integrationTest": {
+          "evidence": ["integration:web-workspace"]
+        },
+        "recoveryTest": {
+          "evidence": ["recovery:web-draft-state"]
+        },
+        "securityTest": {
+          "evidence": ["security:web-space-boundaries"]
+        },
+        "operatorSurface": {
+          "evidence": ["surface:web-workspace", "surface:team-admin"]
+        },
+        "docs": {
+          "evidence": [
+            "doc:team-context",
+            "doc:contributor-reviewer",
+            "doc:workspace-operating-model",
+            "doc:coordination-plane",
+            "doc:software-delivery-workspace-profile"
+          ]
+        },
+        "benchmark": {
+          "evidence": [],
+          "required": false,
+          "rationale": "Human workflow acceptance is covered by critical browser flows rather than a synthetic performance ranking."
+        },
+        "remoteCi": {
+          "evidence": ["remote:ci", "remote:team-node"]
+        }
+      },
+      "remainingLimitation": null
+    },
+    {
+      "id": "model-routing-residency",
+      "title": "Role-specific model routing and data residency",
+      "mandatory": true,
+      "requirements": {
+        "runtimeTest": {
+          "evidence": [
+            "test:model-routing-runtime",
+            "test:community-summary-model-routing"
+          ]
+        },
+        "negativeTest": {
+          "evidence": [
+            "failure:model-residency-fallback",
+            "failure:external-model-unavailable",
+            "failure:community-summary-local-only"
+          ]
+        },
+        "integrationTest": {
+          "evidence": [
+            "integration:model-routing-compiler",
+            "integration:community-summary-model"
+          ]
+        },
+        "recoveryTest": {
+          "evidence": [],
+          "required": false,
+          "rationale": "Model routing is deployment configuration and request execution; durable recovery is covered by source/profile state."
+        },
+        "securityTest": {
+          "evidence": [
+            "security:model-residency",
+            "security:community-summary-residency"
+          ]
+        },
+        "operatorSurface": {
+          "evidence": ["surface:doctor-model-routing"]
+        },
+        "docs": {
+          "evidence": ["doc:enterprise-deployment"]
+        },
+        "benchmark": {
+          "evidence": [],
+          "required": false,
+          "rationale": "Routing correctness is policy/failure behavior; provider quality is benchmarked by the consuming capabilities."
+        },
+        "remoteCi": {
+          "evidence": ["remote:ci", "remote:resilience"]
+        }
+      },
+      "remainingLimitation": null
+    },
+    {
+      "id": "federation-runtime",
+      "title": "Federated peer remote query and partial-failure behavior",
+      "mandatory": true,
+      "requirements": {
+        "runtimeTest": {
+          "evidence": ["test:federation-runtime"]
+        },
+        "negativeTest": {
+          "evidence": [
+            "failure:federated-peer-unavailable",
+            "failure:federated-invalid-payload",
+            "failure:federated-scope-overreturn",
+            "failure:federation-peer-scope-version"
+          ]
+        },
+        "integrationTest": {
+          "evidence": ["integration:federation-two-node"]
+        },
+        "recoveryTest": {
+          "evidence": ["recovery:federation-peer-state"]
+        },
+        "securityTest": {
+          "evidence": [
+            "security:federation-trust-scope",
+            "security:federation-peer-scope-version"
+          ]
+        },
+        "operatorSurface": {
+          "evidence": ["surface:federation-admin", "surface:doctor-federation"]
+        },
+        "docs": {
+          "evidence": ["doc:federation"]
+        },
+        "benchmark": {
+          "evidence": [
+            "benchmark:federation-partial-failure",
+            "benchmark:enterprise-adversarial-scenarios"
+          ]
+        },
+        "remoteCi": {
+          "evidence": ["remote:team-node", "remote:resilience", "remote:ci"]
+        }
+      },
+      "remainingLimitation": null
+    },
+    {
+      "id": "operations-recovery-scale",
+      "title": "Operations, diagnostics, backup/recovery and scale",
+      "mandatory": true,
+      "requirements": {
+        "runtimeTest": {
+          "evidence": ["test:doctor-runtime"]
+        },
+        "negativeTest": {
+          "evidence": ["failure:otel-unavailable"]
+        },
+        "integrationTest": {
+          "evidence": [
+            "integration:operations-runtime",
+            "integration:concurrency-races"
+          ]
+        },
+        "recoveryTest": {
+          "evidence": ["recovery:backup-restore-rebuild"]
+        },
+        "securityTest": {
+          "evidence": ["security:secret-scan"]
+        },
+        "operatorSurface": {
+          "evidence": ["surface:cli-doctor"]
+        },
+        "docs": {
+          "evidence": ["doc:operations-recovery", "doc:enterprise-deployment"]
+        },
+        "benchmark": {
+          "evidence": [
+            "benchmark:scale",
+            "benchmark:enterprise-state",
+            "benchmark:concurrency",
+            "benchmark:scale-combinations"
+          ]
+        },
+        "remoteCi": {
+          "evidence": [
+            "remote:ci",
+            "remote:recovery",
+            "remote:scale",
+            "remote:concurrency",
+            "remote:resilience"
+          ]
+        }
+      },
+      "remainingLimitation": null
+    }
+  ]
+}

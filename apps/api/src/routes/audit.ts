@@ -31,7 +31,13 @@ function sanitizeAuditMetadata(value: unknown): unknown {
 
 export function registerAuditRoutes(app: FastifyInstance, db: Postgres): void {
   app.get<{
-    Querystring: { limit?: string; before?: string; action?: string };
+    Querystring: {
+      limit?: string;
+      before?: string;
+      action?: string;
+      resourceType?: string;
+      resourceId?: string;
+    };
   }>(
     "/v1/audit-events",
     { preHandler: requirePermission("admin") },
@@ -44,6 +50,8 @@ export function registerAuditRoutes(app: FastifyInstance, db: Postgres): void {
         ? Number(request.query.before)
         : null;
       const action = request.query.action?.trim() || null;
+      const resourceType = request.query.resourceType?.trim() || null;
+      const resourceId = request.query.resourceId?.trim() || null;
       const spaceIds = unrestrictedSpaceIdsForPermission(
         actorOf(request),
         "admin",
@@ -77,16 +85,26 @@ export function registerAuditRoutes(app: FastifyInstance, db: Postgres): void {
       if (!vaultIds.size) return { events: [], nextBefore: null };
       const result = await db.pool.query(
         `
-        select id,organization_id,space_id,actor_id,action,resource_type,
-               resource_id,metadata,trace_id,created_at,vault_id
+        select id,organization_id,space_id,actor_id,principal_id,action,
+               resource_type,resource_id,metadata,trace_id,created_at,vault_id
           from audit_events
          where space_id=any($1::uuid[])
            and vault_id=any($2::uuid[])
            and ($3::bigint is null or id < $3)
            and ($4::text is null or action=$4)
-         order by id desc limit $5
+           and ($5::text is null or resource_type=$5)
+           and ($6::text is null or resource_id=$6)
+         order by id desc limit $7
         `,
-        [spaceIds, [...vaultIds], before, action, limit],
+        [
+          spaceIds,
+          [...vaultIds],
+          before,
+          action,
+          resourceType,
+          resourceId,
+          limit,
+        ],
       );
       return {
         events: result.rows.map((event) => ({

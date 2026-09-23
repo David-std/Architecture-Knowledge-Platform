@@ -451,6 +451,59 @@ describe("production lexical ranking", () => {
           path: "docs/identity.md",
           title: "Canonical identity",
         });
+
+        const reranked = await queryKnowledge(db, searchRequest(fixture), {
+          channels: ["exact", "lexical"],
+          plan: planQuery("ranking", {
+            requestedIntent: "CONCEPTUAL",
+            capabilities: {
+              vectorAvailable: false,
+              graphConsistent: false,
+              rawAllowed: false,
+              codeAdapterAvailable: false,
+              contextPackAvailable: false,
+            },
+          }),
+          vaultIds: [fixture.vaultId],
+          retrievalPolicy: {
+            reranker: "deterministic-lexical-v1",
+          },
+        });
+        expect(reranked).toHaveLength(expectedOrder.length);
+        expect(
+          reranked.every(
+            (hit, index) =>
+              hit.rerankTrace?.reranker === "deterministic-lexical-v1" &&
+              hit.rerankTrace.postRank === index + 1 &&
+              hit.rerankTrace.preRank >= 1,
+          ),
+        ).toBe(true);
+        expect(
+          new Set(reranked.map((hit) => hit.rerankTrace?.preRank)).size,
+        ).toBe(reranked.length);
+        const originalById = new Map(
+          hits.map((hit) => [
+            hit.documentId,
+            {
+              trust: hit.trust,
+              lifecycle: hit.lifecycle,
+              citations: hit.citations,
+              warnings: hit.warnings,
+              revision: hit.revision,
+              document: hit.document,
+            },
+          ]),
+        );
+        for (const hit of reranked) {
+          expect({
+            trust: hit.trust,
+            lifecycle: hit.lifecycle,
+            citations: hit.citations,
+            warnings: hit.warnings,
+            revision: hit.revision,
+            document: hit.document,
+          }).toEqual(originalById.get(hit.documentId));
+        }
       } finally {
         await cleanupLexical(db, fixture);
         await db.close();

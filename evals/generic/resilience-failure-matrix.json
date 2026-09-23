@@ -66,12 +66,78 @@
       "id": "otel-unavailable",
       "expectedOutcome": "The core API remains live and ready when the configured OpenTelemetry collector endpoint is unreachable.",
       "evidence": "packages/observability/test/bridge.test.ts; .github/workflows/resilience-matrix.yml"
+    },
+    {
+      "id": "work-claim-acquisition-crash",
+      "expectedOutcome": "A failure after claim-row mutation but before the coordination event commits rolls back both the claim and event, so no phantom owner survives.",
+      "evidence": "apps/api/test/workspace-coordination.integration.test.ts"
+    },
+    {
+      "id": "graph-build-crash-before-activation",
+      "expectedOutcome": "A failed replacement graph build leaves the previous active revision queryable and marks no partial replacement active.",
+      "evidence": "packages/postgres/test/federated-graph.integration.test.ts"
+    },
+    {
+      "id": "graph-activation-event-crash-replay",
+      "expectedOutcome": "GraphRevisionActivated is emitted durably with causal ordering and generic outbox lease recovery can reclaim delivery after a worker crash without duplicating projection state.",
+      "evidence": "packages/postgres/test/federated-graph.integration.test.ts; packages/postgres/test/outbox.integration.test.ts"
+    },
+    {
+      "id": "source-withdrawal-during-query",
+      "expectedOutcome": "A source withdrawal that changes the truth revision during retrieval fails a STRICT query with CONTEXT_REVISION_CHANGED and stale support is suppressed.",
+      "evidence": "apps/api/test/temporal-truth-retrieval.integration.test.ts"
+    },
+    {
+      "id": "connector-checkpoint-partial-apply",
+      "expectedOutcome": "A connector projection failure never advances the source checkpoint and retry exhaustion becomes explicit REJECTED state without a partial object projection.",
+      "evidence": "packages/postgres/test/source-connectors.integration.test.ts"
+    },
+    {
+      "id": "federation-timeout",
+      "expectedOutcome": "A remote peer that does not respond before the negotiated wall budget is aborted, returns FEDERATION_PEER_TIMEOUT, and records only a machine-safe failure code.",
+      "evidence": "apps/api/test/context-fabric.integration.test.ts"
+    },
+    {
+      "id": "provider-timeout",
+      "expectedOutcome": "A normalized compiler provider timeout degrades only when degradationSafe permits it and reuses the same prepared grounded input for the compatible fallback.",
+      "evidence": "apps/worker/test/compilation-stage.test.ts"
+    },
+    {
+      "id": "community-build-failure",
+      "expectedOutcome": "A failure while writing a replacement community index rolls back the whole transaction, including the attempted stale transition of the prior active revision.",
+      "evidence": "packages/indexing/test/community-index.integration.test.ts"
+    },
+    {
+      "id": "ppr-cancellation",
+      "expectedOutcome": "Bounded PPR work checks a cooperative cancellation hook during iteration and fails with PPR_CANCELLED before completing further scoring work.",
+      "evidence": "packages/retrieval/test/ppr.test.ts"
+    },
+    {
+      "id": "profile-activation-crash",
+      "expectedOutcome": "A late durable side-effect failure during profile activation rolls back the profile binding and lifecycle transition atomically.",
+      "evidence": "packages/postgres/test/knowledge-profile-activation.integration.test.ts"
+    },
+    {
+      "id": "offline-capture-reconnect-conflict",
+      "expectedOutcome": "An offline draft captured against an old revision becomes RECONCILE_REQUIRED after reconnect and cannot last-write-wins into workspace state.",
+      "evidence": "apps/api/test/context-fabric.integration.test.ts"
+    },
+    {
+      "id": "truth-invalidation-worker-replay",
+      "expectedOutcome": "Redelivery of the same truth invalidation event reuses the existing projection revision and preserves historical dependencies without duplicate projection state.",
+      "evidence": "apps/worker/test/truth-maintenance.test.ts"
+    },
+    {
+      "id": "backup-restore-projection-rebuild",
+      "expectedOutcome": "The v4 backup restores declared durable state and managed Git into isolated resources, then rebuilds a searchable projection from restored canonical authority.",
+      "evidence": ".github/workflows/resilience-matrix.yml; scripts/verify-restore.ps1; scripts/verify-managed-git-restore.ps1"
     }
   ],
   "limitations": [
     "Service restart probes exercise deterministic CI stop/start failures rather than long-duration network partitions or managed-service failover.",
     "The post-side-effect crash case is scoped to the idempotent indexing consumer and does not claim exactly-once semantics for arbitrary external systems.",
     "Provider unavailability is injected at the document-intelligence routing boundary.",
-    "The MCP scenario proves independence of the core API while MCP is absent; it does not emulate a connected MCP client losing its transport mid-request."
+    "The MCP scenario proves independence of the core API while MCP is absent; it does not emulate a connected MCP client losing its transport mid-request.",
+    "PPR is currently an in-process, on-demand retrieval operation rather than a durable queued job; the resilience matrix proves cooperative cancellation semantics at the bounded operation boundary."
   ]
 }

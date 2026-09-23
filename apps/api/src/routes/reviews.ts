@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
 import {
+  finalizeDecisionCandidatePublicationInTransaction,
   pathMatchesVaultPrefix,
   resolveAuthorizedVaultScope,
   type AppendOutboxEventInput,
@@ -10,7 +11,11 @@ import {
 } from "@akp/postgres";
 import { GitKnowledgeStore } from "@akp/git-store";
 import { assertSafeKnowledgePath } from "@akp/compiler";
-import { validateMarkdownDocument } from "@akp/validation";
+import {
+  parseKnowledgeDocumentMetadata,
+  validateGovernedTrustBoundary,
+  validateMarkdownDocument,
+} from "@akp/validation";
 import { withSpan } from "@akp/observability";
 import {
   assertManagedRepositoryBoundary,
@@ -25,8 +30,17 @@ import {
   hasSpaceAccess,
   hasUnrestrictedPathAccess,
   requirePermission,
+  requirePrincipalAction,
   spaceIdsForPermission,
 } from "../auth.js";
+import {
+  claimReviewForPublication,
+  recordReviewApproval,
+  resolveProposalReviewPolicy,
+  reviewApprovalStatus,
+  reviewPolicyState,
+} from "../review-policy.js";
+import { createReviewDraft } from "../review-draft.js";
 
 // Keep review routes importable by lightweight API tests that mock only the
 // Postgres constructor. The helper is resolved lazily when a review is
@@ -68,6 +82,40 @@ async function renewPublicationLock(
   if (!renewed.rowCount) {
     throw new Error("PUBLICATION_LOCK_LOST");
   }
+}
+
+/** `source-summary` is a v0.3 ingest/compiler provenance draft, not a
+ * KnowledgeProfile kind. Only an already-persisted worker review whose
+ * manifest points back to its durable ingest job may retain that legacy
+ * shape while being revised. Direct proposals never reach this boundary. */
+async function isLegacyWorkerSourceSummaryReview(
+  db: Postgres,
+  review: Record<string, unknown>,
+  kinds: readonly string[],
+): Promise<boolean> {
+  if (
+    kinds.length !== 1 ||
+    kinds[0] !== "source-summary" ||
+    reviewPolicyState(review).pinned
+  ) {
+    return false;
+  }
+  const manifest = (review.impact_manifest ?? {}) as Record<string, unknown>;
+  const jobId = typeof manifest.jobId === "string" ? manifest.jobId : "";
+  const spaceId = String(review.space_id ?? "");
+  const vaultId = String(review.vault_id ?? "");
+  const authorId =
+    typeof review.author_id === "string" ? review.author_id : null;
+  if (!jobId || !spaceId || !vaultId) return false;
+  const source = await db.pool.query(
+    `select 1
+       from ingest_jobs
+      where id::text=$1 and space_id=$2 and vault_id=$3
+        and created_by is not distinct from $4::uuid
+      limit 1`,
+    [jobId, spaceId, vaultId, authorId],
+  );
+  return Boolean(source.rowCount);
 }
 
 async function recordPublicationFailure(
@@ -227,6 +275,11 @@ async function finalizePublicationTransaction(
   );
   if (!approved.rowCount) return false;
   const manifest = (review.impact_manifest ?? {}) as Record<string, unknown>;
+  await finalizeDecisionCandidatePublicationInTransaction(client, {
+    reviewId: String(review.id),
+    revision,
+    impactManifest: manifest,
+  });
   const jobId = manifest.jobId;
   if (typeof jobId === "string") {
     await client.query(
@@ -604,6 +657,25 @@ async function canAccessReview(
   );
 }
 
+function reviewPolicyDecisionHttpStatus(code: string): 403 | 409 | null {
+  if (code === "REVIEW_ROLE_NOT_ALLOWED") return 403;
+  if (
+    [
+      "REVIEW_PROFILE_STALE",
+      "REVIEW_POLICY_SNAPSHOT_INVALID",
+      "REVIEW_POLICY_KINDS_REQUIRED",
+      "REVIEW_ROUND_INVALID",
+      "REVIEW_HEAD_REQUIRED",
+      "REVIEW_ALREADY_DECIDED",
+      "REVIEW_APPROVAL_CONTEXT_CHANGED",
+      "REVIEW_APPROVAL_QUORUM_NOT_MET",
+    ].includes(code)
+  ) {
+    return 409;
+  }
+  return null;
+}
+
 export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
   app.post<{ Body: { reviewId?: string } }>(
     "/v1/operator/publications/reconcile",
@@ -656,7 +728,12 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
     };
   }>(
     "/v1/proposals",
-    { preHandler: requirePermission("knowledge:propose") },
+    {
+      preHandler: [
+        requirePermission("knowledge:propose"),
+        requirePrincipalAction("knowledge:propose"),
+      ],
+    },
     async (request, reply) => {
       const changes = request.body?.changes ?? [];
       if (!changes.length)
@@ -693,6 +770,12 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
         return reply.code(403).send({ code: "SPACE_ACCESS_DENIED" });
       }
       const actor = actorOf(request);
+      if (
+        actor?.principalKind === "AGENT_PROCESS" &&
+        actor.principalVaultId !== vaultId
+      ) {
+        return reply.code(403).send({ code: "PRINCIPAL_VAULT_SCOPE_DENIED" });
+      }
       let vaultAccess: ReviewVaultAccess | null = null;
       try {
         const scope = await resolveAuthorizedVaultScope(db, {
@@ -724,7 +807,10 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
           .send({ code: "PATH_SCOPE_DENIED", path: deniedPath.path });
       }
       const issues = changes.flatMap((change) =>
-        validateMarkdownDocument(change.content).map((issue) => ({
+        [
+          ...validateMarkdownDocument(change.content),
+          ...validateGovernedTrustBoundary(change.content),
+        ].map((issue) => ({
           ...issue,
           path: change.path,
         })),
@@ -735,67 +821,71 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
           .code(422)
           .send({ code: "DRAFT_VALIDATION_FAILED", issues });
       }
-      const reviewId = randomUUID();
-      const store = new GitKnowledgeStore(repositoryPath());
-      const baseRevision = await store.ensureRepository(
-        process.env.AKP_GIT_AUTHOR_NAME ?? "Architecture Knowledge Platform",
-        process.env.AKP_GIT_AUTHOR_EMAIL ?? "akp@localhost",
+      const reviewKinds = changes.map(
+        (change) => parseKnowledgeDocumentMetadata(change.content)?.type,
       );
-      const branchName = await store.createDraftBranch(reviewId, baseRevision);
-      const proposedChanges = await Promise.all(
-        changes.map(async (change) => ({
-          path: change.path,
-          operation: (await store.hasFileAtRevision(baseRevision, change.path))
-            ? ("UPDATE" as const)
-            : ("CREATE" as const),
-          reasons: [change.reason ?? "Direct proposal"],
-        })),
-      );
-      for (const change of changes)
-        await store.writeDraftFile(change.path, change.content);
-      const headCommit = await store.commitAll(
-        request.body.summary ?? "knowledge: direct proposal",
-        process.env.AKP_GIT_AUTHOR_NAME ?? "Architecture Knowledge Platform",
-        process.env.AKP_GIT_AUTHOR_EMAIL ?? "akp@localhost",
-      );
+      if (reviewKinds.some((kind) => !kind)) {
+        return reply.code(422).send({ code: "KNOWLEDGE_KIND_REQUIRED" });
+      }
+      let resolvedReviewPolicy: Awaited<
+        ReturnType<typeof resolveProposalReviewPolicy>
+      >;
       try {
-        await db.pool.query(
-          `
-          insert into reviews(id,space_id,vault_id,branch_name,base_commit,head_commit,status,author_id,
-                              impact_manifest,validation_report)
-          values($1,$2,$3,$4,$5,$6,'PENDING',$7,$8::jsonb,$9::jsonb)
-          `,
-          [
-            reviewId,
-            spaceId,
-            vaultId,
-            branchName,
-            baseRevision,
-            headCommit,
-            actorOf(request)?.id ?? null,
-            JSON.stringify({
-              summary: request.body.summary ?? "",
-              proposedChanges,
-            }),
-            JSON.stringify({ issues, errors: 0 }),
-          ],
+        resolvedReviewPolicy = await resolveProposalReviewPolicy(
+          db,
+          spaceId,
+          vaultId,
+          reviewKinds as string[],
         );
       } catch (error) {
-        await store.cleanupDraft(branchName).catch(() => undefined);
+        const code = error instanceof Error ? error.message : String(error);
+        if (code.startsWith("COMPILER_PROFILE_KIND_NOT_DECLARED:")) {
+          return reply.code(422).send({
+            code: "KNOWLEDGE_PROFILE_KIND_NOT_ALLOWED",
+            kind: code.split(":")[1] ?? "",
+          });
+        }
+        if (code === "COMPILER_REVIEW_POLICY_ROLE_CONFLICT") {
+          return reply
+            .code(422)
+            .send({ code: "KNOWLEDGE_PROFILE_REVIEW_POLICY_CONFLICT" });
+        }
+        if (code === "ACTIVE_KNOWLEDGE_PROFILE_BINDING_INVALID") {
+          return reply.code(409).send({ code });
+        }
         throw error;
       }
+      const created = await createReviewDraft(db, {
+        repositoryPath: repositoryPath(),
+        spaceId,
+        vaultId,
+        authorId: actorOf(request)?.id ?? null,
+        summary: request.body.summary ?? "knowledge: direct proposal",
+        changes,
+        defaultReason: "Direct proposal",
+        impactManifest: {
+          summary: request.body.summary ?? "",
+          reviewKinds: [...new Set(reviewKinds as string[])],
+          reviewPolicy: resolvedReviewPolicy.policy,
+          reviewPolicyPinned: resolvedReviewPolicy.pinned,
+        },
+        validationReport: { issues, errors: 0 },
+      });
       await audit(
         db,
         request,
         "knowledge.propose",
         "review",
-        reviewId,
+        created.reviewId,
         { vaultId },
         spaceId,
       );
-      return reply
-        .code(201)
-        .send({ reviewId, status: "PENDING", branchName, headCommit });
+      return reply.code(201).send({
+        reviewId: created.reviewId,
+        status: "PENDING",
+        branchName: created.branchName,
+        headCommit: created.headCommit,
+      });
     },
   );
 
@@ -980,7 +1070,10 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
           .send({ code: "PATH_SCOPE_DENIED", path: deniedPath.path });
       }
       const issues = changes.flatMap((change) =>
-        validateMarkdownDocument(change.content).map((issue) => ({
+        [
+          ...validateMarkdownDocument(change.content),
+          ...validateGovernedTrustBoundary(change.content),
+        ].map((issue) => ({
           ...issue,
           path: change.path,
         })),
@@ -989,6 +1082,52 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
         return reply
           .code(422)
           .send({ code: "DRAFT_VALIDATION_FAILED", issues });
+      }
+      const revisedReviewKinds = changes.map(
+        (change) => parseKnowledgeDocumentMetadata(change.content)?.type,
+      );
+      if (revisedReviewKinds.some((kind) => !kind)) {
+        return reply.code(422).send({ code: "KNOWLEDGE_KIND_REQUIRED" });
+      }
+      let revisedReviewPolicy: Awaited<
+        ReturnType<typeof resolveProposalReviewPolicy>
+      >;
+      try {
+        revisedReviewPolicy = await resolveProposalReviewPolicy(
+          db,
+          String(review.space_id),
+          String(review.vault_id),
+          revisedReviewKinds as string[],
+        );
+      } catch (error) {
+        const code = error instanceof Error ? error.message : String(error);
+        if (
+          code === "COMPILER_PROFILE_KIND_NOT_DECLARED:source-summary" &&
+          (await isLegacyWorkerSourceSummaryReview(
+            db,
+            review,
+            revisedReviewKinds as string[],
+          ))
+        ) {
+          const legacyState = reviewPolicyState(review);
+          revisedReviewPolicy = {
+            policy: legacyState.policy,
+            pinned: false,
+          };
+        } else if (code.startsWith("COMPILER_PROFILE_KIND_NOT_DECLARED:")) {
+          return reply.code(422).send({
+            code: "KNOWLEDGE_PROFILE_KIND_NOT_ALLOWED",
+            kind: code.split(":")[1] ?? "",
+          });
+        } else if (code === "COMPILER_REVIEW_POLICY_ROLE_CONFLICT") {
+          return reply
+            .code(422)
+            .send({ code: "KNOWLEDGE_PROFILE_REVIEW_POLICY_CONFLICT" });
+        } else if (code === "ACTIVE_KNOWLEDGE_PROFILE_BINDING_INVALID") {
+          return reply.code(409).send({ code });
+        } else {
+          throw error;
+        }
       }
 
       const previousManifest = (review.impact_manifest ?? {}) as Record<
@@ -1042,6 +1181,9 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
               summary: request.body.summary ?? previousManifest.summary ?? "",
               draftRevision,
               proposedChanges,
+              reviewKinds: [...new Set(revisedReviewKinds as string[])],
+              reviewPolicy: revisedReviewPolicy.policy,
+              reviewPolicyPinned: revisedReviewPolicy.pinned,
             }),
             JSON.stringify({ issues, errors: 0 }),
             actor?.id ?? null,
@@ -1111,11 +1253,291 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
         "select * from review_comments where review_id=$1 order by created_at",
         [request.params.id],
       );
+      const impactManifest =
+        review.impact_manifest &&
+        typeof review.impact_manifest === "object" &&
+        !Array.isArray(review.impact_manifest)
+          ? (review.impact_manifest as Record<string, unknown>)
+          : {};
+      const reviewContext =
+        impactManifest.reviewContext &&
+        typeof impactManifest.reviewContext === "object" &&
+        !Array.isArray(impactManifest.reviewContext)
+          ? (impactManifest.reviewContext as Record<string, unknown>)
+          : {};
+      const proposedChanges = Array.isArray(impactManifest.proposedChanges)
+        ? impactManifest.proposedChanges
+        : Array.isArray(impactManifest.proposed_changes)
+          ? impactManifest.proposed_changes
+          : [];
+      const impactedRaw = Array.isArray(impactManifest.impactedDocumentIds)
+        ? impactManifest.impactedDocumentIds
+        : Array.isArray(impactManifest.impacted_document_ids)
+          ? impactManifest.impacted_document_ids
+          : [];
+      const impactedDocumentIds = [
+        ...new Set(
+          impactedRaw.filter(
+            (value): value is string =>
+              typeof value === "string" &&
+              /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(
+                value,
+              ),
+          ),
+        ),
+      ];
+      const proposedPaths = [
+        ...new Set(
+          proposedChanges.flatMap((entry) => {
+            if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+              return [];
+            }
+            const value = (entry as Record<string, unknown>).path;
+            return typeof value === "string" && value.trim()
+              ? [value.trim()]
+              : [];
+          }),
+        ),
+      ];
+      const reviewEvidence = Array.isArray(reviewContext.evidence)
+        ? reviewContext.evidence
+        : [];
+      const evidenceRaw = [
+        ...(Array.isArray(impactManifest.evidenceIds)
+          ? impactManifest.evidenceIds
+          : Array.isArray(impactManifest.evidence_ids)
+            ? impactManifest.evidence_ids
+            : []),
+        ...reviewEvidence.flatMap((entry) => {
+          if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+            return [];
+          }
+          const id = (entry as Record<string, unknown>).id;
+          return typeof id === "string" ? [id] : [];
+        }),
+      ];
+      const evidenceIds = [
+        ...new Set(
+          evidenceRaw.filter(
+            (value): value is string =>
+              typeof value === "string" &&
+              /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(
+                value,
+              ),
+          ),
+        ),
+      ];
+      const vaultId =
+        typeof review.vault_id === "string" ? review.vault_id : null;
+      const relatedTargets = [
+        ...new Set([
+          ...impactedDocumentIds,
+          ...proposedPaths,
+          request.params.id,
+        ]),
+      ];
+
+      const emptyRows = Promise.resolve({
+        rows: [] as Record<string, unknown>[],
+      });
+      const [
+        evidenceDetails,
+        assuranceFindings,
+        graphImpact,
+        codeImpact,
+        temporalHead,
+        temporalFacts,
+        affectedEvals,
+        affectedTests,
+      ] = await Promise.all([
+        vaultId && evidenceIds.length
+          ? db.pool.query(
+              `select e.id,e.source_id,s.title source_title,
+                      e.locator,e.excerpt,e.created_at
+                 from evidence e
+                 join sources s on s.id=e.source_id
+                where e.space_id=$1 and e.vault_id=$2
+                  and e.id=any($3::uuid[])
+                order by e.created_at,e.id
+                limit 100`,
+              [review.space_id, vaultId, evidenceIds],
+            )
+          : emptyRows,
+        vaultId && relatedTargets.length
+          ? db.pool.query(
+              `select id,detector,detector_version,severity,category,scope_id,
+                      target_ids,evidence_refs evidence_ids,support_set_ids,
+                      code,summary,status,proposed_action,revision_set,
+                      first_seen_at,last_seen_at
+                 from assurance_findings
+                where space_id=$1 and vault_id=$2
+                  and status in ('OPEN','ACKNOWLEDGED')
+                  and target_ids ?| $3::text[]
+                order by
+                  case severity
+                    when 'CRITICAL' then 1
+                    when 'HIGH' then 2
+                    when 'MEDIUM' then 3
+                    when 'LOW' then 4
+                    else 5
+                  end,
+                  last_seen_at desc
+                limit 100`,
+              [review.space_id, vaultId, relatedTargets],
+            )
+          : emptyRows,
+        vaultId && impactedDocumentIds.length
+          ? db.pool.query(
+              `select r.id,r.from_document_id "from",r.to_document_id "to",
+                      r.relation_type,r.weight,r.provenance,
+                      source.external_id from_external_id,
+                      source.path from_path,source.title from_title,
+                      target.external_id to_external_id,
+                      target.path to_path,target.title to_title
+                 from knowledge_relations r
+                 join knowledge_documents source on source.id=r.from_document_id
+                 join knowledge_documents target on target.id=r.to_document_id
+                where r.space_id=$1
+                  and source.vault_id=$2 and target.vault_id=$2
+                  and (
+                    r.from_document_id=any($3::uuid[])
+                    or r.to_document_id=any($3::uuid[])
+                  )
+                order by r.id
+                limit 200`,
+              [review.space_id, vaultId, impactedDocumentIds],
+            )
+          : emptyRows,
+        vaultId
+          ? db.pool.query(
+              `select id,project_id,document_id,review_id,relation_type,
+                      knowledge_revision,code_repository,code_commit_sha,
+                      code_node_identity,code_selector,created_at
+                 from code_knowledge_links
+                where space_id=$1 and vault_id=$2
+                  and (
+                    review_id=$3
+                    or document_id=any($4::uuid[])
+                  )
+                order by created_at desc
+                limit 100`,
+              [
+                review.space_id,
+                vaultId,
+                request.params.id,
+                impactedDocumentIds,
+              ],
+            )
+          : emptyRows,
+        vaultId
+          ? db.pool.query(
+              `select revision_seq,revision_hash,updated_at
+                 from truth_revision_heads
+                where space_id=$1 and vault_id=$2
+                limit 1`,
+              [review.space_id, vaultId],
+            )
+          : emptyRows,
+        vaultId && evidenceIds.length
+          ? db.pool.query(
+              `select tf.id,tf.subject_ref,tf.predicate,tf.object,
+                      tf.valid_from,tf.valid_to,tf.recorded_at,tf.lifecycle,
+                      tf.truth_revision_hash,tf.truth_revision_seq,
+                      tf.support_set_id
+                 from temporal_facts tf
+                 join truth_support_sets support on support.id=tf.support_set_id
+                where tf.space_id=$1 and tf.vault_id=$2
+                  and support.evidence_ids && $3::uuid[]
+                order by tf.truth_revision_seq desc,tf.recorded_at desc
+                limit 100`,
+              [review.space_id, vaultId, evidenceIds],
+            )
+          : emptyRows,
+        vaultId
+          ? db.pool.query(
+              `select outbox.event_id,outbox.created_at requested_at,
+                      run.id run_id,run.eval_pack,run.corpus_revision,
+                      run.status,run.metrics,run.created_at run_created_at
+                 from event_outbox outbox
+                 left join eval_runs run on run.trigger_event_id=outbox.event_id
+                where outbox.space_id=$1 and outbox.vault_id=$2
+                  and outbox.resource_id=$3
+                  and outbox.event_type='ImpactedEvalRunRequested'
+                order by outbox.created_at desc
+                limit 50`,
+              [review.space_id, vaultId, request.params.id],
+            )
+          : emptyRows,
+        vaultId
+          ? db.pool.query(
+              `select distinct
+                      link.id code_link_id,link.document_id,
+                      link.code_repository,link.code_commit_sha,
+                      test.id test_node_id,test.kind test_kind,
+                      test.canonical_key,test.payload test_payload,
+                      edge.derivation,edge.confidence,
+                      edge.provenance_revision,edge.source_ids,
+                      edge.evidence_ids,edge.locator_refs
+                 from code_knowledge_links link
+                 join federated_graph_nodes target
+                   on target.space_id=link.space_id
+                  and target.graph_domain='CODE'
+                  and target.scope_id=link.code_node_identity->>'scopeId'
+                  and target.kind=link.code_node_identity->>'kind'
+                  and target.canonical_key=
+                      link.code_node_identity->>'canonicalKey'
+                  and target.revision=link.code_node_identity->>'revision'
+                 join federated_graph_edges edge
+                   on edge.space_id=link.space_id
+                  and edge.to_node_id=target.id
+                  and edge.relation_type='TESTS'
+                 join federated_graph_nodes test on test.id=edge.from_node_id
+                where link.space_id=$1 and link.vault_id=$2
+                  and (
+                    link.review_id=$3
+                    or link.document_id=any($4::uuid[])
+                  )
+                order by test.canonical_key
+                limit 100`,
+              [
+                review.space_id,
+                vaultId,
+                request.params.id,
+                impactedDocumentIds,
+              ],
+            )
+          : emptyRows,
+      ]);
+
+      const approvalStatus = await reviewApprovalStatus(db, review);
       const store = new GitKnowledgeStore(repositoryPath());
       const diff = await store
         .diff(String(review.base_commit), String(review.head_commit))
         .catch(() => "");
-      return { ...review, comments: comments.rows, diff };
+      return {
+        ...review,
+        comments: comments.rows,
+        diff,
+        reviewPolicy: approvalStatus.policy,
+        approvalProgress: {
+          reviewRound: approvalStatus.reviewRound,
+          count: approvalStatus.approvalCount,
+          minimumApprovals: approvalStatus.minimumApprovals,
+          remainingApprovals: approvalStatus.remainingApprovals,
+          pinned: approvalStatus.pinned,
+        },
+        approvals: approvalStatus.approvals,
+        evidenceDetails: evidenceDetails.rows,
+        assuranceFindings: assuranceFindings.rows,
+        graphImpact: graphImpact.rows,
+        codeImpact: codeImpact.rows,
+        temporalImpact: {
+          head: temporalHead.rows[0] ?? null,
+          facts: temporalFacts.rows,
+        },
+        affectedEvals: affectedEvals.rows,
+        affectedTests: affectedTests.rows,
+      };
     },
   );
 
@@ -1170,6 +1592,51 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
         ) {
           return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
         }
+        if (!actor)
+          return reply.code(401).send({ code: "AUTHENTICATION_REQUIRED" });
+        let approval: Awaited<ReturnType<typeof recordReviewApproval>>;
+        try {
+          approval = await recordReviewApproval(db, {
+            reviewId: request.params.id,
+            actor,
+            reason: request.body.reason ?? "",
+          });
+        } catch (error) {
+          const code = error instanceof Error ? error.message : String(error);
+          const status = reviewPolicyDecisionHttpStatus(code);
+          if (status) return reply.code(status).send({ code });
+          throw error;
+        }
+        await audit(
+          db,
+          request,
+          "review.approval_recorded",
+          "review",
+          request.params.id,
+          {
+            vaultId: String(review.vault_id),
+            reviewerRole: approval.reviewerRole,
+            approvalCount: approval.approvalCount,
+            minimumApprovals: approval.minimumApprovals,
+            duplicate: approval.duplicate,
+            reviewRound: approval.reviewRound,
+          },
+          String(review.space_id),
+        );
+        if (!approval.quorumReached) {
+          return {
+            id: request.params.id,
+            status: "PENDING",
+            approvalProgress: {
+              reviewRound: approval.reviewRound,
+              count: approval.approvalCount,
+              minimumApprovals: approval.minimumApprovals,
+              remainingApprovals:
+                approval.minimumApprovals - approval.approvalCount,
+              duplicate: approval.duplicate,
+            },
+          };
+        }
         const store = new GitKnowledgeStore(repositoryPath());
         const publicationKey = repositoryPublicationKey(repositoryPath());
         const lockOwner = `approve:${request.params.id}:${request.id}`;
@@ -1189,26 +1656,21 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
         }
         let revision: string | null = null;
         try {
-          const claimed = await db.pool.query(
-            `
-            update reviews
-               set status='PUBLISHING',decision_by=$3,decision_at=now(),
-                   decision_reason=$4,updated_at=now()
-             where id=$1 and space_id=$2 and status in ('PENDING','CHANGES_REQUESTED')
-             returning *
-            `,
-            [
-              request.params.id,
-              review.space_id,
-              actor?.id ?? null,
-              request.body.reason ?? null,
-            ],
-          );
-          if (!claimed.rowCount) {
-            return reply.code(409).send({
-              code: "REVIEW_ALREADY_DECIDED",
-              status: review.status,
+          let claimedReview: Record<string, unknown>;
+          try {
+            claimedReview = await claimReviewForPublication(db, {
+              reviewId: request.params.id,
+              expectedHeadCommit: approval.headCommit,
+              expectedPolicyFingerprint: approval.policyFingerprint,
+              expectedReviewRound: approval.reviewRound,
+              actorId: actor.id,
+              reason: request.body.reason ?? "",
             });
+          } catch (error) {
+            const code = error instanceof Error ? error.message : String(error);
+            const status = reviewPolicyDecisionHttpStatus(code);
+            if (status) return reply.code(status).send({ code });
+            throw error;
           }
           await renewPublicationLock(db, publicationKey, lockOwner);
           revision = await withSpan(
@@ -1230,7 +1692,7 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
             await publicationClient.query("begin");
             const finalized = await finalizePublicationTransaction(
               publicationClient,
-              claimed.rows[0] as Record<string, unknown>,
+              claimedReview,
               revision,
             );
             if (!finalized) throw new Error("PUBLICATION_STATE_LOST");
@@ -1270,6 +1732,12 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
             id: request.params.id,
             status: "APPROVED",
             mergedCommit: revision,
+            approvalProgress: {
+              reviewRound: approval.reviewRound,
+              count: approval.approvalCount,
+              minimumApprovals: approval.minimumApprovals,
+              remainingApprovals: 0,
+            },
             indexing: "PENDING",
             queuedEvents: [
               "KnowledgePublished",
@@ -1314,21 +1782,72 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
             }
           }
           if (compensationSucceeded) {
-            await db.pool.query(
-              `
-              update reviews
-                 set status='CHANGES_REQUESTED',merged_commit=null,
-                     base_commit=coalesce($2,base_commit),
-                     decision_by=null,decision_at=null,
-                     decision_reason=$3,updated_at=now()
-               where id=$1 and status='PUBLISHING'
-              `,
-              [
-                request.params.id,
-                compensatingRevision,
-                "Publication failed safely; retry from the compensated Git revision.",
-              ],
-            );
+            const canonicalRevision =
+              compensatingRevision ?? observedMainRevision ?? null;
+            if (!canonicalRevision) {
+              throw new Error("PUBLICATION_COMPENSATION_REVISION_REQUIRED");
+            }
+            const compensationClient = await db.pool.connect();
+            try {
+              await compensationClient.query("begin");
+              const compensated = await compensationClient.query(
+                `
+                update reviews
+                   set status='CHANGES_REQUESTED',merged_commit=null,
+                       base_commit=$2,
+                       decision_by=null,decision_at=null,
+                       decision_reason=$3,updated_at=now()
+                 where id=$1 and status='PUBLISHING'
+                 returning id
+                `,
+                [
+                  request.params.id,
+                  canonicalRevision,
+                  "Publication failed safely; retry from the compensated Git revision.",
+                ],
+              );
+              if (!compensated.rowCount) {
+                throw new Error("PUBLICATION_COMPENSATION_STATE_LOST");
+              }
+              const advanced = await compensationClient.query(
+                `update vaults
+                    set current_revision=$3
+                  where id=$1 and space_id=$2 and enabled
+                  returning id`,
+                [review.vault_id, review.space_id, canonicalRevision],
+              );
+              if (!advanced.rowCount) {
+                throw new Error("PUBLICATION_COMPENSATION_VAULT_UNAVAILABLE");
+              }
+              await compensationClient.query("commit");
+            } catch (compensationStateError) {
+              await compensationClient.query("rollback");
+              await recordPublicationFailure(
+                db,
+                String(review.space_id),
+                "Publication compensation state persistence failed",
+                {
+                  reviewId: request.params.id,
+                  canonicalRevision,
+                  error:
+                    compensationStateError instanceof Error
+                      ? compensationStateError.message
+                      : String(compensationStateError),
+                },
+              );
+              await db.pool.query(
+                `update reviews
+                    set status='PUBLICATION_RECOVERY_REQUIRED',
+                        decision_reason=$2,updated_at=now()
+                  where id=$1 and status='PUBLISHING'`,
+                [
+                  request.params.id,
+                  "Canonical Git was compensated but revision authority requires manual reconciliation.",
+                ],
+              );
+            } finally {
+              compensationClient.release();
+            }
           } else {
             await db.pool.query(
               `
@@ -1373,10 +1892,24 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
         decision === "REJECT" ? "REJECTED" : "CHANGES_REQUESTED";
       const transitioned = await db.pool.query(
         `
-        update reviews set status=$2,decision_by=$3,decision_at=now(),
-               decision_reason=$4,updated_at=now()
-         where id=$1 and space_id=$5 and status in ('PENDING','CHANGES_REQUESTED')
-         returning id,status
+        with transitioned as (
+          update reviews
+             set status=$2,decision_by=$3,decision_at=now(),
+                 decision_reason=$4,
+                 review_round=case when $2='CHANGES_REQUESTED' then review_round+1 else review_round end,
+                 updated_at=now()
+           where id=$1 and space_id=$5 and status in ('PENDING','CHANGES_REQUESTED')
+           returning id,status
+        ),
+        rejected_decision as (
+          update workspace_decision_candidates
+             set status='REJECTED',version=version+1,updated_at=now()
+           where review_id in (select id from transitioned)
+             and $2='REJECTED'
+             and status='PENDING_REVIEW'
+           returning id
+        )
+        select id,status from transitioned
         `,
         [
           request.params.id,
@@ -1528,6 +2061,16 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
           if (!completed.rowCount) {
             throw new Error("ROLLBACK_STATE_CONFLICT");
           }
+          const advanced = await rollbackClient.query(
+            `update vaults
+                set current_revision=$3
+              where id=$1 and space_id=$2 and enabled
+              returning id`,
+            [review.vault_id, review.space_id, revision],
+          );
+          if (!advanced.rowCount) {
+            throw new Error("ROLLBACK_VAULT_UNAVAILABLE");
+          }
           await appendRollbackLifecycle(rollbackClient, {
             reviewId: request.params.id,
             ...(typeof jobId === "string" ? { jobId } : {}),
@@ -1594,20 +2137,76 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
             );
           }
         }
-        await db.pool.query(
-          `
-          update reviews
-             set status=$2,decision_reason=$3,updated_at=now()
-           where id=$1 and status='ROLLING_BACK'
-          `,
-          [
-            request.params.id,
-            recoverySucceeded ? "APPROVED" : "ROLLBACK_RECOVERY_REQUIRED",
-            recoverySucceeded
-              ? "Rollback failed and canonical Git was restored; inspect the Error Book."
-              : "Rollback recovery requires operator intervention; inspect the Error Book.",
-          ],
-        );
+        if (recoverySucceeded) {
+          const canonicalRevision =
+            recoveryRevision ?? String(review.merged_commit ?? "");
+          if (!canonicalRevision) {
+            recoverySucceeded = false;
+          } else {
+            const recoveryClient = await db.pool.connect();
+            try {
+              await recoveryClient.query("begin");
+              const restored = await recoveryClient.query(
+                `
+                update reviews
+                   set status='APPROVED',decision_reason=$2,updated_at=now()
+                 where id=$1 and status='ROLLING_BACK'
+                 returning id
+                `,
+                [
+                  request.params.id,
+                  "Rollback failed and canonical Git was restored; inspect the Error Book.",
+                ],
+              );
+              if (!restored.rowCount) {
+                throw new Error("ROLLBACK_RECOVERY_STATE_LOST");
+              }
+              const advanced = await recoveryClient.query(
+                `update vaults
+                    set current_revision=$3
+                  where id=$1 and space_id=$2 and enabled
+                  returning id`,
+                [review.vault_id, review.space_id, canonicalRevision],
+              );
+              if (!advanced.rowCount) {
+                throw new Error("ROLLBACK_RECOVERY_VAULT_UNAVAILABLE");
+              }
+              await recoveryClient.query("commit");
+            } catch (recoveryStateError) {
+              await recoveryClient.query("rollback");
+              recoverySucceeded = false;
+              await recordPublicationFailure(
+                db,
+                String(review.space_id),
+                "Rollback recovery state persistence failed",
+                {
+                  reviewId: request.params.id,
+                  canonicalRevision,
+                  error:
+                    recoveryStateError instanceof Error
+                      ? recoveryStateError.message
+                      : String(recoveryStateError),
+                },
+              );
+            } finally {
+              recoveryClient.release();
+            }
+          }
+        }
+        if (!recoverySucceeded) {
+          await db.pool.query(
+            `
+            update reviews
+               set status='ROLLBACK_RECOVERY_REQUIRED',
+                   decision_reason=$2,updated_at=now()
+             where id=$1 and status='ROLLING_BACK'
+            `,
+            [
+              request.params.id,
+              "Rollback recovery requires operator intervention; inspect the Error Book.",
+            ],
+          );
+        }
         await recordPublicationFailure(
           db,
           String(review.space_id),

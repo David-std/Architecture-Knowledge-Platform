@@ -52,7 +52,12 @@ export function registerWriteIdempotency(
     // platform intentionally does not persist raw session/CSRF secrets merely
     // to replay them, so this credential-issuance endpoint is excluded from
     // generic idempotent replay. All knowledge/source mutations remain scoped.
-    if (request.url.split("?")[0] === "/v1/auth/session") return;
+    const requestPath = request.url.split("?")[0] ?? request.url;
+    if (requestPath === "/v1/auth/session") return;
+    // Agent-process issuance returns a one-time bearer secret. Persisting that
+    // response in the generic idempotency journal would turn the journal into a
+    // credential store, so this endpoint is deliberately excluded as well.
+    if (/^\/v1\/sessions\/[^/]+\/agent-processes$/.test(requestPath)) return;
     const keyHeader = request.headers["idempotency-key"];
     const bodyKey =
       request.url.split("?")[0] === "/v1/ingest" &&

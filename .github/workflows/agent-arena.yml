@@ -1,0 +1,301 @@
+name: agent-arena
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  five-arm-arena:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: postgres://akp:akp@localhost:55432/akp
+      AKP_AGENT_AB_CORPUS: evals/registered/agent-v0.4-product-corpus.json
+      AKP_AGENT_AB_CORPUS_REVISION: agent-arena-v0.4-product-v1
+      AKP_AGENT_ARENA_TASKS: evals/registered/agent-v0.4-product-tasks.json
+      AKP_AGENT_ARENA_REPORT: reports/ci/agent-five-arm-arena.json
+      AKP_AGENT_ARENA_ENABLE: "1"
+      AKP_AGENT_AB_REAL_MODEL: "1"
+      AKP_API_URL: http://127.0.0.1:18080
+      AKP_API_TOKEN: agent-arena-local-evidence-token-2026
+      AKP_API_TOKEN_SCOPES: '{"spaces":[{"spaceId":"00000000-0000-0000-0000-000000000003","pathPrefix":null,"permissions":["knowledge:read","source:read"]}]}'
+      AKP_AGENT_AB_SPACE_ID: 00000000-0000-0000-0000-000000000003
+      AKP_AGENT_AB_VAULT_IDS: 10000000-0000-4000-8000-000000000001,10000000-0000-4000-8000-000000000002
+      AKP_AGENT_AB_PROVIDER_BASE_URL: http://127.0.0.1:18081
+      AKP_AGENT_AB_PROVIDER_MODEL: onnx-community/Qwen2.5-0.5B-Instruct
+      AKP_AGENT_AB_TEMPERATURE: "0"
+      AKP_AGENT_AB_MAX_OUTPUT_TOKENS: "512"
+      AKP_AGENT_AB_PROVIDER_TIMEOUT_MS: "180000"
+      AKP_AGENT_ARENA_CONTEXT_MAX_TOKENS: "2048"
+      AKP_LOCAL_AGENT_MODEL: onnx-community/Qwen2.5-0.5B-Instruct
+      AKP_LOCAL_AGENT_MODEL_REVISION: cc5cc01a65cc3ff17bdb73a7de33d879f62599b0
+      AKP_LOCAL_AGENT_DTYPE: q4
+      AKP_LOCAL_AGENT_PORT: "18081"
+      AKP_CONTEXT_TOKENIZER_MODEL: onnx-community/Qwen2.5-0.5B-Instruct
+      AKP_CONTEXT_TOKENIZER_REVISION: cc5cc01a65cc3ff17bdb73a7de33d879f62599b0
+      AKP_CONTEXT_TOKENIZER_REPORT: reports/ci/context-tokenizer-baseline.json
+      PORT: "18080"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Build Agent arena contract dependency
+        run: pnpm --filter @akp/contracts build
+      - name: Prepare Agent arena evidence directory
+        run: mkdir -p reports/ci
+      - name: Start Postgres with bounded registry retry
+        shell: bash
+        run: |
+          set -o pipefail
+          for attempt in 1 2 3; do
+            if docker compose up -d --wait postgres \
+              2>&1 | tee -a reports/ci/agent-arena-postgres-startup.log; then
+              exit 0
+            fi
+            echo "Postgres startup attempt ${attempt}/3 failed" \
+              | tee -a reports/ci/agent-arena-postgres-startup.log
+            docker compose down --remove-orphans >/dev/null 2>&1 || true
+            if [ "$attempt" -lt 3 ]; then
+              sleep $((attempt * 5))
+            fi
+          done
+          exit 1
+      - run: pnpm db:migrate
+      - name: Provision registered public product corpus and least-privilege token
+        shell: bash
+        run: |
+          pnpm exec tsx scripts/provision-agent-ab-fixture.ts \
+            2>&1 | tee reports/ci/agent-arena-fixture.log
+          pnpm auth:provision \
+            2>&1 | tee reports/ci/agent-arena-auth.log
+      - name: Start isolated AKP API
+        shell: bash
+        run: |
+          pnpm --filter @akp/api dev > reports/ci/agent-arena-api.log 2>&1 &
+          echo $! > reports/ci/agent-arena-api.pid
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:18080/health/liveness >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat reports/ci/agent-arena-api.log >&2
+          exit 1
+      - name: Start pinned local real-model provider
+        shell: bash
+        run: |
+          pnpm --filter @akp/retrieval exec tsx scripts/local-agent-provider.ts \
+            > reports/ci/local-agent-provider.log 2>&1 &
+          echo $! > reports/ci/local-agent-provider.pid
+          for attempt in $(seq 1 120); do
+            if curl --fail --silent http://127.0.0.1:18081/health \
+              > reports/ci/local-agent-provider-health.json; then
+              cat reports/ci/local-agent-provider-health.json
+              exit 0
+            fi
+            sleep 5
+          done
+          cat reports/ci/local-agent-provider.log >&2
+          exit 1
+      - name: Execute live five-arm arena
+        shell: bash
+        run: |
+          set +e
+          set -o pipefail
+          (
+            pnpm benchmark:agent-arena 2>&1 | tee reports/ci/agent-five-arm-arena.log
+          ) &
+          benchmark_pid=$!
+          while kill -0 "$benchmark_pid" 2>/dev/null; do
+            echo '{"event":"AGENT_ARENA_HEARTBEAT","status":"RUNNING"}'
+            sleep 30
+          done
+          wait "$benchmark_pid"
+          status=$?
+          if [ ! -f reports/ci/agent-five-arm-arena.json ]; then
+            echo "Five-arm arena did not produce a report" >&2
+            exit 1
+          fi
+          exit "$status"
+      - name: Validate five-arm evidence discipline
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const report = JSON.parse(
+            readFileSync("reports/ci/agent-five-arm-arena.json", "utf8"),
+          );
+          const providerHealth = JSON.parse(
+            readFileSync("reports/ci/local-agent-provider-health.json", "utf8"),
+          );
+          if (report.benchmark !== "AKP_AGENT_FIVE_ARM_ARENA") {
+            throw new Error("Unexpected five-arm benchmark identity.");
+          }
+          if (
+            report.status !== "PROVEN" ||
+            report.taskSet?.tasks !== 8 ||
+            report.taskSet?.evidenceLevel !== "REGISTERED_V0_4_PRODUCT_CORPUS"
+          ) {
+            throw new Error("Five-arm arena is not proven on the registered eight-task corpus.");
+          }
+          const expectedCategories = new Set([
+            "exact-lookup",
+            "conceptual-synthesis",
+            "workflow-execution",
+            "source-verification",
+            "project-code-impact",
+            "historical-as-of",
+            "conflicting-knowledge",
+            "no-answer",
+          ]);
+          const actualCategories = new Set(report.taskSet?.categories ?? []);
+          if (
+            actualCategories.size !== expectedCategories.size ||
+            [...expectedCategories].some((value) => !actualCategories.has(value))
+          ) {
+            throw new Error("Five-arm arena category coverage is incomplete.");
+          }
+          if (
+            report.claimPolicy?.realModelRequired !== true ||
+            report.claimPolicy?.sameModelSettingsAcrossArms !== true ||
+            report.claimPolicy?.sameTasksAcrossArms !== true ||
+            report.claimPolicy?.boundedContextAcrossArms !== true ||
+            report.claimPolicy?.superiorityClaimAllowed !== false ||
+            report.claimPolicy?.mutationExecutionAllowed !== false
+          ) {
+            throw new Error("Five-arm claim policy is incomplete.");
+          }
+          if (
+            report.contextBudget?.requestedTotalTokens !== 2048 ||
+            report.contextBudget?.singleCallPacketMaxTokens !== 2048 ||
+            report.contextBudget?.enrichedPerCallMaxTokens !== 1024 ||
+            report.contextBudget?.rawSearchHitLimit !== 8
+          ) {
+            throw new Error("Five-arm context budget policy is not pinned.");
+          }
+          if (
+            report.execution?.provider?.model !==
+              "onnx-community/Qwen2.5-0.5B-Instruct" ||
+            report.execution?.provider?.temperature !== 0 ||
+            report.execution?.provider?.maxOutputTokens !== 512 ||
+            providerHealth.revision !==
+              "cc5cc01a65cc3ff17bdb73a7de33d879f62599b0" ||
+            providerHealth.dtype !== "q4"
+          ) {
+            throw new Error("Five-arm arena did not use the pinned model/settings.");
+          }
+          if (report.winner !== null) {
+            throw new Error("Five-arm arena must not manufacture a winner.");
+          }
+          const expectedArms = [
+            "A_RAW_SEARCH",
+            "B_EXPERT_TOOLS",
+            "C_CONTEXT_FACADE",
+            "D_FACADE_ENRICHED_CONTEXT",
+            "E_FACADE_WITH_INSTRUCTIONS",
+          ];
+          const observations = Array.isArray(report.observations)
+            ? report.observations
+            : [];
+          if (observations.length !== 40) {
+            throw new Error("Expected 40 five-arm observations, got " + observations.length + ".");
+          }
+          for (const arm of expectedArms) {
+            if (observations.filter((item) => item.arm === arm).length !== 8) {
+              throw new Error("Five-arm coverage missing observations for " + arm + ".");
+            }
+          }
+          for (const observation of observations) {
+            for (const metric of [
+              "calls",
+              "contextTokens",
+              "latencyMs",
+              "correctness",
+              "mandatoryRuleRecall",
+              "unsupportedClaims",
+              "unsupportedClaimRate",
+              "citationPrecision",
+            ]) {
+              if (!Number.isFinite(observation[metric])) {
+                throw new Error(
+                  "Observation " + observation.taskId + "/" + observation.arm + " lacks " + metric + ".",
+                );
+              }
+            }
+            if (!Array.isArray(observation.missedConflicts)) {
+              throw new Error("Observation lacks missed-conflict evidence.");
+            }
+          }
+          const aggregates = Array.isArray(report.aggregates)
+            ? report.aggregates
+            : [];
+          if (aggregates.length !== 5) {
+            throw new Error("Five-arm report must contain five aggregates.");
+          }
+          for (const aggregate of aggregates) {
+            if (aggregate.tasks !== 8) {
+              throw new Error("Aggregate task count is incomplete for " + aggregate.arm + ".");
+            }
+            for (const metric of [
+              "meanCalls",
+              "meanContextTokens",
+              "meanLatencyMs",
+              "meanCorrectness",
+              "meanMandatoryConstraintRecall",
+              "meanUnsupportedClaims",
+              "meanUnsupportedClaimRate",
+              "meanCitationPrecision",
+              "totalMissedConflicts",
+            ]) {
+              if (!Number.isFinite(aggregate[metric])) {
+                throw new Error("Aggregate " + aggregate.arm + " lacks " + metric + ".");
+              }
+            }
+          }
+          console.log(JSON.stringify({
+            status: report.status,
+            model: report.execution.provider.model,
+            revision: providerHealth.revision,
+            observations: observations.length,
+            aggregates,
+          }, null, 2));
+          NODE
+      - name: Capture Agent arena diagnostics
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          mkdir -p reports/ci
+          docker compose ps --all > reports/ci/agent-arena-docker-compose-ps.txt 2>&1
+          docker compose logs --no-color --timestamps postgres \
+            > reports/ci/agent-arena-postgres.log 2>&1
+          if [ -f reports/ci/agent-arena-api.log ]; then tail -n 300 reports/ci/agent-arena-api.log > reports/ci/agent-arena-api-tail.log; fi
+          if [ -f reports/ci/local-agent-provider.log ]; then tail -n 300 reports/ci/local-agent-provider.log > reports/ci/local-agent-provider-tail.log; fi
+      - name: Upload Agent arena evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: agent-arena-${{ github.run_id }}
+          path: reports/ci
+          if-no-files-found: error
+          retention-days: 14
+      - name: Stop disposable Agent arena services
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          if [ -f reports/ci/agent-arena-api.pid ]; then kill "$(cat reports/ci/agent-arena-api.pid)" 2>/dev/null; fi
+          if [ -f reports/ci/local-agent-provider.pid ]; then kill "$(cat reports/ci/local-agent-provider.pid)" 2>/dev/null; fi
+          docker compose down -v --remove-orphans

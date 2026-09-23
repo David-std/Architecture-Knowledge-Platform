@@ -1,7 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { GraphPathProvenance } from "@akp/contracts";
-import { Postgres } from "@akp/postgres";
+import { EpistemicGraphRelation, GraphPathProvenance } from "@akp/contracts";
+import {
+  Postgres,
+  PostgresFederatedGraphStore,
+  rebuildLegacyEpistemicGraphProjection,
+} from "@akp/postgres";
+import { rebuildCommunityIndex } from "@akp/indexing";
 import { planQuery } from "@akp/retrieval";
 import { queryKnowledge } from "../src/routes/search.js";
 
@@ -153,6 +158,21 @@ async function seedGraph(db: Postgres, fixture: GraphFixture): Promise<void> {
       ],
     );
   }
+
+  await rebuildCommunityIndex(db, {
+    spaceId: fixture.spaceId,
+    vaultId: fixture.vaultId,
+    graphRevision: fixture.corpusRevision,
+    resolution: 0.5,
+    randomSeed: 7,
+  });
+  await rebuildCommunityIndex(db, {
+    spaceId: fixture.spaceId,
+    vaultId: fixture.foreignVaultId,
+    graphRevision: fixture.corpusRevision,
+    resolution: 0.5,
+    randomSeed: 7,
+  });
 }
 
 async function cleanupGraph(
@@ -160,23 +180,37 @@ async function cleanupGraph(
   fixture: GraphFixture,
 ): Promise<void> {
   const vaultIds = [fixture.vaultId, fixture.foreignVaultId];
+  // Remove the legacy fixture first so a later derived-state cleanup failure
+  // cannot leak the deliberate cross-vault A -> X isolation edge into
+  // repository-wide runtime verification.
   await db.pool.query("delete from knowledge_relations where space_id=$1", [
     fixture.spaceId,
   ]);
   await db.pool.query("delete from knowledge_documents where space_id=$1", [
     fixture.spaceId,
   ]);
+  // GraphRevision* events are append-only audit evidence. They deliberately
+  // retain organization/space/vault foreign keys, so this fixture must not
+  // mutate the outbox or delete those registry rows. The CI database is
+  // disposable; remove only mutable source data and derived graph state.
+  await db.pool.query(
+    "delete from federated_graph_projection_revisions where space_id=$1",
+    [fixture.spaceId],
+  );
+  await db.pool.query("delete from federated_graph_edges where space_id=$1", [
+    fixture.spaceId,
+  ]);
+  await db.pool.query(
+    "delete from federated_graph_relationship_assertions where space_id=$1",
+    [fixture.spaceId],
+  );
+  await db.pool.query("delete from federated_graph_nodes where space_id=$1", [
+    fixture.spaceId,
+  ]);
   await db.pool.query(
     "delete from vault_index_revisions where vault_id=any($1::uuid[])",
     [vaultIds],
   );
-  await db.pool.query("delete from vaults where id=any($1::uuid[])", [
-    vaultIds,
-  ]);
-  await db.pool.query("delete from spaces where id=$1", [fixture.spaceId]);
-  await db.pool.query("delete from organizations where id=$1", [
-    fixture.organizationId,
-  ]);
 }
 
 function searchRequest(fixture: GraphFixture) {
@@ -202,6 +236,27 @@ describe("recursive graph retrieval PostgreSQL integration", () => {
       const db = new Postgres(databaseUrl);
       try {
         await seedGraph(db, fixture);
+
+        // Access-boundary regression: same alias in two vaults must never escape the
+        // explicitly authorized vault during exact/alias retrieval.
+        await db.pool.query(
+          "update knowledge_documents set aliases=array['shared-boundary-alias'] where id=any($1::uuid[])",
+          [[fixture.documents.A, fixture.documents.X]],
+        );
+        const aliasScoped = await queryKnowledge(
+          db,
+          { ...searchRequest(fixture), query: "shared-boundary-alias" },
+          {
+            vaultIds: [fixture.vaultId],
+            channels: ["exact"],
+          },
+        );
+        expect(aliasScoped.map((hit) => hit.documentId)).toContain(
+          fixture.documents.A,
+        );
+        expect(aliasScoped.map((hit) => hit.documentId)).not.toContain(
+          fixture.documents.X,
+        );
 
         const threeHop = await queryKnowledge(db, searchRequest(fixture), {
           vaultIds: [fixture.vaultId],
@@ -258,6 +313,233 @@ describe("recursive graph retrieval PostgreSQL integration", () => {
         ]);
         expect(threeHopD?.graphProvenance?.[0]?.graphScore).toBeCloseTo(0.125);
         expect(threeHopD?.graphProvenance).toHaveLength(2);
+        expect(
+          threeHop.some((hit) =>
+            (hit.fusionContributions ?? []).some(
+              (contribution) => contribution.channel === "graph-ppr",
+            ),
+          ),
+        ).toBe(false);
+
+        const associative = await queryKnowledge(db, searchRequest(fixture), {
+          vaultIds: [fixture.vaultId],
+          channels: ["exact", "graph"],
+          plan: planQuery("GRAPH-A", "IMPACT_ANALYSIS", {
+            graphConsistent: true,
+          }),
+          graphPolicy: { maxHops: 3, directionPolicy: "outgoing" },
+          graphScopes: [{ vaultId: fixture.vaultId, pathPrefix: "allowed" }],
+          retrievalPolicy: {
+            graphMode: "ASSOCIATIVE",
+            channels: {
+              GRAPH_PPR: { enabled: true, weight: 1.1 },
+            },
+          },
+          pprPolicy: {
+            restartProbability: 0.2,
+            maxIterations: 100,
+            maxNodes: 100,
+            minimumScore: 0,
+            perScopeCap: 20,
+          },
+        });
+        const pprHits = associative.filter((hit) =>
+          (hit.fusionContributions ?? []).some(
+            (contribution) => contribution.channel === "graph-ppr",
+          ),
+        );
+        expect(pprHits.length).toBeGreaterThan(0);
+        expect(
+          pprHits.every((hit) => (hit.graphProvenance?.length ?? 0) > 0),
+        ).toBe(true);
+        expect(pprHits.map((hit) => hit.documentId)).not.toContain(
+          fixture.documents.S,
+        );
+        expect(pprHits.map((hit) => hit.documentId)).not.toContain(
+          fixture.documents.T,
+        );
+        expect(pprHits.map((hit) => hit.documentId)).not.toContain(
+          fixture.documents.X,
+        );
+        expect(pprHits.map((hit) => hit.documentId)).not.toContain(
+          fixture.documents.Y,
+        );
+        for (const hit of pprHits) {
+          const contribution = hit.fusionContributions?.find(
+            (item) => item.channel === "graph-ppr",
+          );
+          expect(contribution?.rawScore).toBeGreaterThan(0);
+          expect(contribution?.candidateRevision).toBe(fixture.corpusRevision);
+        }
+
+        const driftWithoutOptIn = await queryKnowledge(
+          db,
+          { ...searchRequest(fixture), query: "GRAPH-A" },
+          {
+            vaultIds: [fixture.vaultId],
+            plan: planQuery("GRAPH-A", "CONCEPTUAL", {
+              graphConsistent: true,
+              communityAvailable: true,
+            }),
+            graphScopes: [{ vaultId: fixture.vaultId, pathPrefix: "allowed" }],
+          },
+        );
+        expect(
+          driftWithoutOptIn.some((hit) =>
+            (hit.fusionContributions ?? []).some(
+              (contribution) => contribution.channel === "community",
+            ),
+          ),
+        ).toBe(false);
+
+        const drift = await queryKnowledge(
+          db,
+          { ...searchRequest(fixture), query: "GRAPH-A" },
+          {
+            vaultIds: [fixture.vaultId],
+            plan: planQuery("GRAPH-A", "CONCEPTUAL", {
+              graphConsistent: true,
+              communityAvailable: true,
+            }),
+            graphScopes: [{ vaultId: fixture.vaultId, pathPrefix: "allowed" }],
+            retrievalPolicy: {
+              channels: {
+                COMMUNITY: { enabled: true, weight: 1.1 },
+              },
+            },
+          },
+        );
+        const driftCommunityHits = drift.filter((hit) =>
+          (hit.fusionContributions ?? []).some(
+            (contribution) => contribution.channel === "community",
+          ),
+        );
+        expect(driftCommunityHits.length).toBeGreaterThan(0);
+        // Access-boundary regression: a community built over the full vault must not surface
+        // members hidden by the active path scope.
+        expect(driftCommunityHits.map((hit) => hit.documentId)).not.toContain(
+          fixture.documents.S,
+        );
+        expect(driftCommunityHits.map((hit) => hit.documentId)).not.toContain(
+          fixture.documents.A,
+        );
+        expect(
+          driftCommunityHits.every((hit) =>
+            hit.reasons.includes("community:drift-routing"),
+          ),
+        ).toBe(true);
+        expect(
+          driftCommunityHits.every(
+            (hit) =>
+              !hit.citations.some((citation) =>
+                citation.toLowerCase().includes("community"),
+              ) &&
+              !hit.excerpt
+                .toLowerCase()
+                .includes("derived community containing"),
+          ),
+        ).toBe(true);
+
+        const driftWithoutSeed = await queryKnowledge(
+          db,
+          { ...searchRequest(fixture), query: "no-local-seed-token" },
+          {
+            vaultIds: [fixture.vaultId],
+            plan: planQuery("no-local-seed-token", "CONCEPTUAL", {
+              graphConsistent: true,
+              communityAvailable: true,
+            }),
+            graphScopes: [{ vaultId: fixture.vaultId, pathPrefix: "allowed" }],
+            retrievalPolicy: {
+              channels: {
+                COMMUNITY: { enabled: true, weight: 1.1 },
+              },
+            },
+          },
+        );
+        expect(
+          driftWithoutSeed.some((hit) =>
+            (hit.fusionContributions ?? []).some(
+              (contribution) => contribution.channel === "community",
+            ),
+          ),
+        ).toBe(false);
+
+        const global = await queryKnowledge(
+          db,
+          { ...searchRequest(fixture), query: "whole corpus panorama" },
+          {
+            vaultIds: [fixture.vaultId],
+            plan: planQuery("whole corpus panorama", "GLOBAL_SYNTHESIS", {
+              vectorAvailable: false,
+              graphConsistent: true,
+              communityAvailable: true,
+            }),
+            graphScopes: [{ vaultId: fixture.vaultId, pathPrefix: "allowed" }],
+            retrievalPolicy: {
+              channels: {
+                COMMUNITY: { enabled: true, weight: 1.1 },
+              },
+            },
+          },
+        );
+        expect(
+          global.some((hit) =>
+            (hit.fusionContributions ?? []).some(
+              (contribution) => contribution.channel === "community",
+            ),
+          ),
+        ).toBe(true);
+        expect(
+          global.every((hit) =>
+            hit.citations.every(
+              (citation) => !citation.toLowerCase().includes("community"),
+            ),
+          ),
+        ).toBe(true);
+
+        await db.pool.query(
+          `update community_index_revisions
+              set status='STALE',stale=true
+            where space_id=$1 and vault_id=$2 and status='ACTIVE'`,
+          [fixture.spaceId, fixture.vaultId],
+        );
+        try {
+          const staleCommunity = await queryKnowledge(
+            db,
+            { ...searchRequest(fixture), query: "GRAPH-A" },
+            {
+              vaultIds: [fixture.vaultId],
+              plan: planQuery("GRAPH-A", "CONCEPTUAL", {
+                graphConsistent: true,
+                communityAvailable: true,
+              }),
+              graphScopes: [
+                { vaultId: fixture.vaultId, pathPrefix: "allowed" },
+              ],
+              retrievalPolicy: {
+                channels: {
+                  COMMUNITY: { enabled: true, weight: 1.1 },
+                },
+              },
+            },
+          );
+          expect(
+            staleCommunity.some((hit) =>
+              (hit.fusionContributions ?? []).some(
+                (contribution) => contribution.channel === "community",
+              ),
+            ),
+          ).toBe(false);
+        } finally {
+          await db.pool.query(
+            `update community_index_revisions
+                set status='ACTIVE',stale=false
+              where space_id=$1 and vault_id=$2
+                and graph_revision=$3`,
+            [fixture.spaceId, fixture.vaultId, fixture.corpusRevision],
+          );
+        }
 
         const weighted = await queryKnowledge(db, searchRequest(fixture), {
           vaultIds: [fixture.vaultId],
@@ -592,7 +874,183 @@ describe("recursive graph retrieval PostgreSQL integration", () => {
           ),
         ).toBe(false);
       } finally {
-        await cleanupGraph(db, fixture).catch(() => undefined);
+        await cleanupGraph(db, fixture);
+        await db.close();
+      }
+    },
+  );
+
+  it.skipIf(!databaseUrl)(
+    "projects the v0.3 epistemic graph without changing legacy retrieval results",
+    async () => {
+      if (!databaseUrl) return;
+      const fixture = graphFixture();
+      const db = new Postgres(databaseUrl);
+      try {
+        await seedGraph(db, fixture);
+        for (const [from, to, relation] of [
+          ["B", "E", EpistemicGraphRelation.parse("contradicts")],
+          ["D", "C", EpistemicGraphRelation.parse("supersedes")],
+          ["B", "C", EpistemicGraphRelation.parse("implements")],
+          ["E", "B", EpistemicGraphRelation.parse("applies_to")],
+        ] as const) {
+          await db.pool.query(
+            `insert into knowledge_relations(
+               space_id,from_document_id,to_document_id,relation_type,
+               weight,provenance
+             ) values($1,$2,$3,$4,1,'epistemic-v03-regression')`,
+            [
+              fixture.spaceId,
+              fixture.documents[from],
+              fixture.documents[to],
+              relation,
+            ],
+          );
+        }
+
+        const legacyQuery = () =>
+          queryKnowledge(db, searchRequest(fixture), {
+            vaultIds: [fixture.vaultId],
+            channels: ["exact", "graph"],
+            plan: planQuery("GRAPH-A", "IMPACT_ANALYSIS", {
+              graphConsistent: true,
+            }),
+            graphPolicy: {
+              directionPolicy: "outgoing",
+              maxHops: 3,
+            },
+            graphScopes: [{ vaultId: fixture.vaultId, pathPrefix: null }],
+          });
+        const before = await legacyQuery();
+
+        const projection = await rebuildLegacyEpistemicGraphProjection(db, {
+          spaceId: fixture.spaceId,
+          vaultId: fixture.vaultId,
+        });
+        expect(projection).toMatchObject({
+          graphDomain: "EPISTEMIC",
+          vaultId: fixture.vaultId,
+          sourceRevision: fixture.corpusRevision,
+          lifecycle: "ACTIVE",
+          freshness: "FRESH",
+          provider: "legacy-knowledge-relations",
+          providerVersion: "v0.3-envelope-1",
+        });
+
+        const stableLegacyResult = (
+          hits: Awaited<ReturnType<typeof legacyQuery>>,
+        ) =>
+          hits.map((hit) =>
+            hit.retrievalTrace
+              ? {
+                  ...hit,
+                  retrievalTrace: {
+                    ...hit.retrievalTrace,
+                    truth: {
+                      ...hit.retrievalTrace.truth,
+                      capturedAt: "<query-capture-time>",
+                    },
+                  },
+                }
+              : hit,
+          );
+        const after = await legacyQuery();
+        expect(stableLegacyResult(after)).toEqual(stableLegacyResult(before));
+
+        const legacyEdges = await db.pool.query<{
+          from_id: string;
+          to_id: string;
+          relation: string;
+        }>(
+          `select r.from_document_id::text from_id,
+                  r.to_document_id::text to_id,
+                  r.relation_type relation
+             from knowledge_relations r
+             join knowledge_documents source
+               on source.id=r.from_document_id
+              and source.space_id=r.space_id
+             join knowledge_documents target
+               on target.id=r.to_document_id
+              and target.space_id=r.space_id
+            where r.space_id=$1
+              and source.vault_id=$2
+              and target.vault_id=$2
+              and source.lifecycle in ('ACTIVE','DISPUTED')
+              and target.lifecycle in ('ACTIVE','DISPUTED')
+            order by from_id,to_id,relation`,
+          [fixture.spaceId, fixture.vaultId],
+        );
+        const relationAllowlist = [
+          ...new Set(legacyEdges.rows.map((row) => row.relation)),
+        ];
+        const graph = new PostgresFederatedGraphStore(db);
+        const nodes = await graph.findNodes({
+          authorization: {
+            spaceId: fixture.spaceId,
+            vaults: [{ vaultId: fixture.vaultId, pathPrefix: null }],
+            allowSpaceScoped: false,
+          },
+          domains: ["EPISTEMIC"],
+          freshnessPolicy: "FRESH_ONLY",
+          limit: 100,
+        });
+        const projectedEdges: Array<{
+          from_id: string;
+          to_id: string;
+          relation: string;
+        }> = [];
+        for (const relation of relationAllowlist) {
+          for (const source of nodes) {
+            const outgoing = await graph.neighbors({
+              authorization: {
+                spaceId: fixture.spaceId,
+                vaults: [{ vaultId: fixture.vaultId, pathPrefix: null }],
+                allowSpaceScoped: false,
+              },
+              domains: ["EPISTEMIC"],
+              relationAllowlist: [relation],
+              direction: "outgoing",
+              freshnessPolicy: "FRESH_ONLY",
+              bounds: {
+                maxHops: 1,
+                maxFanout: 100,
+                maxCandidates: 100,
+                timeBudgetMs: 5_000,
+              },
+              seed: { nodeId: source.id },
+            });
+            for (const path of outgoing) {
+              projectedEdges.push({
+                from_id: String(path.seed.payload.legacyDocumentId),
+                to_id: String(path.target.payload.legacyDocumentId),
+                relation: path.steps[0]!.relation,
+              });
+              expect(path.steps[0]!.assertion.provenance.sourceIds).toEqual(
+                expect.arrayContaining([
+                  expect.stringMatching(/^knowledge-relation:/),
+                  expect.stringMatching(/^legacy-provenance:/),
+                ]),
+              );
+            }
+          }
+        }
+        projectedEdges.sort((left, right) =>
+          [left.from_id, left.to_id, left.relation]
+            .join("|")
+            .localeCompare(
+              [right.from_id, right.to_id, right.relation].join("|"),
+            ),
+        );
+        expect(projectedEdges).toEqual(legacyEdges.rows);
+
+        const coreRelations = new Set(
+          projectedEdges.map((value) => value.relation),
+        );
+        for (const relation of EpistemicGraphRelation.options) {
+          expect(coreRelations.has(relation), relation).toBe(true);
+        }
+      } finally {
+        await cleanupGraph(db, fixture);
         await db.close();
       }
     },

@@ -9,7 +9,15 @@ export const AGENT_AB_REQUIRED_CATEGORIES = [
 
 export type AgentAbTaskCategory = (typeof AGENT_AB_REQUIRED_CATEGORIES)[number];
 
-export interface AgentAbTask {
+export interface AgentScoringTask {
+  id: string;
+  mandatoryTerms: string[];
+  forbiddenTerms?: string[];
+  goldCitations?: string[];
+  expectNoAnswer?: boolean;
+}
+
+export interface AgentAbTask extends AgentScoringTask {
   id: string;
   category: AgentAbTaskCategory;
   query: string;
@@ -22,6 +30,8 @@ export interface AgentAbTask {
     | "PROJECT_CODE";
   mandatoryTerms: string[];
   forbiddenTerms?: string[];
+  /** Gold source citations for retrieval/context diagnostics when available. */
+  goldCitations?: string[];
   expectNoAnswer?: boolean;
 }
 
@@ -45,6 +55,14 @@ export interface AgentAbScore {
   unsupportedClaimRate: number;
   citationPrecision: number;
   correctness: number;
+  retrievalRecall: number | null;
+  contextPrecision: number | null;
+  claimSupportRecall: number | null;
+  contextUtilization: number | null;
+  faithfulness: number | null;
+  faithfulnessMethod: "CITATION_SCOPED_LEXICAL_SUPPORT" | null;
+  noiseSensitivity: number | null;
+  noAnswerCorrect: boolean | null;
 }
 
 export interface AgentAbArmObservation extends AgentAbScore {
@@ -68,6 +86,20 @@ export interface AgentAbAggregate {
   meanUnsupportedClaims: number;
   meanCitationPrecision: number;
   meanCorrectness: number;
+  meanRetrievalRecall: number | null;
+  retrievalRecallCoverage: number;
+  meanContextPrecision: number | null;
+  contextPrecisionCoverage: number;
+  meanClaimSupportRecall: number | null;
+  claimSupportRecallCoverage: number;
+  meanContextUtilization: number | null;
+  contextUtilizationCoverage: number;
+  meanFaithfulness: number | null;
+  faithfulnessCoverage: number;
+  meanNoiseSensitivity: number | null;
+  noiseSensitivityCoverage: number;
+  noAnswerAccuracy: number | null;
+  noAnswerCases: number;
   totalMissedConstraints: number;
 }
 
@@ -77,6 +109,89 @@ function normalize(value: string): string {
 
 function containsTerm(text: string, term: string): boolean {
   return normalize(text).includes(normalize(term));
+}
+
+const FAITHFULNESS_STOP_WORDS = new Set([
+  "the",
+  "and",
+  "for",
+  "that",
+  "with",
+  "from",
+  "this",
+  "into",
+  "must",
+  "what",
+  "which",
+  "when",
+  "where",
+  "does",
+  "before",
+  "after",
+  "using",
+  "los",
+  "las",
+  "del",
+  "para",
+  "que",
+  "con",
+  "desde",
+  "este",
+  "esta",
+  "como",
+  "cuando",
+  "donde",
+  "debe",
+  "deben",
+  "una",
+  "uno",
+]);
+
+function lexicalSupportTokens(value: string): string[] {
+  return [
+    ...new Set(
+      normalize(value)
+        .replace(/[^\p{L}\p{N}_:/.-]+/gu, " ")
+        .split(/\s+/u)
+        .map((token) => token.trim().replace(/^[.:/\\-]+|[.:/\\-]+$/gu, ""))
+        .filter(
+          (token) =>
+            token.length >= 4 &&
+            !FAITHFULNESS_STOP_WORDS.has(token) &&
+            !/^\d+$/u.test(token),
+        ),
+    ),
+  ];
+}
+
+function citationScopedFaithfulness(
+  output: AgentAbModelOutput,
+  allowed: ReadonlySet<string>,
+  citationEvidence: Readonly<Record<string, readonly string[]>>,
+): number | null {
+  if (output.claims.length === 0) return null;
+  const claimScores: number[] = [];
+  for (const claim of output.claims) {
+    const validCitations = [
+      ...new Set(claim.citations.filter((citation) => allowed.has(citation))),
+    ];
+    if (validCitations.length === 0) {
+      claimScores.push(0);
+      continue;
+    }
+    const evidence = validCitations.flatMap(
+      (citation) => citationEvidence[citation] ?? [],
+    );
+    if (evidence.length === 0) return null;
+    const claimTokens = lexicalSupportTokens(claim.text);
+    if (claimTokens.length === 0) return null;
+    const evidenceTokens = new Set(lexicalSupportTokens(evidence.join("\n")));
+    const overlap =
+      claimTokens.filter((token) => evidenceTokens.has(token)).length /
+      claimTokens.length;
+    claimScores.push(Number(overlap >= 0.5));
+  }
+  return mean(claimScores);
 }
 
 export function validateAgentAbTasks(tasks: AgentAbTask[]): void {
@@ -98,6 +213,15 @@ export function validateAgentAbTasks(tasks: AgentAbTask[]): void {
         `Agent A/B task ${task.id} needs mandatory terms or expectNoAnswer=true.`,
       );
     }
+    if (
+      task.goldCitations &&
+      (task.goldCitations.some((citation) => !citation.trim()) ||
+        new Set(task.goldCitations).size !== task.goldCitations.length)
+    ) {
+      throw new Error(
+        `Agent A/B task ${task.id} has invalid or duplicate gold citations.`,
+      );
+    }
   }
   const categories = new Set(tasks.map((task) => task.category));
   const missing = AGENT_AB_REQUIRED_CATEGORIES.filter(
@@ -111,9 +235,11 @@ export function validateAgentAbTasks(tasks: AgentAbTask[]): void {
 }
 
 export function scoreAgentAbOutput(
-  task: AgentAbTask,
+  task: AgentScoringTask,
   output: AgentAbModelOutput,
   allowedCitations: readonly string[],
+  context = "",
+  citationEvidence: Readonly<Record<string, readonly string[]>> = {},
 ): AgentAbScore {
   const mandatoryFound = task.mandatoryTerms.filter((term) =>
     containsTerm(output.answer, term),
@@ -154,6 +280,38 @@ export function scoreAgentAbOutput(
           mandatoryRuleRecall === 1 &&
           forbiddenTermsPresent.length === 0,
       );
+  const uniqueAllowed = [...new Set(allowedCitations)];
+  const goldCitations = task.goldCitations?.length
+    ? [...new Set(task.goldCitations)]
+    : null;
+  const retrievalRecall = goldCitations
+    ? goldCitations.filter((citation) => allowed.has(citation)).length /
+      goldCitations.length
+    : null;
+  const contextPrecision = goldCitations
+    ? uniqueAllowed.length === 0
+      ? 0
+      : uniqueAllowed.filter((citation) => goldCitations.includes(citation))
+          .length / uniqueAllowed.length
+    : null;
+  const claimSupportRecall =
+    task.mandatoryTerms.length > 0
+      ? task.mandatoryTerms.filter((term) => containsTerm(context, term))
+          .length / task.mandatoryTerms.length
+      : null;
+  const uniqueUsedCitations = [
+    ...new Set(cited.filter((citation) => allowed.has(citation))),
+  ];
+  const contextUtilization =
+    uniqueAllowed.length > 0
+      ? uniqueUsedCitations.length / uniqueAllowed.length
+      : null;
+  const noAnswerCorrect = task.expectNoAnswer ? output.abstain : null;
+  const faithfulness = citationScopedFaithfulness(
+    output,
+    allowed,
+    citationEvidence,
+  );
   return {
     mandatoryRuleRecall,
     missedConstraints,
@@ -162,6 +320,15 @@ export function scoreAgentAbOutput(
     unsupportedClaimRate,
     citationPrecision,
     correctness,
+    retrievalRecall,
+    contextPrecision,
+    claimSupportRecall,
+    contextUtilization,
+    faithfulness,
+    faithfulnessMethod:
+      faithfulness === null ? null : "CITATION_SCOPED_LEXICAL_SUPPORT",
+    noiseSensitivity: null,
+    noAnswerCorrect,
   };
 }
 
@@ -173,6 +340,12 @@ function mean(values: number[]): number {
 function meanNullable(values: Array<number | null>): number | null {
   const measured = values.filter((value): value is number => value !== null);
   return measured.length === 0 ? null : mean(measured);
+}
+
+function coverage(values: readonly (number | boolean | null)[]): number {
+  return values.length === 0
+    ? 0
+    : values.filter((value) => value !== null).length / values.length;
 }
 
 export function aggregateAgentAbArm(
@@ -206,6 +379,52 @@ export function aggregateAgentAbArm(
       observations.map((item) => item.citationPrecision),
     ),
     meanCorrectness: mean(observations.map((item) => item.correctness)),
+    meanRetrievalRecall: meanNullable(
+      observations.map((item) => item.retrievalRecall),
+    ),
+    retrievalRecallCoverage: coverage(
+      observations.map((item) => item.retrievalRecall),
+    ),
+    meanContextPrecision: meanNullable(
+      observations.map((item) => item.contextPrecision),
+    ),
+    contextPrecisionCoverage: coverage(
+      observations.map((item) => item.contextPrecision),
+    ),
+    meanClaimSupportRecall: meanNullable(
+      observations.map((item) => item.claimSupportRecall),
+    ),
+    claimSupportRecallCoverage: coverage(
+      observations.map((item) => item.claimSupportRecall),
+    ),
+    meanContextUtilization: meanNullable(
+      observations.map((item) => item.contextUtilization),
+    ),
+    contextUtilizationCoverage: coverage(
+      observations.map((item) => item.contextUtilization),
+    ),
+    meanFaithfulness: meanNullable(
+      observations.map((item) => item.faithfulness),
+    ),
+    faithfulnessCoverage: coverage(
+      observations.map((item) => item.faithfulness),
+    ),
+    meanNoiseSensitivity: meanNullable(
+      observations.map((item) => item.noiseSensitivity),
+    ),
+    noiseSensitivityCoverage: coverage(
+      observations.map((item) => item.noiseSensitivity),
+    ),
+    noAnswerAccuracy: (() => {
+      const measured = observations
+        .map((item) => item.noAnswerCorrect)
+        .filter((value): value is boolean => value !== null);
+      return measured.length === 0
+        ? null
+        : mean(measured.map((value) => Number(value)));
+    })(),
+    noAnswerCases: observations.filter((item) => item.noAnswerCorrect !== null)
+      .length,
     totalMissedConstraints: observations.reduce(
       (sum, item) => sum + item.missedConstraints.length,
       0,

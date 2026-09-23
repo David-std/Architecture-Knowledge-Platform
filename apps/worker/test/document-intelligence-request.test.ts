@@ -48,6 +48,32 @@ describe("document intelligence ingest controls", () => {
     });
   });
 
+  it("clamps extraction privacy to a durable LOCAL_ONLY source boundary", () => {
+    const fields = documentIntelligenceFormFields(
+      {
+        modelResidency: "LOCAL_ONLY",
+        documentIntelligence: { privacyPolicy: "REMOTE_ALLOWED" },
+      },
+      "job-local-only",
+    );
+
+    expect(fields.privacy_policy).toBe("LOCAL_ONLY");
+  });
+
+  it("honors a stricter persisted source residency after deduplication", () => {
+    const fields = documentIntelligenceFormFields(
+      {
+        modelResidency: "EXTERNAL_ALLOWED",
+        documentIntelligence: { privacyPolicy: "REMOTE_ALLOWED" },
+      },
+      "job-existing-local-only",
+      undefined,
+      "LOCAL_ONLY",
+    );
+
+    expect(fields.privacy_policy).toBe("LOCAL_ONLY");
+  });
+
   it("uses safe defaults for legacy jobs without document policy", () => {
     expect(documentIntelligenceFormFields({}, "job-legacy")).toEqual({
       ocr_required: "false",

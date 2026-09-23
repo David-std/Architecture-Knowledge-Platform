@@ -1,25 +1,50 @@
 import {
   CompilationPlan,
+  createKnowledgeCompilerRouteCandidates,
+  defaultCompilerKnowledgeProfileContext,
+  knowledgeCompilerProviderFailureCode,
+  durableCompilerKnowledgeProfileContext,
+  routeKnowledgeCompilerCandidates,
+  type CompilerKnowledgeProfileContext,
   type ConfiguredKnowledgeCompiler,
+  type KnowledgeCompilerRouteCandidate,
+  type KnowledgeCompilerRouteDecision,
   type KnowledgeCompilerResult,
 } from "@akp/compiler";
-import { StructuralLocator, type DocumentArtifact } from "@akp/contracts";
-import { withSpan } from "@akp/observability";
+import {
+  ModelResidency,
+  StructuralLocator,
+  mostRestrictiveModelResidency,
+  type DocumentArtifact,
+  type ModelResidency as ModelResidencyValue,
+  type TrustTier,
+} from "@akp/contracts";
+import { OpenTelemetryBridge, withSpan } from "@akp/observability";
 import { resolveAuthorizedVaultScope, type Postgres } from "@akp/postgres";
 import { renderDocumentArtifactDraft } from "./document-artifact.js";
 import { assertEvidenceFragmentIntegrity } from "./evidence-fragment.js";
-import { compileGroundedKnowledgeProposal } from "./knowledge-compilation.js";
+import {
+  executePreparedGroundedKnowledgeCompilation,
+  prepareGroundedKnowledgeCompilation,
+} from "./knowledge-compilation.js";
+
+const modelRouteTelemetry = new OpenTelemetryBridge();
 
 interface EvidenceRow {
   id: string;
   locator: unknown;
   content_hash: string;
   excerpt: string | null;
+  review_status?: string | null;
 }
 
 interface VaultRow {
   schema_profile: Record<string, unknown>;
   current_revision: string | null;
+  active_profile_revision_id?: string | null;
+  profile_revision_id?: string | null;
+  profile_hash?: string | null;
+  canonical_profile?: string | null;
 }
 
 interface PriorSourceRow {
@@ -27,6 +52,21 @@ interface PriorSourceRow {
   path: string;
   external_id: string | null;
   current_revision: string;
+}
+
+interface ModelResidencyRow {
+  organization_model_residency: string;
+  space_model_residency: string;
+  source_model_residency: string;
+}
+
+interface CompilerRoutingBoundary {
+  effectiveResidency: ModelResidencyValue;
+  organizationResidency: ModelResidencyValue;
+  spaceResidency: ModelResidencyValue;
+  sourceResidency: ModelResidencyValue;
+  profileResidency: ModelResidencyValue;
+  structuredOutputRequired: boolean;
 }
 
 export interface CompilationStageInput {
@@ -48,6 +88,25 @@ export interface CompilationStageInput {
 export interface CompilationStageMetadata {
   mode: "GENERATIVE" | "SOURCE_SUMMARY_FALLBACK";
   provider?: ConfiguredKnowledgeCompiler["descriptor"];
+  modelRoute?: {
+    role: "KNOWLEDGE_COMPILE";
+    requiredResidency: ModelResidencyValue;
+    boundaries: {
+      organization: ModelResidencyValue;
+      space: ModelResidencyValue;
+      source: ModelResidencyValue;
+      profile: ModelResidencyValue;
+    };
+    structuredOutputRequired: boolean;
+    selected?: ConfiguredKnowledgeCompiler["descriptor"];
+    rejected: KnowledgeCompilerRouteDecision["rejected"];
+    attempts: Array<{
+      candidate: ConfiguredKnowledgeCompiler["descriptor"];
+      outcome: "SUCCEEDED" | "FAILED";
+      errorCode?: string;
+    }>;
+    degraded: boolean;
+  };
   retrievalChannels?: string[];
   retrievalWarnings?: string[];
   identity?: unknown;
@@ -63,19 +122,59 @@ export interface CompilationStageOutput {
   metadata: CompilationStageMetadata;
 }
 
+function resolveCompilerProfileFromVault(
+  row: VaultRow,
+): CompilerKnowledgeProfileContext {
+  if (!row.active_profile_revision_id) {
+    return defaultCompilerKnowledgeProfileContext();
+  }
+  if (
+    !row.profile_revision_id ||
+    row.profile_revision_id !== row.active_profile_revision_id ||
+    !row.profile_hash ||
+    !row.canonical_profile
+  ) {
+    throw new Error("ACTIVE_KNOWLEDGE_PROFILE_BINDING_INVALID");
+  }
+  let profile: unknown;
+  try {
+    profile = JSON.parse(row.canonical_profile);
+  } catch {
+    throw new Error("ACTIVE_KNOWLEDGE_PROFILE_CANONICAL_INVALID");
+  }
+  return durableCompilerKnowledgeProfileContext({
+    revisionId: row.profile_revision_id,
+    profileHash: row.profile_hash,
+    profile,
+  });
+}
+
 async function loadVaultContext(
   db: Postgres,
   spaceId: string,
   vaultId: string | null,
-): Promise<{ schemaProfile: Record<string, unknown>; corpusRevision: string }> {
+): Promise<{
+  schemaProfile: Record<string, unknown>;
+  corpusRevision: string;
+  knowledgeProfile: CompilerKnowledgeProfileContext;
+}> {
   if (!vaultId) {
-    return { schemaProfile: {}, corpusRevision: "managed:initial" };
+    return {
+      schemaProfile: {},
+      corpusRevision: "managed:initial",
+      knowledgeProfile: defaultCompilerKnowledgeProfileContext(),
+    };
   }
   const result = await db.pool.query<VaultRow>(
     `
-    select schema_profile,current_revision
-      from vaults
-     where id=$1 and space_id=$2 and enabled
+    select v.schema_profile,v.current_revision,
+           v.active_knowledge_profile_revision_id active_profile_revision_id,
+           p.id profile_revision_id,p.profile_hash,p.canonical_profile
+      from vaults v
+      left join knowledge_profile_revisions p
+        on p.id=v.active_knowledge_profile_revision_id
+       and p.space_id=v.space_id and p.vault_id=v.id and p.status='ACTIVE'
+     where v.id=$1 and v.space_id=$2 and v.enabled
      limit 1
     `,
     [vaultId, spaceId],
@@ -85,7 +184,120 @@ async function loadVaultContext(
   return {
     schemaProfile: row.schema_profile ?? {},
     corpusRevision: row.current_revision ?? "managed:initial",
+    knowledgeProfile: resolveCompilerProfileFromVault(row),
   };
+}
+
+async function loadCompilerRoutingBoundary(
+  db: Postgres,
+  input: CompilationStageInput,
+  profile: CompilerKnowledgeProfileContext,
+): Promise<CompilerRoutingBoundary> {
+  const result = await db.pool.query<ModelResidencyRow>(
+    `
+    select o.model_residency organization_model_residency,
+           s.model_residency space_model_residency,
+           src.model_residency source_model_residency
+      from spaces s
+      join organizations o on o.id=s.organization_id
+      join sources src on src.space_id=s.id
+     where s.id=$1 and src.id=$2
+       and (($3::uuid is null and src.vault_id is null) or src.vault_id=$3::uuid)
+     limit 1
+    `,
+    [input.spaceId, input.sourceId, input.vaultId],
+  );
+  const row = result.rows[0];
+  if (!row) throw new Error("COMPILER_SOURCE_RESIDENCY_NOT_FOUND");
+
+  const organizationResidency = ModelResidency.parse(
+    row.organization_model_residency,
+  );
+  const spaceResidency = ModelResidency.parse(row.space_model_residency);
+  const sourceResidency = ModelResidency.parse(row.source_model_residency);
+  const profileConstraint = profile.profile.modelRoleConstraints.find(
+    (constraint) => constraint.role === "KNOWLEDGE_COMPILE",
+  );
+  const profileResidency = profileConstraint?.residency ?? "EXTERNAL_ALLOWED";
+
+  return {
+    organizationResidency,
+    spaceResidency,
+    sourceResidency,
+    profileResidency,
+    effectiveResidency: mostRestrictiveModelResidency(
+      sourceResidency,
+      organizationResidency,
+      spaceResidency,
+      profileResidency,
+    ),
+    structuredOutputRequired:
+      profileConstraint?.structuredOutputRequired ?? false,
+  };
+}
+
+function modelRouteMetadata(
+  boundary: CompilerRoutingBoundary,
+  decision: KnowledgeCompilerRouteDecision,
+): NonNullable<CompilationStageMetadata["modelRoute"]> {
+  return {
+    role: "KNOWLEDGE_COMPILE",
+    requiredResidency: boundary.effectiveResidency,
+    boundaries: {
+      organization: boundary.organizationResidency,
+      space: boundary.spaceResidency,
+      source: boundary.sourceResidency,
+      profile: boundary.profileResidency,
+    },
+    structuredOutputRequired: boundary.structuredOutputRequired,
+    ...(decision.selected ? { selected: decision.selected.descriptor } : {}),
+    rejected: decision.rejected,
+    attempts: [],
+    degraded: false,
+  };
+}
+
+export function modelProviderMetricAttributes(
+  candidate: KnowledgeCompilerRouteCandidate,
+  status: "success" | "failure",
+  fallbackUsed: boolean,
+): Record<string, string> {
+  return {
+    role: candidate.descriptor.role,
+    provider: candidate.descriptor.provider,
+    model: candidate.descriptor.model,
+    status,
+    fallback_used: String(fallbackUsed),
+  };
+}
+
+function assertCompilerProfileBindingUnchanged(
+  before: CompilerKnowledgeProfileContext,
+  after: CompilerKnowledgeProfileContext,
+): void {
+  if (
+    before.source !== after.source ||
+    before.revisionId !== after.revisionId ||
+    before.profileHash !== after.profileHash
+  ) {
+    throw new Error("CONTEXT_REVISION_CHANGED");
+  }
+}
+
+function evidenceTrustFromStatus(
+  status: string | null | undefined,
+): TrustTier | undefined {
+  switch (status) {
+    case "HUMAN_REVIEWED":
+      return "HUMAN_REVIEWED";
+    case "ATTESTED":
+      return "ATTESTED";
+    case "PENDING":
+    case "UNVERIFIED":
+      return "UNVERIFIED";
+    default:
+      return undefined;
+  }
 }
 
 async function loadEvidence(
@@ -100,7 +312,7 @@ async function loadEvidence(
 }> {
   const result = await db.pool.query<EvidenceRow>(
     `
-    select id,locator,content_hash,excerpt
+    select id,locator,content_hash,excerpt,review_status
       from evidence
      where id=$1 and space_id=$2 and vault_id=$3
        and source_id=$4 and artifact_id=$5
@@ -127,12 +339,14 @@ async function loadEvidence(
     excerpt: row.excerpt,
     excerptHash: row.content_hash,
   });
+  const trust = evidenceTrustFromStatus(row.review_status);
   return {
     id: row.id,
     sourceArtifactId: input.sourceArtifactId,
     locator,
     excerpt: row.excerpt,
     excerptHash: row.content_hash,
+    ...(trust ? { trust } : {}),
   };
 }
 
@@ -210,7 +424,7 @@ async function sourceSummaryFallback(
         operation: prior ? "UPDATE" : "CREATE",
         content,
         reasons: [
-          "Generative compilation is disabled or unconfigured; preserve the immutable source as an inspectable review draft.",
+          "Generative compilation did not run under the effective model-routing policy; preserve the immutable source as an inspectable review draft.",
         ],
         evidenceIds: [input.evidenceId],
       },
@@ -231,11 +445,36 @@ async function sourceSummaryFallback(
 export async function buildCompilationStage(
   db: Postgres,
   input: CompilationStageInput,
-  configured: ConfiguredKnowledgeCompiler | null,
+  candidates?: KnowledgeCompilerRouteCandidate[] | null,
 ): Promise<CompilationStageOutput> {
   const vault = await loadVaultContext(db, input.spaceId, input.vaultId);
+  const boundary = await loadCompilerRoutingBoundary(
+    db,
+    input,
+    vault.knowledgeProfile,
+  );
+  const routeCandidates =
+    candidates === null
+      ? []
+      : (candidates ?? createKnowledgeCompilerRouteCandidates(process.env));
+  const decision = routeKnowledgeCompilerCandidates(routeCandidates, {
+    dataResidency: boundary.effectiveResidency,
+    structuredOutputRequired: boundary.structuredOutputRequired,
+  });
+  const routeMetadata = modelRouteMetadata(boundary, decision);
+  modelRouteTelemetry.counter("model_route_decisions_total", 1, {
+    role: "KNOWLEDGE_COMPILE",
+    residency: boundary.effectiveResidency,
+    outcome: decision.selected ? "selected" : "no_candidate",
+  });
+  for (const rejection of decision.rejected) {
+    modelRouteTelemetry.counter("model_route_rejections_total", 1, {
+      role: "KNOWLEDGE_COMPILE",
+      reason: rejection.reason,
+    });
+  }
   const pathPrefix = await loadRetrievalPathPrefix(db, input);
-  if (!configured) {
+  if (!decision.selected) {
     return withSpan(
       "compile.plan",
       {
@@ -253,7 +492,11 @@ export async function buildCompilationStage(
           plan: await validateCompilationPlan(plan, "SOURCE_SUMMARY_FALLBACK"),
           metadata: {
             mode: "SOURCE_SUMMARY_FALLBACK",
-            reason: "GENERIC_COMPILER_DISABLED_OR_UNCONFIGURED",
+            modelRoute: routeMetadata,
+            reason:
+              routeCandidates.length === 0
+                ? "GENERIC_COMPILER_DISABLED_OR_UNCONFIGURED"
+                : "MODEL_ROUTE_NO_COMPATIBLE_CANDIDATE",
           },
         };
       },
@@ -266,36 +509,117 @@ export async function buildCompilationStage(
     ...input,
     vaultId,
   });
-  const compiled = await withSpan(
-    "compile.plan",
-    {
-      "akp.compiler.mode": "GENERATIVE",
-      "akp.vector.enabled": input.vectorEnabled,
+  const prepared = await prepareGroundedKnowledgeCompilation(db, {
+    source: {
+      sourceId: input.sourceId,
+      sourceArtifactId: input.sourceArtifactId,
+      sha256: input.sha256,
+      title: input.title,
+      mediaType: input.mediaType,
     },
-    () =>
-      compileGroundedKnowledgeProposal(db, configured, {
-        source: {
-          sourceId: input.sourceId,
-          sourceArtifactId: input.sourceArtifactId,
-          sha256: input.sha256,
-          title: input.title,
-          mediaType: input.mediaType,
+    documentArtifact: input.artifact,
+    evidence: [evidence],
+    knowledgeProfile: vault.knowledgeProfile,
+    schemaProfile: vault.schemaProfile,
+    corpusRevision: vault.corpusRevision,
+    spaceId: input.spaceId,
+    vaultId,
+    pathPrefix,
+    vectorEnabled: input.vectorEnabled,
+  });
+
+  let compiled:
+    | Awaited<ReturnType<typeof executePreparedGroundedKnowledgeCompilation>>
+    | undefined;
+  let lastProviderError: unknown;
+  for (const [index, candidate] of decision.eligible.entries()) {
+    const attemptStartedAt = performance.now();
+    try {
+      const configured = candidate.createConfigured();
+      compiled = await withSpan(
+        "compile.plan",
+        {
+          "akp.compiler.mode": "GENERATIVE",
+          "akp.vector.enabled": input.vectorEnabled,
+          "akp.compiler.degraded": index > 0,
         },
-        documentArtifact: input.artifact,
-        evidence: [evidence],
-        schemaProfile: vault.schemaProfile,
-        corpusRevision: vault.corpusRevision,
-        spaceId: input.spaceId,
-        vaultId,
-        pathPrefix,
-        vectorEnabled: input.vectorEnabled,
-      }),
+        () => executePreparedGroundedKnowledgeCompilation(configured, prepared),
+      );
+      routeMetadata.selected = candidate.descriptor;
+      routeMetadata.degraded = index > 0;
+      routeMetadata.attempts.push({
+        candidate: candidate.descriptor,
+        outcome: "SUCCEEDED",
+      });
+      const successAttributes = modelProviderMetricAttributes(
+        candidate,
+        "success",
+        index > 0,
+      );
+      modelRouteTelemetry.counter(
+        "model_provider_attempts_total",
+        1,
+        successAttributes,
+      );
+      modelRouteTelemetry.histogram(
+        "model_provider_attempt_latency_ms",
+        Math.max(0, performance.now() - attemptStartedAt),
+        successAttributes,
+      );
+      break;
+    } catch (error) {
+      const errorCode = knowledgeCompilerProviderFailureCode(error);
+      routeMetadata.attempts.push({
+        candidate: candidate.descriptor,
+        outcome: "FAILED",
+        ...(errorCode ? { errorCode } : {}),
+      });
+      const failureAttributes = modelProviderMetricAttributes(
+        candidate,
+        "failure",
+        index > 0,
+      );
+      modelRouteTelemetry.counter(
+        "model_provider_attempts_total",
+        1,
+        failureAttributes,
+      );
+      modelRouteTelemetry.histogram(
+        "model_provider_attempt_latency_ms",
+        Math.max(0, performance.now() - attemptStartedAt),
+        failureAttributes,
+      );
+      lastProviderError = error;
+      const hasCompatibleFallback = index + 1 < decision.eligible.length;
+      if (
+        !errorCode ||
+        candidate.policy.degradationSafe !== true ||
+        !hasCompatibleFallback
+      ) {
+        throw error;
+      }
+      modelRouteTelemetry.counter("model_failovers_total", 1, {
+        role: "KNOWLEDGE_COMPILE",
+        residency: boundary.effectiveResidency,
+      });
+    }
+  }
+  if (!compiled) {
+    throw lastProviderError instanceof Error
+      ? lastProviderError
+      : new Error("COMPILER_PROVIDER_FAILED");
+  }
+  const currentVault = await loadVaultContext(db, input.spaceId, vaultId);
+  assertCompilerProfileBindingUnchanged(
+    vault.knowledgeProfile,
+    currentVault.knowledgeProfile,
   );
   return {
     plan: await validateCompilationPlan(compiled.plan, "GENERATIVE"),
     metadata: {
       mode: "GENERATIVE",
       provider: compiled.provider,
+      modelRoute: routeMetadata,
       retrievalChannels: compiled.retrievalChannels,
       retrievalWarnings: compiled.retrievalWarnings,
       identity: compiled.result.identity,

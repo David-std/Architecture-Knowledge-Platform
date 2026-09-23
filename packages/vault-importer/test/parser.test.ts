@@ -120,7 +120,7 @@ describe("agent-facing curation boundary", () => {
         "status: ready-for-acquisition",
         "---",
         "# Pending downloads",
-        "| ☐ | P0 | PAGO | ISO standard |",
+        "| ☐ | CRITICAL | PAGO | ISO standard |",
         "Comprar una copia oficial.",
       ].join("\n"),
     );

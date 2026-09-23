@@ -14,6 +14,21 @@
   },
   "supportingEvidence": [
     {
+      "path": "scripts/filtered-ann-baseline.ts",
+      "role": "adversarial filtered ANN recall and isolation evidence",
+      "limitation": "The fixture deliberately forces exact/HNSW variants to measure filtered recall and leakage; it sets productionIndexSelected=false and cannot select the production access path."
+    },
+    {
+      "path": "db/migrations/019_semantic_embedding_generations.sql",
+      "role": "available pgvector HNSW indexes",
+      "limitation": "The presence of dimension-specific HNSW indexes makes them planner-eligible; it does not prove that PostgreSQL uses one for every production query."
+    },
+    {
+      "path": "apps/api/src/routes/search.ts",
+      "role": "production vector query contract",
+      "limitation": "The runtime supplies authorization/truth filters plus ORDER BY <=> LIMIT without an explicit exact/HNSW/IVFFlat hint, leaving the physical plan to PostgreSQL."
+    },
+    {
       "path": "reports/scale/load-scale-benchmark.json",
       "role": "synthetic scale context only",
       "limitation": "Synthetic fixed-dimensional vectors and three timing samples per target are not real-corpus semantic quality evidence and are not used to select a production ANN index."
@@ -23,5 +38,12 @@
     "A materially larger production-like registered corpus is available.",
     "Measured exact-vector retrieval latency on that corpus creates a concrete scale question.",
     "Recall@10, latency, build time, index size, RAM and incremental-update cost can all be measured on the same held-out corpus."
-  ]
+  ],
+  "runtimeExecution": {
+    "selectionAuthority": "POSTGRES_PLANNER",
+    "explicitAccessPathHint": null,
+    "pinnedVectorStrategy": null,
+    "queryContract": "Authorize and constrain generation/space/vault/lifecycle/trust before ORDER BY embedding <=> query LIMIT; PostgreSQL chooses the physical access path.",
+    "claimBoundary": "AKP does not report EXACT_SCAN, HNSW or IVFFlat as the production strategy unless a representative benchmark and an observed plan justify that decision."
+  }
 }

@@ -27,6 +27,15 @@ channels:
     messages:
       auditEvent:
         $ref: "#/components/messages/AuditEvent"
+  workspaceEvents:
+    address: internal.workspace_events
+    description: >
+      Append-only coordination blackboard rows persisted in workspace_events.
+      This is durable operational coordination state, not canonical knowledge
+      and not an external message broker.
+    messages:
+      workspaceEvent:
+        $ref: "#/components/messages/WorkspaceEvent"
 operations:
   consumeOutboxEvents:
     action: receive
@@ -52,6 +61,11 @@ components:
       title: Persisted audit event
       payload:
         $ref: "#/components/schemas/AuditEventPayload"
+    WorkspaceEvent:
+      name: WorkspaceEvent
+      title: Persisted workspace coordination event
+      payload:
+        $ref: "#/components/schemas/WorkspaceEventPayload"
   schemas:
     IntegrationEventEnvelope:
       type: object
@@ -79,8 +93,29 @@ components:
             - LexicalIndexUpdateRequested
             - VectorIndexUpdateRequested
             - GraphIndexUpdateRequested
+            - CodeGraphRefreshRequested
+            - CodeKnowledgeLinkApproved
+            - GraphRevisionBuilt
+            - GraphRevisionActivated
+            - GraphRevisionStale
+            - SourceWithdrawn
+            - EvidenceInvalidated
+            - FactSuperseded
+            - TruthRevisionPublished
+            - DerivedSupportInvalidationRequested
             - ContextPackInvalidationRequested
             - ImpactedEvalRunRequested
+            - WorkspaceSessionCreated
+            - WorkspaceSessionUpdated
+            - WorkspaceClaimUpdated
+            - WorkspaceHandoffCreated
+            - WorkspacePromotionRequested
+            - ExternalObjectRefUpserted
+            - OfflineDraftQueued
+            - OfflineDraftReconciled
+            - ContextFabricPeerRegistered
+            - ContextFabricPeerRevoked
+            - PrincipalRevoked
         eventVersion: { type: integer, minimum: 1 }
         resourceId: { type: string, minLength: 1 }
         organizationId: { type: [string, "null"], format: uuid }
@@ -103,6 +138,59 @@ components:
           type: object
           additionalProperties: true
         createdAt: { type: string, format: date-time }
+    WorkspaceEventPayload:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          sessionId,
+          spaceId,
+          vaultId,
+          sessionVersion,
+          eventType,
+          payload,
+          createdAt,
+        ]
+      properties:
+        id: { type: integer, minimum: 1 }
+        sessionId: { type: string, format: uuid }
+        spaceId: { type: string, format: uuid }
+        vaultId: { type: string, format: uuid }
+        actorId:
+          type: [string, "null"]
+          format: uuid
+          description: Compatibility user identity that authored the event.
+        actorPrincipalId:
+          type: [string, "null"]
+          format: uuid
+          description: Exact HUMAN or AGENT_PROCESS principal that authored the event.
+        claimId:
+          type: [string, "null"]
+          format: uuid
+        sessionVersion: { type: integer, minimum: 1 }
+        eventType:
+          type: string
+          enum:
+            - SESSION_CREATED
+            - WORK_CONTEXT_UPDATED
+            - PARTICIPANT_JOINED
+            - CLAIM_ACQUIRED
+            - CLAIM_HEARTBEAT
+            - CLAIM_RELEASED
+            - CLAIM_HANDOFF
+            - HANDOFF_IMPORTED
+            - FINDING
+            - BLOCKER
+            - QUESTION
+            - ARTIFACT
+            - DECISION_CANDIDATE
+            - PROMOTION_REQUESTED
+            - NOTE
+        payload:
+          type: object
+          additionalProperties: true
+        createdAt: { type: string, format: date-time }
     AuditEventPayload:
       type: object
       required: [action, resourceType, metadata, createdAt]
@@ -117,6 +205,10 @@ components:
         actorId:
           type: [string, "null"]
           format: uuid
+        principalId:
+          type: [string, "null"]
+          format: uuid
+          description: Distinct runtime principal identity when available.
         action: { type: string }
         resourceType: { type: string }
         resourceId:

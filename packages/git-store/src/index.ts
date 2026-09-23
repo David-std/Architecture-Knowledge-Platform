@@ -30,7 +30,7 @@ export class GitKnowledgeStore {
     this.repositoryPath = path.resolve(repositoryPath);
   }
 
-  private async git(
+  private async gitRaw(
     args: string[],
     workingTree = this.repositoryPath,
   ): Promise<string> {
@@ -38,11 +38,43 @@ export class GitKnowledgeStore {
       windowsHide: true,
       maxBuffer: 10 * 1024 * 1024,
     });
-    return result.stdout.trim();
+    return result.stdout;
+  }
+
+  private async git(
+    args: string[],
+    workingTree = this.repositoryPath,
+  ): Promise<string> {
+    return (await this.gitRaw(args, workingTree)).trim();
   }
 
   revision(): Promise<string> {
     return this.git(["rev-parse", "HEAD"]);
+  }
+
+  async listTreeEntries(
+    revision = "HEAD",
+  ): Promise<Array<{ path: string; blob: string; mode: string }>> {
+    const output = await this.gitRaw([
+      "ls-tree",
+      "-r",
+      "-z",
+      "--full-tree",
+      `${revision}^{tree}`,
+    ]);
+    return output
+      .split("\0")
+      .filter(Boolean)
+      .flatMap((record) => {
+        const tab = record.indexOf("\t");
+        if (tab < 0) return [];
+        const header = record.slice(0, tab).split(" ");
+        const relativePath = record.slice(tab + 1);
+        const [mode, type, blob] = header;
+        if (!mode || type !== "blob" || !blob || !relativePath) return [];
+        const normalized = this.safePath(relativePath);
+        return [{ path: normalized, blob, mode }];
+      });
   }
 
   async commitMetadata(revision = "HEAD"): Promise<{
@@ -481,5 +513,413 @@ export class GitKnowledgeStore {
       throw new Error("Unsafe knowledge path");
     }
     return normalized;
+  }
+}
+
+export interface LocalGitSourceConnectorOptions {
+  connectorId?: string;
+  includeExtensions?: string[];
+  maxObjectBytes?: number;
+}
+
+/**
+ * Implementation-local structural mirror of the public SourceConnectorPort.
+ *
+ * git-store is built with rootDir=src and intentionally cannot import another
+ * workspace package's source file. Conformance to @akp/domain is checked at
+ * apps/worker/src/source-connectors.ts, whose factory is explicitly typed as
+ * SourceConnectorPort. Keep this mirror field-for-field with that public port.
+ */
+type SourceConnectorPermissionFidelity =
+  | "SOURCE_ACL_EXACT"
+  | "SOURCE_ACL_MAPPED"
+  | "WORKSPACE_WIDE"
+  | "NONE"
+  | "UNKNOWN";
+
+type SourceConnectorCheckpointModel =
+  "REVISION" | "OPAQUE_CURSOR" | "SOURCE_SEQUENCE";
+
+interface SourceConnectorDescriptor {
+  schemaVersion: 1;
+  connectorId: string;
+  sourceSystem: string;
+  objectTypes: string[];
+  incremental: { cursor: boolean; webhook: boolean };
+  permissionFidelity: SourceConnectorPermissionFidelity;
+  replication: "FULL_MIRROR" | "METADATA_ONLY" | "REFERENCE";
+  dataResidency: "LOCAL" | "ORG" | "EXTERNAL";
+  attachments: { supported: boolean; maxBytes?: number };
+  rateLimit:
+    | { kind: "NONE" }
+    | { kind: "DECLARED"; requestsPerMinute: number; burst?: number };
+  checkpointModel: SourceConnectorCheckpointModel;
+  deletionPropagation: "TOMBSTONE" | "NONE";
+  sourceVersioning: boolean;
+  freshnessSlaSeconds?: number;
+  contentTrust: "UNTRUSTED_EXTERNAL";
+}
+
+interface SourceConnectorScope {
+  organizationId?: string;
+  spaceId?: string;
+  vaultId?: string;
+}
+
+interface SourceConnectorCheckpoint {
+  kind: SourceConnectorCheckpointModel;
+  value: string;
+}
+
+interface SourceConnectorObject {
+  objectId: string;
+  objectType: string;
+  sourceSystem: string;
+  sourceVersion: string;
+  operation: "UPSERT" | "DELETE";
+  path?: string;
+  title?: string;
+  content?: string;
+  contentType?: string;
+  contentTrust: "UNTRUSTED_EXTERNAL";
+  permissions: {
+    fidelity: SourceConnectorPermissionFidelity;
+    uncertain: boolean;
+    aclFingerprint?: string;
+  };
+  attachments: Array<{
+    id: string;
+    name: string;
+    contentType?: string;
+    sizeBytes?: number;
+  }>;
+  metadata: Record<string, unknown>;
+}
+
+interface SourceConnectorPullRequest {
+  from?: SourceConnectorCheckpoint;
+  target: SourceConnectorCheckpoint;
+  pageCursor?: string;
+  limit: number;
+}
+
+interface SourceConnectorPullPage {
+  objects: SourceConnectorObject[];
+  target: SourceConnectorCheckpoint;
+  nextPageCursor: string | null;
+  completed: boolean;
+}
+
+interface SourceConnectorPullInput {
+  scope: SourceConnectorScope;
+  from?: SourceConnectorCheckpoint;
+  target: SourceConnectorCheckpoint;
+  pageSize?: number;
+}
+
+interface SourceConnectorFetchInput {
+  scope: SourceConnectorScope;
+  objectId: string;
+  checkpoint?: SourceConnectorCheckpoint;
+}
+
+interface SourceConnectorPort {
+  describe(): SourceConnectorDescriptor;
+  checkpoint(scope: SourceConnectorScope): Promise<SourceConnectorCheckpoint>;
+  pull(input: SourceConnectorPullInput): AsyncIterable<SourceConnectorObject>;
+  fetchById?(
+    input: SourceConnectorFetchInput,
+  ): Promise<SourceConnectorObject | null>;
+}
+
+type GitConnectorCursor = {
+  from: string | null;
+  target: string;
+  offset: number;
+};
+
+function encodeGitConnectorCursor(cursor: GitConnectorCursor): string {
+  return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
+}
+
+function decodeGitConnectorCursor(value: string): GitConnectorCursor {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
+  } catch {
+    throw new Error("SOURCE_CONNECTOR_CURSOR_INVALID");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("SOURCE_CONNECTOR_CURSOR_INVALID");
+  }
+  const candidate = parsed as Record<string, unknown>;
+  if (
+    (candidate.from !== null && typeof candidate.from !== "string") ||
+    typeof candidate.target !== "string" ||
+    !Number.isSafeInteger(candidate.offset) ||
+    Number(candidate.offset) < 0
+  ) {
+    throw new Error("SOURCE_CONNECTOR_CURSOR_INVALID");
+  }
+  return {
+    from: candidate.from as string | null,
+    target: candidate.target,
+    offset: Number(candidate.offset),
+  };
+}
+
+export class LocalGitSourceConnector implements SourceConnectorPort {
+  private readonly connectorId: string;
+  private readonly includeExtensions: Set<string>;
+  private readonly maxObjectBytes: number;
+
+  constructor(
+    private readonly store: GitKnowledgeStore,
+    options: LocalGitSourceConnectorOptions = {},
+  ) {
+    this.connectorId = options.connectorId?.trim() || "local-git";
+    this.includeExtensions = new Set(
+      (options.includeExtensions ?? [".md", ".markdown"]).map((extension) =>
+        extension.toLowerCase(),
+      ),
+    );
+    this.maxObjectBytes = options.maxObjectBytes ?? 1_000_000;
+    if (
+      !Number.isSafeInteger(this.maxObjectBytes) ||
+      this.maxObjectBytes < 1 ||
+      this.maxObjectBytes > 10_000_000
+    ) {
+      throw new Error("SOURCE_CONNECTOR_MAX_OBJECT_BYTES_INVALID");
+    }
+  }
+
+  describe(): SourceConnectorDescriptor {
+    return {
+      schemaVersion: 1,
+      connectorId: this.connectorId,
+      sourceSystem: "git-local",
+      objectTypes: ["MARKDOWN_FILE"],
+      incremental: { cursor: true, webhook: false },
+      permissionFidelity: "WORKSPACE_WIDE",
+      replication: "FULL_MIRROR",
+      dataResidency: "LOCAL",
+      attachments: { supported: false },
+      rateLimit: { kind: "NONE" },
+      checkpointModel: "REVISION",
+      deletionPropagation: "TOMBSTONE",
+      sourceVersioning: true,
+      contentTrust: "UNTRUSTED_EXTERNAL",
+    };
+  }
+
+  async checkpoint(
+    _scope: SourceConnectorScope = {},
+  ): Promise<SourceConnectorCheckpoint> {
+    return { kind: "REVISION", value: await this.store.revision() };
+  }
+
+  private assertRevisionCheckpoint(
+    checkpoint: SourceConnectorCheckpoint,
+  ): string {
+    if (
+      checkpoint.kind !== "REVISION" ||
+      !/^[a-f0-9]{40,64}$/iu.test(checkpoint.value)
+    ) {
+      throw new Error("SOURCE_CONNECTOR_CHECKPOINT_INVALID");
+    }
+    return checkpoint.value;
+  }
+
+  private includedPath(relativePath: string): boolean {
+    return this.includeExtensions.has(
+      path.posix.extname(relativePath).toLowerCase(),
+    );
+  }
+
+  private async objectAt(
+    revision: string,
+    entry: { path: string; blob: string; mode: string },
+  ): Promise<SourceConnectorObject | null> {
+    // Git symlinks are blobs with mode 120000. Never turn their target text
+    // into mirrored source content.
+    if (
+      !["100644", "100755"].includes(entry.mode) ||
+      !this.includedPath(entry.path)
+    ) {
+      return null;
+    }
+    const content = await this.store.showFile(revision, entry.path);
+    if (Buffer.byteLength(content, "utf8") > this.maxObjectBytes) {
+      throw new Error("SOURCE_CONNECTOR_OBJECT_TOO_LARGE");
+    }
+    return {
+      objectId: entry.path,
+      objectType: "MARKDOWN_FILE",
+      sourceSystem: "git-local",
+      sourceVersion: entry.blob,
+      operation: "UPSERT",
+      path: entry.path,
+      title: path.posix.basename(entry.path),
+      content,
+      contentType: "text/markdown",
+      contentTrust: "UNTRUSTED_EXTERNAL",
+      permissions: {
+        fidelity: "WORKSPACE_WIDE",
+        uncertain: false,
+      },
+      attachments: [],
+      metadata: {
+        gitRevision: revision,
+        gitMode: entry.mode,
+        blob: entry.blob,
+      },
+    };
+  }
+
+  async pullPage(
+    request: SourceConnectorPullRequest,
+  ): Promise<SourceConnectorPullPage> {
+    if (
+      !Number.isSafeInteger(request.limit) ||
+      request.limit < 1 ||
+      request.limit > 500
+    ) {
+      throw new Error("SOURCE_CONNECTOR_PULL_LIMIT_INVALID");
+    }
+    const target = this.assertRevisionCheckpoint(request.target);
+    const from = request.from
+      ? this.assertRevisionCheckpoint(request.from)
+      : null;
+    let offset = 0;
+    if (request.pageCursor) {
+      const cursor = decodeGitConnectorCursor(request.pageCursor);
+      if (cursor.target !== target || cursor.from !== from) {
+        throw new Error("SOURCE_CONNECTOR_CURSOR_SCOPE_MISMATCH");
+      }
+      offset = cursor.offset;
+    }
+
+    const targetEntries = new Map(
+      (await this.store.listTreeEntries(target)).map((entry) => [
+        entry.path,
+        entry,
+      ]),
+    );
+    const fromEntries = from
+      ? new Map(
+          (await this.store.listTreeEntries(from)).map((entry) => [
+            entry.path,
+            entry,
+          ]),
+        )
+      : new Map<string, { path: string; blob: string; mode: string }>();
+
+    const changedPaths = [
+      ...new Set([...targetEntries.keys(), ...fromEntries.keys()]),
+    ]
+      .filter((relativePath) => {
+        const current = targetEntries.get(relativePath);
+        const previous = fromEntries.get(relativePath);
+        if (!this.includedPath(relativePath)) return false;
+        return (
+          current?.blob !== previous?.blob || current?.mode !== previous?.mode
+        );
+      })
+      .sort();
+
+    const pagePaths = changedPaths.slice(offset, offset + request.limit);
+    const objects: SourceConnectorObject[] = [];
+    for (const relativePath of pagePaths) {
+      const current = targetEntries.get(relativePath);
+      if (!current || !["100644", "100755"].includes(current.mode)) {
+        if (fromEntries.has(relativePath)) {
+          objects.push({
+            objectId: relativePath,
+            objectType: "MARKDOWN_FILE",
+            sourceSystem: "git-local",
+            sourceVersion: target,
+            operation: "DELETE",
+            path: relativePath,
+            contentTrust: "UNTRUSTED_EXTERNAL",
+            permissions: {
+              fidelity: "WORKSPACE_WIDE",
+              uncertain: false,
+            },
+            attachments: [],
+            metadata: {
+              gitRevision: target,
+              tombstone: true,
+            },
+          });
+        }
+        continue;
+      }
+      const object = await this.objectAt(target, current);
+      if (object) objects.push(object);
+    }
+
+    const nextOffset = offset + pagePaths.length;
+    const completed = nextOffset >= changedPaths.length;
+    return {
+      objects,
+      target: request.target,
+      nextPageCursor: completed
+        ? null
+        : encodeGitConnectorCursor({ from, target, offset: nextOffset }),
+      completed,
+    };
+  }
+
+  async *pull(
+    input: SourceConnectorPullInput,
+  ): AsyncIterable<SourceConnectorObject> {
+    const limit = input.pageSize ?? 100;
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500) {
+      throw new Error("SOURCE_CONNECTOR_PULL_LIMIT_INVALID");
+    }
+    let pageCursor: string | undefined;
+    do {
+      const page = await this.pullPage({
+        ...(input.from ? { from: input.from } : {}),
+        target: input.target,
+        ...(pageCursor ? { pageCursor } : {}),
+        limit,
+      });
+      for (const object of page.objects) {
+        yield object;
+      }
+      pageCursor = page.nextPageCursor ?? undefined;
+    } while (pageCursor);
+  }
+
+  async fetchById(
+    input: SourceConnectorFetchInput,
+  ): Promise<SourceConnectorObject | null>;
+  async fetchById(
+    objectId: string,
+    checkpoint?: SourceConnectorCheckpoint,
+  ): Promise<SourceConnectorObject | null>;
+  async fetchById(
+    inputOrObjectId: SourceConnectorFetchInput | string,
+    checkpoint?: SourceConnectorCheckpoint,
+  ): Promise<SourceConnectorObject | null> {
+    const objectId =
+      typeof inputOrObjectId === "string"
+        ? inputOrObjectId
+        : inputOrObjectId.objectId;
+    const resolvedCheckpoint =
+      typeof inputOrObjectId === "string"
+        ? checkpoint
+        : inputOrObjectId.checkpoint;
+    const scope =
+      typeof inputOrObjectId === "string" ? {} : inputOrObjectId.scope;
+    const revision = resolvedCheckpoint
+      ? this.assertRevisionCheckpoint(resolvedCheckpoint)
+      : (await this.checkpoint(scope)).value;
+    const entry = (await this.store.listTreeEntries(revision)).find(
+      (candidate) => candidate.path === objectId,
+    );
+    if (!entry) return null;
+    return this.objectAt(revision, entry);
   }
 }

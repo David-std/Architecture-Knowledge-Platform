@@ -4,6 +4,7 @@ import type {
   CompactContextSection as ContractCompactContextSection,
   ContextPacket,
   ContextPacketBudget as ContractContextPacketBudget,
+  ContextDisclosureLevel,
   GraphPathProvenance,
   SearchHit,
   SearchRequest,
@@ -26,11 +27,15 @@ export type PacketCandidateKind =
  * fallback. Either spelling is accepted to ease adapters around common
  * tokenizer libraries.
  */
+export type TokenizerQuality = "EXACT" | "APPROXIMATE";
+
 export interface Tokenizer {
   count?: (text: string) => number;
   countTokens?: (text: string) => number;
   id?: string;
   label?: string;
+  quality?: TokenizerQuality;
+  /** Deprecated compatibility mirror of quality. */
   approximate?: boolean;
 }
 
@@ -39,6 +44,7 @@ export type ContextPacketMode = "FULL_CONTEXT_PACKET" | "COMPACT_AGENT_PACKET";
 export interface TokenizerMetadata {
   id: string;
   label: string;
+  quality: TokenizerQuality;
   approximate: boolean;
   source: "injected" | "fallback";
 }
@@ -60,7 +66,21 @@ export type ContextContinuationSink = (
 export interface PacketCandidate {
   hit: SearchHit;
   content: string;
+  /** Authorized full approved page/body used only when L3 is requested. */
+  fullContent?: string;
   kind: PacketCandidateKind;
+  /**
+   * Mandatory policy/rule material is selected ahead of ordinary relevance
+   * candidates. This flag never bypasses authorization, truth or evidence
+   * requirements: callers may only set it on already-valid candidates.
+   */
+  mandatory?: boolean;
+}
+
+export interface MaterialConflictRequirement {
+  id: string;
+  /** All known authorized document identities that form the material conflict. */
+  documentIds: string[];
 }
 
 export interface BuildContextPacketInput {
@@ -68,9 +88,12 @@ export interface BuildContextPacketInput {
   intent: string;
   corpusRevision: string;
   maxTokens: number;
+  requestedContextLevel?: ContextDisclosureLevel;
   candidates: PacketCandidate[];
   gaps?: string[];
   conflicts?: string[];
+  /** Material unresolved conflicts whose accessible sides should travel together. */
+  materialConflicts?: MaterialConflictRequirement[];
   indexRevisions?: Record<string, string | null>;
   retrievalConfiguration?: Record<string, unknown>;
   /** Keep a dossier from flooding a bounded packet with repeated units. */
@@ -103,6 +126,7 @@ export interface CompactPacketIdentity {
   corpusRevision: string;
   status: ContextPacket["status"];
   mode: SearchRequest["mode"];
+  requestedContextLevel: ContextDisclosureLevel;
   scope: ContextPacket["scope"];
   indexRevisions: Record<string, string | null>;
 }
@@ -155,6 +179,7 @@ const roughTokens = (text: string): number => Math.ceil(text.length / 4);
 export const CHAR_4_FALLBACK_TOKENIZER: Tokenizer = Object.freeze({
   id: "char/4",
   label: "char/4 fallback (approximate)",
+  quality: "APPROXIMATE",
   approximate: true,
   count: roughTokens,
 });
@@ -169,6 +194,7 @@ function normalizeTokenizer(input?: Tokenizer): {
       metadata: {
         id: "char/4",
         label: "char/4 fallback (approximate)",
+        quality: "APPROXIMATE",
         approximate: true,
         source: "fallback",
       },
@@ -180,6 +206,18 @@ function normalizeTokenizer(input?: Tokenizer): {
     throw new TypeError(
       "Tokenizer must expose count(text) or countTokens(text)",
     );
+  }
+
+  const quality: TokenizerQuality =
+    input.quality ?? (input.approximate === true ? "APPROXIMATE" : "EXACT");
+  const approximate = quality === "APPROXIMATE";
+  if (input.approximate !== undefined && input.approximate !== approximate) {
+    throw new TypeError(
+      "TOKENIZER_QUALITY_INVALID:CONFLICTING_APPROXIMATE_METADATA",
+    );
+  }
+  if (input.id === "char/4" && quality === "EXACT") {
+    throw new TypeError("TOKENIZER_QUALITY_INVALID:CHAR_4_CANNOT_BE_EXACT");
   }
 
   return {
@@ -196,9 +234,21 @@ function normalizeTokenizer(input?: Tokenizer): {
     metadata: {
       id: input.id ?? "injected",
       label: input.label ?? "injected tokenizer",
-      approximate: input.approximate ?? false,
+      quality,
+      approximate,
       source: "injected",
     },
+  };
+}
+
+export function measureTokens(
+  text: string,
+  tokenizer?: Tokenizer,
+): { tokens: number; metadata: TokenizerMetadata } {
+  const normalized = normalizeTokenizer(tokenizer);
+  return {
+    tokens: normalized.count(text),
+    metadata: normalized.metadata,
   };
 }
 
@@ -292,10 +342,36 @@ function hasEvidence(candidate: PacketCandidate): boolean {
   return candidate.hit.citations.length > 0;
 }
 
+const authorityRank: Record<SearchHit["trust"], number> = {
+  ATTESTED: 0,
+  HUMAN_REVIEWED: 1,
+  MACHINE_SUPPORTED: 2,
+  UNVERIFIED: 3,
+};
+
+function freshnessRank(refreshStatus: string): number {
+  switch (refreshStatus) {
+    case "CURRENT":
+      return 0;
+    case "STALE_PENDING_REVIEW":
+      return 1;
+    default:
+      return 2;
+  }
+}
+
+function independentSupportCount(candidate: PacketCandidate): number {
+  return new Set(candidate.hit.citations).size;
+}
+
 function compareCandidates(a: PacketCandidate, b: PacketCandidate): number {
   return (
+    Number(Boolean(b.mandatory)) - Number(Boolean(a.mandatory)) ||
     priority[a.kind] - priority[b.kind] ||
+    authorityRank[a.hit.trust] - authorityRank[b.hit.trust] ||
+    freshnessRank(a.hit.refreshStatus) - freshnessRank(b.hit.refreshStatus) ||
     Number(hasEvidence(b)) - Number(hasEvidence(a)) ||
+    independentSupportCount(b) - independentSupportCount(a) ||
     b.hit.score - a.hit.score ||
     a.hit.documentId.localeCompare(b.hit.documentId) ||
     (a.hit.unitId ?? "").localeCompare(b.hit.unitId ?? "") ||
@@ -304,10 +380,53 @@ function compareCandidates(a: PacketCandidate, b: PacketCandidate): number {
   );
 }
 
+function oneLineOrientation(value: string, limit = 320): string {
+  const normalized = value.replace(/\s+/gu, " ").trim();
+  if (normalized.length <= limit) return normalized;
+  const boundary = normalized.lastIndexOf(" ", limit - 1);
+  const end = boundary >= Math.floor(limit * 0.6) ? boundary : limit - 1;
+  return `${normalized.slice(0, end).trimEnd()}…`;
+}
+
+function catalogContent(candidate: PacketCandidate): string {
+  const hit = candidate.hit;
+  return [
+    `id=${hit.document.externalId ?? hit.documentId}`,
+    `title=${hit.title}`,
+    `type=${hit.type}`,
+    `lifecycle=${hit.lifecycle}`,
+    `refresh=${hit.refreshStatus}`,
+    `revision=${hit.revision}`,
+  ].join("; ");
+}
+
+function disclosedContent(
+  candidate: PacketCandidate,
+  requested: ContextDisclosureLevel,
+): { content: string; actual: ContextDisclosureLevel } {
+  if (requested === "L0") {
+    return { content: catalogContent(candidate), actual: "L0" };
+  }
+  if (requested === "L1") {
+    const summary = oneLineOrientation(candidate.content);
+    return {
+      content: summary || catalogContent(candidate),
+      actual: "L1",
+    };
+  }
+  if (requested === "L3") {
+    const full = candidate.fullContent?.trim();
+    if (full) return { content: full, actual: "L3" };
+  }
+  return { content: candidate.content, actual: "L2" };
+}
+
 export function contextSectionFromCandidate(
   candidate: PacketCandidate,
+  requestedContextLevel: ContextDisclosureLevel = "L2",
 ): BaseContextSection {
   const hit = candidate.hit;
+  const disclosure = disclosedContent(candidate, requestedContextLevel);
   const retrievalChannels = [
     ...new Set(
       hit.fusionContributions?.map((contribution) => contribution.channel) ??
@@ -316,8 +435,9 @@ export function contextSectionFromCandidate(
   ];
   return {
     kind: candidate.kind,
+    contextLevel: disclosure.actual,
     title: hit.title,
-    content: candidate.content,
+    content: disclosure.content,
     documentId: hit.documentId,
     vaultId: hit.vaultId,
     document: hit.document,
@@ -334,6 +454,9 @@ export function contextSectionFromCandidate(
     ...(hit.graphProvenance !== undefined
       ? { graphProvenance: hit.graphProvenance }
       : {}),
+    ...(hit.retrievalTrace !== undefined
+      ? { retrievalTrace: hit.retrievalTrace }
+      : {}),
   };
 }
 
@@ -344,9 +467,54 @@ function metadataForSection(
   return metadata;
 }
 
-function compactSection(section: BaseContextSection): CompactPacketSection {
+function compactRetrievalTrace(
+  trace: NonNullable<BaseContextSection["retrievalTrace"]>,
+  options?: {
+    documentRevision?: string;
+    omitDuplicateCandidateRevision?: boolean;
+  },
+): NonNullable<CompactPacketSection["retrievalTrace"]> {
+  return {
+    ...trace,
+    contributions: trace.contributions.map((contribution) => ({
+      channel: contribution.channel,
+      rank: contribution.rank,
+      channelWeight: contribution.channelWeight,
+      reason: contribution.reason,
+      ...(contribution.rawScore === undefined
+        ? {}
+        : { rawScore: contribution.rawScore }),
+      ...(contribution.candidateRevision === undefined ||
+      (options?.omitDuplicateCandidateRevision === true &&
+        contribution.candidateRevision === options.documentRevision)
+        ? {}
+        : { candidateRevision: contribution.candidateRevision }),
+      ...(contribution.generation
+        ? {
+            generation: {
+              kind: contribution.generation.kind,
+              id: contribution.generation.id,
+            },
+          }
+        : {}),
+      ...(contribution.queryTransform
+        ? { queryTransform: contribution.queryTransform }
+        : {}),
+      ...(contribution.supportSetId
+        ? { supportSetId: contribution.supportSetId }
+        : {}),
+    })),
+  };
+}
+
+function compactSection(
+  section: BaseContextSection,
+  options?: { tight?: boolean },
+): CompactPacketSection {
+  const tight = options?.tight === true;
   return {
     kind: section.kind,
+    contextLevel: section.contextLevel,
     identity: {
       documentId: section.documentId,
       vaultId: section.vaultId,
@@ -354,22 +522,37 @@ function compactSection(section: BaseContextSection): CompactPacketSection {
       revision: section.documentRevision,
       document: section.document,
       ...(section.unitId ? { unitId: section.unitId } : {}),
-      ...(section.parentUnitId ? { parentUnitId: section.parentUnitId } : {}),
+      ...(!tight && section.parentUnitId
+        ? { parentUnitId: section.parentUnitId }
+        : {}),
       ...(section.unitType ? { unitType: section.unitType } : {}),
-      ...(section.parentUnitType
+      ...(!tight && section.parentUnitType
         ? { parentUnitType: section.parentUnitType }
         : {}),
-      ...(section.headingPath ? { headingPath: section.headingPath } : {}),
+      ...(!tight && section.headingPath
+        ? { headingPath: section.headingPath }
+        : {}),
     },
     content: section.content,
-    references: section.sourceOrEvidenceIds,
-    citations: section.sourceOrEvidenceIds,
+    // A tight projection keeps the complete evidence set once at packet level.
+    // The original section, including its per-section locators, remains
+    // retrievable through the continuation rather than displacing evidence.
+    references: tight ? [] : section.sourceOrEvidenceIds,
+    citations: tight ? [] : section.sourceOrEvidenceIds,
     retrievalChannels: section.retrievalChannels ?? [],
     selectionReason: section.selectionReason,
-    ...(section.score === undefined ? {} : { score: section.score }),
-    ...(section.graphProvenance === undefined
+    ...(!tight && section.score !== undefined ? { score: section.score } : {}),
+    ...(!tight && section.graphProvenance !== undefined
+      ? { graphProvenance: section.graphProvenance }
+      : {}),
+    ...(section.retrievalTrace === undefined
       ? {}
-      : { graphProvenance: section.graphProvenance }),
+      : {
+          retrievalTrace: compactRetrievalTrace(section.retrievalTrace, {
+            documentRevision: section.documentRevision,
+            omitDuplicateCandidateRevision: tight,
+          }),
+        }),
   };
 }
 
@@ -451,6 +634,7 @@ function defaultMaxSections(_intent: string): number {
 function continuationForCandidates(
   packetContentKey: string,
   candidates: PacketCandidate[],
+  requestedContextLevel: ContextDisclosureLevel,
   count: (text: string) => number,
   reason: string,
 ): ContextPacket["continuations"][number] {
@@ -466,7 +650,11 @@ function continuationForCandidates(
       .digest("hex"),
     reason,
     remainingTokens: candidates.reduce(
-      (sum, candidate) => sum + count(candidate.content),
+      (sum, candidate) =>
+        sum +
+        count(
+          contextSectionFromCandidate(candidate, requestedContextLevel).content,
+        ),
       0,
     ),
   };
@@ -615,6 +803,7 @@ export function buildContextPacket(
     (typeof retrievalConfiguration.indexStatus === "string" &&
       retrievalConfiguration.indexStatus !== "CONSISTENT");
   const maxTokens = requestedMaxTokens(input.maxTokens);
+  const requestedContextLevel = input.requestedContextLevel ?? "L2";
   const requiresEvidence = input.intent.toUpperCase() === "SOURCE_VERIFICATION";
   const maxSectionsPerDocument = Number.isFinite(input.maxSectionsPerDocument)
     ? Math.max(1, Math.trunc(input.maxSectionsPerDocument ?? 1))
@@ -638,14 +827,72 @@ export function buildContextPacket(
     packetGaps.push("No source or evidence citation matched the request.");
   }
 
-  const orderedCandidates = diverseCandidateOrder(
-    packetCandidates,
-    maxSectionsPerDocument,
+  const candidateByDocument = new Map<string, PacketCandidate[]>();
+  for (const candidate of packetCandidates) {
+    const group = candidateByDocument.get(candidate.hit.documentId) ?? [];
+    group.push(candidate);
+    candidateByDocument.set(candidate.hit.documentId, group);
+  }
+  for (const group of candidateByDocument.values()) {
+    group.sort(compareCandidates);
+  }
+
+  const materialConflicts = (input.materialConflicts ?? []).map((conflict) => ({
+    id: conflict.id,
+    documentIds: [...new Set(conflict.documentIds.filter(Boolean))],
+  }));
+  const requiredDocumentIds = new Set(
+    materialConflicts.flatMap((conflict) => conflict.documentIds),
   );
+  for (const conflict of materialConflicts) {
+    const accessible = conflict.documentIds.filter((documentId) =>
+      candidateByDocument.has(documentId),
+    );
+    if (accessible.length < conflict.documentIds.length) {
+      packetGaps.push(
+        `Material conflict ${conflict.id} has ${conflict.documentIds.length - accessible.length} unavailable side(s); complete conflict coverage was not possible.`,
+      );
+    }
+  }
+
+  const requiredCandidates = [
+    ...packetCandidates.filter((candidate) => candidate.mandatory),
+    ...[...requiredDocumentIds]
+      .map((documentId) => candidateByDocument.get(documentId)?.[0])
+      .filter((candidate): candidate is PacketCandidate => Boolean(candidate)),
+  ]
+    .sort(compareCandidates)
+    .filter(
+      (candidate, index, all) =>
+        all.findIndex(
+          (item) => candidateKey(item) === candidateKey(candidate),
+        ) === index,
+    );
+  const requiredKeys = new Set(requiredCandidates.map(candidateKey));
+  const ordinaryCandidates = packetCandidates.filter(
+    (candidate) => !requiredKeys.has(candidateKey(candidate)),
+  );
+  const orderedCandidates = [
+    ...requiredCandidates,
+    ...diverseCandidateOrder(ordinaryCandidates, maxSectionsPerDocument),
+  ];
   const orderedKeys = new Set(orderedCandidates.map(candidateKey));
   const omitted: PacketCandidate[] = packetCandidates.filter(
     (candidate) => !orderedKeys.has(candidateKey(candidate)),
   );
+  const noteRequiredOmissions = (): void => {
+    const omittedRequired = omitted.filter((candidate) =>
+      requiredKeys.has(candidateKey(candidate)),
+    );
+    if (
+      omittedRequired.length > 0 &&
+      !packetGaps.some((gap) => gap.startsWith("Mandatory context omitted:"))
+    ) {
+      packetGaps.push(
+        `Mandatory context omitted: ${omittedRequired.length} required section(s) could not be included under the active evidence or token-budget policy.`,
+      );
+    }
+  };
   const seenCandidates = new Set<string>();
   const sectionsByDocument = new Map<string, number>();
   const selected: Array<{
@@ -688,6 +935,7 @@ export function buildContextPacket(
         packetMode: "FULL_CONTEXT_PACKET",
         indexRevisions,
         retrievalConfiguration,
+        requestedContextLevel,
         searchedChannels,
         scope,
         generatedAt,
@@ -731,10 +979,12 @@ export function buildContextPacket(
                     corpusRevision: input.corpusRevision,
                     indexRevisions,
                     retrievalConfiguration,
+                    requestedContextLevel,
                   }),
                 )
                 .digest("hex"),
               omittedCandidates,
+              requestedContextLevel,
               count,
               `${omittedCandidates.length} lower-priority sections exceeded the token budget or document diversity cap.`,
             ),
@@ -753,6 +1003,7 @@ export function buildContextPacket(
       generatedAt,
       budget: provisionalBudget,
       mode: input.request.mode,
+      requestedContextLevel,
       searchedChannels,
       sections: candidateSections,
       citations: candidateCitations,
@@ -770,6 +1021,7 @@ export function buildContextPacket(
           corpusRevision: input.corpusRevision,
           indexRevisions,
           retrievalConfiguration,
+          requestedContextLevel,
           searchedChannels,
           sections: candidateSections,
           citations: candidateCitations,
@@ -812,7 +1064,10 @@ export function buildContextPacket(
       omitted.push(candidate);
       continue;
     }
-    const section = contextSectionFromCandidate(candidate);
+    const section = contextSectionFromCandidate(
+      candidate,
+      requestedContextLevel,
+    );
     const tentative = baseEnvelope(
       [...selected.map((entry) => entry.section), section],
       omitted,
@@ -842,6 +1097,7 @@ export function buildContextPacket(
     }
   };
   ensureNoAnswerGap();
+  noteRequiredOmissions();
 
   // Continuation metadata can grow after later candidates are omitted. Trim
   // the lowest-priority selected sections until the complete final wire fits.
@@ -865,7 +1121,9 @@ export function buildContextPacket(
         input.continuationSink?.({
           packetId: full.packetId,
           continuation,
-          sections: omitted.map(contextSectionFromCandidate),
+          sections: omitted.map((candidate) =>
+            contextSectionFromCandidate(candidate, requestedContextLevel),
+          ),
         });
       }
       return full;
@@ -880,6 +1138,7 @@ export function buildContextPacket(
       if (!removed) throw error;
       omitted.push(removed.candidate);
       ensureNoAnswerGap();
+      noteRequiredOmissions();
       final = baseEnvelope(
         selected.map((entry) => entry.section),
         omitted,
@@ -893,6 +1152,55 @@ export function buildContextPacket(
  * repeated against the compact wire envelope, so the projection has its own
  * hard budget and never reports a larger effective limit.
  */
+function compactProjectionOrder(
+  packet: BuiltContextPacket | ContextPacket,
+  sections: BaseContextSection[],
+): BaseContextSection[] {
+  if (packet.conflicts.length > 0) return sections;
+
+  const query = packet.query.trim().toLowerCase();
+  if (!query) return sections;
+
+  return sections
+    .map((section, index) => ({ section, index }))
+    .sort((left, right) => {
+      const leftRule = left.section.kind === "rule";
+      const rightRule = right.section.kind === "rule";
+      if (leftRule !== rightRule) return Number(rightRule) - Number(leftRule);
+
+      const leftDirect = left.section.content.toLowerCase().includes(query);
+      const rightDirect = right.section.content.toLowerCase().includes(query);
+      if (leftDirect !== rightDirect) {
+        return Number(rightDirect) - Number(leftDirect);
+      }
+
+      return left.index - right.index;
+    })
+    .map(({ section }) => section);
+}
+
+function focusedQuerySection(
+  section: BaseContextSection,
+  query: string,
+  maxChars: number,
+): BaseContextSection | undefined {
+  const needle = query.trim();
+  if (!needle || maxChars < needle.length) return undefined;
+
+  const match = section.content.toLowerCase().indexOf(needle.toLowerCase());
+  if (match < 0) return undefined;
+
+  const surroundingChars = maxChars - needle.length;
+  let start = Math.max(0, match - Math.floor(surroundingChars / 2));
+  let end = Math.min(section.content.length, start + maxChars);
+  start = Math.max(0, end - maxChars);
+
+  const content = section.content.slice(start, end);
+  return content.toLowerCase().includes(needle.toLowerCase())
+    ? { ...section, content }
+    : undefined;
+}
+
 export function projectContextPacket(
   packet: BuiltContextPacket | ContextPacket,
   options?: {
@@ -905,7 +1213,10 @@ export function projectContextPacket(
   const maxTokens = Number.isFinite(options?.maxTokens)
     ? requestedMaxTokens(options?.maxTokens ?? 1)
     : packet.budget.maxTokens;
-  const fullSections = packet.sections as BaseContextSection[];
+  const fullSections = compactProjectionOrder(
+    packet,
+    packet.sections as BaseContextSection[],
+  );
   const references = [...new Set(packet.citations)].sort();
   const indexRevisions = packet.indexRevisions;
   const searchedChannels = [...new Set(packet.searchedChannels)];
@@ -915,9 +1226,11 @@ export function projectContextPacket(
       : [];
   const omitted: BaseContextSection[] = [];
   const selected: BaseContextSection[] = [];
+  const tightSections = new Set<BaseContextSection>();
   const compactEnvelope = (
     sections: BaseContextSection[],
     omittedSections: BaseContextSection[],
+    tentativeTightSection?: BaseContextSection,
   ) => {
     const extraContinuation =
       omittedSections.length === 0
@@ -930,7 +1243,12 @@ export function projectContextPacket(
       (continuation, index, all) =>
         all.findIndex((item) => item.handle === continuation.handle) === index,
     );
-    const content = sections.map(compactSection);
+    const isTightSection = (section: BaseContextSection) =>
+      tightSections.has(section) || section === tentativeTightSection;
+    const tightEnvelope = sections.some(isTightSection);
+    const content = sections.map((section) =>
+      compactSection(section, { tight: isTightSection(section) }),
+    );
     const compactBase = {
       packetMode: "COMPACT_AGENT_PACKET" as const,
       identity: {
@@ -940,11 +1258,15 @@ export function projectContextPacket(
         corpusRevision: packet.corpusRevision,
         status: packet.status,
         mode: packet.mode,
+        requestedContextLevel: packet.requestedContextLevel,
         scope: packet.scope,
         indexRevisions,
       },
       content,
-      references,
+      // citations is the canonical compact evidence list. Under tight budget,
+      // omit the duplicate references alias; the full packet/continuation
+      // retains every original per-section locator.
+      references: tightEnvelope ? [] : references,
       citations: references,
       searchedChannels,
       conflicts: packet.conflicts,
@@ -976,6 +1298,60 @@ export function projectContextPacket(
     return { compactBase, provisionalBudget };
   };
 
+  const projectedSections = new Set<BaseContextSection>();
+  const focusedProjectionThatFits = (
+    section: BaseContextSection,
+  ): { section: BaseContextSection; tight: boolean } | undefined => {
+    const needle = packet.query.trim();
+    if (
+      !needle ||
+      !section.content.toLowerCase().includes(needle.toLowerCase())
+    ) {
+      return undefined;
+    }
+
+    const omittedWithOriginal = [...omitted, section];
+    const findProjection = (tight: boolean) => {
+      let low = needle.length;
+      let high = Math.max(needle.length, section.content.length - 1);
+      let best: BaseContextSection | undefined;
+
+      while (low <= high) {
+        const maxChars = Math.floor((low + high) / 2);
+        const projected = focusedQuerySection(section, needle, maxChars);
+        if (!projected) {
+          high = maxChars - 1;
+          continue;
+        }
+        const tentative = compactEnvelope(
+          [...selected, projected],
+          omittedWithOriginal,
+          tight ? projected : undefined,
+        );
+        try {
+          ensureBudgetFits(
+            tentative.compactBase,
+            tentative.provisionalBudget,
+            count,
+          );
+          best = projected;
+          low = maxChars + 1;
+        } catch (error) {
+          if (!(error instanceof ContextPacketBudgetError)) throw error;
+          high = maxChars - 1;
+        }
+      }
+
+      return best;
+    };
+
+    const regular = findProjection(false);
+    if (regular) return { section: regular, tight: false };
+
+    const tight = findProjection(true);
+    return tight ? { section: tight, tight: true } : undefined;
+  };
+
   // Validate the compact envelope before attempting content selection.
   const empty = compactEnvelope([], []);
   ensureBudgetFits(empty.compactBase, empty.provisionalBudget, count);
@@ -990,7 +1366,15 @@ export function projectContextPacket(
       selected.push(section);
     } catch (error) {
       if (error instanceof ContextPacketBudgetError) {
-        omitted.push(section);
+        const focused = focusedProjectionThatFits(section);
+        if (focused) {
+          selected.push(focused.section);
+          omitted.push(section);
+          projectedSections.add(focused.section);
+          if (focused.tight) tightSections.add(focused.section);
+        } else {
+          omitted.push(section);
+        }
         continue;
       }
       throw error;
@@ -1025,7 +1409,11 @@ export function projectContextPacket(
       ) {
         throw error;
       }
-      omitted.push(selected.pop() as BaseContextSection);
+      const removed = selected.pop() as BaseContextSection;
+      tightSections.delete(removed);
+      if (!projectedSections.delete(removed)) {
+        omitted.push(removed);
+      }
       final = compactEnvelope(selected, omitted);
     }
   }

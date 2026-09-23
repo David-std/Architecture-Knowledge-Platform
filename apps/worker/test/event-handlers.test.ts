@@ -99,6 +99,102 @@ describe("index event consumers", () => {
     ).toBe(true);
   });
 
+  it("schedules INDEX_CHANGE only when every required projection is at corpus parity", async () => {
+    const calls: Array<{ sql: string; args?: unknown[] }> = [];
+    let parity = false;
+    const query = vi.fn(async (sql: string, args?: unknown[]) => {
+      calls.push({ sql, args });
+      if (sql.includes("select corpus_revision from vault_index_revisions")) {
+        return { rows: [{ corpus_revision: "composite:r42" }], rowCount: 1 };
+      }
+      if (/select lexical_revision,vector_revision,graph_revision/i.test(sql)) {
+        return {
+          rows: [
+            {
+              lexical_revision: "composite:r42",
+              vector_revision: null,
+              graph_revision: parity ? "composite:r42" : "older",
+              context_pack_revision: "composite:r42",
+            },
+          ],
+          rowCount: 1,
+        };
+      }
+      if (/insert into assurance_runs/i.test(sql)) {
+        return {
+          rows: [
+            {
+              id: "00000000-0000-0000-0000-000000000086",
+              space_id: "00000000-0000-0000-0000-000000000044",
+              vault_id: "00000000-0000-0000-0000-000000000045",
+              trigger: "INDEX_CHANGE",
+              detectors: [
+                "GRAPH_HEALTH",
+                "CODE_GRAPH_FRESHNESS",
+                "ACCESS_BOUNDARY",
+                "GRAPH_DISAGREEMENT",
+              ],
+              status: "PENDING",
+              idempotency_key:
+                "index-change:00000000-0000-0000-0000-000000000045:composite:r42",
+              cursor: { detectorIndex: 0 },
+              attempts: 0,
+              max_attempts: 5,
+              lease_owner: null,
+              lease_token: 0,
+              lease_expires_at: null,
+              cancel_requested_at: null,
+              next_attempt_at: "2026-09-19T18:00:00.000Z",
+              created_at: "2026-09-19T18:00:00.000Z",
+              updated_at: "2026-09-19T18:00:00.000Z",
+            },
+          ],
+          rowCount: 1,
+        };
+      }
+      return { rows: [], rowCount: 1 };
+    });
+    const db = { pool: { query } } as unknown as Postgres;
+    const handlers = createIndexEventHandlers(db, {} as never);
+    const context = handlers.ContextPackInvalidationRequested;
+    if (!context) throw new Error("context handler missing");
+
+    const previous = process.env.AKP_VECTOR_ENABLED;
+    delete process.env.AKP_VECTOR_ENABLED;
+    try {
+      await context(event("ContextPackInvalidationRequested"));
+      expect(
+        calls.filter((call) => /insert into assurance_runs/i.test(call.sql)),
+      ).toHaveLength(0);
+
+      parity = true;
+      await context(event("ContextPackInvalidationRequested"));
+    } finally {
+      if (previous === undefined) delete process.env.AKP_VECTOR_ENABLED;
+      else process.env.AKP_VECTOR_ENABLED = previous;
+    }
+
+    const inserted = calls.filter((call) =>
+      /insert into assurance_runs/i.test(call.sql),
+    );
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0]?.args).toEqual([
+      "00000000-0000-0000-0000-000000000044",
+      "00000000-0000-0000-0000-000000000045",
+      "INDEX_CHANGE",
+      [
+        "GRAPH_HEALTH",
+        "CODE_GRAPH_FRESHNESS",
+        "ACCESS_BOUNDARY",
+        "GRAPH_DISAGREEMENT",
+      ],
+      "index-change:00000000-0000-0000-0000-000000000045:composite:r42",
+      null,
+      null,
+      5,
+    ]);
+  });
+
   it("does not claim vector freshness while vector indexing is disabled", async () => {
     const { db, calls } = fakeDb();
     const handlers = createIndexEventHandlers(db, {} as never);

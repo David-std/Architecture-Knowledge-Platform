@@ -1,8 +1,13 @@
 import type { FastifyInstance } from "fastify";
 import { getOpenTelemetryStatus } from "@akp/observability";
-import { resolveAuthorizedVaultScope, type Postgres } from "@akp/postgres";
+import {
+  resolveAuthorizedVaultScope,
+  revokeAgentProcessPrincipalInVaultScope,
+  type Postgres,
+} from "@akp/postgres";
 import {
   actorOf,
+  audit,
   requirePermission,
   unrestrictedSpaceIdsForPermission,
   type Actor,
@@ -16,6 +21,7 @@ const SENSITIVE_OPERATIONAL_KEY =
 
 function sanitizeOperationalValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sanitizeOperationalValue);
+  if (value instanceof Date) return value.toISOString();
   if (typeof value === "string") {
     return value.replaceAll(ABSOLUTE_OPERATIONAL_PATH, "[REDACTED_PATH]");
   }
@@ -30,6 +36,38 @@ function sanitizeOperationalValue(value: unknown): unknown {
 interface OperatorScope {
   spaces: string[];
   vaultIds: string[];
+}
+
+interface TeamCredentialScope {
+  spaceId: string;
+  pathPrefix: string | null;
+  permissions: string[];
+}
+
+const OPERATOR_UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function teamCredentialScopes(value: unknown): TeamCredentialScope[] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+  const spaces = (value as Record<string, unknown>).spaces;
+  if (!Array.isArray(spaces)) return [];
+  return spaces.flatMap((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+    const record = entry as Record<string, unknown>;
+    if (typeof record.spaceId !== "string") return [];
+    const pathPrefix =
+      record.pathPrefix === null
+        ? null
+        : typeof record.pathPrefix === "string"
+          ? record.pathPrefix
+          : null;
+    const permissions = Array.isArray(record.permissions)
+      ? record.permissions.filter(
+          (permission): permission is string => typeof permission === "string",
+        )
+      : [];
+    return [{ spaceId: record.spaceId, pathPrefix, permissions }];
+  });
 }
 
 async function operatorScope(
@@ -120,7 +158,485 @@ export function registerOperatorRoutes(
     },
   );
 
-  app.get<{ Querystring: { limit?: string; vaultId?: string } }>(
+  app.get(
+    "/v1/operator/team",
+    { preHandler: requirePermission("admin") },
+    async (request, reply) => {
+      const scope = await operatorScope(db, actorOf(request), "admin");
+      if (!scope.spaces.length) {
+        return reply.code(403).send({ code: "SPACE_SCOPE_DENIED" });
+      }
+      const [spaces, vaults, memberships, principals, apiTokens, credentials] =
+        await Promise.all([
+          db.pool.query(
+            `select id,organization_id,slug,name,visibility,model_residency,
+                    created_at
+               from spaces
+              where id=any($1::uuid[])
+              order by name,id`,
+            [scope.spaces],
+          ),
+          db.pool.query(
+            `select id,space_id,vault_key,name,visibility,enabled,
+                    current_revision,created_at
+               from vaults
+              where id=any($1::uuid[])
+              order by name,id`,
+            [scope.vaultIds],
+          ),
+          db.pool.query(
+            `select m.id,m.user_id,m.space_id,m.role,m.path_prefix,
+                    u.email,u.display_name
+               from memberships m
+               join users u on u.id=m.user_id
+              where m.space_id=any($1::uuid[])
+              order by u.display_name,m.space_id,m.role,m.path_prefix nulls first`,
+            [scope.spaces],
+          ),
+          db.pool.query(
+            `select distinct p.id,p.kind,p.user_id,p.parent_principal_id,
+                    p.session_id,p.vault_id,p.display_name,p.allowed_actions,
+                    p.policy_revision,p.state,p.created_at,p.revoked_at
+               from principals p
+               left join agent_sessions s on s.id=p.session_id
+              where (
+                p.user_id in (
+                  select m.user_id from memberships m
+                   where m.space_id=any($1::uuid[])
+                )
+              ) or p.vault_id=any($2::uuid[])
+                 or (
+                   s.space_id=any($1::uuid[])
+                   and s.vault_id=any($2::uuid[])
+                 )
+              order by p.kind,p.display_name,p.id`,
+            [scope.spaces, scope.vaultIds],
+          ),
+          db.pool.query(
+            `select t.id,t.user_id,t.label,t.scopes,t.expires_at,t.revoked_at,
+                    t.created_at,u.email,u.display_name
+               from api_tokens t
+               join users u on u.id=t.user_id
+              where exists(
+                select 1 from memberships m
+                 where m.user_id=t.user_id
+                   and m.space_id=any($1::uuid[])
+              )
+              order by t.created_at desc,t.id`,
+            [scope.spaces],
+          ),
+          db.pool.query(
+            `select c.id,c.principal_id,c.user_id,c.label,c.scopes,
+                    c.allowed_actions,c.policy_revision,c.expires_at,
+                    c.revoked_at,c.created_at,p.kind principal_kind,
+                    p.vault_id,p.session_id,p.display_name principal_name,
+                    p.state principal_state
+               from principal_credentials c
+               join principals p on p.id=c.principal_id
+              where p.vault_id=any($1::uuid[])
+              order by c.created_at desc,c.id`,
+            [scope.vaultIds],
+          ),
+        ]);
+
+      const authorizedSpaces = new Set(scope.spaces);
+      const apiCredentials = apiTokens.rows.flatMap((row) => {
+        const declared = teamCredentialScopes(row.scopes);
+        const visible = declared.filter((entry) =>
+          authorizedSpaces.has(entry.spaceId),
+        );
+        if (!visible.length) return [];
+        const revocable =
+          declared.length > 0 &&
+          declared.every((entry) => authorizedSpaces.has(entry.spaceId));
+        return [
+          {
+            id: row.id,
+            kind: "API_TOKEN",
+            userId: row.user_id,
+            email: row.email,
+            displayName: row.display_name,
+            label: row.label,
+            scopes: visible,
+            expiresAt: row.expires_at,
+            revokedAt: row.revoked_at,
+            createdAt: row.created_at,
+            revocable,
+            crossScope: !revocable,
+          },
+        ];
+      });
+      const principalCredentials = credentials.rows.map((row) => {
+        const declared = teamCredentialScopes(row.scopes);
+        const visible = declared.filter((entry) =>
+          authorizedSpaces.has(entry.spaceId),
+        );
+        const revocable =
+          row.principal_kind === "AGENT_PROCESS" &&
+          scope.vaultIds.includes(String(row.vault_id)) &&
+          declared.length > 0 &&
+          declared.every((entry) => authorizedSpaces.has(entry.spaceId));
+        return {
+          id: row.id,
+          kind: "PRINCIPAL_CREDENTIAL",
+          principalId: row.principal_id,
+          principalKind: row.principal_kind,
+          principalName: row.principal_name,
+          principalState: row.principal_state,
+          vaultId: row.vault_id,
+          sessionId: row.session_id,
+          label: row.label,
+          scopes: visible,
+          allowedActions: row.allowed_actions,
+          policyRevision: row.policy_revision,
+          expiresAt: row.expires_at,
+          revokedAt: row.revoked_at,
+          createdAt: row.created_at,
+          revocable,
+          crossScope: !revocable,
+        };
+      });
+
+      return sanitizeOperationalValue({
+        generatedAt: new Date().toISOString(),
+        scope,
+        spaces: spaces.rows,
+        vaults: vaults.rows,
+        memberships: memberships.rows,
+        principals: principals.rows,
+        apiCredentials,
+        principalCredentials,
+      });
+    },
+  );
+
+  app.post<{
+    Params: { id: string };
+    Body: { kind?: string };
+  }>(
+    "/v1/operator/team/credentials/:id/revoke",
+    { preHandler: requirePermission("admin") },
+    async (request, reply) => {
+      const credentialId = request.params.id;
+      if (!OPERATOR_UUID_PATTERN.test(credentialId)) {
+        return reply.code(404).send({ code: "CREDENTIAL_NOT_FOUND" });
+      }
+      const kind = request.body?.kind?.trim().toUpperCase();
+      if (!["API_TOKEN", "PRINCIPAL_CREDENTIAL"].includes(kind ?? "")) {
+        return reply.code(400).send({ code: "INVALID_CREDENTIAL_KIND" });
+      }
+      const scope = await operatorScope(db, actorOf(request), "admin");
+      if (!scope.spaces.length) {
+        return reply.code(403).send({ code: "SPACE_SCOPE_DENIED" });
+      }
+      if (kind === "API_TOKEN") {
+        const token = await db.pool.query<{
+          id: string;
+          scopes: unknown;
+          revoked_at: Date | null;
+        }>(
+          `select id,scopes,revoked_at
+             from api_tokens
+            where id=$1`,
+          [credentialId],
+        );
+        const row = token.rows[0];
+        if (!row) return reply.code(404).send({ code: "CREDENTIAL_NOT_FOUND" });
+        const declared = teamCredentialScopes(row.scopes);
+        const declaredSpaceIds = [
+          ...new Set(declared.map((entry) => entry.spaceId)),
+        ];
+        if (
+          !declaredSpaceIds.length ||
+          !declaredSpaceIds.some((spaceId) => scope.spaces.includes(spaceId))
+        ) {
+          return reply.code(404).send({ code: "CREDENTIAL_NOT_FOUND" });
+        }
+        if (
+          declaredSpaceIds.some((spaceId) => !scope.spaces.includes(spaceId))
+        ) {
+          return reply
+            .code(409)
+            .send({ code: "CREDENTIAL_CROSS_SCOPE_REVOKE_DENIED" });
+        }
+        await db.pool.query(
+          `update api_tokens
+              set revoked_at=coalesce(revoked_at,now())
+            where id=$1`,
+          [credentialId],
+        );
+        await audit(
+          db,
+          request,
+          "team.credential.revoke",
+          "api_token",
+          credentialId,
+          { scopeSpaceIds: declaredSpaceIds },
+          declaredSpaceIds[0],
+        );
+        return { id: credentialId, kind, revoked: true };
+      }
+
+      const credential = await db.pool.query<{
+        principal_id: string;
+        vault_id: string;
+        space_id: string;
+        scopes: unknown;
+      }>(
+        `select c.principal_id,c.scopes,p.vault_id,v.space_id
+           from principal_credentials c
+           join principals p on p.id=c.principal_id
+           join vaults v on v.id=p.vault_id
+          where c.id=$1
+            and p.kind='AGENT_PROCESS'
+            and p.vault_id=any($2::uuid[])
+          limit 1`,
+        [credentialId, scope.vaultIds],
+      );
+      const row = credential.rows[0];
+      if (!row) return reply.code(404).send({ code: "CREDENTIAL_NOT_FOUND" });
+      const declared = teamCredentialScopes(row.scopes);
+      const declaredSpaceIds = [
+        ...new Set(declared.map((entry) => entry.spaceId)),
+      ];
+      if (
+        !declaredSpaceIds.length ||
+        declaredSpaceIds.some((spaceId) => !scope.spaces.includes(spaceId))
+      ) {
+        return reply
+          .code(409)
+          .send({ code: "CREDENTIAL_CROSS_SCOPE_REVOKE_DENIED" });
+      }
+      const principal = await revokeAgentProcessPrincipalInVaultScope(db, {
+        principalId: row.principal_id,
+        vaultIds: scope.vaultIds,
+      });
+      await audit(
+        db,
+        request,
+        "team.credential.revoke",
+        "principal",
+        principal.id,
+        { vaultId: row.vault_id, credentialId },
+        row.space_id,
+      );
+      return {
+        id: credentialId,
+        kind,
+        revoked: true,
+        principal: {
+          id: principal.id,
+          state: principal.state,
+          policyRevision: principal.policyRevision,
+          revokedAt: principal.revokedAt,
+        },
+      };
+    },
+  );
+
+  app.get(
+    "/v1/operator/workspace-home",
+    { preHandler: requirePermission("knowledge:read") },
+    async (request, reply) => {
+      const scope = await operatorScope(db, actorOf(request), "knowledge:read");
+      if (!scope.vaultIds.length) {
+        return reply.code(403).send({ code: "VAULT_ACCESS_DENIED" });
+      }
+
+      const [
+        projects,
+        workObjects,
+        reviews,
+        findings,
+        sessions,
+        claims,
+        handoffs,
+        indexes,
+        connectors,
+        federation,
+      ] = await Promise.all([
+        db.pool.query(
+          `select id,space_id,vault_id,slug,
+                  metadata-'rootPath'-'repositoryPath'-'localPath' metadata,
+                  created_at
+             from projects
+            where space_id=any($1::uuid[]) and vault_id=any($2::uuid[])
+            order by created_at desc
+            limit 20`,
+          [scope.spaces, scope.vaultIds],
+        ),
+        db.pool.query(
+          `select id,space_id,vault_id,provider,object_type,external_id,title,
+                  authority,source_revision,work_object_class,metadata,
+                  observed_at,updated_at
+             from external_object_refs
+            where space_id=any($1::uuid[]) and vault_id=any($2::uuid[])
+              and work_object_class is not null
+            order by updated_at desc,id
+            limit 80`,
+          [scope.spaces, scope.vaultIds],
+        ),
+        db.pool.query(
+          `select id,space_id,vault_id,status,base_commit,head_commit,
+                  decision_at,decision_reason,created_at,updated_at
+             from reviews
+            where space_id=any($1::uuid[]) and vault_id=any($2::uuid[])
+              and status in ('PENDING','CHANGES_REQUESTED')
+            order by created_at desc
+            limit 30`,
+          [scope.spaces, scope.vaultIds],
+        ),
+        db.pool.query(
+          `select id,space_id,vault_id,severity,category,detector,code,summary,
+                  status,proposed_action,target_ids,last_seen_at
+             from assurance_findings
+            where space_id=any($1::uuid[]) and vault_id=any($2::uuid[])
+              and status in ('OPEN','ACKNOWLEDGED')
+            order by
+              case severity
+                when 'CRITICAL' then 1
+                when 'HIGH' then 2
+                when 'MEDIUM' then 3
+                when 'LOW' then 4
+                else 5
+              end,
+              last_seen_at desc
+            limit 30`,
+          [scope.spaces, scope.vaultIds],
+        ),
+        db.pool.query(
+          `select s.id,s.space_id,s.vault_id,s.project_id,s.purpose,s.state,
+                  s.created_at,s.updated_at,
+                  r.revision_set_hash,r.pinned_at,
+                  count(p.user_id) filter (
+                    where p.left_at is null
+                      and (
+                        p.presence_expires_at is null
+                        or p.presence_expires_at>now()
+                      )
+                  )::int active_participants
+             from agent_sessions s
+             left join workspace_context_revision_sets r on r.session_id=s.id
+             left join workspace_session_participants p on p.session_id=s.id
+            where s.space_id=any($1::uuid[]) and s.vault_id=any($2::uuid[])
+              and coalesce(s.state->>'workStatus','OPEN') not in (
+                'COMPLETED','ABANDONED'
+              )
+            group by s.id,r.revision_set_hash,r.pinned_at
+            order by s.updated_at desc
+            limit 30`,
+          [scope.spaces, scope.vaultIds],
+        ),
+        db.pool.query(
+          `select c.id,c.session_id,c.work_key,c.status,c.fencing_token,
+                  c.lease_expires_at,c.updated_at,s.space_id,s.vault_id,
+                  p.kind owner_principal_kind,p.display_name owner_principal_label
+             from workspace_claims c
+             join agent_sessions s on s.id=c.session_id
+             join principals p on p.id=c.owner_principal_id
+            where s.space_id=any($1::uuid[]) and s.vault_id=any($2::uuid[])
+              and c.status='ACTIVE'
+            order by c.lease_expires_at,c.updated_at desc
+            limit 40`,
+          [scope.spaces, scope.vaultIds],
+        ),
+        db.pool.query(
+          `select e.id,e.session_id,e.space_id,e.vault_id,e.claim_id,e.payload,
+                  e.created_at
+             from workspace_events e
+            where e.space_id=any($1::uuid[]) and e.vault_id=any($2::uuid[])
+              and e.event_type='CLAIM_HANDOFF'
+            order by e.created_at desc,e.id desc
+            limit 20`,
+          [scope.spaces, scope.vaultIds],
+        ),
+        db.pool.query(
+          `select vault_id,corpus_revision,lexical_revision,vector_revision,
+                  graph_revision,context_pack_revision,status,warnings,
+                  updated_at
+             from vault_index_revisions
+            where space_id=any($1::uuid[]) and vault_id=any($2::uuid[])
+            order by vault_id`,
+          [scope.spaces, scope.vaultIds],
+        ),
+        db.pool.query(
+          `select r.vault_id,r.state,count(*)::int count,
+                  count(*) filter (
+                    where exists (
+                      select 1
+                        from source_connector_events e
+                       where e.connector_id=r.id
+                         and e.status in ('PENDING','REJECTED')
+                    )
+                  )::int attention
+             from source_connector_registrations r
+            where r.space_id=any($1::uuid[]) and r.vault_id=any($2::uuid[])
+            group by r.vault_id,r.state
+            order by r.vault_id,r.state`,
+          [scope.spaces, scope.vaultIds],
+        ),
+        db.pool.query(
+          `select space_id,trust_state,discovery_mode,count(*)::int count,
+                  max(last_seen_at) last_seen_at
+             from context_fabric_peers
+            where space_id=any($1::uuid[])
+            group by space_id,trust_state,discovery_mode
+            order by space_id,trust_state,discovery_mode`,
+          [scope.spaces],
+        ),
+      ]);
+
+      const workByClass = new Map<string, unknown[]>();
+      for (const row of workObjects.rows) {
+        const key = String(row.work_object_class);
+        const values = workByClass.get(key) ?? [];
+        values.push(row);
+        workByClass.set(key, values);
+      }
+
+      const currentWork = (classes: string[], limit: number) =>
+        classes
+          .flatMap((key) => workByClass.get(key) ?? [])
+          .sort((left, right) => {
+            const a = new Date(
+              String((left as Record<string, unknown>).updated_at ?? 0),
+            ).getTime();
+            const b = new Date(
+              String((right as Record<string, unknown>).updated_at ?? 0),
+            ).getTime();
+            return b - a;
+          })
+          .slice(0, limit);
+
+      return sanitizeOperationalValue({
+        generatedAt: new Date().toISOString(),
+        scope: {
+          spaces: scope.spaces,
+          vaultIds: scope.vaultIds,
+        },
+        projects: projects.rows,
+        goals: currentWork(["GOAL", "PROJECT"], 20),
+        workItems: currentWork(["WORK_ITEM"], 30),
+        pullRequests: currentWork(["PULL_REQUEST", "CODE_REVIEW"], 20),
+        incidentsAndDeployments: currentWork(
+          ["INCIDENT", "DEPLOYMENT", "CHANGE", "BUILD", "TEST_RUN"],
+          30,
+        ),
+        pendingReviews: reviews.rows,
+        assuranceFindings: findings.rows,
+        activeSessions: sessions.rows,
+        activeClaims: claims.rows,
+        recentHandoffs: handoffs.rows,
+        freshness: indexes.rows,
+        connectors: connectors.rows,
+        federation: federation.rows,
+      });
+    },
+  );
+
+  app.get<{
+    Querystring: { limit?: string; vaultId?: string; asOf?: string };
+  }>(
     "/v1/operator/graph",
     { preHandler: requirePermission("knowledge:read") },
     async (request, reply) => {
@@ -138,23 +654,127 @@ export function registerOperatorRoutes(
         return reply.code(404).send({ code: "VAULT_NOT_FOUND" });
       }
       const limit = boundedLimit(request.query.limit, 120, 250);
-      const nodes = await db.pool.query(
-        `
-        select id,space_id,vault_id,external_id,path,title,type,layer,lifecycle,
-               trust_tier,refresh_status,current_revision,updated_at
-          from knowledge_documents
-         where space_id=any($1::uuid[]) and vault_id=any($2::uuid[])
-           and lifecycle <> 'DELETED_TOMBSTONE'
-         order by updated_at desc,id
-         limit $3
-        `,
-        [scope.spaces, vaultIds, limit],
-      );
-      const nodeIds = nodes.rows.map((node) => String(node.id));
-      const edges =
-        nodeIds.length === 0
-          ? { rows: [] }
-          : await db.pool.query(
+      const asOfRaw = request.query.asOf?.trim();
+      const asOfDate = asOfRaw ? new Date(asOfRaw) : null;
+      if (asOfDate && Number.isNaN(asOfDate.getTime())) {
+        return reply.code(400).send({ code: "INVALID_GRAPH_AS_OF" });
+      }
+      const asOf = asOfDate?.toISOString() ?? null;
+
+      const [knowledgeNodesResult, federatedNodesResult] = await Promise.all([
+        db.pool.query(
+          `
+          select id,space_id,vault_id,external_id,path,title,type,layer,lifecycle,
+                 trust_tier,refresh_status,current_revision,updated_at
+            from knowledge_documents
+           where space_id=any($1::uuid[]) and vault_id=any($2::uuid[])
+             and lifecycle <> 'DELETED_TOMBSTONE'
+           order by updated_at desc,id
+           limit $3
+          `,
+          [scope.spaces, vaultIds, limit],
+        ),
+        db.pool.query(
+          `
+          select distinct
+                 n.id,n.space_id,n.vault_id,n.graph_domain,n.scope_id,n.kind,
+                 n.canonical_key,n.revision,n.authorization_path,n.payload,
+                 p.lifecycle projection_lifecycle,p.freshness,
+                 p.updated_at projection_updated_at
+            from federated_graph_projection_revisions p
+            join federated_graph_projection_nodes pn
+              on pn.projection_revision_id=p.id
+            join federated_graph_nodes n on n.id=pn.node_id
+           where p.space_id=any($1::uuid[])
+             and p.vault_id=any($2::uuid[])
+             and n.vault_id=any($2::uuid[])
+             and p.lifecycle='ACTIVE'
+           order by p.updated_at desc,n.id
+           limit $3
+          `,
+          [scope.spaces, vaultIds, limit],
+        ),
+      ]);
+
+      const knowledgeNodes = knowledgeNodesResult.rows.map((row) => ({
+        id: `knowledge:${String(row.id)}`,
+        entityId: String(row.id),
+        nodeSource: "KNOWLEDGE",
+        graph_domain: "EPISTEMIC",
+        scope_id: `vault:${String(row.vault_id)}`,
+        kind: String(row.type),
+        canonical_key: String(row.external_id ?? row.path ?? row.id),
+        vault_id: row.vault_id,
+        external_id: row.external_id,
+        path: row.path,
+        title: row.title,
+        type: row.type,
+        layer: row.layer ?? "EPISTEMIC",
+        lifecycle: row.lifecycle,
+        trust_tier: row.trust_tier,
+        refresh_status: row.refresh_status,
+        current_revision: row.current_revision,
+        updated_at: row.updated_at,
+        payload: {
+          documentId: row.id,
+          externalId: row.external_id,
+          path: row.path,
+          title: row.title,
+        },
+      }));
+      const federatedNodes = federatedNodesResult.rows.map((row) => {
+        const payload =
+          row.payload && typeof row.payload === "object"
+            ? (row.payload as Record<string, unknown>)
+            : {};
+        return {
+          id: `federated:${String(row.id)}`,
+          entityId: String(row.id),
+          nodeSource: "FEDERATED",
+          graph_domain: String(row.graph_domain),
+          scope_id: String(row.scope_id),
+          kind: String(row.kind),
+          canonical_key: String(row.canonical_key),
+          vault_id: row.vault_id,
+          external_id: row.canonical_key,
+          path: row.authorization_path ?? null,
+          title: String(
+            payload.title ??
+              payload.name ??
+              payload.qualifiedName ??
+              row.canonical_key,
+          ),
+          type: row.kind,
+          layer: row.graph_domain,
+          lifecycle: row.projection_lifecycle,
+          trust_tier: String(
+            payload.trustTier ?? payload.trust_tier ?? "DERIVED",
+          ),
+          refresh_status: row.freshness,
+          current_revision: row.revision,
+          updated_at: row.projection_updated_at,
+          payload,
+        };
+      });
+
+      const nodes = [...knowledgeNodes, ...federatedNodes]
+        .sort(
+          (left, right) =>
+            new Date(String(right.updated_at ?? 0)).getTime() -
+            new Date(String(left.updated_at ?? 0)).getTime(),
+        )
+        .slice(0, limit);
+      const knowledgeIds = nodes
+        .filter((node) => node.nodeSource === "KNOWLEDGE")
+        .map((node) => node.entityId);
+      const federatedIds = nodes
+        .filter((node) => node.nodeSource === "FEDERATED")
+        .map((node) => node.entityId);
+
+      const [knowledgeEdgesResult, federatedEdgesResult] = await Promise.all([
+        knowledgeIds.length === 0
+          ? Promise.resolve({ rows: [] as Record<string, unknown>[] })
+          : db.pool.query(
               `
               select r.id,r.from_document_id "from",r.to_document_id "to",
                      r.relation_type "type",r.weight,r.provenance
@@ -168,26 +788,120 @@ export function registerOperatorRoutes(
                  and r.to_document_id=any($1::uuid[])
                order by r.relation_type,r.from_document_id,r.to_document_id
               `,
-              [nodeIds, scope.spaces, vaultIds],
-            );
+              [knowledgeIds, scope.spaces, vaultIds],
+            ),
+        federatedIds.length === 0
+          ? Promise.resolve({ rows: [] as Record<string, unknown>[] })
+          : db.pool.query(
+              `
+              select distinct
+                     e.id,e.from_node_id "from",e.to_node_id "to",
+                     e.relation_type "type",e.owner_graph_domain,
+                     e.derivation,e.confidence,e.source_ids,e.evidence_ids,
+                     e.locator_refs,e.provenance_revision,e.support_set_id,
+                     e.valid_from,e.valid_to,e.recorded_at
+                from federated_graph_projection_revisions p
+                join federated_graph_projection_edges pe
+                  on pe.projection_revision_id=p.id
+                join federated_graph_edges e on e.id=pe.edge_id
+               where p.space_id=any($2::uuid[])
+                 and p.vault_id=any($3::uuid[])
+                 and p.lifecycle='ACTIVE'
+                 and e.from_node_id=any($1::uuid[])
+                 and e.to_node_id=any($1::uuid[])
+                 and (
+                   $4::timestamptz is null
+                   or (
+                     (e.valid_from is null or e.valid_from<=$4::timestamptz)
+                     and (e.valid_to is null or e.valid_to>$4::timestamptz)
+                   )
+                 )
+               order by e.owner_graph_domain,e.relation_type,e.id
+              `,
+              [federatedIds, scope.spaces, vaultIds, asOf],
+            ),
+      ]);
+
+      const edges = [
+        ...knowledgeEdgesResult.rows.map((row) => ({
+          id: `knowledge-edge:${String(row.id)}`,
+          entityId: String(row.id),
+          edgeSource: "KNOWLEDGE",
+          from: `knowledge:${String(row.from)}`,
+          to: `knowledge:${String(row.to)}`,
+          type: row.type,
+          weight: row.weight,
+          owner_graph_domain: "EPISTEMIC",
+          derivation: null,
+          confidence: null,
+          provenance: row.provenance,
+          provenance_revision: null,
+          source_ids: [],
+          evidence_ids: [],
+          locator_refs: [],
+          support_set_id: null,
+          valid_from: null,
+          valid_to: null,
+          recorded_at: null,
+        })),
+        ...federatedEdgesResult.rows.map((row) => ({
+          id: `federated-edge:${String(row.id)}`,
+          entityId: String(row.id),
+          edgeSource: "FEDERATED",
+          from: `federated:${String(row.from)}`,
+          to: `federated:${String(row.to)}`,
+          type: row.type,
+          weight: null,
+          owner_graph_domain: row.owner_graph_domain,
+          derivation: row.derivation,
+          confidence: row.confidence,
+          provenance: {
+            sourceIds: row.source_ids,
+            evidenceIds: row.evidence_ids,
+            locatorRefs: row.locator_refs,
+          },
+          provenance_revision: row.provenance_revision,
+          source_ids: row.source_ids,
+          evidence_ids: row.evidence_ids,
+          locator_refs: row.locator_refs,
+          support_set_id: row.support_set_id,
+          valid_from: row.valid_from,
+          valid_to: row.valid_to,
+          recorded_at: row.recorded_at,
+        })),
+      ];
+
       const byRelationType = new Map<string, number>();
+      const byLayer = new Map<string, number>();
       const connected = new Set<string>();
-      for (const edge of edges.rows) {
+      for (const node of nodes) {
+        const layer = String(node.graph_domain);
+        byLayer.set(layer, (byLayer.get(layer) ?? 0) + 1);
+      }
+      for (const edge of edges) {
         const type = String(edge.type);
         byRelationType.set(type, (byRelationType.get(type) ?? 0) + 1);
         connected.add(String(edge.from));
         connected.add(String(edge.to));
       }
-      return {
+
+      return sanitizeOperationalValue({
         scope: { vaultIds },
-        truncated: nodes.rowCount === limit,
-        nodes: nodes.rows,
-        edges: edges.rows,
+        asOf,
+        truncated:
+          knowledgeNodesResult.rowCount === limit ||
+          federatedNodesResult.rowCount === limit ||
+          nodes.length === limit,
+        nodes,
+        edges,
+        byLayer: [...byLayer.entries()]
+          .map(([graph_domain, count]) => ({ graph_domain, nodes: count }))
+          .sort((left, right) => right.nodes - left.nodes),
         byRelationType: [...byRelationType.entries()]
           .map(([relation_type, count]) => ({ relation_type, edges: count }))
           .sort((left, right) => right.edges - left.edges),
-        orphanDocuments: nodeIds.filter((id) => !connected.has(id)).length,
-      };
+        orphanDocuments: nodes.filter((node) => !connected.has(node.id)).length,
+      });
     },
   );
 
@@ -369,6 +1083,9 @@ export function registerOperatorRoutes(
         indexes,
         outbox,
         stuck,
+        assuranceRuns,
+        assuranceFindings,
+        connectorStates,
       ] = await Promise.all([
         db.health().catch(() => false),
         probeJson(`${rawEndpoint}/minio/health/live`),
@@ -418,6 +1135,111 @@ export function registerOperatorRoutes(
             `,
           [scope.spaces, scope.vaultIds],
         ),
+        db.pool.query(
+          `
+            select id,space_id,vault_id,trigger,detectors,status,cursor,
+                   attempts,max_attempts,next_attempt_at,completed_at,
+                   result_summary,created_at,updated_at
+              from assurance_runs
+             where space_id=any($1::uuid[]) and vault_id=any($2::uuid[])
+             order by created_at desc
+             limit 50
+            `,
+          [scope.spaces, scope.vaultIds],
+        ),
+        db.pool.query(
+          `
+            select id,run_id,space_id,vault_id,detector,detector_version,
+                   severity,category,scope_id,target_ids,
+                   evidence_refs evidence_ids,support_set_ids,code,summary,
+                   status,proposed_action,revision_set,first_seen_at,last_seen_at
+              from assurance_findings
+             where space_id=any($1::uuid[]) and vault_id=any($2::uuid[])
+               and status='OPEN'
+             order by
+               case severity
+                 when 'CRITICAL' then 1
+                 when 'HIGH' then 2
+                 when 'MEDIUM' then 3
+                 when 'LOW' then 4
+                 else 5
+               end,
+               last_seen_at desc
+             limit 100
+            `,
+          [scope.spaces, scope.vaultIds],
+        ),
+        db.pool.query(
+          `
+            select r.id,r.space_id,r.vault_id,r.connector_key,r.source_system,
+                   r.state,r.descriptor,r.last_event_at,c.applied_sequence,
+                   c.updated_at checkpoint_updated_at,
+                   case
+                     when r.state<>'ACTIVE' then 'DISABLED'
+                     when r.descriptor#>>'{incremental,webhook}'='true'
+                       then 'ENABLED'
+                     else 'NOT_CONFIGURED'
+                   end webhook_status,
+                   (
+                     select count(*)::int
+                       from source_connector_events e
+                      where e.connector_id=r.id and e.status='PENDING'
+                   ) pending_events,
+                   (
+                     select count(*)::int
+                       from source_connector_events e
+                      where e.connector_id=r.id and e.status='PENDING'
+                        and e.sequence>c.applied_sequence+1
+                   ) gap_events,
+                   (
+                     select count(*)::int
+                       from source_connector_events e
+                      where e.connector_id=r.id and e.status='PENDING'
+                        and e.sequence=c.applied_sequence+1
+                        and e.next_attempt_at>now()
+                   ) retry_events,
+                   (
+                     select count(*)::int
+                       from source_connector_events e
+                      where e.connector_id=r.id and e.status='REJECTED'
+                   ) rejected_events,
+                   (
+                     select coalesce(sum(e.apply_attempts),0)::int
+                       from source_connector_events e
+                      where e.connector_id=r.id
+                   ) total_apply_attempts,
+                   (
+                     select e.error_code
+                       from source_connector_events e
+                      where e.connector_id=r.id and e.error_code is not null
+                      order by e.last_error_at desc nulls last,e.received_at desc
+                      limit 1
+                   ) last_error_code,
+                   (
+                     select count(*)::int
+                       from source_connector_objects o
+                      where o.connector_id=r.id and o.lifecycle='ACTIVE'
+                   ) active_objects,
+                   (
+                     select count(*)::int
+                       from source_connector_objects o
+                      where o.connector_id=r.id and o.lifecycle='ACTIVE'
+                        and o.permission_uncertain
+                   ) uncertain_acl_objects,
+                   (
+                     select count(*)::int
+                       from source_connector_objects o
+                      where o.connector_id=r.id
+                        and o.lifecycle='DELETED_TOMBSTONE'
+                   ) tombstones
+              from source_connector_registrations r
+              join source_connector_checkpoints c on c.connector_id=r.id
+             where r.space_id=any($1::uuid[]) and r.vault_id=any($2::uuid[])
+             order by r.updated_at desc,r.id
+             limit 100
+            `,
+          [scope.spaces, scope.vaultIds],
+        ),
       ]);
       const telemetry = getOpenTelemetryStatus();
       const status =
@@ -445,6 +1267,11 @@ export function registerOperatorRoutes(
         indexes: indexes.rows,
         outbox: outbox.rows,
         stuckJobs: stuck.rows,
+        assurance: {
+          runs: assuranceRuns.rows,
+          openFindings: assuranceFindings.rows,
+        },
+        connectors: connectorStates.rows,
       });
     },
   );

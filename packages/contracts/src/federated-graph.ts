@@ -1,0 +1,446 @@
+import { z } from "zod";
+
+export const GraphDomain = z.enum([
+  "EPISTEMIC",
+  "SOFTWARE_CATALOG",
+  "CODE",
+  "RUNTIME",
+  "TEMPORAL",
+  "WORK",
+  "COMMUNITY",
+]);
+export type GraphDomain = z.infer<typeof GraphDomain>;
+
+export const GraphDerivation = z.enum([
+  "SOURCE_EXPLICIT",
+  "DETERMINISTIC_EXTRACTED",
+  "STATICALLY_RESOLVED",
+  "MODEL_INFERRED",
+  "HUMAN_ASSERTED",
+  "RUNTIME_OBSERVED",
+  "DYNAMICALLY_PROVEN",
+  "DERIVED_SUMMARY",
+]);
+export type GraphDerivation = z.infer<typeof GraphDerivation>;
+
+export const GraphRelationshipLifecycle = z.enum([
+  "ACTIVE",
+  "DISPUTED",
+  "SUPERSEDED",
+  "RETIRED",
+]);
+export type GraphRelationshipLifecycle = z.infer<
+  typeof GraphRelationshipLifecycle
+>;
+
+export const GraphDirection = z.enum(["outgoing", "incoming", "both"]);
+export type GraphDirection = z.infer<typeof GraphDirection>;
+
+export const GraphFreshnessPolicy = z.enum(["FRESH_ONLY", "ALLOW_STALE"]);
+export type GraphFreshnessPolicy = z.infer<typeof GraphFreshnessPolicy>;
+
+export const GraphProjectionLifecycle = z.enum([
+  "REQUESTED",
+  "BUILDING",
+  "READY",
+  "BUILT",
+  "ACTIVE",
+  "RETIRED",
+  "STALE",
+  "FAILED",
+]);
+export type GraphProjectionLifecycle = z.infer<typeof GraphProjectionLifecycle>;
+
+export const GraphProjectionFreshness = z.enum(["FRESH", "STALE"]);
+export type GraphProjectionFreshness = z.infer<typeof GraphProjectionFreshness>;
+
+export const GraphCatalogStatus = z.enum([
+  "READY",
+  "BUILDING",
+  "STALE",
+  "DEGRADED",
+  "UNAVAILABLE",
+]);
+export type GraphCatalogStatus = z.infer<typeof GraphCatalogStatus>;
+
+export const GraphCatalogEntry = z.object({
+  domain: GraphDomain,
+  spaceId: z.string().uuid(),
+  vaultId: z.string().uuid().nullable(),
+  scopeId: z.string().min(1).max(512),
+  activeRevision: z.string().min(1).max(512).optional(),
+  sourceRevision: z.string().min(1).max(1024).optional(),
+  builder: z.string().min(1).max(160),
+  builderVersion: z.string().min(1).max(160),
+  configHash: z.string().regex(/^[a-f0-9]{64}$/),
+  status: GraphCatalogStatus,
+  capabilities: z.array(z.string().min(1).max(120)).max(32),
+  lastSuccessfulBuild: z.string().datetime().optional(),
+});
+export type GraphCatalogEntry = z.infer<typeof GraphCatalogEntry>;
+
+export const SoftwareCatalogNodeKind = z.enum([
+  "domain",
+  "system",
+  "service",
+  "component",
+  "api",
+  "resource",
+  "repository",
+  "team",
+  "person",
+]);
+export type SoftwareCatalogNodeKind = z.infer<typeof SoftwareCatalogNodeKind>;
+
+export const SoftwareCatalogRelation = z.enum([
+  "part_of",
+  "owned_by",
+  "provides",
+  "consumes",
+  "depends_on",
+  "implemented_by",
+]);
+export type SoftwareCatalogRelation = z.infer<typeof SoftwareCatalogRelation>;
+
+export const EpistemicGraphRelation = z.enum([
+  "supports",
+  "contradicts",
+  "supersedes",
+  "implements",
+  "applies_to",
+]);
+export type EpistemicGraphRelation = z.infer<typeof EpistemicGraphRelation>;
+
+export const RuntimeGraphNodeKind = z.enum([
+  "deployment",
+  "environment",
+  "runtime-service",
+  "trace",
+  "span",
+  "runtime-call",
+  "test-run",
+  "coverage-observation",
+  "incident",
+  "alert",
+]);
+export type RuntimeGraphNodeKind = z.infer<typeof RuntimeGraphNodeKind>;
+
+export const RuntimeObservationWindow = z
+  .object({
+    from: z.string().datetime(),
+    to: z.string().datetime(),
+  })
+  .superRefine((value, context) => {
+    if (Date.parse(value.to) <= Date.parse(value.from)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["to"],
+        message: "runtime observation window.to must be after window.from",
+      });
+    }
+  });
+export type RuntimeObservationWindow = z.infer<typeof RuntimeObservationWindow>;
+
+export const RuntimeObservationEnvelope = z
+  .object({
+    observedAt: z.string().datetime().optional(),
+    window: RuntimeObservationWindow.optional(),
+    revision: z.string().min(1).max(1024).optional(),
+    deployment: z.string().min(1).max(1024).optional(),
+  })
+  .passthrough()
+  .superRefine((value, context) => {
+    if (!value.observedAt && !value.window) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["observedAt"],
+        message: "runtime observation requires observedAt or window",
+      });
+    }
+  });
+export type RuntimeObservationEnvelope = z.infer<
+  typeof RuntimeObservationEnvelope
+>;
+
+export const GraphNodeIdentity = z.object({
+  graphDomain: GraphDomain,
+  scopeId: z.string().min(1).max(512),
+  kind: z.string().min(1).max(120),
+  canonicalKey: z.string().min(1).max(2048),
+  revision: z.string().min(1).max(512),
+});
+export type GraphNodeIdentity = z.infer<typeof GraphNodeIdentity>;
+
+export function graphNodeIdentityKey(identity: GraphNodeIdentity): string {
+  const value = GraphNodeIdentity.parse(identity);
+  return JSON.stringify([
+    value.graphDomain,
+    value.scopeId,
+    value.kind,
+    value.canonicalKey,
+    value.revision,
+  ]);
+}
+
+export const GraphProvenanceEnvelope = z
+  .object({
+    derivation: GraphDerivation,
+    sourceIds: z.array(z.string().min(1).max(1024)).max(256),
+    evidenceIds: z.array(z.string().min(1).max(1024)).max(256),
+    locatorRefs: z.array(z.string().min(1).max(2048)).max(256),
+    revision: z.string().min(1).max(512),
+    supportSetId: z.string().min(1).max(1024).optional(),
+    confidence: z.number().min(0).max(1).optional(),
+    validFrom: z.string().datetime().optional(),
+    validTo: z.string().datetime().optional(),
+    recordedAt: z.string().datetime(),
+  })
+  .superRefine((value, context) => {
+    if (
+      value.validFrom &&
+      value.validTo &&
+      Date.parse(value.validTo) <= Date.parse(value.validFrom)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["validTo"],
+        message: "validTo must be after validFrom",
+      });
+    }
+  });
+export type GraphProvenanceEnvelope = z.infer<typeof GraphProvenanceEnvelope>;
+
+export const GraphRelationshipAssertion = z.object({
+  id: z.string().uuid(),
+  spaceId: z.string().uuid(),
+  ownerGraphDomain: GraphDomain,
+  fromNodeId: z.string().uuid(),
+  toNodeId: z.string().uuid(),
+  relation: z.string().min(1).max(160),
+  authorizationPath: z.string().nullable(),
+  lifecycle: GraphRelationshipLifecycle,
+  provenance: GraphProvenanceEnvelope,
+});
+export type GraphRelationshipAssertion = z.infer<
+  typeof GraphRelationshipAssertion
+>;
+
+export const GraphProjectionRevision = z.object({
+  id: z.string().uuid(),
+  graphDomain: GraphDomain,
+  spaceId: z.string().uuid(),
+  vaultId: z.string().uuid().nullable(),
+  scopeId: z.string().min(1).max(512),
+  revision: z.string().min(1).max(512),
+  sourceRevision: z.string().min(1).max(1024),
+  sourceHash: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .nullable(),
+  provider: z.string().min(1).max(160),
+  providerVersion: z.string().min(1).max(160).nullable(),
+  configurationVersion: z.string().min(1).max(512),
+  lifecycle: GraphProjectionLifecycle,
+  freshness: GraphProjectionFreshness,
+  requestedAt: z.string().datetime(),
+  buildingAt: z.string().datetime().nullable(),
+  readyAt: z.string().datetime().nullable(),
+  builtAt: z.string().datetime().nullable(),
+  activatedAt: z.string().datetime().nullable(),
+  retiredAt: z.string().datetime().nullable(),
+  lastSuccessfulUpdate: z.string().datetime().nullable(),
+});
+export type GraphProjectionRevision = z.infer<typeof GraphProjectionRevision>;
+
+export const GraphNodeRef = z.object({
+  id: z.string().uuid(),
+  spaceId: z.string().uuid(),
+  vaultId: z.string().uuid().nullable(),
+  authorizationPath: z.string().nullable(),
+  identity: GraphNodeIdentity,
+  payload: z.record(z.string(), z.unknown()),
+  projection: GraphProjectionRevision.pick({
+    id: true,
+    revision: true,
+    lifecycle: true,
+    freshness: true,
+  }),
+});
+export type GraphNodeRef = z.infer<typeof GraphNodeRef>;
+
+export const GraphPathStep = z.object({
+  from: GraphNodeRef,
+  relation: z.string().min(1).max(160),
+  direction: z.enum(["outgoing", "incoming"]),
+  to: GraphNodeRef,
+  assertion: GraphRelationshipAssertion,
+  provenance: GraphProvenanceEnvelope,
+});
+export type GraphPathStep = z.infer<typeof GraphPathStep>;
+
+const revisionSetShape = z.object({
+  EPISTEMIC: z.string().min(1).optional(),
+  SOFTWARE_CATALOG: z.string().min(1).optional(),
+  CODE: z.string().min(1).optional(),
+  RUNTIME: z.string().min(1).optional(),
+  TEMPORAL: z.string().min(1).optional(),
+  WORK: z.string().min(1).optional(),
+  COMMUNITY: z.string().min(1).optional(),
+});
+
+export const GraphPathResult = z.object({
+  seed: GraphNodeRef,
+  target: GraphNodeRef,
+  steps: z.array(GraphPathStep),
+  score: z.number().finite().optional(),
+  revisionSet: revisionSetShape,
+});
+export type GraphPathResult = z.infer<typeof GraphPathResult>;
+
+export const GraphTraversalBounds = z.object({
+  maxHops: z.number().int().min(1).max(16),
+  maxFanout: z.number().int().min(1).max(1000),
+  maxCandidates: z.number().int().min(1).max(10000),
+  timeBudgetMs: z.number().int().min(1).max(60000),
+});
+export type GraphTraversalBounds = z.infer<typeof GraphTraversalBounds>;
+
+export interface GraphAuthorizationVaultScope {
+  vaultId: string;
+  pathPrefix: string | null;
+}
+
+export interface GraphAuthorizationScope {
+  spaceId: string;
+  vaults: readonly GraphAuthorizationVaultScope[];
+  allowSpaceScoped?: boolean;
+}
+
+export interface GraphNodeSelector {
+  nodeId?: string;
+  identity?: GraphNodeIdentity;
+}
+
+export interface GraphQueryBase {
+  authorization: GraphAuthorizationScope;
+  domains?: readonly GraphDomain[];
+  relationAllowlist: readonly string[];
+  direction: GraphDirection;
+  freshnessPolicy: GraphFreshnessPolicy;
+  bounds: GraphTraversalBounds;
+}
+
+export interface GraphCatalogQuery {
+  authorization: GraphAuthorizationScope;
+  domains?: readonly GraphDomain[];
+  scopeIds?: readonly string[];
+}
+
+export interface GraphNodeLookupQuery {
+  authorization: GraphAuthorizationScope;
+  domains?: readonly GraphDomain[];
+  kinds?: readonly string[];
+  canonicalKeys?: readonly string[];
+  payloadContains?: Readonly<Record<string, string | number | boolean>>;
+  freshnessPolicy: GraphFreshnessPolicy;
+  limit: number;
+}
+
+export interface GraphNeighborQuery extends GraphQueryBase {
+  seed: GraphNodeSelector;
+}
+
+export interface GraphPathQuery extends GraphQueryBase {
+  seed: GraphNodeSelector;
+  target?: GraphNodeSelector;
+}
+
+export interface GraphImpactQuery extends GraphQueryBase {
+  seed: GraphNodeSelector;
+}
+
+export interface GraphImpactResult {
+  seed: GraphNodeRef;
+  affected: GraphPathResult[];
+  revisionSet: Partial<Record<GraphDomain, string>>;
+}
+
+export interface GraphProjectionRevisionState {
+  graphDomain: GraphDomain;
+  spaceId: string;
+  vaultId: string | null;
+  scopeId: string;
+  requested: GraphProjectionRevision | null;
+  built: GraphProjectionRevision | null;
+  active: GraphProjectionRevision | null;
+  requestedRevision: string | null;
+  builtRevision: string | null;
+  activeRevision: string | null;
+  activeFreshness: GraphProjectionFreshness | null;
+  lastSuccessfulUpdate: string | null;
+}
+
+export interface GraphProjectionNodeInput {
+  identity: GraphNodeIdentity;
+  vaultId: string | null;
+  authorizationPath: string | null;
+  payload: Record<string, unknown>;
+}
+
+export interface GraphProjectionEdgeInput {
+  from: GraphNodeIdentity;
+  relation: string;
+  to: GraphNodeIdentity;
+  authorizationPath?: string | null;
+  assertionLifecycle?: GraphRelationshipLifecycle;
+  provenance: GraphProvenanceEnvelope;
+}
+
+export interface GraphProjectionArtifact {
+  graphDomain: GraphDomain;
+  spaceId: string;
+  vaultId: string | null;
+  scopeId: string;
+  revision: string;
+  sourceRevision: string;
+  sourceHash: string | null;
+  provider: string;
+  providerVersion: string | null;
+  configurationVersion: string;
+  nodes: readonly GraphProjectionNodeInput[];
+  edges: readonly GraphProjectionEdgeInput[];
+}
+
+export interface GraphIncrementalUpdate<TArtifact> {
+  baseRevision: string;
+  next: TArtifact;
+}
+
+export interface GraphCatalogPort {
+  catalog(input: GraphCatalogQuery): Promise<GraphCatalogEntry[]>;
+}
+
+export interface GraphQueryPort {
+  findNodes(input: GraphNodeLookupQuery): Promise<GraphNodeRef[]>;
+  neighbors(input: GraphNeighborQuery): Promise<GraphPathResult[]>;
+  paths(input: GraphPathQuery): Promise<GraphPathResult[]>;
+  impact(input: GraphImpactQuery): Promise<GraphImpactResult>;
+  revisionState(
+    domain: GraphDomain,
+    spaceId: string,
+    scopeId: string,
+  ): Promise<GraphProjectionRevisionState>;
+}
+
+export interface GraphProjectionPort<TArtifact = GraphProjectionArtifact> {
+  build(input: TArtifact): Promise<GraphProjectionRevision>;
+  update?(
+    input: GraphIncrementalUpdate<TArtifact>,
+  ): Promise<GraphProjectionRevision>;
+  markStale?(
+    domain: GraphDomain,
+    spaceId: string,
+    scopeId: string,
+    reason?: string,
+  ): Promise<GraphProjectionRevision | null>;
+}

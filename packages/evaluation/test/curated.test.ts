@@ -98,7 +98,7 @@ describe("curated Level B fixture", () => {
     expect(report.evidenceLevel).toBe("CURATED_FIXTURE");
     expect(report.provider.readsPrivateVault).toBe(false);
     expect(report.productionDefault.selected).toBeNull();
-    expect(report.runs).toHaveLength(10);
+    expect(report.runs).toHaveLength(RETRIEVAL_BENCHMARK_MATRIX.length);
     expect(report.runs.every((run) => run.noAnswerAccuracy === 1)).toBe(true);
   });
 });

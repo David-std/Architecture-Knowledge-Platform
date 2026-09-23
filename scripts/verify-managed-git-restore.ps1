@@ -66,7 +66,7 @@ $expectedFiles = @(
     Sort-Object
 )
 if ($expectedFiles.Count -lt 1) {
-  throw "The managed restore proof requires at least one tracked file."
+  throw "The managed restore verification requires at least one tracked file."
 }
 
 $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) "akp-managed-restore-$([guid]::NewGuid().ToString('N'))"
@@ -137,10 +137,36 @@ try {
   }
 
   $searchableUnits = [int](((Invoke-Checked "verify lexical search from rebuilt units" {
-    docker exec $PostgresContainer psql -U akp -d $PostgresDatabase -At -v ON_ERROR_STOP=1 -c "select count(*) from knowledge_units where vault_id='$vaultId' and lifecycle='ACTIVE' and to_tsvector('simple',coalesce(body,'')) @@ plainto_tsquery('simple','restore probe');"
+    docker exec $PostgresContainer psql -U akp -d $PostgresDatabase -At -v ON_ERROR_STOP=1 -c "select count(*) from knowledge_units where vault_id='$vaultId' and lifecycle='ACTIVE' and to_tsvector('simple',coalesce(body,'')) @@ plainto_tsquery('simple','restore');"
   }) | Out-String).Trim())
   if ($searchableUnits -lt 1) {
     throw "Restored managed repository could not rebuild a searchable probe."
+  }
+
+  $derivedReportInput = if ($env:AKP_RESTORED_DERIVED_REPORT) {
+    $env:AKP_RESTORED_DERIVED_REPORT
+  } else {
+    "reports/ci/restored-derived-context.json"
+  }
+  $derivedReport = Resolve-InputPath $derivedReportInput
+  Invoke-Checked "rebuild graph, code graph and local agent context from restored authority" {
+    pnpm exec tsx scripts/verify-restored-derived-context.ts "--repo=$temporaryRoot" "--commit=$actualRevision" "--space-id=$SpaceId" "--vault-id=$vaultId"
+  } | Out-Null
+  if (-not (Test-Path -LiteralPath $derivedReport -PathType Leaf)) {
+    throw "Restored derived-context verification report is missing: $derivedReport"
+  }
+  try {
+    $derived = Get-Content -LiteralPath $derivedReport -Raw | ConvertFrom-Json
+  } catch {
+    throw "Restored derived-context verification report is invalid JSON: $($_.Exception.Message)"
+  }
+  if (
+    $derived.status -ne "PROVEN" -or
+    $derived.epistemicGraph.status -ne "PROVEN" -or
+    $derived.codeGraph.status -ne "PROVEN" -or
+    $derived.agentContext.status -ne "PROVEN"
+  ) {
+    throw "Restored derived projections or agent context were not proven."
   }
 
   Write-Output (@{
@@ -152,6 +178,11 @@ try {
     importedDocuments = $importedDocuments
     indexedUnits = $indexedUnits
     searchableUnits = $searchableUnits
+    rebuiltVaultId = $vaultId
+    epistemicGraphRebuilt = $true
+    codeGraphRebuilt = $true
+    agentContextRebuilt = $true
+    derivedReport = $derivedReport
   } | ConvertTo-Json)
 } finally {
   foreach ($candidate in @($temporaryRoot, $reportRoot)) {

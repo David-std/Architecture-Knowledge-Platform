@@ -67,6 +67,7 @@ $configuredManagedRepository = if (-not [string]::IsNullOrWhiteSpace($ManagedRep
   $null
 }
 $managedRepositoryPresent = $false
+$managedRepositoryHeadRevision = $null
 $managedPath = $null
 if ($configuredManagedRepository) {
   $managedPath = Resolve-InputPath $configuredManagedRepository
@@ -78,6 +79,12 @@ if ($configuredManagedRepository) {
   }) | Out-String).Trim()
   if ($isGit -ne "true") {
     throw "AKP_MANAGED_REPO must be a Git work tree: $managedPath"
+  }
+  $managedRepositoryHeadRevision = ((Invoke-ExternalChecked "read managed repository HEAD" {
+    git -C $managedPath rev-parse HEAD
+  }) | Out-String).Trim().ToLowerInvariant()
+  if ($managedRepositoryHeadRevision -notmatch '^[a-f0-9]{40}$') {
+    throw "AKP_MANAGED_REPO HEAD is not a canonical 40-character Git revision."
   }
   $managedRepositoryPresent = $true
 }
@@ -102,6 +109,40 @@ if ($migrations.Count -lt 1) {
 }
 $artifactNames = @("postgres.dump", "minio-data.tar", "configuration-metadata.json")
 
+$durableStateTables = @(
+  "knowledge_profile_revisions",
+  "vaults",
+  "agent_sessions",
+  "workspace_session_participants",
+  "workspace_context_revision_sets",
+  "workspace_claims",
+  "workspace_events",
+  "workspace_offline_drafts",
+  "workspace_decision_candidates",
+  "reviews",
+  "truth_revision_heads",
+  "truth_revisions",
+  "truth_support_sets",
+  "temporal_facts",
+  "federated_graph_projection_revisions",
+  "assurance_runs",
+  "assurance_findings",
+  "assurance_finding_events",
+  "source_connector_registrations",
+  "source_connector_checkpoints",
+  "source_connector_events",
+  "context_fabric_peers"
+)
+$rebuildableProjectionTables = @(
+  "embedding_generations",
+  "unit_embeddings",
+  "federated_graph_nodes",
+  "federated_graph_edges",
+  "community_index_revisions",
+  "community_index_communities",
+  "community_index_memberships",
+  "context_packets"
+)
 docker exec $PostgresContainer pg_dump -U akp -d $PostgresDatabase -Fc -f /tmp/akp-backup.dump
 if ($LASTEXITCODE -ne 0) { throw "pg_dump failed" }
 docker cp "${PostgresContainer}:/tmp/akp-backup.dump" (Join-Path $target "postgres.dump")
@@ -152,12 +193,14 @@ if ($managedRepositoryPresent) {
 }
 
 $configuration = [ordered]@{
-  format = "akp-configuration-metadata-v2"
+  format = "akp-configuration-metadata-v3"
   managedRepositoryPresent = [bool]$managedRepositoryPresent
   vectorEnabled = ($env:AKP_VECTOR_ENABLED -eq "true")
   ingestRootsConfigured = -not [string]::IsNullOrWhiteSpace($env:AKP_INGEST_ROOTS)
   projectRootsConfigured = -not [string]::IsNullOrWhiteSpace($env:AKP_PROJECT_ROOTS)
   secretsIncluded = $false
+  federationCredentialMaterialIncluded = $false
+  modelProviderSecretsIncluded = $false
 }
 $configuration | ConvertTo-Json -Depth 5 |
   Set-Content -LiteralPath (Join-Path $target "configuration-metadata.json") -Encoding utf8
@@ -177,15 +220,28 @@ $files = @(
   }
 )
 $manifest = [ordered]@{
-  format = "akp-backup-v3"
+  format = "akp-backup-v4"
   createdAt = (Get-Date).ToUniversalTime().ToString("o")
   database = [ordered]@{
     migrationCount = $migrations.Count
     migrations = @($migrations)
   }
+  durableState = [ordered]@{
+    includedViaPostgresDump = @($durableStateTables)
+    federationConfiguration = [ordered]@{
+      credentialReferencesOnly = $true
+      secretsIncluded = $false
+    }
+  }
+  derivedState = [ordered]@{
+    rebuildableTables = @($rebuildableProjectionTables)
+    reconciliationAction = "REBUILD_DERIVED_PROJECTIONS"
+    canonicalAuthority = "MANAGED_GIT_AND_DURABLE_SOURCE_STATE"
+  }
   managedRepository = [ordered]@{
     configured = [bool]$managedRepositoryPresent
     bundleIncluded = [bool]$managedRepositoryPresent
+    headRevision = $managedRepositoryHeadRevision
   }
   files = $files
 }

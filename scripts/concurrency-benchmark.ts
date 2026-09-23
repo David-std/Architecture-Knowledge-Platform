@@ -13,6 +13,7 @@ type Stats = {
   minMs: number;
   p50Ms: number;
   p95Ms: number;
+  p99Ms: number;
   maxMs: number;
   meanMs: number;
 };
@@ -71,6 +72,10 @@ const ingestWorkers = positiveInteger(
   process.env.AKP_CONCURRENCY_INGEST_WORKERS,
   6,
 );
+const concurrentAgents = positiveInteger(
+  process.env.AKP_CONCURRENCY_AGENTS,
+  Math.max(20, searchConcurrency + contextConcurrency + ingestWorkers),
+);
 
 function positiveInteger(value: string | undefined, fallback: number): number {
   if (value === undefined) return fallback;
@@ -107,6 +112,7 @@ function summarize(samples: number[]): Stats {
     minMs: rounded(minimum),
     p50Ms: rounded(percentile(0.5)),
     p95Ms: rounded(percentile(0.95)),
+    p99Ms: rounded(percentile(0.99)),
     maxMs: rounded(maximum),
     meanMs: rounded(
       samples.reduce((total, sample) => total + sample, 0) / samples.length,
@@ -355,9 +361,33 @@ async function seedFixture(db: Postgres, fixture: Fixture): Promise<void> {
       );
     }
   }
+
+  for (let index = 0; index < concurrentAgents; index += 1) {
+    const vaultId = fixture.vaultIds[index % fixture.vaultIds.length];
+    if (!vaultId) throw new Error("Missing benchmark vault");
+    await db.pool.query(
+      `insert into agent_sessions(
+         space_id,vault_id,actor_id,project_id,purpose,context_budget,state
+       ) values($1,$2,$3,null,$4,4096,$5::jsonb)`,
+      [
+        fixture.spaceId,
+        vaultId,
+        fixture.userId,
+        `concurrency-agent-${index + 1}`,
+        JSON.stringify({
+          benchmark: true,
+          ordinal: index + 1,
+          status: "ACTIVE",
+        }),
+      ],
+    );
+  }
 }
 
 async function cleanupFixture(db: Postgres, fixture: Fixture): Promise<void> {
+  await db.pool.query("delete from agent_sessions where space_id=$1", [
+    fixture.spaceId,
+  ]);
   await db.pool.query("delete from context_packets where space_id=$1", [
     fixture.spaceId,
   ]);
@@ -520,11 +550,16 @@ async function measureWorkerClaims(
   latency: Stats;
   throughputPerSecond: number;
   completedRows: number;
+  queueLag: Stats;
+  retriedClaims: number;
+  retryRatePerJob: number;
 }> {
   const expectedIds = new Set(await seedIngestJobs(db, fixture));
   const claimIds: string[] = [];
   const latencies: number[] = [];
+  const queueLagSamples: number[] = [];
   const foreignClaims: string[] = [];
+  let retriedClaims = 0;
   const started = performance.now();
   await Promise.all(
     Array.from({ length: ingestWorkers }, async (_, workerIndex) => {
@@ -534,6 +569,11 @@ async function measureWorkerClaims(
         const claim = await claimNextIngestJob(db, workerId, 30);
         latencies.push(performance.now() - claimStarted);
         if (!claim) return;
+        const createdAt = new Date(String(claim.created_at ?? ""));
+        if (!Number.isNaN(createdAt.getTime())) {
+          queueLagSamples.push(Math.max(0, Date.now() - createdAt.getTime()));
+        }
+        if (Number(claim.attempts ?? 0) > 0) retriedClaims += 1;
         const id = String(claim.id);
         if (!expectedIds.has(id)) {
           foreignClaims.push(id);
@@ -572,6 +612,9 @@ async function measureWorkerClaims(
     latency: summarize(latencies),
     throughputPerSecond: rounded(claimIds.length / elapsedSeconds),
     completedRows: Number(completed.rows[0]?.count ?? 0),
+    queueLag: summarize(queueLagSamples),
+    retriedClaims,
+    retryRatePerJob: rounded(retriedClaims / Math.max(1, ingestJobs)),
   };
 }
 
@@ -643,6 +686,13 @@ async function main(): Promise<void> {
       workers.completedRows === ingestJobs,
     noDuplicateIngestClaims: workers?.duplicateClaims.length === 0,
     noForeignIngestClaims: workers?.foreignClaims.length === 0,
+    agentSessionsExact:
+      (
+        await db.pool.query<{ count: string }>(
+          "select count(*)::text count from agent_sessions where space_id=$1",
+          [fixture.spaceId],
+        )
+      ).rows[0]?.count === String(concurrentAgents),
   };
   const status =
     !failure && Object.values(acceptance).every(Boolean) ? "PASSED" : "FAILED";
@@ -669,6 +719,7 @@ async function main(): Promise<void> {
       contextConcurrency,
       ingestJobs,
       ingestWorkers,
+      concurrentAgents,
     },
     acceptance,
     api: { search, context },
@@ -689,9 +740,11 @@ async function main(): Promise<void> {
     measured: [
       "Concurrent authenticated /v1/search execution across two private vaults",
       "Concurrent authenticated /v1/context execution and ContextPacket persistence",
-      "Per-operation p50/p95/mean/max latency and observed throughput",
+      "Per-operation p50/p95/p99/mean/max latency and observed throughput",
       "Cross-vault response isolation under concurrent retrieval",
       "Concurrent production ingest-job leasing with SKIP LOCKED and multiple worker identities",
+      "Ingest queue lag and observed retry rate during the normal-load benchmark",
+      "Durable active agent-session cardinality paired with concurrent API/worker clients",
       "Duplicate and foreign ingest-job claim detection",
       "Node process memory delta and observable PostgreSQL client-pool state",
     ],

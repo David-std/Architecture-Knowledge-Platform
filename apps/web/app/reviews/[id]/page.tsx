@@ -18,6 +18,25 @@ interface ReviewResponse {
   impact_manifest?: Record<string, unknown>;
   validation_report?: Record<string, unknown>;
   comments?: Array<Record<string, unknown>>;
+  reviewPolicy?: Record<string, unknown>;
+  approvalProgress?: {
+    reviewRound: number;
+    count: number;
+    minimumApprovals: number;
+    remainingApprovals: number;
+    pinned: boolean;
+  };
+  approvals?: Array<Record<string, unknown>>;
+  evidenceDetails?: Array<Record<string, unknown>>;
+  assuranceFindings?: Array<Record<string, unknown>>;
+  graphImpact?: Array<Record<string, unknown>>;
+  codeImpact?: Array<Record<string, unknown>>;
+  temporalImpact?: {
+    head: Record<string, unknown> | null;
+    facts: Array<Record<string, unknown>>;
+  };
+  affectedEvals?: Array<Record<string, unknown>>;
+  affectedTests?: Array<Record<string, unknown>>;
   diff?: string;
 }
 
@@ -89,6 +108,16 @@ export default async function ReviewPage({
     impactedIds,
     warnings,
   } = normalized;
+  const comments = review.comments ?? [];
+  const approvals = review.approvals ?? [];
+  const evidenceDetails = review.evidenceDetails ?? [];
+  const assuranceFindings = review.assuranceFindings ?? [];
+  const graphImpact = review.graphImpact ?? [];
+  const codeImpact = review.codeImpact ?? [];
+  const temporalHead = review.temporalImpact?.head ?? null;
+  const temporalFacts = review.temporalImpact?.facts ?? [];
+  const affectedEvals = review.affectedEvals ?? [];
+  const affectedTests = review.affectedTests ?? [];
   const memberships = me.actor?.memberships ?? [];
   const reviewMembership = memberships.find(
     (membership) =>
@@ -180,6 +209,48 @@ export default async function ReviewPage({
         </div>
       </div>
 
+      <section className="card" style={{ marginTop: 16 }}>
+        <h2>Gobernanza de revisión</h2>
+        <div className="grid">
+          <div>
+            <span className="muted">Política</span>
+            <p>{summary(review.reviewPolicy ?? "No reportada")}</p>
+          </div>
+          <div>
+            <span className="muted">Aprobaciones</span>
+            <p>
+              {review.approvalProgress
+                ? `${review.approvalProgress.count}/${review.approvalProgress.minimumApprovals}`
+                : "No disponible"}
+            </p>
+            {review.approvalProgress ? (
+              <small>
+                round {review.approvalProgress.reviewRound} · remaining{" "}
+                {review.approvalProgress.remainingApprovals} ·{" "}
+                {review.approvalProgress.pinned ? "pinned" : "dynamic"}
+              </small>
+            ) : null}
+          </div>
+        </div>
+        {approvals.length ? (
+          <ul>
+            {approvals.map((approval, index) => (
+              <li key={String(approval.id ?? index)}>
+                {summary(
+                  approval.reviewer_role ??
+                    approval.reviewerRole ??
+                    approval.principal_kind,
+                )}{" "}
+                · {summary(approval.reason)} ·{" "}
+                {summary(approval.created_at ?? approval.createdAt)}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="muted">Aún no hay aprobaciones registradas.</p>
+        )}
+      </section>
+
       {pending && canDecide ? (
         <form action={decide} className="card" style={{ marginTop: 16 }}>
           <h2>Decisión</h2>
@@ -233,6 +304,29 @@ export default async function ReviewPage({
           <button type="submit">Ejecutar rollback</button>
         </form>
       ) : null}
+
+      <h2>Comentarios de revisión</h2>
+      {comments.length ? (
+        <div className="card">
+          {comments.map((comment, index) => (
+            <article
+              key={String(comment.id ?? index)}
+              style={{ marginBottom: 12 }}
+            >
+              <strong>{summary(comment.body)}</strong>
+              <br />
+              <small>
+                {comment.path
+                  ? `${summary(comment.path)}:${summary(comment.line)} · `
+                  : ""}
+                {summary(comment.created_at)}
+              </small>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <p className="card muted">No hay comentarios registrados.</p>
+      )}
 
       <h2>Propuesta de compilación</h2>
       {!hasCompilerContext ? (
@@ -308,6 +402,34 @@ export default async function ReviewPage({
           ) : null}
         </section>
       </div>
+
+      <h2>Excerpts y locators de evidencia</h2>
+      {evidenceDetails.length ? (
+        <div className="card">
+          {evidenceDetails.map((entry, index) => (
+            <article
+              key={String(entry.id ?? index)}
+              style={{ marginBottom: 16 }}
+            >
+              <p>
+                <strong>
+                  {summary(entry.source_title ?? entry.source_id)}
+                </strong>
+                <br />
+                <small>{locatorSummary(entry.locator)}</small>
+              </p>
+              <blockquote>{summary(entry.excerpt)}</blockquote>
+              <small>
+                evidence <code>{summary(entry.id)}</code>
+              </small>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <p className="card muted">
+          No hay excerpts persistidos para los evidence IDs de esta revisión.
+        </p>
+      )}
 
       {warnings.length ? (
         <section className="card" style={{ marginTop: 16 }}>
@@ -529,6 +651,152 @@ export default async function ReviewPage({
             </ul>
           ) : (
             <p className="muted">Sin probes registrados.</p>
+          )}
+        </section>
+      </div>
+
+      <h2>Impacto integrado</h2>
+      <div className="grid">
+        <section className="card">
+          <h3>Graph impact</h3>
+          {graphImpact.length ? (
+            <ul>
+              {graphImpact.map((edge, index) => (
+                <li key={String(edge.id ?? index)}>
+                  <code>{summary(edge.from_external_id ?? edge.from)}</code> —
+                  {summary(edge.relation_type)}→{" "}
+                  <code>{summary(edge.to_external_id ?? edge.to)}</code>
+                  <br />
+                  <small>provenance {summary(edge.provenance)}</small>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted">
+              No hay relaciones de conocimiento persistidas para los documentos
+              impactados.
+            </p>
+          )}
+        </section>
+
+        <section className="card">
+          <h3>Temporal impact</h3>
+          <p>
+            Truth head:{" "}
+            <code>
+              {summary(temporalHead?.revision_hash ?? "sin revisión")}
+            </code>
+          </p>
+          {temporalFacts.length ? (
+            <ul>
+              {temporalFacts.map((fact, index) => (
+                <li key={String(fact.id ?? index)}>
+                  <strong>{summary(fact.subject_ref)}</strong>{" "}
+                  {summary(fact.predicate)} {summary(fact.object)}
+                  <br />
+                  <small>
+                    valid {summary(fact.valid_from)} →{" "}
+                    {summary(fact.valid_to ?? "open")} · recorded{" "}
+                    {summary(fact.recorded_at)}
+                  </small>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted">
+              No hay hechos temporales enlazados por la evidencia de esta
+              revisión.
+            </p>
+          )}
+        </section>
+
+        <section className="card">
+          <h3>Code blast radius</h3>
+          {codeImpact.length ? (
+            <ul>
+              {codeImpact.map((link, index) => (
+                <li key={String(link.id ?? index)}>
+                  <code>{summary(link.code_repository)}</code> @{" "}
+                  <code>{summary(link.code_commit_sha)}</code>
+                  <br />
+                  {summary(link.relation_type)} ·{" "}
+                  {summary(asRecord(link.code_node_identity).canonicalKey)}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted">
+              No hay bridges conocimiento→código aprobados para esta revisión o
+              sus documentos impactados.
+            </p>
+          )}
+        </section>
+
+        <section className="card">
+          <h3>Tests afectados</h3>
+          {affectedTests.length ? (
+            <ul>
+              {affectedTests.map((test, index) => (
+                <li key={String(test.test_node_id ?? index)}>
+                  <strong>{summary(test.canonical_key)}</strong>
+                  <br />
+                  <small>
+                    {summary(test.derivation)} · confidence{" "}
+                    {summary(test.confidence)} · revision{" "}
+                    {summary(test.provenance_revision)}
+                  </small>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted">
+              No hay tests vinculados por bridges CODE revisados.
+            </p>
+          )}
+        </section>
+
+        <section className="card">
+          <h3>Evaluaciones afectadas</h3>
+          {affectedEvals.length ? (
+            <ul>
+              {affectedEvals.map((evaluation, index) => (
+                <li key={String(evaluation.event_id ?? index)}>
+                  <span className="badge">
+                    {summary(evaluation.status ?? "REQUESTED")}
+                  </span>{" "}
+                  {summary(evaluation.eval_pack ?? "pending")} · corpus{" "}
+                  <code>{summary(evaluation.corpus_revision)}</code>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted">
+              No hay eval run durable enlazado a esta revisión todavía.
+            </p>
+          )}
+        </section>
+
+        <section className="card">
+          <h3>Assurance findings relacionados</h3>
+          {assuranceFindings.length ? (
+            <ul>
+              {assuranceFindings.map((finding, index) => (
+                <li key={String(finding.id ?? index)}>
+                  <span className="badge">{summary(finding.severity)}</span>{" "}
+                  <strong>{summary(finding.code)}</strong>
+                  <br />
+                  {summary(finding.summary)}
+                  <br />
+                  <small>
+                    {summary(finding.detector)} · {summary(finding.status)}
+                  </small>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted">
+              No hay findings OPEN/ACKNOWLEDGED relacionados por target.
+            </p>
           )}
         </section>
       </div>

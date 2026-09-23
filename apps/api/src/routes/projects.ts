@@ -4,11 +4,15 @@ import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
 import {
+  appendOutboxEvent,
   pathMatchesVaultPrefix,
   resolveAuthorizedVaultScope,
   type Postgres,
 } from "@akp/postgres";
-import { buildProjectSnapshot } from "@akp/project-adapter";
+import {
+  buildProjectSnapshot,
+  projectCodeGraphIdentity,
+} from "@akp/project-adapter";
 import {
   actorOf,
   audit,
@@ -177,6 +181,9 @@ export function registerProjectRoutes(
     "/v1/projects/scan",
     { preHandler: requirePermission("knowledge:propose") },
     async (request, reply) => {
+      if (!request.headers["idempotency-key"]) {
+        return reply.code(400).send({ code: "IDEMPOTENCY_KEY_REQUIRED" });
+      }
       if (!request.body?.slug || !request.body?.rootPath) {
         return reply.code(400).send({ code: "PROJECT_INPUT_REQUIRED" });
       }
@@ -275,69 +282,112 @@ export function registerProjectRoutes(
       });
       const safeSnapshot = sanitizeProjectPayload(snapshot) as typeof snapshot;
       const body = projectKnowledgeBody(slug, snapshot);
-      const result = await db.pool.query(
-        `
-        insert into projects(space_id,vault_id,slug,root_path,metadata)
-        values($1,$2,$3,$4,$5::jsonb)
-        on conflict(vault_id,slug) do update set root_path=excluded.root_path,metadata=excluded.metadata
-        returning *
-        `,
-        [
-          spaceId,
-          vaultId,
-          slug,
-          rootPath,
-          JSON.stringify({
-            commit,
-            snapshot: safeSnapshot,
-            scannedAt: new Date().toISOString(),
-            limitation:
-              "Static inventories and explicit imports are evidence signals; runtime behavior and architectural intent still require stronger proof.",
-          }),
-        ],
-      );
-      await db.pool.query(
-        `
-        insert into knowledge_documents(
-          space_id,vault_id,path,external_id,title,type,lifecycle,trust_tier,current_revision,
-          body_cache,frontmatter,aliases,layer,content_hash,token_estimate,raw_links
-        ) values($1,$2,$3,$4,$5,'project-evidence','ACTIVE','MACHINE_SUPPORTED',$6,
-                 $7,$8::jsonb,$9,'project',$10,$11,'[]'::jsonb)
-        on conflict(vault_id,path) where vault_id is not null do update set
-          external_id=excluded.external_id,title=excluded.title,current_revision=excluded.current_revision,
-          body_cache=excluded.body_cache,frontmatter=excluded.frontmatter,aliases=excluded.aliases,
-          content_hash=excluded.content_hash,token_estimate=excluded.token_estimate,
-          lifecycle='ACTIVE',trust_tier='MACHINE_SUPPORTED',refresh_status='CURRENT',updated_at=now()
-        `,
-        [
-          spaceId,
-          vaultId,
-          `projects/${slug}/snapshot.md`,
-          `PROJECT-${slug.toUpperCase()}`,
-          `Project evidence: ${slug}`,
-          snapshot.commit,
-          body,
-          JSON.stringify({
-            repository_fingerprint: createHash("sha256")
-              .update(snapshot.repository)
-              .digest("hex")
-              .slice(0, 16),
-            commit: snapshot.commit,
-            snapshot_mode: snapshot.snapshotMode,
-            code_evidence_tier: "NO_SIGNAL",
-          }),
-          [slug],
-          createHash("sha256").update(body).digest("hex"),
-          Math.ceil(body.length / 4),
-        ],
-      );
+      const graphIdentity = projectCodeGraphIdentity(vaultId, slug);
+      const codeGraph = {
+        ...graphIdentity,
+        sourceRevision: snapshot.commit,
+        status:
+          process.env.AKP_CODE_GRAPH_ENABLED === "true"
+            ? ("REQUESTED" as const)
+            : ("DISABLED" as const),
+      };
+      const client = await db.pool.connect();
+      let projectRow: Record<string, unknown> | null = null;
+      try {
+        await client.query("begin");
+        const result = await client.query(
+          `
+          insert into projects(space_id,vault_id,slug,root_path,metadata)
+          values($1,$2,$3,$4,$5::jsonb)
+          on conflict(vault_id,slug) where vault_id is not null do update
+            set root_path=excluded.root_path,metadata=excluded.metadata
+          returning *
+          `,
+          [
+            spaceId,
+            vaultId,
+            slug,
+            rootPath,
+            JSON.stringify({
+              commit,
+              snapshot: safeSnapshot,
+              scannedAt: new Date().toISOString(),
+              codeGraph,
+              limitation:
+                "Static inventories and explicit imports are evidence signals; runtime behavior and architectural intent still require stronger proof.",
+            }),
+          ],
+        );
+        projectRow = result.rows[0] as Record<string, unknown>;
+        await client.query(
+          `
+          insert into knowledge_documents(
+            space_id,vault_id,path,external_id,title,type,lifecycle,trust_tier,current_revision,
+            body_cache,frontmatter,aliases,layer,content_hash,token_estimate,raw_links
+          ) values($1,$2,$3,$4,$5,'project-evidence','ACTIVE','MACHINE_SUPPORTED',$6,
+                   $7,$8::jsonb,$9,'project',$10,$11,'[]'::jsonb)
+          on conflict(vault_id,path) where vault_id is not null do update set
+            external_id=excluded.external_id,title=excluded.title,current_revision=excluded.current_revision,
+            body_cache=excluded.body_cache,frontmatter=excluded.frontmatter,aliases=excluded.aliases,
+            content_hash=excluded.content_hash,token_estimate=excluded.token_estimate,
+            lifecycle='ACTIVE',trust_tier='MACHINE_SUPPORTED',refresh_status='CURRENT',updated_at=now()
+          `,
+          [
+            spaceId,
+            vaultId,
+            `projects/${slug}/snapshot.md`,
+            `PROJECT-${slug.toUpperCase()}`,
+            `Project evidence: ${slug}`,
+            snapshot.commit,
+            body,
+            JSON.stringify({
+              repository_fingerprint: createHash("sha256")
+                .update(snapshot.repository)
+                .digest("hex")
+                .slice(0, 16),
+              commit: snapshot.commit,
+              snapshot_mode: snapshot.snapshotMode,
+              code_evidence_tier: "NO_SIGNAL",
+            }),
+            [slug],
+            createHash("sha256").update(body).digest("hex"),
+            Math.ceil(body.length / 4),
+          ],
+        );
+        if (codeGraph.status === "REQUESTED") {
+          const projectId = String(projectRow.id ?? "");
+          if (!projectId) throw new Error("PROJECT_ID_REQUIRED");
+          await appendOutboxEvent(client, {
+            eventType: "CodeGraphRefreshRequested",
+            resourceId: projectId,
+            spaceId,
+            vaultId,
+            correlationId: request.id,
+            payload: {
+              projectId,
+              slug,
+              commit: snapshot.commit,
+              repository: graphIdentity.repository,
+              scopeId: graphIdentity.scopeId,
+              authorizationPathPrefix: graphIdentity.authorizationPathPrefix,
+            },
+          });
+        }
+        await client.query("commit");
+      } catch (error) {
+        await client.query("rollback").catch(() => undefined);
+        throw error;
+      } finally {
+        client.release();
+      }
+      if (!projectRow) throw new Error("PROJECT_PERSISTENCE_FAILED");
       const projection = await rebuildSpaceProjections(db, spaceId, vaultId);
       await audit(
         db,
         request,
         "project.scan",
         "project",
-        String(result.rows[0]?.id),
+        String(projectRow.id),
         {
           vaultId,
           repositoryFingerprint: createHash("sha256")
@@ -349,15 +399,16 @@ export function registerProjectRoutes(
           fileCount: snapshot.files.length,
           symbolCount: snapshot.symbols.length,
           dependencyCount: snapshot.dependencies.length,
+          codeGraph,
           projection,
         },
         spaceId,
       );
-      const project = sanitizeProjectPayload(result.rows[0]) as Record<
+      const project = sanitizeProjectPayload(projectRow) as Record<
         string,
         unknown
       >;
-      return reply.code(201).send({ ...project, projection });
+      return reply.code(201).send({ ...project, codeGraph, projection });
     },
   );
 }

@@ -1,0 +1,1497 @@
+import { createHash, randomUUID } from "node:crypto";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { FastifyInstance } from "fastify";
+import { Postgres, grantVaultMembership } from "@akp/postgres";
+
+const spaceId = "00000000-0000-0000-0000-000000000003";
+const actorAId = randomUUID();
+const actorBId = randomUUID();
+const reviewerId = randomUUID();
+const vaultId = randomUUID();
+const actorAToken = `governed-flow-a-${randomUUID()}`;
+const actorBToken = `governed-flow-b-${randomUUID()}`;
+const reviewerToken = `governed-flow-reviewer-${randomUUID()}`;
+const tokenHash = (token: string) =>
+  createHash("sha256").update(token).digest("hex");
+const actorAHeaders = { authorization: `Bearer ${actorAToken}` };
+const actorBHeaders = { authorization: `Bearer ${actorBToken}` };
+const reviewerHeaders = { authorization: `Bearer ${reviewerToken}` };
+
+let app: FastifyInstance;
+let db: Postgres;
+
+async function insertToken(
+  userId: string,
+  token: string,
+  label: string,
+  permissions: string[],
+): Promise<void> {
+  await db.pool.query(
+    `insert into api_tokens(user_id,token_hash,label,scopes)
+     values($1,$2,$3,$4::jsonb)`,
+    [
+      userId,
+      tokenHash(token),
+      label,
+      JSON.stringify({
+        spaces: [{ spaceId, pathPrefix: null, permissions }],
+      }),
+    ],
+  );
+}
+
+beforeAll(async () => {
+  if (!process.env.DATABASE_URL) {
+    throw new Error("DATABASE_URL is required for integration tests.");
+  }
+  process.env.NODE_ENV = "test";
+  db = new Postgres(process.env.DATABASE_URL);
+  await db.pool.query(
+    `insert into vaults(
+       id,space_id,canonical_path,name,read_only,current_revision,vault_key,
+       local_path,visibility,enabled
+     ) values($1,$2,$3,$4,false,'governed-flow:r1',$5,$3,'TEAM',true)`,
+    [
+      vaultId,
+      spaceId,
+      `/tmp/governed-flow-${vaultId}`,
+      "Governed product flow integration vault",
+      `governed-flow-${vaultId.slice(0, 8)}`,
+    ],
+  );
+  await db.pool.query(
+    `insert into users(id,email,display_name) values
+      ($1,$2,'Agent Parent A'),
+      ($3,$4,'Agent Parent B'),
+      ($5,$6,'Human Reviewer')`,
+    [
+      actorAId,
+      `${actorAId}@example.test`,
+      actorBId,
+      `${actorBId}@example.test`,
+      reviewerId,
+      `${reviewerId}@example.test`,
+    ],
+  );
+  await db.pool.query(
+    `insert into memberships(user_id,space_id,role,path_prefix) values
+      ($1,$4,'CONTRIBUTOR',null),
+      ($2,$4,'CONTRIBUTOR',null),
+      ($3,$4,'REVIEWER',null)`,
+    [actorAId, actorBId, reviewerId, spaceId],
+  );
+  for (const userId of [actorAId, actorBId]) {
+    await grantVaultMembership(db, {
+      userId,
+      vaultId,
+      role: "CONTRIBUTOR",
+      pathPrefix: null,
+      permissions: ["knowledge:read", "knowledge:propose", "source:read"],
+    });
+  }
+  await grantVaultMembership(db, {
+    userId: reviewerId,
+    vaultId,
+    role: "REVIEWER",
+    pathPrefix: null,
+    permissions: ["knowledge:read", "knowledge:review", "source:read"],
+  });
+  await insertToken(actorAId, actorAToken, "p2 actor a", [
+    "knowledge:read",
+    "knowledge:propose",
+    "source:read",
+  ]);
+  await insertToken(actorBId, actorBToken, "p2 actor b", [
+    "knowledge:read",
+    "knowledge:propose",
+    "source:read",
+  ]);
+  await insertToken(reviewerId, reviewerToken, "p2 human reviewer", [
+    "knowledge:read",
+    "knowledge:review",
+    "source:read",
+  ]);
+  const module = await import("../src/server.js");
+  app = module.buildServer();
+});
+
+afterAll(async () => {
+  if (app) await app.close();
+  if (db) await db.close();
+});
+
+describe("governed product flow", () => {
+  it("coordinates two agent principals, denies agent approval, publishes by human review, and exposes R2", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/sessions",
+      headers: actorAHeaders,
+      payload: {
+        spaceId,
+        vaultId,
+        purpose: "Normative two-agent flow",
+        contextBudget: 4096,
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    const initialSession = created.json() as {
+      id: string;
+      contextRevisionSetHash: string;
+      contextRevisionSet: {
+        dimensions: { knowledgeGit: { revision: string } };
+      };
+    };
+    const sessionId = initialSession.id;
+    expect(
+      initialSession.contextRevisionSet.dimensions.knowledgeGit.revision,
+    ).toBe("governed-flow:r1");
+
+    const joined = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/participants`,
+      headers: actorAHeaders,
+      payload: { userId: actorBId },
+    });
+    expect(joined.statusCode).toBe(201);
+
+    const agentAIssuance = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/agent-processes`,
+      headers: actorAHeaders,
+      payload: {
+        label: "Normative Agent A",
+        durationMinutes: 30,
+        allowedActions: [
+          "workspace:read",
+          "workspace:claim",
+          "workspace:handoff",
+          "workspace:event:append",
+          "knowledge:read",
+          "knowledge:propose",
+        ],
+      },
+    });
+    expect(agentAIssuance.statusCode).toBe(201);
+    const agentA = agentAIssuance.json() as {
+      token: string;
+      principal: { id: string };
+    };
+    const agentAHeaders = { authorization: `Bearer ${agentA.token}` };
+
+    const agentBIssuance = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/agent-processes`,
+      headers: actorBHeaders,
+      payload: {
+        label: "Normative Agent B",
+        durationMinutes: 30,
+        allowedActions: [
+          "workspace:read",
+          "workspace:claim",
+          "workspace:handoff",
+          "workspace:event:append",
+          "knowledge:read",
+          "knowledge:propose",
+        ],
+      },
+    });
+    expect(agentBIssuance.statusCode).toBe(201);
+    const agentB = agentBIssuance.json() as {
+      token: string;
+      principal: { id: string };
+    };
+    const agentBHeaders = { authorization: `Bearer ${agentB.token}` };
+    expect(agentA.principal.id).not.toBe(agentB.principal.id);
+
+    const bootstrapA = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/bootstrap`,
+      headers: agentAHeaders,
+      payload: { query: "compiler boundary", intent: "WORKFLOW_EXECUTION" },
+    });
+    expect(bootstrapA.statusCode).toBe(200);
+    expect(bootstrapA.json()).toMatchObject({
+      revisionSetHash: initialSession.contextRevisionSetHash,
+      sharedRevisionSetHash: initialSession.contextRevisionSetHash,
+      authorization: {
+        principalId: agentA.principal.id,
+        principalKind: "AGENT_PROCESS",
+      },
+    });
+
+    const bootstrapB = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/bootstrap`,
+      headers: agentBHeaders,
+      payload: { query: "web workspace", intent: "WORKFLOW_EXECUTION" },
+    });
+    expect(bootstrapB.statusCode).toBe(200);
+    expect(bootstrapB.json()).toMatchObject({
+      revisionSetHash: initialSession.contextRevisionSetHash,
+      sharedRevisionSetHash: initialSession.contextRevisionSetHash,
+      authorization: {
+        principalId: agentB.principal.id,
+        principalKind: "AGENT_PROCESS",
+      },
+    });
+
+    const compilerClaim = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/claims`,
+      headers: agentAHeaders,
+      payload: { workKey: "packages/compiler/**", leaseSeconds: 120 },
+    });
+    expect(compilerClaim.statusCode).toBe(201);
+    expect(compilerClaim.json()).toMatchObject({
+      ownerId: actorAId,
+      ownerPrincipalId: agentA.principal.id,
+      workKey: "packages/compiler/**",
+      fencingToken: 1,
+    });
+
+    // Fencing belongs to the process principal, not merely the parent user.
+    // Even the HUMAN parent cannot reuse Agent A's live fencing token.
+    const parentCannotUseAgentFence = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/claims/heartbeat`,
+      headers: actorAHeaders,
+      payload: {
+        workKey: "packages/compiler/**",
+        fencingToken: 1,
+        leaseSeconds: 120,
+      },
+    });
+    expect(parentCannotUseAgentFence.statusCode).toBe(409);
+    expect(parentCannotUseAgentFence.json()).toMatchObject({
+      code: "WORK_CLAIM_FENCE_STALE",
+    });
+
+    const webClaim = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/claims`,
+      headers: agentBHeaders,
+      payload: { workKey: "apps/web/**", leaseSeconds: 120 },
+    });
+    expect(webClaim.statusCode).toBe(201);
+    expect(webClaim.json()).toMatchObject({
+      ownerId: actorBId,
+      ownerPrincipalId: agentB.principal.id,
+      workKey: "apps/web/**",
+      fencingToken: 1,
+    });
+
+    const overlap = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/claims`,
+      headers: agentBHeaders,
+      payload: { workKey: "packages/compiler/src/**", leaseSeconds: 120 },
+    });
+    expect(overlap.statusCode).toBe(409);
+    expect(overlap.json()).toMatchObject({ code: "WORK_CLAIM_OVERLAP" });
+
+    // A finishes its compiler work and explicitly releases the scope instead of
+    // waiting for the lease to lapse. That release, not a timeout, is what
+    // unblocks the overlapping claim B was denied above.
+    const compilerRelease = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/claims/release`,
+      headers: agentAHeaders,
+      payload: { workKey: "packages/compiler/**", fencingToken: 1 },
+    });
+    expect(compilerRelease.statusCode).toBe(200);
+    expect(compilerRelease.json()).toMatchObject({
+      ownerId: actorAId,
+      ownerPrincipalId: agentA.principal.id,
+      workKey: "packages/compiler/**",
+      status: "RELEASED",
+      fencingToken: 2,
+    });
+
+    const overlapAfterRelease = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/claims`,
+      headers: agentBHeaders,
+      payload: { workKey: "packages/compiler/src/**", leaseSeconds: 120 },
+    });
+    expect(overlapAfterRelease.statusCode).toBe(201);
+    expect(overlapAfterRelease.json()).toMatchObject({
+      ownerId: actorBId,
+      ownerPrincipalId: agentB.principal.id,
+      workKey: "packages/compiler/src/**",
+      status: "ACTIVE",
+    });
+
+    // A cannot keep writing under the fence it just gave up.
+    const staleCompilerWriter = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/claims/heartbeat`,
+      headers: agentAHeaders,
+      payload: {
+        workKey: "packages/compiler/**",
+        fencingToken: 1,
+        leaseSeconds: 120,
+      },
+    });
+    expect(staleCompilerWriter.statusCode).toBe(409);
+    expect(staleCompilerWriter.json()).toMatchObject({
+      code: "WORK_CLAIM_FENCE_STALE",
+    });
+
+    const promotableClaim = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/claims`,
+      headers: agentAHeaders,
+      payload: { workKey: "finding:compiler-boundary", leaseSeconds: 120 },
+    });
+    expect(promotableClaim.statusCode).toBe(201);
+    expect(promotableClaim.json()).toMatchObject({
+      ownerId: actorAId,
+      ownerPrincipalId: agentA.principal.id,
+      workKey: "finding:compiler-boundary",
+      fencingToken: 1,
+    });
+    const promotableClaimId = (promotableClaim.json() as { id: string }).id;
+
+    const finding = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/events`,
+      headers: agentAHeaders,
+      payload: {
+        eventType: "FINDING",
+        claimId: promotableClaimId,
+        fencingToken: 1,
+        payload: {
+          summary: "Compiler publication boundary requires governed review.",
+          evidence: "governed-product-flow-fixture",
+        },
+      },
+    });
+    expect(finding.statusCode).toBe(201);
+    const findingId = String((finding.json() as { id: string }).id);
+    const findingIdentity = await db.pool.query<{
+      actor_id: string;
+      actor_principal_id: string;
+    }>(
+      `select actor_id,actor_principal_id
+         from workspace_events
+        where id=$1::bigint`,
+      [findingId],
+    );
+    expect(findingIdentity.rows[0]).toMatchObject({
+      actor_id: actorAId,
+      actor_principal_id: agentA.principal.id,
+    });
+
+    const handoff = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/claims/handoff`,
+      headers: agentAHeaders,
+      payload: {
+        workKey: "finding:compiler-boundary",
+        toUserId: actorBId,
+        toPrincipalId: agentB.principal.id,
+        fencingToken: 1,
+        leaseSeconds: 120,
+        summary:
+          "Compiler publication boundary is captured with durable evidence and ready for governed promotion.",
+        completed: [
+          "Agent A captured the compiler publication boundary finding.",
+          "Agent A attached durable fixture evidence.",
+        ],
+        remaining: [
+          "Agent B verifies the shared workspace state.",
+          "Agent B requests governed promotion.",
+        ],
+        blockers: [],
+        changedResourceRefs: ["packages/compiler/**"],
+        evidenceRefs: [`workspace-event:${findingId}`],
+        questions: [
+          "Does the evidence remain valid under the pinned shared revision?",
+        ],
+        note: "Continue from finding and evidence in durable workspace state.",
+      },
+    });
+    expect(handoff.statusCode).toBe(200);
+    expect(handoff.json()).toMatchObject({
+      ownerId: actorBId,
+      ownerPrincipalId: agentB.principal.id,
+      fencingToken: 2,
+    });
+
+    const staleFindingWrite = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/events`,
+      headers: agentAHeaders,
+      payload: {
+        eventType: "NOTE",
+        claimId: promotableClaimId,
+        fencingToken: 1,
+        payload: {
+          summary:
+            "A fenced-out agent must not append claim-owned coordination state.",
+        },
+      },
+    });
+    expect(staleFindingWrite.statusCode).toBe(409);
+    expect(staleFindingWrite.json()).toMatchObject({
+      code: "WORK_CLAIM_FENCE_STALE",
+    });
+
+    const resumedWrite = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/events`,
+      headers: agentBHeaders,
+      payload: {
+        eventType: "NOTE",
+        claimId: promotableClaimId,
+        fencingToken: 2,
+        payload: {
+          summary:
+            "Agent B resumed from the structured handoff with the new fence.",
+        },
+      },
+    });
+    expect(resumedWrite.statusCode).toBe(201);
+    expect(resumedWrite.json()).toMatchObject({
+      claim_id: promotableClaimId,
+      actor_principal_id: agentB.principal.id,
+    });
+
+    const resumed = await app.inject({
+      method: "GET",
+      url: `/v1/sessions/${sessionId}/state`,
+      headers: agentBHeaders,
+    });
+    expect(resumed.statusCode).toBe(200);
+    const resumedBody = resumed.json() as {
+      assignedPrincipals: string[];
+      principals: Array<{ id: string; kind: string; state: string }>;
+      events: Array<{
+        event_type: string;
+        actor_principal_id: string | null;
+        payload: Record<string, unknown>;
+      }>;
+    };
+    expect(resumedBody.assignedPrincipals).toEqual(
+      expect.arrayContaining([agentA.principal.id, agentB.principal.id]),
+    );
+    expect(resumedBody.principals).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: agentA.principal.id,
+          kind: "AGENT_PROCESS",
+          state: "ACTIVE",
+        }),
+        expect.objectContaining({
+          id: agentB.principal.id,
+          kind: "AGENT_PROCESS",
+          state: "ACTIVE",
+        }),
+      ]),
+    );
+    expect(resumedBody.events.map((event) => event.event_type)).toEqual(
+      expect.arrayContaining(["FINDING", "CLAIM_RELEASED", "CLAIM_HANDOFF"]),
+    );
+    const durableHandoff = resumedBody.events.find(
+      (event) => event.event_type === "CLAIM_HANDOFF",
+    );
+    expect(durableHandoff).toMatchObject({
+      actor_principal_id: agentA.principal.id,
+      payload: {
+        fromPrincipalId: agentA.principal.id,
+        toPrincipalId: agentB.principal.id,
+        workContextId: sessionId,
+        summary:
+          "Compiler publication boundary is captured with durable evidence and ready for governed promotion.",
+        completed: [
+          "Agent A captured the compiler publication boundary finding.",
+          "Agent A attached durable fixture evidence.",
+        ],
+        remaining: [
+          "Agent B verifies the shared workspace state.",
+          "Agent B requests governed promotion.",
+        ],
+        blockers: [],
+        changedResourceRefs: ["packages/compiler/**"],
+        evidenceRefs: [`workspace-event:${findingId}`],
+        questions: [
+          "Does the evidence remain valid under the pinned shared revision?",
+        ],
+        contextRevisionSetHash: initialSession.contextRevisionSetHash,
+      },
+    });
+
+    const trustEscalationSummary =
+      "Attempt workspace promotion trust escalation";
+    const trustEscalation = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/promotions`,
+      headers: agentBHeaders,
+      payload: {
+        evidenceEventIds: [findingId],
+        summary: trustEscalationSummary,
+        changes: [
+          {
+            path: `knowledge/trust-escalation-${vaultId.slice(0, 8)}.md`,
+            content:
+              "---\ntype: claim\nstatus: proposed\nknowledge_layer: project\ntrust_tier: attested\n---\n# Forged attestation\n\nThis candidate deliberately attempts to claim a trust authority stronger than the governed human review can confer. It must be rejected before a review draft or canonical publication is created.\n",
+            reason:
+              "Adversarial verification that proposal content cannot manufacture ATTESTED trust.",
+          },
+        ],
+      },
+    });
+    expect(trustEscalation.statusCode).toBe(422);
+    expect(trustEscalation.json()).toMatchObject({
+      code: "DRAFT_VALIDATION_FAILED",
+      issues: expect.arrayContaining([
+        expect.objectContaining({
+          code: "TRUST_ESCALATION_FORBIDDEN",
+          severity: "ERROR",
+        }),
+      ]),
+    });
+    const forgedReview = await db.pool.query(
+      "select id from reviews where impact_manifest->>'summary'=$1",
+      [trustEscalationSummary],
+    );
+    expect(forgedReview.rowCount).toBe(0);
+
+    const promotion = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/promotions`,
+      headers: agentBHeaders,
+      payload: {
+        evidenceEventIds: [findingId],
+        summary: "Promote compiler publication boundary",
+        changes: [
+          {
+            path: `knowledge/compiler-boundary-${vaultId.slice(0, 8)}.md`,
+            content:
+              "---\ntype: claim\nstatus: proposed\nknowledge_layer: project\n---\n# Compiler publication boundary\n\nCanonical publication requires governed human review. This candidate is promoted from durable workspace evidence and must not become approved knowledge through agent agreement or session memory alone.\n",
+            reason:
+              "Promote the shared finding through the existing review lifecycle",
+          },
+        ],
+      },
+    });
+    expect(promotion.statusCode).toBe(201);
+    const promotionBody = promotion.json() as {
+      reviewId: string;
+      promotionEventId: string;
+    };
+
+    const agentApproval = await app.inject({
+      method: "POST",
+      url: `/v1/reviews/${promotionBody.reviewId}/decision`,
+      headers: agentBHeaders,
+      payload: {
+        decision: "APPROVE",
+        reason: "A normal agent credential must not approve publication.",
+      },
+    });
+    expect(agentApproval.statusCode).toBe(403);
+    expect(agentApproval.json()).toMatchObject({
+      code: "PRINCIPAL_ROUTE_DENIED",
+    });
+
+    const humanApproval = await app.inject({
+      method: "POST",
+      url: `/v1/reviews/${promotionBody.reviewId}/decision`,
+      headers: reviewerHeaders,
+      payload: {
+        decision: "APPROVE",
+        reason: "Human reviewer accepts the evidence-preserving promotion.",
+      },
+    });
+    expect(humanApproval.statusCode).toBe(200);
+    const approved = humanApproval.json() as {
+      status: string;
+      mergedCommit: string;
+    };
+    expect(approved.status).toBe("APPROVED");
+    expect(approved.mergedCommit).toMatch(/^[a-f0-9]{40}$/);
+
+    const vaultRevision = await db.pool.query<{ current_revision: string }>(
+      "select current_revision from vaults where id=$1 and space_id=$2",
+      [vaultId, spaceId],
+    );
+    expect(vaultRevision.rows[0]?.current_revision).toBe(approved.mergedCommit);
+
+    const oldState = await app.inject({
+      method: "GET",
+      url: `/v1/sessions/${sessionId}/state`,
+      headers: agentAHeaders,
+    });
+    expect(oldState.statusCode).toBe(200);
+    expect(oldState.json()).toMatchObject({
+      contextRevision: {
+        status: "CHANGED",
+        changedDimensions: expect.arrayContaining(["knowledgeGit"]),
+      },
+    });
+
+    const strictOldWrite = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/claims`,
+      headers: agentAHeaders,
+      payload: { workKey: "post-publication:stale", leaseSeconds: 120 },
+    });
+    expect(strictOldWrite.statusCode).toBe(409);
+    expect(strictOldWrite.json()).toMatchObject({
+      code: "CONTEXT_REVISION_CHANGED",
+    });
+
+    const nextSession = await app.inject({
+      method: "POST",
+      url: "/v1/sessions",
+      headers: actorAHeaders,
+      payload: {
+        spaceId,
+        vaultId,
+        purpose: "Observe publication revision R2",
+        contextBudget: 4096,
+      },
+    });
+    expect(nextSession.statusCode).toBe(201);
+    const next = nextSession.json() as {
+      contextRevisionSetHash: string;
+      contextRevisionSet: {
+        dimensions: { knowledgeGit: { revision: string } };
+      };
+    };
+    expect(next.contextRevisionSetHash).not.toBe(
+      initialSession.contextRevisionSetHash,
+    );
+    expect(next.contextRevisionSet.dimensions.knowledgeGit.revision).toBe(
+      approved.mergedCommit,
+    );
+
+    const publicationEvents = await db.pool.query<{ event_type: string }>(
+      `select event_type from event_outbox
+        where resource_id=$1
+        order by occurred_at,event_id`,
+      [promotionBody.reviewId],
+    );
+    expect(publicationEvents.rows.map((row) => row.event_type)).toEqual(
+      expect.arrayContaining([
+        "KnowledgePublished",
+        "CorpusRevisionPublished",
+        "LexicalIndexUpdateRequested",
+        "VectorIndexUpdateRequested",
+        "GraphIndexUpdateRequested",
+        "ContextPackInvalidationRequested",
+        "ImpactedEvalRunRequested",
+      ]),
+    );
+  });
+
+  it("captures consultative decisions, keeps agent suggestions non-authoritative, and supersedes only after human publication", async () => {
+    const humanPrincipals = await db.pool.query<{
+      id: string;
+      user_id: string;
+    }>(
+      `select id,user_id from principals
+        where kind='HUMAN' and user_id=any($1::uuid[])`,
+      [[actorAId, actorBId, reviewerId]],
+    );
+    const principalByUser = new Map(
+      humanPrincipals.rows.map((row) => [row.user_id, row.id]),
+    );
+    const actorAPrincipalId = principalByUser.get(actorAId);
+    const actorBPrincipalId = principalByUser.get(actorBId);
+    const reviewerPrincipalId = principalByUser.get(reviewerId);
+    expect(actorAPrincipalId).toBeTruthy();
+    expect(actorBPrincipalId).toBeTruthy();
+    expect(reviewerPrincipalId).toBeTruthy();
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/sessions",
+      headers: actorAHeaders,
+      payload: {
+        spaceId,
+        vaultId,
+        purpose: "Consultative architecture decision workflow",
+        contextBudget: 4096,
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    const sessionId = (created.json() as { id: string }).id;
+
+    for (const userId of [actorBId, reviewerId]) {
+      const joined = await app.inject({
+        method: "POST",
+        url: `/v1/sessions/${sessionId}/participants`,
+        headers: actorAHeaders,
+        payload: { userId },
+      });
+      expect(joined.statusCode).toBe(201);
+    }
+
+    const agentCredential = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/agent-processes`,
+      headers: actorAHeaders,
+      payload: {
+        label: "Decision-preparation agent",
+        durationMinutes: 30,
+        allowedActions: [
+          "workspace:read",
+          "workspace:event:append",
+          "knowledge:read",
+          "knowledge:propose",
+        ],
+      },
+    });
+    expect(agentCredential.statusCode).toBe(201);
+    const agent = agentCredential.json() as {
+      token: string;
+      principal: { id: string };
+    };
+    const agentHeaders = { authorization: `Bearer ${agent.token}` };
+
+    const affectedWorkObject = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/external-refs`,
+      headers: actorAHeaders,
+      payload: {
+        provider: "github",
+        objectType: "issue",
+        externalId: "DECISION-WORK-42",
+        title: "Decision-linked work item",
+        authority: "SYSTEM_OF_RECORD",
+        workObjectClass: "WORK_ITEM",
+      },
+    });
+    expect(affectedWorkObject.statusCode, affectedWorkObject.body).toBe(201);
+    const affectedWorkObjectId = (affectedWorkObject.json() as { id: string })
+      .id;
+
+    const createdDecision = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/decisions`,
+      headers: agentHeaders,
+      payload: {
+        decisionAuthorityPrincipalId: reviewerPrincipalId,
+        title: "Context delivery mode",
+        problem:
+          "Choose how the workspace should expose an approved context projection without allowing coordination state to become canonical knowledge.",
+        context:
+          "The team needs local-first context that can remain useful offline while preserving source authorization, provenance, and a single governed publication authority.",
+        drivers: [
+          "permission fidelity",
+          "offline behavior",
+          "revision correctness",
+        ],
+        qualityAttributes: [
+          "security",
+          "availability",
+          "consistency",
+          "auditability",
+        ],
+        affectedRefs: ["service:context-api", "work:connector-runtime"],
+        affectedObjectRefIds: [affectedWorkObjectId],
+        evidenceRefs: [
+          "fixture:connector-capabilities",
+          "fixture:governed-flow",
+        ],
+        verificationPlan:
+          "Re-run the governed two-agent flow and verify that publication advances the canonical revision while stale sessions fail closed.",
+        decisionDeadline: new Date(Date.now() + 86_400_000).toISOString(),
+      },
+    });
+    expect(createdDecision.statusCode).toBe(201);
+    const firstDecision = createdDecision.json() as {
+      id: string;
+      createdByPrincipalId: string;
+      decisionAuthorityPrincipalId: string;
+      status: string;
+    };
+    expect(firstDecision).toMatchObject({
+      createdByPrincipalId: agent.principal.id,
+      decisionAuthorityPrincipalId: reviewerPrincipalId,
+      status: "DRAFT",
+    });
+
+    const filteredDecisions = await app.inject({
+      method: "GET",
+      url: `/v1/sessions/${sessionId}/decisions?objectRefId=${affectedWorkObjectId}`,
+      headers: actorAHeaders,
+    });
+    expect(filteredDecisions.statusCode).toBe(200);
+    expect(
+      (
+        filteredDecisions.json() as {
+          decisions: Array<{ id: string }>;
+        }
+      ).decisions,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: firstDecision.id }),
+      ]),
+    );
+
+    const decisionSnapshot = await app.inject({
+      method: "GET",
+      url: `/v1/sessions/${sessionId}/decisions/${firstDecision.id}`,
+      headers: actorAHeaders,
+    });
+    expect(decisionSnapshot.statusCode).toBe(200);
+    expect(decisionSnapshot.json()).toMatchObject({
+      affectedObjectRefIds: [affectedWorkObjectId],
+    });
+
+    const agentAlternative = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/decisions/${firstDecision.id}/alternatives`,
+      headers: agentHeaders,
+      payload: {
+        title: "Mirror the governed projection",
+        description:
+          "Serve an indexed local projection whose source permissions can be reproduced exactly.",
+        tradeoffs:
+          "Supports offline reads but requires explicit freshness and deletion propagation semantics.",
+        evidenceRefs: ["fixture:mirror-indexed"],
+      },
+    });
+    expect(agentAlternative.statusCode).toBe(201);
+    const suggested = agentAlternative.json() as {
+      id: string;
+      origin: string;
+      status: string;
+    };
+    expect(suggested).toMatchObject({
+      origin: "AGENT_SUGGESTED",
+      status: "SUGGESTED",
+    });
+
+    const humanAlternative = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/decisions/${firstDecision.id}/alternatives`,
+      headers: actorAHeaders,
+      payload: {
+        title: "Resolve every reference live",
+        description:
+          "Keep only safe identifiers locally and resolve approved content from its source whenever it is requested.",
+        tradeoffs:
+          "Avoids mirrored content but makes availability and latency depend on the source system.",
+        evidenceRefs: ["fixture:reference-live"],
+      },
+    });
+    expect(humanAlternative.statusCode).toBe(201);
+    const humanAlternativeBody = humanAlternative.json() as {
+      id: string;
+      origin: string;
+      status: string;
+    };
+    expect(humanAlternativeBody).toMatchObject({
+      origin: "HUMAN_SUBMITTED",
+      status: "CONSIDERED",
+    });
+
+    const prematureSelection = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/decisions/${firstDecision.id}/selection`,
+      headers: reviewerHeaders,
+      payload: {
+        alternativeId: suggested.id,
+        consequences:
+          "If selected, the mirrored projection must carry explicit freshness and authorization guarantees.",
+      },
+    });
+    expect(prematureSelection.statusCode).toBe(409);
+    expect(prematureSelection.json()).toMatchObject({
+      code: "DECISION_ALTERNATIVE_NOT_CONSIDERED",
+    });
+
+    const acceptSuggestion = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/decisions/${firstDecision.id}/alternatives/${suggested.id}/decision`,
+      headers: reviewerHeaders,
+      payload: { decision: "CONSIDER" },
+    });
+    expect(acceptSuggestion.statusCode).toBe(200);
+    expect(acceptSuggestion.json()).toMatchObject({
+      id: suggested.id,
+      origin: "AGENT_SUGGESTED",
+      status: "CONSIDERED",
+      decidedByPrincipalId: reviewerPrincipalId,
+    });
+
+    const consultation = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/decisions/${firstDecision.id}/consultations`,
+      headers: reviewerHeaders,
+      payload: {
+        reviewerPrincipalId: actorBPrincipalId,
+        question:
+          "Does the mirrored option preserve the source authorization boundary in the two-agent workspace?",
+      },
+    });
+    expect(consultation.statusCode).toBe(201);
+    const consultationBody = consultation.json() as { id: string };
+
+    const consultationResponse = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/decisions/${firstDecision.id}/consultations/${consultationBody.id}/respond`,
+      headers: actorBHeaders,
+      payload: {
+        position: "SUPPORT",
+        response:
+          "Yes, provided the connector declares exact source ACL fidelity and stale mirrored state remains explicitly disclosed.",
+      },
+    });
+    expect(consultationResponse.statusCode).toBe(200);
+    expect(consultationResponse.json()).toMatchObject({
+      status: "RESPONDED",
+      position: "SUPPORT",
+      reviewerPrincipalId: actorBPrincipalId,
+    });
+
+    const objection = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/decisions/${firstDecision.id}/objections`,
+      headers: agentHeaders,
+      payload: {
+        alternativeId: suggested.id,
+        statement:
+          "The mirror must fail closed when its declared permission fidelity no longer matches the source.",
+        evidenceRefs: ["fixture:permission-fidelity"],
+      },
+    });
+    expect(objection.statusCode).toBe(201);
+    const objectionBody = objection.json() as { id: string };
+    expect(objection.json()).toMatchObject({
+      status: "OPEN",
+      authorPrincipalId: agent.principal.id,
+    });
+
+    const blockedByObjection = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/decisions/${firstDecision.id}/selection`,
+      headers: reviewerHeaders,
+      payload: {
+        alternativeId: suggested.id,
+        consequences:
+          "A mirrored projection improves local availability but becomes unsafe if permission fidelity drifts.",
+      },
+    });
+    expect(blockedByObjection.statusCode).toBe(409);
+    expect(blockedByObjection.json()).toMatchObject({
+      code: "DECISION_OPEN_OBJECTIONS",
+    });
+
+    const resolved = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/decisions/${firstDecision.id}/objections/${objectionBody.id}/resolve`,
+      headers: reviewerHeaders,
+      payload: {
+        resolution:
+          "Accepted as a hard connector-policy gate; mismatched permission fidelity denies use rather than degrading silently.",
+      },
+    });
+    expect(resolved.statusCode).toBe(200);
+    expect(resolved.json()).toMatchObject({
+      status: "RESOLVED",
+      resolvedByPrincipalId: reviewerPrincipalId,
+    });
+
+    const selected = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/decisions/${firstDecision.id}/selection`,
+      headers: reviewerHeaders,
+      payload: {
+        alternativeId: suggested.id,
+        consequences:
+          "The workspace gains bounded offline availability, while connector permission fidelity, freshness, and deletion propagation become explicit runtime obligations.",
+        followUpActions: [
+          "Run the two-agent governed flow after connector-policy changes.",
+          "Verify stale mirrored state is disclosed and denied when policy fidelity is lost.",
+        ],
+        effectiveFrom: "2026-09-17T00:00:00.000Z",
+        effectiveUntil: "2027-09-17T00:00:00.000Z",
+      },
+    });
+    expect(selected.statusCode).toBe(200);
+    expect(selected.json()).toMatchObject({
+      status: "READY_FOR_REVIEW",
+      selectedAlternativeId: suggested.id,
+      consequences:
+        "The workspace gains bounded offline availability, while connector permission fidelity, freshness, and deletion propagation become explicit runtime obligations.",
+      followUpActions: [
+        "Run the two-agent governed flow after connector-policy changes.",
+        "Verify stale mirrored state is disclosed and denied when policy fidelity is lost.",
+      ],
+      effectiveFrom: "2026-09-17T00:00:00.000Z",
+      effectiveUntil: "2027-09-17T00:00:00.000Z",
+    });
+
+    const captured = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/decisions/${firstDecision.id}/capture`,
+      headers: agentHeaders,
+    });
+    expect(captured.statusCode).toBe(201);
+    const capturedBody = captured.json() as { eventId: string };
+    expect(captured.json()).toMatchObject({
+      eventType: "DECISION_CANDIDATE",
+      candidate: {
+        id: firstDecision.id,
+        status: "READY_FOR_REVIEW",
+      },
+    });
+
+    const capturedAgain = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/decisions/${firstDecision.id}/capture`,
+      headers: agentHeaders,
+    });
+    expect(capturedAgain.statusCode).toBe(201);
+    expect(capturedAgain.json()).toMatchObject({
+      eventId: capturedBody.eventId,
+    });
+
+    const firstPromotion = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/promotions`,
+      headers: agentHeaders,
+      payload: {
+        evidenceEventIds: [capturedBody.eventId],
+        summary: "Promote consulted context delivery decision",
+        changes: [
+          {
+            path: `20-knowledge/generated/decision/context-delivery-${vaultId.slice(0, 8)}.md`,
+            content:
+              "---\nid: CONTEXT-DELIVERY\ntype: decision\nstatus: proposed\nknowledge_layer: project\n---\n# Context delivery mode\n\nUse an indexed governed projection only when connector capabilities preserve the source authorization boundary. The alternative originated as an agent suggestion, was explicitly considered by the human decision authority, received independent consultation, and resolved its open objection before entering governed review.\n",
+            reason:
+              "Promote only the captured consultative decision through human review.",
+          },
+        ],
+      },
+    });
+    expect(firstPromotion.statusCode, firstPromotion.body).toBe(201);
+    const firstPromotionBody = firstPromotion.json() as {
+      reviewId: string;
+      decisionCandidateId: string;
+    };
+    expect(firstPromotionBody.decisionCandidateId).toBe(firstDecision.id);
+
+    const pendingSnapshot = await app.inject({
+      method: "GET",
+      url: `/v1/sessions/${sessionId}/decisions/${firstDecision.id}`,
+      headers: reviewerHeaders,
+    });
+    expect(pendingSnapshot.statusCode).toBe(200);
+    expect(pendingSnapshot.json()).toMatchObject({
+      candidate: {
+        id: firstDecision.id,
+        status: "PENDING_REVIEW",
+        reviewId: firstPromotionBody.reviewId,
+        reviewStatus: "PENDING",
+      },
+    });
+
+    const agentApproval = await app.inject({
+      method: "POST",
+      url: `/v1/reviews/${firstPromotionBody.reviewId}/decision`,
+      headers: agentHeaders,
+      payload: {
+        decision: "APPROVE",
+        reason:
+          "An agent that prepared the candidate still must not approve canonical publication.",
+      },
+    });
+    expect(agentApproval.statusCode).toBe(403);
+    expect(agentApproval.json()).toMatchObject({
+      code: "PRINCIPAL_ROUTE_DENIED",
+    });
+
+    const firstApproval = await app.inject({
+      method: "POST",
+      url: `/v1/reviews/${firstPromotionBody.reviewId}/decision`,
+      headers: reviewerHeaders,
+      payload: {
+        decision: "APPROVE",
+        reason:
+          "Human decision authority approves the consulted, evidence-linked candidate.",
+      },
+    });
+    expect(firstApproval.statusCode).toBe(200);
+    const firstApproved = firstApproval.json() as {
+      status: string;
+      mergedCommit: string;
+    };
+    expect(firstApproved.status).toBe("APPROVED");
+
+    const approvedSnapshot = await app.inject({
+      method: "GET",
+      url: `/v1/sessions/${sessionId}/decisions/${firstDecision.id}`,
+      headers: reviewerHeaders,
+    });
+    expect(approvedSnapshot.statusCode).toBe(200);
+    expect(approvedSnapshot.json()).toMatchObject({
+      candidate: {
+        id: firstDecision.id,
+        status: "APPROVED",
+        publishedRevision: firstApproved.mergedCommit,
+      },
+    });
+
+    const secondSessionResponse = await app.inject({
+      method: "POST",
+      url: "/v1/sessions",
+      headers: actorAHeaders,
+      payload: {
+        spaceId,
+        vaultId,
+        purpose: "Supersede an approved architecture decision",
+        contextBudget: 4096,
+      },
+    });
+    expect(secondSessionResponse.statusCode).toBe(201);
+    const secondSessionId = (secondSessionResponse.json() as { id: string }).id;
+    for (const userId of [actorBId, reviewerId]) {
+      const joined = await app.inject({
+        method: "POST",
+        url: `/v1/sessions/${secondSessionId}/participants`,
+        headers: actorAHeaders,
+        payload: { userId },
+      });
+      expect(joined.statusCode).toBe(201);
+    }
+
+    const rejectedCandidateResponse = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${secondSessionId}/decisions`,
+      headers: actorAHeaders,
+      payload: {
+        decisionAuthorityPrincipalId: reviewerPrincipalId,
+        title: "Rejected candidate keeps lifecycle atomic",
+        problem:
+          "Verify that rejecting a governed review cannot leave its structured decision candidate pending.",
+        context:
+          "Decision workflow and review publication share one governance boundary; their terminal rejection state must not diverge.",
+        drivers: ["atomic lifecycle", "auditability"],
+        qualityAttributes: ["consistency", "auditability"],
+        affectedRefs: ["service:review-api"],
+        evidenceRefs: ["fixture:decision-rejection"],
+        verificationPlan:
+          "Reject the governed review and read both durable states from PostgreSQL in the same integration flow.",
+      },
+    });
+    expect(rejectedCandidateResponse.statusCode).toBe(201);
+    const rejectedCandidate = rejectedCandidateResponse.json() as {
+      id: string;
+    };
+
+    const rejectedAltAResponse = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${secondSessionId}/decisions/${rejectedCandidate.id}/alternatives`,
+      headers: actorAHeaders,
+      payload: {
+        title: "Reject candidate atomically",
+        description:
+          "Transition the linked review and structured decision candidate to rejected together.",
+        tradeoffs:
+          "Requires the review transition to own the decision rejection boundary.",
+      },
+    });
+    expect(rejectedAltAResponse.statusCode).toBe(201);
+    const rejectedAltAId = (rejectedAltAResponse.json() as { id: string }).id;
+
+    const rejectedAltBResponse = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${secondSessionId}/decisions/${rejectedCandidate.id}/alternatives`,
+      headers: actorBHeaders,
+      payload: {
+        title: "Reject review only",
+        description:
+          "Keep decision state independent and reconcile it after the review transition.",
+        tradeoffs:
+          "Creates a divergence window and is therefore retained only as the considered alternative that must not be selected.",
+      },
+    });
+    expect(rejectedAltBResponse.statusCode).toBe(201);
+
+    const rejectedConsultationResponse = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${secondSessionId}/decisions/${rejectedCandidate.id}/consultations`,
+      headers: reviewerHeaders,
+      payload: {
+        reviewerPrincipalId: actorBPrincipalId,
+        question:
+          "Should review rejection and structured decision rejection share one atomic database transition?",
+      },
+    });
+    expect(rejectedConsultationResponse.statusCode).toBe(201);
+    const rejectedConsultationId = (
+      rejectedConsultationResponse.json() as { id: string }
+    ).id;
+
+    const rejectedConsultationAnswer = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${secondSessionId}/decisions/${rejectedCandidate.id}/consultations/${rejectedConsultationId}/respond`,
+      headers: actorBHeaders,
+      payload: {
+        position: "SUPPORT",
+        response:
+          "Yes. A rejected review must never expose a linked decision candidate as still pending governance.",
+      },
+    });
+    expect(rejectedConsultationAnswer.statusCode).toBe(200);
+
+    const rejectedSelection = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${secondSessionId}/decisions/${rejectedCandidate.id}/selection`,
+      headers: reviewerHeaders,
+      payload: {
+        alternativeId: rejectedAltAId,
+        consequences:
+          "Review rejection becomes a single durable state transition with the structured candidate, eliminating a partial-state window.",
+        followUpActions: [
+          "Keep the rejection invariant covered by the governed product-flow integration suite.",
+        ],
+      },
+    });
+    expect(rejectedSelection.statusCode).toBe(200);
+
+    const rejectedCapture = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${secondSessionId}/decisions/${rejectedCandidate.id}/capture`,
+      headers: actorAHeaders,
+    });
+    expect(rejectedCapture.statusCode).toBe(201);
+    const rejectedEventId = (rejectedCapture.json() as { eventId: string })
+      .eventId;
+
+    const rejectedPromotion = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${secondSessionId}/promotions`,
+      headers: actorAHeaders,
+      payload: {
+        evidenceEventIds: [rejectedEventId],
+        summary: "Exercise atomic decision rejection",
+        changes: [
+          {
+            path: `20-knowledge/generated/decision/rejected-lifecycle-${vaultId.slice(0, 8)}.md`,
+            content:
+              "---\nid: REJECTED-LIFECYCLE\ntype: decision\nstatus: proposed\nknowledge_layer: project\n---\n# Rejected lifecycle candidate\n\nThis candidate exists only to prove that review rejection and structured decision rejection remain one durable transition.\n",
+            reason:
+              "Exercise the negative governance path without publishing canonical knowledge.",
+          },
+        ],
+      },
+    });
+    expect(rejectedPromotion.statusCode, rejectedPromotion.body).toBe(201);
+    const rejectedReviewId = (rejectedPromotion.json() as { reviewId: string })
+      .reviewId;
+
+    const rejectedReview = await app.inject({
+      method: "POST",
+      url: `/v1/reviews/${rejectedReviewId}/decision`,
+      headers: reviewerHeaders,
+      payload: {
+        decision: "REJECT",
+        reason:
+          "Intentional negative-path proof: this candidate must never publish.",
+      },
+    });
+    expect(rejectedReview.statusCode).toBe(200);
+    expect(rejectedReview.json()).toMatchObject({ status: "REJECTED" });
+
+    const rejectedState = await db.pool.query<{
+      review_status: string;
+      candidate_status: string;
+    }>(
+      `select review.status review_status,candidate.status candidate_status
+         from reviews review
+         join workspace_decision_candidates candidate
+           on candidate.review_id=review.id
+        where review.id=$1`,
+      [rejectedReviewId],
+    );
+    expect(rejectedState.rows[0]).toEqual({
+      review_status: "REJECTED",
+      candidate_status: "REJECTED",
+    });
+
+    const replacement = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${secondSessionId}/decisions`,
+      headers: actorAHeaders,
+      payload: {
+        decisionAuthorityPrincipalId: reviewerPrincipalId,
+        title: "Context delivery mode v2",
+        problem:
+          "Supersede the original choice after operational evidence requires live revalidation for a subset of sources.",
+        context:
+          "Operational evidence shows that one provider cannot sustain the original mirrored freshness assumptions, so the replacement must narrow caching without weakening authorization.",
+        drivers: ["freshness", "permission fidelity", "provider availability"],
+        qualityAttributes: ["security", "freshness", "resilience"],
+        affectedRefs: ["service:context-api"],
+        evidenceRefs: ["fixture:first-decision", "fixture:operational-change"],
+        verificationPlan:
+          "Verify the replacement through the same governed publication path and confirm that the predecessor is marked superseded atomically.",
+        supersedesCandidateId: firstDecision.id,
+      },
+    });
+    expect(replacement.statusCode).toBe(201);
+    const replacementBody = replacement.json() as { id: string };
+
+    const replacementAltA = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${secondSessionId}/decisions/${replacementBody.id}/alternatives`,
+      headers: actorAHeaders,
+      payload: {
+        title: "Hybrid bounded cache",
+        description:
+          "Use bounded local cache with live revalidation where source policy permits it.",
+        tradeoffs:
+          "Improves availability but stale windows must be bounded and disclosed.",
+      },
+    });
+    expect(replacementAltA.statusCode).toBe(201);
+    const replacementAltAId = (replacementAltA.json() as { id: string }).id;
+
+    const replacementAltB = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${secondSessionId}/decisions/${replacementBody.id}/alternatives`,
+      headers: actorBHeaders,
+      payload: {
+        title: "Live reference only",
+        description: "Use only live references for the changed provider.",
+        tradeoffs:
+          "Strong freshness but no offline content when the provider is unavailable.",
+      },
+    });
+    expect(replacementAltB.statusCode).toBe(201);
+
+    const replacementConsultation = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${secondSessionId}/decisions/${replacementBody.id}/consultations`,
+      headers: reviewerHeaders,
+      payload: {
+        reviewerPrincipalId: actorBPrincipalId,
+        question:
+          "Is a bounded hybrid cache preferable to live-only access for this source?",
+      },
+    });
+    expect(replacementConsultation.statusCode).toBe(201);
+    const replacementConsultationId = (
+      replacementConsultation.json() as { id: string }
+    ).id;
+
+    const replacementResponse = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${secondSessionId}/decisions/${replacementBody.id}/consultations/${replacementConsultationId}/respond`,
+      headers: actorBHeaders,
+      payload: {
+        position: "SUPPORT",
+        response:
+          "A bounded cache is acceptable when its stale window is explicit and permission fidelity remains enforced.",
+      },
+    });
+    expect(replacementResponse.statusCode).toBe(200);
+
+    const replacementSelection = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${secondSessionId}/decisions/${replacementBody.id}/selection`,
+      headers: reviewerHeaders,
+      payload: {
+        alternativeId: replacementAltAId,
+        consequences:
+          "The affected provider uses a bounded hybrid cache, trading some offline continuity for mandatory live revalidation at the declared freshness boundary.",
+        followUpActions: [
+          "Measure stale-window violations for the changed provider.",
+          "Re-run permission-fidelity checks after provider capability changes.",
+        ],
+      },
+    });
+    expect(replacementSelection.statusCode).toBe(200);
+    expect(replacementSelection.json()).toMatchObject({
+      status: "READY_FOR_REVIEW",
+    });
+
+    const replacementCapture = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${secondSessionId}/decisions/${replacementBody.id}/capture`,
+      headers: actorAHeaders,
+    });
+    expect(replacementCapture.statusCode).toBe(201);
+    const replacementEventId = (
+      replacementCapture.json() as { eventId: string }
+    ).eventId;
+
+    const replacementPromotion = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${secondSessionId}/promotions`,
+      headers: actorAHeaders,
+      payload: {
+        evidenceEventIds: [replacementEventId],
+        summary: "Supersede context delivery decision",
+        changes: [
+          {
+            path: `20-knowledge/generated/decision/context-delivery-v2-${vaultId.slice(0, 8)}.md`,
+            content:
+              "---\nid: CONTEXT-DELIVERY-V2\ntype: decision\nstatus: proposed\nknowledge_layer: project\n---\n# Context delivery mode v2\n\nUse a bounded hybrid cache only where permission fidelity is preserved and stale state is explicitly disclosed. This replacement was consulted independently and is not authoritative until the governed human review publishes it.\n",
+            reason:
+              "Publish the replacement through the existing review authority.",
+          },
+        ],
+      },
+    });
+    expect(replacementPromotion.statusCode, replacementPromotion.body).toBe(
+      201,
+    );
+    const replacementReviewId = (
+      replacementPromotion.json() as { reviewId: string }
+    ).reviewId;
+
+    const replacementApproval = await app.inject({
+      method: "POST",
+      url: `/v1/reviews/${replacementReviewId}/decision`,
+      headers: reviewerHeaders,
+      payload: {
+        decision: "APPROVE",
+        reason:
+          "Human reviewer approves the replacement and its explicit supersession link.",
+      },
+    });
+    expect(replacementApproval.statusCode).toBe(200);
+    const replacementApproved = replacementApproval.json() as {
+      mergedCommit: string;
+    };
+
+    const supersessionState = await db.pool.query<{
+      id: string;
+      status: string;
+      supersedes_candidate_id: string | null;
+      superseded_by_candidate_id: string | null;
+      published_revision: string | null;
+    }>(
+      `select id,status,supersedes_candidate_id,
+              superseded_by_candidate_id,published_revision
+         from workspace_decision_candidates
+        where id=any($1::uuid[])
+        order by id`,
+      [[firstDecision.id, replacementBody.id]],
+    );
+    const predecessor = supersessionState.rows.find(
+      (row) => row.id === firstDecision.id,
+    );
+    const successor = supersessionState.rows.find(
+      (row) => row.id === replacementBody.id,
+    );
+    expect(predecessor).toMatchObject({
+      status: "SUPERSEDED",
+      superseded_by_candidate_id: replacementBody.id,
+      published_revision: firstApproved.mergedCommit,
+    });
+    expect(successor).toMatchObject({
+      status: "APPROVED",
+      supersedes_candidate_id: firstDecision.id,
+      published_revision: replacementApproved.mergedCommit,
+    });
+  });
+});

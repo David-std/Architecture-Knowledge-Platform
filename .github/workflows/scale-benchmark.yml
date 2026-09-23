@@ -6,6 +6,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   postgres-scale:
     runs-on: ubuntu-latest
@@ -115,8 +119,157 @@ jobs:
         if: always()
         run: docker compose down -v --remove-orphans
 
+  enterprise-state-scale:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: postgres://akp:akp@localhost:55432/akp
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - run: docker compose up -d --wait postgres
+      - run: pnpm db:migrate
+      - name: Execute enterprise-state scale suite
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p reports/ci
+          pnpm benchmark:scale:enterprise -- \
+            --output reports/ci/enterprise-state-scale-benchmark.json \
+            --targets 100,1000,5000 \
+            --iterations 20 \
+            2>&1 | tee reports/ci/enterprise-state-scale-benchmark.log
+      - name: Validate enterprise-state evidence
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const report = JSON.parse(
+            readFileSync("reports/ci/enterprise-state-scale-benchmark.json", "utf8"),
+          );
+          if (report.status !== "PASSED") {
+            throw new Error(`Enterprise-state benchmark status is ${report.status}.`);
+          }
+          if (report.schemaVersion !== "akp.enterprise-state-scale-benchmark.v1") {
+            throw new Error(`Unexpected schema: ${report.schemaVersion}`);
+          }
+          if (JSON.stringify(report.execution?.targets) !== JSON.stringify([100, 1000, 5000])) {
+            throw new Error("Enterprise-state target matrix changed.");
+          }
+          if (report.execution?.iterations !== 20) {
+            throw new Error("Enterprise-state p99 evidence must retain 20 iterations.");
+          }
+          for (const key of [
+            "exactTargetSet",
+            "exactDimensionRows",
+            "rollbackCleanupSucceeded",
+            "p99Reported",
+            "poolBounded",
+          ]) {
+            if (report.acceptance?.[key] !== true) {
+              throw new Error(`Enterprise-state acceptance failed: ${key}`);
+            }
+          }
+          const last = report.results?.at(-1);
+          if (!last || last.target !== 5000) {
+            throw new Error("Enterprise-state suite did not reach target 5000.");
+          }
+          if (
+            JSON.stringify(last.observed) !== JSON.stringify(last.expected)
+          ) {
+            throw new Error(
+              `Enterprise-state final dimensions are not exact: ${JSON.stringify({
+                expected: last.expected,
+                observed: last.observed,
+              })}`,
+            );
+          }
+          if ((last.observed?.agentSessions ?? 0) < 20) {
+            throw new Error("Enterprise-state suite did not retain at least 20 agent sessions.");
+          }
+          if (!Array.isArray(last.queryLatency) || last.queryLatency.length < 6) {
+            throw new Error("Enterprise-state query evidence is incomplete.");
+          }
+          console.log(JSON.stringify({
+            status: report.status,
+            targets: report.execution.targets,
+            iterations: report.execution.iterations,
+            maxPoolWaiting: report.dbPoolPressure?.maxWaitingCount,
+          }, null, 2));
+          NODE
+      - name: Build workspace for bounded integration probes
+        run: pnpm build
+      - name: Execute bounded scale combination probes
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --filter @akp/indexing exec vitest run \
+            test/community-index.integration.test.ts \
+            2>&1 | tee reports/ci/community-rebuild-under-reads.log
+          pnpm --filter @akp/worker exec vitest run \
+            test/truth-maintenance.test.ts \
+            -t "rebuilds only affected current truth while preserving historical dependencies" \
+            2>&1 | tee reports/ci/truth-invalidation-burst.log
+          node --input-type=module <<'NODE'
+          import { writeFileSync } from "node:fs";
+          const report = {
+            schemaVersion: "akp.enterprise-scale-combinations.v1",
+            generatedAt: new Date().toISOString(),
+            status: "PASSED",
+            evidenceLevel: "BOUNDED_INTEGRATION_FIXTURES",
+            scenarios: [
+              {
+                id: "community-rebuild-under-ongoing-reads",
+                status: "PASSED",
+                fixture:
+                  "Existing ACTIVE community revision remains readable while a replacement rebuild is blocked at a controlled model-summary barrier; activation swaps only after rebuild completion.",
+              },
+              {
+                id: "truth-invalidations-burst",
+                status: "PASSED",
+                fixture:
+                  "Twelve durable DerivedSupportInvalidationRequested events are claimed by four workers and must each produce one successful delivery and projection revision.",
+              },
+            ],
+            claimBoundary:
+              "These are bounded local PostgreSQL integration stress fixtures, not production capacity SLOs.",
+          };
+          writeFileSync(
+            "reports/ci/enterprise-scale-combinations.json",
+            `${JSON.stringify(report, null, 2)}\n`,
+            "utf8",
+          );
+          NODE
+      - name: Capture enterprise-state diagnostics
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          mkdir -p reports/ci
+          docker compose ps --all > reports/ci/enterprise-state-docker-compose-ps.txt 2>&1
+          docker compose logs --no-color --timestamps postgres \
+            > reports/ci/enterprise-state-postgres.log 2>&1
+      - name: Upload enterprise-state evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: enterprise-state-scale-${{ github.run_id }}
+          path: reports/ci
+          if-no-files-found: error
+          retention-days: 14
+      - name: Stop disposable services
+        if: always()
+        run: docker compose down -v --remove-orphans
+
   aggregate-scale-evidence:
-    needs: postgres-scale
+    needs: [postgres-scale, enterprise-state-scale]
     runs-on: ubuntu-latest
     steps:
       - name: Download scale shard evidence
@@ -125,6 +278,12 @@ jobs:
           pattern: scale-benchmark-${{ github.run_id }}-*
           path: reports/scale-shards
           merge-multiple: true
+      - name: Download enterprise-state evidence
+        uses: actions/download-artifact@v7
+        with:
+          name: enterprise-state-scale-${{ github.run_id }}
+          path: reports/enterprise-state
+
       - name: Validate and aggregate exact scale matrix
         shell: bash
         run: |
@@ -178,8 +337,35 @@ jobs:
             }
           }
 
+          const enterprise = JSON.parse(
+            readFileSync(
+              "reports/enterprise-state/enterprise-state-scale-benchmark.json",
+              "utf8",
+            ),
+          );
+          if (enterprise.status !== "PASSED") {
+            throw new Error("Enterprise-state scale evidence did not pass.");
+          }
+          const combinationProbes = JSON.parse(
+            readFileSync(
+              "reports/enterprise-state/enterprise-scale-combinations.json",
+              "utf8",
+            ),
+          );
+          if (
+            combinationProbes.status !== "PASSED" ||
+            combinationProbes.evidenceLevel !== "BOUNDED_INTEGRATION_FIXTURES" ||
+            !Array.isArray(combinationProbes.scenarios) ||
+            combinationProbes.scenarios.length !== 2 ||
+            combinationProbes.scenarios.some(
+              (scenario) => scenario.status !== "PASSED",
+            )
+          ) {
+            throw new Error("Bounded scale combination probes did not pass.");
+          }
+
           const combined = {
-            schemaVersion: "akp.scale-benchmark-matrix.v1",
+            schemaVersion: "akp.scale-benchmark-matrix.v2",
             generatedAt: new Date().toISOString(),
             status: "PASSED",
             evidenceLevel: "SYNTHETIC_ISOLATED_POSTGRES",
@@ -200,6 +386,15 @@ jobs:
               cleanupSucceeded: true,
             },
             results: reports.map((report) => report.results[0]),
+            enterpriseState: {
+              schemaVersion: enterprise.schemaVersion,
+              execution: enterprise.execution,
+              acceptance: enterprise.acceptance,
+              results: enterprise.results,
+              dbPoolPressure: enterprise.dbPoolPressure,
+              limitations: enterprise.limitations,
+            },
+            combinationProbes,
             shards: reports.map((report) => ({
               target: report.execution.targets[0],
               generatedAt: report.generatedAt,

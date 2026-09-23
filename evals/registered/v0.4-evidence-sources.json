@@ -1,0 +1,2517 @@
+{
+  "schemaVersion": 1,
+  "release": "v0.4.0",
+  "policy": "Every listed source is required. Behavioral evidence maps only to directly matching named execution steps; broad build/typecheck success is not accepted. Operator-surface evidence may map to the concrete maintained surface file because runtime/integration behavior is evaluated in separate acceptance columns. Unmapped evidence remains SKIPPED and cannot raise capability maturity.",
+  "evidence": {
+    "remote:ci": {
+      "sources": [
+        {
+          "type": "WORKFLOW",
+          "workflow": "ci"
+        }
+      ]
+    },
+    "remote:recovery": {
+      "sources": [
+        {
+          "type": "WORKFLOW",
+          "workflow": "recovery"
+        }
+      ]
+    },
+    "remote:resilience": {
+      "sources": [
+        {
+          "type": "WORKFLOW",
+          "workflow": "resilience-matrix"
+        }
+      ]
+    },
+    "remote:team-node": {
+      "sources": [
+        {
+          "type": "WORKFLOW",
+          "workflow": "team-node"
+        }
+      ]
+    },
+    "remote:semantic": {
+      "sources": [
+        {
+          "type": "WORKFLOW",
+          "workflow": "semantic-retrieval"
+        }
+      ]
+    },
+    "remote:scale": {
+      "sources": [
+        {
+          "type": "WORKFLOW",
+          "workflow": "scale-benchmark"
+        }
+      ]
+    },
+    "remote:concurrency": {
+      "sources": [
+        {
+          "type": "WORKFLOW",
+          "workflow": "concurrency-benchmark"
+        }
+      ]
+    },
+    "remote:document-intelligence": {
+      "sources": [
+        {
+          "type": "WORKFLOW",
+          "workflow": "document-intelligence-benchmark"
+        }
+      ]
+    },
+    "remote:agent": {
+      "sources": [
+        {
+          "type": "WORKFLOW",
+          "workflow": "agent-ab"
+        },
+        {
+          "type": "WORKFLOW",
+          "workflow": "agent-arena"
+        }
+      ]
+    },
+    "doc:team-context": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "docs/guides/team-context.md"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm docs:validate"
+        }
+      ]
+    },
+    "doc:enterprise-deployment": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "docs/guides/enterprise-deployment.md"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm docs:validate"
+        }
+      ]
+    },
+    "doc:agent-integration": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "docs/guides/agent-integration.md"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm docs:validate"
+        }
+      ]
+    },
+    "doc:graph-model": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "docs/guides/graph-model.md"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm docs:validate"
+        }
+      ]
+    },
+    "doc:code-context": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "docs/guides/code-context.md"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm docs:validate"
+        }
+      ]
+    },
+    "doc:temporal-truth": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "docs/guides/temporal-truth.md"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm docs:validate"
+        }
+      ]
+    },
+    "doc:retrieval-context-engineering": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "docs/guides/retrieval-context-engineering.md"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm docs:validate"
+        }
+      ]
+    },
+    "doc:knowledge-profiles": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "docs/guides/knowledge-profiles.md"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm docs:validate"
+        }
+      ]
+    },
+    "doc:federation": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "docs/guides/federation.md"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm docs:validate"
+        }
+      ]
+    },
+    "doc:contributor-reviewer": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "docs/guides/contributor-reviewer.md"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm docs:validate"
+        }
+      ]
+    },
+    "doc:assurance-connectors": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "docs/guides/assurance-connectors.md"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm docs:validate"
+        }
+      ]
+    },
+    "doc:operations-recovery": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "docs/guides/operations-recovery.md"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm docs:validate"
+        }
+      ]
+    },
+    "benchmark:agent-five-arm": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "agent-arena",
+          "job": "five-arm-arena",
+          "step": "Validate five-arm evidence discipline"
+        }
+      ]
+    },
+    "benchmark:concurrency": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "concurrency-benchmark",
+          "job": "api-and-worker-concurrency",
+          "step": "Validate concurrency evidence dimensions"
+        }
+      ]
+    },
+    "benchmark:document-intelligence": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "document-intelligence-benchmark",
+          "job": "binary-fidelity-and-resources",
+          "step": "Validate benchmark evidence boundaries"
+        }
+      ]
+    },
+    "benchmark:enterprise-state": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "scale-benchmark",
+          "job": "enterprise-state-scale",
+          "step": "Validate enterprise-state evidence"
+        }
+      ]
+    },
+    "benchmark:retrieval-quality": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "semantic-retrieval",
+          "job": "real-multilingual-semantic-retrieval",
+          "step": "Execute registered public corpus retrieval benchmark"
+        }
+      ]
+    },
+    "benchmark:scale": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "scale-benchmark",
+          "job": "aggregate-scale-evidence",
+          "step": "Validate and aggregate exact scale matrix"
+        }
+      ]
+    },
+    "benchmark:semantic": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "semantic-retrieval",
+          "job": "real-multilingual-semantic-retrieval",
+          "step": "Execute pinned multilingual semantic retrieval end to end"
+        }
+      ]
+    },
+    "benchmark:semantic-isolation": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "semantic-retrieval",
+          "job": "real-multilingual-semantic-retrieval",
+          "step": "Validate filtered ANN evidence boundaries"
+        }
+      ]
+    },
+    "test:advanced-retrieval-runtime": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "semantic-retrieval",
+          "job": "real-multilingual-semantic-retrieval",
+          "step": "Execute retrieval matrix through the real runtime pipeline"
+        }
+      ]
+    },
+    "test:agent-context-runtime": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "agent-ab",
+          "job": "aggregate-evidence",
+          "step": "Validate complete agent context ergonomics evidence"
+        }
+      ]
+    },
+    "test:assurance-connectors-runtime": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "resilience-matrix",
+          "job": "injected-failures",
+          "step": "Validate Continuous Assurance and authenticated connector boundaries"
+        }
+      ]
+    },
+    "test:authorization-runtime": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "semantic-retrieval",
+          "job": "real-multilingual-semantic-retrieval",
+          "step": "Validate filtered ANN evidence boundaries"
+        }
+      ]
+    },
+    "test:browser-critical-flows": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run critical browser E2E"
+        }
+      ]
+    },
+    "test:code-context-runtime": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "test:doctor-runtime": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run operator doctor diagnostics"
+        }
+      ]
+    },
+    "test:document-intelligence-runtime": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "document-intelligence-ocr-e2e",
+          "step": "Prove durable OCR ingest through API, worker, artifact and evidence"
+        }
+      ]
+    },
+    "test:graph-runtime": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "test:ingest-lifecycle": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "test:profile-runtime": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "test:temporal-truth-runtime": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run temporal truth maintenance integration"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "test:authorization-decision-semantics": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        }
+      ]
+    },
+    "integration:principal-audit-identities": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "integration:fresh-session-handoff": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "integration:offline-snapshot-contract": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "failure:work-scope-normalization": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "test:workspace-runtime": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "integration:assurance-connectors": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "resilience-matrix",
+          "job": "injected-failures",
+          "step": "Validate Continuous Assurance and authenticated connector boundaries"
+        }
+      ]
+    },
+    "integration:document-intelligence": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "integration:federated-graph": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "resilience-matrix",
+          "job": "injected-failures",
+          "step": "Validate recovery and failure-injection boundaries"
+        }
+      ]
+    },
+    "integration:graphify-live": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "code-graph-graphify",
+          "step": "Verify real Graphify adapter"
+        }
+      ]
+    },
+    "integration:mcp-context-facade": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "agent-ab",
+          "job": "aggregate-evidence",
+          "step": "Validate complete agent context ergonomics evidence"
+        }
+      ]
+    },
+    "integration:multi-space-security": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "semantic-retrieval",
+          "job": "real-multilingual-semantic-retrieval",
+          "step": "Validate filtered ANN evidence boundaries"
+        }
+      ]
+    },
+    "integration:operations-runtime": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm verify:runtime"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run operator doctor diagnostics"
+        }
+      ]
+    },
+    "integration:concurrency-races": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run concurrency race verification"
+        }
+      ]
+    },
+    "integration:product-lifecycle": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "integration:profile-governance": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "integration:retrieval-context": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "semantic-retrieval",
+          "job": "real-multilingual-semantic-retrieval",
+          "step": "Execute retrieval matrix through the real runtime pipeline"
+        }
+      ]
+    },
+    "integration:team-node": {
+      "sources": [
+        {
+          "type": "WORKFLOW",
+          "workflow": "team-node"
+        }
+      ]
+    },
+    "integration:temporal-truth": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "integration:web-workspace": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run critical browser E2E"
+        }
+      ]
+    },
+    "failure:autosave-git-failure": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run critical browser E2E"
+        }
+      ]
+    },
+    "failure:connector-checkpoint-window": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "resilience-matrix",
+          "job": "injected-failures",
+          "step": "Validate Continuous Assurance and authenticated connector boundaries"
+        }
+      ]
+    },
+    "failure:document-provider-unavailable": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "resilience-matrix",
+          "job": "injected-failures",
+          "step": "Validate unavailable document-intelligence provider fails closed"
+        }
+      ]
+    },
+    "failure:otel-unavailable": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "resilience-matrix",
+          "job": "injected-failures",
+          "step": "Start API with MCP absent and OpenTelemetry collector unreachable"
+        }
+      ]
+    },
+    "failure:profile-activation-rollback": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "failure:publication-compensation": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "resilience-matrix",
+          "job": "injected-failures",
+          "step": "Validate publication compensation and recovery"
+        }
+      ]
+    },
+    "failure:source-withdrawal-stale-index": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run temporal truth maintenance integration"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "failure:truth-changes-mid-query": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "failure:webhook-replay": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "resilience-matrix",
+          "job": "injected-failures",
+          "step": "Validate Continuous Assurance and authenticated connector boundaries"
+        }
+      ]
+    },
+    "failure:workspace-fencing": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "recovery:backup-restore-rebuild": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "resilience-matrix",
+          "job": "injected-failures",
+          "step": "Validate backup restore then projection rebuild"
+        }
+      ]
+    },
+    "recovery:derived-index-rebuild": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "resilience-matrix",
+          "job": "injected-failures",
+          "step": "Validate backup restore then projection rebuild"
+        }
+      ]
+    },
+    "recovery:managed-git-restore": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "recovery",
+          "job": "managed-git-restore",
+          "step": "Verify managed Git commit, files and searchable reindex after restore"
+        }
+      ]
+    },
+    "security:code-scope": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "security:connector-auth-replay": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "resilience-matrix",
+          "job": "injected-failures",
+          "step": "Validate Continuous Assurance and authenticated connector boundaries"
+        }
+      ]
+    },
+    "security:cross-space-retrieval": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "semantic-retrieval",
+          "job": "real-multilingual-semantic-retrieval",
+          "step": "Validate filtered ANN evidence boundaries"
+        }
+      ]
+    },
+    "security:cross-space-workspace": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "security:document-provider-boundary": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "python",
+          "step": "Run extractor suite with real local OCR tools"
+        }
+      ]
+    },
+    "security:profile-not-authority": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "security:scoped-ingest-review": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "security:secret-scan": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm security:secrets"
+        }
+      ]
+    },
+    "security:truth-scope": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "security:unauthorized-graph-hop": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "security:web-space-boundaries": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run critical browser E2E"
+        }
+      ]
+    },
+    "surface:agent-context": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "agent-ab",
+          "job": "aggregate-evidence",
+          "step": "Validate complete agent context ergonomics evidence"
+        }
+      ]
+    },
+    "surface:assurance-admin": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run critical browser E2E"
+        }
+      ]
+    },
+    "surface:cli-doctor": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run operator doctor diagnostics"
+        }
+      ]
+    },
+    "surface:code-context": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run critical browser E2E"
+        }
+      ]
+    },
+    "surface:connector-admin": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run critical browser E2E"
+        }
+      ]
+    },
+    "surface:doctor-federation": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run operator doctor diagnostics"
+        }
+      ]
+    },
+    "surface:graph-explorer": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run critical browser E2E"
+        }
+      ]
+    },
+    "surface:mcp-akp-context": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "agent-ab",
+          "job": "aggregate-evidence",
+          "step": "Validate complete agent context ergonomics evidence"
+        }
+      ]
+    },
+    "surface:source-review-publication": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run critical browser E2E"
+        }
+      ]
+    },
+    "surface:temporal-context": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run critical browser E2E"
+        }
+      ]
+    },
+    "surface:web-workspace": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run critical browser E2E"
+        }
+      ]
+    },
+    "surface:workspace-home": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run critical browser E2E"
+        }
+      ]
+    },
+    "test:reasoning-runtime": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run reasoning adversarial verification"
+        }
+      ]
+    },
+    "failure:reasoning-invalid-operator": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run reasoning adversarial verification"
+        }
+      ]
+    },
+    "failure:reasoning-timeout": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run reasoning adversarial verification"
+        }
+      ]
+    },
+    "security:load-raw-resource-boundary": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run reasoning adversarial verification"
+        },
+        {
+          "type": "FILE",
+          "path": "packages/retrieval/test/reasoning-plan.test.ts"
+        }
+      ]
+    },
+    "integration:reasoning-context": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run reasoning adversarial verification"
+        }
+      ]
+    },
+    "security:no-arbitrary-sql-cypher": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run reasoning adversarial verification"
+        }
+      ]
+    },
+    "test:model-routing-runtime": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run model routing and residency verification"
+        }
+      ]
+    },
+    "failure:external-model-unavailable": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run model routing and residency verification"
+        }
+      ]
+    },
+    "failure:model-residency-fallback": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run model routing and residency verification"
+        }
+      ]
+    },
+    "integration:model-routing-compiler": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run model routing and residency verification"
+        }
+      ]
+    },
+    "security:model-residency": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run model routing and residency verification"
+        }
+      ]
+    },
+    "failure:code-provider-crash": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run code graph failure verification"
+        }
+      ]
+    },
+    "failure:stale-code-sha": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run code graph failure verification"
+        }
+      ]
+    },
+    "failure:federated-invalid-payload": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run federation contract verification"
+        }
+      ]
+    },
+    "failure:federated-scope-overreturn": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/src/routes/context-fabric.ts"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/test/context-fabric.integration.test.ts"
+        }
+      ]
+    },
+    "security:federation-trust-scope": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run federation contract verification"
+        }
+      ]
+    },
+    "failure:community-build-rollback": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "resilience-matrix",
+          "job": "injected-failures",
+          "step": "Validate recovery and failure-injection boundaries"
+        }
+      ]
+    },
+    "failure:federated-peer-unavailable": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "resilience-matrix",
+          "job": "injected-failures",
+          "step": "Validate recovery and failure-injection boundaries"
+        }
+      ]
+    },
+    "failure:graph-build-preserves-active": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "resilience-matrix",
+          "job": "injected-failures",
+          "step": "Validate recovery and failure-injection boundaries"
+        }
+      ]
+    },
+    "failure:ppr-cancel": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "resilience-matrix",
+          "job": "injected-failures",
+          "step": "Validate recovery and failure-injection boundaries"
+        }
+      ]
+    },
+    "security:ppr-no-leak": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "resilience-matrix",
+          "job": "injected-failures",
+          "step": "Validate recovery and failure-injection boundaries"
+        }
+      ]
+    },
+    "test:federation-runtime": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "resilience-matrix",
+          "job": "injected-failures",
+          "step": "Validate recovery and failure-injection boundaries"
+        }
+      ]
+    },
+    "failure:revoked-principal": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "failure:agent-revoked-mid-task": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "security:agent-scope": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "security:agent-instruction-integrity": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run MCP instruction integrity verification"
+        }
+      ]
+    },
+    "surface:profile-admin": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "apps/web/app/admin/profiles/page.tsx"
+        }
+      ]
+    },
+    "surface:team-admin": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "apps/web/app/admin/team/page.tsx"
+        }
+      ]
+    },
+    "surface:federation-admin": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "apps/web/app/admin/team/page.tsx"
+        }
+      ]
+    },
+    "surface:source-inspection": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "apps/web/app/sources/[id]/page.tsx"
+        }
+      ]
+    },
+    "surface:retrieval-diagnostics": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "apps/web/app/admin/health/page.tsx"
+        }
+      ]
+    },
+    "recovery:connector-state": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "recovery",
+          "job": "managed-git-restore",
+          "step": "Verify PostgreSQL, MinIO and durable v0.4 state restore"
+        }
+      ]
+    },
+    "recovery:durable-document-state": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "recovery",
+          "job": "managed-git-restore",
+          "step": "Verify PostgreSQL, MinIO and durable v0.4 state restore"
+        }
+      ]
+    },
+    "recovery:federation-peer-state": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "recovery",
+          "job": "managed-git-restore",
+          "step": "Verify PostgreSQL, MinIO and durable v0.4 state restore"
+        }
+      ]
+    },
+    "recovery:profile-state": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "recovery",
+          "job": "managed-git-restore",
+          "step": "Verify PostgreSQL, MinIO and durable v0.4 state restore"
+        }
+      ]
+    },
+    "recovery:truth-state": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "recovery",
+          "job": "managed-git-restore",
+          "step": "Verify PostgreSQL, MinIO and durable v0.4 state restore"
+        }
+      ]
+    },
+    "recovery:web-draft-state": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "recovery",
+          "job": "managed-git-restore",
+          "step": "Verify PostgreSQL, MinIO and durable v0.4 state restore"
+        }
+      ]
+    },
+    "recovery:workspace-state": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "recovery",
+          "job": "managed-git-restore",
+          "step": "Verify PostgreSQL, MinIO and durable v0.4 state restore"
+        }
+      ]
+    },
+    "benchmark:code-quality": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Validate registered domain quality evidence"
+        }
+      ]
+    },
+    "benchmark:federation-partial-failure": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Validate registered domain quality evidence"
+        }
+      ]
+    },
+    "benchmark:graph-quality": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Validate registered domain quality evidence"
+        }
+      ]
+    },
+    "benchmark:reasoning-adversarial": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Validate registered domain quality evidence"
+        }
+      ]
+    },
+    "benchmark:temporal-truth": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Validate registered domain quality evidence"
+        }
+      ]
+    },
+    "integration:federation-two-node": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "federation-two-node",
+          "job": "real-two-node",
+          "step": "Validate real two-node federation evidence"
+        }
+      ]
+    },
+    "recovery:code-graph-rebuild": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "recovery",
+          "job": "managed-git-restore",
+          "step": "Verify managed Git commit, files and searchable reindex after restore"
+        }
+      ]
+    },
+    "recovery:graph-rebuild": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "recovery",
+          "job": "managed-git-restore",
+          "step": "Verify managed Git commit, files and searchable reindex after restore"
+        }
+      ]
+    },
+    "recovery:offline-agent-context": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "recovery",
+          "job": "managed-git-restore",
+          "step": "Verify managed Git commit, files and searchable reindex after restore"
+        }
+      ]
+    },
+    "surface:doctor-model-routing": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run operator doctor diagnostics"
+        }
+      ]
+    },
+    "test:interop-adversarial": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        }
+      ]
+    },
+    "integration:interop-roundtrip": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "integration:activity-derivation-contract": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "integration:relationship-assertion": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        },
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Execute registered domain quality benchmark"
+        }
+      ]
+    },
+    "recovery:rebuild-normalized-equivalence": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        },
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Execute registered domain quality benchmark"
+        }
+      ]
+    },
+    "integration:graph-catalog": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        },
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Execute registered domain quality benchmark"
+        }
+      ]
+    },
+    "test:runtime-domain-contract": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        }
+      ]
+    },
+    "integration:domain-fixtures": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        },
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Execute registered domain quality benchmark"
+        }
+      ]
+    },
+    "integration:cross-domain-provenance": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        },
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Execute registered domain quality benchmark"
+        }
+      ]
+    },
+    "security:cross-domain-hidden-hop": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        },
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Execute registered domain quality benchmark"
+        }
+      ]
+    },
+    "integration:epistemic-v03-regression": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "failure:code-graph-validator": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        }
+      ]
+    },
+    "failure:code-graph-limits": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        }
+      ]
+    },
+    "failure:graphify-version-gate": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "code-graph-graphify",
+          "step": "Verify real Graphify adapter"
+        }
+      ]
+    },
+    "integration:graphify-provider-gate": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "code-graph-graphify",
+          "step": "Verify real Graphify adapter"
+        }
+      ]
+    },
+    "integration:code-graph-lifecycle": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Execute registered domain quality benchmark"
+        }
+      ]
+    },
+    "failure:code-graph-active-preserved": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Execute registered domain quality benchmark"
+        }
+      ]
+    },
+    "test:evidence-tier-transitions": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        }
+      ]
+    },
+    "failure:code-ambiguity-preserved": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        }
+      ]
+    },
+    "integration:symbol-reconciliation": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        }
+      ]
+    },
+    "security:malicious-code-comments": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        }
+      ]
+    },
+    "benchmark:graphify-incremental-equivalence": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "code-graph-graphify",
+          "step": "Verify real Graphify adapter"
+        }
+      ]
+    },
+    "test:impact-partitions": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        }
+      ]
+    },
+    "failure:delta-invalid-commit": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        }
+      ]
+    },
+    "integration:commit-delta-impact": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "security:delta-root-redaction": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        }
+      ]
+    },
+    "test:code-graph-doctor-state": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        }
+      ]
+    },
+    "failure:retired-history-not-stale": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        }
+      ]
+    },
+    "surface:code-graph-doctor": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run operator doctor diagnostics"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/cli/src/doctor.ts"
+        }
+      ]
+    },
+    "test:bitemporal-valid-recorded-time": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/test/temporal-truth-query.integration.test.ts"
+        }
+      ]
+    },
+    "test:support-alternative-groups": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run temporal truth maintenance integration"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        },
+        {
+          "type": "FILE",
+          "path": "packages/postgres/test/temporal-truth.integration.test.ts"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/worker/test/truth-maintenance.test.ts"
+        }
+      ]
+    },
+    "failure:derived-support-before-fusion": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/test/temporal-truth-retrieval.integration.test.ts"
+        }
+      ]
+    },
+    "failure:physical-cleanup-race": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run temporal truth maintenance integration"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/test/temporal-truth-retrieval.integration.test.ts"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/worker/test/truth-maintenance.test.ts"
+        }
+      ]
+    },
+    "failure:snapshot-change-mid-query": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/test/temporal-truth-retrieval.integration.test.ts"
+        }
+      ]
+    },
+    "integration:community-context-fencing": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/test/temporal-truth-retrieval.integration.test.ts"
+        }
+      ]
+    },
+    "integration:explicit-truth-states": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/test/temporal-truth-query.integration.test.ts"
+        }
+      ]
+    },
+    "integration:vector-cleanup": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run temporal truth maintenance integration"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/worker/test/truth-maintenance.test.ts"
+        }
+      ]
+    },
+    "integration:cached-synthesis-support-validation": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run temporal truth maintenance integration"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/worker/test/truth-maintenance.test.ts"
+        }
+      ]
+    },
+    "test:retrieval-trace-contract": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        },
+        {
+          "type": "FILE",
+          "path": "packages/retrieval/test/rrf.test.ts"
+        },
+        {
+          "type": "FILE",
+          "path": "packages/retrieval/test/rerank.test.ts"
+        },
+        {
+          "type": "FILE",
+          "path": "packages/retrieval/test/context-packet.test.ts"
+        }
+      ]
+    },
+    "failure:reranker-candidate-set": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        },
+        {
+          "type": "FILE",
+          "path": "packages/retrieval/test/rerank.test.ts"
+        }
+      ]
+    },
+    "integration:retrieval-trace-e2e": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/test/query-transform.integration.test.ts"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/test/semantic-retrieval.integration.test.ts"
+        }
+      ]
+    },
+    "security:retrieval-trace-scope": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/test/security.integration.test.ts"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/test/query-transform.integration.test.ts"
+        }
+      ]
+    },
+    "failure:reranker-fallback": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        },
+        {
+          "type": "FILE",
+          "path": "packages/retrieval/src/rerank.ts"
+        },
+        {
+          "type": "FILE",
+          "path": "packages/retrieval/test/rerank.test.ts"
+        }
+      ]
+    },
+    "failure:hyde-untrusted-transform": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/test/query-transform.integration.test.ts"
+        }
+      ]
+    },
+    "benchmark:contextual-chunks": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "semantic-retrieval",
+          "job": "real-multilingual-semantic-retrieval",
+          "step": "Benchmark contextual chunk embedding strategies"
+        },
+        {
+          "type": "FILE",
+          "path": "evals/registered/contextual-chunk-benchmark.json"
+        },
+        {
+          "type": "FILE",
+          "path": "packages/retrieval/scripts/contextual-chunk-benchmark.ts"
+        }
+      ]
+    },
+    "benchmark:long-context-placement": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "long-context-placement",
+          "job": "long-context-placement",
+          "step": "Benchmark mandatory evidence placement near model context threshold"
+        },
+        {
+          "type": "FILE",
+          "path": "packages/retrieval/scripts/long-context-placement-benchmark.ts"
+        },
+        {
+          "type": "FILE",
+          "path": ".github/workflows/long-context-placement.yml"
+        }
+      ]
+    },
+    "benchmark:ann-decision-deferred": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        },
+        {
+          "type": "STEP",
+          "workflow": "semantic-retrieval",
+          "job": "real-multilingual-semantic-retrieval",
+          "step": "Validate filtered ANN evidence boundaries"
+        },
+        {
+          "type": "FILE",
+          "path": "evals/registered/ann-decision.json"
+        },
+        {
+          "type": "FILE",
+          "path": "scripts/filtered-ann-baseline.ts"
+        }
+      ]
+    },
+    "integration:drift-routing": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/test/graph-retrieval.integration.test.ts"
+        }
+      ]
+    },
+    "benchmark:drift": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "semantic-retrieval",
+          "job": "real-multilingual-semantic-retrieval",
+          "step": "Execute registered public corpus retrieval benchmark"
+        },
+        {
+          "type": "FILE",
+          "path": "scripts/registered-corpus-retrieval-benchmark.ts"
+        },
+        {
+          "type": "FILE",
+          "path": "packages/evaluation/src/benchmark.ts"
+        }
+      ]
+    },
+    "benchmark:graph-quality-metrics": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Validate registered graph and code metric evidence"
+        },
+        {
+          "type": "FILE",
+          "path": "scripts/registered-graph-code-metrics.ts"
+        }
+      ]
+    },
+    "benchmark:code-quality-metrics": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Validate registered graph and code metric evidence"
+        },
+        {
+          "type": "FILE",
+          "path": "scripts/registered-graph-code-metrics.ts"
+        }
+      ]
+    },
+    "benchmark:temporal-truth-quality-metrics": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Validate registered temporal truth metric evidence"
+        },
+        {
+          "type": "FILE",
+          "path": "scripts/registered-temporal-truth-metrics.ts"
+        }
+      ]
+    },
+    "benchmark:workspace-team-quality-metrics": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Validate registered workspace and team metric evidence"
+        },
+        {
+          "type": "FILE",
+          "path": "scripts/registered-workspace-team-metrics.ts"
+        }
+      ]
+    },
+    "benchmark:retrieval-diagnostic-quality": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Validate registered retrieval diagnostic evidence"
+        },
+        {
+          "type": "FILE",
+          "path": "scripts/registered-retrieval-diagnostics.ts"
+        }
+      ]
+    },
+    "benchmark:retrieval-ablation-reproducibility": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "semantic-retrieval",
+          "job": "real-multilingual-semantic-retrieval",
+          "step": "Build honest competitive arena report"
+        },
+        {
+          "type": "FILE",
+          "path": "scripts/registered-corpus-retrieval-benchmark.ts"
+        },
+        {
+          "type": "FILE",
+          "path": "scripts/competitive-arena-report.ts"
+        }
+      ]
+    },
+    "benchmark:temporal-truth-final-scenarios": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Validate registered temporal truth metric evidence"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        },
+        {
+          "type": "FILE",
+          "path": "scripts/registered-temporal-truth-metrics.ts"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/test/temporal-truth-retrieval.integration.test.ts"
+        }
+      ]
+    },
+    "benchmark:enterprise-adversarial-scenarios": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "domain-quality",
+          "job": "registered-domain-quality",
+          "step": "Validate registered workspace and team metric evidence"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm check"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run API integration with a persisted report"
+        },
+        {
+          "type": "STEP",
+          "workflow": "federation-two-node",
+          "job": "real-two-node",
+          "step": "Validate real two-node federation evidence"
+        },
+        {
+          "type": "FILE",
+          "path": "scripts/registered-workspace-team-metrics.ts"
+        },
+        {
+          "type": "FILE",
+          "path": "packages/indexing/test/multivault-isolation.integration.test.ts"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/test/security.integration.test.ts"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/test/context-fabric.integration.test.ts"
+        }
+      ]
+    },
+    "security:access-boundary-controlled-probes": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run access boundary controlled probes"
+        }
+      ]
+    },
+    "test:community-summary-model-routing": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run model routing and residency verification"
+        }
+      ]
+    },
+    "failure:community-summary-local-only": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run model routing and residency verification"
+        }
+      ]
+    },
+    "integration:community-summary-model": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run model routing and residency verification"
+        }
+      ]
+    },
+    "security:community-summary-residency": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run model routing and residency verification"
+        }
+      ]
+    },
+    "failure:federation-peer-scope-version": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run access boundary controlled probes"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/test/context-fabric.integration.test.ts"
+        }
+      ]
+    },
+    "security:federation-peer-scope-version": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run access boundary controlled probes"
+        },
+        {
+          "type": "FILE",
+          "path": "apps/api/test/context-fabric.integration.test.ts"
+        }
+      ]
+    },
+    "benchmark:scale-combinations": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "scale-benchmark",
+          "job": "aggregate-scale-evidence",
+          "step": "Validate and aggregate exact scale matrix"
+        },
+        {
+          "type": "STEP",
+          "workflow": "scale-benchmark",
+          "job": "enterprise-state-scale",
+          "step": "Validate enterprise-state evidence"
+        },
+        {
+          "type": "STEP",
+          "workflow": "scale-benchmark",
+          "job": "enterprise-state-scale",
+          "step": "Execute bounded scale combination probes"
+        },
+        {
+          "type": "STEP",
+          "workflow": "semantic-retrieval",
+          "job": "real-multilingual-semantic-retrieval",
+          "step": "Validate filtered ANN evidence boundaries"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "code-graph-graphify",
+          "step": "Verify real Graphify adapter"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run access boundary controlled probes"
+        }
+      ]
+    },
+    "doc:workspace-operating-model": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "docs/guides/workspace-operating-model.md"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm docs:validate"
+        }
+      ]
+    },
+    "doc:connector-contract": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "docs/guides/connector-contract.md"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm docs:validate"
+        }
+      ]
+    },
+    "doc:coordination-plane": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "docs/guides/coordination-plane.md"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm docs:validate"
+        }
+      ]
+    },
+    "doc:software-delivery-workspace-profile": {
+      "sources": [
+        {
+          "type": "FILE",
+          "path": "docs/guides/software-delivery-workspace-profile.md"
+        },
+        {
+          "type": "STEP",
+          "workflow": "ci",
+          "job": "typescript",
+          "step": "Run pnpm docs:validate"
+        }
+      ]
+    }
+  }
+}

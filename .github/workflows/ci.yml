@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   typescript:
     runs-on: ubuntu-latest
@@ -56,13 +60,86 @@ jobs:
           git -C "$AKP_MANAGED_REPO" config user.email "akp-ci@localhost"
           git -C "$AKP_MANAGED_REPO" commit --allow-empty -m "chore: initialize managed knowledge for CI"
       - run: pnpm db:migrate
+      - name: Verify frozen v0.3 schema upgrade
+        env:
+          AKP_UPGRADE_DATABASE_URL: postgres://akp:akp@localhost:55432/akp_upgrade
+        run: |
+          git fetch --no-tags --depth=1 origin a6bdcc38fdf026d6c353db096799366865011022
+          docker compose exec -T postgres dropdb -U akp --if-exists akp_upgrade
+          docker compose exec -T postgres createdb -U akp akp_upgrade
+          pnpm verify:upgrade-migrations
       - run: pnpm auth:provision
-      - run: pnpm check
+      - name: Run pnpm check
+        run: pnpm check
+      - name: Run reasoning adversarial verification
+        run: |
+          pnpm --filter @akp/api exec vitest run test/reasoning-runtime.test.ts
+          pnpm --filter @akp/retrieval exec vitest run \
+            test/reasoning-executor.test.ts \
+            test/reasoning-plan.test.ts \
+            test/reasoning-planner.test.ts
+      - name: Run MCP instruction integrity verification
+        run: |
+          pnpm --filter @akp/mcp exec vitest run \
+            test/instruction-bundle.test.ts \
+            test/context-facade.test.ts
+      - name: Run model routing and residency verification
+        run: |
+          pnpm --filter @akp/contracts exec vitest run test/model-role-policy.test.ts
+          pnpm --filter @akp/compiler exec vitest run test/model-role-runtime.test.ts
+          pnpm --filter @akp/worker exec vitest run \
+            test/source-model-residency.test.ts \
+            test/document-intelligence-request.test.ts \
+            test/compilation-stage.test.ts
+          pnpm --filter @akp/indexing exec vitest run \
+            test/community-index.integration.test.ts
+      - name: Run code graph failure verification
+        run: |
+          pnpm --filter @akp/project-adapter exec vitest run \
+            test/code-graph-lifecycle.test.ts
+          pnpm --filter @akp/worker exec vitest run \
+            test/code-graph-refresh.test.ts
+      - name: Run federation contract verification
+        run: |
+          pnpm --filter @akp/contracts exec vitest run \
+            test/federation.test.ts \
+            test/federation-fanout.test.ts
+          pnpm --filter @akp/postgres exec vitest run \
+            test/federation-circuit.test.ts
+      - name: Run access boundary controlled probes
+        run: |
+          pnpm --filter @akp/api exec vitest run \
+            test/graph-retrieval.integration.test.ts \
+            test/context-fabric.integration.test.ts
+      - name: Run concurrency race verification
+        run: |
+          pnpm --filter @akp/postgres exec vitest run \
+            test/knowledge-profile-activation.integration.test.ts \
+            test/federated-graph.integration.test.ts \
+            test/source-connectors.integration.test.ts \
+            -t "serializes concurrent successor activation|serializes concurrent graph generation activation|deduplicates the same connector event under concurrent delivery"
+          pnpm --filter @akp/api exec vitest run \
+            --config vitest.integration.config.ts \
+            test/workspace-coordination.integration.test.ts \
+            test/temporal-truth-retrieval.integration.test.ts \
+            test/review-publication.integration.test.ts \
+            -t "coordinates two authorized actors with durable fencing|rejects a stale vector before ranking after support withdrawal|serializes concurrent approval publication"
       - run: pnpm contracts:validate
       - run: pnpm docs:validate
       - run: pnpm hygiene:validate
       - run: pnpm build
       - run: pnpm security:secrets
+      - name: Install pinned Chromium for browser E2E
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Run critical browser E2E
+        run: pnpm test:browser
+      - name: Run temporal truth maintenance integration
+        run: |
+          mkdir -p reports/ci
+          pnpm --filter @akp/worker exec vitest run \
+            test/truth-maintenance.test.ts \
+            --reporter=default --reporter=junit \
+            --outputFile.junit=../../reports/ci/truth-maintenance-junit.xml
       - name: Run API integration with a persisted report
         run: |
           mkdir -p reports/ci
@@ -76,6 +153,22 @@ jobs:
           --space-id 00000000-0000-0000-0000-000000000003
           --read-only
       - run: pnpm verify:runtime
+      - name: Run operator doctor diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p reports/ci
+          doctor_database="akp_doctor"
+          doctor_url="postgres://akp:akp@localhost:55432/$doctor_database"
+          cleanup_doctor_database() {
+            docker compose exec -T postgres dropdb -U akp --if-exists "$doctor_database" >/dev/null 2>&1 || true
+          }
+          trap cleanup_doctor_database EXIT
+          cleanup_doctor_database
+          docker compose exec -T postgres createdb -U akp "$doctor_database"
+          DATABASE_URL="$doctor_url" pnpm db:migrate
+          DATABASE_URL="$doctor_url" pnpm akp doctor --format json 2>&1 |
+            tee reports/ci/doctor-runtime.json
       - name: Verify Worker OpenTelemetry export
         shell: bash
         run: |
@@ -86,7 +179,7 @@ jobs:
           OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=ci,service.namespace=akp \
           OTEL_METRIC_EXPORT_INTERVAL=1000 \
           pnpm --filter @akp/worker exec node --import tsx --input-type=module -e \
-            'await import("./src/instrumentation.ts"); const { withSpan, shutdownOpenTelemetry } = await import("@akp/observability"); try { await withSpan("worker.telemetry.smoke", { "akp.ci.smoke": true }, async () => undefined); } finally { await shutdownOpenTelemetry(); }'
+            'await import("./src/instrumentation.ts"); const { withSpan, shutdownOpenTelemetry } = await import("@akp/observability"); try { await withSpan("worker.telemetry.verify", { "akp.ci.verify": true }, async () => undefined); } finally { await shutdownOpenTelemetry(); }'
       - run: OTEL_TRACES_EXPORTER=otlp OTEL_METRICS_EXPORTER=otlp OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=ci,service.namespace=akp OTEL_METRIC_EXPORT_INTERVAL=1000 pnpm --filter @akp/api dev > api.log 2>&1 &
       - run: |
           for i in $(seq 1 30); do
@@ -103,12 +196,12 @@ jobs:
           pnpm exec tsx scripts/telemetry-command.ts backup
           pwsh -NoProfile -File scripts/backup.ps1
           -OutputDirectory backups/ci
-      - name: Run traced restore smoke
+      - name: Run traced restore verification
         shell: bash
         run: >-
           OTEL_TRACES_EXPORTER=otlp OTEL_METRICS_EXPORTER=otlp OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=ci,service.namespace=akp OTEL_METRIC_EXPORT_INTERVAL=1000
           pnpm exec tsx scripts/telemetry-command.ts restore
-          pwsh -NoProfile -File scripts/restore-smoke.ps1
+          pwsh -NoProfile -File scripts/verify-restore.ps1
           -BackupDirectory backups/ci
       - name: Verify OpenTelemetry runtime evidence
         shell: bash
@@ -124,6 +217,10 @@ jobs:
         run: |
           set +e
           mkdir -p reports/ci
+          if [ -f reports/ci/prettier-check.txt ] && grep -q "Code style issues" reports/ci/prettier-check.txt; then
+            pnpm exec prettier --write . >/dev/null 2>&1
+            git diff -- . > reports/ci/prettier.patch
+          fi
           docker compose ps --all > reports/ci/docker-compose-ps.txt 2>&1
           docker compose logs --no-color --timestamps > reports/ci/docker-compose.log 2>&1
           docker compose exec -T postgres psql -X -U akp -d akp \
@@ -152,6 +249,51 @@ jobs:
       - name: Stop disposable services
         if: always()
         run: docker compose down -v --remove-orphans
+
+  code-graph-graphify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - uses: actions/setup-python@v7
+        with: { python-version: "3.12" }
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          version: 0.12.7
+          enable-cache: true
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Build Code Graph contract dependency
+        run: pnpm --filter @akp/contracts build
+      - name: Install pinned real Graphify provider
+        run: uv tool install graphifyy==0.9.63
+      - name: Verify real Graphify adapter
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p reports/ci
+          GRAPHIFY_BIN="$(uv tool dir --bin)/graphify"
+          "$GRAPHIFY_BIN" --version | tee reports/ci/graphify-version.txt
+          grep -Eq '0\.9\.63' reports/ci/graphify-version.txt
+          AKP_REAL_GRAPHIFY=1 \
+          AKP_GRAPHIFY_EXECUTABLE="$GRAPHIFY_BIN" \
+            pnpm --filter @akp/project-adapter exec vitest run \
+              test/graphify-real.integration.test.ts \
+              --reporter=default --reporter=junit \
+              --outputFile.junit=../../reports/ci/graphify-real-junit.xml
+      - name: Upload Graphify evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-diagnostics-${{ github.run_id }}-${{ github.job }}
+          path: reports/ci
+          if-no-files-found: ignore
+          retention-days: 14
 
   python:
     runs-on: ubuntu-latest

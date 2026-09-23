@@ -1,0 +1,358 @@
+name: domain-quality
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  registered-domain-quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: postgres://akp:akp@localhost:55432/akp
+      AKP_DOMAIN_QUALITY_REPORT: reports/ci/domain-quality-benchmark.json
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - run: pnpm build
+      - run: docker compose up -d --wait postgres
+      - run: pnpm db:migrate
+      - name: Execute registered domain quality benchmark
+        run: pnpm benchmark:domain-quality
+      - name: Execute registered graph and code metric benchmark
+        env:
+          AKP_REGISTERED_GRAPH_CODE_METRICS_REPORT: reports/ci/registered-graph-code-metrics.json
+        run: pnpm benchmark:registered-graph-code-metrics
+      - name: Execute registered temporal truth metric benchmark
+        env:
+          AKP_REGISTERED_TEMPORAL_TRUTH_METRICS_REPORT: reports/ci/registered-temporal-truth-metrics.json
+        run: pnpm benchmark:registered-temporal-truth-metrics
+      - name: Execute registered workspace and team metric benchmark
+        env:
+          AKP_REGISTERED_WORKSPACE_TEAM_METRICS_REPORT: reports/ci/registered-workspace-team-metrics.json
+        run: pnpm benchmark:registered-workspace-team-metrics
+      - name: Execute registered retrieval diagnostic benchmark
+        env:
+          AKP_REGISTERED_RETRIEVAL_DIAGNOSTICS_REPORT: reports/ci/registered-retrieval-diagnostics.json
+        run: pnpm benchmark:registered-retrieval-diagnostics
+      - name: Validate registered retrieval diagnostic evidence
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const report = JSON.parse(
+            readFileSync("reports/ci/registered-retrieval-diagnostics.json", "utf8"),
+          );
+          const required = [
+            "contextPrecision",
+            "claimSupportRecall",
+            "citationPrecision",
+            "contradictionRecall",
+          ];
+          if (
+            report.benchmark !== "AKP_REGISTERED_RETRIEVAL_DIAGNOSTICS" ||
+            report.status !== "PROVEN" ||
+            report.evidenceLevel !== "REGISTERED_DIAGNOSTIC_RUNTIME_FIXTURE" ||
+            report.claimPolicy?.productionQualityClaimAllowed !== false ||
+            report.claimPolicy?.externalParityClaimAllowed !== false ||
+            report.claimPolicy?.diagnosticFixtureRatesAreProductionRates !== false ||
+            report.claimPolicy?.rankedDocumentPrecisionRelabelledAsContextPrecision !== false ||
+            report.claimPolicy?.retrievalRecallRelabelledAsContradictionRecall !== false
+          ) {
+            throw new Error("Registered retrieval diagnostic claim boundary is invalid.");
+          }
+          for (const name of required) {
+            const metric = report.metrics?.[name];
+            if (
+              metric?.measured !== true ||
+              metric.value !== 1 ||
+              metric.sampleCount < 1 ||
+              metric.scope !== "REGISTERED_DIAGNOSTIC_FIXTURE"
+            ) {
+              throw new Error("Incomplete registered retrieval diagnostic metric: " + name);
+            }
+          }
+          console.log(
+            JSON.stringify({ status: report.status, diagnosticMetrics: required.length }, null, 2),
+          );
+          NODE
+      - name: Validate registered workspace and team metric evidence
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const report = JSON.parse(
+            readFileSync("reports/ci/registered-workspace-team-metrics.json", "utf8"),
+          );
+          const zeroMetrics = [
+            "crossSpaceLeakRate",
+            "privateToTeamLeakRate",
+            "revokedPrincipalAccessRate",
+          ];
+          const positiveMetrics = [
+            "pinnedContextReproducibility",
+            "handoffCompleteness",
+            "overlappingClaimFencing",
+            "promotionCorrectness",
+            "offlineStaleDisclosure",
+            "federationPartialFailure",
+          ];
+          if (
+            report.benchmark !== "AKP_REGISTERED_WORKSPACE_TEAM_METRICS" ||
+            report.status !== "PROVEN" ||
+            report.evidenceLevel !== "REGISTERED_SYNTHETIC_RUNTIME_FIXTURE" ||
+            report.claimPolicy?.externalParityClaimAllowed !== false ||
+            report.claimPolicy?.fixtureRatesAreProductionRates !== false ||
+            report.claimPolicy?.scenarioPassRateRelabelledAsTeamMetric !== false ||
+            report.claimPolicy?.zeroLeakageClaimScope !== "REGISTERED_FIXTURE_ONLY" ||
+            report.fixture?.teamInheritanceSanity !== true
+          ) {
+            throw new Error("registered workspace/team metric claim boundary is invalid.");
+          }
+          for (const name of zeroMetrics) {
+            const metric = report.team?.[name];
+            if (
+              metric?.measured !== true ||
+              metric.value !== 0 ||
+              metric.sampleCount < 1 ||
+              metric.scope !== "REGISTERED_FIXTURE"
+            ) {
+              throw new Error("registered zero-rate metric failed: " + name);
+            }
+          }
+          for (const name of positiveMetrics) {
+            const metric = report.team?.[name];
+            if (
+              metric?.measured !== true ||
+              metric.value !== 1 ||
+              metric.sampleCount < 1 ||
+              metric.scope !== "REGISTERED_FIXTURE"
+            ) {
+              throw new Error("registered positive team metric failed: " + name);
+            }
+          }
+          console.log(
+            JSON.stringify(
+              {
+                status: report.status,
+                zeroMetrics: zeroMetrics.length,
+                positiveMetrics: positiveMetrics.length,
+              },
+              null,
+              2,
+            ),
+          );
+          NODE
+      - name: Validate registered temporal truth metric evidence
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const report = JSON.parse(
+            readFileSync("reports/ci/registered-temporal-truth-metrics.json", "utf8"),
+          );
+          const required = [
+            "currentTruthAccuracy",
+            "asOfAccuracy",
+            "changedSinceAccuracy",
+            "sourceWithdrawalBehavior",
+            "alternativeSupportBehavior",
+            "staleVectorSuppression",
+            "staleCommunityCacheSuppression",
+            "mixedRevisionDetection",
+          ];
+          if (
+            report.benchmark !== "AKP_REGISTERED_TEMPORAL_TRUTH_METRICS" ||
+            report.status !== "PROVEN" ||
+            report.evidenceLevel !== "REGISTERED_SYNTHETIC_RUNTIME_FIXTURE" ||
+            report.claimPolicy?.externalParityClaimAllowed !== false ||
+            report.claimPolicy?.fixtureRatesAreProductionRates !== false ||
+            report.claimPolicy?.scenarioPassRateRelabelledAsAccuracy !== false
+          ) {
+            throw new Error("registered temporal metric claim boundary is invalid.");
+          }
+          for (const name of required) {
+            const metric = report.temporal?.[name];
+            if (
+              metric?.measured !== true ||
+              metric.value !== 1 ||
+              metric.sampleCount < 1 ||
+              metric.scope !== "REGISTERED_FIXTURE"
+            ) {
+              throw new Error("Incomplete registered temporal metric: " + name);
+            }
+          }
+          console.log(
+            JSON.stringify({ status: report.status, temporalMetrics: required.length }, null, 2),
+          );
+          NODE
+      - name: Validate registered graph and code metric evidence
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const report = JSON.parse(
+            readFileSync("reports/ci/registered-graph-code-metrics.json", "utf8"),
+          );
+          if (
+            report.benchmark !== "AKP_REGISTERED_GRAPH_CODE_METRICS" ||
+            report.status !== "PROVEN" ||
+            report.evidenceLevel !== "REGISTERED_SYNTHETIC_RUNTIME_FIXTURE" ||
+            report.claimPolicy?.externalParityClaimAllowed !== false ||
+            report.claimPolicy?.fixtureRatesAreProductionRates !== false ||
+            report.claimPolicy?.scenarioPassRateRelabelledAsPrecisionRecall !== false
+          ) {
+            throw new Error("registered graph/code metric claim boundary is invalid.");
+          }
+          const graphRatios = [
+            "typedPathPrecision",
+            "multiHopRecall",
+            "pprAssociativeRecall",
+            "globalCommunityCoverage",
+            "bridgeAccuracy",
+            "staleEdgeSuppression",
+            "pathExplainability",
+          ];
+          const codeRatios = [
+            "symbolResolution",
+            "callersCalleesCorrectness",
+            "dependencyPathPrecision",
+            "blastRadiusRecall",
+            "changeImpactRecall",
+            "testLinkageAccuracy",
+            "ruleDecisionBridgePrecision",
+            "staleDetection",
+          ];
+          for (const name of graphRatios) {
+            const metric = report.graph?.[name];
+            if (metric?.measured !== true || metric.value !== 1 || metric.sampleCount < 1) {
+              throw new Error("Incomplete registered graph metric: " + name);
+            }
+          }
+          if (
+            report.graph?.unauthorizedPathRate?.measured !== true ||
+            report.graph.unauthorizedPathRate.value !== 0 ||
+            report.graph.unauthorizedPathRate.sampleCount < 1
+          ) {
+            throw new Error("registered unauthorized-path rate must be zero in the registered fixture.");
+          }
+          for (const name of codeRatios) {
+            const metric = report.code?.[name];
+            if (metric?.measured !== true || metric.value !== 1 || metric.sampleCount < 1) {
+              throw new Error("Incomplete registered code metric: " + name);
+            }
+          }
+          for (const name of ["buildTimeMs", "incrementalUpdateTimeMs"]) {
+            const metric = report.code?.[name];
+            if (
+              metric?.measured !== true ||
+              !Number.isFinite(metric.value) ||
+              metric.value < 0 ||
+              metric.unit !== "ms"
+            ) {
+              throw new Error("Incomplete registered code timing metric: " + name);
+            }
+          }
+          console.log(
+            JSON.stringify(
+              {
+                status: report.status,
+                graphMetrics: graphRatios.length + 1,
+                codeMetrics: codeRatios.length + 2,
+              },
+              null,
+              2,
+            ),
+          );
+          NODE
+      - name: Validate registered domain quality evidence
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const report = JSON.parse(
+            readFileSync("reports/ci/domain-quality-benchmark.json", "utf8"),
+          );
+          const expected = new Set([
+            "graph-quality",
+            "code-quality",
+            "temporal-truth",
+            "reasoning-adversarial",
+            "federation-partial-failure",
+          ]);
+          if (
+            report.benchmark !== "AKP_REGISTERED_DOMAIN_QUALITY" ||
+            report.status !== "PROVEN" ||
+            report.claimPolicy?.externalParityClaimAllowed !== false ||
+            report.claimPolicy?.scenarioPassRateIsNotPrecisionOrRecall !== true ||
+            report.claimPolicy?.hiddenChainOfThoughtMeasured !== false
+          ) {
+            throw new Error("Domain quality claim policy or status is invalid.");
+          }
+          if (!Array.isArray(report.domains) || report.domains.length !== 5) {
+            throw new Error("Expected five registered domain benchmark groups.");
+          }
+          for (const domain of report.domains) {
+            if (!expected.delete(domain.id)) {
+              throw new Error("Unexpected or duplicate domain benchmark: " + domain.id);
+            }
+            if (
+              domain.status !== "PASSED" ||
+              domain.scenarioGroups < 1 ||
+              domain.passedScenarioGroups !== domain.scenarioGroups ||
+              domain.scenarioGroupPassRate !== 1 ||
+              !Number.isFinite(domain.durationMs) ||
+              !Array.isArray(domain.commands) ||
+              !Array.isArray(domain.limitations) ||
+              domain.limitations.length === 0
+            ) {
+              throw new Error("Incomplete domain benchmark evidence for " + domain.id);
+            }
+          }
+          if (expected.size !== 0) {
+            throw new Error("Missing domain benchmark groups.");
+          }
+          console.log(
+            JSON.stringify(
+              {
+                status: report.status,
+                domains: report.domains.map((domain) => ({
+                  id: domain.id,
+                  scenarioGroups: domain.scenarioGroups,
+                  durationMs: domain.durationMs,
+                })),
+              },
+              null,
+              2,
+            ),
+          );
+          NODE
+      - name: Upload registered domain quality evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: domain-quality-${{ github.run_id }}
+          path: |
+            reports/ci/domain-quality-benchmark.json
+            reports/ci/registered-graph-code-metrics.json
+            reports/ci/registered-temporal-truth-metrics.json
+            reports/ci/registered-workspace-team-metrics.json
+            reports/ci/registered-retrieval-diagnostics.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Stop disposable services
+        if: always()
+        run: docker compose down -v --remove-orphans

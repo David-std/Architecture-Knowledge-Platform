@@ -265,6 +265,7 @@ describe("Knowledge Compiler contracts", () => {
         apiKey: "test-secret",
         model: "bounded-compiler",
         maxRetries: 0,
+        maxOutputTokens: 321,
       },
       fetchMock,
     );
@@ -273,7 +274,11 @@ describe("Knowledge Compiler contracts", () => {
     expect(result.knowledgeCandidates[0]?.candidateId).toBe("candidate-1");
     expect(fetchMock).toHaveBeenCalledOnce();
     const init = fetchMock.mock.calls[0]?.[1];
+    const requestBody = JSON.parse(String(init?.body)) as {
+      max_tokens?: number;
+    };
     expect(String(init?.body)).toContain("allowDirectPublication");
     expect(String(init?.body)).not.toContain("test-secret");
+    expect(requestBody.max_tokens).toBe(321);
   });
 });

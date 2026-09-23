@@ -1,8 +1,25 @@
 import { metrics } from "@opentelemetry/api";
 import pg from "pg";
 
+export type PostgresPoolClient = pg.PoolClient;
+
 export * from "./vault-registry.js";
+export * from "./authorization-port.js";
 export * from "./outbox.js";
+export * from "./knowledge-profile-registry.js";
+export * from "./knowledge-profile-governance.js";
+export * from "./workspace-coordination.js";
+export * from "./workspace-presence.js";
+export * from "./context-revision-set.js";
+export * from "./principals.js";
+export * from "./team-context-fabric.js";
+export * from "./decision-workflow.js";
+export * from "./federated-graph.js";
+export * from "./epistemic-graph.js";
+export * from "./temporal-truth.js";
+export * from "./context-fabric-node.js";
+export * from "./assurance.js";
+export * from "./source-connectors.js";
 
 export interface PostgresOptions {
   onIdleClientError?: (error: Error) => void;

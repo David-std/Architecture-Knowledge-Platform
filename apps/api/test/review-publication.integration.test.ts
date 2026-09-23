@@ -16,12 +16,20 @@ const admin = "00000000-0000-0000-0000-000000000002";
 const token = `review-publication-integration-${randomUUID()}`;
 const tokenHash = createHash("sha256").update(token).digest("hex");
 const headers = { authorization: `Bearer ${token}` };
+const maintenanceToken = `review-maintenance-${randomUUID()}`;
+const maintenanceTokenHash = createHash("sha256")
+  .update(maintenanceToken)
+  .digest("hex");
+const maintenanceHeaders = {
+  authorization: `Bearer ${maintenanceToken}`,
+};
 
 let app: FastifyInstance;
 let db: Postgres;
 let fixtureRoot: string;
 let defaultVault: string;
 let createdVault = false;
+let maintenancePrincipalId = "";
 const createdReviewIds = new Set<string>();
 const previousManagedRepository = process.env.AKP_MANAGED_REPO;
 
@@ -190,6 +198,61 @@ beforeAll(async () => {
       }),
     ],
   );
+  const humanPrincipal = await db.pool.query<{ id: string }>(
+    "select id from principals where kind='HUMAN' and user_id=$1",
+    [admin],
+  );
+  const parentPrincipalId = humanPrincipal.rows[0]?.id;
+  if (!parentPrincipalId) {
+    throw new Error("review fixture human principal missing");
+  }
+  const maintenancePrincipal = await db.pool.query<{
+    id: string;
+    policy_revision: number;
+  }>(
+    `insert into principals(
+       kind,user_id,parent_principal_id,vault_id,display_name,allowed_actions
+     ) values(
+       'MAINTENANCE_JOB',$1,$2,$3,$4,array['knowledge:read']::text[]
+     )
+     returning id,policy_revision`,
+    [
+      admin,
+      parentPrincipalId,
+      defaultVault,
+      "Review publication maintenance adversary",
+    ],
+  );
+  maintenancePrincipalId = String(maintenancePrincipal.rows[0]?.id ?? "");
+  if (!maintenancePrincipalId) {
+    throw new Error("maintenance principal fixture create failed");
+  }
+  await db.pool.query(
+    `insert into principal_credentials(
+       principal_id,user_id,token_hash,label,scopes,allowed_actions,
+       policy_revision,expires_at
+     ) values(
+       $1,$2,$3,$4,$5::jsonb,array['knowledge:read']::text[],$6,
+       now()+interval '1 hour'
+     )`,
+    [
+      maintenancePrincipalId,
+      admin,
+      maintenanceTokenHash,
+      "review maintenance adversary",
+      JSON.stringify({
+        spaces: [
+          {
+            spaceId: defaultSpace,
+            pathPrefix: null,
+            permissions: ["knowledge:read", "knowledge:review", "admin"],
+          },
+        ],
+      }),
+      Number(maintenancePrincipal.rows[0]?.policy_revision ?? 1),
+    ],
+  );
+
   const module = await import("../src/server.js");
   app = module.buildServer();
 });
@@ -218,6 +281,15 @@ afterAll(async () => {
       // without affecting later fixtures.
       await db.pool.query("delete from reviews where id=any($1::uuid[])", [
         ids,
+      ]);
+    }
+    await db.pool.query(
+      "delete from principal_credentials where token_hash=$1",
+      [maintenanceTokenHash],
+    );
+    if (maintenancePrincipalId) {
+      await db.pool.query("delete from principals where id=$1", [
+        maintenancePrincipalId,
       ]);
     }
     await db.pool.query("delete from api_tokens where token_hash=$1", [
@@ -293,6 +365,66 @@ describe("review publication integration", () => {
     expect(await pathExists(`${repository}-drafts`)).toBe(false);
   });
 
+  it("denies a maintenance principal that attempts to publish a pending review", async () => {
+    const repository = repositoryFor("maintenance-publish-denied");
+    const proposal = await propose(repository, "maintenance-publish-denied");
+
+    const identity = await app.inject({
+      method: "GET",
+      url: "/v1/auth/session",
+      headers: maintenanceHeaders,
+    });
+    expect(identity.statusCode).toBe(200);
+    expect(identity.json()).toMatchObject({
+      actor: {
+        principalId: maintenancePrincipalId,
+        principalKind: "MAINTENANCE_JOB",
+      },
+    });
+
+    const before = await db.pool.query<{ count: number }>(
+      `select count(*)::int count
+         from event_outbox
+        where resource_id=$1
+          and event_type in ('KnowledgePublished','CorpusRevisionPublished')`,
+      [proposal.reviewId],
+    );
+
+    const attempted = await app.inject({
+      method: "POST",
+      url: `/v1/reviews/${proposal.reviewId}/decision`,
+      headers: maintenanceHeaders,
+      payload: {
+        decision: "APPROVE",
+        reason: "maintenance agent must not publish",
+      },
+    });
+    expect(attempted.statusCode).toBe(403);
+    expect(attempted.json()).toEqual({
+      code: "MAINTENANCE_PRINCIPAL_MUTATION_DENIED",
+    });
+
+    const persisted = await db.pool.query<{
+      status: string;
+      merged_commit: string | null;
+    }>("select status,merged_commit from reviews where id=$1", [
+      proposal.reviewId,
+    ]);
+    expect(persisted.rows[0]).toMatchObject({
+      status: "PENDING",
+      merged_commit: null,
+    });
+
+    const after = await db.pool.query<{ count: number }>(
+      `select count(*)::int count
+         from event_outbox
+        where resource_id=$1
+          and event_type in ('KnowledgePublished','CorpusRevisionPublished')`,
+      [proposal.reviewId],
+    );
+    expect(after.rows[0]?.count).toBe(before.rows[0]?.count ?? 0);
+  });
+
   it("commits approval and outbox events without synchronously indexing the vault", async () => {
     const repository = repositoryFor("approval-outbox");
     const proposal = await propose(repository, "approval-outbox");
@@ -362,6 +494,71 @@ describe("review publication integration", () => {
       [defaultVault, `managed/${proposal.relativePath}`],
     );
     expect(indexed.rows[0]?.count).toBe(0);
+  });
+
+  it("serializes concurrent approval publication and emits one publication lifecycle", async () => {
+    const repository = repositoryFor("concurrent-approval");
+    const proposal = await propose(repository, "concurrent-approval");
+
+    const responses = await Promise.all([
+      decide(proposal.reviewId, "APPROVE", "concurrent approval A"),
+      decide(proposal.reviewId, "APPROVE", "concurrent approval B"),
+    ]);
+    expect(responses.map((response) => response.statusCode).sort()).toEqual([
+      200, 409,
+    ]);
+    const conflict = responses.find((response) => response.statusCode === 409);
+    expect([
+      "PUBLICATION_LOCKED",
+      "REVIEW_ALREADY_DECIDED",
+      "REVIEW_APPROVAL_CONTEXT_CHANGED",
+    ]).toContain(conflict?.json().code);
+
+    const persisted = await db.pool.query<{
+      status: string;
+      merged_commit: string | null;
+    }>("select status,merged_commit from reviews where id=$1", [
+      proposal.reviewId,
+    ]);
+    expect(persisted.rows[0]).toMatchObject({
+      status: "APPROVED",
+      merged_commit: expect.any(String),
+    });
+
+    const events = await db.pool.query<{
+      event_type: string;
+      count: number;
+    }>(
+      `select event_type,count(*)::int count
+         from event_outbox
+        where resource_id=$1
+          and event_type=any($2::text[])
+        group by event_type
+        order by event_type`,
+      [
+        proposal.reviewId,
+        [
+          "KnowledgePublished",
+          "CorpusRevisionPublished",
+          "LexicalIndexUpdateRequested",
+          "VectorIndexUpdateRequested",
+          "GraphIndexUpdateRequested",
+          "ContextPackInvalidationRequested",
+          "ImpactedEvalRunRequested",
+        ],
+      ],
+    );
+    expect(
+      Object.fromEntries(events.rows.map((row) => [row.event_type, row.count])),
+    ).toEqual({
+      KnowledgePublished: 1,
+      CorpusRevisionPublished: 1,
+      LexicalIndexUpdateRequested: 1,
+      VectorIndexUpdateRequested: 1,
+      GraphIndexUpdateRequested: 1,
+      ContextPackInvalidationRequested: 1,
+      ImpactedEvalRunRequested: 1,
+    });
   });
 
   it("preserves review feedback, creates a new validated draft revision, resubmits, and approves it", async () => {

@@ -10,7 +10,8 @@
       "intent": "EXACT_LOOKUP",
       "mandatoryTerms": ["Runtime flows"],
       "forbiddenTerms": [],
-      "retrievalQuery": "publication recovery"
+      "retrievalQuery": "publication recovery",
+      "goldCitations": ["repo://docs/architecture/runtime-flows.md"]
     },
     {
       "id": "agent-public-concept-canonical-authority",
@@ -19,7 +20,8 @@
       "intent": "CONCEPTUAL",
       "mandatoryTerms": ["approved Markdown", "Git", "rebuildable projections"],
       "forbiddenTerms": [],
-      "retrievalQuery": "canonical architecture"
+      "retrievalQuery": "canonical architecture",
+      "goldCitations": ["repo://ARCHITECTURE.md"]
     },
     {
       "id": "agent-public-workflow-publication-recovery",
@@ -32,7 +34,8 @@
         "PUBLICATION_RECOVERY_REQUIRED"
       ],
       "forbiddenTerms": [],
-      "retrievalQuery": "publication recovery"
+      "retrievalQuery": "publication recovery",
+      "goldCitations": ["repo://docs/architecture/runtime-flows.md"]
     },
     {
       "id": "agent-public-source-sanitized-packet",
@@ -41,7 +44,8 @@
       "intent": "SOURCE_VERIFICATION",
       "mandatoryTerms": ["query text", "citations", "section content"],
       "forbiddenTerms": [],
-      "retrievalQuery": "sanitized audit bundle"
+      "retrievalQuery": "sanitized audit bundle",
+      "goldCitations": ["repo://docs/architecture/audit-export.md"]
     },
     {
       "id": "agent-public-project-code-health-boundary",
@@ -50,7 +54,8 @@
       "intent": "PROJECT_CODE",
       "mandatoryTerms": ["API process", "required runtime dependencies"],
       "forbiddenTerms": [],
-      "retrievalQuery": "runtime operations"
+      "retrievalQuery": "runtime operations",
+      "goldCitations": ["repo://docs/runbooks/local-operations.md"]
     },
     {
       "id": "agent-public-no-answer-cloud-region",

@@ -1,0 +1,152 @@
+name: federation-two-node
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  real-two-node:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      AKP_TWO_NODE_LOCAL_TOKEN: akp-two-node-local-ci-token-not-for-production
+      AKP_TWO_NODE_REMOTE_TOKEN: akp-two-node-remote-ci-token-not-for-production
+      AKP_TWO_NODE_LOCAL_DATABASE_URL: postgres://akp:akp@127.0.0.1:55432/akp_federation_node_a
+      AKP_TWO_NODE_REMOTE_DATABASE_URL: postgres://akp:akp@127.0.0.1:55432/akp_federation_node_b
+      AKP_TWO_NODE_LOCAL_URL: http://127.0.0.1:18100
+      AKP_TWO_NODE_REMOTE_URL: http://127.0.0.1:18101
+      AKP_TWO_NODE_REMOTE_NODE_ID: federation-node-b
+      AKP_TWO_NODE_REMOTE_REVISION: two-node-verification-b-r1
+      AKP_TWO_NODE_REMOTE_TOKEN_REF: AKP_TWO_NODE_B_TOKEN
+      AKP_TWO_NODE_STATE: reports/ci/two-node-state.json
+      AKP_TWO_NODE_FEDERATION_REPORT: reports/ci/two-node-federation.json
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - run: pnpm build
+      - run: docker compose up -d --wait postgres
+      - name: Create isolated node databases
+        run: |
+          docker compose exec -T postgres dropdb -U akp --if-exists akp_federation_node_a
+          docker compose exec -T postgres dropdb -U akp --if-exists akp_federation_node_b
+          docker compose exec -T postgres createdb -U akp akp_federation_node_a
+          docker compose exec -T postgres createdb -U akp akp_federation_node_b
+      - name: Migrate both federation nodes
+        run: |
+          DATABASE_URL="$AKP_TWO_NODE_LOCAL_DATABASE_URL" pnpm db:migrate
+          DATABASE_URL="$AKP_TWO_NODE_REMOTE_DATABASE_URL" pnpm db:migrate
+      - name: Provision remote product corpus
+        env:
+          DATABASE_URL: ${{ env.AKP_TWO_NODE_REMOTE_DATABASE_URL }}
+          AKP_AGENT_AB_CORPUS: evals/registered/agent-v0.4-product-corpus.json
+          AKP_AGENT_AB_CORPUS_REVISION: two-node-federation-product-v1
+        run: pnpm exec tsx scripts/provision-agent-ab-fixture.ts
+      - name: Provision least-privilege node credentials
+        shell: bash
+        run: |
+          scopes='{"spaces":[{"spaceId":"00000000-0000-0000-0000-000000000003","pathPrefix":null,"permissions":["knowledge:read"]}]}'
+          DATABASE_URL="$AKP_TWO_NODE_LOCAL_DATABASE_URL"           AKP_API_TOKEN="$AKP_TWO_NODE_LOCAL_TOKEN"           AKP_API_TOKEN_SCOPES="$scopes"             pnpm auth:provision
+          DATABASE_URL="$AKP_TWO_NODE_REMOTE_DATABASE_URL"           AKP_API_TOKEN="$AKP_TWO_NODE_REMOTE_TOKEN"           AKP_API_TOKEN_SCOPES="$scopes"             pnpm auth:provision
+      - name: Start remote federation node
+        shell: bash
+        run: |
+          mkdir -p reports/ci
+          DATABASE_URL="$AKP_TWO_NODE_REMOTE_DATABASE_URL"           PORT=18101           AKP_API_HOST=127.0.0.1           AKP_CONTEXT_FABRIC_MODE=FEDERATED_ORG           AKP_CONTEXT_FABRIC_NODE_ID=federation-node-b           AKP_BUILD_REVISION=two-node-verification-b-r1             pnpm --filter @akp/api exec node --import tsx src/server.ts               > reports/ci/federation-node-b.log 2>&1 &
+          echo $! > reports/ci/federation-node-b.pid
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:18101/health/liveness >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat reports/ci/federation-node-b.log
+          exit 1
+      - name: Start local federation node
+        shell: bash
+        run: |
+          DATABASE_URL="$AKP_TWO_NODE_LOCAL_DATABASE_URL"           PORT=18100           AKP_API_HOST=127.0.0.1           AKP_CONTEXT_FABRIC_MODE=FEDERATED_ORG           AKP_CONTEXT_FABRIC_NODE_ID=federation-node-a           AKP_BUILD_REVISION=two-node-verification-a-r1           AKP_TWO_NODE_B_TOKEN="$AKP_TWO_NODE_REMOTE_TOKEN"             pnpm --filter @akp/api exec node --import tsx src/server.ts               > reports/ci/federation-node-a.log 2>&1 &
+          echo $! > reports/ci/federation-node-a.pid
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:18100/health/liveness >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat reports/ci/federation-node-a.log
+          exit 1
+      - name: Configure remote peer
+        run: pnpm exec tsx scripts/two-node-federation-verification.ts --scenario=setup
+      - name: Execute live two-node federation query
+        run: pnpm exec tsx scripts/two-node-federation-verification.ts --scenario=live
+      - name: Stop remote node and exercise partial failure
+        shell: bash
+        run: |
+          kill "$(cat reports/ci/federation-node-b.pid)"
+          for attempt in $(seq 1 20); do
+            if ! kill -0 "$(cat reports/ci/federation-node-b.pid)" 2>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          pnpm exec tsx scripts/two-node-federation-verification.ts --scenario=dead
+      - name: Validate real two-node federation evidence
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const report = JSON.parse(
+            readFileSync("reports/ci/two-node-federation.json", "utf8"),
+          );
+          if (
+            report.status !== "PROVEN" ||
+            report.evidenceLevel !== "REAL_TWO_NODE_FEDERATION" ||
+            report.liveQuery?.hitCount < 1 ||
+            report.liveQuery?.remoteProvenancePreserved !== true ||
+            report.liveQuery?.remoteMaterializedLocally !== false ||
+            report.deadPeer?.localNodeRemainedLive !== true ||
+            report.deadPeer?.persistedFailureCount < 1
+          ) {
+            throw new Error("Two-node federation evidence is incomplete.");
+          }
+          if (
+            !["FEDERATION_PEER_UNAVAILABLE", "FEDERATION_PEER_TIMEOUT"].includes(
+              report.deadPeer?.persistedFailureCode,
+            )
+          ) {
+            throw new Error("Two-node failure code is not bounded.");
+          }
+          console.log(JSON.stringify(report, null, 2));
+          NODE
+      - name: Upload two-node federation evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: federation-two-node-${{ github.run_id }}
+          path: reports/ci
+          if-no-files-found: error
+          retention-days: 30
+      - name: Stop two-node verification services
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          if [ -f reports/ci/federation-node-a.pid ]; then
+            kill "$(cat reports/ci/federation-node-a.pid)" 2>/dev/null
+          fi
+          if [ -f reports/ci/federation-node-b.pid ]; then
+            kill "$(cat reports/ci/federation-node-b.pid)" 2>/dev/null
+          fi
+          docker compose down -v --remove-orphans

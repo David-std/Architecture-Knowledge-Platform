@@ -30,7 +30,8 @@ if (!databaseUrl) throw new Error("DATABASE_URL is required");
 
 const SPACE_ID = "00000000-0000-0000-0000-000000000003";
 const USER_ID = "00000000-0000-0000-0000-000000000002";
-const CORPUS_REVISION = "agent-ab-public-product-v1";
+const CORPUS_REVISION =
+  process.env.AKP_AGENT_AB_CORPUS_REVISION ?? "agent-ab-public-product-v1";
 const VAULT_IDS: Record<string, string> = {
   "product-architecture": "10000000-0000-4000-8000-000000000001",
   "product-operations": "10000000-0000-4000-8000-000000000002",
@@ -41,8 +42,11 @@ function sha256(value: string): string {
 }
 
 async function main(): Promise<void> {
+  const manifestPath =
+    process.env.AKP_AGENT_AB_CORPUS ??
+    "evals/registered/public-product-corpus.json";
   const manifest = JSON.parse(
-    await readFile("evals/registered/public-product-corpus.json", "utf8"),
+    await readFile(manifestPath, "utf8"),
   ) as RegisteredManifest;
   const db = new Postgres(databaseUrl);
   const documentIds = new Map<string, string>();

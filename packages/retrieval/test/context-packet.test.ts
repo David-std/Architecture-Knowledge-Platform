@@ -23,6 +23,7 @@ const baseHit = {
   },
   trust: "HUMAN_REVIEWED" as const,
   lifecycle: "ACTIVE" as const,
+  refreshStatus: "CURRENT",
   score: 1,
   reasons: ["gold"],
   excerpt: "CQRS",
@@ -42,6 +43,162 @@ const requestFor = (query = "cqrs") => ({
 });
 
 describe("buildContextPacket", () => {
+  it("applies L0-L3 progressive disclosure and records the actual level", () => {
+    const detailed =
+      "CQRS separates command and query responsibilities. " +
+      "This second sentence carries implementation detail that orientation can omit.";
+    const full =
+      "# CQRS\n\n" +
+      detailed +
+      "\n\nFull approved page content with constraints, evidence, and examples.";
+
+    const build = (
+      requestedContextLevel: "L0" | "L1" | "L2" | "L3",
+      fullContent?: string,
+    ) =>
+      buildContextPacket({
+        request: requestFor(),
+        intent: "CONCEPTUAL",
+        corpusRevision: "deadbeef",
+        maxTokens: 4_000,
+        requestedContextLevel,
+        candidates: [
+          {
+            hit: baseHit,
+            content: detailed,
+            ...(fullContent === undefined ? {} : { fullContent }),
+            kind: "concept",
+          },
+        ],
+      });
+
+    const l0 = build("L0");
+    expect(l0.requestedContextLevel).toBe("L0");
+    expect(l0.sections[0]).toMatchObject({
+      contextLevel: "L0",
+      documentRevision: "abc",
+    });
+    expect(l0.sections[0]?.content).toContain("id=doc:cqrs");
+    expect(l0.sections[0]?.content).toContain("type=architecture");
+    expect(l0.sections[0]?.content).not.toContain(
+      "separates command and query responsibilities",
+    );
+
+    const l1 = build("L1");
+    expect(l1.sections[0]?.contextLevel).toBe("L1");
+    expect(l1.sections[0]?.content).toContain(
+      "CQRS separates command and query responsibilities.",
+    );
+    expect(l1.sections[0]?.content.length).toBeLessThanOrEqual(320);
+
+    const l2 = build("L2");
+    expect(l2.sections[0]).toMatchObject({
+      contextLevel: "L2",
+      content: detailed,
+    });
+
+    const downgraded = build("L3");
+    expect(downgraded.requestedContextLevel).toBe("L3");
+    expect(downgraded.sections[0]).toMatchObject({
+      contextLevel: "L2",
+      content: detailed,
+    });
+
+    const l3 = build("L3", full);
+    expect(l3.sections[0]).toMatchObject({
+      contextLevel: "L3",
+      content: full,
+    });
+
+    const compact = buildContextPacketPair({
+      request: requestFor(),
+      intent: "CONCEPTUAL",
+      corpusRevision: "deadbeef",
+      maxTokens: 4_000,
+      requestedContextLevel: "L1",
+      candidates: [{ hit: baseHit, content: detailed, kind: "concept" }],
+    }).compact;
+    expect(compact.identity.requestedContextLevel).toBe("L1");
+    expect(compact.content[0]?.contextLevel).toBe("L1");
+  });
+
+  it("preserves the first-class retrieval trace in full and compact context sections", () => {
+    const tracedHit = {
+      ...baseHit,
+      retrievalTrace: {
+        authorization: {
+          decision: "ALLOW" as const,
+          spaceId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          vaultId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          pathRestricted: true,
+        },
+        truth: {
+          state: "SUPPORTED" as const,
+          consistency: "STRICT" as const,
+          revisionHash: "a".repeat(64),
+          capturedAt: "2026-09-20T00:00:00.000Z",
+        },
+        temporal: {
+          lifecycle: "ACTIVE" as const,
+          refreshStatus: "CURRENT",
+        },
+        contributions: [
+          {
+            channel: "vector",
+            rank: 1,
+            channelWeight: 1,
+            reason: "vector",
+            rawScore: 0.91,
+            candidateRevision: "abc",
+            generation: {
+              kind: "VECTOR" as const,
+              id: "generation-1",
+              provider: "fixture-provider",
+              model: "fixture-model",
+              modelRevision: "r1",
+            },
+          },
+        ],
+        fusion: { score: 1 / 61, reasons: ["vector"] },
+        finalSelectionReason: "vector",
+      },
+    };
+    const pair = buildContextPacketPair({
+      request: requestFor("trace"),
+      intent: "CONCEPTUAL",
+      corpusRevision: "deadbeef",
+      maxTokens: 4_000,
+      candidates: [
+        { hit: tracedHit, content: "Traced context", kind: "concept" },
+      ],
+    });
+
+    expect(pair.full.sections[0]?.retrievalTrace).toEqual(
+      tracedHit.retrievalTrace,
+    );
+    expect(pair.compact.content[0]?.retrievalTrace).toEqual({
+      ...tracedHit.retrievalTrace,
+      contributions: [
+        {
+          ...tracedHit.retrievalTrace.contributions[0],
+          generation: {
+            kind: "VECTOR",
+            id: "generation-1",
+          },
+        },
+      ],
+    });
+    expect(
+      pair.compact.content[0]?.retrievalTrace?.contributions[0]?.generation,
+    ).not.toHaveProperty("provider");
+    expect(
+      pair.compact.content[0]?.retrievalTrace?.contributions[0]?.generation,
+    ).not.toHaveProperty("model");
+    expect(
+      pair.compact.content[0]?.retrievalTrace?.contributions[0]?.generation,
+    ).not.toHaveProperty("modelRevision");
+  });
+
   it("copies graph provenance and renders compact, de-duplicated paths", () => {
     const graphProvenance: GraphPathProvenance[] = [
       {
@@ -365,6 +522,7 @@ describe("buildContextPacket", () => {
 
     expect(packet.budget.tokenizer).toMatchObject({
       id: "test-character-counter",
+      quality: "EXACT",
       source: "injected",
       approximate: false,
     });
@@ -401,6 +559,7 @@ describe("buildContextPacket", () => {
 
     expect(packet.budget.tokenizer).toMatchObject({
       id: "char/4",
+      quality: "APPROXIMATE",
       source: "fallback",
       approximate: true,
     });
@@ -408,6 +567,280 @@ describe("buildContextPacket", () => {
     expect(packet.budget.tokenizer.label.toLowerCase()).toContain(
       "approximate",
     );
+  });
+
+  it("keeps compact retrieval provenance without letting verbose model metadata displace content", () => {
+    const tracedHit: SearchHit = {
+      ...baseHit,
+      retrievalTrace: {
+        authorization: {
+          decision: "ALLOW",
+          spaceId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          vaultId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          pathRestricted: true,
+        },
+        truth: {
+          state: "SUPPORTED",
+          consistency: "STRICT",
+          revisionHash: "a".repeat(64),
+          capturedAt: "2026-09-21T00:00:00.000Z",
+        },
+        temporal: {
+          lifecycle: "ACTIVE",
+          refreshStatus: "CURRENT",
+        },
+        contributions: [
+          {
+            channel: "vector",
+            rank: 1,
+            channelWeight: 1,
+            reason: "vector",
+            rawScore: 0.91,
+            candidateRevision: "revision-1",
+            generation: {
+              kind: "VECTOR",
+              id: "00000000-0000-4000-8000-000000000777",
+              provider: "provider-with-verbose-operational-metadata",
+              model: "model-with-verbose-operational-metadata",
+              modelRevision: "model-revision-with-verbose-operational-metadata",
+              configurationHash: "b".repeat(64),
+            },
+          },
+        ],
+        fusion: {
+          score: 1 / 61,
+          reasons: ["vector"],
+        },
+        finalSelectionReason: "vector",
+      },
+    };
+    const full = buildContextPacket({
+      request: requestFor("compact trace"),
+      intent: "CONCEPTUAL",
+      corpusRevision: "deadbeef",
+      maxTokens: 20_000,
+      candidates: [
+        {
+          hit: tracedHit,
+          content: "The content remains the primary compact payload.",
+          kind: "concept",
+        },
+      ],
+    });
+
+    const compact = projectContextPacket(full, { maxTokens: 1_000 });
+
+    expect(compact.content).toHaveLength(1);
+    expect(compact.content[0]?.content).toContain("primary compact payload");
+    expect(
+      compact.content[0]?.retrievalTrace?.contributions[0]?.generation,
+    ).toEqual({
+      kind: "VECTOR",
+      id: "00000000-0000-4000-8000-000000000777",
+    });
+    expect(compact.content[0]?.retrievalTrace?.contributions[0]?.rawScore).toBe(
+      0.91,
+    );
+    expect(compact.budget.serializedTokens).toBeLessThanOrEqual(1_000);
+    expect(
+      full.sections[0]?.retrievalTrace?.contributions[0]?.generation,
+    ).toMatchObject({
+      provider: "provider-with-verbose-operational-metadata",
+      model: "model-with-verbose-operational-metadata",
+    });
+  });
+
+  it("keeps direct query evidence in a tight compact packet without displacing rules", () => {
+    const unrelatedHit: SearchHit = {
+      ...baseHit,
+      score: 100,
+    };
+    const directHit: SearchHit = {
+      ...baseHit,
+      documentId: "22222222-2222-4222-8222-222222222222",
+      score: 1,
+    };
+    const full = buildContextPacket({
+      request: requestFor("needle-marker"),
+      intent: "CONCEPTUAL",
+      corpusRevision: "deadbeef",
+      maxTokens: 20_000,
+      candidates: [
+        {
+          hit: unrelatedHit,
+          content: `unrelated ${"x".repeat(1_200)}`,
+          kind: "concept",
+        },
+        {
+          hit: directHit,
+          content: `needle-marker ${"y".repeat(1_200)}`,
+          kind: "concept",
+        },
+      ],
+    });
+
+    expect(full.sections[0]?.content).toContain("unrelated");
+
+    const compact = projectContextPacket(full, { maxTokens: 1_000 });
+
+    expect(
+      compact.content.some((section) =>
+        section.content.includes("needle-marker"),
+      ),
+    ).toBe(true);
+    expect(compact.budget.serializedTokens).toBeLessThanOrEqual(1_000);
+    expect(compact.continuations.length).toBeGreaterThan(0);
+
+    const withRule = buildContextPacket({
+      request: requestFor("needle-marker"),
+      intent: "CONCEPTUAL",
+      corpusRevision: "deadbeef",
+      maxTokens: 20_000,
+      candidates: [
+        {
+          hit: unrelatedHit,
+          content: `mandatory policy ${"r".repeat(1_200)}`,
+          kind: "rule",
+          mandatory: true,
+        },
+        {
+          hit: directHit,
+          content: `needle-marker ${"y".repeat(1_200)}`,
+          kind: "concept",
+        },
+      ],
+    });
+    const compactWithRule = projectContextPacket(withRule, {
+      maxTokens: 1_000,
+    });
+    expect(compactWithRule.content[0]?.kind).toBe("rule");
+  });
+
+  it("keeps an exact query window when the full direct section exceeds the compact budget", () => {
+    const marker = "needle-marker";
+    const fullContent = `${"x".repeat(4_000)} ${marker} ${"y".repeat(4_000)}`;
+    const full = buildContextPacket({
+      request: requestFor(marker),
+      intent: "CONCEPTUAL",
+      corpusRevision: "deadbeef",
+      maxTokens: 20_000,
+      candidates: [{ hit: baseHit, content: fullContent, kind: "concept" }],
+    });
+    const continuationSections: string[][] = [];
+
+    const compact = projectContextPacket(full, {
+      maxTokens: 1_000,
+      continuationSink: (payload) => {
+        continuationSections.push(
+          payload.sections.map((section) => section.content),
+        );
+      },
+    });
+
+    expect(compact.content).toHaveLength(1);
+    expect(compact.content[0]?.content).toContain(marker);
+    expect(compact.content[0]?.content).not.toBe(fullContent);
+    expect(compact.budget.serializedTokens).toBeLessThanOrEqual(1_000);
+    expect(compact.continuations).toHaveLength(1);
+    expect(continuationSections.at(-1)).toEqual([fullContent]);
+  });
+
+  it("defers optional graph metadata when tight compact evidence would otherwise disappear", () => {
+    const marker = "tight-marker";
+    const path = [
+      "11111111-1111-4111-8111-111111111111",
+      "22222222-2222-4222-8222-222222222222",
+      "33333333-3333-4333-8333-333333333333",
+      "44444444-4444-4444-8444-444444444444",
+      "55555555-5555-4555-8555-555555555555",
+      "66666666-6666-4666-8666-666666666666",
+    ];
+    const tracedHit: SearchHit = {
+      ...baseHit,
+      documentId: path[0] as string,
+      revision: "revision-1",
+      graphProvenance: [
+        {
+          channel: "graph",
+          seedDocumentId: path[0] as string,
+          targetDocumentId: path.at(-1) as string,
+          path: path.map((documentId, index) => ({
+            documentId,
+            document: `verbose-graph-node-${index}-${"g".repeat(180)}`,
+            ...(index < path.length - 1
+              ? {
+                  relation: "requires" as const,
+                  direction: "outgoing" as const,
+                }
+              : {}),
+          })),
+          hops: path.length - 1,
+          graphScore: 0.9,
+        },
+      ],
+      retrievalTrace: {
+        authorization: {
+          decision: "ALLOW",
+          spaceId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          vaultId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          pathRestricted: true,
+        },
+        truth: {
+          state: "SUPPORTED",
+          consistency: "STRICT",
+          revisionHash: "a".repeat(64),
+          capturedAt: "2026-09-21T00:00:00.000Z",
+        },
+        temporal: {
+          lifecycle: "ACTIVE",
+          refreshStatus: "CURRENT",
+        },
+        contributions: [
+          {
+            channel: "graph",
+            rank: 1,
+            channelWeight: 1,
+            reason: "graph",
+            rawScore: 0.9,
+            candidateRevision: "revision-1",
+          },
+        ],
+        fusion: { score: 0.9, reasons: ["graph"] },
+        finalSelectionReason: "graph",
+      },
+    };
+    const fullContent = `${"x".repeat(2_500)} ${marker} ${"y".repeat(2_500)}`;
+    const full = buildContextPacket({
+      request: requestFor(marker),
+      intent: "CONCEPTUAL",
+      corpusRevision: "deadbeef",
+      maxTokens: 20_000,
+      candidates: [{ hit: tracedHit, content: fullContent, kind: "concept" }],
+    });
+    const continuationSections: string[][] = [];
+
+    const compact = projectContextPacket(full, {
+      maxTokens: 1_000,
+      continuationSink: (payload) => {
+        continuationSections.push(
+          payload.sections.map((section) => section.content),
+        );
+      },
+    });
+
+    expect(compact.content).toHaveLength(1);
+    expect(compact.content[0]?.content).toContain(marker);
+    expect(compact.content[0]?.graphProvenance).toBeUndefined();
+    expect(compact.content[0]?.retrievalTrace).toBeDefined();
+    expect(
+      compact.content[0]?.retrievalTrace?.contributions[0],
+    ).not.toHaveProperty("candidateRevision");
+    expect(compact.content[0]?.references).toEqual([]);
+    expect(compact.content[0]?.citations).toEqual([]);
+    expect(compact.references).toEqual([]);
+    expect(compact.citations.length).toBeGreaterThan(0);
+    expect(compact.budget.serializedTokens).toBeLessThanOrEqual(1_000);
+    expect(continuationSections.at(-1)).toEqual([fullContent]);
   });
 
   it("projects a compact packet without losing identity, evidence, uncertainty or actions", () => {
@@ -745,6 +1178,7 @@ describe("buildContextPacket", () => {
     expect(packet.budget.tokenizer).toEqual({
       id: "receiver-aware",
       label: "receiver-aware tokenizer",
+      quality: "EXACT",
       approximate: false,
       source: "injected",
     });
@@ -851,6 +1285,124 @@ describe("buildContextPacket", () => {
     expect(
       priorityBeforeDiversity.sections.map((section) => section.content),
     ).toEqual(["rule A1", "concept A2", "source B1"]);
+  });
+
+  it("orders equal-kind context by authority, freshness, independent support, then relevance", () => {
+    const packet = buildContextPacket({
+      request: requestFor("authority freshness support"),
+      intent: "CONCEPTUAL",
+      corpusRevision: "deadbeef",
+      maxTokens: 20_000,
+      candidates: [
+        {
+          hit: {
+            ...baseHit,
+            documentId: "22222222-2222-4222-8222-222222222222",
+            trust: "MACHINE_SUPPORTED",
+            refreshStatus: "STALE_PENDING_REVIEW",
+            citations: ["source:one"],
+            score: 100,
+          },
+          content: "high relevance but weaker authority",
+          kind: "concept",
+        },
+        {
+          hit: {
+            ...baseHit,
+            documentId: "33333333-3333-4333-8333-333333333333",
+            trust: "ATTESTED",
+            refreshStatus: "CURRENT",
+            citations: ["source:one", "source:two"],
+            score: 1,
+          },
+          content: "authoritative current independently supported",
+          kind: "concept",
+        },
+      ],
+    });
+
+    expect(packet.sections.map((section) => section.content)).toEqual([
+      "authoritative current independently supported",
+      "high relevance but weaker authority",
+    ]);
+  });
+
+  it("places mandatory context and all accessible sides of a material conflict before ordinary candidates", () => {
+    const leftId = "22222222-2222-4222-8222-222222222222";
+    const rightId = "33333333-3333-4333-8333-333333333333";
+    const packet = buildContextPacket({
+      request: requestFor("material conflict"),
+      intent: "COMPARISON",
+      corpusRevision: "deadbeef",
+      maxTokens: 20_000,
+      materialConflicts: [
+        { id: "conflict:retry-policy", documentIds: [leftId, rightId] },
+      ],
+      candidates: [
+        {
+          hit: {
+            ...baseHit,
+            documentId: "44444444-4444-4444-8444-444444444444",
+            score: 1_000,
+          },
+          content: "ordinary high-score concept",
+          kind: "concept",
+        },
+        {
+          hit: { ...baseHit, documentId: leftId, score: 2 },
+          content: "conflict side A",
+          kind: "concept",
+        },
+        {
+          hit: { ...baseHit, documentId: rightId, score: 1 },
+          content: "conflict side B",
+          kind: "concept",
+        },
+        {
+          hit: {
+            ...baseHit,
+            documentId: "55555555-5555-4555-8555-555555555555",
+            score: 0.1,
+          },
+          content: "mandatory policy",
+          kind: "concept",
+          mandatory: true,
+        },
+      ],
+    });
+
+    expect(
+      packet.sections.slice(0, 3).map((section) => section.content),
+    ).toEqual(["mandatory policy", "conflict side A", "conflict side B"]);
+    expect(packet.sections[3]?.content).toBe("ordinary high-score concept");
+  });
+
+  it("makes unavailable material conflict sides explicit instead of silently claiming coverage", () => {
+    const packet = buildContextPacket({
+      request: requestFor("partial conflict"),
+      intent: "COMPARISON",
+      corpusRevision: "deadbeef",
+      maxTokens: 20_000,
+      materialConflicts: [
+        {
+          id: "conflict:partial",
+          documentIds: [
+            baseHit.documentId,
+            "22222222-2222-4222-8222-222222222222",
+          ],
+        },
+      ],
+      candidates: [
+        { hit: baseHit, content: "only accessible side", kind: "rule" },
+      ],
+    });
+
+    expect(packet.gaps).toContain(
+      "Material conflict conflict:partial has 1 unavailable side(s); complete conflict coverage was not possible.",
+    );
+    expect(packet.recommendedActions).toContain(
+      "Review the retrieval gaps before making a definitive claim.",
+    );
   });
 
   it("projects a compact packet with a hard budget and preserves kind, revisions and continuation identity", () => {

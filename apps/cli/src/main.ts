@@ -6,7 +6,12 @@ import { tmpdir } from "node:os";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { Command } from "commander";
-import { Postgres, listVaults, registerVault } from "@akp/postgres";
+import {
+  Postgres,
+  grantVaultMembership,
+  listVaults,
+  registerVault,
+} from "@akp/postgres";
 import {
   importVaultReadOnly,
   inspectVault,
@@ -20,6 +25,7 @@ import {
   type JsonRecord,
   type PacketObservation,
 } from "./metrics.js";
+import { renderDoctorReport, runDoctor } from "./doctor.js";
 import {
   AUDIT_EXPORT_CONFIRMATION,
   AuditExportClientError,
@@ -320,6 +326,168 @@ configureAuditExport(
   { allowOutput: false },
 );
 
+const profile = program
+  .command("profile")
+  .description("Versioned KnowledgeProfile governance");
+
+profile
+  .command("list")
+  .requiredOption("--space-id <uuid>", "Owning space UUID")
+  .requiredOption("--vault-id <uuid>", "Bound vault UUID")
+  .action(async (options: { spaceId: string; vaultId: string }) => {
+    const params = new URLSearchParams({
+      spaceId: options.spaceId,
+      vaultId: options.vaultId,
+    });
+    printJson(await api(`/v1/schema/profiles?${params.toString()}`));
+  });
+
+profile
+  .command("get")
+  .requiredOption("--space-id <uuid>", "Owning space UUID")
+  .requiredOption("--vault-id <uuid>", "Bound vault UUID")
+  .requiredOption("--revision-id <uuid>", "KnowledgeProfile revision UUID")
+  .action(
+    async (options: {
+      spaceId: string;
+      vaultId: string;
+      revisionId: string;
+    }) => {
+      const params = new URLSearchParams({
+        spaceId: options.spaceId,
+        vaultId: options.vaultId,
+      });
+      printJson(
+        await api(
+          `/v1/schema/profiles/${options.revisionId}?${params.toString()}`,
+        ),
+      );
+    },
+  );
+
+profile
+  .command("validate")
+  .requiredOption("--space-id <uuid>", "Owning space UUID")
+  .requiredOption("--vault-id <uuid>", "Bound vault UUID")
+  .requiredOption("--file <path>", "KnowledgeProfile JSON file")
+  .action(
+    async (options: { spaceId: string; vaultId: string; file: string }) => {
+      const profileValue = JSON.parse(
+        readFileSync(path.resolve(options.file), "utf8"),
+      ) as unknown;
+      printJson(
+        await api("/v1/schema/profiles/validate", {
+          method: "POST",
+          body: JSON.stringify({
+            spaceId: options.spaceId,
+            vaultId: options.vaultId,
+            profile: profileValue,
+          }),
+        }),
+      );
+    },
+  );
+
+profile
+  .command("diff")
+  .requiredOption("--space-id <uuid>", "Owning space UUID")
+  .requiredOption("--vault-id <uuid>", "Bound vault UUID")
+  .requiredOption("--file <path>", "Candidate KnowledgeProfile JSON file")
+  .option("--base-revision-id <uuid>", "Optional durable base revision")
+  .action(
+    async (options: {
+      spaceId: string;
+      vaultId: string;
+      file: string;
+      baseRevisionId?: string;
+    }) => {
+      const candidateProfile = JSON.parse(
+        readFileSync(path.resolve(options.file), "utf8"),
+      ) as unknown;
+      printJson(
+        await api("/v1/schema/profiles/diff", {
+          method: "POST",
+          body: JSON.stringify({
+            spaceId: options.spaceId,
+            vaultId: options.vaultId,
+            candidateProfile,
+            ...(options.baseRevisionId
+              ? { baseRevisionId: options.baseRevisionId }
+              : {}),
+          }),
+        }),
+      );
+    },
+  );
+
+profile
+  .command("dry-run")
+  .requiredOption("--space-id <uuid>", "Owning space UUID")
+  .requiredOption("--vault-id <uuid>", "Bound vault UUID")
+  .requiredOption("--file <path>", "Candidate KnowledgeProfile JSON file")
+  .option("--supersedes-revision-id <uuid>", "Revision explicitly superseded")
+  .action(
+    async (options: {
+      spaceId: string;
+      vaultId: string;
+      file: string;
+      supersedesRevisionId?: string;
+    }) => {
+      const profileValue = JSON.parse(
+        readFileSync(path.resolve(options.file), "utf8"),
+      ) as unknown;
+      printJson(
+        await api("/v1/schema/dry-run", {
+          method: "POST",
+          body: JSON.stringify({
+            spaceId: options.spaceId,
+            vaultId: options.vaultId,
+            profile: profileValue,
+            ...(options.supersedesRevisionId
+              ? { supersedesRevisionId: options.supersedesRevisionId }
+              : {}),
+          }),
+        }),
+      );
+    },
+  );
+
+profile
+  .command("activate")
+  .requiredOption("--space-id <uuid>", "Owning space UUID")
+  .requiredOption("--vault-id <uuid>", "Bound vault UUID")
+  .requiredOption("--revision-id <uuid>", "KnowledgeProfile revision UUID")
+  .requiredOption("--dry-run-id <uuid>", "Pinned dry-run UUID")
+  .requiredOption(
+    "--profile-hash <sha256>",
+    "Expected canonical profile SHA-256",
+  )
+  .requiredOption("--corpus-revision <revision>", "Expected corpus revision")
+  .action(
+    async (options: {
+      spaceId: string;
+      vaultId: string;
+      revisionId: string;
+      dryRunId: string;
+      profileHash: string;
+      corpusRevision: string;
+    }) => {
+      printJson(
+        await api("/v1/schema/activate", {
+          method: "POST",
+          body: JSON.stringify({
+            spaceId: options.spaceId,
+            vaultId: options.vaultId,
+            profileRevisionId: options.revisionId,
+            dryRunId: options.dryRunId,
+            expectedProfileHash: options.profileHash,
+            expectedCorpusRevision: options.corpusRevision,
+          }),
+        }),
+      );
+    },
+  );
+
 const vault = program
   .command("vault")
   .description("Read-only vault operations");
@@ -383,6 +551,52 @@ vault
             issueCount: result.issues.length,
             reportPath,
             reportPersisted,
+          },
+          null,
+          2,
+        ),
+      );
+    },
+  );
+
+vault
+  .command("grant-access")
+  .description("Grant a principal access to a vault on this node")
+  .requiredOption("--user-id <uuid>", "Principal receiving access")
+  .requiredOption("--vault-id <uuid>", "Vault the principal may reach")
+  .option("--role <role>", "Vault role whose permissions are granted", "VIEWER")
+  .option(
+    "--path-prefix <path>",
+    "Restrict access to a subtree; omit for the whole vault",
+  )
+  .action(
+    async (options: {
+      userId: string;
+      vaultId: string;
+      role: string;
+      pathPrefix?: string;
+    }) => {
+      // Importing a vault does not grant anyone access to it: vault membership
+      // is deliberately separate from space membership. A node serving a team
+      // needs an operator surface for that, or a freshly imported corpus stays
+      // unreachable through every authorized surface, including its own web app.
+      const membership = await withDatabase((db) =>
+        grantVaultMembership(db, {
+          userId: options.userId,
+          vaultId: options.vaultId,
+          role: options.role,
+          pathPrefix: options.pathPrefix ?? null,
+        }),
+      );
+      console.log(
+        JSON.stringify(
+          {
+            status: "GRANTED",
+            userId: membership.userId,
+            vaultId: membership.vaultId,
+            role: membership.role,
+            pathPrefix: membership.pathPrefix,
+            permissions: membership.permissions,
           },
           null,
           2,
@@ -488,15 +702,20 @@ vault
     );
   });
 
-program.command("doctor").action(async () => {
-  const result = await withDatabase(async (db) => ({
-    database: await db.health(),
-    node: process.version,
-    platform: process.platform,
-    cwd: process.cwd(),
-  }));
-  console.log(JSON.stringify(result, null, 2));
-});
+program
+  .command("doctor")
+  .option("--format <format>", "json or human", "json")
+  .action(async (options: { format: string }) => {
+    const report = await withDatabase((db) => runDoctor(db));
+    if (options.format === "json") {
+      printJson(report);
+    } else if (options.format === "human") {
+      console.log(renderDoctorReport(report));
+    } else {
+      throw new Error("doctor --format must be json or human");
+    }
+    if (report.overall === "FAIL") process.exitCode = 1;
+  });
 
 program.command("status").action(async () => {
   console.log(JSON.stringify(await api("/v1/status"), null, 2));
