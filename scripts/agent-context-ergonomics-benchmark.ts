@@ -815,9 +815,56 @@ async function writeReport(report: Record<string, unknown>): Promise<void> {
   console.log(JSON.stringify({ outputPath, status: report.status }, null, 2));
 }
 
+type BenchmarkShardSelection = {
+  entries: Array<{ index: number; task: AgentAbTask }>;
+  shard: { index: number; count: number; taskIds: string[] } | null;
+};
+
+function selectBenchmarkShard(tasks: AgentAbTask[]): BenchmarkShardSelection {
+  const indexRaw = process.env.AKP_TOOL_ERGONOMICS_SHARD_INDEX;
+  const countRaw = process.env.AKP_TOOL_ERGONOMICS_SHARD_COUNT;
+  if (indexRaw === undefined && countRaw === undefined) {
+    return {
+      entries: tasks.map((task, index) => ({ index, task })),
+      shard: null,
+    };
+  }
+  if (indexRaw === undefined || countRaw === undefined) {
+    throw new Error(
+      "AKP_TOOL_ERGONOMICS_SHARD_INDEX and AKP_TOOL_ERGONOMICS_SHARD_COUNT must be set together.",
+    );
+  }
+  const index = Number(indexRaw);
+  const count = Number(countRaw);
+  if (
+    !Number.isInteger(index) ||
+    !Number.isInteger(count) ||
+    count < 1 ||
+    index < 0 ||
+    index >= count
+  ) {
+    throw new Error("Invalid agent context ergonomics shard coordinates.");
+  }
+  const entries = tasks
+    .map((task, taskIndex) => ({ index: taskIndex, task }))
+    .filter((entry) => entry.index % count === index);
+  if (entries.length === 0) {
+    throw new Error("Agent context ergonomics shard selected no tasks.");
+  }
+  return {
+    entries,
+    shard: {
+      index,
+      count,
+      taskIds: entries.map((entry) => entry.task.id),
+    },
+  };
+}
+
 async function main(): Promise<void> {
   const loaded = await loadTasks();
   const config = benchmarkPrerequisites();
+  const selection = selectBenchmarkShard(loaded.file.tasks);
   const base = {
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
@@ -852,6 +899,7 @@ async function main(): Promise<void> {
       rules: AGENT_INSTRUCTION_BUNDLE.rules.length,
       lifecycle: AGENT_INSTRUCTION_BUNDLE.lifecycle,
     },
+    shard: selection.shard,
     claimPolicy: {
       realModelRequired: true,
       sameModelSettingsAcrossArms: true,
@@ -876,7 +924,7 @@ async function main(): Promise<void> {
   const facadeSurface = facadeCatalog();
 
   try {
-    for (const [taskIndex, task] of loaded.file.tasks.entries()) {
+    for (const { index: taskIndex, task } of selection.entries) {
       const orderedArms = [
         ...ARMS.slice(taskIndex % ARMS.length),
         ...ARMS.slice(0, taskIndex % ARMS.length),
@@ -961,7 +1009,7 @@ async function main(): Promise<void> {
     );
     await writeReport({
       ...base,
-      status: "PROVEN",
+      status: selection.shard ? "PROVEN_SHARD" : "PROVEN",
       execution: {
         apiUrl: config.apiUrl,
         provider: {

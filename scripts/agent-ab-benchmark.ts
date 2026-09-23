@@ -644,9 +644,56 @@ function noiseCausedFailure(
   );
 }
 
+type BenchmarkShardSelection = {
+  entries: Array<{ index: number; task: AgentAbTask }>;
+  shard: { index: number; count: number; taskIds: string[] } | null;
+};
+
+function selectBenchmarkShard(tasks: AgentAbTask[]): BenchmarkShardSelection {
+  const indexRaw = process.env.AKP_AGENT_AB_SHARD_INDEX;
+  const countRaw = process.env.AKP_AGENT_AB_SHARD_COUNT;
+  if (indexRaw === undefined && countRaw === undefined) {
+    return {
+      entries: tasks.map((task, index) => ({ index, task })),
+      shard: null,
+    };
+  }
+  if (indexRaw === undefined || countRaw === undefined) {
+    throw new Error(
+      "AKP_AGENT_AB_SHARD_INDEX and AKP_AGENT_AB_SHARD_COUNT must be set together.",
+    );
+  }
+  const index = Number(indexRaw);
+  const count = Number(countRaw);
+  if (
+    !Number.isInteger(index) ||
+    !Number.isInteger(count) ||
+    count < 1 ||
+    index < 0 ||
+    index >= count
+  ) {
+    throw new Error("Invalid Agent A/B shard coordinates.");
+  }
+  const entries = tasks
+    .map((task, taskIndex) => ({ index: taskIndex, task }))
+    .filter((entry) => entry.index % count === index);
+  if (entries.length === 0) {
+    throw new Error("Agent A/B shard selected no tasks.");
+  }
+  return {
+    entries,
+    shard: {
+      index,
+      count,
+      taskIds: entries.map((entry) => entry.task.id),
+    },
+  };
+}
+
 async function main(): Promise<void> {
   const loaded = await loadTasks();
   const config = benchmarkPrerequisites();
+  const selection = selectBenchmarkShard(loaded.file.tasks);
   const baseReport = {
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
@@ -657,6 +704,7 @@ async function main(): Promise<void> {
       sourceCorpus: loaded.file.sourceCorpus,
       tasks: loaded.file.tasks.length,
     },
+    shard: selection.shard,
     claimPolicy: {
       realModelRequired: true,
       superiorityClaimAllowed: false,
@@ -690,7 +738,7 @@ async function main(): Promise<void> {
     "agent-public-no-answer-cloud-region",
   ]);
   try {
-    for (const [index, task] of loaded.file.tasks.entries()) {
+    for (const { index, task } of selection.entries) {
       const armA = await retrieveArmA(task, config);
       const armB = await retrieveArmB(task, config);
       const ordered =
@@ -767,7 +815,7 @@ async function main(): Promise<void> {
     );
     await writeReport({
       ...baseReport,
-      status: "PROVEN",
+      status: selection.shard ? "PROVEN_SHARD" : "PROVEN",
       execution: {
         apiUrl: config.apiUrl,
         spaceId: config.spaceId,

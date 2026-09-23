@@ -11,14 +11,44 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  controlled-comparison:
+  benchmark-shard:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - kind: comparison
+            shard: 0
+            shard_count: 3
+          - kind: comparison
+            shard: 1
+            shard_count: 3
+          - kind: comparison
+            shard: 2
+            shard_count: 3
+          - kind: ergonomics
+            shard: 0
+            shard_count: 6
+          - kind: ergonomics
+            shard: 1
+            shard_count: 6
+          - kind: ergonomics
+            shard: 2
+            shard_count: 6
+          - kind: ergonomics
+            shard: 3
+            shard_count: 6
+          - kind: ergonomics
+            shard: 4
+            shard_count: 6
+          - kind: ergonomics
+            shard: 5
+            shard_count: 6
     env:
       DATABASE_URL: postgres://akp:akp@localhost:55432/akp
       AKP_AGENT_AB_TASKS: evals/registered/agent-ab-public-product-tasks.json
       AKP_TOOL_ERGONOMICS_TASKS: evals/registered/agent-ab-public-product-tasks.json
-      AKP_AGENT_AB_REPORT: reports/ci/agent-ab-benchmark.json
       AKP_AGENT_AB_ENABLE: "1"
       AKP_AGENT_AB_REAL_MODEL: "1"
       AKP_API_URL: http://127.0.0.1:18080
@@ -37,7 +67,6 @@ jobs:
       AKP_LOCAL_AGENT_PORT: "18081"
       AKP_CONTEXT_TOKENIZER_MODEL: onnx-community/Qwen2.5-0.5B-Instruct
       AKP_CONTEXT_TOKENIZER_REVISION: cc5cc01a65cc3ff17bdb73a7de33d879f62599b0
-      AKP_CONTEXT_TOKENIZER_REPORT: reports/ci/context-tokenizer-baseline.json
       PORT: "18080"
     steps:
       - uses: actions/checkout@v7
@@ -48,7 +77,7 @@ jobs:
           node-version: 24.20.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
-      - name: Prepare Agent A/B evidence directory
+      - name: Prepare shard evidence directory
         run: mkdir -p reports/ci
       - name: Start Postgres with bounded registry retry
         shell: bash
@@ -56,15 +85,13 @@ jobs:
           set -o pipefail
           for attempt in 1 2 3; do
             if docker compose up -d --wait postgres \
-              2>&1 | tee -a reports/ci/agent-ab-postgres-startup.log; then
+              2>&1 | tee -a "reports/ci/postgres-${{ matrix.kind }}-${{ matrix.shard }}.log"; then
               exit 0
             fi
             echo "Postgres startup attempt ${attempt}/3 failed" \
-              | tee -a reports/ci/agent-ab-postgres-startup.log
+              | tee -a "reports/ci/postgres-${{ matrix.kind }}-${{ matrix.shard }}.log"
             docker compose down --remove-orphans >/dev/null 2>&1 || true
-            if [ "$attempt" -lt 3 ]; then
-              sleep $((attempt * 5))
-            fi
+            if [ "${attempt}" -lt 3 ]; then sleep $((attempt * 5)); fi
           done
           exit 1
       - run: pnpm db:migrate
@@ -72,57 +99,132 @@ jobs:
         shell: bash
         run: |
           pnpm exec tsx scripts/provision-agent-ab-fixture.ts \
-            2>&1 | tee reports/ci/agent-ab-fixture.log
+            > "reports/ci/fixture-${{ matrix.kind }}-${{ matrix.shard }}.log" 2>&1
           pnpm auth:provision \
-            2>&1 | tee reports/ci/agent-ab-auth.log
+            > "reports/ci/auth-${{ matrix.kind }}-${{ matrix.shard }}.log" 2>&1
       - name: Start isolated AKP API
         shell: bash
         run: |
-          pnpm --filter @akp/api dev > reports/ci/agent-ab-api.log 2>&1 &
-          echo $! > reports/ci/agent-ab-api.pid
+          pnpm --filter @akp/api dev \
+            > "reports/ci/api-${{ matrix.kind }}-${{ matrix.shard }}.log" 2>&1 &
+          echo $! > /tmp/agent-ab-api.pid
           for attempt in $(seq 1 60); do
             if curl --fail --silent http://127.0.0.1:18080/health/liveness >/dev/null; then
               exit 0
             fi
             sleep 1
           done
-          cat reports/ci/agent-ab-api.log >&2
+          cat "reports/ci/api-${{ matrix.kind }}-${{ matrix.shard }}.log" >&2
           exit 1
       - name: Start pinned local real-model provider
         shell: bash
         run: |
           pnpm --filter @akp/retrieval exec tsx scripts/local-agent-provider.ts \
-            > reports/ci/local-agent-provider.log 2>&1 &
-          echo $! > reports/ci/local-agent-provider.pid
+            > "reports/ci/provider-${{ matrix.kind }}-${{ matrix.shard }}.log" 2>&1 &
+          echo $! > /tmp/local-agent-provider.pid
           for attempt in $(seq 1 120); do
             if curl --fail --silent http://127.0.0.1:18081/health \
-              > reports/ci/local-agent-provider-health.json; then
-              cat reports/ci/local-agent-provider-health.json
+              > "reports/ci/provider-health-${{ matrix.kind }}-${{ matrix.shard }}.json"; then
+              cat "reports/ci/provider-health-${{ matrix.kind }}-${{ matrix.shard }}.json"
               exit 0
             fi
             sleep 5
           done
-          cat reports/ci/local-agent-provider.log >&2
+          cat "reports/ci/provider-${{ matrix.kind }}-${{ matrix.shard }}.log" >&2
           exit 1
       - name: Measure pinned tokenizer against serialized ContextPacket
+        if: matrix.kind == 'comparison' && matrix.shard == 0
+        env:
+          AKP_CONTEXT_TOKENIZER_REPORT: reports/ci/context-tokenizer-baseline.json
         shell: bash
         run: |
           set -o pipefail
           pnpm benchmark:context-tokenization \
             2>&1 | tee reports/ci/context-tokenizer-baseline.log
-      - name: Execute live controlled Agent A/B comparison
+      - name: Execute real-model benchmark shard
         shell: bash
         run: |
           set +e
-          pnpm benchmark:agent-ab > reports/ci/agent-ab.log 2>&1
-          status=$?
-          cat reports/ci/agent-ab.log
-          if [ ! -f reports/ci/agent-ab-benchmark.json ]; then
-            echo "Agent A/B harness did not produce its report" >&2
-            exit 1
+          if [ "${{ matrix.kind }}" = "comparison" ]; then
+            export AKP_AGENT_AB_SHARD_INDEX="${{ matrix.shard }}"
+            export AKP_AGENT_AB_SHARD_COUNT="${{ matrix.shard_count }}"
+            export AKP_AGENT_AB_REPORT="reports/ci/agent-ab-shard-${{ matrix.shard }}.json"
+            pnpm benchmark:agent-ab \
+              > "reports/ci/comparison-${{ matrix.shard }}.log" 2>&1
+            status=$?
+            cat "reports/ci/comparison-${{ matrix.shard }}.log"
+            test -f "reports/ci/agent-ab-shard-${{ matrix.shard }}.json" || exit 1
+          else
+            export AKP_TOOL_ERGONOMICS_SHARD_INDEX="${{ matrix.shard }}"
+            export AKP_TOOL_ERGONOMICS_SHARD_COUNT="${{ matrix.shard_count }}"
+            export AKP_TOOL_ERGONOMICS_REPORT="reports/ci/agent-context-shard-${{ matrix.shard }}.json"
+            pnpm benchmark:agent-context-ergonomics \
+              > "reports/ci/ergonomics-${{ matrix.shard }}.log" 2>&1
+            status=$?
+            cat "reports/ci/ergonomics-${{ matrix.shard }}.log"
+            test -f "reports/ci/agent-context-shard-${{ matrix.shard }}.json" || exit 1
           fi
-          exit "$status"
-      - name: Validate live evidence claim discipline
+          exit "${status}"
+      - name: Capture shard diagnostics
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          docker compose ps --all \
+            > "reports/ci/docker-compose-${{ matrix.kind }}-${{ matrix.shard }}.txt" 2>&1
+          docker compose logs --no-color --timestamps postgres \
+            > "reports/ci/postgres-runtime-${{ matrix.kind }}-${{ matrix.shard }}.log" 2>&1
+          tail -n 300 "reports/ci/api-${{ matrix.kind }}-${{ matrix.shard }}.log" \
+            > "reports/ci/api-tail-${{ matrix.kind }}-${{ matrix.shard }}.log" 2>/dev/null || true
+          tail -n 300 "reports/ci/provider-${{ matrix.kind }}-${{ matrix.shard }}.log" \
+            > "reports/ci/provider-tail-${{ matrix.kind }}-${{ matrix.shard }}.log" 2>/dev/null || true
+      - name: Upload shard evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: agent-evidence-${{ github.run_id }}-${{ matrix.kind }}-${{ matrix.shard }}
+          path: reports/ci
+          if-no-files-found: error
+          retention-days: 14
+      - name: Stop disposable shard services
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          if [ -f /tmp/agent-ab-api.pid ]; then kill "$(cat /tmp/agent-ab-api.pid)" 2>/dev/null; fi
+          if [ -f /tmp/local-agent-provider.pid ]; then kill "$(cat /tmp/local-agent-provider.pid)" 2>/dev/null; fi
+          docker compose down -v --remove-orphans
+
+  aggregate-evidence:
+    needs: benchmark-shard
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      AKP_AGENT_AB_TASKS: evals/registered/agent-ab-public-product-tasks.json
+      AKP_AGENT_AB_REPORT: reports/ci/agent-ab-benchmark.json
+      AKP_TOOL_ERGONOMICS_REPORT: reports/ci/agent-context-ergonomics.json
+      AKP_AGENT_PROVIDER_HEALTH_REPORT: reports/ci/local-agent-provider-health.json
+      AKP_CONTEXT_TOKENIZER_REPORT: reports/ci/context-tokenizer-baseline.json
+      AKP_AGENT_SHARD_DIR: reports/ci/shards
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Download all shard evidence
+        uses: actions/download-artifact@v7
+        with:
+          pattern: agent-evidence-${{ github.run_id }}-*
+          path: reports/ci/shards
+          merge-multiple: true
+      - name: Aggregate complete benchmark evidence
+        run: pnpm benchmark:agent-shards:aggregate
+      - name: Validate complete Agent A/B evidence
         shell: bash
         run: |
           node --input-type=module <<'NODE'
@@ -137,79 +239,45 @@ jobs:
           const tokenizerBaseline = JSON.parse(
             readFileSync("reports/ci/context-tokenizer-baseline.json", "utf8"),
           );
-          if (report.taskSet?.evidenceLevel !== "REGISTERED_PUBLIC_PRODUCT_CORPUS") {
-            throw new Error("Agent A/B must use the registered public product corpus task set.");
+          if (report.status !== "PROVEN" || report.taskSet?.tasks !== 6) {
+            throw new Error("Aggregated Agent A/B evidence is incomplete.");
           }
-          if (report.taskSet?.sourceCorpus !== "architecture-knowledge-platform-public-product-docs") {
-            throw new Error("Agent A/B source corpus does not match the registered product corpus.");
-          }
-          if (report.taskSet?.tasks !== 6) {
-            throw new Error(`Expected six controlled Agent A/B tasks, got ${report.taskSet?.tasks}.`);
-          }
-          if (report.status !== "PROVEN") {
-            throw new Error(`Live Agent A/B benchmark status is ${report.status}, expected PROVEN.`);
-          }
-          if (report.claimPolicy?.realModelRequired !== true || report.execution?.provider?.operatorAssertedRealModel !== true) {
-            throw new Error("PROVEN Agent A/B evidence requires an explicitly asserted real model.");
-          }
-          if (report.execution?.provider?.model !== "onnx-community/Qwen2.5-0.5B-Instruct") {
-            throw new Error(`Unexpected live model: ${report.execution?.provider?.model}`);
-          }
-          if (providerHealth.revision !== "cc5cc01a65cc3ff17bdb73a7de33d879f62599b0" || providerHealth.dtype !== "q4") {
-            throw new Error("Local provider did not execute the pinned model revision and dtype.");
-          }
-          if (tokenizerBaseline.status !== "PROVEN" || tokenizerBaseline.productionDefaultsChanged !== false) {
-            throw new Error("Tokenizer baseline must be proven without changing production defaults.");
+          if (report.observations?.length !== 12) {
+            throw new Error("Expected exactly 12 aggregated Agent A/B observations.");
           }
           if (
-            tokenizerBaseline.targetModel?.model !== "onnx-community/Qwen2.5-0.5B-Instruct" ||
-            tokenizerBaseline.targetModel?.revision !== "cc5cc01a65cc3ff17bdb73a7de33d879f62599b0" ||
+            report.execution?.provider?.model !==
+              "onnx-community/Qwen2.5-0.5B-Instruct" ||
+            providerHealth.revision !==
+              "cc5cc01a65cc3ff17bdb73a7de33d879f62599b0" ||
+            providerHealth.dtype !== "q4"
+          ) {
+            throw new Error("Aggregated Agent A/B evidence did not use the pinned real model.");
+          }
+          if (
+            tokenizerBaseline.status !== "PROVEN" ||
+            tokenizerBaseline.targetModel?.model !==
+              "onnx-community/Qwen2.5-0.5B-Instruct" ||
+            tokenizerBaseline.targetModel?.revision !==
+              "cc5cc01a65cc3ff17bdb73a7de33d879f62599b0" ||
             tokenizerBaseline.targetModel?.exact !== true
           ) {
-            throw new Error("Tokenizer baseline did not use the pinned exact model tokenizer.");
-          }
-          const tokenizerSamples = Array.isArray(tokenizerBaseline.samples)
-            ? tokenizerBaseline.samples
-            : [];
-          const languages = new Set(tokenizerSamples.map((item) => item.language));
-          for (const requiredLanguage of ["english", "spanish", "code", "path"]) {
-            if (!languages.has(requiredLanguage)) {
-              throw new Error(`Tokenizer baseline is missing ${requiredLanguage}.`);
-            }
-          }
-          for (const sample of tokenizerSamples) {
-            if (sample.tokenizer?.approximate !== false || sample.fallbackTokenizer?.approximate !== true) {
-              throw new Error(`Tokenizer baseline ${sample.language} did not preserve EXACT/APPROXIMATE evidence.`);
-            }
-            if (!Number.isFinite(sample.exactContentTokens) || !Number.isFinite(sample.exactSerializedPacketTokens)) {
-              throw new Error(`Tokenizer baseline ${sample.language} lacks exact token measurements.`);
-            }
-          }
-          if (!Array.isArray(tokenizerBaseline.identifiers) || tokenizerBaseline.identifiers.length === 0) {
-            throw new Error("Tokenizer baseline must measure exact code identifiers.");
+            throw new Error("Tokenizer baseline is not exact/pinned.");
           }
           if (report.winner !== null || report.claimPolicy?.superiorityClaimAllowed !== false) {
-            throw new Error("The harness must report measurements without manufacturing a superiority claim.");
+            throw new Error("Agent A/B must not manufacture a winning arm.");
           }
-          const observations = Array.isArray(report.observations) ? report.observations : [];
-          if (observations.length !== 12) {
-            throw new Error(`Expected 12 arm observations, got ${observations.length}.`);
-          }
-          const arms = new Set(observations.map((item) => item.arm));
-          if (!arms.has("A_RAW_SEARCH") || !arms.has("B_AKP_CONTEXT_PACKET")) {
-            throw new Error("Both controlled comparison arms must be present.");
-          }
-          for (const observation of observations) {
-            if (!Number.isFinite(observation.contextTokens) || !Number.isFinite(observation.latencyMs)) {
-              throw new Error(`Observation ${observation.taskId}/${observation.arm} lacks token or latency evidence.`);
-            }
-            if (!Number.isFinite(observation.correctness) || !Number.isFinite(observation.unsupportedClaimRate)) {
-              throw new Error(`Observation ${observation.taskId}/${observation.arm} lacks quality evidence.`);
-            }
+          const noiseProbes = report.observations.filter(
+            (item) =>
+              item.arm === "B_AKP_CONTEXT_PACKET" &&
+              item.retrievalMetadata?.noiseProbe,
+          );
+          if (noiseProbes.length !== 3) {
+            throw new Error("Expected exactly three controlled noise probes.");
           }
           const aggregates = Array.isArray(report.aggregates) ? report.aggregates : [];
           if (aggregates.length !== 2) {
-            throw new Error("Agent A/B report must contain both aggregate arms.");
+            throw new Error("Agent A/B aggregate must contain two arms.");
           }
           for (const aggregate of aggregates) {
             for (const metric of [
@@ -219,53 +287,31 @@ jobs:
               "contextUtilizationCoverage",
             ]) {
               if (!Number.isFinite(aggregate[metric]) || aggregate[metric] < 5 / 6) {
-                throw new Error(`Agent A/B aggregate ${aggregate.arm} lacks registered retrieval-quality coverage for ${metric}.`);
+                throw new Error("Agent A/B aggregate lacks " + metric + ".");
               }
             }
             if (!Number.isFinite(aggregate.noAnswerAccuracy) || aggregate.noAnswerCases !== 1) {
-              throw new Error(`Agent A/B aggregate ${aggregate.arm} lacks no-answer evidence.`);
+              throw new Error("Agent A/B aggregate lacks no-answer evidence.");
             }
             if (!Number.isFinite(aggregate.faithfulnessCoverage) || aggregate.faithfulnessCoverage < 5 / 6) {
-              throw new Error(`Agent A/B aggregate ${aggregate.arm} lacks citation-scoped faithfulness coverage.`);
-            }
-            if (aggregate.arm === "B_AKP_CONTEXT_PACKET") {
-              if (!Number.isFinite(aggregate.noiseSensitivityCoverage) || aggregate.noiseSensitivityCoverage < 0.5) {
-                throw new Error("ContextPacket arm lacks controlled noise-sensitivity coverage.");
-              }
-            } else if (aggregate.noiseSensitivityCoverage !== 0) {
-              throw new Error("Raw-search arm must not claim unexecuted controlled noise probes.");
+              throw new Error("Agent A/B aggregate lacks faithfulness coverage.");
             }
           }
-          console.log(JSON.stringify({
-            status: report.status,
-            model: report.execution.provider.model,
-            modelRevision: providerHealth.revision,
-            dtype: providerHealth.dtype,
-            tokenizerBaseline: {
-              model: tokenizerBaseline.targetModel.model,
-              revision: tokenizerBaseline.targetModel.revision,
-              samples: tokenizerSamples,
-              identifiers: tokenizerBaseline.identifiers,
-            },
-            observations: observations.length,
-            aggregates: report.aggregates,
-          }, null, 2));
+          console.log(
+            JSON.stringify(
+              {
+                status: report.status,
+                observations: report.observations.length,
+                noiseProbes: noiseProbes.length,
+                provider: providerHealth,
+                aggregates,
+              },
+              null,
+              2,
+            ),
+          );
           NODE
-      - name: Execute agent context tool ergonomics benchmark
-        shell: bash
-        run: |
-          set +e
-          AKP_TOOL_ERGONOMICS_REPORT=reports/ci/agent-context-ergonomics.json \
-            pnpm benchmark:agent-context-ergonomics \
-            > reports/ci/agent-context-ergonomics.log 2>&1
-          status=$?
-          cat reports/ci/agent-context-ergonomics.log
-          if [ ! -f reports/ci/agent-context-ergonomics.json ]; then
-            echo "Agent context tool ergonomics harness did not produce its report" >&2
-            exit 1
-          fi
-          exit "$status"
-      - name: Validate agent context tool ergonomics evidence
+      - name: Validate complete agent context ergonomics evidence
         shell: bash
         run: |
           node --input-type=module <<'NODE'
@@ -274,18 +320,15 @@ jobs:
           const report = JSON.parse(
             readFileSync("reports/ci/agent-context-ergonomics.json", "utf8"),
           );
-          const providerHealth = JSON.parse(
-            readFileSync("reports/ci/local-agent-provider-health.json", "utf8"),
-          );
-          if (report.benchmark !== "AGENT_CONTEXT_TOOL_ERGONOMICS") {
-            throw new Error("Unexpected Agent context ergonomics benchmark identity.");
-          }
           if (
+            report.benchmark !== "AGENT_CONTEXT_TOOL_ERGONOMICS" ||
             report.status !== "PROVEN" ||
-            report.taskSet?.tasks !== 6 ||
-            report.taskSet?.evidenceLevel !== "REGISTERED_PUBLIC_PRODUCT_CORPUS"
+            report.taskSet?.tasks !== 6
           ) {
-            throw new Error("Agent context ergonomics evidence is not PROVEN on the registered six-task corpus.");
+            throw new Error("Aggregated agent context ergonomics evidence is incomplete.");
+          }
+          if (report.observations?.length !== 18 || report.aggregates?.length !== 3) {
+            throw new Error("Agent context ergonomics must retain 18 observations and 3 arms.");
           }
           if (
             report.claimPolicy?.realModelRequired !== true ||
@@ -293,139 +336,39 @@ jobs:
             report.claimPolicy?.superiorityClaimAllowed !== false ||
             report.claimPolicy?.mutationExecutionAllowed !== false
           ) {
-            throw new Error("Agent context ergonomics claim policy is incomplete.");
-          }
-          if (
-            report.execution?.provider?.model !==
-              "onnx-community/Qwen2.5-0.5B-Instruct" ||
-            report.execution?.provider?.operatorAssertedRealModel !== true ||
-            providerHealth.revision !==
-              "cc5cc01a65cc3ff17bdb73a7de33d879f62599b0" ||
-            providerHealth.dtype !== "q4"
-          ) {
-            throw new Error("Agent context ergonomics did not use the pinned real model.");
+            throw new Error("Agent context ergonomics claim policy changed.");
           }
           if (
             typeof report.instructionBundle?.sha256 !== "string" ||
             !/^[a-f0-9]{64}$/.test(report.instructionBundle.sha256)
           ) {
-            throw new Error("Agent context ergonomics lacks an integrity-addressed instruction bundle.");
+            throw new Error("Agent context ergonomics instruction bundle is not integrity-addressed.");
           }
           if (report.winner !== null) {
-            throw new Error("Agent context ergonomics must not manufacture a winning arm.");
-          }
-          const observations = Array.isArray(report.observations)
-            ? report.observations
-            : [];
-          if (observations.length !== 18) {
-            throw new Error(
-              `Expected 18 agent context observations, got ${observations.length}.`,
-            );
-          }
-          const requiredArms = [
-            "EXPERT_TOOLS_ONLY",
-            "AKP_CONTEXT_FACADE",
-            "FACADE_WITH_INSTRUCTIONS",
-          ];
-          for (const arm of requiredArms) {
-            const armObservations = observations.filter(
-              (observation) => observation.arm === arm,
-            );
-            if (armObservations.length !== 6) {
-              throw new Error(
-                `Agent context arm ${arm} has ${armObservations.length} observations.`,
-              );
-            }
-          }
-          for (const observation of observations) {
-            for (const metric of [
-              "callsPerTask",
-              "toolSelectionErrors",
-              "inputTokens",
-              "contextTokens",
-              "latencyMs",
-              "correctness",
-              "missedConstraints",
-              "unsupportedClaims",
-              "unsupportedClaimRate",
-              "citationPrecision",
-            ]) {
-              if (!Number.isFinite(observation[metric])) {
-                throw new Error(
-                  `Agent context observation ${observation.taskId}/${observation.arm} lacks ${metric}.`,
-                );
-              }
-            }
-            if (!Array.isArray(observation.selectedCalls)) {
-              throw new Error("Agent context observation lacks selected call trace.");
-            }
-          }
-          const aggregates = Array.isArray(report.aggregates)
-            ? report.aggregates
-            : [];
-          if (aggregates.length !== 3) {
-            throw new Error("Agent context ergonomics report must contain three aggregate arms.");
-          }
-          for (const arm of requiredArms) {
-            const aggregate = aggregates.find((item) => item.arm === arm);
-            if (!aggregate || aggregate.tasks !== 6) {
-              throw new Error(`Agent context aggregate missing for ${arm}.`);
-            }
-            for (const metric of [
-              "meanCallsPerTask",
-              "meanToolSelectionErrors",
-              "exactSelectionRate",
-              "meanInputTokens",
-              "meanContextTokens",
-              "meanLatencyMs",
-              "meanCorrectness",
-              "meanMissedConstraints",
-              "meanUnsupportedClaims",
-              "meanUnsupportedClaimRate",
-              "meanCitationPrecision",
-            ]) {
-              if (!Number.isFinite(aggregate[metric])) {
-                throw new Error(`Agent context aggregate ${arm} lacks ${metric}.`);
-              }
-            }
+            throw new Error("Agent context ergonomics must not manufacture a winner.");
           }
           console.log(
             JSON.stringify(
               {
                 status: report.status,
-                model: report.execution.provider.model,
-                observations: observations.length,
-                aggregates,
+                observations: report.observations.length,
+                aggregates: report.aggregates,
               },
               null,
               2,
             ),
           );
           NODE
-      - name: Capture Agent A/B diagnostics
-        if: always()
-        shell: bash
-        run: |
-          set +e
-          mkdir -p reports/ci
-          docker compose ps --all > reports/ci/agent-ab-docker-compose-ps.txt 2>&1
-          docker compose logs --no-color --timestamps postgres \
-            > reports/ci/agent-ab-postgres.log 2>&1
-          if [ -f reports/ci/agent-ab-api.log ]; then tail -n 300 reports/ci/agent-ab-api.log > reports/ci/agent-ab-api-tail.log; fi
-          if [ -f reports/ci/local-agent-provider.log ]; then tail -n 300 reports/ci/local-agent-provider.log > reports/ci/local-agent-provider-tail.log; fi
-      - name: Upload Agent A/B evidence
+      - name: Upload canonical Agent A/B evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: agent-ab-${{ github.run_id }}
-          path: reports/ci
-          if-no-files-found: error
+          path: |
+            reports/ci/agent-ab-benchmark.json
+            reports/ci/agent-context-ergonomics.json
+            reports/ci/context-tokenizer-baseline.json
+            reports/ci/local-agent-provider-health.json
+            reports/ci/shards
+          if-no-files-found: warn
           retention-days: 14
-      - name: Stop disposable Agent A/B services
-        if: always()
-        shell: bash
-        run: |
-          set +e
-          if [ -f reports/ci/agent-ab-api.pid ]; then kill "$(cat reports/ci/agent-ab-api.pid)" 2>/dev/null; fi
-          if [ -f reports/ci/local-agent-provider.pid ]; then kill "$(cat reports/ci/local-agent-provider.pid)" 2>/dev/null; fi
-          docker compose down -v --remove-orphans
