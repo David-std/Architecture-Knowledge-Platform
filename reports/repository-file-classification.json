@@ -3357,6 +3357,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "scripts/aggregate-agent-benchmark-shards.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "scripts/backup.ps1",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
