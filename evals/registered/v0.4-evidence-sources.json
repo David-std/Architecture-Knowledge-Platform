@@ -342,8 +342,8 @@
         {
           "type": "STEP",
           "workflow": "agent-ab",
-          "job": "controlled-comparison",
-          "step": "Validate agent context tool ergonomics evidence"
+          "job": "aggregate-evidence",
+          "step": "Validate complete agent context ergonomics evidence"
         }
       ]
     },
@@ -558,8 +558,8 @@
         {
           "type": "STEP",
           "workflow": "agent-ab",
-          "job": "controlled-comparison",
-          "step": "Validate agent context tool ergonomics evidence"
+          "job": "aggregate-evidence",
+          "step": "Validate complete agent context ergonomics evidence"
         }
       ]
     },
@@ -908,8 +908,8 @@
         {
           "type": "STEP",
           "workflow": "agent-ab",
-          "job": "controlled-comparison",
-          "step": "Validate agent context tool ergonomics evidence"
+          "job": "aggregate-evidence",
+          "step": "Validate complete agent context ergonomics evidence"
         }
       ]
     },
@@ -978,8 +978,8 @@
         {
           "type": "STEP",
           "workflow": "agent-ab",
-          "job": "controlled-comparison",
-          "step": "Validate agent context tool ergonomics evidence"
+          "job": "aggregate-evidence",
+          "step": "Validate complete agent context ergonomics evidence"
         }
       ]
     },
