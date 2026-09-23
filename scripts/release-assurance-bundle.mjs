@@ -240,16 +240,31 @@ async function zipEntries(zipPath) {
 
 function selectZipEntry(entries, requestedName) {
   const normalized = requestedName.replaceAll("\\", "/");
-  const matches = entries.filter((entry) => {
-    const clean = entry.replaceAll("\\", "/").replace(/^\.\//u, "");
-    return clean === normalized || path.posix.basename(clean) === normalized;
-  });
-  if (matches.length !== 1) {
+  const cleanedEntries = entries.map((entry) => ({
+    entry,
+    clean: entry.replaceAll("\\", "/").replace(/^\.\//u, ""),
+  }));
+  const exactMatches = cleanedEntries.filter(
+    ({ clean }) => clean === normalized,
+  );
+  if (exactMatches.length === 1) {
+    return exactMatches[0].entry;
+  }
+  if (exactMatches.length > 1) {
     throw new Error(
-      `Expected exactly one artifact entry named ${requestedName}; found ${matches.length}: ${matches.join(", ")}`,
+      `Expected exactly one exact artifact entry named ${requestedName}; found ${exactMatches.length}: ${exactMatches.map(({ entry }) => entry).join(", ")}`,
     );
   }
-  return matches[0];
+
+  const basenameMatches = cleanedEntries.filter(
+    ({ clean }) => path.posix.basename(clean) === normalized,
+  );
+  if (basenameMatches.length !== 1) {
+    throw new Error(
+      `Expected exactly one artifact entry named ${requestedName}; found ${basenameMatches.length}: ${basenameMatches.map(({ entry }) => entry).join(", ")}`,
+    );
+  }
+  return basenameMatches[0].entry;
 }
 
 async function readZipEntry(zipPath, entry) {
