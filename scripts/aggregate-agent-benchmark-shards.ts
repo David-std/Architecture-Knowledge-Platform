@@ -91,21 +91,38 @@ function validateShardSet(
 ): void {
   if (reports.length !== expectedCount) {
     throw new Error(
-      label + " expected " + expectedCount + " shard reports, got " + reports.length + ".",
+      label +
+        " expected " +
+        expectedCount +
+        " shard reports, got " +
+        reports.length +
+        ".",
     );
   }
   const seen = new Set<number>();
   const canonicalTaskSet = stable(reports[0]?.taskSet);
   const canonicalClaimPolicy = stable(reports[0]?.claimPolicy);
-  const canonicalProvider = stable(record(record(reports[0]?.execution, label + " execution").provider, label + " provider"));
+  const canonicalProvider = stable(
+    record(
+      record(reports[0]?.execution, label + " execution").provider,
+      label + " provider",
+    ),
+  );
   for (const report of reports) {
     if (report.status !== "PROVEN_SHARD") {
-      throw new Error(label + " shard status is " + String(report.status) + ".");
+      throw new Error(
+        label + " shard status is " + String(report.status) + ".",
+      );
     }
     const shard = record(report.shard, label + " shard");
     const index = integer(shard.index, label + " shard index");
     const count = integer(shard.count, label + " shard count");
-    if (count !== expectedCount || index < 0 || index >= expectedCount || seen.has(index)) {
+    if (
+      count !== expectedCount ||
+      index < 0 ||
+      index >= expectedCount ||
+      seen.has(index)
+    ) {
       throw new Error(label + " shard coordinates are invalid or duplicated.");
     }
     seen.add(index);
@@ -121,7 +138,10 @@ function validateShardSet(
     ) {
       throw new Error(label + " shard task set or claim policy drifted.");
     }
-    const provider = record(record(report.execution, label + " execution").provider, label + " provider");
+    const provider = record(
+      record(report.execution, label + " execution").provider,
+      label + " provider",
+    );
     if (stable(provider) !== canonicalProvider) {
       throw new Error(label + " shard provider settings drifted.");
     }
@@ -143,8 +163,10 @@ function uniqueObservationKeys(
       stringValue(observation.taskId, label + " taskId") +
       "::" +
       stringValue(observation.arm, label + " arm");
-    if (!expected.has(key)) throw new Error(label + " unexpected observation " + key + ".");
-    if (observed.has(key)) throw new Error(label + " duplicate observation " + key + ".");
+    if (!expected.has(key))
+      throw new Error(label + " unexpected observation " + key + ".");
+    if (observed.has(key))
+      throw new Error(label + " duplicate observation " + key + ".");
     observed.add(key);
   }
   if (observed.size !== expected.size) {
@@ -161,8 +183,10 @@ function sortObservations(
   const taskOrder = new Map(taskIds.map((taskId, index) => [taskId, index]));
   const armOrder = new Map(arms.map((arm, index) => [arm, index]));
   return [...observations].sort((left, right) => {
-    const leftTask = taskOrder.get(String(left.taskId)) ?? Number.MAX_SAFE_INTEGER;
-    const rightTask = taskOrder.get(String(right.taskId)) ?? Number.MAX_SAFE_INTEGER;
+    const leftTask =
+      taskOrder.get(String(left.taskId)) ?? Number.MAX_SAFE_INTEGER;
+    const rightTask =
+      taskOrder.get(String(right.taskId)) ?? Number.MAX_SAFE_INTEGER;
     if (leftTask !== rightTask) return leftTask - rightTask;
     return (
       (armOrder.get(String(left.arm)) ?? Number.MAX_SAFE_INTEGER) -
@@ -182,7 +206,9 @@ async function main(): Promise<void> {
     stringValue(record(task, "task " + index).id, "task id"),
   );
   if (taskIds.length !== 6) {
-    throw new Error("Registered Agent A/B corpus must contain exactly six tasks.");
+    throw new Error(
+      "Registered Agent A/B corpus must contain exactly six tasks.",
+    );
   }
 
   const abReports = await Promise.all(
@@ -224,7 +250,9 @@ async function main(): Promise<void> {
       complete: true,
     },
     aggregates: AB_ARMS.map((arm) =>
-      aggregateAgentAbArm(typedAb.filter((observation) => observation.arm === arm)),
+      aggregateAgentAbArm(
+        typedAb.filter((observation) => observation.arm === arm),
+      ),
     ),
     observations: sortedAb,
     winner: null,
@@ -295,7 +323,9 @@ async function main(): Promise<void> {
       dtype: providerReport.dtype,
     });
     if (identity !== providerIdentity) {
-      throw new Error("Benchmark shards did not use one pinned provider identity.");
+      throw new Error(
+        "Benchmark shards did not use one pinned provider identity.",
+      );
     }
   }
   await writeJson(providerHealthOutput, providerReports[0]);
