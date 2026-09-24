@@ -1157,6 +1157,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/web/UX_REDESIGN_SPEC.md",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/worker/package.json",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
