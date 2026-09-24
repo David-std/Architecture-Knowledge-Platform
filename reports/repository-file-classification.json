@@ -907,6 +907,16 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/web/app/api/auth/session/route.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/web/app/api/auth/session/route.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/web/app/author/actions.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
