@@ -70,6 +70,8 @@ h3 {
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 18px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .muted {
   color: var(--muted);
@@ -88,7 +90,10 @@ h3 {
   margin-right: 6px;
 }
 table {
+  display: block;
   width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
   border-collapse: collapse;
   background: var(--panel);
 }
@@ -108,6 +113,10 @@ textarea {
   padding: 10px 12px;
   background: var(--panel);
   color: var(--text);
+}
+select {
+  max-width: 100%;
+  min-width: 0;
 }
 input {
   min-width: 360px;
@@ -164,6 +173,9 @@ pre {
   }
   input {
     min-width: 0;
+    width: 100%;
+  }
+  select {
     width: 100%;
   }
 }
