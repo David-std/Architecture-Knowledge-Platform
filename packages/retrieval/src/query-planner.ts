@@ -154,11 +154,18 @@ function normalizeCapabilities(
   };
 }
 
-function intentChannels(intent: QueryIntent): RetrievalChannel[] {
+function intentChannels(
+  intent: QueryIntent,
+  capabilities: QueryPlannerCapabilities,
+): RetrievalChannel[] {
   const channelsByIntent: Record<QueryIntent, RetrievalChannel[]> = {
     EXACT_LOOKUP: ["exact", "lexical"],
-    CONCEPTUAL: ["exact", "lexical"],
-    COMPARISON: ["exact", "lexical"],
+    CONCEPTUAL: capabilities.vectorAvailable
+      ? ["exact", "lexical", "vector"]
+      : ["exact", "lexical"],
+    COMPARISON: capabilities.vectorAvailable
+      ? ["exact", "lexical", "vector"]
+      : ["exact", "lexical"],
     WORKFLOW_EXECUTION: ["context-pack", "exact", "lexical"],
     SOURCE_VERIFICATION: ["exact", "lexical", "graph", "raw"],
     PROJECT_CODE: ["context-pack", "exact", "lexical", "graph", "code"],
@@ -358,7 +365,7 @@ export function planQuery(
       ? requestedIntentOrOptions.queryShape
       : undefined;
   const shape = addRuntimeShapeSignals(inferredShape, suppliedShape);
-  const requestedChannels = intentChannels(intent);
+  const requestedChannels = intentChannels(intent, capabilities);
   const channels = requestedChannels.filter((channel) =>
     channelIsAvailable(channel, capabilities),
   );

@@ -267,24 +267,24 @@ export default async function TeamAdminPage({
       <h1>Team Admin</h1>
       {query.notice ? <p className="card">{query.notice}</p> : null}
 
-      <div className="grid">
-        <section className="card">
-          <span className="muted">Spaces administrables</span>
-          <p className="metric">{team.spaces.length}</p>
+      <div className="kpi-compact-grid">
+        <section className="kpi-compact-card">
+          <span className="kpi-compact-label">Spaces administrables</span>
+          <span className="kpi-compact-value">{team.spaces.length}</span>
         </section>
-        <section className="card">
-          <span className="muted">Memberships</span>
-          <p className="metric">{team.memberships.length}</p>
+        <section className="kpi-compact-card">
+          <span className="kpi-compact-label">Memberships</span>
+          <span className="kpi-compact-value">{team.memberships.length}</span>
         </section>
-        <section className="card">
-          <span className="muted">Principals</span>
-          <p className="metric">{team.principals.length}</p>
+        <section className="kpi-compact-card">
+          <span className="kpi-compact-label">Principals</span>
+          <span className="kpi-compact-value">{team.principals.length}</span>
         </section>
-        <section className="card">
-          <span className="muted">Credentials visibles</span>
-          <p className="metric">
+        <section className="kpi-compact-card">
+          <span className="kpi-compact-label">Credentials visibles</span>
+          <span className="kpi-compact-value">
             {team.apiCredentials.length + team.principalCredentials.length}
-          </p>
+          </span>
         </section>
       </div>
 

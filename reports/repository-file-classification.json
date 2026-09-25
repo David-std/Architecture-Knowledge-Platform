@@ -907,6 +907,21 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/web/app/api/artwork/route.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/web/app/api/auth/session/route.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/web/app/api/auth/session/route.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/web/app/author/actions.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -933,6 +948,11 @@
     },
     {
       "path": "apps/web/app/author/page.tsx",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/web/app/components/info-tooltip.tsx",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
@@ -1027,6 +1047,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/web/app/operator-shell.tsx",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/web/app/page.tsx",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -1102,6 +1127,16 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/web/lib/navigation.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/web/lib/navigation.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/web/lib/review-manifest.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
@@ -1143,6 +1178,11 @@
     },
     {
       "path": "apps/web/tsconfig.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/web/UX_REDESIGN_SPEC.md",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },

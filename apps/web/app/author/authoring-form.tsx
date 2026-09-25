@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { saveAuthorDraft, submitAuthorReview } from "./actions";
+import { InfoTooltip } from "../components/info-tooltip";
 import {
   AUTHOR_RECOVERY_STORAGE_KEY,
   parseAuthorRecovery,
@@ -182,108 +183,170 @@ export function AuthoringForm({ vaults }: { vaults: Vault[] }) {
         </ol>
       </section>
 
-      <div className="card" role="status" aria-live="polite">
-        {recoveryNotice}
-        {recoveredAt ? (
-          <>
-            {" "}
-            Último recovery: <time dateTime={recoveredAt}>{recoveredAt}</time>.
-          </>
-        ) : null}
+      <div
+        className="card recovery-notice-card"
+        role="status"
+        aria-live="polite"
+      >
+        <div className="recovery-notice-info">
+          <span className="recovery-status-pill">Recovery local</span>
+          <span className="recovery-notice-text">
+            {recoveryNotice}
+            {recoveredAt ? (
+              <>
+                {" "}
+                Último recovery:{" "}
+                <time dateTime={recoveredAt}>{recoveredAt}</time>.
+              </>
+            ) : null}
+          </span>
+        </div>
         {!locked ? (
-          <button
-            type="button"
-            onClick={discardRecovery}
-            style={{ marginLeft: 12 }}
-          >
-            Descartar recovery local
-          </button>
+          <div className="recovery-notice-action">
+            <button
+              type="button"
+              onClick={discardRecovery}
+              className="action-button-secondary-compact"
+            >
+              Descartar recovery local
+            </button>
+          </div>
         ) : null}
       </div>
 
-      <form action={saveAction} className="card" style={{ marginTop: 16 }}>
+      <form
+        action={saveAction}
+        className="card authoring-form-card"
+        style={{ marginTop: 16 }}
+      >
         <input type="hidden" name="spaceId" value={draft.spaceId} />
-        <label>
-          Vault
-          <select
-            name="vaultId"
-            value={draft.vaultId}
-            disabled={locked || saving}
-            onChange={(event) => update("vaultId", event.target.value)}
-          >
-            {vaults.map((vault) => (
-              <option key={vault.id} value={vault.id}>
-                {vault.name} ({vault.vault_key})
-              </option>
-            ))}
-          </select>
-        </label>
 
-        <label>
-          Resumen
-          <input
-            name="summary"
-            value={draft.summary}
-            disabled={locked || saving}
-            required
-            minLength={3}
-            maxLength={500}
-            onChange={(event) => update("summary", event.target.value)}
-            placeholder="Qué conocimiento se propone cambiar"
-          />
-        </label>
+        <div className="author-grid-2col">
+          <label>
+            <span className="form-label-title">
+              Vault
+              <InfoTooltip text="Repositorio canónico de conocimiento autorizado donde se alojará este documento." />
+            </span>
+            <select
+              name="vaultId"
+              value={draft.vaultId}
+              disabled={locked || saving}
+              onChange={(event) => update("vaultId", event.target.value)}
+            >
+              {vaults.map((vault) => (
+                <option key={vault.id} value={vault.id}>
+                  {vault.name} ({vault.vault_key})
+                </option>
+              ))}
+            </select>
+          </label>
 
-        <label>
-          Path gobernado
-          <input
-            name="path"
-            value={draft.path}
-            disabled={locked || saving}
-            required
-            onChange={(event) => update("path", event.target.value)}
-            aria-describedby="author-path-help"
-          />
-        </label>
-        <small id="author-path-help" className="muted">
-          Debe ser un path relativo Markdown autorizado por tu vault y perfil.
+          <label>
+            <span className="form-label-title">
+              Path gobernado
+              <InfoTooltip text="Ruta relativa del archivo Markdown (.md) dentro del repositorio Git, según el espacio de nombres permitido por tu perfil." />
+            </span>
+            <input
+              name="path"
+              value={draft.path}
+              disabled={locked || saving}
+              required
+              onChange={(event) => update("path", event.target.value)}
+              aria-describedby="author-path-help"
+              placeholder="20-knowledge/rules/mi-regla.md"
+            />
+          </label>
+        </div>
+        <small id="author-path-help" className="muted form-field-example">
+          Ejemplo sustancial:{" "}
+          <code>20-knowledge/rules/database-schema-conventions.md</code> (path
+          relativo Markdown autorizado).
         </small>
 
-        <label>
-          Razón
-          <input
-            name="reason"
-            value={draft.reason}
-            disabled={locked || saving}
-            required
-            minLength={3}
-            onChange={(event) => update("reason", event.target.value)}
-            placeholder="Por qué debe cambiar este conocimiento"
-          />
-        </label>
+        <div className="author-field-block">
+          <label>
+            <span className="form-label-title">
+              Resumen del cambio
+              <InfoTooltip text="Descripción estructurada y concisa del cambio propuesto. Explica qué conocimiento se agrega, altera o deroga." />
+            </span>
+            <textarea
+              name="summary"
+              value={draft.summary}
+              disabled={locked || saving}
+              required
+              minLength={3}
+              maxLength={500}
+              rows={3}
+              className="form-textarea-summary"
+              onChange={(event) => update("summary", event.target.value)}
+              placeholder="Describe con precisión qué conocimiento se propone incorporar, actualizar o derogar…"
+            />
+          </label>
+          <small className="muted form-field-example">
+            Ejemplo sustancial: &quot;Actualización de política de consistencia
+            de esquemas Postgres ante migraciones idempotentes en réplicas de
+            lectura.&quot;
+          </small>
+        </div>
 
-        <label>
-          Documento Markdown
-          <textarea
-            name="content"
-            value={draft.content}
-            disabled={locked || saving}
-            required
-            rows={24}
-            onChange={(event) => update("content", event.target.value)}
-            aria-describedby="author-content-help"
-          />
-        </label>
-        <small id="author-content-help" className="muted">
-          El servidor valida frontmatter, KnowledgeProfile, trust boundary y
-          path antes de crear el draft Git.
-        </small>
+        <div className="author-field-block">
+          <label>
+            <span className="form-label-title">
+              Razón / Justificación arquitectónica
+              <InfoTooltip text="Justificación técnica o de negocio. Explica por qué es necesario este cambio y cuál es el impacto de no aplicarlo." />
+            </span>
+            <textarea
+              name="reason"
+              value={draft.reason}
+              disabled={locked || saving}
+              required
+              minLength={3}
+              rows={2}
+              className="form-textarea-reason"
+              onChange={(event) => update("reason", event.target.value)}
+              placeholder="Explica la causa técnica, incidente o decisión que motiva este cambio gobernado…"
+            />
+          </label>
+          <small className="muted form-field-example">
+            Ejemplo sustancial: &quot;Prevenir fallos de replicación asegurando
+            que todas las mutaciones apliquen con cláusulas IF NOT EXISTS
+            conforme a ADR-042.&quot;
+          </small>
+        </div>
+
+        <div className="author-field-block">
+          <label>
+            <span className="form-label-title">
+              Documento Markdown canónico
+              <InfoTooltip text="Contenido completo del documento en formato Markdown con frontmatter YAML (id, type, title, status, knowledge_layer)." />
+            </span>
+            <textarea
+              name="content"
+              value={draft.content}
+              disabled={locked || saving}
+              required
+              rows={20}
+              className="markdown-editor-textarea"
+              onChange={(event) => update("content", event.target.value)}
+              aria-describedby="author-content-help"
+            />
+          </label>
+          <small id="author-content-help" className="muted form-field-hint">
+            El servidor valida frontmatter, KnowledgeProfile, trust boundary y
+            path antes de crear el draft Git.
+          </small>
+        </div>
 
         {!locked ? (
-          <p>
-            <button type="submit" disabled={saving}>
+          <div className="author-actions-bar">
+            <button
+              type="submit"
+              disabled={saving}
+              className="action-button-primary"
+            >
               {saving ? "Guardando…" : "Save: crear draft Git"}
             </button>
-          </p>
+          </div>
         ) : null}
       </form>
 
@@ -323,8 +386,11 @@ export function AuthoringForm({ vaults }: { vaults: Vault[] }) {
         <section className="card" style={{ marginTop: 16 }}>
           <h2>Review enviado</h2>
           <p>{submitState.message}</p>
-          <Link href={"/reviews/" + activeReviewId}>
-            Abrir Review Workspace →
+          <Link
+            href={"/reviews/" + activeReviewId}
+            className="action-button-outline"
+          >
+            Abrir Review Workspace
           </Link>
         </section>
       ) : null}

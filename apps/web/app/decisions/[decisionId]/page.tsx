@@ -637,7 +637,7 @@ export default async function DecisionPage({
               </p>
               <p>{candidate.consequences}</p>
               <p className="muted">
-                effective {candidate.effectiveFrom ?? "not bounded"} →{" "}
+                effective {candidate.effectiveFrom ?? "not bounded"} a{" "}
                 {candidate.effectiveUntil ?? "open"}
               </p>
               <p>follow-up {list(candidate.followUpActions)}</p>

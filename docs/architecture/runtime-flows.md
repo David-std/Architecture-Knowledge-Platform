@@ -76,7 +76,7 @@ sequenceDiagram
       D-->>P: causal outbox delivery
       P->>D: rebuild exact/lexical/vector/graph/context projections
     else rejected
-      D->>D: retain auditable rejection; no main-branch write
+      D->>D: retain auditable rejection without main-branch write
     end
   end
 ```
@@ -156,15 +156,20 @@ Work claims and handoffs are durable coordination state. Promotion creates a gov
 ```mermaid
 sequenceDiagram
   participant B as Browser
+  participant V as Web server
   participant A as API
   participant D as PostgreSQL
-  B->>A: scoped bearer token, one-time exchange
+  B->>V: submit scoped bearer token by POST form
+  V->>A: exchange scoped bearer token
   A->>D: store session and CSRF hashes + expiry
-  A-->>B: HttpOnly SameSite session cookie + CSRF token
-  B->>A: session cookie on read
+  A-->>V: HttpOnly SameSite session cookie + CSRF token
+  V-->>B: set cookies and redirect to workspace
+  B->>V: session cookie on read
+  V->>A: forward session cookie
   A->>D: validate session and current memberships
-  B->>A: cookie + X-CSRF-Token on write
-  B->>A: revoke
+  B->>V: submit authorized write
+  V->>A: cookie + X-CSRF-Token on write
+  V->>A: revoke session
   A->>D: set revoked_at
 ```
 

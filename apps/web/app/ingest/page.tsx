@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { randomUUID } from "node:crypto";
 import { akp } from "../../lib/api";
 import type { VaultOption } from "../../lib/vault-scope";
+import { InfoTooltip } from "../components/info-tooltip";
 
 export default async function IngestPage() {
   const response = await akp<{ vaults: VaultOption[] }>("/v1/vaults");
@@ -32,19 +33,22 @@ export default async function IngestPage() {
   return (
     <main>
       <p className="muted">
-        Captura local permitida → SHA-256 → MinIO → extracción → revisión
+        Captura local permitida · SHA-256 · MinIO · Extracción · Revisión
       </p>
       <h1>Nueva ingesta</h1>
-      <form action={submit} className="card">
+      <form action={submit} className="card ingest-form-card">
         <input
           type="hidden"
           name="idempotencyKey"
           value={`web-ingest-${randomUUID()}`}
         />
-        <p>
-          <label>
-            Vault
-            <select name="scope" required>
+        <div className="ingest-grid">
+          <label className="form-field-label">
+            <span className="form-label-title">
+              Vault
+              <InfoTooltip text="Vault de destino donde se indexarán las fuentes y se generará el draft gobernado." />
+            </span>
+            <select name="scope" required className="form-select">
               <option value="">Selecciona un vault autorizado</option>
               {vaults.map((vault) => (
                 <option key={vault.id} value={`${vault.space_id}:${vault.id}`}>
@@ -53,25 +57,59 @@ export default async function IngestPage() {
               ))}
             </select>
           </label>
-        </p>
-        <p>
-          <label>
-            Ruta capturada <input name="sourceUri" required />
+
+          <label className="form-field-label">
+            <span className="form-label-title">
+              Ruta capturada
+              <InfoTooltip text="Ruta absoluta o relativa del archivo o directorio de evidencia dentro de AKP_INGEST_ROOTS." />
+            </span>
+            <input
+              name="sourceUri"
+              required
+              placeholder="c:/repos/architecture/specs/oauth-spec.pdf"
+              className="form-input"
+            />
           </label>
-        </p>
-        <p>
-          <label>
-            Título <input name="title" />
+        </div>
+        <small className="muted form-field-example">
+          Ejemplo sustancial:{" "}
+          <code>c:/repos/architecture/specs/oauth-spec.pdf</code> (debe residir
+          en una raíz autorizada).
+        </small>
+
+        <div className="ingest-grid" style={{ marginTop: 16 }}>
+          <label className="form-field-label">
+            <span className="form-label-title">
+              Título descriptivo
+              <InfoTooltip text="Título legible de la evidencia para identificarla en el catálogo de fuentes." />
+            </span>
+            <input
+              name="title"
+              placeholder="Especificación OAuth2 y Flujos de Autorización"
+              className="form-input"
+            />
           </label>
-        </p>
-        <p>
-          <label>
-            Media type <input name="mediaType" placeholder="application/pdf" />
+
+          <label className="form-field-label">
+            <span className="form-label-title">
+              Media type
+              <InfoTooltip text="Tipo MIME del archivo (opcional). Por defecto se infiere por extensión o introspección de bytes." />
+            </span>
+            <input
+              name="mediaType"
+              placeholder="application/pdf"
+              className="form-input"
+            />
           </label>
-        </p>
-        <button type="submit">Enviar a revisión</button>
+        </div>
+
+        <div className="form-actions-row">
+          <button type="submit" className="action-button-primary">
+            Enviar a revisión
+          </button>
+        </div>
       </form>
-      <p className="muted">
+      <p className="muted" style={{ marginTop: 16 }}>
         La ruta debe estar dentro de una raíz configurada en AKP_INGEST_ROOTS.
       </p>
     </main>

@@ -734,12 +734,14 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
         await adminPage
           .locator('select[name="vaultId"]')
           .selectOption(fixture.vaultId);
-        await adminPage.locator('input[name="summary"]').fill(recoverySummary);
+        await adminPage
+          .locator('textarea[name="summary"]')
+          .fill(recoverySummary);
         await adminPage
           .locator('input[name="path"]')
           .fill("browser/e2e-recovery.md");
         await adminPage
-          .locator('input[name="reason"]')
+          .locator('textarea[name="reason"]')
           .fill("Prove autosave recovery after Git failure");
         await adminPage
           .locator('textarea[name="content"]')
@@ -798,7 +800,7 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
           .first()
           .waitFor();
         assert.equal(
-          await adminPage.locator('input[name="summary"]').inputValue(),
+          await adminPage.locator('textarea[name="summary"]').inputValue(),
           recoverySummary,
         );
         assert.equal(
@@ -825,11 +827,11 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
         .locator('select[name="vaultId"]')
         .selectOption(fixture.vaultId);
       await adminPage
-        .locator('input[name="summary"]')
+        .locator('textarea[name="summary"]')
         .fill("Browser E2E governed authoring");
       await adminPage.locator('input[name="path"]').fill("browser/e2e-rule.md");
       await adminPage
-        .locator('input[name="reason"]')
+        .locator('textarea[name="reason"]')
         .fill("Browser E2E governed authoring flow");
       await adminPage
         .locator('textarea[name="content"]')
@@ -975,8 +977,9 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
       await entryRow
         .getByRole("button", { name: /Seleccionar|Seleccionado/ })
         .click();
+      await adminPage.locator(".graph-advanced-controls summary").click();
       await adminPage
-        .getByLabel("Target")
+        .getByLabel("Documento de destino")
         .selectOption("federated:" + fixture.helperNodeId);
       await adminPage
         .getByText("Camino dirigido encontrado: 2 nodos.", { exact: true })
@@ -986,7 +989,7 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
       assert.match(body, /CODE/);
       assert.match(
         body,
-        /Validity 2026-06-01T00:00:00\.000Z → open · Recorded 2026-06-01T00:00:00\.000Z/,
+        /Validity 2026-06-01T00:00:00\.000Z a open · Recorded 2026-06-01T00:00:00\.000Z/,
       );
     });
 
@@ -1003,8 +1006,9 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
       await entryRow
         .getByRole("button", { name: /Seleccionar|Seleccionado/ })
         .click();
+      await adminPage.locator(".graph-advanced-controls summary").click();
       await adminPage
-        .getByLabel("Target")
+        .getByLabel("Documento de destino")
         .selectOption("federated:" + fixture.helperNodeId);
       await adminPage
         .getByText("No existe camino dirigido visible entre seed y target.", {

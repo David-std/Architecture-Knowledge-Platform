@@ -7,6 +7,7 @@ import type { NextConfig } from "next";
 const repositoryRoot = path.resolve(process.cwd(), "../..");
 
 const config: NextConfig = {
+  allowedDevOrigins: ["127.0.0.1"],
   // A Team Context Node ships the web surface as a container. Standalone
   // output traces exactly the workspace files the server needs instead of
   // requiring the whole monorepo install at runtime.

@@ -264,87 +264,175 @@ export default async function HealthPage() {
         <p className="muted">No hay revisiones de índices visibles.</p>
       )}
 
-      <h2>Outbox</h2>
-      <div className="grid">
-        <div className="card">
-          <span className="muted">Pending</span>
-          <p className="metric">{pending}</p>
+      <h2 style={{ marginTop: 36, marginBottom: 14 }}>Outbox</h2>
+      <div className="metrics-grid">
+        <div className="metric-card">
+          <div className="metric-card-top">
+            <span className="metric-label">Pendientes</span>
+            <span
+              className={`metric-status-badge ${pending > 0 ? "warning" : "ok"}`}
+            >
+              {pending > 0 ? `${pending} en cola` : "Al día"}
+            </span>
+          </div>
+          <div className="metric-value-row">
+            <span className="metric-number">{pending}</span>
+            <span className="metric-context">
+              Eventos esperando despacho en outbox
+            </span>
+          </div>
         </div>
-        <div className="card">
-          <span className="muted">Retry</span>
-          <p className="metric">{retry}</p>
+        <div className="metric-card">
+          <div className="metric-card-top">
+            <span className="metric-label">Reintentos</span>
+            <span
+              className={`metric-status-badge ${retry > 0 ? "warning" : "ok"}`}
+            >
+              {retry > 0 ? `${retry} pendientes` : "0 reintentos"}
+            </span>
+          </div>
+          <div className="metric-value-row">
+            <span className="metric-number">{retry}</span>
+            <span className="metric-context">
+              Eventos reprogramados tras fallo transitorio
+            </span>
+          </div>
         </div>
-        <div className="card">
-          <span className="muted">Quarantine</span>
-          <p className="metric">{quarantined}</p>
+        <div className="metric-card">
+          <div className="metric-card-top">
+            <span className="metric-label">En cuarentena</span>
+            <span
+              className={`metric-status-badge ${quarantined > 0 ? "critical" : "ok"}`}
+            >
+              {quarantined > 0 ? `${quarantined} aislados` : "0 aislados"}
+            </span>
+          </div>
+          <div className="metric-value-row">
+            <span className="metric-number">{quarantined}</span>
+            <span className="metric-context">
+              Eventos aislados por agotamiento de reintentos
+            </span>
+          </div>
         </div>
       </div>
 
-      <h2>Continuous Assurance</h2>
-      <div className="grid">
-        <section className="card">
-          <span className="muted">Runs recientes</span>
-          <p className="metric">{health.assurance.runs.length}</p>
-        </section>
-        <section className="card">
-          <span className="muted">Findings abiertos</span>
-          <p className="metric">{health.assurance.openFindings.length}</p>
-        </section>
-        <section className="card">
-          <span className="muted">Críticos / altos</span>
-          <p className="metric">
-            {
-              health.assurance.openFindings.filter((finding) =>
-                ["CRITICAL", "HIGH"].includes(finding.severity),
-              ).length
-            }
-          </p>
-        </section>
+      <h2 style={{ marginTop: 36, marginBottom: 14 }}>Continuous Assurance</h2>
+      <div className="metrics-grid">
+        <div className="metric-card">
+          <div className="metric-card-top">
+            <span className="metric-label">Runs recientes</span>
+            <span className="metric-status-badge ok">Activo</span>
+          </div>
+          <div className="metric-value-row">
+            <span className="metric-number">
+              {health.assurance.runs.length}
+            </span>
+            <span className="metric-context">
+              Ejecuciones de detectores registradas
+            </span>
+          </div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-card-top">
+            <span className="metric-label">Findings abiertos</span>
+            <span
+              className={`metric-status-badge ${health.assurance.openFindings.length > 0 ? "warning" : "ok"}`}
+            >
+              {health.assurance.openFindings.length} anomalías
+            </span>
+          </div>
+          <div className="metric-value-row">
+            <span className="metric-number">
+              {health.assurance.openFindings.length}
+            </span>
+            <span className="metric-context">
+              Inconsistencias activas detectadas
+            </span>
+          </div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-card-top">
+            <span className="metric-label">Críticos / altos</span>
+            <span
+              className={`metric-status-badge ${
+                health.assurance.openFindings.filter((finding) =>
+                  ["CRITICAL", "HIGH"].includes(finding.severity),
+                ).length > 0
+                  ? "critical"
+                  : "ok"
+              }`}
+            >
+              {
+                health.assurance.openFindings.filter((finding) =>
+                  ["CRITICAL", "HIGH"].includes(finding.severity),
+                ).length
+              }{" "}
+              urgentes
+            </span>
+          </div>
+          <div className="metric-value-row">
+            <span className="metric-number">
+              {
+                health.assurance.openFindings.filter((finding) =>
+                  ["CRITICAL", "HIGH"].includes(finding.severity),
+                ).length
+              }
+            </span>
+            <span className="metric-context">
+              Severidad crítica o alta sin resolver
+            </span>
+          </div>
+        </div>
       </div>
       {health.assurance.openFindings.length ? (
-        <table>
+        <table className="findings-table">
           <thead>
             <tr>
-              <th>Severidad</th>
-              <th>Detector</th>
-              <th>Código</th>
-              <th>Recurso</th>
-              <th>Hallazgo</th>
+              <th className="th-severity">Severidad</th>
+              <th className="th-detector">Detector</th>
+              <th className="th-code">Código</th>
+              <th className="th-resource">Recurso</th>
+              <th className="th-finding">Hallazgo</th>
             </tr>
           </thead>
           <tbody>
             {health.assurance.openFindings.map((finding) => (
               <tr key={finding.id}>
-                <td>
+                <td className="td-severity">
                   <span className="badge">{finding.severity}</span>
                 </td>
-                <td>
+                <td className="td-detector">
                   {finding.detector}
                   <br />
                   <small>
                     {finding.detector_version} · {finding.category}
                   </small>
                 </td>
-                <td>
+                <td className="td-code">
                   <code>{finding.code}</code>
                 </td>
-                <td>
-                  {finding.target_ids.length
-                    ? finding.target_ids
-                        .slice(0, 2)
-                        .map((target) => (
-                          <code key={target}>{target.slice(0, 22)} </code>
-                        ))
-                    : "—"}
+                <td className="td-resource">
+                  {finding.target_ids.length ? (
+                    <div className="resource-id-list">
+                      {finding.target_ids.slice(0, 2).map((target) => (
+                        <code key={target} className="resource-uuid">
+                          {target}
+                        </code>
+                      ))}
+                    </div>
+                  ) : (
+                    "—"
+                  )}
                 </td>
-                <td>
-                  {finding.summary}
-                  {finding.proposed_action ? (
-                    <>
-                      <br />
-                      <small>Acción: {finding.proposed_action}</small>
-                    </>
-                  ) : null}
+                <td className="td-finding">
+                  <div className="finding-summary-block">
+                    <p className="finding-summary-text">{finding.summary}</p>
+                    {finding.proposed_action ? (
+                      <small className="finding-action-text">
+                        Acción: {finding.proposed_action}
+                      </small>
+                    ) : null}
+                  </div>
                 </td>
               </tr>
             ))}

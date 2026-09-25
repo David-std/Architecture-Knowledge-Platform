@@ -44,7 +44,7 @@ Approved Markdown in managed Git is canonical knowledge. PostgreSQL, lexical/vec
                                          │
                     auth + scope + truth + freshness validation
                                          │
-           exact / lexical / dense / late interaction / graph / raw
+           exact / lexical / optional dense / graph / raw
                                          │
                          fusion + rerank + diversity/conflict
                                          │
