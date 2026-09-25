@@ -102,6 +102,12 @@ describe("query planner", () => {
     expect(
       planQuery("CON-SRP", "EXACT_LOOKUP", { vectorAvailable: true }).channels,
     ).toEqual(["exact", "lexical"]);
+    for (const intent of ["CONCEPTUAL", "COMPARISON"] as const) {
+      expect(planQuery("responsabilidad única", intent)).toMatchObject({
+        channels: ["exact", "lexical"],
+        omittedChannels: [],
+      });
+    }
   });
 
   it("classifies Deep Spec query-shape signals independently from intent", () => {
