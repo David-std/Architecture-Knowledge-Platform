@@ -2038,6 +2038,55 @@ form > button,
   padding: 22px;
 }
 
+.graph-explorer-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.graph-explorer-layout > *,
+.graph-node-detail,
+.graph-detail-list,
+.graph-detail-list dd {
+  min-width: 0;
+}
+
+.graph-node-detail {
+  overflow-wrap: anywhere;
+}
+
+.graph-node-detail code,
+.graph-node-detail dd {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.graph-advanced-controls > summary,
+.search-advanced-control > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.graph-advanced-controls > .grid {
+  margin-top: 16px;
+}
+
+.search-advanced-control {
+  align-self: end;
+  padding: 10px 0;
+}
+
+.search-advanced-control label {
+  margin-top: 12px;
+}
+
+@media (max-width: 900px) {
+  .graph-explorer-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* Metric cards and status badges */
 .metrics-grid {
   display: grid;

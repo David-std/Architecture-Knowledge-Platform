@@ -16,7 +16,7 @@ export default async function GraphPage({
   const graphQuery = selected
     ? new URLSearchParams({
         vaultId: selected.id,
-        limit: "180",
+        limit: "1000",
         ...(asOf ? { asOf } : {}),
       })
     : null;
@@ -34,7 +34,7 @@ export default async function GraphPage({
   return (
     <main style={{ width: "min(1500px, 100%)" }}>
       <p className="muted">
-        Grafo tipado, caminos e impacto bajo scope autorizado
+        Explora documentos y sus relaciones dentro del vault autorizado.
       </p>
       <h1>Grafo de conocimiento</h1>
       <form className="card graph-query-card">
@@ -61,7 +61,7 @@ export default async function GraphPage({
 
           <label className="form-field-label">
             <span className="form-label-title">
-              Marca temporal histórica (as_of)
+              Ver una fecha anterior (opcional)
               <InfoTooltip text="Marca temporal ISO-8601 opcional para explorar la proyección histórica del grafo en ese instante de tiempo." />
             </span>
             <input
@@ -74,8 +74,7 @@ export default async function GraphPage({
           </label>
         </div>
         <small className="muted form-field-example">
-          Ejemplo sustancial: <code>2026-09-19T17:12:00-05:00</code> (o dejar en
-          blanco para visualizar la versión canónica actual).
+          Déjalo vacío para ver el estado actual.
         </small>
         <div className="form-actions-row">
           <button type="submit" className="action-button-primary">
@@ -93,18 +92,25 @@ export default async function GraphPage({
 
       {graph ? (
         <>
+          <p className="muted" role="status">
+            {graph.truncated
+              ? "Vista incompleta: se alcanzó el límite de 1000 nodos."
+              : "Se cargaron todos los documentos importados accesibles de este vault."}{" "}
+            Las relaciones proceden de enlaces Markdown resueltos y campos de
+            relación declarados; los enlaces sin resolver no aparecen como
+            aristas.
+          </p>
           {graph.truncated || staleNodes.length ? (
             <section className="card" role="status" style={{ marginTop: 16 }}>
               <strong>Estado del grafo</strong>
               <p>
                 {graph.truncated
-                  ? "La proyección fue truncada por el límite autorizado; aplica filtros o reduce el scope antes de interpretar cobertura total."
-                  : "La proyección está dentro del límite solicitado."}
+                  ? "La consulta alcanzó el límite de 1000 nodos. Este grafo no representa el vault completo."
+                  : "Se cargaron todos los documentos importados accesibles de este vault."}
               </p>
               <p>
-                Freshness: {staleNodes.length} nodo(s) no reportan
-                CURRENT/FRESH/READY. El detalle conserva el estado de cada nodo
-                y no se presenta como dato silenciosamente vigente.
+                {staleNodes.length} nodo(s) tienen una revisión pendiente o un
+                estado de actualización diferente de actual.
               </p>
             </section>
           ) : null}

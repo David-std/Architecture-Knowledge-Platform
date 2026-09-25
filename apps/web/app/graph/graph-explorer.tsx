@@ -62,7 +62,7 @@ interface Position {
   y: number;
 }
 
-const VISUAL_NODE_LIMIT = 80;
+const VISUAL_NODE_LIMIT = 18;
 const CATALOG_PAGE_SIZE = 25;
 
 function graphLayout(nodes: GraphNode[]): Map<string, Position> {
@@ -70,10 +70,15 @@ function graphLayout(nodes: GraphNode[]): Map<string, Position> {
   if (!nodes.length) return result;
   const centerX = 480;
   const centerY = 340;
-  const radius = Math.max(180, Math.min(300, nodes.length * 8));
+  const radius = Math.max(180, Math.min(270, nodes.length * 15));
   nodes.forEach((node, index) => {
-    const angle = (index / nodes.length) * Math.PI * 2 - Math.PI / 2;
-    const ring = 0.72 + (index % 3) * 0.14;
+    if (index === 0) {
+      result.set(node.id, { x: centerX, y: centerY });
+      return;
+    }
+    const angle =
+      ((index - 1) / (nodes.length - 1)) * Math.PI * 2 - Math.PI / 2;
+    const ring = 0.85 + (index % 2) * 0.15;
     result.set(node.id, {
       x: centerX + Math.cos(angle) * radius * ring,
       y: centerY + Math.sin(angle) * radius * ring,
@@ -180,6 +185,7 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [catalogPage, setCatalogPage] = useState(1);
+  const [catalogQuery, setCatalogQuery] = useState("");
   const dragging = useRef<{
     x: number;
     y: number;
@@ -213,21 +219,38 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
     [graph.edges, enabledLayers, enabledRelations, visibleNodeIds],
   );
   const visualNodes = useMemo(() => {
-    const bounded = filteredNodes.slice(0, VISUAL_NODE_LIMIT);
-    const included = new Set(bounded.map((node) => node.id));
-    for (const candidateId of [selectedId, targetId]) {
-      if (!candidateId || included.has(candidateId)) continue;
-      const candidate = filteredNodes.find((node) => node.id === candidateId);
-      if (!candidate) continue;
-      if (bounded.length >= VISUAL_NODE_LIMIT) {
-        const removed = bounded.pop();
-        if (removed) included.delete(removed.id);
+    const byId = new Map(filteredNodes.map((node) => [node.id, node]));
+    const ordered: string[] = [];
+    const seen = new Set<string>();
+    const add = (id: string) => {
+      if (byId.has(id) && !seen.has(id)) {
+        ordered.push(id);
+        seen.add(id);
       }
-      bounded.push(candidate);
-      included.add(candidate.id);
+    };
+    add(selectedId);
+    add(targetId);
+    let frontier = [selectedId];
+    for (
+      let depth = 0;
+      depth < 2 && ordered.length < VISUAL_NODE_LIMIT;
+      depth += 1
+    ) {
+      const next: string[] = [];
+      for (const id of frontier) {
+        for (const edge of filteredEdges) {
+          const neighbor =
+            edge.from === id ? edge.to : edge.to === id ? edge.from : null;
+          if (neighbor && !seen.has(neighbor) && byId.has(neighbor)) {
+            add(neighbor);
+            next.push(neighbor);
+          }
+        }
+      }
+      frontier = next;
     }
-    return bounded;
-  }, [filteredNodes, selectedId, targetId]);
+    return ordered.slice(0, VISUAL_NODE_LIMIT).map((id) => byId.get(id)!);
+  }, [filteredNodes, filteredEdges, selectedId, targetId]);
   const visualNodeIds = useMemo(
     () => new Set(visualNodes.map((node) => node.id)),
     [visualNodes],
@@ -240,12 +263,17 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
     [filteredEdges, visualNodeIds],
   );
   const positions = useMemo(() => graphLayout(visualNodes), [visualNodes]);
+  const matchingCatalogNodes = filteredNodes.filter((node) =>
+    `${node.title} ${node.external_id ?? ""} ${node.path ?? ""}`
+      .toLocaleLowerCase()
+      .includes(catalogQuery.toLocaleLowerCase().trim()),
+  );
   const catalogPageCount = Math.max(
     1,
-    Math.ceil(filteredNodes.length / CATALOG_PAGE_SIZE),
+    Math.ceil(matchingCatalogNodes.length / CATALOG_PAGE_SIZE),
   );
   const effectiveCatalogPage = Math.min(catalogPage, catalogPageCount);
-  const catalogNodes = filteredNodes.slice(
+  const catalogNodes = matchingCatalogNodes.slice(
     (effectiveCatalogPage - 1) * CATALOG_PAGE_SIZE,
     effectiveCatalogPage * CATALOG_PAGE_SIZE,
   );
@@ -292,195 +320,196 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
 
   return (
     <div>
-      <div className="grid">
-        <section className="card">
-          <h3>Filtros de nodos</h3>
-          <label>
-            Trust
-            <select
-              value={trust}
-              onChange={(event) => setTrust(event.target.value)}
-            >
-              <option value="ALL">Todos</option>
-              {trustTiers.map((tier) => (
-                <option key={tier} value={tier}>
-                  {tier}
-                </option>
-              ))}
-            </select>
-          </label>{" "}
-          <label>
-            Freshness
-            <select
-              value={freshness}
-              onChange={(event) => setFreshness(event.target.value)}
-            >
-              <option value="ALL">Todos</option>
-              {freshnessStates.map((state) => (
-                <option key={state} value={state}>
-                  {state}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div style={{ marginTop: 12 }}>
-            <strong>Capas</strong>
-            <br />
-            {layers.map((layer) => (
-              <label
-                key={layer}
-                style={{ marginRight: 10, display: "inline-block" }}
+      <p className="muted">
+        Selecciona un documento en el catálogo para ver sus conexiones cercanas.
+        El catálogo y los cálculos usan todos los nodos cargados.
+      </p>
+      <details className="card graph-advanced-controls">
+        <summary>Filtros y análisis avanzado</summary>
+        <div className="grid">
+          <section className="card">
+            <h3>Filtros de nodos</h3>
+            <label>
+              Nivel de revisión
+              <select
+                value={trust}
+                onChange={(event) => setTrust(event.target.value)}
               >
-                <input
-                  type="checkbox"
-                  checked={enabledLayers.has(layer)}
-                  onChange={() => toggleLayer(layer)}
-                  style={{ minWidth: 0, width: "auto" }}
-                />{" "}
-                {layer}
-              </label>
-            ))}
-          </div>
-        </section>
-        <section className="card">
-          <h3>Camino / impacto</h3>
-          <label>
-            Target
-            <select
-              value={targetId}
-              onChange={(event) => setTargetId(event.target.value)}
-            >
-              <option value="">Sin target</option>
-              {filteredNodes
-                .filter((node) => node.id !== selectedId)
-                .map((node) => (
-                  <option key={node.id} value={node.id}>
-                    {node.title}
+                <option value="ALL">Todos</option>
+                {trustTiers.map((tier) => (
+                  <option key={tier} value={tier}>
+                    {tier}
                   </option>
                 ))}
-            </select>
-          </label>{" "}
-          <label>
-            Impact depth
-            <select
-              value={impactDepth}
-              onChange={(event) => setImpactDepth(Number(event.target.value))}
-            >
-              {[1, 2, 3].map((depth) => (
-                <option key={depth} value={depth}>
-                  {depth}
-                </option>
+              </select>
+            </label>{" "}
+            <label>
+              Actualización
+              <select
+                value={freshness}
+                onChange={(event) => setFreshness(event.target.value)}
+              >
+                <option value="ALL">Todos</option>
+                {freshnessStates.map((state) => (
+                  <option key={state} value={state}>
+                    {state}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div style={{ marginTop: 12 }}>
+              <strong>Capas</strong>
+              <br />
+              {layers.map((layer) => (
+                <label
+                  key={layer}
+                  style={{ marginRight: 10, display: "inline-block" }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={enabledLayers.has(layer)}
+                    onChange={() => toggleLayer(layer)}
+                    style={{ minWidth: 0, width: "auto" }}
+                  />{" "}
+                  {layer}
+                </label>
               ))}
-            </select>
-          </label>
-          <p className="muted">
-            {targetId
-              ? path.nodes.size
-                ? `Camino dirigido encontrado: ${path.nodes.size} nodos.`
-                : "No existe camino dirigido visible entre seed y target."
-              : `${impact.size} nodos en el impacto saliente visible.`}
-          </p>
-        </section>
-      </div>
-
-      <section className="card" style={{ marginTop: 16 }}>
-        <h3>Relaciones</h3>
-        {relationTypes.map((type) => (
-          <label
-            key={type}
-            style={{ marginRight: 12, display: "inline-block" }}
-          >
-            <input
-              type="checkbox"
-              checked={enabledRelations.has(type)}
-              onChange={() => toggleRelation(type)}
-              style={{ minWidth: 0, width: "auto" }}
-            />{" "}
-            {type}
-          </label>
-        ))}
-      </section>
-
-      <div className="grid" style={{ marginTop: 16 }}>
-        <section className="card">
-          <h3>Why connected?</h3>
-          {!targetId ? (
+            </div>
+          </section>
+          <section className="card">
+            <h3>Camino e impacto</h3>
+            <label>
+              Documento de destino
+              <select
+                value={targetId}
+                onChange={(event) => setTargetId(event.target.value)}
+              >
+                <option value="">Sin destino</option>
+                {filteredNodes
+                  .filter((node) => node.id !== selectedId)
+                  .map((node) => (
+                    <option key={node.id} value={node.id}>
+                      {node.title}
+                    </option>
+                  ))}
+              </select>
+            </label>{" "}
+            <label>
+              Niveles de relación
+              <select
+                value={impactDepth}
+                onChange={(event) => setImpactDepth(Number(event.target.value))}
+              >
+                {[1, 2, 3].map((depth) => (
+                  <option key={depth} value={depth}>
+                    {depth}
+                  </option>
+                ))}
+              </select>
+            </label>
             <p className="muted">
-              Selecciona un target para inspeccionar el camino y su provenance.
+              {targetId
+                ? path.nodes.size
+                  ? `Camino dirigido encontrado: ${path.nodes.size} nodos.`
+                  : "No existe camino dirigido visible entre seed y target."
+                : `${impact.size} nodos en el impacto saliente visible.`}
             </p>
-          ) : pathEdges.length ? (
-            <ol>
-              {pathEdges.map((edge) => (
-                <li key={edge.id}>
-                  <strong>{edge.type}</strong> ·{" "}
-                  {edge.derivation ?? "LEGACY_RELATION"}
-                  {edge.confidence !== null && edge.confidence !== undefined
-                    ? ` · confidence ${edge.confidence}`
-                    : ""}
-                  <br />
-                  <small>
-                    revision {edge.provenance_revision ?? "—"} · support{" "}
-                    {edge.support_set_id ?? "—"}
-                  </small>
-                  <br />
-                  <small>
-                    Validity {edge.valid_from ?? "unbounded"} a{" "}
-                    {edge.valid_to ?? "open"} · Recorded{" "}
-                    {edge.recorded_at ?? "unknown"}
-                  </small>
-                  <details>
-                    <summary>Provenance / evidence</summary>
-                    <pre>
-                      {JSON.stringify(
-                        {
-                          provenance: edge.provenance,
-                          sourceIds: edge.source_ids ?? [],
-                          evidenceIds: edge.evidence_ids ?? [],
-                          locatorRefs: edge.locator_refs ?? [],
-                          validFrom: edge.valid_from ?? null,
-                          validTo: edge.valid_to ?? null,
-                          recordedAt: edge.recorded_at ?? null,
-                        },
-                        null,
-                        2,
-                      )}
-                    </pre>
-                  </details>
-                </li>
-              ))}
-            </ol>
-          ) : (
-            <p className="muted">No hay camino dirigido visible.</p>
-          )}
-        </section>
-        <section className="card">
-          <h3>Derivación visible</h3>
-          {derivationSummary.length ? (
-            <ul>
-              {derivationSummary.map(([derivation, count]) => (
-                <li key={derivation}>
-                  {derivation}: {count}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="muted">Sin aristas visibles.</p>
-          )}
-          <small>
-            SOURCE_EXPLICIT/HUMAN_ASSERTED = declarado · STATICALLY_RESOLVED =
-            estático · RUNTIME_OBSERVED/DYNAMICALLY_PROVEN = observado.
-          </small>
-        </section>
-      </div>
+          </section>
+        </div>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "minmax(0, 1fr) minmax(260px, 340px)",
-          gap: 16,
-          marginTop: 16,
-        }}
-      >
+        <section className="card" style={{ marginTop: 16 }}>
+          <h3>Relaciones</h3>
+          {relationTypes.map((type) => (
+            <label
+              key={type}
+              style={{ marginRight: 12, display: "inline-block" }}
+            >
+              <input
+                type="checkbox"
+                checked={enabledRelations.has(type)}
+                onChange={() => toggleRelation(type)}
+                style={{ minWidth: 0, width: "auto" }}
+              />{" "}
+              {type}
+            </label>
+          ))}
+        </section>
+
+        <div className="grid" style={{ marginTop: 16 }}>
+          <section className="card">
+            <h3>Por qué están conectados</h3>
+            {!targetId ? (
+              <p className="muted">
+                Selecciona un documento de destino para inspeccionar el camino y
+                su procedencia.
+              </p>
+            ) : pathEdges.length ? (
+              <ol>
+                {pathEdges.map((edge) => (
+                  <li key={edge.id}>
+                    <strong>{edge.type}</strong> ·{" "}
+                    {edge.derivation ?? "LEGACY_RELATION"}
+                    {edge.confidence !== null && edge.confidence !== undefined
+                      ? ` · confidence ${edge.confidence}`
+                      : ""}
+                    <br />
+                    <small>
+                      revision {edge.provenance_revision ?? "—"} · support{" "}
+                      {edge.support_set_id ?? "—"}
+                    </small>
+                    <br />
+                    <small>
+                      Validity {edge.valid_from ?? "unbounded"} a{" "}
+                      {edge.valid_to ?? "open"} · Recorded{" "}
+                      {edge.recorded_at ?? "unknown"}
+                    </small>
+                    <details>
+                      <summary>Provenance / evidence</summary>
+                      <pre>
+                        {JSON.stringify(
+                          {
+                            provenance: edge.provenance,
+                            sourceIds: edge.source_ids ?? [],
+                            evidenceIds: edge.evidence_ids ?? [],
+                            locatorRefs: edge.locator_refs ?? [],
+                            validFrom: edge.valid_from ?? null,
+                            validTo: edge.valid_to ?? null,
+                            recordedAt: edge.recorded_at ?? null,
+                          },
+                          null,
+                          2,
+                        )}
+                      </pre>
+                    </details>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="muted">No hay camino dirigido visible.</p>
+            )}
+          </section>
+          <section className="card">
+            <h3>Origen de las relaciones</h3>
+            {derivationSummary.length ? (
+              <ul>
+                {derivationSummary.map(([derivation, count]) => (
+                  <li key={derivation}>
+                    {derivation}: {count}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="muted">Sin aristas visibles.</p>
+            )}
+            <small>
+              SOURCE_EXPLICIT/HUMAN_ASSERTED = declarado · STATICALLY_RESOLVED =
+              estático · RUNTIME_OBSERVED/DYNAMICALLY_PROVEN = observado.
+            </small>
+          </section>
+        </div>
+      </details>
+
+      <div className="graph-explorer-layout">
         <section className="card" style={{ padding: 8, overflow: "hidden" }}>
           <div style={{ display: "flex", gap: 8, padding: 8 }}>
             <button
@@ -514,13 +543,10 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
             </span>
           </div>
           <p id="graph-render-status" className="muted" role="status">
-            Render visual: {visualNodes.length} de {filteredNodes.length} nodos
-            filtrados · {visualEdges.length} de {filteredEdges.length}{" "}
-            relaciones. Los cálculos de camino e impacto usan todo el set
-            filtrado.
-            {filteredNodes.length > VISUAL_NODE_LIMIT
-              ? " Usa el catálogo paginado para seleccionar nodos fuera del presupuesto visual inicial."
-              : ""}
+            Vecindario de {selected?.title ?? "ningún documento"}:{" "}
+            {visualNodes.length} nodos y {visualEdges.length} relaciones
+            visibles. El catálogo contiene {filteredNodes.length} nodos y{" "}
+            {filteredEdges.length} relaciones dentro del vault cargado.
           </p>
           <svg
             viewBox="0 0 960 680"
@@ -584,15 +610,17 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
                       strokeWidth={highlighted ? 4 : impacted ? 2 : 1}
                       opacity={highlighted || impacted ? 1 : 0.62}
                     />
-                    <text
-                      x={(from.x + to.x) / 2}
-                      y={(from.y + to.y) / 2 - 4}
-                      fill="#9eacc9"
-                      fontSize="10"
-                      textAnchor="middle"
-                    >
-                      {edge.type}
-                    </text>
+                    {highlighted ? (
+                      <text
+                        x={(from.x + to.x) / 2}
+                        y={(from.y + to.y) / 2 - 4}
+                        fill="#9eacc9"
+                        fontSize="10"
+                        textAnchor="middle"
+                      >
+                        {edge.type}
+                      </text>
+                    ) : null}
                   </g>
                 );
               })}
@@ -616,6 +644,7 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
                     }}
                     style={{ cursor: "pointer" }}
                   >
+                    <title>{node.title}</title>
                     <circle
                       cx={position.x}
                       cy={position.y}
@@ -630,17 +659,19 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
                       stroke={selectedNode ? "#edf2ff" : "#70d6c1"}
                       strokeWidth={selectedNode ? 3 : 1.5}
                     />
-                    <text
-                      x={position.x}
-                      y={position.y + 27}
-                      fill="#edf2ff"
-                      fontSize="11"
-                      textAnchor="middle"
-                    >
-                      {node.title.length > 24
-                        ? `${node.title.slice(0, 22)}…`
-                        : node.title}
-                    </text>
+                    {selectedNode || onPath ? (
+                      <text
+                        x={position.x}
+                        y={position.y + 27}
+                        fill="#edf2ff"
+                        fontSize="11"
+                        textAnchor="middle"
+                      >
+                        {node.title.length > 24
+                          ? `${node.title.slice(0, 22)}…`
+                          : node.title}
+                      </text>
+                    ) : null}
                   </g>
                 );
               })}
@@ -648,7 +679,7 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
           </svg>
         </section>
 
-        <aside className="card">
+        <aside className="card graph-node-detail">
           <h2>Detalle de nodo</h2>
           {selected ? (
             <>
@@ -659,56 +690,62 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
                 <span className="badge">{selected.lifecycle}</span>
                 <span className="badge">{selected.refresh_status}</span>
               </p>
-              <dl>
-                <dt className="muted">ID</dt>
-                <dd>
-                  <code>{selected.id}</code>
-                </dd>
-                <dt className="muted">Layer / domain</dt>
-                <dd>
-                  {selected.layer ?? "—"} · {selected.graph_domain}
-                </dd>
-                <dt className="muted">Source / kind</dt>
-                <dd>
-                  {selected.nodeSource} · {selected.kind}
-                </dd>
-                <dt className="muted">Scope</dt>
-                <dd>
-                  <code>{selected.scope_id}</code>
-                </dd>
-                <dt className="muted">Canonical key</dt>
-                <dd>
-                  <code>{selected.canonical_key}</code>
-                </dd>
-                <dt className="muted">File / line</dt>
-                <dd>
-                  {typeof selectedPayload.path === "string"
-                    ? selectedPayload.path
-                    : (selected.path ?? "—")}
-                  {typeof selectedPayload.lineStart === "number"
-                    ? `:${selectedPayload.lineStart}`
-                    : ""}
-                  {typeof selectedPayload.lineEnd === "number"
-                    ? `-${selectedPayload.lineEnd}`
-                    : ""}
-                </dd>
-                <dt className="muted">Revision</dt>
-                <dd>
-                  <code>{selected.current_revision ?? "—"}</code>
-                </dd>
-                <dt className="muted">Actualizado</dt>
-                <dd>
-                  {selected.updated_at
-                    ? new Date(selected.updated_at).toLocaleString()
-                    : "—"}
-                </dd>
+              <dl className="graph-detail-list">
+                <dt className="muted">Documento</dt>
+                <dd>{selected.path ?? "Sin ruta de archivo"}</dd>
               </dl>
+              <details>
+                <summary>Datos técnicos y procedencia</summary>
+                <dl className="graph-detail-list">
+                  <dt className="muted">ID</dt>
+                  <dd>
+                    <code>{selected.id}</code>
+                  </dd>
+                  <dt className="muted">Layer / domain</dt>
+                  <dd>
+                    {selected.layer ?? "—"} · {selected.graph_domain}
+                  </dd>
+                  <dt className="muted">Source / kind</dt>
+                  <dd>
+                    {selected.nodeSource} · {selected.kind}
+                  </dd>
+                  <dt className="muted">Scope</dt>
+                  <dd>
+                    <code>{selected.scope_id}</code>
+                  </dd>
+                  <dt className="muted">Canonical key</dt>
+                  <dd>
+                    <code>{selected.canonical_key}</code>
+                  </dd>
+                  <dt className="muted">File / line</dt>
+                  <dd>
+                    {typeof selectedPayload.path === "string"
+                      ? selectedPayload.path
+                      : (selected.path ?? "—")}
+                    {typeof selectedPayload.lineStart === "number"
+                      ? `:${selectedPayload.lineStart}`
+                      : ""}
+                    {typeof selectedPayload.lineEnd === "number"
+                      ? `-${selectedPayload.lineEnd}`
+                      : ""}
+                  </dd>
+                  <dt className="muted">Revision</dt>
+                  <dd>
+                    <code>{selected.current_revision ?? "—"}</code>
+                  </dd>
+                  <dt className="muted">Actualizado</dt>
+                  <dd>
+                    {selected.updated_at
+                      ? new Date(selected.updated_at).toLocaleString()
+                      : "—"}
+                  </dd>
+                </dl>
+              </details>
               {selected.nodeSource === "KNOWLEDGE" ? (
                 <a href={`/documents/${selected.entityId}`}>Abrir documento</a>
               ) : null}
               <p className="muted">
-                Click en otro nodo cambia el seed. El resaltado de impacto sigue
-                relaciones salientes hasta la profundidad seleccionada.
+                Seleccionar otro nodo muestra sus conexiones cercanas.
               </p>
             </>
           ) : (
@@ -720,11 +757,21 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
       <section className="card" style={{ marginTop: 16 }}>
         <h2>Catálogo de nodos</h2>
         <p className="muted">
-          Página {effectiveCatalogPage} de {catalogPageCount} ·{" "}
-          {filteredNodes.length} nodos filtrados. Seleccionar un nodo lo
-          mantiene dentro del presupuesto visual aunque quede fuera de los
-          primeros {VISUAL_NODE_LIMIT}.
+          {matchingCatalogNodes.length} documentos coinciden · Página{" "}
+          {effectiveCatalogPage} de {catalogPageCount}.
         </p>
+        <label className="form-field-label">
+          Buscar documento por título, ID o ruta
+          <input
+            className="form-input"
+            value={catalogQuery}
+            onChange={(event) => {
+              setCatalogQuery(event.target.value);
+              setCatalogPage(1);
+            }}
+            placeholder="Por ejemplo: CON-SRP"
+          />
+        </label>
         {catalogNodes.length ? (
           <>
             <table>

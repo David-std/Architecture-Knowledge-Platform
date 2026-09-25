@@ -195,8 +195,10 @@ export default async function SearchPage({
 
   return (
     <main>
-      <p className="muted">Consulta, fusión, evidencia y contexto operativo</p>
-      <h1>Búsqueda híbrida</h1>
+      <p className="muted">
+        Encuentra conocimiento y revisa las fuentes que lo respaldan.
+      </p>
+      <h1>Buscar conocimiento</h1>
       <form className="card search-form-card">
         <div className="search-form-grid">
           <label className="form-field-label">
@@ -218,24 +220,24 @@ export default async function SearchPage({
               ))}
             </select>
           </label>
-          <label className="form-field-label">
-            <span className="form-label-title">
-              Intent solicitado
-              <InfoTooltip text="Forzar un modo de recuperación específico (ej: EXACT_LOOKUP, EXPLORATORY) o permitir detección automática por el planner." />
-            </span>
-            <select
-              name="intent"
-              defaultValue={requestedIntent ?? ""}
-              className="form-select"
-            >
-              <option value="">Detección automática</option>
-              {intents.map((intent) => (
-                <option key={intent} value={intent}>
-                  {intent}
-                </option>
-              ))}
-            </select>
-          </label>
+          <details className="search-advanced-control">
+            <summary>Opciones avanzadas de búsqueda</summary>
+            <label className="form-field-label">
+              <span className="form-label-title">Tipo de consulta</span>
+              <select
+                name="intent"
+                defaultValue={requestedIntent ?? ""}
+                className="form-select"
+              >
+                <option value="">Detección automática</option>
+                {intents.map((intent) => (
+                  <option key={intent} value={intent}>
+                    {intent}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </details>
         </div>
         <div className="search-input-block">
           <label className="form-field-label">

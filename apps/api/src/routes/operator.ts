@@ -653,7 +653,7 @@ export function registerOperatorRoutes(
       if (!vaultIds.length) {
         return reply.code(404).send({ code: "VAULT_NOT_FOUND" });
       }
-      const limit = boundedLimit(request.query.limit, 120, 250);
+      const limit = boundedLimit(request.query.limit, 120, 1000);
       const asOfRaw = request.query.asOf?.trim();
       const asOfDate = asOfRaw ? new Date(asOfRaw) : null;
       if (asOfDate && Number.isNaN(asOfDate.getTime())) {
