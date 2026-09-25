@@ -157,8 +157,8 @@ function normalizeCapabilities(
 function intentChannels(intent: QueryIntent): RetrievalChannel[] {
   const channelsByIntent: Record<QueryIntent, RetrievalChannel[]> = {
     EXACT_LOOKUP: ["exact", "lexical"],
-    CONCEPTUAL: ["exact", "lexical"],
-    COMPARISON: ["exact", "lexical"],
+    CONCEPTUAL: ["exact", "lexical", "vector"],
+    COMPARISON: ["exact", "lexical", "vector"],
     WORKFLOW_EXECUTION: ["context-pack", "exact", "lexical"],
     SOURCE_VERIFICATION: ["exact", "lexical", "graph", "raw"],
     PROJECT_CODE: ["context-pack", "exact", "lexical", "graph", "code"],
