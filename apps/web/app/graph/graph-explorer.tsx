@@ -424,7 +424,7 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
                   </small>
                   <br />
                   <small>
-                    Validity {edge.valid_from ?? "unbounded"} →{" "}
+                    Validity {edge.valid_from ?? "unbounded"} a{" "}
                     {edge.valid_to ?? "open"} · Recorded{" "}
                     {edge.recorded_at ?? "unknown"}
                   </small>
@@ -778,7 +778,7 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
                   )
                 }
               >
-                Siguiente →
+                Siguiente
               </button>
             </div>
           </>

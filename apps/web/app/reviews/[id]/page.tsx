@@ -664,7 +664,7 @@ export default async function ReviewPage({
               {graphImpact.map((edge, index) => (
                 <li key={String(edge.id ?? index)}>
                   <code>{summary(edge.from_external_id ?? edge.from)}</code> —
-                  {summary(edge.relation_type)}→{" "}
+                  {summary(edge.relation_type)} a{" "}
                   <code>{summary(edge.to_external_id ?? edge.to)}</code>
                   <br />
                   <small>provenance {summary(edge.provenance)}</small>
@@ -695,7 +695,7 @@ export default async function ReviewPage({
                   {summary(fact.predicate)} {summary(fact.object)}
                   <br />
                   <small>
-                    valid {summary(fact.valid_from)} →{" "}
+                    valid {summary(fact.valid_from)} a{" "}
                     {summary(fact.valid_to ?? "open")} · recorded{" "}
                     {summary(fact.recorded_at)}
                   </small>
@@ -726,8 +726,8 @@ export default async function ReviewPage({
             </ul>
           ) : (
             <p className="muted">
-              No hay bridges conocimiento→código aprobados para esta revisión o
-              sus documentos impactados.
+              No hay bridges de conocimiento a código aprobados para esta
+              revisión o sus documentos impactados.
             </p>
           )}
         </section>

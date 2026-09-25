@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { akp, akpOptional } from "../../lib/api";
+import { InfoTooltip } from "../components/info-tooltip";
 import {
   scopedSearchRequest,
   selectVault,
@@ -196,11 +197,19 @@ export default async function SearchPage({
     <main>
       <p className="muted">Consulta, fusión, evidencia y contexto operativo</p>
       <h1>Búsqueda híbrida</h1>
-      <form className="card">
-        <div className="grid">
-          <label>
-            Vault
-            <select name="vaultId" defaultValue={selected?.id ?? ""} required>
+      <form className="card search-form-card">
+        <div className="search-form-grid">
+          <label className="form-field-label">
+            <span className="form-label-title">
+              Vault
+              <InfoTooltip text="Repositorio de conocimiento autorizado donde se ejecutará la recuperación híbrida." />
+            </span>
+            <select
+              name="vaultId"
+              defaultValue={selected?.id ?? ""}
+              required
+              className="form-select"
+            >
               <option value="">Selecciona un vault autorizado</option>
               {(registry.vaults ?? []).map((vault) => (
                 <option key={vault.id} value={vault.id}>
@@ -209,9 +218,16 @@ export default async function SearchPage({
               ))}
             </select>
           </label>
-          <label>
-            Intent solicitado
-            <select name="intent" defaultValue={requestedIntent ?? ""}>
+          <label className="form-field-label">
+            <span className="form-label-title">
+              Intent solicitado
+              <InfoTooltip text="Forzar un modo de recuperación específico (ej: EXACT_LOOKUP, EXPLORATORY) o permitir detección automática por el planner." />
+            </span>
+            <select
+              name="intent"
+              defaultValue={requestedIntent ?? ""}
+              className="form-select"
+            >
               <option value="">Detección automática</option>
               {intents.map((intent) => (
                 <option key={intent} value={intent}>
@@ -221,15 +237,33 @@ export default async function SearchPage({
             </select>
           </label>
         </div>
-        <p>
-          <input
-            name="q"
-            defaultValue={query}
-            placeholder="Pregunta o ID estable"
-            aria-label="Consulta"
-          />{" "}
-          <button type="submit">Buscar</button>
-        </p>
+        <div className="search-input-block">
+          <label className="form-field-label">
+            <span className="form-label-title">
+              Consulta de conocimiento
+              <InfoTooltip text="Escribe una pregunta en lenguaje natural o un identificador canónico exacto (ej: RULE-AUTH-001) para recuperar evidencia contextual." />
+            </span>
+            <div className="search-input-row">
+              <input
+                name="q"
+                defaultValue={query}
+                placeholder="Pregunta en lenguaje natural o ID canónico de documento…"
+                aria-label="Consulta"
+                className="search-query-input"
+              />
+              <button
+                type="submit"
+                className="action-button-primary search-submit-btn"
+              >
+                Buscar
+              </button>
+            </div>
+          </label>
+          <small className="muted form-field-example">
+            Ejemplo sustancial: &quot;¿Cuáles son las políticas de idempotencia
+            y outbox?&quot; o por ID estable <code>RULE-EVENT-001</code>
+          </small>
+        </div>
       </form>
 
       {query && !selected ? (

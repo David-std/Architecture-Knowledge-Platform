@@ -907,6 +907,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/web/app/api/artwork/route.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/web/app/api/auth/session/route.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
@@ -943,6 +948,11 @@
     },
     {
       "path": "apps/web/app/author/page.tsx",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/web/app/components/info-tooltip.tsx",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
@@ -1037,6 +1047,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/web/app/operator-shell.tsx",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/web/app/page.tsx",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -1108,6 +1123,16 @@
     },
     {
       "path": "apps/web/lib/api.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/web/lib/navigation.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/web/lib/navigation.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },

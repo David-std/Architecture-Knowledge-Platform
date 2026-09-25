@@ -9,7 +9,6 @@ export default function ErrorBoundary({
 }) {
   return (
     <main>
-      <p className="muted">Workspace</p>
       <h1>No se pudo cargar esta vista</h1>
       <section className="card" role="alert">
         <p>

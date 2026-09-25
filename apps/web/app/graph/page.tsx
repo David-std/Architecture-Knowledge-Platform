@@ -1,5 +1,6 @@
 import { akp } from "../../lib/api";
 import { selectVault, type VaultOption } from "../../lib/vault-scope";
+import { InfoTooltip } from "../components/info-tooltip";
 import { GraphExplorer, type OperatorGraph } from "./graph-explorer";
 
 export default async function GraphPage({
@@ -36,28 +37,51 @@ export default async function GraphPage({
         Grafo tipado, caminos e impacto bajo scope autorizado
       </p>
       <h1>Grafo de conocimiento</h1>
-      <form className="card">
-        <label>
-          Vault
-          <select name="vaultId" defaultValue={selected?.id ?? ""} required>
-            <option value="">Selecciona un vault autorizado</option>
-            {(registry.vaults ?? []).map((vault) => (
-              <option key={vault.id} value={vault.id}>
-                {vault.name} ({vault.vault_key})
-              </option>
-            ))}
-          </select>
-        </label>{" "}
-        <label>
-          as_of
-          <input
-            type="text"
-            name="asOf"
-            defaultValue={asOf}
-            placeholder="2026-09-19T17:12:00-05:00"
-          />
-        </label>{" "}
-        <button type="submit">Explorar</button>
+      <form className="card graph-query-card">
+        <div className="graph-form-grid">
+          <label className="form-field-label">
+            <span className="form-label-title">
+              Vault
+              <InfoTooltip text="Vault de conocimiento autorizado cuyas entidades y caminos tipados se proyectarán." />
+            </span>
+            <select
+              name="vaultId"
+              defaultValue={selected?.id ?? ""}
+              required
+              className="form-select"
+            >
+              <option value="">Selecciona un vault autorizado</option>
+              {(registry.vaults ?? []).map((vault) => (
+                <option key={vault.id} value={vault.id}>
+                  {vault.name} ({vault.vault_key})
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="form-field-label">
+            <span className="form-label-title">
+              Marca temporal histórica (as_of)
+              <InfoTooltip text="Marca temporal ISO-8601 opcional para explorar la proyección histórica del grafo en ese instante de tiempo." />
+            </span>
+            <input
+              type="text"
+              name="asOf"
+              defaultValue={asOf}
+              placeholder="2026-09-19T17:12:00-05:00"
+              className="form-input"
+            />
+          </label>
+        </div>
+        <small className="muted form-field-example">
+          Ejemplo sustancial: <code>2026-09-19T17:12:00-05:00</code> (o dejar en
+          blanco para visualizar la versión canónica actual).
+        </small>
+        <div className="form-actions-row">
+          <button type="submit" className="action-button-primary">
+            Explorar grafo
+          </button>
+        </div>
       </form>
 
       {!selected ? (

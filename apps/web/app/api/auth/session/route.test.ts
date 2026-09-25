@@ -69,4 +69,38 @@ describe("Web login form", () => {
       `${browserOrigin}/login?error=invalid`,
     );
   });
+
+  it("handles logout by clearing session cookies and redirecting to login", async () => {
+    const fetchMock = vi.fn(
+      async () => new Response('{"status":"REVOKED"}', { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const logoutReq = new Request("http://localhost:3000/api/auth/session", {
+      method: "POST",
+      headers: {
+        origin: browserOrigin,
+        host: "127.0.0.1:3000",
+        "content-type": "application/x-www-form-urlencoded",
+        cookie: "akp_session=session; akp_csrf=csrf",
+      },
+      body: new URLSearchParams({ action: "logout" }),
+    });
+
+    const response = await POST(logoutReq);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/v1\/auth\/session\/revoke$/),
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          cookie: "akp_session=session; akp_csrf=csrf",
+          "x-csrf-token": "csrf",
+        }),
+      }),
+    );
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe(`${browserOrigin}/login`);
+    const setCookies = response.headers.getSetCookie();
+    expect(setCookies.some((c) => c.includes("akp_session=;"))).toBe(true);
+    expect(setCookies.some((c) => c.includes("akp_csrf=;"))).toBe(true);
+  });
 });

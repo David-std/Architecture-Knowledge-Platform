@@ -25,9 +25,9 @@ export default async function AuthorPage() {
   return (
     <main>
       <p className="muted">
-        Recovery local → Save gobernado → review → publicación autorizada
+        Flujo gobernado: Recovery local · Commit de draft · Revisión autorizada
       </p>
-      <h1>Authoring Workspace</h1>
+      <h1>Proponer conocimiento</h1>
       <AuthoringForm vaults={result.vaults} />
     </main>
   );

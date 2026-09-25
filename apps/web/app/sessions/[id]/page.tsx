@@ -234,7 +234,7 @@ export default async function SessionObjectPage({
             {state.eventWindow.truncated ? " · truncated" : ""}
           </p>
           <p>
-            versions {state.eventWindow.oldestVersion ?? "—"} →{" "}
+            versions {state.eventWindow.oldestVersion ?? "—"} a{" "}
             {state.eventWindow.latestVersion ?? "—"}
           </p>
         </section>

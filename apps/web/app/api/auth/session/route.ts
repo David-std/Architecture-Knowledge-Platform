@@ -21,6 +21,39 @@ export async function POST(request: Request) {
   const site = browserOrigin.origin;
 
   const form = await request.formData();
+  const action = String(form.get("action") ?? "").trim();
+
+  if (action === "logout") {
+    const cookieHeader = request.headers.get("cookie") ?? "";
+    const csrf = cookieHeader
+      .split(";")
+      .map((part) => part.trim())
+      .find((part) => part.startsWith("akp_csrf="))
+      ?.slice("akp_csrf=".length);
+    if (cookieHeader.includes("akp_session=") && csrf) {
+      let revoked: Response;
+      try {
+        revoked = await fetch(`${api}/v1/auth/session/revoke`, {
+          method: "POST",
+          cache: "no-store",
+          headers: {
+            cookie: cookieHeader,
+            "x-csrf-token": csrf,
+          },
+        });
+      } catch {
+        return new Response(null, { status: 503 });
+      }
+      if (!revoked.ok && revoked.status !== 401) {
+        return new Response(null, { status: revoked.status });
+      }
+    }
+    const response = NextResponse.redirect(new URL("/login", site), 303);
+    response.cookies.delete("akp_session");
+    response.cookies.delete("akp_csrf");
+    return response;
+  }
+
   const token = String(form.get("token") ?? "").trim();
   if (!token || token.length > 4096) return loginError(site, "invalid");
 
