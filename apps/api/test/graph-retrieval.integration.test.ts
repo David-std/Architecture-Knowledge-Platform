@@ -491,6 +491,15 @@ describe("recursive graph retrieval PostgreSQL integration", () => {
           ),
         ).toBe(true);
         expect(
+          global
+            .filter((hit) =>
+              (hit.fusionContributions ?? []).some(
+                (contribution) => contribution.channel === "community",
+              ),
+            )
+            .map((hit) => hit.documentId),
+        ).not.toContain(fixture.documents.S);
+        expect(
           global.every((hit) =>
             hit.citations.every(
               (citation) => !citation.toLowerCase().includes("community"),
