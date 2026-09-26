@@ -3327,6 +3327,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/vault-importer/test/document-identity.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "packages/vault-importer/test/parser.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
