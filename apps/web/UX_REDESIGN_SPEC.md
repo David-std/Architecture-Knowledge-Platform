@@ -2,17 +2,17 @@
 
 Estado: guía de diseño activa. La arquitectura de información, el shell adaptable y el inicio orientado a atención ya forman parte del producto actual. La referencia histórica a `feat/web-information-architecture` se conserva solo como origen de esta especificación; los estados siguientes describen el árbol vigente.
 
-| Criterio de esta especificación | Estado actual |
-| --- | --- |
-| Cuatro áreas de navegación, ruta activa y shell móvil | Implementado |
-| Inicio orientado a revisiones, hallazgos y salud | Implementado |
-| Búsqueda centrada en encontrar fuentes, con diagnóstico técnico secundario | Implementado |
-| Ingesta que distingue ruta del servidor y job de revisión posterior | Implementado |
-| Primer recorrido verificable por estado real | Implementado |
-| Inbox de revisiones con contexto humano e ID secundario | Implementado |
-| Respuesta generada con citas en la Web | Pendiente de una capacidad productiva explícita; no se simula |
-| Captura/upload desde el navegador hacia un servidor remoto | Pendiente de contrato de ingestión separado |
-| Ocultar navegación según permisos | No adoptado mientras no exista una proyección autorizada de capacidades para la sesión |
+| Criterio de esta especificación                                            | Estado actual                                                                          |
+| -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Cuatro áreas de navegación, ruta activa y shell móvil                      | Implementado                                                                           |
+| Inicio orientado a revisiones, hallazgos y salud                           | Implementado                                                                           |
+| Búsqueda centrada en encontrar fuentes, con diagnóstico técnico secundario | Implementado                                                                           |
+| Ingesta que distingue ruta del servidor y job de revisión posterior        | Implementado                                                                           |
+| Primer recorrido verificable por estado real                               | Implementado                                                                           |
+| Inbox de revisiones con contexto humano e ID secundario                    | Implementado                                                                           |
+| Respuesta generada con citas en la Web                                     | Pendiente de una capacidad productiva explícita; no se simula                          |
+| Captura/upload desde el navegador hacia un servidor remoto                 | Pendiente de contrato de ingestión separado                                            |
+| Ocultar navegación según permisos                                          | No adoptado mientras no exista una proyección autorizada de capacidades para la sesión |
 
 ## 1. Problema, usuarios y resultado
 

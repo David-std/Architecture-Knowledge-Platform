@@ -289,7 +289,9 @@ export default async function SearchPage({
 
       {result && !result.noAnswer ? (
         <section className="card" role="status" style={{ marginTop: 16 }}>
-          <h2>{result.hits.length ? "Fuentes encontradas" : "Sin coincidencias"}</h2>
+          <h2>
+            {result.hits.length ? "Fuentes encontradas" : "Sin coincidencias"}
+          </h2>
           <p>
             {result.degraded
               ? "La recuperación tuvo cobertura parcial. Revisa los límites antes de usar estas fuentes."
@@ -445,16 +447,15 @@ export default async function SearchPage({
       })}
 
       {packet &&
-      ((packet.gaps ?? []).length > 0 || (packet.conflicts ?? []).length > 0) ? (
+      ((packet.gaps ?? []).length > 0 ||
+        (packet.conflicts ?? []).length > 0) ? (
         <section className="card" role="note" style={{ marginTop: 16 }}>
           <h2>Límites del contexto recuperado</h2>
           {(packet.gaps ?? []).map((gap) => (
             <p key={`visible-gap-${gap}`}>Falta: {gap}</p>
           ))}
           {(packet.conflicts ?? []).map((conflict) => (
-            <p key={`visible-conflict-${conflict}`}>
-              Conflicto: {conflict}
-            </p>
+            <p key={`visible-conflict-${conflict}`}>Conflicto: {conflict}</p>
           ))}
         </section>
       ) : null}
@@ -463,106 +464,106 @@ export default async function SearchPage({
         <details className="card" style={{ marginTop: 16 }}>
           <summary>Inspeccionar ContextPacket técnico</summary>
           <section style={{ marginTop: 12 }}>
-          <h2>ContextPacket</h2>
-          <div className="grid">
-            <div className="card">
-              <span className="muted">Estado</span>
-              <p>{packet.status ?? "UNKNOWN"}</p>
-            </div>
-            <div className="card">
-              <span className="muted">Presupuesto</span>
-              <p>{tokenSummary(packet)} tokens</p>
-              <small>
-                {packet.budget?.tokenizer?.label ?? "tokenizer desconocido"}
-                {packet.budget?.tokenizer?.quality
-                  ? ` · ${packet.budget.tokenizer.quality}`
-                  : packet.budget?.tokenizer?.approximate
-                    ? " · APPROXIMATE"
-                    : ""}
-              </small>
-            </div>
-            <div className="card">
-              <span className="muted">Canales buscados</span>
-              <p>{(packet.searchedChannels ?? []).join(" · ") || "—"}</p>
-            </div>
-          </div>
-
-          {(packet.sections ?? []).map((section, index) => (
-            <article
-              className="card"
-              key={`${section.kind}-${index}`}
-              style={{ marginTop: 16 }}
-            >
-              <p>
-                <span className="badge">{section.kind}</span>
-                {(section.retrievalChannels ?? []).map((channel) => (
-                  <span className="badge" key={channel}>
-                    {channel}
-                  </span>
-                ))}
-              </p>
-              <h3>
-                {section.documentId ? (
-                  <Link href={`/documents/${section.documentId}`}>
-                    {section.title ?? section.documentId}
-                  </Link>
-                ) : (
-                  (section.title ?? `Sección ${index + 1}`)
-                )}
-              </h3>
-              <p>{section.content}</p>
-              <small>{section.selectionReason ?? ""}</small>
-            </article>
-          ))}
-
-          <div className="grid" style={{ marginTop: 16 }}>
-            <div className="card">
-              <h3>Gaps</h3>
-              {(packet.gaps ?? []).length ? (
-                <ul>
-                  {packet.gaps?.map((gap) => (
-                    <li key={gap}>{gap}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="muted">Sin gaps reportados.</p>
-              )}
-            </div>
-            <div className="card">
-              <h3>Conflictos</h3>
-              {(packet.conflicts ?? []).length ? (
-                <ul>
-                  {packet.conflicts?.map((conflict) => (
-                    <li key={conflict}>{conflict}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="muted">Sin conflictos reportados.</p>
-              )}
-            </div>
-          </div>
-
-          {(packet.continuations ?? []).length ? (
-            <div className="card" style={{ marginTop: 16 }}>
-              <h3>Continuaciones</h3>
-              <ul>
-                {packet.continuations?.map((continuation, index) => (
-                  <li key={continuation.handle ?? index}>
-                    <code>{continuation.handle ?? "continuation"}</code> —{" "}
-                    {continuation.reason ?? "más contexto disponible"}
-                    {continuation.remainingTokens !== undefined
-                      ? ` · ${continuation.remainingTokens} tokens restantes`
+            <h2>ContextPacket</h2>
+            <div className="grid">
+              <div className="card">
+                <span className="muted">Estado</span>
+                <p>{packet.status ?? "UNKNOWN"}</p>
+              </div>
+              <div className="card">
+                <span className="muted">Presupuesto</span>
+                <p>{tokenSummary(packet)} tokens</p>
+                <small>
+                  {packet.budget?.tokenizer?.label ?? "tokenizer desconocido"}
+                  {packet.budget?.tokenizer?.quality
+                    ? ` · ${packet.budget.tokenizer.quality}`
+                    : packet.budget?.tokenizer?.approximate
+                      ? " · APPROXIMATE"
                       : ""}
-                  </li>
-                ))}
-              </ul>
+                </small>
+              </div>
+              <div className="card">
+                <span className="muted">Canales buscados</span>
+                <p>{(packet.searchedChannels ?? []).join(" · ") || "—"}</p>
+              </div>
             </div>
-          ) : null}
 
-          <details style={{ marginTop: 16 }}>
-            <summary>Inspeccionar JSON del ContextPacket</summary>
-            <pre>{JSON.stringify(packet, null, 2)}</pre>
-          </details>
+            {(packet.sections ?? []).map((section, index) => (
+              <article
+                className="card"
+                key={`${section.kind}-${index}`}
+                style={{ marginTop: 16 }}
+              >
+                <p>
+                  <span className="badge">{section.kind}</span>
+                  {(section.retrievalChannels ?? []).map((channel) => (
+                    <span className="badge" key={channel}>
+                      {channel}
+                    </span>
+                  ))}
+                </p>
+                <h3>
+                  {section.documentId ? (
+                    <Link href={`/documents/${section.documentId}`}>
+                      {section.title ?? section.documentId}
+                    </Link>
+                  ) : (
+                    (section.title ?? `Sección ${index + 1}`)
+                  )}
+                </h3>
+                <p>{section.content}</p>
+                <small>{section.selectionReason ?? ""}</small>
+              </article>
+            ))}
+
+            <div className="grid" style={{ marginTop: 16 }}>
+              <div className="card">
+                <h3>Gaps</h3>
+                {(packet.gaps ?? []).length ? (
+                  <ul>
+                    {packet.gaps?.map((gap) => (
+                      <li key={gap}>{gap}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="muted">Sin gaps reportados.</p>
+                )}
+              </div>
+              <div className="card">
+                <h3>Conflictos</h3>
+                {(packet.conflicts ?? []).length ? (
+                  <ul>
+                    {packet.conflicts?.map((conflict) => (
+                      <li key={conflict}>{conflict}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="muted">Sin conflictos reportados.</p>
+                )}
+              </div>
+            </div>
+
+            {(packet.continuations ?? []).length ? (
+              <div className="card" style={{ marginTop: 16 }}>
+                <h3>Continuaciones</h3>
+                <ul>
+                  {packet.continuations?.map((continuation, index) => (
+                    <li key={continuation.handle ?? index}>
+                      <code>{continuation.handle ?? "continuation"}</code> —{" "}
+                      {continuation.reason ?? "más contexto disponible"}
+                      {continuation.remainingTokens !== undefined
+                        ? ` · ${continuation.remainingTokens} tokens restantes`
+                        : ""}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            <details style={{ marginTop: 16 }}>
+              <summary>Inspeccionar JSON del ContextPacket</summary>
+              <pre>{JSON.stringify(packet, null, 2)}</pre>
+            </details>
           </section>
         </details>
       ) : null}

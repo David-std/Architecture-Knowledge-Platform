@@ -129,26 +129,36 @@ export default async function GettingStartedPage() {
       <section className="card" style={{ marginTop: 20 }}>
         <h2>Qué autoridad tiene cada cosa</h2>
         <dl>
-          <dt><strong>Fuente externa</strong></dt>
+          <dt>
+            <strong>Fuente externa</strong>
+          </dt>
           <dd>
             Material capturado/importado. Conserva procedencia; por sí solo no
             es conocimiento aprobado.
           </dd>
-          <dt><strong>Extracción o evidencia derivada</strong></dt>
+          <dt>
+            <strong>Extracción o evidencia derivada</strong>
+          </dt>
           <dd>
             Texto, estructura, OCR o locator producido desde una fuente. Debe
             seguir enlazado a su origen y revisión.
           </dd>
-          <dt><strong>Propuesta en revisión</strong></dt>
+          <dt>
+            <strong>Propuesta en revisión</strong>
+          </dt>
           <dd>
             Cambio candidato. Puede ser generado o asistido, pero aún no es
             canónico.
           </dd>
-          <dt><strong>Conocimiento aprobado</strong></dt>
+          <dt>
+            <strong>Conocimiento aprobado</strong>
+          </dt>
           <dd>
             Markdown gobernado y publicado mediante la política de revisión.
           </dd>
-          <dt><strong>Índice, grafo o resumen derivado</strong></dt>
+          <dt>
+            <strong>Índice, grafo o resumen derivado</strong>
+          </dt>
           <dd>
             Ayuda a recuperar y navegar. Su score o relación no convierte una
             afirmación en verdadera ni más autorizada.
