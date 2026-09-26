@@ -363,10 +363,7 @@ export function assessRetrievalAnswerability(
     );
   }
 
-  if (
-    vectorMargin !== null &&
-    vectorMargin >= policy.minimumVectorMargin
-  ) {
+  if (vectorMargin !== null && vectorMargin >= policy.minimumVectorMargin) {
     return assessment(
       true,
       "VECTOR_MARGIN_SUPPORT",
