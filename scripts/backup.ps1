@@ -3,7 +3,8 @@ param(
   [string]$PostgresContainer = "",
   [string]$PostgresDatabase = "akp",
   [string]$MinioContainer = "",
-  [string]$ManagedRepository = ""
+  [string]$ManagedRepository = "",
+  [int]$PublicationLockMinutes = 10
 )
 
 $ErrorActionPreference = "Stop"
@@ -50,6 +51,9 @@ if (-not $PostgresContainer -or -not $MinioContainer) {
 if ($PostgresDatabase -notmatch '^[A-Za-z_][A-Za-z0-9_]{0,62}$') {
   throw "PostgreSQL database name must be a simple identifier."
 }
+if ($PublicationLockMinutes -lt 1 -or $PublicationLockMinutes -gt 1440) {
+  throw "PublicationLockMinutes must be between 1 and 1440."
+}
 $target = Resolve-InputPath $OutputDirectory
 if (Test-Path -LiteralPath $target) {
   $existing = Get-ChildItem -LiteralPath $target -Force | Select-Object -First 1
@@ -80,14 +84,44 @@ if ($configuredManagedRepository) {
   if ($isGit -ne "true") {
     throw "AKP_MANAGED_REPO must be a Git work tree: $managedPath"
   }
-  $managedRepositoryHeadRevision = ((Invoke-ExternalChecked "read managed repository HEAD" {
-    git -C $managedPath rev-parse HEAD
-  }) | Out-String).Trim().ToLowerInvariant()
-  if ($managedRepositoryHeadRevision -notmatch '^[a-f0-9]{40}$') {
-    throw "AKP_MANAGED_REPO HEAD is not a canonical 40-character Git revision."
-  }
   $managedRepositoryPresent = $true
 }
+
+$publicationLockOwner = $null
+$publicationLockKey = $null
+$publicationSerializationVerified = $false
+
+try {
+  if ($managedRepositoryPresent) {
+    $publicationLockOwner = "backup:$([guid]::NewGuid().ToString('N'))"
+    $publicationLockKey = ((Invoke-ExternalChecked "derive managed repository publication key" {
+      node -e "const {createHash}=require('node:crypto'); const {realpathSync}=require('node:fs'); const path=require('node:path'); let resolved; try { resolved=realpathSync.native(process.argv[1]); } catch { resolved=path.resolve(process.argv[1]); } if (process.platform==='win32') resolved=resolved.toLowerCase(); process.stdout.write(createHash('sha256').update(resolved).digest('hex'));" $managedPath
+    }) | Out-String).Trim().ToLowerInvariant()
+    if ($publicationLockKey -notmatch '^[a-f0-9]{64}$') {
+      throw "Could not derive the managed repository publication lock key."
+    }
+
+    $lockOwner = ((Invoke-ExternalChecked "acquire managed repository publication lock" {
+      docker exec $PostgresContainer psql -U akp -d $PostgresDatabase -At -v ON_ERROR_STOP=1 -c "insert into repository_publication_locks(repository_key,owner,expires_at) values('$publicationLockKey','$publicationLockOwner',now()+make_interval(mins => $PublicationLockMinutes)) on conflict(repository_key) do update set owner=excluded.owner,expires_at=excluded.expires_at,updated_at=now() where repository_publication_locks.expires_at < now() returning owner;"
+    }) | Out-String).Trim()
+    if ($lockOwner -ne $publicationLockOwner) {
+      throw "Managed repository publication is active; refusing a cross-revision backup."
+    }
+
+    $ambiguousReviewCount = [int](((Invoke-ExternalChecked "check publication recovery state" {
+      docker exec $PostgresContainer psql -U akp -d $PostgresDatabase -At -v ON_ERROR_STOP=1 -c "select count(*) from reviews where status in ('PUBLISHING','ROLLING_BACK','PUBLICATION_RECOVERY_REQUIRED','ROLLBACK_RECOVERY_REQUIRED');"
+    }) | Out-String).Trim())
+    if ($ambiguousReviewCount -ne 0) {
+      throw "Managed repository has $ambiguousReviewCount ambiguous publication/recovery review state(s); reconcile them before backup."
+    }
+
+    $managedRepositoryHeadRevision = ((Invoke-ExternalChecked "read locked managed repository HEAD" {
+      git -C $managedPath rev-parse HEAD
+    }) | Out-String).Trim().ToLowerInvariant()
+    if ($managedRepositoryHeadRevision -notmatch '^[a-f0-9]{40}$') {
+      throw "AKP_MANAGED_REPO HEAD is not a canonical 40-character Git revision."
+    }
+  }
 
 $migrationRows = @(Invoke-ExternalChecked "read applied migration inventory" {
   docker exec $PostgresContainer psql -U akp -d $PostgresDatabase -At -F '|' -v ON_ERROR_STOP=1 -c "select name || '|' || coalesce(checksum,'') from schema_migrations order by name;"
@@ -143,7 +177,7 @@ $rebuildableProjectionTables = @(
   "community_index_memberships",
   "context_packets"
 )
-docker exec $PostgresContainer pg_dump -U akp -d $PostgresDatabase -Fc -f /tmp/akp-backup.dump
+docker exec $PostgresContainer pg_dump -U akp -d $PostgresDatabase -Fc --exclude-table-data=repository_publication_locks -f /tmp/akp-backup.dump
 if ($LASTEXITCODE -ne 0) { throw "pg_dump failed" }
 docker cp "${PostgresContainer}:/tmp/akp-backup.dump" (Join-Path $target "postgres.dump")
 if ($LASTEXITCODE -ne 0) { throw "docker cp for PostgreSQL backup failed" }
@@ -182,6 +216,13 @@ try {
 }
 
 if ($managedRepositoryPresent) {
+  $renewedOwner = ((Invoke-ExternalChecked "renew managed repository publication lock" {
+    docker exec $PostgresContainer psql -U akp -d $PostgresDatabase -At -v ON_ERROR_STOP=1 -c "update repository_publication_locks set expires_at=now()+make_interval(mins => $PublicationLockMinutes),updated_at=now() where repository_key='$publicationLockKey' and owner='$publicationLockOwner' returning owner;"
+  }) | Out-String).Trim()
+  if ($renewedOwner -ne $publicationLockOwner) {
+    throw "Managed repository publication lock was lost during backup; refusing a cross-revision artifact."
+  }
+
   $bundlePath = Join-Path $target "managed-knowledge.bundle"
   Invoke-ExternalChecked "create managed knowledge Git bundle" {
     git -C $managedPath bundle create $bundlePath --all
@@ -189,6 +230,20 @@ if ($managedRepositoryPresent) {
   Invoke-ExternalChecked "verify managed knowledge Git bundle" {
     git -C $managedPath bundle verify $bundlePath
   } | Out-Null
+
+  $finalHeadRevision = ((Invoke-ExternalChecked "verify managed repository HEAD remained stable" {
+    git -C $managedPath rev-parse HEAD
+  }) | Out-String).Trim().ToLowerInvariant()
+  $finalLockOwner = ((Invoke-ExternalChecked "verify managed repository publication lock ownership" {
+    docker exec $PostgresContainer psql -U akp -d $PostgresDatabase -At -v ON_ERROR_STOP=1 -c "select owner from repository_publication_locks where repository_key='$publicationLockKey';"
+  }) | Out-String).Trim()
+  if (
+    $finalHeadRevision -ne $managedRepositoryHeadRevision -or
+    $finalLockOwner -ne $publicationLockOwner
+  ) {
+    throw "Managed repository changed or publication serialization was lost during backup; refusing a cross-revision artifact."
+  }
+  $publicationSerializationVerified = $true
   $artifactNames += "managed-knowledge.bundle"
 }
 
@@ -228,6 +283,7 @@ $manifest = [ordered]@{
   }
   durableState = [ordered]@{
     includedViaPostgresDump = @($durableStateTables)
+    excludedEphemeralTables = @("repository_publication_locks")
     federationConfiguration = [ordered]@{
       credentialReferencesOnly = $true
       secretsIncluded = $false
@@ -242,9 +298,20 @@ $manifest = [ordered]@{
     configured = [bool]$managedRepositoryPresent
     bundleIncluded = [bool]$managedRepositoryPresent
     headRevision = $managedRepositoryHeadRevision
+    publicationSerializationVerified = [bool]$publicationSerializationVerified
+    publicationLockKey = $publicationLockKey
   }
   files = $files
 }
 $manifest | ConvertTo-Json -Depth 8 |
   Set-Content -LiteralPath (Join-Path $target "manifest.json") -Encoding utf8
 Write-Output ($manifest | ConvertTo-Json -Depth 8)
+} finally {
+  if ($publicationLockOwner -and $publicationLockKey) {
+    try {
+      docker exec $PostgresContainer psql -U akp -d $PostgresDatabase -v ON_ERROR_STOP=1 -c "delete from repository_publication_locks where repository_key='$publicationLockKey' and owner='$publicationLockOwner';" *> $null
+    } catch {
+      Write-Warning "Could not release managed repository publication lock; it remains lease-bounded."
+    }
+  }
+}
