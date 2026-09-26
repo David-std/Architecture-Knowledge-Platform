@@ -71,11 +71,30 @@ type Fixture = {
   unitIds: Map<string, string>;
 };
 
+type QueryHit = Awaited<ReturnType<typeof queryKnowledge>>[number];
+
+function collectCandidateSignals(hits: readonly QueryHit[]) {
+  return hits.map((hit) => ({
+    documentId: hit.documentId,
+    externalId: hit.document.externalId,
+    finalScore: hit.score,
+    contributions: (hit.fusionContributions ?? []).map((contribution) => ({
+      channel: contribution.channel,
+      rank: contribution.rank,
+      channelWeight: contribution.channelWeight,
+      rawScore: contribution.rawScore ?? null,
+      reason: contribution.reason,
+    })),
+    rerank: hit.rerankTrace ?? null,
+  }));
+}
+
 type RuntimeObservation = BenchmarkObservation & {
   warnings: string[];
   availableChannels: string[];
   rankedVaultIds: string[];
   fusionReasons: Record<string, string[]>;
+  candidateSignals: ReturnType<typeof collectCandidateSignals>;
 };
 
 type MemorySnapshot = {
@@ -757,6 +776,7 @@ async function executeCase(
     availableChannels: [...availableChannels].sort(),
     rankedVaultIds: [...new Set(hits.map((hit) => hit.vaultId))],
     fusionReasons,
+    candidateSignals: collectCandidateSignals(hits),
   };
 }
 
