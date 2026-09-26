@@ -26,11 +26,7 @@ export function loadWorkerRuntimeConfig(
   defaultDrainDeadlineMs = 60_000,
 ): WorkerRuntimeConfig {
   return {
-    eventMaxAttempts: positiveIntegerSetting(
-      env,
-      "AKP_EVENT_MAX_ATTEMPTS",
-      8,
-    ),
+    eventMaxAttempts: positiveIntegerSetting(env, "AKP_EVENT_MAX_ATTEMPTS", 8),
     eventLeaseSeconds: positiveIntegerSetting(
       env,
       "AKP_EVENT_LEASE_SECONDS",
@@ -38,11 +34,7 @@ export function loadWorkerRuntimeConfig(
     ),
     lintIntervalMs: Math.max(
       60_000,
-      positiveIntegerSetting(
-        env,
-        "AKP_LINT_INTERVAL_MS",
-        24 * 60 * 60 * 1000,
-      ),
+      positiveIntegerSetting(env, "AKP_LINT_INTERVAL_MS", 24 * 60 * 60 * 1000),
     ),
     drainDeadlineMs: positiveIntegerSetting(
       env,
