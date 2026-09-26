@@ -587,6 +587,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/cli/src/api-client.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/cli/src/audit-export.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -612,12 +617,27 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/cli/src/vault-selection.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/cli/test/api-client.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "apps/cli/test/audit-export.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
     {
       "path": "apps/cli/test/metrics.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/cli/test/vault-selection.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
