@@ -4,6 +4,7 @@ export const navigation = [
     label: "Trabajo",
     links: [
       { href: "/", label: "Inicio" },
+      { href: "/getting-started", label: "Primeros pasos" },
       { href: "/reviews", label: "Revisiones" },
       { href: "/decisions", label: "Decisiones" },
     ],
@@ -52,7 +53,11 @@ const allLinks: NavigationLink[] = navigation.flatMap((area) =>
 export function areaForPath(pathname: string): NavigationArea | null {
   if (pathname === "/login") return null;
   if (pathname === "/") return "work";
-  if (/^\/(reviews|decisions|work|services|sessions)(\/|$)/.test(pathname))
+  if (
+    /^\/(getting-started|reviews|decisions|work|services|sessions)(\/|$)/.test(
+      pathname,
+    )
+  )
     return "work";
   if (
     /^\/(search|sources|graph|author|documents|knowledge)(\/|$)/.test(pathname)
