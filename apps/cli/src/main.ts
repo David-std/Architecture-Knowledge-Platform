@@ -1,5 +1,4 @@
 import "dotenv/config";
-import { randomUUID } from "node:crypto";
 import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
@@ -33,6 +32,8 @@ import {
   requestRawEvidenceExport,
   requestAuditExport,
 } from "./audit-export.js";
+import { positiveInteger, requestAkpApi } from "./api-client.js";
+import { resolveCliVaultSelection } from "./vault-selection.js";
 
 function database(): Postgres {
   const databaseUrl = process.env.DATABASE_URL;
@@ -107,49 +108,42 @@ async function withDatabase<T>(
   }
 }
 
-async function api<T = unknown>(route: string, init?: RequestInit): Promise<T> {
-  const base = process.env.AKP_API_URL ?? "http://127.0.0.1:8080";
-  const token = process.env.AKP_API_TOKEN;
-  if (!token) throw new Error("AKP_API_TOKEN is required for API commands.");
-  const response = await fetch(`${base}${route}`, {
-    ...init,
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${token}`,
-      ...(String(init?.method ?? "GET").toUpperCase() === "POST"
-        ? { "idempotency-key": `cli-${randomUUID()}` }
-        : {}),
-      ...(init?.headers ?? {}),
-    },
+async function api<T = unknown>(
+  route: string,
+  init?: RequestInit,
+  options: { idempotencyKey?: string } = {},
+): Promise<T> {
+  return requestAkpApi<T>({
+    baseUrl: process.env.AKP_API_URL ?? "http://127.0.0.1:8080",
+    token: process.env.AKP_API_TOKEN,
+    route,
+    init,
+    ...(options.idempotencyKey
+      ? { idempotencyKey: options.idempotencyKey }
+      : {}),
   });
-  const body = (await response.json()) as T;
-  if (!response.ok)
-    throw new Error(`AKP API ${response.status}: ${JSON.stringify(body)}`);
-  return body;
 }
 
 function printJson(value: unknown): void {
   console.log(JSON.stringify(value, null, 2));
 }
 
-function positiveInteger(value: string): number {
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 1) {
-    throw new Error(`Expected a positive integer, received: ${value}`);
-  }
-  return parsed;
-}
-
 async function runEvaluationTarget(options: {
   spaceId: string;
   vaultId: string;
   evalPack: string;
+  idempotencyKey?: string;
 }): Promise<void> {
+  const { idempotencyKey, ...payload } = options;
   printJson(
-    await api("/v1/evals/run", {
-      method: "POST",
-      body: JSON.stringify(options),
-    }),
+    await api(
+      "/v1/evals/run",
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+      { idempotencyKey },
+    ),
   );
 }
 
@@ -270,7 +264,16 @@ function configureAuditExport(
 const program = new Command()
   .name("akp")
   .description("Architecture Knowledge Platform command-line interface")
-  .version("0.1.0");
+  .version("0.1.0")
+  .addHelpText(
+    "after",
+    [
+      "",
+      "Client commands use AKP_API_URL + AKP_API_TOKEN and enforce the same authorization as Web/MCP.",
+      "Operator-local vault/doctor commands use DATABASE_URL and act on the node directly.",
+      "Use 'akp vaults' to discover vault names/keys visible to the current API credential.",
+    ].join("\n"),
+  );
 
 const auditExport = program
   .command("audit")
@@ -722,43 +725,57 @@ program.command("status").action(async () => {
 });
 
 program
+  .command("vaults")
+  .description("List vaults visible to the authenticated API credential")
+  .action(async () => {
+    printJson(await api("/v1/vaults"));
+  });
+
+program
   .command("search")
   .argument("<query>")
-  .requiredOption("--space-id <uuid>", "Authorized space UUID")
-  .requiredOption("--vault-id <uuid...>", "Target vault UUID(s)")
+  .option("--space-id <uuid>", "Authorized space UUID; optional with --vault")
+  .option("--vault-id <uuid...>", "Target vault UUID(s), retained for scripts")
+  .option("--vault <name-or-key...>", "Target authorized vault name/key(s)")
   .option("--federated", "Explicitly allow multiple-vault synthesis", false)
-  .option("--limit <number>", "Maximum hits", "10")
+  .option("--limit <number>", "Maximum hits", positiveInteger, 10)
   .option("--mode <mode>", "Retrieval mode", "SOURCE_BACKED")
   .action(
     async (
       query: string,
       options: {
-        spaceId: string;
-        vaultId: string[];
+        spaceId?: string;
+        vaultId?: string[];
+        vault?: string[];
         federated: boolean;
-        limit: string;
+        limit: number;
         mode: string;
       },
     ) => {
-      console.log(
-        JSON.stringify(
-          await api("/v1/search", {
-            method: "POST",
-            body: JSON.stringify({
-              query,
-              spaceId: options.spaceId,
-              vaultIds: options.vaultId,
-              ...(options.vaultId.length === 1
-                ? { vaultId: options.vaultId[0] }
-                : {}),
-              federated: options.federated,
-              limit: Number(options.limit),
-              mode: options.mode,
-            }),
+      const scope = await resolveCliVaultSelection({
+        spaceId: options.spaceId,
+        vaultIds: options.vaultId,
+        vaultSelectors: options.vault,
+        listVisibleVaults: async () => {
+          const response = await api<{ vaults?: unknown[] }>("/v1/vaults");
+          return response.vaults ?? [];
+        },
+      });
+      printJson(
+        await api("/v1/search", {
+          method: "POST",
+          body: JSON.stringify({
+            query,
+            spaceId: scope.spaceId,
+            vaultIds: scope.vaultIds,
+            ...(scope.vaultIds.length === 1
+              ? { vaultId: scope.vaultIds[0] }
+              : {}),
+            federated: options.federated,
+            limit: options.limit,
+            mode: options.mode,
           }),
-          null,
-          2,
-        ),
+        }),
       );
     },
   );
@@ -766,77 +783,92 @@ program
 program
   .command("context")
   .argument("<query>")
-  .requiredOption("--space-id <uuid>", "Authorized space UUID")
-  .requiredOption("--vault-id <uuid...>", "Target vault UUID(s)")
+  .option("--space-id <uuid>", "Authorized space UUID; optional with --vault")
+  .option("--vault-id <uuid...>", "Target vault UUID(s), retained for scripts")
+  .option("--vault <name-or-key...>", "Target authorized vault name/key(s)")
   .option("--federated", "Explicitly allow multiple-vault synthesis", false)
   .option("--intent <intent>", "Agent intent", "architecture guidance")
-  .option("--max-tokens <number>", "Context budget", "6000")
+  .option("--max-tokens <number>", "Context budget", positiveInteger, 6000)
   .action(
     async (
       query: string,
       options: {
-        spaceId: string;
-        vaultId: string[];
+        spaceId?: string;
+        vaultId?: string[];
+        vault?: string[];
         federated: boolean;
         intent: string;
-        maxTokens: string;
+        maxTokens: number;
       },
     ) => {
-      console.log(
-        JSON.stringify(
-          await api("/v1/context", {
-            method: "POST",
-            body: JSON.stringify({
-              query,
-              spaceId: options.spaceId,
-              vaultIds: options.vaultId,
-              ...(options.vaultId.length === 1
-                ? { vaultId: options.vaultId[0] }
-                : {}),
-              federated: options.federated,
-              intent: options.intent,
-              maxTokens: Number(options.maxTokens),
-            }),
+      const scope = await resolveCliVaultSelection({
+        spaceId: options.spaceId,
+        vaultIds: options.vaultId,
+        vaultSelectors: options.vault,
+        listVisibleVaults: async () => {
+          const response = await api<{ vaults?: unknown[] }>("/v1/vaults");
+          return response.vaults ?? [];
+        },
+      });
+      printJson(
+        await api("/v1/context", {
+          method: "POST",
+          body: JSON.stringify({
+            query,
+            spaceId: scope.spaceId,
+            vaultIds: scope.vaultIds,
+            ...(scope.vaultIds.length === 1
+              ? { vaultId: scope.vaultIds[0] }
+              : {}),
+            federated: options.federated,
+            intent: options.intent,
+            maxTokens: options.maxTokens,
           }),
-          null,
-          2,
-        ),
+        }),
       );
     },
   );
 
 program
   .command("ingest")
-  .argument("<source>")
+  .argument(
+    "<server-path>",
+    "Path visible to the AKP API/worker and allowed by AKP_INGEST_ROOTS",
+  )
   .requiredOption("--space-id <uuid>", "Authorized space UUID")
   .requiredOption("--vault-id <uuid>", "Target vault UUID")
   .option("--title <title>")
   .option("--media-type <mediaType>")
+  .option(
+    "--idempotency-key <key>",
+    "Stable retry key; reuse it after a lost/uncertain response",
+  )
   .action(
     async (
-      source: string,
+      serverPath: string,
       options: {
         spaceId: string;
         vaultId: string;
         title?: string;
         mediaType?: string;
+        idempotencyKey?: string;
       },
     ) => {
-      console.log(
-        JSON.stringify(
-          await api("/v1/ingest", {
+      printJson(
+        await api(
+          "/v1/ingest",
+          {
             method: "POST",
             body: JSON.stringify({
               spaceId: options.spaceId,
               vaultId: options.vaultId,
-              sourceUri: path.resolve(source),
+              sourceUri: serverPath,
               policy: "REVIEW_REQUIRED",
               ...(options.title ? { title: options.title } : {}),
               ...(options.mediaType ? { mediaType: options.mediaType } : {}),
             }),
-          }),
-          null,
-          2,
+          },
+          { idempotencyKey: options.idempotencyKey },
         ),
       );
     },
@@ -850,19 +882,35 @@ program
   .command("review")
   .argument("<id>")
   .requiredOption("--decision <decision>", "APPROVE, REJECT or REQUEST_CHANGES")
-  .option("--reason <reason>", "Decision rationale", "Reviewed through CLI")
-  .action(async (id: string, options: { decision: string; reason: string }) => {
-    console.log(
-      JSON.stringify(
-        await api(`/v1/reviews/${id}/decision`, {
-          method: "POST",
-          body: JSON.stringify(options),
-        }),
-        null,
-        2,
-      ),
-    );
-  });
+  .requiredOption("--reason <reason>", "Human decision rationale")
+  .option(
+    "--idempotency-key <key>",
+    "Stable retry key; reuse it after a lost/uncertain response",
+  )
+  .action(
+    async (
+      id: string,
+      options: {
+        decision: string;
+        reason: string;
+        idempotencyKey?: string;
+      },
+    ) => {
+      printJson(
+        await api(
+          `/v1/reviews/${id}/decision`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              decision: options.decision,
+              reason: options.reason,
+            }),
+          },
+          { idempotencyKey: options.idempotencyKey },
+        ),
+      );
+    },
+  );
 
 const evaluation = program
   .command("eval")
@@ -877,6 +925,10 @@ evaluation
     "--eval-pack <name>",
     "Generic or registered vault eval pack",
     "generic",
+  )
+  .option(
+    "--idempotency-key <key>",
+    "Stable retry key; reuse it after a lost/uncertain response",
   )
   .action(runEvaluationTarget);
 
@@ -1057,14 +1109,24 @@ const lint = program
 lint
   .command("run")
   .option("--trigger <trigger>", "MANUAL or SCHEDULED", "MANUAL")
-  .action(async (options: { trigger: string }) => {
-    printJson(
-      await api("/v1/lint/run", {
-        method: "POST",
-        body: JSON.stringify({ trigger: options.trigger.toUpperCase() }),
-      }),
-    );
-  });
+  .option(
+    "--idempotency-key <key>",
+    "Stable retry key; reuse it after a lost/uncertain response",
+  )
+  .action(
+    async (options: { trigger: string; idempotencyKey?: string }) => {
+      printJson(
+        await api(
+          "/v1/lint/run",
+          {
+            method: "POST",
+            body: JSON.stringify({ trigger: options.trigger.toUpperCase() }),
+          },
+          { idempotencyKey: options.idempotencyKey },
+        ),
+      );
+    },
+  );
 
 program.configureOutput({
   outputError: (message, write) => write(`ERROR: ${message}`),
