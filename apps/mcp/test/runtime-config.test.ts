@@ -5,9 +5,9 @@ describe("MCP HTTP runtime configuration", () => {
   it.each(["", "abc", "0", "-1", "65536"])(
     "rejects invalid AKP_MCP_HTTP_PORT=%j",
     (value) => {
-      expect(() =>
-        loadMcpRuntimeConfig({ AKP_MCP_HTTP_PORT: value }),
-      ).toThrow(/AKP_MCP_HTTP_PORT/);
+      expect(() => loadMcpRuntimeConfig({ AKP_MCP_HTTP_PORT: value })).toThrow(
+        /AKP_MCP_HTTP_PORT/,
+      );
     },
   );
 

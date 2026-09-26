@@ -5,9 +5,9 @@ describe("API runtime configuration", () => {
   it.each(["", "abc", "0", "-1", "9007199254740992"])(
     "rejects invalid AKP_RATE_LIMIT_MAX=%j",
     (value) => {
-      expect(() =>
-        loadApiRuntimeConfig({ AKP_RATE_LIMIT_MAX: value }),
-      ).toThrow(/AKP_RATE_LIMIT_MAX/);
+      expect(() => loadApiRuntimeConfig({ AKP_RATE_LIMIT_MAX: value })).toThrow(
+        /AKP_RATE_LIMIT_MAX/,
+      );
     },
   );
 
