@@ -228,9 +228,14 @@ describe("retrieval answerability", () => {
 
     expect(assessRetrievalAnswerability(hits, query).supported).toBe(false);
     expect(
-      assessRetrievalAnswerability(hits, query, {}, {
-        allowGraphSupport: true,
-      }),
+      assessRetrievalAnswerability(
+        hits,
+        query,
+        {},
+        {
+          allowGraphSupport: true,
+        },
+      ),
     ).toMatchObject({
       supported: true,
       reason: "GRAPH_INTENT_SUPPORT",
