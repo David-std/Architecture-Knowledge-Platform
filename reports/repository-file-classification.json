@@ -3142,6 +3142,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/retrieval/src/answerability.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/retrieval/src/candidate-policy.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3240,6 +3245,11 @@
       "path": "packages/retrieval/src/structural-context.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/retrieval/test/answerability.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
     },
     {
       "path": "packages/retrieval/test/candidate-policy.test.ts",
