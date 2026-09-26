@@ -320,6 +320,45 @@ function searchRequest(fixture: LexicalFixture): SearchRequest {
 
 describe("production lexical ranking", () => {
   it.skipIf(!databaseUrl)(
+    "recovers a scoped canonical document from an explicit question acronym",
+    async () => {
+      if (!databaseUrl) return;
+      const fixture = lexicalFixture();
+      const db = new Postgres(databaseUrl);
+      try {
+        await seedLexical(db, fixture);
+        await db.pool.query(
+          "update knowledge_documents set external_id='CON-SRP' where id=$1",
+          [fixture.documents.titleTerms],
+        );
+        const hits = await queryKnowledge(
+          db,
+          {
+            ...searchRequest(fixture),
+            query: "principio de responsabilidad única SRP",
+          },
+          { channels: ["exact", "lexical"], vaultIds: [fixture.vaultId] },
+        );
+        expect(hits[0]?.documentId).toBe(fixture.documents.titleTerms);
+        expect(hits[0]?.reasons).toContain("exact:query-acronym");
+
+        const plainAcronym = await queryKnowledge(
+          db,
+          { ...searchRequest(fixture), query: "SRP" },
+          { channels: ["exact", "lexical"], vaultIds: [fixture.vaultId] },
+        );
+        expect(
+          plainAcronym.every(
+            (hit) => !hit.reasons.includes("exact:query-acronym"),
+          ),
+        ).toBe(true);
+      } finally {
+        await cleanupLexical(db, fixture);
+        await db.pool.end();
+      }
+    },
+  );
+  it.skipIf(!databaseUrl)(
     "includes drafts only on request and keeps lexical search independent of vector eligibility",
     async () => {
       if (!databaseUrl) return;
