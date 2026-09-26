@@ -287,6 +287,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/api/src/runtime-config.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/api/src/server.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -473,6 +478,11 @@
     },
     {
       "path": "apps/api/test/rollback-revision-authority.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/api/test/runtime-config.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -867,6 +877,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/mcp/src/runtime-config.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/mcp/src/server.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -883,6 +898,11 @@
     },
     {
       "path": "apps/mcp/test/instruction-bundle.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/mcp/test/runtime-config.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -1292,6 +1312,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/worker/src/runtime-config.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/worker/src/source-boundary.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -1388,6 +1413,11 @@
     },
     {
       "path": "apps/worker/test/operational-error.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/worker/test/runtime-config.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
