@@ -111,7 +111,7 @@ async function withDatabase<T>(
 async function api<T = unknown>(
   route: string,
   init?: RequestInit,
-  options: { idempotencyKey?: string } = {},
+  options: { idempotencyKey?: string | undefined } = {},
 ): Promise<T> {
   return requestAkpApi<T>({
     baseUrl: process.env.AKP_API_URL ?? "http://127.0.0.1:8080",
