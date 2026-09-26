@@ -108,12 +108,13 @@ const ANSWERABILITY_STOPWORDS = new Set([
 function normalizedTokens(value: string): string[] {
   return [
     ...new Set(
-      (value
-        .normalize("NFKD")
-        .replace(/\p{M}/gu, "")
-        .toLocaleLowerCase("en-US")
-        .match(/[\p{L}\p{N}]+/gu) ?? [])
-        .filter((token) => token.length >= 2),
+      (
+        value
+          .normalize("NFKD")
+          .replace(/\p{M}/gu, "")
+          .toLocaleLowerCase("en-US")
+          .match(/[\p{L}\p{N}]+/gu) ?? []
+      ).filter((token) => token.length >= 2),
     ),
   ];
 }
@@ -141,7 +142,9 @@ function collectCandidateSignals(hits: readonly QueryHit[], query: string) {
         queryTokens,
         overlapTokens,
         queryCoverage:
-          queryTokens.length === 0 ? 0 : overlapTokens.length / queryTokens.length,
+          queryTokens.length === 0
+            ? 0
+            : overlapTokens.length / queryTokens.length,
         salientQueryTokens,
         salientOverlapTokens,
         salientCoverage:
