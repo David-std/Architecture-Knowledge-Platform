@@ -1357,11 +1357,12 @@ export async function importVaultReadOnly(
           token_estimate,raw_links,updated_at
         )
         values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,$13,$14,$15,$16::jsonb,now())
-        on conflict (vault_id,path) where vault_id is not null
+        on conflict (vault_id,external_id)
+          where vault_id is not null and external_id is not null
         do update set
           space_id=excluded.space_id,
           vault_id=excluded.vault_id,
-          external_id=excluded.external_id,
+          path=excluded.path,
           title=excluded.title,
           type=excluded.type,
           lifecycle=excluded.lifecycle,

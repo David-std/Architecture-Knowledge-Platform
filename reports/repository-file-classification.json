@@ -3387,6 +3387,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "packages/vault-importer/test/stable-identity.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "packages/vault-importer/tsconfig.json",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
