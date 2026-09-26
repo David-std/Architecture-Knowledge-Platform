@@ -1349,56 +1349,113 @@ export async function importVaultReadOnly(
     const importedIds: string[] = [];
     const databaseIdByExternalId = new Map<string, string>();
     for (const document of inspection.documents) {
-      const row = await client.query<{ id: string }>(
+      const identityRows = await client.query<{
+        id: string;
+        path: string;
+        external_id: string | null;
+      }>(
         `
-        insert into knowledge_documents(
-          space_id,vault_id,path,external_id,title,type,lifecycle,trust_tier,
-          current_revision,body_cache,frontmatter,aliases,layer,content_hash,
-          token_estimate,raw_links,updated_at
-        )
-        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,$13,$14,$15,$16::jsonb,now())
-        on conflict (vault_id,path) where vault_id is not null
-        do update set
-          space_id=excluded.space_id,
-          vault_id=excluded.vault_id,
-          external_id=excluded.external_id,
-          title=excluded.title,
-          type=excluded.type,
-          lifecycle=excluded.lifecycle,
-          trust_tier=excluded.trust_tier,
-          current_revision=excluded.current_revision,
-          body_cache=excluded.body_cache,
-          frontmatter=excluded.frontmatter,
-          aliases=excluded.aliases,
-          layer=excluded.layer,
-          content_hash=excluded.content_hash,
-          token_estimate=excluded.token_estimate,
-          raw_links=excluded.raw_links,
-          refresh_status='CURRENT',
-          invalidated_by=null,
-          stale_reason=null,
-          updated_at=now()
-        returning id
+        select id,path,external_id
+          from knowledge_documents
+         where space_id=$1 and vault_id=$2
+           and (path=$3 or external_id=$4)
+         for update
         `,
-        [
-          spaceId,
-          vaultId,
-          document.relativePath,
-          document.externalId,
-          document.title,
-          document.type,
-          document.lifecycle,
-          document.trustTier,
-          inspection.revision,
-          document.body,
-          JSON.stringify(document.frontmatter),
-          document.aliases,
-          document.layer,
-          document.contentHash,
-          document.tokenEstimate,
-          JSON.stringify(document.links),
-        ],
+        [spaceId, vaultId, document.relativePath, document.externalId],
       );
+      const pathIdentity = identityRows.rows.find(
+        (candidate) => candidate.path === document.relativePath,
+      );
+      const externalIdentity = identityRows.rows.find(
+        (candidate) => candidate.external_id === document.externalId,
+      );
+      if (
+        pathIdentity &&
+        externalIdentity &&
+        pathIdentity.id !== externalIdentity.id
+      ) {
+        throw new Error(
+          `VAULT_DOCUMENT_IDENTITY_CONFLICT:${document.relativePath}:${document.externalId}`,
+        );
+      }
+      const existingIdentity = externalIdentity ?? pathIdentity;
+      const row = existingIdentity
+        ? await client.query<{ id: string }>(
+            `
+            update knowledge_documents
+               set path=$2,
+                   external_id=$3,
+                   title=$4,
+                   type=$5,
+                   lifecycle=$6,
+                   trust_tier=$7,
+                   current_revision=$8,
+                   body_cache=$9,
+                   frontmatter=$10::jsonb,
+                   aliases=$11,
+                   layer=$12,
+                   content_hash=$13,
+                   token_estimate=$14,
+                   raw_links=$15::jsonb,
+                   refresh_status='CURRENT',
+                   invalidated_by=null,
+                   stale_reason=null,
+                   updated_at=now()
+             where id=$1 and space_id=$16 and vault_id=$17
+             returning id
+            `,
+            [
+              existingIdentity.id,
+              document.relativePath,
+              document.externalId,
+              document.title,
+              document.type,
+              document.lifecycle,
+              document.trustTier,
+              inspection.revision,
+              document.body,
+              JSON.stringify(document.frontmatter),
+              document.aliases,
+              document.layer,
+              document.contentHash,
+              document.tokenEstimate,
+              JSON.stringify(document.links),
+              spaceId,
+              vaultId,
+            ],
+          )
+        : await client.query<{ id: string }>(
+            `
+            insert into knowledge_documents(
+              space_id,vault_id,path,external_id,title,type,lifecycle,trust_tier,
+              current_revision,body_cache,frontmatter,aliases,layer,content_hash,
+              token_estimate,raw_links,updated_at
+            )
+            values(
+              $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,$13,$14,$15,
+              $16::jsonb,now()
+            )
+            returning id
+            `,
+            [
+              spaceId,
+              vaultId,
+              document.relativePath,
+              document.externalId,
+              document.title,
+              document.type,
+              document.lifecycle,
+              document.trustTier,
+              inspection.revision,
+              document.body,
+              JSON.stringify(document.frontmatter),
+              document.aliases,
+              document.layer,
+              document.contentHash,
+              document.tokenEstimate,
+              JSON.stringify(document.links),
+            ],
+          );
       const databaseId = row.rows[0]?.id;
       if (!databaseId) {
         throw new Error(
