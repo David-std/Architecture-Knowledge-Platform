@@ -2,6 +2,7 @@ import "./instrumentation.js";
 import { config } from "dotenv";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadApiRuntimeConfig } from "./runtime-config.js";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
@@ -63,6 +64,7 @@ export interface ApiServerDependencies {
 }
 
 export function buildServer(dependencies: ApiServerDependencies = {}) {
+  const runtimeConfig = loadApiRuntimeConfig();
   const app = Fastify({
     logger: process.env.NODE_ENV !== "test",
     bodyLimit: 10 * 1024 * 1024,
@@ -188,7 +190,7 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
     credentials: true,
   });
   void app.register(rateLimit, {
-    max: Number(process.env.AKP_RATE_LIMIT_MAX ?? 120),
+    max: runtimeConfig.rateLimitMax,
     timeWindow: "1 minute",
   });
 
@@ -266,8 +268,9 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
 }
 
 if (process.env.NODE_ENV !== "test") {
+  const runtimeConfig = loadApiRuntimeConfig();
   const app = buildServer();
-  const port = Number(process.env.PORT ?? 8080);
+  const port = runtimeConfig.port;
   // A loopback bind is the right default for SOLO_LOCAL: the API stays
   // unreachable from the network unless an operator opts in. A Team Context
   // Node runs inside a container whose loopback its peers cannot reach, so the
