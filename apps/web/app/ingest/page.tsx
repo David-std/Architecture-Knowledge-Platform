@@ -33,9 +33,17 @@ export default async function IngestPage() {
   return (
     <main>
       <p className="muted">
-        Captura local permitida · SHA-256 · MinIO · Extracción · Revisión
+        Inicia una captura gobernada. Enviar el job no publica conocimiento ni
+        garantiza que llegue a revisión.
       </p>
       <h1>Nueva ingesta</h1>
+      <div className="card" role="note" style={{ marginBottom: 16 }}>
+        <strong>Secuencia</strong>
+        <p>
+          Captura → extracción/OCR si aplica → compilación de propuesta →
+          validación → revisión humana.
+        </p>
+      </div>
       <form action={submit} className="card ingest-form-card">
         <input
           type="hidden"
@@ -60,21 +68,21 @@ export default async function IngestPage() {
 
           <label className="form-field-label">
             <span className="form-label-title">
-              Ruta capturada
-              <InfoTooltip text="Ruta absoluta o relativa del archivo o directorio de evidencia dentro de AKP_INGEST_ROOTS." />
+              Ruta visible para el servidor
+              <InfoTooltip text="Ruta que el proceso API/worker puede abrir dentro de AKP_INGEST_ROOTS. Una ruta que existe solo en tu PC no funciona en un servidor o contenedor remoto." />
             </span>
             <input
               name="sourceUri"
               required
-              placeholder="c:/repos/architecture/specs/oauth-spec.pdf"
+              placeholder="/data/akp-ingest/oauth-spec.pdf"
               className="form-input"
             />
           </label>
         </div>
         <small className="muted form-field-example">
-          Ejemplo sustancial:{" "}
-          <code>c:/repos/architecture/specs/oauth-spec.pdf</code> (debe residir
-          en una raíz autorizada).
+          Ejemplo: <code>/data/akp-ingest/oauth-spec.pdf</code>. La ruta debe
+          existir desde el namespace del API/worker y estar dentro de una raíz
+          autorizada; no es un selector de archivo del navegador.
         </small>
 
         <div className="ingest-grid" style={{ marginTop: 16 }}>
@@ -105,12 +113,14 @@ export default async function IngestPage() {
 
         <div className="form-actions-row">
           <button type="submit" className="action-button-primary">
-            Enviar a revisión
+            Iniciar ingesta
           </button>
         </div>
       </form>
       <p className="muted" style={{ marginTop: 16 }}>
-        La ruta debe estar dentro de una raíz configurada en AKP_INGEST_ROOTS.
+        Si AKP corre en Docker u otra máquina, usa una ruta montada/visible allí
+        y autorizada por AKP_INGEST_ROOTS. Sigue el estado en la página del job
+        hasta que el sistema indique si existe una propuesta para revisión.
       </p>
     </main>
   );

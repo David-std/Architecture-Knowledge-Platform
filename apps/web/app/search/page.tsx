@@ -19,6 +19,18 @@ const intents = [
   "NO_RETRIEVAL_REQUIRED",
 ] as const;
 
+const intentLabels: Record<(typeof intents)[number], string> = {
+  EXACT_LOOKUP: "Encontrar un ID, nombre o alias exacto",
+  CONCEPTUAL: "Explorar un concepto",
+  COMPARISON: "Comparar fuentes o afirmaciones",
+  WORKFLOW_EXECUTION: "Encontrar pasos de un proceso",
+  SOURCE_VERIFICATION: "Verificar una afirmación contra sus fuentes",
+  PROJECT_CODE: "Buscar contexto de código",
+  GLOBAL_SYNTHESIS: "Reunir contexto amplio del vault",
+  IMPACT_ANALYSIS: "Explorar impacto y dependencias",
+  NO_RETRIEVAL_REQUIRED: "No recuperar conocimiento",
+};
+
 interface FusionContribution {
   channel: string;
   rank: number;
@@ -196,9 +208,10 @@ export default async function SearchPage({
   return (
     <main>
       <p className="muted">
-        Encuentra conocimiento y revisa las fuentes que lo respaldan.
+        Recupera documentos y evidencia autorizados. Esta vista encuentra
+        fuentes; no genera ni simula una respuesta final del modelo.
       </p>
-      <h1>Buscar conocimiento</h1>
+      <h1>Encontrar fuentes</h1>
       <form className="card search-form-card">
         <div className="search-form-grid">
           <label className="form-field-label">
@@ -232,7 +245,7 @@ export default async function SearchPage({
                 <option value="">Detección automática</option>
                 {intents.map((intent) => (
                   <option key={intent} value={intent}>
-                    {intent}
+                    {intentLabels[intent]}
                   </option>
                 ))}
               </select>
@@ -274,48 +287,47 @@ export default async function SearchPage({
         </div>
       ) : null}
 
+      {result && !result.noAnswer ? (
+        <section className="card" role="status" style={{ marginTop: 16 }}>
+          <h2>{result.hits.length ? "Fuentes encontradas" : "Sin coincidencias"}</h2>
+          <p>
+            {result.degraded
+              ? "La recuperación tuvo cobertura parcial. Revisa los límites antes de usar estas fuentes."
+              : "Estas fuentes son candidatos autorizados para inspección; su posición no equivale a verdad o aprobación."}
+          </p>
+        </section>
+      ) : null}
+
       {result ? (
-        <section>
-          <h2>Plan efectivo</h2>
-          <div className="grid">
+        <details className="card" style={{ marginTop: 16 }}>
+          <summary>Inspeccionar diagnóstico técnico de recuperación</summary>
+          <div className="grid" style={{ marginTop: 12 }}>
             <div className="card">
               <span className="muted">Consulta</span>
               <p>{query}</p>
             </div>
             <div className="card">
               <span className="muted">Intent efectivo</span>
-              <p className="metric" style={{ fontSize: "1.1rem" }}>
-                {result.intent}
-              </p>
-              {requestedIntent ? (
-                <small>Solicitado: {requestedIntent}</small>
-              ) : (
-                <small>Detectado por planner</small>
-              )}
+              <p>{result.intent}</p>
+              <small>
+                {requestedIntent
+                  ? `Solicitado: ${requestedIntent}`
+                  : "Detectado por planner"}
+              </small>
             </div>
             <div className="card">
               <span className="muted">Canales efectivos</span>
-              <p>
-                {result.channels.map((channel) => (
-                  <span className="badge" key={channel}>
-                    {channel}
-                  </span>
-                ))}
-              </p>
+              <p>{result.channels.join(" · ") || "—"}</p>
             </div>
             <div className="card">
-              <span className="muted">Estado</span>
-              <p>
-                <span className="badge">
-                  {result.degraded ? "DEGRADED" : "SUPPORTED"}
-                </span>
-              </p>
+              <span className="muted">Estado técnico</span>
+              <p>{result.degraded ? "DEGRADED" : "SUPPORTED"}</p>
               <small>
                 {result.warnings.join(" · ") || "Sin degradaciones"}
               </small>
             </div>
           </div>
-        </section>
+        </details>
       ) : null}
 
       {result?.noAnswer ? (
@@ -334,7 +346,7 @@ export default async function SearchPage({
         </section>
       ) : null}
 
-      {result?.hits.length ? <h2>Resultados rankeados</h2> : null}
+      {result?.hits.length ? <h2>Fuentes recuperadas</h2> : null}
       {result?.hits.map((hit, index) => {
         const evidence = evidenceByDocument.get(hit.documentId);
         return (
@@ -343,42 +355,51 @@ export default async function SearchPage({
             key={hit.documentId}
             style={{ marginTop: 16 }}
           >
-            <p className="muted">
-              #{index + 1} · score {hit.score.toFixed(4)}
-            </p>
+            <p className="muted">Fuente {index + 1}</p>
             <h3>
               <Link href={`/documents/${hit.documentId}`}>{hit.title}</Link>
             </h3>
-            <p>
-              <span className="badge">{hit.type}</span>
-              <span className="badge">{hit.trust}</span>
-              <span className="badge">{hit.lifecycle}</span>
-              <span className="badge">freshness {hit.refreshStatus}</span>
+            <p className="muted">
+              {hit.lifecycle === "ACTIVE" ? "Vigente" : "Estado especial"} ·{" "}
+              {hit.refreshStatus === "CURRENT"
+                ? "actualizada"
+                : "actualización pendiente o degradada"}
             </p>
             <p>{hit.excerpt}</p>
-            <p className="muted">{hit.reasons.join(" · ")}</p>
-            {hit.fusionContributions?.length ? (
-              <table>
-                <thead>
-                  <tr>
-                    <th>Canal</th>
-                    <th>Rank</th>
-                    <th>Peso</th>
-                    <th>Razón RRF</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {hit.fusionContributions.map((contribution) => (
-                    <tr key={`${hit.documentId}-${contribution.channel}`}>
-                      <td>{contribution.channel}</td>
-                      <td>{contribution.rank}</td>
-                      <td>{contribution.channelWeight}</td>
-                      <td>{contribution.reason}</td>
+            <details>
+              <summary>Por qué apareció esta fuente</summary>
+              <p className="muted">
+                score {hit.score.toFixed(4)} · type {hit.type} · trust{" "}
+                {hit.trust} · lifecycle {hit.lifecycle} · freshness{" "}
+                {hit.refreshStatus}
+              </p>
+              <p className="muted">{hit.reasons.join(" · ")}</p>
+              {hit.fusionContributions?.length ? (
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Canal</th>
+                      <th>Rank</th>
+                      <th>Peso</th>
+                      <th>Razón RRF</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : null}
+                  </thead>
+                  <tbody>
+                    {hit.fusionContributions.map((contribution) => (
+                      <tr key={`${hit.documentId}-${contribution.channel}`}>
+                        <td>{contribution.channel}</td>
+                        <td>{contribution.rank}</td>
+                        <td>{contribution.channelWeight}</td>
+                        <td>{contribution.reason}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : null}
+              {hit.warnings?.length ? (
+                <p className="muted">Warnings: {hit.warnings.join(" · ")}</p>
+              ) : null}
+            </details>
             <div>
               <strong>Citaciones/evidencia:</strong>
               {(evidence?.evidence.length ?? 0) > 0 ||
@@ -419,15 +440,29 @@ export default async function SearchPage({
                 </p>
               )}
             </div>
-            {hit.warnings?.length ? (
-              <p className="muted">Warnings: {hit.warnings.join(" · ")}</p>
-            ) : null}
           </article>
         );
       })}
 
+      {packet &&
+      ((packet.gaps ?? []).length > 0 || (packet.conflicts ?? []).length > 0) ? (
+        <section className="card" role="note" style={{ marginTop: 16 }}>
+          <h2>Límites del contexto recuperado</h2>
+          {(packet.gaps ?? []).map((gap) => (
+            <p key={`visible-gap-${gap}`}>Falta: {gap}</p>
+          ))}
+          {(packet.conflicts ?? []).map((conflict) => (
+            <p key={`visible-conflict-${conflict}`}>
+              Conflicto: {conflict}
+            </p>
+          ))}
+        </section>
+      ) : null}
+
       {packet ? (
-        <section>
+        <details className="card" style={{ marginTop: 16 }}>
+          <summary>Inspeccionar ContextPacket técnico</summary>
+          <section style={{ marginTop: 12 }}>
           <h2>ContextPacket</h2>
           <div className="grid">
             <div className="card">
@@ -528,7 +563,8 @@ export default async function SearchPage({
             <summary>Inspeccionar JSON del ContextPacket</summary>
             <pre>{JSON.stringify(packet, null, 2)}</pre>
           </details>
-        </section>
+          </section>
+        </details>
       ) : null}
     </main>
   );
