@@ -2,6 +2,7 @@
 
 ```text
 /                       workspace home (projects/work/reviews/agents/health)
+/getting-started        status-backed first-run task guide
 /author                 browser recovery + governed Git draft + review submit
 /search                 query and context packet inspector
 /sources                source registry

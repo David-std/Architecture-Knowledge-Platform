@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { unstable_rethrow } from "next/navigation";
-import { akp } from "../lib/api";
+import { akpOptional } from "../lib/api";
 
 type WorkObject = {
   id: string;
@@ -91,7 +91,7 @@ function revisionParity(item: Freshness): boolean {
 export default async function Home() {
   let home: WorkspaceHome | null = null;
   try {
-    home = await akp<WorkspaceHome>("/v1/operator/workspace-home");
+    home = await akpOptional<WorkspaceHome>("/v1/operator/workspace-home");
   } catch (caught) {
     unstable_rethrow(caught);
   }
@@ -106,13 +106,14 @@ export default async function Home() {
           </div>
         </div>
         <div className="empty-panel" role="status">
-          <h2>No se pudo conectar con el espacio de trabajo</h2>
+          <h2>No hay un espacio de trabajo visible todavía</h2>
           <p>
-            Comprueba que la sesión esté iniciada y el servicio local de AKP
-            esté activo.
+            La sesión puede ser válida pero no tener un vault autorizado. Revisa
+            el recorrido inicial para distinguir registro local, acceso e
+            importación.
           </p>
-          <Link href="/login" className="action-button-primary">
-            Iniciar sesión
+          <Link href="/getting-started" className="action-button-primary">
+            Ver primeros pasos
           </Link>
         </div>
       </main>

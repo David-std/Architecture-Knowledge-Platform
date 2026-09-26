@@ -321,9 +321,17 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
   return (
     <div>
       <p className="muted">
-        Selecciona un documento en el catálogo para ver sus conexiones cercanas.
-        El catálogo y los cálculos usan todos los nodos cargados.
+        Esta es una vista de vecindario, no un mapa completo del vault. El
+        dibujo muestra como máximo {VISUAL_NODE_LIMIT} nodos para conservar
+        legibilidad; el catálogo, los filtros y los cálculos trabajan sobre
+        todos los nodos cargados.
       </p>
+      {graph.truncated ? (
+        <p className="card" role="status">
+          El servidor limitó el conjunto cargado. Amplía o ajusta el alcance
+          antes de interpretar la ausencia de una relación como inexistencia.
+        </p>
+      ) : null}
       <details className="card graph-advanced-controls">
         <summary>Filtros y análisis avanzado</summary>
         <div className="grid">

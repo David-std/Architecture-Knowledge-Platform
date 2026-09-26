@@ -8,10 +8,12 @@ describe("operator navigation", () => {
     );
     expect(new Set(routes).size).toBe(routes.length);
     expect(routes).toContain("/ingest");
+    expect(routes).toContain("/getting-started");
     expect(routes).toContain("/admin/audit");
   });
 
   it("resolves section and list context for detail routes", () => {
+    expect(areaForPath("/getting-started")).toBe("work");
     expect(areaForPath("/reviews/review-id")).toBe("work");
     expect(parentForPath("/reviews/review-id")).toEqual({
       href: "/reviews",

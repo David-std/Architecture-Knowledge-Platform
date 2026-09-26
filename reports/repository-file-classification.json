@@ -1037,6 +1037,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/web/app/getting-started/page.tsx",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/web/app/globals.css",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
