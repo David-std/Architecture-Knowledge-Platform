@@ -102,7 +102,7 @@ try {
     }
 
     $lockOwner = ((Invoke-ExternalChecked "acquire managed repository publication lock" {
-      docker exec $PostgresContainer psql -U akp -d $PostgresDatabase -At -v ON_ERROR_STOP=1 -c "insert into repository_publication_locks(repository_key,owner,expires_at) values('$publicationLockKey','$publicationLockOwner',now()+make_interval(mins => $PublicationLockMinutes)) on conflict(repository_key) do update set owner=excluded.owner,expires_at=excluded.expires_at,updated_at=now() where repository_publication_locks.expires_at < now() returning owner;"
+      docker exec $PostgresContainer psql -U akp -d $PostgresDatabase -Atq -v ON_ERROR_STOP=1 -c "insert into repository_publication_locks(repository_key,owner,expires_at) values('$publicationLockKey','$publicationLockOwner',now()+make_interval(mins => $PublicationLockMinutes)) on conflict(repository_key) do update set owner=excluded.owner,expires_at=excluded.expires_at,updated_at=now() where repository_publication_locks.expires_at < now() returning owner;"
     }) | Out-String).Trim()
     if ($lockOwner -ne $publicationLockOwner) {
       throw "Managed repository publication is active; refusing a cross-revision backup."
@@ -217,7 +217,7 @@ try {
 
 if ($managedRepositoryPresent) {
   $renewedOwner = ((Invoke-ExternalChecked "renew managed repository publication lock" {
-    docker exec $PostgresContainer psql -U akp -d $PostgresDatabase -At -v ON_ERROR_STOP=1 -c "update repository_publication_locks set expires_at=now()+make_interval(mins => $PublicationLockMinutes),updated_at=now() where repository_key='$publicationLockKey' and owner='$publicationLockOwner' returning owner;"
+    docker exec $PostgresContainer psql -U akp -d $PostgresDatabase -Atq -v ON_ERROR_STOP=1 -c "update repository_publication_locks set expires_at=now()+make_interval(mins => $PublicationLockMinutes),updated_at=now() where repository_key='$publicationLockKey' and owner='$publicationLockOwner' returning owner;"
   }) | Out-String).Trim()
   if ($renewedOwner -ne $publicationLockOwner) {
     throw "Managed repository publication lock was lost during backup; refusing a cross-revision artifact."
