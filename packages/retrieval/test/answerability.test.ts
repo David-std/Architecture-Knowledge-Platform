@@ -60,12 +60,18 @@ describe("retrieval answerability", () => {
         hit(1, {
           title: "Threat model",
           excerpt: "Authentication and trust boundaries.",
-          contributions: [contribution("vector", 0.7898), contribution("graph", 1)],
+          contributions: [
+            contribution("vector", 0.7898),
+            contribution("graph", 1),
+          ],
         }),
         hit(2, {
           title: "Operations runbook",
           excerpt: "Local recovery procedures.",
-          contributions: [contribution("vector", 0.7714), contribution("graph", 1)],
+          contributions: [
+            contribution("vector", 0.7714),
+            contribution("graph", 1),
+          ],
         }),
       ],
       "What is the guaranteed 24/7 telephone support SLA for enterprise customers?",
@@ -133,10 +139,7 @@ describe("retrieval answerability", () => {
         hit(1, {
           title: "Canonical rule",
           excerpt: "Unrelated wording.",
-          contributions: [
-            contribution("exact"),
-            contribution("vector", 0.6),
-          ],
+          contributions: [contribution("exact"), contribution("vector", 0.6)],
         }),
         hit(2, {
           title: "Other",
