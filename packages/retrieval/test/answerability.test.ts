@@ -198,10 +198,49 @@ describe("retrieval answerability", () => {
 
     expect(signals).toHaveLength(2);
     expect(result.candidateSignals).toEqual(signals);
-    expect(result.supported).toBe(false);
+    expect(result).toMatchObject({
+      supported: false,
+      reason: "WEAK_SEMANTIC_NEIGHBORS",
+    });
+  });
+
+  it("accepts graph evidence only for an explicit graph-oriented intent", () => {
+    const hits = [
+      hit(1, {
+        title: "Threat model",
+        excerpt: "Authentication and trust boundaries.",
+        contributions: [
+          contribution("vector", 0.7898),
+          contribution("graph", 1),
+        ],
+      }),
+      hit(2, {
+        title: "Operations runbook",
+        excerpt: "Local recovery procedures.",
+        contributions: [
+          contribution("vector", 0.7714),
+          contribution("graph", 1),
+        ],
+      }),
+    ];
+    const query =
+      "Which security document is related to the local operations runbook?";
+
+    expect(assessRetrievalAnswerability(hits, query).supported).toBe(false);
+    expect(
+      assessRetrievalAnswerability(hits, query, {}, {
+        allowGraphSupport: true,
+      }),
+    ).toMatchObject({
+      supported: true,
+      reason: "GRAPH_INTENT_SUPPORT",
+    });
   });
 
   it("validates policy thresholds", () => {
+    expect(() =>
+      resolveRetrievalAnswerabilityPolicy({ minimumVectorTextMargin: -1 }),
+    ).toThrow("minimumVectorTextMargin");
     expect(() =>
       resolveRetrievalAnswerabilityPolicy({ minimumVectorMargin: -1 }),
     ).toThrow("minimumVectorMargin");

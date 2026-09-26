@@ -42,7 +42,12 @@ const DIRECT_SUPPORT_CHANNELS = new Set([
 
 export interface RetrievalAnswerabilityPolicy {
   minimumSalientCoverage: number;
+  minimumVectorTextMargin: number;
   minimumVectorMargin: number;
+}
+
+export interface RetrievalAnswerabilityContext {
+  allowGraphSupport?: boolean;
 }
 
 export type RetrievalAnswerabilityPolicyInput =
@@ -51,6 +56,7 @@ export type RetrievalAnswerabilityPolicyInput =
 export const DEFAULT_RETRIEVAL_ANSWERABILITY_POLICY: RetrievalAnswerabilityPolicy =
   {
     minimumSalientCoverage: 0.1,
+    minimumVectorTextMargin: 0.007,
     minimumVectorMargin: 0.03,
   };
 
@@ -61,6 +67,7 @@ export type RetrievalAnswerabilityReason =
   | "LEXICAL_TEXT_SUPPORT"
   | "VECTOR_TEXT_SUPPORT"
   | "VECTOR_MARGIN_SUPPORT"
+  | "GRAPH_INTENT_SUPPORT"
   | "WEAK_SEMANTIC_NEIGHBORS";
 
 export interface CandidateAnswerabilitySignal {
@@ -114,6 +121,11 @@ export function resolveRetrievalAnswerabilityPolicy(
       input.minimumSalientCoverage ??
         DEFAULT_RETRIEVAL_ANSWERABILITY_POLICY.minimumSalientCoverage,
       "minimumSalientCoverage",
+    ),
+    minimumVectorTextMargin: validFraction(
+      input.minimumVectorTextMargin ??
+        DEFAULT_RETRIEVAL_ANSWERABILITY_POLICY.minimumVectorTextMargin,
+      "minimumVectorTextMargin",
     ),
     minimumVectorMargin: validFraction(
       input.minimumVectorMargin ??
@@ -225,18 +237,21 @@ function assessment(
  * The gate is deliberately narrow:
  * - non-vector retrieval keeps its historical behavior;
  * - exact/code/raw/context-pack/temporal evidence is direct support;
- * - lexical or the strongest vector candidate may establish textual support;
- * - otherwise a discriminative cosine-similarity margin can support
- *   cross-language/paraphrase retrieval without requiring token overlap.
+ * - lexical support may establish direct textual support;
+ * - vector text support needs both salient overlap and a minimum separation
+ *   from the next semantic neighbour;
+ * - a larger cosine-similarity margin can support cross-language/paraphrase
+ *   retrieval without requiring token overlap;
+ * - graph evidence is direct support only when the caller explicitly declares
+ *   a graph-oriented intent.
  *
- * Graph/community expansion is intentionally not treated as direct authority:
- * it can orient retrieval but cannot by itself turn weak semantic neighbours
- * into an answerable result.
+ * Community expansion is intentionally not treated as direct authority.
  */
 export function assessRetrievalAnswerability(
   hits: readonly SearchHit[],
   query: string,
   policyInput: RetrievalAnswerabilityPolicyInput = {},
+  context: RetrievalAnswerabilityContext = {},
 ): RetrievalAnswerabilityAssessment {
   const policy = resolveRetrievalAnswerabilityPolicy(policyInput);
   const candidateSignals = collectCandidateAnswerabilitySignals(hits, query);
@@ -288,6 +303,25 @@ export function assessRetrievalAnswerability(
   }
 
   if (
+    context.allowGraphSupport === true &&
+    candidateSignals.some((signal) =>
+      signal.contributions.some(
+        (contribution) =>
+          contribution.channel === "graph" ||
+          contribution.channel === "graph-ppr",
+      ),
+    )
+  ) {
+    return assessment(
+      true,
+      "GRAPH_INTENT_SUPPORT",
+      candidateSignals,
+      topVectorScore,
+      secondVectorScore,
+    );
+  }
+
+  if (
     candidateSignals.some(
       (signal) =>
         signal.textualSupport.salientCoverage >=
@@ -306,10 +340,19 @@ export function assessRetrievalAnswerability(
     );
   }
 
+  const vectorMargin =
+    topVectorScore !== null && secondVectorScore !== null
+      ? topVectorScore - secondVectorScore
+      : topVectorScore !== null
+        ? Number.POSITIVE_INFINITY
+        : null;
+
   if (
     topVector &&
     topVector.signal.textualSupport.salientCoverage >=
-      policy.minimumSalientCoverage
+      policy.minimumSalientCoverage &&
+    vectorMargin !== null &&
+    vectorMargin >= policy.minimumVectorTextMargin
   ) {
     return assessment(
       true,
@@ -321,9 +364,8 @@ export function assessRetrievalAnswerability(
   }
 
   if (
-    topVectorScore !== null &&
-    secondVectorScore !== null &&
-    topVectorScore - secondVectorScore >= policy.minimumVectorMargin
+    vectorMargin !== null &&
+    vectorMargin >= policy.minimumVectorMargin
   ) {
     return assessment(
       true,

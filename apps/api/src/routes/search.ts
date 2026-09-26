@@ -3636,6 +3636,8 @@ export function registerSearchRoutes(
       const answerability = assessRetrievalAnswerability(
         hits,
         parsed.data.query,
+        {},
+        { allowGraphSupport: plan.intent === "IMPACT_ANALYSIS" },
       );
       if (!answerability.supported && hits.length > 0) {
         retrievalWarnings.push(
@@ -4580,6 +4582,8 @@ export function registerSearchRoutes(
       const answerability = assessRetrievalAnswerability(
         hits,
         parsed.data.query,
+        {},
+        { allowGraphSupport: intent === "IMPACT_ANALYSIS" },
       );
       if (!answerability.supported && hits.length > 0) {
         retrievalWarnings.push(

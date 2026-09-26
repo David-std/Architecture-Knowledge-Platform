@@ -577,7 +577,12 @@ async function executeCase(
       graphPolicy: { maxHops: 3, directionPolicy: "both" },
     },
   );
-  const answerability = assessRetrievalAnswerability(rawHits, testCase.query);
+  const answerability = assessRetrievalAnswerability(
+    rawHits,
+    testCase.query,
+    {},
+    { allowGraphSupport: testCase.category === "graph" },
+  );
   const hits = answerability.supported ? rawHits : [];
   if (!answerability.supported && rawHits.length > 0) {
     warnings.push(`ANSWERABILITY_GATE_REJECTED:${answerability.reason}`);
