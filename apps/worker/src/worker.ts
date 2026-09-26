@@ -58,6 +58,7 @@ import { selectEvidenceFragment } from "./evidence-fragment.js";
 import { resolveAuthorizedLocalSource } from "./source-boundary.js";
 import { operationalErrorRecord } from "./operational-error.js";
 import { resolveSourceModelResidency } from "./source-model-residency.js";
+import { loadWorkerRuntimeConfig } from "./runtime-config.js";
 import {
   appendDocumentIntelligenceFormFields,
   parseDocumentIntelligenceOptions,
@@ -72,6 +73,10 @@ config({
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is required");
+const runtimeConfig = loadWorkerRuntimeConfig(
+  process.env,
+  DEFAULT_WORKER_DRAIN_DEADLINE_MS,
+);
 const extractorUrl = process.env.AKP_EXTRACTOR_URL ?? "http://127.0.0.1:8090";
 const workerId = `${hostname()}:${process.pid}`;
 const db = new Postgres(databaseUrl);
@@ -82,8 +87,8 @@ const git = new GitKnowledgeStore(managedRepository);
 const eventWorker = new DurableEventWorker(db, {
   consumerName: process.env.AKP_EVENT_CONSUMER ?? "ingest-and-indexing",
   workerId: `${workerId}:events`,
-  maxAttempts: Number(process.env.AKP_EVENT_MAX_ATTEMPTS ?? 8),
-  leaseSeconds: Number(process.env.AKP_EVENT_LEASE_SECONDS ?? 60),
+  maxAttempts: runtimeConfig.eventMaxAttempts,
+  leaseSeconds: runtimeConfig.eventLeaseSeconds,
   handlers: {
     ...createIndexEventHandlers(db, git),
     ...createTruthMaintenanceHandlers(db),
@@ -115,10 +120,7 @@ const objects = new MinioObjectStore({
 const authorName =
   process.env.AKP_GIT_AUTHOR_NAME ?? "Architecture Knowledge Platform";
 const authorEmail = process.env.AKP_GIT_AUTHOR_EMAIL ?? "akp@localhost";
-const lintIntervalMs = Math.max(
-  60_000,
-  Number(process.env.AKP_LINT_INTERVAL_MS ?? 24 * 60 * 60 * 1000),
-);
+const lintIntervalMs = runtimeConfig.lintIntervalMs;
 let nextLintCheckAt = 0;
 
 async function runScheduledLintIfDue(force = false): Promise<void> {
@@ -952,10 +954,7 @@ async function loop(): Promise<WorkerDrainSummary | undefined> {
       consumerName: eventWorker.consumerName,
       workerId,
       leaseSeconds: 60,
-      deadlineMs: Number(
-        process.env.AKP_WORKER_DRAIN_DEADLINE_MS ??
-          DEFAULT_WORKER_DRAIN_DEADLINE_MS,
-      ),
+      deadlineMs: runtimeConfig.drainDeadlineMs,
       runEventOnce: () => eventWorker.runOnce(),
       runIngestJob: runClaimedJob,
       assuranceWorkerId: `${workerId}:assurance`,

@@ -1,8 +1,9 @@
 import { createServer } from "node:http";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createMcpServer } from "./server.js";
+import { loadMcpRuntimeConfig } from "./runtime-config.js";
 
-const port = Number(process.env.AKP_MCP_HTTP_PORT ?? 8081);
+const { port } = loadMcpRuntimeConfig();
 const expectedToken = process.env.AKP_API_TOKEN;
 if (!expectedToken) throw new Error("AKP_API_TOKEN is required for HTTP MCP.");
 
