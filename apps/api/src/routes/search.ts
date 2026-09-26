@@ -1549,6 +1549,27 @@ export async function queryKnowledge(
       ? []
       : options.graphScopes,
   );
+  const documentScopeJson = JSON.stringify(
+    (options.pathAuthorizer
+      ? graphScopes
+      : vaultIds.map((vaultId) => ({ vaultId, pathPrefix: null }))
+    ).map((scope) => ({
+      vault_id: scope.vaultId,
+      path_prefix: scope.pathPrefix,
+    })),
+  );
+  const documentScopeClause = (alias: string, parameter: number) => `
+    and exists (
+      select 1
+        from jsonb_to_recordset($${parameter}::jsonb)
+          as permitted(vault_id uuid,path_prefix text)
+       where permitted.vault_id=${alias}vault_id
+         and (
+           permitted.path_prefix is null
+           or ${alias}path=permitted.path_prefix
+           or starts_with(${alias}path,permitted.path_prefix || '/')
+         )
+    )`;
   const rawScopes = normalizeRawScopes(
     vaultIds,
     options.rawScopes,
@@ -1665,7 +1686,7 @@ export async function queryKnowledge(
           3,
         )
       : [];
-  const exact = channels.has("exact")
+  const exactQuery = channels.has("exact")
     ? await observedRetrieval("exact", () =>
         db.pool.query<ExactSearchRow>(
           `
@@ -1693,6 +1714,7 @@ export async function queryKnowledge(
            and d.lifecycle ${lifecycleClause}
            and ${trustClause("d.")}
            and d.refresh_status not in ('STALE_BLOCKED','INVALID')
+           ${documentScopeClause("d.", 6)}
            and (
              lower(d.external_id)=lower($2)
              or exists (
@@ -1732,10 +1754,25 @@ export async function queryKnowledge(
             Math.max(input.limit * 2, 20),
             rawAuthorizationJson,
             queryAcronyms,
+            documentScopeJson,
           ],
         ),
       )
     : { rows: [] as ExactSearchRow[] };
+  // An acronym embedded in a question is only an exact locator when it
+  // identifies one scoped document. A broad acronym such as CQRS otherwise
+  // gives arbitrary matching IDs exact-channel rank ahead of question terms.
+  const acronymMatches = exactQuery.rows.filter(
+    (row) => row.match_reason === "exact:query-acronym",
+  );
+  const exact = {
+    rows:
+      acronymMatches.length > 1
+        ? exactQuery.rows.filter(
+            (row) => row.match_reason !== "exact:query-acronym",
+          )
+        : exactQuery.rows,
+  };
   recordRetrievalCandidates("exact", exact.rows.length);
   if (channels.has("exact")) options.availableChannelSink?.add("exact");
 
@@ -1768,6 +1805,7 @@ export async function queryKnowledge(
                and d.lifecycle ${lifecycleClause}
                and ${trustClause("d.")}
                and d.refresh_status not in ('STALE_BLOCKED','INVALID')
+               ${documentScopeClause("d.", 5)}
                ${modeClause("d.")}
                ${rawAuthorizationClause("d.", 4)}
                and (
@@ -1863,6 +1901,7 @@ export async function queryKnowledge(
             assisted.query,
             Math.max(input.limit * 3, 30),
             rawAuthorizationJson,
+            documentScopeJson,
           ],
         ),
       );
@@ -1975,6 +2014,7 @@ export async function queryKnowledge(
                  and d.lifecycle ${lifecycleClause}
                  and ${trustClause("d.")}
                  and d.refresh_status not in ('STALE_BLOCKED','INVALID')
+                 ${documentScopeClause("d.", 7)}
                  ${modeClause("d.")}
                  ${rawAuthorizationClause("d.", 6)}
                order by e.embedding::vector(${dimensions}) <=> $3::vector(${dimensions}),
@@ -1988,6 +2028,7 @@ export async function queryKnowledge(
                 generation.vaultId,
                 Math.max(input.limit * 3, 30),
                 rawAuthorizationJson,
+                documentScopeJson,
               ],
             ),
           );
@@ -2187,13 +2228,14 @@ export async function queryKnowledge(
              and d.lifecycle ${lifecycleClause}
              and ${trustClause("d.")}
              and d.refresh_status not in ('STALE_BLOCKED','INVALID')
+             ${documentScopeClause("d.", 4)}
              and (d.layer='context-pack' or d.type='context-pack')
              and d.lexical_search_vector @@ query.terms
            order by ts_rank_cd(d.lexical_search_vector,query.terms) desc,
                     d.path,d.id
            limit $3
           `,
-        [spaceId, input.query, Math.max(input.limit, 10)],
+        [spaceId, input.query, Math.max(input.limit, 10), documentScopeJson],
       )
     : { rows: [] as DocumentChannelRow[] };
   if (contextPack.rows.length > 0) {
@@ -2231,6 +2273,7 @@ export async function queryKnowledge(
              and d.lifecycle ${lifecycleClause}
              and ${trustClause("d.")}
              and d.refresh_status not in ('STALE_BLOCKED','INVALID')
+             ${documentScopeClause("d.", 5)}
              and (d.layer in ('source','resource') or d.type='raw-resource')
              ${modeClause("d.")}
              and exists(
@@ -2259,6 +2302,7 @@ export async function queryKnowledge(
                 path_prefix: scope.pathPrefix,
               })),
             ),
+            documentScopeJson,
           ],
         )
       : { rows: [] as DocumentChannelRow[] };
@@ -2285,6 +2329,7 @@ export async function queryKnowledge(
              and d.lifecycle ${lifecycleClause}
              and ${trustClause("d.")}
              and d.refresh_status not in ('STALE_BLOCKED','INVALID')
+             ${documentScopeClause("d.", 4)}
              and d.layer='project'
              and d.lexical_search_vector @@ query.terms
            order by d.updated_at desc,
@@ -2292,7 +2337,7 @@ export async function queryKnowledge(
                     d.id
            limit $3
           `,
-          [spaceId, input.query, Math.max(input.limit, 10)],
+          [spaceId, input.query, Math.max(input.limit, 10), documentScopeJson],
         )
     : { rows: [] };
   if (channels.has("code")) options.availableChannelSink?.add("code");
