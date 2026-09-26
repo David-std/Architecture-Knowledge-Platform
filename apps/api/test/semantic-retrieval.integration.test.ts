@@ -353,6 +353,44 @@ describe("semantic retrieval PostgreSQL integration", () => {
           },
         );
         expect(primaryHits).toHaveLength(1);
+        const deniedByPath = await queryKnowledge(
+          db,
+          searchInput(
+            fixture.primary.spaceId,
+            fixture.primary.vaultId,
+            semanticQuery,
+          ),
+          {
+            vaultIds: [fixture.primary.vaultId],
+            channels: ["vector"],
+            queryEmbeddingService: queryService,
+            graphScopes: [
+              { vaultId: fixture.primary.vaultId, pathPrefix: "other" },
+            ],
+            pathAuthorizer: (path) => path.startsWith("other/"),
+          },
+        );
+        expect(deniedByPath).toHaveLength(0);
+        const permittedByPath = await queryKnowledge(
+          db,
+          searchInput(
+            fixture.primary.spaceId,
+            fixture.primary.vaultId,
+            semanticQuery,
+          ),
+          {
+            vaultIds: [fixture.primary.vaultId],
+            channels: ["vector"],
+            queryEmbeddingService: queryService,
+            graphScopes: [
+              { vaultId: fixture.primary.vaultId, pathPrefix: "managed" },
+            ],
+            pathAuthorizer: (path) => path.startsWith("managed/"),
+          },
+        );
+        expect(permittedByPath.map((hit) => hit.documentId)).toEqual([
+          fixture.primary.documentId,
+        ]);
         expect(primaryHits[0]).toMatchObject({
           documentId: fixture.primary.documentId,
           vaultId: fixture.primary.vaultId,
@@ -397,7 +435,7 @@ describe("semantic retrieval PostgreSQL integration", () => {
         expect(primaryHits[0]?.documentId).not.toBe(
           fixture.otherSpace.documentId,
         );
-        expect(resolverCalls).toHaveLength(1);
+        expect(resolverCalls).toHaveLength(3);
         expect(resolverCalls[0]).toMatchObject({
           generationId: primaryGeneration.generationId,
           spaceId: fixture.primary.spaceId,
@@ -405,7 +443,7 @@ describe("semantic retrieval PostgreSQL integration", () => {
           dimensions: 3,
           inputStrategy: semanticDescriptor.inputStrategy,
         });
-        expect(providerRoles).toEqual(["query"]);
+        expect(providerRoles).toEqual(["query", "query", "query"]);
 
         // The same provider and vector are valid for the other vault, but the
         // target scope selects its own active generation and document only.
