@@ -360,7 +360,7 @@ integration("vault importer stable document identity", () => {
   it(
     "fails closed when a stable external identity tries to take another document path",
     async () => {
-        if (!db || !fixtureRoot) {
+      if (!db || !fixtureRoot) {
         throw new Error("integration fixture was not initialized");
       }
 
