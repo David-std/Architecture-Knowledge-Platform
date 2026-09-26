@@ -1655,6 +1655,16 @@ export async function queryKnowledge(
     options,
   });
 
+  // A natural-language question may carry a precise document suffix (for
+  // example "principio de responsabilidad única SRP" -> CON-SRP). Keep this
+  // bounded and scoped by the same SQL predicates as full-ID lookups.
+  const queryAcronyms =
+    input.query.trim().split(/\s+/u).length > 1
+      ? [...new Set(input.query.match(/\b[A-Z][A-Z0-9]{2,7}\b/gu) ?? [])].slice(
+          0,
+          3,
+        )
+      : [];
   const exact = channels.has("exact")
     ? await observedRetrieval("exact", () =>
         db.pool.query<ExactSearchRow>(
@@ -1667,6 +1677,14 @@ export async function queryKnowledge(
                     where lower(alias)=lower($2)
                  ) then 'exact:alias'
                  when lower(d.title)=lower($2) then 'exact:title'
+                 when exists (
+                   select 1 from unnest($5::text[]) acronym
+                    where lower(d.external_id) like '%-' || lower(acronym)
+                       or exists (
+                         select 1 from unnest(d.aliases) alias
+                          where lower(alias)=lower(acronym)
+                       )
+                 ) then 'exact:query-acronym'
                  else 'exact:path'
                end match_reason
           from knowledge_documents d
@@ -1683,6 +1701,14 @@ export async function queryKnowledge(
              )
              or lower(d.title)=lower($2)
              or lower(d.path)=lower($2)
+             or exists (
+               select 1 from unnest($5::text[]) acronym
+                where lower(d.external_id) like '%-' || lower(acronym)
+                   or exists (
+                     select 1 from unnest(d.aliases) alias
+                      where lower(alias)=lower(acronym)
+                   )
+             )
            )
            ${modeClause("d.")}
            ${rawAuthorizationClause("d.", 4)}
@@ -1694,7 +1720,8 @@ export async function queryKnowledge(
                 where lower(alias)=lower($2)
              ) then 1
              when lower(d.title)=lower($2) then 2
-             else 3
+             when lower(d.path)=lower($2) then 3
+             else 4
            end,
            d.id
          limit $3
@@ -1704,6 +1731,7 @@ export async function queryKnowledge(
             input.query,
             Math.max(input.limit * 2, 20),
             rawAuthorizationJson,
+            queryAcronyms,
           ],
         ),
       )
