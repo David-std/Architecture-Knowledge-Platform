@@ -1,0 +1,26 @@
+name: config-validation-proof
+
+on:
+  push:
+    branches: [fix/runtime-config-validation]
+
+concurrency:
+  group: config-validation-proof-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - run: pnpm --filter @akp/api exec vitest run test/runtime-config.test.ts
+      - run: pnpm --filter @akp/worker exec vitest run test/runtime-config.test.ts
+      - run: pnpm --filter @akp/mcp exec vitest run test/runtime-config.test.ts
