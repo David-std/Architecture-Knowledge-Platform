@@ -73,20 +73,92 @@ type Fixture = {
 
 type QueryHit = Awaited<ReturnType<typeof queryKnowledge>>[number];
 
-function collectCandidateSignals(hits: readonly QueryHit[]) {
-  return hits.map((hit) => ({
-    documentId: hit.documentId,
-    externalId: hit.document.externalId,
-    finalScore: hit.score,
-    contributions: (hit.fusionContributions ?? []).map((contribution) => ({
-      channel: contribution.channel,
-      rank: contribution.rank,
-      channelWeight: contribution.channelWeight,
-      rawScore: contribution.rawScore ?? null,
-      reason: contribution.reason,
-    })),
-    rerank: hit.rerankTrace ?? null,
-  }));
+const ANSWERABILITY_STOPWORDS = new Set([
+  "and",
+  "are",
+  "como",
+  "con",
+  "cual",
+  "cuales",
+  "de",
+  "del",
+  "el",
+  "en",
+  "es",
+  "esta",
+  "este",
+  "for",
+  "from",
+  "how",
+  "is",
+  "la",
+  "las",
+  "los",
+  "para",
+  "por",
+  "que",
+  "the",
+  "una",
+  "un",
+  "what",
+  "where",
+  "which",
+]);
+
+function normalizedTokens(value: string): string[] {
+  return [
+    ...new Set(
+      (value
+        .normalize("NFKD")
+        .replace(/\p{M}/gu, "")
+        .toLocaleLowerCase("en-US")
+        .match(/[\p{L}\p{N}]+/gu) ?? [])
+        .filter((token) => token.length >= 2),
+    ),
+  ];
+}
+
+function collectCandidateSignals(hits: readonly QueryHit[], query: string) {
+  const queryTokens = normalizedTokens(query);
+  const salientQueryTokens = queryTokens.filter(
+    (token) => token.length >= 3 && !ANSWERABILITY_STOPWORDS.has(token),
+  );
+  return hits.map((hit) => {
+    const candidateTokens = new Set(
+      normalizedTokens(`${hit.title} ${hit.excerpt}`),
+    );
+    const overlapTokens = queryTokens.filter((token) =>
+      candidateTokens.has(token),
+    );
+    const salientOverlapTokens = salientQueryTokens.filter((token) =>
+      candidateTokens.has(token),
+    );
+    return {
+      documentId: hit.documentId,
+      externalId: hit.document.externalId,
+      finalScore: hit.score,
+      textualSupport: {
+        queryTokens,
+        overlapTokens,
+        queryCoverage:
+          queryTokens.length === 0 ? 0 : overlapTokens.length / queryTokens.length,
+        salientQueryTokens,
+        salientOverlapTokens,
+        salientCoverage:
+          salientQueryTokens.length === 0
+            ? 0
+            : salientOverlapTokens.length / salientQueryTokens.length,
+      },
+      contributions: (hit.fusionContributions ?? []).map((contribution) => ({
+        channel: contribution.channel,
+        rank: contribution.rank,
+        channelWeight: contribution.channelWeight,
+        rawScore: contribution.rawScore ?? null,
+        reason: contribution.reason,
+      })),
+      rerank: hit.rerankTrace ?? null,
+    };
+  });
 }
 
 type RuntimeObservation = BenchmarkObservation & {
@@ -776,7 +848,7 @@ async function executeCase(
     availableChannels: [...availableChannels].sort(),
     rankedVaultIds: [...new Set(hits.map((hit) => hit.vaultId))],
     fusionReasons,
-    candidateSignals: collectCandidateSignals(hits),
+    candidateSignals: collectCandidateSignals(hits, testCase.query),
   };
 }
 
