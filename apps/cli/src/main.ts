@@ -1113,20 +1113,18 @@ lint
     "--idempotency-key <key>",
     "Stable retry key; reuse it after a lost/uncertain response",
   )
-  .action(
-    async (options: { trigger: string; idempotencyKey?: string }) => {
-      printJson(
-        await api(
-          "/v1/lint/run",
-          {
-            method: "POST",
-            body: JSON.stringify({ trigger: options.trigger.toUpperCase() }),
-          },
-          { idempotencyKey: options.idempotencyKey },
-        ),
-      );
-    },
-  );
+  .action(async (options: { trigger: string; idempotencyKey?: string }) => {
+    printJson(
+      await api(
+        "/v1/lint/run",
+        {
+          method: "POST",
+          body: JSON.stringify({ trigger: options.trigger.toUpperCase() }),
+        },
+        { idempotencyKey: options.idempotencyKey },
+      ),
+    );
+  });
 
 program.configureOutput({
   outputError: (message, write) => write(`ERROR: ${message}`),

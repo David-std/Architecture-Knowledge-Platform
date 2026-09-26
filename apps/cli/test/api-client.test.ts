@@ -49,14 +49,16 @@ describe("CLI API client", () => {
   });
 
   it("reuses an explicit idempotency key for POST recovery", async () => {
-    const fetchImpl = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
-      const headers = new Headers(init?.headers);
-      expect(headers.get("idempotency-key")).toBe("retry-key-1234");
-      return new Response(JSON.stringify({ id: "same-resource" }), {
-        status: 201,
-        headers: { "content-type": "application/json" },
-      });
-    });
+    const fetchImpl = vi.fn(
+      async (_input: string | URL | Request, init?: RequestInit) => {
+        const headers = new Headers(init?.headers);
+        expect(headers.get("idempotency-key")).toBe("retry-key-1234");
+        return new Response(JSON.stringify({ id: "same-resource" }), {
+          status: 201,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    );
     await expect(
       requestAkpApi<{ id: string }>({
         baseUrl: "http://akp.invalid",

@@ -16,9 +16,9 @@ function normalized(value: string): string {
 }
 
 export async function resolveCliVaultSelection(input: {
-  spaceId?: string;
-  vaultIds?: string[];
-  vaultSelectors?: string[];
+  spaceId?: string | undefined;
+  vaultIds?: string[] | undefined;
+  vaultSelectors?: string[] | undefined;
   listVisibleVaults: () => Promise<unknown[]>;
 }): Promise<{ spaceId: string; vaultIds: string[] }> {
   const directIds = [...new Set((input.vaultIds ?? []).filter(Boolean))];
@@ -42,9 +42,8 @@ export async function resolveCliVaultSelection(input: {
       key: stringField(value, "vault_key", "vaultKey"),
       name: stringField(value, "name"),
     }))
-    .filter(
-      (value): value is typeof value & { id: string; spaceId: string } =>
-        Boolean(value.id && value.spaceId),
+    .filter((value): value is typeof value & { id: string; spaceId: string } =>
+      Boolean(value.id && value.spaceId),
     )
     .filter((value) => !input.spaceId || value.spaceId === input.spaceId);
 
@@ -81,7 +80,9 @@ export async function resolveCliVaultSelection(input: {
     );
   }
 
-  const unique = [...new Map(selected.map((vault) => [vault.id, vault])).values()];
+  const unique = [
+    ...new Map(selected.map((vault) => [vault.id, vault])).values(),
+  ];
   const spaces = [...new Set(unique.map((vault) => vault.spaceId))];
   if (spaces.length !== 1) {
     throw new Error(

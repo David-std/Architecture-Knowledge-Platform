@@ -29,11 +29,7 @@ export class AkpApiClientError extends Error {
 
 export function positiveInteger(value: string): number {
   const parsed = Number(value);
-  if (
-    value.trim() === "" ||
-    !Number.isSafeInteger(parsed) ||
-    parsed < 1
-  ) {
+  if (value.trim() === "" || !Number.isSafeInteger(parsed) || parsed < 1) {
     throw new Error(`Expected a positive integer, received: ${value}`);
   }
   return parsed;
@@ -76,8 +72,8 @@ export async function requestAkpApi<T>(input: {
   baseUrl: string;
   token: string | undefined;
   route: string;
-  init?: RequestInit;
-  idempotencyKey?: string;
+  init?: RequestInit | undefined;
+  idempotencyKey?: string | undefined;
   fetchImpl?: FetchLike;
 }): Promise<T> {
   if (!input.token) {
@@ -94,9 +90,7 @@ export async function requestAkpApi<T>(input: {
   if (method === "POST") {
     const supplied =
       input.idempotencyKey ?? headers.get("idempotency-key") ?? undefined;
-    idempotencyKey = validIdempotencyKey(
-      supplied ?? `cli-${randomUUID()}`,
-    );
+    idempotencyKey = validIdempotencyKey(supplied ?? `cli-${randomUUID()}`);
     headers.set("idempotency-key", idempotencyKey);
   }
 
