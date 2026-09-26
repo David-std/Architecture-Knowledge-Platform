@@ -88,6 +88,116 @@ jobs:
           AKP_RECOVERY_VERIFICATION_VAULT_KEY: recovery-verification-vault
           AKP_RECOVERY_VERIFICATION_MANIFEST: reports/ci/recovery-state-seed.json
         run: pnpm exec tsx scripts/seed-recovery-verification.ts
+      - name: Refuse recovery backups across publication races
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $postgres = (docker compose ps -q postgres).Trim()
+          if (-not $postgres) { throw "PostgreSQL recovery service is missing." }
+          $key = (node -e "const {createHash}=require('node:crypto'); const {realpathSync}=require('node:fs'); const path=require('node:path'); let resolved; try { resolved=realpathSync.native(process.argv[1]); } catch { resolved=path.resolve(process.argv[1]); } if (process.platform==='win32') resolved=resolved.toLowerCase(); process.stdout.write(createHash('sha256').update(resolved).digest('hex'));" $env:AKP_MANAGED_REPO).Trim()
+          if ($key -notmatch '^[a-f0-9]{64}      - name: Verify PostgreSQL, MinIO and durable v0.4 state restore
+        shell: pwsh
+        run: >-
+          ./scripts/verify-restore.ps1
+          -BackupDirectory backups/ci-recovery
+          -ManagedRepository $env:AKP_MANAGED_REPO
+          -RecoveryStateManifest reports/ci/recovery-state-seed.json
+      - name: Verify managed Git commit, files and searchable reindex after restore
+        shell: pwsh
+        env:
+          AKP_RESTORED_DERIVED_REPORT: reports/ci/restored-derived-context.json
+        run: >-
+          ./scripts/verify-managed-git-restore.ps1
+          -BackupDirectory backups/ci-recovery
+          -SourceManagedRepository $env:AKP_MANAGED_REPO
+          -SpaceId 00000000-0000-0000-0000-000000000003
+      - name: Upload recovery diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: recovery-diagnostics-${{ github.run_id }}
+          path: |
+            backups/ci-recovery/manifest.json
+            reports/ci/recovery-state-seed.json
+            reports/ci/restored-derived-context.json
+            reports/migration
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Stop disposable recovery services
+        if: always()
+        run: docker compose down -v --remove-orphans
+) { throw "Invalid publication key." }
+
+          $lockOwner = "recovery-ci-active-publication"
+          docker exec $postgres psql -U akp -d akp -v ON_ERROR_STOP=1 -c "insert into repository_publication_locks(repository_key,owner,expires_at) values('$key','$lockOwner',now()+interval '10 minutes') on conflict(repository_key) do update set owner=excluded.owner,expires_at=excluded.expires_at,updated_at=now();" | Out-Null
+          try {
+            $blocked = $false
+            try {
+              ./scripts/backup.ps1 -OutputDirectory backups/ci-lock-conflict -ManagedRepository $env:AKP_MANAGED_REPO
+            } catch {
+              $blocked = $true
+              Write-Host "Expected lock refusal: $($_.Exception.Message)"
+            }
+            if (-not $blocked) {
+              throw "Backup unexpectedly succeeded while publication lock was active."
+            }
+          } finally {
+            docker exec $postgres psql -U akp -d akp -v ON_ERROR_STOP=1 -c "delete from repository_publication_locks where repository_key='$key' and owner='$lockOwner';" | Out-Null
+            Remove-Item backups/ci-lock-conflict -Recurse -Force -ErrorAction SilentlyContinue
+          }
+
+          $vaultId = (docker exec $postgres psql -U akp -d akp -At -v ON_ERROR_STOP=1 -c "select id from vaults where vault_key='recovery-verification-vault' limit 1;").Trim()
+          if ($vaultId -notmatch '^[0-9a-fA-F-]{36}      - name: Verify PostgreSQL, MinIO and durable v0.4 state restore
+        shell: pwsh
+        run: >-
+          ./scripts/verify-restore.ps1
+          -BackupDirectory backups/ci-recovery
+          -ManagedRepository $env:AKP_MANAGED_REPO
+          -RecoveryStateManifest reports/ci/recovery-state-seed.json
+      - name: Verify managed Git commit, files and searchable reindex after restore
+        shell: pwsh
+        env:
+          AKP_RESTORED_DERIVED_REPORT: reports/ci/restored-derived-context.json
+        run: >-
+          ./scripts/verify-managed-git-restore.ps1
+          -BackupDirectory backups/ci-recovery
+          -SourceManagedRepository $env:AKP_MANAGED_REPO
+          -SpaceId 00000000-0000-0000-0000-000000000003
+      - name: Upload recovery diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: recovery-diagnostics-${{ github.run_id }}
+          path: |
+            backups/ci-recovery/manifest.json
+            reports/ci/recovery-state-seed.json
+            reports/ci/restored-derived-context.json
+            reports/migration
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Stop disposable recovery services
+        if: always()
+        run: docker compose down -v --remove-orphans
+) {
+            throw "Recovery verification vault is missing."
+          }
+          $reviewId = [guid]::NewGuid().ToString()
+          docker exec $postgres psql -U akp -d akp -v ON_ERROR_STOP=1 -c "insert into reviews(id,space_id,vault_id,branch_name,base_commit,head_commit,status,impact_manifest,validation_report) values('$reviewId','00000000-0000-0000-0000-000000000003','$vaultId','recovery-ci-ambiguous','base','head','PUBLICATION_RECOVERY_REQUIRED','{}'::jsonb,'{}'::jsonb);" | Out-Null
+          try {
+            $blocked = $false
+            try {
+              ./scripts/backup.ps1 -OutputDirectory backups/ci-ambiguous-publication -ManagedRepository $env:AKP_MANAGED_REPO
+            } catch {
+              $blocked = $true
+              Write-Host "Expected ambiguous-state refusal: $($_.Exception.Message)"
+            }
+            if (-not $blocked) {
+              throw "Backup unexpectedly succeeded with publication recovery required."
+            }
+          } finally {
+            docker exec $postgres psql -U akp -d akp -v ON_ERROR_STOP=1 -c "delete from reviews where id='$reviewId';" | Out-Null
+            Remove-Item backups/ci-ambiguous-publication -Recurse -Force -ErrorAction SilentlyContinue
+          }
       - name: Create complete disposable recovery backup
         shell: pwsh
         run: >-
