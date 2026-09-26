@@ -206,5 +206,154 @@ integration("vault importer stable document identity", () => {
       [vaultId, externalId],
     );
     expect(tombstones.rows[0]?.count).toBe(0);
+
+    const companionPath = path.join(fixtureRoot, "companion.md");
+    const companionExternalId = "RULE-STABLE-COMPANION-001";
+    await writeFile(
+      companionPath,
+      [
+        "---",
+        `id: ${companionExternalId}`,
+        "type: rule",
+        "layer: rule",
+        "status: active",
+        "---",
+        "# Companion policy",
+        "",
+        "This policy depends on [[renamed-policy]].",
+      ].join("\n"),
+      "utf8",
+    );
+    await importVaultReadOnly(db, fixtureRoot, { spaceId, vaultKey });
+
+    const linked = await db.pool.query<{ count: number }>(
+      `select count(*)::int count
+         from knowledge_relations r
+         join knowledge_documents f on f.id=r.from_document_id
+         join knowledge_documents t on t.id=r.to_document_id
+        where f.vault_id=$1 and t.vault_id=$1
+          and f.external_id=$2 and t.external_id=$3
+          and r.provenance='markdown'`,
+      [vaultId, companionExternalId, externalId],
+    );
+    expect(linked.rows[0]?.count).toBe(1);
+
+    await rm(renamedPath);
+    await importVaultReadOnly(db, fixtureRoot, { spaceId, vaultKey });
+
+    const deleted = await db.pool.query<{
+      id: string;
+      lifecycle: string;
+      refresh_status: string;
+      body_cache: string;
+    }>(
+      `select id,lifecycle,refresh_status,body_cache
+         from knowledge_documents
+        where vault_id=$1 and external_id=$2`,
+      [vaultId, externalId],
+    );
+    expect(deleted.rows).toEqual([
+      {
+        id: stableDocumentId,
+        lifecycle: "DELETED_TOMBSTONE",
+        refresh_status: "INVALID",
+        body_cache: "",
+      },
+    ]);
+
+    const deletedUnits = await db.pool.query<{
+      total: number;
+      non_tombstone: number;
+    }>(
+      `select count(*)::int total,
+              count(*) filter (
+                where lifecycle <> 'DELETED_TOMBSTONE'
+              )::int non_tombstone
+         from knowledge_units
+        where document_id=$1`,
+      [stableDocumentId],
+    );
+    expect(deletedUnits.rows[0]?.total).toBeGreaterThan(0);
+    expect(deletedUnits.rows[0]?.non_tombstone).toBe(0);
+
+    const staleMarkdownEdges = await db.pool.query<{ count: number }>(
+      `select count(*)::int count
+         from knowledge_relations
+        where provenance='markdown'
+          and (from_document_id=$1 or to_document_id=$1)`,
+      [stableDocumentId],
+    );
+    expect(staleMarkdownEdges.rows[0]?.count).toBe(0);
+
+    const restoredBody = [
+      "---",
+      `id: ${externalId}`,
+      "type: rule",
+      "layer: rule",
+      "status: active",
+      "---",
+      "# Stable identity policy",
+      "",
+      "A file rename must preserve the canonical document identity and its version history.",
+      "",
+      "The restored revision remains attached to the same stable identity.",
+    ].join("\n");
+    await writeFile(renamedPath, restoredBody, "utf8");
+    await importVaultReadOnly(db, fixtureRoot, { spaceId, vaultKey });
+
+    const restored = await db.pool.query<{
+      id: string;
+      path: string;
+      lifecycle: string;
+      refresh_status: string;
+    }>(
+      `select id,path,lifecycle,refresh_status
+         from knowledge_documents
+        where vault_id=$1 and external_id=$2`,
+      [vaultId, externalId],
+    );
+    expect(restored.rows).toEqual([
+      {
+        id: stableDocumentId,
+        path: "renamed-policy.md",
+        lifecycle: "ACTIVE",
+        refresh_status: "CURRENT",
+      },
+    ]);
+
+    const restoredUnits = await db.pool.query<{ count: number }>(
+      `select count(*)::int count
+         from knowledge_units u
+         join knowledge_documents d on d.id=u.document_id
+        where u.document_id=$1
+          and u.corpus_revision=(
+            select corpus_revision
+              from vault_index_revisions
+             where vault_id=d.vault_id and space_id=d.space_id
+          )
+          and u.lifecycle='ACTIVE'`,
+      [stableDocumentId],
+    );
+    expect(restoredUnits.rows[0]?.count).toBeGreaterThan(0);
+
+    const rebuiltMarkdownEdge = await db.pool.query<{ count: number }>(
+      `select count(*)::int count
+         from knowledge_relations r
+         join knowledge_documents f on f.id=r.from_document_id
+         join knowledge_documents t on t.id=r.to_document_id
+        where f.vault_id=$1 and t.vault_id=$1
+          and f.external_id=$2 and t.external_id=$3
+          and r.provenance='markdown'`,
+      [vaultId, companionExternalId, externalId],
+    );
+    expect(rebuiltMarkdownEdge.rows[0]?.count).toBe(1);
+
+    const restoredHistory = await db.pool.query<{ versions: number }>(
+      `select count(*)::int versions
+         from knowledge_versions
+        where document_id=$1`,
+      [stableDocumentId],
+    );
+    expect(restoredHistory.rows[0]?.versions).toBeGreaterThanOrEqual(4);
   });
 });
