@@ -1362,10 +1362,7 @@ export async function importVaultReadOnly(
         [spaceId, vaultId, document.relativePath],
       );
       const occupiedPath = pathOwner.rows[0];
-      if (
-        occupiedPath &&
-        occupiedPath.external_id !== document.externalId
-      ) {
+      if (occupiedPath && occupiedPath.external_id !== document.externalId) {
         throw new Error(
           `VAULT_DOCUMENT_IDENTITY_CONFLICT:${document.relativePath}:${document.externalId}`,
         );

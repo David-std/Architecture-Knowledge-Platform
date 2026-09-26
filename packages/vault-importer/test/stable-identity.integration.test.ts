@@ -357,93 +357,96 @@ integration("vault importer stable document identity", () => {
     expect(restoredHistory.rows[0]?.versions).toBeGreaterThanOrEqual(4);
   });
 
-  it("fails closed when a stable external identity tries to take another document path", async () => {
-    if (!db || !fixtureRoot) {
-      throw new Error("integration fixture was not initialized");
-    }
+  it(
+    "fails closed when a stable external identity tries to take another document path",
+    async () => {
+        if (!db || !fixtureRoot) {
+        throw new Error("integration fixture was not initialized");
+      }
 
-    const sourcePath = path.join(fixtureRoot, "identity-source.md");
-    const occupiedPath = path.join(fixtureRoot, "identity-occupied.md");
-    const sourceExternalId = "RULE-STABLE-CONFLICT-SOURCE-001";
-    const occupiedExternalId = "RULE-STABLE-CONFLICT-OCCUPIED-001";
-    const sourceBody = [
-      "---",
-      `id: ${sourceExternalId}`,
-      "type: rule",
-      "layer: rule",
-      "status: active",
-      "---",
-      "# Conflict source",
-      "",
-      "This document owns its stable external identity.",
-    ].join("\n");
-    const occupiedBody = [
-      "---",
-      `id: ${occupiedExternalId}`,
-      "type: rule",
-      "layer: rule",
-      "status: active",
-      "---",
-      "# Occupied path",
-      "",
-      "This document owns the destination path.",
-    ].join("\n");
+      const sourcePath = path.join(fixtureRoot, "identity-source.md");
+      const occupiedPath = path.join(fixtureRoot, "identity-occupied.md");
+      const sourceExternalId = "RULE-STABLE-CONFLICT-SOURCE-001";
+      const occupiedExternalId = "RULE-STABLE-CONFLICT-OCCUPIED-001";
+      const sourceBody = [
+        "---",
+        `id: ${sourceExternalId}`,
+        "type: rule",
+        "layer: rule",
+        "status: active",
+        "---",
+        "# Conflict source",
+        "",
+        "This document owns its stable external identity.",
+      ].join("\n");
+      const occupiedBody = [
+        "---",
+        `id: ${occupiedExternalId}`,
+        "type: rule",
+        "layer: rule",
+        "status: active",
+        "---",
+        "# Occupied path",
+        "",
+        "This document owns the destination path.",
+      ].join("\n");
 
-    await writeFile(sourcePath, sourceBody, "utf8");
-    await writeFile(occupiedPath, occupiedBody, "utf8");
-    const seeded = await importVaultReadOnly(db, fixtureRoot, {
-      spaceId,
-      vaultKey,
-    });
-    vaultId = seeded.vaultId;
+      await writeFile(sourcePath, sourceBody, "utf8");
+      await writeFile(occupiedPath, occupiedBody, "utf8");
+      const seeded = await importVaultReadOnly(db, fixtureRoot, {
+        spaceId,
+        vaultKey,
+      });
+      vaultId = seeded.vaultId;
 
-    const before = await db.pool.query<{
-      id: string;
-      path: string;
-      external_id: string;
-      lifecycle: string;
-    }>(
-      `select id,path,external_id,lifecycle
-         from knowledge_documents
-        where vault_id=$1 and external_id=any($2::text[])
-        order by external_id`,
-      [vaultId, [sourceExternalId, occupiedExternalId]],
-    );
-    expect(before.rows).toHaveLength(2);
-    const sourceBefore = before.rows.find(
-      (row) => row.external_id === sourceExternalId,
-    );
-    const occupiedBefore = before.rows.find(
-      (row) => row.external_id === occupiedExternalId,
-    );
-    expect(sourceBefore).toBeDefined();
-    expect(occupiedBefore).toBeDefined();
+      const before = await db.pool.query<{
+        id: string;
+        path: string;
+        external_id: string;
+        lifecycle: string;
+      }>(
+        `select id,path,external_id,lifecycle
+           from knowledge_documents
+          where vault_id=$1 and external_id=any($2::text[])
+          order by external_id`,
+        [vaultId, [sourceExternalId, occupiedExternalId]],
+      );
+      expect(before.rows).toHaveLength(2);
+      const sourceBefore = before.rows.find(
+        (row) => row.external_id === sourceExternalId,
+      );
+      const occupiedBefore = before.rows.find(
+        (row) => row.external_id === occupiedExternalId,
+      );
+      expect(sourceBefore).toBeDefined();
+      expect(occupiedBefore).toBeDefined();
 
-    await rm(sourcePath);
-    await writeFile(occupiedPath, sourceBody, "utf8");
+      await rm(sourcePath);
+      await writeFile(occupiedPath, sourceBody, "utf8");
 
-    await expect(
-      importVaultReadOnly(db, fixtureRoot, { spaceId, vaultKey }),
-    ).rejects.toThrow(
-      `VAULT_DOCUMENT_IDENTITY_CONFLICT:identity-occupied.md:${sourceExternalId}`,
-    );
+      await expect(
+        importVaultReadOnly(db, fixtureRoot, { spaceId, vaultKey }),
+      ).rejects.toThrow(
+        `VAULT_DOCUMENT_IDENTITY_CONFLICT:identity-occupied.md:${sourceExternalId}`,
+      );
 
-    const after = await db.pool.query<{
-      id: string;
-      path: string;
-      external_id: string;
-      lifecycle: string;
-    }>(
-      `select id,path,external_id,lifecycle
-         from knowledge_documents
-        where vault_id=$1 and external_id=any($2::text[])
-        order by external_id`,
-      [vaultId, [sourceExternalId, occupiedExternalId]],
-    );
-    expect(after.rows).toEqual(before.rows);
-    expect(sourceBefore?.path).toBe("identity-source.md");
-    expect(sourceBefore?.lifecycle).toBe("ACTIVE");
-    expect(occupiedBefore?.path).toBe("identity-occupied.md");
-    expect(occupiedBefore?.lifecycle).toBe("ACTIVE");
-  });
+      const after = await db.pool.query<{
+        id: string;
+        path: string;
+        external_id: string;
+        lifecycle: string;
+      }>(
+        `select id,path,external_id,lifecycle
+           from knowledge_documents
+          where vault_id=$1 and external_id=any($2::text[])
+          order by external_id`,
+        [vaultId, [sourceExternalId, occupiedExternalId]],
+      );
+      expect(after.rows).toEqual(before.rows);
+      expect(sourceBefore?.path).toBe("identity-source.md");
+      expect(sourceBefore?.lifecycle).toBe("ACTIVE");
+      expect(occupiedBefore?.path).toBe("identity-occupied.md");
+      expect(occupiedBefore?.lifecycle).toBe("ACTIVE");
+    },
+  );
 });
