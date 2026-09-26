@@ -2054,7 +2054,22 @@ export async function queryKnowledge(
       const routed = await observedRetrieval("community", () =>
         db.pool.query<CommunityCandidateRow>(
           `
-          with query as (
+          with graph_scopes as (
+            select scope.vault_id,scope.path_prefix
+              from jsonb_to_recordset($8::jsonb)
+                as scope(vault_id uuid,path_prefix text)
+          ), scoped_seeds as (
+            select d.id
+              from knowledge_documents d
+              join graph_scopes scope on scope.vault_id=d.vault_id
+             where d.id=any($4::uuid[])
+               and d.space_id=$1
+               and (
+                 scope.path_prefix is null
+                 or d.path=scope.path_prefix
+                 or starts_with(d.path,scope.path_prefix || '/')
+               )
+          ), query as (
             select plainto_tsquery('simple',$2) terms
           ),
           active_community as (
@@ -2075,8 +2090,7 @@ export async function queryKnowledge(
           drift_community as (
             select distinct m.revision_id,m.community_key
               from community_index_memberships m
-             where cardinality($4::uuid[]) > 0
-               and m.document_id=any($4::uuid[])
+             where m.document_id in (select id from scoped_seeds)
           ),
           oriented as (
             select ac.*,
@@ -2106,7 +2120,13 @@ export async function queryKnowledge(
               on m.revision_id=o.revision_id
              and m.community_key=o.community_key
             join knowledge_documents d on d.id=m.document_id
+            join graph_scopes scope on scope.vault_id=d.vault_id
            where d.space_id=$1
+             and (
+               scope.path_prefix is null
+               or d.path=scope.path_prefix
+               or starts_with(d.path,scope.path_prefix || '/')
+             )
              ${vaultFilter("d.")}
              and d.lifecycle ${lifecycleClause}
              and ${trustClause("d.")}
@@ -2115,8 +2135,8 @@ export async function queryKnowledge(
              ${rawAuthorizationClause("d.", 7)}
              and not (
                $5::text='DRIFT'
-               and cardinality($4::uuid[]) > 0
-               and d.id=any($4::uuid[])
+               and exists(select 1 from scoped_seeds)
+               and d.id in (select id from scoped_seeds)
              )
            order by orientation_score desc,o.community_key,d.id
            limit $6
@@ -2129,6 +2149,12 @@ export async function queryKnowledge(
             retrievalPolicy.graphMode,
             Math.max(input.limit * 4, 40),
             rawAuthorizationJson,
+            JSON.stringify(
+              graphScopes.map((scope) => ({
+                vault_id: scope.vaultId,
+                path_prefix: scope.pathPrefix,
+              })),
+            ),
           ],
         ),
       );
