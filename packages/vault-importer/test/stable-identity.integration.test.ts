@@ -355,6 +355,7 @@ integration("vault importer stable document identity", () => {
       [stableDocumentId],
     );
     expect(restoredHistory.rows[0]?.versions).toBeGreaterThanOrEqual(4);
+  });
 
   it("fails closed when a stable external identity tries to take another document path", async () => {
     if (!db || !fixtureRoot) {
@@ -444,7 +445,5 @@ integration("vault importer stable document identity", () => {
     expect(sourceBefore?.lifecycle).toBe("ACTIVE");
     expect(occupiedBefore?.path).toBe("identity-occupied.md");
     expect(occupiedBefore?.lifecycle).toBe("ACTIVE");
-  });
-
   });
 });
