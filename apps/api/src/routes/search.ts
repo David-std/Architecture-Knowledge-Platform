@@ -4911,6 +4911,12 @@ export function registerSearchRoutes(
           } satisfies SearchHit;
         });
       const contextHits = [...hits, ...conflictCounterparts];
+      const querySupportedRank = new Map(
+        hits.map((hit, index) => [
+          `${hit.documentId}:${hit.unitId ?? "document"}`,
+          index + 1,
+        ]),
+      );
       const contextHitIds = new Set(contextHits.map((hit) => hit.documentId));
       const materialConflicts = conflicts.rows.map((conflict) => ({
         id: String(conflict.id),
@@ -5023,6 +5029,9 @@ export function registerSearchRoutes(
               String(detail?.layer ?? ""),
               String(detail?.type ?? hit.type),
             );
+            const retrievalRank = querySupportedRank.get(
+              `${hit.documentId}:${hit.unitId ?? "document"}`,
+            );
             return {
               hit,
               content: hit.parentContext ?? hit.excerpt,
@@ -5030,6 +5039,7 @@ export function registerSearchRoutes(
                 ? { fullContent: String(detail.body_cache) }
                 : {}),
               kind,
+              ...(retrievalRank === undefined ? {} : { retrievalRank }),
               ...(kind === "rule" ? { mandatory: true } : {}),
             };
           }),
