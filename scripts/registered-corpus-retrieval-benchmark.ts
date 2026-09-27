@@ -653,7 +653,9 @@ async function executeCase(
       reason: answerability.reason,
       topVectorScore: answerability.topVectorScore,
       secondVectorScore: answerability.secondVectorScore,
+      thirdVectorScore: answerability.thirdVectorScore,
       vectorMargin: answerability.vectorMargin,
+      vectorNeighborhoodMargin: answerability.vectorNeighborhoodMargin,
     },
   };
 }
