@@ -497,6 +497,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "apps/api/test/search-answerability.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "apps/api/test/search-revision-policy.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
@@ -1118,6 +1123,16 @@
     },
     {
       "path": "apps/web/app/search/page.tsx",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/web/app/search/search-result.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/web/app/search/search-result.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
