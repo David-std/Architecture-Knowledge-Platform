@@ -25,26 +25,32 @@ function hit(id: string): SearchHit {
 }
 
 describe("search answerability presentation", () => {
-  it("moves rejected candidates to exploratoryHits without treating them as evidence", () => {
+  it("moves unsupported candidates to exploratoryHits without treating them as evidence", () => {
     const candidate = hit("11111111-1111-4111-8111-111111111111");
-    expect(partitionSearchHitsByAnswerability([candidate], false)).toEqual({
+    expect(partitionSearchHitsByAnswerability([candidate], [])).toEqual({
       hits: [],
       exploratoryHits: [candidate],
       retrievalOutcome: "EXPLORATORY_ONLY",
     });
   });
 
-  it("keeps supported candidates in hits", () => {
-    const candidate = hit("11111111-1111-4111-8111-111111111112");
-    expect(partitionSearchHitsByAnswerability([candidate], true)).toEqual({
-      hits: [candidate],
-      exploratoryHits: [],
+  it("keeps only passage-supported candidates in hits", () => {
+    const supported = hit("11111111-1111-4111-8111-111111111112");
+    const exploratory = hit("11111111-1111-4111-8111-111111111113");
+    expect(
+      partitionSearchHitsByAnswerability(
+        [supported, exploratory],
+        [supported.documentId],
+      ),
+    ).toEqual({
+      hits: [supported],
+      exploratoryHits: [exploratory],
       retrievalOutcome: "SUPPORTED",
     });
   });
 
   it("distinguishes a true empty retrieval from an answerability rejection", () => {
-    expect(partitionSearchHitsByAnswerability([], false)).toEqual({
+    expect(partitionSearchHitsByAnswerability([], [])).toEqual({
       hits: [],
       exploratoryHits: [],
       retrievalOutcome: "NO_CANDIDATES",
