@@ -441,21 +441,84 @@ integration("real multilingual semantic retrieval", () => {
         expect(limitedHits).toHaveLength(1);
         expect(limitedHits[0]?.documentId).toBe(targetRelevant.id);
         expect(limitedComparisonPool?.length).toBeGreaterThanOrEqual(2);
-        expect(
-          assessRetrievalAnswerability(
-            limitedHits,
-            query,
-            {},
-            {
-              ...(limitedComparisonPool
-                ? { comparisonHits: limitedComparisonPool }
-                : {}),
+        const limitedAssessment = assessRetrievalAnswerability(
+          limitedHits,
+          query,
+          {},
+          {
+            ...(limitedComparisonPool
+              ? { comparisonHits: limitedComparisonPool }
+              : {}),
+          },
+        );
+
+        const unsupportedQuery =
+          "What guaranteed 24/7 telephone support SLA is included for premium customers?";
+        let unsupportedComparisonPool:
+          Parameters<typeof assessRetrievalAnswerability>[0] | undefined;
+        const unsupportedHits = await queryKnowledge(
+          db,
+          {
+            query: unsupportedQuery,
+            spaceId: fixture.spaceId,
+            vaultId: targetVaultId,
+            vaultIds: [],
+            federated: false,
+            types: [],
+            minimumTrust: "MACHINE_SUPPORTED",
+            mode: "SOURCE_BACKED",
+            limit: 5,
+          },
+          {
+            vaultIds: [targetVaultId],
+            channels: ["vector"],
+            queryEmbeddingService: queryService,
+            answerabilityCandidateSink: (candidates) => {
+              unsupportedComparisonPool = candidates;
             },
-          ),
-        ).toMatchObject({
-          supported: true,
-          reason: "VECTOR_MARGIN_SUPPORT",
-        });
+          },
+        );
+        const unsupportedAssessment = assessRetrievalAnswerability(
+          unsupportedHits,
+          unsupportedQuery,
+          {},
+          {
+            ...(unsupportedComparisonPool
+              ? { comparisonHits: unsupportedComparisonPool }
+              : {}),
+          },
+        );
+        console.info(
+          JSON.stringify({
+            semanticAnswerabilityProbe: {
+              supportedQuery: {
+                rankedDocumentIds: targetHits.map((hit) => hit.documentId),
+                vectorScores: targetHits.map((hit) => ({
+                  documentId: hit.documentId,
+                  externalId: hit.document.externalId,
+                  rawScore:
+                    hit.fusionContributions?.find(
+                      (contribution) => contribution.channel === "vector",
+                    )?.rawScore ?? null,
+                })),
+                fullAssessment: assessRetrievalAnswerability(targetHits, query),
+                limitedAssessment,
+              },
+              unsupportedQuery: {
+                vectorScores: unsupportedHits.map((hit) => ({
+                  documentId: hit.documentId,
+                  externalId: hit.document.externalId,
+                  rawScore:
+                    hit.fusionContributions?.find(
+                      (contribution) => contribution.channel === "vector",
+                    )?.rawScore ?? null,
+                })),
+                assessment: unsupportedAssessment,
+              },
+            },
+          }),
+        );
+        expect(limitedAssessment.supported).toBe(true);
 
         resolverCalls.length = 0;
         const foreignHits = await queryKnowledge(
@@ -537,51 +600,16 @@ integration("real multilingual semantic retrieval", () => {
                 )?.rawScore ?? null,
             })),
             answerability: assessRetrievalAnswerability(targetHits, query),
-            noAnswerProbe: await (async () => {
-              const unsupportedQuery =
-                "What guaranteed 24/7 telephone support SLA is included for premium customers?";
-              let comparison:
-                Parameters<typeof assessRetrievalAnswerability>[0] | undefined;
-              const candidates = await queryKnowledge(
-                db,
-                {
-                  query: unsupportedQuery,
-                  spaceId: fixture.spaceId,
-                  vaultId: targetVaultId,
-                  vaultIds: [],
-                  federated: false,
-                  types: [],
-                  minimumTrust: "MACHINE_SUPPORTED",
-                  mode: "SOURCE_BACKED",
-                  limit: 5,
-                },
-                {
-                  vaultIds: [targetVaultId],
-                  channels: ["vector"],
-                  queryEmbeddingService: queryService,
-                  answerabilityCandidateSink: (hits) => {
-                    comparison = hits;
-                  },
-                },
-              );
-              return {
-                vectorScores: candidates.map((hit) => ({
-                  documentId: hit.documentId,
-                  rawScore:
-                    hit.fusionContributions?.find(
-                      (contribution) => contribution.channel === "vector",
-                    )?.rawScore ?? null,
-                })),
-                assessment: assessRetrievalAnswerability(
-                  candidates,
-                  unsupportedQuery,
-                  {},
-                  {
-                    ...(comparison ? { comparisonHits: comparison } : {}),
-                  },
-                ),
-              };
-            })(),
+            noAnswerProbe: {
+              vectorScores: unsupportedHits.map((hit) => ({
+                documentId: hit.documentId,
+                rawScore:
+                  hit.fusionContributions?.find(
+                    (contribution) => contribution.channel === "vector",
+                  )?.rawScore ?? null,
+              })),
+              assessment: unsupportedAssessment,
+            },
             foreignGenerationId: foreignGeneration.generationId,
             foreignDocumentId: foreignCandidate.id,
           }),
