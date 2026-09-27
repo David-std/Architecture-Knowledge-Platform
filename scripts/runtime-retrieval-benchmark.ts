@@ -739,7 +739,9 @@ async function executeCase(
     {},
     {
       allowGraphSupport: testCase.category === "graph",
-      comparisonHits: answerabilityCandidates,
+      ...(answerabilityCandidates
+        ? { comparisonHits: answerabilityCandidates }
+        : {}),
     },
   );
   const hits = answerability.supported ? rawHits : [];
