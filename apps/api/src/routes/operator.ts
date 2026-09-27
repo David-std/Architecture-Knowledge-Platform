@@ -577,7 +577,16 @@ export function registerOperatorRoutes(
         ),
         db.pool.query(
           `select space_id,trust_state,discovery_mode,count(*)::int count,
-                  max(last_seen_at) last_seen_at
+                  max(last_seen_at) last_seen_at,
+                  count(*) filter(where failure_count>0)::int degraded,
+                  count(*) filter(
+                    where circuit_open_until is not null
+                      and circuit_open_until>now()
+                  )::int circuit_open,
+                  array_remove(
+                    array_agg(distinct last_failure_code order by last_failure_code),
+                    null
+                  ) failure_codes
              from context_fabric_peers
             where space_id=any($1::uuid[])
             group by space_id,trust_state,discovery_mode
@@ -795,28 +804,37 @@ export function registerOperatorRoutes(
           : db.pool.query(
               `
               select distinct
-                     e.id,e.from_node_id "from",e.to_node_id "to",
-                     e.relation_type "type",e.owner_graph_domain,
-                     e.derivation,e.confidence,e.source_ids,e.evidence_ids,
-                     e.locator_refs,e.provenance_revision,e.support_set_id,
-                     e.valid_from,e.valid_to,e.recorded_at
+                     e.id,a.from_node_id "from",a.to_node_id "to",
+                     a.relation_type "type",a.owner_graph_domain,
+                     a.derivation,a.confidence,a.source_ids,a.evidence_ids,
+                     a.locator_refs,a.provenance_revision,a.support_set_id,
+                     a.valid_from,a.valid_to,a.recorded_at,
+                     a.lifecycle assertion_lifecycle
                 from federated_graph_projection_revisions p
                 join federated_graph_projection_edges pe
                   on pe.projection_revision_id=p.id
                 join federated_graph_edges e on e.id=pe.edge_id
+                join federated_graph_relationship_assertions a
+                  on a.id=e.assertion_id and a.space_id=e.space_id
                where p.space_id=any($2::uuid[])
                  and p.vault_id=any($3::uuid[])
                  and p.lifecycle='ACTIVE'
-                 and e.from_node_id=any($1::uuid[])
-                 and e.to_node_id=any($1::uuid[])
+                 and a.from_node_id=any($1::uuid[])
+                 and a.to_node_id=any($1::uuid[])
                  and (
-                   $4::timestamptz is null
+                   (
+                     $4::timestamptz is null
+                     and a.lifecycle in ('ACTIVE','DISPUTED')
+                     and (a.valid_from is null or a.valid_from<=now())
+                     and (a.valid_to is null or a.valid_to>now())
+                   )
                    or (
-                     (e.valid_from is null or e.valid_from<=$4::timestamptz)
-                     and (e.valid_to is null or e.valid_to>$4::timestamptz)
+                     $4::timestamptz is not null
+                     and (a.valid_from is null or a.valid_from<=$4::timestamptz)
+                     and (a.valid_to is null or a.valid_to>$4::timestamptz)
                    )
                  )
-               order by e.owner_graph_domain,e.relation_type,e.id
+               order by a.owner_graph_domain,a.relation_type,e.id
               `,
               [federatedIds, scope.spaces, vaultIds, asOf],
             ),
@@ -843,6 +861,8 @@ export function registerOperatorRoutes(
           valid_from: null,
           valid_to: null,
           recorded_at: null,
+          assertion_lifecycle: null,
+          temporal_state: asOf ? "HISTORICAL" : "CURRENT",
         })),
         ...federatedEdgesResult.rows.map((row) => ({
           id: `federated-edge:${String(row.id)}`,
@@ -868,6 +888,14 @@ export function registerOperatorRoutes(
           valid_from: row.valid_from,
           valid_to: row.valid_to,
           recorded_at: row.recorded_at,
+          assertion_lifecycle: row.assertion_lifecycle,
+          temporal_state:
+            row.assertion_lifecycle === "SUPERSEDED" ||
+            row.assertion_lifecycle === "RETIRED"
+              ? row.assertion_lifecycle
+              : asOf
+                ? "HISTORICAL"
+                : "CURRENT",
         })),
       ];
 

@@ -54,6 +54,69 @@ describe("parseWikiLinks", () => {
   });
 });
 
+describe("portable vault paths", () => {
+  const document = (id: string): string =>
+    [
+      "---",
+      `id: ${id}`,
+      "type: rule",
+      "status: active",
+      "---",
+      `# ${id}`,
+      "",
+      "Portable path fixture.",
+    ].join("\n");
+
+  it.skipIf(process.platform === "win32")(
+    "rejects paths that collide on a case-insensitive filesystem",
+    async () => {
+      const root = await mkdtemp(path.join(tmpdir(), "akp-path-case-"));
+      temporaryRoots.push(root);
+      await writeFile(path.join(root, "A.md"), document("PATH-UPPER"), "utf8");
+      await writeFile(path.join(root, "a.md"), document("PATH-LOWER"), "utf8");
+
+      await expect(inspectVault(root)).rejects.toThrow(
+        /VAULT_PORTABLE_PATH_COLLISION/,
+      );
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "rejects canonically equivalent Unicode paths",
+    async () => {
+      const root = await mkdtemp(path.join(tmpdir(), "akp-path-unicode-"));
+      temporaryRoots.push(root);
+      await writeFile(
+        path.join(root, "caf\u00e9.md"),
+        document("PATH-NFC"),
+        "utf8",
+      );
+      await writeFile(
+        path.join(root, "cafe\u0301.md"),
+        document("PATH-NFD"),
+        "utf8",
+      );
+
+      await expect(inspectVault(root)).rejects.toThrow(
+        /VAULT_PORTABLE_PATH_COLLISION/,
+      );
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "rejects Windows-reserved path segments before import",
+    async () => {
+      const root = await mkdtemp(path.join(tmpdir(), "akp-path-reserved-"));
+      temporaryRoots.push(root);
+      await writeFile(path.join(root, "CON.md"), document("PATH-CON"), "utf8");
+
+      await expect(inspectVault(root)).rejects.toThrow(
+        /VAULT_NON_PORTABLE_PATH/,
+      );
+    },
+  );
+});
+
 describe("agent-facing curation boundary", () => {
   it("promotes curated recovery maps but archives copied acquisition manifests", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "akp-vault-curation-"));

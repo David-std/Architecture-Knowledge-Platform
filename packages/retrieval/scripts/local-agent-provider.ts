@@ -63,14 +63,25 @@ async function requestBody(
   return parsed as Record<string, unknown>;
 }
 
-function messageContent(value: unknown): string | null {
-  if (typeof value === "string") return value;
-  if (!Array.isArray(value)) return null;
-  const last = value.at(-1) as Record<string, unknown> | undefined;
-  const content = last?.content;
-  return typeof content === "string" ? content : null;
+function chatPrompt(messages: unknown[]): string {
+  const turns = messages.map((value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw new Error("Each message must be an object.");
+    }
+    const message = value as Record<string, unknown>;
+    if (
+      !["system", "user", "assistant"].includes(String(message.role)) ||
+      typeof message.content !== "string"
+    ) {
+      throw new Error("Each message needs a valid role and text content.");
+    }
+    const content = message.content
+      .replaceAll("<|im_start|>", "[im_start]")
+      .replaceAll("<|im_end|>", "[im_end]");
+    return `<|im_start|>${message.role}\n${content}<|im_end|>\n`;
+  });
+  return `${turns.join("")}<|im_start|>assistant\n`;
 }
-
 const server = createServer(async (request, response) => {
   try {
     if (request.method === "GET" && request.url === "/health") {
@@ -108,17 +119,20 @@ const server = createServer(async (request, response) => {
       Number.isFinite(requestedTemperature) && requestedTemperature > 0;
 
     const started = performance.now();
-    const output = await generator(messages as never, {
+    const output = await generator(chatPrompt(messages), {
       max_new_tokens: maxNewTokens,
       do_sample: doSample,
       ...(doSample
         ? { temperature: Math.max(0.01, Math.min(2, requestedTemperature)) }
         : {}),
-      return_full_text: true,
+      return_full_text: false,
     });
     const first = Array.isArray(output) ? output[0] : output;
     const record = first as Record<string, unknown> | undefined;
-    const content = messageContent(record?.generated_text);
+    const content =
+      typeof record?.generated_text === "string"
+        ? record.generated_text.trim()
+        : null;
     if (!content) {
       throw new Error("Local model returned no assistant message.");
     }

@@ -47,6 +47,13 @@ jobs:
           AKP_CAPABILITY_ACCEPTANCE_JSON: reports/ci/capability-acceptance.json
           AKP_CAPABILITY_ACCEPTANCE_MARKDOWN: reports/ci/capability-acceptance.md
         run: pnpm assurance:capabilities
+      - name: Validate Deep Spec same-SHA traceability
+        env:
+          AKP_RELEASE_ASSURANCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+          AKP_CAPABILITY_EVIDENCE_LEDGER: reports/ci/release-assurance-evidence.json
+          AKP_DEEP_SPEC_TRACEABILITY_JSON: reports/ci/deep-spec-traceability.json
+          AKP_DEEP_SPEC_TRACEABILITY_MARKDOWN: reports/ci/deep-spec-traceability.md
+        run: pnpm assurance:deep-spec
       - name: Generate parity and exclusion reports
         env:
           AKP_CAPABILITY_ACCEPTANCE_JSON: reports/ci/capability-acceptance.json
@@ -69,6 +76,8 @@ jobs:
             reports/ci/release-assurance-evidence.json
             reports/ci/capability-acceptance.json
             reports/ci/capability-acceptance.md
+            reports/ci/deep-spec-traceability.json
+            reports/ci/deep-spec-traceability.md
             reports/ci/parity-exclusions
             reports/ci/release-assurance-package
           if-no-files-found: warn

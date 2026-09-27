@@ -302,6 +302,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "apps/api/test/audit-export-query-bounds.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "apps/api/test/auth-space.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
@@ -1297,6 +1302,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/worker/src/ingest-transition.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/worker/src/instrumentation.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -1398,6 +1408,11 @@
     },
     {
       "path": "apps/worker/test/evidence-fragment.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/worker/test/ingest-transition.integration.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -2247,6 +2262,11 @@
       "reason": "versioned registered product evaluation"
     },
     {
+      "path": "evals/registered/v0.4-deep-spec-traceability.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "versioned registered product evaluation"
+    },
+    {
       "path": "evals/registered/v0.4-evidence-sources.json",
       "category": "PRODUCT_EVAL",
       "reason": "versioned registered product evaluation"
@@ -2298,6 +2318,11 @@
     },
     {
       "path": "packages/audit-export/test/audit-export.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/audit-export/test/streaming.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -3513,6 +3538,11 @@
     },
     {
       "path": "scripts/concurrency-benchmark.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/deep-spec-traceability.mjs",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },

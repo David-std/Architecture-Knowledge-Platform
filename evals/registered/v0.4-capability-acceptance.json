@@ -773,6 +773,7 @@
         },
         "benchmark": {
           "evidence": [
+            "benchmark:baseline-evidence",
             "benchmark:scale",
             "benchmark:enterprise-state",
             "benchmark:concurrency",

@@ -44,6 +44,8 @@ export interface GraphEdge {
   valid_from?: string | null;
   valid_to?: string | null;
   recorded_at?: string | null;
+  assertion_lifecycle?: string | null;
+  temporal_state?: string | null;
 }
 
 export interface OperatorGraph {
@@ -471,6 +473,11 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
                       {edge.valid_to ?? "open"} · Recorded{" "}
                       {edge.recorded_at ?? "unknown"}
                     </small>
+                    <br />
+                    <small>
+                      Assertion state {edge.assertion_lifecycle ?? "LEGACY"} ·{" "}
+                      Temporal state {edge.temporal_state ?? "CURRENT"}
+                    </small>
                     <details>
                       <summary>Provenance / evidence</summary>
                       <pre>
@@ -483,6 +490,9 @@ export function GraphExplorer({ graph }: { graph: OperatorGraph }) {
                             validFrom: edge.valid_from ?? null,
                             validTo: edge.valid_to ?? null,
                             recordedAt: edge.recorded_at ?? null,
+                            assertionLifecycle:
+                              edge.assertion_lifecycle ?? null,
+                            temporalState: edge.temporal_state ?? "CURRENT",
                           },
                           null,
                           2,

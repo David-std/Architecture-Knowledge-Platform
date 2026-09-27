@@ -56,6 +56,16 @@ type WorkspaceHome = {
   recentHandoffs: Array<{ id: string | number }>;
   freshness: Freshness[];
   connectors: Array<{ attention: number }>;
+  federation: Array<{
+    space_id: string;
+    trust_state: string;
+    discovery_mode: string;
+    count: number;
+    last_seen_at: string | null;
+    degraded: number;
+    circuit_open: number;
+    failure_codes: string[];
+  }>;
 };
 
 const severityRank: Record<string, number> = {
@@ -140,12 +150,26 @@ export default async function Home() {
   ];
 
   const unhealthy = home.freshness.filter(
-    (item) => item.status !== "READY" || !revisionParity(item),
+    (item) =>
+      !["READY", "CONSISTENT"].includes(item.status.toUpperCase()) ||
+      !revisionParity(item),
   );
   const connectorAttention = home.connectors.reduce(
     (sum, item) => sum + Number(item.attention ?? 0),
     0,
   );
+  const federationDegraded = home.federation.reduce(
+    (sum, item) => sum + Number(item.degraded ?? 0),
+    0,
+  );
+  const federationCircuitOpen = home.federation.reduce(
+    (sum, item) => sum + Number(item.circuit_open ?? 0),
+    0,
+  );
+  const federationFailureCodes = [
+    ...new Set(home.federation.flatMap((item) => item.failure_codes ?? [])),
+  ];
+  const federationPartial = federationDegraded > 0 || federationCircuitOpen > 0;
   const delivery = [...home.pullRequests, ...home.incidentsAndDeployments];
   const totalVaults = home.freshness.length;
   const synchronizedVaults = totalVaults - unhealthy.length;
@@ -285,6 +309,35 @@ export default async function Home() {
           <div className="metric-card-bottom">
             <Link href="/admin/health" className="metric-action-btn">
               Diagnosticar salud
+            </Link>
+          </div>
+        </div>
+
+        <div className="metric-card">
+          <div className="metric-card-top">
+            <span className="metric-label">Federación</span>
+            <span
+              className={`metric-status-badge ${
+                federationPartial ? "warning" : "ok"
+              }`}
+            >
+              {federationPartial ? "PARTIAL" : "HEALTHY"}
+            </span>
+          </div>
+          <div className="metric-value-row">
+            <span className="metric-number">{federationDegraded}</span>
+            <span className="metric-context">
+              peer(s) con fallo reciente · circuitos abiertos{" "}
+              {federationCircuitOpen}
+            </span>
+          </div>
+          <small>
+            {federationFailureCodes.join(" · ") ||
+              "Sin fallos remotos registrados"}
+          </small>
+          <div className="metric-card-bottom">
+            <Link href="/admin/health" className="metric-action-btn">
+              Diagnosticar federación
             </Link>
           </div>
         </div>

@@ -57,6 +57,7 @@ const reportSpecs = [
         "contextual-chunk-benchmark.json",
         "competitive/contextual-chunk-benchmark.json",
       ],
+      ["baseline-evidence.json", "acceptance/baseline-evidence.json"],
     ],
   },
   {
@@ -173,6 +174,14 @@ const localFiles = [
   [
     "reports/ci/capability-acceptance.md",
     "acceptance/capability-acceptance.md",
+  ],
+  [
+    "reports/ci/deep-spec-traceability.json",
+    "acceptance/deep-spec-traceability.json",
+  ],
+  [
+    "reports/ci/deep-spec-traceability.md",
+    "acceptance/deep-spec-traceability.md",
   ],
   [
     "evals/registered/competitive-arena-v0.4.json",
