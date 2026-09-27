@@ -28,7 +28,7 @@
         "remote:ci"
       ],
       "artifactEvidence": [
-        "benchmark:scale"
+        "benchmark:baseline-evidence"
       ]
     },
     {
