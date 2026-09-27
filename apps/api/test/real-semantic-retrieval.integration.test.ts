@@ -476,6 +476,7 @@ integration("real multilingual semantic retrieval", () => {
           "What guaranteed 24/7 telephone support SLA is included for premium customers?";
         let unsupportedComparisonPool:
           Parameters<typeof assessRetrievalAnswerability>[0] | undefined;
+        const unsupportedRetrievalStarted = performance.now();
         const unsupportedHits = await queryKnowledge(
           db,
           {
@@ -498,6 +499,8 @@ integration("real multilingual semantic retrieval", () => {
             },
           },
         );
+        const unsupportedRetrievalLatencyMs =
+          performance.now() - unsupportedRetrievalStarted;
         const unsupportedAnswerabilityPool =
           unsupportedComparisonPool ?? unsupportedHits;
         const unsupportedVerificationStarted = performance.now();
@@ -620,7 +623,7 @@ integration("real multilingual semantic retrieval", () => {
             goldDocumentIds: [] as string[],
             rawHits: unsupportedHits,
             assessment: unsupportedAssessment,
-            retrievalLatencyMs: 0,
+            retrievalLatencyMs: unsupportedRetrievalLatencyMs,
             verificationLatencyMs: unsupportedVerificationLatencyMs,
           },
           {
@@ -705,10 +708,19 @@ integration("real multilingual semantic retrieval", () => {
               },
             ]),
           ),
+          presentationLimitProbe: {
+            supportVerification: limitedVerificationLatencyMs,
+          },
           beforeAfterMatrix: cases.map((entry) => ({
             id: entry.id,
             expected: entry.expectedSupport ? "SUPPORTED" : "ABSTAIN",
             legacyVectorMargin: legacyPureVectorSupport(entry.assessment)
+              ? "SUPPORTED"
+              : "ABSTAIN",
+            passageTextOnly: entry.assessment.candidateSignals.some(
+              (signal) =>
+                signal.passageSupport.reason === "PASSAGE_TEXT_SUPPORT",
+            )
               ? "SUPPORTED"
               : "ABSTAIN",
             deterministicPassageSupport: entry.assessment.supported
