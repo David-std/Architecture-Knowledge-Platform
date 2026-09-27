@@ -104,8 +104,7 @@ describe("retrieval answerability", () => {
     });
     const siblingBase = hit(11, {
       title: "Replay observability",
-      excerpt:
-        "The worker emits latency telemetry after each replay attempt.",
+      excerpt: "The worker emits latency telemetry after each replay attempt.",
       contributions: [contribution("vector", 0.87, 2)],
     });
     const sibling: SearchHit = {
