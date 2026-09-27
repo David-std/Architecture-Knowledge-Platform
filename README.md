@@ -5,7 +5,6 @@
 ![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs&logoColor=white)
 ![Fastify](https://img.shields.io/badge/Fastify-5-000000?logo=fastify&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16%20%2B%20pgvector-4169E1?logo=postgresql&logoColor=white)
-![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
 ![MCP](https://img.shields.io/badge/Model%20Context%20Protocol-1.30-6B5BFF)
 
 Architecture Knowledge Platform (AKP) is a local-first, governed **Context Workspace and Context Fabric** for software teams, humans and AI agents. It connects approved knowledge, software structure, work state, runtime observations and external systems without replacing their authority.
