@@ -15,8 +15,7 @@ const DIRECT_SUPPORT_CHANNELS = new Set([
   "temporal",
 ]);
 
-export interface RetrievalAnswerabilityPolicy
-  extends DeterministicPassageSupportPolicy {}
+export interface RetrievalAnswerabilityPolicy extends DeterministicPassageSupportPolicy {}
 
 export type RetrievalAnswerabilityPolicyInput =
   Partial<RetrievalAnswerabilityPolicy>;
