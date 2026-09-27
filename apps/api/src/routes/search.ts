@@ -3649,7 +3649,9 @@ export function registerSearchRoutes(
         {},
         {
           allowGraphSupport: plan.channels.includes("graph"),
-          comparisonHits: answerabilityCandidates,
+          ...(answerabilityCandidates
+            ? { comparisonHits: answerabilityCandidates }
+            : {}),
         },
       );
       if (!answerability.supported && hits.length > 0) {
@@ -4611,10 +4613,10 @@ export function registerSearchRoutes(
                     contribution.channel === "graph-ppr",
                 ),
               )),
-          comparisonHits:
-            reasoningExecutionMode === "PLAN"
-              ? undefined
-              : directAnswerabilityCandidates,
+          ...(reasoningExecutionMode !== "PLAN" &&
+          directAnswerabilityCandidates
+            ? { comparisonHits: directAnswerabilityCandidates }
+            : {}),
         },
       );
       if (!answerability.supported && hits.length > 0) {
