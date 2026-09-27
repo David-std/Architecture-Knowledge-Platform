@@ -16,6 +16,7 @@ const ROOT = process.cwd();
 const DATABASE_URL =
   process.env.DATABASE_URL ?? "postgres://akp:akp@127.0.0.1:55432/akp";
 const API_URL = process.env.AKP_API_URL ?? "http://127.0.0.1:8080";
+const API_PORT = new URL(API_URL).port || "8080";
 const ADMIN_WEB = "http://127.0.0.1:3100";
 const READER_WEB = "http://127.0.0.1:3101";
 const SPACE_ID = "00000000-0000-0000-0000-000000000003";
@@ -113,6 +114,16 @@ function spawnService(label, command, args, env = {}) {
 
 async function stopService(child) {
   if (!child || child.exitCode !== null) return;
+  if (process.platform === "win32" && child.pid) {
+    try {
+      execFileSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
+        stdio: "ignore",
+      });
+    } catch {
+      child.kill("SIGKILL");
+    }
+    return;
+  }
   const exited = new Promise((resolve) => child.once("exit", resolve));
   try {
     if (process.platform !== "win32" && child.pid) {
@@ -143,7 +154,7 @@ async function ensureApi() {
     return;
   } catch {
     spawnService("api", "pnpm", ["--filter", "@akp/api", "start"], {
-      PORT: "8080",
+      PORT: API_PORT,
     });
     await waitForUrl(API_URL + "/health/readiness");
   }
@@ -614,7 +625,7 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
     } catch {
       apiWasSpawned = true;
       spawnService("api", "pnpm", ["--filter", "@akp/api", "start"], {
-        PORT: "8080",
+        PORT: API_PORT,
       });
       await waitForUrl(API_URL + "/health/readiness");
     }
@@ -742,8 +753,9 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
 
     await browserStep(t, "1b federation partial state", pages, async () => {
       await adminPage.goto(ADMIN_WEB + "/");
+      await adminPage.getByText("Federación", { exact: true }).waitFor();
       const body = await adminPage.locator("body").innerText();
-      assert.match(body, /Federación/);
+      assert.match(body, /Federación/i);
       assert.match(body, /PARTIAL/);
       assert.match(body, /FEDERATION_PEER_TIMEOUT/);
       assert.match(body, /circuitos abiertos 1/);
@@ -851,10 +863,12 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
         );
 
         await adminPage.reload();
-        await adminPage
-          .getByText(/Recovery local restaurado\./)
-          .first()
-          .waitFor();
+        await adminPage.waitForFunction(
+          (summary) =>
+            document.querySelector('textarea[name="summary"]')?.value ===
+            summary,
+          recoverySummary,
+        );
         assert.equal(
           await adminPage.locator('textarea[name="summary"]').inputValue(),
           recoverySummary,
@@ -1035,6 +1049,9 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
         await adminPage.goto(
           ADMIN_WEB + "/graph?vaultId=" + encodeURIComponent(fixture.vaultId),
         );
+        await adminPage
+          .getByText("Estado del grafo", { exact: true })
+          .waitFor();
         const body = await adminPage.locator("body").innerText();
         assert.match(body, /Estado del grafo/);
         assert.match(
