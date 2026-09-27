@@ -43,7 +43,9 @@ const fixture = {
   projectionId: randomUUID(),
   entryNodeId: randomUUID(),
   helperNodeId: randomUUID(),
+  edgeAssertionId: randomUUID(),
   edgeId: randomUUID(),
+  federationPeerId: randomUUID(),
   sourceId: randomUUID(),
   evidenceId: randomUUID(),
   documentId: randomUUID(),
@@ -357,6 +359,24 @@ async function setupDatabase(db) {
   );
 
   await db.query(
+    "insert into context_fabric_peers(" +
+      "id,organization_id,space_id,peer_key,display_name,endpoint," +
+      "discovery_mode,trust_state,capabilities,revision,last_seen_at," +
+      "failure_count,circuit_open_until,last_failure_code" +
+      ") values(" +
+      "$1,'00000000-0000-0000-0000-000000000001',$2,$3," +
+      "'Browser degraded federation peer','https://browser-peer.invalid'," +
+      "'REMOTE_QUERY','APPROVED','{}'::jsonb,'browser-peer-r1',now()," +
+      "2,now()+interval '10 minutes','FEDERATION_PEER_TIMEOUT'" +
+      ")",
+    [
+      fixture.federationPeerId,
+      SPACE_ID,
+      "browser-e2e-peer-" + fixture.federationPeerId.slice(0, 8),
+    ],
+  );
+
+  await db.query(
     "insert into assurance_runs(" +
       "id,space_id,vault_id,trigger,detectors,status,idempotency_key," +
       "requested_by_user_id,completed_at,result_summary" +
@@ -446,23 +466,45 @@ async function setupDatabase(db) {
     );
   }
 
+  const browserEdgeHash = sha256("browser-code-edge");
+  await db.query(
+    "insert into federated_graph_relationship_assertions(" +
+      "id,space_id,owner_graph_domain,from_node_id,to_node_id,relation_type," +
+      "authorization_path,lifecycle,derivation,source_ids,evidence_ids," +
+      "locator_refs,provenance_revision,support_set_id,confidence,valid_from," +
+      "valid_to,recorded_at,assertion_hash" +
+      ") values(" +
+      "$1,$2,'CODE',$3,$4,'CALLS',null,'ACTIVE','STATICALLY_RESOLVED'," +
+      "'[]'::jsonb,'[]'::jsonb,'[]'::jsonb,'browser-code-r1',null,1.0," +
+      "'2026-06-01T00:00:00.000Z',null,'2026-06-01T00:00:00.000Z',$5" +
+      ")",
+    [
+      fixture.edgeAssertionId,
+      SPACE_ID,
+      fixture.entryNodeId,
+      fixture.helperNodeId,
+      browserEdgeHash,
+    ],
+  );
+
   await db.query(
     "insert into federated_graph_edges(" +
       "id,space_id,owner_graph_domain,from_node_id,to_node_id,relation_type," +
       "authorization_path,derivation,source_ids,evidence_ids,locator_refs," +
       "provenance_revision,support_set_id,confidence,valid_from,valid_to," +
-      "recorded_at,provenance_hash" +
+      "recorded_at,provenance_hash,assertion_id" +
       ") values(" +
       "$1,$2,'CODE',$3,$4,'CALLS',null,'STATICALLY_RESOLVED'," +
       "'[]'::jsonb,'[]'::jsonb,'[]'::jsonb,'browser-code-r1',null,1.0," +
-      "'2026-06-01T00:00:00.000Z',null,'2026-06-01T00:00:00.000Z',$5" +
+      "'2026-06-01T00:00:00.000Z',null,'2026-06-01T00:00:00.000Z',$5,$6" +
       ")",
     [
       fixture.edgeId,
       SPACE_ID,
       fixture.entryNodeId,
       fixture.helperNodeId,
-      sha256("browser-code-edge"),
+      browserEdgeHash,
+      fixture.edgeAssertionId,
     ],
   );
   await db.query(
