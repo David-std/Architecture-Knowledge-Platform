@@ -745,9 +745,7 @@ async function executeCase(
         : {}),
     },
   );
-  const supportedCandidateKeys = new Set(
-    answerability.supportedCandidateKeys,
-  );
+  const supportedCandidateKeys = new Set(answerability.supportedCandidateKeys);
   const hits = rawHits.filter((hit) =>
     supportedCandidateKeys.has(retrievalAnswerabilityCandidateKey(hit)),
   );
