@@ -3192,11 +3192,6 @@
       "reason": "runtime, build or operational code"
     },
     {
-      "path": "packages/retrieval/src/support-verifier.ts",
-      "category": "PRODUCT_CODE",
-      "reason": "runtime, build or operational code"
-    },
-    {
       "path": "packages/retrieval/src/candidate-policy.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3293,6 +3288,11 @@
     },
     {
       "path": "packages/retrieval/src/structural-context.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/retrieval/src/support-verifier.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
