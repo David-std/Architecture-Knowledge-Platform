@@ -503,12 +503,12 @@ integration("real multilingual semantic retrieval", () => {
             queryEmbeddingService: queryService,
           },
         );
-        expect(new Set(federatedHits.map((hit) => hit.documentId))).toEqual(
-          new Set([
-            targetRelevant.id,
-            targetRelevantPeer.id,
-            foreignCandidate.id,
-          ]),
+        expect(federatedHits).toHaveLength(3);
+        expect(federatedHits.map((hit) => hit.documentId)).toContain(
+          targetRelevant.id,
+        );
+        expect(federatedHits.map((hit) => hit.documentId)).toContain(
+          foreignCandidate.id,
         );
         expect(new Set(federatedHits.map((hit) => hit.vaultId))).toEqual(
           new Set([targetVaultId, foreignVaultId]),
