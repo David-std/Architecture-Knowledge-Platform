@@ -69,7 +69,7 @@ export const DEFAULT_DETERMINISTIC_PASSAGE_SUPPORT_POLICY: DeterministicPassageS
   {
     minimumSalientCoverage: 0.4,
     minimumSalientOverlap: 2,
-    semanticCueMaxVectorRank: 1,
+    semanticCueMaxVectorRank: 3,
   };
 
 export interface DeterministicPassageSupportSignal {
@@ -208,6 +208,8 @@ const PASSAGE_CUE_PATTERNS: Record<PassageAnswerCue, readonly string[]> = {
     "through",
     "via",
     "submit*",
+    "file*",
+    "apply*",
     "check*",
     "consult*",
     "persist*",
