@@ -3247,29 +3247,34 @@ export async function queryKnowledge(
           ],
         );
   const structuralContextByUnit = new Map(
-    selectedUnits.rows.map((row) => [
-      String(row.id),
-      {
+    selectedUnits.rows.map((row) => {
+      const unit = {
         body: String(row.body),
-        headingPath: Array.isArray(row.heading_path)
-          ? row.heading_path.map(String)
-          : [],
-        ...(row.parent_unit_id
-          ? { parentUnitId: String(row.parent_unit_id) }
-          : {}),
-        ...(row.parent_unit_type
-          ? { parentUnitType: String(row.parent_unit_type) }
-          : {}),
-        context: rehydrateStructuralContext({
-          body: String(row.body),
-          unitType: String(row.unit_type),
-          parentBody: row.parent_body ? String(row.parent_body) : null,
-          parentUnitType: row.parent_unit_type
-            ? String(row.parent_unit_type)
-            : null,
-        }),
-      },
-    ]),
+        unitType: String(row.unit_type),
+        parentBody: row.parent_body ? String(row.parent_body) : null,
+        parentUnitType: row.parent_unit_type
+          ? String(row.parent_unit_type)
+          : null,
+        focusText: input.query,
+      };
+      return [
+        String(row.id),
+        {
+          body: unit.body,
+          headingPath: Array.isArray(row.heading_path)
+            ? row.heading_path.map(String)
+            : [],
+          ...(row.parent_unit_id
+            ? { parentUnitId: String(row.parent_unit_id) }
+            : {}),
+          ...(row.parent_unit_type
+            ? { parentUnitType: String(row.parent_unit_type) }
+            : {}),
+          context: rehydrateStructuralContext(unit),
+          excerpt: rehydrateStructuralContext(unit, 1200),
+        },
+      ] as const;
+    }),
   );
   const generationForContribution = (
     contribution: (typeof fused)[number]["contributions"][number],
@@ -3472,10 +3477,9 @@ export async function queryKnowledge(
         ...(graphProvenanceByCandidate.has(item.id)
           ? { graphProvenance: graphProvenanceByCandidate.get(item.id) }
           : {}),
-        excerpt: (structuralContext?.body ?? String(row.body_cache)).slice(
-          0,
-          1200,
-        ),
+        excerpt:
+          structuralContext?.excerpt ??
+          String(row.body_cache).slice(0, 1200),
         citations,
         warnings: [
           "UNTRUSTED_RETRIEVED_CONTENT",
