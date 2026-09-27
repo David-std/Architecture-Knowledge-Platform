@@ -1347,9 +1347,9 @@ describe("buildContextPacket", () => {
         ],
       });
 
-      expect(packet.sections.some((section) => section.documentId === directId)).toBe(
-        true,
-      );
+      expect(
+        packet.sections.some((section) => section.documentId === directId),
+      ).toBe(true);
       expect(packet.sections[0]).toMatchObject({
         documentId: directId,
         retrievalRank: 1,
@@ -1392,9 +1392,9 @@ describe("buildContextPacket", () => {
     });
 
     expect(packet.sections[0]?.kind).toBe("rule");
-    expect(packet.sections.some((section) => section.documentId === directId)).toBe(
-      false,
-    );
+    expect(
+      packet.sections.some((section) => section.documentId === directId),
+    ).toBe(false);
     expect(packet.status).toBe("DEGRADED");
     expect(packet.gaps).toEqual(
       expect.arrayContaining([
@@ -1445,12 +1445,14 @@ describe("buildContextPacket", () => {
       ],
     });
 
-    expect(pair.full.sections.some((section) => section.documentId === directId)).toBe(
-      true,
-    );
-    expect(pair.compact.content.some((section) => section.identity.documentId === directId)).toBe(
-      false,
-    );
+    expect(
+      pair.full.sections.some((section) => section.documentId === directId),
+    ).toBe(true);
+    expect(
+      pair.compact.content.some(
+        (section) => section.identity.documentId === directId,
+      ),
+    ).toBe(false);
     expect(pair.compact.identity.status).toBe("DEGRADED");
     expect(pair.compact.gaps).toEqual(
       expect.arrayContaining([
@@ -1485,7 +1487,8 @@ describe("buildContextPacket", () => {
               title: "Compiled guidance",
             },
           },
-          content: "Compiled Markdown can be identified without inventing a citation.",
+          content:
+            "Compiled Markdown can be identified without inventing a citation.",
           kind: "concept",
           retrievalRank: 1,
         },
