@@ -57,6 +57,7 @@ const reportSpecs = [
         "contextual-chunk-benchmark.json",
         "competitive/contextual-chunk-benchmark.json",
       ],
+      ["baseline-evidence.json", "acceptance/baseline-evidence.json"],
     ],
   },
   {
