@@ -53,7 +53,7 @@ interface SearchHit {
   fusionContributions?: FusionContribution[];
 }
 
-interface SearchResponse {
+export interface SearchResponse {
   intent: string;
   plan?: {
     requestedIntent?: string;
@@ -63,7 +63,9 @@ interface SearchResponse {
   channels: string[];
   warnings: string[];
   degraded: boolean;
+  retrievalOutcome?: "SUPPORTED" | "EXPLORATORY_ONLY" | "NO_CANDIDATES";
   hits: SearchHit[];
+  exploratoryHits?: SearchHit[];
   noAnswer: {
     status?: string;
     reason: string;
@@ -98,6 +100,26 @@ interface ContextSection {
   selectionReason?: string;
   retrievalChannels?: string[];
   sourceOrEvidenceIds?: string[];
+}
+
+export function searchResultPresentation(result: SearchResponse): {
+  supportedCount: number;
+  exploratoryCount: number;
+  outcome: "SUPPORTED" | "EXPLORATORY_ONLY" | "NO_CANDIDATES";
+} {
+  const exploratoryCount = result.exploratoryHits?.length ?? 0;
+  const outcome =
+    result.retrievalOutcome ??
+    (result.hits.length > 0
+      ? "SUPPORTED"
+      : exploratoryCount > 0
+        ? "EXPLORATORY_ONLY"
+        : "NO_CANDIDATES");
+  return {
+    supportedCount: result.hits.length,
+    exploratoryCount,
+    outcome,
+  };
 }
 
 interface ContextPacket {
@@ -207,6 +229,8 @@ export default async function SearchPage({
           }),
         })
       : null;
+  const presentation = result ? searchResultPresentation(result) : null;
+  const exploratoryHits = result?.exploratoryHits ?? [];
   const evidenceEntries = result
     ? await Promise.all(
         result.hits
@@ -376,6 +400,39 @@ export default async function SearchPage({
           ))}
           {(result.noAnswer.recommendedActions ?? []).map((action) => (
             <p key={action}>Acción recomendada: {action}</p>
+          ))}
+        </section>
+      ) : null}
+
+      {presentation?.outcome === "EXPLORATORY_ONLY" &&
+      exploratoryHits.length > 0 ? (
+        <section className="card" role="status" style={{ marginTop: 16 }}>
+          <h2>Coincidencias exploratorias</h2>
+          <p>
+            Se recuperaron candidatos autorizados, pero no alcanzaron el nivel
+            de soporte necesario para tratarlos como evidencia de una respuesta.
+            Puedes inspeccionarlos para reformular la búsqueda.
+          </p>
+          {exploratoryHits.map((hit, index) => (
+            <article
+              key={`exploratory-${hit.documentId}`}
+              style={{ marginTop: index === 0 ? 12 : 20 }}
+            >
+              <p className="muted">Coincidencia exploratoria {index + 1}</p>
+              <h3>
+                <Link href={`/documents/${hit.documentId}`}>{hit.title}</Link>
+              </h3>
+              <p>{hit.excerpt}</p>
+              <small className="muted">
+                No es evidencia aprobada para responder · score{" "}
+                {hit.score.toFixed(4)}
+                {hit.fusionContributions?.length
+                  ? ` · canales ${hit.fusionContributions
+                      .map((entry) => entry.channel)
+                      .join(" · ")}`
+                  : ""}
+              </small>
+            </article>
           ))}
         </section>
       ) : null}
