@@ -380,8 +380,7 @@ function compareCandidates(a: PacketCandidate, b: PacketCandidate): number {
   const bRank = validRetrievalRank(b);
   const aRanked = aRank !== undefined;
   const bRanked = bRank !== undefined;
-  const mandatory =
-    Number(Boolean(b.mandatory)) - Number(Boolean(a.mandatory));
+  const mandatory = Number(Boolean(b.mandatory)) - Number(Boolean(a.mandatory));
   if (mandatory !== 0) return mandatory;
 
   // Ranked candidates are concrete passages that already passed the
@@ -392,8 +391,7 @@ function compareCandidates(a: PacketCandidate, b: PacketCandidate): number {
       Number(bRanked) - Number(aRanked) ||
       authorityRank[a.hit.trust] - authorityRank[b.hit.trust] ||
       freshnessRank(a.hit.refreshStatus) - freshnessRank(b.hit.refreshStatus) ||
-      (aRank ?? Number.MAX_SAFE_INTEGER) -
-        (bRank ?? Number.MAX_SAFE_INTEGER) ||
+      (aRank ?? Number.MAX_SAFE_INTEGER) - (bRank ?? Number.MAX_SAFE_INTEGER) ||
       Number(hasEvidence(b)) - Number(hasEvidence(a)) ||
       independentSupportCount(b) - independentSupportCount(a) ||
       priority[a.kind] - priority[b.kind] ||
@@ -772,7 +770,9 @@ function diverseCandidateOrder(
   // Ranked candidates instead preserve the order of their best supported
   // passage, while still interleaving documents so one dossier cannot flood
   // a bounded packet.
-  if (!sorted.some((candidate) => validRetrievalRank(candidate) !== undefined)) {
+  if (
+    !sorted.some((candidate) => validRetrievalRank(candidate) !== undefined)
+  ) {
     const priorityTiers = [
       ...new Set(sorted.map((item) => priority[item.kind])),
     ];
