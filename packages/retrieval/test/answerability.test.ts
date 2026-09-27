@@ -114,7 +114,8 @@ describe("retrieval answerability", () => {
       [
         hit(1, {
           title: "Payment replay safety",
-          excerpt: "A replay uses the recorded idempotency key before applying a payment.",
+          excerpt:
+            "A replay uses the recorded idempotency key before applying a payment.",
           contributions: [contribution("vector", 0.854)],
         }),
         hit(2, {
