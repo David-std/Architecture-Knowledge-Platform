@@ -461,8 +461,7 @@ integration("real multilingual semantic retrieval", () => {
         expect(limitedHits).toHaveLength(1);
         expect(limitedHits[0]?.documentId).toBe(targetRelevant.id);
         expect(limitedComparisonPool?.length).toBeGreaterThanOrEqual(3);
-        const limitedAnswerabilityPool =
-          limitedComparisonPool ?? limitedHits;
+        const limitedAnswerabilityPool = limitedComparisonPool ?? limitedHits;
         const limitedVerificationStarted = performance.now();
         const limitedAssessment = assessRetrievalAnswerability(
           limitedAnswerabilityPool,
@@ -631,8 +630,7 @@ integration("real multilingual semantic retrieval", () => {
             rawHits: semanticNeighborCase.rawHits,
             assessment: semanticNeighborCase.assessment,
             retrievalLatencyMs: semanticNeighborCase.retrievalLatencyMs,
-            verificationLatencyMs:
-              semanticNeighborCase.verificationLatencyMs,
+            verificationLatencyMs: semanticNeighborCase.verificationLatencyMs,
           },
         ];
         const answerableCases = cases.filter((entry) => entry.expectedSupport);
@@ -654,7 +652,9 @@ integration("real multilingual semantic retrieval", () => {
           ),
         );
         const literalFailures = cases
-          .filter((entry) => entry.assessment.supported !== entry.expectedSupport)
+          .filter(
+            (entry) => entry.assessment.supported !== entry.expectedSupport,
+          )
           .map(
             (entry) =>
               `${entry.id}: expected ${entry.expectedSupport ? "SUPPORTED" : "ABSTAIN"} but got ${entry.assessment.supported ? "SUPPORTED" : "ABSTAIN"} (${entry.assessment.reason})`,
@@ -701,18 +701,16 @@ integration("real multilingual semantic retrieval", () => {
               {
                 retrieval: entry.retrievalLatencyMs,
                 supportVerification: entry.verificationLatencyMs,
-                total:
-                  entry.retrievalLatencyMs + entry.verificationLatencyMs,
+                total: entry.retrievalLatencyMs + entry.verificationLatencyMs,
               },
             ]),
           ),
           beforeAfterMatrix: cases.map((entry) => ({
             id: entry.id,
             expected: entry.expectedSupport ? "SUPPORTED" : "ABSTAIN",
-            legacyVectorMargin:
-              legacyPureVectorSupport(entry.assessment)
-                ? "SUPPORTED"
-                : "ABSTAIN",
+            legacyVectorMargin: legacyPureVectorSupport(entry.assessment)
+              ? "SUPPORTED"
+              : "ABSTAIN",
             deterministicPassageSupport: entry.assessment.supported
               ? "SUPPORTED"
               : "ABSTAIN",
