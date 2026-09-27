@@ -189,7 +189,7 @@ const QUERY_CUE_PATTERNS: Record<PassageAnswerCue, readonly string[]> = {
   ],
   CONDITION: ["when", "cuando", "under what", "en que caso", "en que casos"],
   RATIONALE: ["why", "por que", "razon", "motivo"],
-  RULE: ["rule", "policy", "bounded", "limit*", "regla", "politica", "limita*"],
+  RULE: ["rule", "policy", "bounded", "regla", "politica"],
   DEFINITION: ["what is", "que es", "define*", "significa*"],
   COMPARISON: [
     "compare*",
