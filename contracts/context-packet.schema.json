@@ -303,6 +303,10 @@
         "score": {
           "type": "number"
         },
+        "retrievalRank": {
+          "type": "integer",
+          "minimum": 1
+        },
         "selectionReason": {
           "type": "string"
         },
@@ -565,6 +569,10 @@
         },
         "score": {
           "type": "number"
+        },
+        "retrievalRank": {
+          "type": "integer",
+          "minimum": 1
         },
         "graphProvenance": {
           "type": "array",
