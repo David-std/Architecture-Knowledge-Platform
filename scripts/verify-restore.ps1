@@ -114,6 +114,10 @@ if (
 if ($manifest.derivedState.reconciliationAction -ne "REBUILD_DERIVED_PROJECTIONS") {
   throw "Backup manifest does not declare the supported derived-state reconciliation action."
 }
+$excludedEphemeralTables = @($manifest.durableState.excludedEphemeralTables)
+if ($excludedEphemeralTables -notcontains "repository_publication_locks") {
+  throw "Backup manifest does not exclude ephemeral repository publication locks."
+}
 $artifactNames = @()
 foreach ($entry in $manifest.files) {
   $name = [string]$entry.name
@@ -162,6 +166,15 @@ if (
 ) {
   throw "Backup manifest does not declare the canonical managed Git revision."
 }
+if (
+  $bundleRequired -and
+  (
+    $manifest.managedRepository.publicationSerializationVerified -ne $true -or
+    [string]$manifest.managedRepository.publicationLockKey -notmatch '^[a-fA-F0-9]{64}$'
+  )
+) {
+  throw "Backup manifest does not prove managed Git/PostgreSQL publication serialization."
+}
 
 $database = "akp_restore_verify_$([guid]::NewGuid().ToString('N'))"
 $dumpTemporaryPath = "/tmp/akp-restore-$([guid]::NewGuid().ToString('N')).dump"
@@ -195,6 +208,15 @@ try {
     if ($LASTEXITCODE -ne 0 -or $present -ne "t") {
       throw "Restored database is missing required durable state table: $requiredTable"
     }
+  }
+
+  $restoredPublicationLocks = [int](Invoke-RestoredScalar -Database $database -Sql "select count(*) from repository_publication_locks;")
+  if ($restoredPublicationLocks -ne 0) {
+    throw "Restored database contains ephemeral repository publication locks."
+  }
+  $ambiguousPublicationStates = [int](Invoke-RestoredScalar -Database $database -Sql "select count(*) from reviews where status in ('PUBLISHING','ROLLING_BACK','PUBLICATION_RECOVERY_REQUIRED','ROLLBACK_RECOVERY_REQUIRED');")
+  if ($bundleRequired -and $ambiguousPublicationStates -ne 0) {
+    throw "Restored database contains ambiguous managed publication/recovery state."
   }
 
   if ($null -ne $recoveryVerification) {
@@ -365,4 +387,7 @@ Write-Output (@{
   durableRecoverySentinelsVerified = ($null -ne $recoveryVerification)
   derivedStateReconciliation = [string]$manifest.derivedState.reconciliationAction
   federationSecretsIncluded = [bool]$manifest.durableState.federationConfiguration.secretsIncluded
+  publicationSerializationVerified = [bool]$manifest.managedRepository.publicationSerializationVerified
+  restoredPublicationLocks = $restoredPublicationLocks
+  ambiguousPublicationStates = $ambiguousPublicationStates
 } | ConvertTo-Json)
