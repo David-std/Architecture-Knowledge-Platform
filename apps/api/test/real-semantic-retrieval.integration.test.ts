@@ -504,12 +504,12 @@ integration("real multilingual semantic retrieval", () => {
         const legacyPureVectorSupport = (
           assessment: ReturnType<typeof assessRetrievalAnswerability>,
         ) =>
-          assessment.vectorMargin !== null &&
-          assessment.vectorMargin >= 0.03;
+          assessment.vectorMargin !== null && assessment.vectorMargin >= 0.03;
         const legacySupportedAnswerable =
           legacyPureVectorSupport(limitedAssessment);
-        const legacyAcceptedUnsupported =
-          legacyPureVectorSupport(unsupportedAssessment);
+        const legacyAcceptedUnsupported = legacyPureVectorSupport(
+          unsupportedAssessment,
+        );
         const semanticMetrics = {
           schemaVersion: 1,
           evidenceBoundary:
