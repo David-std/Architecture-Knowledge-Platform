@@ -495,7 +495,7 @@ integration("real multilingual semantic retrieval", () => {
             types: [],
             minimumTrust: "MACHINE_SUPPORTED",
             mode: "SOURCE_BACKED",
-            limit: 3,
+            limit: targetDocuments.length + 1,
           },
           {
             vaultIds: [targetVaultId, foreignVaultId],
@@ -503,7 +503,7 @@ integration("real multilingual semantic retrieval", () => {
             queryEmbeddingService: queryService,
           },
         );
-        expect(federatedHits).toHaveLength(3);
+        expect(federatedHits).toHaveLength(targetDocuments.length + 1);
         expect(federatedHits.map((hit) => hit.documentId)).toContain(
           targetRelevant.id,
         );
