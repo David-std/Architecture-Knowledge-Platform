@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { SearchHit } from "@akp/contracts";
+import { retrievalAnswerabilityCandidateKey } from "@akp/retrieval";
 import { partitionSearchHitsByAnswerability } from "../src/routes/search.js";
 
-function hit(id: string): SearchHit {
+function hit(id: string, unitId?: string): SearchHit {
   return {
+    ...(unitId ? { unitId } : {}),
     documentId: id,
     vaultId: "22222222-2222-4222-8222-222222222222",
     document: {
@@ -40,11 +42,34 @@ describe("search answerability presentation", () => {
     expect(
       partitionSearchHitsByAnswerability(
         [supported, exploratory],
-        [supported.documentId],
+        [retrievalAnswerabilityCandidateKey(supported)],
       ),
     ).toEqual({
       hits: [supported],
       exploratoryHits: [exploratory],
+      retrievalOutcome: "SUPPORTED",
+    });
+  });
+
+  it("does not let a supported unit admit an unsupported sibling from the same document", () => {
+    const documentId = "11111111-1111-4111-8111-111111111114";
+    const supported = hit(
+      documentId,
+      "22222222-2222-4222-8222-222222222221",
+    );
+    const sibling = hit(
+      documentId,
+      "22222222-2222-4222-8222-222222222222",
+    );
+
+    expect(
+      partitionSearchHitsByAnswerability(
+        [supported, sibling],
+        [retrievalAnswerabilityCandidateKey(supported)],
+      ),
+    ).toEqual({
+      hits: [supported],
+      exploratoryHits: [sibling],
       retrievalOutcome: "SUPPORTED",
     });
   });
