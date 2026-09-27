@@ -1416,7 +1416,9 @@ export function projectContextPacket(
         : undefined;
     const compactGaps =
       primarySupportGap &&
-      !packet.gaps.some((gap) => gap.startsWith(primarySupportGap.split(":")[0]!))
+      !packet.gaps.some((gap) =>
+        gap.startsWith(primarySupportGap.split(":")[0]!),
+      )
         ? [...packet.gaps, primarySupportGap]
         : packet.gaps;
     const compactRequiredActions = primarySupportLimited
