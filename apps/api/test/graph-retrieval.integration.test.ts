@@ -239,6 +239,10 @@ async function cleanupGraph(
   await db.pool.query("delete from knowledge_relations where space_id=$1", [
     fixture.spaceId,
   ]);
+  await db.pool.query(
+    "delete from community_index_revisions where space_id=$1",
+    [fixture.spaceId],
+  );
   await db.pool.query("delete from knowledge_documents where space_id=$1", [
     fixture.spaceId,
   ]);
