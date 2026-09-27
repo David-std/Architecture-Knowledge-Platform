@@ -923,6 +923,7 @@ export const ContextSection = z.object({
   retrievalChannels: z.array(z.string()).optional(),
   documentRevision: z.string(),
   score: z.number().optional(),
+  retrievalRank: z.number().int().positive().optional(),
   selectionReason: z.string(),
   sourceOrEvidenceIds: z.array(z.string()),
   graphProvenance: z.array(GraphPathProvenance).optional(),
@@ -1037,6 +1038,7 @@ export const CompactContextSection = z.object({
   retrievalChannels: z.array(z.string()),
   selectionReason: z.string(),
   score: z.number().optional(),
+  retrievalRank: z.number().int().positive().optional(),
   graphProvenance: z.array(GraphPathProvenance).optional(),
   retrievalTrace: RetrievalTrace.optional(),
 });
