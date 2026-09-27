@@ -390,9 +390,9 @@ integration("real multilingual semantic retrieval", () => {
 
         expect(targetHits).toHaveLength(5);
         expect(targetHits[0]?.documentId).toBe(targetRelevant.id);
-        expect(
-          targetHits.slice(0, 2).map((hit) => hit.documentId),
-        ).toContain(targetRelevantPeer.id);
+        expect(targetHits.slice(0, 2).map((hit) => hit.documentId)).toContain(
+          targetRelevantPeer.id,
+        );
         expect(targetHits[0]?.score).toBeGreaterThan(targetHits[1]?.score ?? 0);
         expect(targetHits.every((hit) => hit.vaultId === targetVaultId)).toBe(
           true,
@@ -536,16 +536,12 @@ integration("real multilingual semantic retrieval", () => {
                   (contribution) => contribution.channel === "vector",
                 )?.rawScore ?? null,
             })),
-            answerability: assessRetrievalAnswerability(
-              targetHits,
-              query,
-            ),
+            answerability: assessRetrievalAnswerability(targetHits, query),
             noAnswerProbe: await (async () => {
               const unsupportedQuery =
                 "What guaranteed 24/7 telephone support SLA is included for premium customers?";
               let comparison:
-                | Parameters<typeof assessRetrievalAnswerability>[0]
-                | undefined;
+                Parameters<typeof assessRetrievalAnswerability>[0] | undefined;
               const candidates = await queryKnowledge(
                 db,
                 {
