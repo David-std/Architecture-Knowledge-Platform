@@ -18,6 +18,7 @@ import {
 } from "../packages/indexing/src/index.js";
 import { Postgres } from "../packages/postgres/src/index.js";
 import {
+  assessRetrievalAnswerability,
   DeterministicQueryDecomposer,
   LOCAL_MULTILINGUAL_E5_SMALL_DESCRIPTOR,
   LocalSemanticEmbeddingAdapter,
@@ -86,103 +87,18 @@ type Fixture = {
 
 type QueryHit = Awaited<ReturnType<typeof queryKnowledge>>[number];
 
-const ANSWERABILITY_STOPWORDS = new Set([
-  "and",
-  "are",
-  "como",
-  "con",
-  "cual",
-  "cuales",
-  "de",
-  "del",
-  "el",
-  "en",
-  "es",
-  "esta",
-  "este",
-  "for",
-  "from",
-  "how",
-  "is",
-  "la",
-  "las",
-  "los",
-  "para",
-  "por",
-  "que",
-  "the",
-  "una",
-  "un",
-  "what",
-  "where",
-  "which",
-]);
-
-function normalizedTokens(value: string): string[] {
-  return [
-    ...new Set(
-      (
-        value
-          .normalize("NFKD")
-          .replace(/\p{M}/gu, "")
-          .toLocaleLowerCase("en-US")
-          .match(/[\p{L}\p{N}]+/gu) ?? []
-      ).filter((token) => token.length >= 2),
-    ),
-  ];
-}
-
-function collectCandidateSignals(hits: readonly QueryHit[], query: string) {
-  const queryTokens = normalizedTokens(query);
-  const salientQueryTokens = queryTokens.filter(
-    (token) => token.length >= 3 && !ANSWERABILITY_STOPWORDS.has(token),
-  );
-  return hits.map((hit) => {
-    const candidateTokens = new Set(
-      normalizedTokens(`${hit.title} ${hit.excerpt}`),
-    );
-    const overlapTokens = queryTokens.filter((token) =>
-      candidateTokens.has(token),
-    );
-    const salientOverlapTokens = salientQueryTokens.filter((token) =>
-      candidateTokens.has(token),
-    );
-    return {
-      documentId: hit.documentId,
-      externalId: hit.document.externalId,
-      finalScore: hit.score,
-      textualSupport: {
-        queryTokens,
-        overlapTokens,
-        queryCoverage:
-          queryTokens.length === 0
-            ? 0
-            : overlapTokens.length / queryTokens.length,
-        salientQueryTokens,
-        salientOverlapTokens,
-        salientCoverage:
-          salientQueryTokens.length === 0
-            ? 0
-            : salientOverlapTokens.length / salientQueryTokens.length,
-      },
-      contributions: (hit.fusionContributions ?? []).map((contribution) => ({
-        channel: contribution.channel,
-        rank: contribution.rank,
-        channelWeight: contribution.channelWeight,
-        rawScore: contribution.rawScore ?? null,
-        reason: contribution.reason,
-      })),
-      rerank: hit.rerankTrace ?? null,
-    };
-  });
-}
-
 type RuntimeObservation = BenchmarkObservation & {
   warnings: string[];
   availableChannels: string[];
   rankedVaultIds: string[];
   fusionReasons: Record<string, string[]>;
-  candidateSignals: ReturnType<typeof collectCandidateSignals>;
+  candidateSignals: ReturnType<
+    typeof assessRetrievalAnswerability
+  >["candidateSignals"];
+  answerability: Omit<
+    ReturnType<typeof assessRetrievalAnswerability>,
+    "candidateSignals"
+  >;
 };
 
 type StorageSnapshot = {
@@ -605,7 +521,8 @@ async function executeCase(
     "context-pack" | "exact" | "lexical" | "vector" | "graph" | "raw" | "code"
   >();
   const started = performance.now();
-  const hits = await queryKnowledge(
+  let answerabilityCandidates: readonly QueryHit[] | undefined;
+  const rawHits = await queryKnowledge(
     db,
     {
       query: testCase.query,
@@ -657,10 +574,28 @@ async function executeCase(
       queryEmbeddingService,
       warningSink: warnings,
       availableChannelSink: availableChannels,
+      answerabilityCandidateSink: (candidates) => {
+        answerabilityCandidates = candidates;
+      },
       graphScopes: [{ vaultId, pathPrefix: null }],
       graphPolicy: { maxHops: 3, directionPolicy: "both" },
     },
   );
+  const answerability = assessRetrievalAnswerability(
+    rawHits,
+    testCase.query,
+    {},
+    {
+      allowGraphSupport: testCase.category === "graph",
+      ...(answerabilityCandidates
+        ? { comparisonHits: answerabilityCandidates }
+        : {}),
+    },
+  );
+  const hits = answerability.supported ? rawHits : [];
+  if (!answerability.supported && rawHits.length > 0) {
+    warnings.push(`ANSWERABILITY_GATE_REJECTED:${answerability.reason}`);
+  }
   const latencyMs = performance.now() - started;
   const rankedDocumentIds = hits.flatMap((hit) =>
     hit.document.externalId ? [hit.document.externalId] : [],
@@ -712,7 +647,14 @@ async function executeCase(
         [...hit.reasons],
       ]),
     ),
-    candidateSignals: collectCandidateSignals(hits, testCase.query),
+    candidateSignals: answerability.candidateSignals,
+    answerability: {
+      supported: answerability.supported,
+      reason: answerability.reason,
+      topVectorScore: answerability.topVectorScore,
+      secondVectorScore: answerability.secondVectorScore,
+      vectorMargin: answerability.vectorMargin,
+    },
   };
 }
 

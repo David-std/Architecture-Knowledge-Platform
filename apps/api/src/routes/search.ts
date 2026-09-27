@@ -25,6 +25,7 @@ import {
   type SearchRequest as SearchInput,
 } from "@akp/contracts";
 import {
+  assessRetrievalAnswerability,
   buildContextPacket,
   buildContextPacketPair,
   ContextPacketBudgetError,
@@ -498,6 +499,11 @@ export interface RetrievalExecutionOptions {
   warningSink?: string[];
   /** Channels that reached their provider/index successfully for this request. */
   availableChannelSink?: Set<RetrievalChannel>;
+  /**
+   * Authorized, truth-filtered and reranked candidates before input.limit is
+   * applied. Used for answerability comparison only; not returned to clients.
+   */
+  answerabilityCandidateSink?: (hits: readonly SearchHit[]) => void;
   vaultIds?: string[];
   /** Exact, authorized Code Graph candidates resolved by the HTTP boundary. */
   codeCandidates?: CodeChannelCandidate[];
@@ -3416,6 +3422,7 @@ export async function queryKnowledge(
   if (rerankResult.warning) {
     options.warningSink?.push(rerankResult.warning);
   }
+  options.answerabilityCandidateSink?.(rerankResult.hits);
   const finalResults = rerankResult.hits.slice(0, input.limit);
   await finalizeTruthSnapshot();
   return finalResults;
@@ -3599,6 +3606,7 @@ export function registerSearchRoutes(
       ];
       const availableChannels = new Set<RetrievalChannel>();
       let truthState: RetrievalTruthState | undefined;
+      let answerabilityCandidates: readonly SearchHit[] | undefined;
       let hits: SearchHit[];
       try {
         hits = await queryKnowledge(db, scopedRequest, {
@@ -3616,6 +3624,9 @@ export function registerSearchRoutes(
             : {}),
           warningSink: retrievalWarnings,
           availableChannelSink: availableChannels,
+          answerabilityCandidateSink: (candidates) => {
+            answerabilityCandidates = candidates;
+          },
           authorizationResolved: true,
           pathAuthorizer,
           truthConsistency: parsed.data.truthConsistency ?? "STRICT",
@@ -3632,6 +3643,33 @@ export function registerSearchRoutes(
         }
         throw error;
       }
+      const answerability = assessRetrievalAnswerability(
+        hits,
+        parsed.data.query,
+        {},
+        {
+          allowGraphSupport: plan.intent === "IMPACT_ANALYSIS",
+          ...(answerabilityCandidates
+            ? { comparisonHits: answerabilityCandidates }
+            : {}),
+        },
+      );
+      if (!answerability.supported && hits.length > 0) {
+        retrievalWarnings.push(
+          `ANSWERABILITY_GATE_REJECTED:${answerability.reason}`,
+        );
+        telemetry.counter("retrieval_answerability_gate", 1, {
+          outcome: "REJECTED",
+          reason: answerability.reason,
+        });
+        hits = [];
+      } else if (hits.length > 0) {
+        telemetry.counter("retrieval_answerability_gate", 1, {
+          outcome: "SUPPORTED",
+          reason: answerability.reason,
+        });
+      }
+
       const channelState = channelsConsistentWithIndex(
         plan.channels,
         index,
@@ -3669,15 +3707,26 @@ export function registerSearchRoutes(
           hits.length === 0
             ? {
                 status: "INSUFFICIENT_KNOWLEDGE",
-                reason: "NO_SUPPORTED_MATCH",
+                reason:
+                  answerability.reason === "WEAK_SEMANTIC_NEIGHBORS"
+                    ? "INSUFFICIENT_SUPPORT"
+                    : "NO_SUPPORTED_MATCH",
                 searchedChannels: effectiveChannelState.channels,
-                gaps: ["No supported source-backed match was retrieved."],
+                gaps: [
+                  answerability.reason === "WEAK_SEMANTIC_NEIGHBORS"
+                    ? "Retrieved semantic neighbours did not provide enough direct, textual, or discriminative support."
+                    : "No supported source-backed match was retrieved.",
+                ],
                 conflicts: [],
                 recommendedActions: [
-                  "Broaden the query or lower the minimum trust explicitly.",
+                  answerability.reason === "WEAK_SEMANTIC_NEIGHBORS"
+                    ? "Refine the query or add an authoritative source that directly supports the requested fact."
+                    : "Broaden the query or lower the minimum trust explicitly.",
                 ],
                 guidance:
-                  "Broaden the query or lower the minimum trust explicitly.",
+                  answerability.reason === "WEAK_SEMANTIC_NEIGHBORS"
+                    ? "The nearest semantic candidates were too weak or ambiguous to treat as supported knowledge."
+                    : "Broaden the query or lower the minimum trust explicitly.",
               }
             : null,
       };
@@ -4042,6 +4091,7 @@ export function registerSearchRoutes(
       ];
       const availableChannels = new Set<RetrievalChannel>();
       let truthState: RetrievalTruthState | undefined;
+      let directAnswerabilityCandidates: readonly SearchHit[] | undefined;
       let reasoningTrace: unknown = null;
       let reasoningExecutionMode: "DIRECT" | "PLAN" | "DIRECT_FALLBACK" =
         "DIRECT";
@@ -4062,6 +4112,9 @@ export function registerSearchRoutes(
             : {}),
           warningSink: retrievalWarnings,
           availableChannelSink: availableChannels,
+          answerabilityCandidateSink: (candidates) => {
+            directAnswerabilityCandidates = candidates;
+          },
           authorizationResolved: true,
           pathAuthorizer,
           truthConsistency: parsed.data.truthConsistency ?? "STRICT",
@@ -4545,6 +4598,44 @@ export function registerSearchRoutes(
         }
         throw error;
       }
+      const answerability = assessRetrievalAnswerability(
+        hits,
+        parsed.data.query,
+        {},
+        {
+          allowGraphSupport:
+            plan.intent === "IMPACT_ANALYSIS" ||
+            (reasoningExecutionMode === "PLAN" &&
+              hits.some((hit) =>
+                (hit.fusionContributions ?? []).some(
+                  (contribution) =>
+                    contribution.channel === "graph" ||
+                    contribution.channel === "graph-ppr",
+                ),
+              )),
+          ...(reasoningExecutionMode !== "PLAN" && directAnswerabilityCandidates
+            ? { comparisonHits: directAnswerabilityCandidates }
+            : {}),
+        },
+      );
+      if (!answerability.supported && hits.length > 0) {
+        retrievalWarnings.push(
+          `ANSWERABILITY_GATE_REJECTED:${answerability.reason}`,
+        );
+        telemetry.counter("retrieval_answerability_gate", 1, {
+          outcome: "REJECTED",
+          reason: answerability.reason,
+          surface: "context",
+        });
+        hits = [];
+      } else if (hits.length > 0) {
+        telemetry.counter("retrieval_answerability_gate", 1, {
+          outcome: "SUPPORTED",
+          reason: answerability.reason,
+          surface: "context",
+        });
+      }
+
       type MaterialConflictRow = {
         id: string;
         topic: string;
