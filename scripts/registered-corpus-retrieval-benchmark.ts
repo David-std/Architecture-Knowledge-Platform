@@ -604,14 +604,27 @@ async function executeCase(
   const rankedDocumentIds = hits.flatMap((hit) =>
     hit.document.externalId ? [hit.document.externalId] : [],
   );
+  const retrievedUnitIds = hits.flatMap((hit) =>
+    hit.unitId ? [hit.unitId] : [],
+  );
+  const retrievedDocumentIds = hits.flatMap((hit) =>
+    hit.unitId ? [] : [hit.documentId],
+  );
   const retrievedEvidenceIds = hits.length
     ? (
         await db.pool.query<{ source_ids: string[] }>(
           `select source_ids
              from knowledge_units
-            where document_id=any($1::uuid[])
-              and corpus_revision=$2`,
-          [hits.map((hit) => hit.documentId), fixture.corpusRevision],
+            where corpus_revision=$3
+              and (
+                id=any($1::uuid[])
+                or document_id=any($2::uuid[])
+              )`,
+          [
+            retrievedUnitIds,
+            retrievedDocumentIds,
+            fixture.corpusRevision,
+          ],
         )
       ).rows.flatMap((row) => row.source_ids)
     : [];
