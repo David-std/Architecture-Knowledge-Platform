@@ -53,14 +53,8 @@ describe("search answerability presentation", () => {
 
   it("does not let a supported unit admit an unsupported sibling from the same document", () => {
     const documentId = "11111111-1111-4111-8111-111111111114";
-    const supported = hit(
-      documentId,
-      "22222222-2222-4222-8222-222222222221",
-    );
-    const sibling = hit(
-      documentId,
-      "22222222-2222-4222-8222-222222222222",
-    );
+    const supported = hit(documentId, "22222222-2222-4222-8222-222222222221");
+    const sibling = hit(documentId, "22222222-2222-4222-8222-222222222222");
 
     expect(
       partitionSearchHitsByAnswerability(
