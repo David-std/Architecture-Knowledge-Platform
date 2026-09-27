@@ -109,6 +109,38 @@ describe("retrieval answerability", () => {
     expect(result.candidateSignals[0]?.textualSupport.salientCoverage).toBe(0);
   });
 
+  it("supports English-to-Spanish semantic retrieval when the neighbourhood separates from background", () => {
+    const result = assessRetrievalAnswerability(
+      [
+        hit(1, {
+          title: "Reproducción segura de eventos",
+          excerpt:
+            "Durante un replay se consulta una clave de idempotencia persistida antes de volver a aplicar una operación.",
+          contributions: [contribution("vector", 0.851)],
+        }),
+        hit(2, {
+          title: "Control de duplicados",
+          excerpt:
+            "Las operaciones ya procesadas se reconocen por su identificador estable y no se ejecutan dos veces.",
+          contributions: [contribution("vector", 0.842)],
+        }),
+        hit(3, {
+          title: "Retención de caché",
+          excerpt:
+            "Las entradas de caché expiran después de una ventana de retención acotada.",
+          contributions: [contribution("vector", 0.768)],
+        }),
+      ],
+      "How does event replay avoid applying the same operation twice?",
+    );
+
+    expect(result).toMatchObject({
+      supported: true,
+      reason: "VECTOR_NEIGHBORHOOD_SUPPORT",
+    });
+    expect(result.candidateSignals[0]?.textualSupport.salientCoverage).toBe(0);
+  });
+
   it("supports two close semantic neighbours when they separate from background", () => {
     const result = assessRetrievalAnswerability(
       [
