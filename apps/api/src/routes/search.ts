@@ -3637,7 +3637,7 @@ export function registerSearchRoutes(
         hits,
         parsed.data.query,
         {},
-        { allowGraphSupport: plan.intent === "IMPACT_ANALYSIS" },
+        { allowGraphSupport: plan.channels.includes("graph") },
       );
       if (!answerability.supported && hits.length > 0) {
         retrievalWarnings.push(
@@ -4583,7 +4583,18 @@ export function registerSearchRoutes(
         hits,
         parsed.data.query,
         {},
-        { allowGraphSupport: intent === "IMPACT_ANALYSIS" },
+        {
+          allowGraphSupport:
+            plan.channels.includes("graph") ||
+            (reasoningExecutionMode === "PLAN" &&
+              hits.some((hit) =>
+                (hit.fusionContributions ?? []).some(
+                  (contribution) =>
+                    contribution.channel === "graph" ||
+                    contribution.channel === "graph-ppr",
+                ),
+              )),
+        },
       );
       if (!answerability.supported && hits.length > 0) {
         retrievalWarnings.push(
