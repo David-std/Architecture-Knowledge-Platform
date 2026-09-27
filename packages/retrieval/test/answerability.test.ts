@@ -188,9 +188,14 @@ describe("retrieval answerability", () => {
     const query =
       "¿Qué regla limita los reintentos de llamadas transitorias mediante retroceso exponencial?";
 
-    const result = assessRetrievalAnswerability([winner], query, {}, {
-      comparisonHits: [winner, runnerUp],
-    });
+    const result = assessRetrievalAnswerability(
+      [winner],
+      query,
+      {},
+      {
+        comparisonHits: [winner, runnerUp],
+      },
+    );
 
     expect(result).toMatchObject({
       supported: true,
