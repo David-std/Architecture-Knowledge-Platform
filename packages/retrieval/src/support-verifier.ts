@@ -69,7 +69,7 @@ export const DEFAULT_DETERMINISTIC_PASSAGE_SUPPORT_POLICY: DeterministicPassageS
   {
     minimumSalientCoverage: 0.4,
     minimumSalientOverlap: 2,
-    semanticCueMaxVectorRank: 3,
+    semanticCueMaxVectorRank: 5,
   };
 
 export interface DeterministicPassageSupportSignal {
