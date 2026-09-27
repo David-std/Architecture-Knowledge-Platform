@@ -18,7 +18,6 @@ describe("rehydrateStructuralContext", () => {
     expect(result.length).toBeLessThanOrEqual(600);
   });
 
-
   it("focuses a long matched unit on the lexical passage instead of its prefix", () => {
     const decisive =
       "Peer revocation sets the peer to DISABLED and removes its credential reference.";
