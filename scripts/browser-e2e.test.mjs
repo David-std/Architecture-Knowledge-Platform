@@ -369,6 +369,28 @@ async function setupDatabase(db) {
     [fixture.connectorId, sha256("browser-connector-failure")],
   );
 
+  const browserFederationCapabilities = {
+    schemaVersion: 1,
+    accessMode: "REMOTE_FEDERATED",
+    permissionFidelity: "SOURCE_ACL_EXACT",
+    syncFidelity: "APPEND",
+    incrementalSync: false,
+    deletionPropagation: "NONE",
+    cursorOrWebhook: false,
+    sourceAuthority: "REFERENCE",
+    writeBack: "NONE",
+    identityMapping: "EXACT",
+    dataResidency: "ORG",
+    replayable: false,
+    auditTrail: "METADATA_ONLY",
+    rateLimit: {
+      kind: "DECLARED",
+      requestsPerMinute: 120,
+      onExceeded: "FAIL_CLOSED",
+    },
+    degradation: { onUnavailable: "FAIL_CLOSED" },
+    health: "UNAVAILABLE",
+  };
   await db.query(
     "insert into context_fabric_peers(" +
       "id,organization_id,space_id,peer_key,display_name,endpoint," +
@@ -377,13 +399,14 @@ async function setupDatabase(db) {
       ") values(" +
       "$1,'00000000-0000-0000-0000-000000000001',$2,$3," +
       "'Browser degraded federation peer','https://browser-peer.invalid'," +
-      "'REMOTE_QUERY','APPROVED','{}'::jsonb,'browser-peer-r1',now()," +
+      "'REMOTE_QUERY','APPROVED',$4::jsonb,'browser-peer-r1',now()," +
       "2,now()+interval '10 minutes','FEDERATION_PEER_TIMEOUT'" +
       ")",
     [
       fixture.federationPeerId,
       SPACE_ID,
       "browser-e2e-peer-" + fixture.federationPeerId.slice(0, 8),
+      JSON.stringify(browserFederationCapabilities),
     ],
   );
 
@@ -1277,6 +1300,11 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
 
     if (browser) await browser.close().catch(() => undefined);
     if (databaseConnected) {
+      await db
+        .query("delete from context_fabric_peers where id=$1", [
+          fixture.federationPeerId,
+        ])
+        .catch(() => undefined);
       await db.query(
         "update source_connector_registrations " +
           "set state='DISABLED',updated_at=now() where id=$1",
