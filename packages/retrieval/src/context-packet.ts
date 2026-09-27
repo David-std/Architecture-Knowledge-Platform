@@ -737,9 +737,7 @@ function recommendationList(
 ): string[] {
   const actions = [...supplied];
   if (omitted.length > 0) {
-    actions.push(
-      "Request a continuation to inspect omitted lower-priority material.",
-    );
+    actions.push("Request a continuation to inspect omitted material.");
   }
   if (gaps.length > 0) {
     actions.push("Review the retrieval gaps before making a definitive claim.");
