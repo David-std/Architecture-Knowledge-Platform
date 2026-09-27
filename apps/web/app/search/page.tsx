@@ -126,6 +126,14 @@ interface ContextPacket {
     reason?: string;
     remainingTokens?: number;
   }>;
+  retrievalConfiguration?: {
+    reasoning?: {
+      requested?: "DIRECT" | "PLAN";
+      execution?: "DIRECT" | "PLAN" | "DIRECT_FALLBACK";
+      trace?: unknown;
+    };
+    warnings?: string[];
+  };
   [key: string]: unknown;
 }
 
@@ -155,7 +163,12 @@ function tokenSummary(packet: ContextPacket): string {
 export default async function SearchPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; vaultId?: string; intent?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    vaultId?: string;
+    intent?: string;
+    reasoningMode?: string;
+  }>;
 }) {
   const params = await searchParams;
   const query = params.q?.trim() ?? "";
@@ -164,6 +177,8 @@ export default async function SearchPage({
   )
     ? params.intent
     : undefined;
+  const requestedReasoningMode =
+    params.reasoningMode === "PLAN" ? "PLAN" : "DIRECT";
   const registry = await akp<{ vaults: VaultOption[] }>("/v1/vaults");
   const selection = selectVault(registry.vaults ?? [], params.vaultId);
   const selected = selection.vault;
@@ -185,7 +200,11 @@ export default async function SearchPage({
     commonRequest && selected
       ? await akp<ContextPacket>("/v1/context", {
           method: "POST",
-          body: JSON.stringify({ ...commonRequest, maxTokens: 1600 }),
+          body: JSON.stringify({
+            ...commonRequest,
+            maxTokens: 1600,
+            reasoningMode: requestedReasoningMode,
+          }),
         })
       : null;
   const evidenceEntries = result
@@ -248,6 +267,17 @@ export default async function SearchPage({
                     {intentLabels[intent]}
                   </option>
                 ))}
+              </select>
+            </label>
+            <label className="form-field-label">
+              <span className="form-label-title">Ejecución de razonamiento</span>
+              <select
+                name="reasoningMode"
+                defaultValue={requestedReasoningMode}
+                className="form-select"
+              >
+                <option value="DIRECT">Directa determinista</option>
+                <option value="PLAN">Planner acotado con fallback</option>
               </select>
             </label>
           </details>
@@ -445,6 +475,35 @@ export default async function SearchPage({
           </article>
         );
       })}
+
+      {packet?.retrievalConfiguration?.reasoning ? (
+        <section className="card" role="status" style={{ marginTop: 16 }}>
+          <h2>Estado del reasoning planner</h2>
+          <p>
+            Solicitado{" "}
+            <strong>
+              {packet.retrievalConfiguration.reasoning.requested ??
+                requestedReasoningMode}
+            </strong>{" "}
+            · ejecución{" "}
+            <strong>
+              {packet.retrievalConfiguration.reasoning.execution ?? "UNKNOWN"}
+            </strong>
+          </p>
+          {packet.retrievalConfiguration.reasoning.execution ===
+          "DIRECT_FALLBACK" ? (
+            <p>
+              Reasoning planner unavailable or failed. La consulta continuó con
+              el fallback directo determinista y este resultado no debe
+              interpretarse como ejecución del plan solicitado.
+            </p>
+          ) : (
+            <p className="muted">
+              No se activó degradación del planner para este ContextPacket.
+            </p>
+          )}
+        </section>
+      ) : null}
 
       {packet &&
       ((packet.gaps ?? []).length > 0 ||
