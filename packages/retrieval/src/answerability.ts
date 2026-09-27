@@ -476,5 +476,6 @@ export function assessRetrievalAnswerability(
     candidateSignals,
     topVectorScore,
     secondVectorScore,
+    thirdVectorScore,
   );
 }
