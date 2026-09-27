@@ -259,11 +259,29 @@ integration("real multilingual semantic retrieval", () => {
         "University enrollment withdrawal",
         "To cancel university enrollment before the deadline, the student must submit a withdrawal request through the registrar.",
       );
+      const targetRelevantPeer = documentFixture(
+        targetVaultId,
+        "real-semantic/registration-cancellation.md",
+        "Registration cancellation procedure",
+        "A learner leaving registration before the cutoff files a cancellation form with the academic records office.",
+      );
       const targetDistractor = documentFixture(
         targetVaultId,
         "real-semantic/pasta.md",
         "Receta de pasta de verano",
         "Esta receta combina tomates, albahaca, ajo y aceite de oliva para preparar una pasta fresca de verano.",
+      );
+      const targetDistractorTwo = documentFixture(
+        targetVaultId,
+        "real-semantic/cache.md",
+        "Application cache retention",
+        "Cached responses use bounded retention and are refreshed after their configured expiration window.",
+      );
+      const targetDistractorThree = documentFixture(
+        targetVaultId,
+        "real-semantic/observability.md",
+        "Runtime telemetry",
+        "Application traces and metrics are exported to the configured observability backend.",
       );
       const foreignCandidate = documentFixture(
         foreignVaultId,
@@ -272,7 +290,13 @@ integration("real multilingual semantic retrieval", () => {
         targetRelevant.body,
         targetRelevant.externalId,
       );
-      const targetDocuments = [targetRelevant, targetDistractor];
+      const targetDocuments = [
+        targetRelevant,
+        targetRelevantPeer,
+        targetDistractor,
+        targetDistractorTwo,
+        targetDistractorThree,
+      ];
       const allDocuments = [...targetDocuments, foreignCandidate];
       const db = new Postgres(databaseUrl);
       const adapter = new LocalSemanticEmbeddingAdapter({
@@ -355,7 +379,7 @@ integration("real multilingual semantic retrieval", () => {
             types: [],
             minimumTrust: "MACHINE_SUPPORTED",
             mode: "SOURCE_BACKED",
-            limit: 2,
+            limit: 5,
           },
           {
             vaultIds: [targetVaultId],
@@ -364,9 +388,11 @@ integration("real multilingual semantic retrieval", () => {
           },
         );
 
-        expect(targetHits).toHaveLength(2);
+        expect(targetHits).toHaveLength(5);
         expect(targetHits[0]?.documentId).toBe(targetRelevant.id);
-        expect(targetHits[1]?.documentId).toBe(targetDistractor.id);
+        expect(
+          targetHits.slice(0, 2).map((hit) => hit.documentId),
+        ).toContain(targetRelevantPeer.id);
         expect(targetHits[0]?.score).toBeGreaterThan(targetHits[1]?.score ?? 0);
         expect(targetHits.every((hit) => hit.vaultId === targetVaultId)).toBe(
           true,
@@ -502,6 +528,64 @@ integration("real multilingual semantic retrieval", () => {
             targetGenerationId: targetGeneration.generationId,
             targetTopDocument: targetHits[0]?.documentId,
             targetScores: targetHits.map((hit) => hit.score),
+            targetVectorScores: targetHits.map((hit) => ({
+              documentId: hit.documentId,
+              externalId: hit.document.externalId,
+              rawScore:
+                hit.fusionContributions?.find(
+                  (contribution) => contribution.channel === "vector",
+                )?.rawScore ?? null,
+            })),
+            answerability: assessRetrievalAnswerability(
+              targetHits,
+              query,
+            ),
+            noAnswerProbe: await (async () => {
+              const unsupportedQuery =
+                "What guaranteed 24/7 telephone support SLA is included for premium customers?";
+              let comparison:
+                | Parameters<typeof assessRetrievalAnswerability>[0]
+                | undefined;
+              const candidates = await queryKnowledge(
+                db,
+                {
+                  query: unsupportedQuery,
+                  spaceId: fixture.spaceId,
+                  vaultId: targetVaultId,
+                  vaultIds: [],
+                  federated: false,
+                  types: [],
+                  minimumTrust: "MACHINE_SUPPORTED",
+                  mode: "SOURCE_BACKED",
+                  limit: 5,
+                },
+                {
+                  vaultIds: [targetVaultId],
+                  channels: ["vector"],
+                  queryEmbeddingService: queryService,
+                  answerabilityCandidateSink: (hits) => {
+                    comparison = hits;
+                  },
+                },
+              );
+              return {
+                vectorScores: candidates.map((hit) => ({
+                  documentId: hit.documentId,
+                  rawScore:
+                    hit.fusionContributions?.find(
+                      (contribution) => contribution.channel === "vector",
+                    )?.rawScore ?? null,
+                })),
+                assessment: assessRetrievalAnswerability(
+                  candidates,
+                  unsupportedQuery,
+                  {},
+                  {
+                    ...(comparison ? { comparisonHits: comparison } : {}),
+                  },
+                ),
+              };
+            })(),
             foreignGenerationId: foreignGeneration.generationId,
             foreignDocumentId: foreignCandidate.id,
           }),
