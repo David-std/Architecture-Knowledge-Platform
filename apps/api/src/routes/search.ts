@@ -52,6 +52,7 @@ import {
   type QueryTransformationKind,
   type QueryTransformationVariant,
   type QueryTransformerPort,
+  type RetrievalAnswerabilityAssessment,
   type RetrievalCandidate,
   type RetrievalPolicyInput,
   type Tokenizer,
@@ -501,7 +502,8 @@ export interface RetrievalExecutionOptions {
   availableChannelSink?: Set<RetrievalChannel>;
   /**
    * Authorized, truth-filtered and reranked candidates before input.limit is
-   * applied. Used for answerability comparison only; not returned to clients.
+   * applied. The answerability layer verifies concrete passages from this pool
+   * before presentation; the pool itself is never evidence by rank alone.
    */
   answerabilityCandidateSink?: (hits: readonly SearchHit[]) => void;
   vaultIds?: string[];
@@ -512,6 +514,75 @@ export interface RetrievalExecutionOptions {
   pathAuthorizer?: (path: string, vaultId?: string) => boolean;
   truthConsistency?: TruthConsistencyMode;
   truthStateSink?: (state: RetrievalTruthState) => void;
+}
+
+export function partitionSearchHitsByAnswerability(
+  hits: readonly SearchHit[],
+  supportedDocumentIds: readonly string[],
+): {
+  hits: SearchHit[];
+  exploratoryHits: SearchHit[];
+  retrievalOutcome: "SUPPORTED" | "EXPLORATORY_ONLY" | "NO_CANDIDATES";
+} {
+  const supportedIds = new Set(supportedDocumentIds);
+  const supportedHits = hits.filter((hit) => supportedIds.has(hit.documentId));
+  const exploratoryHits = hits.filter(
+    (hit) => !supportedIds.has(hit.documentId),
+  );
+  return {
+    hits: supportedHits,
+    exploratoryHits,
+    retrievalOutcome:
+      supportedHits.length > 0
+        ? "SUPPORTED"
+        : exploratoryHits.length > 0
+          ? "EXPLORATORY_ONLY"
+          : "NO_CANDIDATES",
+  };
+}
+
+function recordAnswerabilityDiagnostics(
+  answerability: RetrievalAnswerabilityAssessment,
+  surface: "search" | "context",
+): void {
+  for (const signal of answerability.candidateSignals) {
+    const primaryContribution = [...signal.contributions].sort(
+      (left, right) => left.rank - right.rank,
+    )[0];
+    const attributes = {
+      surface,
+      outcome: signal.passageSupport.supported ? "SUPPORTED" : "REJECTED",
+      reason: signal.passageSupport.reason,
+      channel: primaryContribution?.channel ?? "none",
+      passage_source: signal.passageSupport.passageSource,
+    };
+    telemetry.counter("retrieval_answerability_candidate", 1, attributes);
+    telemetry.histogram(
+      "retrieval_answerability_candidate_rank",
+      signal.candidateRank,
+      attributes,
+    );
+    telemetry.histogram(
+      "retrieval_answerability_candidate_score",
+      primaryContribution?.rawScore ?? signal.finalScore,
+      attributes,
+    );
+    telemetry.histogram(
+      "retrieval_answerability_passage_salient_coverage",
+      signal.textualSupport.salientCoverage,
+      attributes,
+    );
+    telemetry.histogram(
+      "retrieval_answerability_passage_cue_coverage",
+      signal.passageSupport.answerCueCoverage,
+      attributes,
+    );
+    telemetry.histogram(
+      "retrieval_answerability_passage_characters",
+      signal.passageSupport.passageCharacters,
+      attributes,
+    );
+  }
 }
 
 export interface SearchRouteDependencies {
@@ -3083,11 +3154,16 @@ export async function queryKnowledge(
     retrievalCandidates,
     retrievalPolicy,
   );
+  // Answerability needs a background neighbour to distinguish two close
+  // relevant semantic hits from an ambiguous top pair. Keep at least three
+  // already-authorized fused candidates internally even when presentation
+  // limit is one; finalResults still honors input.limit below.
+  const answerabilityComparisonLimit = Math.max(input.limit * 2, 3);
   const fused = (
     await withSpan("retrieve.fuse", {}, async () =>
       reciprocalRankFusion(rankedChannels),
     )
-  ).slice(0, input.limit * 2);
+  ).slice(0, answerabilityComparisonLimit);
   if (fused.length === 0) {
     await finalizeTruthSnapshot();
     return [];
@@ -3171,29 +3247,34 @@ export async function queryKnowledge(
           ],
         );
   const structuralContextByUnit = new Map(
-    selectedUnits.rows.map((row) => [
-      String(row.id),
-      {
+    selectedUnits.rows.map((row) => {
+      const unit = {
         body: String(row.body),
-        headingPath: Array.isArray(row.heading_path)
-          ? row.heading_path.map(String)
-          : [],
-        ...(row.parent_unit_id
-          ? { parentUnitId: String(row.parent_unit_id) }
-          : {}),
-        ...(row.parent_unit_type
-          ? { parentUnitType: String(row.parent_unit_type) }
-          : {}),
-        context: rehydrateStructuralContext({
-          body: String(row.body),
-          unitType: String(row.unit_type),
-          parentBody: row.parent_body ? String(row.parent_body) : null,
-          parentUnitType: row.parent_unit_type
-            ? String(row.parent_unit_type)
-            : null,
-        }),
-      },
-    ]),
+        unitType: String(row.unit_type),
+        parentBody: row.parent_body ? String(row.parent_body) : null,
+        parentUnitType: row.parent_unit_type
+          ? String(row.parent_unit_type)
+          : null,
+        focusText: input.query,
+      };
+      return [
+        String(row.id),
+        {
+          body: unit.body,
+          headingPath: Array.isArray(row.heading_path)
+            ? row.heading_path.map(String)
+            : [],
+          ...(row.parent_unit_id
+            ? { parentUnitId: String(row.parent_unit_id) }
+            : {}),
+          ...(row.parent_unit_type
+            ? { parentUnitType: String(row.parent_unit_type) }
+            : {}),
+          context: rehydrateStructuralContext(unit),
+          excerpt: rehydrateStructuralContext(unit, 1200),
+        },
+      ] as const;
+    }),
   );
   const generationForContribution = (
     contribution: (typeof fused)[number]["contributions"][number],
@@ -3396,10 +3477,8 @@ export async function queryKnowledge(
         ...(graphProvenanceByCandidate.has(item.id)
           ? { graphProvenance: graphProvenanceByCandidate.get(item.id) }
           : {}),
-        excerpt: (structuralContext?.body ?? String(row.body_cache)).slice(
-          0,
-          1200,
-        ),
+        excerpt:
+          structuralContext?.excerpt ?? String(row.body_cache).slice(0, 1200),
         citations,
         warnings: [
           "UNTRUSTED_RETRIEVED_CONTENT",
@@ -3643,18 +3722,22 @@ export function registerSearchRoutes(
         }
         throw error;
       }
+      const answerabilityPool = answerabilityCandidates ?? hits;
       const answerability = assessRetrievalAnswerability(
-        hits,
+        answerabilityPool,
         parsed.data.query,
         {},
         {
           allowGraphSupport: plan.intent === "IMPACT_ANALYSIS",
-          ...(answerabilityCandidates
-            ? { comparisonHits: answerabilityCandidates }
-            : {}),
+          comparisonHits: answerabilityPool,
         },
       );
-      if (!answerability.supported && hits.length > 0) {
+      const partitioned = partitionSearchHitsByAnswerability(
+        answerabilityPool,
+        answerability.supportedDocumentIds,
+      );
+      recordAnswerabilityDiagnostics(answerability, "search");
+      if (!answerability.supported && answerabilityPool.length > 0) {
         retrievalWarnings.push(
           `ANSWERABILITY_GATE_REJECTED:${answerability.reason}`,
         );
@@ -3662,13 +3745,18 @@ export function registerSearchRoutes(
           outcome: "REJECTED",
           reason: answerability.reason,
         });
-        hits = [];
-      } else if (hits.length > 0) {
+      } else if (answerabilityPool.length > 0) {
         telemetry.counter("retrieval_answerability_gate", 1, {
           outcome: "SUPPORTED",
           reason: answerability.reason,
         });
       }
+      hits = partitioned.hits.slice(0, parsed.data.limit);
+      const exploratoryHits = partitioned.exploratoryHits.slice(
+        0,
+        parsed.data.limit,
+      );
+      const retrievalOutcome = partitioned.retrievalOutcome;
 
       const channelState = channelsConsistentWithIndex(
         plan.channels,
@@ -3702,29 +3790,31 @@ export function registerSearchRoutes(
         warnings: effectiveChannelState.warnings,
         indexRevisions: index,
         truth: truthState ?? null,
+        retrievalOutcome,
         hits,
+        exploratoryHits,
         noAnswer:
           hits.length === 0
             ? {
                 status: "INSUFFICIENT_KNOWLEDGE",
                 reason:
-                  answerability.reason === "WEAK_SEMANTIC_NEIGHBORS"
+                  answerability.reason === "SUPPORT_NOT_DEMONSTRATED"
                     ? "INSUFFICIENT_SUPPORT"
                     : "NO_SUPPORTED_MATCH",
                 searchedChannels: effectiveChannelState.channels,
                 gaps: [
-                  answerability.reason === "WEAK_SEMANTIC_NEIGHBORS"
-                    ? "Retrieved semantic neighbours did not provide enough direct, textual, or discriminative support."
+                  answerability.reason === "SUPPORT_NOT_DEMONSTRATED"
+                    ? "Retrieved candidates did not contain a concrete passage that demonstrated enough support for the answer."
                     : "No supported source-backed match was retrieved.",
                 ],
                 conflicts: [],
                 recommendedActions: [
-                  answerability.reason === "WEAK_SEMANTIC_NEIGHBORS"
+                  answerability.reason === "SUPPORT_NOT_DEMONSTRATED"
                     ? "Refine the query or add an authoritative source that directly supports the requested fact."
                     : "Broaden the query or lower the minimum trust explicitly.",
                 ],
                 guidance:
-                  answerability.reason === "WEAK_SEMANTIC_NEIGHBORS"
+                  answerability.reason === "SUPPORT_NOT_DEMONSTRATED"
                     ? "The nearest semantic candidates were too weak or ambiguous to treat as supported knowledge."
                     : "Broaden the query or lower the minimum trust explicitly.",
               }
@@ -4598,8 +4688,12 @@ export function registerSearchRoutes(
         }
         throw error;
       }
+      const answerabilityPool =
+        reasoningExecutionMode !== "PLAN" && directAnswerabilityCandidates
+          ? directAnswerabilityCandidates
+          : hits;
       const answerability = assessRetrievalAnswerability(
-        hits,
+        answerabilityPool,
         parsed.data.query,
         {},
         {
@@ -4613,12 +4707,12 @@ export function registerSearchRoutes(
                     contribution.channel === "graph-ppr",
                 ),
               )),
-          ...(reasoningExecutionMode !== "PLAN" && directAnswerabilityCandidates
-            ? { comparisonHits: directAnswerabilityCandidates }
-            : {}),
+          comparisonHits: answerabilityPool,
         },
       );
-      if (!answerability.supported && hits.length > 0) {
+      recordAnswerabilityDiagnostics(answerability, "context");
+      const supportedIds = new Set(answerability.supportedDocumentIds);
+      if (!answerability.supported && answerabilityPool.length > 0) {
         retrievalWarnings.push(
           `ANSWERABILITY_GATE_REJECTED:${answerability.reason}`,
         );
@@ -4628,12 +4722,16 @@ export function registerSearchRoutes(
           surface: "context",
         });
         hits = [];
-      } else if (hits.length > 0) {
+      } else if (answerabilityPool.length > 0) {
         telemetry.counter("retrieval_answerability_gate", 1, {
           outcome: "SUPPORTED",
           reason: answerability.reason,
           surface: "context",
         });
+        const supportedPool = answerabilityPool.filter((hit) =>
+          supportedIds.has(hit.documentId),
+        );
+        hits = supportedPool.slice(0, scopedRequest.limit);
       }
 
       type MaterialConflictRow = {

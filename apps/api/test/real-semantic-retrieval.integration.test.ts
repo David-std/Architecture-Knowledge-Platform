@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { Postgres } from "@akp/postgres";
 import { buildEmbeddingIndex } from "@akp/indexing";
@@ -259,11 +261,35 @@ integration("real multilingual semantic retrieval", () => {
         "University enrollment withdrawal",
         "To cancel university enrollment before the deadline, the student must submit a withdrawal request through the registrar.",
       );
+      const targetRelevantPeer = documentFixture(
+        targetVaultId,
+        "real-semantic/registration-cancellation.md",
+        "Registration cancellation procedure",
+        "To withdraw university enrollment before the deadline, a student files a cancellation request with the academic records office.",
+      );
+      const targetRelevantThird = documentFixture(
+        targetVaultId,
+        "real-semantic/withdrawal-deadline.md",
+        "Withdrawal before the cutoff",
+        "Before the registration cutoff, a learner files a withdrawal form with student records so the enrollment can be cancelled.",
+      );
       const targetDistractor = documentFixture(
         targetVaultId,
         "real-semantic/pasta.md",
         "Receta de pasta de verano",
         "Esta receta combina tomates, albahaca, ajo y aceite de oliva para preparar una pasta fresca de verano.",
+      );
+      const targetDistractorTwo = documentFixture(
+        targetVaultId,
+        "real-semantic/cache.md",
+        "Application cache retention",
+        "Cached responses use bounded retention and are refreshed after their configured expiration window.",
+      );
+      const targetDistractorThree = documentFixture(
+        targetVaultId,
+        "real-semantic/observability.md",
+        "Runtime telemetry",
+        "Application traces and metrics are exported to the configured observability backend.",
       );
       const foreignCandidate = documentFixture(
         foreignVaultId,
@@ -272,7 +298,14 @@ integration("real multilingual semantic retrieval", () => {
         targetRelevant.body,
         targetRelevant.externalId,
       );
-      const targetDocuments = [targetRelevant, targetDistractor];
+      const targetDocuments = [
+        targetRelevant,
+        targetRelevantPeer,
+        targetRelevantThird,
+        targetDistractor,
+        targetDistractorTwo,
+        targetDistractorThree,
+      ];
       const allDocuments = [...targetDocuments, foreignCandidate];
       const db = new Postgres(databaseUrl);
       const adapter = new LocalSemanticEmbeddingAdapter({
@@ -344,6 +377,9 @@ integration("real multilingual semantic retrieval", () => {
         });
         const query =
           "¿Cómo puede un estudiante cancelar su matrícula universitaria antes de la fecha límite?";
+        let targetComparisonPool:
+          Parameters<typeof assessRetrievalAnswerability>[0] | undefined;
+        const targetRetrievalStarted = performance.now();
         const targetHits = await queryKnowledge(
           db,
           {
@@ -355,18 +391,28 @@ integration("real multilingual semantic retrieval", () => {
             types: [],
             minimumTrust: "MACHINE_SUPPORTED",
             mode: "SOURCE_BACKED",
-            limit: 2,
+            limit: 5,
           },
           {
             vaultIds: [targetVaultId],
             channels: ["vector"],
             queryEmbeddingService: queryService,
+            answerabilityCandidateSink: (candidates) => {
+              targetComparisonPool = candidates;
+            },
           },
         );
+        const targetRetrievalLatencyMs =
+          performance.now() - targetRetrievalStarted;
 
-        expect(targetHits).toHaveLength(2);
+        expect(targetHits).toHaveLength(5);
         expect(targetHits[0]?.documentId).toBe(targetRelevant.id);
-        expect(targetHits[1]?.documentId).toBe(targetDistractor.id);
+        expect(targetHits.map((hit) => hit.documentId)).toContain(
+          targetRelevantPeer.id,
+        );
+        expect(targetHits.map((hit) => hit.documentId)).toContain(
+          targetRelevantThird.id,
+        );
         expect(targetHits[0]?.score).toBeGreaterThan(targetHits[1]?.score ?? 0);
         expect(targetHits.every((hit) => hit.vaultId === targetVaultId)).toBe(
           true,
@@ -414,22 +460,337 @@ integration("real multilingual semantic retrieval", () => {
         );
         expect(limitedHits).toHaveLength(1);
         expect(limitedHits[0]?.documentId).toBe(targetRelevant.id);
-        expect(limitedComparisonPool?.length).toBeGreaterThanOrEqual(2);
-        expect(
-          assessRetrievalAnswerability(
-            limitedHits,
-            query,
-            {},
-            {
-              ...(limitedComparisonPool
-                ? { comparisonHits: limitedComparisonPool }
-                : {}),
+        expect(limitedComparisonPool?.length).toBeGreaterThanOrEqual(3);
+        const limitedAnswerabilityPool = limitedComparisonPool ?? limitedHits;
+        const limitedVerificationStarted = performance.now();
+        const limitedAssessment = assessRetrievalAnswerability(
+          limitedAnswerabilityPool,
+          query,
+          {},
+          { comparisonHits: limitedAnswerabilityPool },
+        );
+        const limitedVerificationLatencyMs =
+          performance.now() - limitedVerificationStarted;
+
+        const unsupportedQuery =
+          "What guaranteed 24/7 telephone support SLA is included for premium customers?";
+        let unsupportedComparisonPool:
+          Parameters<typeof assessRetrievalAnswerability>[0] | undefined;
+        const unsupportedRetrievalStarted = performance.now();
+        const unsupportedHits = await queryKnowledge(
+          db,
+          {
+            query: unsupportedQuery,
+            spaceId: fixture.spaceId,
+            vaultId: targetVaultId,
+            vaultIds: [],
+            federated: false,
+            types: [],
+            minimumTrust: "MACHINE_SUPPORTED",
+            mode: "SOURCE_BACKED",
+            limit: 5,
+          },
+          {
+            vaultIds: [targetVaultId],
+            channels: ["vector"],
+            queryEmbeddingService: queryService,
+            answerabilityCandidateSink: (candidates) => {
+              unsupportedComparisonPool = candidates;
             },
+          },
+        );
+        const unsupportedRetrievalLatencyMs =
+          performance.now() - unsupportedRetrievalStarted;
+        const unsupportedAnswerabilityPool =
+          unsupportedComparisonPool ?? unsupportedHits;
+        const unsupportedVerificationStarted = performance.now();
+        const unsupportedAssessment = assessRetrievalAnswerability(
+          unsupportedAnswerabilityPool,
+          unsupportedQuery,
+          {},
+          { comparisonHits: unsupportedAnswerabilityPool },
+        );
+        const unsupportedVerificationLatencyMs =
+          performance.now() - unsupportedVerificationStarted;
+        const evaluateCase = async (caseQuery: string) => {
+          let comparisonPool:
+            Parameters<typeof assessRetrievalAnswerability>[0] | undefined;
+          const retrievalStarted = performance.now();
+          const rawHits = await queryKnowledge(
+            db,
+            {
+              query: caseQuery,
+              spaceId: fixture.spaceId,
+              vaultId: targetVaultId,
+              vaultIds: [],
+              federated: false,
+              types: [],
+              minimumTrust: "MACHINE_SUPPORTED",
+              mode: "SOURCE_BACKED",
+              limit: 5,
+            },
+            {
+              vaultIds: [targetVaultId],
+              channels: ["vector"],
+              queryEmbeddingService: queryService,
+              answerabilityCandidateSink: (candidates) => {
+                comparisonPool = candidates;
+              },
+            },
+          );
+          const retrievalLatencyMs = performance.now() - retrievalStarted;
+          const answerabilityPool = comparisonPool ?? rawHits;
+          const verificationStarted = performance.now();
+          const assessment = assessRetrievalAnswerability(
+            answerabilityPool,
+            caseQuery,
+            {},
+            { comparisonHits: answerabilityPool },
+          );
+          const verificationLatencyMs = performance.now() - verificationStarted;
+          return {
+            rawHits,
+            assessment,
+            retrievalLatencyMs,
+            verificationLatencyMs,
+          };
+        };
+
+        const englishCase = await evaluateCase(
+          "How should a student withdraw registration before the deadline?",
+        );
+        const semanticNeighborCase = await evaluateCase(
+          "What exact tuition refund percentage is guaranteed after enrollment withdrawal?",
+        );
+        const targetAssessmentStarted = performance.now();
+        const targetAnswerabilityPool = targetComparisonPool ?? targetHits;
+        const targetAssessment = assessRetrievalAnswerability(
+          targetAnswerabilityPool,
+          query,
+          {},
+          { comparisonHits: targetAnswerabilityPool },
+        );
+        const targetVerificationLatencyMs =
+          performance.now() - targetAssessmentStarted;
+
+        const goldDocumentIds = [
+          targetRelevant.id,
+          targetRelevantPeer.id,
+          targetRelevantThird.id,
+        ];
+        const rankedDocumentIds = targetHits.map((hit) => hit.documentId);
+        const retrievedGold = goldDocumentIds.filter((documentId) =>
+          rankedDocumentIds.slice(0, 5).includes(documentId),
+        );
+        const englishRankedDocumentIds = englishCase.rawHits.map(
+          (hit) => hit.documentId,
+        );
+        const englishRetrievedGold = goldDocumentIds.filter((documentId) =>
+          englishRankedDocumentIds.slice(0, 5).includes(documentId),
+        );
+        const correctSourceRank = Math.min(
+          ...goldDocumentIds
+            .map((documentId) => rankedDocumentIds.indexOf(documentId))
+            .filter((index) => index >= 0)
+            .map((index) => index + 1),
+        );
+        const legacyPureVectorSupport = (
+          assessment: ReturnType<typeof assessRetrievalAnswerability>,
+        ) =>
+          assessment.vectorMargin !== null && assessment.vectorMargin >= 0.03;
+        const cases = [
+          {
+            id: "cross-language-withdrawal",
+            expectedSupport: true,
+            goldDocumentIds,
+            rawHits: targetHits,
+            assessment: targetAssessment,
+            retrievalLatencyMs: targetRetrievalLatencyMs,
+            verificationLatencyMs: targetVerificationLatencyMs,
+          },
+          {
+            id: "english-withdrawal-paraphrase",
+            expectedSupport: true,
+            goldDocumentIds,
+            rawHits: englishCase.rawHits,
+            assessment: englishCase.assessment,
+            retrievalLatencyMs: englishCase.retrievalLatencyMs,
+            verificationLatencyMs: englishCase.verificationLatencyMs,
+          },
+          {
+            id: "unrelated-support-sla",
+            expectedSupport: false,
+            goldDocumentIds: [] as string[],
+            rawHits: unsupportedHits,
+            assessment: unsupportedAssessment,
+            retrievalLatencyMs: unsupportedRetrievalLatencyMs,
+            verificationLatencyMs: unsupportedVerificationLatencyMs,
+          },
+          {
+            id: "semantic-neighbor-without-refund-answer",
+            expectedSupport: false,
+            goldDocumentIds: [] as string[],
+            rawHits: semanticNeighborCase.rawHits,
+            assessment: semanticNeighborCase.assessment,
+            retrievalLatencyMs: semanticNeighborCase.retrievalLatencyMs,
+            verificationLatencyMs: semanticNeighborCase.verificationLatencyMs,
+          },
+        ];
+        const answerableCases = cases.filter((entry) => entry.expectedSupport);
+        const negativeCases = cases.filter((entry) => !entry.expectedSupport);
+        const correctRetrievedSourceIds = answerableCases.flatMap((entry) =>
+          entry.goldDocumentIds.filter((documentId) =>
+            entry.rawHits
+              .slice(0, 5)
+              .some((hit) => hit.documentId === documentId),
           ),
-        ).toMatchObject({
-          supported: true,
-          reason: "VECTOR_MARGIN_SUPPORT",
+        );
+        const correctAcceptedSourceIds = answerableCases.flatMap((entry) =>
+          entry.goldDocumentIds.filter(
+            (documentId) =>
+              entry.rawHits
+                .slice(0, 5)
+                .some((hit) => hit.documentId === documentId) &&
+              entry.assessment.supportedDocumentIds.includes(documentId),
+          ),
+        );
+        const literalFailures = cases
+          .filter(
+            (entry) => entry.assessment.supported !== entry.expectedSupport,
+          )
+          .map(
+            (entry) =>
+              `${entry.id}: expected ${entry.expectedSupport ? "SUPPORTED" : "ABSTAIN"} but got ${entry.assessment.supported ? "SUPPORTED" : "ABSTAIN"} (${entry.assessment.reason})`,
+          );
+        const semanticMetrics = {
+          schemaVersion: 2,
+          evidenceBoundary:
+            "Generic synthetic multilingual E5 fixture only; not evidence of corpus-general precision.",
+          cases: {
+            answerable: answerableCases.length,
+            unsupported: negativeCases.length,
+          },
+          retrievalBeforeFilter: {
+            recallAt5:
+              (retrievedGold.length / goldDocumentIds.length +
+                englishRetrievedGold.length / goldDocumentIds.length) /
+              2,
+            byCase: {
+              "cross-language-withdrawal":
+                retrievedGold.length / goldDocumentIds.length,
+              "english-withdrawal-paraphrase":
+                englishRetrievedGold.length / goldDocumentIds.length,
+            },
+            correctSourceRank: Number.isFinite(correctSourceRank)
+              ? correctSourceRank
+              : null,
+          },
+          supportFilter: {
+            correctSourcesAcceptedRate:
+              correctRetrievedSourceIds.length === 0
+                ? 0
+                : correctAcceptedSourceIds.length /
+                  correctRetrievedSourceIds.length,
+            falseAbstentionRate:
+              answerableCases.filter((entry) => !entry.assessment.supported)
+                .length / answerableCases.length,
+            falseAcceptanceRate:
+              negativeCases.filter((entry) => entry.assessment.supported)
+                .length / negativeCases.length,
+          },
+          latencyMs: Object.fromEntries(
+            cases.map((entry) => [
+              entry.id,
+              {
+                retrieval: entry.retrievalLatencyMs,
+                supportVerification: entry.verificationLatencyMs,
+                total: entry.retrievalLatencyMs + entry.verificationLatencyMs,
+              },
+            ]),
+          ),
+          presentationLimitProbe: {
+            supportVerification: limitedVerificationLatencyMs,
+          },
+          beforeAfterMatrix: cases.map((entry) => ({
+            id: entry.id,
+            expected: entry.expectedSupport ? "SUPPORTED" : "ABSTAIN",
+            legacyVectorMargin: legacyPureVectorSupport(entry.assessment)
+              ? "SUPPORTED"
+              : "ABSTAIN",
+            passageTextOnly: entry.assessment.candidateSignals.some(
+              (signal) =>
+                signal.passageSupport.reason === "PASSAGE_TEXT_SUPPORT",
+            )
+              ? "SUPPORTED"
+              : "ABSTAIN",
+            deterministicPassageSupport: entry.assessment.supported
+              ? "SUPPORTED"
+              : "ABSTAIN",
+            reason: entry.assessment.reason,
+          })),
+          literalFailures,
+          passageDiagnostics: cases.map((entry) => ({
+            id: entry.id,
+            candidates: entry.assessment.candidateSignals.map((signal) => ({
+              rank: signal.candidateRank,
+              channels: signal.contributions.map(
+                (contribution) => contribution.channel,
+              ),
+              vectorScore:
+                signal.contributions.find(
+                  (contribution) => contribution.channel === "vector",
+                )?.rawScore ?? null,
+              supportReason: signal.passageSupport.reason,
+              passageSource: signal.passageSupport.passageSource,
+              salientCoverage: signal.textualSupport.salientCoverage,
+              answerCueCoverage: signal.passageSupport.answerCueCoverage,
+              passageCharacters: signal.passageSupport.passageCharacters,
+            })),
+          })),
+        };
+        const metricsPath = path.resolve(
+          process.cwd(),
+          "../../reports/ci/semantic-answerability-metrics.json",
+        );
+        await mkdir(path.dirname(metricsPath), { recursive: true });
+        await writeFile(
+          metricsPath,
+          `${JSON.stringify(semanticMetrics, null, 2)}\n`,
+          "utf8",
+        );
+
+        console.info(
+          JSON.stringify({
+            semanticAnswerabilityProbe: {
+              metrics: semanticMetrics,
+              model: {
+                provider: targetGeneration.provider,
+                model: targetGeneration.model,
+                revision: targetGeneration.modelRevision,
+              },
+            },
+          }),
+        );
+        expect(retrievedGold).toHaveLength(goldDocumentIds.length);
+        expect(englishRetrievedGold).toHaveLength(goldDocumentIds.length);
+        expect(correctSourceRank).toBe(1);
+        expect(limitedAssessment.supported).toBe(true);
+        expect(targetAssessment.supported).toBe(true);
+        expect(englishCase.assessment.supported).toBe(true);
+        expect(unsupportedAssessment).toMatchObject({
+          supported: false,
+          reason: "SUPPORT_NOT_DEMONSTRATED",
         });
+        expect(semanticNeighborCase.assessment).toMatchObject({
+          supported: false,
+          reason: "SUPPORT_NOT_DEMONSTRATED",
+        });
+        expect(semanticMetrics.supportFilter).toEqual({
+          correctSourcesAcceptedRate: 1,
+          falseAbstentionRate: 0,
+          falseAcceptanceRate: 0,
+        });
+        expect(semanticMetrics.literalFailures).toEqual([]);
 
         resolverCalls.length = 0;
         const foreignHits = await queryKnowledge(
@@ -469,7 +830,7 @@ integration("real multilingual semantic retrieval", () => {
             types: [],
             minimumTrust: "MACHINE_SUPPORTED",
             mode: "SOURCE_BACKED",
-            limit: 3,
+            limit: targetDocuments.length + 1,
           },
           {
             vaultIds: [targetVaultId, foreignVaultId],
@@ -477,12 +838,12 @@ integration("real multilingual semantic retrieval", () => {
             queryEmbeddingService: queryService,
           },
         );
-        expect(new Set(federatedHits.map((hit) => hit.documentId))).toEqual(
-          new Set([
-            targetRelevant.id,
-            foreignCandidate.id,
-            targetDistractor.id,
-          ]),
+        expect(federatedHits).toHaveLength(targetDocuments.length + 1);
+        expect(federatedHits.map((hit) => hit.documentId)).toContain(
+          targetRelevant.id,
+        );
+        expect(federatedHits.map((hit) => hit.documentId)).toContain(
+          foreignCandidate.id,
         );
         expect(new Set(federatedHits.map((hit) => hit.vaultId))).toEqual(
           new Set([targetVaultId, foreignVaultId]),
@@ -502,6 +863,25 @@ integration("real multilingual semantic retrieval", () => {
             targetGenerationId: targetGeneration.generationId,
             targetTopDocument: targetHits[0]?.documentId,
             targetScores: targetHits.map((hit) => hit.score),
+            targetVectorScores: targetHits.map((hit) => ({
+              documentId: hit.documentId,
+              externalId: hit.document.externalId,
+              rawScore:
+                hit.fusionContributions?.find(
+                  (contribution) => contribution.channel === "vector",
+                )?.rawScore ?? null,
+            })),
+            answerability: assessRetrievalAnswerability(targetHits, query),
+            noAnswerProbe: {
+              vectorScores: unsupportedHits.map((hit) => ({
+                documentId: hit.documentId,
+                rawScore:
+                  hit.fusionContributions?.find(
+                    (contribution) => contribution.channel === "vector",
+                  )?.rawScore ?? null,
+              })),
+              assessment: unsupportedAssessment,
+            },
             foreignGenerationId: foreignGeneration.generationId,
             foreignDocumentId: foreignCandidate.id,
           }),

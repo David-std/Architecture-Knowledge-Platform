@@ -6,7 +6,6 @@ import {
   resolveRetrievalAnswerabilityPolicy,
 } from "../src/answerability.js";
 
-const DOCUMENT_ID = "11111111-1111-4111-8111-111111111111";
 const VAULT_ID = "22222222-2222-4222-8222-222222222222";
 
 function hit(
@@ -14,16 +13,20 @@ function hit(
   input: {
     title: string;
     excerpt: string;
+    parentContext?: string;
     contributions: NonNullable<SearchHit["fusionContributions"]>;
   },
 ): SearchHit {
-  const id = `11111111-1111-4111-8111-${String(idSuffix).padStart(12, "0")}`;
+  const documentId = `11111111-1111-4111-8111-${String(idSuffix).padStart(12, "0")}`;
+  const unitId = `33333333-3333-4333-8333-${String(idSuffix).padStart(12, "0")}`;
   return {
-    documentId: id === DOCUMENT_ID ? DOCUMENT_ID : id,
+    documentId,
     vaultId: VAULT_ID,
+    unitId,
+    unitType: "PARAGRAPH",
     document: {
-      externalId: `doc-${idSuffix}`,
-      path: `docs/doc-${idSuffix}.md`,
+      externalId: `public-fixture-${idSuffix}`,
+      path: `docs/public-${idSuffix}.md`,
       title: input.title,
     },
     revision: "revision-1",
@@ -35,6 +38,7 @@ function hit(
     score: 1,
     reasons: ["test"],
     fusionContributions: input.contributions,
+    ...(input.parentContext ? { parentContext: input.parentContext } : {}),
     excerpt: input.excerpt,
     citations: [],
   };
@@ -43,10 +47,11 @@ function hit(
 function contribution(
   channel: string,
   rawScore?: number,
+  rank = 1,
 ): NonNullable<SearchHit["fusionContributions"]>[number] {
   return {
     channel,
-    rank: 1,
+    rank,
     channelWeight: 1,
     reason: `${channel}:test`,
     ...(rawScore === undefined ? {} : { rawScore }),
@@ -54,273 +59,286 @@ function contribution(
 }
 
 describe("retrieval answerability", () => {
-  it("rejects weak semantic neighbours with no direct or textual support", () => {
+  it("accepts multiple answer-bearing passages even when the vector neighbourhood is dense", () => {
+    const hits = [
+      hit(1, {
+        title: "Webhook replay safety",
+        excerpt:
+          "Before applying a duplicate webhook delivery, the consumer checks a persisted idempotency key and suppresses the repeated side effect.",
+        contributions: [contribution("vector", 0.865113, 1)],
+      }),
+      hit(2, {
+        title: "Duplicate delivery guard",
+        excerpt:
+          "Duplicate webhook attempts reuse the same durable processing record, so the handler does not apply the side effect twice.",
+        contributions: [contribution("vector", 0.861647, 2)],
+      }),
+      hit(3, {
+        title: "Replay processing rule",
+        excerpt:
+          "A duplicate webhook replay checks the recorded delivery key before executing the handler again.",
+        contributions: [contribution("vector", 0.859263, 3)],
+      }),
+    ];
+
+    const result = assessRetrievalAnswerability(
+      hits,
+      "How are duplicate webhook deliveries prevented during redelivery?",
+    );
+
+    expect(result.supported).toBe(true);
+    expect(result.supportedDocumentIds).toEqual(
+      hits.map((candidate) => candidate.documentId),
+    );
+    expect(result.vectorMargin).toBeCloseTo(0.003466, 6);
+    expect(result.vectorNeighborhoodMargin).toBeCloseTo(0.00585, 5);
+  });
+
+  it("does not use vector separation as support when no passage answers the question", () => {
     const result = assessRetrievalAnswerability(
       [
         hit(1, {
-          title: "Threat model",
-          excerpt: "Authentication and trust boundaries.",
-          contributions: [
-            contribution("vector", 0.7898),
-            contribution("graph", 1),
-          ],
+          title: "Runtime telemetry",
+          excerpt: "Metrics are exported to the observability backend.",
+          contributions: [contribution("vector", 0.91, 1)],
         }),
         hit(2, {
-          title: "Operations runbook",
-          excerpt: "Local recovery procedures.",
-          contributions: [
-            contribution("vector", 0.7714),
-            contribution("graph", 1),
-          ],
+          title: "Cache retention",
+          excerpt: "Cached responses expire after a bounded window.",
+          contributions: [contribution("vector", 0.72, 2)],
         }),
       ],
-      "What is the guaranteed 24/7 telephone support SLA for enterprise customers?",
+      "What guaranteed telephone support number is provided to premium customers?",
     );
 
     expect(result).toMatchObject({
       supported: false,
-      reason: "WEAK_SEMANTIC_NEIGHBORS",
+      reason: "SUPPORT_NOT_DEMONSTRATED",
+      supportedDocumentIds: [],
     });
-    expect(result.vectorMargin).toBeCloseTo(0.0184, 4);
+    expect(result.vectorMargin).toBeCloseTo(0.19, 4);
   });
 
-  it("preserves cross-language retrieval when the vector winner is discriminative", () => {
+  it("accepts a passage paraphrase with no shared salient words when answer cues align", () => {
+    const query = "How can recurring charges be stopped after redelivery?";
+    const candidate = hit(1, {
+      title: "Idempotent consumer",
+      excerpt:
+        "A persisted idempotency key is checked before applying a payment again.",
+      contributions: [contribution("vector", 0.84, 1)],
+    });
+    const result = assessRetrievalAnswerability([candidate], query);
+
+    expect(
+      result.candidateSignals[0]?.textualSupport.salientOverlapTokens,
+    ).toEqual([]);
+    expect(result).toMatchObject({
+      supported: true,
+      reason: "PASSAGE_CUE_SUPPORT",
+      supportedDocumentIds: [candidate.documentId],
+    });
+  });
+
+  it("accepts a cross-language answer-bearing passage without relying on a vector margin", () => {
+    const query =
+      "¿Cómo puede un alumno darse de baja antes de la fecha límite?";
+    const candidate = hit(1, {
+      title: "Enrollment withdrawal",
+      excerpt:
+        "The student files a withdrawal request through the registrar before the deadline.",
+      contributions: [contribution("vector", 0.83, 2)],
+    });
+    const result = assessRetrievalAnswerability([candidate], query);
+
+    expect(
+      result.candidateSignals[0]?.textualSupport.salientOverlapTokens,
+    ).toEqual([]);
+    expect(result).toMatchObject({
+      supported: true,
+      reason: "PASSAGE_CUE_SUPPORT",
+    });
+  });
+
+  it("rejects a semantic neighbour that is relevant to the topic but does not answer", () => {
     const result = assessRetrievalAnswerability(
       [
         hit(1, {
-          title: "Retry policy",
+          title: "Replay observability",
           excerpt:
-            "Transient calls use bounded retries with exponential backoff.",
-          contributions: [contribution("vector", 0.8133)],
-        }),
-        hit(2, {
-          title: "Cache policy",
-          excerpt: "Cache entries use bounded retention.",
-          contributions: [contribution("vector", 0.7366)],
+            "The replay worker records delivery latency and emits telemetry after processing.",
+          contributions: [contribution("vector", 0.88, 1)],
         }),
       ],
-      "¿Qué regla limita los reintentos de llamadas transitorias mediante retroceso exponencial?",
+      "How can recurring charges be stopped after redelivery?",
+    );
+
+    expect(result).toMatchObject({
+      supported: false,
+      reason: "SUPPORT_NOT_DEMONSTRATED",
+    });
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: false,
+      reason: "ANSWER_CUE_MISMATCH",
+    });
+  });
+
+  it("uses structural parent context when the presentation excerpt omits the decisive passage", () => {
+    const candidate = hit(1, {
+      title: "Durable publication",
+      excerpt: "Publication overview.",
+      parentContext:
+        "A publication is committed only after the durable outbox record is written. The durable outbox record preserves recovery after a process crash.",
+      contributions: [contribution("vector", 0.8, 1)],
+    });
+    const result = assessRetrievalAnswerability(
+      [candidate],
+      "How does the durable outbox preserve publication recovery after a crash?",
     );
 
     expect(result).toMatchObject({
       supported: true,
-      reason: "VECTOR_MARGIN_SUPPORT",
+      reason: "PASSAGE_TEXT_SUPPORT",
     });
-    expect(result.candidateSignals[0]?.textualSupport.salientCoverage).toBe(0);
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      passageSource: "STRUCTURAL_CONTEXT",
+      supportSurfaceExtendsExcerpt: true,
+    });
   });
 
-  it("preserves a low-margin vector winner with measured salient text support", () => {
+  it("treats exact and other direct channels as candidate-specific support", () => {
+    const direct = hit(1, {
+      title: "Canonical rule",
+      excerpt: "Unrelated wording.",
+      contributions: [contribution("exact"), contribution("vector", 0.6, 1)],
+    });
+    const neighbour = hit(2, {
+      title: "Nearby topic",
+      excerpt: "A nearby topic with no direct match.",
+      contributions: [contribution("vector", 0.59, 2)],
+    });
     const result = assessRetrievalAnswerability(
-      [
-        hit(1, {
-          title: "Architecture overview",
-          excerpt:
-            "Approved Markdown is canonical knowledge and indexes are rebuildable projections.",
-          contributions: [contribution("vector", 0.7884)],
-        }),
-        hit(2, {
-          title: "C4 architecture",
-          excerpt: "Container and module views.",
-          contributions: [contribution("vector", 0.7791)],
-        }),
-      ],
-      "¿Qué componente conserva el Markdown aprobado como conocimiento canónico y qué datos se consideran proyecciones reconstruibles?",
-    );
-
-    expect(result.supported).toBe(true);
-    expect(["VECTOR_TEXT_SUPPORT", "VECTOR_MARGIN_SUPPORT"]).toContain(
-      result.reason,
-    );
-  });
-
-  it("treats exact and other direct channels as support", () => {
-    const result = assessRetrievalAnswerability(
-      [
-        hit(1, {
-          title: "Canonical rule",
-          excerpt: "Unrelated wording.",
-          contributions: [contribution("exact"), contribution("vector", 0.6)],
-        }),
-        hit(2, {
-          title: "Other",
-          excerpt: "Other wording.",
-          contributions: [contribution("vector", 0.59)],
-        }),
-      ],
+      [direct, neighbour],
       "RULE-AUTH-001",
     );
 
     expect(result).toMatchObject({
       supported: true,
       reason: "DIRECT_CHANNEL_SUPPORT",
+      supportedDocumentIds: [direct.documentId],
     });
+    expect(result.candidateSignals[1]?.passageSupport.supported).toBe(false);
   });
 
-  it("preserves lexical-only retrieval when no vector candidate participated", () => {
-    const result = assessRetrievalAnswerability(
-      [
-        hit(1, {
-          title: "Related workflow",
-          excerpt: "Follows the reviewed policy.",
-          contributions: [contribution("lexical", 1)],
-        }),
-      ],
-      "What workflow follows the reviewed policy?",
-    );
+  it("requires lexical candidates to demonstrate support in their passage", () => {
+    const supported = hit(1, {
+      title: "Reviewed workflow",
+      excerpt: "The workflow follows the reviewed policy.",
+      contributions: [contribution("lexical", 1)],
+    });
+    const unsupported = hit(2, {
+      title: "Policy archive",
+      excerpt: "Archived policy documents are listed by year.",
+      contributions: [contribution("lexical", 0.8)],
+    });
+    const query = "What workflow follows the reviewed policy?";
 
-    expect(result).toMatchObject({
+    expect(assessRetrievalAnswerability([supported], query)).toMatchObject({
       supported: true,
-      reason: "LEXICAL_TEXT_SUPPORT",
+      reason: "PASSAGE_TEXT_SUPPORT",
+      supportedDocumentIds: [supported.documentId],
+    });
+    expect(assessRetrievalAnswerability([unsupported], query)).toMatchObject({
+      supported: false,
+      reason: "SUPPORT_NOT_DEMONSTRATED",
     });
   });
 
-  it("uses a same-query comparison pool when presentation limit keeps one vector hit", () => {
-    const winner = hit(1, {
-      title: "Retry policy",
-      excerpt: "Transient calls use bounded retries with exponential backoff.",
-      contributions: [contribution("vector", 0.8133)],
+  it("accepts graph evidence only for an explicit graph-oriented intent", () => {
+    const candidate = hit(1, {
+      title: "Dependency relation",
+      excerpt: "A graph neighbour discovered through an authorized path.",
+      contributions: [
+        contribution("vector", 0.78, 1),
+        contribution("graph", 1, 1),
+      ],
     });
-    const runnerUp = hit(2, {
-      title: "Cache policy",
-      excerpt: "Cache entries use bounded retention.",
-      contributions: [contribution("vector", 0.7366)],
-    });
-    const query =
-      "¿Qué regla limita los reintentos de llamadas transitorias mediante retroceso exponencial?";
+    const query = "Which component is related to this dependency?";
 
-    const result = assessRetrievalAnswerability(
-      [winner],
-      query,
-      {},
-      {
-        comparisonHits: [winner, runnerUp],
-      },
+    expect(assessRetrievalAnswerability([candidate], query).supported).toBe(
+      false,
     );
-
-    expect(result).toMatchObject({
+    expect(
+      assessRetrievalAnswerability(
+        [candidate],
+        query,
+        {},
+        { allowGraphSupport: true },
+      ),
+    ).toMatchObject({
       supported: true,
-      reason: "VECTOR_MARGIN_SUPPORT",
-      topVectorScore: 0.8133,
-      secondVectorScore: 0.7366,
-    });
-    expect(result.candidateSignals).toHaveLength(1);
-  });
-
-  it("does not invent a vector margin when only one semantic candidate exists", () => {
-    const result = assessRetrievalAnswerability(
-      [
-        hit(1, {
-          title: "Threat model",
-          excerpt: "Authentication and trust boundaries.",
-          contributions: [contribution("vector", 0.91)],
-        }),
-      ],
-      "What is the guaranteed 24/7 telephone support SLA for enterprise customers?",
-    );
-
-    expect(result).toMatchObject({
-      supported: false,
-      reason: "WEAK_SEMANTIC_NEIGHBORS",
-      secondVectorScore: null,
-      vectorMargin: null,
+      reason: "GRAPH_INTENT_SUPPORT",
+      supportedDocumentIds: [candidate.documentId],
     });
   });
 
-  it("does not treat community-only orientation as answerability evidence", () => {
-    const result = assessRetrievalAnswerability(
-      [
-        hit(1, {
-          title: "Architecture theme",
-          excerpt: "A derived cluster summary.",
-          contributions: [contribution("community", 1)],
-        }),
-      ],
-      "What contractual support SLA applies to enterprise customers?",
-    );
-
-    expect(result).toMatchObject({
-      supported: false,
-      reason: "WEAK_SEMANTIC_NEIGHBORS",
-    });
-  });
-
-  it("keeps raw candidate signals available even when the gate rejects them", () => {
+  it("keeps authorized candidate diagnostics even when support is not demonstrated", () => {
     const hits = [
       hit(1, {
         title: "Managed architecture",
         excerpt: "A managed component exists.",
-        contributions: [contribution("vector", 0.777)],
+        contributions: [contribution("vector", 0.777, 1)],
       }),
       hit(2, {
         title: "Module guide",
         excerpt: "Module boundaries.",
-        contributions: [contribution("vector", 0.772)],
+        contributions: [contribution("vector", 0.772, 2)],
       }),
     ];
-    const signals = collectCandidateAnswerabilitySignals(
-      hits,
-      "Which public cloud region hosts the managed production SaaS service?",
-    );
-    const result = assessRetrievalAnswerability(
-      hits,
-      "Which public cloud region hosts the managed production SaaS service?",
-    );
+    const query =
+      "Which public cloud region hosts the managed production service?";
+    const signals = collectCandidateAnswerabilitySignals(hits, query);
+    const result = assessRetrievalAnswerability(hits, query);
 
     expect(signals).toHaveLength(2);
     expect(result.candidateSignals).toEqual(signals);
     expect(result).toMatchObject({
       supported: false,
-      reason: "WEAK_SEMANTIC_NEIGHBORS",
+      reason: "SUPPORT_NOT_DEMONSTRATED",
     });
   });
 
-  it("accepts graph evidence only for an explicit graph-oriented intent", () => {
-    const hits = [
-      hit(1, {
-        title: "Threat model",
-        excerpt: "Authentication and trust boundaries.",
-        contributions: [
-          contribution("vector", 0.7898),
-          contribution("graph", 1),
-        ],
-      }),
-      hit(2, {
-        title: "Operations runbook",
-        excerpt: "Local recovery procedures.",
-        contributions: [
-          contribution("vector", 0.7714),
-          contribution("graph", 1),
-        ],
-      }),
-    ];
-    const query =
-      "Which security document is related to the local operations runbook?";
-
-    expect(assessRetrievalAnswerability(hits, query).supported).toBe(false);
-    expect(
-      assessRetrievalAnswerability(
-        hits,
-        query,
-        {},
-        {
-          allowGraphSupport: true,
-        },
-      ),
-    ).toMatchObject({
-      supported: true,
-      reason: "GRAPH_INTENT_SUPPORT",
+  it("uses the comparison pool only for vector diagnostics, never as implicit support", () => {
+    const winner = hit(1, {
+      title: "Observability",
+      excerpt: "Metrics are exported to a monitoring backend.",
+      contributions: [contribution("vector", 0.9, 1)],
     });
+    const distant = hit(2, {
+      title: "Cache",
+      excerpt: "Cached values expire.",
+      contributions: [contribution("vector", 0.4, 2)],
+    });
+    const result = assessRetrievalAnswerability(
+      [winner],
+      "What is the unpublished emergency support telephone number?",
+      {},
+      { comparisonHits: [winner, distant] },
+    );
+
+    expect(result.supported).toBe(false);
+    expect(result.vectorMargin).toBeCloseTo(0.5, 4);
+    expect(result.supportedDocumentIds).toEqual([]);
   });
 
-  it("validates policy thresholds", () => {
-    expect(() =>
-      resolveRetrievalAnswerabilityPolicy({ minimumVectorTextMargin: -1 }),
-    ).toThrow("minimumVectorTextMargin");
-    expect(() =>
-      resolveRetrievalAnswerabilityPolicy({ minimumVectorMargin: -1 }),
-    ).toThrow("minimumVectorMargin");
+  it("validates passage support policy thresholds", () => {
     expect(() =>
       resolveRetrievalAnswerabilityPolicy({ minimumSalientCoverage: 1.1 }),
     ).toThrow("minimumSalientCoverage");
+    expect(() =>
+      resolveRetrievalAnswerabilityPolicy({ minimumSalientOverlap: 0 }),
+    ).toThrow("minimumSalientOverlap");
+    expect(() =>
+      resolveRetrievalAnswerabilityPolicy({ semanticCueMaxVectorRank: 0 }),
+    ).toThrow("semanticCueMaxVectorRank");
   });
 });

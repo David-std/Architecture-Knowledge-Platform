@@ -744,7 +744,10 @@ async function executeCase(
         : {}),
     },
   );
-  const hits = answerability.supported ? rawHits : [];
+  const supportedDocumentIds = new Set(answerability.supportedDocumentIds);
+  const hits = rawHits.filter((hit) =>
+    supportedDocumentIds.has(hit.documentId),
+  );
   if (!answerability.supported && rawHits.length > 0) {
     warnings.push(`ANSWERABILITY_GATE_REJECTED:${answerability.reason}`);
   }
@@ -792,7 +795,9 @@ async function executeCase(
       reason: answerability.reason,
       topVectorScore: answerability.topVectorScore,
       secondVectorScore: answerability.secondVectorScore,
+      thirdVectorScore: answerability.thirdVectorScore,
       vectorMargin: answerability.vectorMargin,
+      vectorNeighborhoodMargin: answerability.vectorNeighborhoodMargin,
     },
   };
 }

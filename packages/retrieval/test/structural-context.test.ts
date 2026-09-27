@@ -18,6 +18,37 @@ describe("rehydrateStructuralContext", () => {
     expect(result.length).toBeLessThanOrEqual(600);
   });
 
+  it("focuses a long matched unit on the lexical passage instead of its prefix", () => {
+    const decisive =
+      "Peer revocation sets the peer to DISABLED and removes its credential reference.";
+    const result = rehydrateStructuralContext(
+      {
+        body: `${"introductory federation context ".repeat(120)}\n${decisive}\n${"tail context ".repeat(120)}`,
+        unitType: "PARAGRAPH",
+        focusText: "peer revocation credential reference",
+      },
+      600,
+    );
+
+    expect(result).toContain(decisive);
+    expect(result.length).toBeLessThanOrEqual(600);
+    expect(result).not.toMatch(/^introductory federation context/u);
+  });
+
+  it("falls back deterministically when focus terms do not occur", () => {
+    const body = `${"prefix ".repeat(200)}\nlate material`;
+    const result = rehydrateStructuralContext(
+      {
+        body,
+        unitType: "PARAGRAPH",
+        focusText: "unrelated semantic paraphrase",
+      },
+      120,
+    );
+
+    expect(result).toBe(`${body.slice(0, 119).trimEnd()}…`);
+  });
+
   it("never expands a DOCUMENT container into the packet", () => {
     const child = "Only this atomic table row is relevant.";
     const result = rehydrateStructuralContext({
