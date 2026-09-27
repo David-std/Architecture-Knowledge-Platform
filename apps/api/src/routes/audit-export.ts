@@ -998,7 +998,7 @@ export function registerAuditExportRoutes(
           .header("cache-control", "no-store")
           .header("x-akp-bundle-hash", bundle.hash)
           .header("x-akp-bundle-schema-version", "1.0")
-          .send(Readable.from(renderAuditZipChunks(bundle)));
+          .send(Readable.from(renderAuditZipChunks(bundle), { objectMode: false }));
       } catch (error) {
         if (error instanceof AuditExportLimitError) {
           return reply.code(413).send({
