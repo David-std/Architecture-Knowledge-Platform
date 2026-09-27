@@ -389,7 +389,7 @@ integration("real multilingual semantic retrieval", () => {
         });
 
         let limitedComparisonPool:
-          | readonly (typeof targetHits)[number][]
+          | Parameters<typeof assessRetrievalAnswerability>[0]
           | undefined;
         const limitedHits = await queryKnowledge(
           db,
