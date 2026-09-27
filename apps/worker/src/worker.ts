@@ -466,29 +466,99 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
         version,
         { extracted },
         undefined,
-        async (client) => {\n          const storedArtifact = await client.query<{ id: string }>(\n            `\n            insert into source_artifacts(
-                    source_id,kind,object_key,source_hash,extractor,extractor_version,
-                    quality,metadata,document_artifact,artifact_schema_version,
-                    configuration_hash,structured_content_hash\n            )\n            values($1,'document-artifact',$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9,$10,$11)\n            on conflict (source_id,extractor,extractor_version,configuration_hash)\n              where kind='document-artifact'\n            do update set\n              object_key=excluded.object_key,\n              source_hash=excluded.source_hash,\n              quality=excluded.quality,\n              metadata=excluded.metadata,\n              document_artifact=excluded.document_artifact,\n              artifact_schema_version=excluded.artifact_schema_version,\n              structured_content_hash=excluded.structured_content_hash\n            returning id\n            `,\n            [\n              outputs.sourceId,\n              String(raw.key ?? ""),\n              raw.sha256,\n              canonical.extractor,\n              canonical.extractorVersion,\n              canonical.artifact.quality,\n              JSON.stringify({\n                routing: canonical.routing,\n                warnings: canonical.warnings,\n                quality_metrics: canonical.artifact.quality_metrics,\n              }),\n              JSON.stringify(canonical.artifact),\n              DOCUMENT_ARTIFACT_SCHEMA_VERSION,\n              canonical.configurationHash,\n              canonical.contentHash,\n            ],\n          );\n          const artifactId =\n            storedArtifact.rows[0]?.id ??\n            (\n              await client.query<{ id: string }>(\n                `\n                select id from source_artifacts\n                 where source_id=$1 and kind='document-artifact'\n                   and extractor=$2 and extractor_version=$3\n                   and configuration_hash=$4\n                 limit 1\n                `,
-                      [\n                  outputs.sourceId,\n                  canonical.extractor,\n                  canonical.extractorVersion,\n                  canonical.configurationHash,\n                ],\n              )\n            ).rows[0]?.id;\n          if (!artifactId) throw new Error("Could not persist document artifact.");
-          \n          extracted.source_artifact_id = artifactId;\n          const storedEvidence = await client.query<{ id: string }>(
-                  `
-                  insert into evidence(
-                    space_id,vault_id,source_id,artifact_id,locator,content_hash,excerpt,review_status\n            )\n            values($1,$2,$3,$4,$5::jsonb,$6,$7,'MACHINE_EXTRACTED')\n            on conflict(artifact_id) where artifact_id is not null do update set
-                    vault_id=excluded.vault_id,locator=excluded.locator,
-                    content_hash=excluded.content_hash,excerpt=excluded.excerpt,
-                    review_status=excluded.review_status\n            returning id\n            `,\n            [
-                    spaceId,
-                    vaultId,\n              outputs.sourceId,
-                    artifactId,\n              JSON.stringify(evidenceFragment.locator),
-                    evidenceFragment.excerptHash,
-                    evidenceFragment.excerpt,\n            ],\n          );
-                const evidenceId = storedEvidence.rows[0]?.id;
-                if (!evidenceId) throw new Error("Could not persist evidence.");
-          \n          extracted.evidence_id = evidenceId;
+        async (client) => {
+          const storedArtifact = await client.query<{ id: string }>(
+            `
+            insert into source_artifacts(
+              source_id,kind,object_key,source_hash,extractor,extractor_version,
+              quality,metadata,document_artifact,artifact_schema_version,
+              configuration_hash,structured_content_hash
+            )
+            values($1,'document-artifact',$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9,$10,$11)
+            on conflict (source_id,extractor,extractor_version,configuration_hash)
+              where kind='document-artifact'
+            do update set
+              object_key=excluded.object_key,
+              source_hash=excluded.source_hash,
+              quality=excluded.quality,
+              metadata=excluded.metadata,
+              document_artifact=excluded.document_artifact,
+              artifact_schema_version=excluded.artifact_schema_version,
+              structured_content_hash=excluded.structured_content_hash
+            returning id
+            `,
+            [
+              outputs.sourceId,
+              String(raw.key ?? ""),
+              raw.sha256,
+              canonical.extractor,
+              canonical.extractorVersion,
+              canonical.artifact.quality,
+              JSON.stringify({
+                routing: canonical.routing,
+                warnings: canonical.warnings,
+                quality_metrics: canonical.artifact.quality_metrics,
+              }),
+              JSON.stringify(canonical.artifact),
+              DOCUMENT_ARTIFACT_SCHEMA_VERSION,
+              canonical.configurationHash,
+              canonical.contentHash,
+            ],
+          );
+          const artifactId =
+            storedArtifact.rows[0]?.id ??
+            (
+              await client.query<{ id: string }>(
+                `
+                select id from source_artifacts
+                 where source_id=$1 and kind='document-artifact'
+                   and extractor=$2 and extractor_version=$3
+                   and configuration_hash=$4
+                 limit 1
+                `,
+                [
+                  outputs.sourceId,
+                  canonical.extractor,
+                  canonical.extractorVersion,
+                  canonical.configurationHash,
+                ],
+              )
+            ).rows[0]?.id;
+          if (!artifactId) {
+            throw new Error("Could not persist document artifact.");
+          }
+          extracted.source_artifact_id = artifactId;
+
+          const storedEvidence = await client.query<{ id: string }>(
+            `
+            insert into evidence(
+              space_id,vault_id,source_id,artifact_id,locator,content_hash,
+              excerpt,review_status
+            )
+            values($1,$2,$3,$4,$5::jsonb,$6,$7,'MACHINE_EXTRACTED')
+            on conflict(artifact_id) where artifact_id is not null do update set
+              vault_id=excluded.vault_id,
+              locator=excluded.locator,
+              content_hash=excluded.content_hash,
+              excerpt=excluded.excerpt,
+              review_status=excluded.review_status
+            returning id
+            `,
+            [
+              spaceId,
+              vaultId,
+              outputs.sourceId,
+              artifactId,
+              JSON.stringify(evidenceFragment.locator),
+              evidenceFragment.excerptHash,
+              evidenceFragment.excerpt,
+            ],
+          );
+          const evidenceId = storedEvidence.rows[0]?.id;
+          if (!evidenceId) throw new Error("Could not persist evidence.");
+          extracted.evidence_id = evidenceId;
         },
       );
-
     } finally {
       await rm(immutablePath, { force: true });
     }
