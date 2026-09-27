@@ -3478,8 +3478,7 @@ export async function queryKnowledge(
           ? { graphProvenance: graphProvenanceByCandidate.get(item.id) }
           : {}),
         excerpt:
-          structuralContext?.excerpt ??
-          String(row.body_cache).slice(0, 1200),
+          structuralContext?.excerpt ?? String(row.body_cache).slice(0, 1200),
         citations,
         warnings: [
           "UNTRUSTED_RETRIEVED_CONTENT",
