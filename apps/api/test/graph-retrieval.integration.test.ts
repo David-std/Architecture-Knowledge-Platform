@@ -174,6 +174,59 @@ async function seedGraph(db: Postgres, fixture: GraphFixture): Promise<void> {
     randomSeed: 7,
   });
 }
+  const controlledRevisionId = randomUUID();
+  await db.pool.query(
+    `insert into community_index_revisions(
+       id,space_id,vault_id,scope_id,community_revision,graph_revision,
+       algorithm,algorithm_version,objective,resolution,random_seed,quality,
+       hierarchy,lifecycle,status,stale,activated_at,error
+     ) values(
+       $1,$2,$3,'boundary-probe',$4,$5,
+       'TEST_CONTROLLED','1','CPM',1,7,1,
+       '{}'::jsonb,'DERIVED_INDEX','ACTIVE',false,now(),null
+     )`,
+    [
+      controlledRevisionId,
+      fixture.spaceId,
+      fixture.vaultId,
+      `${fixture.corpusRevision}:boundary-probe`,
+      fixture.corpusRevision,
+    ],
+  );
+  await db.pool.query(
+    `insert into community_index_communities(
+       revision_id,community_key,ordinal,member_count,summary,
+       summary_lifecycle,citable,support_set,hierarchy
+     ) values(
+       $1,'boundary-probe',0,3,
+       'Controlled non-citable community for boundary verification.',
+       'DERIVED_INDEX',false,$2::jsonb,'{}'::jsonb
+     )`,
+    [
+      controlledRevisionId,
+      JSON.stringify({
+        documentIds: [
+          fixture.documents.A,
+          fixture.documents.B,
+          fixture.documents.S,
+        ],
+        relationKeys: [],
+      }),
+    ],
+  );
+  for (const documentId of [
+    fixture.documents.A,
+    fixture.documents.B,
+    fixture.documents.S,
+  ]) {
+    await db.pool.query(
+      `insert into community_index_memberships(
+         revision_id,document_id,community_key,hierarchy
+       ) values($1,$2,'boundary-probe','{}'::jsonb)`,
+      [controlledRevisionId, documentId],
+    );
+  }
+
 
 async function cleanupGraph(
   db: Postgres,
