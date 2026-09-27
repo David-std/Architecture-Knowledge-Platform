@@ -43,7 +43,14 @@ const DIRECT_SUPPORT_CHANNELS = new Set([
 export interface RetrievalAnswerabilityPolicy {
   minimumSalientCoverage: number;
   minimumVectorTextMargin: number;
+  /** Minimum adjacent separation used inside a semantic neighbourhood. */
   minimumVectorMargin: number;
+  /**
+   * Minimum top-to-background separation for pure semantic support.
+   * With 3+ candidates the third vector candidate is the conservative
+   * background reference, allowing two close relevant neighbours.
+   */
+  minimumVectorNeighborhoodMargin: number;
 }
 
 export interface RetrievalAnswerabilityContext {
@@ -64,6 +71,7 @@ export const DEFAULT_RETRIEVAL_ANSWERABILITY_POLICY: RetrievalAnswerabilityPolic
     minimumSalientCoverage: 0.1,
     minimumVectorTextMargin: 0.007,
     minimumVectorMargin: 0.03,
+    minimumVectorNeighborhoodMargin: 0.06,
   };
 
 export type RetrievalAnswerabilityReason =
@@ -73,6 +81,7 @@ export type RetrievalAnswerabilityReason =
   | "LEXICAL_TEXT_SUPPORT"
   | "VECTOR_TEXT_SUPPORT"
   | "VECTOR_MARGIN_SUPPORT"
+  | "VECTOR_NEIGHBORHOOD_SUPPORT"
   | "GRAPH_INTENT_SUPPORT"
   | "WEAK_SEMANTIC_NEIGHBORS";
 
@@ -104,7 +113,9 @@ export interface RetrievalAnswerabilityAssessment {
   candidateSignals: CandidateAnswerabilitySignal[];
   topVectorScore: number | null;
   secondVectorScore: number | null;
+  thirdVectorScore: number | null;
   vectorMargin: number | null;
+  vectorNeighborhoodMargin: number | null;
 }
 
 function validFraction(value: unknown, field: string): number {
@@ -137,6 +148,11 @@ export function resolveRetrievalAnswerabilityPolicy(
       input.minimumVectorMargin ??
         DEFAULT_RETRIEVAL_ANSWERABILITY_POLICY.minimumVectorMargin,
       "minimumVectorMargin",
+    ),
+    minimumVectorNeighborhoodMargin: validFraction(
+      input.minimumVectorNeighborhoodMargin ??
+        DEFAULT_RETRIEVAL_ANSWERABILITY_POLICY.minimumVectorNeighborhoodMargin,
+      "minimumVectorNeighborhoodMargin",
     ),
   };
 }
@@ -222,6 +238,7 @@ function assessment(
   candidateSignals: CandidateAnswerabilitySignal[],
   topVectorScore: number | null,
   secondVectorScore: number | null,
+  thirdVectorScore: number | null = null,
 ): RetrievalAnswerabilityAssessment {
   return {
     supported,
@@ -229,9 +246,14 @@ function assessment(
     candidateSignals,
     topVectorScore,
     secondVectorScore,
+    thirdVectorScore,
     vectorMargin:
       topVectorScore !== null && secondVectorScore !== null
         ? topVectorScore - secondVectorScore
+        : null,
+    vectorNeighborhoodMargin:
+      topVectorScore !== null
+        ? topVectorScore - (thirdVectorScore ?? secondVectorScore ?? topVectorScore)
         : null,
   };
 }
@@ -246,8 +268,10 @@ function assessment(
  * - lexical support may establish direct textual support;
  * - vector text support needs both salient overlap and a minimum separation
  *   from the next semantic neighbour;
- * - a larger cosine-similarity margin can support cross-language/paraphrase
- *   retrieval without requiring token overlap;
+ * - pure semantic support uses neighbourhood separation rather than only the
+ *   top-1/top-2 gap, so two close relevant neighbours do not look ambiguous;
+ * - when only two semantic candidates exist, a stronger pairwise margin is
+ *   required because no background neighbour is available;
  * - graph evidence is direct support only when the caller explicitly declares
  *   a graph-oriented intent.
  *
@@ -297,8 +321,16 @@ export function assessRetrievalAnswerability(
           candidate.signal.documentId !== topVector.signal.documentId,
       )
     : undefined;
+  const thirdVector = topVector
+    ? comparisonVectorCandidates.find(
+        (candidate) =>
+          candidate.signal.documentId !== topVector.signal.documentId &&
+          candidate.signal.documentId !== secondVector?.signal.documentId,
+      )
+    : undefined;
   const topVectorScore = topVector?.score ?? null;
   const secondVectorScore = secondVector?.score ?? null;
+  const thirdVectorScore = thirdVector?.score ?? null;
 
   if (
     candidateSignals.some((signal) =>
@@ -313,6 +345,7 @@ export function assessRetrievalAnswerability(
       candidateSignals,
       topVectorScore,
       secondVectorScore,
+      thirdVectorScore,
     );
   }
 
@@ -332,6 +365,7 @@ export function assessRetrievalAnswerability(
       candidateSignals,
       topVectorScore,
       secondVectorScore,
+      thirdVectorScore,
     );
   }
 
@@ -356,6 +390,7 @@ export function assessRetrievalAnswerability(
       candidateSignals,
       topVectorScore,
       secondVectorScore,
+      thirdVectorScore,
     );
   }
 
@@ -364,6 +399,7 @@ export function assessRetrievalAnswerability(
       true,
       "VECTOR_GATE_NOT_APPLICABLE",
       candidateSignals,
+      null,
       null,
       null,
     );
@@ -387,16 +423,50 @@ export function assessRetrievalAnswerability(
       candidateSignals,
       topVectorScore,
       secondVectorScore,
+      thirdVectorScore,
     );
   }
 
-  if (vectorMargin !== null && vectorMargin >= policy.minimumVectorMargin) {
+  const secondToThirdMargin =
+    secondVectorScore !== null && thirdVectorScore !== null
+      ? secondVectorScore - thirdVectorScore
+      : null;
+  const vectorNeighborhoodMargin =
+    topVectorScore !== null
+      ? topVectorScore -
+        (thirdVectorScore ?? secondVectorScore ?? topVectorScore)
+      : null;
+
+  if (
+    thirdVectorScore !== null &&
+    vectorNeighborhoodMargin !== null &&
+    vectorNeighborhoodMargin >= policy.minimumVectorNeighborhoodMargin &&
+    ((vectorMargin !== null && vectorMargin >= policy.minimumVectorMargin) ||
+      (secondToThirdMargin !== null &&
+        secondToThirdMargin >= policy.minimumVectorMargin))
+  ) {
+    return assessment(
+      true,
+      "VECTOR_NEIGHBORHOOD_SUPPORT",
+      candidateSignals,
+      topVectorScore,
+      secondVectorScore,
+      thirdVectorScore,
+    );
+  }
+
+  if (
+    thirdVectorScore === null &&
+    vectorMargin !== null &&
+    vectorMargin >= policy.minimumVectorNeighborhoodMargin
+  ) {
     return assessment(
       true,
       "VECTOR_MARGIN_SUPPORT",
       candidateSignals,
       topVectorScore,
       secondVectorScore,
+      thirdVectorScore,
     );
   }
 
