@@ -140,12 +140,13 @@ describe("retrieval answerability", () => {
   });
 
   it("accepts a cross-language answer-bearing passage without relying on a vector margin", () => {
-    const query = "¿Cómo puede un alumno darse de baja antes del cierre?";
+    const query =
+      "¿Cómo puede un alumno darse de baja antes de la fecha límite?";
     const candidate = hit(1, {
       title: "Enrollment withdrawal",
       excerpt:
-        "The student must submit a withdrawal request through the registrar before the deadline.",
-      contributions: [contribution("vector", 0.83, 1)],
+        "The student files a withdrawal request through the registrar before the deadline.",
+      contributions: [contribution("vector", 0.83, 2)],
     });
     const result = assessRetrievalAnswerability([candidate], query);
 
