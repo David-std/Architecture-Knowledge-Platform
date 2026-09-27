@@ -253,7 +253,8 @@ function assessment(
         : null,
     vectorNeighborhoodMargin:
       topVectorScore !== null
-        ? topVectorScore - (thirdVectorScore ?? secondVectorScore ?? topVectorScore)
+        ? topVectorScore -
+          (thirdVectorScore ?? secondVectorScore ?? topVectorScore)
         : null,
   };
 }
