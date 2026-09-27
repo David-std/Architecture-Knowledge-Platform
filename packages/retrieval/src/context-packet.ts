@@ -1390,40 +1390,47 @@ export function projectContextPacket(
     const content = sections.map((section) =>
       compactSection(section, { tight: isTightSection(section) }),
     );
-    const primarySupportMissing =
+    const primaryOriginalOmitted =
       primaryQuerySection !== undefined &&
-      !sections.some((section) =>
-        sameSectionIdentity(section, primaryQuerySection),
-      ) &&
       omittedSections.some((section) =>
         sameSectionIdentity(section, primaryQuerySection),
       );
-    const compactGaps = primarySupportMissing
-      ? [
-          ...packet.gaps,
-          ...(!packet.gaps.some((gap) =>
-            gap.startsWith(
-              "Highest-ranked query-supported material omitted from compact packet:",
-            ),
-          )
-            ? [
-                "Highest-ranked query-supported material omitted from compact packet: the active token budget could not include the best supported retrieval result. Request its continuation before treating this compact packet as complete support for the query.",
-              ]
-            : []),
-        ]
-      : packet.gaps;
-    const compactRequiredActions = primarySupportMissing
+    const selectedPrimaryQuerySection =
+      primaryQuerySection === undefined
+        ? undefined
+        : sections.find((section) =>
+            sameSectionIdentity(section, primaryQuerySection),
+          );
+    const primarySupportMissing =
+      primaryOriginalOmitted && selectedPrimaryQuerySection === undefined;
+    const primarySupportTruncated =
+      primaryOriginalOmitted &&
+      selectedPrimaryQuerySection !== undefined &&
+      selectedPrimaryQuerySection.content !== primaryQuerySection?.content;
+    const primarySupportLimited =
+      primarySupportMissing || primarySupportTruncated;
+    const primarySupportGap = primarySupportMissing
+      ? "Highest-ranked query-supported material omitted from compact packet: the active token budget could not include the best supported retrieval result. Request its continuation before treating this compact packet as complete support for the query."
+      : primarySupportTruncated
+        ? "Highest-ranked query-supported material truncated in compact packet: only a bounded projection fit the active token budget. Request its full continuation before treating this compact packet as complete support for the query."
+        : undefined;
+    const compactGaps =
+      primarySupportGap &&
+      !packet.gaps.some((gap) => gap.startsWith(primarySupportGap.split(":")[0]!))
+        ? [...packet.gaps, primarySupportGap]
+        : packet.gaps;
+    const compactRequiredActions = primarySupportLimited
       ? [
           ...new Set([
             ...packet.requiredActions,
-            "Request the continuation containing the highest-ranked query-supported material before treating this compact packet as complete support for the query.",
+            "Request the continuation containing the full highest-ranked query-supported material before treating this compact packet as complete support for the query.",
           ]),
         ]
       : packet.requiredActions;
     const compactStatus =
       packet.status === "INSUFFICIENT_KNOWLEDGE"
         ? packet.status
-        : primarySupportMissing
+        : primarySupportLimited
           ? "DEGRADED"
           : packet.status;
     const compactBase = {
