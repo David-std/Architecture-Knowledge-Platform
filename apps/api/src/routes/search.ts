@@ -3648,7 +3648,7 @@ export function registerSearchRoutes(
         parsed.data.query,
         {},
         {
-          allowGraphSupport: plan.channels.includes("graph"),
+          allowGraphSupport: plan.intent === "IMPACT_ANALYSIS",
           ...(answerabilityCandidates
             ? { comparisonHits: answerabilityCandidates }
             : {}),
@@ -4604,7 +4604,7 @@ export function registerSearchRoutes(
         {},
         {
           allowGraphSupport:
-            plan.channels.includes("graph") ||
+            plan.intent === "IMPACT_ANALYSIS" ||
             (reasoningExecutionMode === "PLAN" &&
               hits.some((hit) =>
                 (hit.fusionContributions ?? []).some(
