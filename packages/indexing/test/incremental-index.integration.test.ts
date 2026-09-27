@@ -302,9 +302,13 @@ describe("incremental index event port", () => {
           "index-rename-move",
           createdRevision,
         );
+        const renameWorktree = path.join(
+          `${repositoryPath}-drafts`,
+          "index-rename-move",
+        );
         await rename(
-          path.join(repositoryPath, "managed", "original.md"),
-          path.join(repositoryPath, "managed", "renamed.md"),
+          path.join(renameWorktree, "managed", "original.md"),
+          path.join(renameWorktree, "managed", "renamed.md"),
         );
         const renameDraft = await store.commitAll(
           "test: rename managed document",
