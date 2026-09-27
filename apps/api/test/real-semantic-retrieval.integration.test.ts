@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { Postgres } from "@akp/postgres";
 import { buildEmbeddingIndex } from "@akp/indexing";
 import {
+  assessRetrievalAnswerability,
   LOCAL_MULTILINGUAL_E5_SMALL_DESCRIPTOR,
   MULTILINGUAL_E5_SMALL_DIMENSIONS,
   LocalSemanticEmbeddingAdapter,
@@ -385,6 +386,45 @@ integration("real multilingual semantic retrieval", () => {
           dimensions: MULTILINGUAL_E5_SMALL_DIMENSIONS,
           normalization: "l2",
           inputStrategy: LOCAL_MULTILINGUAL_E5_SMALL_DESCRIPTOR.inputStrategy,
+        });
+
+        let limitedComparisonPool:
+          | readonly (typeof targetHits)[number][]
+          | undefined;
+        const limitedHits = await queryKnowledge(
+          db,
+          {
+            query,
+            spaceId: fixture.spaceId,
+            vaultId: targetVaultId,
+            vaultIds: [],
+            federated: false,
+            types: [],
+            minimumTrust: "MACHINE_SUPPORTED",
+            mode: "SOURCE_BACKED",
+            limit: 1,
+          },
+          {
+            vaultIds: [targetVaultId],
+            channels: ["vector"],
+            queryEmbeddingService: queryService,
+            answerabilityCandidateSink: (candidates) => {
+              limitedComparisonPool = candidates;
+            },
+          },
+        );
+        expect(limitedHits).toHaveLength(1);
+        expect(limitedHits[0]?.documentId).toBe(targetRelevant.id);
+        expect(limitedComparisonPool?.length).toBeGreaterThanOrEqual(2);
+        expect(
+          assessRetrievalAnswerability(limitedHits, query, {}, {
+            ...(limitedComparisonPool
+              ? { comparisonHits: limitedComparisonPool }
+              : {}),
+          }),
+        ).toMatchObject({
+          supported: true,
+          reason: "VECTOR_MARGIN_SUPPORT",
         });
 
         resolverCalls.length = 0;
