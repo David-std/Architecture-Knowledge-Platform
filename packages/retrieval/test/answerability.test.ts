@@ -4,6 +4,7 @@ import {
   assessRetrievalAnswerability,
   collectCandidateAnswerabilitySignals,
   resolveRetrievalAnswerabilityPolicy,
+  retrievalAnswerabilityCandidateKey,
 } from "../src/answerability.js";
 
 const VAULT_ID = "22222222-2222-4222-8222-222222222222";
@@ -92,6 +93,48 @@ describe("retrieval answerability", () => {
     );
     expect(result.vectorMargin).toBeCloseTo(0.003466, 6);
     expect(result.vectorNeighborhoodMargin).toBeCloseTo(0.00585, 5);
+  });
+
+  it("keeps support passage-specific when sibling units belong to the same document", () => {
+    const supported = hit(10, {
+      title: "Replay safety",
+      excerpt:
+        "The handler checks a persisted idempotency key before applying the side effect again.",
+      contributions: [contribution("vector", 0.88, 1)],
+    });
+    const siblingBase = hit(11, {
+      title: "Replay observability",
+      excerpt:
+        "The worker emits latency telemetry after each replay attempt.",
+      contributions: [contribution("vector", 0.87, 2)],
+    });
+    const sibling: SearchHit = {
+      ...siblingBase,
+      documentId: supported.documentId,
+      document: supported.document,
+    };
+
+    const result = assessRetrievalAnswerability(
+      [supported, sibling],
+      "How can a replay avoid repeating an external side effect?",
+    );
+
+    expect(result.supportedDocumentIds).toEqual([supported.documentId]);
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(supported),
+    ]);
+    expect(result.candidateSignals).toEqual([
+      expect.objectContaining({
+        candidateKey: retrievalAnswerabilityCandidateKey(supported),
+        unitId: supported.unitId,
+        passageSupport: expect.objectContaining({ supported: true }),
+      }),
+      expect.objectContaining({
+        candidateKey: retrievalAnswerabilityCandidateKey(sibling),
+        unitId: sibling.unitId,
+        passageSupport: expect.objectContaining({ supported: false }),
+      }),
+    ]);
   });
 
   it("does not use vector separation as support when no passage answers the question", () => {
