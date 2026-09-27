@@ -228,7 +228,16 @@ async function synchronizeManagedPathsCore(
   const client = await db.pool.connect();
   try {
     await client.query("begin");
-    for (const change of options.changes) {
+    // Apply creates/updates before explicit deletes. Git represents a rename as
+    // two path changes and their order is not contractual; processing the new
+    // path first lets the stable external ID carry the existing document UUID
+    // forward before the old-path tombstone becomes a harmless no-op.
+    const orderedChanges = [...options.changes].sort(
+      (left, right) =>
+        Number(left.operation === "DELETE") -
+        Number(right.operation === "DELETE"),
+    );
+    for (const change of orderedChanges) {
       const managedPath = normalizeManagedPath(change.path);
       // A durable tombstone is authoritative. Do not rehydrate a deleted
       // path merely because a physical compatibility layout still exposes
@@ -285,14 +294,69 @@ async function synchronizeManagedPathsCore(
       const data = parsed.data as Record<string, unknown>;
       const externalId = String(data.id ?? stableManagedId(change.path));
       const contentHash = createHash("sha256").update(raw).digest("hex");
+
+      // Stable frontmatter IDs are the document identity. A managed rename
+      // changes the path but must not create a second document node or lose
+      // versions/evidence that reference the existing UUID. Mirror the full
+      // vault importer: reject a path owned by another stable ID, and only
+      // move an existing identity when its previous path is absent from the
+      // canonical target revision.
+      const pathOwner = await client.query<{
+        id: string;
+        external_id: string | null;
+      }>(
+        `
+        select id,external_id
+          from knowledge_documents
+         where space_id=$1 and vault_id=$2 and path=$3
+         for update
+        `,
+        [options.spaceId, options.vaultId, managedPath],
+      );
+      const occupiedPath = pathOwner.rows[0];
+      if (occupiedPath && occupiedPath.external_id !== externalId) {
+        throw new Error(
+          `VAULT_DOCUMENT_IDENTITY_CONFLICT:${managedPath}:${externalId}`,
+        );
+      }
+
+      const identityOwner = await client.query<{
+        id: string;
+        path: string;
+      }>(
+        `
+        select id,path
+          from knowledge_documents
+         where space_id=$1 and vault_id=$2 and external_id=$3
+         for update
+        `,
+        [options.spaceId, options.vaultId, externalId],
+      );
+      const existingIdentity = identityOwner.rows[0];
+      if (existingIdentity && existingIdentity.path !== managedPath) {
+        const previousPathInTargetRevision = await readManagedFile(
+          store,
+          options.revision,
+          existingIdentity.path,
+        );
+        if (previousPathInTargetRevision !== null) {
+          throw new Error(
+            `VAULT_DOCUMENT_IDENTITY_CONFLICT:${managedPath}:${externalId}`,
+          );
+        }
+      }
+
       const indexed = await client.query<{ id: string }>(
         `
       insert into knowledge_documents(
         space_id,vault_id,path,external_id,title,type,lifecycle,trust_tier,current_revision,
         body_cache,frontmatter,aliases,layer,content_hash,token_estimate,raw_links
       ) values($1,$2,$3,$4,$5,$6,'ACTIVE','HUMAN_REVIEWED',$7,$8,$9::jsonb,$10,$11,$12,$13,$14::jsonb)
-      on conflict(vault_id,path) where vault_id is not null do update set
-        external_id=excluded.external_id,title=excluded.title,type=excluded.type,
+      on conflict(vault_id,external_id)
+        where vault_id is not null and external_id is not null
+      do update set
+        space_id=excluded.space_id,vault_id=excluded.vault_id,path=excluded.path,
+        title=excluded.title,type=excluded.type,
         lifecycle=excluded.lifecycle,trust_tier=excluded.trust_tier,
         current_revision=excluded.current_revision,body_cache=excluded.body_cache,
         frontmatter=excluded.frontmatter,aliases=excluded.aliases,layer=excluded.layer,
