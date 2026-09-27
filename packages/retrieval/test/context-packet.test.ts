@@ -1474,6 +1474,58 @@ describe("buildContextPacket", () => {
     );
   });
 
+  it("degrades a compact projection when the best query support fits only as a focused truncation", () => {
+    const directId = "66666666-6666-4666-8666-666666666666";
+    const query = "bounded replay invariant";
+    const full = buildContextPacket({
+      request: requestFor(query),
+      intent: "CONCEPTUAL",
+      corpusRevision: "deadbeef",
+      maxTokens: 4_000,
+      candidates: [
+        {
+          hit: {
+            ...baseHit,
+            documentId: directId,
+            title: "Direct replay guidance",
+            score: 0.91,
+          },
+          content:
+            `The ${query} is described here with its decisive procedure. ` +
+            "d".repeat(8_000),
+          kind: "concept",
+          retrievalRank: 1,
+        },
+      ],
+    });
+
+    expect(full.status).toBe("SUPPORTED");
+    const originalContent = full.sections[0]?.content ?? "";
+    const compact = projectContextPacket(full, { maxTokens: 1_000 });
+    const projected = compact.content.find(
+      (section) => section.identity.documentId === directId,
+    );
+
+    expect(projected).toBeDefined();
+    expect(projected!.content.length).toBeLessThan(originalContent.length);
+    expect(compact.identity.status).toBe("DEGRADED");
+    expect(compact.gaps).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          "Highest-ranked query-supported material truncated in compact packet:",
+        ),
+      ]),
+    );
+    expect(compact.requiredActions).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          "continuation containing the full highest-ranked query-supported material",
+        ),
+      ]),
+    );
+    expect(compact.continuations.length).toBeGreaterThan(0);
+  });
+
   it("keeps document provenance distinct from source/evidence citations", () => {
     const packet = buildContextPacket({
       request: requestFor("compiled markdown guidance"),
