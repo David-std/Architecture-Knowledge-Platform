@@ -150,7 +150,9 @@ export default async function Home() {
   ];
 
   const unhealthy = home.freshness.filter(
-    (item) => item.status !== "READY" || !revisionParity(item),
+    (item) =>
+      !["READY", "CONSISTENT"].includes(item.status.toUpperCase()) ||
+      !revisionParity(item),
   );
   const connectorAttention = home.connectors.reduce(
     (sum, item) => sum + Number(item.attention ?? 0),
