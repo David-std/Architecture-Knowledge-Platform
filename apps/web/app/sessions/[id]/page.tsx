@@ -121,6 +121,16 @@ type SessionState = {
       revisionSetHash?: string;
     };
   };
+  offlineStatus: {
+    offline: true;
+    capturedAt: string;
+    stale: boolean;
+    ageSeconds: number | null;
+    status: string;
+    unavailableLiveChannels: string[];
+    queuedDraftCount: number;
+    mustRevalidateOnReconnect: boolean;
+  };
 };
 
 function short(value: string | null | undefined): string {
@@ -224,6 +234,32 @@ export default async function SessionObjectPage({
           {state.contextRevision.changedDimensions.length ? (
             <p>changed {state.contextRevision.changedDimensions.join(" · ")}</p>
           ) : null}
+        </section>
+
+        <section className="card">
+          <p className="muted">Offline snapshot readiness</p>
+          <p className="metric">
+            {state.offlineStatus.stale ? "STALE" : "CURRENT"}
+          </p>
+          <p>
+            Snapshot age{" "}
+            <strong>
+              {state.offlineStatus.ageSeconds === null
+                ? "unknown"
+                : `${state.offlineStatus.ageSeconds}s`}
+            </strong>{" "}
+            · queued drafts {state.offlineStatus.queuedDraftCount}
+          </p>
+          <p>
+            Live-only channels unavailable offline:{" "}
+            {state.offlineStatus.unavailableLiveChannels.join(" · ") || "—"}
+          </p>
+          <small className="muted">
+            Captured {state.offlineStatus.capturedAt} · reconnect revalidation{" "}
+            {state.offlineStatus.mustRevalidateOnReconnect
+              ? "required"
+              : "not required"}
+          </small>
         </section>
 
         <section className="card">
