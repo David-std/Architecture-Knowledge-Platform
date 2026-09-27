@@ -52,6 +52,7 @@ import {
   type QueryTransformationKind,
   type QueryTransformationVariant,
   type QueryTransformerPort,
+  type RetrievalAnswerabilityAssessment,
   type RetrievalCandidate,
   type RetrievalPolicyInput,
   type Tokenizer,
@@ -501,7 +502,8 @@ export interface RetrievalExecutionOptions {
   availableChannelSink?: Set<RetrievalChannel>;
   /**
    * Authorized, truth-filtered and reranked candidates before input.limit is
-   * applied. Used for answerability comparison only; not returned to clients.
+   * applied. The answerability layer verifies concrete passages from this pool
+   * before presentation; the pool itself is never evidence by rank alone.
    */
   answerabilityCandidateSink?: (hits: readonly SearchHit[]) => void;
   vaultIds?: string[];
@@ -516,31 +518,71 @@ export interface RetrievalExecutionOptions {
 
 export function partitionSearchHitsByAnswerability(
   hits: readonly SearchHit[],
-  supported: boolean,
+  supportedDocumentIds: readonly string[],
 ): {
   hits: SearchHit[];
   exploratoryHits: SearchHit[];
   retrievalOutcome: "SUPPORTED" | "EXPLORATORY_ONLY" | "NO_CANDIDATES";
 } {
-  if (supported) {
-    return {
-      hits: [...hits],
-      exploratoryHits: [],
-      retrievalOutcome: hits.length > 0 ? "SUPPORTED" : "NO_CANDIDATES",
-    };
-  }
-  if (hits.length > 0) {
-    return {
-      hits: [],
-      exploratoryHits: [...hits],
-      retrievalOutcome: "EXPLORATORY_ONLY",
-    };
-  }
+  const supportedIds = new Set(supportedDocumentIds);
+  const supportedHits = hits.filter((hit) => supportedIds.has(hit.documentId));
+  const exploratoryHits = hits.filter(
+    (hit) => !supportedIds.has(hit.documentId),
+  );
   return {
-    hits: [],
-    exploratoryHits: [],
-    retrievalOutcome: "NO_CANDIDATES",
+    hits: supportedHits,
+    exploratoryHits,
+    retrievalOutcome:
+      supportedHits.length > 0
+        ? "SUPPORTED"
+        : exploratoryHits.length > 0
+          ? "EXPLORATORY_ONLY"
+          : "NO_CANDIDATES",
   };
+}
+
+function recordAnswerabilityDiagnostics(
+  answerability: RetrievalAnswerabilityAssessment,
+  surface: "search" | "context",
+): void {
+  for (const signal of answerability.candidateSignals) {
+    const primaryContribution = [...signal.contributions].sort(
+      (left, right) => left.rank - right.rank,
+    )[0];
+    const attributes = {
+      surface,
+      outcome: signal.passageSupport.supported ? "SUPPORTED" : "REJECTED",
+      reason: signal.passageSupport.reason,
+      channel: primaryContribution?.channel ?? "none",
+      passage_source: signal.passageSupport.passageSource,
+    };
+    telemetry.counter("retrieval_answerability_candidate", 1, attributes);
+    telemetry.histogram(
+      "retrieval_answerability_candidate_rank",
+      signal.candidateRank,
+      attributes,
+    );
+    telemetry.histogram(
+      "retrieval_answerability_candidate_score",
+      primaryContribution?.rawScore ?? signal.finalScore,
+      attributes,
+    );
+    telemetry.histogram(
+      "retrieval_answerability_passage_salient_coverage",
+      signal.textualSupport.salientCoverage,
+      attributes,
+    );
+    telemetry.histogram(
+      "retrieval_answerability_passage_cue_coverage",
+      signal.passageSupport.answerCueCoverage,
+      attributes,
+    );
+    telemetry.histogram(
+      "retrieval_answerability_passage_characters",
+      signal.passageSupport.passageCharacters,
+      attributes,
+    );
+  }
 }
 
 export interface SearchRouteDependencies {
@@ -3677,22 +3719,22 @@ export function registerSearchRoutes(
         }
         throw error;
       }
+      const answerabilityPool = answerabilityCandidates ?? hits;
       const answerability = assessRetrievalAnswerability(
-        hits,
+        answerabilityPool,
         parsed.data.query,
         {},
         {
           allowGraphSupport: plan.intent === "IMPACT_ANALYSIS",
-          ...(answerabilityCandidates
-            ? { comparisonHits: answerabilityCandidates }
-            : {}),
+          comparisonHits: answerabilityPool,
         },
       );
       const partitioned = partitionSearchHitsByAnswerability(
-        hits,
-        answerability.supported,
+        answerabilityPool,
+        answerability.supportedDocumentIds,
       );
-      if (!answerability.supported && hits.length > 0) {
+      recordAnswerabilityDiagnostics(answerability, "search");
+      if (!answerability.supported && answerabilityPool.length > 0) {
         retrievalWarnings.push(
           `ANSWERABILITY_GATE_REJECTED:${answerability.reason}`,
         );
@@ -3700,14 +3742,17 @@ export function registerSearchRoutes(
           outcome: "REJECTED",
           reason: answerability.reason,
         });
-      } else if (hits.length > 0) {
+      } else if (answerabilityPool.length > 0) {
         telemetry.counter("retrieval_answerability_gate", 1, {
           outcome: "SUPPORTED",
           reason: answerability.reason,
         });
       }
-      hits = partitioned.hits;
-      const exploratoryHits = partitioned.exploratoryHits;
+      hits = partitioned.hits.slice(0, parsed.data.limit);
+      const exploratoryHits = partitioned.exploratoryHits.slice(
+        0,
+        parsed.data.limit,
+      );
       const retrievalOutcome = partitioned.retrievalOutcome;
 
       const channelState = channelsConsistentWithIndex(
@@ -3750,23 +3795,23 @@ export function registerSearchRoutes(
             ? {
                 status: "INSUFFICIENT_KNOWLEDGE",
                 reason:
-                  answerability.reason === "WEAK_SEMANTIC_NEIGHBORS"
+                  answerability.reason === "SUPPORT_NOT_DEMONSTRATED"
                     ? "INSUFFICIENT_SUPPORT"
                     : "NO_SUPPORTED_MATCH",
                 searchedChannels: effectiveChannelState.channels,
                 gaps: [
-                  answerability.reason === "WEAK_SEMANTIC_NEIGHBORS"
-                    ? "Retrieved semantic neighbours did not provide enough direct, textual, or discriminative support."
+                  answerability.reason === "SUPPORT_NOT_DEMONSTRATED"
+                    ? "Retrieved candidates did not contain a concrete passage that demonstrated enough support for the answer."
                     : "No supported source-backed match was retrieved.",
                 ],
                 conflicts: [],
                 recommendedActions: [
-                  answerability.reason === "WEAK_SEMANTIC_NEIGHBORS"
+                  answerability.reason === "SUPPORT_NOT_DEMONSTRATED"
                     ? "Refine the query or add an authoritative source that directly supports the requested fact."
                     : "Broaden the query or lower the minimum trust explicitly.",
                 ],
                 guidance:
-                  answerability.reason === "WEAK_SEMANTIC_NEIGHBORS"
+                  answerability.reason === "SUPPORT_NOT_DEMONSTRATED"
                     ? "The nearest semantic candidates were too weak or ambiguous to treat as supported knowledge."
                     : "Broaden the query or lower the minimum trust explicitly.",
               }
@@ -4640,8 +4685,12 @@ export function registerSearchRoutes(
         }
         throw error;
       }
+      const answerabilityPool =
+        reasoningExecutionMode !== "PLAN" && directAnswerabilityCandidates
+          ? directAnswerabilityCandidates
+          : hits;
       const answerability = assessRetrievalAnswerability(
-        hits,
+        answerabilityPool,
         parsed.data.query,
         {},
         {
@@ -4655,12 +4704,12 @@ export function registerSearchRoutes(
                     contribution.channel === "graph-ppr",
                 ),
               )),
-          ...(reasoningExecutionMode !== "PLAN" && directAnswerabilityCandidates
-            ? { comparisonHits: directAnswerabilityCandidates }
-            : {}),
+          comparisonHits: answerabilityPool,
         },
       );
-      if (!answerability.supported && hits.length > 0) {
+      recordAnswerabilityDiagnostics(answerability, "context");
+      const supportedIds = new Set(answerability.supportedDocumentIds);
+      if (!answerability.supported && answerabilityPool.length > 0) {
         retrievalWarnings.push(
           `ANSWERABILITY_GATE_REJECTED:${answerability.reason}`,
         );
@@ -4670,12 +4719,16 @@ export function registerSearchRoutes(
           surface: "context",
         });
         hits = [];
-      } else if (hits.length > 0) {
+      } else if (answerabilityPool.length > 0) {
         telemetry.counter("retrieval_answerability_gate", 1, {
           outcome: "SUPPORTED",
           reason: answerability.reason,
           surface: "context",
         });
+        const supportedPool = answerabilityPool.filter((hit) =>
+          supportedIds.has(hit.documentId),
+        );
+        hits = supportedPool.slice(0, scopedRequest.limit);
       }
 
       type MaterialConflictRow = {
