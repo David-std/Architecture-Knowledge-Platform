@@ -174,6 +174,33 @@ describe("retrieval answerability", () => {
     });
   });
 
+  it("uses a same-query comparison pool when presentation limit keeps one vector hit", () => {
+    const winner = hit(1, {
+      title: "Retry policy",
+      excerpt: "Transient calls use bounded retries with exponential backoff.",
+      contributions: [contribution("vector", 0.8133)],
+    });
+    const runnerUp = hit(2, {
+      title: "Cache policy",
+      excerpt: "Cache entries use bounded retention.",
+      contributions: [contribution("vector", 0.7366)],
+    });
+    const query =
+      "¿Qué regla limita los reintentos de llamadas transitorias mediante retroceso exponencial?";
+
+    const result = assessRetrievalAnswerability([winner], query, {}, {
+      comparisonHits: [winner, runnerUp],
+    });
+
+    expect(result).toMatchObject({
+      supported: true,
+      reason: "VECTOR_MARGIN_SUPPORT",
+      topVectorScore: 0.8133,
+      secondVectorScore: 0.7366,
+    });
+    expect(result.candidateSignals).toHaveLength(1);
+  });
+
   it("does not invent a vector margin when only one semantic candidate exists", () => {
     const result = assessRetrievalAnswerability(
       [

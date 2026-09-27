@@ -682,6 +682,7 @@ async function executeCase(
     "context-pack" | "exact" | "lexical" | "vector" | "graph" | "raw" | "code"
   >();
   const started = performance.now();
+  let answerabilityCandidates: readonly QueryHit[] | undefined;
   const rawHits = await queryKnowledge(
     db,
     {
@@ -725,6 +726,9 @@ async function executeCase(
       queryEmbeddingService,
       warningSink: warnings,
       availableChannelSink: availableChannels,
+      answerabilityCandidateSink: (candidates) => {
+        answerabilityCandidates = candidates;
+      },
       graphScopes: [{ vaultId, pathPrefix: null }],
       graphPolicy: { maxHops: 3, directionPolicy: "both" },
     },
@@ -733,7 +737,10 @@ async function executeCase(
     rawHits,
     testCase.query,
     {},
-    { allowGraphSupport: testCase.category === "graph" },
+    {
+      allowGraphSupport: testCase.category === "graph",
+      comparisonHits: answerabilityCandidates,
+    },
   );
   const hits = answerability.supported ? rawHits : [];
   if (!answerability.supported && rawHits.length > 0) {

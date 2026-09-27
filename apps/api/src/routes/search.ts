@@ -499,6 +499,11 @@ export interface RetrievalExecutionOptions {
   warningSink?: string[];
   /** Channels that reached their provider/index successfully for this request. */
   availableChannelSink?: Set<RetrievalChannel>;
+  /**
+   * Authorized, truth-filtered and reranked candidates before input.limit is
+   * applied. Used for answerability comparison only; not returned to clients.
+   */
+  answerabilityCandidateSink?: (hits: readonly SearchHit[]) => void;
   vaultIds?: string[];
   /** Exact, authorized Code Graph candidates resolved by the HTTP boundary. */
   codeCandidates?: CodeChannelCandidate[];
@@ -3417,6 +3422,7 @@ export async function queryKnowledge(
   if (rerankResult.warning) {
     options.warningSink?.push(rerankResult.warning);
   }
+  options.answerabilityCandidateSink?.(rerankResult.hits);
   const finalResults = rerankResult.hits.slice(0, input.limit);
   await finalizeTruthSnapshot();
   return finalResults;
@@ -3600,6 +3606,7 @@ export function registerSearchRoutes(
       ];
       const availableChannels = new Set<RetrievalChannel>();
       let truthState: RetrievalTruthState | undefined;
+      let answerabilityCandidates: readonly SearchHit[] | undefined;
       let hits: SearchHit[];
       try {
         hits = await queryKnowledge(db, scopedRequest, {
@@ -3617,6 +3624,9 @@ export function registerSearchRoutes(
             : {}),
           warningSink: retrievalWarnings,
           availableChannelSink: availableChannels,
+          answerabilityCandidateSink: (candidates) => {
+            answerabilityCandidates = candidates;
+          },
           authorizationResolved: true,
           pathAuthorizer,
           truthConsistency: parsed.data.truthConsistency ?? "STRICT",
@@ -3637,7 +3647,10 @@ export function registerSearchRoutes(
         hits,
         parsed.data.query,
         {},
-        { allowGraphSupport: plan.channels.includes("graph") },
+        {
+          allowGraphSupport: plan.channels.includes("graph"),
+          comparisonHits: answerabilityCandidates,
+        },
       );
       if (!answerability.supported && hits.length > 0) {
         retrievalWarnings.push(
@@ -4076,6 +4089,7 @@ export function registerSearchRoutes(
       ];
       const availableChannels = new Set<RetrievalChannel>();
       let truthState: RetrievalTruthState | undefined;
+      let directAnswerabilityCandidates: readonly SearchHit[] | undefined;
       let reasoningTrace: unknown = null;
       let reasoningExecutionMode: "DIRECT" | "PLAN" | "DIRECT_FALLBACK" =
         "DIRECT";
@@ -4096,6 +4110,9 @@ export function registerSearchRoutes(
             : {}),
           warningSink: retrievalWarnings,
           availableChannelSink: availableChannels,
+          answerabilityCandidateSink: (candidates) => {
+            directAnswerabilityCandidates = candidates;
+          },
           authorizationResolved: true,
           pathAuthorizer,
           truthConsistency: parsed.data.truthConsistency ?? "STRICT",
@@ -4594,6 +4611,10 @@ export function registerSearchRoutes(
                     contribution.channel === "graph-ppr",
                 ),
               )),
+          comparisonHits:
+            reasoningExecutionMode === "PLAN"
+              ? undefined
+              : directAnswerabilityCandidates,
         },
       );
       if (!answerability.supported && hits.length > 0) {

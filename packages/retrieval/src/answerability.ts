@@ -48,6 +48,12 @@ export interface RetrievalAnswerabilityPolicy {
 
 export interface RetrievalAnswerabilityContext {
   allowGraphSupport?: boolean;
+  /**
+   * Same-query candidates retained before the caller's presentation limit.
+   * They are used only to measure vector separation; support must still come
+   * from the returned hits.
+   */
+  comparisonHits?: readonly SearchHit[];
 }
 
 export type RetrievalAnswerabilityPolicyInput =
@@ -270,9 +276,27 @@ export function assessRetrievalAnswerability(
         right.score - left.score ||
         left.signal.documentId.localeCompare(right.signal.documentId),
     );
+  const comparisonSignals = context.comparisonHits
+    ? collectCandidateAnswerabilitySignals(context.comparisonHits, query)
+    : candidateSignals;
+  const comparisonVectorCandidates = comparisonSignals
+    .flatMap((signal) => {
+      const score = vectorScore(signal);
+      return score === null ? [] : [{ signal, score }];
+    })
+    .sort(
+      (left, right) =>
+        right.score - left.score ||
+        left.signal.documentId.localeCompare(right.signal.documentId),
+    );
 
   const topVector = vectorCandidates[0];
-  const secondVector = vectorCandidates[1];
+  const secondVector = topVector
+    ? comparisonVectorCandidates.find(
+        (candidate) =>
+          candidate.signal.documentId !== topVector.signal.documentId,
+      )
+    : undefined;
   const topVectorScore = topVector?.score ?? null;
   const secondVectorScore = secondVector?.score ?? null;
 
