@@ -39,7 +39,7 @@ Core health dependencies are PostgreSQL, raw object storage and the extractor. O
 
 `AKP_BACKUP_DIR` selects the backup location doctor inspects. `AKP_BACKUP_MAX_AGE_HOURS` controls its recency warning threshold.
 
-`AKP_MANAGED_REPO` identifies managed Git. Backup v4 records migration inventory, per-artifact SHA-256, durable-state coverage, rebuildable-state policy and non-secret configuration metadata.
+`AKP_MANAGED_REPO` identifies managed Git. Backup v4 records migration inventory, per-artifact SHA-256, durable-state coverage, rebuildable-state policy and non-secret configuration metadata. When managed Git is present, backup acquires the same repository publication lease used by review publication/rollback, refuses ambiguous publication-recovery states, and verifies that both the lease owner and Git HEAD remained stable through bundle creation. Publication locks are ephemeral coordination state and are deliberately excluded from the PostgreSQL dump.
 
 ## Normal workflow
 
@@ -71,7 +71,7 @@ An unavailable optional vector/model/federation provider can degrade only when t
 
 ## Failure and recovery
 
-Backup v4 includes PostgreSQL, MinIO data, a managed Git bundle when configured and non-secret metadata. Restore verification checks hashes, migrations and required durable tables in an isolated database/volume.
+Backup v4 includes PostgreSQL, MinIO data, a managed Git bundle when configured and non-secret metadata. Restore verification checks hashes, migrations and required durable tables in an isolated database/volume. A managed-Git backup is rejected if publication is already locked, a review is in `PUBLISHING`, `ROLLING_BACK`, `PUBLICATION_RECOVERY_REQUIRED` or `ROLLBACK_RECOVERY_REQUIRED`, or the backup loses its publication lease / observes a different Git HEAD before the bundle is finalized. Restore also proves that no ephemeral publication lock was replayed.
 
 Managed-Git restore clones the bundle into a new repository, verifies revision/file inventory and proves that searchable derived state can be rebuilt.
 
