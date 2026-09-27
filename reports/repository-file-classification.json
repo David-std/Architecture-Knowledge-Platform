@@ -302,6 +302,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "apps/api/test/audit-export-query-bounds.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "apps/api/test/auth-space.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
@@ -2313,6 +2318,11 @@
     },
     {
       "path": "packages/audit-export/test/audit-export.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/audit-export/test/streaming.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
