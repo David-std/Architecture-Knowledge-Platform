@@ -822,9 +822,15 @@ export function registerOperatorRoutes(
                  and a.from_node_id=any($1::uuid[])
                  and a.to_node_id=any($1::uuid[])
                  and (
-                   $4::timestamptz is null
+                   (
+                     $4::timestamptz is null
+                     and a.lifecycle in ('ACTIVE','DISPUTED')
+                     and (a.valid_from is null or a.valid_from<=now())
+                     and (a.valid_to is null or a.valid_to>now())
+                   )
                    or (
-                     (a.valid_from is null or a.valid_from<=$4::timestamptz)
+                     $4::timestamptz is not null
+                     and (a.valid_from is null or a.valid_from<=$4::timestamptz)
                      and (a.valid_to is null or a.valid_to>$4::timestamptz)
                    )
                  )
