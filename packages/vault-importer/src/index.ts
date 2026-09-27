@@ -1349,6 +1349,25 @@ export async function importVaultReadOnly(
     const importedIds: string[] = [];
     const databaseIdByExternalId = new Map<string, string>();
     for (const document of inspection.documents) {
+      const pathOwner = await client.query<{
+        id: string;
+        external_id: string | null;
+      }>(
+        `
+        select id,external_id
+          from knowledge_documents
+         where space_id=$1 and vault_id=$2 and path=$3
+         for update
+        `,
+        [spaceId, vaultId, document.relativePath],
+      );
+      const occupiedPath = pathOwner.rows[0];
+      if (occupiedPath && occupiedPath.external_id !== document.externalId) {
+        throw new Error(
+          `VAULT_DOCUMENT_IDENTITY_CONFLICT:${document.relativePath}:${document.externalId}`,
+        );
+      }
+
       const row = await client.query<{ id: string }>(
         `
         insert into knowledge_documents(
