@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { Postgres } from "@akp/postgres";
 import { buildEmbeddingIndex } from "@akp/indexing";
@@ -488,9 +490,80 @@ integration("real multilingual semantic retrieval", () => {
               : {}),
           },
         );
+        const goldDocumentIds = [targetRelevant.id, targetRelevantPeer.id];
+        const rankedDocumentIds = targetHits.map((hit) => hit.documentId);
+        const retrievedGold = goldDocumentIds.filter((documentId) =>
+          rankedDocumentIds.slice(0, 5).includes(documentId),
+        );
+        const correctSourceRank = Math.min(
+          ...goldDocumentIds
+            .map((documentId) => rankedDocumentIds.indexOf(documentId))
+            .filter((index) => index >= 0)
+            .map((index) => index + 1),
+        );
+        const legacyPureVectorSupport = (
+          assessment: ReturnType<typeof assessRetrievalAnswerability>,
+        ) =>
+          assessment.vectorMargin !== null &&
+          assessment.vectorMargin >= 0.03;
+        const legacySupportedAnswerable =
+          legacyPureVectorSupport(limitedAssessment);
+        const legacyAcceptedUnsupported =
+          legacyPureVectorSupport(unsupportedAssessment);
+        const semanticMetrics = {
+          schemaVersion: 1,
+          evidenceBoundary:
+            "Synthetic multilingual E5 fixture only; not evidence of corpus-general precision.",
+          cases: {
+            answerable: 1,
+            unsupported: 1,
+          },
+          recallAt5: retrievedGold.length / goldDocumentIds.length,
+          correctSourceRank: Number.isFinite(correctSourceRank)
+            ? correctSourceRank
+            : null,
+          legacyPureVectorRule: {
+            falseAbstentionRate: legacySupportedAnswerable ? 0 : 1,
+            falseAcceptanceRate: legacyAcceptedUnsupported ? 1 : 0,
+          },
+          neighborhoodRule: {
+            falseAbstentionRate: limitedAssessment.supported ? 0 : 1,
+            falseAcceptanceRate: unsupportedAssessment.supported ? 1 : 0,
+          },
+          answerableAssessment: {
+            reason: limitedAssessment.reason,
+            topVectorScore: limitedAssessment.topVectorScore,
+            secondVectorScore: limitedAssessment.secondVectorScore,
+            thirdVectorScore: limitedAssessment.thirdVectorScore,
+            vectorMargin: limitedAssessment.vectorMargin,
+            vectorNeighborhoodMargin:
+              limitedAssessment.vectorNeighborhoodMargin,
+          },
+          unsupportedAssessment: {
+            reason: unsupportedAssessment.reason,
+            topVectorScore: unsupportedAssessment.topVectorScore,
+            secondVectorScore: unsupportedAssessment.secondVectorScore,
+            thirdVectorScore: unsupportedAssessment.thirdVectorScore,
+            vectorMargin: unsupportedAssessment.vectorMargin,
+            vectorNeighborhoodMargin:
+              unsupportedAssessment.vectorNeighborhoodMargin,
+          },
+        };
+        const metricsPath = path.resolve(
+          process.cwd(),
+          "../../reports/ci/semantic-answerability-metrics.json",
+        );
+        await mkdir(path.dirname(metricsPath), { recursive: true });
+        await writeFile(
+          metricsPath,
+          `${JSON.stringify(semanticMetrics, null, 2)}\n`,
+          "utf8",
+        );
+
         console.info(
           JSON.stringify({
             semanticAnswerabilityProbe: {
+              metrics: semanticMetrics,
               supportedQuery: {
                 rankedDocumentIds: targetHits.map((hit) => hit.documentId),
                 vectorScores: targetHits.map((hit) => ({
