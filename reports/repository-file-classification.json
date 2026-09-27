@@ -2247,6 +2247,11 @@
       "reason": "versioned registered product evaluation"
     },
     {
+      "path": "evals/registered/v0.4-deep-spec-traceability.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "registered evaluation or benchmark asset"
+    },
+    {
       "path": "evals/registered/v0.4-evidence-sources.json",
       "category": "PRODUCT_EVAL",
       "reason": "versioned registered product evaluation"
@@ -3513,6 +3518,11 @@
     },
     {
       "path": "scripts/concurrency-benchmark.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/deep-spec-traceability.mjs",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
