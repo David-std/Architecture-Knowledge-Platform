@@ -6,6 +6,7 @@ import { Postgres } from "@akp/postgres";
 import { buildEmbeddingIndex } from "@akp/indexing";
 import {
   assessRetrievalAnswerability,
+  DEFAULT_RETRIEVAL_ANSWERABILITY_POLICY,
   LOCAL_MULTILINGUAL_E5_SMALL_DESCRIPTOR,
   MULTILINGUAL_E5_SMALL_DIMENSIONS,
   LocalSemanticEmbeddingAdapter,
@@ -591,9 +592,31 @@ integration("real multilingual semantic retrieval", () => {
             },
           }),
         );
+        expect(retrievedGold).toHaveLength(goldDocumentIds.length);
+        expect(correctSourceRank).toBe(1);
         expect(limitedAssessment).toMatchObject({
           supported: true,
           reason: "VECTOR_NEIGHBORHOOD_SUPPORT",
+        });
+        expect(limitedAssessment.vectorNeighborhoodMargin).not.toBeNull();
+        expect(
+          limitedAssessment.vectorNeighborhoodMargin ?? 0,
+        ).toBeGreaterThanOrEqual(
+          DEFAULT_RETRIEVAL_ANSWERABILITY_POLICY.minimumVectorNeighborhoodMargin,
+        );
+        expect(unsupportedAssessment).toMatchObject({
+          supported: false,
+          reason: "WEAK_SEMANTIC_NEIGHBORS",
+        });
+        expect(unsupportedAssessment.vectorNeighborhoodMargin).not.toBeNull();
+        expect(
+          unsupportedAssessment.vectorNeighborhoodMargin ?? 1,
+        ).toBeLessThan(
+          DEFAULT_RETRIEVAL_ANSWERABILITY_POLICY.minimumVectorNeighborhoodMargin,
+        );
+        expect(semanticMetrics.neighborhoodRule).toEqual({
+          falseAbstentionRate: 0,
+          falseAcceptanceRate: 0,
         });
 
         resolverCalls.length = 0;
