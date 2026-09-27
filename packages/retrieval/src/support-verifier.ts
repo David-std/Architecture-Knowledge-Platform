@@ -426,7 +426,7 @@ export function verifyDeterministicPassageSupport(
     passageCharacters: passage.length,
     excerptCharacters: excerpt.length,
     supportSurfaceExtendsExcerpt:
-      Boolean(structural) && structural.length > excerpt.length,
+      structural !== undefined && structural.length > excerpt.length,
     queryTokens,
     overlapTokens,
     queryCoverage,
