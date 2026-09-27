@@ -173,7 +173,6 @@ async function seedGraph(db: Postgres, fixture: GraphFixture): Promise<void> {
     resolution: 0.5,
     randomSeed: 7,
   });
-}
   const controlledRevisionId = randomUUID();
   await db.pool.query(
     `insert into community_index_revisions(
@@ -226,7 +225,7 @@ async function seedGraph(db: Postgres, fixture: GraphFixture): Promise<void> {
       [controlledRevisionId, documentId],
     );
   }
-
+}
 
 async function cleanupGraph(
   db: Postgres,
