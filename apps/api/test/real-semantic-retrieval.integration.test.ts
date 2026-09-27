@@ -263,7 +263,7 @@ integration("real multilingual semantic retrieval", () => {
         targetVaultId,
         "real-semantic/registration-cancellation.md",
         "Registration cancellation procedure",
-        "A learner leaving registration before the cutoff files a cancellation form with the academic records office.",
+        "To withdraw university enrollment before the deadline, a student files a cancellation request with the academic records office.",
       );
       const targetDistractor = documentFixture(
         targetVaultId,
@@ -440,7 +440,7 @@ integration("real multilingual semantic retrieval", () => {
         );
         expect(limitedHits).toHaveLength(1);
         expect(limitedHits[0]?.documentId).toBe(targetRelevant.id);
-        expect(limitedComparisonPool?.length).toBeGreaterThanOrEqual(2);
+        expect(limitedComparisonPool?.length).toBeGreaterThanOrEqual(3);
         const limitedAssessment = assessRetrievalAnswerability(
           limitedHits,
           query,
@@ -518,7 +518,10 @@ integration("real multilingual semantic retrieval", () => {
             },
           }),
         );
-        expect(limitedAssessment.supported).toBe(true);
+        expect(limitedAssessment).toMatchObject({
+          supported: true,
+          reason: "VECTOR_NEIGHBORHOOD_SUPPORT",
+        });
 
         resolverCalls.length = 0;
         const foreignHits = await queryKnowledge(
