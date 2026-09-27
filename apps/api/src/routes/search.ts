@@ -514,6 +514,35 @@ export interface RetrievalExecutionOptions {
   truthStateSink?: (state: RetrievalTruthState) => void;
 }
 
+export function partitionSearchHitsByAnswerability(
+  hits: readonly SearchHit[],
+  supported: boolean,
+): {
+  hits: SearchHit[];
+  exploratoryHits: SearchHit[];
+  retrievalOutcome: "SUPPORTED" | "EXPLORATORY_ONLY" | "NO_CANDIDATES";
+} {
+  if (supported) {
+    return {
+      hits: [...hits],
+      exploratoryHits: [],
+      retrievalOutcome: hits.length > 0 ? "SUPPORTED" : "NO_CANDIDATES",
+    };
+  }
+  if (hits.length > 0) {
+    return {
+      hits: [],
+      exploratoryHits: [...hits],
+      retrievalOutcome: "EXPLORATORY_ONLY",
+    };
+  }
+  return {
+    hits: [],
+    exploratoryHits: [],
+    retrievalOutcome: "NO_CANDIDATES",
+  };
+}
+
 export interface SearchRouteDependencies {
   /** Active model/agent tokenizer when the runtime provides one. */
   contextTokenizer?: Tokenizer;
@@ -3654,7 +3683,10 @@ export function registerSearchRoutes(
             : {}),
         },
       );
-      let exploratoryHits: SearchHit[] = [];
+      const partitioned = partitionSearchHitsByAnswerability(
+        hits,
+        answerability.supported,
+      );
       if (!answerability.supported && hits.length > 0) {
         retrievalWarnings.push(
           `ANSWERABILITY_GATE_REJECTED:${answerability.reason}`,
@@ -3663,20 +3695,15 @@ export function registerSearchRoutes(
           outcome: "REJECTED",
           reason: answerability.reason,
         });
-        exploratoryHits = hits;
-        hits = [];
       } else if (hits.length > 0) {
         telemetry.counter("retrieval_answerability_gate", 1, {
           outcome: "SUPPORTED",
           reason: answerability.reason,
         });
       }
-      const retrievalOutcome =
-        hits.length > 0
-          ? "SUPPORTED"
-          : exploratoryHits.length > 0
-            ? "EXPLORATORY_ONLY"
-            : "NO_CANDIDATES";
+      hits = partitioned.hits;
+      const exploratoryHits = partitioned.exploratoryHits;
+      const retrievalOutcome = partitioned.retrievalOutcome;
 
       const channelState = channelsConsistentWithIndex(
         plan.channels,
