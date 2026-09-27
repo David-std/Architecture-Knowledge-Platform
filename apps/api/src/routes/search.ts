@@ -4613,8 +4613,7 @@ export function registerSearchRoutes(
                     contribution.channel === "graph-ppr",
                 ),
               )),
-          ...(reasoningExecutionMode !== "PLAN" &&
-          directAnswerabilityCandidates
+          ...(reasoningExecutionMode !== "PLAN" && directAnswerabilityCandidates
             ? { comparisonHits: directAnswerabilityCandidates }
             : {}),
         },
