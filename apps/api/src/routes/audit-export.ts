@@ -42,6 +42,31 @@ const AuditExportQuery = z.object({
     .optional(),
 });
 
+export interface AuditExportRowLimits {
+  sources: number;
+  documents: number;
+  relations: number;
+  evidence: number;
+}
+
+/**
+ * Fetch one row beyond each logical export limit so the bundle can preserve
+ * its existing `truncated` semantics without materializing the full vault.
+ */
+export function auditExportRowLimits(input: {
+  maxSources?: number | undefined;
+  maxDocuments?: number | undefined;
+  maxRelations?: number | undefined;
+  maxEvidence?: number | undefined;
+}): AuditExportRowLimits {
+  return {
+    sources: (input.maxSources ?? 10_000) + 1,
+    documents: (input.maxDocuments ?? 20_000) + 1,
+    relations: (input.maxRelations ?? 50_000) + 1,
+    evidence: (input.maxEvidence ?? 50_000) + 1,
+  };
+}
+
 export const RAW_EVIDENCE_EXPORT_CONFIRMATION = "EXPORT_RAW_EVIDENCE";
 export const RAW_EVIDENCE_EXPORT_HARD_MAX_BYTES = 50 * 1024 * 1024;
 
@@ -745,6 +770,7 @@ export function registerAuditExportRoutes(
       } catch {
         return reply.code(404).send({ code: "VAULT_NOT_FOUND" });
       }
+      const rowLimits = auditExportRowLimits(query.data);
 
       const [
         indexResult,
@@ -768,8 +794,9 @@ export function registerAuditExportRoutes(
         ),
         db.pool.query(
           `select id,title,media_type,sha256,byte_size,status,created_at
-             from sources where space_id=$1 and vault_id=$2 order by id`,
-          [vault.space_id, vault.id],
+             from sources where space_id=$1 and vault_id=$2
+            order by id limit $3`,
+          [vault.space_id, vault.id, rowLimits.sources],
         ),
         db.pool.query(
           `select id,path,title,type,lifecycle,trust_tier,current_revision,
@@ -777,21 +804,24 @@ export function registerAuditExportRoutes(
                   last_verified_at,verified_against_revision,freshness_policy,
                   stale_after,invalidated_by,stale_reason,refresh_status,updated_at
              from knowledge_documents
-            where space_id=$1 and vault_id=$2 order by id`,
-          [vault.space_id, vault.id],
+            where space_id=$1 and vault_id=$2
+            order by id limit $3`,
+          [vault.space_id, vault.id, rowLimits.documents],
         ),
         db.pool.query(
           `select r.id,r.from_document_id,r.to_document_id,r.relation_type,
                   r.weight,r.provenance from knowledge_relations r
              join knowledge_documents f on f.id=r.from_document_id
              join knowledge_documents t on t.id=r.to_document_id
-            where r.space_id=$1 and f.vault_id=$2 and t.vault_id=$2 order by r.id`,
-          [vault.space_id, vault.id],
+            where r.space_id=$1 and f.vault_id=$2 and t.vault_id=$2
+            order by r.id limit $3`,
+          [vault.space_id, vault.id, rowLimits.relations],
         ),
         db.pool.query(
           `select id,source_id,artifact_id,locator,content_hash,review_status,created_at
-             from evidence where space_id=$1 and vault_id=$2 order by id`,
-          [vault.space_id, vault.id],
+             from evidence where space_id=$1 and vault_id=$2
+            order by id limit $3`,
+          [vault.space_id, vault.id, rowLimits.evidence],
         ),
         db.pool.query(
           `select id,trigger,corpus_revision,status,findings,created_at
