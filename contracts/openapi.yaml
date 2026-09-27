@@ -480,7 +480,17 @@ paths:
               schema:
                 type: object
                 required:
-                  [mode, intent, plan, degraded, channels, hits, noAnswer]
+                  [
+                    mode,
+                    intent,
+                    plan,
+                    degraded,
+                    channels,
+                    retrievalOutcome,
+                    hits,
+                    exploratoryHits,
+                    noAnswer,
+                  ]
                 properties:
                   mode: { $ref: "#/components/schemas/SearchMode" }
                   intent: { type: string }
@@ -495,8 +505,16 @@ paths:
                   truth:
                     type: [object, "null"]
                     additionalProperties: true
+                  retrievalOutcome:
+                    type: string
+                    enum: [SUPPORTED, EXPLORATORY_ONLY, NO_CANDIDATES]
                   hits:
                     type: array
+                    description: Supported sources that may be used as retrieval evidence.
+                    items: { $ref: "#/components/schemas/SearchHit" }
+                  exploratoryHits:
+                    type: array
+                    description: Authorized candidates rejected by answerability; inspectable but not approved evidence.
                     items: { $ref: "#/components/schemas/SearchHit" }
                   noAnswer:
                     oneOf:
