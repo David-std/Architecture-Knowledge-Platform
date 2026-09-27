@@ -28,8 +28,12 @@
         "security-guide-v3": 0.9318
       },
       "expectations": {
-        "current": ["security-guide-v3"],
-        "asOfBeforeChange": ["security-guide-v1"],
+        "current": [
+          "security-guide-v3"
+        ],
+        "asOfBeforeChange": [
+          "security-guide-v1"
+        ],
         "mustNotResolveBy": "DENSE_SCORE_ONLY",
         "mustExposeContradiction": true,
         "readTimeSupportValidationRequired": true
@@ -58,7 +62,11 @@
         "approximateFallbackMustBeLabeled": true,
         "serializedContextPacketMeasured": true,
         "exactOrLexicalIdentifierChannelRequired": true,
-        "benchmarkLanguages": ["en", "es", "code"]
+        "benchmarkLanguages": [
+          "en",
+          "es",
+          "code"
+        ]
       }
     },
     {
@@ -98,7 +106,10 @@
       "id": "two-agent-structured-handoff-and-promotion",
       "kind": "TWO_AGENT_WORKSPACE_HANDOFF",
       "task": "Refactor compiler review flow while updating the Web review experience.",
-      "principals": ["agent-a", "agent-b"],
+      "principals": [
+        "agent-a",
+        "agent-b"
+      ],
       "claims": [
         {
           "principal": "agent-a",
@@ -163,7 +174,10 @@
         "after": "src/auth/token-service.ts#TokenService.rotate",
         "mustRemainCandidateWhenAmbiguous": true
       },
-      "excludedPaths": ["vendor/generated-client.ts", "dist/bundle.min.js"],
+      "excludedPaths": [
+        "vendor/generated-client.ts",
+        "dist/bundle.min.js"
+      ],
       "ambiguousCall": "src/compat/adapter.ts#refresh -> refresh",
       "expectations": {
         "crossFilePathPresent": true,
@@ -220,7 +234,11 @@
           "statusAfter": "ACTIVE"
         }
       ],
-      "staleDerivedStateRetainedPhysically": ["VECTOR", "COMMUNITY", "CACHE"],
+      "staleDerivedStateRetainedPhysically": [
+        "VECTOR",
+        "COMMUNITY",
+        "CACHE"
+      ],
       "expectations": {
         "conclusionMayRemainViaIndependentSourceB": true,
         "sourceACitationRemovedFromCurrentExplanation": true,
@@ -286,6 +304,65 @@
         "mandatoryActionsNeverMoveIntoRetrievedContent": true,
         "materialConflictCoverageRequired": true,
         "continuationDetailRetainedOutOfBand": true
+      }
+    },
+    {
+      "id": "query-supported-context-under-tight-budget",
+      "kind": "QUERY_SUPPORTED_CONTEXT_BUDGET",
+      "query": "How should a replay-safe operation avoid repeating an external side effect?",
+      "budgets": [
+        1500,
+        2500,
+        3500
+      ],
+      "candidates": [
+        {
+          "id": "direct-supported-concept",
+          "kind": "concept",
+          "score": 0.91,
+          "retrievalRank": 1,
+          "content": "The replay-safe operation records an idempotency marker before the external side effect and reuses that marker on retry.",
+          "contentRepeat": 2100
+        },
+        {
+          "id": "generic-workflow",
+          "kind": "workflow",
+          "score": 0.9,
+          "retrievalRank": 2,
+          "content": "A general replay workflow coordinates retries, checkpoints, and operator review.",
+          "contentRepeat": 3000
+        },
+        {
+          "id": "supporting-evidence",
+          "kind": "evidence",
+          "score": 0.89,
+          "retrievalRank": 3,
+          "content": "Supporting evidence describes replay frequency and observed recovery behavior.",
+          "contentRepeat": 3000
+        },
+        {
+          "id": "background-decision",
+          "kind": "decision",
+          "score": 0.88,
+          "retrievalRank": 4,
+          "content": "A background decision records the broader event-processing trade-off.",
+          "contentRepeat": 3000
+        }
+      ],
+      "mandatoryOverlay": {
+        "id": "governance-boundary",
+        "kind": "rule",
+        "score": 0.2,
+        "content": "Never bypass the active authorization and trust policy when assembling context.",
+        "contentRepeat": 3000,
+        "mandatory": true
+      },
+      "expectations": {
+        "highestRankedSupportedCandidateIncludedAcrossBudgets": true,
+        "documentKindMustNotOverrideSupportedRetrievalRank": true,
+        "mandatoryMaterialStillPrecedesOrdinaryCandidates": true,
+        "omittedHighestRankedSupportMustDegradePacket": true,
+        "omittedHighestRankedSupportMustExposeContinuation": true
       }
     }
   ]
