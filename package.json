@@ -59,7 +59,8 @@
     "benchmark:registered-graph-code-metrics": "tsx scripts/registered-graph-code-metrics.ts",
     "benchmark:registered-temporal-truth-metrics": "tsx scripts/registered-temporal-truth-metrics.ts",
     "benchmark:registered-workspace-team-metrics": "tsx scripts/registered-workspace-team-metrics.ts",
-    "benchmark:registered-retrieval-diagnostics": "tsx scripts/registered-retrieval-diagnostics.ts"
+    "benchmark:registered-retrieval-diagnostics": "tsx scripts/registered-retrieval-diagnostics.ts",
+    "assurance:deep-spec": "node scripts/deep-spec-traceability.mjs"
   },
   "devDependencies": {
     "@types/mime-types": "^3.0.1",

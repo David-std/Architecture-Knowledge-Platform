@@ -287,12 +287,22 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/api/src/runtime-config.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/api/src/server.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
     {
       "path": "apps/api/test/audit-events.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/api/test/audit-export-query-bounds.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -477,6 +487,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "apps/api/test/runtime-config.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "apps/api/test/schema-profile-governance.integration.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
@@ -577,6 +592,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/cli/src/api-client.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/cli/src/audit-export.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -602,12 +622,27 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/cli/src/vault-selection.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/cli/test/api-client.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "apps/cli/test/audit-export.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
     {
       "path": "apps/cli/test/metrics.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/cli/test/vault-selection.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -847,6 +882,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/mcp/src/runtime-config.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/mcp/src/server.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -863,6 +903,11 @@
     },
     {
       "path": "apps/mcp/test/instruction-bundle.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/mcp/test/runtime-config.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -993,6 +1038,11 @@
     },
     {
       "path": "apps/web/app/evals/page.tsx",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/web/app/getting-started/page.tsx",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
@@ -1252,6 +1302,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/worker/src/ingest-transition.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/worker/src/instrumentation.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -1268,6 +1323,11 @@
     },
     {
       "path": "apps/worker/src/operational-error.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/worker/src/runtime-config.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
@@ -1352,6 +1412,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "apps/worker/test/ingest-transition.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "apps/worker/test/knowledge-compilation.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
@@ -1368,6 +1433,11 @@
     },
     {
       "path": "apps/worker/test/operational-error.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/worker/test/runtime-config.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -2192,6 +2262,11 @@
       "reason": "versioned registered product evaluation"
     },
     {
+      "path": "evals/registered/v0.4-deep-spec-traceability.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "versioned registered product evaluation"
+    },
+    {
       "path": "evals/registered/v0.4-evidence-sources.json",
       "category": "PRODUCT_EVAL",
       "reason": "versioned registered product evaluation"
@@ -2243,6 +2318,11 @@
     },
     {
       "path": "packages/audit-export/test/audit-export.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/audit-export/test/streaming.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -3092,6 +3172,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/retrieval/src/answerability.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/retrieval/src/candidate-policy.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3190,6 +3275,11 @@
       "path": "packages/retrieval/src/structural-context.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/retrieval/test/answerability.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
     },
     {
       "path": "packages/retrieval/test/candidate-policy.test.ts",
@@ -3337,6 +3427,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "packages/vault-importer/test/stable-identity.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "packages/vault-importer/tsconfig.json",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3443,6 +3538,11 @@
     },
     {
       "path": "scripts/concurrency-benchmark.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/deep-spec-traceability.mjs",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },

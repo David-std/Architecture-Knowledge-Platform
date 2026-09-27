@@ -899,8 +899,11 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
       );
       const result = await db.pool.query(
         `
-        select r.*, u.display_name author_name
-         from reviews r left join users u on u.id=r.author_id
+        select r.*, u.display_name author_name,
+               v.name vault_name, v.vault_key
+         from reviews r
+         left join users u on u.id=r.author_id
+         left join vaults v on v.id=r.vault_id and v.space_id=r.space_id
          where ($1='' or r.status=$1) and r.space_id=any($2::uuid[])
          order by r.created_at desc limit 100
         `,

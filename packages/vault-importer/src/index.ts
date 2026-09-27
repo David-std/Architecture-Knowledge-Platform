@@ -147,6 +147,31 @@ function normalizePath(input: string): string {
   return input.replaceAll("\\", "/");
 }
 
+const WINDOWS_RESERVED_PATH_SEGMENT =
+  /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
+
+function portableVaultPathKey(input: string): string {
+  const normalized = normalizePath(input).normalize("NFC");
+  const segments = normalized.split("/");
+  if (
+    !normalized ||
+    normalized.startsWith("/") ||
+    /^[A-Za-z]:/.test(normalized) ||
+    segments.some(
+      (segment) =>
+        !segment ||
+        segment === "." ||
+        segment === ".." ||
+        /[<>:"|?*\u0000-\u001f]/u.test(segment) ||
+        /[ .]$/u.test(segment) ||
+        WINDOWS_RESERVED_PATH_SEGMENT.test(segment),
+    )
+  ) {
+    throw new Error(`VAULT_NON_PORTABLE_PATH:${input}`);
+  }
+  return normalized.toLocaleLowerCase("en-US");
+}
+
 function slugTitle(relativePath: string): string {
   return path
     .basename(relativePath, path.extname(relativePath))
@@ -375,8 +400,17 @@ export async function inspectVault(
   const issues: ImportIssue[] = [];
   const documents: VaultDocument[] = [];
   const seenIds = new Map<string, string>();
+  const seenPortablePaths = new Map<string, string>();
 
   for (const relativePath of relativePaths) {
+    const portableKey = portableVaultPathKey(relativePath);
+    const conflictingPath = seenPortablePaths.get(portableKey);
+    if (conflictingPath && conflictingPath !== relativePath) {
+      throw new Error(
+        `VAULT_PORTABLE_PATH_COLLISION:${conflictingPath}:${relativePath}`,
+      );
+    }
+    seenPortablePaths.set(portableKey, relativePath);
     if (process.env.AKP_IMPORT_DEBUG === "1") {
       console.error(
         `[vault-import] parse ${documents.length + 1}/${relativePaths.length} ${relativePath}`,
@@ -1349,6 +1383,25 @@ export async function importVaultReadOnly(
     const importedIds: string[] = [];
     const databaseIdByExternalId = new Map<string, string>();
     for (const document of inspection.documents) {
+      const pathOwner = await client.query<{
+        id: string;
+        external_id: string | null;
+      }>(
+        `
+        select id,external_id
+          from knowledge_documents
+         where space_id=$1 and vault_id=$2 and path=$3
+         for update
+        `,
+        [spaceId, vaultId, document.relativePath],
+      );
+      const occupiedPath = pathOwner.rows[0];
+      if (occupiedPath && occupiedPath.external_id !== document.externalId) {
+        throw new Error(
+          `VAULT_DOCUMENT_IDENTITY_CONFLICT:${document.relativePath}:${document.externalId}`,
+        );
+      }
+
       const row = await client.query<{ id: string }>(
         `
         insert into knowledge_documents(
@@ -1357,11 +1410,12 @@ export async function importVaultReadOnly(
           token_estimate,raw_links,updated_at
         )
         values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,$13,$14,$15,$16::jsonb,now())
-        on conflict (vault_id,path) where vault_id is not null
+        on conflict (vault_id,external_id)
+          where vault_id is not null and external_id is not null
         do update set
           space_id=excluded.space_id,
           vault_id=excluded.vault_id,
-          external_id=excluded.external_id,
+          path=excluded.path,
           title=excluded.title,
           type=excluded.type,
           lifecycle=excluded.lifecycle,

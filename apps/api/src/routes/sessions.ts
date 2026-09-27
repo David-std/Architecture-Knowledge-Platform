@@ -27,6 +27,7 @@ import {
   assertWorkspaceContextRevisionCurrent,
   isWorkspaceWorkKey,
   listWorkspaceHandoffsForRecipient,
+  listWorkspaceOfflineDrafts,
   listWorkspaceSessionsForParticipant,
   linkDecisionCandidateReviewInTransaction,
   PostgresAuthorizationPort,
@@ -411,7 +412,41 @@ export function registerSessionRoutes(
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
       const snapshot = await workspaceSessionSnapshot(db, session.id, actor.id);
       if (!snapshot) return reply.code(404).send({ code: "SESSION_NOT_FOUND" });
-      return snapshot;
+      const queuedDrafts = await listWorkspaceOfflineDrafts(
+        db,
+        session.id,
+        actor.id,
+      );
+      const capturedAt = new Date();
+      const pinnedAt = snapshot.contextRevision.pinned?.pinnedAt ?? null;
+      const ageSeconds = pinnedAt
+        ? Math.max(
+            0,
+            Math.floor((capturedAt.getTime() - pinnedAt.getTime()) / 1000),
+          )
+        : null;
+      return {
+        ...snapshot,
+        offlineStatus: {
+          offline: true,
+          capturedAt: capturedAt.toISOString(),
+          stale:
+            snapshot.contextRevision.status !== "CURRENT" ||
+            !snapshot.contextRevision.pinned,
+          ageSeconds,
+          status: snapshot.contextRevision.status,
+          unavailableLiveChannels: [
+            "FEDERATION_REMOTE_QUERY",
+            "CONNECTOR_LIVE_READ",
+          ],
+          queuedDraftCount: queuedDrafts.filter(
+            (draft) =>
+              draft.status === "QUEUED" ||
+              draft.status === "RECONCILE_REQUIRED",
+          ).length,
+          mustRevalidateOnReconnect: true,
+        },
+      };
     },
   );
 

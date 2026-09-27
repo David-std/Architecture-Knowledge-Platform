@@ -18,6 +18,7 @@ import {
 } from "../packages/indexing/src/index.js";
 import { Postgres } from "../packages/postgres/src/index.js";
 import {
+  assessRetrievalAnswerability,
   DeterministicQueryDecomposer,
   LOCAL_MULTILINGUAL_E5_SMALL_DESCRIPTOR,
   LocalSemanticEmbeddingAdapter,
@@ -84,11 +85,20 @@ type Fixture = {
   unitIds: Map<string, string>;
 };
 
+type QueryHit = Awaited<ReturnType<typeof queryKnowledge>>[number];
+
 type RuntimeObservation = BenchmarkObservation & {
   warnings: string[];
   availableChannels: string[];
   rankedVaultIds: string[];
   fusionReasons: Record<string, string[]>;
+  candidateSignals: ReturnType<
+    typeof assessRetrievalAnswerability
+  >["candidateSignals"];
+  answerability: Omit<
+    ReturnType<typeof assessRetrievalAnswerability>,
+    "candidateSignals"
+  >;
 };
 
 type StorageSnapshot = {
@@ -511,7 +521,8 @@ async function executeCase(
     "context-pack" | "exact" | "lexical" | "vector" | "graph" | "raw" | "code"
   >();
   const started = performance.now();
-  const hits = await queryKnowledge(
+  let answerabilityCandidates: readonly QueryHit[] | undefined;
+  const rawHits = await queryKnowledge(
     db,
     {
       query: testCase.query,
@@ -563,10 +574,28 @@ async function executeCase(
       queryEmbeddingService,
       warningSink: warnings,
       availableChannelSink: availableChannels,
+      answerabilityCandidateSink: (candidates) => {
+        answerabilityCandidates = candidates;
+      },
       graphScopes: [{ vaultId, pathPrefix: null }],
       graphPolicy: { maxHops: 3, directionPolicy: "both" },
     },
   );
+  const answerability = assessRetrievalAnswerability(
+    rawHits,
+    testCase.query,
+    {},
+    {
+      allowGraphSupport: testCase.category === "graph",
+      ...(answerabilityCandidates
+        ? { comparisonHits: answerabilityCandidates }
+        : {}),
+    },
+  );
+  const hits = answerability.supported ? rawHits : [];
+  if (!answerability.supported && rawHits.length > 0) {
+    warnings.push(`ANSWERABILITY_GATE_REJECTED:${answerability.reason}`);
+  }
   const latencyMs = performance.now() - started;
   const rankedDocumentIds = hits.flatMap((hit) =>
     hit.document.externalId ? [hit.document.externalId] : [],
@@ -618,6 +647,14 @@ async function executeCase(
         [...hit.reasons],
       ]),
     ),
+    candidateSignals: answerability.candidateSignals,
+    answerability: {
+      supported: answerability.supported,
+      reason: answerability.reason,
+      topVectorScore: answerability.topVectorScore,
+      secondVectorScore: answerability.secondVectorScore,
+      vectorMargin: answerability.vectorMargin,
+    },
   };
 }
 

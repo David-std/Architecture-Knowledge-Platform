@@ -16,6 +16,7 @@ const ROOT = process.cwd();
 const DATABASE_URL =
   process.env.DATABASE_URL ?? "postgres://akp:akp@127.0.0.1:55432/akp";
 const API_URL = process.env.AKP_API_URL ?? "http://127.0.0.1:8080";
+const API_PORT = new URL(API_URL).port || "8080";
 const ADMIN_WEB = "http://127.0.0.1:3100";
 const READER_WEB = "http://127.0.0.1:3101";
 const SPACE_ID = "00000000-0000-0000-0000-000000000003";
@@ -43,7 +44,9 @@ const fixture = {
   projectionId: randomUUID(),
   entryNodeId: randomUUID(),
   helperNodeId: randomUUID(),
+  edgeAssertionId: randomUUID(),
   edgeId: randomUUID(),
+  federationPeerId: randomUUID(),
   sourceId: randomUUID(),
   evidenceId: randomUUID(),
   documentId: randomUUID(),
@@ -111,6 +114,16 @@ function spawnService(label, command, args, env = {}) {
 
 async function stopService(child) {
   if (!child || child.exitCode !== null) return;
+  if (process.platform === "win32" && child.pid) {
+    try {
+      execFileSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
+        stdio: "ignore",
+      });
+    } catch {
+      child.kill("SIGKILL");
+    }
+    return;
+  }
   const exited = new Promise((resolve) => child.once("exit", resolve));
   try {
     if (process.platform !== "win32" && child.pid) {
@@ -141,7 +154,7 @@ async function ensureApi() {
     return;
   } catch {
     spawnService("api", "pnpm", ["--filter", "@akp/api", "start"], {
-      PORT: "8080",
+      PORT: API_PORT,
     });
     await waitForUrl(API_URL + "/health/readiness");
   }
@@ -356,6 +369,47 @@ async function setupDatabase(db) {
     [fixture.connectorId, sha256("browser-connector-failure")],
   );
 
+  const browserFederationCapabilities = {
+    schemaVersion: 1,
+    accessMode: "REMOTE_FEDERATED",
+    permissionFidelity: "SOURCE_ACL_EXACT",
+    syncFidelity: "APPEND",
+    incrementalSync: false,
+    deletionPropagation: "NONE",
+    cursorOrWebhook: false,
+    sourceAuthority: "REFERENCE",
+    writeBack: "NONE",
+    identityMapping: "EXACT",
+    dataResidency: "ORG",
+    replayable: false,
+    auditTrail: "METADATA_ONLY",
+    rateLimit: {
+      kind: "DECLARED",
+      requestsPerMinute: 120,
+      onExceeded: "FAIL_CLOSED",
+    },
+    degradation: { onUnavailable: "FAIL_CLOSED" },
+    health: "UNAVAILABLE",
+  };
+  await db.query(
+    "insert into context_fabric_peers(" +
+      "id,organization_id,space_id,peer_key,display_name,endpoint," +
+      "discovery_mode,trust_state,capabilities,revision,last_seen_at," +
+      "failure_count,circuit_open_until,last_failure_code" +
+      ") values(" +
+      "$1,'00000000-0000-0000-0000-000000000001',$2,$3," +
+      "'Browser degraded federation peer','https://browser-peer.invalid'," +
+      "'REMOTE_QUERY','APPROVED',$4::jsonb,'browser-peer-r1',now()," +
+      "2,now()+interval '10 minutes','FEDERATION_PEER_TIMEOUT'" +
+      ")",
+    [
+      fixture.federationPeerId,
+      SPACE_ID,
+      "browser-e2e-peer-" + fixture.federationPeerId.slice(0, 8),
+      JSON.stringify(browserFederationCapabilities),
+    ],
+  );
+
   await db.query(
     "insert into assurance_runs(" +
       "id,space_id,vault_id,trigger,detectors,status,idempotency_key," +
@@ -446,23 +500,45 @@ async function setupDatabase(db) {
     );
   }
 
+  const browserEdgeHash = sha256("browser-code-edge");
+  await db.query(
+    "insert into federated_graph_relationship_assertions(" +
+      "id,space_id,owner_graph_domain,from_node_id,to_node_id,relation_type," +
+      "authorization_path,lifecycle,derivation,source_ids,evidence_ids," +
+      "locator_refs,provenance_revision,support_set_id,confidence,valid_from," +
+      "valid_to,recorded_at,assertion_hash" +
+      ") values(" +
+      "$1,$2,'CODE',$3,$4,'CALLS',null,'ACTIVE','STATICALLY_RESOLVED'," +
+      "'[]'::jsonb,'[]'::jsonb,'[]'::jsonb,'browser-code-r1',null,1.0," +
+      "'2026-06-01T00:00:00.000Z',null,'2026-06-01T00:00:00.000Z',$5" +
+      ")",
+    [
+      fixture.edgeAssertionId,
+      SPACE_ID,
+      fixture.entryNodeId,
+      fixture.helperNodeId,
+      browserEdgeHash,
+    ],
+  );
+
   await db.query(
     "insert into federated_graph_edges(" +
       "id,space_id,owner_graph_domain,from_node_id,to_node_id,relation_type," +
       "authorization_path,derivation,source_ids,evidence_ids,locator_refs," +
       "provenance_revision,support_set_id,confidence,valid_from,valid_to," +
-      "recorded_at,provenance_hash" +
+      "recorded_at,provenance_hash,assertion_id" +
       ") values(" +
       "$1,$2,'CODE',$3,$4,'CALLS',null,'STATICALLY_RESOLVED'," +
       "'[]'::jsonb,'[]'::jsonb,'[]'::jsonb,'browser-code-r1',null,1.0," +
-      "'2026-06-01T00:00:00.000Z',null,'2026-06-01T00:00:00.000Z',$5" +
+      "'2026-06-01T00:00:00.000Z',null,'2026-06-01T00:00:00.000Z',$5,$6" +
       ")",
     [
       fixture.edgeId,
       SPACE_ID,
       fixture.entryNodeId,
       fixture.helperNodeId,
-      sha256("browser-code-edge"),
+      browserEdgeHash,
+      fixture.edgeAssertionId,
     ],
   );
   await db.query(
@@ -565,14 +641,14 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
   try {
     await db.connect();
     databaseConnected = true;
-    await setupDatabase(db);
+    const corpusRevision = await setupDatabase(db);
 
     try {
       await waitForUrl(API_URL + "/health/readiness", 1_500);
     } catch {
       apiWasSpawned = true;
       spawnService("api", "pnpm", ["--filter", "@akp/api", "start"], {
-        PORT: "8080",
+        PORT: API_PORT,
       });
       await waitForUrl(API_URL + "/health/readiness");
     }
@@ -691,6 +767,21 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
       assert.match(body, /Retrieved context IDs/);
       assert.match(body, /packet/i);
       assert.match(body, /CURRENT/);
+      assert.match(body, /Offline snapshot readiness/);
+      assert.match(body, /Snapshot age/);
+      assert.match(body, /FEDERATION_REMOTE_QUERY/);
+      assert.match(body, /CONNECTOR_LIVE_READ/);
+      assert.match(body, /queued drafts 0/);
+    });
+
+    await browserStep(t, "1b federation partial state", pages, async () => {
+      await adminPage.goto(ADMIN_WEB + "/");
+      await adminPage.getByText("Federación", { exact: true }).waitFor();
+      const body = await adminPage.locator("body").innerText();
+      assert.match(body, /Federación/i);
+      assert.match(body, /PARTIAL/);
+      assert.match(body, /FEDERATION_PEER_TIMEOUT/);
+      assert.match(body, /circuitos abiertos 1/);
     });
 
     await browserStep(t, "7 agent claim and handoff", pages, async () => {
@@ -795,10 +886,12 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
         );
 
         await adminPage.reload();
-        await adminPage
-          .getByText(/Recovery local restaurado\./)
-          .first()
-          .waitFor();
+        await adminPage.waitForFunction(
+          (summary) =>
+            document.querySelector('textarea[name="summary"]')?.value ===
+            summary,
+          recoverySummary,
+        );
         assert.equal(
           await adminPage.locator('textarea[name="summary"]').inputValue(),
           recoverySummary,
@@ -969,6 +1062,34 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
       }
     });
 
+    await browserStep(t, "5a stale graph state", pages, async () => {
+      await db.query(
+        "update federated_graph_projection_revisions " +
+          "set freshness='STALE',updated_at=now() where id=$1",
+        [fixture.projectionId],
+      );
+      try {
+        await adminPage.goto(
+          ADMIN_WEB + "/graph?vaultId=" + encodeURIComponent(fixture.vaultId),
+        );
+        await adminPage
+          .getByText("Estado del grafo", { exact: true })
+          .waitFor();
+        const body = await adminPage.locator("body").innerText();
+        assert.match(body, /Estado del grafo/);
+        assert.match(
+          body,
+          /nodo\(s\) tienen una revisión pendiente o un estado de actualización diferente de actual/,
+        );
+      } finally {
+        await db.query(
+          "update federated_graph_projection_revisions " +
+            "set freshness='FRESH',updated_at=now() where id=$1",
+          [fixture.projectionId],
+        );
+      }
+    });
+
     await browserStep(t, "5 code impact visualization", pages, async () => {
       await adminPage.goto(
         ADMIN_WEB + "/graph?vaultId=" + encodeURIComponent(fixture.vaultId),
@@ -987,6 +1108,7 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
       const body = await adminPage.locator("body").innerText();
       assert.match(body, /STATICALLY_RESOLVED/);
       assert.match(body, /CODE/);
+      assert.match(body, /Assertion state ACTIVE · Temporal state CURRENT/);
       assert.match(
         body,
         /Validity 2026-06-01T00:00:00\.000Z a open · Recorded 2026-06-01T00:00:00\.000Z/,
@@ -1020,6 +1142,98 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
       assert.match(body, /Query effective time/);
       assert.match(body, /2026-01-01T00:00:00.000Z/);
     });
+
+    await browserStep(
+      t,
+      "6b historical superseded assertion",
+      pages,
+      async () => {
+        await db.query(
+          "update federated_graph_relationship_assertions " +
+            "set lifecycle='SUPERSEDED',valid_to='2026-07-01T00:00:00.000Z'," +
+            "updated_at=now() where id=$1",
+          [fixture.edgeAssertionId],
+        );
+        try {
+          const asOf = "2026-06-15T00:00:00.000Z";
+          await adminPage.goto(
+            ADMIN_WEB +
+              "/graph?vaultId=" +
+              encodeURIComponent(fixture.vaultId) +
+              "&asOf=" +
+              encodeURIComponent(asOf),
+          );
+          const entryRow = adminPage.locator("tr", {
+            hasText: "BrowserEntry",
+          });
+          await entryRow
+            .getByRole("button", { name: /Seleccionar|Seleccionado/ })
+            .click();
+          await adminPage.locator(".graph-advanced-controls summary").click();
+          await adminPage
+            .getByLabel("Documento de destino")
+            .selectOption("federated:" + fixture.helperNodeId);
+          await adminPage
+            .getByText("Camino dirigido encontrado: 2 nodos.", { exact: true })
+            .waitFor();
+          const body = await adminPage.locator("body").innerText();
+          assert.match(body, /HISTORICAL SNAPSHOT/);
+          assert.match(body, /Query effective time/);
+          assert.match(
+            body,
+            /Assertion state SUPERSEDED · Temporal state SUPERSEDED/,
+          );
+          assert.match(
+            body,
+            /Validity 2026-06-01T00:00:00\.000Z a 2026-07-01T00:00:00\.000Z/,
+          );
+          assert.match(body, /Recorded 2026-06-01T00:00:00\.000Z/);
+        } finally {
+          await db.query(
+            "update federated_graph_relationship_assertions " +
+              "set lifecycle='ACTIVE',valid_to=null,updated_at=now() where id=$1",
+            [fixture.edgeAssertionId],
+          );
+        }
+      },
+    );
+
+    await browserStep(
+      t,
+      "6c reasoning planner fallback state",
+      pages,
+      async () => {
+        await db.query("delete from vault_index_revisions where vault_id=$1", [
+          fixture.vaultId,
+        ]);
+        try {
+          await adminPage.goto(
+            ADMIN_WEB +
+              "/search?vaultId=" +
+              encodeURIComponent(fixture.vaultId) +
+              "&q=" +
+              encodeURIComponent("BROWSER-BOOTSTRAP") +
+              "&reasoningMode=PLAN",
+          );
+          await adminPage
+            .getByRole("heading", { name: "Estado del reasoning planner" })
+            .waitFor();
+          const body = await adminPage.locator("body").innerText();
+          assert.match(body, /Solicitado PLAN · ejecución DIRECT_FALLBACK/);
+          assert.match(body, /Reasoning planner unavailable or failed/);
+        } finally {
+          await db.query(
+            "insert into vault_index_revisions(" +
+              "space_id,vault_id,corpus_revision,lexical_revision," +
+              "vector_revision,graph_revision,context_pack_revision," +
+              "retrieval_configuration_version,status,warnings" +
+              ") values($1,$2,$3,$3,$3,$3,$3,'browser-e2e'," +
+              "'CONSISTENT','[]'::jsonb)",
+            [SPACE_ID, fixture.vaultId, corpusRevision],
+          );
+        }
+      },
+    );
 
     await browserStep(t, "8 connector failure state", pages, async () => {
       await adminPage.goto(
@@ -1086,6 +1300,11 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
 
     if (browser) await browser.close().catch(() => undefined);
     if (databaseConnected) {
+      await db
+        .query("delete from context_fabric_peers where id=$1", [
+          fixture.federationPeerId,
+        ])
+        .catch(() => undefined);
       await db.query(
         "update source_connector_registrations " +
           "set state='DISABLED',updated_at=now() where id=$1",

@@ -124,6 +124,8 @@ jobs:
             test/temporal-truth-retrieval.integration.test.ts \
             test/review-publication.integration.test.ts \
             -t "coordinates two authorized actors with durable fencing|rejects a stale vector before ranking after support withdrawal|serializes concurrent approval publication"
+          pnpm --filter @akp/worker exec vitest run \
+            test/ingest-transition.integration.test.ts
       - run: pnpm contracts:validate
       - run: pnpm docs:validate
       - run: pnpm hygiene:validate

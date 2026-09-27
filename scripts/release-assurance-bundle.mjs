@@ -57,6 +57,7 @@ const reportSpecs = [
         "contextual-chunk-benchmark.json",
         "competitive/contextual-chunk-benchmark.json",
       ],
+      ["baseline-evidence.json", "acceptance/baseline-evidence.json"],
     ],
   },
   {
@@ -173,6 +174,14 @@ const localFiles = [
   [
     "reports/ci/capability-acceptance.md",
     "acceptance/capability-acceptance.md",
+  ],
+  [
+    "reports/ci/deep-spec-traceability.json",
+    "acceptance/deep-spec-traceability.json",
+  ],
+  [
+    "reports/ci/deep-spec-traceability.md",
+    "acceptance/deep-spec-traceability.md",
   ],
   [
     "evals/registered/competitive-arena-v0.4.json",
@@ -391,12 +400,33 @@ try {
         artifact?.expired !== true &&
         Number.isSafeInteger(Number(artifact?.id)),
     );
-    if (matches.length !== 1) {
+    const runAttempt = Number(workflow.runAttempt);
+    if (
+      matches.length === 0 ||
+      (matches.length > 1 && (!Number.isInteger(runAttempt) || runAttempt < 2))
+    ) {
       throw new Error(
-        `Expected exactly one non-expired artifact ${artifactName} for ${spec.workflow} run ${runId}; found ${matches.length}.`,
+        `Expected a non-expired artifact ${artifactName} for ${spec.workflow} run ${runId} attempt ${runAttempt}; found ${matches.length}.`,
       );
     }
-    const artifact = matches[0];
+    // GitHub retains artifacts from earlier attempts of the same run. A
+    // passing retry must package the artifact produced by its latest attempt.
+    const ordered = [...matches].sort(
+      (left, right) =>
+        Date.parse(right.created_at) - Date.parse(left.created_at) ||
+        Number(right.id) - Number(left.id),
+    );
+    if (
+      matches.length > 1 &&
+      (!Number.isFinite(Date.parse(ordered[0]?.created_at)) ||
+        Date.parse(ordered[0].created_at) ===
+          Date.parse(ordered[1]?.created_at))
+    ) {
+      throw new Error(
+        `Cannot identify the latest artifact ${artifactName} for ${spec.workflow} run ${runId}.`,
+      );
+    }
+    const artifact = ordered[0];
     let cached = artifactCache.get(artifact.id);
     if (!cached) {
       const zipPath = path.join(

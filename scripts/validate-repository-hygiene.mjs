@@ -269,7 +269,10 @@ for (const entry of entries) {
     /^test\/fixtures\//.test(entry.path);
 
   if (!constructionScanExcluded) {
-    if (phaseLabel.test(content))
+    const registeredWorkstreamIds =
+      entry.path === "evals/registered/v0.4-deep-spec-traceability.json" ||
+      entry.path === "scripts/deep-spec-traceability.mjs";
+    if (!registeredWorkstreamIds && phaseLabel.test(content))
       failures.push(`PHASE_LABEL_RESIDUE ${entry.path}`);
     if (smokeToken.test(content))
       failures.push(`SMOKE_TERMINOLOGY_RESIDUE ${entry.path}`);

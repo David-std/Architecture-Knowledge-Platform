@@ -25,6 +25,7 @@ import {
   type SearchRequest as SearchInput,
 } from "@akp/contracts";
 import {
+  assessRetrievalAnswerability,
   buildContextPacket,
   buildContextPacketPair,
   ContextPacketBudgetError,
@@ -498,6 +499,11 @@ export interface RetrievalExecutionOptions {
   warningSink?: string[];
   /** Channels that reached their provider/index successfully for this request. */
   availableChannelSink?: Set<RetrievalChannel>;
+  /**
+   * Authorized, truth-filtered and reranked candidates before input.limit is
+   * applied. Used for answerability comparison only; not returned to clients.
+   */
+  answerabilityCandidateSink?: (hits: readonly SearchHit[]) => void;
   vaultIds?: string[];
   /** Exact, authorized Code Graph candidates resolved by the HTTP boundary. */
   codeCandidates?: CodeChannelCandidate[];
@@ -1549,6 +1555,27 @@ export async function queryKnowledge(
       ? []
       : options.graphScopes,
   );
+  const documentScopeJson = JSON.stringify(
+    (options.pathAuthorizer
+      ? graphScopes
+      : vaultIds.map((vaultId) => ({ vaultId, pathPrefix: null }))
+    ).map((scope) => ({
+      vault_id: scope.vaultId,
+      path_prefix: scope.pathPrefix,
+    })),
+  );
+  const documentScopeClause = (alias: string, parameter: number) => `
+    and exists (
+      select 1
+        from jsonb_to_recordset($${parameter}::jsonb)
+          as permitted(vault_id uuid,path_prefix text)
+       where permitted.vault_id=${alias}vault_id
+         and (
+           permitted.path_prefix is null
+           or ${alias}path=permitted.path_prefix
+           or starts_with(${alias}path,permitted.path_prefix || '/')
+         )
+    )`;
   const rawScopes = normalizeRawScopes(
     vaultIds,
     options.rawScopes,
@@ -1655,7 +1682,17 @@ export async function queryKnowledge(
     options,
   });
 
-  const exact = channels.has("exact")
+  // A natural-language question may carry a precise document suffix (for
+  // example "principio de responsabilidad única SRP" -> CON-SRP). Keep this
+  // bounded and scoped by the same SQL predicates as full-ID lookups.
+  const queryAcronyms =
+    input.query.trim().split(/\s+/u).length > 1
+      ? [...new Set(input.query.match(/\b[A-Z][A-Z0-9]{2,7}\b/gu) ?? [])].slice(
+          0,
+          3,
+        )
+      : [];
+  const exactQuery = channels.has("exact")
     ? await observedRetrieval("exact", () =>
         db.pool.query<ExactSearchRow>(
           `
@@ -1667,6 +1704,14 @@ export async function queryKnowledge(
                     where lower(alias)=lower($2)
                  ) then 'exact:alias'
                  when lower(d.title)=lower($2) then 'exact:title'
+                 when exists (
+                   select 1 from unnest($5::text[]) acronym
+                    where lower(d.external_id) like '%-' || lower(acronym)
+                       or exists (
+                         select 1 from unnest(d.aliases) alias
+                          where lower(alias)=lower(acronym)
+                       )
+                 ) then 'exact:query-acronym'
                  else 'exact:path'
                end match_reason
           from knowledge_documents d
@@ -1675,6 +1720,7 @@ export async function queryKnowledge(
            and d.lifecycle ${lifecycleClause}
            and ${trustClause("d.")}
            and d.refresh_status not in ('STALE_BLOCKED','INVALID')
+           ${documentScopeClause("d.", 6)}
            and (
              lower(d.external_id)=lower($2)
              or exists (
@@ -1683,6 +1729,14 @@ export async function queryKnowledge(
              )
              or lower(d.title)=lower($2)
              or lower(d.path)=lower($2)
+             or exists (
+               select 1 from unnest($5::text[]) acronym
+                where lower(d.external_id) like '%-' || lower(acronym)
+                   or exists (
+                     select 1 from unnest(d.aliases) alias
+                      where lower(alias)=lower(acronym)
+                   )
+             )
            )
            ${modeClause("d.")}
            ${rawAuthorizationClause("d.", 4)}
@@ -1694,7 +1748,8 @@ export async function queryKnowledge(
                 where lower(alias)=lower($2)
              ) then 1
              when lower(d.title)=lower($2) then 2
-             else 3
+             when lower(d.path)=lower($2) then 3
+             else 4
            end,
            d.id
          limit $3
@@ -1704,10 +1759,26 @@ export async function queryKnowledge(
             input.query,
             Math.max(input.limit * 2, 20),
             rawAuthorizationJson,
+            queryAcronyms,
+            documentScopeJson,
           ],
         ),
       )
     : { rows: [] as ExactSearchRow[] };
+  // An acronym embedded in a question is only an exact locator when it
+  // identifies one scoped document. A broad acronym such as CQRS otherwise
+  // gives arbitrary matching IDs exact-channel rank ahead of question terms.
+  const acronymMatches = exactQuery.rows.filter(
+    (row) => row.match_reason === "exact:query-acronym",
+  );
+  const exact = {
+    rows:
+      acronymMatches.length > 1
+        ? exactQuery.rows.filter(
+            (row) => row.match_reason !== "exact:query-acronym",
+          )
+        : exactQuery.rows,
+  };
   recordRetrievalCandidates("exact", exact.rows.length);
   if (channels.has("exact")) options.availableChannelSink?.add("exact");
 
@@ -1740,6 +1811,7 @@ export async function queryKnowledge(
                and d.lifecycle ${lifecycleClause}
                and ${trustClause("d.")}
                and d.refresh_status not in ('STALE_BLOCKED','INVALID')
+               ${documentScopeClause("d.", 5)}
                ${modeClause("d.")}
                ${rawAuthorizationClause("d.", 4)}
                and (
@@ -1835,6 +1907,7 @@ export async function queryKnowledge(
             assisted.query,
             Math.max(input.limit * 3, 30),
             rawAuthorizationJson,
+            documentScopeJson,
           ],
         ),
       );
@@ -1947,6 +2020,7 @@ export async function queryKnowledge(
                  and d.lifecycle ${lifecycleClause}
                  and ${trustClause("d.")}
                  and d.refresh_status not in ('STALE_BLOCKED','INVALID')
+                 ${documentScopeClause("d.", 7)}
                  ${modeClause("d.")}
                  ${rawAuthorizationClause("d.", 6)}
                order by e.embedding::vector(${dimensions}) <=> $3::vector(${dimensions}),
@@ -1960,6 +2034,7 @@ export async function queryKnowledge(
                 generation.vaultId,
                 Math.max(input.limit * 3, 30),
                 rawAuthorizationJson,
+                documentScopeJson,
               ],
             ),
           );
@@ -2026,7 +2101,22 @@ export async function queryKnowledge(
       const routed = await observedRetrieval("community", () =>
         db.pool.query<CommunityCandidateRow>(
           `
-          with query as (
+          with graph_scopes as (
+            select scope.vault_id,scope.path_prefix
+              from jsonb_to_recordset($8::jsonb)
+                as scope(vault_id uuid,path_prefix text)
+          ), scoped_seeds as (
+            select d.id
+              from knowledge_documents d
+              join graph_scopes scope on scope.vault_id=d.vault_id
+             where d.id=any($4::uuid[])
+               and d.space_id=$1
+               and (
+                 scope.path_prefix is null
+                 or d.path=scope.path_prefix
+                 or starts_with(d.path,scope.path_prefix || '/')
+               )
+          ), query as (
             select plainto_tsquery('simple',$2) terms
           ),
           active_community as (
@@ -2047,8 +2137,7 @@ export async function queryKnowledge(
           drift_community as (
             select distinct m.revision_id,m.community_key
               from community_index_memberships m
-             where cardinality($4::uuid[]) > 0
-               and m.document_id=any($4::uuid[])
+             where m.document_id in (select id from scoped_seeds)
           ),
           oriented as (
             select ac.*,
@@ -2078,7 +2167,13 @@ export async function queryKnowledge(
               on m.revision_id=o.revision_id
              and m.community_key=o.community_key
             join knowledge_documents d on d.id=m.document_id
+            join graph_scopes scope on scope.vault_id=d.vault_id
            where d.space_id=$1
+             and (
+               scope.path_prefix is null
+               or d.path=scope.path_prefix
+               or starts_with(d.path,scope.path_prefix || '/')
+             )
              ${vaultFilter("d.")}
              and d.lifecycle ${lifecycleClause}
              and ${trustClause("d.")}
@@ -2087,8 +2182,8 @@ export async function queryKnowledge(
              ${rawAuthorizationClause("d.", 7)}
              and not (
                $5::text='DRIFT'
-               and cardinality($4::uuid[]) > 0
-               and d.id=any($4::uuid[])
+               and exists(select 1 from scoped_seeds)
+               and d.id in (select id from scoped_seeds)
              )
            order by orientation_score desc,o.community_key,d.id
            limit $6
@@ -2101,6 +2196,12 @@ export async function queryKnowledge(
             retrievalPolicy.graphMode,
             Math.max(input.limit * 4, 40),
             rawAuthorizationJson,
+            JSON.stringify(
+              graphScopes.map((scope) => ({
+                vault_id: scope.vaultId,
+                path_prefix: scope.pathPrefix,
+              })),
+            ),
           ],
         ),
       );
@@ -2133,13 +2234,14 @@ export async function queryKnowledge(
              and d.lifecycle ${lifecycleClause}
              and ${trustClause("d.")}
              and d.refresh_status not in ('STALE_BLOCKED','INVALID')
+             ${documentScopeClause("d.", 4)}
              and (d.layer='context-pack' or d.type='context-pack')
              and d.lexical_search_vector @@ query.terms
            order by ts_rank_cd(d.lexical_search_vector,query.terms) desc,
                     d.path,d.id
            limit $3
           `,
-        [spaceId, input.query, Math.max(input.limit, 10)],
+        [spaceId, input.query, Math.max(input.limit, 10), documentScopeJson],
       )
     : { rows: [] as DocumentChannelRow[] };
   if (contextPack.rows.length > 0) {
@@ -2177,6 +2279,7 @@ export async function queryKnowledge(
              and d.lifecycle ${lifecycleClause}
              and ${trustClause("d.")}
              and d.refresh_status not in ('STALE_BLOCKED','INVALID')
+             ${documentScopeClause("d.", 5)}
              and (d.layer in ('source','resource') or d.type='raw-resource')
              ${modeClause("d.")}
              and exists(
@@ -2205,6 +2308,7 @@ export async function queryKnowledge(
                 path_prefix: scope.pathPrefix,
               })),
             ),
+            documentScopeJson,
           ],
         )
       : { rows: [] as DocumentChannelRow[] };
@@ -2231,6 +2335,7 @@ export async function queryKnowledge(
              and d.lifecycle ${lifecycleClause}
              and ${trustClause("d.")}
              and d.refresh_status not in ('STALE_BLOCKED','INVALID')
+             ${documentScopeClause("d.", 4)}
              and d.layer='project'
              and d.lexical_search_vector @@ query.terms
            order by d.updated_at desc,
@@ -2238,7 +2343,7 @@ export async function queryKnowledge(
                     d.id
            limit $3
           `,
-          [spaceId, input.query, Math.max(input.limit, 10)],
+          [spaceId, input.query, Math.max(input.limit, 10), documentScopeJson],
         )
     : { rows: [] };
   if (channels.has("code")) options.availableChannelSink?.add("code");
@@ -3317,6 +3422,7 @@ export async function queryKnowledge(
   if (rerankResult.warning) {
     options.warningSink?.push(rerankResult.warning);
   }
+  options.answerabilityCandidateSink?.(rerankResult.hits);
   const finalResults = rerankResult.hits.slice(0, input.limit);
   await finalizeTruthSnapshot();
   return finalResults;
@@ -3500,6 +3606,7 @@ export function registerSearchRoutes(
       ];
       const availableChannels = new Set<RetrievalChannel>();
       let truthState: RetrievalTruthState | undefined;
+      let answerabilityCandidates: readonly SearchHit[] | undefined;
       let hits: SearchHit[];
       try {
         hits = await queryKnowledge(db, scopedRequest, {
@@ -3517,6 +3624,9 @@ export function registerSearchRoutes(
             : {}),
           warningSink: retrievalWarnings,
           availableChannelSink: availableChannels,
+          answerabilityCandidateSink: (candidates) => {
+            answerabilityCandidates = candidates;
+          },
           authorizationResolved: true,
           pathAuthorizer,
           truthConsistency: parsed.data.truthConsistency ?? "STRICT",
@@ -3533,6 +3643,33 @@ export function registerSearchRoutes(
         }
         throw error;
       }
+      const answerability = assessRetrievalAnswerability(
+        hits,
+        parsed.data.query,
+        {},
+        {
+          allowGraphSupport: plan.intent === "IMPACT_ANALYSIS",
+          ...(answerabilityCandidates
+            ? { comparisonHits: answerabilityCandidates }
+            : {}),
+        },
+      );
+      if (!answerability.supported && hits.length > 0) {
+        retrievalWarnings.push(
+          `ANSWERABILITY_GATE_REJECTED:${answerability.reason}`,
+        );
+        telemetry.counter("retrieval_answerability_gate", 1, {
+          outcome: "REJECTED",
+          reason: answerability.reason,
+        });
+        hits = [];
+      } else if (hits.length > 0) {
+        telemetry.counter("retrieval_answerability_gate", 1, {
+          outcome: "SUPPORTED",
+          reason: answerability.reason,
+        });
+      }
+
       const channelState = channelsConsistentWithIndex(
         plan.channels,
         index,
@@ -3570,15 +3707,26 @@ export function registerSearchRoutes(
           hits.length === 0
             ? {
                 status: "INSUFFICIENT_KNOWLEDGE",
-                reason: "NO_SUPPORTED_MATCH",
+                reason:
+                  answerability.reason === "WEAK_SEMANTIC_NEIGHBORS"
+                    ? "INSUFFICIENT_SUPPORT"
+                    : "NO_SUPPORTED_MATCH",
                 searchedChannels: effectiveChannelState.channels,
-                gaps: ["No supported source-backed match was retrieved."],
+                gaps: [
+                  answerability.reason === "WEAK_SEMANTIC_NEIGHBORS"
+                    ? "Retrieved semantic neighbours did not provide enough direct, textual, or discriminative support."
+                    : "No supported source-backed match was retrieved.",
+                ],
                 conflicts: [],
                 recommendedActions: [
-                  "Broaden the query or lower the minimum trust explicitly.",
+                  answerability.reason === "WEAK_SEMANTIC_NEIGHBORS"
+                    ? "Refine the query or add an authoritative source that directly supports the requested fact."
+                    : "Broaden the query or lower the minimum trust explicitly.",
                 ],
                 guidance:
-                  "Broaden the query or lower the minimum trust explicitly.",
+                  answerability.reason === "WEAK_SEMANTIC_NEIGHBORS"
+                    ? "The nearest semantic candidates were too weak or ambiguous to treat as supported knowledge."
+                    : "Broaden the query or lower the minimum trust explicitly.",
               }
             : null,
       };
@@ -3943,6 +4091,7 @@ export function registerSearchRoutes(
       ];
       const availableChannels = new Set<RetrievalChannel>();
       let truthState: RetrievalTruthState | undefined;
+      let directAnswerabilityCandidates: readonly SearchHit[] | undefined;
       let reasoningTrace: unknown = null;
       let reasoningExecutionMode: "DIRECT" | "PLAN" | "DIRECT_FALLBACK" =
         "DIRECT";
@@ -3963,6 +4112,9 @@ export function registerSearchRoutes(
             : {}),
           warningSink: retrievalWarnings,
           availableChannelSink: availableChannels,
+          answerabilityCandidateSink: (candidates) => {
+            directAnswerabilityCandidates = candidates;
+          },
           authorizationResolved: true,
           pathAuthorizer,
           truthConsistency: parsed.data.truthConsistency ?? "STRICT",
@@ -4446,6 +4598,44 @@ export function registerSearchRoutes(
         }
         throw error;
       }
+      const answerability = assessRetrievalAnswerability(
+        hits,
+        parsed.data.query,
+        {},
+        {
+          allowGraphSupport:
+            plan.intent === "IMPACT_ANALYSIS" ||
+            (reasoningExecutionMode === "PLAN" &&
+              hits.some((hit) =>
+                (hit.fusionContributions ?? []).some(
+                  (contribution) =>
+                    contribution.channel === "graph" ||
+                    contribution.channel === "graph-ppr",
+                ),
+              )),
+          ...(reasoningExecutionMode !== "PLAN" && directAnswerabilityCandidates
+            ? { comparisonHits: directAnswerabilityCandidates }
+            : {}),
+        },
+      );
+      if (!answerability.supported && hits.length > 0) {
+        retrievalWarnings.push(
+          `ANSWERABILITY_GATE_REJECTED:${answerability.reason}`,
+        );
+        telemetry.counter("retrieval_answerability_gate", 1, {
+          outcome: "REJECTED",
+          reason: answerability.reason,
+          surface: "context",
+        });
+        hits = [];
+      } else if (hits.length > 0) {
+        telemetry.counter("retrieval_answerability_gate", 1, {
+          outcome: "SUPPORTED",
+          reason: answerability.reason,
+          surface: "context",
+        });
+      }
+
       type MaterialConflictRow = {
         id: string;
         topic: string;

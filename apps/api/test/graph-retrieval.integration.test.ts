@@ -173,6 +173,58 @@ async function seedGraph(db: Postgres, fixture: GraphFixture): Promise<void> {
     resolution: 0.5,
     randomSeed: 7,
   });
+  const controlledRevisionId = randomUUID();
+  await db.pool.query(
+    `insert into community_index_revisions(
+       id,space_id,vault_id,scope_id,community_revision,graph_revision,
+       algorithm,algorithm_version,objective,resolution,random_seed,quality,
+       hierarchy,lifecycle,status,stale,activated_at,error
+     ) values(
+       $1,$2,$3,'boundary-probe',$4,$5,
+       'TEST_CONTROLLED','1','CPM',1,7,1,
+       '{}'::jsonb,'DERIVED_INDEX','ACTIVE',false,now(),null
+     )`,
+    [
+      controlledRevisionId,
+      fixture.spaceId,
+      fixture.vaultId,
+      `${fixture.corpusRevision}:boundary-probe`,
+      fixture.corpusRevision,
+    ],
+  );
+  await db.pool.query(
+    `insert into community_index_communities(
+       revision_id,community_key,ordinal,member_count,summary,
+       summary_lifecycle,citable,support_set,hierarchy
+     ) values(
+       $1,'boundary-probe',0,3,
+       'Controlled non-citable community for boundary verification.',
+       'DERIVED_INDEX',false,$2::jsonb,'{}'::jsonb
+     )`,
+    [
+      controlledRevisionId,
+      JSON.stringify({
+        documentIds: [
+          fixture.documents.A,
+          fixture.documents.B,
+          fixture.documents.S,
+        ],
+        relationKeys: [],
+      }),
+    ],
+  );
+  for (const documentId of [
+    fixture.documents.A,
+    fixture.documents.B,
+    fixture.documents.S,
+  ]) {
+    await db.pool.query(
+      `insert into community_index_memberships(
+         revision_id,document_id,community_key,hierarchy
+       ) values($1,$2,'boundary-probe','{}'::jsonb)`,
+      [controlledRevisionId, documentId],
+    );
+  }
 }
 
 async function cleanupGraph(
@@ -186,6 +238,10 @@ async function cleanupGraph(
   await db.pool.query("delete from knowledge_relations where space_id=$1", [
     fixture.spaceId,
   ]);
+  await db.pool.query(
+    "delete from community_index_revisions where space_id=$1",
+    [fixture.spaceId],
+  );
   await db.pool.query("delete from knowledge_documents where space_id=$1", [
     fixture.spaceId,
   ]);
@@ -490,6 +546,15 @@ describe("recursive graph retrieval PostgreSQL integration", () => {
             ),
           ),
         ).toBe(true);
+        expect(
+          global
+            .filter((hit) =>
+              (hit.fusionContributions ?? []).some(
+                (contribution) => contribution.channel === "community",
+              ),
+            )
+            .map((hit) => hit.documentId),
+        ).not.toContain(fixture.documents.S);
         expect(
           global.every((hit) =>
             hit.citations.every(

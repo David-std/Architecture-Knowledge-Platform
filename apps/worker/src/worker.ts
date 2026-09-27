@@ -10,7 +10,6 @@ import { randomUUID } from "node:crypto";
 import { pipeline } from "node:stream/promises";
 import {
   Postgres,
-  appendOutboxEvent,
   applyNextSourceConnectorEvent,
   claimContextFabricNode,
   claimNextAssuranceRun,
@@ -36,7 +35,6 @@ import { createTruthMaintenanceHandlers } from "./truth-maintenance.js";
 import { createCodeGraphRefreshHandlers } from "./code-graph-refresh.js";
 import { createCodeKnowledgeLinkHandlers } from "./code-knowledge-link.js";
 import { createContinuousAssuranceEventHandlers } from "./assurance-events.js";
-import { lifecycleEventForState } from "./lifecycle.js";
 import {
   DEFAULT_WORKER_DRAIN_DEADLINE_MS,
   drainToQuiescence,
@@ -58,6 +56,12 @@ import { selectEvidenceFragment } from "./evidence-fragment.js";
 import { resolveAuthorizedLocalSource } from "./source-boundary.js";
 import { operationalErrorRecord } from "./operational-error.js";
 import { resolveSourceModelResidency } from "./source-model-residency.js";
+import { loadWorkerRuntimeConfig } from "./runtime-config.js";
+import {
+  assertClaimedIngestJob,
+  transitionClaimedIngestJob,
+  type IngestTransitionSideEffect,
+} from "./ingest-transition.js";
 import {
   appendDocumentIntelligenceFormFields,
   parseDocumentIntelligenceOptions,
@@ -72,6 +76,10 @@ config({
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is required");
+const runtimeConfig = loadWorkerRuntimeConfig(
+  process.env,
+  DEFAULT_WORKER_DRAIN_DEADLINE_MS,
+);
 const extractorUrl = process.env.AKP_EXTRACTOR_URL ?? "http://127.0.0.1:8090";
 const workerId = `${hostname()}:${process.pid}`;
 const db = new Postgres(databaseUrl);
@@ -82,8 +90,8 @@ const git = new GitKnowledgeStore(managedRepository);
 const eventWorker = new DurableEventWorker(db, {
   consumerName: process.env.AKP_EVENT_CONSUMER ?? "ingest-and-indexing",
   workerId: `${workerId}:events`,
-  maxAttempts: Number(process.env.AKP_EVENT_MAX_ATTEMPTS ?? 8),
-  leaseSeconds: Number(process.env.AKP_EVENT_LEASE_SECONDS ?? 60),
+  maxAttempts: runtimeConfig.eventMaxAttempts,
+  leaseSeconds: runtimeConfig.eventLeaseSeconds,
   handlers: {
     ...createIndexEventHandlers(db, git),
     ...createTruthMaintenanceHandlers(db),
@@ -115,10 +123,7 @@ const objects = new MinioObjectStore({
 const authorName =
   process.env.AKP_GIT_AUTHOR_NAME ?? "Architecture Knowledge Platform";
 const authorEmail = process.env.AKP_GIT_AUTHOR_EMAIL ?? "akp@localhost";
-const lintIntervalMs = Math.max(
-  60_000,
-  Number(process.env.AKP_LINT_INTERVAL_MS ?? 24 * 60 * 60 * 1000),
-);
+const lintIntervalMs = runtimeConfig.lintIntervalMs;
 let nextLintCheckAt = 0;
 
 async function runScheduledLintIfDue(force = false): Promise<void> {
@@ -162,106 +167,21 @@ async function updateState(
   expectedVersion: number,
   stageOutput?: Record<string, unknown>,
   result?: unknown,
+  sideEffect?: IngestTransitionSideEffect,
 ): Promise<void> {
-  if (!Number.isSafeInteger(expectedVersion) || Number(expectedVersion) < 1) {
-    throw new Error("JOB_FENCING_VERSION_REQUIRED");
-  }
-  transitionIngest(current, next);
-  const client = await db.pool.connect();
-  try {
-    await client.query("begin");
-    const updated = await client.query<{
-      id: string;
-      space_id: string;
-      vault_id: string | null;
-      payload: Record<string, unknown>;
-    }>(
-      `
-      update ingest_jobs
-         set state = $3,
-             result = coalesce($4::jsonb, result),
-             stage_outputs = stage_outputs || coalesce($5::jsonb, '{}'::jsonb),
-             lease_owner = null,
-             lease_expires_at = null,
-             heartbeat_at = now(),
-             updated_at = now()
-       where id = $1 and state = $2 and lease_owner = $6 and version = $7
-         and cancelled_at is null
-       returning id,space_id,vault_id,payload
-      `,
-      [
-        jobId,
-        current,
-        next,
-        result === undefined ? null : JSON.stringify(result),
-        stageOutput === undefined ? null : JSON.stringify(stageOutput),
-        workerId,
-        expectedVersion,
-      ],
-    );
-    if (!updated.rowCount) {
-      throw new Error("JOB_LEASE_LOST_OR_CANCELLED");
-    }
-    await client.query(
-      `
-      insert into ingest_job_events(job_id,state,event_type,payload)
-      values($1,$2,'STATE_TRANSITION',$3::jsonb)
-      `,
-      [jobId, next, JSON.stringify({ from: current, workerId })],
-    );
-    const lifecycleEvent = lifecycleEventForState(next);
-    if (lifecycleEvent) {
-      const emitted = await appendOutboxEvent(client, {
-        eventType: lifecycleEvent.eventType,
-        resourceId: String(updated.rows[0]?.id ?? jobId),
-        spaceId: String(updated.rows[0]?.space_id),
-        vaultId: updated.rows[0]?.vault_id ?? null,
-        correlationId: jobId,
-        payload: {
-          jobId,
-          state: next,
-          sourceId:
-            typeof (stageOutput ?? {}).sourceId === "string"
-              ? (stageOutput as Record<string, unknown>).sourceId
-              : null,
-          revision:
-            typeof (stageOutput ?? {}).revision === "string"
-              ? (stageOutput as Record<string, unknown>).revision
-              : null,
-        },
-      });
-      for (const eventType of lifecycleEvent.followUps) {
-        await appendOutboxEvent(client, {
-          eventType,
-          resourceId: String(updated.rows[0]?.id ?? jobId),
-          spaceId: String(updated.rows[0]?.space_id),
-          vaultId: updated.rows[0]?.vault_id ?? null,
-          correlationId: jobId,
-          causationId: emitted.eventId,
-          payload: {
-            jobId,
-            state: next,
-            revision:
-              typeof (stageOutput ?? {}).revision === "string"
-                ? (stageOutput as Record<string, unknown>).revision
-                : null,
-            changedPaths: Array.isArray((stageOutput ?? {}).changedPaths)
-              ? (stageOutput as Record<string, unknown>).changedPaths
-              : [],
-            tombstones: Array.isArray((stageOutput ?? {}).tombstones)
-              ? (stageOutput as Record<string, unknown>).tombstones
-              : [],
-          },
-        });
-      }
-    }
-    await client.query("commit");
-  } catch (error) {
-    await client.query("rollback");
-    throw error;
-  } finally {
-    client.release();
-  }
+  await transitionClaimedIngestJob(
+    db,
+    {
+      jobId,
+      current,
+      next,
+      expectedVersion,
+      workerId,
+      ...(stageOutput === undefined ? {} : { stageOutput }),
+      ...(result === undefined ? {} : { result }),
+    },
+    sideEffect,
+  );
 }
 
 type ProviderTaskEvent =
@@ -318,10 +238,8 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
         ? { expectedSha256: payload.expectedSha256 }
         : {}),
     });
-    // Migration 013 replaces the bootstrap `(space_id, sha256)` key with
-    // vault-aware partial unique indexes.  Infer the correct index explicitly
-    // so a source with the same bytes can exist in two isolated vaults while
-    // legacy managed rows (vault_id IS NULL) remain deduplicated per space.
+    // Raw object storage is content-addressed and may precede the SQL fence.
+    // Canonical source persistence must commit atomically with RECEIVED->HASHED.
     const sourceValues = [
       spaceId,
       vaultId,
@@ -335,56 +253,71 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
       JSON.stringify({ bucket: raw.bucket, immutable: true }),
       modelResidency,
     ];
-    const source = vaultId
-      ? await db.pool.query<{ id: string; model_residency: string }>(
-          `
-          insert into sources(
-            space_id,vault_id,title,source_uri,media_type,sha256,byte_size,
-            object_key,created_by,metadata,model_residency
-          )
-          values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11)
-          on conflict (vault_id,sha256) where vault_id is not null
-            do update set
-              source_uri=excluded.source_uri,
-              model_residency=case
-                when sources.model_residency='LOCAL_ONLY'
-                  or excluded.model_residency='LOCAL_ONLY' then 'LOCAL_ONLY'
-                when sources.model_residency='ORG_APPROVED'
-                  or excluded.model_residency='ORG_APPROVED' then 'ORG_APPROVED'
-                else 'EXTERNAL_ALLOWED'
-              end
-          returning id,model_residency
-          `,
-          sourceValues,
-        )
-      : await db.pool.query<{ id: string; model_residency: string }>(
-          `
-          insert into sources(
-            space_id,vault_id,title,source_uri,media_type,sha256,byte_size,
-            object_key,created_by,metadata,model_residency
-          )
-          values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11)
-          on conflict (space_id,sha256) where vault_id is null
-            do update set
-              source_uri=excluded.source_uri,
-              model_residency=case
-                when sources.model_residency='LOCAL_ONLY'
-                  or excluded.model_residency='LOCAL_ONLY' then 'LOCAL_ONLY'
-                when sources.model_residency='ORG_APPROVED'
-                  or excluded.model_residency='ORG_APPROVED' then 'ORG_APPROVED'
-                else 'EXTERNAL_ALLOWED'
-              end
-          returning id,model_residency
-          `,
-          sourceValues,
-        );
-    await updateState(id, state, "HASHED", version, {
+    const hashedStage: Record<string, unknown> = {
       raw,
-      sourceId: source.rows[0]?.id,
+      sourceId: "",
       originalName: basename(sourcePath),
       mediaType,
-      modelResidency: source.rows[0]?.model_residency ?? modelResidency,
-    });
+      modelResidency,
+    };
+    await updateState(
+      id,
+      state,
+      "HASHED",
+      version,
+      hashedStage,
+      undefined,
+      async (client) => {
+        const source = vaultId
+          ? await client.query<{ id: string; model_residency: string }>(
+              `
+              insert into sources(
+                space_id,vault_id,title,source_uri,media_type,sha256,byte_size,
+                object_key,created_by,metadata,model_residency
+              )
+              values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11)
+              on conflict (vault_id,sha256) where vault_id is not null
+                do update set
+                  source_uri=excluded.source_uri,
+                  model_residency=case
+                    when sources.model_residency='LOCAL_ONLY'
+                      or excluded.model_residency='LOCAL_ONLY' then 'LOCAL_ONLY'
+                    when sources.model_residency='ORG_APPROVED'
+                      or excluded.model_residency='ORG_APPROVED' then 'ORG_APPROVED'
+                    else 'EXTERNAL_ALLOWED'
+                  end
+              returning id,model_residency
+              `,
+              sourceValues,
+            )
+          : await client.query<{ id: string; model_residency: string }>(
+              `
+              insert into sources(
+                space_id,vault_id,title,source_uri,media_type,sha256,byte_size,
+                object_key,created_by,metadata,model_residency
+              )
+              values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11)
+              on conflict (space_id,sha256) where vault_id is null
+                do update set
+                  source_uri=excluded.source_uri,
+                  model_residency=case
+                    when sources.model_residency='LOCAL_ONLY'
+                      or excluded.model_residency='LOCAL_ONLY' then 'LOCAL_ONLY'
+                    when sources.model_residency='ORG_APPROVED'
+                      or excluded.model_residency='ORG_APPROVED' then 'ORG_APPROVED'
+                    else 'EXTERNAL_ALLOWED'
+                  end
+              returning id,model_residency
+              `,
+              sourceValues,
+            );
+        const persistedSource = source.rows[0];
+        if (!persistedSource) throw new Error("SOURCE_PERSISTENCE_FAILED");
+        hashedStage.sourceId = persistedSource.id;
+        hashedStage.modelResidency =
+          persistedSource.model_residency ?? modelResidency;
+      },
+    );
     return;
   }
   if (state === "HASHED") {
@@ -507,93 +440,11 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
         warnings: canonical.warnings,
       });
 
-      const storedArtifact = await db.pool.query<{ id: string }>(
-        `
-        insert into source_artifacts(
-          source_id,kind,object_key,source_hash,extractor,extractor_version,
-          quality,metadata,document_artifact,artifact_schema_version,
-          configuration_hash,structured_content_hash
-        )
-        values($1,'document-artifact',$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9,$10,$11)
-        on conflict (source_id,extractor,extractor_version,configuration_hash)
-          where kind='document-artifact'
-        do update set
-          object_key=excluded.object_key,
-          source_hash=excluded.source_hash,
-          quality=excluded.quality,
-          metadata=excluded.metadata,
-          document_artifact=excluded.document_artifact,
-          artifact_schema_version=excluded.artifact_schema_version,
-          structured_content_hash=excluded.structured_content_hash
-        returning id
-        `,
-        [
-          outputs.sourceId,
-          String(raw.key ?? ""),
-          raw.sha256,
-          canonical.extractor,
-          canonical.extractorVersion,
-          canonical.artifact.quality,
-          JSON.stringify({
-            routing: canonical.routing,
-            warnings: canonical.warnings,
-            quality_metrics: canonical.artifact.quality_metrics,
-          }),
-          JSON.stringify(canonical.artifact),
-          DOCUMENT_ARTIFACT_SCHEMA_VERSION,
-          canonical.configurationHash,
-          canonical.contentHash,
-        ],
-      );
-      const artifactId =
-        storedArtifact.rows[0]?.id ??
-        (
-          await db.pool.query<{ id: string }>(
-            `
-            select id from source_artifacts
-             where source_id=$1 and kind='document-artifact'
-               and extractor=$2 and extractor_version=$3
-               and configuration_hash=$4
-             limit 1
-            `,
-            [
-              outputs.sourceId,
-              canonical.extractor,
-              canonical.extractorVersion,
-              canonical.configurationHash,
-            ],
-          )
-        ).rows[0]?.id;
-      if (!artifactId) throw new Error("Could not persist document artifact.");
       const preview = renderDocumentArtifactPreview(canonical.artifact, 4_000);
       const evidenceFragment = selectEvidenceFragment(
         canonical.artifact,
         preview.markdown,
       );
-      const storedEvidence = await db.pool.query<{ id: string }>(
-        `
-        insert into evidence(
-          space_id,vault_id,source_id,artifact_id,locator,content_hash,excerpt,review_status
-        )
-        values($1,$2,$3,$4,$5::jsonb,$6,$7,'MACHINE_EXTRACTED')
-        on conflict(artifact_id) where artifact_id is not null do update set
-          vault_id=excluded.vault_id,locator=excluded.locator,
-          content_hash=excluded.content_hash,excerpt=excluded.excerpt,
-          review_status=excluded.review_status
-        returning id
-        `,
-        [
-          spaceId,
-          vaultId,
-          outputs.sourceId,
-          artifactId,
-          JSON.stringify(evidenceFragment.locator),
-          evidenceFragment.excerptHash,
-          evidenceFragment.excerpt,
-        ],
-      );
-      const evidenceId = storedEvidence.rows[0]?.id;
-      if (!evidenceId) throw new Error("Could not persist evidence.");
       const extracted = {
         extractor: canonical.extractor,
         extractor_version: canonical.extractorVersion,
@@ -603,11 +454,111 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
         structured_content_hash: canonical.contentHash,
         routing: canonical.routing,
         warnings: canonical.warnings,
-        source_artifact_id: artifactId,
-        evidence_id: evidenceId,
+        source_artifact_id: "",
+        evidence_id: "",
         evidence_precision: evidenceFragment.precision,
       };
-      await updateState(id, state, "ANALYZING", version, { extracted });
+
+      await updateState(
+        id,
+        state,
+        "ANALYZING",
+        version,
+        { extracted },
+        undefined,
+        async (client) => {
+          const storedArtifact = await client.query<{ id: string }>(
+            `
+            insert into source_artifacts(
+              source_id,kind,object_key,source_hash,extractor,extractor_version,
+              quality,metadata,document_artifact,artifact_schema_version,
+              configuration_hash,structured_content_hash
+            )
+            values($1,'document-artifact',$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9,$10,$11)
+            on conflict (source_id,extractor,extractor_version,configuration_hash)
+              where kind='document-artifact'
+            do update set
+              object_key=excluded.object_key,
+              source_hash=excluded.source_hash,
+              quality=excluded.quality,
+              metadata=excluded.metadata,
+              document_artifact=excluded.document_artifact,
+              artifact_schema_version=excluded.artifact_schema_version,
+              structured_content_hash=excluded.structured_content_hash
+            returning id
+            `,
+            [
+              outputs.sourceId,
+              String(raw.key ?? ""),
+              raw.sha256,
+              canonical.extractor,
+              canonical.extractorVersion,
+              canonical.artifact.quality,
+              JSON.stringify({
+                routing: canonical.routing,
+                warnings: canonical.warnings,
+                quality_metrics: canonical.artifact.quality_metrics,
+              }),
+              JSON.stringify(canonical.artifact),
+              DOCUMENT_ARTIFACT_SCHEMA_VERSION,
+              canonical.configurationHash,
+              canonical.contentHash,
+            ],
+          );
+          const artifactId =
+            storedArtifact.rows[0]?.id ??
+            (
+              await client.query<{ id: string }>(
+                `
+                select id from source_artifacts
+                 where source_id=$1 and kind='document-artifact'
+                   and extractor=$2 and extractor_version=$3
+                   and configuration_hash=$4
+                 limit 1
+                `,
+                [
+                  outputs.sourceId,
+                  canonical.extractor,
+                  canonical.extractorVersion,
+                  canonical.configurationHash,
+                ],
+              )
+            ).rows[0]?.id;
+          if (!artifactId) {
+            throw new Error("Could not persist document artifact.");
+          }
+          extracted.source_artifact_id = artifactId;
+
+          const storedEvidence = await client.query<{ id: string }>(
+            `
+            insert into evidence(
+              space_id,vault_id,source_id,artifact_id,locator,content_hash,
+              excerpt,review_status
+            )
+            values($1,$2,$3,$4,$5::jsonb,$6,$7,'MACHINE_EXTRACTED')
+            on conflict(artifact_id) where artifact_id is not null do update set
+              vault_id=excluded.vault_id,
+              locator=excluded.locator,
+              content_hash=excluded.content_hash,
+              excerpt=excluded.excerpt,
+              review_status=excluded.review_status
+            returning id
+            `,
+            [
+              spaceId,
+              vaultId,
+              outputs.sourceId,
+              artifactId,
+              JSON.stringify(evidenceFragment.locator),
+              evidenceFragment.excerptHash,
+              evidenceFragment.excerpt,
+            ],
+          );
+          const evidenceId = storedEvidence.rows[0]?.id;
+          if (!evidenceId) throw new Error("Could not persist evidence.");
+          extracted.evidence_id = evidenceId;
+        },
+      );
     } finally {
       await rm(immutablePath, { force: true });
     }
@@ -707,31 +658,58 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
       );
       return;
     }
-    await db.pool.query(
-      "insert into compilation_plans(job_id,source_id,plan) values($1,$2,$3::jsonb)",
-      [id, outputs.sourceId, JSON.stringify(plan)],
+    await updateState(
+      id,
+      state,
+      "PLANNED",
+      version,
+      {
+        plan,
+        compilation: compilationStage.metadata,
+      },
+      undefined,
+      async (client) => {
+        await client.query(
+          "insert into compilation_plans(job_id,source_id,plan) values($1,$2,$3::jsonb)",
+          [id, outputs.sourceId, JSON.stringify(plan)],
+        );
+      },
     );
-    await updateState(id, state, "PLANNED", version, {
-      plan,
-      compilation: compilationStage.metadata,
-    });
     return;
   }
   if (state === "PLANNED") {
     const plan = CompilationPlan.parse(outputs.plan);
+    await assertClaimedIngestJob(db, {
+      jobId: id,
+      state,
+      expectedVersion: version,
+      workerId,
+    });
     const baseRevision = await git.ensureRepository(authorName, authorEmail);
     const branchName = await git.createDraftBranch(id, baseRevision);
-    for (const change of plan.proposedChanges) {
-      await git.writeDraftFile(change.path, change.content);
+    try {
+      for (const change of plan.proposedChanges) {
+        await git.writeDraftFile(change.path, change.content);
+      }
+      const headCommit = await git.commitAll(
+        `knowledge: draft source ${String(outputs.sourceId)}`,
+        authorName,
+        authorEmail,
+      );
+      await updateState(id, state, "DRAFTED", version, {
+        draft: { branchName, baseRevision, headCommit },
+      });
+    } catch (error) {
+      try {
+        await git.cleanupDraft(branchName);
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [error, cleanupError],
+          "INGEST_DRAFT_COMPENSATION_FAILED",
+        );
+      }
+      throw error;
     }
-    const headCommit = await git.commitAll(
-      `knowledge: draft source ${String(outputs.sourceId)}`,
-      authorName,
-      authorEmail,
-    );
-    await updateState(id, state, "DRAFTED", version, {
-      draft: { branchName, baseRevision, headCommit },
-    });
     return;
   }
   if (state === "DRAFTED") {
@@ -795,32 +773,42 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
     };
     const plan = CompilationPlan.parse(outputs.plan);
     const reviewId = randomUUID();
-    await db.pool.query(
-      `
-      insert into reviews(id,space_id,vault_id,branch_name,base_commit,head_commit,status,author_id,
-                          impact_manifest,validation_report)
-      values($1,$2,$3,$4,$5,$6,'PENDING',$7,$8::jsonb,$9::jsonb)
-      `,
-      [
-        reviewId,
-        spaceId,
-        vaultId,
-        draft.branchName,
-        draft.baseRevision,
-        draft.headCommit,
-        job.created_by ?? null,
-        JSON.stringify({
-          jobId: id,
-          ...plan,
-          compilation: outputs.compilation ?? null,
-        }),
-        JSON.stringify(outputs.validation ?? { issues: [], errors: 0 }),
-      ],
+    await updateState(
+      id,
+      state,
+      "REVIEW_REQUIRED",
+      version,
+      { reviewId },
+      undefined,
+      async (client) => {
+        await client.query(
+          `
+          insert into reviews(
+            id,space_id,vault_id,branch_name,base_commit,head_commit,status,
+            author_id,impact_manifest,validation_report
+          )
+          values($1,$2,$3,$4,$5,$6,'PENDING',$7,$8::jsonb,$9::jsonb)
+          `,
+          [
+            reviewId,
+            spaceId,
+            vaultId,
+            draft.branchName,
+            draft.baseRevision,
+            draft.headCommit,
+            job.created_by ?? null,
+            JSON.stringify({
+              jobId: id,
+              ...plan,
+              compilation: outputs.compilation ?? null,
+            }),
+            JSON.stringify(outputs.validation ?? { issues: [], errors: 0 }),
+          ],
+        );
+      },
     );
-    await updateState(id, state, "REVIEW_REQUIRED", version, { reviewId });
     return;
   }
-
   await db.pool.query(
     "update ingest_jobs set lease_owner=null,lease_expires_at=null,updated_at=now() where id=$1 and lease_owner=$2 and version=$3",
     [id, workerId, version],
@@ -952,10 +940,7 @@ async function loop(): Promise<WorkerDrainSummary | undefined> {
       consumerName: eventWorker.consumerName,
       workerId,
       leaseSeconds: 60,
-      deadlineMs: Number(
-        process.env.AKP_WORKER_DRAIN_DEADLINE_MS ??
-          DEFAULT_WORKER_DRAIN_DEADLINE_MS,
-      ),
+      deadlineMs: runtimeConfig.drainDeadlineMs,
       runEventOnce: () => eventWorker.runOnce(),
       runIngestJob: runClaimedJob,
       assuranceWorkerId: `${workerId}:assurance`,

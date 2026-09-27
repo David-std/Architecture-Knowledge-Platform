@@ -34,7 +34,7 @@ Approved Markdown in managed Git is canonical knowledge. Immutable source bytes 
                                          │
                     auth + scope + truth + freshness validation
                                          │
-           exact / lexical / dense / late interaction / graph / raw
+           exact / lexical / dense / graph / raw
                                          │
                          fusion + rerank + diversity/conflict
                                          │
