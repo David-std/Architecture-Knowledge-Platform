@@ -389,8 +389,7 @@ integration("real multilingual semantic retrieval", () => {
         });
 
         let limitedComparisonPool:
-          | Parameters<typeof assessRetrievalAnswerability>[0]
-          | undefined;
+          Parameters<typeof assessRetrievalAnswerability>[0] | undefined;
         const limitedHits = await queryKnowledge(
           db,
           {
@@ -417,11 +416,16 @@ integration("real multilingual semantic retrieval", () => {
         expect(limitedHits[0]?.documentId).toBe(targetRelevant.id);
         expect(limitedComparisonPool?.length).toBeGreaterThanOrEqual(2);
         expect(
-          assessRetrievalAnswerability(limitedHits, query, {}, {
-            ...(limitedComparisonPool
-              ? { comparisonHits: limitedComparisonPool }
-              : {}),
-          }),
+          assessRetrievalAnswerability(
+            limitedHits,
+            query,
+            {},
+            {
+              ...(limitedComparisonPool
+                ? { comparisonHits: limitedComparisonPool }
+                : {}),
+            },
+          ),
         ).toMatchObject({
           supported: true,
           reason: "VECTOR_MARGIN_SUPPORT",
