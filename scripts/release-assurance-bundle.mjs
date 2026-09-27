@@ -175,6 +175,14 @@ const localFiles = [
     "acceptance/capability-acceptance.md",
   ],
   [
+    "reports/ci/deep-spec-traceability.json",
+    "acceptance/deep-spec-traceability.json",
+  ],
+  [
+    "reports/ci/deep-spec-traceability.md",
+    "acceptance/deep-spec-traceability.md",
+  ],
+  [
     "evals/registered/competitive-arena-v0.4.json",
     "competitive/competitive-arena-manifest.json",
   ],
