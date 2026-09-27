@@ -384,14 +384,16 @@ function compareCandidates(a: PacketCandidate, b: PacketCandidate): number {
   if (mandatory !== 0) return mandatory;
 
   // Ranked candidates are concrete passages that already passed the
-  // answerability verifier. Keep trust/freshness ahead of retrieval position,
-  // then let query relevance outrank generic kind preferences.
+  // authorization/truth/answerability boundaries. Their supported retrieval
+  // position therefore drives ordinary selection; trust/freshness remain
+  // deterministic confidence tie-breakers rather than reintroducing generic
+  // background material ahead of the query's best supported passage.
   if (aRanked || bRanked) {
     return (
       Number(bRanked) - Number(aRanked) ||
+      (aRank ?? Number.MAX_SAFE_INTEGER) - (bRank ?? Number.MAX_SAFE_INTEGER) ||
       authorityRank[a.hit.trust] - authorityRank[b.hit.trust] ||
       freshnessRank(a.hit.refreshStatus) - freshnessRank(b.hit.refreshStatus) ||
-      (aRank ?? Number.MAX_SAFE_INTEGER) - (bRank ?? Number.MAX_SAFE_INTEGER) ||
       Number(hasEvidence(b)) - Number(hasEvidence(a)) ||
       independentSupportCount(b) - independentSupportCount(a) ||
       priority[a.kind] - priority[b.kind] ||
