@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
+import { Readable } from "node:stream";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
   AuditExportLimitError,
   buildAuditBundle,
-  renderAuditZip,
+  renderAuditZipChunks,
   type AuditExportLimits,
   type AuditLocatorFilter,
 } from "@akp/audit-export";
@@ -33,6 +34,13 @@ const AuditExportQuery = z.object({
   maxRelations: z.coerce.number().int().positive().max(50_000).optional(),
   maxEvidence: z.coerce.number().int().positive().max(50_000).optional(),
   maxPackets: z.coerce.number().int().positive().max(20).optional(),
+  maxContradictions: z.coerce.number().int().positive().max(5_000).optional(),
+  maxContradictionMembers: z.coerce
+    .number()
+    .int()
+    .positive()
+    .max(2_000)
+    .optional(),
   maxStringBytes: z.coerce.number().int().positive().max(16_384).optional(),
   maxTotalBytes: z.coerce
     .number()
@@ -47,6 +55,8 @@ export interface AuditExportRowLimits {
   documents: number;
   relations: number;
   evidence: number;
+  contradictions: number;
+  contradictionMembers: number;
 }
 
 /**
@@ -58,12 +68,16 @@ export function auditExportRowLimits(input: {
   maxDocuments?: number | undefined;
   maxRelations?: number | undefined;
   maxEvidence?: number | undefined;
+  maxContradictions?: number | undefined;
+  maxContradictionMembers?: number | undefined;
 }): AuditExportRowLimits {
   return {
     sources: (input.maxSources ?? 10_000) + 1,
     documents: (input.maxDocuments ?? 20_000) + 1,
     relations: (input.maxRelations ?? 50_000) + 1,
     evidence: (input.maxEvidence ?? 50_000) + 1,
+    contradictions: (input.maxContradictions ?? 500) + 1,
+    contradictionMembers: (input.maxContradictionMembers ?? 200) + 1,
   };
 }
 
@@ -850,15 +864,42 @@ export function registerAuditExportRoutes(
           [vault.space_id, vault.id],
         ),
         db.pool.query(
-          `select c.id,c.topic,c.status,c.resolution,c.created_at,c.updated_at,
-                  coalesce(jsonb_agg(jsonb_build_object(
-                    'document_id',m.document_id,'authority',m.authority,'scope',m.scope
-                  )) filter (where m.document_id is not null),'[]'::jsonb) members
-             from contradiction_clusters c
-             left join contradiction_members m on m.cluster_id=c.id
-            where c.space_id=$1 and c.vault_id=$2
-            group by c.id order by c.id`,
-          [vault.space_id, vault.id],
+          `
+          with limited_clusters as (
+            select id,topic,status,resolution,created_at,updated_at
+              from contradiction_clusters
+             where space_id=$1 and vault_id=$2
+             order by id
+             limit $3
+          )
+          select c.id,c.topic,c.status,c.resolution,c.created_at,c.updated_at,
+                 coalesce(m.members,'[]'::jsonb) members
+            from limited_clusters c
+            left join lateral (
+              select jsonb_agg(
+                       jsonb_build_object(
+                         'document_id',member.document_id,
+                         'authority',member.authority,
+                         'scope',member.scope
+                       )
+                       order by member.document_id
+                     ) members
+                from (
+                  select document_id,authority,scope
+                    from contradiction_members
+                   where cluster_id=c.id
+                   order by document_id
+                   limit $4
+                ) member
+            ) m on true
+           order by c.id
+          `,
+          [
+            vault.space_id,
+            vault.id,
+            rowLimits.contradictions,
+            rowLimits.contradictionMembers,
+          ],
         ),
         db.pool.query(
           `select id,corpus_revision,packet_hash,scope,packet,created_at
@@ -957,7 +998,7 @@ export function registerAuditExportRoutes(
           .header("cache-control", "no-store")
           .header("x-akp-bundle-hash", bundle.hash)
           .header("x-akp-bundle-schema-version", "1.0")
-          .send(Buffer.from(renderAuditZip(bundle)));
+          .send(Readable.from(renderAuditZipChunks(bundle)));
       } catch (error) {
         if (error instanceof AuditExportLimitError) {
           return reply.code(413).send({
