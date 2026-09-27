@@ -620,11 +620,7 @@ async function executeCase(
                 id=any($1::uuid[])
                 or document_id=any($2::uuid[])
               )`,
-          [
-            retrievedUnitIds,
-            retrievedDocumentIds,
-            fixture.corpusRevision,
-          ],
+          [retrievedUnitIds, retrievedDocumentIds, fixture.corpusRevision],
         )
       ).rows.flatMap((row) => row.source_ids)
     : [];
