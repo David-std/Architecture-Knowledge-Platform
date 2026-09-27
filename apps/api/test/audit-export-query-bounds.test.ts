@@ -8,6 +8,8 @@ describe("audit export query bounds", () => {
       documents: 20_001,
       relations: 50_001,
       evidence: 50_001,
+      contradictions: 501,
+      contradictionMembers: 201,
     });
   });
 
@@ -18,12 +20,16 @@ describe("audit export query bounds", () => {
         maxDocuments: 3,
         maxRelations: 4,
         maxEvidence: 5,
+        maxContradictions: 6,
+        maxContradictionMembers: 7,
       }),
     ).toEqual({
       sources: 3,
       documents: 4,
       relations: 5,
       evidence: 6,
+      contradictions: 7,
+      contradictionMembers: 8,
     });
   });
 });
