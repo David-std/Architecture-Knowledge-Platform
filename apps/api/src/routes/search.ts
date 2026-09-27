@@ -3654,6 +3654,7 @@ export function registerSearchRoutes(
             : {}),
         },
       );
+      let exploratoryHits: SearchHit[] = [];
       if (!answerability.supported && hits.length > 0) {
         retrievalWarnings.push(
           `ANSWERABILITY_GATE_REJECTED:${answerability.reason}`,
@@ -3662,6 +3663,7 @@ export function registerSearchRoutes(
           outcome: "REJECTED",
           reason: answerability.reason,
         });
+        exploratoryHits = hits;
         hits = [];
       } else if (hits.length > 0) {
         telemetry.counter("retrieval_answerability_gate", 1, {
@@ -3669,6 +3671,12 @@ export function registerSearchRoutes(
           reason: answerability.reason,
         });
       }
+      const retrievalOutcome =
+        hits.length > 0
+          ? "SUPPORTED"
+          : exploratoryHits.length > 0
+            ? "EXPLORATORY_ONLY"
+            : "NO_CANDIDATES";
 
       const channelState = channelsConsistentWithIndex(
         plan.channels,
@@ -3702,7 +3710,9 @@ export function registerSearchRoutes(
         warnings: effectiveChannelState.warnings,
         indexRevisions: index,
         truth: truthState ?? null,
+        retrievalOutcome,
         hits,
+        exploratoryHits,
         noAnswer:
           hits.length === 0
             ? {
