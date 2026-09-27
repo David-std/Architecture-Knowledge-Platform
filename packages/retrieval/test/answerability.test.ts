@@ -109,6 +109,70 @@ describe("retrieval answerability", () => {
     expect(result.candidateSignals[0]?.textualSupport.salientCoverage).toBe(0);
   });
 
+  it("supports two close semantic neighbours when they separate from background", () => {
+    const result = assessRetrievalAnswerability(
+      [
+        hit(1, {
+          title: "Payment replay safety",
+          excerpt: "A replay uses the recorded idempotency key before applying a payment.",
+          contributions: [contribution("vector", 0.854)],
+        }),
+        hit(2, {
+          title: "Duplicate payment guard",
+          excerpt: "Previously processed payment keys are not applied twice.",
+          contributions: [contribution("vector", 0.847)],
+        }),
+        hit(3, {
+          title: "Cache retention",
+          excerpt: "Cached values expire after a bounded retention window.",
+          contributions: [contribution("vector", 0.775)],
+        }),
+      ],
+      "How are duplicate payments prevented when events are replayed?",
+    );
+
+    expect(result).toMatchObject({
+      supported: true,
+      reason: "VECTOR_NEIGHBORHOOD_SUPPORT",
+      topVectorScore: 0.854,
+      secondVectorScore: 0.847,
+      thirdVectorScore: 0.775,
+    });
+    expect(result.vectorMargin).toBeCloseTo(0.007, 4);
+    expect(result.vectorNeighborhoodMargin).toBeCloseTo(0.079, 4);
+  });
+
+  it("rejects an unsupported semantic outlier even when the legacy top-two margin passes", () => {
+    const result = assessRetrievalAnswerability(
+      [
+        hit(1, {
+          title: "Runtime telemetry",
+          excerpt: "Metrics are exported to the observability backend.",
+          contributions: [contribution("vector", 0.7522)],
+        }),
+        hit(2, {
+          title: "Cache retention",
+          excerpt: "Cached responses expire after a bounded window.",
+          contributions: [contribution("vector", 0.7215)],
+        }),
+        hit(3, {
+          title: "Enrollment procedure",
+          excerpt: "Students submit a withdrawal request to the registrar.",
+          contributions: [contribution("vector", 0.7184)],
+        }),
+      ],
+      "What guaranteed 24/7 telephone support SLA is included for premium customers?",
+    );
+
+    expect(result).toMatchObject({
+      supported: false,
+      reason: "WEAK_SEMANTIC_NEIGHBORS",
+      thirdVectorScore: 0.7184,
+    });
+    expect(result.vectorMargin).toBeGreaterThan(0.03);
+    expect(result.vectorNeighborhoodMargin).toBeLessThan(0.06);
+  });
+
   it("preserves a low-margin vector winner with measured salient text support", () => {
     const result = assessRetrievalAnswerability(
       [
@@ -319,6 +383,11 @@ describe("retrieval answerability", () => {
     expect(() =>
       resolveRetrievalAnswerabilityPolicy({ minimumVectorMargin: -1 }),
     ).toThrow("minimumVectorMargin");
+    expect(() =>
+      resolveRetrievalAnswerabilityPolicy({
+        minimumVectorNeighborhoodMargin: 1.1,
+      }),
+    ).toThrow("minimumVectorNeighborhoodMargin");
     expect(() =>
       resolveRetrievalAnswerabilityPolicy({ minimumSalientCoverage: 1.1 }),
     ).toThrow("minimumSalientCoverage");
