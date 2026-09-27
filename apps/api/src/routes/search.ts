@@ -4919,7 +4919,9 @@ export function registerSearchRoutes(
       const querySupportedRank = new Map(
         answerability.candidateSignals
           .filter((signal) => signal.passageSupport.supported)
-          .map((signal) => [signal.candidateKey, signal.candidateRank] as const),
+          .map(
+            (signal) => [signal.candidateKey, signal.candidateRank] as const,
+          ),
       );
       const contextHitIds = new Set(contextHits.map((hit) => hit.documentId));
       const materialConflicts = conflicts.rows.map((conflict) => ({
