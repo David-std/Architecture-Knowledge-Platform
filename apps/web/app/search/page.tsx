@@ -392,7 +392,8 @@ export default async function SearchPage({
           <p>
             Se recuperaron candidatos autorizados, pero no alcanzaron el nivel
             de soporte necesario para tratarlos como evidencia de una respuesta.
-            Puedes inspeccionarlos para reformular la búsqueda.
+            Puedes abrir una fuente para inspeccionarla o reformular la
+            búsqueda; estas coincidencias no verifican la respuesta.
           </p>
           {exploratoryHits.map((hit, index) => (
             <article
