@@ -37,6 +37,8 @@ export interface AuditExportLimits {
   maxRelations: number;
   maxEvidence: number;
   maxPackets: number;
+  maxContradictions: number;
+  maxContradictionMembers: number;
   maxStringBytes: number;
   maxTotalBytes: number;
 }
@@ -91,6 +93,8 @@ const DEFAULT_LIMITS: AuditExportLimits = {
   maxRelations: 50_000,
   maxEvidence: 50_000,
   maxPackets: 20,
+  maxContradictions: 500,
+  maxContradictionMembers: 200,
   maxStringBytes: 16_384,
   maxTotalBytes: 50 * 1024 * 1024,
 };
@@ -205,6 +209,68 @@ function orderedRows(
   };
 }
 
+interface BoundedGapsAndContradictions {
+  value: unknown;
+  contradictionCount: number;
+  contradictionMemberCount: number;
+  contradictionsTruncated: boolean;
+  contradictionMembersTruncated: boolean;
+}
+
+function boundGapsAndContradictions(
+  value: unknown,
+  limits: AuditExportLimits,
+): BoundedGapsAndContradictions {
+  const sanitized = safeRecord(value, limits);
+  if (!sanitized || typeof sanitized !== "object" || Array.isArray(sanitized)) {
+    return {
+      value: sanitized,
+      contradictionCount: 0,
+      contradictionMemberCount: 0,
+      contradictionsTruncated: false,
+      contradictionMembersTruncated: false,
+    };
+  }
+
+  const record = sanitized as Record<string, unknown>;
+  const rawContradictions = Array.isArray(record.contradictions)
+    ? record.contradictions
+    : [];
+  const contradictionRows = orderedRows(
+    rawContradictions,
+    limits.maxContradictions,
+    limits,
+  );
+  let contradictionMemberCount = 0;
+  let contradictionMembersTruncated = false;
+  const contradictions = contradictionRows.rows.map((row) => {
+    if (!row || typeof row !== "object" || Array.isArray(row)) return row;
+    const contradiction = row as Record<string, unknown>;
+    const members = Array.isArray(contradiction.members)
+      ? contradiction.members
+      : [];
+    contradictionMemberCount += Math.min(
+      members.length,
+      limits.maxContradictionMembers,
+    );
+    if (members.length > limits.maxContradictionMembers) {
+      contradictionMembersTruncated = true;
+    }
+    return {
+      ...contradiction,
+      members: members.slice(0, limits.maxContradictionMembers),
+    };
+  });
+
+  return {
+    value: { ...record, contradictions },
+    contradictionCount: contradictions.length,
+    contradictionMemberCount,
+    contradictionsTruncated: contradictionRows.truncated,
+    contradictionMembersTruncated,
+  };
+}
+
 function matchesLocator(value: unknown, filter: AuditLocatorFilter): boolean {
   if (!value || typeof value !== "object") return false;
   const locator = value as Record<string, unknown>;
@@ -278,6 +344,10 @@ export function buildAuditBundle(input: AuditBundleInput): AuditBundle {
     .slice()
     .sort((left, right) => left.id.localeCompare(right.id))
     .slice(0, limits.maxPackets);
+  const gapsAndContradictions = boundGapsAndContradictions(
+    input.gapsAndContradictions,
+    limits,
+  );
   const truncated = {
     sources: sourceRows.truncated,
     documents: documentRows.truncated,
@@ -285,6 +355,9 @@ export function buildAuditBundle(input: AuditBundleInput): AuditBundle {
     evidence: evidenceRows.truncated,
     sample_context_packets:
       (input.sampleContextPackets?.length ?? 0) > packetRows.length,
+    contradictions: gapsAndContradictions.contradictionsTruncated,
+    contradiction_members:
+      gapsAndContradictions.contradictionMembersTruncated,
   };
   const files: Record<string, string> = {
     "VAULT_MANIFEST.jsonl": jsonl(
@@ -300,9 +373,7 @@ export function buildAuditBundle(input: AuditBundleInput): AuditBundle {
     "RETRIEVAL_BENCHMARK.json": json(
       safeRecord(input.retrievalBenchmark, limits),
     ),
-    "GAPS_AND_CONTRADICTIONS.json": json(
-      safeRecord(input.gapsAndContradictions, limits),
-    ),
+    "GAPS_AND_CONTRADICTIONS.json": json(gapsAndContradictions.value),
   };
   for (const packet of packetRows) {
     const safeId =
@@ -317,6 +388,8 @@ export function buildAuditBundle(input: AuditBundleInput): AuditBundle {
     relations: relationRows.rows.length,
     evidence: evidenceRows.rows.length,
     sample_context_packets: packetRows.length,
+    contradictions: gapsAndContradictions.contradictionCount,
+    contradiction_members: gapsAndContradictions.contradictionMemberCount,
   };
   const safeMetadata = safeRecord(input.metadata, limits) as Record<
     string,
@@ -427,19 +500,25 @@ function concat(parts: Uint8Array[]): Uint8Array {
   return output;
 }
 
-/** Render a deterministic, uncompressed ZIP without adding a dependency. */
-export function renderAuditZip(bundle: AuditBundle): Uint8Array {
-  const localParts: Uint8Array[] = [];
+/**
+ * Yield a deterministic, uncompressed ZIP without materializing a second copy
+ * of the complete bundle. The central directory remains small while file
+ * payloads are emitted one at a time.
+ */
+export function* renderAuditZipChunks(
+  bundle: AuditBundle,
+): Generator<Uint8Array> {
   const centralParts: Uint8Array[] = [];
   let offset = 0;
   const entries = Object.entries(bundle.files).sort(([left], [right]) =>
     left.localeCompare(right),
   );
+
   for (const [name, content] of entries) {
     const nameBytes = Buffer.from(name, "utf8");
     const contentBytes = Buffer.from(content, "utf8");
     const checksum = crc32(contentBytes);
-    const local = concat([
+    const localHeader = concat([
       Uint8Array.of(0x50, 0x4b, 0x03, 0x04),
       u16(20),
       u16(0),
@@ -451,44 +530,56 @@ export function renderAuditZip(bundle: AuditBundle): Uint8Array {
       u32(contentBytes.byteLength),
       u16(nameBytes.byteLength),
       u16(0),
-      nameBytes,
-      contentBytes,
     ]);
-    localParts.push(local);
-    const central = concat([
-      Uint8Array.of(0x50, 0x4b, 0x01, 0x02),
-      u16(20),
-      u16(20),
-      u16(0),
-      u16(0),
-      u16(0),
-      u16(0),
-      u32(checksum),
-      u32(contentBytes.byteLength),
-      u32(contentBytes.byteLength),
-      u16(nameBytes.byteLength),
-      u16(0),
-      u16(0),
-      u16(0),
-      u16(0),
-      u32(0),
-      u32(offset),
-      nameBytes,
-    ]);
-    centralParts.push(central);
-    offset += local.byteLength;
+    yield localHeader;
+    yield nameBytes;
+    yield contentBytes;
+
+    centralParts.push(
+      concat([
+        Uint8Array.of(0x50, 0x4b, 0x01, 0x02),
+        u16(20),
+        u16(20),
+        u16(0),
+        u16(0),
+        u16(0),
+        u16(0),
+        u32(checksum),
+        u32(contentBytes.byteLength),
+        u32(contentBytes.byteLength),
+        u16(nameBytes.byteLength),
+        u16(0),
+        u16(0),
+        u16(0),
+        u16(0),
+        u32(0),
+        u32(offset),
+        nameBytes,
+      ]),
+    );
+    offset +=
+      localHeader.byteLength + nameBytes.byteLength + contentBytes.byteLength;
   }
-  const local = concat(localParts);
-  const central = concat(centralParts);
-  const end = concat([
+
+  const centralSize = centralParts.reduce(
+    (total, part) => total + part.byteLength,
+    0,
+  );
+  for (const central of centralParts) yield central;
+
+  yield concat([
     Uint8Array.of(0x50, 0x4b, 0x05, 0x06),
     u16(0),
     u16(0),
     u16(entries.length),
     u16(entries.length),
-    u32(central.byteLength),
-    u32(local.byteLength),
+    u32(centralSize),
+    u32(offset),
     u16(0),
   ]);
-  return concat([local, central, end]);
+}
+
+/** Compatibility helper for callers that explicitly need one in-memory ZIP. */
+export function renderAuditZip(bundle: AuditBundle): Uint8Array {
+  return concat([...renderAuditZipChunks(bundle)]);
 }
