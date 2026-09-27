@@ -169,8 +169,7 @@ export default async function Home() {
   const federationFailureCodes = [
     ...new Set(home.federation.flatMap((item) => item.failure_codes ?? [])),
   ];
-  const federationPartial =
-    federationDegraded > 0 || federationCircuitOpen > 0;
+  const federationPartial = federationDegraded > 0 || federationCircuitOpen > 0;
   const delivery = [...home.pullRequests, ...home.incidentsAndDeployments];
   const totalVaults = home.freshness.length;
   const synchronizedVaults = totalVaults - unhealthy.length;

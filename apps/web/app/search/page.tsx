@@ -270,7 +270,9 @@ export default async function SearchPage({
               </select>
             </label>
             <label className="form-field-label">
-              <span className="form-label-title">Ejecución de razonamiento</span>
+              <span className="form-label-title">
+                Ejecución de razonamiento
+              </span>
               <select
                 name="reasoningMode"
                 defaultValue={requestedReasoningMode}

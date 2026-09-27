@@ -441,5 +441,4 @@ describe("incremental index event port", () => {
       }
     },
   );
-
 });

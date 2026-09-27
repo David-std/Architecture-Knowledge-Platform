@@ -79,7 +79,9 @@ if (
   typeof ledger.commit !== "string" ||
   !/^[a-f0-9]{40}$/i.test(ledger.commit)
 ) {
-  throw new Error("Deep Spec traceability requires a same-SHA evidence ledger.");
+  throw new Error(
+    "Deep Spec traceability requires a same-SHA evidence ledger.",
+  );
 }
 const expectedCommit =
   process.env.AKP_RELEASE_ASSURANCE_COMMIT?.trim() ||
@@ -141,9 +143,8 @@ function sourceTypes(evidenceId) {
     definitionValue,
     `evidence source definition ${evidenceId}`,
   );
-  return (Array.isArray(sourceDefinition.sources)
-    ? sourceDefinition.sources
-    : []
+  return (
+    Array.isArray(sourceDefinition.sources) ? sourceDefinition.sources : []
   ).map((source) => String(record(source, "evidence source").type ?? ""));
 }
 
@@ -185,7 +186,10 @@ function evaluateEvidence(evidenceId, dimension) {
 const workstreamValues = Array.isArray(definition.workstreams)
   ? definition.workstreams
   : [];
-const expectedWorkstreams = Array.from({ length: 13 }, (_, index) => `P${index}`);
+const expectedWorkstreams = Array.from(
+  { length: 13 },
+  (_, index) => `P${index}`,
+);
 const actualWorkstreamIds = workstreamValues.map(
   (value) => record(value, "workstream").id,
 );
@@ -193,7 +197,9 @@ if (
   actualWorkstreamIds.length !== expectedWorkstreams.length ||
   expectedWorkstreams.some((id) => !actualWorkstreamIds.includes(id))
 ) {
-  throw new Error("Deep Spec traceability must contain exactly P0 through P12.");
+  throw new Error(
+    "Deep Spec traceability must contain exactly P0 through P12.",
+  );
 }
 
 const workstreams = workstreamValues.map((value) => {

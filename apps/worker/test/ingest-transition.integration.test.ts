@@ -87,10 +87,7 @@ integration("ingest transition fencing", () => {
       const job = await db.pool.query<{
         state: string;
         cancelled_at: Date | string | null;
-      }>(
-        "select state,cancelled_at from ingest_jobs where id=$1",
-        [jobId],
-      );
+      }>("select state,cancelled_at from ingest_jobs where id=$1", [jobId]);
       expect(job.rows[0]?.state).toBe("CANCELLED");
       expect(job.rows[0]?.cancelled_at).not.toBeNull();
     } finally {
@@ -137,10 +134,9 @@ integration("ingest transition fencing", () => {
         state: string;
         lease_owner: string | null;
         version: string | number;
-      }>(
-        "select state,lease_owner,version from ingest_jobs where id=$1",
-        [jobId],
-      );
+      }>("select state,lease_owner,version from ingest_jobs where id=$1", [
+        jobId,
+      ]);
       expect(job.rows[0]).toMatchObject({
         state: "HASHED",
         lease_owner: workerId,

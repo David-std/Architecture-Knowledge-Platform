@@ -356,8 +356,7 @@ export function buildAuditBundle(input: AuditBundleInput): AuditBundle {
     sample_context_packets:
       (input.sampleContextPackets?.length ?? 0) > packetRows.length,
     contradictions: gapsAndContradictions.contradictionsTruncated,
-    contradiction_members:
-      gapsAndContradictions.contradictionMembersTruncated,
+    contradiction_members: gapsAndContradictions.contradictionMembersTruncated,
   };
   const files: Record<string, string> = {
     "VAULT_MANIFEST.jsonl": jsonl(

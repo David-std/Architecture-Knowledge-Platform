@@ -36,9 +36,7 @@ function bundleWithContradictions() {
         },
         {
           id: "cluster-2",
-          members: [
-            { document_id: "doc-3", authority: "C", scope: "three" },
-          ],
+          members: [{ document_id: "doc-3", authority: "C", scope: "three" }],
         },
       ],
       openErrors: [],

@@ -46,12 +46,7 @@ export async function transitionClaimedIngestJob(
         where id=$1 and state=$2 and lease_owner=$3 and version=$4
           and cancelled_at is null
         for update`,
-      [
-        input.jobId,
-        input.current,
-        input.workerId,
-        input.expectedVersion,
-      ],
+      [input.jobId, input.current, input.workerId, input.expectedVersion],
     );
     const job = claimed.rows[0];
     if (!job) {
@@ -137,9 +132,7 @@ export async function transitionClaimedIngestJob(
               typeof (input.stageOutput ?? {}).revision === "string"
                 ? input.stageOutput?.revision
                 : null,
-            changedPaths: Array.isArray(
-              (input.stageOutput ?? {}).changedPaths,
-            )
+            changedPaths: Array.isArray((input.stageOutput ?? {}).changedPaths)
               ? input.stageOutput?.changedPaths
               : [],
             tombstones: Array.isArray((input.stageOutput ?? {}).tombstones)

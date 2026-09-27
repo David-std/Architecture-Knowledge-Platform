@@ -2264,7 +2264,7 @@
     {
       "path": "evals/registered/v0.4-deep-spec-traceability.json",
       "category": "PRODUCT_EVAL",
-      "reason": "registered evaluation or benchmark asset"
+      "reason": "versioned registered product evaluation"
     },
     {
       "path": "evals/registered/v0.4-evidence-sources.json",

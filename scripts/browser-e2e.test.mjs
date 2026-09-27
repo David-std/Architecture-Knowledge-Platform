@@ -1139,7 +1139,10 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
           const body = await adminPage.locator("body").innerText();
           assert.match(body, /HISTORICAL SNAPSHOT/);
           assert.match(body, /Query effective time/);
-          assert.match(body, /Assertion state SUPERSEDED · Temporal state SUPERSEDED/);
+          assert.match(
+            body,
+            /Assertion state SUPERSEDED · Temporal state SUPERSEDED/,
+          );
           assert.match(
             body,
             /Validity 2026-06-01T00:00:00\.000Z a 2026-07-01T00:00:00\.000Z/,
@@ -1160,10 +1163,9 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
       "6c reasoning planner fallback state",
       pages,
       async () => {
-        await db.query(
-          "delete from vault_index_revisions where vault_id=$1",
-          [fixture.vaultId],
-        );
+        await db.query("delete from vault_index_revisions where vault_id=$1", [
+          fixture.vaultId,
+        ]);
         try {
           await adminPage.goto(
             ADMIN_WEB +
