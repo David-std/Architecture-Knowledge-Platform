@@ -115,7 +115,7 @@ describe("retrieval answerability", () => {
         hit(1, {
           title: "Reproducción segura de eventos",
           excerpt:
-            "Durante un replay se consulta una clave de idempotencia persistida antes de volver a aplicar una operación.",
+            "Durante la reproducción de eventos se consulta una clave de idempotencia persistida antes de ejecutar de nuevo una acción.",
           contributions: [contribution("vector", 0.851)],
         }),
         hit(2, {
