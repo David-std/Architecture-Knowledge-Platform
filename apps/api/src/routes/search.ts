@@ -3112,11 +3112,16 @@ export async function queryKnowledge(
     retrievalCandidates,
     retrievalPolicy,
   );
+  // Answerability needs a background neighbour to distinguish two close
+  // relevant semantic hits from an ambiguous top pair. Keep at least three
+  // already-authorized fused candidates internally even when presentation
+  // limit is one; finalResults still honors input.limit below.
+  const answerabilityComparisonLimit = Math.max(input.limit * 2, 3);
   const fused = (
     await withSpan("retrieve.fuse", {}, async () =>
       reciprocalRankFusion(rankedChannels),
     )
-  ).slice(0, input.limit * 2);
+  ).slice(0, answerabilityComparisonLimit);
   if (fused.length === 0) {
     await finalizeTruthSnapshot();
     return [];
