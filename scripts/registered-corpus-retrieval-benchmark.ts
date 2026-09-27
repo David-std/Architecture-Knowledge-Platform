@@ -24,6 +24,7 @@ import {
   LocalSemanticEmbeddingAdapter,
   MULTILINGUAL_E5_SMALL_DIMENSIONS,
   QueryEmbeddingService,
+  retrievalAnswerabilityCandidateKey,
   type ActiveEmbeddingGenerationDescriptor,
 } from "../packages/retrieval/src/index.js";
 import { queryKnowledge } from "../apps/api/src/routes/search.js";
@@ -592,9 +593,11 @@ async function executeCase(
         : {}),
     },
   );
-  const supportedDocumentIds = new Set(answerability.supportedDocumentIds);
+  const supportedCandidateKeys = new Set(
+    answerability.supportedCandidateKeys,
+  );
   const hits = rawHits.filter((hit) =>
-    supportedDocumentIds.has(hit.documentId),
+    supportedCandidateKeys.has(retrievalAnswerabilityCandidateKey(hit)),
   );
   if (!answerability.supported && rawHits.length > 0) {
     warnings.push(`ANSWERABILITY_GATE_REJECTED:${answerability.reason}`);
