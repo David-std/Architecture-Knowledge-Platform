@@ -506,8 +506,8 @@ integration("real multilingual semantic retrieval", () => {
         expect(new Set(federatedHits.map((hit) => hit.documentId))).toEqual(
           new Set([
             targetRelevant.id,
+            targetRelevantPeer.id,
             foreignCandidate.id,
-            targetDistractor.id,
           ]),
         );
         expect(new Set(federatedHits.map((hit) => hit.vaultId))).toEqual(
