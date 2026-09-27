@@ -1,36 +1,11 @@
 import type { SearchHit } from "@akp/contracts";
-
-const ANSWERABILITY_STOPWORDS = new Set([
-  "and",
-  "are",
-  "como",
-  "con",
-  "cual",
-  "cuales",
-  "de",
-  "del",
-  "el",
-  "en",
-  "es",
-  "esta",
-  "este",
-  "for",
-  "from",
-  "how",
-  "is",
-  "la",
-  "las",
-  "los",
-  "para",
-  "por",
-  "que",
-  "the",
-  "una",
-  "un",
-  "what",
-  "where",
-  "which",
-]);
+import {
+  DEFAULT_DETERMINISTIC_PASSAGE_SUPPORT_POLICY,
+  resolveDeterministicPassageSupportPolicy,
+  verifyDeterministicPassageSupport,
+  type DeterministicPassageSupportPolicy,
+  type DeterministicPassageSupportSignal,
+} from "./support-verifier.js";
 
 const DIRECT_SUPPORT_CHANNELS = new Set([
   "exact",
@@ -40,63 +15,68 @@ const DIRECT_SUPPORT_CHANNELS = new Set([
   "temporal",
 ]);
 
-export interface RetrievalAnswerabilityPolicy {
-  minimumSalientCoverage: number;
-  minimumVectorTextMargin: number;
-  /** Minimum adjacent separation used inside a semantic neighbourhood. */
-  minimumVectorMargin: number;
-  /**
-   * Minimum top-to-background separation for pure semantic support.
-   * With 3+ candidates the third vector candidate is the conservative
-   * background reference, allowing two close relevant neighbours.
-   */
-  minimumVectorNeighborhoodMargin: number;
-}
-
-export interface RetrievalAnswerabilityContext {
-  allowGraphSupport?: boolean;
-  /**
-   * Same-query candidates retained before the caller's presentation limit.
-   * They are used only to measure vector separation; support must still come
-   * from the returned hits.
-   */
-  comparisonHits?: readonly SearchHit[];
-}
+export interface RetrievalAnswerabilityPolicy
+  extends DeterministicPassageSupportPolicy {}
 
 export type RetrievalAnswerabilityPolicyInput =
   Partial<RetrievalAnswerabilityPolicy>;
 
 export const DEFAULT_RETRIEVAL_ANSWERABILITY_POLICY: RetrievalAnswerabilityPolicy =
   {
-    minimumSalientCoverage: 0.1,
-    minimumVectorTextMargin: 0.007,
-    minimumVectorMargin: 0.03,
-    minimumVectorNeighborhoodMargin: 0.06,
+    ...DEFAULT_DETERMINISTIC_PASSAGE_SUPPORT_POLICY,
   };
+
+export interface RetrievalAnswerabilityContext {
+  allowGraphSupport?: boolean;
+  /**
+   * Authorized, truth-filtered candidates from the same query before the
+   * presentation limit. They are diagnostic ranking context only; support is
+   * established independently for each concrete passage.
+   */
+  comparisonHits?: readonly SearchHit[];
+}
+
+export type CandidateSupportReason =
+  | "DIRECT_CHANNEL_SUPPORT"
+  | "GRAPH_INTENT_SUPPORT"
+  | DeterministicPassageSupportSignal["reason"];
 
 export type RetrievalAnswerabilityReason =
   | "NO_CANDIDATES"
-  | "VECTOR_GATE_NOT_APPLICABLE"
   | "DIRECT_CHANNEL_SUPPORT"
-  | "LEXICAL_TEXT_SUPPORT"
-  | "VECTOR_TEXT_SUPPORT"
-  | "VECTOR_MARGIN_SUPPORT"
-  | "VECTOR_NEIGHBORHOOD_SUPPORT"
   | "GRAPH_INTENT_SUPPORT"
-  | "WEAK_SEMANTIC_NEIGHBORS";
+  | "PASSAGE_TEXT_SUPPORT"
+  | "PASSAGE_CUE_SUPPORT"
+  | "SUPPORT_NOT_DEMONSTRATED";
+
+export interface CandidatePassageSupport {
+  supported: boolean;
+  reason: CandidateSupportReason;
+  passageSource: DeterministicPassageSupportSignal["passageSource"];
+  passageCharacters: number;
+  excerptCharacters: number;
+  supportSurfaceExtendsExcerpt: boolean;
+  requiredAnswerCues: DeterministicPassageSupportSignal["requiredAnswerCues"];
+  matchedAnswerCues: DeterministicPassageSupportSignal["matchedAnswerCues"];
+  answerCueCoverage: number;
+  vectorRank: number | null;
+}
 
 export interface CandidateAnswerabilitySignal {
   documentId: string;
   externalId: string | null;
+  candidateRank: number;
   finalScore: number;
-  textualSupport: {
-    queryTokens: string[];
-    overlapTokens: string[];
-    queryCoverage: number;
-    salientQueryTokens: string[];
-    salientOverlapTokens: string[];
-    salientCoverage: number;
-  };
+  textualSupport: Pick<
+    DeterministicPassageSupportSignal,
+    | "queryTokens"
+    | "overlapTokens"
+    | "queryCoverage"
+    | "salientQueryTokens"
+    | "salientOverlapTokens"
+    | "salientCoverage"
+  >;
+  passageSupport: CandidatePassageSupport;
   contributions: Array<{
     channel: string;
     rank: number;
@@ -110,6 +90,7 @@ export interface CandidateAnswerabilitySignal {
 export interface RetrievalAnswerabilityAssessment {
   supported: boolean;
   reason: RetrievalAnswerabilityReason;
+  supportedDocumentIds: string[];
   candidateSignals: CandidateAnswerabilitySignal[];
   topVectorScore: number | null;
   secondVectorScore: number | null;
@@ -118,96 +99,84 @@ export interface RetrievalAnswerabilityAssessment {
   vectorNeighborhoodMargin: number | null;
 }
 
-function validFraction(value: unknown, field: string): number {
-  if (
-    typeof value !== "number" ||
-    !Number.isFinite(value) ||
-    value < 0 ||
-    value > 1
-  ) {
-    throw new Error(`${field} must be a finite number between 0 and 1`);
-  }
-  return value;
-}
-
 export function resolveRetrievalAnswerabilityPolicy(
   input: RetrievalAnswerabilityPolicyInput = {},
 ): RetrievalAnswerabilityPolicy {
-  return {
-    minimumSalientCoverage: validFraction(
-      input.minimumSalientCoverage ??
-        DEFAULT_RETRIEVAL_ANSWERABILITY_POLICY.minimumSalientCoverage,
-      "minimumSalientCoverage",
-    ),
-    minimumVectorTextMargin: validFraction(
-      input.minimumVectorTextMargin ??
-        DEFAULT_RETRIEVAL_ANSWERABILITY_POLICY.minimumVectorTextMargin,
-      "minimumVectorTextMargin",
-    ),
-    minimumVectorMargin: validFraction(
-      input.minimumVectorMargin ??
-        DEFAULT_RETRIEVAL_ANSWERABILITY_POLICY.minimumVectorMargin,
-      "minimumVectorMargin",
-    ),
-    minimumVectorNeighborhoodMargin: validFraction(
-      input.minimumVectorNeighborhoodMargin ??
-        DEFAULT_RETRIEVAL_ANSWERABILITY_POLICY.minimumVectorNeighborhoodMargin,
-      "minimumVectorNeighborhoodMargin",
-    ),
-  };
+  return resolveDeterministicPassageSupportPolicy(input);
 }
 
-function normalizedTokens(value: string): string[] {
-  return [
-    ...new Set(
-      (
-        value
-          .normalize("NFKD")
-          .replace(/\p{M}/gu, "")
-          .toLocaleLowerCase("en-US")
-          .match(/[\p{L}\p{N}]+/gu) ?? []
-      ).filter((token) => token.length >= 2),
-    ),
-  ];
+function supportReasonForCandidate(
+  hit: SearchHit,
+  passage: DeterministicPassageSupportSignal,
+  allowGraphSupport: boolean,
+): CandidateSupportReason {
+  if (
+    (hit.fusionContributions ?? []).some((contribution) =>
+      DIRECT_SUPPORT_CHANNELS.has(contribution.channel),
+    )
+  ) {
+    return "DIRECT_CHANNEL_SUPPORT";
+  }
+  if (
+    allowGraphSupport &&
+    (hit.fusionContributions ?? []).some(
+      (contribution) =>
+        contribution.channel === "graph" ||
+        contribution.channel === "graph-ppr",
+    )
+  ) {
+    return "GRAPH_INTENT_SUPPORT";
+  }
+  return passage.reason;
+}
+
+function supportedReason(reason: CandidateSupportReason): boolean {
+  return (
+    reason === "DIRECT_CHANNEL_SUPPORT" ||
+    reason === "GRAPH_INTENT_SUPPORT" ||
+    reason === "PASSAGE_TEXT_SUPPORT" ||
+    reason === "PASSAGE_CUE_SUPPORT"
+  );
 }
 
 export function collectCandidateAnswerabilitySignals(
   hits: readonly SearchHit[],
   query: string,
+  policyInput: RetrievalAnswerabilityPolicyInput = {},
+  context: Pick<RetrievalAnswerabilityContext, "allowGraphSupport"> = {},
 ): CandidateAnswerabilitySignal[] {
-  const queryTokens = normalizedTokens(query);
-  const salientQueryTokens = queryTokens.filter(
-    (token) => token.length >= 3 && !ANSWERABILITY_STOPWORDS.has(token),
-  );
-
-  return hits.map((hit) => {
-    const candidateTokens = new Set(
-      normalizedTokens(`${hit.title} ${hit.excerpt}`),
+  const policy = resolveRetrievalAnswerabilityPolicy(policyInput);
+  return hits.map((hit, index) => {
+    const passage = verifyDeterministicPassageSupport(hit, query, policy);
+    const supportReason = supportReasonForCandidate(
+      hit,
+      passage,
+      context.allowGraphSupport === true,
     );
-    const overlapTokens = queryTokens.filter((token) =>
-      candidateTokens.has(token),
-    );
-    const salientOverlapTokens = salientQueryTokens.filter((token) =>
-      candidateTokens.has(token),
-    );
-
     return {
       documentId: hit.documentId,
       externalId: hit.document.externalId,
+      candidateRank: index + 1,
       finalScore: hit.score,
       textualSupport: {
-        queryTokens,
-        overlapTokens,
-        queryCoverage:
-          queryTokens.length === 0
-            ? 0
-            : overlapTokens.length / queryTokens.length,
-        salientQueryTokens,
-        salientOverlapTokens,
-        salientCoverage:
-          salientQueryTokens.length === 0
-            ? 0
-            : salientOverlapTokens.length / salientQueryTokens.length,
+        queryTokens: passage.queryTokens,
+        overlapTokens: passage.overlapTokens,
+        queryCoverage: passage.queryCoverage,
+        salientQueryTokens: passage.salientQueryTokens,
+        salientOverlapTokens: passage.salientOverlapTokens,
+        salientCoverage: passage.salientCoverage,
+      },
+      passageSupport: {
+        passageSource: passage.passageSource,
+        passageCharacters: passage.passageCharacters,
+        excerptCharacters: passage.excerptCharacters,
+        supportSurfaceExtendsExcerpt: passage.supportSurfaceExtendsExcerpt,
+        requiredAnswerCues: passage.requiredAnswerCues,
+        matchedAnswerCues: passage.matchedAnswerCues,
+        answerCueCoverage: passage.answerCueCoverage,
+        vectorRank: passage.vectorRank,
+        supported: supportedReason(supportReason),
+        reason: supportReason,
       },
       contributions: (hit.fusionContributions ?? []).map((contribution) => ({
         channel: contribution.channel,
@@ -232,17 +201,84 @@ function vectorScore(signal: CandidateAnswerabilitySignal): number | null {
   return scores.length ? Math.max(...scores) : null;
 }
 
-function assessment(
-  supported: boolean,
-  reason: RetrievalAnswerabilityReason,
-  candidateSignals: CandidateAnswerabilitySignal[],
-  topVectorScore: number | null,
-  secondVectorScore: number | null,
-  thirdVectorScore: number | null = null,
+function topLevelReason(
+  signals: readonly CandidateAnswerabilitySignal[],
+): RetrievalAnswerabilityReason {
+  const supported = signals.filter((signal) => signal.passageSupport.supported);
+  if (supported.length === 0) return "SUPPORT_NOT_DEMONSTRATED";
+  const reasons = supported.map((signal) => signal.passageSupport.reason);
+  for (const reason of [
+    "DIRECT_CHANNEL_SUPPORT",
+    "GRAPH_INTENT_SUPPORT",
+    "PASSAGE_TEXT_SUPPORT",
+    "PASSAGE_CUE_SUPPORT",
+  ] as const) {
+    if (reasons.includes(reason)) return reason;
+  }
+  return "SUPPORT_NOT_DEMONSTRATED";
+}
+
+/**
+ * Determines which authorized retrieved passages can actually support an
+ * answer. Retrieval rank and vector geometry remain diagnostics; they never
+ * turn a candidate into evidence by themselves.
+ */
+export function assessRetrievalAnswerability(
+  hits: readonly SearchHit[],
+  query: string,
+  policyInput: RetrievalAnswerabilityPolicyInput = {},
+  context: RetrievalAnswerabilityContext = {},
 ): RetrievalAnswerabilityAssessment {
+  const candidateSignals = collectCandidateAnswerabilitySignals(
+    hits,
+    query,
+    policyInput,
+    context,
+  );
+
+  if (candidateSignals.length === 0) {
+    return {
+      supported: false,
+      reason: "NO_CANDIDATES",
+      supportedDocumentIds: [],
+      candidateSignals,
+      topVectorScore: null,
+      secondVectorScore: null,
+      thirdVectorScore: null,
+      vectorMargin: null,
+      vectorNeighborhoodMargin: null,
+    };
+  }
+
+  const supportedDocumentIds = candidateSignals
+    .filter((signal) => signal.passageSupport.supported)
+    .map((signal) => signal.documentId);
+  const comparisonSignals = context.comparisonHits
+    ? collectCandidateAnswerabilitySignals(
+        context.comparisonHits,
+        query,
+        policyInput,
+        context,
+      )
+    : candidateSignals;
+  const comparisonVectorCandidates = comparisonSignals
+    .flatMap((signal) => {
+      const score = vectorScore(signal);
+      return score === null ? [] : [{ signal, score }];
+    })
+    .sort(
+      (left, right) =>
+        right.score - left.score ||
+        left.signal.documentId.localeCompare(right.signal.documentId),
+    );
+  const topVectorScore = comparisonVectorCandidates[0]?.score ?? null;
+  const secondVectorScore = comparisonVectorCandidates[1]?.score ?? null;
+  const thirdVectorScore = comparisonVectorCandidates[2]?.score ?? null;
+
   return {
-    supported,
-    reason,
+    supported: supportedDocumentIds.length > 0,
+    reason: topLevelReason(candidateSignals),
+    supportedDocumentIds,
     candidateSignals,
     topVectorScore,
     secondVectorScore,
@@ -257,226 +293,4 @@ function assessment(
           (thirdVectorScore ?? secondVectorScore ?? topVectorScore)
         : null,
   };
-}
-
-/**
- * Decides whether retrieved candidates are strong enough to leave the
- * retrieval layer as supported material.
- *
- * The gate is deliberately narrow:
- * - non-vector retrieval keeps its historical behavior;
- * - exact/code/raw/context-pack/temporal evidence is direct support;
- * - lexical support may establish direct textual support;
- * - vector text support needs both salient overlap and a minimum separation
- *   from the next semantic neighbour;
- * - pure semantic support uses neighbourhood separation rather than only the
- *   top-1/top-2 gap, so two close relevant neighbours do not look ambiguous;
- * - when only two semantic candidates exist, a stronger pairwise margin is
- *   required because no background neighbour is available;
- * - graph evidence is direct support only when the caller explicitly declares
- *   a graph-oriented intent.
- *
- * Community expansion is intentionally not treated as direct authority.
- */
-export function assessRetrievalAnswerability(
-  hits: readonly SearchHit[],
-  query: string,
-  policyInput: RetrievalAnswerabilityPolicyInput = {},
-  context: RetrievalAnswerabilityContext = {},
-): RetrievalAnswerabilityAssessment {
-  const policy = resolveRetrievalAnswerabilityPolicy(policyInput);
-  const candidateSignals = collectCandidateAnswerabilitySignals(hits, query);
-
-  if (candidateSignals.length === 0) {
-    return assessment(false, "NO_CANDIDATES", candidateSignals, null, null);
-  }
-
-  const vectorCandidates = candidateSignals
-    .flatMap((signal) => {
-      const score = vectorScore(signal);
-      return score === null ? [] : [{ signal, score }];
-    })
-    .sort(
-      (left, right) =>
-        right.score - left.score ||
-        left.signal.documentId.localeCompare(right.signal.documentId),
-    );
-  const comparisonSignals = context.comparisonHits
-    ? collectCandidateAnswerabilitySignals(context.comparisonHits, query)
-    : candidateSignals;
-  const comparisonVectorCandidates = comparisonSignals
-    .flatMap((signal) => {
-      const score = vectorScore(signal);
-      return score === null ? [] : [{ signal, score }];
-    })
-    .sort(
-      (left, right) =>
-        right.score - left.score ||
-        left.signal.documentId.localeCompare(right.signal.documentId),
-    );
-
-  const topVector = vectorCandidates[0];
-  const secondVector = topVector
-    ? comparisonVectorCandidates.find(
-        (candidate) =>
-          candidate.signal.documentId !== topVector.signal.documentId,
-      )
-    : undefined;
-  const thirdVector = topVector
-    ? comparisonVectorCandidates.find(
-        (candidate) =>
-          candidate.signal.documentId !== topVector.signal.documentId &&
-          candidate.signal.documentId !== secondVector?.signal.documentId,
-      )
-    : undefined;
-  const topVectorScore = topVector?.score ?? null;
-  const secondVectorScore = secondVector?.score ?? null;
-  const thirdVectorScore = thirdVector?.score ?? null;
-
-  if (
-    candidateSignals.some((signal) =>
-      signal.contributions.some((contribution) =>
-        DIRECT_SUPPORT_CHANNELS.has(contribution.channel),
-      ),
-    )
-  ) {
-    return assessment(
-      true,
-      "DIRECT_CHANNEL_SUPPORT",
-      candidateSignals,
-      topVectorScore,
-      secondVectorScore,
-      thirdVectorScore,
-    );
-  }
-
-  if (
-    context.allowGraphSupport === true &&
-    candidateSignals.some((signal) =>
-      signal.contributions.some(
-        (contribution) =>
-          contribution.channel === "graph" ||
-          contribution.channel === "graph-ppr",
-      ),
-    )
-  ) {
-    return assessment(
-      true,
-      "GRAPH_INTENT_SUPPORT",
-      candidateSignals,
-      topVectorScore,
-      secondVectorScore,
-      thirdVectorScore,
-    );
-  }
-
-  const hasLexicalCandidate = candidateSignals.some((signal) =>
-    signal.contributions.some(
-      (contribution) => contribution.channel === "lexical",
-    ),
-  );
-  if (
-    candidateSignals.some(
-      (signal) =>
-        signal.textualSupport.salientCoverage >=
-          policy.minimumSalientCoverage &&
-        signal.contributions.some(
-          (contribution) => contribution.channel === "lexical",
-        ),
-    )
-  ) {
-    return assessment(
-      true,
-      "LEXICAL_TEXT_SUPPORT",
-      candidateSignals,
-      topVectorScore,
-      secondVectorScore,
-      thirdVectorScore,
-    );
-  }
-
-  if (vectorCandidates.length === 0 && hasLexicalCandidate) {
-    return assessment(
-      true,
-      "VECTOR_GATE_NOT_APPLICABLE",
-      candidateSignals,
-      null,
-      null,
-      null,
-    );
-  }
-
-  const vectorMargin =
-    topVectorScore !== null && secondVectorScore !== null
-      ? topVectorScore - secondVectorScore
-      : null;
-
-  if (
-    topVector &&
-    topVector.signal.textualSupport.salientCoverage >=
-      policy.minimumSalientCoverage &&
-    vectorMargin !== null &&
-    vectorMargin >= policy.minimumVectorTextMargin
-  ) {
-    return assessment(
-      true,
-      "VECTOR_TEXT_SUPPORT",
-      candidateSignals,
-      topVectorScore,
-      secondVectorScore,
-      thirdVectorScore,
-    );
-  }
-
-  const secondToThirdMargin =
-    secondVectorScore !== null && thirdVectorScore !== null
-      ? secondVectorScore - thirdVectorScore
-      : null;
-  const vectorNeighborhoodMargin =
-    topVectorScore !== null
-      ? topVectorScore -
-        (thirdVectorScore ?? secondVectorScore ?? topVectorScore)
-      : null;
-
-  if (
-    thirdVectorScore !== null &&
-    vectorNeighborhoodMargin !== null &&
-    vectorNeighborhoodMargin >= policy.minimumVectorNeighborhoodMargin &&
-    ((vectorMargin !== null && vectorMargin >= policy.minimumVectorMargin) ||
-      (secondToThirdMargin !== null &&
-        secondToThirdMargin >= policy.minimumVectorMargin))
-  ) {
-    return assessment(
-      true,
-      "VECTOR_NEIGHBORHOOD_SUPPORT",
-      candidateSignals,
-      topVectorScore,
-      secondVectorScore,
-      thirdVectorScore,
-    );
-  }
-
-  if (
-    thirdVectorScore === null &&
-    vectorMargin !== null &&
-    vectorMargin >= policy.minimumVectorNeighborhoodMargin
-  ) {
-    return assessment(
-      true,
-      "VECTOR_MARGIN_SUPPORT",
-      candidateSignals,
-      topVectorScore,
-      secondVectorScore,
-      thirdVectorScore,
-    );
-  }
-
-  return assessment(
-    false,
-    "WEAK_SEMANTIC_NEIGHBORS",
-    candidateSignals,
-    topVectorScore,
-    secondVectorScore,
-    thirdVectorScore,
-  );
 }
