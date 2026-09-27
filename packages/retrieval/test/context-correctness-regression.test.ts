@@ -193,7 +193,9 @@ describe("registered ContextPacket correctness", () => {
     ).toBe(false);
     expect(constrained.status).toBe("DEGRADED");
     expect(constrained.gaps).toContainEqual(
-      expect.stringContaining("Highest-ranked query-supported material omitted:"),
+      expect.stringContaining(
+        "Highest-ranked query-supported material omitted:",
+      ),
     );
     expect(constrained.continuations.length).toBeGreaterThan(0);
   });
