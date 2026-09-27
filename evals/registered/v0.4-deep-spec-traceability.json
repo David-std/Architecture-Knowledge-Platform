@@ -1,0 +1,302 @@
+{
+  "schemaVersion": 1,
+  "release": "v0.4.0",
+  "evidenceDimensions": [
+    "runtimeEvidence",
+    "negativeEvidence",
+    "integrationEvidence",
+    "sameShaWorkflowEvidence",
+    "artifactEvidence"
+  ],
+  "workstreams": [
+    {
+      "id": "P0",
+      "title": "Baseline evidence consolidation",
+      "capabilityIds": [
+        "operations-recovery-scale"
+      ],
+      "runtimeEvidence": [
+        "test:doctor-runtime"
+      ],
+      "negativeEvidence": [
+        "failure:otel-unavailable"
+      ],
+      "integrationEvidence": [
+        "integration:operations-runtime"
+      ],
+      "sameShaWorkflowEvidence": [
+        "remote:ci"
+      ],
+      "artifactEvidence": [
+        "benchmark:scale"
+      ]
+    },
+    {
+      "id": "P1",
+      "title": "Interoperability and hostile import boundary",
+      "capabilityIds": [
+        "knowledge-profiles"
+      ],
+      "runtimeEvidence": [
+        "test:interop-adversarial"
+      ],
+      "negativeEvidence": [
+        "test:interop-adversarial"
+      ],
+      "integrationEvidence": [
+        "integration:interop-roundtrip"
+      ],
+      "sameShaWorkflowEvidence": [
+        "remote:ci"
+      ],
+      "artifactEvidence": [
+        "integration:interop-roundtrip"
+      ]
+    },
+    {
+      "id": "P2",
+      "title": "Team Context Fabric and resumable work",
+      "capabilityIds": [
+        "team-context-workspace",
+        "authorization-isolation"
+      ],
+      "runtimeEvidence": [
+        "test:workspace-runtime"
+      ],
+      "negativeEvidence": [
+        "failure:workspace-fencing"
+      ],
+      "integrationEvidence": [
+        "integration:fresh-session-handoff"
+      ],
+      "sameShaWorkflowEvidence": [
+        "remote:team-node"
+      ],
+      "artifactEvidence": [
+        "benchmark:workspace-team-quality-metrics"
+      ]
+    },
+    {
+      "id": "P3",
+      "title": "Federated graph and first-class relationship assertions",
+      "capabilityIds": [
+        "federated-graph"
+      ],
+      "runtimeEvidence": [
+        "test:graph-runtime"
+      ],
+      "negativeEvidence": [
+        "failure:graph-build-preserves-active"
+      ],
+      "integrationEvidence": [
+        "integration:relationship-assertion"
+      ],
+      "sameShaWorkflowEvidence": [
+        "remote:ci"
+      ],
+      "artifactEvidence": [
+        "benchmark:graph-quality-metrics"
+      ]
+    },
+    {
+      "id": "P4",
+      "title": "Code context and Graphify hardening",
+      "capabilityIds": [
+        "code-context"
+      ],
+      "runtimeEvidence": [
+        "test:code-context-runtime"
+      ],
+      "negativeEvidence": [
+        "failure:code-graph-validator"
+      ],
+      "integrationEvidence": [
+        "integration:graphify-live"
+      ],
+      "sameShaWorkflowEvidence": [
+        "remote:ci"
+      ],
+      "artifactEvidence": [
+        "benchmark:graphify-incremental-equivalence"
+      ]
+    },
+    {
+      "id": "P5",
+      "title": "Temporal truth and support invalidation",
+      "capabilityIds": [
+        "temporal-truth"
+      ],
+      "runtimeEvidence": [
+        "test:temporal-truth-runtime"
+      ],
+      "negativeEvidence": [
+        "failure:source-withdrawal-stale-index"
+      ],
+      "integrationEvidence": [
+        "integration:temporal-truth"
+      ],
+      "sameShaWorkflowEvidence": [
+        "remote:semantic"
+      ],
+      "artifactEvidence": [
+        "benchmark:temporal-truth-final-scenarios"
+      ]
+    },
+    {
+      "id": "P6",
+      "title": "Advanced retrieval and context engineering",
+      "capabilityIds": [
+        "advanced-retrieval"
+      ],
+      "runtimeEvidence": [
+        "test:advanced-retrieval-runtime"
+      ],
+      "negativeEvidence": [
+        "failure:ppr-cancel"
+      ],
+      "integrationEvidence": [
+        "integration:retrieval-context"
+      ],
+      "sameShaWorkflowEvidence": [
+        "remote:semantic"
+      ],
+      "artifactEvidence": [
+        "benchmark:long-context-placement"
+      ]
+    },
+    {
+      "id": "P7",
+      "title": "Safe bounded reasoning",
+      "capabilityIds": [
+        "safe-reasoning"
+      ],
+      "runtimeEvidence": [
+        "test:reasoning-runtime"
+      ],
+      "negativeEvidence": [
+        "failure:reasoning-timeout"
+      ],
+      "integrationEvidence": [
+        "integration:reasoning-context"
+      ],
+      "sameShaWorkflowEvidence": [
+        "remote:ci"
+      ],
+      "artifactEvidence": [
+        "benchmark:reasoning-adversarial"
+      ]
+    },
+    {
+      "id": "P8",
+      "title": "Continuous assurance and connector boundaries",
+      "capabilityIds": [
+        "assurance-connectors"
+      ],
+      "runtimeEvidence": [
+        "test:assurance-connectors-runtime"
+      ],
+      "negativeEvidence": [
+        "failure:webhook-replay"
+      ],
+      "integrationEvidence": [
+        "integration:assurance-connectors"
+      ],
+      "sameShaWorkflowEvidence": [
+        "remote:resilience"
+      ],
+      "artifactEvidence": [
+        "security:access-boundary-controlled-probes"
+      ]
+    },
+    {
+      "id": "P9",
+      "title": "Agent context facade and governed agent integration",
+      "capabilityIds": [
+        "agent-context"
+      ],
+      "runtimeEvidence": [
+        "test:agent-context-runtime"
+      ],
+      "negativeEvidence": [
+        "failure:agent-revoked-mid-task"
+      ],
+      "integrationEvidence": [
+        "integration:mcp-context-facade"
+      ],
+      "sameShaWorkflowEvidence": [
+        "remote:agent"
+      ],
+      "artifactEvidence": [
+        "benchmark:agent-five-arm"
+      ]
+    },
+    {
+      "id": "P10",
+      "title": "Human workspace and degraded-state Web UX",
+      "capabilityIds": [
+        "workspace-web"
+      ],
+      "runtimeEvidence": [
+        "test:browser-critical-flows"
+      ],
+      "negativeEvidence": [
+        "failure:autosave-git-failure"
+      ],
+      "integrationEvidence": [
+        "integration:web-workspace"
+      ],
+      "sameShaWorkflowEvidence": [
+        "remote:ci"
+      ],
+      "artifactEvidence": [
+        "surface:web-workspace"
+      ]
+    },
+    {
+      "id": "P11",
+      "title": "Concurrency, federation and enterprise failure matrix",
+      "capabilityIds": [
+        "federation-runtime",
+        "operations-recovery-scale"
+      ],
+      "runtimeEvidence": [
+        "test:federation-runtime"
+      ],
+      "negativeEvidence": [
+        "failure:federated-peer-unavailable"
+      ],
+      "integrationEvidence": [
+        "integration:concurrency-races"
+      ],
+      "sameShaWorkflowEvidence": [
+        "remote:concurrency"
+      ],
+      "artifactEvidence": [
+        "benchmark:federation-partial-failure"
+      ]
+    },
+    {
+      "id": "P12",
+      "title": "Same-SHA release traceability and acceptance",
+      "capabilityIds": [
+        "operations-recovery-scale"
+      ],
+      "runtimeEvidence": [
+        "test:doctor-runtime"
+      ],
+      "negativeEvidence": [
+        "failure:otel-unavailable"
+      ],
+      "integrationEvidence": [
+        "integration:operations-runtime"
+      ],
+      "sameShaWorkflowEvidence": [
+        "remote:ci"
+      ],
+      "artifactEvidence": [
+        "benchmark:enterprise-state"
+      ],
+      "selfArtifact": "reports/ci/deep-spec-traceability.json"
+    }
+  ]
+}
