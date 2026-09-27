@@ -234,22 +234,33 @@
       "id": "P10",
       "title": "Human workspace and degraded-state Web UX",
       "capabilityIds": [
-        "workspace-web"
+        "workspace-web",
+        "team-context-workspace",
+        "temporal-truth",
+        "safe-reasoning",
+        "assurance-connectors",
+        "federation-runtime"
       ],
       "runtimeEvidence": [
         "test:browser-critical-flows"
       ],
       "negativeEvidence": [
-        "failure:autosave-git-failure"
+        "failure:autosave-git-failure",
+        "failure:federated-peer-unavailable"
       ],
       "integrationEvidence": [
-        "integration:web-workspace"
+        "integration:web-workspace",
+        "integration:offline-snapshot-contract",
+        "integration:reasoning-context"
       ],
       "sameShaWorkflowEvidence": [
         "remote:ci"
       ],
       "artifactEvidence": [
-        "surface:web-workspace"
+        "surface:web-workspace",
+        "surface:workspace-home",
+        "surface:temporal-context",
+        "surface:connector-admin"
       ]
     },
     {
@@ -257,22 +268,31 @@
       "title": "Concurrency, federation and enterprise failure matrix",
       "capabilityIds": [
         "federation-runtime",
-        "operations-recovery-scale"
+        "operations-recovery-scale",
+        "authorization-isolation",
+        "advanced-retrieval"
       ],
       "runtimeEvidence": [
         "test:federation-runtime"
       ],
       "negativeEvidence": [
-        "failure:federated-peer-unavailable"
+        "failure:federated-peer-unavailable",
+        "failure:federated-scope-overreturn",
+        "failure:federation-peer-scope-version"
       ],
       "integrationEvidence": [
-        "integration:concurrency-races"
+        "integration:concurrency-races",
+        "integration:federation-two-node"
       ],
       "sameShaWorkflowEvidence": [
-        "remote:concurrency"
+        "remote:concurrency",
+        "remote:scale",
+        "remote:ci"
       ],
       "artifactEvidence": [
-        "benchmark:federation-partial-failure"
+        "benchmark:federation-partial-failure",
+        "benchmark:scale-combinations",
+        "benchmark:enterprise-adversarial-scenarios"
       ]
     },
     {
