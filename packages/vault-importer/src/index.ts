@@ -147,6 +147,31 @@ function normalizePath(input: string): string {
   return input.replaceAll("\\", "/");
 }
 
+const WINDOWS_RESERVED_PATH_SEGMENT =
+  /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
+
+function portableVaultPathKey(input: string): string {
+  const normalized = normalizePath(input).normalize("NFC");
+  const segments = normalized.split("/");
+  if (
+    !normalized ||
+    normalized.startsWith("/") ||
+    /^[A-Za-z]:/.test(normalized) ||
+    segments.some(
+      (segment) =>
+        !segment ||
+        segment === "." ||
+        segment === ".." ||
+        /[<>:"|?*\u0000-\u001f]/u.test(segment) ||
+        /[ .]$/u.test(segment) ||
+        WINDOWS_RESERVED_PATH_SEGMENT.test(segment),
+    )
+  ) {
+    throw new Error(`VAULT_NON_PORTABLE_PATH:${input}`);
+  }
+  return normalized.toLocaleLowerCase("en-US");
+}
+
 function slugTitle(relativePath: string): string {
   return path
     .basename(relativePath, path.extname(relativePath))
@@ -375,8 +400,17 @@ export async function inspectVault(
   const issues: ImportIssue[] = [];
   const documents: VaultDocument[] = [];
   const seenIds = new Map<string, string>();
+  const seenPortablePaths = new Map<string, string>();
 
   for (const relativePath of relativePaths) {
+    const portableKey = portableVaultPathKey(relativePath);
+    const conflictingPath = seenPortablePaths.get(portableKey);
+    if (conflictingPath && conflictingPath !== relativePath) {
+      throw new Error(
+        `VAULT_PORTABLE_PATH_COLLISION:${conflictingPath}:${relativePath}`,
+      );
+    }
+    seenPortablePaths.set(portableKey, relativePath);
     if (process.env.AKP_IMPORT_DEBUG === "1") {
       console.error(
         `[vault-import] parse ${documents.length + 1}/${relativePaths.length} ${relativePath}`,
