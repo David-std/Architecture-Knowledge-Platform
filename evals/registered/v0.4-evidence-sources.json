@@ -2512,6 +2512,20 @@
           "step": "Run pnpm docs:validate"
         }
       ]
+    },
+    "benchmark:baseline-evidence": {
+      "sources": [
+        {
+          "type": "STEP",
+          "workflow": "semantic-retrieval",
+          "job": "real-multilingual-semantic-retrieval",
+          "step": "Generate consolidated baseline evidence envelope"
+        },
+        {
+          "type": "FILE",
+          "path": "scripts/baseline-evidence.ts"
+        }
+      ]
     }
   }
 }
