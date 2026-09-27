@@ -1,7 +1,5 @@
 export type SearchRetrievalOutcome =
-  | "SUPPORTED"
-  | "EXPLORATORY_ONLY"
-  | "NO_CANDIDATES";
+  "SUPPORTED" | "EXPLORATORY_ONLY" | "NO_CANDIDATES";
 
 export interface SearchResultPresentationInput {
   retrievalOutcome?: SearchRetrievalOutcome;
