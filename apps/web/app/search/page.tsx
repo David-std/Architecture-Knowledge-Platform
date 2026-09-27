@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { akp, akpOptional } from "../../lib/api";
 import { InfoTooltip } from "../components/info-tooltip";
+import { searchResultPresentation } from "./search-result";
 import {
   scopedSearchRequest,
   selectVault,
@@ -100,26 +101,6 @@ interface ContextSection {
   selectionReason?: string;
   retrievalChannels?: string[];
   sourceOrEvidenceIds?: string[];
-}
-
-export function searchResultPresentation(result: SearchResponse): {
-  supportedCount: number;
-  exploratoryCount: number;
-  outcome: "SUPPORTED" | "EXPLORATORY_ONLY" | "NO_CANDIDATES";
-} {
-  const exploratoryCount = result.exploratoryHits?.length ?? 0;
-  const outcome =
-    result.retrievalOutcome ??
-    (result.hits.length > 0
-      ? "SUPPORTED"
-      : exploratoryCount > 0
-        ? "EXPLORATORY_ONLY"
-        : "NO_CANDIDATES");
-  return {
-    supportedCount: result.hits.length,
-    exploratoryCount,
-    outcome,
-  };
 }
 
 interface ContextPacket {
