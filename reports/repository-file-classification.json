@@ -1297,6 +1297,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/worker/src/ingest-transition.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/worker/src/instrumentation.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -1398,6 +1403,11 @@
     },
     {
       "path": "apps/worker/test/evidence-fragment.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/worker/test/ingest-transition.integration.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
