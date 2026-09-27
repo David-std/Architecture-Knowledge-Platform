@@ -156,13 +156,13 @@ describe("retrieval answerability", () => {
     });
   });
 
-  it("does not gate retrieval when no vector candidate participated", () => {
+  it("preserves lexical-only retrieval when no vector candidate participated", () => {
     const result = assessRetrievalAnswerability(
       [
         hit(1, {
           title: "Related workflow",
           excerpt: "Follows the reviewed policy.",
-          contributions: [contribution("graph", 1)],
+          contributions: [contribution("lexical", 1)],
         }),
       ],
       "What workflow follows the reviewed policy?",
@@ -170,7 +170,45 @@ describe("retrieval answerability", () => {
 
     expect(result).toMatchObject({
       supported: true,
-      reason: "VECTOR_GATE_NOT_APPLICABLE",
+      reason: "LEXICAL_TEXT_SUPPORT",
+    });
+  });
+
+  it("does not invent a vector margin when only one semantic candidate exists", () => {
+    const result = assessRetrievalAnswerability(
+      [
+        hit(1, {
+          title: "Threat model",
+          excerpt: "Authentication and trust boundaries.",
+          contributions: [contribution("vector", 0.91)],
+        }),
+      ],
+      "What is the guaranteed 24/7 telephone support SLA for enterprise customers?",
+    );
+
+    expect(result).toMatchObject({
+      supported: false,
+      reason: "WEAK_SEMANTIC_NEIGHBORS",
+      secondVectorScore: null,
+      vectorMargin: null,
+    });
+  });
+
+  it("does not treat community-only orientation as answerability evidence", () => {
+    const result = assessRetrievalAnswerability(
+      [
+        hit(1, {
+          title: "Architecture theme",
+          excerpt: "A derived cluster summary.",
+          contributions: [contribution("community", 1)],
+        }),
+      ],
+      "What contractual support SLA applies to enterprise customers?",
+    );
+
+    expect(result).toMatchObject({
+      supported: false,
+      reason: "WEAK_SEMANTIC_NEIGHBORS",
     });
   });
 

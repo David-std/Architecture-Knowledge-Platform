@@ -271,16 +271,6 @@ export function assessRetrievalAnswerability(
         left.signal.documentId.localeCompare(right.signal.documentId),
     );
 
-  if (vectorCandidates.length === 0) {
-    return assessment(
-      true,
-      "VECTOR_GATE_NOT_APPLICABLE",
-      candidateSignals,
-      null,
-      null,
-    );
-  }
-
   const topVector = vectorCandidates[0];
   const secondVector = vectorCandidates[1];
   const topVectorScore = topVector?.score ?? null;
@@ -321,6 +311,11 @@ export function assessRetrievalAnswerability(
     );
   }
 
+  const hasLexicalCandidate = candidateSignals.some((signal) =>
+    signal.contributions.some(
+      (contribution) => contribution.channel === "lexical",
+    ),
+  );
   if (
     candidateSignals.some(
       (signal) =>
@@ -340,12 +335,20 @@ export function assessRetrievalAnswerability(
     );
   }
 
+  if (vectorCandidates.length === 0 && hasLexicalCandidate) {
+    return assessment(
+      true,
+      "VECTOR_GATE_NOT_APPLICABLE",
+      candidateSignals,
+      null,
+      null,
+    );
+  }
+
   const vectorMargin =
     topVectorScore !== null && secondVectorScore !== null
       ? topVectorScore - secondVectorScore
-      : topVectorScore !== null
-        ? Number.POSITIVE_INFINITY
-        : null;
+      : null;
 
   if (
     topVector &&
