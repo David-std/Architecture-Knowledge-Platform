@@ -1410,7 +1410,7 @@ describe("buildContextPacket", () => {
     expect(packet.requiredActions).toEqual(
       expect.arrayContaining([
         expect.stringContaining(
-          "Request the continuation containing the highest-ranked query-supported material",
+          "Request the continuation containing the full highest-ranked query-supported material",
         ),
       ]),
     );
