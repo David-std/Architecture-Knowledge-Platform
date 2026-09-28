@@ -79,7 +79,9 @@ function jiraIssueToObject(
     sourceSystem: "jira",
     sourceVersion: updated,
     operation: "UPSERT",
-    title: stringValue(fields.summary),
+    ...(stringValue(fields.summary)
+      ? { title: stringValue(fields.summary)! }
+      : {}),
     contentTrust: "UNTRUSTED_EXTERNAL",
     permissions: {
       fidelity: "SOURCE_ACL_MAPPED",
@@ -263,7 +265,7 @@ function linearIssueToObject(issue: Record<string, unknown>): SourceConnectorObj
     sourceSystem: "linear",
     sourceVersion: updatedAt,
     operation: "UPSERT",
-    title: stringValue(issue.title),
+    ...(stringValue(issue.title) ? { title: stringValue(issue.title)! } : {}),
     contentTrust: "UNTRUSTED_EXTERNAL",
     permissions: {
       fidelity: "SOURCE_ACL_MAPPED",
