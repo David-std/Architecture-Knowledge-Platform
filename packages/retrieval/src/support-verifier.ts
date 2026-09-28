@@ -438,6 +438,7 @@ function canonicalSemanticToken(token: string): string {
   if (/^(reason|razon|motivo|because|porque|debido)/u.test(token))
     return "rationale";
   if (/^(point|apunt)/u.test(token)) return "points";
+  if (/^(call|llam)/u.test(token)) return "call";
   return token;
 }
 
@@ -462,7 +463,9 @@ function queryAnswerCues(query: string): PassageAnswerCue[] {
       normalized.trim(),
     );
   const dateYear =
-    /\b(which year|what year|year|ano|fecha|date)\b/u.test(normalized.trim());
+    /\b(which year|what year|in what year|que ano|en que ano|which date|what date|que fecha|en que fecha)\b/u.test(
+      normalized.trim(),
+    );
   const yesNo =
     /^(?:\s*[¿?]?\s*)?(?:do|does|did|is|are|can|could|should|must|will|would|es|son|puede|pueden|debe|deben|define|definen|determina|determinan|exige|exigen|requiere|requieren)\b/u.test(
       normalized.trim(),
@@ -738,12 +741,18 @@ export function verifyDeterministicPassageSupport(
     policy.minimumSalientOverlap,
     Math.max(1, salientQueryTokens.length),
   );
+  const semanticTextSupport =
+    requiredAnswerCues.length === 0 &&
+    boundedSupport.supported &&
+    boundedSupport.semanticAnchorOverlap.length >=
+      Math.min(2, Math.max(1, queryPredicateAnchors(query, []).length));
   const strongTextSupport =
     passage.length > 0 &&
-    salientQueryTokens.length > 0 &&
-    salientOverlapTokens.length >= requiredOverlap &&
-    salientCoverage >= policy.minimumSalientCoverage &&
-    boundedSupport.supported;
+    boundedSupport.supported &&
+    ((salientQueryTokens.length > 0 &&
+      salientOverlapTokens.length >= requiredOverlap &&
+      salientCoverage >= policy.minimumSalientCoverage) ||
+      semanticTextSupport);
   const cueSemanticSupport =
     passage.length > 0 &&
     requiredAnswerCues.length > 0 &&
