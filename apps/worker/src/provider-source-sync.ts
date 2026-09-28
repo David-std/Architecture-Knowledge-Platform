@@ -391,6 +391,13 @@ export async function syncProviderSourceConnector(
           // can mean deletion, archival, or loss of visibility. Do not turn an
           // ambiguous absence into a tombstone without an explicit provider
           // deletion signal.
+          await db.pool.query(
+            `update source_connector_objects
+                set provider_last_checked_at=now()
+              where connector_id=$1 and object_id=$2
+                and lifecycle='ACTIVE'`,
+            [connectorId, candidate.object_id],
+          );
           deletionHealth = "DEGRADED";
           deletionErrorCode = "PROVIDER_OBJECT_ABSENCE_AMBIGUOUS";
           break;
