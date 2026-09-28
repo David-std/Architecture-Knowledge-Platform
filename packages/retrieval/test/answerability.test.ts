@@ -322,14 +322,14 @@ describe("retrieval answerability", () => {
 
   it("requires a numeric quantity instead of accepting topical cost language", () => {
     const topical = hit(21, {
-      title: "Service cost controls",
+      title: "Retry capacity controls",
       excerpt:
-        "Platform operating cost is governed by budget policy and bounded capacity reviews.",
+        "Retry capacity is governed by traffic policy and bounded load reviews.",
       contributions: [contribution("vector", 0.94, 1)],
     });
     const result = assessRetrievalAnswerability(
       [topical],
-      "How much is the exact monthly platform cost?",
+      "How many retry attempts are allowed per minute?",
     );
 
     expect(result).toMatchObject({
@@ -347,14 +347,14 @@ describe("retrieval answerability", () => {
 
   it("requires an explicit year when the question asks which year", () => {
     const topical = hit(22, {
-      title: "Retention policy history",
+      title: "Compatibility window history",
       excerpt:
-        "The retention policy changed after the compliance review and remains active.",
+        "The compatibility window ended after the migration review.",
       contributions: [contribution("vector", 0.93, 1)],
     });
     const result = assessRetrievalAnswerability(
       [topical],
-      "Which year was the retention policy prohibited?",
+      "Which year did the compatibility window end?",
     );
 
     expect(result.supported).toBe(false);
