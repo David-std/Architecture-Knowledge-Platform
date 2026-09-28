@@ -79,13 +79,13 @@ An issue connector declares `HYBRID_CACHE`, `SOURCE_ACL_MAPPED`, `UPSERT`, event
 
 ## Jira and Linear read-only adapters
 
-AKP includes provider adapters for Jira Cloud issue references and Linear issue references. Both adapters are read-only and declare `REFERENCE` replication, external residency and mapped/uncertain ACL fidelity. They preserve provider identity and revision timestamps, expose cursor/webhook boundaries, tombstone deletion semantics and explicit provider health. Provider-authenticated reads mark their projection metadata as `providerVerified: true`; this means AKP observed the object through the authenticated adapter, not that the ticket content is approved knowledge.
+AKP includes provider adapters for Jira Cloud issue references and Linear issue references. The deployed provider path is authenticated, cursor-based polling. Both adapters are read-only and declare `REFERENCE` replication, external residency, mapped/uncertain ACL fidelity, no write-back and no deletion propagation. They preserve provider identity and revision timestamps and publish explicit provider health. Provider-authenticated reads mark their projection metadata as `providerVerified: true`; this means AKP observed the object through the authenticated adapter, not that the ticket content is approved knowledge.
 
 The agent bridge is intentionally weaker. `akp_upsert_external_reference` accepts the identity, URL, revision and bounded metadata an agent obtained through another provider MCP, but the API forces authority to `REFERENCE` and stamps `providerVerified: false`. A relayed copy cannot self-promote to `SYSTEM_OF_RECORD`.
 
-Jira webhook verification is deployment-injected and fails closed when no verifier is configured; AKP does not assume one universal signing scheme. Linear webhooks require the provider HMAC signature over the raw body and a fresh webhook timestamp. Neither adapter enables write-back.
+Webhook verification primitives exist and fail closed: Jira requires a deployment-supplied verifier, while the Linear primitive checks HMAC and timestamp freshness. They are not advertised by the provider registration contract because AKP does not currently route provider webhooks into the provider-pull inbox. Likewise, polling does not claim deletion/tombstone fidelity until a deletion reconciliation path is deployed.
 
-CI exercises both providers with simulated HTTP/webhook responses. A claim of live Jira or Linear integration additionally requires a sandbox/account run with deployment credentials; simulated-provider coverage is not treated as that evidence.
+CI exercises provider reads, pagination, provenance and the verification primitives with simulated responses. A claim of live Jira or Linear integration additionally requires a sandbox/account run with deployment credentials; simulated-provider coverage is not treated as that evidence.
 
 ## Limitations
 
