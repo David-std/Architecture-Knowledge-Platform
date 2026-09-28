@@ -84,7 +84,12 @@ export const ProviderSourceConnectorRegistrationSchema = z
     baseUrl: z.string().url().max(2048).optional(),
     jql: z.string().trim().min(1).max(4000).optional(),
     authorizationScheme: z.enum(["RAW", "BASIC", "BEARER"]).optional(),
-    freshnessSlaSeconds: z.number().int().positive().max(31_536_000).default(300),
+    freshnessSlaSeconds: z
+      .number()
+      .int()
+      .positive()
+      .max(31_536_000)
+      .default(300),
   })
   .strict()
   .superRefine((value, context) => {
@@ -128,20 +133,14 @@ export const ProviderSourceConnectorRegistrationSchema = z
         });
       }
     }
-    if (
-      value.provider === "jira" &&
-      value.authorizationScheme === "RAW"
-    ) {
+    if (value.provider === "jira" && value.authorizationScheme === "RAW") {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["authorizationScheme"],
         message: "Jira Cloud provider auth must be BASIC or BEARER.",
       });
     }
-    if (
-      value.provider === "linear" &&
-      value.authorizationScheme === "BASIC"
-    ) {
+    if (value.provider === "linear" && value.authorizationScheme === "BASIC") {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["authorizationScheme"],
