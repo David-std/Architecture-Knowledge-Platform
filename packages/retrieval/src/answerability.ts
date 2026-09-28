@@ -135,8 +135,7 @@ function identifierLikeQuery(query: string): boolean {
   return (
     /\d/u.test(trimmed) ||
     /[_:/.]/u.test(trimmed) ||
-    (trimmed.includes("-") &&
-      trimmed === trimmed.toLocaleUpperCase("en-US"))
+    (trimmed.includes("-") && trimmed === trimmed.toLocaleUpperCase("en-US"))
   );
 }
 
