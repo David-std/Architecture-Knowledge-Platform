@@ -4,12 +4,12 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { SearchRequest } from "../packages/contracts/src/index.js";
 import { scoreBenchmarkObservation } from "../packages/evaluation/src/index.js";
-import { Postgres } from "../packages/postgres/src/index.js";
+import {\n  assertSyntheticFixtureDatabaseSafety,\n  Postgres,\n} from "../packages/postgres/src/index.js";
 import { buildContextPacket } from "../packages/retrieval/src/index.js";
 import { queryKnowledge } from "../apps/api/src/routes/search.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl) throw new Error("DATABASE_URL is required.");
+if (!databaseUrl) throw new Error("DATABASE_URL is required.");\nassertSyntheticFixtureDatabaseSafety(databaseUrl);
 
 const outputPath = path.resolve(
   process.env.AKP_REGISTERED_RETRIEVAL_DIAGNOSTICS_REPORT ??
