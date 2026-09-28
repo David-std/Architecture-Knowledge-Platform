@@ -54,8 +54,8 @@ describe("external work source connectors", () => {
       sourceSystem: "jira",
       replication: "REFERENCE",
       permissionFidelity: "SOURCE_ACL_MAPPED",
-      deletionPropagation: "TOMBSTONE",
-      incremental: { cursor: true, webhook: true },
+      deletionPropagation: "NONE",
+      incremental: { cursor: true, webhook: false },
     });
 
     const objects = await collect(
@@ -194,6 +194,8 @@ describe("external work source connectors", () => {
     expect(connector.describe()).toMatchObject({
       replication: "REFERENCE",
       dataResidency: "EXTERNAL",
+      deletionPropagation: "NONE",
+      incremental: { cursor: true, webhook: false },
     });
   });
 
