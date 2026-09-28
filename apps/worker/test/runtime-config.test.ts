@@ -5,6 +5,7 @@ const variables = [
   "AKP_EVENT_MAX_ATTEMPTS",
   "AKP_EVENT_LEASE_SECONDS",
   "AKP_LINT_INTERVAL_MS",
+  "AKP_PROVIDER_SYNC_INTERVAL_MS",
   "AKP_WORKER_DRAIN_DEADLINE_MS",
 ] as const;
 
@@ -25,6 +26,7 @@ describe("worker runtime configuration", () => {
       eventMaxAttempts: 8,
       eventLeaseSeconds: 60,
       lintIntervalMs: 24 * 60 * 60 * 1000,
+      providerSyncIntervalMs: 60_000,
       drainDeadlineMs: 90_000,
     });
     expect(
@@ -33,6 +35,7 @@ describe("worker runtime configuration", () => {
           AKP_EVENT_MAX_ATTEMPTS: "3",
           AKP_EVENT_LEASE_SECONDS: "20",
           AKP_LINT_INTERVAL_MS: "1",
+          AKP_PROVIDER_SYNC_INTERVAL_MS: "1",
           AKP_WORKER_DRAIN_DEADLINE_MS: "120000",
         },
         90_000,
@@ -41,6 +44,7 @@ describe("worker runtime configuration", () => {
       eventMaxAttempts: 3,
       eventLeaseSeconds: 20,
       lintIntervalMs: 60_000,
+      providerSyncIntervalMs: 10_000,
       drainDeadlineMs: 120_000,
     });
   });
