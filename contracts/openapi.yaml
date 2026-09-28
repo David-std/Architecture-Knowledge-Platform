@@ -3463,7 +3463,8 @@ paths:
         operator-owned credential reference and non-secret provider
         configuration are persisted; provider secret bytes remain outside AKP
         durable state. Provider projections remain UNTRUSTED_EXTERNAL
-        references and write-back is disabled.
+        references and write-back is disabled. The deployed provider path is
+        authenticated polling; provider webhook ingestion is not exposed.
       requestBody:
         required: true
         content:
@@ -3487,12 +3488,6 @@ paths:
                     type: string,
                     pattern: "^[A-Z][A-Z0-9_]{1,127}$",
                     description: "Environment/secret-store reference, never the provider secret itself.",
-                  }
-                webhookSecretRef:
-                  {
-                    type: string,
-                    pattern: "^[A-Z][A-Z0-9_]{1,127}$",
-                    description: "Optional Linear webhook-secret reference.",
                   }
                 baseUrl:
                   {
