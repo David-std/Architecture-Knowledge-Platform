@@ -1,8 +1,4 @@
-import {
-  createHash,
-  createHmac,
-  timingSafeEqual,
-} from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import type {
   SourceConnectorCheckpoint,
   SourceConnectorFetchInput,
@@ -141,19 +137,23 @@ export class JiraCloudSourceConnector implements SourceConnectorPort {
     };
   }
 
-  async checkpoint(_scope: SourceConnectorScope): Promise<SourceConnectorCheckpoint> {
+  async checkpoint(
+    _scope: SourceConnectorScope,
+  ): Promise<SourceConnectorCheckpoint> {
     return isoCheckpoint();
   }
 
-  async *pull(input: SourceConnectorPullInput): AsyncIterable<SourceConnectorObject> {
+  async *pull(
+    input: SourceConnectorPullInput,
+  ): AsyncIterable<SourceConnectorObject> {
     const from = input.from?.value;
     const target = input.target.value;
     let nextPageToken: string | undefined;
     do {
       const clauses = [
         this.options.jql?.trim() ? `(${this.options.jql.trim()})` : "",
-        from ? `updated > "${from.replace(/"/gu, "\\\"")}"` : "",
-        `updated <= "${target.replace(/"/gu, "\\\"")}"`,
+        from ? `updated > "${from.replace(/"/gu, '\\\"')}"` : "",
+        `updated <= "${target.replace(/"/gu, '\\\"')}"`,
       ].filter(Boolean);
       const response = await this.request("/rest/api/3/search/jql", {
         method: "POST",
@@ -161,7 +161,14 @@ export class JiraCloudSourceConnector implements SourceConnectorPort {
           jql: `${clauses.join(" AND ")} ORDER BY updated ASC, key ASC`,
           maxResults: boundedLimit(input.pageSize),
           ...(nextPageToken ? { nextPageToken } : {}),
-          fields: ["summary", "updated", "status", "project", "security", "assignee"],
+          fields: [
+            "summary",
+            "updated",
+            "status",
+            "project",
+            "security",
+            "assignee",
+          ],
         }),
       });
       const issues = Array.isArray(response.issues) ? response.issues : [];
@@ -172,7 +179,9 @@ export class JiraCloudSourceConnector implements SourceConnectorPort {
     } while (nextPageToken);
   }
 
-  async fetchById(input: SourceConnectorFetchInput): Promise<SourceConnectorObject | null> {
+  async fetchById(
+    input: SourceConnectorFetchInput,
+  ): Promise<SourceConnectorObject | null> {
     const response = await this.fetchImpl(
       `${this.options.baseUrl.replace(/\/$/u, "")}/rest/api/3/issue/${encodeURIComponent(input.objectId)}?fields=summary,updated,status,project,security,assignee`,
       {
@@ -197,8 +206,11 @@ export class JiraCloudSourceConnector implements SourceConnectorPort {
       return { accepted: false, reason: "JIRA_WEBHOOK_VERIFIER_REQUIRED" };
     }
     const accepted = await this.options.webhookVerifier(request);
-    if (!accepted) return { accepted: false, reason: "JIRA_WEBHOOK_SIGNATURE_INVALID" };
-    const payload = jsonObject(JSON.parse(Buffer.from(request.rawBody).toString("utf8")));
+    if (!accepted)
+      return { accepted: false, reason: "JIRA_WEBHOOK_SIGNATURE_INVALID" };
+    const payload = jsonObject(
+      JSON.parse(Buffer.from(request.rawBody).toString("utf8")),
+    );
     const issue = jsonObject(payload.issue);
     const eventId =
       header(request.headers, "x-atlassian-webhook-identifier") ??
@@ -246,7 +258,9 @@ export class JiraCloudSourceConnector implements SourceConnectorPort {
   }
 }
 
-function linearIssueToObject(issue: Record<string, unknown>): SourceConnectorObject {
+function linearIssueToObject(
+  issue: Record<string, unknown>,
+): SourceConnectorObject {
   const id = stringValue(issue.id);
   const identifier = stringValue(issue.identifier);
   const updatedAt = stringValue(issue.updatedAt);
@@ -326,11 +340,15 @@ export class LinearSourceConnector implements SourceConnectorPort {
     };
   }
 
-  async checkpoint(_scope: SourceConnectorScope): Promise<SourceConnectorCheckpoint> {
+  async checkpoint(
+    _scope: SourceConnectorScope,
+  ): Promise<SourceConnectorCheckpoint> {
     return isoCheckpoint();
   }
 
-  async *pull(input: SourceConnectorPullInput): AsyncIterable<SourceConnectorObject> {
+  async *pull(
+    input: SourceConnectorPullInput,
+  ): AsyncIterable<SourceConnectorObject> {
     let after: string | null = null;
     do {
       const data = await this.graphql(
@@ -361,11 +379,16 @@ export class LinearSourceConnector implements SourceConnectorPort {
       const nodes = Array.isArray(issues.nodes) ? issues.nodes : [];
       for (const issue of nodes) yield linearIssueToObject(jsonObject(issue));
       const pageInfo = jsonObject(issues.pageInfo);
-      after = pageInfo.hasNextPage === true ? stringValue(pageInfo.endCursor) ?? null : null;
+      after =
+        pageInfo.hasNextPage === true
+          ? (stringValue(pageInfo.endCursor) ?? null)
+          : null;
     } while (after);
   }
 
-  async fetchById(input: SourceConnectorFetchInput): Promise<SourceConnectorObject | null> {
+  async fetchById(
+    input: SourceConnectorFetchInput,
+  ): Promise<SourceConnectorObject | null> {
     const data = await this.graphql(
       `query Issue($id:String!){
         issue(id:$id){
@@ -385,17 +408,25 @@ export class LinearSourceConnector implements SourceConnectorPort {
     request: SourceConnectorWebhookRequest,
   ): Promise<SourceConnectorWebhookVerification> {
     const secret = this.options.webhookSecret;
-    if (!secret) return { accepted: false, reason: "LINEAR_WEBHOOK_SECRET_REQUIRED" };
+    if (!secret)
+      return { accepted: false, reason: "LINEAR_WEBHOOK_SECRET_REQUIRED" };
     const signature = header(request.headers, "linear-signature");
     if (!signature || !/^[a-f0-9]{64}$/iu.test(signature)) {
       return { accepted: false, reason: "LINEAR_WEBHOOK_SIGNATURE_INVALID" };
     }
-    const computed = createHmac("sha256", secret).update(request.rawBody).digest();
+    const computed = createHmac("sha256", secret)
+      .update(request.rawBody)
+      .digest();
     const supplied = Buffer.from(signature, "hex");
-    if (supplied.length !== computed.length || !timingSafeEqual(supplied, computed)) {
+    if (
+      supplied.length !== computed.length ||
+      !timingSafeEqual(supplied, computed)
+    ) {
       return { accepted: false, reason: "LINEAR_WEBHOOK_SIGNATURE_INVALID" };
     }
-    const payload = jsonObject(JSON.parse(Buffer.from(request.rawBody).toString("utf8")));
+    const payload = jsonObject(
+      JSON.parse(Buffer.from(request.rawBody).toString("utf8")),
+    );
     const webhookTimestamp = Number(payload.webhookTimestamp);
     const now = this.options.now?.() ?? Date.now();
     if (
