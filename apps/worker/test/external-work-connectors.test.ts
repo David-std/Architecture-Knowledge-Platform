@@ -54,7 +54,7 @@ describe("external work source connectors", () => {
       sourceSystem: "jira",
       replication: "REFERENCE",
       permissionFidelity: "SOURCE_ACL_MAPPED",
-      deletionPropagation: "TOMBSTONE",
+      deletionPropagation: "NONE",
       incremental: { cursor: true, webhook: false },
     });
 
@@ -194,7 +194,7 @@ describe("external work source connectors", () => {
     expect(connector.describe()).toMatchObject({
       replication: "REFERENCE",
       dataResidency: "EXTERNAL",
-      deletionPropagation: "TOMBSTONE",
+      deletionPropagation: "NONE",
       incremental: { cursor: true, webhook: false },
     });
   });
