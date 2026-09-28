@@ -24,8 +24,9 @@ describe("external work source connectors", () => {
       async (_url: string | URL | Request, init?: RequestInit) => {
         expect(init?.method).toBe("POST");
         const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-        expect(String(body.jql)).toContain("updated >");
+        expect(String(body.jql)).toContain("updated >=");
         expect(String(body.jql)).toContain("updated <=");
+        expect(String(body.jql)).toContain("2026-09-26T23:55:00.000Z");
         return jsonResponse({
           issues: [
             {
@@ -124,9 +125,10 @@ describe("external work source connectors", () => {
     const fetchImpl = vi.fn(
       async (_url: string | URL | Request, init?: RequestInit) => {
         const body = JSON.parse(String(init?.body)) as {
-          variables: { after: string | null };
+          variables: { after: string | null; from: string | null };
         };
         if (body.variables.after === null) {
+          expect(body.variables.from).toBe("2026-09-26T23:55:00.000Z");
           return jsonResponse({
             data: {
               issues: {
