@@ -201,6 +201,89 @@ describe("retrieval answerability", () => {
     });
   });
 
+  it("rejects a topical definition when the query asks for an avoidance condition, even on a direct channel", () => {
+    const definition = hit(1, {
+      title: "Immutable change-log definition",
+      excerpt:
+        "Immutable change logs record every domain change and retain a complete operational history for later reconstruction.",
+      contributions: [
+        contribution("exact"),
+        contribution("vector", 0.91, 1),
+      ],
+    });
+    const query =
+      "When should immutable change logs be avoided because operational overhead is high?";
+
+    const result = assessRetrievalAnswerability([definition], query);
+
+    expect(result).toMatchObject({
+      supported: false,
+      reason: "SUPPORT_NOT_DEMONSTRATED",
+      supportedCandidateKeys: [],
+    });
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: false,
+      reason: "ANSWER_CUE_MISMATCH",
+      answerCueCoverage: 0,
+    });
+    expect(
+      result.candidateSignals[0]?.passageSupport.requiredAnswerCues,
+    ).toEqual(expect.arrayContaining(["PREVENTION", "CONDITION"]));
+    expect(
+      result.candidateSignals[0]?.textualSupport.salientCoverage,
+    ).toBeGreaterThanOrEqual(0.4);
+  });
+
+  it("admits the condition-bearing unit instead of a topical definition from the same document", () => {
+    const definition = hit(1, {
+      title: "Immutable change-log definition",
+      excerpt:
+        "Immutable change logs record every domain change and retain a complete operational history for later reconstruction.",
+      contributions: [
+        contribution("exact"),
+        contribution("vector", 0.91, 1),
+      ],
+    });
+    const conditionBase = hit(2, {
+      title: "Immutable change-log trade-off",
+      excerpt:
+        "Avoid immutable change logs when simple mutable records are sufficient and the operational overhead outweighs the audit requirement.",
+      contributions: [contribution("vector", 0.89, 2)],
+    });
+    const condition: SearchHit = {
+      ...conditionBase,
+      documentId: definition.documentId,
+      document: definition.document,
+    };
+    const query =
+      "When should immutable change logs be avoided because operational overhead is high?";
+
+    const result = assessRetrievalAnswerability(
+      [definition, condition],
+      query,
+    );
+
+    expect(result.supported).toBe(true);
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(condition),
+    ]);
+    expect(result.candidateSignals).toEqual([
+      expect.objectContaining({
+        candidateKey: retrievalAnswerabilityCandidateKey(definition),
+        passageSupport: expect.objectContaining({
+          supported: false,
+          reason: "ANSWER_CUE_MISMATCH",
+        }),
+      }),
+      expect.objectContaining({
+        candidateKey: retrievalAnswerabilityCandidateKey(condition),
+        passageSupport: expect.objectContaining({
+          supported: true,
+        }),
+      }),
+    ]);
+  });
+
   it("rejects a semantic neighbour that is relevant to the topic but does not answer", () => {
     const result = assessRetrievalAnswerability(
       [
