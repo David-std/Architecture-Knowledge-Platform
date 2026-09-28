@@ -83,6 +83,7 @@ const ProviderRegistrationBody = z
       .optional(),
     baseUrl: z.string().url().max(2048).optional(),
     jql: z.string().trim().min(1).max(4000).optional(),
+    authorizationScheme: z.enum(["RAW", "BASIC", "BEARER"]).optional(),
     freshnessSlaSeconds: z.number().int().positive().max(31_536_000).default(300),
   })
   .strict()
@@ -92,6 +93,59 @@ const ProviderRegistrationBody = z
         code: z.ZodIssueCode.custom,
         path: ["baseUrl"],
         message: "Jira provider connectors require baseUrl.",
+      });
+    }
+    if (value.baseUrl) {
+      try {
+        const url = new URL(value.baseUrl);
+        const jiraCloud =
+          value.provider === "jira" &&
+          url.protocol === "https:" &&
+          url.username === "" &&
+          url.password === "" &&
+          url.pathname.replace(/\/+$/u, "") === "" &&
+          url.hostname.toLowerCase().endsWith(".atlassian.net");
+        const linearApi =
+          value.provider === "linear" &&
+          url.protocol === "https:" &&
+          url.username === "" &&
+          url.password === "" &&
+          url.hostname.toLowerCase() === "api.linear.app" &&
+          url.pathname.replace(/\/+$/u, "") === "/graphql";
+        if (!jiraCloud && !linearApi) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["baseUrl"],
+            message:
+              "Provider endpoint is outside the fail-closed Jira Cloud/Linear allowlist.",
+          });
+        }
+      } catch {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["baseUrl"],
+          message: "Provider endpoint is invalid.",
+        });
+      }
+    }
+    if (
+      value.provider === "jira" &&
+      value.authorizationScheme === "RAW"
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["authorizationScheme"],
+        message: "Jira Cloud provider auth must be BASIC or BEARER.",
+      });
+    }
+    if (
+      value.provider === "linear" &&
+      value.authorizationScheme === "BASIC"
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["authorizationScheme"],
+        message: "Linear provider auth must be RAW or BEARER.",
       });
     }
     if (value.provider === "jira" && value.webhookSecretRef) {
@@ -383,8 +437,15 @@ export function registerSourceConnectorRoutes(
         writeBack: "NONE",
       };
       const providerConfig = {
-        ...(parsed.data.baseUrl ? { baseUrl: parsed.data.baseUrl } : {}),
+        ...(parsed.data.baseUrl
+          ? parsed.data.provider === "linear"
+            ? { endpoint: parsed.data.baseUrl }
+            : { baseUrl: parsed.data.baseUrl }
+          : {}),
         ...(parsed.data.jql ? { jql: parsed.data.jql } : {}),
+        authorizationScheme:
+          parsed.data.authorizationScheme ??
+          (parsed.data.provider === "jira" ? "BASIC" : "RAW"),
         ...(parsed.data.webhookSecretRef
           ? { webhookSecretRef: parsed.data.webhookSecretRef }
           : {}),
