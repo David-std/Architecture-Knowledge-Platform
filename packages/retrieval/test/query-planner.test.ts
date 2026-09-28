@@ -49,6 +49,22 @@ describe("query planner", () => {
     });
   });
 
+  it("does not treat dependency vocabulary alone as impact analysis", () => {
+    const conceptual = planQuery(
+      "Why do dependencies point toward policies?",
+      { vectorAvailable: true, graphConsistent: true },
+    );
+    expect(conceptual.intent).toBe("CONCEPTUAL");
+    expect(conceptual.channels).toContain("vector");
+
+    expect(
+      planQuery("What dependencies are affected by this change?", {
+        vectorAvailable: true,
+        graphConsistent: true,
+      }).intent,
+    ).toBe("IMPACT_ANALYSIS");
+  });
+
   it("reserves deeper graph traversal for impact analysis", () => {
     expect(
       planQuery("trace the dependency impact", "IMPACT_ANALYSIS", {
