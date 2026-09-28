@@ -165,7 +165,6 @@ function passageMatchesGoldPredicate(
   return all && any;
 }
 
-
 async function storageSnapshot(db: Postgres): Promise<StorageSnapshot> {
   const result = await db.pool.query(
     `
