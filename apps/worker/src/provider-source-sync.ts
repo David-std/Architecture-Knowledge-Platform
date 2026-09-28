@@ -87,14 +87,9 @@ function providerPort(
   }
   if (row.source_system === "linear") {
     const endpoint = stringValue(config.endpoint);
-    const webhookSecretRef = stringValue(config.webhookSecretRef);
-    const webhookSecret = webhookSecretRef
-      ? environment[webhookSecretRef]?.trim()
-      : undefined;
     return new LinearSourceConnector({
       authorizationHeader: authorization,
       ...(endpoint ? { endpoint } : {}),
-      ...(webhookSecret ? { webhookSecret } : {}),
     });
   }
   throw new Error("PROVIDER_CONNECTOR_UNSUPPORTED");
