@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
-import type { SourceConnectorCheckpoint, SourceConnectorPort } from "@akp/domain";
+import type {
+  SourceConnectorCheckpoint,
+  SourceConnectorPort,
+} from "@akp/domain";
 import {
   appendSourceConnectorEvent,
   applyNextSourceConnectorEvent,
@@ -213,7 +216,9 @@ export async function syncProviderSourceConnector(
         applied: 0,
         checkpointAdvanced: false,
         health: health.state,
-        errorCode: health.reason ? safeErrorCode(health.reason) : "PROVIDER_UNAVAILABLE",
+        errorCode: health.reason
+          ? safeErrorCode(health.reason)
+          : "PROVIDER_UNAVAILABLE",
       };
     }
 
@@ -300,7 +305,8 @@ export async function syncProviderSourceConnector(
         objectType: object.objectType,
         sourceVersion: object.sourceVersion,
         title: object.title ?? null,
-        content: object.operation === "DELETE" ? null : (object.content ?? null),
+        content:
+          object.operation === "DELETE" ? null : (object.content ?? null),
         contentType: object.contentType ?? null,
         permissionFidelity: object.permissions.fidelity,
         permissionUncertain: object.permissions.uncertain,
