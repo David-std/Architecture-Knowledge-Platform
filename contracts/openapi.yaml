@@ -3501,6 +3501,8 @@ paths:
                     description: "Required for Jira Cloud; optional Linear GraphQL endpoint override.",
                   }
                 jql: { type: string, minLength: 1, maxLength: 4000 }
+                authorizationScheme:
+                  { type: string, enum: [RAW, BASIC, BEARER] }
                 freshnessSlaSeconds:
                   { type: integer, minimum: 1, maximum: 31536000, default: 300 }
       responses:
