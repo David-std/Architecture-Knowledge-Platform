@@ -205,7 +205,6 @@ export async function upsertExternalObjectRef(
     canonicalUrl?: string | null;
     sourceRevision?: string | null;
     title?: string | null;
-    authority?: ExternalObjectAuthority;
     workObjectClass?: WorkObjectClass | null;
     owners?: string[];
     metadata?: Record<string, unknown>;
@@ -250,7 +249,7 @@ export async function upsertExternalObjectRef(
         input.canonicalUrl?.trim() || null,
         input.sourceRevision?.trim() || null,
         input.title?.trim() || null,
-        input.authority ?? "SYSTEM_OF_RECORD",
+        "REFERENCE",
         JSON.stringify(input.metadata ?? {}),
         JSON.stringify(input.owners ?? []),
         input.observedAt ?? new Date(),
