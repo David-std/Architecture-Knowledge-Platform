@@ -36,6 +36,7 @@ import {
   planQuery,
   QueryEmbeddingService,
   rehydrateStructuralContext,
+  retrievalAnswerabilityCandidateKey,
   reciprocalRankFusion,
   validateQueryTransformationResult,
   rerankSearchHitsSafely,
@@ -518,16 +519,18 @@ export interface RetrievalExecutionOptions {
 
 export function partitionSearchHitsByAnswerability(
   hits: readonly SearchHit[],
-  supportedDocumentIds: readonly string[],
+  supportedCandidateKeys: readonly string[],
 ): {
   hits: SearchHit[];
   exploratoryHits: SearchHit[];
   retrievalOutcome: "SUPPORTED" | "EXPLORATORY_ONLY" | "NO_CANDIDATES";
 } {
-  const supportedIds = new Set(supportedDocumentIds);
-  const supportedHits = hits.filter((hit) => supportedIds.has(hit.documentId));
+  const supportedKeys = new Set(supportedCandidateKeys);
+  const supportedHits = hits.filter((hit) =>
+    supportedKeys.has(retrievalAnswerabilityCandidateKey(hit)),
+  );
   const exploratoryHits = hits.filter(
-    (hit) => !supportedIds.has(hit.documentId),
+    (hit) => !supportedKeys.has(retrievalAnswerabilityCandidateKey(hit)),
   );
   return {
     hits: supportedHits,
@@ -3734,7 +3737,7 @@ export function registerSearchRoutes(
       );
       const partitioned = partitionSearchHitsByAnswerability(
         answerabilityPool,
-        answerability.supportedDocumentIds,
+        answerability.supportedCandidateKeys,
       );
       recordAnswerabilityDiagnostics(answerability, "search");
       if (!answerability.supported && answerabilityPool.length > 0) {
@@ -4711,7 +4714,9 @@ export function registerSearchRoutes(
         },
       );
       recordAnswerabilityDiagnostics(answerability, "context");
-      const supportedIds = new Set(answerability.supportedDocumentIds);
+      const supportedCandidateKeys = new Set(
+        answerability.supportedCandidateKeys,
+      );
       if (!answerability.supported && answerabilityPool.length > 0) {
         retrievalWarnings.push(
           `ANSWERABILITY_GATE_REJECTED:${answerability.reason}`,
@@ -4729,7 +4734,7 @@ export function registerSearchRoutes(
           surface: "context",
         });
         const supportedPool = answerabilityPool.filter((hit) =>
-          supportedIds.has(hit.documentId),
+          supportedCandidateKeys.has(retrievalAnswerabilityCandidateKey(hit)),
         );
         hits = supportedPool.slice(0, scopedRequest.limit);
       }
@@ -4911,6 +4916,13 @@ export function registerSearchRoutes(
           } satisfies SearchHit;
         });
       const contextHits = [...hits, ...conflictCounterparts];
+      const querySupportedRank = new Map(
+        answerability.candidateSignals
+          .filter((signal) => signal.passageSupport.supported)
+          .map(
+            (signal) => [signal.candidateKey, signal.candidateRank] as const,
+          ),
+      );
       const contextHitIds = new Set(contextHits.map((hit) => hit.documentId));
       const materialConflicts = conflicts.rows.map((conflict) => ({
         id: String(conflict.id),
@@ -5023,6 +5035,9 @@ export function registerSearchRoutes(
               String(detail?.layer ?? ""),
               String(detail?.type ?? hit.type),
             );
+            const retrievalRank = querySupportedRank.get(
+              retrievalAnswerabilityCandidateKey(hit),
+            );
             return {
               hit,
               content: hit.parentContext ?? hit.excerpt,
@@ -5030,6 +5045,7 @@ export function registerSearchRoutes(
                 ? { fullContent: String(detail.body_cache) }
                 : {}),
               kind,
+              ...(retrievalRank === undefined ? {} : { retrievalRank }),
               ...(kind === "rule" ? { mandatory: true } : {}),
             };
           }),

@@ -253,6 +253,10 @@ const PASSAGE_CUE_PATTERNS: Record<PassageAnswerCue, readonly string[]> = {
     "scenario*",
     "condition*",
     "threshold*",
+    "poor fit",
+    "not recommended",
+    "suitable only",
+    "appropriate only",
     "cuando",
     "si",
     "salvo",
@@ -320,7 +324,24 @@ const PASSAGE_CUE_PATTERNS: Record<PassageAnswerCue, readonly string[]> = {
   ],
 };
 
+function identifierLikeQuery(query: string): boolean {
+  const trimmed = query.trim();
+  if (
+    !trimmed ||
+    /\s/u.test(trimmed) ||
+    !/^[\p{L}\p{N}_.:/-]+$/u.test(trimmed)
+  ) {
+    return false;
+  }
+  return (
+    /\d/u.test(trimmed) ||
+    /[_:/.]/u.test(trimmed) ||
+    (trimmed.includes("-") && trimmed === trimmed.toLocaleUpperCase("en-US"))
+  );
+}
+
 function queryAnswerCues(query: string): PassageAnswerCue[] {
+  if (identifierLikeQuery(query)) return [];
   const normalized = normalizedMatchText(query);
   const tokens = normalizedAnswerabilityTokens(query);
   return (Object.keys(QUERY_CUE_PATTERNS) as PassageAnswerCue[]).filter((cue) =>
@@ -341,6 +362,37 @@ function passageAnswerCues(
       patternMatches(normalized, tokens, pattern),
     ),
   );
+}
+
+/**
+ * Re-checks a bounded compact projection without treating a repeated query
+ * string as its own answer. Identifier/look-up queries are supported when the
+ * exact query remains present. Queries that ask for a procedure, rationale,
+ * prevention rule, condition, definition or comparison must also retain the
+ * corresponding answer cue outside the echoed query text.
+ */
+export function deterministicProjectionRetainsSupport(
+  passage: string,
+  query: string,
+): boolean {
+  const needle = query.trim();
+  if (!needle || !passage.trim()) return false;
+
+  const match = passage
+    .toLocaleLowerCase("en-US")
+    .indexOf(needle.toLocaleLowerCase("en-US"));
+  if (match < 0) return false;
+
+  const requiredAnswerCues = queryAnswerCues(query);
+  if (requiredAnswerCues.length === 0) return true;
+
+  const passageWithoutQueryEcho =
+    passage.slice(0, match) + " " + passage.slice(match + needle.length);
+  const matchedAnswerCues = passageAnswerCues(
+    passageWithoutQueryEcho,
+    requiredAnswerCues,
+  );
+  return matchedAnswerCues.length === requiredAnswerCues.length;
 }
 
 function minVectorRank(hit: SearchHit): number | null {
@@ -390,15 +442,18 @@ export function verifyDeterministicPassageSupport(
     policy.minimumSalientOverlap,
     Math.max(1, salientQueryTokens.length),
   );
+  const requiredAnswerCuesSatisfied =
+    requiredAnswerCues.length === 0 || answerCueCoverage === 1;
   const strongTextSupport =
     passage.length > 0 &&
     salientQueryTokens.length > 0 &&
     salientOverlapTokens.length >= requiredOverlap &&
-    salientCoverage >= policy.minimumSalientCoverage;
+    salientCoverage >= policy.minimumSalientCoverage &&
+    requiredAnswerCuesSatisfied;
   const cueSemanticSupport =
     passage.length > 0 &&
     requiredAnswerCues.length > 0 &&
-    answerCueCoverage === 1 &&
+    requiredAnswerCuesSatisfied &&
     vectorRank !== null &&
     vectorRank <= policy.semanticCueMaxVectorRank;
 

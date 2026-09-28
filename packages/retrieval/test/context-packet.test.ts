@@ -1287,6 +1287,331 @@ describe("buildContextPacket", () => {
     ).toEqual(["rule A1", "concept A2", "source B1"]);
   });
 
+  it.each([1_500, 2_500, 3_500])(
+    "keeps the best query-supported result ahead of generic kind priority under a %i-token budget",
+    (maxTokens) => {
+      const directId = "66666666-6666-4666-8666-666666666666";
+      const directContent =
+        "The directly answering passage states the bounded replay invariant. " +
+        "d".repeat(2_100);
+      const packet = buildContextPacket({
+        request: requestFor("bounded replay invariant"),
+        intent: "CONCEPTUAL",
+        corpusRevision: "deadbeef",
+        maxTokens,
+        candidates: [
+          {
+            hit: {
+              ...baseHit,
+              documentId: directId,
+              title: "Direct replay guidance",
+              score: 0.91,
+              trust: "MACHINE_SUPPORTED",
+            },
+            content: directContent,
+            kind: "concept",
+            retrievalRank: 1,
+          },
+          {
+            hit: {
+              ...baseHit,
+              documentId: "77777777-7777-4777-8777-777777777777",
+              title: "Generic workflow",
+              score: 0.9,
+              trust: "ATTESTED",
+            },
+            content: "Generic workflow context. " + "w".repeat(3_000),
+            kind: "workflow",
+            retrievalRank: 2,
+          },
+          {
+            hit: {
+              ...baseHit,
+              documentId: "88888888-8888-4888-8888-888888888888",
+              title: "Generic evidence",
+              score: 0.89,
+              trust: "ATTESTED",
+            },
+            content: "Generic evidence context. " + "e".repeat(3_000),
+            kind: "evidence",
+            retrievalRank: 3,
+          },
+          {
+            hit: {
+              ...baseHit,
+              documentId: "99999999-9999-4999-8999-999999999999",
+              title: "Generic decision",
+              score: 0.88,
+              trust: "ATTESTED",
+            },
+            content: "Generic decision context. " + "x".repeat(3_000),
+            kind: "decision",
+            retrievalRank: 4,
+          },
+        ],
+      });
+
+      expect(
+        packet.sections.some((section) => section.documentId === directId),
+      ).toBe(true);
+      expect(packet.sections[0]).toMatchObject({
+        documentId: directId,
+        retrievalRank: 1,
+      });
+      expect(packet.budget.serializedTokens).toBeLessThanOrEqual(maxTokens);
+    },
+  );
+
+  it("keeps mandatory policy first but degrades explicitly when the best query support cannot fit", () => {
+    const directId = "66666666-6666-4666-8666-666666666666";
+    const packet = buildContextPacket({
+      request: requestFor("bounded replay invariant"),
+      intent: "CONCEPTUAL",
+      corpusRevision: "deadbeef",
+      maxTokens: 1_500,
+      candidates: [
+        {
+          hit: {
+            ...baseHit,
+            documentId: "77777777-7777-4777-8777-777777777777",
+            title: "Mandatory policy",
+            score: 0.2,
+          },
+          content: "Mandatory policy guard. " + "m".repeat(3_000),
+          kind: "rule",
+          mandatory: true,
+        },
+        {
+          hit: {
+            ...baseHit,
+            documentId: directId,
+            title: "Direct replay guidance",
+            score: 0.91,
+          },
+          content: "Direct query support. " + "d".repeat(2_300),
+          kind: "concept",
+          retrievalRank: 1,
+        },
+      ],
+    });
+
+    expect(packet.sections[0]?.kind).toBe("rule");
+    expect(
+      packet.sections.some((section) => section.documentId === directId),
+    ).toBe(false);
+    expect(packet.status).toBe("DEGRADED");
+    expect(packet.gaps).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          "Highest-ranked query-supported material omitted:",
+        ),
+      ]),
+    );
+    expect(packet.requiredActions).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          "Request the continuation containing the highest-ranked query-supported material",
+        ),
+      ]),
+    );
+    expect(packet.continuations.length).toBeGreaterThan(0);
+  });
+
+  it("degrades a compact projection when its budget drops the best query-supported section", () => {
+    const directId = "66666666-6666-4666-8666-666666666666";
+    const pair = buildContextPacketPair({
+      request: requestFor("bounded replay invariant"),
+      intent: "CONCEPTUAL",
+      corpusRevision: "deadbeef",
+      maxTokens: 1_500,
+      candidates: [
+        {
+          hit: {
+            ...baseHit,
+            documentId: "77777777-7777-4777-8777-777777777777",
+            title: "Mandatory policy",
+          },
+          content: "Mandatory policy guard. " + "m".repeat(2_500),
+          kind: "rule",
+          mandatory: true,
+        },
+        {
+          hit: {
+            ...baseHit,
+            documentId: directId,
+            title: "Direct replay guidance",
+            score: 0.91,
+          },
+          content: "Direct query support. " + "d".repeat(2_500),
+          kind: "concept",
+          retrievalRank: 1,
+        },
+      ],
+    });
+
+    expect(
+      pair.full.sections.some((section) => section.documentId === directId),
+    ).toBe(true);
+    expect(
+      pair.compact.content.some(
+        (section) => section.identity.documentId === directId,
+      ),
+    ).toBe(false);
+    expect(pair.compact.identity.status).toBe("DEGRADED");
+    expect(pair.compact.gaps).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          "Highest-ranked query-supported material omitted from compact packet:",
+        ),
+      ]),
+    );
+    expect(pair.compact.requiredActions).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          "Request the continuation containing the full highest-ranked query-supported material",
+        ),
+      ]),
+    );
+  });
+
+  it("degrades a compact projection when the best query support fits only as a focused truncation", () => {
+    const directId = "66666666-6666-4666-8666-666666666666";
+    const query = "bounded replay invariant";
+    const full = buildContextPacket({
+      request: requestFor(query),
+      intent: "CONCEPTUAL",
+      corpusRevision: "deadbeef",
+      maxTokens: 4_000,
+      candidates: [
+        {
+          hit: {
+            ...baseHit,
+            documentId: directId,
+            title: "Direct replay guidance",
+            score: 0.91,
+          },
+          content:
+            `The ${query} is described here with its decisive procedure. ` +
+            "d".repeat(8_000),
+          kind: "concept",
+          retrievalRank: 1,
+        },
+      ],
+    });
+
+    expect(full.status).toBe("SUPPORTED");
+    const originalContent = full.sections[0]?.content ?? "";
+    const compact = projectContextPacket(full, { maxTokens: 1_000 });
+    const projected = compact.content.find(
+      (section) => section.identity.documentId === directId,
+    );
+
+    expect(projected).toBeDefined();
+    expect(projected!.content.length).toBeLessThan(originalContent.length);
+    expect(compact.identity.status).toBe("DEGRADED");
+    expect(compact.gaps).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          "Highest-ranked query-supported material truncated in compact packet without retaining demonstrable answer support:",
+        ),
+      ]),
+    );
+    expect(compact.requiredActions).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          "continuation containing the full highest-ranked query-supported material",
+        ),
+      ]),
+    );
+    expect(compact.continuations.length).toBeGreaterThan(0);
+  });
+
+  it("keeps a focused identifier projection supported when the bounded window retains the direct lookup", () => {
+    const directId = "88888888-8888-4888-8888-888888888888";
+    const query = "revision-marker-abc123";
+    const full = buildContextPacket({
+      request: requestFor(query),
+      intent: "CONCEPTUAL",
+      corpusRevision: "deadbeef",
+      maxTokens: 4_000,
+      candidates: [
+        {
+          hit: {
+            ...baseHit,
+            documentId: directId,
+            title: "Revision marker reference",
+            score: 0.93,
+          },
+          content:
+            "Reference material before the lookup. " +
+            `The current revision is ${query}. ` +
+            "r".repeat(8_000),
+          kind: "concept",
+          retrievalRank: 1,
+        },
+      ],
+    });
+
+    expect(full.status).toBe("SUPPORTED");
+    const originalContent = full.sections[0]?.content ?? "";
+    const compact = projectContextPacket(full, { maxTokens: 1_000 });
+    const projected = compact.content.find(
+      (section) => section.identity.documentId === directId,
+    );
+
+    expect(projected).toBeDefined();
+    expect(projected!.content.length).toBeLessThan(originalContent.length);
+    expect(projected!.content).toContain(query);
+    expect(compact.identity.status).toBe("SUPPORTED");
+    expect(compact.gaps).not.toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          "Highest-ranked query-supported material truncated in compact packet",
+        ),
+      ]),
+    );
+    expect(compact.continuations.length).toBeGreaterThan(0);
+  });
+
+  it("keeps document provenance distinct from source/evidence citations", () => {
+    const packet = buildContextPacket({
+      request: requestFor("compiled markdown guidance"),
+      intent: "CONCEPTUAL",
+      corpusRevision: "deadbeef",
+      maxTokens: 2_000,
+      candidates: [
+        {
+          hit: {
+            ...baseHit,
+            citations: [],
+            document: {
+              externalId: "doc:compiled-guidance",
+              path: "docs/compiled-guidance.md",
+              title: "Compiled guidance",
+            },
+          },
+          content:
+            "Compiled Markdown can be identified without inventing a citation.",
+          kind: "concept",
+          retrievalRank: 1,
+        },
+      ],
+    });
+
+    expect(packet.status).toBe("SUPPORTED");
+    expect(packet.citations).toEqual([]);
+    expect(packet.sections[0]).toMatchObject({
+      documentId: baseHit.documentId,
+      documentRevision: "abc",
+      document: { path: "docs/compiled-guidance.md" },
+      sourceOrEvidenceIds: [],
+      retrievalRank: 1,
+    });
+    expect(packet.requiredActions).toContain(
+      "Do not claim vault authority without evidence.",
+    );
+  });
+
   it("orders equal-kind context by authority, freshness, independent support, then relevance", () => {
     const packet = buildContextPacket({
       request: requestFor("authority freshness support"),

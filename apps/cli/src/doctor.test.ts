@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Postgres } from "@akp/postgres";
 import {
+  DOCTOR_ACTIVE_INGEST_STATES,
   graphChecks,
+  isDoctorActiveIngestState,
   modelRoutingCheck,
   overallDoctorStatus,
   renderDoctorReport,
@@ -22,6 +24,37 @@ describe("doctor rendering", () => {
         { id: "b", label: "B", status: "FAIL", summary: "fail" },
       ]),
     ).toBe("FAIL");
+  });
+
+  it("counts only worker-active ingest states and excludes terminal or gated states", () => {
+    expect(DOCTOR_ACTIVE_INGEST_STATES).toEqual([
+      "RECEIVED",
+      "HASHED",
+      "STORED",
+      "NORMALIZING",
+      "ANALYZING",
+      "PLANNED",
+      "DRAFTED",
+      "VALIDATING",
+    ]);
+
+    for (const state of DOCTOR_ACTIVE_INGEST_STATES) {
+      expect(isDoctorActiveIngestState(state)).toBe(true);
+    }
+    for (const state of [
+      "REVIEW_REQUIRED",
+      "AUTO_APPROVED",
+      "MERGED",
+      "INDEXED",
+      "EVALUATED",
+      "COMPLETED",
+      "FAILED",
+      "CANCELLED",
+      "NO_MATERIAL",
+      "QUARANTINED",
+    ]) {
+      expect(isDoctorActiveIngestState(state)).toBe(false);
+    }
   });
 
   it("reports disabled model routing without requiring a provider", () => {

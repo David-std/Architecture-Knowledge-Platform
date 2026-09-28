@@ -787,7 +787,7 @@ program
   .option("--vault-id <uuid...>", "Target vault UUID(s), retained for scripts")
   .option("--vault <name-or-key...>", "Target authorized vault name/key(s)")
   .option("--federated", "Explicitly allow multiple-vault synthesis", false)
-  .option("--intent <intent>", "Agent intent", "architecture guidance")
+  .option("--intent <intent>", "Retrieval intent", "CONCEPTUAL")
   .option("--max-tokens <number>", "Context budget", positiveInteger, 6000)
   .action(
     async (
@@ -1024,7 +1024,7 @@ benchmark
     positiveInteger,
     20,
   )
-  .option("--intent <intent>", "Packet intent", "architecture guidance")
+  .option("--intent <intent>", "Packet intent", "CONCEPTUAL")
   .option("--mode <mode>", "Retrieval mode", "SOURCE_BACKED")
   .requiredOption("--space-id <uuid>", "Authorized space UUID")
   .requiredOption("--vault-id <uuid...>", "Target vault UUID(s)")

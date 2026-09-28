@@ -135,6 +135,8 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
       - name: Run critical browser E2E
         run: pnpm test:browser
+      - name: Re-run critical browser E2E on the same database
+        run: pnpm test:browser
       - name: Run temporal truth maintenance integration
         run: |
           mkdir -p reports/ci
