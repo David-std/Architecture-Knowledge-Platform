@@ -414,7 +414,7 @@ export function registerSourceConnectorRoutes(
             ? { kind: "DECLARED", requestsPerMinute: 40 }
             : { kind: "NONE" },
         checkpointModel: "OPAQUE_CURSOR",
-        deletionPropagation: "NONE",
+        deletionPropagation: "TOMBSTONE",
         sourceVersioning: true,
         freshnessSlaSeconds: parsed.data.freshnessSlaSeconds,
         contentTrust: "UNTRUSTED_EXTERNAL",
