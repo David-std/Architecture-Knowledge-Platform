@@ -208,6 +208,8 @@ describe("provider source sync", () => {
         "11111111-1111-4111-8111-111111111111",
         "OPAQUE_CURSOR",
         "2026-09-28T00:00:00.000Z",
+        "AVAILABLE",
+        null,
       ],
     ]);
     expect(applyNextEvent).toHaveBeenCalledTimes(2);
