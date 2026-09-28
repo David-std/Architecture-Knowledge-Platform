@@ -120,7 +120,11 @@ function supportReasonForCandidate(
   passage: DeterministicPassageSupportSignal,
   allowGraphSupport: boolean,
 ): CandidateSupportReason {
+  const requiredAnswerCuesSatisfied =
+    passage.requiredAnswerCues.length === 0 || passage.answerCueCoverage === 1;
+
   if (
+    requiredAnswerCuesSatisfied &&
     (hit.fusionContributions ?? []).some((contribution) =>
       DIRECT_SUPPORT_CHANNELS.has(contribution.channel),
     )
@@ -128,6 +132,7 @@ function supportReasonForCandidate(
     return "DIRECT_CHANNEL_SUPPORT";
   }
   if (
+    requiredAnswerCuesSatisfied &&
     allowGraphSupport &&
     (hit.fusionContributions ?? []).some(
       (contribution) =>
