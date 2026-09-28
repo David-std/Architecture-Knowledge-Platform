@@ -1512,7 +1512,7 @@ describe("buildContextPacket", () => {
     expect(compact.gaps).toEqual(
       expect.arrayContaining([
         expect.stringContaining(
-          "Highest-ranked query-supported material truncated in compact packet:",
+          "Highest-ranked query-supported material truncated in compact packet without retaining demonstrable answer support:",
         ),
       ]),
     );
@@ -1520,6 +1520,53 @@ describe("buildContextPacket", () => {
       expect.arrayContaining([
         expect.stringContaining(
           "continuation containing the full highest-ranked query-supported material",
+        ),
+      ]),
+    );
+    expect(compact.continuations.length).toBeGreaterThan(0);
+  });
+
+  it("keeps a focused identifier projection supported when the bounded window retains the direct lookup", () => {
+    const directId = "88888888-8888-4888-8888-888888888888";
+    const query = "revision-marker-abc123";
+    const full = buildContextPacket({
+      request: requestFor(query),
+      intent: "CONCEPTUAL",
+      corpusRevision: "deadbeef",
+      maxTokens: 4_000,
+      candidates: [
+        {
+          hit: {
+            ...baseHit,
+            documentId: directId,
+            title: "Revision marker reference",
+            score: 0.93,
+          },
+          content:
+            "Reference material before the lookup. " +
+            `The current revision is ${query}. ` +
+            "r".repeat(8_000),
+          kind: "concept",
+          retrievalRank: 1,
+        },
+      ],
+    });
+
+    expect(full.status).toBe("SUPPORTED");
+    const originalContent = full.sections[0]?.content ?? "";
+    const compact = projectContextPacket(full, { maxTokens: 1_000 });
+    const projected = compact.content.find(
+      (section) => section.identity.documentId === directId,
+    );
+
+    expect(projected).toBeDefined();
+    expect(projected!.content.length).toBeLessThan(originalContent.length);
+    expect(projected!.content).toContain(query);
+    expect(compact.identity.status).toBe("SUPPORTED");
+    expect(compact.gaps).not.toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          "Highest-ranked query-supported material truncated in compact packet",
         ),
       ]),
     );
