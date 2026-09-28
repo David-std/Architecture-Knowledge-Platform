@@ -2,19 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "name": "architecture-knowledge-platform",
   "version": "0.2.0",
-  "transports": [
-    "stdio",
-    "streamable-http"
-  ],
+  "transports": ["stdio", "streamable-http"],
   "definitions": {
     "ScopedSearch": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "query",
-        "spaceId",
-        "vaultIds"
-      ],
+      "required": ["query", "spaceId", "vaultIds"],
       "properties": {
         "query": {
           "type": "string",
@@ -82,11 +75,7 @@
     "ScopedContext": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "query",
-        "spaceId",
-        "vaultIds"
-      ],
+      "required": ["query", "spaceId", "vaultIds"],
       "properties": {
         "query": {
           "type": "string",
@@ -132,18 +121,12 @@
         },
         "packetMode": {
           "type": "string",
-          "enum": [
-            "FULL_CONTEXT_PACKET",
-            "COMPACT_AGENT_PACKET"
-          ],
+          "enum": ["FULL_CONTEXT_PACKET", "COMPACT_AGENT_PACKET"],
           "default": "COMPACT_AGENT_PACKET"
         },
         "reasoningMode": {
           "type": "string",
-          "enum": [
-            "DIRECT",
-            "PLAN"
-          ],
+          "enum": ["DIRECT", "PLAN"],
           "default": "DIRECT"
         },
         "limit": {
@@ -167,9 +150,7 @@
     "CodeSymbolSelector": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "repository"
-      ],
+      "required": ["repository"],
       "properties": {
         "repository": {
           "type": "string",
@@ -208,24 +189,16 @@
       },
       "anyOf": [
         {
-          "required": [
-            "path"
-          ]
+          "required": ["path"]
         },
         {
-          "required": [
-            "qualifiedName"
-          ]
+          "required": ["qualifiedName"]
         },
         {
-          "required": [
-            "name"
-          ]
+          "required": ["name"]
         },
         {
-          "required": [
-            "signature"
-          ]
+          "required": ["signature"]
         }
       ]
     },
@@ -299,11 +272,7 @@
         },
         "direction": {
           "type": "string",
-          "enum": [
-            "outgoing",
-            "incoming",
-            "both"
-          ]
+          "enum": ["outgoing", "incoming", "both"]
         },
         "includeTests": {
           "type": "boolean"
@@ -322,10 +291,7 @@
     "CodeScopedSelector": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "spaceId",
-        "selector"
-      ],
+      "required": ["spaceId", "selector"],
       "properties": {
         "spaceId": {
           "type": "string",
@@ -349,10 +315,7 @@
         },
         "freshnessPolicy": {
           "type": "string",
-          "enum": [
-            "FRESH_ONLY",
-            "ALLOW_STALE"
-          ],
+          "enum": ["FRESH_ONLY", "ALLOW_STALE"],
           "default": "FRESH_ONLY"
         },
         "selector": {
@@ -363,11 +326,7 @@
     "CodeScopedPath": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "spaceId",
-        "source",
-        "target"
-      ],
+      "required": ["spaceId", "source", "target"],
       "properties": {
         "spaceId": {
           "type": "string",
@@ -391,10 +350,7 @@
         },
         "freshnessPolicy": {
           "type": "string",
-          "enum": [
-            "FRESH_ONLY",
-            "ALLOW_STALE"
-          ],
+          "enum": ["FRESH_ONLY", "ALLOW_STALE"],
           "default": "FRESH_ONLY"
         },
         "source": {
@@ -411,10 +367,7 @@
     "CodeScopedImpact": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "spaceId",
-        "selector"
-      ],
+      "required": ["spaceId", "selector"],
       "properties": {
         "spaceId": {
           "type": "string",
@@ -438,10 +391,7 @@
         },
         "freshnessPolicy": {
           "type": "string",
-          "enum": [
-            "FRESH_ONLY",
-            "ALLOW_STALE"
-          ],
+          "enum": ["FRESH_ONLY", "ALLOW_STALE"],
           "default": "FRESH_ONLY"
         },
         "selector": {
@@ -455,12 +405,7 @@
     "CodeScopedChangeImpact": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "spaceId",
-        "repository",
-        "commitSha",
-        "changedPaths"
-      ],
+      "required": ["spaceId", "repository", "commitSha", "changedPaths"],
       "properties": {
         "spaceId": {
           "type": "string",
@@ -484,10 +429,7 @@
         },
         "freshnessPolicy": {
           "type": "string",
-          "enum": [
-            "FRESH_ONLY",
-            "ALLOW_STALE"
-          ],
+          "enum": ["FRESH_ONLY", "ALLOW_STALE"],
           "default": "FRESH_ONLY"
         },
         "repository": {
@@ -526,9 +468,7 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "action"
-        ],
+        "required": ["action"],
         "properties": {
           "action": {
             "type": "string",
@@ -603,10 +543,7 @@
           },
           "packetMode": {
             "type": "string",
-            "enum": [
-              "COMPACT_AGENT_PACKET",
-              "FULL_CONTEXT_PACKET"
-            ],
+            "enum": ["COMPACT_AGENT_PACKET", "FULL_CONTEXT_PACKET"],
             "default": "COMPACT_AGENT_PACKET"
           },
           "resourceId": {
@@ -742,12 +679,7 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "spaceId",
-          "vaultId",
-          "purpose",
-          "idempotencyKey"
-        ],
+        "required": ["spaceId", "vaultId", "purpose", "idempotencyKey"],
         "properties": {
           "spaceId": {
             "type": "string",
@@ -805,9 +737,7 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "sessionId"
-        ],
+        "required": ["sessionId"],
         "properties": {
           "sessionId": {
             "type": "string",
@@ -829,11 +759,7 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "sessionId",
-          "status",
-          "idempotencyKey"
-        ],
+        "required": ["sessionId", "status", "idempotencyKey"],
         "properties": {
           "sessionId": {
             "type": "string",
@@ -841,18 +767,10 @@
           },
           "status": {
             "type": "string",
-            "enum": [
-              "OPEN",
-              "BLOCKED",
-              "COMPLETED",
-              "ABANDONED"
-            ]
+            "enum": ["OPEN", "BLOCKED", "COMPLETED", "ABANDONED"]
           },
           "outcome": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "minLength": 1,
             "maxLength": 12000
           },
@@ -895,9 +813,7 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "sessionId"
-        ],
+        "required": ["sessionId"],
         "properties": {
           "sessionId": {
             "type": "string",
@@ -999,9 +915,7 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "sessionId"
-        ],
+        "required": ["sessionId"],
         "properties": {
           "sessionId": {
             "type": "string",
@@ -1029,10 +943,7 @@
           "packetMode": {
             "type": "string",
             "default": "COMPACT_AGENT_PACKET",
-            "enum": [
-              "COMPACT_AGENT_PACKET",
-              "FULL_CONTEXT_PACKET"
-            ]
+            "enum": ["COMPACT_AGENT_PACKET", "FULL_CONTEXT_PACKET"]
           }
         }
       },
@@ -1050,11 +961,7 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "sessionId",
-          "workKey",
-          "idempotencyKey"
-        ],
+        "required": ["sessionId", "workKey", "idempotencyKey"],
         "properties": {
           "sessionId": {
             "type": "string",
@@ -1092,12 +999,7 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "sessionId",
-          "workKey",
-          "fencingToken",
-          "idempotencyKey"
-        ],
+        "required": ["sessionId", "workKey", "fencingToken", "idempotencyKey"],
         "properties": {
           "sessionId": {
             "type": "string",
@@ -1139,12 +1041,7 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "sessionId",
-          "workKey",
-          "fencingToken",
-          "idempotencyKey"
-        ],
+        "required": ["sessionId", "workKey", "fencingToken", "idempotencyKey"],
         "properties": {
           "sessionId": {
             "type": "string",
@@ -1301,11 +1198,7 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "sessionId",
-          "eventType",
-          "idempotencyKey"
-        ],
+        "required": ["sessionId", "eventType", "idempotencyKey"],
         "properties": {
           "sessionId": {
             "type": "string",
@@ -1389,10 +1282,7 @@
             "items": {
               "type": "object",
               "additionalProperties": false,
-              "required": [
-                "path",
-                "content"
-              ],
+              "required": ["path", "content"],
               "properties": {
                 "path": {
                   "type": "string",
@@ -1439,9 +1329,7 @@
       "version": "1.0.0",
       "permission": "knowledge:read",
       "mutates": false,
-      "sideEffects": [
-        "persists_context_packet"
-      ],
+      "sideEffects": ["persists_context_packet"],
       "inputSchema": {
         "$ref": "#/definitions/ScopedContext"
       },
@@ -1488,9 +1376,7 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "packetId"
-        ],
+        "required": ["packetId"],
         "properties": {
           "packetId": {
             "type": "string",
@@ -1511,10 +1397,7 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "packetId",
-          "handle"
-        ],
+        "required": ["packetId", "handle"],
         "properties": {
           "packetId": {
             "type": "string",
@@ -1662,12 +1545,7 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "spaceId",
-          "vaultId",
-          "sourceUri",
-          "idempotencyKey"
-        ],
+        "required": ["spaceId", "vaultId", "sourceUri", "idempotencyKey"],
         "properties": {
           "spaceId": {
             "type": "string",
@@ -1689,11 +1567,7 @@
           },
           "modelResidency": {
             "type": "string",
-            "enum": [
-              "LOCAL_ONLY",
-              "ORG_APPROVED",
-              "EXTERNAL_ALLOWED"
-            ]
+            "enum": ["LOCAL_ONLY", "ORG_APPROVED", "EXTERNAL_ALLOWED"]
           },
           "expectedSha256": {
             "type": "string",
@@ -1879,11 +1753,7 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "spaceId",
-          "vaultId",
-          "idempotencyKey"
-        ],
+        "required": ["spaceId", "vaultId", "idempotencyKey"],
         "properties": {
           "spaceId": {
             "type": "string",
@@ -1919,12 +1789,7 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "spaceId",
-          "vaultId",
-          "confirm",
-          "idempotencyKey"
-        ],
+        "required": ["spaceId", "vaultId", "confirm", "idempotencyKey"],
         "properties": {
           "spaceId": {
             "type": "string",
@@ -1936,10 +1801,7 @@
           },
           "confirm": {
             "type": "string",
-            "enum": [
-              "REBUILD_DERIVED_PROJECTIONS",
-              "REIMPORT_AND_REBUILD"
-            ]
+            "enum": ["REBUILD_DERIVED_PROJECTIONS", "REIMPORT_AND_REBUILD"]
           },
           "reimportVault": {
             "type": "boolean",
@@ -1959,9 +1821,7 @@
                   "const": true
                 }
               },
-              "required": [
-                "reimportVault"
-              ]
+              "required": ["reimportVault"]
             },
             "then": {
               "properties": {
@@ -1976,9 +1836,7 @@
               "anyOf": [
                 {
                   "not": {
-                    "required": [
-                      "reimportVault"
-                    ]
+                    "required": ["reimportVault"]
                   }
                 },
                 {
@@ -1987,9 +1845,7 @@
                       "const": false
                     }
                   },
-                  "required": [
-                    "reimportVault"
-                  ]
+                  "required": ["reimportVault"]
                 }
               ]
             },
@@ -2017,11 +1873,7 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "spaceId",
-          "vaultId",
-          "idempotencyKey"
-        ],
+        "required": ["spaceId", "vaultId", "idempotencyKey"],
         "properties": {
           "spaceId": {
             "type": "string",
@@ -2056,10 +1908,7 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "vaultId",
-          "confirm"
-        ],
+        "required": ["vaultId", "confirm"],
         "properties": {
           "vaultId": {
             "type": "string",
