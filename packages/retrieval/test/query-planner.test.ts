@@ -50,10 +50,10 @@ describe("query planner", () => {
   });
 
   it("does not treat dependency vocabulary alone as impact analysis", () => {
-    const conceptual = planQuery(
-      "Why do dependencies point toward policies?",
-      { vectorAvailable: true, graphConsistent: true },
-    );
+    const conceptual = planQuery("Why do dependencies point toward policies?", {
+      vectorAvailable: true,
+      graphConsistent: true,
+    });
     expect(conceptual.intent).toBe("CONCEPTUAL");
     expect(conceptual.channels).toContain("vector");
 
