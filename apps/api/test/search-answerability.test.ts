@@ -4,7 +4,10 @@ import {
   assessRetrievalAnswerability,
   retrievalAnswerabilityCandidateKey,
 } from "@akp/retrieval";
-import { partitionSearchHitsByAnswerability } from "../src/routes/search.js";
+import {
+  internalAnswerabilityCandidateLimit,
+  partitionSearchHitsByAnswerability,
+} from "../src/routes/search.js";
 
 function hit(id: string, unitId?: string): SearchHit {
   return {
@@ -30,6 +33,13 @@ function hit(id: string, unitId?: string): SearchHit {
 }
 
 describe("search answerability presentation", () => {
+  it("keeps an internal answerability pool wider than presentation limits", () => {
+    expect(internalAnswerabilityCandidateLimit(1)).toBe(64);
+    expect(internalAnswerabilityCandidateLimit(10)).toBe(64);
+    expect(internalAnswerabilityCandidateLimit(20)).toBe(80);
+    expect(internalAnswerabilityCandidateLimit(100)).toBe(200);
+  });
+
   it("moves unsupported candidates to exploratoryHits without treating them as evidence", () => {
     const candidate = hit("11111111-1111-4111-8111-111111111111");
     expect(partitionSearchHitsByAnswerability([candidate], [])).toEqual({
