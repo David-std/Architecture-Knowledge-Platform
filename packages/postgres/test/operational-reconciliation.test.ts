@@ -10,7 +10,9 @@ function databaseWithQuery(
   handler: (sql: string, values?: unknown[]) => { rows: unknown[] },
 ): Postgres {
   const client = {
-    query: vi.fn(async (sql: string, values?: unknown[]) => handler(sql, values)),
+    query: vi.fn(async (sql: string, values?: unknown[]) =>
+      handler(sql, values),
+    ),
     release: vi.fn(),
   };
   return {
@@ -43,7 +45,8 @@ describe("operational reconciliation", () => {
               environment: "local",
               disposition: "SUPERSEDED_BY_VERIFIED_PROJECTION",
               actor: "operator:test",
-              rationale: "A later verified projection supersedes this delivery.",
+              rationale:
+                "A later verified projection supersedes this delivery.",
               evidence: { projectionRevision: "rev-verified" },
               created_at: "2026-09-28T20:00:00.000Z",
             },
@@ -73,9 +76,9 @@ describe("operational reconciliation", () => {
     expect(queries.some((sql) => /update\s+event_quarantine/iu.test(sql))).toBe(
       false,
     );
-    expect(queries.some((sql) => /delete\s+from\s+event_quarantine/iu.test(sql))).toBe(
-      false,
-    );
+    expect(
+      queries.some((sql) => /delete\s+from\s+event_quarantine/iu.test(sql)),
+    ).toBe(false);
   });
 
   it("requires a failed ingest before recording a terminal disposition", async () => {
@@ -110,9 +113,7 @@ describe("operational reconciliation", () => {
         "11111111-1111-4111-8111-111111111111",
         "projection-worker",
       ),
-    ).toBe(
-      "11111111-1111-4111-8111-111111111111:projection-worker",
-    );
+    ).toBe("11111111-1111-4111-8111-111111111111:projection-worker");
     expect(() => quarantineResourceKey("", "projection-worker")).toThrow(
       "OPERATIONAL_RECONCILIATION_RESOURCE_REQUIRED",
     );
