@@ -691,7 +691,8 @@ export function deterministicProjectionRetainsSupport(
   if (match < 0) return false;
 
   const requiredAnswerCues = queryAnswerCues(query);
-  if (requiredAnswerCues.length === 0 && identifierLikeQuery(query)) return true;
+  if (requiredAnswerCues.length === 0 && identifierLikeQuery(query))
+    return true;
 
   const passageWithoutQueryEcho =
     passage.slice(0, match) + " " + passage.slice(match + needle.length);
