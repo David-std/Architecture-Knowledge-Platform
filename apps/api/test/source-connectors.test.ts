@@ -161,9 +161,21 @@ describe("source connector webhook signatures", () => {
         credentialRef: "AKP_LINEAR_CREDENTIAL",
         authorizationScheme: "RAW",
         baseUrl: "https://api.linear.app/graphql",
-        webhookSecretRef: "AKP_LINEAR_WEBHOOK_SECRET",
       }).success,
     ).toBe(true);
+
+    expect(
+      ProviderSourceConnectorRegistrationSchema.safeParse({
+        spaceId: "11111111-1111-4111-8111-111111111111",
+        vaultId: "22222222-2222-4222-8222-222222222222",
+        connectorKey: "linear-webhook-not-deployed",
+        provider: "linear",
+        credentialRef: "AKP_LINEAR_CREDENTIAL",
+        authorizationScheme: "RAW",
+        baseUrl: "https://api.linear.app/graphql",
+        webhookSecretRef: "AKP_LINEAR_WEBHOOK_SECRET",
+      }).success,
+    ).toBe(false);
 
     for (const baseUrl of [
       "http://169.254.169.254/latest/meta-data/",
