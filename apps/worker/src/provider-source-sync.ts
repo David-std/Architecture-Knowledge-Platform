@@ -387,71 +387,13 @@ export async function syncProviderSourceConnector(
             continue;
           }
 
-          const sourceVersion = `deleted:${target.value}`.slice(0, 1024);
-          const eventId = eventIdentity(
-            provider,
-            candidate.object_id,
-            sourceVersion,
-            "DELETE",
-          );
-          const existing = await db.pool.query<{ sequence: string | number }>(
-            `select sequence
-               from source_connector_events
-              where connector_id=$1 and event_id=$2`,
-            [connectorId, eventId],
-          );
-          if (existing.rows[0]) {
-            highestSequence = Math.max(
-              highestSequence,
-              Number(existing.rows[0].sequence),
-            );
-            continue;
-          }
-
-          sequence += 1;
-          highestSequence = sequence;
-          const metadata = {
-            ...objectRecord(candidate.metadata),
-            _akpProviderObservation: {
-              providerVerified: true,
-              observedVia: "AUTHENTICATED_PROVIDER_RECONCILIATION",
-              deletionConfirmed: true,
-              checkpoint: target.value,
-            },
-          };
-          const serialized = {
-            operation: "DELETE",
-            objectId: candidate.object_id,
-            objectType: candidate.object_type,
-            sourceVersion,
-            permissions: {
-              fidelity: candidate.permission_fidelity,
-              uncertain: candidate.permission_uncertain,
-              ...(candidate.acl_fingerprint
-                ? { aclFingerprint: candidate.acl_fingerprint }
-                : {}),
-            },
-            metadata,
-          };
-          await (dependencies.appendEvent ?? appendSourceConnectorEvent)(db, {
-            connectorId,
-            eventId,
-            sequence,
-            occurredAt: observedAt(metadata, target.value),
-            operation: "DELETE",
-            objectId: candidate.object_id,
-            objectType: candidate.object_type,
-            sourceVersion,
-            title: candidate.title,
-            content: null,
-            contentType: null,
-            permissionFidelity: candidate.permission_fidelity,
-            permissionUncertain: candidate.permission_uncertain,
-            aclFingerprint: candidate.acl_fingerprint,
-            metadata,
-            payloadHash: payloadHash(serialized),
-          });
-          appended += 1;
+          // Jira/Linear point reads are authorization-scoped. A missing object
+          // can mean deletion, archival, or loss of visibility. Do not turn an
+          // ambiguous absence into a tombstone without an explicit provider
+          // deletion signal.
+          deletionHealth = "DEGRADED";
+          deletionErrorCode = "PROVIDER_OBJECT_ABSENCE_AMBIGUOUS";
+          break;
         } catch (error) {
           deletionHealth = "DEGRADED";
           deletionErrorCode = safeErrorCode(error);
@@ -475,12 +417,13 @@ export async function syncProviderSourceConnector(
           and status<>'APPLIED'`,
       [connectorId, highestSequence],
     );
-    const checkpointAdvanced = Number(unresolved.rows[0]?.count ?? 0) === 0;
-    const finalHealth: ProviderHealthState =
-      checkpointAdvanced && deletionHealth === "AVAILABLE"
-        ? "AVAILABLE"
-        : "DEGRADED";
-    const finalErrorCode = !checkpointAdvanced
+    const allEventsApplied = Number(unresolved.rows[0]?.count ?? 0) === 0;
+    const checkpointAdvanced =
+      allEventsApplied && deletionHealth === "AVAILABLE";
+    const finalHealth: ProviderHealthState = checkpointAdvanced
+      ? "AVAILABLE"
+      : "DEGRADED";
+    const finalErrorCode = !allEventsApplied
       ? "PROVIDER_EVENTS_UNAPPLIED"
       : deletionErrorCode;
 
@@ -502,7 +445,7 @@ export async function syncProviderSourceConnector(
         db,
         connectorId,
         "DEGRADED",
-        "PROVIDER_EVENTS_UNAPPLIED",
+        finalErrorCode ?? "PROVIDER_SYNC_DEGRADED",
       );
     }
 
