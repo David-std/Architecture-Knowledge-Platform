@@ -25,7 +25,7 @@ This document tracks the corrective work discovered after the context-answerabil
 - [x] Add simulated-provider tests. A real-integration claim remains blocked until sandbox credentials are exercised.
 - [x] Expose safe AKP MCP operations for linking/querying/updating external references without promoting ticket content into approved knowledge.
 - [ ] Provider webhook ingestion is intentionally not advertised until an authenticated HTTP path is wired into the inbox.
-- [ ] Provider deletion/tombstone propagation is intentionally `NONE` until a demonstrable deletion reconciliation path exists.
+- [x] Provider deletion reconciliation is bounded and authenticated: active projections are rechecked with provider `fetchById`, confirmed absence becomes a sequenced `DELETE` event/tombstone, and the provider checkpoint advances only after the deletion event is durably applied.
 - [ ] Run Jira and Linear sandbox/account acceptance with real credentials before calling the adapters live-validated.
 
 ## P1 — operational reconciliation
