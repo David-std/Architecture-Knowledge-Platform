@@ -27,6 +27,12 @@ type Connector = {
   };
   last_event_at?: string | null;
   checkpoint_updated_at?: string | null;
+  connector_mode?: string;
+  provider_checkpoint_kind?: string | null;
+  provider_checkpoint_value?: string | null;
+  provider_health?: string | null;
+  provider_last_success_at?: string | null;
+  provider_last_error_code?: string | null;
   applied_sequence: number | string;
   webhook_status: string;
   pending_events: number;
@@ -166,6 +172,21 @@ export default async function ConnectorsPage({
                     <small>
                       actualizado {connector.checkpoint_updated_at ?? "—"}
                     </small>
+                    {connector.connector_mode === "PROVIDER_PULL" ? (
+                      <>
+                        <br />
+                        <small>
+                          proveedor {connector.provider_health ?? "UNKNOWN"} ·
+                          {" "}último OK {connector.provider_last_success_at ?? "—"}
+                        </small>
+                        {connector.provider_last_error_code ? (
+                          <>
+                            <br />
+                            <code>{connector.provider_last_error_code}</code>
+                          </>
+                        ) : null}
+                      </>
+                    ) : null}
                   </td>
                   <td>
                     último evento {connector.last_event_at ?? "—"}
