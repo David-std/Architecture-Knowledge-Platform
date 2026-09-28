@@ -28,6 +28,18 @@ function boundedLimit(value: number | undefined): number {
   return Math.max(1, Math.min(100, value ?? 50));
 }
 
+const PROVIDER_POLL_OVERLAP_MS = 5 * 60 * 1000;
+
+function overlappedCheckpointValue(
+  value: string | undefined,
+  overlapMs = PROVIDER_POLL_OVERLAP_MS,
+): string | undefined {
+  if (!value) return undefined;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return new Date(parsed.getTime() - overlapMs).toISOString();
+}
+
 function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
@@ -146,7 +158,7 @@ export class JiraCloudSourceConnector implements SourceConnectorPort {
   async *pull(
     input: SourceConnectorPullInput,
   ): AsyncIterable<SourceConnectorObject> {
-    const from = input.from?.value;
+    const from = overlappedCheckpointValue(input.from?.value);
     const target = input.target.value;
     let nextPageToken: string | undefined;
     do {
@@ -331,7 +343,7 @@ export class LinearSourceConnector implements SourceConnectorPort {
       replication: "REFERENCE" as const,
       dataResidency: "EXTERNAL" as const,
       attachments: { supported: false },
-      rateLimit: { kind: "DECLARED" as const, requestsPerMinute: 40 },
+      rateLimit: { kind: "NONE" as const },
       checkpointModel: "OPAQUE_CURSOR" as const,
       deletionPropagation: "NONE" as const,
       sourceVersioning: true,
@@ -350,6 +362,7 @@ export class LinearSourceConnector implements SourceConnectorPort {
     input: SourceConnectorPullInput,
   ): AsyncIterable<SourceConnectorObject> {
     let after: string | null = null;
+    const from = overlappedCheckpointValue(input.from?.value);
     do {
       const data = await this.graphql(
         `query Issues($first:Int!,$after:String,$from:DateTimeOrDuration,$target:DateTimeOrDuration){
@@ -371,7 +384,7 @@ export class LinearSourceConnector implements SourceConnectorPort {
         {
           first: boundedLimit(input.pageSize),
           after,
-          from: input.from?.value ?? null,
+          from: from ?? null,
           target: input.target.value,
         },
       );
