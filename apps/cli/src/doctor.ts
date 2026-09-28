@@ -20,6 +20,11 @@ export interface DoctorReport {
   checks: DoctorCheck[];
 }
 
+export interface DoctorScope {
+  vaultId?: string;
+  environment?: string;
+}
+
 interface DoctorEnvironment {
   readonly [key: string]: string | undefined;
 }
@@ -739,6 +744,7 @@ export async function runDoctor(
   db: Postgres,
   environment: DoctorEnvironment = process.env,
   cwd = process.cwd(),
+  scope: DoctorScope = {},
 ): Promise<DoctorReport> {
   const checks: DoctorCheck[] = [];
 
@@ -779,37 +785,99 @@ export async function runDoctor(
   checks.push(
     await safeCheck("outbox-jobs", "Outbox and jobs", async () => {
       const result = await db.pool.query<{
-        quarantined: number;
+        quarantined_unresolved: number;
+        quarantined_reconciled: number;
         retrying: number;
-        ingest_failed: number;
+        ingest_failed_unresolved: number;
+        ingest_failed_reconciled: number;
         ingest_active: number;
       }>(
         `select
-          (select count(*)::int from event_deliveries where status='QUARANTINED') quarantined,
-          (select count(*)::int from event_deliveries where status='RETRY') retrying,
-          (select count(*)::int from ingest_jobs where state='FAILED') ingest_failed,
-          (select count(*)::int from ingest_jobs
-            where state = any($1::text[])
-              and cancelled_at is null) ingest_active`,
-        [[...DOCTOR_ACTIVE_INGEST_STATES]],
+          (
+            select count(*)::int
+              from event_deliveries d
+              join event_outbox o on o.event_id=d.event_id
+              left join operational_reconciliations r
+                on r.resource_type='EVENT_QUARANTINE'
+               and r.resource_key=d.event_id::text || ':' || d.consumer_name
+               and r.environment=$2
+             where d.status='QUARANTINED'
+               and ($1::uuid is null or o.vault_id=$1::uuid)
+               and r.id is null
+          ) quarantined_unresolved,
+          (
+            select count(*)::int
+              from event_deliveries d
+              join event_outbox o on o.event_id=d.event_id
+              join operational_reconciliations r
+                on r.resource_type='EVENT_QUARANTINE'
+               and r.resource_key=d.event_id::text || ':' || d.consumer_name
+               and r.environment=$2
+             where d.status='QUARANTINED'
+               and ($1::uuid is null or o.vault_id=$1::uuid)
+          ) quarantined_reconciled,
+          (
+            select count(*)::int
+              from event_deliveries d
+              join event_outbox o on o.event_id=d.event_id
+             where d.status='RETRY'
+               and ($1::uuid is null or o.vault_id=$1::uuid)
+          ) retrying,
+          (
+            select count(*)::int
+              from ingest_jobs j
+              left join operational_reconciliations r
+                on r.resource_type='INGEST_JOB'
+               and r.resource_key=j.id::text
+               and r.environment=$2
+             where j.state='FAILED'
+               and ($1::uuid is null or j.vault_id=$1::uuid)
+               and r.id is null
+          ) ingest_failed_unresolved,
+          (
+            select count(*)::int
+              from ingest_jobs j
+              join operational_reconciliations r
+                on r.resource_type='INGEST_JOB'
+               and r.resource_key=j.id::text
+               and r.environment=$2
+             where j.state='FAILED'
+               and ($1::uuid is null or j.vault_id=$1::uuid)
+          ) ingest_failed_reconciled,
+          (
+            select count(*)::int
+              from ingest_jobs j
+             where j.state = any($3::text[])
+               and j.cancelled_at is null
+               and ($1::uuid is null or j.vault_id=$1::uuid)
+          ) ingest_active`,
+        [
+          scope.vaultId ?? null,
+          scope.environment?.trim() || "default",
+          [...DOCTOR_ACTIVE_INGEST_STATES],
+        ],
       );
       const row = result.rows[0]!;
       return {
         id: "outbox-jobs",
         label: "Outbox and jobs",
         status:
-          row.quarantined > 0
+          row.quarantined_unresolved > 0
             ? "FAIL"
-            : row.retrying > 0 || row.ingest_failed > 0
+            : row.retrying > 0 || row.ingest_failed_unresolved > 0
               ? "WARN"
               : "OK",
         summary:
-          row.quarantined > 0
-            ? "Quarantined outbox deliveries require operator attention."
-            : row.retrying > 0 || row.ingest_failed > 0
-              ? "Retrying deliveries or failed ingest jobs are present."
-              : "No quarantined deliveries or failed ingest jobs were found.",
-        details: row,
+          row.quarantined_unresolved > 0
+            ? "Unresolved quarantined outbox deliveries require operator attention."
+            : row.retrying > 0 || row.ingest_failed_unresolved > 0
+              ? "Retrying deliveries or unresolved failed ingest jobs are present."
+              : "No unresolved quarantined deliveries or failed ingest jobs were found.",
+        details: {
+          ...row,
+          vaultId: scope.vaultId ?? null,
+          environment: scope.environment?.trim() || "default",
+        },
       };
     }),
   );
