@@ -343,6 +343,37 @@ function passageAnswerCues(
   );
 }
 
+/**
+ * Re-checks a bounded compact projection without treating a repeated query
+ * string as its own answer. Identifier/look-up queries are supported when the
+ * exact query remains present. Queries that ask for a procedure, rationale,
+ * prevention rule, condition, definition or comparison must also retain the
+ * corresponding answer cue outside the echoed query text.
+ */
+export function deterministicProjectionRetainsSupport(
+  passage: string,
+  query: string,
+): boolean {
+  const needle = query.trim();
+  if (!needle || !passage.trim()) return false;
+
+  const match = passage.toLocaleLowerCase("en-US").indexOf(
+    needle.toLocaleLowerCase("en-US"),
+  );
+  if (match < 0) return false;
+
+  const requiredAnswerCues = queryAnswerCues(query);
+  if (requiredAnswerCues.length === 0) return true;
+
+  const passageWithoutQueryEcho =
+    passage.slice(0, match) + " " + passage.slice(match + needle.length);
+  const matchedAnswerCues = passageAnswerCues(
+    passageWithoutQueryEcho,
+    requiredAnswerCues,
+  );
+  return matchedAnswerCues.length === requiredAnswerCues.length;
+}
+
 function minVectorRank(hit: SearchHit): number | null {
   const ranks = (hit.fusionContributions ?? []).flatMap((contribution) =>
     contribution.channel === "vector" &&
