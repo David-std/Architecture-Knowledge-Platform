@@ -727,10 +727,9 @@ reconcile
     "--reason <text>",
     "Why this terminal disposition is justified",
   )
-  .option(
+  .requiredOption(
     "--evidence <json>",
     "Bounded JSON evidence for the disposition",
-    "{}",
   )
   .option("--environment <name>", "Operational environment label", "default")
   .action(
@@ -790,10 +789,9 @@ reconcile
     "--reason <text>",
     "Why this terminal disposition is justified",
   )
-  .option(
+  .requiredOption(
     "--evidence <json>",
     "Bounded JSON evidence for the disposition",
-    "{}",
   )
   .option("--environment <name>", "Operational environment label", "default")
   .action(
