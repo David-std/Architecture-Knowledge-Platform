@@ -77,10 +77,6 @@ export const ProviderSourceConnectorRegistrationSchema = z
     connectorKey: z.string().regex(CONNECTOR_KEY),
     provider: z.enum(["jira", "linear"]),
     credentialRef: z.string().regex(/^[A-Z][A-Z0-9_]{1,127}$/),
-    webhookSecretRef: z
-      .string()
-      .regex(/^[A-Z][A-Z0-9_]{1,127}$/)
-      .optional(),
     baseUrl: z.string().url().max(2048).optional(),
     jql: z.string().trim().min(1).max(4000).optional(),
     authorizationScheme: z.enum(["RAW", "BASIC", "BEARER"]).optional(),
@@ -145,14 +141,6 @@ export const ProviderSourceConnectorRegistrationSchema = z
         code: z.ZodIssueCode.custom,
         path: ["authorizationScheme"],
         message: "Linear provider auth must be RAW or BEARER.",
-      });
-    }
-    if (value.webhookSecretRef) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["webhookSecretRef"],
-        message:
-          "Provider connectors currently use authenticated polling only; provider webhook ingestion is not exposed.",
       });
     }
   });
