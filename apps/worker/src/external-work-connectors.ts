@@ -164,7 +164,7 @@ export class JiraCloudSourceConnector implements SourceConnectorPort {
     do {
       const clauses = [
         this.options.jql?.trim() ? `(${this.options.jql.trim()})` : "",
-        from ? `updated > "${from.replace(/"/gu, '\\\"')}"` : "",
+        from ? `updated >= "${from.replace(/"/gu, '\\\"')}"` : "",
         `updated <= "${target.replace(/"/gu, '\\\"')}"`,
       ].filter(Boolean);
       const response = await this.request("/rest/api/3/search/jql", {
