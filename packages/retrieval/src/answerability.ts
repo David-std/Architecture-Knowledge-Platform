@@ -115,32 +115,76 @@ export function retrievalAnswerabilityCandidateKey(
   return `${hit.documentId}:${hit.unitId ?? "document"}`;
 }
 
+function normalizedIdentity(value: string): string {
+  return value
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .trim()
+    .toLocaleLowerCase("en-US");
+}
+
+function identifierLikeQuery(query: string): boolean {
+  const trimmed = query.trim();
+  if (
+    !trimmed ||
+    /\s/u.test(trimmed) ||
+    !/^[\p{L}\p{N}_.:/-]+$/u.test(trimmed)
+  ) {
+    return false;
+  }
+  return (
+    /\d/u.test(trimmed) ||
+    /[_:/.]/u.test(trimmed) ||
+    (trimmed.includes("-") &&
+      trimmed === trimmed.toLocaleUpperCase("en-US"))
+  );
+}
+
+function exactIdentifierMatchesHit(hit: SearchHit, query: string): boolean {
+  if (!identifierLikeQuery(query)) return false;
+  const needle = normalizedIdentity(query);
+  const path = normalizedIdentity(hit.document.path);
+  const pathLeaf = path.split("/").at(-1) ?? path;
+  const pathStem = pathLeaf.replace(/\.[^.]+$/u, "");
+  const identities = [
+    hit.document.externalId,
+    hit.title,
+    hit.document.title,
+    path,
+    pathLeaf,
+    pathStem,
+  ]
+    .filter((value): value is string => typeof value === "string")
+    .map(normalizedIdentity);
+  return identities.includes(needle);
+}
+
 function supportReasonForCandidate(
   hit: SearchHit,
   passage: DeterministicPassageSupportSignal,
   allowGraphSupport: boolean,
+  query: string,
 ): CandidateSupportReason {
-  const requiredAnswerCuesSatisfied =
-    passage.requiredAnswerCues.length === 0 || passage.answerCueCoverage === 1;
-
-  if (
-    requiredAnswerCuesSatisfied &&
-    (hit.fusionContributions ?? []).some((contribution) =>
-      DIRECT_SUPPORT_CHANNELS.has(contribution.channel),
-    )
-  ) {
+  const directChannel = (hit.fusionContributions ?? []).some((contribution) =>
+    DIRECT_SUPPORT_CHANNELS.has(contribution.channel),
+  );
+  if (directChannel && exactIdentifierMatchesHit(hit, query)) {
     return "DIRECT_CHANNEL_SUPPORT";
   }
+
+  // Retrieval channels and graph topology rank candidates; they are not
+  // evidence that a natural-language predicate is answered. Keep the graph
+  // flag for diagnostics/caller policy, but require passage support itself.
   if (
-    requiredAnswerCuesSatisfied &&
     allowGraphSupport &&
+    passage.supported &&
     (hit.fusionContributions ?? []).some(
       (contribution) =>
         contribution.channel === "graph" ||
         contribution.channel === "graph-ppr",
     )
   ) {
-    return "GRAPH_INTENT_SUPPORT";
+    return passage.reason;
   }
   return passage.reason;
 }
@@ -167,6 +211,7 @@ export function collectCandidateAnswerabilitySignals(
       hit,
       passage,
       context.allowGraphSupport === true,
+      query,
     );
     return {
       documentId: hit.documentId,
