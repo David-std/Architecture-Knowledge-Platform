@@ -31,7 +31,15 @@ describe("operational reconciliation", () => {
     const db = databaseWithQuery((sql) => {
       queries.push(sql);
       if (sql.includes("from event_quarantine q")) {
-        return { rows: [{ space_id: spaceId, vault_id: vaultId }] };
+        return {
+          rows: [
+            {
+              space_id: spaceId,
+              vault_id: vaultId,
+              delivery_status: "QUARANTINED",
+            },
+          ],
+        };
       }
       if (sql.includes("insert into operational_reconciliations")) {
         return {
@@ -103,8 +111,51 @@ describe("operational reconciliation", () => {
         disposition: "TERMINAL_FIXTURE_DISPOSITION",
         actor: "operator:test",
         rationale: "Fixture source no longer exists.",
+        evidence: { failureCode: "SOURCE_PATH_NOT_ALLOWED" },
       }),
     ).rejects.toThrow("INGEST_JOB_NOT_FAILED");
+  });
+
+  it("does not claim a quarantined delivery was recovered before replay succeeded", async () => {
+    const eventId = "66666666-6666-4666-8666-666666666666";
+    const db = databaseWithQuery((sql) => {
+      if (sql.includes("from event_quarantine q")) {
+        return {
+          rows: [
+            {
+              space_id: null,
+              vault_id: null,
+              delivery_status: "QUARANTINED",
+            },
+          ],
+        };
+      }
+      return { rows: [] };
+    });
+
+    await expect(
+      reconcileEventQuarantine(db, {
+        eventId,
+        consumerName: "projection-worker",
+        disposition: "RECOVERED_REPLAYED",
+        actor: "operator:test",
+        rationale: "Replay was requested.",
+        evidence: { replayRequestId: "replay-1" },
+      }),
+    ).rejects.toThrow("EVENT_QUARANTINE_REPLAY_NOT_SUCCEEDED");
+  });
+
+  it("requires concrete evidence before recording a terminal disposition", async () => {
+    const db = databaseWithQuery(() => ({ rows: [] }));
+    await expect(
+      reconcileFailedIngest(db, {
+        jobId: "77777777-7777-4777-8777-777777777777",
+        disposition: "IRRECOVERABLE_RECONCILED",
+        actor: "operator:test",
+        rationale: "The source is no longer recoverable.",
+        evidence: {},
+      }),
+    ).rejects.toThrow("OPERATIONAL_RECONCILIATION_EVIDENCE_REQUIRED");
   });
 
   it("keeps quarantine resource identity deterministic and bounded to event plus consumer", () => {
