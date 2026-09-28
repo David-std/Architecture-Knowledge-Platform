@@ -218,6 +218,7 @@ interface CommunityCandidateRow extends DocumentChannelRow {
 
 interface CodeChannelRow extends DocumentChannelRow {
   match_reason?: string;
+  code_support_text?: string;
   code_citations?: string[];
 }
 
@@ -2409,6 +2410,7 @@ export async function queryKnowledge(
             id: candidate.id,
             document_revision: candidate.documentRevision,
             match_reason: candidate.reason,
+            code_support_text: candidate.supportText,
             code_citations: candidate.citations,
           })),
         }
@@ -2437,6 +2439,13 @@ export async function queryKnowledge(
   if (channels.has("code")) options.availableChannelSink?.add("code");
   const codeCitationsByCandidate = new Map(
     codeFallback.rows.map((row) => [String(row.id), row.code_citations ?? []]),
+  );
+  const codeSupportByCandidate = new Map(
+    codeFallback.rows.flatMap((row) =>
+      typeof row.code_support_text === "string" && row.code_support_text.trim()
+        ? [[String(row.id), row.code_support_text.trim()] as const]
+        : [],
+    ),
   );
 
   const candidateSeedIds = seedIds.filter((id) => UUID_PATTERN.test(id));
@@ -3433,6 +3442,13 @@ export async function queryKnowledge(
       const structuralContext = matchedUnit
         ? structuralContextByUnit.get(matchedUnit.unitId)
         : undefined;
+      const codeSupport = codeSupportByCandidate.get(item.id);
+      const answerabilityContext = [
+        structuralContext?.context,
+        codeSupport,
+      ]
+        .filter((value): value is string => Boolean(value?.trim()))
+        .join("\n");
       return {
         documentId: String(row.id),
         vaultId,
@@ -3446,8 +3462,8 @@ export async function queryKnowledge(
         ...(structuralContext?.headingPath
           ? { headingPath: structuralContext.headingPath }
           : {}),
-        ...(structuralContext?.context
-          ? { parentContext: structuralContext.context }
+        ...(answerabilityContext
+          ? { parentContext: answerabilityContext.slice(0, 4_000) }
           : {}),
         document: {
           externalId: row.external_id ? String(row.external_id) : null,
