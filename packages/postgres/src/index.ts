@@ -26,10 +26,37 @@ export interface PostgresOptions {
   onIdleClientError?: (error: Error) => void;
 }
 
+export function assertTestDatabaseSafety(
+  databaseUrl: string,
+  environment: NodeJS.ProcessEnv = process.env,
+): void {
+  if (
+    environment.NODE_ENV !== "test" ||
+    environment.CI === "true" ||
+    environment.AKP_TEST_ALLOW_UNSAFE_DATABASE === "1"
+  ) {
+    return;
+  }
+  let databaseName = "";
+  try {
+    databaseName = decodeURIComponent(
+      new URL(databaseUrl).pathname.replace(/^\//u, ""),
+    );
+  } catch {
+    throw new Error("TEST_DATABASE_URL_INVALID");
+  }
+  if (!/(?:^|[_-])(test|e2e|ci)(?:$|[_-])/iu.test(databaseName)) {
+    throw new Error(
+      `TEST_DATABASE_NOT_DISPOSABLE:${databaseName || "unknown"}`,
+    );
+  }
+}
+
 export class Postgres {
   readonly pool: pg.Pool;
 
   constructor(databaseUrl: string, options: PostgresOptions = {}) {
+    assertTestDatabaseSafety(databaseUrl);
     this.pool = new pg.Pool({ connectionString: databaseUrl });
     this.pool.on("error", (error) => {
       options.onIdleClientError?.(error);
