@@ -11,7 +11,8 @@ import type {
   GraphProjectionNodeInput,
   GraphProvenanceEnvelope,
 } from "../packages/contracts/src/index.js";
-import {\n  assertSyntheticFixtureDatabaseSafety,
+import {
+  assertSyntheticFixtureDatabaseSafety,
   Postgres,
   PostgresFederatedGraphStore,
 } from "../packages/postgres/src/index.js";
@@ -22,7 +23,8 @@ import {
 } from "../packages/retrieval/src/index.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl) throw new Error("DATABASE_URL is required.");\nassertSyntheticFixtureDatabaseSafety(databaseUrl);
+if (!databaseUrl) throw new Error("DATABASE_URL is required.");
+assertSyntheticFixtureDatabaseSafety(databaseUrl);
 
 const outputPath = path.resolve(
   process.env.AKP_REGISTERED_GRAPH_CODE_METRICS_REPORT ??
