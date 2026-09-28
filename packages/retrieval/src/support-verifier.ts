@@ -475,6 +475,9 @@ function queryAnswerCues(query: string): PassageAnswerCue[] {
   for (const cue of Object.keys(QUERY_CUE_PATTERNS) as PassageAnswerCue[]) {
     if (cue === "YES_NO" || cue === "QUANTITY" || cue === "DATE_YEAR") continue;
     if (cue === "PROCEDURE" && quantity) continue;
+    // "Does X define Y?" asks for a yes/no assertion about a relation; it is
+    // not a request for a dictionary-style definition of Y.
+    if (cue === "DEFINITION" && yesNo) continue;
     if (
       QUERY_CUE_PATTERNS[cue].some((pattern) =>
         patternMatches(normalized, tokens, pattern),
