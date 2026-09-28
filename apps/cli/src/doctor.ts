@@ -740,6 +740,53 @@ export async function graphChecks(db: Postgres): Promise<{
   return { graphs, code };
 }
 
+export async function syntheticFixtureResidueCheck(
+  db: Postgres,
+  vaultId?: string,
+): Promise<DoctorCheck> {
+  const result = await db.pool.query<{
+    id: string;
+    vault_key: string;
+    name: string;
+    canonical_path: string;
+    total: number;
+  }>(
+    `select id,vault_key,name,canonical_path,
+            count(*) over()::int total
+       from vaults
+      where enabled
+        and (
+          canonical_path like 'benchmark/%'
+          or canonical_path like 'synthetic://akp-scale/%'
+          or canonical_path like '/tmp/registered-%'
+        )
+        and ($1::uuid is null or id=$1::uuid)
+      order by created_at,id
+      limit 25`,
+    [vaultId ?? null],
+  );
+  const total = Number(result.rows[0]?.total ?? 0);
+  return {
+    id: "synthetic-fixture-residue",
+    label: "Synthetic fixture residue",
+    status: total > 0 ? "WARN" : "OK",
+    summary:
+      total > 0
+        ? "Synthetic benchmark/test vaults are present in this database."
+        : "No known AKP synthetic benchmark/test vault markers were found.",
+    details: {
+      total,
+      truncated: total > result.rows.length,
+      vaults: result.rows.map((row) => ({
+        id: row.id,
+        vaultKey: row.vault_key,
+        name: row.name,
+        canonicalPath: row.canonical_path,
+      })),
+    },
+  };
+}
+
 export async function runDoctor(
   db: Postgres,
   environment: DoctorEnvironment = process.env,
@@ -781,6 +828,14 @@ export async function runDoctor(
   );
 
   checks.push(managedGitCheck(environment));
+
+  checks.push(
+    await safeCheck(
+      "synthetic-fixture-residue",
+      "Synthetic fixture residue",
+      () => syntheticFixtureResidueCheck(db, scope.vaultId),
+    ),
+  );
 
   checks.push(
     await safeCheck("outbox-jobs", "Outbox and jobs", async () => {
