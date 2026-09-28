@@ -70,7 +70,7 @@ export const SourceConnectorRegistrationSchema = z
 
 const RegistrationBody = SourceConnectorRegistrationSchema;
 
-const ProviderRegistrationBody = z
+export const ProviderSourceConnectorRegistrationSchema = z
   .object({
     spaceId: UUID,
     vaultId: UUID,
@@ -157,6 +157,8 @@ const ProviderRegistrationBody = z
       });
     }
   });
+
+const ProviderRegistrationBody = ProviderSourceConnectorRegistrationSchema;
 
 const WebhookBody = z
   .object({
