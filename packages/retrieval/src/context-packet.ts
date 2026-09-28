@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { deterministicProjectionRetainsSupport } from "./support-verifier.js";
 import type {
   CompactAgentPacket as ContractCompactAgentPacket,
   CompactContextSection as ContractCompactContextSection,
@@ -1407,12 +1408,21 @@ export function projectContextPacket(
       primaryOriginalOmitted &&
       selectedPrimaryQuerySection !== undefined &&
       selectedPrimaryQuerySection.content !== primaryQuerySection?.content;
+    const primaryTruncationRetainsSupport =
+      primarySupportTruncated &&
+      selectedPrimaryQuerySection !== undefined &&
+      deterministicProjectionRetainsSupport(
+        selectedPrimaryQuerySection.content,
+        packet.query,
+      );
+    const primarySupportTruncationUnverified =
+      primarySupportTruncated && !primaryTruncationRetainsSupport;
     const primarySupportLimited =
-      primarySupportMissing || primarySupportTruncated;
+      primarySupportMissing || primarySupportTruncationUnverified;
     const primarySupportGap = primarySupportMissing
       ? "Highest-ranked query-supported material omitted from compact packet: the active token budget could not include the best supported retrieval result. Request its continuation before treating this compact packet as complete support for the query."
-      : primarySupportTruncated
-        ? "Highest-ranked query-supported material truncated in compact packet: only a bounded projection fit the active token budget. Request its full continuation before treating this compact packet as complete support for the query."
+      : primarySupportTruncationUnverified
+        ? "Highest-ranked query-supported material truncated in compact packet without retaining demonstrable answer support: only a bounded projection fit the active token budget. Request its full continuation before treating this compact packet as complete support for the query."
         : undefined;
     const compactGaps =
       primarySupportGap &&
