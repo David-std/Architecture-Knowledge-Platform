@@ -176,8 +176,8 @@ export default async function ConnectorsPage({
                       <>
                         <br />
                         <small>
-                          proveedor {connector.provider_health ?? "UNKNOWN"} ·
-                          {" "}último OK {connector.provider_last_success_at ?? "—"}
+                          proveedor {connector.provider_health ?? "UNKNOWN"} ·{" "}
+                          último OK {connector.provider_last_success_at ?? "—"}
                         </small>
                         {connector.provider_last_error_code ? (
                           <>
