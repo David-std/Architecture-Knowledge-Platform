@@ -437,7 +437,13 @@ export function registerContextFabricRoutes(
         title: request.body?.title ?? null,
         ...(workObjectClass ? { workObjectClass } : {}),
         owners,
-        metadata,
+        metadata: {
+          ...metadata,
+          _akpProvenance: {
+            observationSource: "RELAYED_CLIENT",
+            providerVerified: false,
+          },
+        },
       });
       await audit(
         db,
