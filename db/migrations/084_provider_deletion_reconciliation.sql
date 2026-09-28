@@ -1,8 +1,9 @@
--- Bounded authenticated deletion reconciliation for provider-pull connectors.
+-- Bounded authenticated absence reconciliation for provider-pull connectors.
 --
--- Provider APIs do not always expose deleted issues in incremental search.
--- Rotate explicit fetch-by-id probes over active projections instead of
--- silently assuming absence from a delta feed means deletion.
+-- Provider APIs do not always expose lifecycle changes in incremental search,
+-- and a missing point read may also reflect authorization/visibility changes.
+-- Rotate explicit fetch-by-id probes over active projections; runtime policy
+-- must not treat ambiguous absence as proof of deletion.
 alter table source_connector_objects
   add column if not exists provider_last_checked_at timestamptz;
 
