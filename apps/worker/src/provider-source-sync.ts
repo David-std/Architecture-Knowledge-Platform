@@ -77,26 +77,24 @@ function providerPort(
   );
   if (row.source_system === "jira") {
     const baseUrl = stringValue(config.baseUrl);
+    const jql = stringValue(config.jql);
     if (!baseUrl) throw new Error("JIRA_BASE_URL_REQUIRED");
     return new JiraCloudSourceConnector({
       baseUrl,
       authorizationHeader: authorization,
-      ...(stringValue(config.jql) ? { jql: stringValue(config.jql) } : {}),
+      ...(jql ? { jql } : {}),
     });
   }
   if (row.source_system === "linear") {
+    const endpoint = stringValue(config.endpoint);
+    const webhookSecretRef = stringValue(config.webhookSecretRef);
+    const webhookSecret = webhookSecretRef
+      ? environment[webhookSecretRef]?.trim()
+      : undefined;
     return new LinearSourceConnector({
       authorizationHeader: authorization,
-      ...(stringValue(config.endpoint)
-        ? { endpoint: stringValue(config.endpoint) }
-        : {}),
-      ...(stringValue(config.webhookSecretRef) &&
-      environment[stringValue(config.webhookSecretRef)!]
-        ? {
-            webhookSecret:
-              environment[stringValue(config.webhookSecretRef)!]!.trim(),
-          }
-        : {}),
+      ...(endpoint ? { endpoint } : {}),
+      ...(webhookSecret ? { webhookSecret } : {}),
     });
   }
   throw new Error("PROVIDER_CONNECTOR_UNSUPPORTED");
