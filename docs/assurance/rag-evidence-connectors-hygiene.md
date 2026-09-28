@@ -42,7 +42,7 @@ This document tracks the corrective work discovered after the context-answerabil
 - [x] Prevent Browser E2E fixtures from being persisted into the ordinary runtime database.
 - [x] Production/runtime Web therefore does not intentionally present synthetic vaults as connected/imported data.
 - [x] No intentional production demo-vault surface was found; if one is introduced it must be explicitly labelled and isolated.
-- [ ] Add a dedicated fresh-install/zero-vault Web regression; current protection is data-source and E2E database isolation rather than an explicit empty-install browser assertion.
+- [x] Add a zero-vault Web selection regression: an empty authorized registry remains `NO_AUTHORIZED_VAULT` and no placeholder/demo vault is synthesized.
 
 ## Merge boundary
 
