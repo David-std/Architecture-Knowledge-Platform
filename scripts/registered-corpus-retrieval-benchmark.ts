@@ -16,7 +16,10 @@ import {
   buildEmbeddingIndex,
   rebuildCommunityIndex,
 } from "../packages/indexing/src/index.js";
-import {\n  assertSyntheticFixtureDatabaseSafety,\n  Postgres,\n} from "../packages/postgres/src/index.js";
+import {
+  assertSyntheticFixtureDatabaseSafety,
+  Postgres,
+} from "../packages/postgres/src/index.js";
 import {
   assessRetrievalAnswerability,
   DeterministicQueryDecomposer,
@@ -117,7 +120,8 @@ type StorageSnapshot = {
 };
 
 const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl) throw new Error("DATABASE_URL is required");\nassertSyntheticFixtureDatabaseSafety(databaseUrl);
+if (!databaseUrl) throw new Error("DATABASE_URL is required");
+assertSyntheticFixtureDatabaseSafety(databaseUrl);
 
 const repositoryRoot = path.resolve(".");
 const manifestPath = path.resolve(
