@@ -19,7 +19,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import path from "node:path";
 import pg from "pg";
-import { assertSyntheticFixtureDatabaseSafety } from "../packages/postgres/src/index.js";
+import { assertSyntheticFixtureDatabaseSafety } from "../packages/postgres/src/database-safety.js";
 import {
   buildContextPacket,
   type PacketCandidate,
