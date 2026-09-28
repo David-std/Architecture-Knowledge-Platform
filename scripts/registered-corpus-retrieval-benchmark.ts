@@ -70,6 +70,12 @@ type GoldCase = {
   gold_documents: string[];
   gold_evidence?: string[];
   gold_citations?: string[];
+  gold_support?: Array<{
+    id: string;
+    document: string;
+    all_terms: string[];
+    any_terms?: string[];
+  }>;
   must_not_include?: string[];
   expect_no_answer?: boolean;
   vault: string;
@@ -136,6 +142,29 @@ function numeric(value: unknown): number {
   }
   return parsed;
 }
+function normalizedPredicateText(value: string): string {
+  return value
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .toLocaleLowerCase("en-US");
+}
+
+function passageMatchesGoldPredicate(
+  passage: string,
+  predicate: NonNullable<GoldCase["gold_support"]>[number],
+): boolean {
+  const normalized = normalizedPredicateText(passage);
+  const all = predicate.all_terms.every((term) =>
+    normalized.includes(normalizedPredicateText(term)),
+  );
+  const any =
+    !predicate.any_terms?.length ||
+    predicate.any_terms.some((term) =>
+      normalized.includes(normalizedPredicateText(term)),
+    );
+  return all && any;
+}
+
 
 async function storageSnapshot(db: Postgres): Promise<StorageSnapshot> {
   const result = await db.pool.query(
@@ -624,6 +653,27 @@ async function executeCase(
         )
       ).rows.flatMap((row) => row.source_ids)
     : [];
+  const goldSupportIds = (testCase.gold_support ?? []).map(
+    (predicate) => predicate.id,
+  );
+  const retrievedSupportIds = (testCase.gold_support ?? []).flatMap(
+    (predicate) =>
+      hits.some(
+        (hit) =>
+          hit.document.externalId === predicate.document &&
+          passageMatchesGoldPredicate(
+            hit.parentContext?.trim() || hit.excerpt,
+            predicate,
+          ),
+      )
+        ? [predicate.id]
+        : [],
+  );
+  for (const supportId of goldSupportIds) {
+    if (!retrievedSupportIds.includes(supportId)) {
+      warnings.push(`PREDICATE_SUPPORT_MISSED:${supportId}`);
+    }
+  }
   return {
     configurationName: configuration.name,
     caseId: testCase.id,
@@ -635,6 +685,12 @@ async function executeCase(
       : {}),
     ...(testCase.gold_citations
       ? { goldCitationIds: [...testCase.gold_citations] }
+      : {}),
+    ...(goldSupportIds.length > 0
+      ? {
+          goldSupportIds,
+          retrievedSupportIds,
+        }
       : {}),
     retrievedEvidenceIds,
     ...(testCase.must_not_include
