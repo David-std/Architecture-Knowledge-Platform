@@ -719,9 +719,19 @@ reconcile
     "--disposition <kind>",
     "RECOVERED_REPLAYED, SUPERSEDED_BY_VERIFIED_PROJECTION, or IRRECOVERABLE_RECONCILED",
   )
-  .requiredOption("--actor <identity>", "Operator identity recorded in the audit trail")
-  .requiredOption("--reason <text>", "Why this terminal disposition is justified")
-  .option("--evidence <json>", "Bounded JSON evidence for the disposition", "{}")
+  .requiredOption(
+    "--actor <identity>",
+    "Operator identity recorded in the audit trail",
+  )
+  .requiredOption(
+    "--reason <text>",
+    "Why this terminal disposition is justified",
+  )
+  .option(
+    "--evidence <json>",
+    "Bounded JSON evidence for the disposition",
+    "{}",
+  )
   .option("--environment <name>", "Operational environment label", "default")
   .action(
     async (options: {
@@ -742,7 +752,11 @@ reconcile
         throw new Error("Invalid quarantine disposition.");
       }
       const evidence = JSON.parse(options.evidence) as unknown;
-      if (!evidence || Array.isArray(evidence) || typeof evidence !== "object") {
+      if (
+        !evidence ||
+        Array.isArray(evidence) ||
+        typeof evidence !== "object"
+      ) {
         throw new Error("--evidence must be a JSON object.");
       }
       printJson(
@@ -768,9 +782,19 @@ reconcile
     "--disposition <kind>",
     "TERMINAL_FIXTURE_DISPOSITION, SUPERSEDED_BY_VERIFIED_PROJECTION, or IRRECOVERABLE_RECONCILED",
   )
-  .requiredOption("--actor <identity>", "Operator identity recorded in the audit trail")
-  .requiredOption("--reason <text>", "Why this terminal disposition is justified")
-  .option("--evidence <json>", "Bounded JSON evidence for the disposition", "{}")
+  .requiredOption(
+    "--actor <identity>",
+    "Operator identity recorded in the audit trail",
+  )
+  .requiredOption(
+    "--reason <text>",
+    "Why this terminal disposition is justified",
+  )
+  .option(
+    "--evidence <json>",
+    "Bounded JSON evidence for the disposition",
+    "{}",
+  )
   .option("--environment <name>", "Operational environment label", "default")
   .action(
     async (options: {
@@ -790,7 +814,11 @@ reconcile
         throw new Error("Invalid ingest disposition.");
       }
       const evidence = JSON.parse(options.evidence) as unknown;
-      if (!evidence || Array.isArray(evidence) || typeof evidence !== "object") {
+      if (
+        !evidence ||
+        Array.isArray(evidence) ||
+        typeof evidence !== "object"
+      ) {
         throw new Error("--evidence must be a JSON object.");
       }
       printJson(
@@ -811,24 +839,33 @@ reconcile
 program
   .command("doctor")
   .option("--format <format>", "json or human", "json")
-  .option("--vault-id <uuid>", "Limit operational residue diagnostics to one vault")
+  .option(
+    "--vault-id <uuid>",
+    "Limit operational residue diagnostics to one vault",
+  )
   .option("--environment <name>", "Operational environment label", "default")
-  .action(async (options: { format: string; vaultId?: string; environment: string }) => {
-    const report = await withDatabase((db) =>
-      runDoctor(db, process.env, process.cwd(), {
-        ...(options.vaultId ? { vaultId: options.vaultId } : {}),
-        environment: options.environment,
-      }),
-    );
-    if (options.format === "json") {
-      printJson(report);
-    } else if (options.format === "human") {
-      console.log(renderDoctorReport(report));
-    } else {
-      throw new Error("doctor --format must be json or human");
-    }
-    if (report.overall === "FAIL") process.exitCode = 1;
-  });
+  .action(
+    async (options: {
+      format: string;
+      vaultId?: string;
+      environment: string;
+    }) => {
+      const report = await withDatabase((db) =>
+        runDoctor(db, process.env, process.cwd(), {
+          ...(options.vaultId ? { vaultId: options.vaultId } : {}),
+          environment: options.environment,
+        }),
+      );
+      if (options.format === "json") {
+        printJson(report);
+      } else if (options.format === "human") {
+        console.log(renderDoctorReport(report));
+      } else {
+        throw new Error("doctor --format must be json or human");
+      }
+      if (report.overall === "FAIL") process.exitCode = 1;
+    },
+  );
 
 program.command("status").action(async () => {
   console.log(JSON.stringify(await api("/v1/status"), null, 2));
