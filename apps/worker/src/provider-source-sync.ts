@@ -152,10 +152,22 @@ export interface ProviderSyncResult {
   errorCode: string | null;
 }
 
+export interface ProviderSyncDependencies {
+  providerPort?: (
+    row: ProviderConnectorRow,
+    environment: NodeJS.ProcessEnv,
+  ) => SourceConnectorPort & {
+    health(): Promise<{ state: ProviderHealthState; reason?: string }>;
+  };
+  appendEvent?: typeof appendSourceConnectorEvent;
+  applyNextEvent?: typeof applyNextSourceConnectorEvent;
+}
+
 export async function syncProviderSourceConnector(
   db: Postgres,
   connectorId: string,
   environment: NodeJS.ProcessEnv = process.env,
+  dependencies: ProviderSyncDependencies = {},
 ): Promise<ProviderSyncResult> {
   const lockClient = await db.pool.connect();
   let locked = false;
@@ -192,7 +204,7 @@ export async function syncProviderSourceConnector(
     const row = registration.rows[0];
     if (!row) throw new Error("PROVIDER_CONNECTOR_NOT_FOUND");
     provider = row.source_system;
-    const port = providerPort(row, environment);
+    const port = (dependencies.providerPort ?? providerPort)(row, environment);
     const health = await port.health();
     if (health.state !== "AVAILABLE") {
       await updateProviderHealth(
@@ -288,7 +300,7 @@ export async function syncProviderSourceConnector(
         permissions: object.permissions,
         metadata,
       };
-      await appendSourceConnectorEvent(db, {
+      await (dependencies.appendEvent ?? appendSourceConnectorEvent)(db, {
         connectorId,
         eventId,
         sequence,
@@ -312,7 +324,9 @@ export async function syncProviderSourceConnector(
 
     let applied = 0;
     for (;;) {
-      const result = await applyNextSourceConnectorEvent(db, { connectorId });
+      const result = await (
+        dependencies.applyNextEvent ?? applyNextSourceConnectorEvent
+      )(db, { connectorId });
       if (!result) break;
       applied += 1;
     }
