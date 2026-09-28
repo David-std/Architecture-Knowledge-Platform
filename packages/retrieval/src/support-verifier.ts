@@ -426,6 +426,11 @@ function canonicalSemanticToken(token: string): string {
   if (/^(polic|politic)/u.test(token)) return "policy";
   if (/^(student|alumn|estudiant)/u.test(token)) return "student";
   if (/^(withdraw|baja|retiro|retir)/u.test(token)) return "withdrawal";
+  if (/^(cancel|cancelar|cancelacion)/u.test(token)) return "cancel";
+  if (/^(enroll|registration|matricula|inscripcion)/u.test(token))
+    return "enrollment";
+  if (/^(universit|universidad)/u.test(token)) return "university";
+  if (/^(before|antes)/u.test(token)) return "before";
   if (/^(deadline|limite|vencim)/u.test(token)) return "deadline";
   if (/^(charge|payment|pago|cobro)/u.test(token)) return "payment";
   if (/^(recurr|repeat|repet|again|otra)/u.test(token)) return "repeat";
@@ -478,6 +483,7 @@ function queryAnswerCues(query: string): PassageAnswerCue[] {
   for (const cue of Object.keys(QUERY_CUE_PATTERNS) as PassageAnswerCue[]) {
     if (cue === "YES_NO" || cue === "QUANTITY" || cue === "DATE_YEAR") continue;
     if (cue === "PROCEDURE" && quantity) continue;
+    if (cue === "PROCEDURE" && cues.has("PREVENTION")) continue;
     // "Does X define Y?" asks for a yes/no assertion about a relation; it is
     // not a request for a dictionary-style definition of Y.
     if (cue === "DEFINITION" && yesNo) continue;
@@ -685,7 +691,7 @@ export function deterministicProjectionRetainsSupport(
   if (match < 0) return false;
 
   const requiredAnswerCues = queryAnswerCues(query);
-  if (requiredAnswerCues.length === 0) return true;
+  if (requiredAnswerCues.length === 0 && identifierLikeQuery(query)) return true;
 
   const passageWithoutQueryEcho =
     passage.slice(0, match) + " " + passage.slice(match + needle.length);
