@@ -654,9 +654,14 @@ function boundedPredicateSupport(
     const anchorCoverage =
       anchors.length === 0 ? 1 : overlap.length / anchors.length;
     const answer = answerRequirementsMatch(window, query, required);
+    const boundedDefinitionRelation =
+      required.includes("DEFINITION") &&
+      answer.matched.includes("DEFINITION") &&
+      overlap.length >= requiredAnchorOverlap;
     const enoughAnchors =
       anchors.length === 0 ||
-      (overlap.length >= requiredAnchorOverlap && anchorCoverage >= 0.4);
+      (overlap.length >= requiredAnchorOverlap &&
+        (anchorCoverage >= 0.4 || boundedDefinitionRelation));
     const supported = answer.allMatched && enoughAnchors;
     if (
       supported ||
