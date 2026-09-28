@@ -1417,6 +1417,12 @@ function mergeVectorRows(rows: readonly VectorSearchRow[]): VectorSearchRow[] {
   );
 }
 
+export function internalAnswerabilityCandidateLimit(
+  presentationLimit: number,
+): number {
+  return Math.min(200, Math.max(64, presentationLimit * 4));
+}
+
 export async function queryKnowledge(
   db: Postgres,
   input: SearchInput,
@@ -1424,6 +1430,12 @@ export async function queryKnowledge(
 ): Promise<SearchHit[]> {
   if (!input.spaceId) throw new Error("SPACE_ID_REQUIRED");
   const spaceId = input.spaceId;
+  const internalCandidateLimit = internalAnswerabilityCandidateLimit(input.limit);
+  telemetry.histogram(
+    "retrieval_answerability_internal_candidate_limit",
+    internalCandidateLimit,
+    { presentation_limit: String(input.limit) },
+  );
   const vaultIds = [
     ...new Set([
       ...(options.vaultIds ?? []),
@@ -1831,7 +1843,7 @@ export async function queryKnowledge(
           [
             spaceId,
             input.query,
-            Math.max(input.limit * 2, 20),
+            internalCandidateLimit,
             rawAuthorizationJson,
             queryAcronyms,
             documentScopeJson,
@@ -1979,7 +1991,7 @@ export async function queryKnowledge(
           [
             spaceId,
             assisted.query,
-            Math.max(input.limit * 3, 30),
+            internalCandidateLimit,
             rawAuthorizationJson,
             documentScopeJson,
           ],
@@ -2003,7 +2015,7 @@ export async function queryKnowledge(
     }
   }
   const lexical = {
-    rows: mergeLexicalRows(lexicalRows).slice(0, Math.max(input.limit * 3, 30)),
+    rows: mergeLexicalRows(lexicalRows).slice(0, internalCandidateLimit),
   };
   recordRetrievalCandidates("lexical", lexical.rows.length);
   if (channels.has("lexical")) {
@@ -2106,7 +2118,7 @@ export async function queryKnowledge(
                 spaceId,
                 toPgVector(queryVector),
                 generation.vaultId,
-                Math.max(input.limit * 3, 30),
+                internalCandidateLimit,
                 rawAuthorizationJson,
                 documentScopeJson,
               ],
@@ -2137,7 +2149,7 @@ export async function queryKnowledge(
     vector.rows.splice(
       0,
       vector.rows.length,
-      ...mergeVectorRows(vector.rows).slice(0, Math.max(input.limit * 3, 30)),
+      ...mergeVectorRows(vector.rows).slice(0, internalCandidateLimit),
     );
   }
 
@@ -3157,16 +3169,14 @@ export async function queryKnowledge(
     retrievalCandidates,
     retrievalPolicy,
   );
-  // Answerability needs a background neighbour to distinguish two close
-  // relevant semantic hits from an ambiguous top pair. Keep at least three
-  // already-authorized fused candidates internally even when presentation
-  // limit is one; finalResults still honors input.limit below.
-  const answerabilityComparisonLimit = Math.max(input.limit * 2, 3);
+  // Answerability operates on a bounded internal pool independent from the
+  // visual/API presentation limit. A small presentation request must not hide
+  // a support-bearing semantic unit before passage verification runs.
   const fused = (
     await withSpan("retrieve.fuse", {}, async () =>
       reciprocalRankFusion(rankedChannels),
     )
-  ).slice(0, answerabilityComparisonLimit);
+  ).slice(0, internalCandidateLimit);
   if (fused.length === 0) {
     await finalizeTruthSnapshot();
     return [];
