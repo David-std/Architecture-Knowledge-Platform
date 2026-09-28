@@ -331,6 +331,143 @@ export async function syncProviderSourceConnector(
       applied += 1;
     }
 
+    let deletionHealth: ProviderHealthState = "AVAILABLE";
+    let deletionErrorCode: string | null = null;
+    if (port.fetchById) {
+      const deletionCandidates = await db.pool.query<{
+        object_id: string;
+        object_type: string;
+        source_version: string;
+        title: string | null;
+        permission_fidelity:
+          | "SOURCE_ACL_EXACT"
+          | "SOURCE_ACL_MAPPED"
+          | "WORKSPACE_WIDE"
+          | "NONE"
+          | "UNKNOWN";
+        permission_uncertain: boolean;
+        acl_fingerprint: string | null;
+        metadata: Record<string, unknown>;
+      }>(
+        `select o.object_id,o.object_type,o.source_version,o.title,
+                o.permission_fidelity,o.permission_uncertain,
+                o.acl_fingerprint,o.metadata
+           from source_connector_objects o
+          where o.connector_id=$1
+            and o.lifecycle='ACTIVE'
+            and not exists(
+              select 1
+                from source_connector_events e
+               where e.connector_id=o.connector_id
+                 and e.object_id=o.object_id
+                 and e.operation='DELETE'
+                 and e.status<>'APPLIED'
+            )
+          order by o.provider_last_checked_at asc nulls first,
+                   o.updated_at,o.object_id
+          limit 25`,
+        [connectorId],
+      );
+
+      for (const candidate of deletionCandidates.rows) {
+        try {
+          const current = await port.fetchById({
+            scope: { spaceId: row.space_id, vaultId: row.vault_id },
+            objectId: candidate.object_id,
+            checkpoint: target,
+          });
+          if (current) {
+            await db.pool.query(
+              `update source_connector_objects
+                  set provider_last_checked_at=now()
+                where connector_id=$1 and object_id=$2
+                  and lifecycle='ACTIVE'`,
+              [connectorId, candidate.object_id],
+            );
+            continue;
+          }
+
+          const sourceVersion = `deleted:${target.value}`.slice(0, 1024);
+          const eventId = eventIdentity(
+            provider,
+            candidate.object_id,
+            sourceVersion,
+            "DELETE",
+          );
+          const existing = await db.pool.query<{ sequence: string | number }>(
+            `select sequence
+               from source_connector_events
+              where connector_id=$1 and event_id=$2`,
+            [connectorId, eventId],
+          );
+          if (existing.rows[0]) {
+            highestSequence = Math.max(
+              highestSequence,
+              Number(existing.rows[0].sequence),
+            );
+            continue;
+          }
+
+          sequence += 1;
+          highestSequence = sequence;
+          const metadata = {
+            ...objectRecord(candidate.metadata),
+            _akpProviderObservation: {
+              providerVerified: true,
+              observedVia: "AUTHENTICATED_PROVIDER_RECONCILIATION",
+              deletionConfirmed: true,
+              checkpoint: target.value,
+            },
+          };
+          const serialized = {
+            operation: "DELETE",
+            objectId: candidate.object_id,
+            objectType: candidate.object_type,
+            sourceVersion,
+            permissions: {
+              fidelity: candidate.permission_fidelity,
+              uncertain: candidate.permission_uncertain,
+              ...(candidate.acl_fingerprint
+                ? { aclFingerprint: candidate.acl_fingerprint }
+                : {}),
+            },
+            metadata,
+          };
+          await (dependencies.appendEvent ?? appendSourceConnectorEvent)(db, {
+            connectorId,
+            eventId,
+            sequence,
+            occurredAt: observedAt(metadata, target.value),
+            operation: "DELETE",
+            objectId: candidate.object_id,
+            objectType: candidate.object_type,
+            sourceVersion,
+            title: candidate.title,
+            content: null,
+            contentType: null,
+            permissionFidelity: candidate.permission_fidelity,
+            permissionUncertain: candidate.permission_uncertain,
+            aclFingerprint: candidate.acl_fingerprint,
+            metadata,
+            payloadHash: payloadHash(serialized),
+          });
+          appended += 1;
+        } catch (error) {
+          deletionHealth = "DEGRADED";
+          deletionErrorCode = safeErrorCode(error);
+          break;
+        }
+      }
+
+      for (;;) {
+        const result = await (
+          dependencies.applyNextEvent ?? applyNextSourceConnectorEvent
+        )(db, { connectorId });
+        if (!result) break;
+        applied += 1;
+      }
+    }
+
     const unresolved = await db.pool.query<{ count: number }>(
       `select count(*)::int count
          from source_connector_events
@@ -339,17 +476,26 @@ export async function syncProviderSourceConnector(
       [connectorId, highestSequence],
     );
     const checkpointAdvanced = Number(unresolved.rows[0]?.count ?? 0) === 0;
+    const finalHealth: ProviderHealthState =
+      checkpointAdvanced && deletionHealth === "AVAILABLE"
+        ? "AVAILABLE"
+        : "DEGRADED";
+    const finalErrorCode = !checkpointAdvanced
+      ? "PROVIDER_EVENTS_UNAPPLIED"
+      : deletionErrorCode;
+
     if (checkpointAdvanced) {
       await db.pool.query(
         `update source_connector_checkpoints
             set provider_checkpoint_kind=$2,
                 provider_checkpoint_value=$3,
-                provider_health='AVAILABLE',
-                provider_last_success_at=now(),
-                provider_last_error_code=null,
+                provider_health=$4,
+                provider_last_success_at=case when $4='AVAILABLE' then now()
+                                              else provider_last_success_at end,
+                provider_last_error_code=$5,
                 updated_at=now()
           where connector_id=$1`,
-        [connectorId, target.kind, target.value],
+        [connectorId, target.kind, target.value, finalHealth, finalErrorCode],
       );
     } else {
       await updateProviderHealth(
@@ -367,8 +513,8 @@ export async function syncProviderSourceConnector(
       appended,
       applied,
       checkpointAdvanced,
-      health: checkpointAdvanced ? "AVAILABLE" : "DEGRADED",
-      errorCode: checkpointAdvanced ? null : "PROVIDER_EVENTS_UNAPPLIED",
+      health: finalHealth,
+      errorCode: finalErrorCode,
     };
   } catch (error) {
     const errorCode = safeErrorCode(error);
