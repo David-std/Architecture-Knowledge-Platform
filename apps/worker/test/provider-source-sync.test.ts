@@ -1,10 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SourceConnectorPort } from "@akp/domain";
 import type { Postgres } from "@akp/postgres";
-import {
-  syncProviderSourceConnector,
-  type ProviderHealthState,
-} from "../src/provider-source-sync.js";
+import type { ProviderHealthState } from "../src/external-work-connectors.js";
+import { syncProviderSourceConnector } from "../src/provider-source-sync.js";
 
 function fakeDatabase() {
   const checkpointUpdates: unknown[][] = [];
