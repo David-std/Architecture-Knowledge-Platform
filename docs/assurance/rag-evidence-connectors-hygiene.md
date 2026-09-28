@@ -41,7 +41,7 @@ This document tracks the corrective work discovered after the context-answerabil
 - [x] Audit production Web vault surfaces: they consume API-backed `/v1/vaults` / operator state rather than a hard-coded mock vault registry.
 - [x] Prevent Browser E2E fixtures from being persisted into the ordinary runtime database.
 - [x] Browser E2E uses a dedicated disposable database and refuses an ordinary local operator database by default.
-- [x] Synthetic benchmark/fixture seeders require a database whose name is explicitly disposable (`test`, `e2e`, `ci`, `bench` or `benchmark`) unless CI or an explicit unsafe override is used.
+- [x] Synthetic benchmark/fixture seeders require a database whose name is explicitly disposable (`test`, `e2e`, `ci`, `bench` or `benchmark`) unless CI or the explicit `AKP_SYNTHETIC_ALLOW_UNSAFE_DATABASE=1` override is used.
 - [x] `akp doctor` warns when known AKP synthetic benchmark vault markers remain in the current database, so historical fixture contamination is visible instead of looking like real imported knowledge.
 - [x] Production/runtime Web therefore does not intentionally present synthetic vaults as connected/imported data.
 - [x] No intentional production demo-vault surface was found; if one is introduced it must be explicitly labelled and isolated.
