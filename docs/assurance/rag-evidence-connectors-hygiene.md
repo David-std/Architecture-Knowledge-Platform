@@ -42,6 +42,7 @@ This document tracks the corrective work discovered after the context-answerabil
 - [x] Prevent Browser E2E fixtures from being persisted into the ordinary runtime database.
 - [x] Browser E2E uses a dedicated disposable database and refuses an ordinary local operator database by default.
 - [x] Synthetic benchmark/fixture seeders require a database whose name is explicitly disposable (`test`, `e2e`, `ci`, `bench` or `benchmark`) unless CI or an explicit unsafe override is used.
+- [x] `akp doctor` warns when known AKP synthetic benchmark vault markers remain in the current database, so historical fixture contamination is visible instead of looking like real imported knowledge.
 - [x] Production/runtime Web therefore does not intentionally present synthetic vaults as connected/imported data.
 - [x] No intentional production demo-vault surface was found; if one is introduced it must be explicitly labelled and isolated.
 - [x] Add a zero-vault Web selection regression: an empty authorized registry remains `NO_AUTHORIZED_VAULT` and no placeholder/demo vault is synthesized.
@@ -49,7 +50,7 @@ This document tracks the corrective work discovered after the context-answerabil
 
 ## Bootstrap and synthetic-data finding
 
-The production Web surfaces read vault state from the API; they do not hard-code a demo vault catalog. Migration `002_platform_runtime.sql` seeds the local organization, administrator and the `Architecture Knowledge` space needed for bootstrap, but it does **not** insert a vault. Synthetic vaults are created by tests and benchmark fixtures. Browser E2E and fixture-seeding benchmark scripts now fail closed on an ordinary local operator database unless the operator deliberately enables the documented unsafe override.
+The production Web surfaces read vault state from the API; they do not hard-code a demo vault catalog. Migration `002_platform_runtime.sql` seeds the local organization, administrator and the `Architecture Knowledge` space needed for bootstrap, but it does **not** insert a vault. Synthetic vaults are created by tests and benchmark fixtures. Browser E2E and fixture-seeding benchmark scripts now fail closed on an ordinary local operator database unless the operator deliberately enables the documented unsafe override. `akp doctor` also surfaces previously persisted benchmark vault markers as a warning so an operator can distinguish old fixture residue from real vaults before deciding whether to clean it up.
 
 ## Merge boundary
 
