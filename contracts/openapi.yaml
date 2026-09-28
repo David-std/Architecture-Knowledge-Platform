@@ -3452,6 +3452,63 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  /v1/source-connectors/providers:
+    post:
+      tags: [Sources]
+      operationId: registerProviderSourceConnector
+      x-akp-permission: admin
+      x-akp-idempotency-exempt: true
+      description: >
+        Register a read-only Jira or Linear provider connector. Only an
+        operator-owned credential reference and non-secret provider
+        configuration are persisted; provider secret bytes remain outside AKP
+        durable state. Provider projections remain UNTRUSTED_EXTERNAL
+        references and write-back is disabled.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                [spaceId, vaultId, connectorKey, provider, credentialRef]
+              properties:
+                spaceId: { type: string, format: uuid }
+                vaultId: { type: string, format: uuid }
+                connectorKey:
+                  {
+                    type: string,
+                    pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+                  }
+                provider: { type: string, enum: [jira, linear] }
+                credentialRef:
+                  {
+                    type: string,
+                    pattern: "^[A-Z][A-Z0-9_]{1,127}$",
+                    description: "Environment/secret-store reference, never the provider secret itself.",
+                  }
+                webhookSecretRef:
+                  {
+                    type: string,
+                    pattern: "^[A-Z][A-Z0-9_]{1,127}$",
+                    description: "Optional Linear webhook-secret reference.",
+                  }
+                baseUrl:
+                  {
+                    type: string,
+                    format: uri,
+                    description: "Required for Jira Cloud; optional Linear GraphQL endpoint override.",
+                  }
+                jql: { type: string, minLength: 1, maxLength: 4000 }
+                freshnessSlaSeconds:
+                  { type: integer, minimum: 1, maximum: 31536000, default: 300 }
+      responses:
+        "201": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
   /hooks/source-connectors/{id}/events:
     post:
       tags: [Sources]
