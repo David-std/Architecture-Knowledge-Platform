@@ -23,6 +23,22 @@ export interface OperationalReconciliationRecord {
   createdAt: string;
 }
 
+function requireDispositionEvidence(input: {
+  actor: string;
+  rationale: string;
+  evidence?: Record<string, unknown>;
+}): Record<string, unknown> {
+  if (!input.actor.trim())
+    throw new Error("OPERATIONAL_RECONCILIATION_ACTOR_REQUIRED");
+  if (!input.rationale.trim())
+    throw new Error("OPERATIONAL_RECONCILIATION_RATIONALE_REQUIRED");
+  const evidence = input.evidence ?? {};
+  if (Object.keys(evidence).length === 0) {
+    throw new Error("OPERATIONAL_RECONCILIATION_EVIDENCE_REQUIRED");
+  }
+  return evidence;
+}
+
 function normalize(
   row: Record<string, unknown>,
 ): OperationalReconciliationRecord {
@@ -78,13 +94,17 @@ export async function reconcileEventQuarantine(
   const client = await db.pool.connect();
   try {
     await client.query("begin");
+    const evidence = requireDispositionEvidence(input);
     const source = await client.query<{
       space_id: string | null;
       vault_id: string | null;
+      delivery_status: string | null;
     }>(
-      `select o.space_id,o.vault_id
+      `select o.space_id,o.vault_id,d.status delivery_status
          from event_quarantine q
          join event_outbox o on o.event_id=q.event_id
+         left join event_deliveries d
+           on d.event_id=q.event_id and d.consumer_name=q.consumer_name
         where q.event_id=$1 and q.consumer_name=$2
         order by q.quarantined_at desc,q.id desc
         limit 1`,
@@ -92,6 +112,12 @@ export async function reconcileEventQuarantine(
     );
     const row = source.rows[0];
     if (!row) throw new Error("EVENT_QUARANTINE_NOT_FOUND");
+    if (
+      input.disposition === "RECOVERED_REPLAYED" &&
+      row.delivery_status !== "SUCCEEDED"
+    ) {
+      throw new Error("EVENT_QUARANTINE_REPLAY_NOT_SUCCEEDED");
+    }
     const inserted = await client.query<Record<string, unknown>>(
       `insert into operational_reconciliations(
          resource_type,resource_key,space_id,vault_id,environment,disposition,
@@ -109,7 +135,7 @@ export async function reconcileEventQuarantine(
         input.disposition,
         input.actor.trim(),
         input.rationale.trim(),
-        JSON.stringify(input.evidence ?? {}),
+        JSON.stringify(evidence),
       ],
     );
     const result = inserted.rows[0];
@@ -143,6 +169,7 @@ export async function reconcileFailedIngest(
   const client = await db.pool.connect();
   try {
     await client.query("begin");
+    const evidence = requireDispositionEvidence(input);
     const source = await client.query<{
       space_id: string;
       vault_id: string | null;
@@ -176,7 +203,7 @@ export async function reconcileFailedIngest(
         input.disposition,
         input.actor.trim(),
         input.rationale.trim(),
-        JSON.stringify(input.evidence ?? {}),
+        JSON.stringify(evidence),
       ],
     );
     const result = inserted.rows[0];
