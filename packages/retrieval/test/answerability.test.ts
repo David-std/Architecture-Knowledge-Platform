@@ -277,14 +277,14 @@ describe("retrieval answerability", () => {
 
   it("accepts an explicit bilingual yes-no negation about the same relation", () => {
     const candidate = hit(20, {
-      title: "Pattern scope",
+      title: "Component scope",
       excerpt:
-        "Strategy y Adapter no determinan toda la arquitectura; resuelven responsabilidades locales.",
+        "Proxy y Gateway no determinan todo el diseño del sistema; resuelven responsabilidades locales.",
       contributions: [contribution("vector", 0.88, 1)],
     });
     const result = assessRetrievalAnswerability(
       [candidate],
-      "Do Strategy and Adapter define the entire architecture?",
+      "Do Proxy and Gateway define the entire system design?",
     );
 
     expect(result).toMatchObject({
@@ -342,19 +342,19 @@ describe("retrieval answerability", () => {
 
   it("requires rationale and relation anchors in the same sentence", () => {
     const thematic = hit(23, {
-      title: "Policy rationale",
+      title: "Handler overview",
       parentContext:
-        "Dependencies are documented for architecture review. A deployment policy changes because maintenance windows are short.",
-      excerpt: "Dependencies are documented for architecture review.",
+        "Request handlers are documented for review. A deployment schedule changes because maintenance windows are short.",
+      excerpt: "Request handlers are documented for review.",
       contributions: [contribution("vector", 0.91, 1)],
     });
     const correct = hit(24, {
-      title: "Dependency direction",
+      title: "Handler contract rationale",
       excerpt:
-        "Las dependencias apuntan hacia las políticas porque las reglas de negocio deben permanecer independientes de detalles externos.",
+        "Request handlers depend on stable contracts because transport details must remain replaceable.",
       contributions: [contribution("vector", 0.89, 2)],
     });
-    const query = "Why do dependencies point toward policies?";
+    const query = "Why do request handlers depend on stable contracts?";
     const result = assessRetrievalAnswerability([thematic, correct], query);
 
     expect(result.supportedCandidateKeys).toEqual([
