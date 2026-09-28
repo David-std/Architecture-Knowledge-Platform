@@ -357,12 +357,7 @@ export function registerContextFabricRoutes(
 
   app.get<{ Params: { id: string } }>(
     "/v1/sessions/:id/external-refs",
-    {
-      preHandler: [
-        requirePermission("knowledge:propose"),
-        requirePrincipalAction("knowledge:propose"),
-      ],
-    },
+    { preHandler: requirePermission("knowledge:read") },
     async (request, reply) => {
       const session = await authorizedSession(
         db,
@@ -394,7 +389,12 @@ export function registerContextFabricRoutes(
     };
   }>(
     "/v1/sessions/:id/external-refs",
-    { preHandler: requirePermission("knowledge:read") },
+    {
+      preHandler: [
+        requirePermission("knowledge:propose"),
+        requirePrincipalAction("knowledge:propose"),
+      ],
+    },
     async (request, reply) => {
       const session = await authorizedSession(
         db,
