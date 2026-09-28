@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { assertTestDatabaseSafety } from "../src/index.js";
+import {
+  assertSyntheticFixtureDatabaseSafety,
+  assertTestDatabaseSafety,
+} from "../src/index.js";
 
 describe("test database safety", () => {
   it("rejects a normal operational database during local tests", () => {
@@ -21,6 +24,37 @@ describe("test database safety", () => {
       assertTestDatabaseSafety(
         "postgres://akp:akp@localhost:55432/akp-browser-e2e",
         { NODE_ENV: "test" },
+      ),
+    ).not.toThrow();
+  });
+
+  it("blocks synthetic benchmark seeding against a normal operator database", () => {
+    expect(() =>
+      assertSyntheticFixtureDatabaseSafety(
+        "postgres://akp:akp@localhost:55432/akp",
+        {},
+      ),
+    ).toThrow("SYNTHETIC_DATABASE_NOT_DISPOSABLE:akp");
+
+    expect(() =>
+      assertSyntheticFixtureDatabaseSafety(
+        "postgres://akp:akp@localhost:55432/akp_benchmark_local",
+        {},
+      ),
+    ).not.toThrow();
+  });
+
+  it("requires an explicit override for synthetic fixtures outside disposable databases", () => {
+    expect(() =>
+      assertSyntheticFixtureDatabaseSafety(
+        "postgres://akp:akp@localhost:55432/akp",
+        { CI: "true" },
+      ),
+    ).not.toThrow();
+    expect(() =>
+      assertSyntheticFixtureDatabaseSafety(
+        "postgres://akp:akp@localhost:55432/akp",
+        { AKP_SYNTHETIC_ALLOW_UNSAFE_DATABASE: "1" },
       ),
     ).not.toThrow();
   });
