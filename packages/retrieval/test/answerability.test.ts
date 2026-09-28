@@ -206,10 +206,7 @@ describe("retrieval answerability", () => {
       title: "Immutable change-log definition",
       excerpt:
         "Immutable change logs record every domain change and retain a complete operational history for later reconstruction.",
-      contributions: [
-        contribution("exact"),
-        contribution("vector", 0.91, 1),
-      ],
+      contributions: [contribution("exact"), contribution("vector", 0.91, 1)],
     });
     const query =
       "When should immutable change logs be avoided because operational overhead is high?";
@@ -239,10 +236,7 @@ describe("retrieval answerability", () => {
       title: "Immutable change-log definition",
       excerpt:
         "Immutable change logs record every domain change and retain a complete operational history for later reconstruction.",
-      contributions: [
-        contribution("exact"),
-        contribution("vector", 0.91, 1),
-      ],
+      contributions: [contribution("exact"), contribution("vector", 0.91, 1)],
     });
     const conditionBase = hit(2, {
       title: "Immutable change-log trade-off",
@@ -258,10 +252,7 @@ describe("retrieval answerability", () => {
     const query =
       "When should immutable change logs be avoided because operational overhead is high?";
 
-    const result = assessRetrievalAnswerability(
-      [definition, condition],
-      query,
-    );
+    const result = assessRetrievalAnswerability([definition, condition], query);
 
     expect(result.supported).toBe(true);
     expect(result.supportedCandidateKeys).toEqual([
