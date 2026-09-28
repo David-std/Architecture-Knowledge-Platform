@@ -52,6 +52,8 @@ const fixture = {
   sourceId: randomUUID(),
   evidenceId: randomUUID(),
   documentId: randomUUID(),
+  authorRulePath: "browser/e2e-rule-" + randomUUID().slice(0, 8) + ".md",
+  authorRuleId: "BROWSER-E2E-RULE-" + randomUUID().slice(0, 8).toUpperCase(),
 };
 
 const children = [];
@@ -935,7 +937,7 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
       await adminPage
         .locator('textarea[name="summary"]')
         .fill("Browser E2E governed authoring");
-      await adminPage.locator('input[name="path"]').fill("browser/e2e-rule.md");
+      await adminPage.locator('input[name="path"]').fill(fixture.authorRulePath);
       await adminPage
         .locator('textarea[name="reason"]')
         .fill("Browser E2E governed authoring flow");
@@ -944,7 +946,7 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
         .fill(
           [
             "---",
-            "id: BROWSER-E2E-RULE",
+            `id: ${fixture.authorRuleId}`,
             "type: rule",
             "title: Browser E2E rule",
             "status: ACTIVE",
