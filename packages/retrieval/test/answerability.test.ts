@@ -216,9 +216,7 @@ describe("retrieval answerability", () => {
 
     expect(result).toMatchObject({
       supported: true,
-      supportedCandidateKeys: [
-        retrievalAnswerabilityCandidateKey(candidate),
-      ],
+      supportedCandidateKeys: [retrievalAnswerabilityCandidateKey(candidate)],
     });
     expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
       supported: true,
