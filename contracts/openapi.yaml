@@ -2671,7 +2671,8 @@ paths:
     post:
       tags: [Sessions]
       operationId: upsertSessionExternalObjectRef
-      x-akp-permission: knowledge:read
+      x-akp-permission: knowledge:propose
+      x-akp-principal-action: knowledge:propose
       parameters:
         - { $ref: "#/components/parameters/UuidId" }
         - { $ref: "#/components/parameters/IdempotencyKey" }
@@ -2690,9 +2691,6 @@ paths:
                 canonicalUrl: { type: string }
                 sourceRevision: { type: string }
                 title: { type: string }
-                authority:
-                  type: string
-                  enum: [SYSTEM_OF_RECORD, REFERENCE, MIRRORED_PROJECTION]
                 workObjectClass:
                   type: string
                   enum:
