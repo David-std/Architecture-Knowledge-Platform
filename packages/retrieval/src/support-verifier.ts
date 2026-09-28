@@ -481,7 +481,6 @@ function queryAnswerCues(query: string): PassageAnswerCue[] {
   for (const cue of Object.keys(QUERY_CUE_PATTERNS) as PassageAnswerCue[]) {
     if (cue === "YES_NO" || cue === "QUANTITY" || cue === "DATE_YEAR") continue;
     if (cue === "PROCEDURE" && quantity) continue;
-    if (cue === "PROCEDURE" && cues.has("PREVENTION")) continue;
     // "Does X define Y?" asks for a yes/no assertion about a relation; it is
     // not a request for a dictionary-style definition of Y.
     if (cue === "DEFINITION" && yesNo) continue;
@@ -493,6 +492,12 @@ function queryAnswerCues(query: string): PassageAnswerCue[] {
       cues.add(cue);
     }
   }
+
+  // "How can X be prevented/stopped?" asks for the prevention mechanism.
+  // PROCEDURE is a generic interrogative cue here, not a second independent
+  // predicate that the passage must prove.
+  if (cues.has("PREVENTION")) cues.delete("PROCEDURE");
+
   return [...cues];
 }
 
