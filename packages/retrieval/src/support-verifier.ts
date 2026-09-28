@@ -324,7 +324,25 @@ const PASSAGE_CUE_PATTERNS: Record<PassageAnswerCue, readonly string[]> = {
   ],
 };
 
+function identifierLikeQuery(query: string): boolean {
+  const trimmed = query.trim();
+  if (
+    !trimmed ||
+    /\s/u.test(trimmed) ||
+    !/^[\p{L}\p{N}_.:/-]+$/u.test(trimmed)
+  ) {
+    return false;
+  }
+  return (
+    /\d/u.test(trimmed) ||
+    /[_:/.]/u.test(trimmed) ||
+    (trimmed.includes("-") &&
+      trimmed === trimmed.toLocaleUpperCase("en-US"))
+  );
+}
+
 function queryAnswerCues(query: string): PassageAnswerCue[] {
+  if (identifierLikeQuery(query)) return [];
   const normalized = normalizedMatchText(query);
   const tokens = normalizedAnswerabilityTokens(query);
   return (Object.keys(QUERY_CUE_PATTERNS) as PassageAnswerCue[]).filter((cue) =>
