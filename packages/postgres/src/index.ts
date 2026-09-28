@@ -20,6 +20,7 @@ export * from "./temporal-truth.js";
 export * from "./context-fabric-node.js";
 export * from "./assurance.js";
 export * from "./source-connectors.js";
+export * from "./operational-reconciliation.js";
 
 export interface PostgresOptions {
   onIdleClientError?: (error: Error) => void;
