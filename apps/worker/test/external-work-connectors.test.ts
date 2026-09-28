@@ -24,9 +24,9 @@ describe("external work source connectors", () => {
       async (_url: string | URL | Request, init?: RequestInit) => {
         expect(init?.method).toBe("POST");
         const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-        expect(String(body.jql)).toContain("updated >=");
-        expect(String(body.jql)).toContain("updated <=");
-        expect(String(body.jql)).toContain("2026-09-26T23:55:00.000Z");
+        expect(String(body.jql)).toMatch(/updated >= "-\d+m"/u);
+        expect(String(body.jql)).not.toContain("T23:55:00.000Z");
+        expect(String(body.jql)).not.toContain("updated <=");
         return jsonResponse({
           issues: [
             {
