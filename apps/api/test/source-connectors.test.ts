@@ -1,6 +1,7 @@
 import { generateKeyPairSync, sign } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
+  ProviderSourceConnectorRegistrationSchema,
   SourceConnectorRegistrationSchema,
   sourceConnectorWebhookMessage,
   verifySourceConnectorWebhookSignature,
@@ -136,6 +137,67 @@ describe("source connector webhook signatures", () => {
     expect(
       SourceConnectorRegistrationSchema.safeParse(registration).success,
     ).toBe(true);
+  });
+
+  it("accepts only allowlisted Jira Cloud and Linear provider endpoints", () => {
+    expect(
+      ProviderSourceConnectorRegistrationSchema.safeParse({
+        spaceId: "11111111-1111-4111-8111-111111111111",
+        vaultId: "22222222-2222-4222-8222-222222222222",
+        connectorKey: "jira-main",
+        provider: "jira",
+        credentialRef: "AKP_JIRA_CREDENTIAL",
+        authorizationScheme: "BASIC",
+        baseUrl: "https://architecture-team.atlassian.net",
+      }).success,
+    ).toBe(true);
+
+    expect(
+      ProviderSourceConnectorRegistrationSchema.safeParse({
+        spaceId: "11111111-1111-4111-8111-111111111111",
+        vaultId: "22222222-2222-4222-8222-222222222222",
+        connectorKey: "linear-main",
+        provider: "linear",
+        credentialRef: "AKP_LINEAR_CREDENTIAL",
+        authorizationScheme: "RAW",
+        baseUrl: "https://api.linear.app/graphql",
+        webhookSecretRef: "AKP_LINEAR_WEBHOOK_SECRET",
+      }).success,
+    ).toBe(true);
+
+    for (const baseUrl of [
+      "http://169.254.169.254/latest/meta-data/",
+      "https://localhost/internal",
+      "https://attacker.example/",
+      "https://api.linear.app.evil.example/graphql",
+      "https://user:password@api.linear.app/graphql",
+    ]) {
+      expect(
+        ProviderSourceConnectorRegistrationSchema.safeParse({
+          spaceId: "11111111-1111-4111-8111-111111111111",
+          vaultId: "22222222-2222-4222-8222-222222222222",
+          connectorKey: "provider-ssrf-probe",
+          provider: baseUrl.includes("linear") ? "linear" : "jira",
+          credentialRef: "AKP_PROVIDER_CREDENTIAL",
+          baseUrl,
+        }).success,
+      ).toBe(false);
+    }
+  });
+
+  it("stores credential references rather than provider secret values in the provider schema", () => {
+    const parsed = ProviderSourceConnectorRegistrationSchema.safeParse({
+      spaceId: "11111111-1111-4111-8111-111111111111",
+      vaultId: "22222222-2222-4222-8222-222222222222",
+      connectorKey: "linear-reference",
+      provider: "linear",
+      credentialRef: "AKP_LINEAR_CREDENTIAL",
+    });
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data).not.toHaveProperty("token");
+    expect(parsed.data).not.toHaveProperty("password");
+    expect(parsed.data.credentialRef).toBe("AKP_LINEAR_CREDENTIAL");
   });
 
   it("binds the signature to one connector and rejects stale timestamps", () => {
