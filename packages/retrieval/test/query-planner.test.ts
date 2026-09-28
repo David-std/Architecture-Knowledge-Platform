@@ -50,7 +50,7 @@ describe("query planner", () => {
   });
 
   it("does not treat dependency vocabulary alone as impact analysis", () => {
-    const conceptual = planQuery("Why do dependencies point toward policies?", {
+    const conceptual = planQuery("Why are service dependencies documented?", {
       vectorAvailable: true,
       graphConsistent: true,
     });
@@ -58,7 +58,7 @@ describe("query planner", () => {
     expect(conceptual.channels).toContain("vector");
 
     expect(
-      planQuery("What dependencies are affected by this change?", {
+      planQuery("Which services are affected by this deployment change?", {
         vectorAvailable: true,
         graphConsistent: true,
       }).intent,
