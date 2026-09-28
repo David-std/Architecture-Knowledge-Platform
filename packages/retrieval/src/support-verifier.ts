@@ -490,20 +490,20 @@ function queryAnswerCues(query: string): PassageAnswerCue[] {
 }
 
 function passageWindows(passage: string): string[] {
+  // Evidence for an answer predicate must be local. Do not combine adjacent
+  // sentences merely because they share a parentContext: an unrelated
+  // "because", number or rule in the next sentence must not prove the query.
   const sentences = passage
     .split(/(?<=[.!?;])\s+|\n+/u)
     .map((part) => part.trim())
     .filter(Boolean);
-  if (sentences.length <= 1) return passage.trim() ? [passage.trim()] : [];
-
-  const windows: string[] = [];
-  for (let index = 0; index < sentences.length; index += 1) {
-    const current = sentences[index]!;
-    windows.push(current.slice(0, 900));
-    const next = sentences[index + 1];
-    if (next) windows.push(`${current} ${next}`.slice(0, 900));
-  }
-  return [...new Set(windows)];
+  return [
+    ...new Set(
+      (sentences.length > 0 ? sentences : [passage])
+        .map((sentence) => sentence.slice(0, 900).trim())
+        .filter(Boolean),
+    ),
+  ];
 }
 
 function queryPredicateAnchors(
