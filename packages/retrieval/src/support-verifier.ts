@@ -585,6 +585,20 @@ function answerRequirementsMatch(
   const genericMatched = passageAnswerCues(window, genericRequired);
   const matched = new Set<PassageAnswerCue>(genericMatched);
 
+  if (required.includes("DEFINITION") && !matched.has("DEFINITION")) {
+    const normalizedWindow = normalizedMatchText(window);
+    const windowTokens = new Set(semanticTokens(window));
+    const definitionAnchors = queryPredicateAnchors(query, ["DEFINITION"]);
+    const overlap = definitionAnchors.filter((token) => windowTokens.has(token));
+    const copularRelation =
+      /\b(is|are|means|defined|refers|consists|es|son|significa|define|consiste)\b/u.test(
+        normalizedWindow.trim(),
+      );
+    if (copularRelation && overlap.length >= Math.min(2, definitionAnchors.length)) {
+      matched.add("DEFINITION");
+    }
+  }
+
   if (
     required.includes("QUANTITY") &&
     quantitativeEvidenceMatches(window, query)
