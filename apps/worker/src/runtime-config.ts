@@ -2,6 +2,7 @@ export interface WorkerRuntimeConfig {
   eventMaxAttempts: number;
   eventLeaseSeconds: number;
   lintIntervalMs: number;
+  providerSyncIntervalMs: number;
   drainDeadlineMs: number;
 }
 
@@ -35,6 +36,10 @@ export function loadWorkerRuntimeConfig(
     lintIntervalMs: Math.max(
       60_000,
       positiveIntegerSetting(env, "AKP_LINT_INTERVAL_MS", 24 * 60 * 60 * 1000),
+    ),
+    providerSyncIntervalMs: Math.max(
+      10_000,
+      positiveIntegerSetting(env, "AKP_PROVIDER_SYNC_INTERVAL_MS", 60_000),
     ),
     drainDeadlineMs: positiveIntegerSetting(
       env,
