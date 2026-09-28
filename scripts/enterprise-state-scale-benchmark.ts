@@ -11,7 +11,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import path from "node:path";
-import pg from "pg";
+import pg from "pg";\nimport { assertSyntheticFixtureDatabaseSafety } from "../packages/postgres/src/index.js";
 
 type Numeric = number | string;
 
@@ -104,7 +104,7 @@ type TargetResult = {
 };
 
 const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl) throw new Error("DATABASE_URL is required");
+if (!databaseUrl) throw new Error("DATABASE_URL is required");\nassertSyntheticFixtureDatabaseSafety(databaseUrl);
 
 const args = process.argv.slice(2);
 
