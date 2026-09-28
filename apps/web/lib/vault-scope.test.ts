@@ -21,6 +21,13 @@ const vaults: VaultOption[] = [
 ];
 
 describe("selectVault", () => {
+  it("keeps a fresh empty registry empty instead of inventing a demo vault", () => {
+    expect(selectVault([])).toEqual({
+      status: "NO_AUTHORIZED_VAULT",
+      vault: null,
+    });
+  });
+
   it("requires an explicit choice when multiple vaults are visible", () => {
     expect(selectVault(vaults)).toEqual({
       status: "VAULT_SELECTION_REQUIRED",
