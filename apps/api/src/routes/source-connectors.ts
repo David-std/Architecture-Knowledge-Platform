@@ -147,12 +147,12 @@ export const ProviderSourceConnectorRegistrationSchema = z
         message: "Linear provider auth must be RAW or BEARER.",
       });
     }
-    if (value.provider === "jira" && value.webhookSecretRef) {
+    if (value.webhookSecretRef) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["webhookSecretRef"],
         message:
-          "Jira webhook verification is deployment-adapter specific and is not configured by a shared secret reference.",
+          "Provider connectors currently use authenticated polling only; provider webhook ingestion is not exposed.",
       });
     }
   });
@@ -415,9 +415,7 @@ export function registerSourceConnectorRoutes(
         objectTypes: ["ISSUE"],
         incremental: {
           cursor: true,
-          webhook:
-            parsed.data.provider === "linear" &&
-            Boolean(parsed.data.webhookSecretRef),
+          webhook: false,
         },
         permissionFidelity: "SOURCE_ACL_MAPPED",
         replication: "REFERENCE",
@@ -428,10 +426,7 @@ export function registerSourceConnectorRoutes(
             ? { kind: "DECLARED", requestsPerMinute: 40 }
             : { kind: "NONE" },
         checkpointModel: "OPAQUE_CURSOR",
-        deletionPropagation:
-          parsed.data.provider === "linear" && parsed.data.webhookSecretRef
-            ? "TOMBSTONE"
-            : "NONE",
+        deletionPropagation: "NONE",
         sourceVersioning: true,
         freshnessSlaSeconds: parsed.data.freshnessSlaSeconds,
         contentTrust: "UNTRUSTED_EXTERNAL",
@@ -447,9 +442,6 @@ export function registerSourceConnectorRoutes(
         authorizationScheme:
           parsed.data.authorizationScheme ??
           (parsed.data.provider === "jira" ? "BASIC" : "RAW"),
-        ...(parsed.data.webhookSecretRef
-          ? { webhookSecretRef: parsed.data.webhookSecretRef }
-          : {}),
       };
       const connector = await registerSourceConnector(db, {
         spaceId: parsed.data.spaceId,
