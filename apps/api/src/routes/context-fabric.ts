@@ -49,6 +49,7 @@ import {
   actorOf,
   audit,
   requirePermission,
+  requirePrincipalAction,
   unrestrictedSpaceIdsForPermission,
 } from "../auth.js";
 
@@ -356,7 +357,12 @@ export function registerContextFabricRoutes(
 
   app.get<{ Params: { id: string } }>(
     "/v1/sessions/:id/external-refs",
-    { preHandler: requirePermission("knowledge:read") },
+    {
+      preHandler: [
+        requirePermission("knowledge:propose"),
+        requirePrincipalAction("knowledge:propose"),
+      ],
+    },
     async (request, reply) => {
       const session = await authorizedSession(
         db,
@@ -382,7 +388,6 @@ export function registerContextFabricRoutes(
       canonicalUrl?: string;
       sourceRevision?: string;
       title?: string;
-      authority?: "SYSTEM_OF_RECORD" | "REFERENCE" | "MIRRORED_PROJECTION";
       workObjectClass?: string;
       owners?: string[];
       metadata?: Record<string, unknown>;
@@ -430,9 +435,6 @@ export function registerContextFabricRoutes(
         canonicalUrl: request.body?.canonicalUrl ?? null,
         sourceRevision: request.body?.sourceRevision ?? null,
         title: request.body?.title ?? null,
-        ...(request.body?.authority
-          ? { authority: request.body.authority }
-          : {}),
         ...(workObjectClass ? { workObjectClass } : {}),
         owners,
         metadata,
