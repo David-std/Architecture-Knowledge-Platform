@@ -40,6 +40,31 @@ function overlappedCheckpointValue(
   return new Date(parsed.getTime() - overlapMs).toISOString();
 }
 
+function jiraRelativeLookback(
+  from: string | undefined,
+  target: string,
+): string | undefined {
+  if (!from) return undefined;
+  const fromMs = new Date(from).getTime();
+  const targetMs = new Date(target).getTime();
+  if (!Number.isFinite(fromMs) || !Number.isFinite(targetMs)) return undefined;
+  const minutes = Math.max(1, Math.ceil((targetMs - fromMs) / 60_000) + 1);
+  return `-${minutes}m`;
+}
+
+function sourceVersionWithinWindow(
+  sourceVersion: string,
+  from: string | undefined,
+  target: string,
+): boolean {
+  const sourceMs = new Date(sourceVersion).getTime();
+  const fromMs = from ? new Date(from).getTime() : Number.NEGATIVE_INFINITY;
+  const targetMs = new Date(target).getTime();
+  if (!Number.isFinite(sourceMs) || !Number.isFinite(targetMs)) return true;
+  const boundedFrom = Number.isFinite(fromMs) ? fromMs : Number.NEGATIVE_INFINITY;
+  return sourceMs >= boundedFrom && sourceMs <= targetMs;
+}
+
 function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
@@ -160,12 +185,12 @@ export class JiraCloudSourceConnector implements SourceConnectorPort {
   ): AsyncIterable<SourceConnectorObject> {
     const from = overlappedCheckpointValue(input.from?.value);
     const target = input.target.value;
+    const relativeLookback = jiraRelativeLookback(from, target);
     let nextPageToken: string | undefined;
     do {
       const clauses = [
         this.options.jql?.trim() ? `(${this.options.jql.trim()})` : "",
-        from ? `updated >= "${from.replace(/"/gu, '\\\"')}"` : "",
-        `updated <= "${target.replace(/"/gu, '\\\"')}"`,
+        relativeLookback ? `updated >= "${relativeLookback}"` : "",
       ].filter(Boolean);
       const response = await this.request("/rest/api/3/search/jql", {
         method: "POST",
@@ -185,7 +210,11 @@ export class JiraCloudSourceConnector implements SourceConnectorPort {
       });
       const issues = Array.isArray(response.issues) ? response.issues : [];
       for (const issue of issues) {
-        yield jiraIssueToObject(jsonObject(issue), this.options.baseUrl);
+        const object = jiraIssueToObject(jsonObject(issue), this.options.baseUrl);
+        if (!sourceVersionWithinWindow(object.sourceVersion, from, target)) {
+          continue;
+        }
+        yield object;
       }
       nextPageToken = stringValue(response.nextPageToken);
     } while (nextPageToken);
