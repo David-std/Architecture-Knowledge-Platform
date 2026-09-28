@@ -416,8 +416,6 @@ const QUESTION_SHAPE_TOKENS = new Set([
 
 function canonicalSemanticToken(token: string): string {
   if (/^(architect|arquitect)/u.test(token)) return "architecture";
-  if (/^(strateg|estrateg)/u.test(token)) return "strategy";
-  if (/^(adapter|adaptador)/u.test(token)) return "adapter";
   if (/^(defin|determin)/u.test(token)) return "define";
   if (/^(requir|exig|requier)/u.test(token)) return "require";
   if (/^(view|vista)/u.test(token)) return "view";
