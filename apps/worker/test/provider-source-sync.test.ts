@@ -4,8 +4,9 @@ import type { Postgres } from "@akp/postgres";
 import type { ProviderHealthState } from "../src/external-work-connectors.js";
 import { syncProviderSourceConnector } from "../src/provider-source-sync.js";
 
-function fakeDatabase() {
+function fakeDatabase(activeObjects: Array<Record<string, unknown>> = []) {
   const checkpointUpdates: unknown[][] = [];
+  const objectCheckUpdates: unknown[][] = [];
   const poolQuery = vi.fn(async (sql: string, values?: unknown[]) => {
     if (sql.includes("from source_connector_registrations r")) {
       return {
@@ -38,6 +39,16 @@ function fakeDatabase() {
     ) {
       return { rows: [{ count: 0 }] };
     }
+    if (sql.includes("from source_connector_objects o")) {
+      return { rows: activeObjects };
+    }
+    if (
+      sql.includes("update source_connector_objects") &&
+      sql.includes("provider_last_checked_at")
+    ) {
+      objectCheckUpdates.push(values ?? []);
+      return { rows: [] };
+    }
     if (
       sql.includes("update source_connector_checkpoints") &&
       sql.includes("provider_checkpoint_kind")
@@ -68,7 +79,13 @@ function fakeDatabase() {
       connect: vi.fn(async () => lockClient),
     },
   } as unknown as Postgres;
-  return { db, poolQuery, checkpointUpdates, lockClient };
+  return {
+    db,
+    poolQuery,
+    checkpointUpdates,
+    objectCheckUpdates,
+    lockClient,
+  };
 }
 
 describe("provider source sync", () => {
@@ -195,5 +212,132 @@ describe("provider source sync", () => {
     ]);
     expect(applyNextEvent).toHaveBeenCalledTimes(2);
     expect(lockClient.release).toHaveBeenCalledOnce();
+  });
+
+  it("turns an authenticated provider absence into a sequenced tombstone event", async () => {
+    const { db, checkpointUpdates, objectCheckUpdates } = fakeDatabase([
+      {
+        object_id: "lin-deleted",
+        object_type: "ISSUE",
+        source_version: "2026-09-26T12:00:00.000Z",
+        title: "Removed provider issue",
+        permission_fidelity: "SOURCE_ACL_MAPPED",
+        permission_uncertain: true,
+        acl_fingerprint: "acl-deleted",
+        metadata: { provider: "linear", identifier: "ENG-9" },
+      },
+    ]);
+    const appendEvent = vi.fn(async () => ({
+      id: "delete-event-row",
+      status: "PENDING" as const,
+      duplicate: false,
+      sequence: 8,
+    }));
+    const applyNextEvent = vi
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        eventId: "linear:delete",
+        connectorId: "11111111-1111-4111-8111-111111111111",
+        spaceId: "22222222-2222-4222-8222-222222222222",
+        vaultId: "33333333-3333-4333-8333-333333333333",
+        sequence: 8,
+        operation: "DELETE",
+        objectId: "lin-deleted",
+      })
+      .mockResolvedValueOnce(null);
+
+    const port = {
+      describe: () => ({
+        schemaVersion: 1 as const,
+        connectorId: "linear-test",
+        sourceSystem: "linear",
+        objectTypes: ["ISSUE"],
+        incremental: { cursor: true, webhook: false },
+        permissionFidelity: "SOURCE_ACL_MAPPED" as const,
+        replication: "REFERENCE" as const,
+        dataResidency: "EXTERNAL" as const,
+        attachments: { supported: false },
+        rateLimit: { kind: "NONE" as const },
+        checkpointModel: "OPAQUE_CURSOR" as const,
+        deletionPropagation: "TOMBSTONE" as const,
+        sourceVersioning: true,
+        contentTrust: "UNTRUSTED_EXTERNAL" as const,
+      }),
+      checkpoint: vi.fn(async () => ({
+        kind: "OPAQUE_CURSOR" as const,
+        value: "2026-09-28T00:00:00.000Z",
+      })),
+      pull: async function* () {
+        return;
+      },
+      fetchById: vi.fn(async () => null),
+      verifyWebhook: vi.fn(async () => ({
+        accepted: false,
+        reason: "NOT_USED",
+      })),
+      health: vi.fn(
+        async (): Promise<{
+          state: ProviderHealthState;
+        }> => ({ state: "AVAILABLE" }),
+      ),
+    } as unknown as SourceConnectorPort & {
+      health(): Promise<{ state: ProviderHealthState; reason?: string }>;
+    };
+
+    const result = await syncProviderSourceConnector(
+      db,
+      "11111111-1111-4111-8111-111111111111",
+      { LINEAR_TEST_TOKEN: "test-secret" },
+      {
+        providerPort: () => port,
+        appendEvent,
+        applyNextEvent,
+      },
+    );
+
+    expect(result).toMatchObject({
+      provider: "linear",
+      discovered: 0,
+      appended: 1,
+      applied: 1,
+      checkpointAdvanced: true,
+      health: "AVAILABLE",
+      errorCode: null,
+    });
+    expect(port.fetchById).toHaveBeenCalledWith({
+      scope: {
+        spaceId: "22222222-2222-4222-8222-222222222222",
+        vaultId: "33333333-3333-4333-8333-333333333333",
+      },
+      objectId: "lin-deleted",
+      checkpoint: {
+        kind: "OPAQUE_CURSOR",
+        value: "2026-09-28T00:00:00.000Z",
+      },
+    });
+    expect(appendEvent).toHaveBeenCalledOnce();
+    expect(appendEvent.mock.calls[0]?.[1]).toMatchObject({
+      connectorId: "11111111-1111-4111-8111-111111111111",
+      sequence: 8,
+      operation: "DELETE",
+      objectId: "lin-deleted",
+      content: null,
+      metadata: {
+        _akpProviderObservation: {
+          providerVerified: true,
+          observedVia: "AUTHENTICATED_PROVIDER_RECONCILIATION",
+          deletionConfirmed: true,
+        },
+      },
+    });
+    expect(objectCheckUpdates).toEqual([]);
+    expect(checkpointUpdates[0]).toEqual([
+      "11111111-1111-4111-8111-111111111111",
+      "OPAQUE_CURSOR",
+      "2026-09-28T00:00:00.000Z",
+      "AVAILABLE",
+      null,
+    ]);
   });
 });
