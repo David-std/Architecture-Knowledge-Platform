@@ -216,38 +216,21 @@ describe("provider source sync", () => {
     expect(lockClient.release).toHaveBeenCalledOnce();
   });
 
-  it("turns an authenticated provider absence into a sequenced tombstone event", async () => {
+  it("degrades and preserves the projection when provider absence is ambiguous", async () => {
     const { db, checkpointUpdates, objectCheckUpdates } = fakeDatabase([
       {
-        object_id: "lin-deleted",
+        object_id: "lin-missing",
         object_type: "ISSUE",
         source_version: "2026-09-26T12:00:00.000Z",
-        title: "Removed provider issue",
+        title: "Previously visible provider issue",
         permission_fidelity: "SOURCE_ACL_MAPPED",
         permission_uncertain: true,
-        acl_fingerprint: "acl-deleted",
+        acl_fingerprint: "acl-missing",
         metadata: { provider: "linear", identifier: "ENG-9" },
       },
     ]);
-    const appendEvent = vi.fn(async () => ({
-      id: "delete-event-row",
-      status: "PENDING" as const,
-      duplicate: false,
-      sequence: 8,
-    }));
-    const applyNextEvent = vi
-      .fn()
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({
-        eventId: "linear:delete",
-        connectorId: "11111111-1111-4111-8111-111111111111",
-        spaceId: "22222222-2222-4222-8222-222222222222",
-        vaultId: "33333333-3333-4333-8333-333333333333",
-        sequence: 8,
-        operation: "DELETE",
-        objectId: "lin-deleted",
-      })
-      .mockResolvedValueOnce(null);
+    const appendEvent = vi.fn();
+    const applyNextEvent = vi.fn().mockResolvedValue(null);
 
     const port = {
       describe: () => ({
@@ -262,7 +245,7 @@ describe("provider source sync", () => {
         attachments: { supported: false },
         rateLimit: { kind: "NONE" as const },
         checkpointModel: "OPAQUE_CURSOR" as const,
-        deletionPropagation: "TOMBSTONE" as const,
+        deletionPropagation: "NONE" as const,
         sourceVersioning: true,
         contentTrust: "UNTRUSTED_EXTERNAL" as const,
       }),
@@ -301,45 +284,24 @@ describe("provider source sync", () => {
     expect(result).toMatchObject({
       provider: "linear",
       discovered: 0,
-      appended: 1,
-      applied: 1,
-      checkpointAdvanced: true,
-      health: "AVAILABLE",
-      errorCode: null,
+      appended: 0,
+      applied: 0,
+      checkpointAdvanced: false,
+      health: "DEGRADED",
+      errorCode: "PROVIDER_OBJECT_ABSENCE_AMBIGUOUS",
     });
     expect(port.fetchById).toHaveBeenCalledWith({
       scope: {
         spaceId: "22222222-2222-4222-8222-222222222222",
         vaultId: "33333333-3333-4333-8333-333333333333",
       },
-      objectId: "lin-deleted",
+      objectId: "lin-missing",
       checkpoint: {
         kind: "OPAQUE_CURSOR",
         value: "2026-09-28T00:00:00.000Z",
       },
     });
-    expect(appendEvent).toHaveBeenCalledOnce();
-    expect(appendEvent.mock.calls[0]?.[1]).toMatchObject({
-      connectorId: "11111111-1111-4111-8111-111111111111",
-      sequence: 8,
-      operation: "DELETE",
-      objectId: "lin-deleted",
-      content: null,
-      metadata: {
-        _akpProviderObservation: {
-          providerVerified: true,
-          observedVia: "AUTHENTICATED_PROVIDER_RECONCILIATION",
-          deletionConfirmed: true,
-        },
-      },
-    });
+    expect(appendEvent).not.toHaveBeenCalled();
     expect(objectCheckUpdates).toEqual([]);
-    expect(checkpointUpdates[0]).toEqual([
-      "11111111-1111-4111-8111-111111111111",
-      "OPAQUE_CURSOR",
-      "2026-09-28T00:00:00.000Z",
-      "AVAILABLE",
-      null,
-    ]);
-  });
-});
+    expect(checkpointUpdates).toEqual([]);
+  });});
