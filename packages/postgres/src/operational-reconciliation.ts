@@ -1,8 +1,7 @@
 import type { Postgres } from "./index.js";
 
 export type OperationalReconciliationResourceType =
-  | "EVENT_QUARANTINE"
-  | "INGEST_JOB";
+  "EVENT_QUARANTINE" | "INGEST_JOB";
 
 export type OperationalReconciliationDisposition =
   | "RECOVERED_REPLAYED"
@@ -24,7 +23,9 @@ export interface OperationalReconciliationRecord {
   createdAt: string;
 }
 
-function normalize(row: Record<string, unknown>): OperationalReconciliationRecord {
+function normalize(
+  row: Record<string, unknown>,
+): OperationalReconciliationRecord {
   return {
     id: String(row.id),
     resourceType: String(
@@ -40,7 +41,9 @@ function normalize(row: Record<string, unknown>): OperationalReconciliationRecor
     actor: String(row.actor),
     rationale: String(row.rationale),
     evidence:
-      row.evidence && typeof row.evidence === "object" && !Array.isArray(row.evidence)
+      row.evidence &&
+      typeof row.evidence === "object" &&
+      !Array.isArray(row.evidence)
         ? (row.evidence as Record<string, unknown>)
         : {},
     createdAt: new Date(String(row.created_at)).toISOString(),
