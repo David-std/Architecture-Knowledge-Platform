@@ -20,28 +20,30 @@ function jsonResponse(value: unknown, status = 200): Response {
 
 describe("external work source connectors", () => {
   it("maps Jira issues as read-only verified provider references with mapped ACL provenance", async () => {
-    const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
-      expect(init?.method).toBe("POST");
-      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-      expect(String(body.jql)).toContain("updated >");
-      expect(String(body.jql)).toContain("updated <=");
-      return jsonResponse({
-        issues: [
-          {
-            id: "10001",
-            key: "ARCH-42",
-            fields: {
-              summary: "Bound provider issue",
-              updated: "2026-09-28T05:00:00.000+0000",
-              status: { name: "In Progress" },
-              project: { id: "10000" },
-              security: { id: "7" },
-              assignee: { accountId: "acct-1" },
+    const fetchImpl = vi.fn(
+      async (_url: string | URL | Request, init?: RequestInit) => {
+        expect(init?.method).toBe("POST");
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        expect(String(body.jql)).toContain("updated >");
+        expect(String(body.jql)).toContain("updated <=");
+        return jsonResponse({
+          issues: [
+            {
+              id: "10001",
+              key: "ARCH-42",
+              fields: {
+                summary: "Bound provider issue",
+                updated: "2026-09-28T05:00:00.000+0000",
+                status: { name: "In Progress" },
+                project: { id: "10000" },
+                security: { id: "7" },
+                assignee: { accountId: "acct-1" },
+              },
             },
-          },
-        ],
-      });
-    });
+          ],
+        });
+      },
+    );
     const connector = new JiraCloudSourceConnector({
       baseUrl: "https://example.atlassian.net",
       authorizationHeader: "Bearer test-only",
@@ -89,7 +91,10 @@ describe("external work source connectors", () => {
   it("fails Jira webhook verification closed unless a deployment verifier is supplied", async () => {
     const request = {
       rawBody: new TextEncoder().encode(
-        JSON.stringify({ webhookEvent: "jira:issue_updated", issue: { id: "10001" } }),
+        JSON.stringify({
+          webhookEvent: "jira:issue_updated",
+          issue: { id: "10001" },
+        }),
       ),
       headers: {},
     };
@@ -116,40 +121,42 @@ describe("external work source connectors", () => {
   });
 
   it("maps Linear GraphQL issues and advances cursor pagination without write-back", async () => {
-    const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
-      const body = JSON.parse(String(init?.body)) as {
-        variables: { after: string | null };
-      };
-      if (body.variables.after === null) {
+    const fetchImpl = vi.fn(
+      async (_url: string | URL | Request, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body)) as {
+          variables: { after: string | null };
+        };
+        if (body.variables.after === null) {
+          return jsonResponse({
+            data: {
+              issues: {
+                nodes: [
+                  {
+                    id: "lin-1",
+                    identifier: "ENG-7",
+                    title: "Bound Linear issue",
+                    updatedAt: "2026-09-28T05:30:00.000Z",
+                    url: "https://linear.app/example/issue/ENG-7",
+                    team: { id: "team-1", key: "ENG" },
+                    state: { name: "Started" },
+                    assignee: { id: "user-1" },
+                  },
+                ],
+                pageInfo: { hasNextPage: true, endCursor: "cursor-1" },
+              },
+            },
+          });
+        }
         return jsonResponse({
           data: {
             issues: {
-              nodes: [
-                {
-                  id: "lin-1",
-                  identifier: "ENG-7",
-                  title: "Bound Linear issue",
-                  updatedAt: "2026-09-28T05:30:00.000Z",
-                  url: "https://linear.app/example/issue/ENG-7",
-                  team: { id: "team-1", key: "ENG" },
-                  state: { name: "Started" },
-                  assignee: { id: "user-1" },
-                },
-              ],
-              pageInfo: { hasNextPage: true, endCursor: "cursor-1" },
+              nodes: [],
+              pageInfo: { hasNextPage: false, endCursor: null },
             },
           },
         });
-      }
-      return jsonResponse({
-        data: {
-          issues: {
-            nodes: [],
-            pageInfo: { hasNextPage: false, endCursor: null },
-          },
-        },
-      });
-    });
+      },
+    );
     const connector = new LinearSourceConnector({
       authorizationHeader: "test-only-key",
       endpoint: "https://linear.invalid/graphql",
@@ -198,7 +205,9 @@ describe("external work source connectors", () => {
       webhookTimestamp: now,
       data: { id: "lin-1" },
     });
-    const signature = createHmac("sha256", secret).update(payload).digest("hex");
+    const signature = createHmac("sha256", secret)
+      .update(payload)
+      .digest("hex");
     const connector = new LinearSourceConnector({
       authorizationHeader: "test-only-key",
       webhookSecret: secret,
