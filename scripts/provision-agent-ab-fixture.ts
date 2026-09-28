@@ -2,7 +2,7 @@ import "dotenv/config";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { Postgres } from "../packages/postgres/src/index.js";
+import {\n  assertSyntheticFixtureDatabaseSafety,\n  Postgres,\n} from "../packages/postgres/src/index.js";
 
 type RegisteredDocument = {
   id: string;
@@ -26,7 +26,7 @@ type RegisteredManifest = {
 };
 
 const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl) throw new Error("DATABASE_URL is required");
+if (!databaseUrl) throw new Error("DATABASE_URL is required");\nassertSyntheticFixtureDatabaseSafety(databaseUrl);
 
 const SPACE_ID = "00000000-0000-0000-0000-000000000003";
 const USER_ID = "00000000-0000-0000-0000-000000000002";
