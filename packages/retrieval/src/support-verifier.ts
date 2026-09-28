@@ -516,7 +516,9 @@ function queryPredicateAnchors(
   const requirementWords = new Set<string>();
   for (const requirement of requirements) {
     for (const pattern of QUERY_CUE_PATTERNS[requirement] ?? []) {
-      for (const token of normalizedAnswerabilityTokens(pattern.replace("*", ""))) {
+      for (const token of normalizedAnswerabilityTokens(
+        pattern.replace("*", ""),
+      )) {
         requirementWords.add(canonicalSemanticToken(token));
       }
     }
@@ -546,9 +548,7 @@ function quantitativeEvidenceMatches(window: string, query: string): boolean {
   );
   if (
     asksMonthly &&
-    !/\b(month|monthly|per month|mensual|por mes|mes)\b/u.test(
-      normalizedWindow,
-    )
+    !/\b(month|monthly|per month|mensual|por mes|mes)\b/u.test(normalizedWindow)
   ) {
     return false;
   }
@@ -576,10 +576,16 @@ function answerRequirementsMatch(
   const genericMatched = passageAnswerCues(window, genericRequired);
   const matched = new Set<PassageAnswerCue>(genericMatched);
 
-  if (required.includes("QUANTITY") && quantitativeEvidenceMatches(window, query)) {
+  if (
+    required.includes("QUANTITY") &&
+    quantitativeEvidenceMatches(window, query)
+  ) {
     matched.add("QUANTITY");
   }
-  if (required.includes("DATE_YEAR") && dateYearEvidenceMatches(window, query)) {
+  if (
+    required.includes("DATE_YEAR") &&
+    dateYearEvidenceMatches(window, query)
+  ) {
     matched.add("DATE_YEAR");
   }
   if (required.includes("YES_NO")) {
@@ -622,7 +628,8 @@ function boundedPredicateSupport(
   for (const window of passageWindows(passage)) {
     const windowTokens = new Set(semanticTokens(window));
     const overlap = anchors.filter((token) => windowTokens.has(token));
-    const anchorCoverage = anchors.length === 0 ? 1 : overlap.length / anchors.length;
+    const anchorCoverage =
+      anchors.length === 0 ? 1 : overlap.length / anchors.length;
     const answer = answerRequirementsMatch(window, query, required);
     const enoughAnchors =
       anchors.length === 0 ||
