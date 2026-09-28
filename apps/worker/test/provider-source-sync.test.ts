@@ -142,9 +142,11 @@ describe("provider source sync", () => {
         accepted: false,
         reason: "NOT_USED",
       })),
-      health: vi.fn(async (): Promise<{
-        state: ProviderHealthState;
-      }> => ({ state: "AVAILABLE" })),
+      health: vi.fn(
+        async (): Promise<{
+          state: ProviderHealthState;
+        }> => ({ state: "AVAILABLE" }),
+      ),
     } as unknown as SourceConnectorPort & {
       health(): Promise<{ state: ProviderHealthState; reason?: string }>;
     };
