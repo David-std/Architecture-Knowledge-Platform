@@ -303,10 +303,7 @@ describe("provider source sync", () => {
     });
     expect(appendEvent).not.toHaveBeenCalled();
     expect(objectCheckUpdates).toEqual([
-      [
-        "11111111-1111-4111-8111-111111111111",
-        "lin-missing",
-      ],
+      ["11111111-1111-4111-8111-111111111111", "lin-missing"],
     ]);
     expect(checkpointUpdates).toEqual([]);
   });});
