@@ -937,7 +937,9 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
       await adminPage
         .locator('textarea[name="summary"]')
         .fill("Browser E2E governed authoring");
-      await adminPage.locator('input[name="path"]').fill(fixture.authorRulePath);
+      await adminPage
+        .locator('input[name="path"]')
+        .fill(fixture.authorRulePath);
       await adminPage
         .locator('textarea[name="reason"]')
         .fill("Browser E2E governed authoring flow");
