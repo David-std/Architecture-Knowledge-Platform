@@ -70,6 +70,40 @@ export const SourceConnectorRegistrationSchema = z
 
 const RegistrationBody = SourceConnectorRegistrationSchema;
 
+const ProviderRegistrationBody = z
+  .object({
+    spaceId: UUID,
+    vaultId: UUID,
+    connectorKey: z.string().regex(CONNECTOR_KEY),
+    provider: z.enum(["jira", "linear"]),
+    credentialRef: z.string().regex(/^[A-Z][A-Z0-9_]{1,127}$/),
+    webhookSecretRef: z
+      .string()
+      .regex(/^[A-Z][A-Z0-9_]{1,127}$/)
+      .optional(),
+    baseUrl: z.string().url().max(2048).optional(),
+    jql: z.string().trim().min(1).max(4000).optional(),
+    freshnessSlaSeconds: z.number().int().positive().max(31_536_000).default(300),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.provider === "jira" && !value.baseUrl) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["baseUrl"],
+        message: "Jira provider connectors require baseUrl.",
+      });
+    }
+    if (value.provider === "jira" && value.webhookSecretRef) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["webhookSecretRef"],
+        message:
+          "Jira webhook verification is deployment-adapter specific and is not configured by a shared secret reference.",
+      });
+    }
+  });
+
 const WebhookBody = z
   .object({
     eventId: z.string().trim().min(1).max(200),
@@ -288,6 +322,108 @@ export function registerSourceConnectorRoutes(
         vaultId: connector.vault_id,
         connectorKey: connector.connector_key,
         sourceSystem: connector.source_system,
+        descriptor: connector.descriptor,
+        state: connector.state,
+      });
+    },
+  );
+
+  app.post(
+    "/v1/source-connectors/providers",
+    { preHandler: requirePermission("admin") },
+    async (request, reply) => {
+      const parsed = ProviderRegistrationBody.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          code: "INVALID_PROVIDER_SOURCE_CONNECTOR",
+          issues: parsed.error.issues,
+        });
+      }
+      if (
+        !(await requireWholeVault(
+          db,
+          request,
+          reply,
+          "admin",
+          parsed.data.spaceId,
+          parsed.data.vaultId,
+        ))
+      ) {
+        return;
+      }
+      const actor = actorOf(request);
+      if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
+
+      const descriptor = {
+        schemaVersion: 1,
+        sourceSystem: parsed.data.provider,
+        objectTypes: ["ISSUE"],
+        incremental: {
+          cursor: true,
+          webhook:
+            parsed.data.provider === "linear" &&
+            Boolean(parsed.data.webhookSecretRef),
+        },
+        permissionFidelity: "SOURCE_ACL_MAPPED",
+        replication: "REFERENCE",
+        dataResidency: "EXTERNAL",
+        attachments: { supported: false },
+        rateLimit:
+          parsed.data.provider === "linear"
+            ? { kind: "DECLARED", requestsPerMinute: 40 }
+            : { kind: "NONE" },
+        checkpointModel: "OPAQUE_CURSOR",
+        deletionPropagation:
+          parsed.data.provider === "linear" && parsed.data.webhookSecretRef
+            ? "TOMBSTONE"
+            : "NONE",
+        sourceVersioning: true,
+        freshnessSlaSeconds: parsed.data.freshnessSlaSeconds,
+        contentTrust: "UNTRUSTED_EXTERNAL",
+        writeBack: "NONE",
+      };
+      const providerConfig = {
+        ...(parsed.data.baseUrl ? { baseUrl: parsed.data.baseUrl } : {}),
+        ...(parsed.data.jql ? { jql: parsed.data.jql } : {}),
+        ...(parsed.data.webhookSecretRef
+          ? { webhookSecretRef: parsed.data.webhookSecretRef }
+          : {}),
+      };
+      const connector = await registerSourceConnector(db, {
+        spaceId: parsed.data.spaceId,
+        vaultId: parsed.data.vaultId,
+        connectorKey: parsed.data.connectorKey,
+        sourceSystem: parsed.data.provider,
+        publicKeyPem: null,
+        connectorMode: "PROVIDER_PULL",
+        credentialRef: parsed.data.credentialRef,
+        providerConfig,
+        descriptor,
+        createdByUserId: actor.id,
+        createdByPrincipalId: actor.principalId,
+      });
+      await audit(
+        db,
+        request,
+        "source_connector.provider.register",
+        "source_connector",
+        String(connector.id),
+        {
+          vaultId: parsed.data.vaultId,
+          connectorKey: parsed.data.connectorKey,
+          provider: parsed.data.provider,
+          credentialRef: parsed.data.credentialRef,
+          writeBack: "NONE",
+        },
+        parsed.data.spaceId,
+      );
+      return reply.code(201).send({
+        id: connector.id,
+        spaceId: connector.space_id,
+        vaultId: connector.vault_id,
+        connectorKey: connector.connector_key,
+        sourceSystem: connector.source_system,
+        connectorMode: connector.connector_mode,
         descriptor: connector.descriptor,
         state: connector.state,
       });
