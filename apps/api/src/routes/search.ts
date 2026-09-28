@@ -1430,7 +1430,9 @@ export async function queryKnowledge(
 ): Promise<SearchHit[]> {
   if (!input.spaceId) throw new Error("SPACE_ID_REQUIRED");
   const spaceId = input.spaceId;
-  const internalCandidateLimit = internalAnswerabilityCandidateLimit(input.limit);
+  const internalCandidateLimit = internalAnswerabilityCandidateLimit(
+    input.limit,
+  );
   telemetry.histogram(
     "retrieval_answerability_internal_candidate_limit",
     internalCandidateLimit,
