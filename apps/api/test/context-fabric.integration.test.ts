@@ -51,16 +51,16 @@ beforeAll(async () => {
   );
   await db.pool.query(
     `insert into memberships(user_id,space_id,role,path_prefix) values
-      ($1,$3,'VIEWER',null),
+      ($1,$3,'CONTRIBUTOR',null),
       ($2,$3,'ADMIN',null)`,
     [actorId, adminId, spaceId],
   );
   await grantVaultMembership(db, {
     userId: actorId,
     vaultId,
-    role: "VIEWER",
+    role: "CONTRIBUTOR",
     pathPrefix: null,
-    permissions: ["knowledge:read", "source:read"],
+    permissions: ["knowledge:read", "knowledge:propose", "source:read"],
   });
   await db.pool.query(
     `insert into api_tokens(user_id,token_hash,label,scopes) values
@@ -74,7 +74,7 @@ beforeAll(async () => {
           {
             spaceId,
             pathPrefix: null,
-            permissions: ["knowledge:read", "source:read"],
+            permissions: ["knowledge:read", "knowledge:propose", "source:read"],
           },
         ],
       }),
@@ -200,7 +200,9 @@ describe("team context fabric integration", () => {
         canonicalUrl: "https://example.test/issues/42",
         sourceRevision: "etag-42",
         title: "External system of record item",
-        authority: "SYSTEM_OF_RECORD",
+        // A relayed actor cannot self-assert provider authority. This legacy
+        // field is deliberately ignored by the route.
+        authority: "REFERENCE",
         metadata: { state: "OPEN" },
       },
     });
@@ -234,7 +236,7 @@ describe("team context fabric integration", () => {
       payload: {
         sessionId,
         externalId: "GH-42",
-        authority: "SYSTEM_OF_RECORD",
+        authority: "REFERENCE",
       },
     });
 
