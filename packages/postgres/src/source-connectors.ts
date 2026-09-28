@@ -12,7 +12,10 @@ export interface SourceConnectorRegistrationInput {
   vaultId: string;
   connectorKey: string;
   sourceSystem: string;
-  publicKeyPem: string;
+  publicKeyPem?: string | null;
+  connectorMode?: "SIGNED_WEBHOOK" | "PROVIDER_PULL";
+  credentialRef?: string | null;
+  providerConfig?: Record<string, unknown>;
   descriptor: Record<string, unknown>;
   createdByUserId?: string | null;
   createdByPrincipalId?: string | null;
@@ -90,12 +93,16 @@ export async function registerSourceConnector(
     const inserted = await client.query<Record<string, unknown>>(
       `insert into source_connector_registrations(
          space_id,vault_id,connector_key,source_system,public_key_pem,descriptor,
-         created_by_user_id,created_by_principal_id
-       ) values($1,$2,$3,$4,$5,$6::jsonb,$7,$8)
+         created_by_user_id,created_by_principal_id,connector_mode,
+         credential_ref,provider_config
+       ) values($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,$11::jsonb)
        on conflict(vault_id,connector_key) do update
          set source_system=excluded.source_system,
              public_key_pem=excluded.public_key_pem,
              descriptor=excluded.descriptor,
+             connector_mode=excluded.connector_mode,
+             credential_ref=excluded.credential_ref,
+             provider_config=excluded.provider_config,
              state='ACTIVE',
              updated_at=now()
        returning *`,
@@ -104,10 +111,13 @@ export async function registerSourceConnector(
         input.vaultId,
         input.connectorKey,
         input.sourceSystem,
-        input.publicKeyPem,
+        input.publicKeyPem ?? null,
         JSON.stringify(input.descriptor),
         input.createdByUserId ?? null,
         input.createdByPrincipalId ?? null,
+        input.connectorMode ?? "SIGNED_WEBHOOK",
+        input.credentialRef ?? null,
+        JSON.stringify(input.providerConfig ?? {}),
       ],
     );
     const row = inserted.rows[0];
