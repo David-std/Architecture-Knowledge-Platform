@@ -57,6 +57,7 @@ import { resolveAuthorizedLocalSource } from "./source-boundary.js";
 import { operationalErrorRecord } from "./operational-error.js";
 import { resolveSourceModelResidency } from "./source-model-residency.js";
 import { loadWorkerRuntimeConfig } from "./runtime-config.js";
+import { syncConfiguredProviderConnectors } from "./provider-source-sync.js";
 import {
   assertClaimedIngestJob,
   transitionClaimedIngestJob,
@@ -125,6 +126,26 @@ const authorName =
 const authorEmail = process.env.AKP_GIT_AUTHOR_EMAIL ?? "akp@localhost";
 const lintIntervalMs = runtimeConfig.lintIntervalMs;
 let nextLintCheckAt = 0;
+let nextProviderSyncAt = 0;
+
+async function runProviderSyncIfDue(force = false): Promise<void> {
+  if (!force && Date.now() < nextProviderSyncAt) return;
+  nextProviderSyncAt = Date.now() + runtimeConfig.providerSyncIntervalMs;
+  const results = await syncConfiguredProviderConnectors(db);
+  for (const result of results) {
+    if (result.health !== "AVAILABLE") {
+      process.stderr.write(
+        `${JSON.stringify({
+          level: "warn",
+          code: result.errorCode ?? "PROVIDER_SYNC_DEGRADED",
+          connectorId: result.connectorId,
+          provider: result.provider,
+          health: result.health,
+        })}\n`,
+      );
+    }
+  }
+}
 
 async function runScheduledLintIfDue(force = false): Promise<void> {
   if (!force && Date.now() < nextLintCheckAt) return;
@@ -934,6 +955,7 @@ async function loop(): Promise<WorkerDrainSummary | undefined> {
   });
   await eventWorker.register();
   await runScheduledLintIfDue(process.env.AKP_LINT_RUN_ONCE === "true");
+  if (!drain) await runProviderSyncIfDue(true);
   if (drain) {
     return drainToQuiescence({
       db,
@@ -962,6 +984,7 @@ async function loop(): Promise<WorkerDrainSummary | undefined> {
     const job = await claimNextIngestJob(db, workerId, 60);
     if (!job) {
       await runScheduledLintIfDue();
+      await runProviderSyncIfDue();
       if (eventHandled) continue;
       await new Promise((resolve) => setTimeout(resolve, 1000));
       continue;
