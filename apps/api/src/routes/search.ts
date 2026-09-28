@@ -2410,7 +2410,9 @@ export async function queryKnowledge(
             id: candidate.id,
             document_revision: candidate.documentRevision,
             match_reason: candidate.reason,
-            code_support_text: candidate.supportText,
+            ...(candidate.supportText
+              ? { code_support_text: candidate.supportText }
+              : {}),
             code_citations: candidate.citations,
           })),
         }
