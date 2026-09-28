@@ -218,7 +218,7 @@ describe("team context fabric integration", () => {
       provider: "github",
       objectType: "issue",
       externalId: "GH-42",
-      authority: "SYSTEM_OF_RECORD",
+      authority: "REFERENCE",
     });
     const externalRefOutbox = await db.pool.query<{
       space_id: string;
