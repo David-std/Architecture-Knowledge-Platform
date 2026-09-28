@@ -43,14 +43,19 @@ const ANSWERABILITY_STOPWORDS = new Set([
   "why",
 ]);
 
-export type PassageAnswerCue =
+export type PassageAnswerRequirement =
   | "PROCEDURE"
   | "PREVENTION"
   | "CONDITION"
   | "RATIONALE"
   | "RULE"
   | "DEFINITION"
-  | "COMPARISON";
+  | "COMPARISON"
+  | "YES_NO"
+  | "QUANTITY"
+  | "DATE_YEAR";
+
+export type PassageAnswerCue = PassageAnswerRequirement;
 
 export type PassageSupportReason =
   | "PASSAGE_TEXT_SUPPORT"
@@ -189,7 +194,7 @@ const QUERY_CUE_PATTERNS: Record<PassageAnswerCue, readonly string[]> = {
   ],
   CONDITION: ["when", "cuando", "under what", "en que caso", "en que casos"],
   RATIONALE: ["why", "por que", "razon", "motivo"],
-  RULE: ["rule", "policy", "bounded", "regla", "politica"],
+  RULE: ["rule", "policy", "regla", "politica"],
   DEFINITION: ["what is", "que es", "define*", "significa*"],
   COMPARISON: [
     "compare*",
@@ -199,6 +204,9 @@ const QUERY_CUE_PATTERNS: Record<PassageAnswerCue, readonly string[]> = {
     "compar*",
     "frente a",
   ],
+  YES_NO: [],
+  QUANTITY: [],
+  DATE_YEAR: [],
 };
 
 const PASSAGE_CUE_PATTERNS: Record<PassageAnswerCue, readonly string[]> = {
@@ -322,6 +330,32 @@ const PASSAGE_CUE_PATTERNS: Record<PassageAnswerCue, readonly string[]> = {
     "mejor",
     "peor",
   ],
+  YES_NO: [
+    "is",
+    "are",
+    "does",
+    "do",
+    "can",
+    "must",
+    "requires",
+    "require*",
+    "define*",
+    "determin*",
+    "es",
+    "son",
+    "puede",
+    "debe",
+    "exig*",
+    "requier*",
+    "defin*",
+    "determin*",
+    "no",
+    "not",
+    "never",
+    "nunca",
+  ],
+  QUANTITY: [],
+  DATE_YEAR: [],
 };
 
 function identifierLikeQuery(query: string): boolean {
@@ -340,15 +374,269 @@ function identifierLikeQuery(query: string): boolean {
   );
 }
 
+const QUESTION_SHAPE_TOKENS = new Set([
+  "all",
+  "are",
+  "can",
+  "como",
+  "cuanto",
+  "cuantos",
+  "cuanta",
+  "cuantas",
+  "cual",
+  "cuales",
+  "cuando",
+  "define",
+  "defines",
+  "do",
+  "does",
+  "entire",
+  "es",
+  "exige",
+  "how",
+  "is",
+  "many",
+  "much",
+  "must",
+  "por",
+  "que",
+  "require",
+  "requires",
+  "should",
+  "son",
+  "toda",
+  "todas",
+  "todo",
+  "todos",
+  "what",
+  "when",
+  "which",
+  "why",
+]);
+
+function canonicalSemanticToken(token: string): string {
+  if (/^(architect|arquitect)/u.test(token)) return "architecture";
+  if (/^(strateg|estrateg)/u.test(token)) return "strategy";
+  if (/^(adapter|adaptador)/u.test(token)) return "adapter";
+  if (/^(defin|determin)/u.test(token)) return "define";
+  if (/^(requir|exig|requier)/u.test(token)) return "require";
+  if (/^(view|vista)/u.test(token)) return "view";
+  if (/^(dependenc|dependency|dependencies|dependient)/u.test(token))
+    return "dependency";
+  if (/^(polic|politic)/u.test(token)) return "policy";
+  if (/^(student|alumn|estudiant)/u.test(token)) return "student";
+  if (/^(withdraw|baja|retiro|retir)/u.test(token)) return "withdrawal";
+  if (/^(deadline|limite|vencim)/u.test(token)) return "deadline";
+  if (/^(charge|payment|pago|cobro)/u.test(token)) return "payment";
+  if (/^(recurr|repeat|repet|again|otra)/u.test(token)) return "repeat";
+  if (/^(redeliver|replay|retry|reintent|reenv)/u.test(token)) return "retry";
+  if (/^(idempot|deduplic|suppress|stop|prevent|evit|deten)/u.test(token))
+    return "prevent-repeat";
+  if (/^(cost|costo|precio|importe|price)/u.test(token)) return "cost";
+  if (/^(month|monthly|mensual|mes)/u.test(token)) return "month";
+  if (/^(year|ano)/u.test(token)) return "year";
+  if (/^(reason|razon|motivo|because|porque|debido)/u.test(token))
+    return "rationale";
+  if (/^(point|apunt)/u.test(token)) return "points";
+  return token;
+}
+
+function semanticTokens(value: string): string[] {
+  return [
+    ...new Set(
+      normalizedAnswerabilityTokens(value).map((token) =>
+        canonicalSemanticToken(token),
+      ),
+    ),
+  ];
+}
+
 function queryAnswerCues(query: string): PassageAnswerCue[] {
   if (identifierLikeQuery(query)) return [];
   const normalized = normalizedMatchText(query);
   const tokens = normalizedAnswerabilityTokens(query);
-  return (Object.keys(QUERY_CUE_PATTERNS) as PassageAnswerCue[]).filter((cue) =>
-    QUERY_CUE_PATTERNS[cue].some((pattern) =>
-      patternMatches(normalized, tokens, pattern),
+  const cues = new Set<PassageAnswerCue>();
+
+  const quantity =
+    /\b(how many|how much|cuant[oa]s?|cantidad|amount|importe|cost|costo|price|precio)\b/u.test(
+      normalized.trim(),
+    );
+  const dateYear =
+    /\b(which year|what year|year|ano|fecha|date)\b/u.test(normalized.trim());
+  const yesNo =
+    /^(?:\s*[¿?]?\s*)?(?:do|does|did|is|are|can|could|should|must|will|would|es|son|puede|pueden|debe|deben|define|definen|determina|determinan|exige|exigen|requiere|requieren)\b/u.test(
+      normalized.trim(),
+    );
+
+  if (quantity) cues.add("QUANTITY");
+  if (dateYear) cues.add("DATE_YEAR");
+  if (yesNo) cues.add("YES_NO");
+
+  for (const cue of Object.keys(QUERY_CUE_PATTERNS) as PassageAnswerCue[]) {
+    if (cue === "YES_NO" || cue === "QUANTITY" || cue === "DATE_YEAR") continue;
+    if (cue === "PROCEDURE" && quantity) continue;
+    if (
+      QUERY_CUE_PATTERNS[cue].some((pattern) =>
+        patternMatches(normalized, tokens, pattern),
+      )
+    ) {
+      cues.add(cue);
+    }
+  }
+  return [...cues];
+}
+
+function passageWindows(passage: string): string[] {
+  const sentences = passage
+    .split(/(?<=[.!?;])\s+|\n+/u)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (sentences.length <= 1) return passage.trim() ? [passage.trim()] : [];
+
+  const windows: string[] = [];
+  for (let index = 0; index < sentences.length; index += 1) {
+    const current = sentences[index]!;
+    windows.push(current.slice(0, 900));
+    const next = sentences[index + 1];
+    if (next) windows.push(`${current} ${next}`.slice(0, 900));
+  }
+  return [...new Set(windows)];
+}
+
+function queryPredicateAnchors(
+  query: string,
+  requirements: readonly PassageAnswerCue[],
+): string[] {
+  const requirementWords = new Set<string>();
+  for (const requirement of requirements) {
+    for (const pattern of QUERY_CUE_PATTERNS[requirement] ?? []) {
+      for (const token of normalizedAnswerabilityTokens(pattern.replace("*", ""))) {
+        requirementWords.add(canonicalSemanticToken(token));
+      }
+    }
+  }
+  return [
+    ...new Set(
+      semanticTokens(query).filter(
+        (token) =>
+          token.length >= 2 &&
+          !ANSWERABILITY_STOPWORDS.has(token) &&
+          !QUESTION_SHAPE_TOKENS.has(token) &&
+          !requirementWords.has(token),
+      ),
     ),
+  ];
+}
+
+function quantitativeEvidenceMatches(window: string, query: string): boolean {
+  const hasNumber = /(?:^|\s)(?:[$€£S\/]\s*)?\d+(?:[.,]\d+)?(?:\s*%|\b)/u.test(
+    window,
   );
+  if (!hasNumber) return false;
+  const normalizedQuery = normalizedMatchText(query);
+  const normalizedWindow = normalizedMatchText(window);
+  const asksMonthly = /\b(month|monthly|per month|mensual|por mes|mes)\b/u.test(
+    normalizedQuery,
+  );
+  if (
+    asksMonthly &&
+    !/\b(month|monthly|per month|mensual|por mes|mes)\b/u.test(
+      normalizedWindow,
+    )
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function dateYearEvidenceMatches(window: string, query: string): boolean {
+  const normalizedQuery = normalizedMatchText(query);
+  const asksYear = /\b(year|ano)\b/u.test(normalizedQuery);
+  if (asksYear) return /\b(?:19|20)\d{2}\b/u.test(window);
+  return (
+    /\b(?:19|20)\d{2}\b/u.test(window) ||
+    /\b\d{1,2}[\/-]\d{1,2}[\/-](?:\d{2}|\d{4})\b/u.test(window)
+  );
+}
+
+function answerRequirementsMatch(
+  window: string,
+  query: string,
+  required: readonly PassageAnswerCue[],
+): { matched: PassageAnswerCue[]; allMatched: boolean } {
+  const genericRequired = required.filter(
+    (cue) => cue !== "YES_NO" && cue !== "QUANTITY" && cue !== "DATE_YEAR",
+  );
+  const genericMatched = passageAnswerCues(window, genericRequired);
+  const matched = new Set<PassageAnswerCue>(genericMatched);
+
+  if (required.includes("QUANTITY") && quantitativeEvidenceMatches(window, query)) {
+    matched.add("QUANTITY");
+  }
+  if (required.includes("DATE_YEAR") && dateYearEvidenceMatches(window, query)) {
+    matched.add("DATE_YEAR");
+  }
+  if (required.includes("YES_NO")) {
+    const semanticWindow = new Set(semanticTokens(window));
+    const semanticQuery = semanticTokens(query);
+    const relationTokens = semanticQuery.filter((token) =>
+      ["define", "require", "dependency", "points"].includes(token),
+    );
+    const relationMatched =
+      relationTokens.length === 0 ||
+      relationTokens.some((token) => semanticWindow.has(token));
+    if (relationMatched) matched.add("YES_NO");
+  }
+
+  return {
+    matched: [...matched],
+    allMatched: required.every((cue) => matched.has(cue)),
+  };
+}
+
+function boundedPredicateSupport(
+  passage: string,
+  query: string,
+  required: readonly PassageAnswerCue[],
+): {
+  supported: boolean;
+  matchedAnswerCues: PassageAnswerCue[];
+  anchorCoverage: number;
+  semanticAnchorOverlap: string[];
+} {
+  const anchors = queryPredicateAnchors(query, required);
+  const requiredAnchorOverlap = Math.min(2, Math.max(1, anchors.length));
+  let best = {
+    supported: false,
+    matchedAnswerCues: [] as PassageAnswerCue[],
+    anchorCoverage: 0,
+    semanticAnchorOverlap: [] as string[],
+  };
+
+  for (const window of passageWindows(passage)) {
+    const windowTokens = new Set(semanticTokens(window));
+    const overlap = anchors.filter((token) => windowTokens.has(token));
+    const anchorCoverage = anchors.length === 0 ? 1 : overlap.length / anchors.length;
+    const answer = answerRequirementsMatch(window, query, required);
+    const enoughAnchors =
+      anchors.length === 0 ||
+      (overlap.length >= requiredAnchorOverlap && anchorCoverage >= 0.4);
+    const supported = answer.allMatched && enoughAnchors;
+    if (
+      supported ||
+      anchorCoverage > best.anchorCoverage ||
+      answer.matched.length > best.matchedAnswerCues.length
+    ) {
+      best = {
+        supported,
+        matchedAnswerCues: answer.matched,
+        anchorCoverage,
+        semanticAnchorOverlap: overlap,
+      };
+    }
+    if (supported) break;
+  }
+  return best;
 }
 
 function passageAnswerCues(
@@ -388,11 +676,11 @@ export function deterministicProjectionRetainsSupport(
 
   const passageWithoutQueryEcho =
     passage.slice(0, match) + " " + passage.slice(match + needle.length);
-  const matchedAnswerCues = passageAnswerCues(
+  return boundedPredicateSupport(
     passageWithoutQueryEcho,
+    query,
     requiredAnswerCues,
-  );
-  return matchedAnswerCues.length === requiredAnswerCues.length;
+  ).supported;
 }
 
 function minVectorRank(hit: SearchHit): number | null {
@@ -432,7 +720,12 @@ export function verifyDeterministicPassageSupport(
       ? 0
       : salientOverlapTokens.length / salientQueryTokens.length;
   const requiredAnswerCues = queryAnswerCues(query);
-  const matchedAnswerCues = passageAnswerCues(passage, requiredAnswerCues);
+  const boundedSupport = boundedPredicateSupport(
+    passage,
+    query,
+    requiredAnswerCues,
+  );
+  const matchedAnswerCues = boundedSupport.matchedAnswerCues;
   const answerCueCoverage =
     requiredAnswerCues.length === 0
       ? 1
@@ -442,20 +735,17 @@ export function verifyDeterministicPassageSupport(
     policy.minimumSalientOverlap,
     Math.max(1, salientQueryTokens.length),
   );
-  const requiredAnswerCuesSatisfied =
-    requiredAnswerCues.length === 0 || answerCueCoverage === 1;
   const strongTextSupport =
     passage.length > 0 &&
     salientQueryTokens.length > 0 &&
     salientOverlapTokens.length >= requiredOverlap &&
     salientCoverage >= policy.minimumSalientCoverage &&
-    requiredAnswerCuesSatisfied;
+    boundedSupport.supported;
   const cueSemanticSupport =
     passage.length > 0 &&
     requiredAnswerCues.length > 0 &&
-    requiredAnswerCuesSatisfied &&
-    vectorRank !== null &&
-    vectorRank <= policy.semanticCueMaxVectorRank;
+    boundedSupport.supported &&
+    boundedSupport.semanticAnchorOverlap.length > 0;
 
   let reason: PassageSupportReason;
   if (!passage) {
