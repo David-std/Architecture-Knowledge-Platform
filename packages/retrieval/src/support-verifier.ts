@@ -421,15 +421,18 @@ export function verifyDeterministicPassageSupport(
     policy.minimumSalientOverlap,
     Math.max(1, salientQueryTokens.length),
   );
+  const requiredAnswerCuesSatisfied =
+    requiredAnswerCues.length === 0 || answerCueCoverage === 1;
   const strongTextSupport =
     passage.length > 0 &&
     salientQueryTokens.length > 0 &&
     salientOverlapTokens.length >= requiredOverlap &&
-    salientCoverage >= policy.minimumSalientCoverage;
+    salientCoverage >= policy.minimumSalientCoverage &&
+    requiredAnswerCuesSatisfied;
   const cueSemanticSupport =
     passage.length > 0 &&
     requiredAnswerCues.length > 0 &&
-    answerCueCoverage === 1 &&
+    requiredAnswerCuesSatisfied &&
     vectorRank !== null &&
     vectorRank <= policy.semanticCueMaxVectorRank;
 
