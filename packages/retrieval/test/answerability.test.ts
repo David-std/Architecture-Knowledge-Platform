@@ -275,6 +275,97 @@ describe("retrieval answerability", () => {
     ]);
   });
 
+  it("accepts an explicit bilingual yes-no negation about the same relation", () => {
+    const candidate = hit(20, {
+      title: "Pattern scope",
+      excerpt:
+        "Strategy y Adapter no determinan toda la arquitectura; resuelven responsabilidades locales.",
+      contributions: [contribution("vector", 0.88, 1)],
+    });
+    const result = assessRetrievalAnswerability(
+      [candidate],
+      "Do Strategy and Adapter define the entire architecture?",
+    );
+
+    expect(result).toMatchObject({
+      supported: true,
+      supportedCandidateKeys: [
+        retrievalAnswerabilityCandidateKey(candidate),
+      ],
+    });
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: true,
+      requiredAnswerCues: ["YES_NO"],
+    });
+  });
+
+  it("requires a numeric quantity instead of accepting topical cost language", () => {
+    const topical = hit(21, {
+      title: "Service cost controls",
+      excerpt:
+        "Platform operating cost is governed by budget policy and bounded capacity reviews.",
+      contributions: [contribution("vector", 0.94, 1)],
+    });
+    const result = assessRetrievalAnswerability(
+      [topical],
+      "How much is the exact monthly platform cost?",
+    );
+
+    expect(result).toMatchObject({
+      supported: false,
+      supportedCandidateKeys: [],
+    });
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: false,
+      reason: "ANSWER_CUE_MISMATCH",
+    });
+    expect(
+      result.candidateSignals[0]?.passageSupport.requiredAnswerCues,
+    ).toContain("QUANTITY");
+  });
+
+  it("requires an explicit year when the question asks which year", () => {
+    const topical = hit(22, {
+      title: "Retention policy history",
+      excerpt:
+        "The retention policy changed after the compliance review and remains active.",
+      contributions: [contribution("vector", 0.93, 1)],
+    });
+    const result = assessRetrievalAnswerability(
+      [topical],
+      "Which year was the retention policy prohibited?",
+    );
+
+    expect(result.supported).toBe(false);
+    expect(
+      result.candidateSignals[0]?.passageSupport.requiredAnswerCues,
+    ).toContain("DATE_YEAR");
+  });
+
+  it("requires rationale and relation anchors in the same sentence", () => {
+    const thematic = hit(23, {
+      title: "Policy rationale",
+      parentContext:
+        "Dependencies are documented for architecture review. A deployment policy changes because maintenance windows are short.",
+      excerpt: "Dependencies are documented for architecture review.",
+      contributions: [contribution("vector", 0.91, 1)],
+    });
+    const correct = hit(24, {
+      title: "Dependency direction",
+      excerpt:
+        "Las dependencias apuntan hacia las políticas porque las reglas de negocio deben permanecer independientes de detalles externos.",
+      contributions: [contribution("vector", 0.89, 2)],
+    });
+    const query = "Why do dependencies point toward policies?";
+    const result = assessRetrievalAnswerability([thematic, correct], query);
+
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(correct),
+    ]);
+    expect(result.candidateSignals[0]?.passageSupport.supported).toBe(false);
+    expect(result.candidateSignals[1]?.passageSupport.supported).toBe(true);
+  });
+
   it("rejects a semantic neighbour that is relevant to the topic but does not answer", () => {
     const result = assessRetrievalAnswerability(
       [
@@ -321,19 +412,26 @@ describe("retrieval answerability", () => {
     });
   });
 
-  it("treats exact and other direct channels as candidate-specific support", () => {
-    const direct = hit(1, {
+  it("uses direct-channel support only for an exact identifier whose identity matches", () => {
+    const directBase = hit(1, {
       title: "Canonical rule",
       excerpt: "Unrelated wording.",
       contributions: [contribution("exact"), contribution("vector", 0.6, 1)],
     });
-    const neighbour = hit(2, {
+    const direct: SearchHit = {
+      ...directBase,
+      document: {
+        ...directBase.document,
+        externalId: "RULE-AUTH-001",
+      },
+    };
+    const unrelatedExact = hit(2, {
       title: "Nearby topic",
       excerpt: "A nearby topic with no direct match.",
-      contributions: [contribution("vector", 0.59, 2)],
+      contributions: [contribution("exact"), contribution("vector", 0.59, 2)],
     });
     const result = assessRetrievalAnswerability(
-      [direct, neighbour],
+      [direct, unrelatedExact],
       "RULE-AUTH-001",
     );
 
@@ -342,6 +440,9 @@ describe("retrieval answerability", () => {
       reason: "DIRECT_CHANNEL_SUPPORT",
       supportedDocumentIds: [direct.documentId],
     });
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(direct),
+    ]);
     expect(result.candidateSignals[1]?.passageSupport.supported).toBe(false);
   });
 
@@ -369,7 +470,7 @@ describe("retrieval answerability", () => {
     });
   });
 
-  it("accepts graph evidence only for an explicit graph-oriented intent", () => {
+  it("does not let graph topology substitute for passage evidence", () => {
     const candidate = hit(1, {
       title: "Dependency relation",
       excerpt: "A graph neighbour discovered through an authorized path.",
@@ -391,9 +492,9 @@ describe("retrieval answerability", () => {
         { allowGraphSupport: true },
       ),
     ).toMatchObject({
-      supported: true,
-      reason: "GRAPH_INTENT_SUPPORT",
-      supportedDocumentIds: [candidate.documentId],
+      supported: false,
+      reason: "SUPPORT_NOT_DEMONSTRATED",
+      supportedDocumentIds: [],
     });
   });
 
