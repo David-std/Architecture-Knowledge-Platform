@@ -3443,10 +3443,7 @@ export async function queryKnowledge(
         ? structuralContextByUnit.get(matchedUnit.unitId)
         : undefined;
       const codeSupport = codeSupportByCandidate.get(item.id);
-      const answerabilityContext = [
-        structuralContext?.context,
-        codeSupport,
-      ]
+      const answerabilityContext = [structuralContext?.context, codeSupport]
         .filter((value): value is string => Boolean(value?.trim()))
         .join("\n");
       return {
