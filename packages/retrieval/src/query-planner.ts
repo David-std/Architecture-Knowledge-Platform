@@ -333,7 +333,14 @@ export function planQuery(
   let intent: QueryIntent;
   if (explicitIntent && QUERY_INTENTS.has(explicitIntent as QueryIntent)) {
     intent = explicitIntent as QueryIntent;
-  } else if (/\b(impact|impacto|afecta|dependenc)/.test(normalized))
+  } else if (
+    /\b(impact|impacto|afecta|afectan|afectado|afectada|afectados|afectadas|blast radius|downstream|upstream|dependent|dependents|dependiente|dependientes)\b/u.test(
+      normalized,
+    ) ||
+    /\b(change|modify|cambiar|modificar|cambio)\b[^\n]{0,80}\b(dependency|dependencies|dependencia|dependencias)\b/u.test(
+      normalized,
+    )
+  )
     intent = "IMPACT_ANALYSIS";
   else if (
     /\b(source|fuente|evidencia|verify|verifica|citation|cita)\b/.test(
