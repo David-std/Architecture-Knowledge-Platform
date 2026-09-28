@@ -254,6 +254,50 @@ export function createMcpServer(): McpServer {
   );
 
   server.registerTool(
+    "akp_list_external_references",
+    {
+      description:
+        "List external ticket/work references linked to a workspace session. These are coordination references, not approved knowledge.",
+      inputSchema: { sessionId: z.string().uuid() },
+    },
+    async ({ sessionId }) =>
+      textResult(
+        await api(
+          `/v1/sessions/${encodeURIComponent(sessionId)}/external-refs`,
+        ),
+      ),
+  );
+
+  server.registerTool(
+    "akp_upsert_external_reference",
+    {
+      description:
+        "Link or update a Jira/Linear/other external reference relayed by the agent. AKP records it as REFERENCE with providerVerified=false; the agent must not represent relayed data as provider-verified.",
+      inputSchema: {
+        sessionId: z.string().uuid(),
+        provider: z.string().trim().min(1).max(80),
+        objectType: z.string().trim().min(1).max(80),
+        externalId: z.string().trim().min(1).max(512),
+        canonicalUrl: z.string().url().optional(),
+        sourceRevision: z.string().trim().min(1).max(1024).optional(),
+        title: z.string().trim().min(1).max(1000).optional(),
+        workObjectClass: z.string().trim().min(1).max(120).optional(),
+        owners: z.array(z.string().trim().min(1).max(256)).max(50).optional(),
+        metadata: z.record(z.unknown()).optional(),
+        idempotencyKey: z.string().min(8).max(200),
+      },
+    },
+    async ({ sessionId, idempotencyKey, ...body }) =>
+      textResult(
+        await writeApi(
+          `/v1/sessions/${encodeURIComponent(sessionId)}/external-refs`,
+          idempotencyKey,
+          body,
+        ),
+      ),
+  );
+
+  server.registerTool(
     "akp_bootstrap_session_context",
     {
       description:
