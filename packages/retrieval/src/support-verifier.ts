@@ -357,9 +357,9 @@ export function deterministicProjectionRetainsSupport(
   const needle = query.trim();
   if (!needle || !passage.trim()) return false;
 
-  const match = passage.toLocaleLowerCase("en-US").indexOf(
-    needle.toLocaleLowerCase("en-US"),
-  );
+  const match = passage
+    .toLocaleLowerCase("en-US")
+    .indexOf(needle.toLocaleLowerCase("en-US"));
   if (match < 0) return false;
 
   const requiredAnswerCues = queryAnswerCues(query);
