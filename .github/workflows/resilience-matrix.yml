@@ -216,7 +216,7 @@ jobs:
               cat "reports/ci/readiness-${label}-down.json" 2>/dev/null || true
               return 1
             fi
-            docker compose up -d --wait "$service"
+            docker compose start "$service"
             wait_ready "${label}-recovered"
           }
 
