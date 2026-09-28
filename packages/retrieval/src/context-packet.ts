@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { deterministicProjectionRetainsSupport } from "./support-verifier.js";
 import type {
   CompactAgentPacket as ContractCompactAgentPacket,
   CompactContextSection as ContractCompactContextSection,
@@ -75,6 +76,12 @@ export interface PacketCandidate {
    * requirements: callers may only set it on already-valid candidates.
    */
   mandatory?: boolean;
+  /**
+   * 1-based retrieval position among concrete candidates that already passed
+   * query answerability. This is selection provenance, not an evidence signal:
+   * authorization, truth, trust and freshness still gate the candidate first.
+   */
+  retrievalRank?: number;
 }
 
 export interface MaterialConflictRequirement {
@@ -364,9 +371,43 @@ function independentSupportCount(candidate: PacketCandidate): number {
   return new Set(candidate.hit.citations).size;
 }
 
+function validRetrievalRank(candidate: PacketCandidate): number | undefined {
+  const value = candidate.retrievalRank;
+  return Number.isSafeInteger(value) && (value ?? 0) > 0 ? value : undefined;
+}
+
 function compareCandidates(a: PacketCandidate, b: PacketCandidate): number {
+  const aRank = validRetrievalRank(a);
+  const bRank = validRetrievalRank(b);
+  const aRanked = aRank !== undefined;
+  const bRanked = bRank !== undefined;
+  const mandatory = Number(Boolean(b.mandatory)) - Number(Boolean(a.mandatory));
+  if (mandatory !== 0) return mandatory;
+
+  // Ranked candidates are concrete passages that already passed the
+  // authorization/truth/answerability boundaries. Their supported retrieval
+  // position therefore drives ordinary selection; trust/freshness remain
+  // deterministic confidence tie-breakers rather than reintroducing generic
+  // background material ahead of the query's best supported passage.
+  if (aRanked || bRanked) {
+    return (
+      Number(bRanked) - Number(aRanked) ||
+      (aRank ?? Number.MAX_SAFE_INTEGER) - (bRank ?? Number.MAX_SAFE_INTEGER) ||
+      authorityRank[a.hit.trust] - authorityRank[b.hit.trust] ||
+      freshnessRank(a.hit.refreshStatus) - freshnessRank(b.hit.refreshStatus) ||
+      Number(hasEvidence(b)) - Number(hasEvidence(a)) ||
+      independentSupportCount(b) - independentSupportCount(a) ||
+      priority[a.kind] - priority[b.kind] ||
+      b.hit.score - a.hit.score ||
+      a.hit.documentId.localeCompare(b.hit.documentId) ||
+      (a.hit.unitId ?? "").localeCompare(b.hit.unitId ?? "") ||
+      a.hit.revision.localeCompare(b.hit.revision) ||
+      a.content.localeCompare(b.content)
+    );
+  }
+
+  // Compatibility path for callers that do not yet supply query-support rank.
   return (
-    Number(Boolean(b.mandatory)) - Number(Boolean(a.mandatory)) ||
     priority[a.kind] - priority[b.kind] ||
     authorityRank[a.hit.trust] - authorityRank[b.hit.trust] ||
     freshnessRank(a.hit.refreshStatus) - freshnessRank(b.hit.refreshStatus) ||
@@ -449,6 +490,9 @@ export function contextSectionFromCandidate(
     ...(retrievalChannels.length > 0 ? { retrievalChannels } : {}),
     documentRevision: hit.revision,
     score: hit.score,
+    ...(validRetrievalRank(candidate) !== undefined
+      ? { retrievalRank: validRetrievalRank(candidate) }
+      : {}),
     selectionReason: selectionReasons(hit).join("; "),
     sourceOrEvidenceIds: hit.citations,
     ...(hit.graphProvenance !== undefined
@@ -542,6 +586,9 @@ function compactSection(
     retrievalChannels: section.retrievalChannels ?? [],
     selectionReason: section.selectionReason,
     ...(!tight && section.score !== undefined ? { score: section.score } : {}),
+    ...(section.retrievalRank !== undefined
+      ? { retrievalRank: section.retrievalRank }
+      : {}),
     ...(!tight && section.graphProvenance !== undefined
       ? { graphProvenance: section.graphProvenance }
       : {}),
@@ -691,9 +738,7 @@ function recommendationList(
 ): string[] {
   const actions = [...supplied];
   if (omitted.length > 0) {
-    actions.push(
-      "Request a continuation to inspect omitted lower-priority material.",
-    );
+    actions.push("Request a continuation to inspect omitted material.");
   }
   if (gaps.length > 0) {
     actions.push("Review the retrieval gaps before making a definitive claim.");
@@ -721,21 +766,47 @@ function diverseCandidateOrder(
 ): PacketCandidate[] {
   const sorted = [...candidates].sort(compareCandidates);
   const result: PacketCandidate[] = [];
-  const priorityTiers = [...new Set(sorted.map((item) => priority[item.kind]))];
-  for (const candidatePriority of priorityTiers) {
-    const groups = new Map<string, PacketCandidate[]>();
-    for (const candidate of sorted) {
-      if (priority[candidate.kind] !== candidatePriority) continue;
-      const group = groups.get(candidate.hit.documentId) ?? [];
-      group.push(candidate);
-      groups.set(candidate.hit.documentId, group);
-    }
-    const orderedDocuments = [...groups.keys()];
-    for (let round = 0; round < maxSectionsPerDocument; round += 1) {
-      for (const documentId of orderedDocuments) {
-        const candidate = groups.get(documentId)?.[round];
-        if (candidate) result.push(candidate);
+
+  // Legacy callers without answerability rank keep the historical kind tiers.
+  // Ranked candidates instead preserve the order of their best supported
+  // passage, while still interleaving documents so one dossier cannot flood
+  // a bounded packet.
+  if (
+    !sorted.some((candidate) => validRetrievalRank(candidate) !== undefined)
+  ) {
+    const priorityTiers = [
+      ...new Set(sorted.map((item) => priority[item.kind])),
+    ];
+    for (const candidatePriority of priorityTiers) {
+      const groups = new Map<string, PacketCandidate[]>();
+      for (const candidate of sorted) {
+        if (priority[candidate.kind] !== candidatePriority) continue;
+        const group = groups.get(candidate.hit.documentId) ?? [];
+        group.push(candidate);
+        groups.set(candidate.hit.documentId, group);
       }
+      const orderedDocuments = [...groups.keys()];
+      for (let round = 0; round < maxSectionsPerDocument; round += 1) {
+        for (const documentId of orderedDocuments) {
+          const candidate = groups.get(documentId)?.[round];
+          if (candidate) result.push(candidate);
+        }
+      }
+    }
+    return result;
+  }
+
+  const groups = new Map<string, PacketCandidate[]>();
+  for (const candidate of sorted) {
+    const group = groups.get(candidate.hit.documentId) ?? [];
+    group.push(candidate);
+    groups.set(candidate.hit.documentId, group);
+  }
+  const orderedDocuments = [...groups.keys()];
+  for (let round = 0; round < maxSectionsPerDocument; round += 1) {
+    for (const documentId of orderedDocuments) {
+      const candidate = groups.get(documentId)?.[round];
+      if (candidate) result.push(candidate);
     }
   }
   return result;
@@ -817,6 +888,14 @@ export function buildContextPacket(
     (candidate) => candidate.content.trim().length > 0,
   );
   const packetGaps = [...(input.gaps ?? [])];
+  const highestRankedQueryCandidate = [...packetCandidates]
+    .filter((candidate) => validRetrievalRank(candidate) !== undefined)
+    .sort(
+      (left, right) =>
+        (validRetrievalRank(left) ?? Number.MAX_SAFE_INTEGER) -
+          (validRetrievalRank(right) ?? Number.MAX_SAFE_INTEGER) ||
+        compareCandidates(left, right),
+    )[0];
   if (packetGaps.length === 0 && packetCandidates.length === 0) {
     packetGaps.push("No supported material matched the request.");
   } else if (
@@ -893,6 +972,40 @@ export function buildContextPacket(
       );
     }
   };
+  const highestRankedQueryKey = highestRankedQueryCandidate
+    ? candidateKey(highestRankedQueryCandidate)
+    : undefined;
+  const primaryQuerySupportOmitted = (
+    selectedSections: readonly BaseContextSection[],
+    omittedCandidates: readonly PacketCandidate[],
+  ): boolean => {
+    if (!highestRankedQueryKey) return false;
+    const represented = selectedSections.some(
+      (section) =>
+        `${section.documentId}:${section.unitId ?? "document"}` ===
+        highestRankedQueryKey,
+    );
+    return (
+      !represented &&
+      omittedCandidates.some(
+        (candidate) => candidateKey(candidate) === highestRankedQueryKey,
+      )
+    );
+  };
+  const notePrimaryQuerySupportOmission = (
+    selectedSections: readonly BaseContextSection[],
+  ): void => {
+    if (
+      primaryQuerySupportOmitted(selectedSections, omitted) &&
+      !packetGaps.some((gap) =>
+        gap.startsWith("Highest-ranked query-supported material omitted:"),
+      )
+    ) {
+      packetGaps.push(
+        "Highest-ranked query-supported material omitted: the active token/evidence policy could not include the best supported retrieval result. Request its continuation before treating this packet as complete support for the query.",
+      );
+    }
+  };
   const seenCandidates = new Set<string>();
   const sectionsByDocument = new Map<string, number>();
   const selected: Array<{
@@ -909,11 +1022,20 @@ export function buildContextPacket(
         candidateSections.flatMap((section) => section.sourceOrEvidenceIds),
       ),
     ].sort();
+    const primarySupportMissing = primaryQuerySupportOmitted(
+      candidateSections,
+      omittedCandidates,
+    );
     const requiredActions = [
       ...(input.requiredActions ?? []),
       UNTRUSTED_RETRIEVED_CONTENT_ACTION,
       ...(candidateCitations.length === 0
         ? ["Do not claim vault authority without evidence."]
+        : []),
+      ...(primarySupportMissing
+        ? [
+            "Request the continuation containing the highest-ranked query-supported material before treating this packet as complete support for the query.",
+          ]
         : []),
     ].filter((action, index, actions) => actions.indexOf(action) === index);
     const recommendations = recommendationList(
@@ -960,6 +1082,7 @@ export function buildContextPacket(
       candidateSections.length === 0
         ? "INSUFFICIENT_KNOWLEDGE"
         : degradedRetrieval ||
+            primarySupportMissing ||
             Object.values(indexRevisions).some(
               (revision) =>
                 revision !== null && revision !== input.corpusRevision,
@@ -986,7 +1109,7 @@ export function buildContextPacket(
               omittedCandidates,
               requestedContextLevel,
               count,
-              `${omittedCandidates.length} lower-priority sections exceeded the token budget or document diversity cap.`,
+              `${omittedCandidates.length} section(s) exceeded the token budget, evidence policy, or document diversity cap.`,
             ),
           ];
     const base = {
@@ -1098,6 +1221,7 @@ export function buildContextPacket(
   };
   ensureNoAnswerGap();
   noteRequiredOmissions();
+  notePrimaryQuerySupportOmission(selected.map((entry) => entry.section));
 
   // Continuation metadata can grow after later candidates are omitted. Trim
   // the lowest-priority selected sections until the complete final wire fits.
@@ -1139,6 +1263,7 @@ export function buildContextPacket(
       omitted.push(removed.candidate);
       ensureNoAnswerGap();
       noteRequiredOmissions();
+      notePrimaryQuerySupportOmission(selected.map((entry) => entry.section));
       final = baseEnvelope(
         selected.map((entry) => entry.section),
         omitted,
@@ -1167,6 +1292,10 @@ function compactProjectionOrder(
       const leftRule = left.section.kind === "rule";
       const rightRule = right.section.kind === "rule";
       if (leftRule !== rightRule) return Number(rightRule) - Number(leftRule);
+
+      const leftRank = left.section.retrievalRank ?? Number.MAX_SAFE_INTEGER;
+      const rightRank = right.section.retrievalRank ?? Number.MAX_SAFE_INTEGER;
+      if (leftRank !== rightRank) return leftRank - rightRank;
 
       const leftDirect = left.section.content.toLowerCase().includes(query);
       const rightDirect = right.section.content.toLowerCase().includes(query);
@@ -1227,6 +1356,19 @@ export function projectContextPacket(
   const omitted: BaseContextSection[] = [];
   const selected: BaseContextSection[] = [];
   const tightSections = new Set<BaseContextSection>();
+  const primaryQuerySection = [...(packet.sections as BaseContextSection[])]
+    .filter((section) => section.retrievalRank !== undefined)
+    .sort(
+      (left, right) =>
+        (left.retrievalRank ?? Number.MAX_SAFE_INTEGER) -
+        (right.retrievalRank ?? Number.MAX_SAFE_INTEGER),
+    )[0];
+  const sameSectionIdentity = (
+    left: BaseContextSection,
+    right: BaseContextSection,
+  ) =>
+    left.documentId === right.documentId &&
+    (left.unitId ?? "document") === (right.unitId ?? "document");
   const compactEnvelope = (
     sections: BaseContextSection[],
     omittedSections: BaseContextSection[],
@@ -1249,6 +1391,60 @@ export function projectContextPacket(
     const content = sections.map((section) =>
       compactSection(section, { tight: isTightSection(section) }),
     );
+    const primaryOriginalOmitted =
+      primaryQuerySection !== undefined &&
+      omittedSections.some((section) =>
+        sameSectionIdentity(section, primaryQuerySection),
+      );
+    const selectedPrimaryQuerySection =
+      primaryQuerySection === undefined
+        ? undefined
+        : sections.find((section) =>
+            sameSectionIdentity(section, primaryQuerySection),
+          );
+    const primarySupportMissing =
+      primaryOriginalOmitted && selectedPrimaryQuerySection === undefined;
+    const primarySupportTruncated =
+      primaryOriginalOmitted &&
+      selectedPrimaryQuerySection !== undefined &&
+      selectedPrimaryQuerySection.content !== primaryQuerySection?.content;
+    const primaryTruncationRetainsSupport =
+      primarySupportTruncated &&
+      selectedPrimaryQuerySection !== undefined &&
+      deterministicProjectionRetainsSupport(
+        selectedPrimaryQuerySection.content,
+        packet.query,
+      );
+    const primarySupportTruncationUnverified =
+      primarySupportTruncated && !primaryTruncationRetainsSupport;
+    const primarySupportLimited =
+      primarySupportMissing || primarySupportTruncationUnverified;
+    const primarySupportGap = primarySupportMissing
+      ? "Highest-ranked query-supported material omitted from compact packet: the active token budget could not include the best supported retrieval result. Request its continuation before treating this compact packet as complete support for the query."
+      : primarySupportTruncationUnverified
+        ? "Highest-ranked query-supported material truncated in compact packet without retaining demonstrable answer support: only a bounded projection fit the active token budget. Request its full continuation before treating this compact packet as complete support for the query."
+        : undefined;
+    const compactGaps =
+      primarySupportGap &&
+      !packet.gaps.some((gap) =>
+        gap.startsWith(primarySupportGap.split(":")[0]!),
+      )
+        ? [...packet.gaps, primarySupportGap]
+        : packet.gaps;
+    const compactRequiredActions = primarySupportLimited
+      ? [
+          ...new Set([
+            ...packet.requiredActions,
+            "Request the continuation containing the full highest-ranked query-supported material before treating this compact packet as complete support for the query.",
+          ]),
+        ]
+      : packet.requiredActions;
+    const compactStatus =
+      packet.status === "INSUFFICIENT_KNOWLEDGE"
+        ? packet.status
+        : primarySupportLimited
+          ? "DEGRADED"
+          : packet.status;
     const compactBase = {
       packetMode: "COMPACT_AGENT_PACKET" as const,
       identity: {
@@ -1256,7 +1452,7 @@ export function projectContextPacket(
         query: packet.query,
         intent: packet.intent,
         corpusRevision: packet.corpusRevision,
-        status: packet.status,
+        status: compactStatus,
         mode: packet.mode,
         requestedContextLevel: packet.requestedContextLevel,
         scope: packet.scope,
@@ -1270,8 +1466,8 @@ export function projectContextPacket(
       citations: references,
       searchedChannels,
       conflicts: packet.conflicts,
-      gaps: packet.gaps,
-      requiredActions: packet.requiredActions,
+      gaps: compactGaps,
+      requiredActions: compactRequiredActions,
       recommendedActions: [...new Set(suppliedRecommendations)],
       continuations,
       packetHash: packet.packetHash,

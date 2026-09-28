@@ -24,6 +24,21 @@ interface DoctorEnvironment {
   readonly [key: string]: string | undefined;
 }
 
+export const DOCTOR_ACTIVE_INGEST_STATES = [
+  "RECEIVED",
+  "HASHED",
+  "STORED",
+  "NORMALIZING",
+  "ANALYZING",
+  "PLANNED",
+  "DRAFTED",
+  "VALIDATING",
+] as const;
+
+export function isDoctorActiveIngestState(state: string): boolean {
+  return (DOCTOR_ACTIVE_INGEST_STATES as readonly string[]).includes(state);
+}
+
 function statusRank(status: DoctorStatus): number {
   switch (status) {
     case "FAIL":
@@ -774,8 +789,9 @@ export async function runDoctor(
           (select count(*)::int from event_deliveries where status='RETRY') retrying,
           (select count(*)::int from ingest_jobs where state='FAILED') ingest_failed,
           (select count(*)::int from ingest_jobs
-            where state not in ('FAILED','REVIEW_REQUIRED')
+            where state = any($1::text[])
               and cancelled_at is null) ingest_active`,
+        [[...DOCTOR_ACTIVE_INGEST_STATES]],
       );
       const row = result.rows[0]!;
       return {

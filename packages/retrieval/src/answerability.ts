@@ -63,6 +63,8 @@ export interface CandidatePassageSupport {
 
 export interface CandidateAnswerabilitySignal {
   documentId: string;
+  unitId: string | null;
+  candidateKey: string;
   externalId: string | null;
   candidateRank: number;
   finalScore: number;
@@ -89,7 +91,10 @@ export interface CandidateAnswerabilitySignal {
 export interface RetrievalAnswerabilityAssessment {
   supported: boolean;
   reason: RetrievalAnswerabilityReason;
+  /** Compatibility/document-level summary; do not use to admit passages. */
   supportedDocumentIds: string[];
+  /** Concrete passages that independently demonstrated support. */
+  supportedCandidateKeys: string[];
   candidateSignals: CandidateAnswerabilitySignal[];
   topVectorScore: number | null;
   secondVectorScore: number | null;
@@ -104,12 +109,22 @@ export function resolveRetrievalAnswerabilityPolicy(
   return resolveDeterministicPassageSupportPolicy(input);
 }
 
+export function retrievalAnswerabilityCandidateKey(
+  hit: Pick<SearchHit, "documentId" | "unitId">,
+): string {
+  return `${hit.documentId}:${hit.unitId ?? "document"}`;
+}
+
 function supportReasonForCandidate(
   hit: SearchHit,
   passage: DeterministicPassageSupportSignal,
   allowGraphSupport: boolean,
 ): CandidateSupportReason {
+  const requiredAnswerCuesSatisfied =
+    passage.requiredAnswerCues.length === 0 || passage.answerCueCoverage === 1;
+
   if (
+    requiredAnswerCuesSatisfied &&
     (hit.fusionContributions ?? []).some((contribution) =>
       DIRECT_SUPPORT_CHANNELS.has(contribution.channel),
     )
@@ -117,6 +132,7 @@ function supportReasonForCandidate(
     return "DIRECT_CHANNEL_SUPPORT";
   }
   if (
+    requiredAnswerCuesSatisfied &&
     allowGraphSupport &&
     (hit.fusionContributions ?? []).some(
       (contribution) =>
@@ -154,6 +170,8 @@ export function collectCandidateAnswerabilitySignals(
     );
     return {
       documentId: hit.documentId,
+      unitId: hit.unitId ?? null,
+      candidateKey: retrievalAnswerabilityCandidateKey(hit),
       externalId: hit.document.externalId,
       candidateRank: index + 1,
       finalScore: hit.score,
@@ -240,6 +258,7 @@ export function assessRetrievalAnswerability(
       supported: false,
       reason: "NO_CANDIDATES",
       supportedDocumentIds: [],
+      supportedCandidateKeys: [],
       candidateSignals,
       topVectorScore: null,
       secondVectorScore: null,
@@ -249,9 +268,15 @@ export function assessRetrievalAnswerability(
     };
   }
 
-  const supportedDocumentIds = candidateSignals
-    .filter((signal) => signal.passageSupport.supported)
-    .map((signal) => signal.documentId);
+  const supportedSignals = candidateSignals.filter(
+    (signal) => signal.passageSupport.supported,
+  );
+  const supportedDocumentIds = [
+    ...new Set(supportedSignals.map((signal) => signal.documentId)),
+  ];
+  const supportedCandidateKeys = supportedSignals.map(
+    (signal) => signal.candidateKey,
+  );
   const comparisonSignals = context.comparisonHits
     ? collectCandidateAnswerabilitySignals(
         context.comparisonHits,
@@ -275,9 +300,10 @@ export function assessRetrievalAnswerability(
   const thirdVectorScore = comparisonVectorCandidates[2]?.score ?? null;
 
   return {
-    supported: supportedDocumentIds.length > 0,
+    supported: supportedCandidateKeys.length > 0,
     reason: topLevelReason(candidateSignals),
     supportedDocumentIds,
+    supportedCandidateKeys,
     candidateSignals,
     topVectorScore,
     secondVectorScore,

@@ -42,6 +42,8 @@ const fixture = {
   assuranceRunId: randomUUID(),
   assuranceFindingId: randomUUID(),
   projectionId: randomUUID(),
+  graphScopeId: "browser-code-" + randomUUID().slice(0, 8),
+  graphRevision: "browser-code-r1-" + randomUUID().slice(0, 8),
   entryNodeId: randomUUID(),
   helperNodeId: randomUUID(),
   edgeAssertionId: randomUUID(),
@@ -50,6 +52,8 @@ const fixture = {
   sourceId: randomUUID(),
   evidenceId: randomUUID(),
   documentId: randomUUID(),
+  authorRulePath: "browser/e2e-rule-" + randomUUID().slice(0, 8) + ".md",
+  authorRuleId: "BROWSER-E2E-RULE-" + randomUUID().slice(0, 8).toUpperCase(),
 };
 
 const children = [];
@@ -451,11 +455,18 @@ async function setupDatabase(db) {
       "provider,provider_version,configuration_version,lifecycle,freshness," +
       "built_at,activated_at,last_successful_update" +
       ") values(" +
-      "$1,$2,$3,'CODE','browser-code','browser-code-r1',$4," +
+      "$1,$2,$3,'CODE',$4,$5,$6," +
       "'browser-e2e','1','browser-e2e-v1','ACTIVE','FRESH'," +
       "now(),now(),now()" +
       ")",
-    [fixture.projectionId, SPACE_ID, fixture.vaultId, revision],
+    [
+      fixture.projectionId,
+      SPACE_ID,
+      fixture.vaultId,
+      fixture.graphScopeId,
+      fixture.graphRevision,
+      revision,
+    ],
   );
 
   const entryPayload = {
@@ -481,13 +492,15 @@ async function setupDatabase(db) {
       "insert into federated_graph_nodes(" +
         "id,space_id,vault_id,graph_domain,scope_id,kind,canonical_key," +
         "revision,authorization_path,payload,payload_hash" +
-        ") values($1,$2,$3,'CODE','browser-code','FUNCTION',$4," +
-        "'browser-code-r1',null,$5::jsonb,$6)",
+        ") values($1,$2,$3,'CODE',$4,'FUNCTION',$5," +
+        "$6,null,$7::jsonb,$8)",
       [
         id,
         SPACE_ID,
         fixture.vaultId,
+        fixture.graphScopeId,
         key,
+        fixture.graphRevision,
         JSON.stringify(payload),
         sha256(JSON.stringify(payload)),
       ],
@@ -509,7 +522,7 @@ async function setupDatabase(db) {
       "valid_to,recorded_at,assertion_hash" +
       ") values(" +
       "$1,$2,'CODE',$3,$4,'CALLS',null,'ACTIVE','STATICALLY_RESOLVED'," +
-      "'[]'::jsonb,'[]'::jsonb,'[]'::jsonb,'browser-code-r1',null,1.0," +
+      "'[]'::jsonb,'[]'::jsonb,'[]'::jsonb,$6,null,1.0," +
       "'2026-06-01T00:00:00.000Z',null,'2026-06-01T00:00:00.000Z',$5" +
       ")",
     [
@@ -518,6 +531,7 @@ async function setupDatabase(db) {
       fixture.entryNodeId,
       fixture.helperNodeId,
       browserEdgeHash,
+      fixture.graphRevision,
     ],
   );
 
@@ -529,7 +543,7 @@ async function setupDatabase(db) {
       "recorded_at,provenance_hash,assertion_id" +
       ") values(" +
       "$1,$2,'CODE',$3,$4,'CALLS',null,'STATICALLY_RESOLVED'," +
-      "'[]'::jsonb,'[]'::jsonb,'[]'::jsonb,'browser-code-r1',null,1.0," +
+      "'[]'::jsonb,'[]'::jsonb,'[]'::jsonb,$7,null,1.0," +
       "'2026-06-01T00:00:00.000Z',null,'2026-06-01T00:00:00.000Z',$5,$6" +
       ")",
     [
@@ -539,6 +553,7 @@ async function setupDatabase(db) {
       fixture.helperNodeId,
       browserEdgeHash,
       fixture.edgeAssertionId,
+      fixture.graphRevision,
     ],
   );
   await db.query(
@@ -922,7 +937,9 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
       await adminPage
         .locator('textarea[name="summary"]')
         .fill("Browser E2E governed authoring");
-      await adminPage.locator('input[name="path"]').fill("browser/e2e-rule.md");
+      await adminPage
+        .locator('input[name="path"]')
+        .fill(fixture.authorRulePath);
       await adminPage
         .locator('textarea[name="reason"]')
         .fill("Browser E2E governed authoring flow");
@@ -931,7 +948,7 @@ test("critical browser workflows", { timeout: 300_000 }, async (t) => {
         .fill(
           [
             "---",
-            "id: BROWSER-E2E-RULE",
+            `id: ${fixture.authorRuleId}`,
             "type: rule",
             "title: Browser E2E rule",
             "status: ACTIVE",
