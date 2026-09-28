@@ -61,7 +61,9 @@ function sourceVersionWithinWindow(
   const fromMs = from ? new Date(from).getTime() : Number.NEGATIVE_INFINITY;
   const targetMs = new Date(target).getTime();
   if (!Number.isFinite(sourceMs) || !Number.isFinite(targetMs)) return true;
-  const boundedFrom = Number.isFinite(fromMs) ? fromMs : Number.NEGATIVE_INFINITY;
+  const boundedFrom = Number.isFinite(fromMs)
+    ? fromMs
+    : Number.NEGATIVE_INFINITY;
   return sourceMs >= boundedFrom && sourceMs <= targetMs;
 }
 
@@ -210,7 +212,10 @@ export class JiraCloudSourceConnector implements SourceConnectorPort {
       });
       const issues = Array.isArray(response.issues) ? response.issues : [];
       for (const issue of issues) {
-        const object = jiraIssueToObject(jsonObject(issue), this.options.baseUrl);
+        const object = jiraIssueToObject(
+          jsonObject(issue),
+          this.options.baseUrl,
+        );
         if (!sourceVersionWithinWindow(object.sourceVersion, from, target)) {
           continue;
         }
