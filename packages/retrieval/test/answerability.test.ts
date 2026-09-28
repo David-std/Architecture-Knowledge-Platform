@@ -201,6 +201,31 @@ describe("retrieval answerability", () => {
     });
   });
 
+  it("accepts a bounded copular definition without treating topic proximity as evidence", () => {
+    const candidate = hit(30, {
+      title: "Canonical knowledge",
+      parentContext:
+        "Approved Markdown in managed Git is canonical knowledge. PostgreSQL, vector indexes, graphs, packets and caches are derived operational projections.",
+      excerpt: "Approved Markdown in managed Git is canonical knowledge.",
+      contributions: [contribution("vector", 0.86, 1)],
+    });
+    const result = assessRetrievalAnswerability(
+      [candidate],
+      "What is canonical knowledge in the platform, and which stores are derived projections?",
+    );
+
+    expect(result).toMatchObject({
+      supported: true,
+      supportedCandidateKeys: [
+        retrievalAnswerabilityCandidateKey(candidate),
+      ],
+    });
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: true,
+      requiredAnswerCues: ["DEFINITION"],
+    });
+  });
+
   it("rejects a topical definition when the query asks for an avoidance condition, even on a direct channel", () => {
     const definition = hit(1, {
       title: "Immutable change-log definition",
