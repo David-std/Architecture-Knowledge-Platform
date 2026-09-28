@@ -18,7 +18,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import path from "node:path";
-import pg from "pg";\nimport { assertSyntheticFixtureDatabaseSafety } from "../packages/postgres/src/index.js";
+import pg from "pg";
+import { assertSyntheticFixtureDatabaseSafety } from "../packages/postgres/src/index.js";
 import {
   buildContextPacket,
   type PacketCandidate,
