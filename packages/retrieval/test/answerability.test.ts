@@ -247,7 +247,7 @@ describe("retrieval answerability", () => {
     const conditionBase = hit(2, {
       title: "Immutable change-log trade-off",
       excerpt:
-        "Avoid immutable change logs when simple mutable records are sufficient and the operational overhead outweighs the audit requirement.",
+        "Immutable change logs are a poor fit for simple mutable records because operational overhead outweighs the audit requirement.",
       contributions: [contribution("vector", 0.89, 2)],
     });
     const condition: SearchHit = {
