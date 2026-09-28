@@ -143,6 +143,21 @@ export const ProviderSourceConnectorRegistrationSchema = z
         message: "Linear provider auth must be RAW or BEARER.",
       });
     }
+    if (value.provider === "linear" && value.jql) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["jql"],
+        message: "JQL is only valid for Jira provider connectors.",
+      });
+    }
+    if (value.provider === "jira" && /\border\s+by\b/iu.test(value.jql ?? "")) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["jql"],
+        message:
+          "Jira provider JQL must not include ORDER BY; AKP appends deterministic ordering.",
+      });
+    }
   });
 
 const ProviderRegistrationBody = ProviderSourceConnectorRegistrationSchema;
