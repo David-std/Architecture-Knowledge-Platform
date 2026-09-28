@@ -306,5 +306,5 @@ describe("provider source sync", () => {
       ["11111111-1111-4111-8111-111111111111", "lin-missing"],
     ]);
     expect(checkpointUpdates).toEqual([]);
-   });
+  });
 });
