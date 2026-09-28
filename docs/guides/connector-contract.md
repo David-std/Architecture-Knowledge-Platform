@@ -77,6 +77,16 @@ Deletion from a source invalidates or tombstones the external projection accordi
 
 An issue connector declares `HYBRID_CACHE`, `SOURCE_ACL_MAPPED`, `UPSERT`, eventual deletion and bounded write-back. AKP can use the cached issue for authorized workspace orientation, revalidate it when online and surface staleness when the provider is unavailable. The issue remains owned by the external tracker.
 
+## Jira and Linear read-only adapters
+
+AKP includes provider adapters for Jira Cloud issue references and Linear issue references. Both adapters are read-only and declare `REFERENCE` replication, external residency and mapped/uncertain ACL fidelity. They preserve provider identity and revision timestamps, expose cursor/webhook boundaries, tombstone deletion semantics and explicit provider health. Provider-authenticated reads mark their projection metadata as `providerVerified: true`; this means AKP observed the object through the authenticated adapter, not that the ticket content is approved knowledge.
+
+The agent bridge is intentionally weaker. `akp_upsert_external_reference` accepts the identity, URL, revision and bounded metadata an agent obtained through another provider MCP, but the API forces authority to `REFERENCE` and stamps `providerVerified: false`. A relayed copy cannot self-promote to `SYSTEM_OF_RECORD`.
+
+Jira webhook verification is deployment-injected and fails closed when no verifier is configured; AKP does not assume one universal signing scheme. Linear webhooks require the provider HMAC signature over the raw body and a fresh webhook timestamp. Neither adapter enables write-back.
+
+CI exercises both providers with simulated HTTP/webhook responses. A claim of live Jira or Linear integration additionally requires a sandbox/account run with deployment credentials; simulated-provider coverage is not treated as that evidence.
+
 ## Limitations
 
 The generic connector contract does not imply a first-party adapter for every vendor. Permission fidelity and deletion guarantees are limited by what a provider exposes.
