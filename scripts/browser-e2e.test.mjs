@@ -32,8 +32,9 @@ function databaseName(databaseUrl) {
 }
 
 const browserDatabaseName = databaseName(DATABASE_URL);
-const disposableDatabase =
-  /(?:^|[_-])(test|e2e|ci)(?:$|[_-])/iu.test(browserDatabaseName);
+const disposableDatabase = /(?:^|[_-])(test|e2e|ci)(?:$|[_-])/iu.test(
+  browserDatabaseName,
+);
 if (
   !disposableDatabase &&
   process.env.AKP_BROWSER_E2E_ALLOW_UNSAFE_DATABASE !== "1"
