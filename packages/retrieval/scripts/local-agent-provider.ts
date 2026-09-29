@@ -22,10 +22,35 @@ console.error(
   }),
 );
 
-const generator = await pipeline("text-generation", MODEL, {
-  dtype: DTYPE,
-  revision: REVISION,
-});
+async function loadGenerator() {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      return await pipeline("text-generation", MODEL, {
+        dtype: DTYPE,
+        revision: REVISION,
+      });
+    } catch (error) {
+      lastError = error;
+      console.error(
+        JSON.stringify({
+          event: "model_load_retry",
+          attempt,
+          maxAttempts: 3,
+          message: error instanceof Error ? error.message : String(error),
+        }),
+      );
+      if (attempt < 3) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * 5_000));
+      }
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error(String(lastError ?? "MODEL_LOAD_FAILED"));
+}
+
+const generator = await loadGenerator();
 
 console.error(
   JSON.stringify({
