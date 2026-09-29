@@ -125,6 +125,32 @@ function observedAt(
   return new Date().toISOString();
 }
 
+async function updateLinkedProviderHealth(
+  db: Postgres,
+  connectorId: string,
+  state: ProviderHealthState,
+  errorCode: string | null,
+): Promise<void> {
+  await db.pool.query(
+    `update external_object_refs r
+        set metadata=r.metadata || jsonb_build_object(
+              '_akpProvenance',
+              coalesce(r.metadata->'_akpProvenance','{}'::jsonb) ||
+              jsonb_build_object(
+                'providerHealth',$2::text,
+                'providerLastErrorCode',$3::text,
+                'providerVerified',true,
+                'observationSource','AUTHENTICATED_PROVIDER_ADAPTER'
+              )
+            ),
+            updated_at=now()
+       from external_object_provider_links l
+      where l.external_ref_id=r.id
+        and l.connector_id=$1`,
+    [connectorId, state, errorCode],
+  );
+}
+
 async function updateProviderHealth(
   db: Postgres,
   connectorId: string,
@@ -139,6 +165,7 @@ async function updateProviderHealth(
       where connector_id=$1`,
     [connectorId, state, errorCode],
   );
+  await updateLinkedProviderHealth(db, connectorId, state, errorCode);
 }
 
 export interface ProviderSyncResult {
@@ -450,6 +477,12 @@ export async function syncProviderSourceConnector(
                 updated_at=now()
           where connector_id=$1`,
         [connectorId, target.kind, target.value, finalHealth, finalErrorCode],
+      );
+      await updateLinkedProviderHealth(
+        db,
+        connectorId,
+        finalHealth,
+        finalErrorCode,
       );
     } else {
       await updateProviderHealth(
