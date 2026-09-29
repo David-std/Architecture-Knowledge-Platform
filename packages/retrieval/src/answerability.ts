@@ -126,6 +126,12 @@ export interface CandidatePassageSupport {
   matchedAnswerCues: DeterministicPassageSupportSignal["matchedAnswerCues"];
   answerCueCoverage: number;
   vectorRank: number | null;
+  claimRelationDiagnostics:
+    DeterministicPassageSupportSignal["claimRelationDiagnostics"];
+  boundedAnchorCoverage:
+    DeterministicPassageSupportSignal["boundedAnchorCoverage"];
+  boundedRelationRoleMatched:
+    DeterministicPassageSupportSignal["boundedRelationRoleMatched"];
 }
 
 export interface CandidateAnswerabilitySignal {
@@ -306,6 +312,9 @@ export function collectCandidateAnswerabilitySignals(
         matchedAnswerCues: passage.matchedAnswerCues,
         answerCueCoverage: passage.answerCueCoverage,
         vectorRank: passage.vectorRank,
+        claimRelationDiagnostics: passage.claimRelationDiagnostics,
+        boundedAnchorCoverage: passage.boundedAnchorCoverage,
+        boundedRelationRoleMatched: passage.boundedRelationRoleMatched,
         supported: supportedReason(supportReason),
         reason: supportReason,
       },
