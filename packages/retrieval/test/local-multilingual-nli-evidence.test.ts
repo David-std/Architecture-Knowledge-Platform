@@ -148,6 +148,7 @@ describe("local multilingual NLI evidence verifier", () => {
       minimumEntailmentScore: 0.7,
       minimumPolarityMargin: 0.2,
       modelDescriptor: LOCAL_MULTILINGUAL_NLI_MDEBERTA_DESCRIPTOR,
+      cacheDir: "/tmp/akp-model-cache",
       localFilesOnly: true,
       runtimeFactory: async (options) => {
         calls.push(options);
@@ -164,6 +165,7 @@ describe("local multilingual NLI evidence verifier", () => {
     expect(calls).toEqual([
       {
         ...LOCAL_MULTILINGUAL_NLI_MDEBERTA_DESCRIPTOR,
+        cacheDir: "/tmp/akp-model-cache",
         localFilesOnly: true,
       },
     ]);
