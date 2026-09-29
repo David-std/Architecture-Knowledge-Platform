@@ -751,7 +751,8 @@ describe("retrieval answerability", () => {
         "The selected mechanism keeps the domain independent from external frameworks.",
       contributions: [contribution("vector", 0.84, 3)],
     });
-    const query = "Why does the selected mechanism keep the domain independent?";
+    const query =
+      "Why does the selected mechanism keep the domain independent?";
     const baseline = assessRetrievalAnswerability([candidate], query);
     const result = await assessRetrievalAnswerabilityWithVerifier(
       [candidate],
@@ -787,8 +788,7 @@ describe("retrieval answerability", () => {
   it("enforces query-conditioned support on the exact candidate relation", async () => {
     const wrong = hit(41, {
       title: "Adapter example",
-      excerpt:
-        "The adapter defines a uniqueness strategy for generated keys.",
+      excerpt: "The adapter defines a uniqueness strategy for generated keys.",
       contributions: [contribution("vector", 0.93, 1)],
     });
     const correct = hit(42, {

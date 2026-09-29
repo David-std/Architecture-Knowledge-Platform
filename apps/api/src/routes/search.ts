@@ -3778,8 +3778,7 @@ export function registerSearchRoutes(
               ...(dependencies.evidenceVerifierMaxCandidates === undefined
                 ? {}
                 : {
-                    maxCandidates:
-                      dependencies.evidenceVerifierMaxCandidates,
+                    maxCandidates: dependencies.evidenceVerifierMaxCandidates,
                   }),
             },
             {},
@@ -4774,8 +4773,7 @@ export function registerSearchRoutes(
               ...(dependencies.evidenceVerifierMaxCandidates === undefined
                 ? {}
                 : {
-                    maxCandidates:
-                      dependencies.evidenceVerifierMaxCandidates,
+                    maxCandidates: dependencies.evidenceVerifierMaxCandidates,
                   }),
             },
             {},

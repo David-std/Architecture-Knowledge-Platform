@@ -36,9 +36,7 @@ export interface RetrievalAnswerabilityContext {
 }
 
 export type QueryConditionedEvidenceDecision =
-  | "SUPPORTS"
-  | "CONTRADICTS"
-  | "INSUFFICIENT";
+  "SUPPORTS" | "CONTRADICTS" | "INSUFFICIENT";
 
 export type QueryConditionedEvidenceVerifierMode = "SHADOW" | "ENFORCE";
 
@@ -92,9 +90,7 @@ export interface QueryConditionedEvidenceTrace {
   verifierId: string;
   mode: QueryConditionedEvidenceVerifierMode;
   decision:
-    | QueryConditionedEvidenceDecision
-    | "VERIFIER_ERROR"
-    | "NOT_VERIFIED";
+    QueryConditionedEvidenceDecision | "VERIFIER_ERROR" | "NOT_VERIFIED";
   score: number | null;
   reason: string;
   evidenceSpan: QueryConditionedEvidenceSpan | null;
@@ -442,7 +438,9 @@ function resolveQueryConditionedEvidencePolicy(
 ): QueryConditionedEvidencePolicy {
   const mode = input.mode ?? DEFAULT_QUERY_CONDITIONED_EVIDENCE_POLICY.mode;
   if (mode !== "SHADOW" && mode !== "ENFORCE") {
-    throw new Error("query-conditioned evidence mode must be SHADOW or ENFORCE");
+    throw new Error(
+      "query-conditioned evidence mode must be SHADOW or ENFORCE",
+    );
   }
   const integer = (value: number, field: string): number => {
     if (!Number.isSafeInteger(value) || value < 1 || value > 256) {
@@ -617,9 +615,8 @@ export async function assessRetrievalAnswerabilityWithVerifier(
   policyInput: RetrievalAnswerabilityPolicyInput = {},
   context: RetrievalAnswerabilityContext = {},
 ): Promise<RetrievalAnswerabilityAssessment> {
-  const verifierPolicy = resolveQueryConditionedEvidencePolicy(
-    verifierPolicyInput,
-  );
+  const verifierPolicy =
+    resolveQueryConditionedEvidencePolicy(verifierPolicyInput);
   const baseline = assessRetrievalAnswerability(
     hits,
     query,
@@ -685,4 +682,3 @@ export async function assessRetrievalAnswerabilityWithVerifier(
     candidateSignals,
   };
 }
-
