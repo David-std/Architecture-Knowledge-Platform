@@ -32,7 +32,7 @@ async function insertToken(userId: string, value: string): Promise<void> {
           {
             spaceId,
             pathPrefix: null,
-            permissions: ["knowledge:read", "source:read"],
+            permissions: ["knowledge:read", "knowledge:propose", "source:read"],
           },
         ],
       }),
@@ -83,7 +83,7 @@ beforeAll(async () => {
       vaultId: vault,
       role: "VIEWER",
       pathPrefix: null,
-      permissions: ["knowledge:read", "source:read"],
+      permissions: ["knowledge:read", "knowledge:propose", "source:read"],
     });
   }
   await insertToken(actorId, token);

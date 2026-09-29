@@ -65,7 +65,7 @@ beforeAll(async () => {
     vaultId,
     role: "VIEWER",
     pathPrefix: null,
-    permissions: ["knowledge:read", "source:read"],
+    permissions: ["knowledge:read", "knowledge:propose", "source:read"],
   });
   await db.pool.query(
     `insert into api_tokens(user_id,token_hash,label,scopes)
@@ -78,7 +78,7 @@ beforeAll(async () => {
           {
             spaceId,
             pathPrefix: null,
-            permissions: ["knowledge:read", "source:read"],
+            permissions: ["knowledge:read", "knowledge:propose", "source:read"],
           },
         ],
       }),
