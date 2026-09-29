@@ -492,11 +492,7 @@ function semanticTokens(value: string): string[] {
   ];
 }
 
-const YES_NO_RELATION_PREDICATES = new Set([
-  "define",
-  "require",
-  "points",
-]);
+const YES_NO_RELATION_PREDICATES = new Set(["define", "require", "points"]);
 
 interface QueryRelationRoles {
   predicates: string[];
