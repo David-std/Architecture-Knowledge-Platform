@@ -570,18 +570,27 @@ describe("reasoning executor", () => {
       },
     };
     const later = vi.fn();
+    let observedAbort = false;
     const result = await executeReasoningPlan(plan, validationContext(), {
       ports: {
         SEARCH_LEXICAL: async ({ step, signal }) => {
           if (step.id === "later") return later();
           await new Promise<void>((resolve) => {
-            signal.addEventListener("abort", () => resolve(), { once: true });
+            signal.addEventListener(
+              "abort",
+              () => {
+                observedAbort = true;
+                resolve();
+              },
+              { once: true },
+            );
           });
-          throw new Error("PORT_OBSERVED_ABORT");
+          return documentValue("doc:aborted");
         },
       },
     });
 
+    expect(observedAbort).toBe(true);
     expect(result.status).toBe("FAILED");
     if (result.status === "REJECTED") throw new Error("unexpected rejection");
     expect(later).not.toHaveBeenCalled();
