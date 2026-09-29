@@ -348,8 +348,7 @@ describe("retrieval answerability", () => {
   it("requires an explicit year when the question asks which year", () => {
     const topical = hit(22, {
       title: "Compatibility window history",
-      excerpt:
-        "The compatibility window ended after the migration review.",
+      excerpt: "The compatibility window ended after the migration review.",
       contributions: [contribution("vector", 0.93, 1)],
     });
     const result = assessRetrievalAnswerability(
