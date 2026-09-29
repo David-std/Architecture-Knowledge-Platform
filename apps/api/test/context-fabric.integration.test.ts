@@ -468,7 +468,7 @@ describe("team context fabric integration", () => {
       operation: "DELETE",
       objectId: "provider-object-1",
       objectType: "ISSUE",
-      sourceVersion: "provider-v3",
+      sourceVersion: "2026-09-28T10:10:00.000Z",
       permissionFidelity: "SOURCE_ACL_MAPPED",
       permissionUncertain: true,
       aclFingerprint: "provider-acl-v3",
