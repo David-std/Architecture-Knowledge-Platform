@@ -115,9 +115,10 @@ afterAll(async () => {
       [[actorId, adminId], sessionId],
     );
     if (createdSessionIds.length) {
-      await db.pool.query("delete from agent_sessions where id=any($1::uuid[])", [
-        createdSessionIds,
-      ]);
+      await db.pool.query(
+        "delete from agent_sessions where id=any($1::uuid[])",
+        [createdSessionIds],
+      );
     }
     await db.pool.query(
       "delete from idempotency_records where actor_id=any($1::uuid[])",
@@ -309,9 +310,11 @@ describe("team context fabric integration", () => {
     });
     expect(providerObjects.statusCode, providerObjects.body).toBe(200);
     expect(
-      (providerObjects.json() as {
-        objects: Array<Record<string, unknown>>;
-      }).objects,
+      (
+        providerObjects.json() as {
+          objects: Array<Record<string, unknown>>;
+        }
+      ).objects,
     ).toContainEqual(
       expect.objectContaining({
         connectorId: providerConnectorId,
@@ -420,7 +423,9 @@ describe("team context fabric integration", () => {
         identifier: "ENG-101",
         canonicalUrl: "https://linear.app/example/issue/ENG-101",
       },
-      payloadHash: createHash("sha256").update("provider-update-2").digest("hex"),
+      payloadHash: createHash("sha256")
+        .update("provider-update-2")
+        .digest("hex"),
     });
     expect(
       await applyNextSourceConnectorEvent(db, {
@@ -468,7 +473,9 @@ describe("team context fabric integration", () => {
       permissionUncertain: true,
       aclFingerprint: "provider-acl-v3",
       metadata: { provider: "linear", deleted: true },
-      payloadHash: createHash("sha256").update("provider-delete-3").digest("hex"),
+      payloadHash: createHash("sha256")
+        .update("provider-delete-3")
+        .digest("hex"),
     });
     expect(
       await applyNextSourceConnectorEvent(db, {
@@ -478,10 +485,9 @@ describe("team context fabric integration", () => {
     const tombstoned = await db.pool.query<{
       authority: string;
       metadata: Record<string, unknown>;
-    }>(
-      `select authority,metadata from external_object_refs where id=$1`,
-      [providerRefBody.id],
-    );
+    }>(`select authority,metadata from external_object_refs where id=$1`, [
+      providerRefBody.id,
+    ]);
     expect(tombstoned.rows[0]).toMatchObject({
       authority: "MIRRORED_PROJECTION",
       metadata: {
