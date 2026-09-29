@@ -430,6 +430,31 @@ describe("project scan Code Graph request", () => {
     ).toBe(true);
   });
 
+  it("keeps dependency rationale conceptual when intent and PROJECT_CODE mode are not requested", async () => {
+    expect(projectId).not.toBe("");
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/context",
+      headers: { authorization: headers.authorization },
+      payload: {
+        query: "Why do dependencies point inward toward domain policies?",
+        projectId,
+        spaceId,
+        vaultId,
+        maxTokens: 2048,
+      },
+    });
+
+    expect(response.statusCode, response.body).toBe(200);
+    const packet = response.json() as {
+      intent: string;
+      searchedChannels: string[];
+    };
+    expect(packet.intent).toBe("CONCEPTUAL");
+    expect(packet.searchedChannels).not.toContain("code");
+  });
+
   it("derives commit delta impact from the authorized Git checkout and keeps ambiguity explicit", async () => {
     expect(projectId).not.toBe("");
     const identity = projectCodeGraphIdentity(vaultId, slug);
