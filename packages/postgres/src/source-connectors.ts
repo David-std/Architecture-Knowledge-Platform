@@ -376,6 +376,42 @@ export async function applyNextSourceConnectorEvent(
           event.occurred_at,
         ],
       );
+      await client.query(
+        `update external_object_refs r
+            set source_revision=$3,
+                title=coalesce($4,r.title),
+                canonical_url=coalesce($5::jsonb->>'canonicalUrl',r.canonical_url),
+                authority='MIRRORED_PROJECTION',
+                metadata=$5::jsonb || jsonb_build_object(
+                  '_akpProvenance',
+                  coalesce(r.metadata->'_akpProvenance','{}'::jsonb) ||
+                  jsonb_build_object(
+                    'observationSource','AUTHENTICATED_PROVIDER_ADAPTER',
+                    'providerVerified',true,
+                    'connectorId',$1::text,
+                    'providerObjectId',$2::text,
+                    'providerHealth','AVAILABLE',
+                    'providerLastErrorCode',null,
+                    'lifecycle',$6::text
+                  )
+                ),
+                observed_at=$7::timestamptz,
+                updated_at=now()
+           from external_object_provider_links l
+          where l.external_ref_id=r.id
+            and l.connector_id=$1
+            and l.object_id=$2`,
+        [
+          event.connector_id,
+          event.object_id,
+          event.source_version,
+          event.title ?? null,
+          JSON.stringify(event.metadata ?? {}),
+          lifecycle,
+          event.occurred_at,
+        ],
+      );
+
       const eventUpdated = await client.query(
         `update source_connector_events
             set status='APPLIED',applied_at=now(),error_code=null,
