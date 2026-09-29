@@ -1,9 +1,4 @@
-import {
-  createHmac,
-  generateKeyPairSync,
-  randomUUID,
-  sign,
-} from "node:crypto";
+import { createHmac, generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   Postgres,
@@ -90,8 +85,7 @@ describeDb("authenticated generic source connector webhook", () => {
     });
     connectorId = String(connector.id);
 
-    previousProviderWebhookSecret =
-      process.env.AKP_TEST_LINEAR_WEBHOOK_SECRET;
+    previousProviderWebhookSecret = process.env.AKP_TEST_LINEAR_WEBHOOK_SECRET;
     process.env.AKP_TEST_LINEAR_WEBHOOK_SECRET = providerWebhookSecret;
     const providerConnector = await registerSourceConnector(db, {
       spaceId,
