@@ -69,11 +69,17 @@ function normalize(
 export function quarantineResourceKey(
   eventId: string,
   consumerName: string,
+  quarantineId: string | number,
 ): string {
-  if (!eventId.trim() || !consumerName.trim()) {
+  const normalizedQuarantineId = String(quarantineId).trim();
+  if (
+    !eventId.trim() ||
+    !consumerName.trim() ||
+    !/^[1-9][0-9]*$/u.test(normalizedQuarantineId)
+  ) {
     throw new Error("OPERATIONAL_RECONCILIATION_RESOURCE_REQUIRED");
   }
-  return `${eventId.trim()}:${consumerName.trim()}`;
+  return `${eventId.trim()}:${consumerName.trim()}:quarantine:${normalizedQuarantineId}`;
 }
 
 export async function reconcileEventQuarantine(
@@ -96,11 +102,12 @@ export async function reconcileEventQuarantine(
     await client.query("begin");
     const evidence = requireDispositionEvidence(input);
     const source = await client.query<{
+      quarantine_id: string | number;
       space_id: string | null;
       vault_id: string | null;
       delivery_status: string | null;
     }>(
-      `select o.space_id,o.vault_id,d.status delivery_status
+      `select q.id quarantine_id,o.space_id,o.vault_id,d.status delivery_status
          from event_quarantine q
          join event_outbox o on o.event_id=q.event_id
          left join event_deliveries d
@@ -128,7 +135,11 @@ export async function reconcileEventQuarantine(
        on conflict(resource_type,resource_key,environment) do nothing
        returning *`,
       [
-        quarantineResourceKey(input.eventId, input.consumerName),
+        quarantineResourceKey(
+          input.eventId,
+          input.consumerName,
+          row.quarantine_id,
+        ),
         row.space_id,
         row.vault_id,
         input.environment?.trim() || "default",
