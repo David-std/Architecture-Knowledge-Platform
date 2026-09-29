@@ -558,11 +558,7 @@ export function registerContextFabricRoutes(
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
       const connectorId = safeText(request.body?.connectorId, 64);
       const objectId = safeText(request.body?.objectId, 2048);
-      if (
-        !connectorId ||
-        !UUID_PATTERN.test(connectorId) ||
-        !objectId
-      ) {
+      if (!connectorId || !UUID_PATTERN.test(connectorId) || !objectId) {
         return reply.code(400).send({ code: "INVALID_PROVIDER_OBJECT_REF" });
       }
       const requestedClass = request.body?.workObjectClass
