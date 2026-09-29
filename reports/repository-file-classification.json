@@ -3302,6 +3302,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/retrieval/src/local-multilingual-qa-evidence.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/retrieval/src/local-semantic-embedding.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3413,6 +3418,11 @@
     },
     {
       "path": "packages/retrieval/test/embeddings.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/local-multilingual-qa-evidence.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
