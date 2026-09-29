@@ -2728,6 +2728,27 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /v1/sessions/{id}/provider-objects:
+    get:
+      tags: [Sessions]
+      operationId: listSessionProviderObjects
+      x-akp-permission: knowledge:read
+      description: >
+        Lists active external objects synchronized into the session vault by
+        authenticated read-only provider adapters. Provider credentials and
+        connector configuration are never returned, and these projections are
+        not approved AKP knowledge.
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /v1/sessions/{id}/provider-refs:
     post:
       tags: [Sessions]
