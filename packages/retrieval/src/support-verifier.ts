@@ -518,6 +518,11 @@ function passageWindows(passage: string): string[] {
   ];
 }
 
+const CUE_TOKENS_THAT_REMAIN_PREDICATE_ANCHORS = new Set([
+  "duplicate",
+  "repeat",
+]);
+
 function queryPredicateAnchors(
   query: string,
   requirements: readonly PassageAnswerCue[],
@@ -528,7 +533,9 @@ function queryPredicateAnchors(
       for (const token of normalizedAnswerabilityTokens(
         pattern.replace("*", ""),
       )) {
-        requirementWords.add(canonicalSemanticToken(token));
+        const canonical = canonicalSemanticToken(token);
+        if (CUE_TOKENS_THAT_REMAIN_PREDICATE_ANCHORS.has(canonical)) continue;
+        requirementWords.add(canonical);
       }
     }
   }
