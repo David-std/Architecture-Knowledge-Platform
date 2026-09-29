@@ -512,7 +512,7 @@ describe("retrieval answerability", () => {
 
   it("rescues a human-reviewed claim when the relation object is a bounded paraphrase", () => {
     const correctClaim = hit(40, {
-      title: "Local patterns and architecture",
+      title: "Local pattern scope",
       type: "claim",
       excerpt:
         "Strategy y Adapter son patrones locales. No determinan el conjunto de módulos, límites ni la dirección global de dependencias.",
@@ -579,7 +579,7 @@ describe("retrieval answerability", () => {
 
   it("does not apply claim relation fallback to unreviewed claims", () => {
     const unreviewed = hit(43, {
-      title: "Local patterns and architecture",
+      title: "Local pattern scope",
       type: "claim",
       trust: "UNTRUSTED_EXTERNAL",
       excerpt:
