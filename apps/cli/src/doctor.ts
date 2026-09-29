@@ -852,9 +852,18 @@ export async function runDoctor(
             select count(*)::int
               from event_deliveries d
               join event_outbox o on o.event_id=d.event_id
+              left join lateral (
+                select q.id
+                  from event_quarantine q
+                 where q.event_id=d.event_id
+                   and q.consumer_name=d.consumer_name
+                 order by q.quarantined_at desc,q.id desc
+                 limit 1
+              ) q on true
               left join operational_reconciliations r
                 on r.resource_type='EVENT_QUARANTINE'
-               and r.resource_key=d.event_id::text || ':' || d.consumer_name
+               and r.resource_key=d.event_id::text || ':' || d.consumer_name ||
+                    ':quarantine:' || q.id::text
                and r.environment=$2
              where d.status='QUARANTINED'
                and ($1::uuid is null or o.vault_id=$1::uuid)
@@ -864,9 +873,18 @@ export async function runDoctor(
             select count(*)::int
               from event_deliveries d
               join event_outbox o on o.event_id=d.event_id
+              join lateral (
+                select q.id
+                  from event_quarantine q
+                 where q.event_id=d.event_id
+                   and q.consumer_name=d.consumer_name
+                 order by q.quarantined_at desc,q.id desc
+                 limit 1
+              ) q on true
               join operational_reconciliations r
                 on r.resource_type='EVENT_QUARANTINE'
-               and r.resource_key=d.event_id::text || ':' || d.consumer_name
+               and r.resource_key=d.event_id::text || ':' || d.consumer_name ||
+                    ':quarantine:' || q.id::text
                and r.environment=$2
              where d.status='QUARANTINED'
                and ($1::uuid is null or o.vault_id=$1::uuid)
