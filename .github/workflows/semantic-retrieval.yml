@@ -12,7 +12,7 @@ concurrency:
 jobs:
   real-multilingual-semantic-retrieval:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     env:
       DATABASE_URL: postgres://akp:akp@localhost:55432/akp
       AKP_RUN_REAL_MODEL_TESTS: "1"
@@ -147,6 +147,13 @@ jobs:
             alternatives: report.alternatives,
           }, null, 2));
           NODE
+      - name: Measure query-conditioned evidence verifier in shadow mode
+        shell: bash
+        run: |
+          set -o pipefail
+          AKP_EVIDENCE_VERIFIER_SHADOW_REPORT=reports/ci/evidence-verifier-shadow-benchmark.json \
+            pnpm benchmark:evidence-verifier-shadow \
+            2>&1 | tee reports/ci/evidence-verifier-shadow-benchmark.log
       - name: Execute pinned multilingual semantic retrieval end to end
         shell: bash
         run: |

@@ -3677,6 +3677,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "scripts/evidence-verifier-shadow-benchmark.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "scripts/filtered-ann-baseline.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"

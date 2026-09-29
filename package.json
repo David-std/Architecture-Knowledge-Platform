@@ -60,7 +60,8 @@
     "benchmark:registered-temporal-truth-metrics": "tsx scripts/registered-temporal-truth-metrics.ts",
     "benchmark:registered-workspace-team-metrics": "tsx scripts/registered-workspace-team-metrics.ts",
     "benchmark:registered-retrieval-diagnostics": "tsx scripts/registered-retrieval-diagnostics.ts",
-    "assurance:deep-spec": "node scripts/deep-spec-traceability.mjs"
+    "assurance:deep-spec": "node scripts/deep-spec-traceability.mjs",
+    "benchmark:evidence-verifier-shadow": "tsx scripts/evidence-verifier-shadow-benchmark.ts"
   },
   "devDependencies": {
     "@types/mime-types": "^3.0.1",
