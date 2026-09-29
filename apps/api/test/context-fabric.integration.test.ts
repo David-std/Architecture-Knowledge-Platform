@@ -359,6 +359,49 @@ describe("team context fabric integration", () => {
     });
     expect(JSON.stringify(providerRefBody)).not.toContain("client-forged");
 
+    const secondSessionResponse = await app.inject({
+      method: "POST",
+      url: "/v1/sessions",
+      headers,
+      payload: {
+        spaceId,
+        vaultId,
+        purpose: "Second provider reference session",
+        contextBudget: 1024,
+      },
+    });
+    expect(secondSessionResponse.statusCode).toBe(201);
+    const secondSessionId = (secondSessionResponse.json() as { id: string }).id;
+    const secondProviderRef = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${secondSessionId}/provider-refs`,
+      headers,
+      payload: {
+        connectorId: providerConnectorId,
+        objectId: "provider-object-1",
+        workObjectClass: "WORK_ITEM",
+      },
+    });
+    expect(secondProviderRef.statusCode, secondProviderRef.body).toBe(201);
+    expect((secondProviderRef.json() as { id: string }).id).not.toBe(
+      providerRefBody.id,
+    );
+    const firstSessionRefsAfterSecondLink = await app.inject({
+      method: "GET",
+      url: `/v1/sessions/${sessionId}/external-refs`,
+      headers,
+    });
+    expect(
+      (
+        firstSessionRefsAfterSecondLink.json() as {
+          refs: Array<{ id: string }>;
+        }
+      ).refs,
+    ).toContainEqual(expect.objectContaining({ id: providerRefBody.id }));
+    await db.pool.query("delete from agent_sessions where id=$1", [
+      secondSessionId,
+    ]);
+
     await appendSourceConnectorEvent(db, {
       connectorId: providerConnectorId,
       eventId: "provider-update-2",
