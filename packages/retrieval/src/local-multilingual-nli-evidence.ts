@@ -1,0 +1,384 @@
+import type {
+  QueryConditionedEvidenceVerification,
+  QueryConditionedEvidenceVerifier,
+  QueryConditionedEvidenceVerifierInput,
+} from "./answerability.js";
+import { resolveLocalSemanticCacheDir } from "./local-semantic-embedding.js";
+
+/**
+ * Pinned source revision containing the ONNX export and tokenizer.
+ *
+ * The model card describes this MiniLMv2 model as multilingual NLI trained
+ * with MNLI and XNLI. The adapter remains shadow-only until AKP's own
+ * source-disjoint evaluation calibrates it.
+ */
+export const LOCAL_MULTILINGUAL_NLI_MODEL =
+  "MoritzLaurer/multilingual-MiniLMv2-L6-mnli-xnli";
+export const LOCAL_MULTILINGUAL_NLI_REVISION =
+  "0a71e92a985b6e1ad1828cf67ce9c459639c1dca";
+
+export interface LocalMultilingualNliDistribution {
+  readonly entailment: number;
+  readonly neutral: number;
+  readonly contradiction: number;
+}
+
+export interface LocalMultilingualNliRuntime {
+  infer(
+    premise: string,
+    hypothesis: string,
+  ): Promise<LocalMultilingualNliDistribution>;
+  readonly dispose?: () => Promise<void> | void;
+}
+
+export interface LocalMultilingualNliRuntimeLoadOptions {
+  readonly model: typeof LOCAL_MULTILINGUAL_NLI_MODEL;
+  readonly revision: typeof LOCAL_MULTILINGUAL_NLI_REVISION;
+  readonly cacheDir?: string;
+  readonly localFilesOnly: boolean;
+}
+
+export type LocalMultilingualNliRuntimeFactory = (
+  options: LocalMultilingualNliRuntimeLoadOptions,
+) => Promise<LocalMultilingualNliRuntime>;
+
+export interface LocalMultilingualNliEvidenceVerifierOptions {
+  readonly minimumEntailmentScore: number;
+  readonly minimumPolarityMargin: number;
+  readonly cacheDir?: string;
+  readonly localFilesOnly?: boolean;
+  readonly runtimeFactory?: LocalMultilingualNliRuntimeFactory;
+}
+
+interface RelationHypotheses {
+  positive: string;
+  negative: string;
+}
+
+interface PassageWindow {
+  text: string;
+  premise: string;
+  startOffset: number;
+  endOffset: number;
+}
+
+function probability(value: number, field: string): number {
+  if (!Number.isFinite(value) || value < 0 || value > 1) {
+    throw new Error(`${field} must be a finite number between 0 and 1`);
+  }
+  return value;
+}
+
+function normalizeDistribution(
+  values: readonly number[],
+): LocalMultilingualNliDistribution {
+  if (values.length !== 3 || values.some((value) => !Number.isFinite(value))) {
+    throw new Error("LOCAL_MULTILINGUAL_NLI_LOGITS_INVALID");
+  }
+  const max = Math.max(...values);
+  const exps = values.map((value) => Math.exp(value - max));
+  const total = exps.reduce((sum, value) => sum + value, 0);
+  if (!Number.isFinite(total) || total <= 0) {
+    throw new Error("LOCAL_MULTILINGUAL_NLI_SOFTMAX_INVALID");
+  }
+  return {
+    entailment: exps[0]! / total,
+    neutral: exps[1]! / total,
+    contradiction: exps[2]! / total,
+  };
+}
+
+function conjugateThirdPerson(verb: string): string {
+  if (/(?:s|x|z|ch|sh)$/iu.test(verb)) return `${verb}es`;
+  if (/[^aeiou]y$/iu.test(verb)) return `${verb.slice(0, -1)}ies`;
+  return `${verb}s`;
+}
+
+function relationHypotheses(query: string): RelationHypotheses | null {
+  const normalized = query
+    .trim()
+    .replace(/^¿\s*/u, "")
+    .replace(/[?？]+\s*$/u, "")
+    .trim();
+  const match =
+    /^(do|does|did|can|could|should|must|will|would)\s+(.+?)\s+(define|determine|require|govern|control|establish|set|prevent|allow)\s+(.+)$/iu.exec(
+      normalized,
+    );
+  if (!match) return null;
+
+  const auxiliary = match[1]!.toLocaleLowerCase("en-US");
+  const subject = match[2]!.trim();
+  const verb = match[3]!.toLocaleLowerCase("en-US");
+  const object = match[4]!.trim();
+
+  if (auxiliary === "do") {
+    return {
+      positive: `${subject} ${verb} ${object}.`,
+      negative: `${subject} do not ${verb} ${object}.`,
+    };
+  }
+  if (auxiliary === "does") {
+    return {
+      positive: `${subject} ${conjugateThirdPerson(verb)} ${object}.`,
+      negative: `${subject} does not ${verb} ${object}.`,
+    };
+  }
+  if (auxiliary === "did") {
+    return {
+      positive: `${subject} did ${verb} ${object}.`,
+      negative: `${subject} did not ${verb} ${object}.`,
+    };
+  }
+  return {
+    positive: `${subject} ${auxiliary} ${verb} ${object}.`,
+    negative: `${subject} ${auxiliary} not ${verb} ${object}.`,
+  };
+}
+
+function passageWindows(passage: string, title?: string): PassageWindow[] {
+  const windows: PassageWindow[] = [];
+  const matcher = /[^.!?;\n]+(?:[.!?;]|$)/gu;
+  for (const match of passage.matchAll(matcher)) {
+    if (match.index === undefined) continue;
+    const raw = match[0];
+    const leading = raw.length - raw.trimStart().length;
+    const trailing = raw.length - raw.trimEnd().length;
+    const startOffset = match.index + leading;
+    const endOffset = match.index + raw.length - trailing;
+    if (endOffset <= startOffset) continue;
+    const text = passage.slice(startOffset, endOffset);
+    windows.push({
+      text,
+      premise: title?.trim() ? `${title.trim()}: ${text}` : text,
+      startOffset,
+      endOffset,
+    });
+  }
+  if (windows.length > 0) return windows;
+  const text = passage.trim();
+  const startOffset = passage.indexOf(text);
+  return text
+    ? [
+        {
+          text,
+          premise: title?.trim() ? `${title.trim()}: ${text}` : text,
+          startOffset,
+          endOffset: startOffset + text.length,
+        },
+      ]
+    : [];
+}
+
+function entailmentIsTop(
+  distribution: LocalMultilingualNliDistribution,
+): boolean {
+  return (
+    distribution.entailment > distribution.neutral &&
+    distribution.entailment > distribution.contradiction
+  );
+}
+
+export const defaultLocalMultilingualNliRuntimeFactory: LocalMultilingualNliRuntimeFactory =
+  async (options) => {
+    const { AutoModelForSequenceClassification, AutoTokenizer } = await import(
+      "@huggingface/transformers"
+    );
+    const cacheOptions = {
+      revision: options.revision,
+      local_files_only: options.localFilesOnly,
+      ...(options.cacheDir === undefined
+        ? {}
+        : { cache_dir: options.cacheDir }),
+    };
+    const tokenizer = await AutoTokenizer.from_pretrained(
+      options.model,
+      cacheOptions,
+    );
+    const model = await AutoModelForSequenceClassification.from_pretrained(
+      options.model,
+      {
+        ...cacheOptions,
+        subfolder: "onnx",
+        model_file_name: "model",
+        device: "cpu",
+        dtype: "fp32",
+      },
+    );
+
+    return {
+      infer: async (premise, hypothesis) => {
+        const inputs = await tokenizer(premise, {
+          text_pair: hypothesis,
+          truncation: true,
+          max_length: 512,
+        });
+        const output = (await model(inputs)) as unknown as {
+          logits?: { data?: ArrayLike<number> };
+        };
+        const data = output.logits?.data;
+        if (!data || data.length < 3) {
+          throw new Error("LOCAL_MULTILINGUAL_NLI_LOGITS_MISSING");
+        }
+        return normalizeDistribution([
+          Number(data[0]),
+          Number(data[1]),
+          Number(data[2]),
+        ]);
+      },
+      dispose: async () => {
+        await model.dispose?.();
+      },
+    };
+  };
+
+export class LocalMultilingualNliEvidenceVerifier
+  implements QueryConditionedEvidenceVerifier
+{
+  readonly id: string;
+
+  private readonly minimumEntailmentScore: number;
+  private readonly minimumPolarityMargin: number;
+  private readonly cacheDir: string | undefined;
+  private readonly localFilesOnly: boolean;
+  private readonly runtimeFactory: LocalMultilingualNliRuntimeFactory;
+  private runtimePromise: Promise<LocalMultilingualNliRuntime> | undefined;
+
+  constructor(options: LocalMultilingualNliEvidenceVerifierOptions) {
+    this.minimumEntailmentScore = probability(
+      options.minimumEntailmentScore,
+      "local multilingual NLI minimumEntailmentScore",
+    );
+    this.minimumPolarityMargin = probability(
+      options.minimumPolarityMargin,
+      "local multilingual NLI minimumPolarityMargin",
+    );
+    this.cacheDir = resolveLocalSemanticCacheDir(options.cacheDir);
+    this.localFilesOnly = options.localFilesOnly ?? false;
+    this.runtimeFactory =
+      options.runtimeFactory ?? defaultLocalMultilingualNliRuntimeFactory;
+    this.id =
+      `local-multilingual-nli@${LOCAL_MULTILINGUAL_NLI_REVISION}:entail=${this.minimumEntailmentScore}:margin=${this.minimumPolarityMargin}`;
+  }
+
+  async verify(
+    input: QueryConditionedEvidenceVerifierInput,
+  ): Promise<QueryConditionedEvidenceVerification> {
+    const hypotheses = relationHypotheses(input.query);
+    if (!hypotheses) {
+      return {
+        decision: "INSUFFICIENT",
+        reason: "LOCAL_MULTILINGUAL_NLI_QUERY_SHAPE_UNSUPPORTED",
+      };
+    }
+
+    const windows = passageWindows(input.passage, input.title);
+    if (windows.length === 0) {
+      return {
+        decision: "INSUFFICIENT",
+        reason: "LOCAL_MULTILINGUAL_NLI_EMPTY_PASSAGE",
+      };
+    }
+
+    const runtime = await this.getRuntime();
+    let best:
+      | {
+          score: number;
+          oppositeScore: number;
+          direction: "POSITIVE" | "NEGATIVE";
+          span: { startOffset: number; endOffset: number };
+          distribution: LocalMultilingualNliDistribution;
+        }
+      | undefined;
+
+    for (const window of windows) {
+      const [positive, negative] = await Promise.all([
+        runtime.infer(window.premise, hypotheses.positive),
+        runtime.infer(window.premise, hypotheses.negative),
+      ]);
+      const choices = [
+        {
+          score: positive.entailment,
+          oppositeScore: negative.entailment,
+          direction: "POSITIVE" as const,
+          distribution: positive,
+        },
+        {
+          score: negative.entailment,
+          oppositeScore: positive.entailment,
+          direction: "NEGATIVE" as const,
+          distribution: negative,
+        },
+      ];
+      for (const choice of choices) {
+        if (!entailmentIsTop(choice.distribution)) continue;
+        if (
+          !best ||
+          choice.score > best.score ||
+          (choice.score === best.score &&
+            choice.oppositeScore < best.oppositeScore)
+        ) {
+          best = {
+            ...choice,
+            span: {
+              startOffset: window.startOffset,
+              endOffset: window.endOffset,
+            },
+          };
+        }
+      }
+    }
+
+    if (!best) {
+      return {
+        decision: "INSUFFICIENT",
+        reason: "LOCAL_MULTILINGUAL_NLI_NO_ENTAILED_POLARITY",
+      };
+    }
+    if (best.score < this.minimumEntailmentScore) {
+      return {
+        decision: "INSUFFICIENT",
+        score: best.score,
+        reason: "LOCAL_MULTILINGUAL_NLI_BELOW_CALIBRATED_THRESHOLD",
+      };
+    }
+    if (best.score - best.oppositeScore < this.minimumPolarityMargin) {
+      return {
+        decision: "INSUFFICIENT",
+        score: best.score,
+        reason: "LOCAL_MULTILINGUAL_NLI_POLARITY_AMBIGUOUS",
+      };
+    }
+
+    return {
+      decision: "SUPPORTS",
+      score: best.score,
+      evidenceSpan: best.span,
+      reason:
+        best.direction === "POSITIVE"
+          ? "LOCAL_MULTILINGUAL_NLI_POSITIVE_ANSWER_SUPPORT"
+          : "LOCAL_MULTILINGUAL_NLI_NEGATIVE_ANSWER_SUPPORT",
+    };
+  }
+
+  async dispose(): Promise<void> {
+    const runtime = await this.runtimePromise;
+    await runtime?.dispose?.();
+    this.runtimePromise = undefined;
+  }
+
+  private async getRuntime(): Promise<LocalMultilingualNliRuntime> {
+    if (this.runtimePromise === undefined) {
+      const pending = this.runtimeFactory({
+        model: LOCAL_MULTILINGUAL_NLI_MODEL,
+        revision: LOCAL_MULTILINGUAL_NLI_REVISION,
+        localFilesOnly: this.localFilesOnly,
+        ...(this.cacheDir === undefined ? {} : { cacheDir: this.cacheDir }),
+      });
+      this.runtimePromise = pending.catch((error: unknown) => {
+        this.runtimePromise = undefined;
+        throw error;
+      });
+    }
+    return this.runtimePromise;
+  }
+}
