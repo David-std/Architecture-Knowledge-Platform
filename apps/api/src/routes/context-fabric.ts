@@ -27,6 +27,7 @@ import {
   markContextFabricPeerQueryFailure,
   markContextFabricPeerQuerySuccess,
   listExternalObjectRefsForSession,
+  linkProviderObjectRef,
   isWorkActivityAction,
   isWorkObjectClass,
   isWorkActivityDerivation,
@@ -456,6 +457,75 @@ export function registerContextFabricRoutes(
           sessionId: session.id,
           provider,
           objectType,
+        },
+        session.spaceId,
+      );
+      return reply.code(201).send(ref);
+    },
+  );
+
+  app.post<{
+    Params: { id: string };
+    Body: {
+      connectorId?: string;
+      objectId?: string;
+      workObjectClass?: string;
+    };
+  }>(
+    "/v1/sessions/:id/provider-refs",
+    {
+      preHandler: [
+        requirePermission("knowledge:propose"),
+        requirePrincipalAction("knowledge:propose"),
+      ],
+    },
+    async (request, reply) => {
+      const session = await authorizedSession(
+        db,
+        request,
+        reply,
+        request.params.id,
+      );
+      if (!session) return;
+      const actor = actorOf(request);
+      if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
+      const connectorId = safeText(request.body?.connectorId, 64);
+      const objectId = safeText(request.body?.objectId, 2048);
+      if (
+        !connectorId ||
+        !UUID_PATTERN.test(connectorId) ||
+        !objectId
+      ) {
+        return reply.code(400).send({ code: "INVALID_PROVIDER_OBJECT_REF" });
+      }
+      const requestedClass = request.body?.workObjectClass
+        ?.trim()
+        .toUpperCase();
+      if (requestedClass && !isWorkObjectClass(requestedClass)) {
+        return reply.code(400).send({ code: "INVALID_WORK_OBJECT_CLASS" });
+      }
+      const ref = await linkProviderObjectRef(db, {
+        sessionId: session.id,
+        actorId: actor.id,
+        connectorId,
+        objectId,
+        ...(requestedClass && isWorkObjectClass(requestedClass)
+          ? { workObjectClass: requestedClass }
+          : {}),
+      });
+      await audit(
+        db,
+        request,
+        "context_fabric.provider_ref.link",
+        "external_object_ref",
+        ref.id,
+        {
+          vaultId: session.vaultId,
+          sessionId: session.id,
+          connectorId,
+          provider: ref.provider,
+          objectType: ref.objectType,
+          authority: ref.authority,
         },
         session.spaceId,
       );
