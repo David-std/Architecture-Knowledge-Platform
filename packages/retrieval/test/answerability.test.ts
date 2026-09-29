@@ -226,13 +226,13 @@ describe("retrieval answerability", () => {
 
   it("rejects a topical definition when the query asks for an avoidance condition, even on a direct channel", () => {
     const definition = hit(1, {
-      title: "Immutable change-log definition",
+      title: "Checksum validation definition",
       excerpt:
-        "Immutable change logs record every domain change and retain a complete operational history for later reconstruction.",
+        "Periodic checksum validation recomputes digests to detect accidental data corruption during storage.",
       contributions: [contribution("exact"), contribution("vector", 0.91, 1)],
     });
     const query =
-      "When should immutable change logs be avoided because operational overhead is high?";
+      "When should periodic checksum validation be avoided on battery-constrained sensors?";
 
     const result = assessRetrievalAnswerability([definition], query);
 
@@ -256,15 +256,15 @@ describe("retrieval answerability", () => {
 
   it("admits the condition-bearing unit instead of a topical definition from the same document", () => {
     const definition = hit(1, {
-      title: "Immutable change-log definition",
+      title: "Checksum validation definition",
       excerpt:
-        "Immutable change logs record every domain change and retain a complete operational history for later reconstruction.",
+        "Periodic checksum validation recomputes digests to detect accidental data corruption during storage.",
       contributions: [contribution("exact"), contribution("vector", 0.91, 1)],
     });
     const conditionBase = hit(2, {
-      title: "Immutable change-log trade-off",
+      title: "Checksum validation trade-off",
       excerpt:
-        "Immutable change logs are a poor fit for simple mutable records because operational overhead outweighs the audit requirement.",
+        "Periodic checksum validation is a poor fit for battery-constrained sensors because repeated digest computation drains limited power.",
       contributions: [contribution("vector", 0.89, 2)],
     });
     const condition: SearchHit = {
@@ -273,7 +273,7 @@ describe("retrieval answerability", () => {
       document: definition.document,
     };
     const query =
-      "When should immutable change logs be avoided because operational overhead is high?";
+      "When should periodic checksum validation be avoided on battery-constrained sensors?";
 
     const result = assessRetrievalAnswerability([definition, condition], query);
 
