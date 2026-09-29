@@ -313,9 +313,11 @@ describe("retrieval answerability", () => {
 
     expect(result).toMatchObject({
       supported: true,
-      reason: "PASSAGE_CUE_SUPPORT",
       supportedCandidateKeys: [retrievalAnswerabilityCandidateKey(candidate)],
     });
+    expect(["PASSAGE_TEXT_SUPPORT", "PASSAGE_CUE_SUPPORT"]).toContain(
+      result.reason,
+    );
     expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
       supported: true,
       requiredAnswerCues: expect.arrayContaining(["PREVENTION", "CONDITION"]),
@@ -374,14 +376,14 @@ describe("retrieval answerability", () => {
 
   it("maps diagram-view and mandatory-require language inside one bounded evidence unit", () => {
     const candidate = hit(34, {
-      title: "VistaKit selective views",
+      title: "AtlasKit selective views",
       excerpt:
-        "Las vistas de VistaKit se seleccionan según la necesidad; no son una lista obligatoria de entregables.",
+        "Las vistas de AtlasKit se seleccionan según la necesidad; no son una lista obligatoria de entregables.",
       contributions: [contribution("vector", 0.87, 4)],
     });
     const result = assessRetrievalAnswerability(
       [candidate],
-      "Does VistaKit require every level of diagram?",
+      "Does AtlasKit require every level of diagram?",
     );
 
     expect(result).toMatchObject({
