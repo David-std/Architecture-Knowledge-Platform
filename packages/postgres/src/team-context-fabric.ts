@@ -227,7 +227,7 @@ export async function upsertExternalObjectRef(
        ) values(
          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13,$14
        )
-       on conflict(vault_id,provider,object_type,external_id) do update
+       on conflict(vault_id,session_id,provider,object_type,external_id)\n         where session_id is not null do update
          set session_id=excluded.session_id,
              canonical_url=excluded.canonical_url,
              source_revision=excluded.source_revision,
@@ -364,7 +364,7 @@ export async function linkProviderObjectRef(
          $1,$2,$3,$4,$5,$6,$7,$8,$9,'MIRRORED_PROJECTION',$10::jsonb,
          '[]'::jsonb,$11,$12
        )
-       on conflict(vault_id,provider,object_type,external_id) do update
+       on conflict(vault_id,session_id,provider,object_type,external_id)\n         where session_id is not null do update
          set session_id=excluded.session_id,
              canonical_url=excluded.canonical_url,
              source_revision=excluded.source_revision,
