@@ -298,6 +298,24 @@ export function createMcpServer(): McpServer {
   );
 
   server.registerTool(
+    "akp_list_provider_objects",
+    {
+      description:
+        "List active Jira/Linear objects synchronized through authenticated read-only provider adapters for one workspace session. Returned objects are external projections, not approved AKP knowledge.",
+      inputSchema: {
+        sessionId: z.string().uuid(),
+        limit: z.number().int().min(1).max(100).default(50),
+      },
+    },
+    async ({ sessionId, limit }) =>
+      textResult(
+        await api(
+          `/v1/sessions/${encodeURIComponent(sessionId)}/provider-objects?limit=${limit}`,
+        ),
+      ),
+  );
+
+  server.registerTool(
     "akp_link_provider_reference",
     {
       description:
