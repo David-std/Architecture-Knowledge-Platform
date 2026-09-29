@@ -553,6 +553,47 @@ async function executeCase(
   const availableChannels = new Set<
     "context-pack" | "exact" | "lexical" | "vector" | "graph" | "raw" | "code"
   >();
+  const baseRuntimeOptions = {
+    vaultIds: [vaultId],
+    channels: [...configuration.channels],
+    allowVectorForBenchmark: Boolean(configuration.allowVectorForBenchmark),
+    deterministicRerank: Boolean(configuration.deterministicRerank),
+    ...(configuration.associativePpr
+      ? {
+          retrievalPolicy: {
+            graphMode: "ASSOCIATIVE" as const,
+            channels: {
+              GRAPH_PPR: { enabled: true, weight: 1.1 },
+            },
+          },
+        }
+      : configuration.communityDrift
+        ? {
+            retrievalPolicy: {
+              graphMode: "DRIFT" as const,
+              channels: {
+                COMMUNITY: { enabled: true, weight: 1.1 },
+              },
+            },
+          }
+        : configuration.communityGlobal
+          ? {
+              retrievalPolicy: {
+                graphMode: "GLOBAL" as const,
+                channels: {
+                  COMMUNITY: { enabled: true, weight: 1.1 },
+                },
+              },
+            }
+          : {}),
+    ...(configuration.queryDecomposition
+      ? { queryTransformer: new DeterministicQueryDecomposer() }
+      : {}),
+    queryEmbeddingService,
+    graphScopes: [{ vaultId, pathPrefix: null }],
+    graphPolicy: { maxHops: 3, directionPolicy: "both" as const },
+  };
+
   const started = performance.now();
   let answerabilityCandidates: readonly QueryHit[] | undefined;
   const rawHits = await queryKnowledge(
@@ -569,49 +610,12 @@ async function executeCase(
       limit: 10,
     },
     {
-      vaultIds: [vaultId],
-      channels: [...configuration.channels],
-      allowVectorForBenchmark: Boolean(configuration.allowVectorForBenchmark),
-      deterministicRerank: Boolean(configuration.deterministicRerank),
-      ...(configuration.associativePpr
-        ? {
-            retrievalPolicy: {
-              graphMode: "ASSOCIATIVE" as const,
-              channels: {
-                GRAPH_PPR: { enabled: true, weight: 1.1 },
-              },
-            },
-          }
-        : configuration.communityDrift
-          ? {
-              retrievalPolicy: {
-                graphMode: "DRIFT" as const,
-                channels: {
-                  COMMUNITY: { enabled: true, weight: 1.1 },
-                },
-              },
-            }
-          : configuration.communityGlobal
-            ? {
-                retrievalPolicy: {
-                  graphMode: "GLOBAL" as const,
-                  channels: {
-                    COMMUNITY: { enabled: true, weight: 1.1 },
-                  },
-                },
-              }
-            : {}),
-      ...(configuration.queryDecomposition
-        ? { queryTransformer: new DeterministicQueryDecomposer() }
-        : {}),
-      queryEmbeddingService,
+      ...baseRuntimeOptions,
       warningSink: warnings,
       availableChannelSink: availableChannels,
       answerabilityCandidateSink: (candidates) => {
         answerabilityCandidates = candidates;
       },
-      graphScopes: [{ vaultId, pathPrefix: null }],
-      graphPolicy: { maxHops: 3, directionPolicy: "both" },
     },
   );
   const answerability = assessRetrievalAnswerability(
@@ -633,6 +637,24 @@ async function executeCase(
     warnings.push(`ANSWERABILITY_GATE_REJECTED:${answerability.reason}`);
   }
   const latencyMs = performance.now() - started;
+  const depthHits =
+    (testCase.gold_support?.length ?? 0) > 0
+      ? await queryKnowledge(
+          db,
+          {
+            query: testCase.query,
+            spaceId: fixture.spaceId,
+            vaultId,
+            vaultIds: [],
+            federated: false,
+            types: [],
+            minimumTrust: "MACHINE_SUPPORTED",
+            mode: "SOURCE_BACKED",
+            limit: 64,
+          },
+          baseRuntimeOptions,
+        )
+      : rawHits;
   const rankedDocumentIds = hits.flatMap((hit) =>
     hit.document.externalId ? [hit.document.externalId] : [],
   );
@@ -673,6 +695,19 @@ async function executeCase(
         : [],
     );
   const retrievedGoldSupportIds = supportIdsForHits(rawHits);
+  const goldSupportFirstRanks = (testCase.gold_support ?? []).map(
+    (predicate) => {
+      const index = depthHits.findIndex(
+        (hit) =>
+          hit.document.externalId === predicate.document &&
+          passageMatchesGoldPredicate(
+            hit.parentContext?.trim() || hit.excerpt,
+            predicate,
+          ),
+      );
+      return index < 0 ? null : index + 1;
+    },
+  );
   const retrievedSupportIds = supportIdsForHits(hits);
   const selectedGoldSupportCandidateCount = hits.filter((hit) =>
     (testCase.gold_support ?? []).some(
@@ -705,6 +740,7 @@ async function executeCase(
       ? {
           goldSupportIds,
           retrievedGoldSupportIds,
+          goldSupportFirstRanks,
           retrievedSupportIds,
           selectedSupportCandidateCount: hits.length,
           selectedGoldSupportCandidateCount,
