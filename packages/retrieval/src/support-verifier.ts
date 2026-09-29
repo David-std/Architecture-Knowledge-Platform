@@ -76,6 +76,23 @@ export const DEFAULT_DETERMINISTIC_PASSAGE_SUPPORT_POLICY: DeterministicPassageS
     minimumSalientOverlap: 2,
   };
 
+export interface ClaimRelationDiagnostics {
+  eligibleClaim: boolean;
+  relationExtracted: boolean;
+  predicateMatched: boolean;
+  subjectAnchorCount: number;
+  subjectOverlap: number;
+  subjectMatched: boolean;
+  objectAnchorCount: number;
+  objectOverlap: number;
+  queryGlobalScope: boolean;
+  excerptGlobalScope: boolean;
+  objectOrScopeMatched: boolean;
+  anchorCount: number;
+  anchorOverlap: number;
+  supported: boolean;
+}
+
 export interface DeterministicPassageSupportSignal {
   supported: boolean;
   reason: PassageSupportReason;
@@ -93,6 +110,9 @@ export interface DeterministicPassageSupportSignal {
   matchedAnswerCues: PassageAnswerCue[];
   answerCueCoverage: number;
   vectorRank: number | null;
+  claimRelationDiagnostics: ClaimRelationDiagnostics | null;
+  boundedAnchorCoverage: number;
+  boundedRelationRoleMatched: boolean;
 }
 
 function validFraction(value: unknown, field: string): number {
@@ -527,6 +547,22 @@ function semanticTokens(value: string): string[] {
 
 const YES_NO_RELATION_PREDICATES = new Set(["define", "require", "points"]);
 
+const RELATION_GRAMMAR_TOKENS = new Set([
+  "using",
+  "use",
+  "uses",
+  "used",
+  "via",
+  "through",
+  "or",
+  "either",
+  "both",
+  "usando",
+  "usar",
+  "mediante",
+  "o",
+]);
+
 interface QueryRelationRoles {
   predicates: string[];
   subjectAnchors: string[];
@@ -544,7 +580,8 @@ function relationAnchorEligible(token: string): boolean {
     token.length >= 2 &&
     !ANSWERABILITY_STOPWORDS.has(token) &&
     !QUESTION_SHAPE_TOKENS.has(token) &&
-    !YES_NO_RELATION_PREDICATES.has(token)
+    !YES_NO_RELATION_PREDICATES.has(token) &&
+    !RELATION_GRAMMAR_TOKENS.has(token)
   );
 }
 
@@ -602,44 +639,60 @@ function globalRelationScopePresent(value: string): boolean {
   );
 }
 
-function atomicClaimRelationSupport(excerpt: string, query: string): boolean {
+function atomicClaimRelationDiagnostics(
+  hit: SearchHit,
+  excerpt: string,
+  query: string,
+): ClaimRelationDiagnostics {
+  const eligibleClaim = isSupportEligibleClaim(hit);
   const relation = queryYesNoRelationRoles(query);
-  if (!relation || !excerpt.trim()) return false;
-
   const queryAnchors = queryPredicateAnchors(query, ["YES_NO"]);
-  if (queryAnchors.length < 2) return false;
-
-  const minimumSubjectOverlap = Math.max(
-    1,
-    Math.ceil(relation.subjectAnchors.length * (2 / 3)),
-  );
-  const minimumAnchorOverlap = Math.max(
-    2,
-    Math.ceil(queryAnchors.length * 0.6),
-  );
   const excerptTokens = new Set(semanticTokens(excerpt));
-  const predicateMatched = relation.predicates.some((token) =>
-    excerptTokens.has(token),
-  );
-  const subjectOverlap = relation.subjectAnchors.filter((token) =>
-    excerptTokens.has(token),
-  ).length;
-  const objectOverlap = relation.objectAnchors.filter((token) =>
-    excerptTokens.has(token),
-  ).length;
+  const predicateMatched =
+    relation?.predicates.some((token) => excerptTokens.has(token)) ?? false;
+  const subjectOverlap =
+    relation?.subjectAnchors.filter((token) => excerptTokens.has(token))
+      .length ?? 0;
+  const objectOverlap =
+    relation?.objectAnchors.filter((token) => excerptTokens.has(token))
+      .length ?? 0;
   const anchorOverlap = queryAnchors.filter((token) =>
     excerptTokens.has(token),
   ).length;
+  const queryGlobalScope = globalRelationScopePresent(query);
+  const excerptGlobalScope = globalRelationScopePresent(excerpt);
+  const minimumSubjectOverlap = relation
+    ? Math.min(2, Math.max(1, relation.subjectAnchors.length))
+    : 0;
+  const subjectMatched =
+    relation !== null && subjectOverlap >= minimumSubjectOverlap;
   const objectOrScopeMatched =
-    objectOverlap > 0 ||
-    (globalRelationScopePresent(query) && globalRelationScopePresent(excerpt));
-
-  return (
+    relation !== null &&
+    (objectOverlap > 0 || (queryGlobalScope && excerptGlobalScope));
+  const supported =
+    eligibleClaim &&
+    Boolean(excerpt.trim()) &&
+    relation !== null &&
     predicateMatched &&
-    subjectOverlap >= minimumSubjectOverlap &&
-    anchorOverlap >= minimumAnchorOverlap &&
-    objectOrScopeMatched
-  );
+    subjectMatched &&
+    objectOrScopeMatched;
+
+  return {
+    eligibleClaim,
+    relationExtracted: relation !== null,
+    predicateMatched,
+    subjectAnchorCount: relation?.subjectAnchors.length ?? 0,
+    subjectOverlap,
+    subjectMatched,
+    objectAnchorCount: relation?.objectAnchors.length ?? 0,
+    objectOverlap,
+    queryGlobalScope,
+    excerptGlobalScope,
+    objectOrScopeMatched,
+    anchorCount: queryAnchors.length,
+    anchorOverlap,
+    supported,
+  };
 }
 
 function queryExplicitlyRequestsQuantity(query: string): boolean {
@@ -1038,13 +1091,14 @@ export function verifyDeterministicPassageSupport(
     requiredAnswerCues,
     hit.title?.trim() || hit.document.title?.trim() || undefined,
   );
+  const claimRelationDiagnostics = requiredAnswerCues.includes("YES_NO")
+    ? atomicClaimRelationDiagnostics(hit, excerpt, query)
+    : null;
   const claimRelationSupport =
-    isSupportEligibleClaim(hit) &&
-    requiredAnswerCues.includes("YES_NO") &&
+    claimRelationDiagnostics?.supported === true &&
     requiredAnswerCues
       .filter((cue) => cue !== "YES_NO")
-      .every((cue) => boundedSupport.matchedAnswerCues.includes(cue)) &&
-    atomicClaimRelationSupport(excerpt, query);
+      .every((cue) => boundedSupport.matchedAnswerCues.includes(cue));
   const matchedAnswerCues = claimRelationSupport
     ? [
         ...new Set<PassageAnswerCue>([
@@ -1119,5 +1173,8 @@ export function verifyDeterministicPassageSupport(
     matchedAnswerCues,
     answerCueCoverage,
     vectorRank,
+    claimRelationDiagnostics,
+    boundedAnchorCoverage: boundedSupport.anchorCoverage,
+    boundedRelationRoleMatched: boundedSupport.relationRoleMatched,
   };
 }
