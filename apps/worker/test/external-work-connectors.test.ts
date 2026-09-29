@@ -198,6 +198,7 @@ describe("external work source connectors", () => {
       dataResidency: "EXTERNAL",
       deletionPropagation: "NONE",
       incremental: { cursor: true, webhook: false },
+      rateLimit: { kind: "DECLARED", requestsPerMinute: 40 },
     });
   });
 
