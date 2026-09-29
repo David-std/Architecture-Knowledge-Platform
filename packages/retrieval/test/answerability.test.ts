@@ -298,6 +298,146 @@ describe("retrieval answerability", () => {
     ]);
   });
 
+  it("uses a scoped title and an explicitly linked continuation for an avoidance condition", () => {
+    const candidate = hit(31, {
+      title: "Reject durable change logs for simple record editing",
+      parentContext:
+        "Durable change logs are justified by replay, temporal reconstruction, or compliance traceability. Without those drivers, the log adds unjustified operational overhead.",
+      excerpt:
+        "Without those drivers, the log adds unjustified operational overhead.",
+      contributions: [contribution("vector", 0.86, 5)],
+    });
+    const query =
+      "When should a durable change log be avoided because of operating costs?";
+    const result = assessRetrievalAnswerability([candidate], query);
+
+    expect(result).toMatchObject({
+      supported: true,
+      reason: "PASSAGE_CUE_SUPPORT",
+      supportedCandidateKeys: [retrievalAnswerabilityCandidateKey(candidate)],
+    });
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: true,
+      requiredAnswerCues: expect.arrayContaining(["PREVENTION", "CONDITION"]),
+    });
+    expect(
+      result.candidateSignals[0]?.passageSupport.requiredAnswerCues,
+    ).not.toContain("QUANTITY");
+
+    const topical = hit(32, {
+      title: "Durable change log operating overhead",
+      excerpt:
+        "The durable change log adds operational overhead while recording each update.",
+      contributions: [contribution("vector", 0.85, 1)],
+    });
+    const rejected = assessRetrievalAnswerability([topical], query);
+    expect(rejected).toMatchObject({
+      supported: false,
+      reason: "SUPPORT_NOT_DEMONSTRATED",
+    });
+    expect(rejected.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: false,
+      reason: "ANSWER_CUE_MISMATCH",
+    });
+
+    const monthly = assessRetrievalAnswerability(
+      [candidate],
+      "What is the monthly operating cost of the durable change log?",
+    );
+    expect(monthly.supported).toBe(false);
+    expect(
+      monthly.candidateSignals[0]?.passageSupport.requiredAnswerCues,
+    ).toContain("QUANTITY");
+  });
+
+  it("accepts a bilingual architecture paraphrase without lowering the global overlap threshold", () => {
+    const candidate = hit(33, {
+      title: "Local patterns are not system architecture",
+      excerpt:
+        "Mediator y Facade no determinan el conjunto de módulos, límites ni la dirección global de dependencias.",
+      contributions: [contribution("vector", 0.9, 1)],
+    });
+    const result = assessRetrievalAnswerability(
+      [candidate],
+      "Do Mediator and Facade patterns define the overall system architecture?",
+    );
+
+    expect(result).toMatchObject({
+      supported: true,
+      supportedCandidateKeys: [retrievalAnswerabilityCandidateKey(candidate)],
+    });
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: true,
+      requiredAnswerCues: ["YES_NO"],
+    });
+  });
+
+  it("maps diagram-view and mandatory-require language inside one bounded evidence unit", () => {
+    const candidate = hit(34, {
+      title: "VistaKit selective views",
+      excerpt:
+        "Las vistas de VistaKit se seleccionan según la necesidad; no son una lista obligatoria de entregables.",
+      contributions: [contribution("vector", 0.87, 4)],
+    });
+    const result = assessRetrievalAnswerability(
+      [candidate],
+      "Does VistaKit require every level of diagram?",
+    );
+
+    expect(result).toMatchObject({
+      supported: true,
+      supportedCandidateKeys: [retrievalAnswerabilityCandidateKey(candidate)],
+    });
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: true,
+      requiredAnswerCues: ["YES_NO"],
+    });
+  });
+
+  it("does not treat policy as a rule request when policy is the object of a rationale question", () => {
+    const candidate = hit(35, {
+      title: "Dependency direction",
+      excerpt:
+        "Las dependencias apuntan hacia las políticas del dominio para mantenerlas independientes de frameworks y mecanismos externos.",
+      contributions: [contribution("vector", 0.88, 3)],
+    });
+    const result = assessRetrievalAnswerability(
+      [candidate],
+      "Why do dependencies point inward toward domain policies?",
+    );
+
+    expect(result).toMatchObject({
+      supported: true,
+      supportedCandidateKeys: [retrievalAnswerabilityCandidateKey(candidate)],
+    });
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: true,
+      requiredAnswerCues: ["RATIONALE"],
+    });
+  });
+
+  it("still recognizes an explicit policy request as a rule predicate", () => {
+    const candidate = hit(36, {
+      title: "Retry policy",
+      excerpt:
+        "The retry policy requires a bounded delay before another attempt.",
+      contributions: [contribution("vector", 0.82, 2)],
+    });
+    const result = assessRetrievalAnswerability(
+      [candidate],
+      "Which policy governs retry windows?",
+    );
+
+    expect(result).toMatchObject({
+      supported: true,
+      supportedCandidateKeys: [retrievalAnswerabilityCandidateKey(candidate)],
+    });
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: true,
+      requiredAnswerCues: ["RULE"],
+    });
+  });
+
   it("accepts an explicit bilingual yes-no negation about the same relation", () => {
     const candidate = hit(20, {
       title: "Component scope",

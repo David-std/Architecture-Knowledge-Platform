@@ -194,7 +194,7 @@ const QUERY_CUE_PATTERNS: Record<PassageAnswerCue, readonly string[]> = {
   ],
   CONDITION: ["when", "cuando", "under what", "en que caso", "en que casos"],
   RATIONALE: ["why", "por que", "razon", "motivo"],
-  RULE: ["rule", "policy", "regla", "politica"],
+  RULE: ["rule", "regla"],
   DEFINITION: ["what is", "que es", "define*", "significa*"],
   COMPARISON: [
     "compare*",
@@ -243,6 +243,11 @@ const PASSAGE_CUE_PATTERNS: Record<PassageAnswerCue, readonly string[]> = {
     "side effect*",
     "poor fit",
     "not recommended",
+    "should not",
+    "do not use",
+    "reject*",
+    "discard*",
+    "unsuitable",
     "outweigh*",
     "evit*",
     "preven*",
@@ -250,6 +255,9 @@ const PASSAGE_CUE_PATTERNS: Record<PassageAnswerCue, readonly string[]> = {
     "repet*",
     "dos veces",
     "sin efectos",
+    "rechaz*",
+    "descart*",
+    "no conviene",
   ],
   CONDITION: [
     "when",
@@ -265,6 +273,9 @@ const PASSAGE_CUE_PATTERNS: Record<PassageAnswerCue, readonly string[]> = {
     "not recommended",
     "suitable only",
     "appropriate only",
+    "without",
+    "in absence",
+    "absent",
     "cuando",
     "si",
     "salvo",
@@ -272,6 +283,9 @@ const PASSAGE_CUE_PATTERNS: Record<PassageAnswerCue, readonly string[]> = {
     "bajo",
     "caso",
     "umbral",
+    "sin",
+    "sin que",
+    "a falta de",
   ],
   RATIONALE: [
     "because",
@@ -282,6 +296,12 @@ const PASSAGE_CUE_PATTERNS: Record<PassageAnswerCue, readonly string[]> = {
     "overhead",
     "complexity",
     "cost*",
+    "so",
+    "so that",
+    "in order to",
+    "to keep",
+    "to preserve",
+    "thereby",
     "porque",
     "debido",
     "razon",
@@ -289,6 +309,10 @@ const PASSAGE_CUE_PATTERNS: Record<PassageAnswerCue, readonly string[]> = {
     "sobrecarga",
     "complejidad",
     "costo*",
+    "para",
+    "para que",
+    "con el fin de",
+    "de modo que",
   ],
   RULE: [
     "bounded",
@@ -391,6 +415,10 @@ const QUESTION_SHAPE_TOKENS = new Set([
   "do",
   "does",
   "entire",
+  "enough",
+  "every",
+  "overall",
+  "alone",
   "es",
   "exige",
   "how",
@@ -418,7 +446,8 @@ function canonicalSemanticToken(token: string): string {
   if (/^(architect|arquitect)/u.test(token)) return "architecture";
   if (/^(defin|determin)/u.test(token)) return "define";
   if (/^(requir|exig|requier)/u.test(token)) return "require";
-  if (/^(view|vista)/u.test(token)) return "view";
+  if (/^(view|vista|diagram|diagrama)/u.test(token)) return "view";
+  if (/^(mandatory|obligat|obligatori)/u.test(token)) return "require";
   if (/^(dependenc|dependency|dependencies|dependient)/u.test(token))
     return "dependency";
   if (/^(polic|politic)/u.test(token)) return "policy";
@@ -435,7 +464,11 @@ function canonicalSemanticToken(token: string): string {
   if (/^(redeliver|replay|retry|reintent|reenv)/u.test(token)) return "retry";
   if (/^(idempot|deduplic|suppress|stop|prevent|evit|deten)/u.test(token))
     return "prevent-repeat";
-  if (/^(cost|costo|precio|importe|price)/u.test(token)) return "cost";
+  if (/^(cost|costo|coste|precio|importe|price|overhead|sobrecarga)/u.test(token))
+    return "cost";
+  if (/^(operat|operacion)/u.test(token)) return "operational";
+  if (/^(domain|dominio)/u.test(token)) return "domain";
+  if (/^(toward|towards|hacia)/u.test(token)) return "toward";
   if (/^(month|monthly|mensual|mes)/u.test(token)) return "month";
   if (/^(year|ano)/u.test(token)) return "year";
   if (/^(reason|razon|motivo|because|porque|debido)/u.test(token))
@@ -455,16 +488,39 @@ function semanticTokens(value: string): string[] {
   ];
 }
 
+function queryExplicitlyRequestsQuantity(query: string): boolean {
+  const normalized = normalizedMatchText(query).trim();
+  return (
+    /\b(?:how many|how much|cuant[oa]s?)\b/u.test(normalized) ||
+    /\bwhat\s+(?:does|do|did)\b.{0,80}\bcost\b/u.test(normalized) ||
+    /\b(?:what|which)\s+(?:is|are|was|were)\s+(?:the|its|their)?\s*(?:monthly|annual|yearly|daily|weekly)?\s*(?:cost|price|amount)\b/u.test(
+      normalized,
+    ) ||
+    /\bcuanto\s+cuesta\b/u.test(normalized) ||
+    /\b(?:cual|cuanto|cuanta)\s+(?:es|son|fue|eran)?\s*(?:el|la|los|las)?\s*(?:costo|coste|precio|importe|monto)\b/u.test(
+      normalized,
+    )
+  );
+}
+
+function queryExplicitlyRequestsRule(query: string): boolean {
+  const normalized = normalizedMatchText(query).trim();
+  return (
+    /\b(?:what|which)\s+(?:rule|policy)\b/u.test(normalized) ||
+    /\b(?:under|according to)\s+(?:what|which)\s+(?:rule|policy)\b/u.test(
+      normalized,
+    ) ||
+    /\b(?:que|cual)\s+(?:regla|politica)\b/u.test(normalized)
+  );
+}
+
 function queryAnswerCues(query: string): PassageAnswerCue[] {
   if (identifierLikeQuery(query)) return [];
   const normalized = normalizedMatchText(query);
   const tokens = normalizedAnswerabilityTokens(query);
   const cues = new Set<PassageAnswerCue>();
 
-  const quantity =
-    /\b(how many|how much|cuant[oa]s?|cantidad|amount|importe|cost|costo|price|precio)\b/u.test(
-      normalized.trim(),
-    );
+  const quantity = queryExplicitlyRequestsQuantity(query);
   const dateYear =
     /\b(which year|what year|in what year|que ano|en que ano|which date|what date|que fecha|en que fecha)\b/u.test(
       normalized.trim(),
@@ -477,9 +533,16 @@ function queryAnswerCues(query: string): PassageAnswerCue[] {
   if (quantity) cues.add("QUANTITY");
   if (dateYear) cues.add("DATE_YEAR");
   if (yesNo) cues.add("YES_NO");
+  if (queryExplicitlyRequestsRule(query)) cues.add("RULE");
 
   for (const cue of Object.keys(QUERY_CUE_PATTERNS) as PassageAnswerCue[]) {
-    if (cue === "YES_NO" || cue === "QUANTITY" || cue === "DATE_YEAR") continue;
+    if (
+      cue === "YES_NO" ||
+      cue === "QUANTITY" ||
+      cue === "DATE_YEAR" ||
+      cue === "RULE"
+    )
+      continue;
     if (cue === "PROCEDURE" && quantity) continue;
     // "Does X define Y?" asks for a yes/no assertion about a relation; it is
     // not a request for a dictionary-style definition of Y.
@@ -501,21 +564,49 @@ function queryAnswerCues(query: string): PassageAnswerCue[] {
   return [...cues];
 }
 
-function passageWindows(passage: string): string[] {
-  // Evidence for an answer predicate must be local. Do not combine adjacent
-  // sentences merely because they share a parentContext: an unrelated
-  // "because", number or rule in the next sentence must not prove the query.
+function explicitlyLinkedContinuation(sentence: string): boolean {
+  const normalized = normalizedMatchText(sentence).trim();
+  return /^(?:without (?:them|those|these|it)|in (?:their|its) absence|sin (?:ellos|ellas|estos|estas|eso|esos|esas)|a falta de (?:ellos|ellas|estos|estas|eso)|because of (?:this|that)|therefore|thus|consequently|por (?:ello|eso)|de modo que)\b/u.test(
+    normalized,
+  );
+}
+
+function passageWindows(passage: string, title?: string): string[] {
+  // Evidence for an answer predicate must stay local. A unit title may scope a
+  // sentence, and an adjacent sentence may be joined only when it explicitly
+  // refers back to its predecessor. This captures bounded structures such as
+  // "Reject X" + "without those drivers..." without concatenating unrelated
+  // sibling sentences or the whole document.
   const sentences = passage
     .split(/(?<=[.!?;])\s+|\n+/u)
     .map((part) => part.trim())
-    .filter(Boolean);
-  return [
-    ...new Set(
-      (sentences.length > 0 ? sentences : [passage])
-        .map((sentence) => sentence.slice(0, 900).trim())
-        .filter(Boolean),
-    ),
-  ];
+    .filter(Boolean)
+    .map((sentence) => sentence.slice(0, 900).trim());
+  const boundedSentences =
+    sentences.length > 0 ? sentences : [passage.slice(0, 900).trim()];
+  const boundedTitle = title?.trim().slice(0, 240);
+  const windows = [...boundedSentences];
+
+  if (boundedTitle) {
+    for (const sentence of boundedSentences) {
+      windows.push(`${boundedTitle}: ${sentence}`.slice(0, 1200));
+    }
+  }
+
+  for (let index = 1; index < boundedSentences.length; index += 1) {
+    const current = boundedSentences[index]!;
+    if (!explicitlyLinkedContinuation(current)) continue;
+    const linked = `${boundedSentences[index - 1]} ${current}`.slice(
+      0,
+      1800,
+    );
+    windows.push(linked);
+    if (boundedTitle) {
+      windows.push(`${boundedTitle}: ${linked}`.slice(0, 2040));
+    }
+  }
+
+  return [...new Set(windows.filter(Boolean))];
 }
 
 const CUE_TOKENS_THAT_REMAIN_PREDICATE_ANCHORS = new Set([
@@ -645,6 +736,7 @@ function boundedPredicateSupport(
   passage: string,
   query: string,
   required: readonly PassageAnswerCue[],
+  title?: string,
 ): {
   supported: boolean;
   matchedAnswerCues: PassageAnswerCue[];
@@ -660,7 +752,7 @@ function boundedPredicateSupport(
     semanticAnchorOverlap: [] as string[],
   };
 
-  for (const window of passageWindows(passage)) {
+  for (const window of passageWindows(passage, title)) {
     const windowTokens = new Set(semanticTokens(window));
     const overlap = anchors.filter((token) => windowTokens.has(token));
     const anchorCoverage =
@@ -778,6 +870,7 @@ export function verifyDeterministicPassageSupport(
     passage,
     query,
     requiredAnswerCues,
+    hit.title?.trim() || hit.document.title?.trim() || undefined,
   );
   const matchedAnswerCues = boundedSupport.matchedAnswerCues;
   const answerCueCoverage =
