@@ -591,8 +591,7 @@ function atomicClaimRelationSupport(excerpt: string, query: string): boolean {
   ).length;
   const objectOrScopeMatched =
     objectOverlap > 0 ||
-    (globalRelationScopePresent(query) &&
-      globalRelationScopePresent(excerpt));
+    (globalRelationScopePresent(query) && globalRelationScopePresent(excerpt));
 
   return (
     predicateMatched &&
