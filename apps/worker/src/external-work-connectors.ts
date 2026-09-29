@@ -146,6 +146,7 @@ export interface JiraCloudSourceConnectorOptions {
   webhookVerifier?: (
     request: SourceConnectorWebhookRequest,
   ) => Promise<boolean> | boolean;
+  webhookEnabled?: boolean;
   freshnessSlaSeconds?: number;
 }
 
@@ -162,7 +163,12 @@ export class JiraCloudSourceConnector implements SourceConnectorPort {
       connectorId: "jira-cloud",
       sourceSystem: "jira",
       objectTypes: ["ISSUE"],
-      incremental: { cursor: true, webhook: false },
+      incremental: {
+        cursor: true,
+        webhook:
+          this.options.webhookEnabled === true ||
+          Boolean(this.options.webhookVerifier),
+      },
       permissionFidelity: "SOURCE_ACL_MAPPED" as const,
       replication: "REFERENCE" as const,
       dataResidency: "EXTERNAL" as const,
@@ -352,6 +358,7 @@ export interface LinearSourceConnectorOptions {
   authorizationHeader: string;
   endpoint?: string;
   webhookSecret?: string;
+  webhookEnabled?: boolean;
   fetchImpl?: FetchLike;
   freshnessSlaSeconds?: number;
   now?: () => number;
@@ -372,7 +379,12 @@ export class LinearSourceConnector implements SourceConnectorPort {
       connectorId: "linear",
       sourceSystem: "linear",
       objectTypes: ["ISSUE"],
-      incremental: { cursor: true, webhook: false },
+      incremental: {
+        cursor: true,
+        webhook:
+          this.options.webhookEnabled === true ||
+          Boolean(this.options.webhookSecret),
+      },
       permissionFidelity: "SOURCE_ACL_MAPPED" as const,
       replication: "REFERENCE" as const,
       dataResidency: "EXTERNAL" as const,
