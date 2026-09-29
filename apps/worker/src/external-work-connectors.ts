@@ -165,9 +165,7 @@ export class JiraCloudSourceConnector implements SourceConnectorPort {
       objectTypes: ["ISSUE"],
       incremental: {
         cursor: true,
-        webhook:
-          this.options.webhookEnabled === true ||
-          Boolean(this.options.webhookVerifier),
+        webhook: Boolean(this.options.webhookVerifier),
       },
       permissionFidelity: "SOURCE_ACL_MAPPED" as const,
       replication: "REFERENCE" as const,
