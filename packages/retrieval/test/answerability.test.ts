@@ -485,7 +485,7 @@ describe("retrieval answerability", () => {
     const candidate = hit(39, {
       title: "Retry overview",
       excerpt:
-        "A retry is allowed when the transient condition clears and the operation can continue.",
+        "The operation may continue when the transient condition clears.",
       contributions: [contribution("vector", 0.79, 51)],
     });
     const result = assessRetrievalAnswerability(
