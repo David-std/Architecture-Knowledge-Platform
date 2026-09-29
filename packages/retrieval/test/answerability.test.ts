@@ -687,6 +687,37 @@ describe("retrieval answerability", () => {
     });
   });
 
+  it("accepts a bounded rationale expressed as preventing external detail leakage", () => {
+    const claim = hit(149, {
+      title: "Dependency boundary",
+      type: "claim",
+      trust: "MACHINE_SUPPORTED",
+      externalId: "CLM-149",
+      excerpt:
+        "Service dependencies point toward domain policy. External details must not leak their names or formats into the core.",
+      contributions: [contribution("vector", 0.79, 8)],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [claim],
+      "Why should code dependencies point toward policy rather than external details?",
+    );
+
+    expect(result).toMatchObject({
+      supported: true,
+      supportedCandidateKeys: [retrievalAnswerabilityCandidateKey(claim)],
+    });
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: true,
+      vectorRank: 8,
+      requiredAnswerCues: ["RATIONALE"],
+      matchedAnswerCues: ["RATIONALE"],
+    });
+    expect(
+      result.candidateSignals[0]?.passageSupport.boundedAnchorCoverage,
+    ).toBeGreaterThanOrEqual(0.4);
+  });
+
   it("does not apply claim relation fallback to unreviewed claims", () => {
     const unreviewed = hit(43, {
       title: "Local pattern scope",
