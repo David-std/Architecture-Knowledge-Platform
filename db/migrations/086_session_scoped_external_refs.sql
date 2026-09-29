@@ -14,6 +14,8 @@ alter table external_object_refs
 alter table external_object_refs
   drop constraint if exists external_object_refs_vault_id_provider_object_type_external_id_;
 alter table external_object_refs
+  drop constraint if exists external_object_refs_vault_id_provider_object_type_external_key;
+alter table external_object_refs
   drop constraint if exists external_object_refs_vault_id_provider_object_type_external_id_;
 
 create unique index external_object_refs_session_identity_uniq
