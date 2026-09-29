@@ -1,5 +1,6 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { redirect } from "next/navigation";
 import { akp } from "../../../lib/api";
 
@@ -22,6 +23,9 @@ export async function linkProviderReference(formData: FormData) {
       `/v1/sessions/${encodeURIComponent(sessionId)}/provider-refs`,
       {
         method: "POST",
+        headers: {
+          "idempotency-key": `web-provider-link-${randomUUID()}`,
+        },
         body: JSON.stringify({
           connectorId: required(formData, "connectorId"),
           objectId: required(formData, "objectId"),
