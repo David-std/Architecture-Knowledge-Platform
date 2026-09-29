@@ -528,45 +528,45 @@ export async function applyNextSourceConnectorEvent(
 
       if (projectionShouldAdvance) {
         await client.query(
-        `insert into source_connector_objects(
-           connector_id,object_id,object_type,source_version,lifecycle,title,
-           content,content_type,permission_fidelity,permission_uncertain,
-           acl_fingerprint,metadata,source_sequence,observed_at
-         ) values(
-           $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13,$14::timestamptz
-         )
-         on conflict(connector_id,object_id) do update
-           set object_type=excluded.object_type,
-               source_version=excluded.source_version,
-               lifecycle=excluded.lifecycle,
-               title=excluded.title,
-               content=excluded.content,
-               content_type=excluded.content_type,
-               permission_fidelity=excluded.permission_fidelity,
-               permission_uncertain=excluded.permission_uncertain,
-               acl_fingerprint=excluded.acl_fingerprint,
-               metadata=excluded.metadata,
-               source_sequence=excluded.source_sequence,
-               observed_at=excluded.observed_at,
-               updated_at=now()
-         where source_connector_objects.source_sequence<excluded.source_sequence`,
-        [
-          event.connector_id,
-          event.object_id,
-          event.object_type,
-          event.source_version,
-          lifecycle,
-          event.title ?? null,
-          lifecycle === "DELETED_TOMBSTONE" ? null : (event.content ?? null),
-          event.content_type ?? null,
-          event.permission_fidelity,
-          event.permission_uncertain,
-          event.acl_fingerprint ?? null,
-          JSON.stringify(event.metadata ?? {}),
-          sequence,
-          event.occurred_at,
-        ],
-      );
+          `insert into source_connector_objects(
+             connector_id,object_id,object_type,source_version,lifecycle,title,
+             content,content_type,permission_fidelity,permission_uncertain,
+             acl_fingerprint,metadata,source_sequence,observed_at
+           ) values(
+             $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13,$14::timestamptz
+           )
+           on conflict(connector_id,object_id) do update
+             set object_type=excluded.object_type,
+                 source_version=excluded.source_version,
+                 lifecycle=excluded.lifecycle,
+                 title=excluded.title,
+                 content=excluded.content,
+                 content_type=excluded.content_type,
+                 permission_fidelity=excluded.permission_fidelity,
+                 permission_uncertain=excluded.permission_uncertain,
+                 acl_fingerprint=excluded.acl_fingerprint,
+                 metadata=excluded.metadata,
+                 source_sequence=excluded.source_sequence,
+                 observed_at=excluded.observed_at,
+                 updated_at=now()
+           where source_connector_objects.source_sequence<excluded.source_sequence`,
+          [
+            event.connector_id,
+            event.object_id,
+            event.object_type,
+            event.source_version,
+            lifecycle,
+            event.title ?? null,
+            lifecycle === "DELETED_TOMBSTONE" ? null : (event.content ?? null),
+            event.content_type ?? null,
+            event.permission_fidelity,
+            event.permission_uncertain,
+            event.acl_fingerprint ?? null,
+            JSON.stringify(event.metadata ?? {}),
+            sequence,
+            event.occurred_at,
+          ],
+        );
         await client.query(
           `update external_object_refs r
               set source_revision=$3,
