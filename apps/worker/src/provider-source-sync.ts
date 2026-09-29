@@ -83,7 +83,6 @@ function providerPort(
     return new JiraCloudSourceConnector({
       baseUrl,
       authorizationHeader: authorization,
-      webhookEnabled,
       ...(jql ? { jql } : {}),
     });
   }
