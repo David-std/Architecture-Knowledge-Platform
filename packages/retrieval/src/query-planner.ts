@@ -363,6 +363,7 @@ export function planQuery(
     )
   )
     intent = "SOURCE_VERIFICATION";
+  else if (exactPattern.test(query)) intent = "EXACT_LOOKUP";
   else if (looksLikeProjectCodeRequest(query)) intent = "PROJECT_CODE";
   else if (
     /\b(compare|comparison|comparar|versus| vs |diferencia)\b/.test(normalized)
@@ -372,7 +373,6 @@ export function planQuery(
     intent = "WORKFLOW_EXECUTION";
   else if (/\b(global|sintesis|panorama|todo el corpus)\b/.test(normalized))
     intent = "GLOBAL_SYNTHESIS";
-  else if (exactPattern.test(query)) intent = "EXACT_LOOKUP";
   else intent = "CONCEPTUAL";
 
   const inferredShape = classifyQueryShape(query, intent);
