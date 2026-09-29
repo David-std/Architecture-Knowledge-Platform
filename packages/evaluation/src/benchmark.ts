@@ -431,9 +431,8 @@ export function scoreBenchmarkObservation(
       : null;
   const goldSupportRecallAt = (limit: number): number =>
     goldSupportDepthScored
-      ? goldSupportFirstRanks.filter(
-          (rank) => rank !== null && rank <= limit,
-        ).length / goldSupportFirstRanks.length
+      ? goldSupportFirstRanks.filter((rank) => rank !== null && rank <= limit)
+          .length / goldSupportFirstRanks.length
       : 0;
   const goldSupportRecallAt8 = goldSupportRecallAt(8);
   const goldSupportRecallAt16 = goldSupportRecallAt(16);
