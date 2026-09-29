@@ -34,6 +34,7 @@ describe("operational reconciliation", () => {
         return {
           rows: [
             {
+              quarantine_id: 41,
               space_id: spaceId,
               vault_id: vaultId,
               delivery_status: "QUARANTINED",
@@ -47,7 +48,7 @@ describe("operational reconciliation", () => {
             {
               id: "44444444-4444-4444-8444-444444444444",
               resource_type: "EVENT_QUARANTINE",
-              resource_key: `${eventId}:projection-worker`,
+              resource_key: `${eventId}:projection-worker:quarantine:41`,
               space_id: spaceId,
               vault_id: vaultId,
               environment: "local",
@@ -76,7 +77,7 @@ describe("operational reconciliation", () => {
       }),
     ).resolves.toMatchObject({
       resourceType: "EVENT_QUARANTINE",
-      resourceKey: `${eventId}:projection-worker`,
+      resourceKey: `${eventId}:projection-worker:quarantine:41`,
       vaultId,
       disposition: "SUPERSEDED_BY_VERIFIED_PROJECTION",
     });
@@ -123,6 +124,7 @@ describe("operational reconciliation", () => {
         return {
           rows: [
             {
+              quarantine_id: 77,
               space_id: null,
               vault_id: null,
               delivery_status: "QUARANTINED",
@@ -158,15 +160,26 @@ describe("operational reconciliation", () => {
     ).rejects.toThrow("OPERATIONAL_RECONCILIATION_EVIDENCE_REQUIRED");
   });
 
-  it("keeps quarantine resource identity deterministic and bounded to event plus consumer", () => {
+  it("binds a disposition to one quarantine occurrence so a later re-quarantine stays unresolved", () => {
+    const eventId = "11111111-1111-4111-8111-111111111111";
     expect(
-      quarantineResourceKey(
-        "11111111-1111-4111-8111-111111111111",
-        "projection-worker",
-      ),
-    ).toBe("11111111-1111-4111-8111-111111111111:projection-worker");
-    expect(() => quarantineResourceKey("", "projection-worker")).toThrow(
-      "OPERATIONAL_RECONCILIATION_RESOURCE_REQUIRED",
+      quarantineResourceKey(eventId, "projection-worker", 41),
+    ).toBe(
+      "11111111-1111-4111-8111-111111111111:projection-worker:quarantine:41",
     );
+    expect(
+      quarantineResourceKey(eventId, "projection-worker", 42),
+    ).toBe(
+      "11111111-1111-4111-8111-111111111111:projection-worker:quarantine:42",
+    );
+    expect(
+      quarantineResourceKey(eventId, "projection-worker", 41),
+    ).not.toBe(quarantineResourceKey(eventId, "projection-worker", 42));
+    expect(() =>
+      quarantineResourceKey("", "projection-worker", 41),
+    ).toThrow("OPERATIONAL_RECONCILIATION_RESOURCE_REQUIRED");
+    expect(() =>
+      quarantineResourceKey(eventId, "projection-worker", 0),
+    ).toThrow("OPERATIONAL_RECONCILIATION_RESOURCE_REQUIRED");
   });
 });
