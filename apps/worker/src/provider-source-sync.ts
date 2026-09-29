@@ -355,6 +355,10 @@ export async function syncProviderSourceConnector(
            from source_connector_objects o
           where o.connector_id=$1
             and o.lifecycle='ACTIVE'
+            and (
+              o.provider_last_checked_at is null
+              or o.provider_last_checked_at < now() - interval '15 minutes'
+            )
             and not exists(
               select 1
                 from source_connector_events e
@@ -365,7 +369,7 @@ export async function syncProviderSourceConnector(
             )
           order by o.provider_last_checked_at asc nulls first,
                    o.updated_at,o.object_id
-          limit 25`,
+          limit 10`,
         [connectorId],
       );
 
