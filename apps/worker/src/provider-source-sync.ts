@@ -75,6 +75,7 @@ function providerPort(
     config.authorizationScheme,
     row.source_system,
   );
+  const webhookEnabled = Boolean(stringValue(config.webhookSecretRef));
   if (row.source_system === "jira") {
     const baseUrl = stringValue(config.baseUrl);
     const jql = stringValue(config.jql);
@@ -82,6 +83,7 @@ function providerPort(
     return new JiraCloudSourceConnector({
       baseUrl,
       authorizationHeader: authorization,
+      webhookEnabled,
       ...(jql ? { jql } : {}),
     });
   }
@@ -89,6 +91,7 @@ function providerPort(
     const endpoint = stringValue(config.endpoint);
     return new LinearSourceConnector({
       authorizationHeader: authorization,
+      webhookEnabled,
       ...(endpoint ? { endpoint } : {}),
     });
   }
