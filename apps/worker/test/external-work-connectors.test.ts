@@ -104,7 +104,7 @@ describe("external work source connectors", () => {
 
     expect(jira.describe().incremental).toEqual({
       cursor: true,
-      webhook: true,
+      webhook: false,
     });
     expect(linear.describe().incremental).toEqual({
       cursor: true,
