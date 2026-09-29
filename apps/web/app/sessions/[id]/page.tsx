@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { akp } from "../../../lib/api";
+import { linkProviderReference } from "./actions";
 import {
   eventPayload,
   sessionObjectGroups,
@@ -62,6 +63,22 @@ type ExternalRef = {
   workObjectClass: string | null;
   sourceRevision: string | null;
   updatedAt: string;
+};
+
+type ProviderObject = {
+  connectorId: string;
+  provider: string;
+  objectId: string;
+  objectType: string;
+  externalId: string;
+  sourceRevision: string;
+  title: string | null;
+  canonicalUrl: string | null;
+  providerHealth: string;
+  providerLastErrorCode: string | null;
+  lifecycle: string;
+  observedAt: string;
+  metadata: Record<string, unknown>;
 };
 
 type OperatorMe = {
@@ -159,20 +176,33 @@ function captureTitle(event: SessionEvent): string {
 
 export default async function SessionObjectPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ notice?: string; error?: string }>;
 }) {
   const { id } = await params;
-  const [state, refsResponse, me] = await Promise.all([
+  const query = await searchParams;
+  const [state, refsResponse, providerResponse, me] = await Promise.all([
     akp<SessionState>(`/v1/sessions/${encodeURIComponent(id)}/state`),
     akp<{ refs: ExternalRef[] }>(
       `/v1/sessions/${encodeURIComponent(id)}/external-refs`,
+    ),
+    akp<{ objects: ProviderObject[] }>(
+      `/v1/sessions/${encodeURIComponent(id)}/provider-objects?limit=50`,
     ),
     akp<OperatorMe>("/v1/operator/me"),
   ]);
   const grouped = sessionObjectGroups(state.events);
   const workRefs = refsResponse.refs.filter(
     (ref) => ref.workObjectClass !== null,
+  );
+  const canPropose = Boolean(
+    me.actor?.memberships.some(
+      (membership) =>
+        membership.spaceId === state.session.spaceId &&
+        membership.permissions.includes("knowledge:propose"),
+    ),
   );
   const canReadAudit = Boolean(
     me.actor?.memberships.some(
@@ -195,6 +225,12 @@ export default async function SessionObjectPage({
       <p>
         <Link href="/">← Workspace Home</Link>
       </p>
+      {query.notice ? <p className="card">{query.notice}</p> : null}
+      {query.error ? (
+        <p className="card">
+          <strong>Action failed:</strong> {query.error}
+        </p>
+      ) : null}
 
       <div className="grid">
         <section className="card">
@@ -364,6 +400,78 @@ export default async function SessionObjectPage({
         ) : (
           <p className="muted">
             No typed work objects projected for this session.
+          </p>
+        )}
+      </section>
+
+      <h2>Provider-backed objects available</h2>
+      <section className="card">
+        <p className="muted">
+          These objects come from authenticated read-only provider adapters.
+          Linking creates a MIRRORED_PROJECTION coordination reference; it does
+          not approve the ticket as AKP knowledge.
+        </p>
+        {providerResponse.objects.length ? (
+          <table>
+            <thead>
+              <tr>
+                <th>Object</th>
+                <th>Provider</th>
+                <th>Revision</th>
+                <th>Health</th>
+                <th>Observed</th>
+                <th>Link</th>
+              </tr>
+            </thead>
+            <tbody>
+              {providerResponse.objects.map((item) => (
+                <tr key={`${item.connectorId}:${item.objectId}`}>
+                  <td>
+                    {item.canonicalUrl ? (
+                      <a href={item.canonicalUrl} target="_blank" rel="noreferrer">
+                        {item.title?.trim() || item.externalId}
+                      </a>
+                    ) : (
+                      item.title?.trim() || item.externalId
+                    )}
+                    <br />
+                    <small className="muted">{item.objectType}</small>
+                  </td>
+                  <td>{item.provider}</td>
+                  <td>
+                    <code>{short(item.sourceRevision)}</code>
+                  </td>
+                  <td>
+                    <span className="badge">{item.providerHealth}</span>
+                    {item.providerLastErrorCode ? (
+                      <>
+                        <br />
+                        <small>{item.providerLastErrorCode}</small>
+                      </>
+                    ) : null}
+                  </td>
+                  <td>{item.observedAt}</td>
+                  <td>
+                    {canPropose ? (
+                      <form action={linkProviderReference}>
+                        <input type="hidden" name="sessionId" value={state.session.id} />
+                        <input type="hidden" name="connectorId" value={item.connectorId} />
+                        <input type="hidden" name="objectId" value={item.objectId} />
+                        <input type="hidden" name="workObjectClass" value="WORK_ITEM" />
+                        <button type="submit">Link to session</button>
+                      </form>
+                    ) : (
+                      <span className="muted">knowledge:propose required</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="muted">
+            No active Jira/Linear provider projections are available in this
+            vault.
           </p>
         )}
       </section>
