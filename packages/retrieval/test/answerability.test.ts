@@ -606,6 +606,56 @@ describe("retrieval answerability", () => {
     });
   });
 
+  it("matches a specific subject core without treating its generic model head as identity", () => {
+    const correctClaim = hit(150, {
+      title: "Orion sensor selection",
+      type: "claim",
+      trust: "MACHINE_SUPPORTED",
+      externalId: "CLM-150",
+      excerpt:
+        "Los sensores de Orion se seleccionan según la necesidad; no son obligatorios en todas las instalaciones.",
+      contributions: [contribution("vector", 0.7, 34)],
+    });
+    const otherModelClaim = hit(151, {
+      title: "Atlas sensor selection",
+      type: "claim",
+      trust: "MACHINE_SUPPORTED",
+      externalId: "CLM-151",
+      excerpt:
+        "Los sensores de Atlas se seleccionan según la necesidad; no son obligatorios en todas las instalaciones.",
+      contributions: [contribution("vector", 0.69, 35)],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [correctClaim, otherModelClaim],
+      "Does the Orion model require every sensor for each installation?",
+    );
+
+    expect(result.supported).toBe(true);
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(correctClaim),
+    ]);
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: true,
+      claimRelationDiagnostics: expect.objectContaining({
+        subjectAnchorCount: 1,
+        subjectOverlap: 1,
+        subjectMatched: true,
+        objectOrScopeMatched: true,
+        supported: true,
+      }),
+    });
+    expect(result.candidateSignals[1]?.passageSupport).toMatchObject({
+      supported: false,
+      claimRelationDiagnostics: expect.objectContaining({
+        subjectAnchorCount: 1,
+        subjectOverlap: 0,
+        subjectMatched: false,
+        supported: false,
+      }),
+    });
+  });
+
   it("rejects a reviewed claim with the same subject and predicate but a different object", () => {
     const wrongClaim = hit(42, {
       title: "Local pattern deployment scope",
