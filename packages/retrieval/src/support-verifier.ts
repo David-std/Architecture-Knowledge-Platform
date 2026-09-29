@@ -346,6 +346,7 @@ const PASSAGE_CUE_PATTERNS: Record<PassageAnswerCue, readonly string[]> = {
     "this ensur*",
     "doing so",
     "as a result",
+    "leak*",
     "porque",
     "debido",
     "razon",
@@ -366,6 +367,7 @@ const PASSAGE_CUE_PATTERNS: Record<PassageAnswerCue, readonly string[]> = {
     "asi",
     "de esta forma",
     "de este modo",
+    "filtr*",
   ],
   RULE: [
     "bounded",
@@ -525,6 +527,8 @@ function canonicalSemanticToken(token: string): string {
     return "cost";
   if (/^(operat|operacion)/u.test(token)) return "operational";
   if (/^(domain|dominio)/u.test(token)) return "domain";
+  if (/^(external|exterior|extern)/u.test(token)) return "external";
+  if (/^(detail|detalle)/u.test(token)) return "detail";
   if (/^(toward|towards|hacia)/u.test(token)) return "toward";
   if (/^(month|monthly|mensual|mes)/u.test(token)) return "month";
   if (/^(year|ano)/u.test(token)) return "year";
@@ -818,6 +822,25 @@ const CUE_TOKENS_THAT_REMAIN_PREDICATE_ANCHORS = new Set([
   "repeat",
 ]);
 
+const PREDICATE_GRAMMAR_TOKENS = new Set([
+  "using",
+  "use",
+  "or",
+  "either",
+  "both",
+  "toward",
+  "rather",
+  "than",
+  "instead",
+  "via",
+  "through",
+  "usando",
+  "usar",
+  "o",
+  "hacia",
+  "mediante",
+]);
+
 function queryPredicateAnchors(
   query: string,
   requirements: readonly PassageAnswerCue[],
@@ -841,6 +864,7 @@ function queryPredicateAnchors(
           token.length >= 2 &&
           !ANSWERABILITY_STOPWORDS.has(token) &&
           !QUESTION_SHAPE_TOKENS.has(token) &&
+          !PREDICATE_GRAMMAR_TOKENS.has(token) &&
           !requirementWords.has(token),
       ),
     ),
