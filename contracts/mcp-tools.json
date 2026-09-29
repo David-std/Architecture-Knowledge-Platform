@@ -38,17 +38,37 @@
         },
         "minimumTrust": {
           "type": "string",
-          "enum": ["UNVERIFIED", "MACHINE_SUPPORTED", "HUMAN_REVIEWED", "ATTESTED"],
+          "enum": [
+            "UNVERIFIED",
+            "MACHINE_SUPPORTED",
+            "HUMAN_REVIEWED",
+            "ATTESTED"
+          ],
           "default": "MACHINE_SUPPORTED"
         },
         "mode": {
           "type": "string",
-          "enum": ["COMPILED_ONLY", "SOURCE_BACKED", "RAW_ONLY", "PROJECT_CODE"],
+          "enum": [
+            "COMPILED_ONLY",
+            "SOURCE_BACKED",
+            "RAW_ONLY",
+            "PROJECT_CODE"
+          ],
           "default": "SOURCE_BACKED"
         },
         "intent": {
           "type": "string",
-          "enum": ["EXACT_LOOKUP", "CONCEPTUAL", "COMPARISON", "WORKFLOW_EXECUTION", "SOURCE_VERIFICATION", "PROJECT_CODE", "GLOBAL_SYNTHESIS", "IMPACT_ANALYSIS", "NO_RETRIEVAL_REQUIRED"]
+          "enum": [
+            "EXACT_LOOKUP",
+            "CONCEPTUAL",
+            "COMPARISON",
+            "WORKFLOW_EXECUTION",
+            "SOURCE_VERIFICATION",
+            "PROJECT_CODE",
+            "GLOBAL_SYNTHESIS",
+            "IMPACT_ANALYSIS",
+            "NO_RETRIEVAL_REQUIRED"
+          ]
         }
       }
     },
@@ -80,7 +100,17 @@
         },
         "intent": {
           "type": "string",
-          "enum": ["EXACT_LOOKUP", "CONCEPTUAL", "COMPARISON", "WORKFLOW_EXECUTION", "SOURCE_VERIFICATION", "PROJECT_CODE", "GLOBAL_SYNTHESIS", "IMPACT_ANALYSIS", "NO_RETRIEVAL_REQUIRED"],
+          "enum": [
+            "EXACT_LOOKUP",
+            "CONCEPTUAL",
+            "COMPARISON",
+            "WORKFLOW_EXECUTION",
+            "SOURCE_VERIFICATION",
+            "PROJECT_CODE",
+            "GLOBAL_SYNTHESIS",
+            "IMPACT_ANALYSIS",
+            "NO_RETRIEVAL_REQUIRED"
+          ],
           "default": "CONCEPTUAL"
         },
         "maxTokens": {
@@ -107,7 +137,12 @@
         },
         "mode": {
           "type": "string",
-          "enum": ["COMPILED_ONLY", "SOURCE_BACKED", "RAW_ONLY", "PROJECT_CODE"],
+          "enum": [
+            "COMPILED_ONLY",
+            "SOURCE_BACKED",
+            "RAW_ONLY",
+            "PROJECT_CODE"
+          ],
           "default": "SOURCE_BACKED"
         }
       }
@@ -437,7 +472,19 @@
         "properties": {
           "action": {
             "type": "string",
-            "enum": ["BOOTSTRAP", "SEARCH", "EXPLAIN", "IMPACT", "CODE", "TEMPORAL", "GLOBAL", "VERIFY", "CAPTURE", "TASK", "STATUS"]
+            "enum": [
+              "BOOTSTRAP",
+              "SEARCH",
+              "EXPLAIN",
+              "IMPACT",
+              "CODE",
+              "TEMPORAL",
+              "GLOBAL",
+              "VERIFY",
+              "CAPTURE",
+              "TASK",
+              "STATUS"
+            ]
           },
           "sessionId": {
             "type": "string",
@@ -474,7 +521,17 @@
           },
           "intent": {
             "type": "string",
-            "enum": ["EXACT_LOOKUP", "CONCEPTUAL", "COMPARISON", "WORKFLOW_EXECUTION", "SOURCE_VERIFICATION", "PROJECT_CODE", "GLOBAL_SYNTHESIS", "IMPACT_ANALYSIS", "NO_RETRIEVAL_REQUIRED"]
+            "enum": [
+              "EXACT_LOOKUP",
+              "CONCEPTUAL",
+              "COMPARISON",
+              "WORKFLOW_EXECUTION",
+              "SOURCE_VERIFICATION",
+              "PROJECT_CODE",
+              "GLOBAL_SYNTHESIS",
+              "IMPACT_ANALYSIS",
+              "NO_RETRIEVAL_REQUIRED"
+            ]
           },
           "limit": {
             "type": "integer",
@@ -511,7 +568,16 @@
           },
           "codeOperation": {
             "type": "string",
-            "enum": ["SYMBOL", "CALLERS", "CALLEES", "PATH", "IMPACT", "CHANGE_IMPACT", "TESTS", "EXPLAIN_PATH"],
+            "enum": [
+              "SYMBOL",
+              "CALLERS",
+              "CALLEES",
+              "PATH",
+              "IMPACT",
+              "CHANGE_IMPACT",
+              "TESTS",
+              "EXPLAIN_PATH"
+            ],
             "default": "SYMBOL"
           },
           "selector": {
@@ -774,7 +840,13 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["sessionId", "provider", "objectType", "externalId", "idempotencyKey"],
+        "required": [
+          "sessionId",
+          "provider",
+          "objectType",
+          "externalId",
+          "idempotencyKey"
+        ],
         "properties": {
           "sessionId": {
             "type": "string",
@@ -930,7 +1002,17 @@
           "intent": {
             "type": "string",
             "default": "WORKFLOW_EXECUTION",
-            "enum": ["EXACT_LOOKUP", "CONCEPTUAL", "COMPARISON", "WORKFLOW_EXECUTION", "SOURCE_VERIFICATION", "PROJECT_CODE", "GLOBAL_SYNTHESIS", "IMPACT_ANALYSIS", "NO_RETRIEVAL_REQUIRED"]
+            "enum": [
+              "EXACT_LOOKUP",
+              "CONCEPTUAL",
+              "COMPARISON",
+              "WORKFLOW_EXECUTION",
+              "SOURCE_VERIFICATION",
+              "PROJECT_CODE",
+              "GLOBAL_SYNTHESIS",
+              "IMPACT_ANALYSIS",
+              "NO_RETRIEVAL_REQUIRED"
+            ]
           },
           "packetMode": {
             "type": "string",
@@ -1069,7 +1151,13 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["sessionId", "workKey", "toUserId", "fencingToken", "idempotencyKey"],
+        "required": [
+          "sessionId",
+          "workKey",
+          "toUserId",
+          "fencingToken",
+          "idempotencyKey"
+        ],
         "properties": {
           "sessionId": {
             "type": "string",
@@ -1192,7 +1280,14 @@
           },
           "eventType": {
             "type": "string",
-            "enum": ["FINDING", "BLOCKER", "QUESTION", "ARTIFACT", "DECISION_CANDIDATE", "NOTE"]
+            "enum": [
+              "FINDING",
+              "BLOCKER",
+              "QUESTION",
+              "ARTIFACT",
+              "DECISION_CANDIDATE",
+              "NOTE"
+            ]
           },
           "claimId": {
             "type": "string",
@@ -1229,7 +1324,12 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["sessionId", "evidenceEventIds", "changes", "idempotencyKey"],
+        "required": [
+          "sessionId",
+          "evidenceEventIds",
+          "changes",
+          "idempotencyKey"
+        ],
         "properties": {
           "sessionId": {
             "type": "string",
@@ -1578,7 +1678,15 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["spaceId", "vaultId", "summary", "path", "content", "reason", "idempotencyKey"],
+        "required": [
+          "spaceId",
+          "vaultId",
+          "summary",
+          "path",
+          "content",
+          "reason",
+          "idempotencyKey"
+        ],
         "properties": {
           "spaceId": {
             "type": "string",
@@ -1647,7 +1755,14 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["reviewId", "summary", "path", "content", "reason", "idempotencyKey"],
+        "required": [
+          "reviewId",
+          "summary",
+          "path",
+          "content",
+          "reason",
+          "idempotencyKey"
+        ],
         "properties": {
           "reviewId": {
             "type": "string",
