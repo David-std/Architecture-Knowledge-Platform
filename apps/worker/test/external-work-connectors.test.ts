@@ -89,6 +89,29 @@ describe("external work source connectors", () => {
     });
   });
 
+  it("reports provider webhook capability without requiring the polling adapter to own the signing secret", () => {
+    const jira = new JiraCloudSourceConnector({
+      baseUrl: "https://example.atlassian.net",
+      authorizationHeader: "Bearer test-only",
+      webhookEnabled: true,
+      fetchImpl: vi.fn() as unknown as typeof fetch,
+    });
+    const linear = new LinearSourceConnector({
+      authorizationHeader: "test-only-key",
+      webhookEnabled: true,
+      fetchImpl: vi.fn() as unknown as typeof fetch,
+    });
+
+    expect(jira.describe().incremental).toEqual({
+      cursor: true,
+      webhook: true,
+    });
+    expect(linear.describe().incremental).toEqual({
+      cursor: true,
+      webhook: true,
+    });
+  });
+
   it("fails Jira webhook verification closed unless a deployment verifier is supplied", async () => {
     const request = {
       rawBody: new TextEncoder().encode(
