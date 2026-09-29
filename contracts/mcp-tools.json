@@ -996,6 +996,36 @@
       }
     },
     {
+      "name": "akp_list_provider_objects",
+      "version": "1.0.0",
+      "permission": "knowledge:read",
+      "mutates": false,
+      "description": "List active Jira/Linear objects synchronized through authenticated read-only provider adapters for one authorized workspace session.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sessionId"
+        ],
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        }
+      },
+      "http": {
+        "method": "GET",
+        "path": "/v1/sessions/{id}/provider-objects"
+      }
+    },
+    {
       "name": "akp_link_provider_reference",
       "version": "1.0.0",
       "permission": "knowledge:propose",
