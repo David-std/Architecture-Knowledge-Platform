@@ -24,7 +24,7 @@ This document tracks the corrective work discovered after the context-answerabil
 - [x] Keep provider registration fail-closed to allowlisted Jira Cloud / Linear endpoints and credential references rather than secret bytes.
 - [x] Add simulated-provider tests. A real-integration claim remains blocked until sandbox credentials are exercised.
 - [x] Expose safe AKP MCP operations for linking/querying/updating external references without promoting ticket content into approved knowledge.
-- [x] Provider webhook ingestion uses a raw-body authenticated HTTP path into the same idempotent connector inbox. Jira verifies `X-Hub-Signature` plus the Atlassian delivery identifier; Linear verifies `Linear-Signature`, delivery identity and timestamp freshness. Signing secret bytes remain outside PostgreSQL.
+- [x] Linear provider webhook ingestion uses a raw-body authenticated HTTP path into the same idempotent connector inbox and verifies `Linear-Signature`, delivery identity and timestamp freshness. Signing secret bytes remain outside PostgreSQL. Native Jira Cloud provider webhooks remain fail-closed because the standard Jira webhook contract documents retry identity but not a Linear-equivalent shared-secret HMAC; Jira uses authenticated polling until an Atlassian-authenticated callback mechanism is implemented.
 - [x] Provider absence reconciliation is bounded and fail-closed: active projections are rechecked with authenticated `fetchById`; an ambiguous `404`/`null` degrades health and blocks provider-checkpoint advancement instead of fabricating a deletion. Explicit `DELETE` events still tombstone through the generic connector inbox.
 - [ ] Run Jira and Linear sandbox/account acceptance with real credentials before calling the adapters live-validated.
 
