@@ -426,7 +426,6 @@ export async function syncProviderSourceConnector(
           break;
         }
       }
-
     }
 
     const unresolved = await db.pool.query<{ count: number }>(
