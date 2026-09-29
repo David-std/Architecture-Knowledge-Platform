@@ -3543,8 +3543,9 @@ paths:
         operator-owned credential reference and non-secret provider
         configuration are persisted; provider secret bytes remain outside AKP
         durable state. Provider projections remain UNTRUSTED_EXTERNAL
-        references and write-back is disabled. The deployed provider path is
-        authenticated polling; provider webhook ingestion is not exposed.
+        references and write-back is disabled. Polling is always available;
+        an optional webhookSecretRef enables authenticated provider webhook
+        ingestion without persisting the signing secret.
       requestBody:
         required: true
         content:
@@ -3569,6 +3570,12 @@ paths:
                     pattern: "^[A-Z][A-Z0-9_]{1,127}$",
                     description: "Environment/secret-store reference, never the provider secret itself.",
                   }
+                webhookSecretRef:
+                  {
+                    type: string,
+                    pattern: "^[A-Z][A-Z0-9_]{1,127}$",
+                    description: "Optional environment/secret-store reference used only to verify Jira/Linear webhook signatures.",
+                  }
                 baseUrl:
                   {
                     type: string,
@@ -3585,6 +3592,58 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+
+  /hooks/source-connectors/{id}/provider-events:
+    post:
+      tags: [Sources]
+      operationId: receiveProviderSourceConnectorWebhook
+      security: []
+      x-akp-idempotency-exempt: true
+      description: >
+        Authenticated Jira Cloud or Linear webhook inbox for a registered
+        PROVIDER_PULL connector. AKP verifies the provider signature against an
+        operator-owned webhook secret reference, preserves the provider
+        delivery identifier as the idempotency key, assigns a contiguous inbox
+        sequence under lock, and stores only UNTRUSTED_EXTERNAL reference
+        metadata. Jira uses X-Hub-Signature plus
+        X-Atlassian-Webhook-Identifier. Linear uses Linear-Signature,
+        Linear-Delivery and a one-minute timestamp freshness check.
+      parameters:
+        - {
+            name: id,
+            in: path,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          {
+            description: "Duplicate provider delivery already recorded.",
+            content:
+              {
+                application/json:
+                  { schema: { type: object, additionalProperties: true } },
+              },
+          }
+        "202":
+          {
+            description: "Verified provider delivery accepted into the connector inbox.",
+            content:
+              {
+                application/json:
+                  { schema: { type: object, additionalProperties: true } },
+              },
+          }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /hooks/source-connectors/{id}/events:
     post:
