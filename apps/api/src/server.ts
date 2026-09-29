@@ -19,6 +19,8 @@ import {
 } from "@akp/observability";
 import {
   DeterministicQueryDecomposer,
+  type QueryConditionedEvidenceVerifier,
+  type QueryConditionedEvidenceVerifierMode,
   type QueryTransformerPort,
   type Tokenizer,
 } from "@akp/retrieval";
@@ -61,6 +63,9 @@ config({
 export interface ApiServerDependencies {
   contextTokenizer?: Tokenizer;
   queryTransformer?: QueryTransformerPort;
+  evidenceVerifier?: QueryConditionedEvidenceVerifier;
+  evidenceVerifierMode?: QueryConditionedEvidenceVerifierMode;
+  evidenceVerifierMaxCandidates?: number;
 }
 
 export function buildServer(dependencies: ApiServerDependencies = {}) {
@@ -251,6 +256,18 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
       ? { contextTokenizer: dependencies.contextTokenizer }
       : {}),
     ...(queryTransformer ? { queryTransformer } : {}),
+    ...(dependencies.evidenceVerifier
+      ? { evidenceVerifier: dependencies.evidenceVerifier }
+      : {}),
+    ...(dependencies.evidenceVerifierMode
+      ? { evidenceVerifierMode: dependencies.evidenceVerifierMode }
+      : {}),
+    ...(dependencies.evidenceVerifierMaxCandidates === undefined
+      ? {}
+      : {
+          evidenceVerifierMaxCandidates:
+            dependencies.evidenceVerifierMaxCandidates,
+        }),
   });
   registerIngestRoutes(app, db);
   registerKnowledgeRoutes(app, db);

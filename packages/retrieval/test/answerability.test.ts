@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { SearchHit } from "@akp/contracts";
 import {
   assessRetrievalAnswerability,
+  assessRetrievalAnswerabilityWithVerifier,
   collectCandidateAnswerabilitySignals,
   resolveRetrievalAnswerabilityPolicy,
   retrievalAnswerabilityCandidateKey,
@@ -741,6 +742,178 @@ describe("retrieval answerability", () => {
       supported: false,
       reason: "SUPPORT_NOT_DEMONSTRATED",
     });
+  });
+
+  it("keeps query-conditioned verification in shadow mode until promotion", async () => {
+    const candidate = hit(40, {
+      title: "Bounded semantic relation",
+      excerpt:
+        "The selected mechanism keeps the domain independent from external frameworks.",
+      contributions: [contribution("vector", 0.84, 3)],
+    });
+    const query = "Why does the selected mechanism keep the domain independent?";
+    const baseline = assessRetrievalAnswerability([candidate], query);
+    const result = await assessRetrievalAnswerabilityWithVerifier(
+      [candidate],
+      query,
+      {
+        id: "fixture-verifier",
+        async verify(input) {
+          return {
+            decision: "SUPPORTS",
+            score: 0.91,
+            evidenceSpan: {
+              startOffset: 0,
+              endOffset: input.passage.length,
+            },
+            reason: "fixture support",
+          };
+        },
+      },
+      { mode: "SHADOW" },
+    );
+
+    expect(result.supported).toBe(baseline.supported);
+    expect(result.supportedCandidateKeys).toEqual(
+      baseline.supportedCandidateKeys,
+    );
+    expect(result.candidateSignals[0]?.queryConditionedEvidence).toMatchObject({
+      verifierId: "fixture-verifier",
+      mode: "SHADOW",
+      decision: "SUPPORTS",
+    });
+  });
+
+  it("enforces query-conditioned support on the exact candidate relation", async () => {
+    const wrong = hit(41, {
+      title: "Adapter example",
+      excerpt:
+        "The adapter defines a uniqueness strategy for generated keys.",
+      contributions: [contribution("vector", 0.93, 1)],
+    });
+    const correct = hit(42, {
+      title: "Architecture boundary",
+      excerpt:
+        "Local patterns do not determine the overall system architecture.",
+      contributions: [contribution("vector", 0.88, 2)],
+    });
+    const query = "Do local patterns define the overall system architecture?";
+    const correctKey = retrievalAnswerabilityCandidateKey(correct);
+    const result = await assessRetrievalAnswerabilityWithVerifier(
+      [wrong, correct],
+      query,
+      {
+        id: "fixture-verifier",
+        async verify(input) {
+          if (input.candidateKey === correctKey) {
+            return {
+              decision: "SUPPORTS",
+              evidenceSpan: {
+                startOffset: 0,
+                endOffset: input.passage.length,
+              },
+              reason: "relation is answered",
+            };
+          }
+          return {
+            decision: "INSUFFICIENT",
+            reason: "same vocabulary, different relation",
+          };
+        },
+      },
+      { mode: "ENFORCE" },
+    );
+
+    expect(result.supportedCandidateKeys).toEqual([correctKey]);
+    expect(result.candidateSignals).toEqual([
+      expect.objectContaining({
+        candidateKey: retrievalAnswerabilityCandidateKey(wrong),
+        passageSupport: expect.objectContaining({
+          supported: false,
+          reason: "QUERY_CONDITIONED_INSUFFICIENT",
+        }),
+      }),
+      expect.objectContaining({
+        candidateKey: correctKey,
+        passageSupport: expect.objectContaining({
+          supported: true,
+          reason: "QUERY_CONDITIONED_SUPPORT",
+        }),
+        queryConditionedEvidence: expect.objectContaining({
+          decision: "SUPPORTS",
+          evidenceSpan: {
+            startOffset: 0,
+            endOffset: correct.excerpt.length,
+          },
+        }),
+      }),
+    ]);
+  });
+
+  it("does not let a query-conditioned verifier override a missing quantity", async () => {
+    const candidate = hit(43, {
+      title: "Operating cost overview",
+      excerpt:
+        "The subsystem has recurring operating cost, reviewed each month.",
+      contributions: [contribution("vector", 0.9, 1)],
+    });
+    const result = await assessRetrievalAnswerabilityWithVerifier(
+      [candidate],
+      "What is the monthly operating cost of the subsystem?",
+      {
+        id: "fixture-verifier",
+        async verify(input) {
+          return {
+            decision: "SUPPORTS",
+            score: 0.99,
+            evidenceSpan: {
+              startOffset: 0,
+              endOffset: input.passage.length,
+            },
+            reason: "model claims support",
+          };
+        },
+      },
+      { mode: "ENFORCE" },
+    );
+
+    expect(result.supported).toBe(false);
+    expect(result.supportedCandidateKeys).toEqual([]);
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: false,
+      reason: "QUERY_CONDITIONED_INSUFFICIENT",
+    });
+  });
+
+  it("fails query-conditioned promotion closed when SUPPORTS lacks an evidence span", async () => {
+    const candidate = hit(44, {
+      title: "Scoped rule",
+      excerpt: "The scoped rule applies only after approval.",
+      contributions: [contribution("vector", 0.8, 1)],
+    });
+    const result = await assessRetrievalAnswerabilityWithVerifier(
+      [candidate],
+      "When does the scoped rule apply?",
+      {
+        id: "fixture-verifier",
+        async verify() {
+          return {
+            decision: "SUPPORTS",
+            reason: "score-only support is not inspectable",
+          };
+        },
+      },
+      { mode: "ENFORCE" },
+    );
+
+    expect(result.supported).toBe(false);
+    expect(result.candidateSignals[0]?.queryConditionedEvidence).toMatchObject({
+      decision: "VERIFIER_ERROR",
+      reason: "QUERY_CONDITIONED_EVIDENCE_SPAN_REQUIRED",
+    });
+    expect(result.candidateSignals[0]?.passageSupport.reason).toBe(
+      "QUERY_CONDITIONED_VERIFIER_ERROR",
+    );
   });
 
   it("uses the comparison pool only for vector diagnostics, never as implicit support", () => {

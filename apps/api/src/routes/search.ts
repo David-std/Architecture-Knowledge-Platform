@@ -26,6 +26,7 @@ import {
 } from "@akp/contracts";
 import {
   assessRetrievalAnswerability,
+  assessRetrievalAnswerabilityWithVerifier,
   buildContextPacket,
   buildContextPacketPair,
   ContextPacketBudgetError,
@@ -48,6 +49,8 @@ import {
   toPgVector,
   type ActiveEmbeddingGenerationDescriptor,
   type PersonalizedPageRankPolicy,
+  type QueryConditionedEvidenceVerifier,
+  type QueryConditionedEvidenceVerifierMode,
   type QueryPlan,
   type QueryPlannerCapabilities,
   type QueryTransformationKind,
@@ -594,6 +597,14 @@ export interface SearchRouteDependencies {
   contextTokenizer?: Tokenizer;
   /** Optional experimental query transformer, normally controlled by feature flag. */
   queryTransformer?: QueryTransformerPort;
+  /**
+   * Optional query-conditioned verifier. It is never derived implicitly from
+   * an LLM provider; promotion requires explicit dependency wiring.
+   */
+  evidenceVerifier?: QueryConditionedEvidenceVerifier;
+  /** Injected verifiers default to SHADOW so evaluation cannot silently gate. */
+  evidenceVerifierMode?: QueryConditionedEvidenceVerifierMode;
+  evidenceVerifierMaxCandidates?: number;
 }
 
 interface StoredContextPacketRow {
@@ -3753,15 +3764,33 @@ export function registerSearchRoutes(
         throw error;
       }
       const answerabilityPool = answerabilityCandidates ?? hits;
-      const answerability = assessRetrievalAnswerability(
-        answerabilityPool,
-        parsed.data.query,
-        {},
-        {
-          allowGraphSupport: plan.intent === "IMPACT_ANALYSIS",
-          comparisonHits: answerabilityPool,
-        },
-      );
+      const answerabilityContext = {
+        allowGraphSupport: plan.intent === "IMPACT_ANALYSIS",
+        comparisonHits: answerabilityPool,
+      };
+      const answerability = dependencies.evidenceVerifier
+        ? await assessRetrievalAnswerabilityWithVerifier(
+            answerabilityPool,
+            parsed.data.query,
+            dependencies.evidenceVerifier,
+            {
+              mode: dependencies.evidenceVerifierMode ?? "SHADOW",
+              ...(dependencies.evidenceVerifierMaxCandidates === undefined
+                ? {}
+                : {
+                    maxCandidates:
+                      dependencies.evidenceVerifierMaxCandidates,
+                  }),
+            },
+            {},
+            answerabilityContext,
+          )
+        : assessRetrievalAnswerability(
+            answerabilityPool,
+            parsed.data.query,
+            {},
+            answerabilityContext,
+          );
       const partitioned = partitionSearchHitsByAnswerability(
         answerabilityPool,
         answerability.supportedCandidateKeys,
@@ -4722,24 +4751,42 @@ export function registerSearchRoutes(
         reasoningExecutionMode !== "PLAN" && directAnswerabilityCandidates
           ? directAnswerabilityCandidates
           : hits;
-      const answerability = assessRetrievalAnswerability(
-        answerabilityPool,
-        parsed.data.query,
-        {},
-        {
-          allowGraphSupport:
-            plan.intent === "IMPACT_ANALYSIS" ||
-            (reasoningExecutionMode === "PLAN" &&
-              hits.some((hit) =>
-                (hit.fusionContributions ?? []).some(
-                  (contribution) =>
-                    contribution.channel === "graph" ||
-                    contribution.channel === "graph-ppr",
-                ),
-              )),
-          comparisonHits: answerabilityPool,
-        },
-      );
+      const answerabilityContext = {
+        allowGraphSupport:
+          plan.intent === "IMPACT_ANALYSIS" ||
+          (reasoningExecutionMode === "PLAN" &&
+            hits.some((hit) =>
+              (hit.fusionContributions ?? []).some(
+                (contribution) =>
+                  contribution.channel === "graph" ||
+                  contribution.channel === "graph-ppr",
+              ),
+            )),
+        comparisonHits: answerabilityPool,
+      };
+      const answerability = dependencies.evidenceVerifier
+        ? await assessRetrievalAnswerabilityWithVerifier(
+            answerabilityPool,
+            parsed.data.query,
+            dependencies.evidenceVerifier,
+            {
+              mode: dependencies.evidenceVerifierMode ?? "SHADOW",
+              ...(dependencies.evidenceVerifierMaxCandidates === undefined
+                ? {}
+                : {
+                    maxCandidates:
+                      dependencies.evidenceVerifierMaxCandidates,
+                  }),
+            },
+            {},
+            answerabilityContext,
+          )
+        : assessRetrievalAnswerability(
+            answerabilityPool,
+            parsed.data.query,
+            {},
+            answerabilityContext,
+          );
       recordAnswerabilityDiagnostics(answerability, "context");
       const supportedCandidateKeys = new Set(
         answerability.supportedCandidateKeys,
