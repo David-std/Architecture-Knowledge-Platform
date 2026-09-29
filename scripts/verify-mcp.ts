@@ -146,6 +146,7 @@ try {
     "akp_get_session_state",
     "akp_list_external_references",
     "akp_upsert_external_reference",
+    "akp_list_provider_objects",
     "akp_link_provider_reference",
     "akp_update_work_context",
     "akp_bootstrap_session_context",
