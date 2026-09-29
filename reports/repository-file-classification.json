@@ -3567,6 +3567,16 @@
       "reason": "configuration or policy contract"
     },
     {
+      "path": "policies/retrieval-generality-baseline.json",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "configuration or policy contract"
+    },
+    {
+      "path": "policies/retrieval-generality.md",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "configuration or policy contract"
+    },
+    {
       "path": "README.md",
       "category": "PRODUCT_DOCUMENTATION",
       "reason": "product documentation"
@@ -3818,6 +3828,11 @@
     },
     {
       "path": "scripts/validate-repository-hygiene.mjs",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/validate-retrieval-generality.mjs",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
