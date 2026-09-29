@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { akp } from "../../../lib/api";
 import {
   compareDependencyPerspectives,
+  externalRefVerification,
   relatedObjectId,
   relationDirection,
   type WorkActivity,
@@ -139,6 +140,7 @@ export default async function WorkObjectPage({
 
   const object = refsResponse.refs.find((ref) => ref.id === id);
   if (!object) notFound();
+  const verification = externalRefVerification(object);
 
   const byId = new Map(refsResponse.refs.map((ref) => [ref.id, ref]));
   const relational = activityResponse.events.filter(
@@ -233,7 +235,7 @@ export default async function WorkObjectPage({
           {object.canonicalUrl ? (
             <p>
               <a href={object.canonicalUrl} target="_blank" rel="noreferrer">
-                Open system-of-record reference
+                Open external reference
               </a>
             </p>
           ) : null}
@@ -247,6 +249,22 @@ export default async function WorkObjectPage({
           </p>
           <p>observed {object.observedAt}</p>
           <p>updated {object.updatedAt}</p>
+        </section>
+
+        <section className="card">
+          <p className="muted">Source verification</p>
+          <p className="metric">{verification.status}</p>
+          <p>{verification.label}</p>
+          {verification.providerHealth ? (
+            <p>
+              provider health <strong>{verification.providerHealth}</strong>
+            </p>
+          ) : null}
+          {verification.lifecycle ? (
+            <p>
+              provider lifecycle <strong>{verification.lifecycle}</strong>
+            </p>
+          ) : null}
         </section>
 
         <section className="card">
