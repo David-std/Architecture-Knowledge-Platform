@@ -457,7 +457,7 @@ async function captureProviderWebhookRawBody(
   }
   const raw = Buffer.concat(chunks);
   providerWebhookRawBodies.set(request, raw);
-  return Readable.from(raw);
+  return Readable.from([raw]);
 }
 
 export function sourceConnectorWebhookMessage(
