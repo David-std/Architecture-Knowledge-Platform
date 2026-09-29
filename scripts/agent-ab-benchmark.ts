@@ -328,6 +328,7 @@ async function retrieveArmA(
     {
       query: retrievalQuery,
       intent: task.intent,
+      ...(task.projectId ? { projectId: task.projectId } : {}),
       spaceId: config.spaceId,
       vaultIds: config.vaultIds,
       federated: config.vaultIds.length > 1,
@@ -354,6 +355,7 @@ async function retrieveArmB(
     {
       query: retrievalQuery,
       intent: task.intent,
+      ...(task.projectId ? { projectId: task.projectId } : {}),
       spaceId: config.spaceId,
       vaultIds: config.vaultIds,
       federated: config.vaultIds.length > 1,
