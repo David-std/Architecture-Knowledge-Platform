@@ -495,11 +495,11 @@ function queryExplicitlyRequestsQuantity(query: string): boolean {
   return (
     /\b(?:how many|how much|cuant[oa]s?)\b/u.test(normalized) ||
     /\bwhat\s+(?:does|do|did)\b.{0,80}\bcost\b/u.test(normalized) ||
-    /\b(?:what|which)\s+(?:is|are|was|were)\s+(?:the|its|their)?\s*(?:monthly|annual|yearly|daily|weekly)?\s*(?:cost|price|amount)\b/u.test(
+    /\b(?:what|which)\s+(?:is|are|was|were)\s+(?:the|its|their)?\s*(?:(?:monthly|annual|yearly|daily|weekly|operating|operational|infrastructure|estimated|expected|total)\s+){0,4}(?:cost|price|amount)\b/u.test(
       normalized,
     ) ||
     /\bcuanto\s+cuesta\b/u.test(normalized) ||
-    /\b(?:cual|cuanto|cuanta)\s+(?:es|son|fue|eran)?\s*(?:el|la|los|las)?\s*(?:costo|coste|precio|importe|monto)\b/u.test(
+    /\b(?:cual|cuanto|cuanta)\s+(?:es|son|fue|eran)?\s*(?:el|la|los|las)?\s*(?:(?:mensual|anual|diario|semanal|operativo|operacional|infraestructura|estimado|esperado|total)\s+){0,4}(?:costo|coste|precio|importe|monto)\b/u.test(
       normalized,
     )
   );
@@ -548,7 +548,7 @@ function queryAnswerCues(query: string): PassageAnswerCue[] {
     if (cue === "PROCEDURE" && quantity) continue;
     // "Does X define Y?" asks for a yes/no assertion about a relation; it is
     // not a request for a dictionary-style definition of Y.
-    if (cue === "DEFINITION" && yesNo) continue;
+    if (cue === "DEFINITION" && (yesNo || quantity || dateYear)) continue;
     if (
       QUERY_CUE_PATTERNS[cue].some((pattern) =>
         patternMatches(normalized, tokens, pattern),
