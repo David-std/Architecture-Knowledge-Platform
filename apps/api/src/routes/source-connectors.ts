@@ -162,6 +162,14 @@ export const ProviderSourceConnectorRegistrationSchema = z
         message: "JQL is only valid for Jira provider connectors.",
       });
     }
+    if (value.provider === "jira" && value.webhookSecretRef) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["webhookSecretRef"],
+        message:
+          "Direct Jira Cloud webhooks are polling-only until an Atlassian-authenticated callback mechanism is configured; do not invent an HMAC contract.",
+      });
+    }
     if (value.provider === "jira" && /\border\s+by\b/iu.test(value.jql ?? "")) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
@@ -303,16 +311,11 @@ export function verifyProviderWebhookSignature(input: {
     return { accepted: true, eventId: delivery };
   }
 
-  const signature = readHeader("x-hub-signature");
-  const delivery = readHeader("x-atlassian-webhook-identifier");
-  if (!signature || !delivery) {
-    return { accepted: false, reason: "JIRA_WEBHOOK_AUTH_REQUIRED" };
-  }
-  const match = /^sha256=([a-f0-9]{64})$/iu.exec(signature);
-  if (!match || !hmacSha256Matches(input.rawBody, input.secret, match[1]!)) {
-    return { accepted: false, reason: "JIRA_WEBHOOK_SIGNATURE_INVALID" };
-  }
-  return { accepted: true, eventId: delivery };
+  // Jira Cloud's standard webhook documentation provides a delivery
+  // identifier for retry deduplication but does not define a shared-secret
+  // HMAC equivalent to Linear-Signature. Treating an invented header as
+  // authentication would make the integration both incompatible and unsafe.
+  return { accepted: false, reason: "JIRA_DIRECT_WEBHOOK_UNSUPPORTED" };
 }
 
 export function providerWebhookEvent(input: {
