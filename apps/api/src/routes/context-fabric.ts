@@ -464,6 +464,73 @@ export function registerContextFabricRoutes(
     },
   );
 
+  app.get<{
+    Params: { id: string };
+    Querystring: { limit?: string };
+  }>(
+    "/v1/sessions/:id/provider-objects",
+    { preHandler: requirePermission("knowledge:read") },
+    async (request, reply) => {
+      const session = await authorizedSession(
+        db,
+        request,
+        reply,
+        request.params.id,
+      );
+      if (!session) return;
+      const parsedLimit = Number(request.query.limit ?? 50);
+      const limit = Number.isFinite(parsedLimit)
+        ? Math.max(1, Math.min(100, Math.trunc(parsedLimit)))
+        : 50;
+      const result = await db.pool.query<Record<string, unknown>>(
+        `select r.id connector_id,r.source_system provider,
+                o.object_id,o.object_type,o.source_version,o.lifecycle,o.title,
+                o.metadata,o.observed_at,c.provider_health,
+                c.provider_last_error_code
+           from source_connector_registrations r
+           join source_connector_objects o on o.connector_id=r.id
+           join source_connector_checkpoints c on c.connector_id=r.id
+          where r.space_id=$1 and r.vault_id=$2
+            and r.connector_mode='PROVIDER_PULL'
+            and r.state='ACTIVE'
+            and o.lifecycle='ACTIVE'
+          order by o.observed_at desc,r.source_system,o.object_id
+          limit $3`,
+        [session.spaceId, session.vaultId, limit],
+      );
+      return {
+        objects: result.rows.map((row) => {
+          const metadata = boundedObject(row.metadata ?? {}) ?? {};
+          const externalId =
+            (typeof metadata.key === "string" && metadata.key.trim()) ||
+            (typeof metadata.identifier === "string" &&
+              metadata.identifier.trim()) ||
+            String(row.object_id);
+          return {
+            connectorId: String(row.connector_id),
+            provider: String(row.provider),
+            objectId: String(row.object_id),
+            objectType: String(row.object_type),
+            externalId,
+            sourceRevision: String(row.source_version),
+            title: row.title ? String(row.title) : null,
+            canonicalUrl:
+              typeof metadata.canonicalUrl === "string"
+                ? metadata.canonicalUrl
+                : null,
+            providerHealth: String(row.provider_health ?? "AVAILABLE"),
+            providerLastErrorCode: row.provider_last_error_code
+              ? String(row.provider_last_error_code)
+              : null,
+            lifecycle: String(row.lifecycle),
+            observedAt: new Date(String(row.observed_at)).toISOString(),
+            metadata,
+          };
+        }),
+      };
+    },
+  );
+
   app.post<{
     Params: { id: string };
     Body: {
