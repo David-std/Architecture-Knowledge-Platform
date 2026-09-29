@@ -431,6 +431,22 @@ describe("GraphifyCodeGraphAdapter", () => {
         options: defaultCodeGraphOptions(),
       },
       {
+        code: "GRAPHIFY_LINE_RANGE_INVALID",
+        graph: {
+          nodes: [
+            {
+              id: "a",
+              label: "a",
+              node_type: "function",
+              source_file: "src/a.ts",
+              source_location: "L2-L1",
+            },
+          ],
+          edges: [],
+        },
+        options: defaultCodeGraphOptions(),
+      },
+      {
         code: "CODE_GRAPH_NODE_COUNT_LIMIT",
         graph: {
           nodes: [
@@ -452,6 +468,40 @@ describe("GraphifyCodeGraphAdapter", () => {
           edges: [],
         },
         options: { ...defaultCodeGraphOptions(), maxNodes: 1 },
+      },
+      {
+        code: "CODE_GRAPH_EDGE_COUNT_LIMIT",
+        graph: {
+          nodes: [
+            {
+              id: "a",
+              label: "a",
+              node_type: "function",
+              source_file: "src/a.ts",
+              source_location: "L1",
+            },
+            {
+              id: "b",
+              label: "b",
+              node_type: "function",
+              source_file: "src/b.ts",
+              source_location: "L1",
+            },
+          ],
+          edges: [
+            {
+              source: "a",
+              target: "b",
+              relation: "calls",
+            },
+            {
+              source: "b",
+              target: "a",
+              relation: "calls",
+            },
+          ],
+        },
+        options: { ...defaultCodeGraphOptions(), maxEdges: 1 },
       },
     ]) {
       const script = await fakeGraphify(root, fixture.graph);
