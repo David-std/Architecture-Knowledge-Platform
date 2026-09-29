@@ -60,6 +60,7 @@ export type PassageAnswerCue = PassageAnswerRequirement;
 export type PassageSupportReason =
   | "PASSAGE_TEXT_SUPPORT"
   | "PASSAGE_CUE_SUPPORT"
+  | "CLAIM_RELATION_SUPPORT"
   | "NO_CONCRETE_PASSAGE"
   | "ANSWER_CUE_MISMATCH"
   | "PASSAGE_SUPPORT_NOT_DEMONSTRATED";
@@ -545,6 +546,52 @@ function relationRolesMatch(
   );
 }
 
+function isHumanReviewedClaim(hit: SearchHit): boolean {
+  return (
+    hit.trust === "HUMAN_REVIEWED" &&
+    hit.type.trim().toLocaleLowerCase("en-US") === "claim"
+  );
+}
+
+function boundedClaimRelationSupport(
+  passage: string,
+  query: string,
+  title?: string,
+): boolean {
+  const relation = queryYesNoRelationRoles(query);
+  if (!relation) return false;
+
+  const queryAnchors = queryPredicateAnchors(query, ["YES_NO"]);
+  if (queryAnchors.length < 2) return false;
+
+  const minimumSubjectOverlap = Math.max(
+    1,
+    Math.ceil(relation.subjectAnchors.length * (2 / 3)),
+  );
+  const minimumAnchorOverlap = Math.max(
+    2,
+    Math.ceil(queryAnchors.length * 0.6),
+  );
+
+  return passageWindows(passage, title).some((window) => {
+    const tokens = new Set(semanticTokens(window));
+    const predicateMatched = relation.predicates.some((token) =>
+      tokens.has(token),
+    );
+    const subjectOverlap = relation.subjectAnchors.filter((token) =>
+      tokens.has(token),
+    ).length;
+    const anchorOverlap = queryAnchors.filter((token) => tokens.has(token))
+      .length;
+
+    return (
+      predicateMatched &&
+      subjectOverlap >= minimumSubjectOverlap &&
+      anchorOverlap >= minimumAnchorOverlap
+    );
+  });
+}
+
 function queryExplicitlyRequestsQuantity(query: string): boolean {
   const normalized = normalizedMatchText(query).trim();
   return (
@@ -941,7 +988,25 @@ export function verifyDeterministicPassageSupport(
     requiredAnswerCues,
     hit.title?.trim() || hit.document.title?.trim() || undefined,
   );
-  const matchedAnswerCues = boundedSupport.matchedAnswerCues;
+  const claimRelationSupport =
+    isHumanReviewedClaim(hit) &&
+    requiredAnswerCues.includes("YES_NO") &&
+    requiredAnswerCues
+      .filter((cue) => cue !== "YES_NO")
+      .every((cue) => boundedSupport.matchedAnswerCues.includes(cue)) &&
+    boundedClaimRelationSupport(
+      passage,
+      query,
+      hit.title?.trim() || hit.document.title?.trim() || undefined,
+    );
+  const matchedAnswerCues = claimRelationSupport
+    ? [
+        ...new Set<PassageAnswerCue>([
+          ...boundedSupport.matchedAnswerCues,
+          "YES_NO",
+        ]),
+      ]
+    : boundedSupport.matchedAnswerCues;
   const answerCueCoverage =
     requiredAnswerCues.length === 0
       ? 1
@@ -976,6 +1041,8 @@ export function verifyDeterministicPassageSupport(
     reason = "PASSAGE_TEXT_SUPPORT";
   } else if (cueSemanticSupport) {
     reason = "PASSAGE_CUE_SUPPORT";
+  } else if (claimRelationSupport) {
+    reason = "CLAIM_RELATION_SUPPORT";
   } else if (
     requiredAnswerCues.length > 0 &&
     matchedAnswerCues.length < requiredAnswerCues.length
@@ -987,7 +1054,9 @@ export function verifyDeterministicPassageSupport(
 
   return {
     supported:
-      reason === "PASSAGE_TEXT_SUPPORT" || reason === "PASSAGE_CUE_SUPPORT",
+      reason === "PASSAGE_TEXT_SUPPORT" ||
+      reason === "PASSAGE_CUE_SUPPORT" ||
+      reason === "CLAIM_RELATION_SUPPORT",
     reason,
     passageSource,
     passageCharacters: passage.length,

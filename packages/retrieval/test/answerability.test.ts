@@ -17,6 +17,8 @@ function hit(
     excerpt: string;
     parentContext?: string;
     contributions: NonNullable<SearchHit["fusionContributions"]>;
+    type?: string;
+    trust?: SearchHit["trust"];
   },
 ): SearchHit {
   const documentId = `11111111-1111-4111-8111-${String(idSuffix).padStart(12, "0")}`;
@@ -33,8 +35,8 @@ function hit(
     },
     revision: "revision-1",
     title: input.title,
-    type: "concept",
-    trust: "HUMAN_REVIEWED",
+    type: input.type ?? "concept",
+    trust: input.trust ?? "HUMAN_REVIEWED",
     lifecycle: "ACTIVE",
     refreshStatus: "CURRENT",
     score: 1,
@@ -506,6 +508,91 @@ describe("retrieval answerability", () => {
       vectorRank: 6,
       requiredAnswerCues: expect.arrayContaining(["PREVENTION", "CONDITION"]),
     });
+  });
+
+  it("rescues a human-reviewed claim when the relation object is a bounded paraphrase", () => {
+    const correctClaim = hit(40, {
+      title: "Local patterns and architecture",
+      type: "claim",
+      excerpt:
+        "Strategy y Adapter son patrones locales. No determinan el conjunto de módulos, límites ni la dirección global de dependencias.",
+      contributions: [contribution("vector", 0.91, 1)],
+    });
+    const incidentalProfile = hit(41, {
+      title: "Java persistence profile",
+      type: "profile",
+      excerpt:
+        "The persistence adapter defines a uniqueness strategy for generated record keys.",
+      contributions: [contribution("vector", 0.62, 51)],
+    });
+    const query =
+      "Do Strategy and Adapter patterns define the overall system architecture?";
+
+    const result = assessRetrievalAnswerability(
+      [correctClaim, incidentalProfile],
+      query,
+    );
+
+    expect(result.supported).toBe(true);
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(correctClaim),
+    ]);
+    expect(result.candidateSignals).toEqual([
+      expect.objectContaining({
+        candidateKey: retrievalAnswerabilityCandidateKey(correctClaim),
+        passageSupport: expect.objectContaining({
+          supported: true,
+          reason: "CLAIM_RELATION_SUPPORT",
+          vectorRank: 1,
+        }),
+      }),
+      expect.objectContaining({
+        candidateKey: retrievalAnswerabilityCandidateKey(incidentalProfile),
+        passageSupport: expect.objectContaining({
+          supported: false,
+          vectorRank: 51,
+        }),
+      }),
+    ]);
+  });
+
+  it("does not let claim authority rescue a different relation with weak query coverage", () => {
+    const wrongClaim = hit(42, {
+      title: "Generated key uniqueness",
+      type: "claim",
+      excerpt:
+        "The persistence Adapter defines a uniqueness Strategy for generated record keys.",
+      contributions: [contribution("vector", 0.9, 1)],
+    });
+    const result = assessRetrievalAnswerability(
+      [wrongClaim],
+      "Do Strategy and Adapter patterns define the overall system architecture?",
+    );
+
+    expect(result.supported).toBe(false);
+    expect(result.supportedCandidateKeys).toEqual([]);
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: false,
+      reason: "ANSWER_CUE_MISMATCH",
+    });
+  });
+
+  it("does not apply claim relation fallback to unreviewed claims", () => {
+    const unreviewed = hit(43, {
+      title: "Local patterns and architecture",
+      type: "claim",
+      trust: "UNTRUSTED_EXTERNAL",
+      excerpt:
+        "Strategy y Adapter son patrones locales. No determinan el conjunto de módulos, límites ni la dirección global de dependencias.",
+      contributions: [contribution("vector", 0.9, 1)],
+    });
+    const result = assessRetrievalAnswerability(
+      [unreviewed],
+      "Do Strategy and Adapter patterns define the overall system architecture?",
+    );
+
+    expect(result.supported).toBe(false);
+    expect(result.supportedCandidateKeys).toEqual([]);
   });
 
   it("accepts an explicit bilingual yes-no negation about the same relation", () => {
