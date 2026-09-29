@@ -27,7 +27,13 @@ describe("API runtime configuration", () => {
       evidenceVerifierMinimumSupportScore: null,
       evidenceVerifierMaxCandidates: 16,
       evidenceVerifierLocalFilesOnly: false,
-      it("keeps local evidence verification shadow-only and explicit", () => {
+    });
+    expect(
+      loadApiRuntimeConfig({ AKP_RATE_LIMIT_MAX: "240", PORT: "9090" }),
+    ).toMatchObject({ rateLimitMax: 240, port: 9090 });
+  });
+
+  it("keeps local evidence verification shadow-only and explicit", () => {
     expect(() =>
       loadApiRuntimeConfig({
         AKP_EVIDENCE_VERIFIER_PROVIDER: "local-multilingual-qa",
@@ -57,9 +63,26 @@ describe("API runtime configuration", () => {
       evidenceVerifierLocalFilesOnly: true,
     });
   });
-});
-    expect(
-      loadApiRuntimeConfig({ AKP_RATE_LIMIT_MAX: "240", PORT: "9090" }),
-    ).toMatchObject({ rateLimitMax: 240, port: 9090 });
-  });
+
+  it.each(["", "0", "-0.1", "1.1", "abc"])(
+    "rejects invalid AKP_EVIDENCE_VERIFIER_MIN_SCORE=%j",
+    (value) => {
+      expect(() =>
+        loadApiRuntimeConfig({
+          AKP_EVIDENCE_VERIFIER_MIN_SCORE: value,
+        }),
+      ).toThrow(/AKP_EVIDENCE_VERIFIER_MIN_SCORE/);
+    },
+  );
+
+  it.each(["yes", "1", "TRUE"])(
+    "rejects invalid AKP_EVIDENCE_VERIFIER_LOCAL_FILES_ONLY=%j",
+    (value) => {
+      expect(() =>
+        loadApiRuntimeConfig({
+          AKP_EVIDENCE_VERIFIER_LOCAL_FILES_ONLY: value,
+        }),
+      ).toThrow(/AKP_EVIDENCE_VERIFIER_LOCAL_FILES_ONLY/);
+    },
+  );
 });
