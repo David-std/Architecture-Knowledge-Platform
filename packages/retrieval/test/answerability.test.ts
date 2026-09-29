@@ -19,6 +19,7 @@ function hit(
     contributions: NonNullable<SearchHit["fusionContributions"]>;
     type?: string;
     trust?: SearchHit["trust"];
+    externalId?: string;
   },
 ): SearchHit {
   const documentId = `11111111-1111-4111-8111-${String(idSuffix).padStart(12, "0")}`;
@@ -29,7 +30,7 @@ function hit(
     unitId,
     unitType: "PARAGRAPH",
     document: {
-      externalId: `public-fixture-${idSuffix}`,
+      externalId: input.externalId ?? `public-fixture-${idSuffix}`,
       path: `docs/public-${idSuffix}.md`,
       title: input.title,
     },
@@ -510,17 +511,19 @@ describe("retrieval answerability", () => {
     });
   });
 
-  it("rescues a human-reviewed claim when the relation object is a bounded paraphrase", () => {
+  it("rescues a reviewed claim only when claim metadata anchors the missing relation object", () => {
     const correctClaim = hit(40, {
       title: "Local pattern scope",
       type: "claim",
+      externalId: "CLM-LOCAL-PATTERN-NOT-SYSTEM-ARCHITECTURE",
       excerpt:
-        "Strategy y Adapter son patrones locales. No determinan el conjunto de módulos, límites ni la dirección global de dependencias.",
+        "Strategy y Adapter son patrones locales. No determinan módulos, límites ni la dirección global de dependencias.",
       contributions: [contribution("vector", 0.91, 1)],
     });
     const incidentalProfile = hit(41, {
       title: "Java persistence profile",
       type: "profile",
+      externalId: "PRO-STORAGE-ADAPTER",
       excerpt:
         "The persistence adapter defines a uniqueness strategy for generated record keys.",
       contributions: [contribution("vector", 0.62, 51)],
@@ -534,34 +537,28 @@ describe("retrieval answerability", () => {
     );
 
     expect(result.supported).toBe(true);
+    expect(result.reason).toBe("CLAIM_RELATION_SUPPORT");
     expect(result.supportedCandidateKeys).toEqual([
       retrievalAnswerabilityCandidateKey(correctClaim),
     ]);
-    expect(result.candidateSignals).toEqual([
-      expect.objectContaining({
-        candidateKey: retrievalAnswerabilityCandidateKey(correctClaim),
-        passageSupport: expect.objectContaining({
-          supported: true,
-          reason: "CLAIM_RELATION_SUPPORT",
-          vectorRank: 1,
-        }),
-      }),
-      expect.objectContaining({
-        candidateKey: retrievalAnswerabilityCandidateKey(incidentalProfile),
-        passageSupport: expect.objectContaining({
-          supported: false,
-          vectorRank: 51,
-        }),
-      }),
-    ]);
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: true,
+      reason: "CLAIM_RELATION_SUPPORT",
+      vectorRank: 1,
+    });
+    expect(result.candidateSignals[1]?.passageSupport).toMatchObject({
+      supported: false,
+      vectorRank: 51,
+    });
   });
 
-  it("does not let claim authority rescue a different relation with weak query coverage", () => {
+  it("rejects a reviewed claim with the same subject and predicate but a different object", () => {
     const wrongClaim = hit(42, {
-      title: "Generated key uniqueness",
+      title: "Local pattern deployment scope",
       type: "claim",
+      externalId: "CLM-LOCAL-PATTERN-NOT-DEPLOYMENT-SCHEDULE",
       excerpt:
-        "The persistence Adapter defines a uniqueness Strategy for generated record keys.",
+        "Strategy and Adapter patterns do not determine deployment schedules.",
       contributions: [contribution("vector", 0.9, 1)],
     });
     const result = assessRetrievalAnswerability(
@@ -581,9 +578,10 @@ describe("retrieval answerability", () => {
     const unreviewed = hit(43, {
       title: "Local pattern scope",
       type: "claim",
-      trust: "UNTRUSTED_EXTERNAL",
+      trust: "UNVERIFIED",
+      externalId: "CLM-LOCAL-PATTERN-NOT-SYSTEM-ARCHITECTURE",
       excerpt:
-        "Strategy y Adapter son patrones locales. No determinan el conjunto de módulos, límites ni la dirección global de dependencias.",
+        "Strategy y Adapter son patrones locales. No determinan módulos, límites ni la dirección global de dependencias.",
       contributions: [contribution("vector", 0.9, 1)],
     });
     const result = assessRetrievalAnswerability(

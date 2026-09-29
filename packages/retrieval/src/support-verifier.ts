@@ -548,7 +548,8 @@ function relationRolesMatch(
 
 function isHumanReviewedClaim(hit: SearchHit): boolean {
   return (
-    hit.trust === "HUMAN_REVIEWED" &&
+    hit.lifecycle === "ACTIVE" &&
+    (hit.trust === "HUMAN_REVIEWED" || hit.trust === "ATTESTED") &&
     hit.type.trim().toLocaleLowerCase("en-US") === "claim"
   );
 }
@@ -557,39 +558,31 @@ function boundedClaimRelationSupport(
   passage: string,
   query: string,
   title?: string,
+  externalId?: string | null,
 ): boolean {
   const relation = queryYesNoRelationRoles(query);
   if (!relation) return false;
 
-  const queryAnchors = queryPredicateAnchors(query, ["YES_NO"]);
-  if (queryAnchors.length < 2) return false;
-
-  const minimumSubjectOverlap = Math.max(
-    1,
-    Math.ceil(relation.subjectAnchors.length * (2 / 3)),
-  );
-  const minimumAnchorOverlap = Math.max(
-    2,
-    Math.ceil(queryAnchors.length * 0.6),
+  const metadataTokens = new Set(
+    semanticTokens(
+      [title?.trim(), externalId?.trim()].filter(Boolean).join(" "),
+    ),
   );
 
   return passageWindows(passage, title).some((window) => {
-    const tokens = new Set(semanticTokens(window));
+    const passageTokens = new Set(semanticTokens(window));
+    const combinedTokens = new Set([...passageTokens, ...metadataTokens]);
     const predicateMatched = relation.predicates.some((token) =>
-      tokens.has(token),
+      passageTokens.has(token),
     );
-    const subjectOverlap = relation.subjectAnchors.filter((token) =>
-      tokens.has(token),
-    ).length;
-    const anchorOverlap = queryAnchors.filter((token) =>
-      tokens.has(token),
-    ).length;
+    const subjectMatched = relation.subjectAnchors.some((token) =>
+      combinedTokens.has(token),
+    );
+    const objectMatched = relation.objectAnchors.some((token) =>
+      combinedTokens.has(token),
+    );
 
-    return (
-      predicateMatched &&
-      subjectOverlap >= minimumSubjectOverlap &&
-      anchorOverlap >= minimumAnchorOverlap
-    );
+    return predicateMatched && subjectMatched && objectMatched;
   });
 }
 
@@ -999,6 +992,7 @@ export function verifyDeterministicPassageSupport(
       passage,
       query,
       hit.title?.trim() || hit.document.title?.trim() || undefined,
+      hit.document.externalId,
     );
   const matchedAnswerCues = claimRelationSupport
     ? [

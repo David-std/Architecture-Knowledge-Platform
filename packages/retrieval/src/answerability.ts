@@ -112,6 +112,7 @@ export type RetrievalAnswerabilityReason =
   | "QUERY_CONDITIONED_SUPPORT"
   | "PASSAGE_TEXT_SUPPORT"
   | "PASSAGE_CUE_SUPPORT"
+  | "CLAIM_RELATION_SUPPORT"
   | "SUPPORT_NOT_DEMONSTRATED";
 
 export interface CandidatePassageSupport {
@@ -261,7 +262,8 @@ function supportedReason(reason: CandidateSupportReason): boolean {
     reason === "GRAPH_INTENT_SUPPORT" ||
     reason === "QUERY_CONDITIONED_SUPPORT" ||
     reason === "PASSAGE_TEXT_SUPPORT" ||
-    reason === "PASSAGE_CUE_SUPPORT"
+    reason === "PASSAGE_CUE_SUPPORT" ||
+    reason === "CLAIM_RELATION_SUPPORT"
   );
 }
 
@@ -342,6 +344,7 @@ function topLevelReason(
     "QUERY_CONDITIONED_SUPPORT",
     "PASSAGE_TEXT_SUPPORT",
     "PASSAGE_CUE_SUPPORT",
+    "CLAIM_RELATION_SUPPORT",
   ] as const) {
     if (reasons.includes(reason)) return reason;
   }
