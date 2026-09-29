@@ -21,5 +21,13 @@ describe("registered public-product Agent A/B task set", () => {
     );
     expect(() => validateAgentAbTasks(parsed.tasks)).not.toThrow();
     expect(parsed.tasks).toHaveLength(6);
+    expect(
+      parsed.tasks.find((task) => task.category === "project-code"),
+    ).toMatchObject({
+      intent: "PROJECT_CODE",
+      projectId: expect.stringMatching(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu,
+      ),
+    });
   });
 });
