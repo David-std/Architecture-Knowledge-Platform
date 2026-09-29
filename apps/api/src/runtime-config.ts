@@ -55,10 +55,7 @@ function verifierProvider(env: NodeJS.ProcessEnv): EvidenceVerifierProvider {
   );
 }
 
-function optionalFraction(
-  env: NodeJS.ProcessEnv,
-  name: string,
-): number | null {
+function optionalFraction(env: NodeJS.ProcessEnv, name: string): number | null {
   const raw = env[name];
   if (raw === undefined) return null;
   const parsed = Number(raw);

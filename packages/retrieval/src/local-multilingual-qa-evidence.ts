@@ -128,9 +128,7 @@ export const defaultLocalMultilingualQaEvidencePipelineFactory: LocalMultilingua
     return answerer as unknown as LocalMultilingualQaEvidencePipeline;
   };
 
-export class LocalMultilingualQaEvidenceVerifier
-  implements QueryConditionedEvidenceVerifier
-{
+export class LocalMultilingualQaEvidenceVerifier implements QueryConditionedEvidenceVerifier {
   readonly id: string;
 
   private readonly minimumSupportScore: number;
@@ -138,8 +136,7 @@ export class LocalMultilingualQaEvidenceVerifier
   private readonly localFilesOnly: boolean;
   private readonly pipelineFactory: LocalMultilingualQaEvidencePipelineFactory;
   private pipelinePromise:
-    | Promise<LocalMultilingualQaEvidencePipeline>
-    | undefined;
+    Promise<LocalMultilingualQaEvidencePipeline> | undefined;
 
   constructor(options: LocalMultilingualQaEvidenceVerifierOptions) {
     this.minimumSupportScore = validatedSupportScore(
@@ -150,8 +147,7 @@ export class LocalMultilingualQaEvidenceVerifier
     this.pipelineFactory =
       options.pipelineFactory ??
       defaultLocalMultilingualQaEvidencePipelineFactory;
-    this.id =
-      `local-multilingual-qa@${LOCAL_MULTILINGUAL_QA_EVIDENCE_REVISION}:min=${this.minimumSupportScore}`;
+    this.id = `local-multilingual-qa@${LOCAL_MULTILINGUAL_QA_EVIDENCE_REVISION}:min=${this.minimumSupportScore}`;
   }
 
   async verify(
@@ -165,7 +161,9 @@ export class LocalMultilingualQaEvidenceVerifier
     }
 
     const result = bestResult(
-      await (await this.getPipeline())(input.query, input.passage, {
+      await (
+        await this.getPipeline()
+      )(input.query, input.passage, {
         top_k: 1,
       }),
     );

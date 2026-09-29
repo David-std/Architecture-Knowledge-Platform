@@ -8,8 +8,8 @@ import {
 
 describe("local multilingual QA evidence verifier", () => {
   it("returns SUPPORTS only with a calibrated score and inspectable span", async () => {
-    const factory: LocalMultilingualQaEvidencePipelineFactory = async () =>
-      async (_question, context) => ({
+    const factory: LocalMultilingualQaEvidencePipelineFactory =
+      async () => async (_question, context) => ({
         answer: "without those drivers",
         score: 0.91,
         start: context.indexOf("without those drivers"),
