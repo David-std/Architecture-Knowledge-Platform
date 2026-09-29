@@ -4,7 +4,7 @@ import type {
   SourceConnectorPort,
 } from "@akp/domain";
 import {
-  appendSourceConnectorEvent,
+  appendProviderSourceConnectorEvent,
   applyNextSourceConnectorEvent,
   type Postgres,
 } from "@akp/postgres";
@@ -189,7 +189,7 @@ export interface ProviderSyncDependencies {
   ) => SourceConnectorPort & {
     health(): Promise<{ state: ProviderHealthState; reason?: string }>;
   };
-  appendEvent?: typeof appendSourceConnectorEvent;
+  appendEvent?: typeof appendProviderSourceConnectorEvent;
   applyNextEvent?: typeof applyNextSourceConnectorEvent;
 }
 
@@ -279,10 +279,9 @@ export async function syncProviderSourceConnector(
         where c.connector_id=$1`,
       [connectorId],
     );
-    let sequence = Number(sequenceState.rows[0]?.sequence ?? 0);
     let discovered = 0;
     let appended = 0;
-    let highestSequence = sequence;
+    let highestSequence = Number(sequenceState.rows[0]?.sequence ?? 0);
 
     for await (const object of port.pull({
       scope: { spaceId: row.space_id, vaultId: row.vault_id },
@@ -297,21 +296,6 @@ export async function syncProviderSourceConnector(
         object.sourceVersion,
         object.operation,
       );
-      const existing = await db.pool.query<{ sequence: string | number }>(
-        `select sequence
-           from source_connector_events
-          where connector_id=$1 and event_id=$2`,
-        [connectorId, eventId],
-      );
-      if (existing.rows[0]) {
-        highestSequence = Math.max(
-          highestSequence,
-          Number(existing.rows[0].sequence),
-        );
-        continue;
-      }
-      sequence += 1;
-      highestSequence = sequence;
       const metadata = {
         ...object.metadata,
         _akpProviderObservation: {
@@ -330,10 +314,11 @@ export async function syncProviderSourceConnector(
         permissions: object.permissions,
         metadata,
       };
-      await (dependencies.appendEvent ?? appendSourceConnectorEvent)(db, {
+      const receipt = await (
+        dependencies.appendEvent ?? appendProviderSourceConnectorEvent
+      )(db, {
         connectorId,
         eventId,
-        sequence,
         occurredAt: observedAt(metadata, target.value),
         operation: object.operation,
         objectId: object.objectId,
@@ -349,7 +334,8 @@ export async function syncProviderSourceConnector(
         metadata,
         payloadHash: payloadHash(serialized),
       });
-      appended += 1;
+      highestSequence = Math.max(highestSequence, receipt.sequence);
+      if (!receipt.duplicate) appended += 1;
     }
 
     let applied = 0;
@@ -442,13 +428,6 @@ export async function syncProviderSourceConnector(
         }
       }
 
-      for (;;) {
-        const result = await (
-          dependencies.applyNextEvent ?? applyNextSourceConnectorEvent
-        )(db, { connectorId });
-        if (!result) break;
-        applied += 1;
-      }
     }
 
     const unresolved = await db.pool.query<{ count: number }>(
