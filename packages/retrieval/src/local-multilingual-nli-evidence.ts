@@ -12,10 +12,34 @@ import { resolveLocalSemanticCacheDir } from "./local-semantic-embedding.js";
  * with MNLI and XNLI. The adapter remains shadow-only until AKP's own
  * source-disjoint evaluation calibrates it.
  */
+export interface LocalMultilingualNliModelDescriptor {
+  readonly model: string;
+  readonly revision: string;
+  readonly modelFileName: string;
+  readonly dtype: "fp32" | "q8";
+}
+
+export const LOCAL_MULTILINGUAL_NLI_MINILM_DESCRIPTOR: LocalMultilingualNliModelDescriptor =
+  Object.freeze({
+    model: "MoritzLaurer/multilingual-MiniLMv2-L6-mnli-xnli",
+    revision: "0a71e92a985b6e1ad1828cf67ce9c459639c1dca",
+    modelFileName: "model",
+    dtype: "fp32",
+  });
+
+export const LOCAL_MULTILINGUAL_NLI_MDEBERTA_DESCRIPTOR: LocalMultilingualNliModelDescriptor =
+  Object.freeze({
+    model:
+      "onnx-community/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7-ONNX",
+    revision: "cdc8277b4682665e2f2e87cd83da7da07b153d75",
+    modelFileName: "model_quantized",
+    dtype: "q8",
+  });
+
 export const LOCAL_MULTILINGUAL_NLI_MODEL =
-  "MoritzLaurer/multilingual-MiniLMv2-L6-mnli-xnli";
+  LOCAL_MULTILINGUAL_NLI_MINILM_DESCRIPTOR.model;
 export const LOCAL_MULTILINGUAL_NLI_REVISION =
-  "0a71e92a985b6e1ad1828cf67ce9c459639c1dca";
+  LOCAL_MULTILINGUAL_NLI_MINILM_DESCRIPTOR.revision;
 
 export interface LocalMultilingualNliDistribution {
   readonly entailment: number;
@@ -32,8 +56,10 @@ export interface LocalMultilingualNliRuntime {
 }
 
 export interface LocalMultilingualNliRuntimeLoadOptions {
-  readonly model: typeof LOCAL_MULTILINGUAL_NLI_MODEL;
-  readonly revision: typeof LOCAL_MULTILINGUAL_NLI_REVISION;
+  readonly model: string;
+  readonly revision: string;
+  readonly modelFileName: string;
+  readonly dtype: "fp32" | "q8";
   readonly cacheDir?: string;
   readonly localFilesOnly: boolean;
 }
@@ -45,6 +71,7 @@ export type LocalMultilingualNliRuntimeFactory = (
 export interface LocalMultilingualNliEvidenceVerifierOptions {
   readonly minimumEntailmentScore: number;
   readonly minimumPolarityMargin: number;
+  readonly modelDescriptor?: LocalMultilingualNliModelDescriptor;
   readonly cacheDir?: string;
   readonly localFilesOnly?: boolean;
   readonly runtimeFactory?: LocalMultilingualNliRuntimeFactory;
@@ -198,9 +225,9 @@ export const defaultLocalMultilingualNliRuntimeFactory: LocalMultilingualNliRunt
       {
         ...cacheOptions,
         subfolder: "onnx",
-        model_file_name: "model",
+        model_file_name: options.modelFileName,
         device: "cpu",
-        dtype: "fp32",
+        dtype: options.dtype,
       },
     );
 
@@ -235,6 +262,7 @@ export class LocalMultilingualNliEvidenceVerifier implements QueryConditionedEvi
 
   private readonly minimumEntailmentScore: number;
   private readonly minimumPolarityMargin: number;
+  private readonly modelDescriptor: LocalMultilingualNliModelDescriptor;
   private readonly cacheDir: string | undefined;
   private readonly localFilesOnly: boolean;
   private readonly runtimeFactory: LocalMultilingualNliRuntimeFactory;
@@ -249,11 +277,13 @@ export class LocalMultilingualNliEvidenceVerifier implements QueryConditionedEvi
       options.minimumPolarityMargin,
       "local multilingual NLI minimumPolarityMargin",
     );
+    this.modelDescriptor =
+      options.modelDescriptor ?? LOCAL_MULTILINGUAL_NLI_MINILM_DESCRIPTOR;
     this.cacheDir = resolveLocalSemanticCacheDir(options.cacheDir);
     this.localFilesOnly = options.localFilesOnly ?? false;
     this.runtimeFactory =
       options.runtimeFactory ?? defaultLocalMultilingualNliRuntimeFactory;
-    this.id = `local-multilingual-nli@${LOCAL_MULTILINGUAL_NLI_REVISION}:entail=${this.minimumEntailmentScore}:margin=${this.minimumPolarityMargin}`;
+    this.id = `local-multilingual-nli:${this.modelDescriptor.model}@${this.modelDescriptor.revision}:entail=${this.minimumEntailmentScore}:margin=${this.minimumPolarityMargin}`;
   }
 
   async verify(
@@ -365,8 +395,10 @@ export class LocalMultilingualNliEvidenceVerifier implements QueryConditionedEvi
   private async getRuntime(): Promise<LocalMultilingualNliRuntime> {
     if (this.runtimePromise === undefined) {
       const pending = this.runtimeFactory({
-        model: LOCAL_MULTILINGUAL_NLI_MODEL,
-        revision: LOCAL_MULTILINGUAL_NLI_REVISION,
+        model: this.modelDescriptor.model,
+        revision: this.modelDescriptor.revision,
+        modelFileName: this.modelDescriptor.modelFileName,
+        dtype: this.modelDescriptor.dtype,
         localFilesOnly: this.localFilesOnly,
         ...(this.cacheDir === undefined ? {} : { cacheDir: this.cacheDir }),
       });

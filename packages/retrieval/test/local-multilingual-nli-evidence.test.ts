@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  LOCAL_MULTILINGUAL_NLI_MODEL,
-  LOCAL_MULTILINGUAL_NLI_REVISION,
+  LOCAL_MULTILINGUAL_NLI_MDEBERTA_DESCRIPTOR,
+  LOCAL_MULTILINGUAL_NLI_MINILM_DESCRIPTOR,
   LocalMultilingualNliEvidenceVerifier,
   type LocalMultilingualNliRuntimeFactory,
 } from "../src/local-multilingual-nli-evidence.js";
@@ -132,9 +132,39 @@ describe("local multilingual NLI evidence verifier", () => {
     await verifier.verify(input);
     expect(calls).toEqual([
       {
-        model: LOCAL_MULTILINGUAL_NLI_MODEL,
-        revision: LOCAL_MULTILINGUAL_NLI_REVISION,
+        model: LOCAL_MULTILINGUAL_NLI_MINILM_DESCRIPTOR.model,
+        revision: LOCAL_MULTILINGUAL_NLI_MINILM_DESCRIPTOR.revision,
+        modelFileName:
+          LOCAL_MULTILINGUAL_NLI_MINILM_DESCRIPTOR.modelFileName,
+        dtype: LOCAL_MULTILINGUAL_NLI_MINILM_DESCRIPTOR.dtype,
         cacheDir: "/tmp/akp-model-cache",
+        localFilesOnly: true,
+      },
+    ]);
+  });
+
+  it("passes an explicitly selected NLI descriptor to the runtime", async () => {
+    const calls: unknown[] = [];
+    const verifier = new LocalMultilingualNliEvidenceVerifier({
+      minimumEntailmentScore: 0.7,
+      minimumPolarityMargin: 0.2,
+      modelDescriptor: LOCAL_MULTILINGUAL_NLI_MDEBERTA_DESCRIPTOR,
+      localFilesOnly: true,
+      runtimeFactory: async (options) => {
+        calls.push(options);
+        return {
+          infer: async (_premise, hypothesis) =>
+            hypothesis.includes("do not define")
+              ? { entailment: 0.9, neutral: 0.07, contradiction: 0.03 }
+              : { entailment: 0.03, neutral: 0.07, contradiction: 0.9 },
+        };
+      },
+    });
+
+    await verifier.verify(input);
+    expect(calls).toEqual([
+      {
+        ...LOCAL_MULTILINGUAL_NLI_MDEBERTA_DESCRIPTOR,
         localFilesOnly: true,
       },
     ]);

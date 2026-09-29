@@ -4,6 +4,8 @@ import path from "node:path";
 import { performance } from "node:perf_hooks";
 import type { SearchHit } from "@akp/contracts";
 import {
+  LOCAL_MULTILINGUAL_NLI_MDEBERTA_DESCRIPTOR,
+  LOCAL_MULTILINGUAL_NLI_MINILM_DESCRIPTOR,
   LocalMultilingualNliEvidenceVerifier,
   retrievalAnswerabilityCandidateKey,
 } from "../packages/retrieval/src/index.js";
@@ -232,49 +234,61 @@ const reportPath = path.resolve(
     "reports/ci/evidence-verifier-nli-shadow-benchmark.json",
 );
 
-const verifier = new LocalMultilingualNliEvidenceVerifier({
-  minimumEntailmentScore: 0,
-  minimumPolarityMargin: 0,
-  cacheDir: process.env.AKP_MODEL_CACHE_DIR,
-  localFilesOnly: false,
-});
+const MODEL_DESCRIPTORS = [
+  LOCAL_MULTILINGUAL_NLI_MINILM_DESCRIPTOR,
+  LOCAL_MULTILINGUAL_NLI_MDEBERTA_DESCRIPTOR,
+] as const;
 
-const observations = [];
-try {
-  for (const testCase of CASES) {
-    const candidates = [];
-    for (const fixture of testCase.candidates) {
-      const candidate = hit(fixture);
-      const started = performance.now();
-      const verification = await verifier.verify({
-        query: testCase.query,
-        candidateKey: retrievalAnswerabilityCandidateKey(candidate),
-        title: candidate.title,
-        passage: candidate.parentContext?.trim() || candidate.excerpt,
-        unitType: candidate.unitType ?? null,
-        parentUnitType: candidate.parentUnitType ?? null,
-        documentType: candidate.type,
-      });
-      candidates.push({
-        label: fixture.label,
-        candidateKey: retrievalAnswerabilityCandidateKey(candidate),
-        vectorRank: fixture.vectorRank,
-        verifierDecision: verification.decision,
-        verifierScore: verification.score ?? null,
-        verifierReason: verification.reason,
-        evidenceSpan: verification.evidenceSpan ?? null,
-        latencyMs: performance.now() - started,
+const modelRuns = [];
+for (const modelDescriptor of MODEL_DESCRIPTORS) {
+  const verifier = new LocalMultilingualNliEvidenceVerifier({
+    minimumEntailmentScore: 0,
+    minimumPolarityMargin: 0,
+    modelDescriptor,
+    cacheDir: process.env.AKP_MODEL_CACHE_DIR,
+    localFilesOnly: false,
+  });
+  const observations = [];
+  try {
+    for (const testCase of CASES) {
+      const candidates = [];
+      for (const fixture of testCase.candidates) {
+        const candidate = hit(fixture);
+        const started = performance.now();
+        const verification = await verifier.verify({
+          query: testCase.query,
+          candidateKey: retrievalAnswerabilityCandidateKey(candidate),
+          title: candidate.title,
+          passage: candidate.parentContext?.trim() || candidate.excerpt,
+          unitType: candidate.unitType ?? null,
+          parentUnitType: candidate.parentUnitType ?? null,
+          documentType: candidate.type,
+        });
+        candidates.push({
+          label: fixture.label,
+          candidateKey: retrievalAnswerabilityCandidateKey(candidate),
+          vectorRank: fixture.vectorRank,
+          verifierDecision: verification.decision,
+          verifierScore: verification.score ?? null,
+          verifierReason: verification.reason,
+          evidenceSpan: verification.evidenceSpan ?? null,
+          latencyMs: performance.now() - started,
+        });
+      }
+      observations.push({
+        id: testCase.id,
+        split: testCase.split,
+        goldLabels: testCase.goldLabels,
+        candidates,
       });
     }
-    observations.push({
-      id: testCase.id,
-      split: testCase.split,
-      goldLabels: testCase.goldLabels,
-      candidates,
-    });
-  }
-} finally {
-  await verifier.dispose();
+  } finally {
+      }
+  modelRuns.push({
+    modelDescriptor,
+    verifierId: verifier.id,
+    observations,
+  });
 }
 
 function metricsFor(
@@ -331,77 +345,85 @@ function metricsFor(
   };
 }
 
-const calibration = observations.filter(
-  (entry) => entry.split === "CALIBRATION",
-);
-const holdout = observations.filter((entry) => entry.split === "HOLDOUT");
-const observedCalibrationScores = calibration.flatMap((entry) =>
-  entry.candidates.flatMap((candidate) =>
-    typeof candidate.verifierScore === "number"
-      ? [candidate.verifierScore]
-      : [],
-  ),
-);
-const thresholds = [
-  ...new Set([
-    0,
-    0.1,
-    0.2,
-    0.3,
-    0.4,
-    0.5,
-    0.6,
-    0.7,
-    0.8,
-    0.9,
-    ...observedCalibrationScores.map((score) => Number(score.toFixed(6))),
-  ]),
-].sort((left, right) => left - right);
+const comparisons = modelRuns.map((modelRun) => {
+  const calibration = modelRun.observations.filter(
+    (entry) => entry.split === "CALIBRATION",
+  );
+  const holdout = modelRun.observations.filter(
+    (entry) => entry.split === "HOLDOUT",
+  );
+  const observedCalibrationScores = calibration.flatMap((entry) =>
+    entry.candidates.flatMap((candidate) =>
+      typeof candidate.verifierScore === "number"
+        ? [candidate.verifierScore]
+        : [],
+    ),
+  );
+  const thresholds = [
+    ...new Set([
+      0,
+      0.1,
+      0.2,
+      0.3,
+      0.4,
+      0.5,
+      0.6,
+      0.7,
+      0.8,
+      0.9,
+      ...observedCalibrationScores.map((score) =>
+        Number(score.toFixed(6)),
+      ),
+    ]),
+  ].sort((left, right) => left - right);
 
-const calibrationMetrics = thresholds.map((threshold) => ({
-  threshold,
-  ...metricsFor(calibration, threshold),
-}));
-const calibrationCandidate =
-  calibrationMetrics
-    .filter(
-      (metrics) =>
-        metrics.falseAcceptanceRate === 0 &&
-        metrics.falseAbstentionRate === 0 &&
-        metrics.supportSelectionPrecision === 1,
-    )
-    .sort((left, right) => right.threshold - left.threshold)[0] ?? null;
-const holdoutMetrics =
-  calibrationCandidate === null
-    ? null
-    : {
-        threshold: calibrationCandidate.threshold,
-        ...metricsFor(holdout, calibrationCandidate.threshold),
-      };
+  const calibrationMetrics = thresholds.map((threshold) => ({
+    threshold,
+    ...metricsFor(calibration, threshold),
+  }));
+  const calibrationCandidate =
+    calibrationMetrics
+      .filter(
+        (metrics) =>
+          metrics.falseAcceptanceRate === 0 &&
+          metrics.falseAbstentionRate === 0 &&
+          metrics.supportSelectionPrecision === 1,
+      )
+      .sort((left, right) => right.threshold - left.threshold)[0] ?? null;
+  const holdoutMetrics =
+    calibrationCandidate === null
+      ? null
+      : {
+          threshold: calibrationCandidate.threshold,
+          ...metricsFor(holdout, calibrationCandidate.threshold),
+        };
+
+  return {
+    modelDescriptor: modelRun.modelDescriptor,
+    verifierId: modelRun.verifierId,
+    cases: modelRun.observations,
+    calibrationMetrics,
+    calibrationCandidate,
+    holdoutMetrics,
+    holdoutPassesAcceptance:
+      holdoutMetrics !== null &&
+      holdoutMetrics.falseAcceptanceRate === 0 &&
+      holdoutMetrics.falseAbstentionRate === 0 &&
+      holdoutMetrics.supportSelectionPrecision === 1,
+  };
+});
 
 const report = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   status: "MEASURED",
   evidenceBoundary:
-    "Public synthetic bilingual calibration/holdout shadow evaluation only. No threshold or verifier is promoted by this report.",
-  model: {
-    id: verifier.id,
-    provider: "local-transformers-js",
-    task: "multilingual-nli",
-  },
+    "Public synthetic bilingual calibration/holdout shadow comparison only. No threshold or verifier is promoted by this report.",
   splitCounts: {
-    calibration: calibration.length,
-    holdout: holdout.length,
+    calibration: CASES.filter((entry) => entry.split === "CALIBRATION")
+      .length,
+    holdout: CASES.filter((entry) => entry.split === "HOLDOUT").length,
   },
-  cases: observations,
-  calibrationMetrics,
-  calibrationCandidate,
-  holdoutMetrics,
-  holdoutPassesAcceptance:
-    holdoutMetrics !== null &&
-    holdoutMetrics.falseAcceptanceRate === 0 &&
-    holdoutMetrics.falseAbstentionRate === 0 &&
-    holdoutMetrics.supportSelectionPrecision === 1,
+  comparisons,
   productionDefaultChanged: false,
   enforcementEnabled: false,
   promotionAllowed: false,
