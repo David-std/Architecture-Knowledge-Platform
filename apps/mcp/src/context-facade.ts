@@ -423,6 +423,7 @@ export async function dispatchAkpContext(
             vaultIds: scopedVaultIds(input),
             federated: input.federated,
             intent: input.intent ?? "CONCEPTUAL",
+            ...(input.projectId ? { projectId: input.projectId } : {}),
             limit: input.limit,
           }),
         }),
