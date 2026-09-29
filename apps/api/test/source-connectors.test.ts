@@ -339,8 +339,7 @@ describe("source connector webhook signatures", () => {
         provider: "jira",
         providerVerified: true,
         key: "ARCH-42",
-        canonicalUrl:
-          "https://architecture-team.atlassian.net/browse/ARCH-42",
+        canonicalUrl: "https://architecture-team.atlassian.net/browse/ARCH-42",
         _akpProviderObservation: {
           observedVia: "AUTHENTICATED_PROVIDER_WEBHOOK",
         },
