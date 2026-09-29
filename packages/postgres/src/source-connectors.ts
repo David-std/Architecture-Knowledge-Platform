@@ -88,6 +88,28 @@ function sourceConnectorError(code: string, statusCode: number): Error {
   return error;
 }
 
+function providerSourceVersionMillis(value: unknown): number {
+  const parsed = Date.parse(String(value ?? ""));
+  if (!Number.isFinite(parsed)) {
+    throw sourceConnectorError("PROVIDER_SOURCE_VERSION_INVALID", 409);
+  }
+  return parsed;
+}
+
+function providerProjectionShouldAdvance(
+  connectorMode: unknown,
+  incomingSourceVersion: unknown,
+  currentSourceVersion: string | null,
+): boolean {
+  if (String(connectorMode) !== "PROVIDER_PULL" || !currentSourceVersion) {
+    return true;
+  }
+  return (
+    providerSourceVersionMillis(incomingSourceVersion) >
+    providerSourceVersionMillis(currentSourceVersion)
+  );
+}
+
 export async function registerSourceConnector(
   db: Postgres,
   input: SourceConnectorRegistrationInput,
@@ -439,7 +461,7 @@ export async function applyNextSourceConnectorEvent(
   try {
     await client.query("begin");
     const selected = await client.query<Record<string, unknown>>(
-      `select e.*,r.space_id,r.vault_id
+      `select e.*,r.space_id,r.vault_id,r.connector_mode
          from source_connector_events e
          join source_connector_registrations r on r.id=e.connector_id
          join source_connector_checkpoints c on c.connector_id=e.connector_id
@@ -488,7 +510,24 @@ export async function applyNextSourceConnectorEvent(
     try {
       const lifecycle =
         String(event.operation) === "DELETE" ? "DELETED_TOMBSTONE" : "ACTIVE";
-      await client.query(
+      const currentProjection =
+        String(event.connector_mode) === "PROVIDER_PULL"
+          ? await client.query<{ source_version: string }>(
+              `select source_version
+                 from source_connector_objects
+                where connector_id=$1 and object_id=$2
+                for update`,
+              [event.connector_id, event.object_id],
+            )
+          : null;
+      const projectionShouldAdvance = providerProjectionShouldAdvance(
+        event.connector_mode,
+        event.source_version,
+        currentProjection?.rows[0]?.source_version ?? null,
+      );
+
+      if (projectionShouldAdvance) {
+        await client.query(
         `insert into source_connector_objects(
            connector_id,object_id,object_type,source_version,lifecycle,title,
            content,content_type,permission_fidelity,permission_uncertain,
@@ -528,41 +567,42 @@ export async function applyNextSourceConnectorEvent(
           event.occurred_at,
         ],
       );
-      await client.query(
-        `update external_object_refs r
-            set source_revision=$3,
-                title=coalesce($4,r.title),
-                canonical_url=coalesce($5::jsonb->>'canonicalUrl',r.canonical_url),
-                authority='MIRRORED_PROJECTION',
-                metadata=$5::jsonb || jsonb_build_object(
-                  '_akpProvenance',
-                  coalesce(r.metadata->'_akpProvenance','{}'::jsonb) ||
-                  jsonb_build_object(
-                    'observationSource','AUTHENTICATED_PROVIDER_ADAPTER',
-                    'providerVerified',true,
-                    'connectorId',$1::text,
-                    'providerObjectId',$2::text,
-                    'providerHealth','AVAILABLE',
-                    'providerLastErrorCode',null,
-                    'lifecycle',$6::text
-                  )
-                ),
-                observed_at=$7::timestamptz,
-                updated_at=now()
-           from external_object_provider_links l
-          where l.external_ref_id=r.id
-            and l.connector_id=$1
-            and l.object_id=$2`,
-        [
-          event.connector_id,
-          event.object_id,
-          event.source_version,
-          event.title ?? null,
-          JSON.stringify(event.metadata ?? {}),
-          lifecycle,
-          event.occurred_at,
-        ],
-      );
+        await client.query(
+          `update external_object_refs r
+              set source_revision=$3,
+                  title=coalesce($4,r.title),
+                  canonical_url=coalesce($5::jsonb->>'canonicalUrl',r.canonical_url),
+                  authority='MIRRORED_PROJECTION',
+                  metadata=$5::jsonb || jsonb_build_object(
+                    '_akpProvenance',
+                    coalesce(r.metadata->'_akpProvenance','{}'::jsonb) ||
+                    jsonb_build_object(
+                      'observationSource','AUTHENTICATED_PROVIDER_ADAPTER',
+                      'providerVerified',true,
+                      'connectorId',$1::text,
+                      'providerObjectId',$2::text,
+                      'providerHealth','AVAILABLE',
+                      'providerLastErrorCode',null,
+                      'lifecycle',$6::text
+                    )
+                  ),
+                  observed_at=$7::timestamptz,
+                  updated_at=now()
+             from external_object_provider_links l
+            where l.external_ref_id=r.id
+              and l.connector_id=$1
+              and l.object_id=$2`,
+          [
+            event.connector_id,
+            event.object_id,
+            event.source_version,
+            event.title ?? null,
+            JSON.stringify(event.metadata ?? {}),
+            lifecycle,
+            event.occurred_at,
+          ],
+        );
+      }
 
       const eventUpdated = await client.query(
         `update source_connector_events
@@ -584,25 +624,27 @@ export async function applyNextSourceConnectorEvent(
         throw new Error("SOURCE_CONNECTOR_CHECKPOINT_FENCED");
       }
 
-      await client.query(
-        `insert into assurance_runs(
-           space_id,vault_id,trigger,detectors,idempotency_key
-         ) values(
-           $1,$2,'CONNECTOR_EVENT',
-           array[
-             'CONNECTOR_DELETION',
-             'CONNECTOR_FRESHNESS',
-             'CONNECTOR_ACL_DRIFT'
-           ]::text[],
-           $3
-         )
-         on conflict(space_id,vault_id,idempotency_key) do nothing`,
-        [
-          event.space_id,
-          event.vault_id,
-          `connector-event:${String(event.connector_id)}:${sequence}`,
-        ],
-      );
+      if (projectionShouldAdvance) {
+        await client.query(
+          `insert into assurance_runs(
+             space_id,vault_id,trigger,detectors,idempotency_key
+           ) values(
+             $1,$2,'CONNECTOR_EVENT',
+             array[
+               'CONNECTOR_DELETION',
+               'CONNECTOR_FRESHNESS',
+               'CONNECTOR_ACL_DRIFT'
+             ]::text[],
+             $3
+           )
+           on conflict(space_id,vault_id,idempotency_key) do nothing`,
+          [
+            event.space_id,
+            event.vault_id,
+            `connector-event:${String(event.connector_id)}:${sequence}`,
+          ],
+        );
+      }
       await client.query("release savepoint source_connector_apply");
       await client.query("commit");
       return {
