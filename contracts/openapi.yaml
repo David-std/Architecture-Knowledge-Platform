@@ -2661,7 +2661,7 @@ paths:
         - { $ref: "#/components/parameters/UuidId" }
       responses:
         "200":
-          description: External system-of-record references visible to the authorized session.
+          description: External coordination references and provider-backed projections visible to the authorized session.
           content:
             application/json:
               schema: { type: object, additionalProperties: true }
@@ -2727,6 +2727,65 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/sessions/{id}/provider-refs:
+    post:
+      tags: [Sessions]
+      operationId: linkSessionProviderObjectRef
+      x-akp-permission: knowledge:propose
+      x-akp-principal-action: knowledge:propose
+      description: >
+        Links an already-synchronized authenticated provider object to the
+        session. The caller supplies only connector/object identity and an
+        optional work class; provider identity, URL, source revision, metadata
+        and MIRRORED_PROJECTION authority are derived from AKP's connector
+        projection and cannot be asserted by the caller.
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [connectorId, objectId]
+              properties:
+                connectorId: { type: string, format: uuid }
+                objectId: { type: string, minLength: 1, maxLength: 2048 }
+                workObjectClass:
+                  type: string
+                  enum:
+                    [
+                      GOAL,
+                      PROJECT,
+                      WORK_ITEM,
+                      PULL_REQUEST,
+                      CODE_REVIEW,
+                      INCIDENT,
+                      CHANGE,
+                      BUILD,
+                      DEPLOYMENT,
+                      ENVIRONMENT,
+                      TEST_RUN,
+                      MEETING,
+                      MESSAGE,
+                      DOCUMENT,
+                      REPOSITORY,
+                      SERVICE,
+                    ]
+      responses:
+        "201":
+          description: Provider-backed reference linked as MIRRORED_PROJECTION.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /v1/sessions/{id}/offline-drafts:
     get:
