@@ -6,6 +6,7 @@ export * from "./ppr.js";
 export * from "./chunking.js";
 export * from "./embeddings.js";
 export * from "./local-semantic-embedding.js";
+export * from "./local-multilingual-qa-evidence.js";
 export * from "./openai-compatible-embedding.js";
 export * from "./embedding-provider-registry.js";
 export * from "./structural-context.js";
