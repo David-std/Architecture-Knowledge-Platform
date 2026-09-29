@@ -440,6 +440,63 @@ describe("retrieval answerability", () => {
     });
   });
 
+  it("rejects the same vocabulary when subject, predicate and object form a different relation", () => {
+    const wrongRelation = hit(37, {
+      title: "Java adapter profile",
+      excerpt:
+        "The persistence adapter defines a uniqueness strategy for generated record keys.",
+      contributions: [contribution("vector", 0.96, 1)],
+    });
+    const correctRelation = hit(38, {
+      title: "Local patterns are not architecture",
+      excerpt:
+        "Strategy and Adapter are local patterns; they do not determine the overall system architecture.",
+      contributions: [contribution("vector", 0.91, 2)],
+    });
+    const query =
+      "Do Strategy and Adapter patterns define the overall system architecture?";
+
+    const result = assessRetrievalAnswerability(
+      [wrongRelation, correctRelation],
+      query,
+    );
+
+    expect(result.supported).toBe(true);
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(correctRelation),
+    ]);
+    expect(result.candidateSignals).toEqual([
+      expect.objectContaining({
+        candidateKey: retrievalAnswerabilityCandidateKey(wrongRelation),
+        passageSupport: expect.objectContaining({
+          supported: false,
+        }),
+      }),
+      expect.objectContaining({
+        candidateKey: retrievalAnswerabilityCandidateKey(correctRelation),
+        passageSupport: expect.objectContaining({
+          supported: true,
+        }),
+      }),
+    ]);
+  });
+
+  it("does not let a deep vector rank become evidence from generic answer cues alone", () => {
+    const candidate = hit(39, {
+      title: "Retry overview",
+      excerpt:
+        "A retry is allowed when the transient condition clears and the operation can continue.",
+      contributions: [contribution("vector", 0.79, 51)],
+    });
+    const result = assessRetrievalAnswerability(
+      [candidate],
+      "When should a retry be allowed?",
+    );
+
+    expect(result.supported).toBe(false);
+    expect(result.supportedCandidateKeys).toEqual([]);
+  });
+
   it("accepts an explicit bilingual yes-no negation about the same relation", () => {
     const candidate = hit(20, {
       title: "Component scope",

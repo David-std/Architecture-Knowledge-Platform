@@ -444,6 +444,8 @@ const QUESTION_SHAPE_TOKENS = new Set([
 
 function canonicalSemanticToken(token: string): string {
   if (/^(architect|arquitect)/u.test(token)) return "architecture";
+  if (/^(pattern|patron)/u.test(token)) return "pattern";
+  if (/^(system|sistema)/u.test(token)) return "system";
   if (/^(defin|determin)/u.test(token)) return "define";
   if (/^(requir|exig|requier)/u.test(token)) return "require";
   if (/^(view|vista|diagram|diagrama)/u.test(token)) return "view";
@@ -488,6 +490,70 @@ function semanticTokens(value: string): string[] {
       ),
     ),
   ];
+}
+
+const YES_NO_RELATION_PREDICATES = new Set([
+  "define",
+  "require",
+  "points",
+]);
+
+interface QueryRelationRoles {
+  predicates: string[];
+  subjectAnchors: string[];
+  objectAnchors: string[];
+}
+
+function orderedSemanticTokens(value: string): string[] {
+  return normalizedAnswerabilityTokens(value).map((token) =>
+    canonicalSemanticToken(token),
+  );
+}
+
+function relationAnchorEligible(token: string): boolean {
+  return (
+    token.length >= 2 &&
+    !ANSWERABILITY_STOPWORDS.has(token) &&
+    !QUESTION_SHAPE_TOKENS.has(token) &&
+    !YES_NO_RELATION_PREDICATES.has(token)
+  );
+}
+
+function queryYesNoRelationRoles(query: string): QueryRelationRoles | null {
+  const ordered = orderedSemanticTokens(query);
+  const predicateIndex = ordered.findIndex((token) =>
+    YES_NO_RELATION_PREDICATES.has(token),
+  );
+  if (predicateIndex < 0) return null;
+
+  const predicate = ordered[predicateIndex]!;
+  const subjectAnchors = [
+    ...new Set(ordered.slice(0, predicateIndex).filter(relationAnchorEligible)),
+  ];
+  const objectAnchors = [
+    ...new Set(
+      ordered.slice(predicateIndex + 1).filter(relationAnchorEligible),
+    ),
+  ];
+
+  if (subjectAnchors.length === 0 || objectAnchors.length === 0) return null;
+  return {
+    predicates: [predicate],
+    subjectAnchors,
+    objectAnchors,
+  };
+}
+
+function relationRolesMatch(
+  window: string,
+  relation: QueryRelationRoles,
+): boolean {
+  const windowTokens = new Set(semanticTokens(window));
+  return (
+    relation.predicates.some((token) => windowTokens.has(token)) &&
+    relation.subjectAnchors.some((token) => windowTokens.has(token)) &&
+    relation.objectAnchors.some((token) => windowTokens.has(token))
+  );
 }
 
 function queryExplicitlyRequestsQuantity(query: string): boolean {
@@ -675,7 +741,11 @@ function answerRequirementsMatch(
   window: string,
   query: string,
   required: readonly PassageAnswerCue[],
-): { matched: PassageAnswerCue[]; allMatched: boolean } {
+): {
+  matched: PassageAnswerCue[];
+  allMatched: boolean;
+  relationRoleMatched: boolean;
+} {
   const genericRequired = required.filter(
     (cue) => cue !== "YES_NO" && cue !== "QUANTITY" && cue !== "DATE_YEAR",
   );
@@ -713,21 +783,29 @@ function answerRequirementsMatch(
   ) {
     matched.add("DATE_YEAR");
   }
+  let relationRoleMatched = false;
   if (required.includes("YES_NO")) {
     const semanticWindow = new Set(semanticTokens(window));
     const semanticQuery = semanticTokens(query);
-    const relationTokens = semanticQuery.filter((token) =>
-      ["define", "require", "dependency", "points"].includes(token),
-    );
-    const relationMatched =
-      relationTokens.length === 0 ||
-      relationTokens.some((token) => semanticWindow.has(token));
-    if (relationMatched) matched.add("YES_NO");
+    const relation = queryYesNoRelationRoles(query);
+    if (relation) {
+      relationRoleMatched = relationRolesMatch(window, relation);
+      if (relationRoleMatched) matched.add("YES_NO");
+    } else {
+      const relationTokens = semanticQuery.filter((token) =>
+        ["define", "require", "dependency", "points"].includes(token),
+      );
+      const relationMatched =
+        relationTokens.length === 0 ||
+        relationTokens.some((token) => semanticWindow.has(token));
+      if (relationMatched) matched.add("YES_NO");
+    }
   }
 
   return {
     matched: [...matched],
     allMatched: required.every((cue) => matched.has(cue)),
+    relationRoleMatched,
   };
 }
 
@@ -741,6 +819,7 @@ function boundedPredicateSupport(
   matchedAnswerCues: PassageAnswerCue[];
   anchorCoverage: number;
   semanticAnchorOverlap: string[];
+  relationRoleMatched: boolean;
 } {
   const anchors = queryPredicateAnchors(query, required);
   const requiredAnchorOverlap = Math.min(2, Math.max(1, anchors.length));
@@ -749,6 +828,7 @@ function boundedPredicateSupport(
     matchedAnswerCues: [] as PassageAnswerCue[],
     anchorCoverage: 0,
     semanticAnchorOverlap: [] as string[],
+    relationRoleMatched: false,
   };
 
   for (const window of passageWindows(passage, title)) {
@@ -776,6 +856,7 @@ function boundedPredicateSupport(
         matchedAnswerCues: answer.matched,
         anchorCoverage,
         semanticAnchorOverlap: overlap,
+        relationRoleMatched: answer.relationRoleMatched,
       };
     }
     if (supported) break;
@@ -897,7 +978,10 @@ export function verifyDeterministicPassageSupport(
     passage.length > 0 &&
     requiredAnswerCues.length > 0 &&
     boundedSupport.supported &&
-    boundedSupport.semanticAnchorOverlap.length > 0;
+    boundedSupport.semanticAnchorOverlap.length > 0 &&
+    (boundedSupport.relationRoleMatched ||
+      vectorRank === null ||
+      vectorRank <= policy.semanticCueMaxVectorRank);
 
   let reason: PassageSupportReason;
   if (!passage) {

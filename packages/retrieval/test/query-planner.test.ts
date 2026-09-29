@@ -50,6 +50,18 @@ describe("query planner", () => {
   });
 
   it("does not treat dependency vocabulary alone as impact analysis", () => {
+    const policyRationale = planQuery(
+      "Why do dependencies point inward toward domain policies?",
+      {
+        vectorAvailable: true,
+        graphConsistent: true,
+        codeAdapterAvailable: true,
+      },
+    );
+    expect(policyRationale.intent).toBe("CONCEPTUAL");
+    expect(policyRationale.channels).toContain("vector");
+    expect(policyRationale.channels).not.toContain("code");
+
     const conceptual = planQuery("Why are service dependencies documented?", {
       vectorAvailable: true,
       graphConsistent: true,
