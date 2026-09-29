@@ -13,9 +13,10 @@ concurrency:
 jobs:
   benchmark-shard:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     strategy:
       fail-fast: false
+      max-parallel: 3
       matrix:
         include:
           - kind: comparison
