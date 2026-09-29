@@ -296,6 +296,14 @@ const PASSAGE_CUE_PATTERNS: Record<PassageAnswerCue, readonly string[]> = {
     "to keep",
     "to preserve",
     "thereby",
+    "this keep*",
+    "this preserv*",
+    "this prevent*",
+    "this avoid*",
+    "this allow*",
+    "this ensur*",
+    "doing so",
+    "as a result",
     "porque",
     "debido",
     "razon",
@@ -307,6 +315,15 @@ const PASSAGE_CUE_PATTERNS: Record<PassageAnswerCue, readonly string[]> = {
     "para que",
     "con el fin de",
     "de modo que",
+    "esto mantien*",
+    "esto preserv*",
+    "esto evit*",
+    "esto permit*",
+    "esto asegur*",
+    "al hacerlo",
+    "asi",
+    "de esta forma",
+    "de este modo",
   ],
   RULE: [
     "bounded",
@@ -546,10 +563,12 @@ function relationRolesMatch(
   );
 }
 
-function isHumanReviewedClaim(hit: SearchHit): boolean {
+function isSupportEligibleClaim(hit: SearchHit): boolean {
   return (
     hit.lifecycle === "ACTIVE" &&
-    (hit.trust === "HUMAN_REVIEWED" || hit.trust === "ATTESTED") &&
+    (hit.trust === "MACHINE_SUPPORTED" ||
+      hit.trust === "HUMAN_REVIEWED" ||
+      hit.trust === "ATTESTED") &&
     hit.type.trim().toLocaleLowerCase("en-US") === "claim"
   );
 }
@@ -679,7 +698,7 @@ function queryAnswerCues(query: string): PassageAnswerCue[] {
 
 function explicitlyLinkedContinuation(sentence: string): boolean {
   const normalized = normalizedMatchText(sentence).trim();
-  return /^(?:without (?:them|those|these|it)|in (?:their|its) absence|sin (?:ellos|ellas|estos|estas|eso|esos|esas)|a falta de (?:ellos|ellas|estos|estas|eso)|because of (?:this|that)|therefore|thus|consequently|por (?:ello|eso)|de modo que)\b/u.test(
+  return /^(?:without (?:them|those|these|it)|in (?:their|its) absence|sin (?:ellos|ellas|estos|estas|eso|esos|esas)|a falta de (?:ellos|ellas|estos|estas|eso)|because of (?:this|that)|therefore|thus|consequently|this (?:keeps?|preserves?|prevents?|avoids?|allows?|ensures?)|doing so|as a result|por (?:ello|eso)|de modo que|esto (?:mantiene|preserva|evita|permite|asegura)|al hacerlo|asi|de esta forma|de este modo)\b/u.test(
     normalized,
   );
 }
@@ -998,7 +1017,7 @@ export function verifyDeterministicPassageSupport(
     hit.title?.trim() || hit.document.title?.trim() || undefined,
   );
   const claimRelationSupport =
-    isHumanReviewedClaim(hit) &&
+    isSupportEligibleClaim(hit) &&
     requiredAnswerCues.includes("YES_NO") &&
     requiredAnswerCues
       .filter((cue) => cue !== "YES_NO")
