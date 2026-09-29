@@ -158,8 +158,7 @@ const CASES: ShadowCase[] = [
       {
         label: "history-without-year",
         title: "Compatibility history",
-        passage:
-          "The compatibility window ended after the migration review.",
+        passage: "The compatibility window ended after the migration review.",
         vectorRank: 1,
       },
     ],
@@ -305,8 +304,7 @@ const thresholdMetrics = thresholds.map((threshold) => {
       expectedNegativeCases === 0
         ? 0
         : falseAcceptances / expectedNegativeCases,
-    supportSelectionPrecision:
-      selected === 0 ? 0 : selectedGold / selected,
+    supportSelectionPrecision: selected === 0 ? 0 : selectedGold / selected,
     selectedCandidates: selected,
     selectedGoldCandidates: selectedGold,
   };
