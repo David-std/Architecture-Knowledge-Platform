@@ -489,8 +489,7 @@ describe("retrieval answerability", () => {
       title: "Avoid durable change logs without explicit drivers",
       parentContext:
         "Durable change logs are justified by replay or audit requirements. Without those drivers, they add unjustified operational cost.",
-      excerpt:
-        "Without those drivers, they add unjustified operational cost.",
+      excerpt: "Without those drivers, they add unjustified operational cost.",
       contributions: [contribution("vector", 0.79, 6)],
     });
     const result = assessRetrievalAnswerability(
