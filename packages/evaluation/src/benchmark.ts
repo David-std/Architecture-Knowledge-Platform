@@ -146,6 +146,12 @@ export interface BenchmarkObservation {
   retrievedSupportIds?: string[];
   /** Gold support predicates present before passage-support admission. */
   retrievedGoldSupportIds?: string[];
+  /**
+   * First pre-admission candidate rank for each goldSupportIds entry.
+   * A null rank means the labelled support was not recovered in the measured
+   * retrieval-depth window.
+   */
+  goldSupportFirstRanks?: Array<number | null>;
   /** Passage-level selection counts after the support gate. */
   selectedSupportCandidateCount?: number;
   selectedGoldSupportCandidateCount?: number;
@@ -178,6 +184,12 @@ export interface BenchmarkCaseMetrics {
   claimSupportRecall: number;
   /** Precision of admitted passages against gold support labels. */
   supportSelectionPrecision: number;
+  /** Pre-admission depth diagnostics for labelled positive support. */
+  firstGoldSupportRank: number | null;
+  goldSupportRecallAt8: number;
+  goldSupportRecallAt16: number;
+  goldSupportRecallAt32: number;
+  goldSupportRecallAt64: number;
   citationPrecision: number;
   contextUtilization: number;
   noiseSensitivity: number;
@@ -195,6 +207,7 @@ export interface BenchmarkCaseMetrics {
   goldSupportRetrievalScored: boolean;
   claimSupportScored: boolean;
   supportSelectionPrecisionScored: boolean;
+  goldSupportDepthScored: boolean;
   citationScored: boolean;
   contextUtilizationScored: boolean;
   noiseSensitivityScored: boolean;
@@ -221,6 +234,13 @@ export interface BenchmarkRunMetrics {
   claimSupportRecallCoverage: number;
   meanSupportSelectionPrecision: number;
   supportSelectionPrecisionCoverage: number;
+  meanFirstGoldSupportRank: number;
+  goldSupportFirstRankFoundRate: number;
+  meanGoldSupportRecallAt8: number;
+  meanGoldSupportRecallAt16: number;
+  meanGoldSupportRecallAt32: number;
+  meanGoldSupportRecallAt64: number;
+  goldSupportDepthCoverage: number;
   meanCitationPrecision: number;
   citationPrecisionCoverage: number;
   meanContextUtilization: number;
@@ -382,6 +402,43 @@ export function scoreBenchmarkObservation(
         : 0
       : selectedGoldSupportCandidateCount / selectedSupportCandidateCount
     : 0;
+  const goldSupportDepthScored =
+    observation.goldSupportIds !== undefined &&
+    observation.goldSupportIds.length > 0 &&
+    observation.goldSupportFirstRanks !== undefined;
+  const goldSupportFirstRanks = observation.goldSupportFirstRanks ?? [];
+  if (
+    goldSupportDepthScored &&
+    goldSupportFirstRanks.length !== observation.goldSupportIds!.length
+  ) {
+    throw new Error(
+      "Benchmark gold-support first-rank labels must align with goldSupportIds.",
+    );
+  }
+  for (const rank of goldSupportFirstRanks) {
+    if (rank !== null && (!Number.isSafeInteger(rank) || rank < 1)) {
+      throw new Error(
+        "Benchmark gold-support first ranks must be positive integers or null.",
+      );
+    }
+  }
+  const foundGoldSupportRanks = goldSupportFirstRanks.filter(
+    (rank): rank is number => rank !== null,
+  );
+  const firstGoldSupportRank =
+    goldSupportDepthScored && foundGoldSupportRanks.length > 0
+      ? Math.min(...foundGoldSupportRanks)
+      : null;
+  const goldSupportRecallAt = (limit: number): number =>
+    goldSupportDepthScored
+      ? goldSupportFirstRanks.filter(
+          (rank) => rank !== null && rank <= limit,
+        ).length / goldSupportFirstRanks.length
+      : 0;
+  const goldSupportRecallAt8 = goldSupportRecallAt(8);
+  const goldSupportRecallAt16 = goldSupportRecallAt(16);
+  const goldSupportRecallAt32 = goldSupportRecallAt(32);
+  const goldSupportRecallAt64 = goldSupportRecallAt(64);
 
   const contextUtilizationScored =
     observation.contextDocumentIds !== undefined &&
@@ -452,6 +509,11 @@ export function scoreBenchmarkObservation(
     goldSupportRetrievalRecall,
     claimSupportRecall,
     supportSelectionPrecision,
+    firstGoldSupportRank,
+    goldSupportRecallAt8,
+    goldSupportRecallAt16,
+    goldSupportRecallAt32,
+    goldSupportRecallAt64,
     citationPrecision,
     contextUtilization,
     noiseSensitivity,
@@ -468,6 +530,7 @@ export function scoreBenchmarkObservation(
     goldSupportRetrievalScored,
     claimSupportScored,
     supportSelectionPrecisionScored,
+    goldSupportDepthScored,
     citationScored,
     contextUtilizationScored,
     noiseSensitivityScored,
@@ -514,6 +577,12 @@ export function aggregateBenchmarkRun(
   );
   const scoredSupportSelectionPrecision = results.filter(
     (result) => result.metrics.supportSelectionPrecisionScored,
+  );
+  const scoredGoldSupportDepth = results.filter(
+    (result) => result.metrics.goldSupportDepthScored,
+  );
+  const foundGoldSupportDepth = scoredGoldSupportDepth.filter(
+    (result) => result.metrics.firstGoldSupportRank !== null,
   );
   const scoredContextUtilization = results.filter(
     (result) => result.metrics.contextUtilizationScored,
@@ -580,6 +649,37 @@ export function aggregateBenchmarkRun(
       results.length === 0
         ? 0
         : scoredSupportSelectionPrecision.length / results.length,
+    meanFirstGoldSupportRank: average(
+      foundGoldSupportDepth.map(
+        (result) => result.metrics.firstGoldSupportRank ?? 0,
+      ),
+    ),
+    goldSupportFirstRankFoundRate:
+      scoredGoldSupportDepth.length === 0
+        ? 0
+        : foundGoldSupportDepth.length / scoredGoldSupportDepth.length,
+    meanGoldSupportRecallAt8: average(
+      scoredGoldSupportDepth.map(
+        (result) => result.metrics.goldSupportRecallAt8,
+      ),
+    ),
+    meanGoldSupportRecallAt16: average(
+      scoredGoldSupportDepth.map(
+        (result) => result.metrics.goldSupportRecallAt16,
+      ),
+    ),
+    meanGoldSupportRecallAt32: average(
+      scoredGoldSupportDepth.map(
+        (result) => result.metrics.goldSupportRecallAt32,
+      ),
+    ),
+    meanGoldSupportRecallAt64: average(
+      scoredGoldSupportDepth.map(
+        (result) => result.metrics.goldSupportRecallAt64,
+      ),
+    ),
+    goldSupportDepthCoverage:
+      results.length === 0 ? 0 : scoredGoldSupportDepth.length / results.length,
     meanCitationPrecision: average(
       scoredCitations.map((result) => result.metrics.citationPrecision),
     ),
