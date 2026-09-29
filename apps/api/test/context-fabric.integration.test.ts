@@ -300,6 +300,28 @@ describe("team context fabric integration", () => {
       [providerConnectorId],
     );
 
+    const providerObjects = await app.inject({
+      method: "GET",
+      url: `/v1/sessions/${sessionId}/provider-objects?limit=10`,
+      headers,
+    });
+    expect(providerObjects.statusCode, providerObjects.body).toBe(200);
+    expect(
+      (providerObjects.json() as {
+        objects: Array<Record<string, unknown>>;
+      }).objects,
+    ).toContainEqual(
+      expect.objectContaining({
+        connectorId: providerConnectorId,
+        provider: "linear",
+        objectId: "provider-object-1",
+        externalId: "ENG-101",
+        sourceRevision: "provider-v1",
+        providerHealth: "AVAILABLE",
+        lifecycle: "ACTIVE",
+      }),
+    );
+
     const providerRef = await app.inject({
       method: "POST",
       url: `/v1/sessions/${sessionId}/provider-refs`,
