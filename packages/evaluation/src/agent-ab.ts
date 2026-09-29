@@ -209,17 +209,6 @@ export function validateAgentAbTasks(tasks: AgentAbTask[]): void {
     if (!task.query.trim()) {
       throw new Error(`Agent A/B task ${task.id} has an empty query.`);
     }
-    if (
-      task.intent === "PROJECT_CODE" &&
-      (!task.projectId ||
-        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(
-          task.projectId,
-        ))
-    ) {
-      throw new Error(
-        `Agent A/B PROJECT_CODE task ${task.id} requires a valid projectId.`,
-      );
-    }
     if (!task.expectNoAnswer && task.mandatoryTerms.length === 0) {
       throw new Error(
         `Agent A/B task ${task.id} needs mandatory terms or expectNoAnswer=true.`,
