@@ -3543,9 +3543,10 @@ paths:
         operator-owned credential reference and non-secret provider
         configuration are persisted; provider secret bytes remain outside AKP
         durable state. Provider projections remain UNTRUSTED_EXTERNAL
-        references and write-back is disabled. Polling is always available;
-        an optional webhookSecretRef enables authenticated provider webhook
-        ingestion without persisting the signing secret.
+        references and write-back is disabled. Polling is always available.
+        For Linear only, an optional webhookSecretRef enables authenticated
+        provider webhook ingestion without persisting the signing secret.
+        Native Jira Cloud webhooks remain polling-only in this direct mode.
       requestBody:
         required: true
         content:
@@ -3574,7 +3575,7 @@ paths:
                   {
                     type: string,
                     pattern: "^[A-Z][A-Z0-9_]{1,127}$",
-                    description: "Optional environment/secret-store reference used only to verify Jira/Linear webhook signatures.",
+                    description: "Linear-only environment/secret-store reference used to verify Linear-Signature. Direct Jira Cloud registration rejects this field.",
                   }
                 baseUrl:
                   {
@@ -3600,14 +3601,15 @@ paths:
       security: []
       x-akp-idempotency-exempt: true
       description: >
-        Authenticated Jira Cloud or Linear webhook inbox for a registered
-        PROVIDER_PULL connector. AKP verifies the provider signature against an
-        operator-owned webhook secret reference, preserves the provider
-        delivery identifier as the idempotency key, assigns a contiguous inbox
-        sequence under lock, and stores only UNTRUSTED_EXTERNAL reference
-        metadata. Jira uses X-Hub-Signature plus
-        X-Atlassian-Webhook-Identifier. Linear uses Linear-Signature,
-        Linear-Delivery and a one-minute timestamp freshness check.
+        Authenticated provider webhook inbox for a registered PROVIDER_PULL
+        connector. The direct first-party path currently accepts Linear:
+        AKP verifies Linear-Signature against an operator-owned secret
+        reference, preserves Linear-Delivery as the idempotency key, checks
+        timestamp freshness, assigns a contiguous inbox sequence under lock,
+        and stores only UNTRUSTED_EXTERNAL reference metadata. Direct Jira
+        Cloud webhooks fail closed until an Atlassian-authenticated callback
+        mechanism is configured; Jira provider synchronization uses
+        authenticated polling.
       parameters:
         - {
             name: id,
