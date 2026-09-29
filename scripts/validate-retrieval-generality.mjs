@@ -8,138 +8,85 @@ const baselinePath = path.join(
   root,
   "policies/retrieval-generality-baseline.json",
 );
-const monitored = {
-  "packages/retrieval/src/support-verifier.ts": {
-    functions: [
-      "canonicalSemanticToken",
-      "globalRelationScopePresent",
-      "queryExplicitlyRequestsQuantity",
-      "queryExplicitlyRequestsRule",
-      "queryAnswerCues",
-      "explicitlyLinkedContinuation",
-      "queryPredicateAnchors",
-      "queryYesNoRelationRoles",
-      "quantitativeEvidenceMatches",
-      "dateYearEvidenceMatches",
-    ],
-    constants: [
-      "ANSWERABILITY_STOPWORDS",
-      "QUERY_CUE_PATTERNS",
-      "PASSAGE_CUE_PATTERNS",
-      "QUESTION_SHAPE_TOKENS",
-      "RELATION_GRAMMAR_TOKENS",
-      "PREDICATE_GRAMMAR_TOKENS",
-      "YES_NO_RELATION_PREDICATES",
-      "CUE_TOKENS_THAT_REMAIN_PREDICATE_ANCHORS",
-    ],
-  },
-  "packages/retrieval/src/query-planner.ts": {
-    functions: ["looksLikeProjectCodeRequest", "classifyQueryShape"],
-    constants: ["exactPattern", "codeShapePattern"],
-  },
-};
+const monitoredFiles = [
+  "packages/retrieval/src/support-verifier.ts",
+  "packages/retrieval/src/query-planner.ts",
+];
 
-function literalsIn(node) {
-  const literals = new Set();
-  function visit(current) {
-    if (
-      ts.isStringLiteral(current) ||
-      ts.isNoSubstitutionTemplateLiteral(current) ||
-      ts.isRegularExpressionLiteral(current)
-    ) {
-      literals.add(current.getText());
-    }
-    ts.forEachChild(current, visit);
-  }
-  visit(node);
-  return [...literals].sort();
-}
-
-function sourceDeclarations(file, watched) {
+function sourceLiterals(file, content) {
   const source = ts.createSourceFile(
     file,
-    readFileSync(path.join(root, file), "utf8"),
+    content,
     ts.ScriptTarget.Latest,
     true,
     ts.ScriptKind.TS,
   );
-  if (source.parseDiagnostics.length > 0) {
+  if (source.parseDiagnostics.length > 0)
     throw new Error(`Cannot parse ${file}`);
-  }
-
-  const found = {};
-  for (const statement of source.statements) {
+  const literals = new Set();
+  function visit(node) {
     if (
-      ts.isFunctionDeclaration(statement) &&
-      statement.name &&
-      watched.functions.includes(statement.name.text)
+      ts.isStringLiteral(node) ||
+      ts.isNoSubstitutionTemplateLiteral(node) ||
+      ts.isRegularExpressionLiteral(node) ||
+      ts.isTemplateHead(node) ||
+      ts.isTemplateMiddle(node) ||
+      ts.isTemplateTail(node)
     ) {
-      found[`function:${statement.name.text}`] = literalsIn(statement);
+      literals.add(node.getText(source));
     }
-    if (ts.isVariableStatement(statement)) {
-      for (const declaration of statement.declarationList.declarations) {
-        if (
-          ts.isIdentifier(declaration.name) &&
-          watched.constants.includes(declaration.name.text)
-        ) {
-          found[`constant:${declaration.name.text}`] = literalsIn(declaration);
-        }
-      }
-    }
+    ts.forEachChild(node, visit);
   }
-
-  for (const name of watched.functions) {
-    if (!Object.hasOwn(found, `function:${name}`)) {
-      throw new Error(`Monitored function missing: ${file}:${name}`);
-    }
-  }
-  for (const name of watched.constants) {
-    if (!Object.hasOwn(found, `constant:${name}`)) {
-      throw new Error(`Monitored constant missing: ${file}:${name}`);
-    }
-  }
-  return found;
+  visit(source);
+  return [...literals].sort();
 }
 
 const current = Object.fromEntries(
-  Object.entries(monitored).map(([file, watched]) => [
+  monitoredFiles.map((file) => [
     file,
-    sourceDeclarations(file, watched),
+    sourceLiterals(file, readFileSync(path.join(root, file), "utf8")),
   ]),
 );
 
+// Verify that adding a new helper declaration is inspected by the scan.
+const probe = sourceLiterals(
+  "probe.ts",
+  'function newHelper() { return "NEW_QUERY_ALIAS"; }',
+);
+if (!probe.includes('"NEW_QUERY_ALIAS"')) {
+  throw new Error("Generality scan failed to inspect a new helper declaration");
+}
+
 if (process.argv.includes("--print-current")) {
-  process.stdout.write(`${JSON.stringify(current, null, 2)}\n`);
+  process.stdout.write(
+    `${JSON.stringify({ schemaVersion: 2, files: current }, null, 2)}\n`,
+  );
   process.exit(0);
 }
 
 const baseline = JSON.parse(readFileSync(baselinePath, "utf8"));
+if (baseline.schemaVersion !== 2)
+  throw new Error("Retrieval generality baseline schema must be version 2");
 const failures = [];
-for (const [file, declarations] of Object.entries(current)) {
-  for (const [name, literals] of Object.entries(declarations)) {
-    const allowed = baseline[file]?.[name];
-    if (!Array.isArray(allowed)) {
-      failures.push(`Missing baseline declaration: ${file}:${name}`);
-      continue;
-    }
-    for (const literal of literals) {
-      if (!allowed.includes(literal)) {
-        failures.push(
-          `New hard-coded query literal: ${file}:${name}: ${literal}`,
-        );
-      }
-    }
+for (const [file, literals] of Object.entries(current)) {
+  const allowed = baseline.files?.[file];
+  if (!Array.isArray(allowed)) {
+    failures.push(`Missing baseline file: ${file}`);
+    continue;
   }
+  const additions = literals.filter((literal) => !allowed.includes(literal));
+  if (additions.length > 0)
+    failures.push(
+      `${file}: ${additions.length} new literal(s) outside baseline`,
+    );
 }
-
 if (failures.length > 0) {
   for (const failure of failures) process.stderr.write(`${failure}\n`);
   process.stderr.write(
-    "Keep source-specific vocabulary in evaluation fixtures or explicit profiles, not generic retrieval runtime. See policies/retrieval-generality.md.\n",
+    "Do not add query-specific vocabulary to generic retrieval runtime. See policies/retrieval-generality.md.\n",
   );
   process.exit(1);
 }
-
 process.stdout.write(
-  "Retrieval generality policy passed: no new literals in monitored query heuristics.\n",
+  "Retrieval generality policy passed: no new literals in monitored runtime files.\n",
 );
