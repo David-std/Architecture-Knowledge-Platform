@@ -607,16 +607,9 @@ function queryYesNoRelationRoles(query: string): QueryRelationRoles | null {
   if (predicateIndex < 0) return null;
 
   const predicate = ordered[predicateIndex]!;
-  const rawSubjectAnchors = [
+  const subjectAnchors = [
     ...new Set(ordered.slice(0, predicateIndex).filter(relationAnchorEligible)),
   ];
-  const specificSubjectAnchors = rawSubjectAnchors.filter(
-    (token) => !RELATION_GENERIC_SUBJECT_HEADS.has(token),
-  );
-  const subjectAnchors =
-    specificSubjectAnchors.length > 0
-      ? specificSubjectAnchors
-      : rawSubjectAnchors;
   const objectAnchors = [
     ...new Set(
       ordered.slice(predicateIndex + 1).filter(relationAnchorEligible),
@@ -669,11 +662,19 @@ function atomicClaimRelationDiagnostics(
   const relation = queryYesNoRelationRoles(query);
   const queryAnchors = queryPredicateAnchors(query, ["YES_NO"]);
   const excerptTokens = new Set(semanticTokens(excerpt));
+  const claimSubjectAnchors = relation
+    ? (() => {
+        const specific = relation.subjectAnchors.filter(
+          (token) => !RELATION_GENERIC_SUBJECT_HEADS.has(token),
+        );
+        return specific.length > 0 ? specific : relation.subjectAnchors;
+      })()
+    : [];
   const predicateMatched =
     relation?.predicates.some((token) => excerptTokens.has(token)) ?? false;
-  const subjectOverlap =
-    relation?.subjectAnchors.filter((token) => excerptTokens.has(token))
-      .length ?? 0;
+  const subjectOverlap = claimSubjectAnchors.filter((token) =>
+    excerptTokens.has(token),
+  ).length;
   const objectOverlap =
     relation?.objectAnchors.filter((token) => excerptTokens.has(token))
       .length ?? 0;
@@ -682,9 +683,10 @@ function atomicClaimRelationDiagnostics(
   ).length;
   const queryGlobalScope = globalRelationScopePresent(query);
   const excerptGlobalScope = globalRelationScopePresent(excerpt);
-  const minimumSubjectOverlap = relation
-    ? Math.min(2, Math.max(1, relation.subjectAnchors.length))
-    : 0;
+  const minimumSubjectOverlap =
+    claimSubjectAnchors.length > 0
+      ? Math.min(2, claimSubjectAnchors.length)
+      : 0;
   const subjectMatched =
     relation !== null && subjectOverlap >= minimumSubjectOverlap;
   const objectOrScopeMatched =
@@ -702,7 +704,7 @@ function atomicClaimRelationDiagnostics(
     eligibleClaim,
     relationExtracted: relation !== null,
     predicateMatched,
-    subjectAnchorCount: relation?.subjectAnchors.length ?? 0,
+    subjectAnchorCount: claimSubjectAnchors.length,
     subjectOverlap,
     subjectMatched,
     objectAnchorCount: relation?.objectAnchors.length ?? 0,

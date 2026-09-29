@@ -608,27 +608,27 @@ describe("retrieval answerability", () => {
 
   it("matches a specific subject core without treating its generic model head as identity", () => {
     const correctClaim = hit(150, {
-      title: "Orion sensor selection",
+      title: "Orion policy selection",
       type: "claim",
       trust: "MACHINE_SUPPORTED",
       externalId: "CLM-150",
       excerpt:
-        "Los sensores de Orion se seleccionan según la necesidad; no son obligatorios en todas las instalaciones.",
+        "Las políticas de Orion se seleccionan según la necesidad; no son obligatorias para cada despliegue.",
       contributions: [contribution("vector", 0.7, 34)],
     });
     const otherModelClaim = hit(151, {
-      title: "Atlas sensor selection",
+      title: "Atlas policy selection",
       type: "claim",
       trust: "MACHINE_SUPPORTED",
       externalId: "CLM-151",
       excerpt:
-        "Los sensores de Atlas se seleccionan según la necesidad; no son obligatorios en todas las instalaciones.",
+        "Las políticas de Atlas se seleccionan según la necesidad; no son obligatorias para cada despliegue.",
       contributions: [contribution("vector", 0.69, 35)],
     });
 
     const result = assessRetrievalAnswerability(
       [correctClaim, otherModelClaim],
-      "Does the Orion model require every sensor for each installation?",
+      "Does the Orion model require every policy for each deployment?",
     );
 
     expect(result.supported).toBe(true);
