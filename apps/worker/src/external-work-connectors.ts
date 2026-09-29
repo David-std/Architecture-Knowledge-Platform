@@ -377,7 +377,7 @@ export class LinearSourceConnector implements SourceConnectorPort {
       replication: "REFERENCE" as const,
       dataResidency: "EXTERNAL" as const,
       attachments: { supported: false },
-      rateLimit: { kind: "NONE" as const },
+      rateLimit: { kind: "DECLARED" as const, requestsPerMinute: 40 },
       checkpointModel: "OPAQUE_CURSOR" as const,
       deletionPropagation: "NONE" as const,
       sourceVersioning: true,
