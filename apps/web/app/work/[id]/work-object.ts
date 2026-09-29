@@ -92,3 +92,67 @@ export function compareDependencyPerspectives(
       };
     });
 }
+
+export type ExternalRefVerificationStatus =
+  | "PROVIDER_VERIFIED"
+  | "RELAYED_UNVERIFIED"
+  | "UNKNOWN";
+
+export interface ExternalRefVerification {
+  status: ExternalRefVerificationStatus;
+  label: string;
+  providerHealth: string | null;
+  lifecycle: string | null;
+}
+
+function metadataRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+export function externalRefVerification(input: {
+  authority: string;
+  metadata: Record<string, unknown>;
+}): ExternalRefVerification {
+  const provenance = metadataRecord(input.metadata._akpProvenance);
+  const source =
+    typeof provenance.observationSource === "string"
+      ? provenance.observationSource
+      : null;
+  const verified = provenance.providerVerified === true;
+  const explicitlyUnverified = provenance.providerVerified === false;
+  const providerHealth =
+    typeof provenance.providerHealth === "string"
+      ? provenance.providerHealth
+      : null;
+  const lifecycle =
+    typeof provenance.lifecycle === "string" ? provenance.lifecycle : null;
+
+  if (
+    verified &&
+    source === "AUTHENTICATED_PROVIDER_ADAPTER" &&
+    input.authority === "MIRRORED_PROJECTION"
+  ) {
+    return {
+      status: "PROVIDER_VERIFIED",
+      label: "Verified through authenticated provider adapter",
+      providerHealth,
+      lifecycle,
+    };
+  }
+  if (explicitlyUnverified && source === "RELAYED_CLIENT") {
+    return {
+      status: "RELAYED_UNVERIFIED",
+      label: "Relayed by client · not provider-verified",
+      providerHealth,
+      lifecycle,
+    };
+  }
+  return {
+    status: "UNKNOWN",
+    label: "Provider verification not established",
+    providerHealth,
+    lifecycle,
+  };
+}
