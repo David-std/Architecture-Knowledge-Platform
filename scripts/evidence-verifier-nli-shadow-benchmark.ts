@@ -331,7 +331,9 @@ function metricsFor(
   };
 }
 
-const calibration = observations.filter((entry) => entry.split === "CALIBRATION");
+const calibration = observations.filter(
+  (entry) => entry.split === "CALIBRATION",
+);
 const holdout = observations.filter((entry) => entry.split === "HOLDOUT");
 const observedCalibrationScores = calibration.flatMap((entry) =>
   entry.candidates.flatMap((candidate) =>

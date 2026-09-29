@@ -180,9 +180,8 @@ function entailmentIsTop(
 
 export const defaultLocalMultilingualNliRuntimeFactory: LocalMultilingualNliRuntimeFactory =
   async (options) => {
-    const { AutoModelForSequenceClassification, AutoTokenizer } = await import(
-      "@huggingface/transformers"
-    );
+    const { AutoModelForSequenceClassification, AutoTokenizer } =
+      await import("@huggingface/transformers");
     const cacheOptions = {
       revision: options.revision,
       local_files_only: options.localFilesOnly,
@@ -231,9 +230,7 @@ export const defaultLocalMultilingualNliRuntimeFactory: LocalMultilingualNliRunt
     };
   };
 
-export class LocalMultilingualNliEvidenceVerifier
-  implements QueryConditionedEvidenceVerifier
-{
+export class LocalMultilingualNliEvidenceVerifier implements QueryConditionedEvidenceVerifier {
   readonly id: string;
 
   private readonly minimumEntailmentScore: number;
@@ -256,8 +253,7 @@ export class LocalMultilingualNliEvidenceVerifier
     this.localFilesOnly = options.localFilesOnly ?? false;
     this.runtimeFactory =
       options.runtimeFactory ?? defaultLocalMultilingualNliRuntimeFactory;
-    this.id =
-      `local-multilingual-nli@${LOCAL_MULTILINGUAL_NLI_REVISION}:entail=${this.minimumEntailmentScore}:margin=${this.minimumPolarityMargin}`;
+    this.id = `local-multilingual-nli@${LOCAL_MULTILINGUAL_NLI_REVISION}:entail=${this.minimumEntailmentScore}:margin=${this.minimumPolarityMargin}`;
   }
 
   async verify(
