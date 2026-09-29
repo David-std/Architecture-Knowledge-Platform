@@ -511,10 +511,11 @@ describe("retrieval answerability", () => {
     });
   });
 
-  it("rescues a reviewed claim from its atomic passage without treating metadata as evidence", () => {
+  it("rescues a machine-supported claim from its atomic passage without treating metadata as evidence", () => {
     const correctClaim = hit(40, {
       title: "Local pattern scope",
       type: "claim",
+      trust: "MACHINE_SUPPORTED",
       externalId: "CLM-40",
       excerpt:
         "Strategy y Adapter son patrones locales. No determinan módulos, límites ni la dirección global de dependencias.",
@@ -556,6 +557,7 @@ describe("retrieval answerability", () => {
     const wrongClaim = hit(42, {
       title: "Local pattern deployment scope",
       type: "claim",
+      trust: "MACHINE_SUPPORTED",
       externalId: "CLM-42",
       excerpt:
         "Strategy and Adapter patterns do not determine deployment schedules.",
@@ -571,6 +573,62 @@ describe("retrieval answerability", () => {
     expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
       supported: false,
       reason: "ANSWER_CUE_MISMATCH",
+    });
+  });
+
+  it("accepts a machine-supported selective-view claim even at a deep vector rank", () => {
+    const claim = hit(145, {
+      title: "Atlas selective views",
+      type: "claim",
+      trust: "MACHINE_SUPPORTED",
+      externalId: "CLM-145",
+      excerpt:
+        "Atlas views are selected according to need; they are not mandatory deliverables.",
+      contributions: [contribution("vector", 0.66, 34)],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [claim],
+      "Does Atlas require every level of diagram?",
+    );
+
+    expect(result).toMatchObject({
+      supported: true,
+      supportedCandidateKeys: [retrievalAnswerabilityCandidateKey(claim)],
+    });
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: true,
+      reason: "CLAIM_RELATION_SUPPORT",
+      vectorRank: 34,
+    });
+  });
+
+  it("supports rationale split across an explicitly linked adjacent sentence", () => {
+    const claim = hit(146, {
+      title: "Dependency direction",
+      type: "claim",
+      trust: "MACHINE_SUPPORTED",
+      externalId: "CLM-146",
+      parentContext:
+        "Dependencies point toward domain rules rather than framework details. This keeps domain decisions isolated from external mechanisms.",
+      excerpt:
+        "Dependencies point toward domain rules rather than framework details. This keeps domain decisions isolated from external mechanisms.",
+      contributions: [contribution("vector", 0.81, 8)],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [claim],
+      "Why should implementation dependencies point toward domain rules instead of infrastructure details?",
+    );
+
+    expect(result).toMatchObject({
+      supported: true,
+      supportedCandidateKeys: [retrievalAnswerabilityCandidateKey(claim)],
+    });
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: true,
+      vectorRank: 8,
+      requiredAnswerCues: ["RATIONALE"],
     });
   });
 
