@@ -94,9 +94,7 @@ export function compareDependencyPerspectives(
 }
 
 export type ExternalRefVerificationStatus =
-  | "PROVIDER_VERIFIED"
-  | "RELAYED_UNVERIFIED"
-  | "UNKNOWN";
+  "PROVIDER_VERIFIED" | "RELAYED_UNVERIFIED" | "UNKNOWN";
 
 export interface ExternalRefVerification {
   status: ExternalRefVerificationStatus;
