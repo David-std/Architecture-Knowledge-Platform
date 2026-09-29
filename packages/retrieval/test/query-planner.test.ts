@@ -73,7 +73,7 @@ describe("query planner", () => {
     expect(codePolicyRationale.intent).toBe("CONCEPTUAL");
     expect(codePolicyRationale.channels).toContain("vector");
     expect(codePolicyRationale.channels).not.toContain("code");
-    expect(codePolicyRationale.queryShape.codeSymbolOrPath).toBe(false);
+    expect(codePolicyRationale.shape.codeSymbolOrPath).toBe(false);
 
     const conceptual = planQuery("Why are service dependencies documented?", {
       vectorAvailable: true,
