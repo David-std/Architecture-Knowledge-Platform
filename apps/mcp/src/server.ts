@@ -298,6 +298,29 @@ export function createMcpServer(): McpServer {
   );
 
   server.registerTool(
+    "akp_link_provider_reference",
+    {
+      description:
+        "Link an authenticated Jira/Linear provider projection into a workspace session. The client supplies only connector/object identity; AKP derives provider, revision, URL, metadata and MIRRORED_PROJECTION authority from its authenticated connector state.",
+      inputSchema: {
+        sessionId: z.string().uuid(),
+        connectorId: z.string().uuid(),
+        objectId: z.string().trim().min(1).max(2048),
+        workObjectClass: z.string().trim().min(1).max(120).optional(),
+        idempotencyKey: z.string().min(8).max(200),
+      },
+    },
+    async ({ sessionId, idempotencyKey, ...body }) =>
+      textResult(
+        await writeApi(
+          `/v1/sessions/${encodeURIComponent(sessionId)}/provider-refs`,
+          idempotencyKey,
+          body,
+        ),
+      ),
+  );
+
+  server.registerTool(
     "akp_bootstrap_session_context",
     {
       description:
