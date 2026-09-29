@@ -554,10 +554,7 @@ function isHumanReviewedClaim(hit: SearchHit): boolean {
   );
 }
 
-function atomicClaimRelationSupport(
-  excerpt: string,
-  query: string,
-): boolean {
+function atomicClaimRelationSupport(excerpt: string, query: string): boolean {
   const relation = queryYesNoRelationRoles(query);
   if (!relation || !excerpt.trim()) return false;
 
