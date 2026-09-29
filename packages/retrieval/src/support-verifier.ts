@@ -554,6 +554,13 @@ function isHumanReviewedClaim(hit: SearchHit): boolean {
   );
 }
 
+function globalRelationScopePresent(value: string): boolean {
+  const normalized = normalizedMatchText(value).trim();
+  return /\b(?:overall|global|globally|entire|system wide|across the system|across system|globalmente|en todo el sistema|de todo el sistema)\b/u.test(
+    normalized,
+  );
+}
+
 function atomicClaimRelationSupport(excerpt: string, query: string): boolean {
   const relation = queryYesNoRelationRoles(query);
   if (!relation || !excerpt.trim()) return false;
@@ -576,14 +583,22 @@ function atomicClaimRelationSupport(excerpt: string, query: string): boolean {
   const subjectOverlap = relation.subjectAnchors.filter((token) =>
     excerptTokens.has(token),
   ).length;
+  const objectOverlap = relation.objectAnchors.filter((token) =>
+    excerptTokens.has(token),
+  ).length;
   const anchorOverlap = queryAnchors.filter((token) =>
     excerptTokens.has(token),
   ).length;
+  const objectOrScopeMatched =
+    objectOverlap > 0 ||
+    (globalRelationScopePresent(query) &&
+      globalRelationScopePresent(excerpt));
 
   return (
     predicateMatched &&
     subjectOverlap >= minimumSubjectOverlap &&
-    anchorOverlap >= minimumAnchorOverlap
+    anchorOverlap >= minimumAnchorOverlap &&
+    objectOrScopeMatched
   );
 }
 
