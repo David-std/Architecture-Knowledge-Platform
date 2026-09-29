@@ -1142,6 +1142,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/web/app/sessions/[id]/actions.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/web/app/sessions/[id]/page.tsx",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -1317,6 +1322,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/worker/src/external-work-connectors.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/worker/src/ingest-transition.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -1338,6 +1348,11 @@
     },
     {
       "path": "apps/worker/src/operational-error.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/worker/src/provider-source-sync.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
@@ -1427,6 +1442,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "apps/worker/test/external-work-connectors.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "apps/worker/test/ingest-transition.integration.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
@@ -1448,6 +1468,11 @@
     },
     {
       "path": "apps/worker/test/operational-error.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/worker/test/provider-source-sync.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -1923,6 +1948,36 @@
     },
     {
       "path": "db/migrations/080_federation_peer_protocol_scope.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
+      "path": "db/migrations/081_external_reference_authority.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
+      "path": "db/migrations/082_operational_reconciliations.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
+      "path": "db/migrations/083_provider_source_connectors.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
+      "path": "db/migrations/084_provider_deletion_reconciliation.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
+      "path": "db/migrations/085_provider_session_reference_links.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
+      "path": "db/migrations/086_session_scoped_external_refs.sql",
       "category": "MIGRATION",
       "reason": "append-only database migration"
     },
@@ -2887,6 +2942,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/postgres/src/database-safety.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/postgres/src/decision-workflow.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -2913,6 +2973,11 @@
     },
     {
       "path": "packages/postgres/src/knowledge-profile-registry.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/postgres/src/operational-reconciliation.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
@@ -2997,6 +3062,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "packages/postgres/test/operational-reconciliation.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "packages/postgres/test/outbox.integration.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
@@ -3018,6 +3088,11 @@
     },
     {
       "path": "packages/postgres/test/temporal-truth.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/postgres/test/test-database-safety.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
