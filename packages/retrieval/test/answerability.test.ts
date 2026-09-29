@@ -636,13 +636,13 @@ describe("retrieval answerability", () => {
       trust: "MACHINE_SUPPORTED",
       externalId: "CLM-145",
       excerpt:
-        "Atlas views are selected according to need; they are not mandatory deliverables.",
+        "Las vistas de Atlas se seleccionan según la necesidad; no son entregables obligatorios.",
       contributions: [contribution("vector", 0.66, 34)],
     });
 
     const result = assessRetrievalAnswerability(
       [claim],
-      "Does Atlas require every level of diagram?",
+      "Does Atlas require every level of diagram for each project?",
     );
 
     expect(result).toMatchObject({
@@ -694,7 +694,7 @@ describe("retrieval answerability", () => {
       trust: "MACHINE_SUPPORTED",
       externalId: "CLM-149",
       excerpt:
-        "Service dependencies point toward domain policy. External details must not leak their names or formats into the core.",
+        "Las dependencias apuntan hacia las políticas del dominio. Los detalles externos no deben filtrar sus nombres o formatos hacia el interior.",
       contributions: [contribution("vector", 0.79, 8)],
     });
 
