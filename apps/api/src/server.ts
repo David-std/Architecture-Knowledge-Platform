@@ -19,6 +19,7 @@ import {
 } from "@akp/observability";
 import {
   DeterministicQueryDecomposer,
+  LocalMultilingualQaEvidenceVerifier,
   type QueryConditionedEvidenceVerifier,
   type QueryConditionedEvidenceVerifierMode,
   type QueryTransformerPort,
@@ -70,6 +71,18 @@ export interface ApiServerDependencies {
 
 export function buildServer(dependencies: ApiServerDependencies = {}) {
   const runtimeConfig = loadApiRuntimeConfig();
+  const runtimeEvidenceVerifier =
+    dependencies.evidenceVerifier ??
+    (runtimeConfig.evidenceVerifierProvider === "local-multilingual-qa"
+      ? new LocalMultilingualQaEvidenceVerifier({
+          minimumSupportScore:
+            runtimeConfig.evidenceVerifierMinimumSupportScore as number,
+          localFilesOnly: runtimeConfig.evidenceVerifierLocalFilesOnly,
+        })
+      : undefined);
+  const ownsRuntimeEvidenceVerifier =
+    dependencies.evidenceVerifier === undefined &&
+    runtimeEvidenceVerifier instanceof LocalMultilingualQaEvidenceVerifier;
   const app = Fastify({
     logger: process.env.NODE_ENV !== "test",
     bodyLimit: 10 * 1024 * 1024,
@@ -256,18 +269,23 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
       ? { contextTokenizer: dependencies.contextTokenizer }
       : {}),
     ...(queryTransformer ? { queryTransformer } : {}),
-    ...(dependencies.evidenceVerifier
-      ? { evidenceVerifier: dependencies.evidenceVerifier }
+    ...(runtimeEvidenceVerifier
+      ? { evidenceVerifier: runtimeEvidenceVerifier }
       : {}),
-    ...(dependencies.evidenceVerifierMode
-      ? { evidenceVerifierMode: dependencies.evidenceVerifierMode }
+    ...(runtimeEvidenceVerifier
+      ? {
+          evidenceVerifierMode:
+            dependencies.evidenceVerifierMode ??
+            runtimeConfig.evidenceVerifierMode,
+        }
       : {}),
-    ...(dependencies.evidenceVerifierMaxCandidates === undefined
-      ? {}
-      : {
+    ...(runtimeEvidenceVerifier
+      ? {
           evidenceVerifierMaxCandidates:
-            dependencies.evidenceVerifierMaxCandidates,
-        }),
+            dependencies.evidenceVerifierMaxCandidates ??
+            runtimeConfig.evidenceVerifierMaxCandidates,
+        }
+      : {}),
   });
   registerIngestRoutes(app, db);
   registerKnowledgeRoutes(app, db);
@@ -280,7 +298,15 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
   registerWorkspacePresenceRoutes(app, db);
   registerGovernanceRoutes(app, db);
 
-  app.addHook("onClose", async () => db.close());
+  app.addHook("onClose", async () => {
+    if (
+      ownsRuntimeEvidenceVerifier &&
+      runtimeEvidenceVerifier instanceof LocalMultilingualQaEvidenceVerifier
+    ) {
+      await runtimeEvidenceVerifier.dispose();
+    }
+    await db.close();
+  });
   return app;
 }
 
