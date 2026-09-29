@@ -7,6 +7,7 @@ import { syncProviderSourceConnector } from "../src/provider-source-sync.js";
 function fakeDatabase(activeObjects: Array<Record<string, unknown>> = []) {
   const checkpointUpdates: unknown[][] = [];
   const objectCheckUpdates: unknown[][] = [];
+  const linkedHealthUpdates: unknown[][] = [];
   const poolQuery = vi.fn(async (sql: string, values?: unknown[]) => {
     if (sql.includes("from source_connector_registrations r")) {
       return {
@@ -53,6 +54,10 @@ function fakeDatabase(activeObjects: Array<Record<string, unknown>> = []) {
       objectCheckUpdates.push(values ?? []);
       return { rows: [] };
     }
+    if (sql.includes("update external_object_refs r")) {
+      linkedHealthUpdates.push(values ?? []);
+      return { rows: [] };
+    }
     if (
       sql.includes("update source_connector_checkpoints") &&
       sql.includes("provider_checkpoint_kind")
@@ -88,13 +93,15 @@ function fakeDatabase(activeObjects: Array<Record<string, unknown>> = []) {
     poolQuery,
     checkpointUpdates,
     objectCheckUpdates,
+    linkedHealthUpdates,
     lockClient,
   };
 }
 
 describe("provider source sync", () => {
   it("advances a provider checkpoint only after discovered events are durably applied", async () => {
-    const { db, checkpointUpdates, lockClient } = fakeDatabase();
+    const { db, checkpointUpdates, linkedHealthUpdates, lockClient } =
+      fakeDatabase();
     const appendEvent = vi.fn(async () => ({
       id: "event-row",
       status: "PENDING",
@@ -216,12 +223,22 @@ describe("provider source sync", () => {
         null,
       ],
     ]);
+    expect(linkedHealthUpdates).toContainEqual([
+      "11111111-1111-4111-8111-111111111111",
+      "AVAILABLE",
+      null,
+    ]);
     expect(applyNextEvent).toHaveBeenCalledTimes(2);
     expect(lockClient.release).toHaveBeenCalledOnce();
   });
 
   it("degrades and preserves the projection when provider absence is ambiguous", async () => {
-    const { db, checkpointUpdates, objectCheckUpdates } = fakeDatabase([
+    const {
+      db,
+      checkpointUpdates,
+      objectCheckUpdates,
+      linkedHealthUpdates,
+    } = fakeDatabase([
       {
         object_id: "lin-missing",
         object_type: "ISSUE",
@@ -310,5 +327,10 @@ describe("provider source sync", () => {
       ["11111111-1111-4111-8111-111111111111", "lin-missing"],
     ]);
     expect(checkpointUpdates).toEqual([]);
+    expect(linkedHealthUpdates).toContainEqual([
+      "11111111-1111-4111-8111-111111111111",
+      "DEGRADED",
+      "PROVIDER_OBJECT_ABSENCE_AMBIGUOUS",
+    ]);
   });
 });
