@@ -154,6 +154,13 @@ jobs:
           AKP_EVIDENCE_VERIFIER_SHADOW_REPORT=reports/ci/evidence-verifier-shadow-benchmark.json \
             pnpm benchmark:evidence-verifier-shadow \
             2>&1 | tee reports/ci/evidence-verifier-shadow-benchmark.log
+      - name: Measure multilingual NLI evidence verifier in shadow mode
+        shell: bash
+        run: |
+          set -o pipefail
+          AKP_EVIDENCE_VERIFIER_NLI_SHADOW_REPORT=reports/ci/evidence-verifier-nli-shadow-benchmark.json \
+            pnpm benchmark:evidence-verifier-nli-shadow \
+            2>&1 | tee reports/ci/evidence-verifier-nli-shadow-benchmark.log
       - name: Execute pinned multilingual semantic retrieval end to end
         shell: bash
         run: |

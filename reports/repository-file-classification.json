@@ -3302,6 +3302,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/retrieval/src/local-multilingual-nli-evidence.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/retrieval/src/local-multilingual-qa-evidence.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3418,6 +3423,11 @@
     },
     {
       "path": "packages/retrieval/test/embeddings.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/local-multilingual-nli-evidence.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -3673,6 +3683,11 @@
     },
     {
       "path": "scripts/event-concurrency-benchmark.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/evidence-verifier-nli-shadow-benchmark.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
