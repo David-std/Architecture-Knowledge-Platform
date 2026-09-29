@@ -85,7 +85,10 @@ export const ProviderSourceConnectorRegistrationSchema = z
     connectorKey: z.string().regex(CONNECTOR_KEY),
     provider: z.enum(["jira", "linear"]),
     credentialRef: z.string().regex(/^[A-Z][A-Z0-9_]{1,127}$/),
-    webhookSecretRef: z.string().regex(/^[A-Z][A-Z0-9_]{1,127}$/).optional(),
+    webhookSecretRef: z
+      .string()
+      .regex(/^[A-Z][A-Z0-9_]{1,127}$/)
+      .optional(),
     baseUrl: z.string().url().max(2048).optional(),
     jql: z.string().trim().min(1).max(4000).optional(),
     authorizationScheme: z.enum(["RAW", "BASIC", "BEARER"]).optional(),
@@ -338,7 +341,8 @@ export function providerWebhookEvent(input: {
     const occurredAt =
       millisecondsTimestamp(body.timestamp) ?? new Date().toISOString();
     const sourceVersion = textValue(fields.updated) ?? occurredAt;
-    if (!objectId || !key) throw new Error("JIRA_WEBHOOK_ISSUE_IDENTITY_INVALID");
+    if (!objectId || !key)
+      throw new Error("JIRA_WEBHOOK_ISSUE_IDENTITY_INVALID");
     const aclFingerprint = createHash("sha256")
       .update(
         JSON.stringify({
