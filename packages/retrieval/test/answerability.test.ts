@@ -553,6 +553,59 @@ describe("retrieval answerability", () => {
     });
   });
 
+  it("parses grammatical modifiers around a yes-no relation without inflating subject overlap", () => {
+    const correctClaim = hit(147, {
+      title: "Mediator and Facade scope",
+      type: "claim",
+      trust: "MACHINE_SUPPORTED",
+      externalId: "CLM-147",
+      excerpt:
+        "Mediator y Facade son patrones locales. No determinan módulos, límites ni la dirección global de dependencias.",
+      contributions: [contribution("vector", 0.9, 1)],
+    });
+    const lexicalProfile = hit(148, {
+      title: "Facade routing profile",
+      type: "profile",
+      externalId: "PRO-148",
+      excerpt:
+        "A facade adapter defines a routing strategy for downstream calls.",
+      contributions: [contribution("vector", 0.61, 44)],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [correctClaim, lexicalProfile],
+      "Does using Mediator or Facade define the overall architecture?",
+    );
+
+    expect(result.supported).toBe(true);
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(correctClaim),
+    ]);
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: true,
+      reason: "CLAIM_RELATION_SUPPORT",
+      claimRelationDiagnostics: {
+        eligibleClaim: true,
+        relationExtracted: true,
+        predicateMatched: true,
+        subjectAnchorCount: 2,
+        subjectOverlap: 2,
+        subjectMatched: true,
+        queryGlobalScope: true,
+        excerptGlobalScope: true,
+        objectOrScopeMatched: true,
+        supported: true,
+      },
+    });
+    expect(result.candidateSignals[1]?.passageSupport).toMatchObject({
+      supported: false,
+      claimRelationDiagnostics: expect.objectContaining({
+        eligibleClaim: false,
+        supported: false,
+      }),
+    });
+  });
+
   it("rejects a reviewed claim with the same subject and predicate but a different object", () => {
     const wrongClaim = hit(42, {
       title: "Local pattern deployment scope",
