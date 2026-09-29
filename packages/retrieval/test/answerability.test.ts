@@ -600,10 +600,9 @@ describe("retrieval answerability", () => {
       supported: true,
       vectorRank: 34,
     });
-    expect([
-      "PASSAGE_CUE_SUPPORT",
-      "CLAIM_RELATION_SUPPORT",
-    ]).toContain(result.candidateSignals[0]?.passageSupport.reason);
+    expect(["PASSAGE_CUE_SUPPORT", "CLAIM_RELATION_SUPPORT"]).toContain(
+      result.candidateSignals[0]?.passageSupport.reason,
+    );
   });
 
   it("supports rationale split across an explicitly linked adjacent sentence", () => {

@@ -174,7 +174,11 @@ function patternMatches(
 
   const fixedTokens = patternTokens.slice(0, -1);
   const finalPrefix = patternTokens.at(-1)!;
-  for (let index = 0; index <= tokens.length - patternTokens.length; index += 1) {
+  for (
+    let index = 0;
+    index <= tokens.length - patternTokens.length;
+    index += 1
+  ) {
     const fixedMatch = fixedTokens.every(
       (token, offset) => tokens[index + offset] === token,
     );
