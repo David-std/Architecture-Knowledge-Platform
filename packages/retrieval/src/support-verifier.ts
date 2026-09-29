@@ -160,14 +160,32 @@ function patternMatches(
   pattern: string,
 ): boolean {
   const prefix = pattern.endsWith("*");
-  const normalizedPattern = normalizedAnswerabilityTokens(
+  const patternTokens = normalizedAnswerabilityTokens(
     prefix ? pattern.slice(0, -1) : pattern,
-  ).join(" ");
-  if (!normalizedPattern) return false;
-  if (prefix && !normalizedPattern.includes(" ")) {
-    return tokens.some((token) => token.startsWith(normalizedPattern));
+  );
+  if (patternTokens.length === 0) return false;
+
+  if (!prefix) {
+    return normalizedText.includes(` ${patternTokens.join(" ")} `);
   }
-  return normalizedText.includes(` ${normalizedPattern} `);
+  if (patternTokens.length === 1) {
+    return tokens.some((token) => token.startsWith(patternTokens[0]!));
+  }
+
+  const fixedTokens = patternTokens.slice(0, -1);
+  const finalPrefix = patternTokens.at(-1)!;
+  for (let index = 0; index <= tokens.length - patternTokens.length; index += 1) {
+    const fixedMatch = fixedTokens.every(
+      (token, offset) => tokens[index + offset] === token,
+    );
+    if (
+      fixedMatch &&
+      tokens[index + fixedTokens.length]?.startsWith(finalPrefix)
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 const QUERY_CUE_PATTERNS: Record<PassageAnswerCue, readonly string[]> = {
