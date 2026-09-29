@@ -134,8 +134,7 @@ describe("local multilingual NLI evidence verifier", () => {
       {
         model: LOCAL_MULTILINGUAL_NLI_MINILM_DESCRIPTOR.model,
         revision: LOCAL_MULTILINGUAL_NLI_MINILM_DESCRIPTOR.revision,
-        modelFileName:
-          LOCAL_MULTILINGUAL_NLI_MINILM_DESCRIPTOR.modelFileName,
+        modelFileName: LOCAL_MULTILINGUAL_NLI_MINILM_DESCRIPTOR.modelFileName,
         dtype: LOCAL_MULTILINGUAL_NLI_MINILM_DESCRIPTOR.dtype,
         cacheDir: "/tmp/akp-model-cache",
         localFilesOnly: true,

@@ -283,7 +283,8 @@ for (const modelDescriptor of MODEL_DESCRIPTORS) {
       });
     }
   } finally {
-      }
+    await verifier.dispose();
+  }
   modelRuns.push({
     modelDescriptor,
     verifierId: verifier.id,
@@ -371,9 +372,7 @@ const comparisons = modelRuns.map((modelRun) => {
       0.7,
       0.8,
       0.9,
-      ...observedCalibrationScores.map((score) =>
-        Number(score.toFixed(6)),
-      ),
+      ...observedCalibrationScores.map((score) => Number(score.toFixed(6))),
     ]),
   ].sort((left, right) => left - right);
 
@@ -419,8 +418,7 @@ const report = {
   evidenceBoundary:
     "Public synthetic bilingual calibration/holdout shadow comparison only. No threshold or verifier is promoted by this report.",
   splitCounts: {
-    calibration: CASES.filter((entry) => entry.split === "CALIBRATION")
-      .length,
+    calibration: CASES.filter((entry) => entry.split === "CALIBRATION").length,
     holdout: CASES.filter((entry) => entry.split === "HOLDOUT").length,
   },
   comparisons,
