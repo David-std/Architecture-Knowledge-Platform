@@ -280,7 +280,7 @@ describe("team context fabric integration", () => {
          content,content_type,permission_fidelity,permission_uncertain,
          acl_fingerprint,metadata,source_sequence,observed_at
        ) values(
-         $1,'provider-object-1','ISSUE','provider-v1','ACTIVE',
+         $1,'provider-object-1','ISSUE','2026-09-28T10:00:00.000Z','ACTIVE',
          'Provider verified issue',null,null,'SOURCE_ACL_MAPPED',true,
          'provider-acl-v1',$2::jsonb,1,'2026-09-28T10:00:00Z'
        )`,
@@ -321,7 +321,7 @@ describe("team context fabric integration", () => {
         provider: "linear",
         objectId: "provider-object-1",
         externalId: "ENG-101",
-        sourceRevision: "provider-v1",
+        sourceRevision: "2026-09-28T10:00:00.000Z",
         providerHealth: "AVAILABLE",
         lifecycle: "ACTIVE",
       }),
@@ -350,7 +350,7 @@ describe("team context fabric integration", () => {
     expect(providerRefBody).toMatchObject({
       externalId: "ENG-101",
       authority: "MIRRORED_PROJECTION",
-      sourceRevision: "provider-v1",
+      sourceRevision: "2026-09-28T10:00:00.000Z",
       metadata: {
         _akpProvenance: {
           observationSource: "AUTHENTICATED_PROVIDER_ADAPTER",
@@ -412,7 +412,7 @@ describe("team context fabric integration", () => {
       operation: "UPSERT",
       objectId: "provider-object-1",
       objectType: "ISSUE",
-      sourceVersion: "provider-v2",
+      sourceVersion: "2026-09-28T10:05:00.000Z",
       title: "Provider verified issue updated",
       permissionFidelity: "SOURCE_ACL_MAPPED",
       permissionUncertain: true,
@@ -449,7 +449,7 @@ describe("team context fabric integration", () => {
       }
     ).refs.find((ref) => ref.id === providerRefBody.id);
     expect(refreshedProvider).toMatchObject({
-      sourceRevision: "provider-v2",
+      sourceRevision: "2026-09-28T10:05:00.000Z",
       title: "Provider verified issue updated",
       metadata: {
         _akpProvenance: {
