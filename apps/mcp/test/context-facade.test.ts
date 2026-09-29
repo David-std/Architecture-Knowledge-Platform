@@ -175,24 +175,41 @@ describe("akp_context façade", () => {
     const writeApi = vi.fn();
     const projectId = "44444444-4444-4444-8444-444444444444";
 
+    const scope = {
+      spaceId: "11111111-1111-4111-8111-111111111111",
+      vaultId: "22222222-2222-4222-8222-222222222222",
+      projectId,
+      query: "What does healthReadiness call?",
+      intent: "PROJECT_CODE" as const,
+    };
+
     await dispatchAkpContext(
-      {
-        action: "EXPLAIN",
-        spaceId: "11111111-1111-4111-8111-111111111111",
-        vaultId: "22222222-2222-4222-8222-222222222222",
-        projectId,
-        query: "What does healthReadiness call?",
-        intent: "PROJECT_CODE",
-      },
+      { action: "SEARCH", ...scope },
+      { api, writeApi: writeApi as never },
+    );
+    await dispatchAkpContext(
+      { action: "EXPLAIN", ...scope },
       { api, writeApi: writeApi as never },
     );
 
-    expect(api).toHaveBeenCalledWith(
-      "/v1/context",
+    expect(api).toHaveBeenNthCalledWith(
+      1,
+      "/v1/search",
       expect.objectContaining({ method: "POST" }),
     );
     expect(
       JSON.parse(String((api.mock.calls[0]?.[1] as RequestInit).body)),
+    ).toMatchObject({
+      projectId,
+      intent: "PROJECT_CODE",
+    });
+    expect(api).toHaveBeenNthCalledWith(
+      2,
+      "/v1/context",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(
+      JSON.parse(String((api.mock.calls[1]?.[1] as RequestInit).body)),
     ).toMatchObject({
       projectId,
       intent: "PROJECT_CODE",
