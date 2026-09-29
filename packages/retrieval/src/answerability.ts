@@ -126,12 +126,9 @@ export interface CandidatePassageSupport {
   matchedAnswerCues: DeterministicPassageSupportSignal["matchedAnswerCues"];
   answerCueCoverage: number;
   vectorRank: number | null;
-  claimRelationDiagnostics:
-    DeterministicPassageSupportSignal["claimRelationDiagnostics"];
-  boundedAnchorCoverage:
-    DeterministicPassageSupportSignal["boundedAnchorCoverage"];
-  boundedRelationRoleMatched:
-    DeterministicPassageSupportSignal["boundedRelationRoleMatched"];
+  claimRelationDiagnostics: DeterministicPassageSupportSignal["claimRelationDiagnostics"];
+  boundedAnchorCoverage: DeterministicPassageSupportSignal["boundedAnchorCoverage"];
+  boundedRelationRoleMatched: DeterministicPassageSupportSignal["boundedRelationRoleMatched"];
 }
 
 export interface CandidateAnswerabilitySignal {
