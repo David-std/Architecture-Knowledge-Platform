@@ -438,7 +438,8 @@ describe("project scan Code Graph request", () => {
       url: "/v1/context",
       headers: { authorization: headers.authorization },
       payload: {
-        query: "Why do dependencies point inward toward domain policies?",
+        query:
+          "Why should code dependencies point toward domain abstractions instead of framework details?",
         projectId,
         spaceId,
         vaultId,
