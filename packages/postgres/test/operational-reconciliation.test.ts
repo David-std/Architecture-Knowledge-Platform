@@ -162,22 +162,18 @@ describe("operational reconciliation", () => {
 
   it("binds a disposition to one quarantine occurrence so a later re-quarantine stays unresolved", () => {
     const eventId = "11111111-1111-4111-8111-111111111111";
-    expect(
-      quarantineResourceKey(eventId, "projection-worker", 41),
-    ).toBe(
+    expect(quarantineResourceKey(eventId, "projection-worker", 41)).toBe(
       "11111111-1111-4111-8111-111111111111:projection-worker:quarantine:41",
     );
-    expect(
-      quarantineResourceKey(eventId, "projection-worker", 42),
-    ).toBe(
+    expect(quarantineResourceKey(eventId, "projection-worker", 42)).toBe(
       "11111111-1111-4111-8111-111111111111:projection-worker:quarantine:42",
     );
-    expect(
-      quarantineResourceKey(eventId, "projection-worker", 41),
-    ).not.toBe(quarantineResourceKey(eventId, "projection-worker", 42));
-    expect(() =>
-      quarantineResourceKey("", "projection-worker", 41),
-    ).toThrow("OPERATIONAL_RECONCILIATION_RESOURCE_REQUIRED");
+    expect(quarantineResourceKey(eventId, "projection-worker", 41)).not.toBe(
+      quarantineResourceKey(eventId, "projection-worker", 42),
+    );
+    expect(() => quarantineResourceKey("", "projection-worker", 41)).toThrow(
+      "OPERATIONAL_RECONCILIATION_RESOURCE_REQUIRED",
+    );
     expect(() =>
       quarantineResourceKey(eventId, "projection-worker", 0),
     ).toThrow("OPERATIONAL_RECONCILIATION_RESOURCE_REQUIRED");
