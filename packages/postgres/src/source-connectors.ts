@@ -47,6 +47,11 @@ export interface SourceConnectorEventReceipt {
   sequence: number;
 }
 
+export type ProviderSourceConnectorEventInput = Omit<
+  SourceConnectorEventInput,
+  "sequence"
+>;
+
 export interface AppliedSourceConnectorEvent {
   eventId: string;
   connectorId: string;
@@ -260,6 +265,150 @@ export async function appendSourceConnectorEvent(
     await client.query(
       `update source_connector_registrations
           set last_event_at=greatest(coalesce(last_event_at,$2::timestamptz),$2::timestamptz),
+              updated_at=now()
+        where id=$1`,
+      [input.connectorId, input.occurredAt],
+    );
+    await client.query("commit");
+    return {
+      id: row.id,
+      status: row.status,
+      duplicate: false,
+      sequence: Number(row.sequence),
+    };
+  } catch (error) {
+    await client.query("rollback").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Append one provider-authenticated webhook event using an AKP-owned
+ * monotonically increasing inbox sequence. Provider delivery IDs remain the
+ * idempotency key; callers never invent a source sequence that could race.
+ */
+export async function appendProviderSourceConnectorEvent(
+  db: Postgres,
+  input: ProviderSourceConnectorEventInput,
+): Promise<SourceConnectorEventReceipt> {
+  if (!/^[a-f0-9]{64}$/u.test(input.payloadHash)) {
+    throw sourceConnectorError("SOURCE_CONNECTOR_PAYLOAD_HASH_INVALID", 400);
+  }
+  if (input.operation === "DELETE" && input.content != null) {
+    throw sourceConnectorError(
+      "SOURCE_CONNECTOR_DELETE_CONTENT_FORBIDDEN",
+      400,
+    );
+  }
+
+  const client = await db.pool.connect();
+  try {
+    await client.query("begin");
+    const registration = await client.query<{
+      state: string;
+      connector_mode: string;
+      applied_sequence: string | number;
+    }>(
+      `select r.state,r.connector_mode,c.applied_sequence
+         from source_connector_registrations r
+         join source_connector_checkpoints c on c.connector_id=r.id
+        where r.id=$1
+        for update of r,c`,
+      [input.connectorId],
+    );
+    const connector = registration.rows[0];
+    if (!connector)
+      throw sourceConnectorError("SOURCE_CONNECTOR_NOT_FOUND", 404);
+    if (connector.state !== "ACTIVE") {
+      throw sourceConnectorError("SOURCE_CONNECTOR_DISABLED", 409);
+    }
+    if (connector.connector_mode !== "PROVIDER_PULL") {
+      throw sourceConnectorError("SOURCE_CONNECTOR_PROVIDER_MODE_REQUIRED", 409);
+    }
+
+    const existing = await client.query<{
+      id: string;
+      sequence: string | number;
+      payload_hash: string;
+      status: SourceConnectorEventReceipt["status"];
+    }>(
+      `select id,sequence,payload_hash,status
+         from source_connector_events
+        where connector_id=$1 and event_id=$2`,
+      [input.connectorId, input.eventId],
+    );
+    const sameEvent = existing.rows[0];
+    if (sameEvent) {
+      if (sameEvent.payload_hash !== input.payloadHash) {
+        throw sourceConnectorError("SOURCE_CONNECTOR_EVENT_ID_CONFLICT", 409);
+      }
+      await client.query("commit");
+      return {
+        id: sameEvent.id,
+        status: sameEvent.status,
+        duplicate: true,
+        sequence: Number(sameEvent.sequence),
+      };
+    }
+
+    const nextSequence = await client.query<{ sequence: string | number }>(
+      `select greatest(
+           $2::bigint,
+           coalesce(max(sequence),0)
+         ) + 1 sequence
+         from source_connector_events
+        where connector_id=$1`,
+      [input.connectorId, connector.applied_sequence],
+    );
+    const sequence = Number(nextSequence.rows[0]?.sequence ?? 0);
+    if (!Number.isSafeInteger(sequence) || sequence < 1) {
+      throw sourceConnectorError("SOURCE_CONNECTOR_SEQUENCE_INVALID", 500);
+    }
+
+    const inserted = await client.query<{
+      id: string;
+      status: SourceConnectorEventReceipt["status"];
+      sequence: string | number;
+    }>(
+      `insert into source_connector_events(
+         connector_id,event_id,sequence,occurred_at,operation,object_id,
+         object_type,source_version,title,content,content_type,
+         permission_fidelity,permission_uncertain,acl_fingerprint,
+         metadata,payload_hash
+       ) values(
+         $1,$2,$3,$4::timestamptz,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,
+         $15::jsonb,$16
+       )
+       returning id,status,sequence`,
+      [
+        input.connectorId,
+        input.eventId,
+        sequence,
+        input.occurredAt,
+        input.operation,
+        input.objectId,
+        input.objectType,
+        input.sourceVersion,
+        input.title ?? null,
+        input.content ?? null,
+        input.contentType ?? null,
+        input.permissionFidelity,
+        input.permissionUncertain,
+        input.aclFingerprint ?? null,
+        JSON.stringify(input.metadata),
+        input.payloadHash,
+      ],
+    );
+    const row = inserted.rows[0];
+    if (!row) throw new Error("SOURCE_CONNECTOR_EVENT_APPEND_FAILED");
+    await client.query(
+      `update source_connector_registrations
+          set last_event_at=greatest(
+                coalesce(last_event_at,$2::timestamptz),
+                $2::timestamptz
+              ),
               updated_at=now()
         where id=$1`,
       [input.connectorId, input.occurredAt],
