@@ -554,36 +554,40 @@ function isHumanReviewedClaim(hit: SearchHit): boolean {
   );
 }
 
-function boundedClaimRelationSupport(
-  passage: string,
+function atomicClaimRelationSupport(
+  excerpt: string,
   query: string,
-  title?: string,
-  externalId?: string | null,
 ): boolean {
   const relation = queryYesNoRelationRoles(query);
-  if (!relation) return false;
+  if (!relation || !excerpt.trim()) return false;
 
-  const metadataTokens = new Set(
-    semanticTokens(
-      [title?.trim(), externalId?.trim()].filter(Boolean).join(" "),
-    ),
+  const queryAnchors = queryPredicateAnchors(query, ["YES_NO"]);
+  if (queryAnchors.length < 2) return false;
+
+  const minimumSubjectOverlap = Math.max(
+    1,
+    Math.ceil(relation.subjectAnchors.length * (2 / 3)),
   );
+  const minimumAnchorOverlap = Math.max(
+    2,
+    Math.ceil(queryAnchors.length * 0.6),
+  );
+  const excerptTokens = new Set(semanticTokens(excerpt));
+  const predicateMatched = relation.predicates.some((token) =>
+    excerptTokens.has(token),
+  );
+  const subjectOverlap = relation.subjectAnchors.filter((token) =>
+    excerptTokens.has(token),
+  ).length;
+  const anchorOverlap = queryAnchors.filter((token) =>
+    excerptTokens.has(token),
+  ).length;
 
-  return passageWindows(passage, title).some((window) => {
-    const passageTokens = new Set(semanticTokens(window));
-    const combinedTokens = new Set([...passageTokens, ...metadataTokens]);
-    const predicateMatched = relation.predicates.some((token) =>
-      passageTokens.has(token),
-    );
-    const subjectMatched = relation.subjectAnchors.some((token) =>
-      combinedTokens.has(token),
-    );
-    const objectMatched = relation.objectAnchors.some((token) =>
-      combinedTokens.has(token),
-    );
-
-    return predicateMatched && subjectMatched && objectMatched;
-  });
+  return (
+    predicateMatched &&
+    subjectOverlap >= minimumSubjectOverlap &&
+    anchorOverlap >= minimumAnchorOverlap
+  );
 }
 
 function queryExplicitlyRequestsQuantity(query: string): boolean {
@@ -988,12 +992,7 @@ export function verifyDeterministicPassageSupport(
     requiredAnswerCues
       .filter((cue) => cue !== "YES_NO")
       .every((cue) => boundedSupport.matchedAnswerCues.includes(cue)) &&
-    boundedClaimRelationSupport(
-      passage,
-      query,
-      hit.title?.trim() || hit.document.title?.trim() || undefined,
-      hit.document.externalId,
-    );
+    atomicClaimRelationSupport(excerpt, query);
   const matchedAnswerCues = claimRelationSupport
     ? [
         ...new Set<PassageAnswerCue>([

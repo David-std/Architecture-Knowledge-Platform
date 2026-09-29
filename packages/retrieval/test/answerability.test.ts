@@ -511,11 +511,11 @@ describe("retrieval answerability", () => {
     });
   });
 
-  it("rescues a reviewed claim only when claim metadata anchors the missing relation object", () => {
+  it("rescues a reviewed claim from its atomic passage without treating metadata as evidence", () => {
     const correctClaim = hit(40, {
       title: "Local pattern scope",
       type: "claim",
-      externalId: "CLM-LOCAL-PATTERN-NOT-SYSTEM-ARCHITECTURE",
+      externalId: "CLM-40",
       excerpt:
         "Strategy y Adapter son patrones locales. No determinan módulos, límites ni la dirección global de dependencias.",
       contributions: [contribution("vector", 0.91, 1)],
@@ -523,7 +523,7 @@ describe("retrieval answerability", () => {
     const incidentalProfile = hit(41, {
       title: "Java persistence profile",
       type: "profile",
-      externalId: "PRO-STORAGE-ADAPTER",
+      externalId: "PRO-41",
       excerpt:
         "The persistence adapter defines a uniqueness strategy for generated record keys.",
       contributions: [contribution("vector", 0.62, 51)],
@@ -556,7 +556,7 @@ describe("retrieval answerability", () => {
     const wrongClaim = hit(42, {
       title: "Local pattern deployment scope",
       type: "claim",
-      externalId: "CLM-LOCAL-PATTERN-NOT-DEPLOYMENT-SCHEDULE",
+      externalId: "CLM-42",
       excerpt:
         "Strategy and Adapter patterns do not determine deployment schedules.",
       contributions: [contribution("vector", 0.9, 1)],
@@ -579,7 +579,7 @@ describe("retrieval answerability", () => {
       title: "Local pattern scope",
       type: "claim",
       trust: "UNVERIFIED",
-      externalId: "CLM-LOCAL-PATTERN-NOT-SYSTEM-ARCHITECTURE",
+      externalId: "CLM-43",
       excerpt:
         "Strategy y Adapter son patrones locales. No determinan módulos, límites ni la dirección global de dependencias.",
       contributions: [contribution("vector", 0.9, 1)],
