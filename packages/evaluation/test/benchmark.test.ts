@@ -141,6 +141,7 @@ describe("benchmark metrics", () => {
       contextDocumentIds: ["doc-a", "noise"],
       goldSupportIds: ["support-a", "support-b"],
       retrievedGoldSupportIds: ["support-a", "support-b"],
+      goldSupportFirstRanks: [3, 18],
       retrievedSupportIds: ["support-a"],
       selectedSupportCandidateCount: 2,
       selectedGoldSupportCandidateCount: 1,
@@ -158,6 +159,11 @@ describe("benchmark metrics", () => {
       goldSupportRetrievalRecall: 1,
       claimSupportRecall: 0.5,
       supportSelectionPrecision: 0.5,
+      firstGoldSupportRank: 3,
+      goldSupportRecallAt8: 0.5,
+      goldSupportRecallAt16: 0.5,
+      goldSupportRecallAt32: 1,
+      goldSupportRecallAt64: 1,
       citationPrecision: 1,
       contextUtilization: 0.5,
       noiseSensitivity: 0,
@@ -166,6 +172,7 @@ describe("benchmark metrics", () => {
       goldSupportRetrievalScored: true,
       claimSupportScored: true,
       supportSelectionPrecisionScored: true,
+      goldSupportDepthScored: true,
       citationScored: true,
       contextUtilizationScored: true,
       noiseSensitivityScored: true,
@@ -185,6 +192,11 @@ describe("benchmark metrics", () => {
       goldSupportRetrievalRecall: 0,
       claimSupportRecall: 0,
       supportSelectionPrecision: 0,
+      firstGoldSupportRank: null,
+      goldSupportRecallAt8: 0,
+      goldSupportRecallAt16: 0,
+      goldSupportRecallAt32: 0,
+      goldSupportRecallAt64: 0,
       contextUtilization: 0,
       noiseSensitivity: 0,
       faithfulness: 0,
@@ -192,6 +204,7 @@ describe("benchmark metrics", () => {
       goldSupportRetrievalScored: false,
       claimSupportScored: false,
       supportSelectionPrecisionScored: false,
+      goldSupportDepthScored: false,
       contextUtilizationScored: false,
       noiseSensitivityScored: false,
       faithfulnessScored: false,
@@ -207,6 +220,7 @@ describe("benchmark metrics", () => {
       goldDocumentIds: ["doc-a"],
       goldSupportIds: ["support-a"],
       retrievedGoldSupportIds: ["support-a"],
+      goldSupportFirstRanks: [34],
       retrievedSupportIds: [],
       selectedSupportCandidateCount: 0,
       selectedGoldSupportCandidateCount: 0,
@@ -216,6 +230,12 @@ describe("benchmark metrics", () => {
       goldSupportRetrievalRecall: 1,
       claimSupportRecall: 0,
       supportSelectionPrecision: 0,
+      firstGoldSupportRank: 34,
+      goldSupportRecallAt8: 0,
+      goldSupportRecallAt16: 0,
+      goldSupportRecallAt32: 0,
+      goldSupportRecallAt64: 1,
+      goldSupportDepthScored: true,
       falseAbstention: true,
       falseAcceptance: false,
     });
@@ -241,6 +261,34 @@ describe("benchmark metrics", () => {
       falseAcceptance: true,
       noAnswerCorrect: false,
     });
+  });
+
+  it("rejects malformed gold-support depth labels instead of hiding them", () => {
+    expect(() =>
+      scoreBenchmarkObservation({
+        configurationName: "diagnostic",
+        caseId: "misaligned-depth",
+        slice: "support-selection",
+        rankedDocumentIds: [],
+        goldDocumentIds: ["doc-a"],
+        goldSupportIds: ["support-a", "support-b"],
+        goldSupportFirstRanks: [4],
+        returnedAnswer: false,
+      }),
+    ).toThrow(/first-rank labels/);
+
+    expect(() =>
+      scoreBenchmarkObservation({
+        configurationName: "diagnostic",
+        caseId: "invalid-depth",
+        slice: "support-selection",
+        rankedDocumentIds: [],
+        goldDocumentIds: ["doc-a"],
+        goldSupportIds: ["support-a"],
+        goldSupportFirstRanks: [0],
+        returnedAnswer: false,
+      }),
+    ).toThrow(/positive integers or null/);
   });
 
   it("deduplicates repeated document rows before rank metrics", () => {
@@ -301,6 +349,8 @@ describe("benchmark metrics", () => {
     expect(run.evidenceRecallCoverage).toBe(0);
     expect(run.contextPrecisionCoverage).toBe(0);
     expect(run.claimSupportRecallCoverage).toBe(0);
+    expect(run.goldSupportDepthCoverage).toBe(0);
+    expect(run.goldSupportFirstRankFoundRate).toBe(0);
     expect(run.contextUtilizationCoverage).toBe(0);
     expect(run.noiseSensitivityCoverage).toBe(0);
     expect(run.faithfulnessCoverage).toBe(0);
