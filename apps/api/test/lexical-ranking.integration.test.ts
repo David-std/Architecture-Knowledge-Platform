@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { type SearchRequest } from "@akp/contracts";
 import { Postgres } from "@akp/postgres";
-import { planQuery } from "@akp/retrieval";
+import { assessRetrievalAnswerability, planQuery } from "@akp/retrieval";
 import { queryKnowledge } from "../src/routes/search.js";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -586,6 +586,101 @@ describe("production lexical ranking", () => {
             document: hit.document,
           }).toEqual(originalById.get(hit.documentId));
         }
+      } finally {
+        await cleanupLexical(db, fixture);
+        await db.close();
+      }
+    },
+  );
+});
+
+describe("bounded assertion recall", () => {
+  it.skipIf(!databaseUrl)(
+    "recovers a direct approved claim without admitting a same-topic wrong relation",
+    async () => {
+      if (!databaseUrl) return;
+      const fixture = lexicalFixture();
+      const db = new Postgres(databaseUrl);
+      try {
+        await seedLexical(db, fixture);
+        const updates = [
+          {
+            documentId: fixture.documents.titleTerms,
+            unitId: fixture.units.titleTerms,
+            externalId: "CLM-BLUE-WIDGET-STORAGE",
+            title: "Blue widget requires a storage engine",
+            body: "A blue widget requires a storage engine to keep its state.",
+            type: "claim",
+          },
+          {
+            documentId: fixture.documents.bodyTerms,
+            unitId: fixture.units.bodyTerms,
+            externalId: "CLM-BLUE-WIDGET-QUEUE",
+            title: "Blue widget requires a transport queue",
+            body: "A blue widget requires a transport queue for delivery.",
+            type: "claim",
+          },
+          {
+            documentId: fixture.documents.alias,
+            unitId: fixture.units.alias,
+            externalId: "CON-BLUE-WIDGET",
+            title: "Blue widget storage overview",
+            body: "A blue widget can use storage and a transport queue.",
+            type: "concept",
+          },
+        ] as const;
+        for (const item of updates) {
+          const hash = createHash("sha256").update(item.body).digest("hex");
+          await db.pool.query(
+            `update knowledge_documents
+                set external_id=$2,title=$3,body_cache=$4,type=$5,
+                    content_hash=$6
+              where id=$1`,
+            [
+              item.documentId,
+              item.externalId,
+              item.title,
+              item.body,
+              item.type,
+              hash,
+            ],
+          );
+          await db.pool.query(
+            `update knowledge_units
+                set heading_path=$2,body=$3,content_hash=$4
+              where id=$1`,
+            [item.unitId, [item.title], item.body, hash],
+          );
+        }
+        const query =
+          "Does a blue widget require a storage engine in practice?";
+        const hits = await queryKnowledge(
+          db,
+          { ...searchRequest(fixture), query },
+          { channels: ["lexical"], vaultIds: [fixture.vaultId] },
+        );
+        expect(
+          hits.some((hit) => hit.documentId === fixture.documents.titleTerms),
+        ).toBe(true);
+        expect(
+          hits.some((hit) => hit.documentId === fixture.documents.alias),
+        ).toBe(false);
+        expect(
+          hits
+            .find((hit) => hit.documentId === fixture.documents.titleTerms)
+            ?.reasons.some((reason) =>
+              reason.startsWith("lexical:disjunction:"),
+            ),
+        ).toBe(true);
+        const answerability = assessRetrievalAnswerability(hits, query);
+        const accepted = answerability.candidateSignals
+          .filter((signal) => signal.passageSupport.supported)
+          .map((signal) => signal.externalId);
+        expect(
+          hits.some((hit) => hit.documentId === fixture.documents.bodyTerms),
+        ).toBe(true);
+        expect(accepted).toContain("CLM-BLUE-WIDGET-STORAGE");
+        expect(accepted).not.toContain("CLM-BLUE-WIDGET-QUEUE");
       } finally {
         await cleanupLexical(db, fixture);
         await db.close();

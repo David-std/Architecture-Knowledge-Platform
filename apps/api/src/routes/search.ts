@@ -27,6 +27,7 @@ import {
 import {
   assessRetrievalAnswerability,
   assessRetrievalAnswerabilityWithVerifier,
+  normalizedAnswerabilityTokens,
   buildContextPacket,
   buildContextPacketPair,
   ContextPacketBudgetError,
@@ -1429,6 +1430,12 @@ function mergeVectorRows(rows: readonly VectorSearchRow[]): VectorSearchRow[] {
   );
 }
 
+function boundedDisjunctiveLexicalQuery(query: string): string | null {
+  const terms = normalizedAnswerabilityTokens(query)
+    .filter((term) => term.length >= 3 && term.length <= 64)
+    .slice(0, 24);
+  return terms.length > 1 ? terms.join(" | ") : null;
+}
 export function internalAnswerabilityCandidateLimit(
   presentationLimit: number,
 ): number {
@@ -1885,11 +1892,15 @@ export async function queryKnowledge(
   const lexicalRows: LexicalSearchRow[] = [];
   if (channels.has("lexical") || channels.has("graph")) {
     for (const assisted of assistedQueries) {
-      const result = await observedRetrieval("lexical", () =>
-        db.pool.query<LexicalSearchRow>(
-          `
+      const queryLexical = (orTerms: string | null) =>
+        observedRetrieval("lexical", () =>
+          db.pool.query<LexicalSearchRow>(
+            `
           with query as (
-            select plainto_tsquery('simple', $2) terms,
+            select case when $6::text is null
+                        then plainto_tsquery('simple', $2)
+                        else to_tsquery('simple', $6)
+                   end terms,
                    plainto_tsquery(
                      'simple',
                      akp_lexical_symbol_text($2)
@@ -1911,6 +1922,7 @@ export async function queryKnowledge(
                and d.lifecycle ${lifecycleClause}
                and ${trustClause("d.")}
                and d.refresh_status not in ('STALE_BLOCKED','INVALID')
+               and ($6::text is null or d.type in ('claim','rule'))
                ${documentScopeClause("d.", 5)}
                ${modeClause("d.")}
                ${rawAuthorizationClause("d.", 4)}
@@ -2002,17 +2014,29 @@ export async function queryKnowledge(
            order by score desc,id,unit_id nulls last
            limit $3
           `,
-          [
-            spaceId,
-            assisted.query,
-            internalCandidateLimit,
-            rawAuthorizationJson,
-            documentScopeJson,
-          ],
-        ),
+            [
+              spaceId,
+              assisted.query,
+              internalCandidateLimit,
+              rawAuthorizationJson,
+              documentScopeJson,
+              orTerms,
+            ],
+          ),
+        );
+      const strict = await queryLexical(null);
+      const disjunctiveTerms = boundedDisjunctiveLexicalQuery(assisted.query);
+      const fallback =
+        strict.rows.length === 0 && disjunctiveTerms
+          ? await queryLexical(disjunctiveTerms)
+          : null;
+      const resultRows = (fallback?.rows ?? strict.rows).map((row) =>
+        fallback
+          ? { ...row, match_reason: `lexical:disjunction:${row.match_reason}` }
+          : row,
       );
       lexicalRows.push(
-        ...result.rows.map((row) =>
+        ...resultRows.map((row) =>
           assisted.variant
             ? {
                 ...row,
@@ -2184,9 +2208,13 @@ export async function queryKnowledge(
 
   const seedIds = [
     ...new Set(
-      [...exact.rows, ...lexical.rows, ...vector.rows].map((row) =>
-        String(row.id),
-      ),
+      [
+        ...exact.rows,
+        ...lexical.rows.filter(
+          (row) => !row.match_reason?.startsWith("lexical:disjunction:"),
+        ),
+        ...vector.rows,
+      ].map((row) => String(row.id)),
     ),
   ];
   const communityCandidates: CommunityCandidateRow[] = [];
