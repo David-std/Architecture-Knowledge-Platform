@@ -457,7 +457,11 @@ async function captureProviderWebhookRawBody(
   }
   const raw = Buffer.concat(chunks);
   providerWebhookRawBodies.set(request, raw);
-  return Readable.from([raw]);
+  const replay = Readable.from([raw]) as Readable & {
+    receivedEncodedLength?: number;
+  };
+  replay.receivedEncodedLength = raw.length;
+  return replay;
 }
 
 export function sourceConnectorWebhookMessage(
