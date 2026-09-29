@@ -567,6 +567,16 @@ const RELATION_GRAMMAR_TOKENS = new Set([
   "o",
 ]);
 
+const RELATION_GENERIC_SUBJECT_HEADS = new Set([
+  "model",
+  "modelo",
+  "pattern",
+  "system",
+  "framework",
+  "approach",
+  "enfoque",
+]);
+
 interface QueryRelationRoles {
   predicates: string[];
   subjectAnchors: string[];
@@ -597,9 +607,16 @@ function queryYesNoRelationRoles(query: string): QueryRelationRoles | null {
   if (predicateIndex < 0) return null;
 
   const predicate = ordered[predicateIndex]!;
-  const subjectAnchors = [
+  const rawSubjectAnchors = [
     ...new Set(ordered.slice(0, predicateIndex).filter(relationAnchorEligible)),
   ];
+  const specificSubjectAnchors = rawSubjectAnchors.filter(
+    (token) => !RELATION_GENERIC_SUBJECT_HEADS.has(token),
+  );
+  const subjectAnchors =
+    specificSubjectAnchors.length > 0
+      ? specificSubjectAnchors
+      : rawSubjectAnchors;
   const objectAnchors = [
     ...new Set(
       ordered.slice(predicateIndex + 1).filter(relationAnchorEligible),
