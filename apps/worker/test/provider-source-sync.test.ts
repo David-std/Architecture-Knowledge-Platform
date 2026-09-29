@@ -233,23 +233,19 @@ describe("provider source sync", () => {
   });
 
   it("degrades and preserves the projection when provider absence is ambiguous", async () => {
-    const {
-      db,
-      checkpointUpdates,
-      objectCheckUpdates,
-      linkedHealthUpdates,
-    } = fakeDatabase([
-      {
-        object_id: "lin-missing",
-        object_type: "ISSUE",
-        source_version: "2026-09-26T12:00:00.000Z",
-        title: "Previously visible provider issue",
-        permission_fidelity: "SOURCE_ACL_MAPPED",
-        permission_uncertain: true,
-        acl_fingerprint: "acl-missing",
-        metadata: { provider: "linear", identifier: "ENG-9" },
-      },
-    ]);
+    const { db, checkpointUpdates, objectCheckUpdates, linkedHealthUpdates } =
+      fakeDatabase([
+        {
+          object_id: "lin-missing",
+          object_type: "ISSUE",
+          source_version: "2026-09-26T12:00:00.000Z",
+          title: "Previously visible provider issue",
+          permission_fidelity: "SOURCE_ACL_MAPPED",
+          permission_uncertain: true,
+          acl_fingerprint: "acl-missing",
+          metadata: { provider: "linear", identifier: "ENG-9" },
+        },
+      ]);
     const appendEvent = vi.fn();
     const applyNextEvent = vi.fn().mockResolvedValue(null);
 
