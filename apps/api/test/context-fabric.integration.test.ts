@@ -25,6 +25,7 @@ const adminHeaders = { authorization: `Bearer ${adminToken}` };
 let app: FastifyInstance;
 let db: Postgres;
 let sessionId = "";
+const createdSessionIds: string[] = [];
 let peerIds: string[] = [];
 
 beforeAll(async () => {
@@ -113,9 +114,9 @@ afterAll(async () => {
            or ($2::text<>'' and (resource_id=$2 or metadata->>'sessionId'=$2))`,
       [[actorId, adminId], sessionId],
     );
-    if (sessionId) {
-      await db.pool.query("delete from agent_sessions where id=$1", [
-        sessionId,
+    if (createdSessionIds.length) {
+      await db.pool.query("delete from agent_sessions where id=any($1::uuid[])", [
+        createdSessionIds,
       ]);
     }
     await db.pool.query(
@@ -190,6 +191,7 @@ describe("team context fabric integration", () => {
       contextRevisionSetHash: string;
     };
     sessionId = createdSession.id;
+    createdSessionIds.push(sessionId);
     expect(createdSession.contextRevisionSetHash).toMatch(/^[a-f0-9]{64}$/);
 
     const externalRef = await app.inject({
@@ -372,6 +374,7 @@ describe("team context fabric integration", () => {
     });
     expect(secondSessionResponse.statusCode).toBe(201);
     const secondSessionId = (secondSessionResponse.json() as { id: string }).id;
+    createdSessionIds.push(secondSessionId);
     const secondProviderRef = await app.inject({
       method: "POST",
       url: `/v1/sessions/${secondSessionId}/provider-refs`,
@@ -398,10 +401,6 @@ describe("team context fabric integration", () => {
         }
       ).refs,
     ).toContainEqual(expect.objectContaining({ id: providerRefBody.id }));
-    await db.pool.query("delete from agent_sessions where id=$1", [
-      secondSessionId,
-    ]);
-
     await appendSourceConnectorEvent(db, {
       connectorId: providerConnectorId,
       eventId: "provider-update-2",
