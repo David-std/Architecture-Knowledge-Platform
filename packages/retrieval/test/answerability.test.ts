@@ -442,23 +442,23 @@ describe("retrieval answerability", () => {
   });
 
   it("rejects the same vocabulary when subject, predicate and object form a different relation", () => {
-    const wrongRelation = hit(37, {
-      title: "Java adapter profile",
-      excerpt:
-        "The persistence adapter defines a uniqueness strategy for generated record keys.",
-      contributions: [contribution("vector", 0.96, 1)],
-    });
     const correctRelation = hit(38, {
       title: "Local patterns are not architecture",
       excerpt:
         "Strategy and Adapter are local patterns; they do not determine the overall system architecture.",
-      contributions: [contribution("vector", 0.91, 2)],
+      contributions: [contribution("vector", 0.91, 1)],
+    });
+    const wrongRelation = hit(37, {
+      title: "Java adapter profile",
+      excerpt:
+        "The persistence adapter defines a uniqueness strategy for generated record keys.",
+      contributions: [contribution("vector", 0.61, 51)],
     });
     const query =
       "Do Strategy and Adapter patterns define the overall system architecture?";
 
     const result = assessRetrievalAnswerability(
-      [wrongRelation, correctRelation],
+      [correctRelation, wrongRelation],
       query,
     );
 
@@ -468,34 +468,45 @@ describe("retrieval answerability", () => {
     ]);
     expect(result.candidateSignals).toEqual([
       expect.objectContaining({
-        candidateKey: retrievalAnswerabilityCandidateKey(wrongRelation),
-        passageSupport: expect.objectContaining({
-          supported: false,
-        }),
-      }),
-      expect.objectContaining({
         candidateKey: retrievalAnswerabilityCandidateKey(correctRelation),
         passageSupport: expect.objectContaining({
           supported: true,
+          vectorRank: 1,
+        }),
+      }),
+      expect.objectContaining({
+        candidateKey: retrievalAnswerabilityCandidateKey(wrongRelation),
+        passageSupport: expect.objectContaining({
+          supported: false,
+          vectorRank: 51,
         }),
       }),
     ]);
   });
 
-  it("does not let a deep vector rank become evidence from generic answer cues alone", () => {
+  it("keeps vector rank diagnostic instead of using it as a truth boundary", () => {
     const candidate = hit(39, {
-      title: "Retry overview",
+      title: "Avoid durable change logs without explicit drivers",
+      parentContext:
+        "Durable change logs are justified by replay or audit requirements. Without those drivers, they add unjustified operational cost.",
       excerpt:
-        "The operation may continue when the transient condition clears.",
-      contributions: [contribution("vector", 0.79, 51)],
+        "Without those drivers, they add unjustified operational cost.",
+      contributions: [contribution("vector", 0.79, 6)],
     });
     const result = assessRetrievalAnswerability(
       [candidate],
-      "When should a retry be allowed?",
+      "When should a durable change log be avoided because of operating cost?",
     );
 
-    expect(result.supported).toBe(false);
-    expect(result.supportedCandidateKeys).toEqual([]);
+    expect(result.supported).toBe(true);
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(candidate),
+    ]);
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: true,
+      vectorRank: 6,
+      requiredAnswerCues: expect.arrayContaining(["PREVENTION", "CONDITION"]),
+    });
   });
 
   it("accepts an explicit bilingual yes-no negation about the same relation", () => {
@@ -946,8 +957,5 @@ describe("retrieval answerability", () => {
     expect(() =>
       resolveRetrievalAnswerabilityPolicy({ minimumSalientOverlap: 0 }),
     ).toThrow("minimumSalientOverlap");
-    expect(() =>
-      resolveRetrievalAnswerabilityPolicy({ semanticCueMaxVectorRank: 0 }),
-    ).toThrow("semanticCueMaxVectorRank");
   });
 });

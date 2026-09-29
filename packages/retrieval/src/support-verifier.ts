@@ -67,14 +67,12 @@ export type PassageSupportReason =
 export interface DeterministicPassageSupportPolicy {
   minimumSalientCoverage: number;
   minimumSalientOverlap: number;
-  semanticCueMaxVectorRank: number;
 }
 
 export const DEFAULT_DETERMINISTIC_PASSAGE_SUPPORT_POLICY: DeterministicPassageSupportPolicy =
   {
     minimumSalientCoverage: 0.4,
     minimumSalientOverlap: 2,
-    semanticCueMaxVectorRank: 5,
   };
 
 export interface DeterministicPassageSupportSignal {
@@ -133,11 +131,6 @@ export function resolveDeterministicPassageSupportPolicy(
       input.minimumSalientOverlap ??
         DEFAULT_DETERMINISTIC_PASSAGE_SUPPORT_POLICY.minimumSalientOverlap,
       "minimumSalientOverlap",
-    ),
-    semanticCueMaxVectorRank: validPositiveInteger(
-      input.semanticCueMaxVectorRank ??
-        DEFAULT_DETERMINISTIC_PASSAGE_SUPPORT_POLICY.semanticCueMaxVectorRank,
-      "semanticCueMaxVectorRank",
     ),
   };
 }
@@ -974,10 +967,7 @@ export function verifyDeterministicPassageSupport(
     passage.length > 0 &&
     requiredAnswerCues.length > 0 &&
     boundedSupport.supported &&
-    boundedSupport.semanticAnchorOverlap.length > 0 &&
-    (boundedSupport.relationRoleMatched ||
-      vectorRank === null ||
-      vectorRank <= policy.semanticCueMaxVectorRank);
+    boundedSupport.semanticAnchorOverlap.length > 0;
 
   let reason: PassageSupportReason;
   if (!passage) {
