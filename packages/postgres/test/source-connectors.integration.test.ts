@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   Postgres,
+  appendProviderSourceConnectorEvent,
   appendSourceConnectorEvent,
   applyNextSourceConnectorEvent,
   registerSourceConnector,
@@ -335,6 +336,70 @@ describeDb("source connector no-gap inbox", () => {
         [connectorId, input.eventId],
       );
     }
+  });
+
+  it("assigns provider webhook sequence under lock and deduplicates retries", async () => {
+    const provider = await registerSourceConnector(db, {
+      spaceId,
+      vaultId,
+      connectorKey: "provider-webhook-test",
+      sourceSystem: "linear",
+      publicKeyPem: null,
+      connectorMode: "PROVIDER_PULL",
+      credentialRef: "AKP_TEST_PROVIDER_TOKEN",
+      providerConfig: {
+        webhookSecretRef: "AKP_TEST_PROVIDER_WEBHOOK_SECRET",
+      },
+      descriptor: {
+        schemaVersion: 1,
+        sourceSystem: "linear",
+        checkpointModel: "OPAQUE_CURSOR",
+        contentTrust: "UNTRUSTED_EXTERNAL",
+        replication: "REFERENCE",
+      },
+    });
+    const providerId = String(provider.id);
+    const input = {
+      connectorId: providerId,
+      eventId: "provider-delivery-1",
+      occurredAt: "2026-09-28T22:00:00.000Z",
+      operation: "UPSERT" as const,
+      objectId: "lin-1",
+      objectType: "ISSUE",
+      sourceVersion: "2026-09-28T22:00:00.000Z",
+      title: "Provider issue",
+      content: null,
+      contentType: null,
+      permissionFidelity: "SOURCE_ACL_MAPPED" as const,
+      permissionUncertain: true,
+      aclFingerprint: "provider-acl",
+      metadata: { provider: "linear", providerVerified: true },
+      payloadHash: hash("provider-delivery-1"),
+    };
+
+    const receipts = await Promise.all([
+      appendProviderSourceConnectorEvent(db, input),
+      appendProviderSourceConnectorEvent(db, input),
+    ]);
+    expect(receipts.map((receipt) => receipt.duplicate).sort()).toEqual([
+      false,
+      true,
+    ]);
+    expect(new Set(receipts.map((receipt) => receipt.sequence)).size).toBe(1);
+    expect(receipts[0]?.sequence).toBe(1);
+
+    const second = await appendProviderSourceConnectorEvent(db, {
+      ...input,
+      eventId: "provider-delivery-2",
+      objectId: "lin-2",
+      payloadHash: hash("provider-delivery-2"),
+    });
+    expect(second).toMatchObject({ duplicate: false, sequence: 2 });
+
+    await db.pool.query(
+      "delete from source_connector_registrations where id=$1",
+      [providerId],
+    );
   });
 
   it("persists apply retries, exhausts to REJECTED, and never advances the checkpoint", async () => {
