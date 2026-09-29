@@ -428,7 +428,11 @@ export default async function SessionObjectPage({
                 <tr key={`${item.connectorId}:${item.objectId}`}>
                   <td>
                     {item.canonicalUrl ? (
-                      <a href={item.canonicalUrl} target="_blank" rel="noreferrer">
+                      <a
+                        href={item.canonicalUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
                         {item.title?.trim() || item.externalId}
                       </a>
                     ) : (
@@ -454,10 +458,26 @@ export default async function SessionObjectPage({
                   <td>
                     {canPropose ? (
                       <form action={linkProviderReference}>
-                        <input type="hidden" name="sessionId" value={state.session.id} />
-                        <input type="hidden" name="connectorId" value={item.connectorId} />
-                        <input type="hidden" name="objectId" value={item.objectId} />
-                        <input type="hidden" name="workObjectClass" value="WORK_ITEM" />
+                        <input
+                          type="hidden"
+                          name="sessionId"
+                          value={state.session.id}
+                        />
+                        <input
+                          type="hidden"
+                          name="connectorId"
+                          value={item.connectorId}
+                        />
+                        <input
+                          type="hidden"
+                          name="objectId"
+                          value={item.objectId}
+                        />
+                        <input
+                          type="hidden"
+                          name="workObjectClass"
+                          value="WORK_ITEM"
+                        />
                         <button type="submit">Link to session</button>
                       </form>
                     ) : (
