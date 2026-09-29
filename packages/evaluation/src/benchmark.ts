@@ -141,9 +141,14 @@ export interface BenchmarkObservation {
   retrievedCitationIds?: string[];
   /** Documents actually assembled into model context. */
   contextDocumentIds?: string[];
-  /** Gold and retrieved support units/claims for claim-support recall. */
+  /** Gold support predicates and the subset accepted by the support gate. */
   goldSupportIds?: string[];
   retrievedSupportIds?: string[];
+  /** Gold support predicates present before passage-support admission. */
+  retrievedGoldSupportIds?: string[];
+  /** Passage-level selection counts after the support gate. */
+  selectedSupportCandidateCount?: number;
+  selectedGoldSupportCandidateCount?: number;
   /** Context items demonstrably used by the answer/agent. */
   usedContextIds?: string[];
   /** Explicit paired-noise judgement. True means the added noise caused failure. */
@@ -167,12 +172,19 @@ export interface BenchmarkCaseMetrics {
   ndcgAt10: number;
   evidenceRecall: number;
   contextPrecision: number;
+  /** Recall of gold support passages before the support-admission gate. */
+  goldSupportRetrievalRecall: number;
+  /** Recall of gold support predicates after support admission. */
   claimSupportRecall: number;
+  /** Precision of admitted passages against gold support labels. */
+  supportSelectionPrecision: number;
   citationPrecision: number;
   contextUtilization: number;
   noiseSensitivity: number;
   faithfulness: number;
   noAnswerCorrect: boolean;
+  falseAbstention: boolean;
+  falseAcceptance: boolean;
   unsupportedClaim: boolean;
   estimatedTokens: number;
   latencyMs: number;
@@ -180,7 +192,9 @@ export interface BenchmarkCaseMetrics {
   /** False means the adapter/dataset did not provide evidence for this metric. */
   evidenceScored: boolean;
   contextPrecisionScored: boolean;
+  goldSupportRetrievalScored: boolean;
   claimSupportScored: boolean;
+  supportSelectionPrecisionScored: boolean;
   citationScored: boolean;
   contextUtilizationScored: boolean;
   noiseSensitivityScored: boolean;
@@ -201,8 +215,12 @@ export interface BenchmarkRunMetrics {
   evidenceRecallCoverage: number;
   meanContextPrecision: number;
   contextPrecisionCoverage: number;
+  meanGoldSupportRetrievalRecall: number;
+  goldSupportRetrievalCoverage: number;
   meanClaimSupportRecall: number;
   claimSupportRecallCoverage: number;
+  meanSupportSelectionPrecision: number;
+  supportSelectionPrecisionCoverage: number;
   meanCitationPrecision: number;
   citationPrecisionCoverage: number;
   meanContextUtilization: number;
@@ -212,6 +230,8 @@ export interface BenchmarkRunMetrics {
   meanFaithfulness: number;
   faithfulnessCoverage: number;
   unsupportedClaimRate: number;
+  falseAbstentionRate: number;
+  falseAcceptanceRate: number;
   noAnswerAccuracy: number;
   noAnswerCases: number;
   meanEstimatedTokens: number;
@@ -326,6 +346,42 @@ export function scoreBenchmarkObservation(
       : intersectionSize(retrievedSupport, observation.goldSupportIds!) /
         observation.goldSupportIds!.length
     : 0;
+  const goldSupportRetrievalScored =
+    observation.goldSupportIds !== undefined &&
+    observation.retrievedGoldSupportIds !== undefined;
+  const retrievedGoldSupport = unique(
+    observation.retrievedGoldSupportIds ?? [],
+  );
+  const goldSupportRetrievalRecall = goldSupportRetrievalScored
+    ? observation.goldSupportIds!.length === 0
+      ? 1
+      : intersectionSize(retrievedGoldSupport, observation.goldSupportIds!) /
+        observation.goldSupportIds!.length
+    : 0;
+  const supportSelectionPrecisionScored =
+    observation.goldSupportIds !== undefined &&
+    observation.selectedSupportCandidateCount !== undefined &&
+    observation.selectedGoldSupportCandidateCount !== undefined;
+  const selectedSupportCandidateCount =
+    observation.selectedSupportCandidateCount ?? 0;
+  const selectedGoldSupportCandidateCount =
+    observation.selectedGoldSupportCandidateCount ?? 0;
+  if (
+    !Number.isSafeInteger(selectedSupportCandidateCount) ||
+    selectedSupportCandidateCount < 0 ||
+    !Number.isSafeInteger(selectedGoldSupportCandidateCount) ||
+    selectedGoldSupportCandidateCount < 0 ||
+    selectedGoldSupportCandidateCount > selectedSupportCandidateCount
+  ) {
+    throw new Error("Benchmark support-selection counts are invalid.");
+  }
+  const supportSelectionPrecision = supportSelectionPrecisionScored
+    ? selectedSupportCandidateCount === 0
+      ? observation.goldSupportIds!.length === 0
+        ? 1
+        : 0
+      : selectedGoldSupportCandidateCount / selectedSupportCandidateCount
+    : 0;
 
   const contextUtilizationScored =
     observation.contextDocumentIds !== undefined &&
@@ -354,6 +410,12 @@ export function scoreBenchmarkObservation(
     observation.faithfulnessScore >= 0 &&
     observation.faithfulnessScore <= 1;
   const faithfulness = faithfulnessScored ? observation.faithfulnessScore! : 0;
+
+  const falseAbstention =
+    !expectedNoAnswer &&
+    observation.goldDocumentIds.length > 0 &&
+    !returnedAnswer;
+  const falseAcceptance = expectedNoAnswer && returnedAnswer;
 
   const unsupportedClaim =
     observation.unsupportedClaim ??
@@ -387,19 +449,25 @@ export function scoreBenchmarkObservation(
     ndcgAt10: idealDcg === 0 ? (expectedNoAnswer ? 1 : 0) : dcg / idealDcg,
     evidenceRecall,
     contextPrecision,
+    goldSupportRetrievalRecall,
     claimSupportRecall,
+    supportSelectionPrecision,
     citationPrecision,
     contextUtilization,
     noiseSensitivity,
     faithfulness,
     noAnswerCorrect,
+    falseAbstention,
+    falseAcceptance,
     unsupportedClaim,
     estimatedTokens: Math.max(0, observation.estimatedTokens ?? 0),
     latencyMs: safeDuration(observation.latencyMs),
     forbidden,
     evidenceScored,
     contextPrecisionScored,
+    goldSupportRetrievalScored,
     claimSupportScored,
+    supportSelectionPrecisionScored,
     citationScored,
     contextUtilizationScored,
     noiseSensitivityScored,
@@ -438,8 +506,14 @@ export function aggregateBenchmarkRun(
   const scoredContextPrecision = results.filter(
     (result) => result.metrics.contextPrecisionScored,
   );
+  const scoredGoldSupportRetrieval = results.filter(
+    (result) => result.metrics.goldSupportRetrievalScored,
+  );
   const scoredClaimSupport = results.filter(
     (result) => result.metrics.claimSupportScored,
+  );
+  const scoredSupportSelectionPrecision = results.filter(
+    (result) => result.metrics.supportSelectionPrecisionScored,
   );
   const scoredContextUtilization = results.filter(
     (result) => result.metrics.contextUtilizationScored,
@@ -483,11 +557,29 @@ export function aggregateBenchmarkRun(
     ),
     contextPrecisionCoverage:
       results.length === 0 ? 0 : scoredContextPrecision.length / results.length,
+    meanGoldSupportRetrievalRecall: average(
+      scoredGoldSupportRetrieval.map(
+        (result) => result.metrics.goldSupportRetrievalRecall,
+      ),
+    ),
+    goldSupportRetrievalCoverage:
+      results.length === 0
+        ? 0
+        : scoredGoldSupportRetrieval.length / results.length,
     meanClaimSupportRecall: average(
       scoredClaimSupport.map((result) => result.metrics.claimSupportRecall),
     ),
     claimSupportRecallCoverage:
       results.length === 0 ? 0 : scoredClaimSupport.length / results.length,
+    meanSupportSelectionPrecision: average(
+      scoredSupportSelectionPrecision.map(
+        (result) => result.metrics.supportSelectionPrecision,
+      ),
+    ),
+    supportSelectionPrecisionCoverage:
+      results.length === 0
+        ? 0
+        : scoredSupportSelectionPrecision.length / results.length,
     meanCitationPrecision: average(
       scoredCitations.map((result) => result.metrics.citationPrecision),
     ),
@@ -516,6 +608,16 @@ export function aggregateBenchmarkRun(
       results.length === 0
         ? 0
         : results.filter((result) => result.metrics.unsupportedClaim).length /
+          results.length,
+    falseAbstentionRate:
+      results.length === 0
+        ? 0
+        : results.filter((result) => result.metrics.falseAbstention).length /
+          results.length,
+    falseAcceptanceRate:
+      results.length === 0
+        ? 0
+        : results.filter((result) => result.metrics.falseAcceptance).length /
           results.length,
     noAnswerAccuracy:
       noAnswer.length === 0

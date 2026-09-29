@@ -140,7 +140,10 @@ describe("benchmark metrics", () => {
       goldDocumentIds: ["doc-a", "doc-b"],
       contextDocumentIds: ["doc-a", "noise"],
       goldSupportIds: ["support-a", "support-b"],
+      retrievedGoldSupportIds: ["support-a", "support-b"],
       retrievedSupportIds: ["support-a"],
+      selectedSupportCandidateCount: 2,
+      selectedGoldSupportCandidateCount: 1,
       goldCitationIds: ["citation-a"],
       retrievedCitationIds: ["citation-a"],
       usedContextIds: ["doc-a"],
@@ -152,13 +155,17 @@ describe("benchmark metrics", () => {
     expect(scored).toMatchObject({
       retrievalRecall: 0.5,
       contextPrecision: 0.5,
+      goldSupportRetrievalRecall: 1,
       claimSupportRecall: 0.5,
+      supportSelectionPrecision: 0.5,
       citationPrecision: 1,
       contextUtilization: 0.5,
       noiseSensitivity: 0,
       faithfulness: 0.8,
       contextPrecisionScored: true,
+      goldSupportRetrievalScored: true,
       claimSupportScored: true,
+      supportSelectionPrecisionScored: true,
       citationScored: true,
       contextUtilizationScored: true,
       noiseSensitivityScored: true,
@@ -175,15 +182,64 @@ describe("benchmark metrics", () => {
     });
     expect(unlabelled).toMatchObject({
       contextPrecision: 0,
+      goldSupportRetrievalRecall: 0,
       claimSupportRecall: 0,
+      supportSelectionPrecision: 0,
       contextUtilization: 0,
       noiseSensitivity: 0,
       faithfulness: 0,
       contextPrecisionScored: false,
+      goldSupportRetrievalScored: false,
       claimSupportScored: false,
+      supportSelectionPrecisionScored: false,
       contextUtilizationScored: false,
       noiseSensitivityScored: false,
       faithfulnessScored: false,
+    });
+  });
+
+  it("separates passage retrieval from support admission and records false decisions", () => {
+    const abstention = scoreBenchmarkObservation({
+      configurationName: "diagnostic",
+      caseId: "false-abstention",
+      slice: "support-selection",
+      rankedDocumentIds: [],
+      goldDocumentIds: ["doc-a"],
+      goldSupportIds: ["support-a"],
+      retrievedGoldSupportIds: ["support-a"],
+      retrievedSupportIds: [],
+      selectedSupportCandidateCount: 0,
+      selectedGoldSupportCandidateCount: 0,
+      returnedAnswer: false,
+    });
+    expect(abstention).toMatchObject({
+      goldSupportRetrievalRecall: 1,
+      claimSupportRecall: 0,
+      supportSelectionPrecision: 0,
+      falseAbstention: true,
+      falseAcceptance: false,
+    });
+
+    const falseAcceptance = scoreBenchmarkObservation({
+      configurationName: "diagnostic",
+      caseId: "false-acceptance",
+      slice: "support-selection",
+      rankedDocumentIds: ["noise"],
+      goldDocumentIds: [],
+      goldSupportIds: [],
+      retrievedGoldSupportIds: [],
+      retrievedSupportIds: [],
+      selectedSupportCandidateCount: 1,
+      selectedGoldSupportCandidateCount: 0,
+      expectNoAnswer: true,
+      returnedAnswer: true,
+    });
+    expect(falseAcceptance).toMatchObject({
+      goldSupportRetrievalRecall: 1,
+      supportSelectionPrecision: 0,
+      falseAbstention: false,
+      falseAcceptance: true,
+      noAnswerCorrect: false,
     });
   });
 

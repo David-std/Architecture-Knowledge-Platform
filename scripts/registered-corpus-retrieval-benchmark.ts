@@ -659,9 +659,9 @@ async function executeCase(
   const goldSupportIds = (testCase.gold_support ?? []).map(
     (predicate) => predicate.id,
   );
-  const retrievedSupportIds = (testCase.gold_support ?? []).flatMap(
-    (predicate) =>
-      hits.some(
+  const supportIdsForHits = (candidates: readonly QueryHit[]): string[] =>
+    (testCase.gold_support ?? []).flatMap((predicate) =>
+      candidates.some(
         (hit) =>
           hit.document.externalId === predicate.document &&
           passageMatchesGoldPredicate(
@@ -671,7 +671,19 @@ async function executeCase(
       )
         ? [predicate.id]
         : [],
-  );
+    );
+  const retrievedGoldSupportIds = supportIdsForHits(rawHits);
+  const retrievedSupportIds = supportIdsForHits(hits);
+  const selectedGoldSupportCandidateCount = hits.filter((hit) =>
+    (testCase.gold_support ?? []).some(
+      (predicate) =>
+        hit.document.externalId === predicate.document &&
+        passageMatchesGoldPredicate(
+          hit.parentContext?.trim() || hit.excerpt,
+          predicate,
+        ),
+    ),
+  ).length;
   for (const supportId of goldSupportIds) {
     if (!retrievedSupportIds.includes(supportId)) {
       warnings.push(`PREDICATE_SUPPORT_MISSED:${supportId}`);
@@ -689,10 +701,13 @@ async function executeCase(
     ...(testCase.gold_citations
       ? { goldCitationIds: [...testCase.gold_citations] }
       : {}),
-    ...(goldSupportIds.length > 0
+    ...(testCase.gold_support !== undefined
       ? {
           goldSupportIds,
+          retrievedGoldSupportIds,
           retrievedSupportIds,
+          selectedSupportCandidateCount: hits.length,
+          selectedGoldSupportCandidateCount,
         }
       : {}),
     retrievedEvidenceIds,
