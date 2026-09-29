@@ -62,6 +62,19 @@ describe("query planner", () => {
     expect(policyRationale.channels).toContain("vector");
     expect(policyRationale.channels).not.toContain("code");
 
+    const codePolicyRationale = planQuery(
+      "Why should code dependencies point toward domain abstractions instead of framework details?",
+      {
+        vectorAvailable: true,
+        graphConsistent: true,
+        codeAdapterAvailable: true,
+      },
+    );
+    expect(codePolicyRationale.intent).toBe("CONCEPTUAL");
+    expect(codePolicyRationale.channels).toContain("vector");
+    expect(codePolicyRationale.channels).not.toContain("code");
+    expect(codePolicyRationale.queryShape.codeSymbolOrPath).toBe(false);
+
     const conceptual = planQuery("Why are service dependencies documented?", {
       vectorAvailable: true,
       graphConsistent: true,
