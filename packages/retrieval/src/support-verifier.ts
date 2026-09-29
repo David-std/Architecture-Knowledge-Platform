@@ -581,8 +581,9 @@ function boundedClaimRelationSupport(
     const subjectOverlap = relation.subjectAnchors.filter((token) =>
       tokens.has(token),
     ).length;
-    const anchorOverlap = queryAnchors.filter((token) => tokens.has(token))
-      .length;
+    const anchorOverlap = queryAnchors.filter((token) =>
+      tokens.has(token),
+    ).length;
 
     return (
       predicateMatched &&
