@@ -464,7 +464,9 @@ function canonicalSemanticToken(token: string): string {
   if (/^(redeliver|replay|retry|reintent|reenv)/u.test(token)) return "retry";
   if (/^(idempot|deduplic|suppress|stop|prevent|evit|deten)/u.test(token))
     return "prevent-repeat";
-  if (/^(cost|costo|coste|precio|importe|price|overhead|sobrecarga)/u.test(token))
+  if (
+    /^(cost|costo|coste|precio|importe|price|overhead|sobrecarga)/u.test(token)
+  )
     return "cost";
   if (/^(operat|operacion)/u.test(token)) return "operational";
   if (/^(domain|dominio)/u.test(token)) return "domain";
@@ -596,10 +598,7 @@ function passageWindows(passage: string, title?: string): string[] {
   for (let index = 1; index < boundedSentences.length; index += 1) {
     const current = boundedSentences[index]!;
     if (!explicitlyLinkedContinuation(current)) continue;
-    const linked = `${boundedSentences[index - 1]} ${current}`.slice(
-      0,
-      1800,
-    );
+    const linked = `${boundedSentences[index - 1]} ${current}`.slice(0, 1800);
     windows.push(linked);
     if (boundedTitle) {
       windows.push(`${boundedTitle}: ${linked}`.slice(0, 2040));
