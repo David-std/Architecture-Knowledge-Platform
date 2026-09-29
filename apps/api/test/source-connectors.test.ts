@@ -289,8 +289,7 @@ describe("source connector webhook signatures", () => {
     ).toBe(false);
   });
 
-  it("verifies Jira HMAC retries and maps explicit issue deletion", () => {
-    const secret = "jira-webhook-secret";
+  it("rejects direct Jira webhook authentication until Atlassian-authenticated callbacks are supported", () => {
     const body = {
       webhookEvent: "jira:issue_deleted",
       timestamp: Date.parse("2026-09-28T22:00:00.000Z"),
@@ -306,23 +305,38 @@ describe("source connector webhook signatures", () => {
       },
     };
     const rawBody = Buffer.from(JSON.stringify(body));
-    const signature = createHmac("sha256", secret)
-      .update(rawBody)
-      .digest("hex");
 
     expect(
       verifyProviderWebhookSignature({
         provider: "jira",
-        secret,
+        secret: "not-used-for-native-jira-webhooks",
         rawBody,
         headers: {
-          "x-hub-signature": `sha256=${signature}`,
           "x-atlassian-webhook-identifier": "jira-delivery-42",
         },
         body,
       }),
-    ).toEqual({ accepted: true, eventId: "jira-delivery-42" });
+    ).toEqual({
+      accepted: false,
+      reason: "JIRA_DIRECT_WEBHOOK_UNSUPPORTED",
+    });
 
+    expect(
+      ProviderSourceConnectorRegistrationSchema.safeParse({
+        spaceId: "11111111-1111-4111-8111-111111111111",
+        vaultId: "22222222-2222-4222-8222-222222222222",
+        connectorKey: "jira-webhook",
+        provider: "jira",
+        credentialRef: "AKP_JIRA_CREDENTIAL",
+        authorizationScheme: "BASIC",
+        baseUrl: "https://architecture-team.atlassian.net",
+        webhookSecretRef: "AKP_JIRA_WEBHOOK_SECRET",
+      }).success,
+    ).toBe(false);
+
+    // Mapping remains a pure converter for an already-authenticated upstream
+    // adapter, but the direct Jira Cloud route never reaches it without an
+    // authenticated callback mechanism.
     expect(
       providerWebhookEvent({
         provider: "jira",
@@ -335,15 +349,6 @@ describe("source connector webhook signatures", () => {
       objectId: "10001",
       objectType: "ISSUE",
       content: null,
-      metadata: {
-        provider: "jira",
-        providerVerified: true,
-        key: "ARCH-42",
-        canonicalUrl: "https://architecture-team.atlassian.net/browse/ARCH-42",
-        _akpProviderObservation: {
-          observedVia: "AUTHENTICATED_PROVIDER_WEBHOOK",
-        },
-      },
     });
   });
 
