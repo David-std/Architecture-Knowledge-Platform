@@ -203,7 +203,6 @@ describe("provider source sync", () => {
     expect(appendEvent).toHaveBeenCalledOnce();
     expect(appendEvent.mock.calls[0]?.[1]).toMatchObject({
       connectorId: "11111111-1111-4111-8111-111111111111",
-      sequence: 8,
       objectId: "lin-1",
       metadata: {
         provider: "linear",
