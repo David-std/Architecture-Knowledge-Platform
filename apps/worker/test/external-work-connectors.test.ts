@@ -168,6 +168,7 @@ describe("external work source connectors", () => {
     const objects = await collect(
       connector.pull({
         scope: {},
+        from: { kind: "OPAQUE_CURSOR", value: "2026-09-27T00:00:00.000Z" },
         target: { kind: "OPAQUE_CURSOR", value: "2026-09-28T06:00:00.000Z" },
         pageSize: 50,
       }),
