@@ -34,18 +34,19 @@ function fakeDatabase(activeObjects: Array<Record<string, unknown>> = []) {
     ) {
       return { rows: [] };
     }
-    if (
-      sql.includes("from source_connector_events") &&
-      sql.includes("status<>'APPLIED'")
-    ) {
-      return { rows: [{ count: 0 }] };
-    }
     if (sql.includes("from source_connector_objects o")) {
       expect(sql).toContain(
         "provider_last_checked_at < now() - interval '15 minutes'",
       );
       expect(sql).toContain("limit 10");
       return { rows: activeObjects };
+    }
+    if (
+      sql.includes("select count(*)::int count") &&
+      sql.includes("from source_connector_events") &&
+      sql.includes("status<>'APPLIED'")
+    ) {
+      return { rows: [{ count: 0 }] };
     }
     if (
       sql.includes("update source_connector_objects") &&
