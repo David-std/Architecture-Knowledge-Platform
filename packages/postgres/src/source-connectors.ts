@@ -325,7 +325,10 @@ export async function appendProviderSourceConnectorEvent(
       throw sourceConnectorError("SOURCE_CONNECTOR_DISABLED", 409);
     }
     if (connector.connector_mode !== "PROVIDER_PULL") {
-      throw sourceConnectorError("SOURCE_CONNECTOR_PROVIDER_MODE_REQUIRED", 409);
+      throw sourceConnectorError(
+        "SOURCE_CONNECTOR_PROVIDER_MODE_REQUIRED",
+        409,
+      );
     }
 
     const existing = await client.query<{
