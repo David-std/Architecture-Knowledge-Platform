@@ -444,6 +444,51 @@ describe("retrieval answerability", () => {
     });
   });
 
+  it("lets a title scope the subject but requires predicate and object in the evidence sentence", () => {
+    const candidate = hit(152, {
+      title: "Blue widget requirement",
+      type: "profile",
+      excerpt: "It requires a storage engine for durable state.",
+      contributions: [contribution("vector", 0.73, 5)],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [candidate],
+      "Does a blue widget require a storage engine?",
+    );
+
+    expect(result).toMatchObject({
+      supported: true,
+      supportedCandidateKeys: [retrievalAnswerabilityCandidateKey(candidate)],
+    });
+  });
+
+  it("does not synthesize a relation by taking the object from the title and the predicate from another sentence", () => {
+    const candidate = hit(153, {
+      title: "Blue widget storage engine practice guide",
+      type: "profile",
+      excerpt:
+        "In practice, a blue widget deployment guide uses a storage engine. The guide does not require the widget itself.",
+      contributions: [contribution("vector", 0.72, 4)],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [candidate],
+      "Does a blue widget require a storage engine in practice?",
+    );
+
+    expect(result).toMatchObject({
+      supported: false,
+      supportedCandidateKeys: [],
+      reason: "SUPPORT_NOT_DEMONSTRATED",
+    });
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: false,
+      reason: "ANSWER_CUE_MISMATCH",
+      boundedRelationRoleMatched: false,
+    });
+  });
+
   it("rejects the same vocabulary when subject, predicate and object form a different relation", () => {
     const correctRelation = hit(38, {
       title: "Local patterns are not architecture",

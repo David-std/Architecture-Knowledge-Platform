@@ -625,14 +625,19 @@ function queryYesNoRelationRoles(query: string): QueryRelationRoles | null {
 }
 
 function relationRolesMatch(
-  window: string,
+  evidence: string,
   relation: QueryRelationRoles,
+  scopeTitle?: string,
 ): boolean {
-  const windowTokens = new Set(semanticTokens(window));
+  const evidenceTokens = new Set(semanticTokens(evidence));
+  const subjectTokens = new Set([
+    ...evidenceTokens,
+    ...(scopeTitle ? semanticTokens(scopeTitle) : []),
+  ]);
   return (
-    relation.predicates.some((token) => windowTokens.has(token)) &&
-    relation.subjectAnchors.some((token) => windowTokens.has(token)) &&
-    relation.objectAnchors.some((token) => windowTokens.has(token))
+    relation.predicates.some((token) => evidenceTokens.has(token)) &&
+    relation.subjectAnchors.some((token) => subjectTokens.has(token)) &&
+    relation.objectAnchors.some((token) => evidenceTokens.has(token))
   );
 }
 
@@ -801,12 +806,17 @@ function explicitlyLinkedContinuation(sentence: string): boolean {
   );
 }
 
-function passageWindows(passage: string, title?: string): string[] {
+interface PassageWindow {
+  text: string;
+  evidence: string;
+  scopeTitle?: string;
+}
+
+function passageWindows(passage: string, title?: string): PassageWindow[] {
   // Evidence for an answer predicate must stay local. A unit title may scope a
   // sentence, and an adjacent sentence may be joined only when it explicitly
-  // refers back to its predecessor. This captures bounded structures such as
-  // "Reject X" + "without those drivers..." without concatenating unrelated
-  // sibling sentences or the whole document.
+  // refers back to its predecessor. For relation questions, the title may
+  // identify the subject but cannot supply the predicate or object.
   const sentences = passage
     .split(/(?<=[.!?;])\s+|\n+/u)
     .map((part) => part.trim())
@@ -815,11 +825,18 @@ function passageWindows(passage: string, title?: string): string[] {
   const boundedSentences =
     sentences.length > 0 ? sentences : [passage.slice(0, 900).trim()];
   const boundedTitle = title?.trim().slice(0, 240);
-  const windows = [...boundedSentences];
+  const windows: PassageWindow[] = boundedSentences.map((sentence) => ({
+    text: sentence,
+    evidence: sentence,
+  }));
 
   if (boundedTitle) {
     for (const sentence of boundedSentences) {
-      windows.push(`${boundedTitle}: ${sentence}`.slice(0, 1200));
+      windows.push({
+        text: `${boundedTitle}: ${sentence}`.slice(0, 1200),
+        evidence: sentence,
+        scopeTitle: boundedTitle,
+      });
     }
   }
 
@@ -827,13 +844,22 @@ function passageWindows(passage: string, title?: string): string[] {
     const current = boundedSentences[index]!;
     if (!explicitlyLinkedContinuation(current)) continue;
     const linked = `${boundedSentences[index - 1]} ${current}`.slice(0, 1800);
-    windows.push(linked);
+    windows.push({ text: linked, evidence: linked });
     if (boundedTitle) {
-      windows.push(`${boundedTitle}: ${linked}`.slice(0, 2040));
+      windows.push({
+        text: `${boundedTitle}: ${linked}`.slice(0, 2040),
+        evidence: linked,
+        scopeTitle: boundedTitle,
+      });
     }
   }
 
-  return [...new Set(windows.filter(Boolean))];
+  const seen = new Set<string>();
+  return windows.filter((window) => {
+    if (!window.text || seen.has(window.text)) return false;
+    seen.add(window.text);
+    return true;
+  });
 }
 
 const CUE_TOKENS_THAT_REMAIN_PREDICATE_ANCHORS = new Set([
@@ -923,6 +949,8 @@ function answerRequirementsMatch(
   window: string,
   query: string,
   required: readonly PassageAnswerCue[],
+  relationEvidence: string = window,
+  relationScopeTitle?: string,
 ): {
   matched: PassageAnswerCue[];
   allMatched: boolean;
@@ -971,7 +999,11 @@ function answerRequirementsMatch(
     const semanticQuery = semanticTokens(query);
     const relation = queryYesNoRelationRoles(query);
     if (relation) {
-      relationRoleMatched = relationRolesMatch(window, relation);
+      relationRoleMatched = relationRolesMatch(
+        relationEvidence,
+        relation,
+        relationScopeTitle,
+      );
       if (relationRoleMatched) matched.add("YES_NO");
     } else {
       const relationTokens = semanticQuery.filter((token) =>
@@ -1014,11 +1046,17 @@ function boundedPredicateSupport(
   };
 
   for (const window of passageWindows(passage, title)) {
-    const windowTokens = new Set(semanticTokens(window));
+    const windowTokens = new Set(semanticTokens(window.text));
     const overlap = anchors.filter((token) => windowTokens.has(token));
     const anchorCoverage =
       anchors.length === 0 ? 1 : overlap.length / anchors.length;
-    const answer = answerRequirementsMatch(window, query, required);
+    const answer = answerRequirementsMatch(
+      window.text,
+      query,
+      required,
+      window.evidence,
+      window.scopeTitle,
+    );
     const boundedDefinitionRelation =
       required.includes("DEFINITION") &&
       answer.matched.includes("DEFINITION") &&
