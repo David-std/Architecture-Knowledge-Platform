@@ -375,7 +375,7 @@ for (const modelDescriptor of MODEL_DESCRIPTORS) {
       for (const fixture of testCase.candidates) {
         const candidate = hit(fixture);
         const started = performance.now();
-        const verification = await verifier.verify({
+        const evaluation = await verifier.evaluate({
           query: testCase.query,
           candidateKey: retrievalAnswerabilityCandidateKey(candidate),
           title: candidate.title,
@@ -384,14 +384,21 @@ for (const modelDescriptor of MODEL_DESCRIPTORS) {
           parentUnitType: candidate.parentUnitType ?? null,
           documentType: candidate.type,
         });
+        const baselineSupports =
+          evaluation.score !== null &&
+          evaluation.polarityMargin !== null &&
+          evaluation.polarityMargin >= 0;
         candidates.push({
           label: fixture.label,
           candidateKey: retrievalAnswerabilityCandidateKey(candidate),
           vectorRank: fixture.vectorRank,
-          verifierDecision: verification.decision,
-          verifierScore: verification.score ?? null,
-          verifierReason: verification.reason,
-          evidenceSpan: verification.evidenceSpan ?? null,
+          verifierDecision: baselineSupports ? "SUPPORTS" : "INSUFFICIENT",
+          verifierScore: evaluation.score,
+          verifierOppositeScore: evaluation.oppositeScore,
+          verifierPolarityMargin: evaluation.polarityMargin,
+          verifierDirection: evaluation.direction,
+          verifierReason: evaluation.reason,
+          evidenceSpan: evaluation.evidenceSpan,
           latencyMs: performance.now() - started,
         });
       }
@@ -415,6 +422,7 @@ for (const modelDescriptor of MODEL_DESCRIPTORS) {
 function metricsFor(
   rows: typeof observations,
   threshold: number,
+  minimumPolarityMargin: number,
 ): {
   falseAbstentionRate: number;
   falseAcceptanceRate: number;
@@ -433,8 +441,10 @@ function metricsFor(
     const gold = new Set(entry.goldLabels);
     const accepted = entry.candidates.filter(
       (candidate) =>
-        candidate.verifierDecision === "SUPPORTS" &&
-        (candidate.verifierScore ?? 0) >= threshold,
+        candidate.verifierScore !== null &&
+        candidate.verifierPolarityMargin !== null &&
+        candidate.verifierScore >= threshold &&
+        candidate.verifierPolarityMargin >= minimumPolarityMargin,
     );
     const acceptedGold = accepted.filter((candidate) =>
       gold.has(candidate.label),
@@ -480,6 +490,14 @@ const comparisons = modelRuns.map((modelRun) => {
         : [],
     ),
   );
+  const observedCalibrationMargins = calibration.flatMap((entry) =>
+    entry.candidates.flatMap((candidate) =>
+      typeof candidate.verifierPolarityMargin === "number" &&
+      candidate.verifierPolarityMargin >= 0
+        ? [candidate.verifierPolarityMargin]
+        : [],
+    ),
+  );
   const thresholds = [
     ...new Set([
       0,
@@ -495,11 +513,32 @@ const comparisons = modelRuns.map((modelRun) => {
       ...observedCalibrationScores.map((score) => Number(score.toFixed(6))),
     ]),
   ].sort((left, right) => left - right);
+  const polarityMargins = [
+    ...new Set([
+      0,
+      0.05,
+      0.1,
+      0.2,
+      0.3,
+      0.4,
+      0.5,
+      0.6,
+      0.7,
+      0.8,
+      0.9,
+      ...observedCalibrationMargins.map((margin) =>
+        Number(margin.toFixed(6)),
+      ),
+    ]),
+  ].sort((left, right) => left - right);
 
-  const calibrationMetrics = thresholds.map((threshold) => ({
-    threshold,
-    ...metricsFor(calibration, threshold),
-  }));
+  const calibrationMetrics = thresholds.flatMap((threshold) =>
+    polarityMargins.map((minimumPolarityMargin) => ({
+      threshold,
+      minimumPolarityMargin,
+      ...metricsFor(calibration, threshold, minimumPolarityMargin),
+    })),
+  );
   const calibrationCandidate =
     calibrationMetrics
       .filter(
@@ -508,13 +547,22 @@ const comparisons = modelRuns.map((modelRun) => {
           metrics.falseAbstentionRate === 0 &&
           metrics.supportSelectionPrecision === 1,
       )
-      .sort((left, right) => right.threshold - left.threshold)[0] ?? null;
+      .sort(
+        (left, right) =>
+          right.threshold - left.threshold ||
+          right.minimumPolarityMargin - left.minimumPolarityMargin,
+      )[0] ?? null;
   const holdoutMetrics =
     calibrationCandidate === null
       ? null
       : {
           threshold: calibrationCandidate.threshold,
-          ...metricsFor(holdout, calibrationCandidate.threshold),
+          minimumPolarityMargin: calibrationCandidate.minimumPolarityMargin,
+          ...metricsFor(
+            holdout,
+            calibrationCandidate.threshold,
+            calibrationCandidate.minimumPolarityMargin,
+          ),
         };
 
   return {
@@ -533,10 +581,10 @@ const comparisons = modelRuns.map((modelRun) => {
 });
 
 const report = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   status: "MEASURED",
   evidenceBoundary:
-    "Public synthetic bilingual calibration/holdout shadow comparison covering direct, negative, relational, definitional and conditional evidence. No threshold or verifier is promoted by this report.",
+    "Public synthetic bilingual calibration/holdout shadow comparison covering direct, negative, relational, definitional and conditional evidence. Entailment score and answer-polarity margin are calibrated jointly on calibration sources, then frozen for holdout. No threshold or verifier is promoted by this report.",
   splitCounts: {
     calibration: CASES.filter((entry) => entry.split === "CALIBRATION").length,
     holdout: CASES.filter((entry) => entry.split === "HOLDOUT").length,
