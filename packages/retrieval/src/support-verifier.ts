@@ -1287,10 +1287,14 @@ export function verifyDeterministicPassageSupport(
     requiredAnswerCues
       .filter((cue) => cue !== "YES_NO")
       .every((cue) => boundedSupport.matchedAnswerCues.includes(cue));
+  const explicitDefinitionSupport =
+    boundedSupport.matchedAnswerCues.includes("DEFINITION");
   const definitionEvidenceEligible =
     !requiredAnswerCues.includes("DEFINITION") ||
+    explicitDefinitionSupport ||
     definitionIdentityMatches(hit, excerpt, query);
   const conceptDefinitionSupport =
+    !explicitDefinitionSupport &&
     definitionEvidenceEligible &&
     isIntroductoryConceptDefinition(hit, excerpt, query, requiredAnswerCues);
   const matchedAnswerCues = [
