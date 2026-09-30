@@ -17,7 +17,6 @@ type Candidate = {
   label: string;
   title: string;
   passage: string;
-  language?: "en" | "es";
   goldSpan?: string;
 };
 
@@ -26,7 +25,6 @@ type Case = {
   split: Split;
   family: string;
   query: string;
-  queryLanguage?: "en" | "es";
   candidates: Candidate[];
   goldLabels: string[];
 };
@@ -36,9 +34,6 @@ const REVISION = "6f5ff65298512715a1e669753bc754d2bc8f367b";
 const BINARY_ENTAILMENT_MODEL = "23donge/bge-m3-zeroshot-v2.0-onnx-int8";
 const BINARY_ENTAILMENT_REVISION = "84ceaae57bca4ccc6478cf87a8e49c076150098f";
 const BINARY_ENTAILMENT_UPSTREAM = "MoritzLaurer/bge-m3-zeroshot-v2.0";
-const SPANISH_TO_ENGLISH_MODEL = "Xenova/opus-mt-es-en";
-const SPANISH_TO_ENGLISH_REVISION =
-  "eadfd7c658a9d8929ac3b8e996b68a68e2c7d480";
 
 const CASES: Case[] = [
   {
@@ -152,7 +147,6 @@ const CASES: Case[] = [
         title: "Focused handlers",
         passage:
           "Un manejador con una sola responsabilidad concentra sus cambios en un único motivo de negocio.",
-        language: "es",
         goldSpan:
           "Un manejador con una sola responsabilidad concentra sus cambios en un único motivo de negocio.",
       },
@@ -216,14 +210,12 @@ const CASES: Case[] = [
     split: "HOLDOUT",
     family: "MODALITY_NEGATION",
     query: "¿Es obligatorio usar un scheduler para procesar trabajos?",
-    queryLanguage: "es",
     candidates: [
       {
         label: "scheduler-optional",
         title: "Ejecución de trabajos",
         passage:
           "Los trabajos pueden procesarse directamente sin scheduler; incorporarlo es una opción operativa.",
-        language: "es",
         goldSpan: "Los trabajos pueden procesarse directamente sin scheduler;",
       },
       {
@@ -231,7 +223,6 @@ const CASES: Case[] = [
         title: "Scheduler",
         passage:
           "El scheduler registra tiempos de ejecución y métricas de los trabajos.",
-        language: "es",
       },
     ],
     goldLabels: ["scheduler-optional"],
@@ -270,7 +261,6 @@ const CASES: Case[] = [
         title: "Single-purpose modules",
         passage:
           "Un módulo con una sola responsabilidad concentra sus cambios en un único motivo de negocio.",
-        language: "es",
         goldSpan:
           "Un módulo con una sola responsabilidad concentra sus cambios en un único motivo de negocio.",
       },
@@ -635,7 +625,7 @@ function metrics(
 }
 
 const cacheDir = resolveLocalSemanticCacheDir(process.env.AKP_MODEL_CACHE_DIR);
-const { AutoModelForSequenceClassification, AutoTokenizer, pipeline } =
+const { AutoModelForSequenceClassification, AutoTokenizer } =
   await import("@huggingface/transformers");
 
 const loadStarted = performance.now();
@@ -901,36 +891,6 @@ const binaryModel = await AutoModelForSequenceClassification.from_pretrained(
 );
 const binaryLoadLatencyMs = performance.now() - binaryLoadStarted;
 
-const translationLoadStarted = performance.now();
-const spanishToEnglish = await pipeline(
-  "translation",
-  SPANISH_TO_ENGLISH_MODEL,
-  {
-    revision: SPANISH_TO_ENGLISH_REVISION,
-    dtype: "int8",
-    device: "cpu",
-    local_files_only: false,
-    ...(cacheDir === undefined ? {} : { cache_dir: cacheDir }),
-  },
-);
-const translationLoadLatencyMs = performance.now() - translationLoadStarted;
-const translationCache = new Map<string, string>();
-
-async function translateSpanishToEnglish(text: string): Promise<string> {
-  const cached = translationCache.get(text);
-  if (cached !== undefined) return cached;
-  const output = await spanishToEnglish(text);
-  const first = Array.isArray(output) ? output[0] : output;
-  const translated = (first as { translation_text?: string } | undefined)
-    ?.translation_text;
-  if (typeof translated !== "string" || translated.trim().length === 0) {
-    throw new Error("SPANISH_TO_ENGLISH_TRANSLATION_MISSING");
-  }
-  const normalized = translated.trim();
-  translationCache.set(text, normalized);
-  return normalized;
-}
-
 async function binaryEntailmentScore(
   premise: string,
   hypothesis: string,
@@ -966,11 +926,6 @@ async function evaluateBinaryCases(
     testCase: Case,
     candidate: Candidate,
   ) => readonly ShadowRelationHypothesisCandidate[],
-  premiseFor: (
-    testCase: Case,
-    candidate: Candidate,
-    passage: string,
-  ) => Promise<string> = async (_testCase, _candidate, passage) => passage,
 ) {
   const observations = [];
   for (const testCase of CASES) {
@@ -985,15 +940,13 @@ async function evaluateBinaryCases(
       let selectedPositiveHypothesis: string | null = null;
       let selectedNegativeHypothesis: string | null = null;
       let selectedAnswerPolarity: "POSITIVE" | "NEGATIVE" | null = null;
-      let selectedPremise: string | null = null;
 
       for (const hypothesis of hypotheses) {
         for (let index = 0; index < windows.length; index += 1) {
           const window = windows[index]!;
-          const premise = await premiseFor(testCase, candidate, window.text);
           const [positiveScore, negativeScore] = await Promise.all([
-            binaryEntailmentScore(premise, hypothesis.positive),
-            binaryEntailmentScore(premise, hypothesis.negative),
+            binaryEntailmentScore(window.text, hypothesis.positive),
+            binaryEntailmentScore(window.text, hypothesis.negative),
           ]);
           const score = Math.max(positiveScore, negativeScore);
           const polarityMargin = Math.abs(positiveScore - negativeScore);
@@ -1009,7 +962,6 @@ async function evaluateBinaryCases(
             selectedNegativeHypothesis = hypothesis.negative;
             selectedAnswerPolarity =
               positiveScore >= negativeScore ? "POSITIVE" : "NEGATIVE";
-            selectedPremise = premise;
           }
         }
       }
@@ -1027,7 +979,6 @@ async function evaluateBinaryCases(
         selectedPositiveHypothesis,
         selectedNegativeHypothesis,
         selectedAnswerPolarity,
-        evaluatedPremise: selectedPremise,
         bestSpan: {
           text: bestWindow.text,
           startOffset: bestWindow.start,
@@ -1244,9 +1195,6 @@ let binaryObservations: Awaited<ReturnType<typeof evaluateBinaryCases>>;
 let binaryHypothesisSweepObservations: Awaited<
   ReturnType<typeof evaluateBinaryCases>
 >;
-let binaryTranslatedObservations: Awaited<
-  ReturnType<typeof evaluateBinaryCases>
->;
 try {
   binaryObservations = await evaluateBinaryCases((testCase, candidate) => {
     const hypothesis = buildEvidenceRelationHypotheses(
@@ -1261,18 +1209,8 @@ try {
     (testCase, candidate) =>
       shadowRelationHypothesisCandidates(testCase.query, candidate.title),
   );
-  binaryTranslatedObservations = await evaluateBinaryCases(
-    (testCase, candidate) =>
-      shadowRelationHypothesisCandidates(testCase.query, candidate.title),
-    async (testCase, candidate, passage) =>
-      candidate.language === "es" &&
-      (testCase.queryLanguage ?? "en") === "en"
-        ? translateSpanishToEnglish(passage)
-        : passage,
-  );
 } finally {
   await binaryModel.dispose?.();
-  await spanishToEnglish.dispose?.();
 }
 
 const binaryCalibrationResult = calibrateBinaryObservations(binaryObservations);
@@ -1281,9 +1219,6 @@ const binarySweepCalibrationResult = calibrateBinaryObservations(
 );
 const binarySweepScoreOnlyMidpoint = scoreOnlyMidpointCalibration(
   binaryHypothesisSweepObservations,
-);
-const binaryTranslatedCalibrationResult = calibrateBinaryObservations(
-  binaryTranslatedObservations,
 );
 
 const binaryEntailmentComparison = {
@@ -1314,29 +1249,11 @@ const binaryHypothesisSweepComparison = {
   observations: binaryHypothesisSweepObservations,
 };
 
-const binaryTranslationComparison = {
-  model: binaryEntailmentComparison.model,
-  translationModel: {
-    id: SPANISH_TO_ENGLISH_MODEL,
-    revision: SPANISH_TO_ENGLISH_REVISION,
-    dtype: "int8",
-    provenance: "transformers-js-onnx-shadow-only",
-  },
-  translationStrategy:
-    "shadow-only explicit fixture metadata: translate Spanish passage to English only when the query is English; no language detector or production fallback",
-  translationLoadLatencyMs,
-  calibrationCandidate: binaryTranslatedCalibrationResult.calibrationCandidate,
-  holdoutMetrics: binaryTranslatedCalibrationResult.holdoutMetrics,
-  holdoutPassesAcceptance:
-    binaryTranslatedCalibrationResult.holdoutPassesAcceptance,
-  observations: binaryTranslatedObservations,
-};
-
 const report = {
-  schemaVersion: 6,
+  schemaVersion: 5,
   status: "MEASURED",
   evidenceBoundary:
-    "Public synthetic source-disjoint shadow evaluation of multilingual evidence signals: reranker relevance/contrast plus a pinned multilingual binary entailment model. A separate shadow-only fallback hypothesis sweep isolates missing parser coverage without replacing hypotheses already produced by the production parser. A translation capability probe uses explicit fixture language metadata to translate only Spanish passages paired with English queries before applying the same entailment calibration; it adds no production language detector or fallback. Thresholds are derived only from calibration labels and frozen for holdout. No signal is evidence truth or promoted by this report.",
+    "Public synthetic source-disjoint shadow evaluation of multilingual evidence signals: reranker relevance/contrast plus a pinned multilingual binary entailment model. A separate shadow-only fallback hypothesis sweep isolates missing parser coverage without replacing hypotheses already produced by the production parser. The report includes both the existing score-plus-margin grid and an auditable score-only midpoint boundary derived only from calibration labels, then frozen for holdout. No signal is evidence truth or promoted by this report.",
   model: {
     id: MODEL,
     revision: REVISION,
@@ -1353,7 +1270,6 @@ const report = {
   comparisons,
   binaryEntailmentComparison,
   binaryHypothesisSweepComparison,
-  binaryTranslationComparison,
   promotionAllowed: false,
   productionDefaultChanged: false,
   enforcementEnabled: false,
