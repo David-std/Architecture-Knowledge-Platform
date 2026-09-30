@@ -615,10 +615,10 @@ describe("bounded assertion recall", () => {
           {
             documentId: fixture.documents.bodyTerms,
             unitId: fixture.units.bodyTerms,
-            externalId: "CLM-BLUE-WIDGET-QUEUE",
+            externalId: "RUL-BLUE-WIDGET-QUEUE",
             title: "Blue widget requires a transport queue",
             body: "A blue widget requires a transport queue for delivery.",
-            type: "claim",
+            type: "decision-rule",
           },
           {
             documentId: fixture.documents.alias,
@@ -687,7 +687,7 @@ describe("bounded assertion recall", () => {
           hits.some((hit) => hit.documentId === fixture.documents.bodyTerms),
         ).toBe(true);
         expect(accepted).toContain("CLM-BLUE-WIDGET-STORAGE");
-        expect(accepted).not.toContain("CLM-BLUE-WIDGET-QUEUE");
+        expect(accepted).not.toContain("RUL-BLUE-WIDGET-QUEUE");
         expect(accepted).not.toContain("PRO-BLUE-WIDGET");
       } finally {
         await cleanupLexical(db, fixture);

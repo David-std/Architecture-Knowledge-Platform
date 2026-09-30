@@ -1919,7 +1919,7 @@ export async function queryKnowledge(
                and d.lifecycle ${lifecycleClause}
                and ${trustClause("d.")}
                and d.refresh_status not in ('STALE_BLOCKED','INVALID')
-               and ($6::text is null or d.type in ('claim','rule'))
+               and ($6::text is null or d.type in ('claim','rule','decision-rule'))
                ${documentScopeClause("d.", 5)}
                ${modeClause("d.")}
                ${rawAuthorizationClause("d.", 4)}
