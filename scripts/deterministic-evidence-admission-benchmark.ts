@@ -290,6 +290,20 @@ const CASES: AdmissionCase[] = [
     goldLabels: [],
   },
   {
+    id: "claim-link-slug-is-not-relation-evidence",
+    tier: "CORE",
+    query: "Does NEXO require QARO?",
+    candidates: [
+      {
+        label: "claim-reference",
+        title: "NEXO integration",
+        type: "claim",
+        passage: "See [[claims/nexo-requires-qaro]] for the approved relation.",
+      },
+    ],
+    goldLabels: [],
+  },
+  {
     id: "indirect-bilingual-responsibility",
     tier: "SEMANTIC_FRONTIER",
     query: "Does a single-purpose module reduce reasons to change?",

@@ -957,15 +957,19 @@ interface PassageWindow {
   scopeTitle?: string;
 }
 
+function withoutReferenceMarkup(passage: string): string {
+  return passage
+    .replace(/\[\[[^\]]+\]\]/gu, " ")
+    .replace(/\[[^\]]+\]\([^)]*\)/gu, " ");
+}
+
 function passageWindows(passage: string, title?: string): PassageWindow[] {
   // Evidence for an answer predicate must stay local. A unit title may scope a
   // sentence, and an adjacent sentence may be joined only when it explicitly
   // refers back to its predecessor. For relation questions, the title may
   // identify the subject but cannot supply the predicate or object.
   // A link to a proposition is a pointer, not an assertion of its content.
-  const evidentialPassage = passage
-    .replace(/\[\[[^\]]+\]\]/gu, " ")
-    .replace(/\[[^\]]+\]\([^)]*\)/gu, " ");
+  const evidentialPassage = withoutReferenceMarkup(passage);
   const sentences = evidentialPassage
     .split(/(?<=[.!?])\s+|\n+/u)
     .map((part) => part.trim())
@@ -1292,7 +1296,7 @@ export function verifyDeterministicPassageSupport(
 ): DeterministicPassageSupportSignal {
   const policy = resolveDeterministicPassageSupportPolicy(policyInput);
   const excerpt = hit.excerpt.trim();
-  const passage = excerpt;
+  const passage = withoutReferenceMarkup(excerpt).trim();
   const passageSource = "EXCERPT" as const;
   const queryTokens = normalizedAnswerabilityTokens(query);
   const salientQueryTokens = queryTokens.filter(
@@ -1317,7 +1321,7 @@ export function verifyDeterministicPassageSupport(
     hit.title?.trim() || hit.document.title?.trim() || undefined,
   );
   const claimRelationDiagnostics = requiredAnswerCues.includes("YES_NO")
-    ? atomicClaimRelationDiagnostics(hit, excerpt, query)
+    ? atomicClaimRelationDiagnostics(hit, passage, query)
     : null;
   const claimRelationSupport =
     claimRelationDiagnostics?.supported === true &&
@@ -1326,15 +1330,15 @@ export function verifyDeterministicPassageSupport(
       .every((cue) => boundedSupport.matchedAnswerCues.includes(cue));
   const explicitDefinitionSupport =
     boundedSupport.matchedAnswerCues.includes("DEFINITION") &&
-    definitionExcerptAnchorsMatch(excerpt, query);
+    definitionExcerptAnchorsMatch(passage, query);
   const definitionEvidenceEligible =
     !requiredAnswerCues.includes("DEFINITION") ||
     explicitDefinitionSupport ||
-    definitionIdentityMatches(hit, excerpt, query);
+    definitionIdentityMatches(hit, passage, query);
   const conceptDefinitionSupport =
     !explicitDefinitionSupport &&
     definitionEvidenceEligible &&
-    isIntroductoryConceptDefinition(hit, excerpt, query, requiredAnswerCues);
+    isIntroductoryConceptDefinition(hit, passage, query, requiredAnswerCues);
   const matchedAnswerCues = [
     ...new Set<PassageAnswerCue>([
       ...boundedSupport.matchedAnswerCues,
@@ -1377,7 +1381,7 @@ export function verifyDeterministicPassageSupport(
     : [];
   const evidenceScopeTokens = new Set(
     normalizedAnswerabilityTokens(
-      `${hit.title?.trim() || hit.document.title?.trim() || ""} ${excerpt}`,
+      `${hit.title?.trim() || hit.document.title?.trim() || ""} ${passage}`,
     ),
   );
   const explicitAcronymsMatched = queryAcronyms.every((token) =>
