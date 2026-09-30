@@ -746,7 +746,9 @@ function mandatoryOptionalityMatches(evidence: string, query: string): boolean {
   if (requireIndex < 0) return false;
 
   const beforeAnchors = [
-    ...new Set(queryTokens.slice(0, requireIndex).filter(relationAnchorEligible)),
+    ...new Set(
+      queryTokens.slice(0, requireIndex).filter(relationAnchorEligible),
+    ),
   ];
   const afterAnchors = [
     ...new Set(
