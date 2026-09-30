@@ -17,6 +17,7 @@ type Candidate = {
   label: string;
   title: string;
   passage: string;
+  language?: "en" | "es";
   goldSpan?: string;
 };
 
@@ -25,6 +26,7 @@ type Case = {
   split: Split;
   family: string;
   query: string;
+  queryLanguage?: "en" | "es";
   candidates: Candidate[];
   goldLabels: string[];
 };
@@ -34,6 +36,9 @@ const REVISION = "6f5ff65298512715a1e669753bc754d2bc8f367b";
 const BINARY_ENTAILMENT_MODEL = "23donge/bge-m3-zeroshot-v2.0-onnx-int8";
 const BINARY_ENTAILMENT_REVISION = "84ceaae57bca4ccc6478cf87a8e49c076150098f";
 const BINARY_ENTAILMENT_UPSTREAM = "MoritzLaurer/bge-m3-zeroshot-v2.0";
+const SPANISH_TO_ENGLISH_MODEL = "Xenova/opus-mt-es-en";
+const SPANISH_TO_ENGLISH_REVISION =
+  "eadfd7c658a9d8929ac3b8e996b68a68e2c7d480";
 
 const CASES: Case[] = [
   {
@@ -147,6 +152,7 @@ const CASES: Case[] = [
         title: "Focused handlers",
         passage:
           "Un manejador con una sola responsabilidad concentra sus cambios en un único motivo de negocio.",
+        language: "es",
         goldSpan:
           "Un manejador con una sola responsabilidad concentra sus cambios en un único motivo de negocio.",
       },
@@ -210,12 +216,14 @@ const CASES: Case[] = [
     split: "HOLDOUT",
     family: "MODALITY_NEGATION",
     query: "¿Es obligatorio usar un scheduler para procesar trabajos?",
+    queryLanguage: "es",
     candidates: [
       {
         label: "scheduler-optional",
         title: "Ejecución de trabajos",
         passage:
           "Los trabajos pueden procesarse directamente sin scheduler; incorporarlo es una opción operativa.",
+        language: "es",
         goldSpan: "Los trabajos pueden procesarse directamente sin scheduler;",
       },
       {
@@ -223,6 +231,7 @@ const CASES: Case[] = [
         title: "Scheduler",
         passage:
           "El scheduler registra tiempos de ejecución y métricas de los trabajos.",
+        language: "es",
       },
     ],
     goldLabels: ["scheduler-optional"],
@@ -261,6 +270,7 @@ const CASES: Case[] = [
         title: "Single-purpose modules",
         passage:
           "Un módulo con una sola responsabilidad concentra sus cambios en un único motivo de negocio.",
+        language: "es",
         goldSpan:
           "Un módulo con una sola responsabilidad concentra sus cambios en un único motivo de negocio.",
       },
@@ -625,7 +635,7 @@ function metrics(
 }
 
 const cacheDir = resolveLocalSemanticCacheDir(process.env.AKP_MODEL_CACHE_DIR);
-const { AutoModelForSequenceClassification, AutoTokenizer } =
+const { AutoModelForSequenceClassification, AutoTokenizer, pipeline } =
   await import("@huggingface/transformers");
 
 const loadStarted = performance.now();
@@ -891,6 +901,36 @@ const binaryModel = await AutoModelForSequenceClassification.from_pretrained(
 );
 const binaryLoadLatencyMs = performance.now() - binaryLoadStarted;
 
+const translationLoadStarted = performance.now();
+const spanishToEnglish = await pipeline(
+  "translation",
+  SPANISH_TO_ENGLISH_MODEL,
+  {
+    revision: SPANISH_TO_ENGLISH_REVISION,
+    dtype: "int8",
+    device: "cpu",
+    local_files_only: false,
+    ...(cacheDir === undefined ? {} : { cache_dir: cacheDir }),
+  },
+);
+const translationLoadLatencyMs = performance.now() - translationLoadStarted;
+const translationCache = new Map<string, string>();
+
+async function translateSpanishToEnglish(text: string): Promise<string> {
+  const cached = translationCache.get(text);
+  if (cached !== undefined) return cached;
+  const output = await spanishToEnglish(text);
+  const first = Array.isArray(output) ? output[0] : output;
+  const translated = (first as { translation_text?: string } | undefined)
+    ?.translation_text;
+  if (typeof translated !== "string" || translated.trim().length === 0) {
+    throw new Error("SPANISH_TO_ENGLISH_TRANSLATION_MISSING");
+  }
+  const normalized = translated.trim();
+  translationCache.set(text, normalized);
+  return normalized;
+}
+
 async function binaryEntailmentScore(
   premise: string,
   hypothesis: string,
@@ -926,6 +966,11 @@ async function evaluateBinaryCases(
     testCase: Case,
     candidate: Candidate,
   ) => readonly ShadowRelationHypothesisCandidate[],
+  premiseFor: (
+    testCase: Case,
+    candidate: Candidate,
+    passage: string,
+  ) => Promise<string> = async (_testCase, _candidate, passage) => passage,
 ) {
   const observations = [];
   for (const testCase of CASES) {
@@ -940,13 +985,15 @@ async function evaluateBinaryCases(
       let selectedPositiveHypothesis: string | null = null;
       let selectedNegativeHypothesis: string | null = null;
       let selectedAnswerPolarity: "POSITIVE" | "NEGATIVE" | null = null;
+      let selectedPremise: string | null = null;
 
       for (const hypothesis of hypotheses) {
         for (let index = 0; index < windows.length; index += 1) {
           const window = windows[index]!;
+          const premise = await premiseFor(testCase, candidate, window.text);
           const [positiveScore, negativeScore] = await Promise.all([
-            binaryEntailmentScore(window.text, hypothesis.positive),
-            binaryEntailmentScore(window.text, hypothesis.negative),
+            binaryEntailmentScore(premise, hypothesis.positive),
+            binaryEntailmentScore(premise, hypothesis.negative),
           ]);
           const score = Math.max(positiveScore, negativeScore);
           const polarityMargin = Math.abs(positiveScore - negativeScore);
@@ -962,6 +1009,7 @@ async function evaluateBinaryCases(
             selectedNegativeHypothesis = hypothesis.negative;
             selectedAnswerPolarity =
               positiveScore >= negativeScore ? "POSITIVE" : "NEGATIVE";
+            selectedPremise = premise;
           }
         }
       }
@@ -979,6 +1027,7 @@ async function evaluateBinaryCases(
         selectedPositiveHypothesis,
         selectedNegativeHypothesis,
         selectedAnswerPolarity,
+        evaluatedPremise: selectedPremise,
         bestSpan: {
           text: bestWindow.text,
           startOffset: bestWindow.start,
@@ -999,222 +1048,6 @@ async function evaluateBinaryCases(
     });
   }
   return observations;
-}
-
-async function evaluateBinaryTopicBridgeCases() {
-  const observations = [];
-  for (const testCase of CASES) {
-    const candidates = [];
-    for (const candidate of testCase.candidates) {
-      const hypotheses = shadowRelationHypothesisCandidates(
-        testCase.query,
-        candidate.title,
-      );
-      const windows = sentenceWindows(candidate.passage);
-      let bestIndex = 0;
-      let bestScore = 0;
-      let bestPassageScore = 0;
-      let bestPolarityMargin = 0;
-      let bestPassagePolarityMargin = 0;
-      let bestPolarityConsistent = false;
-      let selectedHypothesisSource: string | null = null;
-      let selectedPositiveHypothesis: string | null = null;
-      let selectedNegativeHypothesis: string | null = null;
-      let selectedAnswerPolarity: "POSITIVE" | "NEGATIVE" | null = null;
-
-      for (const hypothesis of hypotheses) {
-        for (let index = 0; index < windows.length; index += 1) {
-          const window = windows[index]!;
-          const topicalPremise = `Topic: ${candidate.title}. Evidence: ${window.text}`;
-          const [
-            passagePositive,
-            passageNegative,
-            topicalPositive,
-            topicalNegative,
-          ] = await Promise.all([
-            binaryEntailmentScore(window.text, hypothesis.positive),
-            binaryEntailmentScore(window.text, hypothesis.negative),
-            binaryEntailmentScore(topicalPremise, hypothesis.positive),
-            binaryEntailmentScore(topicalPremise, hypothesis.negative),
-          ]);
-          const passageScore = Math.max(passagePositive, passageNegative);
-          const score = Math.max(topicalPositive, topicalNegative);
-          const passagePolarity =
-            passagePositive >= passageNegative ? "POSITIVE" : "NEGATIVE";
-          const answerPolarity =
-            topicalPositive >= topicalNegative ? "POSITIVE" : "NEGATIVE";
-          const polarityMargin = Math.abs(topicalPositive - topicalNegative);
-          const passagePolarityMargin = Math.abs(
-            passagePositive - passageNegative,
-          );
-          const polarityConsistent = passagePolarity === answerPolarity;
-
-          if (
-            score > bestScore ||
-            (score === bestScore && passageScore > bestPassageScore)
-          ) {
-            bestScore = score;
-            bestPassageScore = passageScore;
-            bestPolarityMargin = polarityMargin;
-            bestPassagePolarityMargin = passagePolarityMargin;
-            bestPolarityConsistent = polarityConsistent;
-            bestIndex = index;
-            selectedHypothesisSource = hypothesis.source;
-            selectedPositiveHypothesis = hypothesis.positive;
-            selectedNegativeHypothesis = hypothesis.negative;
-            selectedAnswerPolarity = answerPolarity;
-          }
-        }
-      }
-
-      const bestWindow = windows[bestIndex]!;
-      const goldSpan = candidate.goldSpan ?? null;
-      candidates.push({
-        label: candidate.label,
-        score: bestScore,
-        passageScore: bestPassageScore,
-        polarityMargin: bestPolarityMargin,
-        passagePolarityMargin: bestPassagePolarityMargin,
-        polarityConsistent: bestPolarityConsistent,
-        directionCompatible:
-          hypotheses.length > 0 &&
-          orderedAnchorsCompatible(testCase.query, bestWindow.text),
-        selectedHypothesisSource,
-        selectedPositiveHypothesis,
-        selectedNegativeHypothesis,
-        selectedAnswerPolarity,
-        bestSpan: {
-          text: bestWindow.text,
-          startOffset: bestWindow.start,
-          endOffset: bestWindow.end,
-        },
-        spanCorrect:
-          goldSpan === null ? null : bestWindow.text.includes(goldSpan.trim()),
-      });
-    }
-
-    observations.push({
-      id: testCase.id,
-      split: testCase.split,
-      family: testCase.family,
-      query: testCase.query,
-      goldLabels: testCase.goldLabels,
-      candidates,
-    });
-  }
-  return observations;
-}
-
-function topicBridgeMetrics(
-  observations: Awaited<ReturnType<typeof evaluateBinaryTopicBridgeCases>>,
-  threshold: number,
-  minimumPassageScore: number,
-) {
-  return metrics(
-    observations.map((entry) => ({
-      ...entry,
-      candidates: entry.candidates.map((candidate) => ({
-        ...candidate,
-        directionCompatible:
-          candidate.directionCompatible &&
-          candidate.polarityConsistent &&
-          candidate.passageScore >= minimumPassageScore,
-      })),
-    })),
-    threshold,
-    0,
-  );
-}
-
-function calibrateBinaryTopicBridge(
-  observations: Awaited<ReturnType<typeof evaluateBinaryTopicBridgeCases>>,
-) {
-  const calibration = observations.filter(
-    (entry) => entry.split === "CALIBRATION",
-  );
-  const holdout = observations.filter((entry) => entry.split === "HOLDOUT");
-  const thresholds = [
-    ...new Set([
-      0.1,
-      0.2,
-      0.3,
-      0.4,
-      0.5,
-      0.6,
-      0.7,
-      0.8,
-      0.9,
-      ...calibration.flatMap((entry) =>
-        entry.candidates.map((candidate) => Number(candidate.score.toFixed(6))),
-      ),
-    ]),
-  ].sort((left, right) => left - right);
-  const passageFloors = [
-    ...new Set([
-      0,
-      0.1,
-      0.2,
-      0.3,
-      0.4,
-      0.5,
-      0.6,
-      0.7,
-      0.8,
-      0.9,
-      ...calibration.flatMap((entry) =>
-        entry.candidates.map((candidate) =>
-          Number(candidate.passageScore.toFixed(6)),
-        ),
-      ),
-    ]),
-  ].sort((left, right) => left - right);
-
-  const calibrationMetrics = thresholds.flatMap((threshold) =>
-    passageFloors.map((minimumPassageScore) => ({
-      threshold,
-      minimumPassageScore,
-      ...topicBridgeMetrics(calibration, threshold, minimumPassageScore),
-    })),
-  );
-  const calibrationCandidate =
-    calibrationMetrics
-      .filter(
-        (entry) =>
-          entry.falseAcceptances === 0 &&
-          entry.falseAbstentions === 0 &&
-          entry.wrongSelections === 0 &&
-          entry.supportSelectionPrecision === 1 &&
-          entry.spanAccuracy === 1,
-      )
-      .sort(
-        (left, right) =>
-          right.threshold - left.threshold ||
-          right.minimumPassageScore - left.minimumPassageScore,
-      )[0] ?? null;
-  const holdoutMetrics =
-    calibrationCandidate === null
-      ? null
-      : {
-          threshold: calibrationCandidate.threshold,
-          minimumPassageScore: calibrationCandidate.minimumPassageScore,
-          ...topicBridgeMetrics(
-            holdout,
-            calibrationCandidate.threshold,
-            calibrationCandidate.minimumPassageScore,
-          ),
-        };
-
-  return {
-    calibrationCandidate,
-    holdoutMetrics,
-    holdoutPassesAcceptance:
-      holdoutMetrics !== null &&
-      holdoutMetrics.falseAcceptances === 0 &&
-      holdoutMetrics.falseAbstentions === 0 &&
-      holdoutMetrics.wrongSelections === 0 &&
-      holdoutMetrics.supportSelectionPrecision === 1 &&
-      holdoutMetrics.spanAccuracy === 1,
-  };
 }
 
 function calibrateBinaryObservations(
@@ -1411,8 +1244,8 @@ let binaryObservations: Awaited<ReturnType<typeof evaluateBinaryCases>>;
 let binaryHypothesisSweepObservations: Awaited<
   ReturnType<typeof evaluateBinaryCases>
 >;
-let binaryTopicBridgeObservations: Awaited<
-  ReturnType<typeof evaluateBinaryTopicBridgeCases>
+let binaryTranslatedObservations: Awaited<
+  ReturnType<typeof evaluateBinaryCases>
 >;
 try {
   binaryObservations = await evaluateBinaryCases((testCase, candidate) => {
@@ -1428,9 +1261,18 @@ try {
     (testCase, candidate) =>
       shadowRelationHypothesisCandidates(testCase.query, candidate.title),
   );
-  binaryTopicBridgeObservations = await evaluateBinaryTopicBridgeCases();
+  binaryTranslatedObservations = await evaluateBinaryCases(
+    (testCase, candidate) =>
+      shadowRelationHypothesisCandidates(testCase.query, candidate.title),
+    async (testCase, candidate, passage) =>
+      candidate.language === "es" &&
+      (testCase.queryLanguage ?? "en") === "en"
+        ? translateSpanishToEnglish(passage)
+        : passage,
+  );
 } finally {
   await binaryModel.dispose?.();
+  await spanishToEnglish.dispose?.();
 }
 
 const binaryCalibrationResult = calibrateBinaryObservations(binaryObservations);
@@ -1440,8 +1282,8 @@ const binarySweepCalibrationResult = calibrateBinaryObservations(
 const binarySweepScoreOnlyMidpoint = scoreOnlyMidpointCalibration(
   binaryHypothesisSweepObservations,
 );
-const binaryTopicBridgeCalibrationResult = calibrateBinaryTopicBridge(
-  binaryTopicBridgeObservations,
+const binaryTranslatedCalibrationResult = calibrateBinaryObservations(
+  binaryTranslatedObservations,
 );
 
 const binaryEntailmentComparison = {
@@ -1472,22 +1314,29 @@ const binaryHypothesisSweepComparison = {
   observations: binaryHypothesisSweepObservations,
 };
 
-const binaryTopicBridgeComparison = {
+const binaryTranslationComparison = {
   model: binaryEntailmentComparison.model,
-  hypothesisStrategy:
-    "shadow-only title-as-topic bridge; passage-only score floor and answer-polarity consistency are mandatory",
-  calibrationCandidate: binaryTopicBridgeCalibrationResult.calibrationCandidate,
-  holdoutMetrics: binaryTopicBridgeCalibrationResult.holdoutMetrics,
+  translationModel: {
+    id: SPANISH_TO_ENGLISH_MODEL,
+    revision: SPANISH_TO_ENGLISH_REVISION,
+    dtype: "int8",
+    provenance: "transformers-js-onnx-shadow-only",
+  },
+  translationStrategy:
+    "shadow-only explicit fixture metadata: translate Spanish passage to English only when the query is English; no language detector or production fallback",
+  translationLoadLatencyMs,
+  calibrationCandidate: binaryTranslatedCalibrationResult.calibrationCandidate,
+  holdoutMetrics: binaryTranslatedCalibrationResult.holdoutMetrics,
   holdoutPassesAcceptance:
-    binaryTopicBridgeCalibrationResult.holdoutPassesAcceptance,
-  observations: binaryTopicBridgeObservations,
+    binaryTranslatedCalibrationResult.holdoutPassesAcceptance,
+  observations: binaryTranslatedObservations,
 };
 
 const report = {
   schemaVersion: 6,
   status: "MEASURED",
   evidenceBoundary:
-    "Public synthetic source-disjoint shadow evaluation of multilingual evidence signals: reranker relevance/contrast plus a pinned multilingual binary entailment model. A separate shadow-only fallback hypothesis sweep isolates missing parser coverage without replacing hypotheses already produced by the production parser. A title-as-topic bridge is measured separately and cannot admit evidence unless the passage-only entailment score clears an independently calibrated floor with consistent answer polarity. All thresholds are derived only from calibration labels and frozen for holdout. No signal is evidence truth or promoted by this report.",
+    "Public synthetic source-disjoint shadow evaluation of multilingual evidence signals: reranker relevance/contrast plus a pinned multilingual binary entailment model. A separate shadow-only fallback hypothesis sweep isolates missing parser coverage without replacing hypotheses already produced by the production parser. A translation capability probe uses explicit fixture language metadata to translate only Spanish passages paired with English queries before applying the same entailment calibration; it adds no production language detector or fallback. Thresholds are derived only from calibration labels and frozen for holdout. No signal is evidence truth or promoted by this report.",
   model: {
     id: MODEL,
     revision: REVISION,
@@ -1504,7 +1353,7 @@ const report = {
   comparisons,
   binaryEntailmentComparison,
   binaryHypothesisSweepComparison,
-  binaryTopicBridgeComparison,
+  binaryTranslationComparison,
   promotionAllowed: false,
   productionDefaultChanged: false,
   enforcementEnabled: false,
