@@ -4,11 +4,7 @@ import { performance } from "node:perf_hooks";
 import { resolveLocalSemanticCacheDir } from "../src/index.js";
 
 type Split = "CALIBRATION" | "HOLDOUT";
-type Strategy =
-  | "PASSAGE_ONLY"
-  | "TITLE_PLUS_PASSAGE"
-  | "QUERY_MINUS_TITLE"
-  | "QUERY_OVER_TITLE_BASELINE";
+type Strategy = "PASSAGE_ONLY" | "TITLE_PLUS_PASSAGE" | "QUERY_MINUS_TITLE";
 
 type Candidate = {
   label: string;
@@ -488,7 +484,6 @@ const strategies: Strategy[] = [
   "PASSAGE_ONLY",
   "TITLE_PLUS_PASSAGE",
   "QUERY_MINUS_TITLE",
-  "QUERY_OVER_TITLE_BASELINE",
 ];
 const comparisons = [];
 
@@ -501,10 +496,6 @@ try {
       const candidates = [];
       for (const candidate of testCase.candidates) {
         const windows = sentenceWindows(candidate.passage);
-        const queryTitleBaseline =
-          strategy === "QUERY_OVER_TITLE_BASELINE"
-            ? await scorePair(testCase.query, candidate.title)
-            : null;
         let bestIndex = 0;
         let bestScore = Number.NEGATIVE_INFINITY;
 
@@ -518,9 +509,7 @@ try {
           const score =
             strategy === "QUERY_MINUS_TITLE"
               ? queryScore - (await scorePair(candidate.title, window.text))
-              : strategy === "QUERY_OVER_TITLE_BASELINE"
-                ? queryScore - queryTitleBaseline!
-                : queryScore;
+              : queryScore;
           if (score > bestScore) {
             bestScore = score;
             bestIndex = index;
@@ -626,7 +615,7 @@ const report = {
   schemaVersion: 1,
   status: "MEASURED",
   evidenceBoundary:
-    "Public synthetic source-disjoint shadow evaluation of a multilingual cross-encoder reranker, including passage relevance, title-passage contrast and query-conditioned passage lift over the source title baseline. Relevance or lift is not evidence truth and is never promoted by this report.",
+    "Public synthetic source-disjoint shadow evaluation of a multilingual cross-encoder reranker, including a query-vs-title contrastive lift. Relevance or lift is not evidence truth and is never promoted by this report.",
   model: {
     id: MODEL,
     revision: REVISION,
