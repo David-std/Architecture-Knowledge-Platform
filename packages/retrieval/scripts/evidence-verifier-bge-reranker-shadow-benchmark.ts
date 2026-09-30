@@ -1,10 +1,17 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
-import { resolveLocalSemanticCacheDir } from "../src/index.js";
+import {
+  buildEvidenceRelationHypotheses,
+  resolveLocalSemanticCacheDir,
+} from "../src/index.js";
 
 type Split = "CALIBRATION" | "HOLDOUT";
-type Strategy = "PASSAGE_ONLY" | "TITLE_PLUS_PASSAGE" | "QUERY_MINUS_TITLE";
+type Strategy =
+  | "PASSAGE_ONLY"
+  | "TITLE_PLUS_PASSAGE"
+  | "QUERY_MINUS_TITLE"
+  | "RELATION_POLARITY";
 
 type Candidate = {
   label: string;
@@ -373,9 +380,11 @@ function metrics(
       score: number;
       directionCompatible: boolean;
       spanCorrect: boolean | null;
+      polarityMargin: number | null;
     }[];
   }[],
   threshold: number,
+  minimumPolarityMargin = 0,
 ) {
   let positiveCases = 0;
   let negativeCases = 0;
@@ -391,7 +400,10 @@ function metrics(
     const gold = new Set(observation.goldLabels);
     const accepted = observation.candidates.filter(
       (candidate) =>
-        candidate.directionCompatible && candidate.score >= threshold,
+        candidate.directionCompatible &&
+        candidate.score >= threshold &&
+        (candidate.polarityMargin === null ||
+          candidate.polarityMargin >= minimumPolarityMargin),
     );
     const acceptedGold = accepted.filter((candidate) =>
       gold.has(candidate.label),
@@ -484,6 +496,7 @@ const strategies: Strategy[] = [
   "PASSAGE_ONLY",
   "TITLE_PLUS_PASSAGE",
   "QUERY_MINUS_TITLE",
+  "RELATION_POLARITY",
 ];
 const comparisons = [];
 
@@ -496,22 +509,50 @@ try {
       const candidates = [];
       for (const candidate of testCase.candidates) {
         const windows = sentenceWindows(candidate.passage);
+        const relationHypotheses =
+          strategy === "RELATION_POLARITY"
+            ? buildEvidenceRelationHypotheses(testCase.query, candidate.title)
+            : null;
         let bestIndex = 0;
         let bestScore = Number.NEGATIVE_INFINITY;
+        let bestPolarityMargin: number | null = null;
 
         for (let index = 0; index < windows.length; index += 1) {
           const window = windows[index]!;
-          const passage =
-            strategy === "TITLE_PLUS_PASSAGE"
-              ? `${candidate.title}: ${window.text}`
-              : window.text;
-          const queryScore = await scorePair(testCase.query, passage);
-          const score =
-            strategy === "QUERY_MINUS_TITLE"
-              ? queryScore - (await scorePair(candidate.title, window.text))
-              : queryScore;
-          if (score > bestScore) {
+          let score: number;
+          let polarityMargin: number | null = null;
+
+          if (strategy === "RELATION_POLARITY") {
+            if (relationHypotheses === null) {
+              score = 0;
+              polarityMargin = 0;
+            } else {
+              const [positiveScore, negativeScore] = await Promise.all([
+                scorePair(relationHypotheses.positive, window.text),
+                scorePair(relationHypotheses.negative, window.text),
+              ]);
+              score = Math.max(positiveScore, negativeScore);
+              polarityMargin = Math.abs(positiveScore - negativeScore);
+            }
+          } else {
+            const passage =
+              strategy === "TITLE_PLUS_PASSAGE"
+                ? `${candidate.title}: ${window.text}`
+                : window.text;
+            const queryScore = await scorePair(testCase.query, passage);
+            score =
+              strategy === "QUERY_MINUS_TITLE"
+                ? queryScore - (await scorePair(candidate.title, window.text))
+                : queryScore;
+          }
+
+          if (
+            score > bestScore ||
+            (score === bestScore &&
+              (polarityMargin ?? 0) > (bestPolarityMargin ?? 0))
+          ) {
             bestScore = score;
+            bestPolarityMargin = polarityMargin;
             bestIndex = index;
           }
         }
@@ -521,10 +562,12 @@ try {
         candidates.push({
           label: candidate.label,
           score: bestScore,
-          directionCompatible: orderedAnchorsCompatible(
-            testCase.query,
-            bestWindow.text,
-          ),
+          polarityMargin: bestPolarityMargin,
+          directionCompatible:
+            strategy !== "RELATION_POLARITY"
+              ? orderedAnchorsCompatible(testCase.query, bestWindow.text)
+              : relationHypotheses !== null &&
+                orderedAnchorsCompatible(testCase.query, bestWindow.text),
           bestSpan: {
             text: bestWindow.text,
             startOffset: bestWindow.start,
@@ -569,10 +612,42 @@ try {
       ]),
     ].sort((left, right) => left - right);
 
-    const calibrationMetrics = thresholds.map((threshold) => ({
-      threshold,
-      ...metrics(calibration, threshold),
-    }));
+    const observedPolarityMargins = calibration.flatMap((entry) =>
+      entry.candidates.flatMap((candidate) =>
+        typeof candidate.polarityMargin === "number"
+          ? [candidate.polarityMargin]
+          : [],
+      ),
+    );
+    const polarityMargins =
+      strategy === "RELATION_POLARITY"
+        ? [
+            ...new Set([
+              0,
+              0.05,
+              0.1,
+              0.2,
+              0.3,
+              0.4,
+              0.5,
+              0.6,
+              0.7,
+              0.8,
+              0.9,
+              ...observedPolarityMargins.map((margin) =>
+                Number(margin.toFixed(6)),
+              ),
+            ]),
+          ].sort((left, right) => left - right)
+        : [0];
+
+    const calibrationMetrics = thresholds.flatMap((threshold) =>
+      polarityMargins.map((minimumPolarityMargin) => ({
+        threshold,
+        minimumPolarityMargin,
+        ...metrics(calibration, threshold, minimumPolarityMargin),
+      })),
+    );
     const calibrationCandidate =
       calibrationMetrics
         .filter(
@@ -583,13 +658,22 @@ try {
             entry.supportSelectionPrecision === 1 &&
             entry.spanAccuracy === 1,
         )
-        .sort((left, right) => right.threshold - left.threshold)[0] ?? null;
+        .sort(
+          (left, right) =>
+            right.threshold - left.threshold ||
+            right.minimumPolarityMargin - left.minimumPolarityMargin,
+        )[0] ?? null;
     const holdoutMetrics =
       calibrationCandidate === null
         ? null
         : {
             threshold: calibrationCandidate.threshold,
-            ...metrics(holdout, calibrationCandidate.threshold),
+            minimumPolarityMargin: calibrationCandidate.minimumPolarityMargin,
+            ...metrics(
+              holdout,
+              calibrationCandidate.threshold,
+              calibrationCandidate.minimumPolarityMargin,
+            ),
           };
 
     comparisons.push({
@@ -612,10 +696,10 @@ try {
 }
 
 const report = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   status: "MEASURED",
   evidenceBoundary:
-    "Public synthetic source-disjoint shadow evaluation of a multilingual cross-encoder reranker, including a query-vs-title contrastive lift. Relevance or lift is not evidence truth and is never promoted by this report.",
+    "Public synthetic source-disjoint shadow evaluation of a multilingual cross-encoder reranker, including passage relevance, title-passage contrast, and a passage-to-positive/negative-relation polarity contrast. Score and polarity margin are calibrated only on calibration sources and frozen for holdout. Relevance or contrast is not evidence truth and is never promoted by this report.",
   model: {
     id: MODEL,
     revision: REVISION,
