@@ -62,6 +62,7 @@
     "benchmark:registered-workspace-team-metrics": "tsx scripts/registered-workspace-team-metrics.ts",
     "benchmark:registered-retrieval-diagnostics": "tsx scripts/registered-retrieval-diagnostics.ts",
     "assurance:deep-spec": "node scripts/deep-spec-traceability.mjs",
+    "benchmark:evidence-admission": "tsx scripts/deterministic-evidence-admission-benchmark.ts",
     "benchmark:evidence-verifier-shadow": "tsx scripts/evidence-verifier-shadow-benchmark.ts",
     "benchmark:evidence-verifier-nli-shadow": "tsx scripts/evidence-verifier-nli-shadow-benchmark.ts"
   },

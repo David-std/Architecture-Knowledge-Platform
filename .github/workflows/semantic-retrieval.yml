@@ -147,6 +147,13 @@ jobs:
             alternatives: report.alternatives,
           }, null, 2));
           NODE
+      - name: Gate deterministic evidence admission
+        shell: bash
+        run: |
+          set -o pipefail
+          AKP_DETERMINISTIC_EVIDENCE_ADMISSION_REPORT=reports/ci/deterministic-evidence-admission-benchmark.json \
+            pnpm benchmark:evidence-admission \
+            2>&1 | tee reports/ci/deterministic-evidence-admission-benchmark.log
       - name: Measure query-conditioned evidence verifier in shadow mode
         shell: bash
         run: |
