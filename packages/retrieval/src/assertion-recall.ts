@@ -10,7 +10,7 @@ export function boundedAssertionRecallQuery(query: string): string | null {
 }
 
 export function assertionRecallSelectionReason(reason: string): string {
-  return `${ASSERTION_RECALL_SELECTION_MARKER}${reason}`;
+  return ASSERTION_RECALL_SELECTION_MARKER + reason;
 }
 
 export function isAssertionRecallSelectionReason(

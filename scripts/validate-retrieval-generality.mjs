@@ -76,10 +76,14 @@ for (const [file, literals] of Object.entries(current)) {
     continue;
   }
   const additions = literals.filter((literal) => !allowed.includes(literal));
-  if (additions.length > 0)
+  if (additions.length > 0) {
     failures.push(
       `${file}: ${additions.length} new literal(s) outside baseline`,
     );
+    for (const literal of additions) {
+      failures.push(`  + ${literal}`);
+    }
+  }
 }
 if (failures.length > 0) {
   for (const failure of failures) process.stderr.write(`${failure}\n`);
