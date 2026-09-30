@@ -3327,8 +3327,8 @@ export async function queryKnowledge(
       ? { rows: [] }
       : await db.pool.query(
           `
-          select u.id, u.document_id, u.unit_type, u.heading_path, u.body,
-                 u.parent_unit_id,
+          select u.id, u.document_id, u.unit_type, u.heading_path,
+                 u.structural_order, u.body, u.parent_unit_id,
                  p.unit_type parent_unit_type, p.body parent_body
             from knowledge_units u
             left join knowledge_units p
@@ -3364,6 +3364,7 @@ export async function queryKnowledge(
           headingPath: Array.isArray(row.heading_path)
             ? row.heading_path.map(String)
             : [],
+          structuralOrder: Number(row.structural_order),
           ...(row.parent_unit_id
             ? { parentUnitId: String(row.parent_unit_id) }
             : {}),
@@ -3541,6 +3542,11 @@ export async function queryKnowledge(
           : {}),
         ...(structuralContext?.headingPath
           ? { headingPath: structuralContext.headingPath }
+          : {}),
+        ...(structuralContext &&
+        Number.isSafeInteger(structuralContext.structuralOrder) &&
+        structuralContext.structuralOrder >= 0
+          ? { structuralOrder: structuralContext.structuralOrder }
           : {}),
         ...(answerabilityContext
           ? { parentContext: answerabilityContext.slice(0, 4_000) }

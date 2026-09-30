@@ -20,6 +20,9 @@ function hit(
     type?: string;
     trust?: SearchHit["trust"];
     externalId?: string;
+    structuralOrder?: number;
+    headingPath?: string[];
+    unitType?: string;
   },
 ): SearchHit {
   const documentId = `11111111-1111-4111-8111-${String(idSuffix).padStart(12, "0")}`;
@@ -28,7 +31,11 @@ function hit(
     documentId,
     vaultId: VAULT_ID,
     unitId,
-    unitType: "PARAGRAPH",
+    unitType: input.unitType ?? "PARAGRAPH",
+    ...(input.structuralOrder === undefined
+      ? {}
+      : { structuralOrder: input.structuralOrder }),
+    ...(input.headingPath ? { headingPath: input.headingPath } : {}),
     document: {
       externalId: input.externalId ?? `public-fixture-${idSuffix}`,
       path: `docs/public-${idSuffix}.md`,
@@ -340,6 +347,76 @@ describe("retrieval answerability", () => {
       supported: true,
       requiredAnswerCues: ["DEFINITION"],
     });
+  });
+
+  it("accepts a bilingual functional description only from the introductory concept unit", () => {
+    const candidate = hit(920, {
+      title: "Adaptive failover routing",
+      type: "concept",
+      trust: "MACHINE_SUPPORTED",
+      structuralOrder: 2,
+      headingPath: ["Adaptive failover routing"],
+      excerpt:
+        "El enrutamiento adaptativo selecciona un destino saludable y conserva una alternativa determinista cuando falla la ruta principal.",
+      contributions: [contribution("vector", 0.84, 4)],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [candidate],
+      "What is adaptive failover routing?",
+    );
+
+    expect(result).toMatchObject({
+      supported: true,
+      reason: "CONCEPT_DEFINITION_SUPPORT",
+      supportedCandidateKeys: [retrievalAnswerabilityCandidateKey(candidate)],
+    });
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: true,
+      reason: "CONCEPT_DEFINITION_SUPPORT",
+      requiredAnswerCues: ["DEFINITION"],
+      matchedAnswerCues: ["DEFINITION"],
+    });
+  });
+
+  it("does not treat a later paragraph from the same concept as its definition", () => {
+    const candidate = hit(921, {
+      title: "Adaptive failover routing",
+      type: "concept",
+      trust: "MACHINE_SUPPORTED",
+      structuralOrder: 7,
+      headingPath: ["Adaptive failover routing", "Operations"],
+      excerpt:
+        "The dashboard records latency and availability for adaptive failover routing.",
+      contributions: [contribution("vector", 0.91, 1)],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [candidate],
+      "What is adaptive failover routing?",
+    );
+
+    expect(result.supported).toBe(false);
+  });
+
+  it("does not grant definition support to a non-concept introductory document", () => {
+    const candidate = hit(922, {
+      title: "Adaptive failover routing",
+      type: "dashboard",
+      trust: "HUMAN_REVIEWED",
+      structuralOrder: 2,
+      headingPath: ["Adaptive failover routing"],
+      excerpt:
+        "The dashboard records latency and availability for adaptive failover routing.",
+      contributions: [contribution("vector", 0.92, 1)],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [candidate],
+      "What is adaptive failover routing?",
+    );
+
+    expect(result.supported).toBe(false);
   });
 
   it("rejects a topical definition when the query asks for an avoidance condition, even on a direct channel", () => {

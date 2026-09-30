@@ -61,6 +61,7 @@ export type PassageSupportReason =
   | "PASSAGE_TEXT_SUPPORT"
   | "PASSAGE_CUE_SUPPORT"
   | "CLAIM_RELATION_SUPPORT"
+  | "CONCEPT_DEFINITION_SUPPORT"
   | "NO_CONCRETE_PASSAGE"
   | "ANSWER_CUE_MISMATCH"
   | "PASSAGE_SUPPORT_NOT_DEMONSTRATED";
@@ -691,6 +692,49 @@ function isSupportEligibleProposition(hit: SearchHit): boolean {
   );
 }
 
+function isIntroductoryConceptDefinition(
+  hit: SearchHit,
+  excerpt: string,
+  query: string,
+  required: readonly PassageAnswerCue[],
+): boolean {
+  if (
+    required.length !== 1 ||
+    required[0] !== "DEFINITION" ||
+    hit.lifecycle !== "ACTIVE" ||
+    !["MACHINE_SUPPORTED", "HUMAN_REVIEWED", "ATTESTED"].includes(hit.trust) ||
+    hit.type.trim().toLocaleLowerCase("en-US") !== "concept" ||
+    hit.unitType !== "PARAGRAPH" ||
+    !Number.isSafeInteger(hit.structuralOrder) ||
+    (hit.structuralOrder ?? Number.MAX_SAFE_INTEGER) > 2 ||
+    (hit.structuralOrder ?? -1) < 1 ||
+    !excerpt.trim()
+  ) {
+    return false;
+  }
+
+  const headingPath = hit.headingPath ?? [];
+  if (headingPath.length !== 1) return false;
+
+  const anchors = queryPredicateAnchors(query, ["DEFINITION"]);
+  if (anchors.length === 0) return false;
+
+  const scopeTokens = new Set([
+    ...semanticTokens(hit.title?.trim() || hit.document.title),
+    ...semanticTokens(headingPath[0] ?? ""),
+  ]);
+  const overlap = anchors.filter((token) => scopeTokens.has(token));
+  const requiredOverlap = Math.min(2, anchors.length);
+  const coverage = overlap.length / anchors.length;
+  const excerptTokenCount = normalizedAnswerabilityTokens(excerpt).length;
+
+  return (
+    overlap.length >= requiredOverlap &&
+    coverage >= 0.6 &&
+    excerptTokenCount >= 4
+  );
+}
+
 function globalRelationScopePresent(value: string): boolean {
   const normalized = normalizedMatchText(value).trim();
   return /\b(?:overall|global|globally|entire|system wide|across the system|across system|globalmente|en todo el sistema|de todo el sistema)\b/u.test(
@@ -1215,14 +1259,19 @@ export function verifyDeterministicPassageSupport(
     requiredAnswerCues
       .filter((cue) => cue !== "YES_NO")
       .every((cue) => boundedSupport.matchedAnswerCues.includes(cue));
-  const matchedAnswerCues = claimRelationSupport
-    ? [
-        ...new Set<PassageAnswerCue>([
-          ...boundedSupport.matchedAnswerCues,
-          "YES_NO",
-        ]),
-      ]
-    : boundedSupport.matchedAnswerCues;
+  const conceptDefinitionSupport = isIntroductoryConceptDefinition(
+    hit,
+    excerpt,
+    query,
+    requiredAnswerCues,
+  );
+  const matchedAnswerCues = [
+    ...new Set<PassageAnswerCue>([
+      ...boundedSupport.matchedAnswerCues,
+      ...(claimRelationSupport ? (["YES_NO"] as const) : []),
+      ...(conceptDefinitionSupport ? (["DEFINITION"] as const) : []),
+    ]),
+  ];
   const answerCueCoverage =
     requiredAnswerCues.length === 0
       ? 1
@@ -1284,6 +1333,8 @@ export function verifyDeterministicPassageSupport(
     reason = "PASSAGE_CUE_SUPPORT";
   } else if (claimRelationSupport) {
     reason = "CLAIM_RELATION_SUPPORT";
+  } else if (conceptDefinitionSupport) {
+    reason = "CONCEPT_DEFINITION_SUPPORT";
   } else if (
     requiredAnswerCues.length > 0 &&
     matchedAnswerCues.length < requiredAnswerCues.length
@@ -1297,7 +1348,8 @@ export function verifyDeterministicPassageSupport(
     supported:
       reason === "PASSAGE_TEXT_SUPPORT" ||
       reason === "PASSAGE_CUE_SUPPORT" ||
-      reason === "CLAIM_RELATION_SUPPORT",
+      reason === "CLAIM_RELATION_SUPPORT" ||
+      reason === "CONCEPT_DEFINITION_SUPPORT",
     reason,
     passageSource,
     passageCharacters: passage.length,

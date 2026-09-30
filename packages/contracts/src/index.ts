@@ -597,6 +597,7 @@ export const SearchHit = z.object({
   parentUnitId: z.string().uuid().optional(),
   parentUnitType: z.string().optional(),
   headingPath: z.array(z.string()).optional(),
+  structuralOrder: z.number().int().nonnegative().optional(),
   parentContext: z.string().optional(),
   document: z.object({
     externalId: z.string().nullable(),
