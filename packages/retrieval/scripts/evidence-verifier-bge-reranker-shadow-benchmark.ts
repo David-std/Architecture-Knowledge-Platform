@@ -31,9 +31,10 @@ type Case = {
 
 const MODEL = "onnx-community/bge-reranker-v2-m3-ONNX";
 const REVISION = "6f5ff65298512715a1e669753bc754d2bc8f367b";
-const BINARY_ENTAILMENT_MODEL = "MoritzLaurer/bge-m3-zeroshot-v2.0";
-const BINARY_ENTAILMENT_REVISION =
-  "9abf1c8aaeb82a2447809c20753ed0b106b76652";
+const BINARY_ENTAILMENT_MODEL =
+  "23donge/bge-m3-zeroshot-v2.0-onnx-int8";
+const BINARY_ENTAILMENT_REVISION = "84ceaae57bca4ccc6478cf87a8e49c076150098f";
+const BINARY_ENTAILMENT_UPSTREAM = "MoritzLaurer/bge-m3-zeroshot-v2.0";
 
 const CASES: Case[] = [
   {
@@ -698,7 +699,6 @@ try {
   await model.dispose?.();
 }
 
-
 const binaryLoadStarted = performance.now();
 const binaryTokenizer = await AutoTokenizer.from_pretrained(
   BINARY_ENTAILMENT_MODEL,
@@ -712,7 +712,7 @@ const binaryModel = await AutoModelForSequenceClassification.from_pretrained(
   BINARY_ENTAILMENT_MODEL,
   {
     revision: BINARY_ENTAILMENT_REVISION,
-    subfolder: "onnx",
+    subfolder: "",
     model_file_name: "model",
     dtype: "fp32",
     device: "cpu",
@@ -802,9 +802,7 @@ try {
           endOffset: bestWindow.end,
         },
         spanCorrect:
-          goldSpan === null
-            ? null
-            : bestWindow.text.includes(goldSpan.trim()),
+          goldSpan === null ? null : bestWindow.text.includes(goldSpan.trim()),
       });
     }
 
@@ -890,8 +888,7 @@ const binaryHoldoutMetrics =
     ? null
     : {
         threshold: binaryCalibrationCandidate.threshold,
-        minimumPolarityMargin:
-          binaryCalibrationCandidate.minimumPolarityMargin,
+        minimumPolarityMargin: binaryCalibrationCandidate.minimumPolarityMargin,
         ...metrics(
           binaryHoldout,
           binaryCalibrationCandidate.threshold,
@@ -903,6 +900,9 @@ const binaryEntailmentComparison = {
   model: {
     id: BINARY_ENTAILMENT_MODEL,
     revision: BINARY_ENTAILMENT_REVISION,
+    upstream: BINARY_ENTAILMENT_UPSTREAM,
+    artifactQuantization: "int8-dynamic",
+    provenance: "third-party-quantization-shadow-only",
     labels: ["entailment", "not_entailment"],
   },
   loadLatencyMs: binaryLoadLatencyMs,
