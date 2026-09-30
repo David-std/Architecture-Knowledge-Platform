@@ -744,19 +744,27 @@ function mandatoryOptionalityMatches(evidence: string, query: string): boolean {
   const queryTokens = orderedSemanticTokens(query);
   const requireIndex = queryTokens.indexOf("require");
   if (requireIndex < 0) return false;
-  const objectAnchors = [
+
+  const beforeAnchors = [
+    ...new Set(queryTokens.slice(0, requireIndex).filter(relationAnchorEligible)),
+  ];
+  const afterAnchors = [
     ...new Set(
       queryTokens.slice(requireIndex + 1).filter(relationAnchorEligible),
     ),
   ];
-  if (objectAnchors.length === 0) return false;
+  const targetAnchors =
+    beforeAnchors.length > 0 ? beforeAnchors : afterAnchors.slice(0, 1);
+  const contextAnchors =
+    beforeAnchors.length > 0 ? afterAnchors : afterAnchors.slice(1);
+  if (targetAnchors.length === 0) return false;
 
   const ordered = orderedSemanticTokens(evidence);
   const tokenSet = new Set(ordered);
-  const requiredOverlap = Math.min(2, objectAnchors.length);
+  if (!allAnchorsPresent(targetAnchors, tokenSet)) return false;
   if (
-    objectAnchors.filter((token) => tokenSet.has(token)).length <
-    requiredOverlap
+    contextAnchors.length > 0 &&
+    !contextAnchors.some((token) => tokenSet.has(token))
   ) {
     return false;
   }
@@ -768,13 +776,13 @@ function mandatoryOptionalityMatches(evidence: string, query: string): boolean {
   const absenceIndex = rawTokens.findIndex((token) =>
     /^(without|sin)$/u.test(token),
   );
-  const absenceSupportsObject =
+  const absenceSupportsTarget =
     absenceIndex >= 0 &&
-    objectAnchors.some((anchor) =>
+    targetAnchors.some((anchor) =>
       ordered.slice(absenceIndex + 1, absenceIndex + 6).includes(anchor),
     );
 
-  return optionality || absenceSupportsObject;
+  return optionality || absenceSupportsTarget;
 }
 
 function insufficientEstablishmentMatches(

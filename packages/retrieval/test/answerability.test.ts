@@ -1125,20 +1125,20 @@ describe("retrieval answerability", () => {
       title: "Safety assessment",
       type: "claim",
       excerpt:
-        "A gateway alone is insufficient to establish safety of the architecture.",
+        "A gateway alone is insufficient to establish security of the architecture.",
       contributions: [contribution("vector", 0.86, 5)],
     });
     const topical = hit(925, {
       title: "Gateway catalog",
       type: "claim",
       excerpt:
-        "Gateway components are listed in the safe architecture catalog.",
+        "Gateway components are listed in the secure architecture catalog.",
       contributions: [contribution("vector", 0.85, 6)],
     });
 
     const result = assessRetrievalAnswerability(
       [supported, topical],
-      "Does a gateway prove that the architecture is safe?",
+      "Does a gateway prove that the architecture is secure?",
     );
 
     expect(result.supportedCandidateKeys).toEqual([
