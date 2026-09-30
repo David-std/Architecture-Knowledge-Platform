@@ -434,7 +434,8 @@
     "packages/retrieval/src/assertion-recall.ts": [
       "\" | \"",
       "\"./support-verifier.js\"",
-      "\"lexical:assertion-recall:\""
+      "\"lexical:assertion-recall:\"",
+      "\"string\""
     ]
   }
 }
