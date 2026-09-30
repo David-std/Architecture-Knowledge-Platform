@@ -31,8 +31,7 @@ type Case = {
 
 const MODEL = "onnx-community/bge-reranker-v2-m3-ONNX";
 const REVISION = "6f5ff65298512715a1e669753bc754d2bc8f367b";
-const BINARY_ENTAILMENT_MODEL =
-  "23donge/bge-m3-zeroshot-v2.0-onnx-int8";
+const BINARY_ENTAILMENT_MODEL = "23donge/bge-m3-zeroshot-v2.0-onnx-int8";
 const BINARY_ENTAILMENT_REVISION = "84ceaae57bca4ccc6478cf87a8e49c076150098f";
 const BINARY_ENTAILMENT_UPSTREAM = "MoritzLaurer/bge-m3-zeroshot-v2.0";
 
@@ -938,6 +937,7 @@ const report = {
     holdout: CASES.filter((entry) => entry.split === "HOLDOUT").length,
   },
   comparisons,
+  binaryEntailmentComparison,
   promotionAllowed: false,
   productionDefaultChanged: false,
   enforcementEnabled: false,
