@@ -11,7 +11,8 @@ type Strategy =
   | "FULL_QUERY"
   | "CONTENT_QUERY"
   | "TITLE_RESIDUAL"
-  | "RELATION_RESIDUAL";
+  | "RELATION_RESIDUAL"
+  | "TOKEN_ALIGNMENT";
 
 type Candidate = {
   label: string;
@@ -391,7 +392,8 @@ function passageTextFor(
   passage: string,
   title: string,
 ): string {
-  if (strategy !== "RELATION_RESIDUAL") return passage;
+  if (strategy !== "RELATION_RESIDUAL" && strategy !== "TOKEN_ALIGNMENT")
+    return passage;
   const titleTokens = new Set(contentTokens(title));
   const passageTokens = contentTokens(passage);
   const residual = passageTokens.filter((token) => !titleTokens.has(token));
@@ -444,6 +446,33 @@ function cosine(left: readonly number[], right: readonly number[]): number {
     score += left[index]! * right[index]!;
   }
   return score;
+}
+
+async function tokenAlignment(
+  adapter: LocalSemanticEmbeddingAdapter,
+  queryText: string,
+  passageText: string,
+): Promise<{ score: number; floor: number; matches: number[] }> {
+  const queryTokens = contentTokens(queryText);
+  const passageTokens = contentTokens(passageText);
+  if (queryTokens.length === 0 || passageTokens.length === 0) {
+    return { score: -1, floor: -1, matches: [] };
+  }
+
+  const queryVectors = await adapter.embedQueries(queryTokens);
+  const passageVectors = await adapter.embedPassages(passageTokens);
+  const matches = queryVectors.map((queryVector) =>
+    Math.max(
+      ...passageVectors.map((passageVector) =>
+        cosine(queryVector, passageVector),
+      ),
+    ),
+  );
+  return {
+    score: matches.reduce((sum, value) => sum + value, 0) / matches.length,
+    floor: Math.min(...matches),
+    matches,
+  };
 }
 
 function metrics(
@@ -525,6 +554,7 @@ const strategies: Strategy[] = [
   "CONTENT_QUERY",
   "TITLE_RESIDUAL",
   "RELATION_RESIDUAL",
+  "TOKEN_ALIGNMENT",
 ];
 const adapter = new LocalSemanticEmbeddingAdapter({
   cacheDir: process.env.AKP_MODEL_CACHE_DIR,
@@ -550,14 +580,33 @@ try {
         const passageTexts = windows.map((window) =>
           passageTextFor(strategy, window.text, candidate.title),
         );
-        const passageVectors = await adapter.embedPassages(passageTexts);
         let bestIndex = 0;
         let bestScore = Number.NEGATIVE_INFINITY;
-        for (let index = 0; index < passageVectors.length; index += 1) {
-          const score = cosine(queryVector!, passageVectors[index]!);
-          if (score > bestScore) {
-            bestScore = score;
-            bestIndex = index;
+        let bestAlignmentFloor: number | null = null;
+        let bestAlignmentMatches: number[] | null = null;
+
+        if (strategy === "TOKEN_ALIGNMENT") {
+          for (let index = 0; index < passageTexts.length; index += 1) {
+            const alignment = await tokenAlignment(
+              adapter,
+              queryText,
+              passageTexts[index]!,
+            );
+            if (alignment.score > bestScore) {
+              bestScore = alignment.score;
+              bestIndex = index;
+              bestAlignmentFloor = alignment.floor;
+              bestAlignmentMatches = alignment.matches;
+            }
+          }
+        } else {
+          const passageVectors = await adapter.embedPassages(passageTexts);
+          for (let index = 0; index < passageVectors.length; index += 1) {
+            const score = cosine(queryVector!, passageVectors[index]!);
+            if (score > bestScore) {
+              bestScore = score;
+              bestIndex = index;
+            }
           }
         }
         const bestWindow = windows[bestIndex]!;
@@ -567,6 +616,8 @@ try {
           queryText,
           passageText: passageTexts[bestIndex]!,
           score: bestScore,
+          alignmentFloor: bestAlignmentFloor,
+          alignmentMatches: bestAlignmentMatches,
           directionCompatible: orderedAnchorsCompatible(
             testCase.query,
             bestWindow.text,
@@ -661,7 +712,7 @@ const report = {
   schemaVersion: 1,
   status: "MEASURED",
   evidenceBoundary:
-    "Public synthetic source-disjoint shadow evaluation of E5 relation alignment, including symmetric title-residual relation text. Embedding similarity is not evidence truth and is never promoted by this report.",
+    "Public synthetic source-disjoint shadow evaluation of E5 relation alignment, including symmetric title-residual text and token-level residual alignment. Embedding similarity is not evidence truth and is never promoted by this report.",
   model: adapter.descriptor,
   splitCounts: {
     calibration: CASES.filter((entry) => entry.split === "CALIBRATION").length,
