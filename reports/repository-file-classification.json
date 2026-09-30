@@ -3707,6 +3707,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "scripts/evidence-verifier-bge-reranker-shadow-benchmark.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "scripts/evidence-verifier-e5-relation-shadow-benchmark.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"

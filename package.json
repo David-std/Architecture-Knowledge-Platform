@@ -65,7 +65,8 @@
     "benchmark:evidence-admission": "tsx scripts/deterministic-evidence-admission-benchmark.ts",
     "benchmark:evidence-verifier-shadow": "tsx scripts/evidence-verifier-shadow-benchmark.ts",
     "benchmark:evidence-verifier-nli-shadow": "tsx scripts/evidence-verifier-nli-shadow-benchmark.ts",
-    "benchmark:evidence-verifier-e5-relation-shadow": "tsx scripts/evidence-verifier-e5-relation-shadow-benchmark.ts"
+    "benchmark:evidence-verifier-e5-relation-shadow": "tsx scripts/evidence-verifier-e5-relation-shadow-benchmark.ts",
+    "benchmark:evidence-verifier-bge-reranker-shadow": "tsx scripts/evidence-verifier-bge-reranker-shadow-benchmark.ts"
   },
   "devDependencies": {
     "@types/mime-types": "^3.0.1",

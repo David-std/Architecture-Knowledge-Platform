@@ -175,6 +175,13 @@ jobs:
           AKP_EVIDENCE_VERIFIER_E5_RELATION_SHADOW_REPORT=reports/ci/evidence-verifier-e5-relation-shadow-benchmark.json \
             pnpm benchmark:evidence-verifier-e5-relation-shadow \
             2>&1 | tee reports/ci/evidence-verifier-e5-relation-shadow-benchmark.log
+      - name: Measure multilingual BGE reranker in shadow mode
+        shell: bash
+        run: |
+          set -o pipefail
+          AKP_EVIDENCE_VERIFIER_BGE_RERANKER_SHADOW_REPORT=reports/ci/evidence-verifier-bge-reranker-shadow-benchmark.json \
+            pnpm benchmark:evidence-verifier-bge-reranker-shadow \
+            2>&1 | tee reports/ci/evidence-verifier-bge-reranker-shadow-benchmark.log
       - name: Execute pinned multilingual semantic retrieval end to end
         shell: bash
         run: |
