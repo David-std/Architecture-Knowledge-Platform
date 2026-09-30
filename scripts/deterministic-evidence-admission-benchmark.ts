@@ -186,7 +186,8 @@ const CASES: AdmissionCase[] = [
       {
         label: "migration-topic",
         title: "Migration history",
-        passage: "The migration was completed after the final verification run.",
+        passage:
+          "The migration was completed after the final verification run.",
       },
     ],
     goldLabels: [],
@@ -247,7 +248,9 @@ const rows = CASES.map((entry) => {
     falseAbstention: expectedAnswer && selectedGold.length === 0,
     wrongSelection: selectedWrong.length > 0,
     supportSelectionPrecision:
-      selectedLabels.length === 0 ? null : selectedGold.length / selectedLabels.length,
+      selectedLabels.length === 0
+        ? null
+        : selectedGold.length / selectedLabels.length,
   };
 });
 
@@ -255,8 +258,12 @@ function metrics(tier: AdmissionCase["tier"]) {
   const scoped = rows.filter((row) => row.tier === tier);
   const positives = scoped.filter((row) => row.goldLabels.length > 0);
   const negatives = scoped.filter((row) => row.goldLabels.length === 0);
-  const selected = scoped.flatMap((row) => row.selectedLabels.map((label) => ({ row, label })));
-  const selectedGold = selected.filter(({ row, label }) => row.goldLabels.includes(label));
+  const selected = scoped.flatMap((row) =>
+    row.selectedLabels.map((label) => ({ row, label })),
+  );
+  const selectedGold = selected.filter(({ row, label }) =>
+    row.goldLabels.includes(label),
+  );
   return {
     cases: scoped.length,
     positiveCases: positives.length,
@@ -265,12 +272,14 @@ function metrics(tier: AdmissionCase["tier"]) {
     falseAcceptanceRate:
       negatives.length === 0
         ? 0
-        : negatives.filter((row) => row.falseAcceptance).length / negatives.length,
+        : negatives.filter((row) => row.falseAcceptance).length /
+          negatives.length,
     falseAbstentions: positives.filter((row) => row.falseAbstention).length,
     falseAbstentionRate:
       positives.length === 0
         ? 0
-        : positives.filter((row) => row.falseAbstention).length / positives.length,
+        : positives.filter((row) => row.falseAbstention).length /
+          positives.length,
     wrongSelections: scoped.filter((row) => row.wrongSelection).length,
     supportSelectionPrecision:
       selected.length === 0 ? 1 : selectedGold.length / selected.length,
