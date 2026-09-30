@@ -771,9 +771,7 @@ function mandatoryOptionalityMatches(evidence: string, query: string): boolean {
   const absenceSupportsObject =
     absenceIndex >= 0 &&
     objectAnchors.some((anchor) =>
-      ordered
-        .slice(absenceIndex + 1, absenceIndex + 6)
-        .includes(anchor),
+      ordered.slice(absenceIndex + 1, absenceIndex + 6).includes(anchor),
     );
 
   return optionality || absenceSupportsObject;
@@ -788,7 +786,9 @@ function insufficientEstablishmentMatches(
   if (predicateIndex < 0) return false;
 
   const subjectAnchors = [
-    ...new Set(queryTokens.slice(0, predicateIndex).filter(relationAnchorEligible)),
+    ...new Set(
+      queryTokens.slice(0, predicateIndex).filter(relationAnchorEligible),
+    ),
   ];
   const objectAnchors = [
     ...new Set(
