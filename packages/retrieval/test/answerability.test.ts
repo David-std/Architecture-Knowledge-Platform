@@ -133,10 +133,7 @@ describe("retrieval answerability", () => {
       contributions: [contribution("vector", 0.91, 1)],
     });
 
-    const result = assessRetrievalAnswerability(
-      [direct],
-      "Can NEXO use QARO?",
-    );
+    const result = assessRetrievalAnswerability([direct], "Can NEXO use QARO?");
 
     expect(result).toMatchObject({
       supported: true,

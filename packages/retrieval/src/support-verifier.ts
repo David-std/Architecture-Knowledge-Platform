@@ -671,8 +671,7 @@ function genericYesNoRelationRolesMatch(
 ): boolean {
   const queryTokens = orderedSemanticTokens(query).filter(
     (token) =>
-      !ANSWERABILITY_STOPWORDS.has(token) &&
-      !QUESTION_SHAPE_TOKENS.has(token),
+      !ANSWERABILITY_STOPWORDS.has(token) && !QUESTION_SHAPE_TOKENS.has(token),
   );
   if (queryTokens.length < 3) return false;
 
