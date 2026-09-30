@@ -1001,6 +1001,222 @@ async function evaluateBinaryCases(
   return observations;
 }
 
+async function evaluateBinaryTopicBridgeCases() {
+  const observations = [];
+  for (const testCase of CASES) {
+    const candidates = [];
+    for (const candidate of testCase.candidates) {
+      const hypotheses = shadowRelationHypothesisCandidates(
+        testCase.query,
+        candidate.title,
+      );
+      const windows = sentenceWindows(candidate.passage);
+      let bestIndex = 0;
+      let bestScore = 0;
+      let bestPassageScore = 0;
+      let bestPolarityMargin = 0;
+      let bestPassagePolarityMargin = 0;
+      let bestPolarityConsistent = false;
+      let selectedHypothesisSource: string | null = null;
+      let selectedPositiveHypothesis: string | null = null;
+      let selectedNegativeHypothesis: string | null = null;
+      let selectedAnswerPolarity: "POSITIVE" | "NEGATIVE" | null = null;
+
+      for (const hypothesis of hypotheses) {
+        for (let index = 0; index < windows.length; index += 1) {
+          const window = windows[index]!;
+          const topicalPremise = `Topic: ${candidate.title}. Evidence: ${window.text}`;
+          const [
+            passagePositive,
+            passageNegative,
+            topicalPositive,
+            topicalNegative,
+          ] = await Promise.all([
+            binaryEntailmentScore(window.text, hypothesis.positive),
+            binaryEntailmentScore(window.text, hypothesis.negative),
+            binaryEntailmentScore(topicalPremise, hypothesis.positive),
+            binaryEntailmentScore(topicalPremise, hypothesis.negative),
+          ]);
+          const passageScore = Math.max(passagePositive, passageNegative);
+          const score = Math.max(topicalPositive, topicalNegative);
+          const passagePolarity =
+            passagePositive >= passageNegative ? "POSITIVE" : "NEGATIVE";
+          const answerPolarity =
+            topicalPositive >= topicalNegative ? "POSITIVE" : "NEGATIVE";
+          const polarityMargin = Math.abs(topicalPositive - topicalNegative);
+          const passagePolarityMargin = Math.abs(
+            passagePositive - passageNegative,
+          );
+          const polarityConsistent = passagePolarity === answerPolarity;
+
+          if (
+            score > bestScore ||
+            (score === bestScore && passageScore > bestPassageScore)
+          ) {
+            bestScore = score;
+            bestPassageScore = passageScore;
+            bestPolarityMargin = polarityMargin;
+            bestPassagePolarityMargin = passagePolarityMargin;
+            bestPolarityConsistent = polarityConsistent;
+            bestIndex = index;
+            selectedHypothesisSource = hypothesis.source;
+            selectedPositiveHypothesis = hypothesis.positive;
+            selectedNegativeHypothesis = hypothesis.negative;
+            selectedAnswerPolarity = answerPolarity;
+          }
+        }
+      }
+
+      const bestWindow = windows[bestIndex]!;
+      const goldSpan = candidate.goldSpan ?? null;
+      candidates.push({
+        label: candidate.label,
+        score: bestScore,
+        passageScore: bestPassageScore,
+        polarityMargin: bestPolarityMargin,
+        passagePolarityMargin: bestPassagePolarityMargin,
+        polarityConsistent: bestPolarityConsistent,
+        directionCompatible:
+          hypotheses.length > 0 &&
+          orderedAnchorsCompatible(testCase.query, bestWindow.text),
+        selectedHypothesisSource,
+        selectedPositiveHypothesis,
+        selectedNegativeHypothesis,
+        selectedAnswerPolarity,
+        bestSpan: {
+          text: bestWindow.text,
+          startOffset: bestWindow.start,
+          endOffset: bestWindow.end,
+        },
+        spanCorrect:
+          goldSpan === null ? null : bestWindow.text.includes(goldSpan.trim()),
+      });
+    }
+
+    observations.push({
+      id: testCase.id,
+      split: testCase.split,
+      family: testCase.family,
+      query: testCase.query,
+      goldLabels: testCase.goldLabels,
+      candidates,
+    });
+  }
+  return observations;
+}
+
+function topicBridgeMetrics(
+  observations: Awaited<ReturnType<typeof evaluateBinaryTopicBridgeCases>>,
+  threshold: number,
+  minimumPassageScore: number,
+) {
+  return metrics(
+    observations.map((entry) => ({
+      ...entry,
+      candidates: entry.candidates.map((candidate) => ({
+        ...candidate,
+        directionCompatible:
+          candidate.directionCompatible &&
+          candidate.polarityConsistent &&
+          candidate.passageScore >= minimumPassageScore,
+      })),
+    })),
+    threshold,
+    0,
+  );
+}
+
+function calibrateBinaryTopicBridge(
+  observations: Awaited<ReturnType<typeof evaluateBinaryTopicBridgeCases>>,
+) {
+  const calibration = observations.filter(
+    (entry) => entry.split === "CALIBRATION",
+  );
+  const holdout = observations.filter((entry) => entry.split === "HOLDOUT");
+  const thresholds = [
+    ...new Set([
+      0.1,
+      0.2,
+      0.3,
+      0.4,
+      0.5,
+      0.6,
+      0.7,
+      0.8,
+      0.9,
+      ...calibration.flatMap((entry) =>
+        entry.candidates.map((candidate) => Number(candidate.score.toFixed(6))),
+      ),
+    ]),
+  ].sort((left, right) => left - right);
+  const passageFloors = [
+    ...new Set([
+      0,
+      0.1,
+      0.2,
+      0.3,
+      0.4,
+      0.5,
+      0.6,
+      0.7,
+      0.8,
+      0.9,
+      ...calibration.flatMap((entry) =>
+        entry.candidates.map((candidate) =>
+          Number(candidate.passageScore.toFixed(6)),
+        ),
+      ),
+    ]),
+  ].sort((left, right) => left - right);
+
+  const calibrationMetrics = thresholds.flatMap((threshold) =>
+    passageFloors.map((minimumPassageScore) => ({
+      threshold,
+      minimumPassageScore,
+      ...topicBridgeMetrics(calibration, threshold, minimumPassageScore),
+    })),
+  );
+  const calibrationCandidate =
+    calibrationMetrics
+      .filter(
+        (entry) =>
+          entry.falseAcceptances === 0 &&
+          entry.falseAbstentions === 0 &&
+          entry.wrongSelections === 0 &&
+          entry.supportSelectionPrecision === 1 &&
+          entry.spanAccuracy === 1,
+      )
+      .sort(
+        (left, right) =>
+          right.threshold - left.threshold ||
+          right.minimumPassageScore - left.minimumPassageScore,
+      )[0] ?? null;
+  const holdoutMetrics =
+    calibrationCandidate === null
+      ? null
+      : {
+          threshold: calibrationCandidate.threshold,
+          minimumPassageScore: calibrationCandidate.minimumPassageScore,
+          ...topicBridgeMetrics(
+            holdout,
+            calibrationCandidate.threshold,
+            calibrationCandidate.minimumPassageScore,
+          ),
+        };
+
+  return {
+    calibrationCandidate,
+    holdoutMetrics,
+    holdoutPassesAcceptance:
+      holdoutMetrics !== null &&
+      holdoutMetrics.falseAcceptances === 0 &&
+      holdoutMetrics.falseAbstentions === 0 &&
+      holdoutMetrics.wrongSelections === 0 &&
+      holdoutMetrics.supportSelectionPrecision === 1 &&
+      holdoutMetrics.spanAccuracy === 1,
+  };
+}
+
 function calibrateBinaryObservations(
   observations: Awaited<ReturnType<typeof evaluateBinaryCases>>,
 ) {
@@ -1195,6 +1411,9 @@ let binaryObservations: Awaited<ReturnType<typeof evaluateBinaryCases>>;
 let binaryHypothesisSweepObservations: Awaited<
   ReturnType<typeof evaluateBinaryCases>
 >;
+let binaryTopicBridgeObservations: Awaited<
+  ReturnType<typeof evaluateBinaryTopicBridgeCases>
+>;
 try {
   binaryObservations = await evaluateBinaryCases((testCase, candidate) => {
     const hypothesis = buildEvidenceRelationHypotheses(
@@ -1209,6 +1428,7 @@ try {
     (testCase, candidate) =>
       shadowRelationHypothesisCandidates(testCase.query, candidate.title),
   );
+  binaryTopicBridgeObservations = await evaluateBinaryTopicBridgeCases();
 } finally {
   await binaryModel.dispose?.();
 }
@@ -1219,6 +1439,9 @@ const binarySweepCalibrationResult = calibrateBinaryObservations(
 );
 const binarySweepScoreOnlyMidpoint = scoreOnlyMidpointCalibration(
   binaryHypothesisSweepObservations,
+);
+const binaryTopicBridgeCalibrationResult = calibrateBinaryTopicBridge(
+  binaryTopicBridgeObservations,
 );
 
 const binaryEntailmentComparison = {
@@ -1249,11 +1472,22 @@ const binaryHypothesisSweepComparison = {
   observations: binaryHypothesisSweepObservations,
 };
 
+const binaryTopicBridgeComparison = {
+  model: binaryEntailmentComparison.model,
+  hypothesisStrategy:
+    "shadow-only title-as-topic bridge; passage-only score floor and answer-polarity consistency are mandatory",
+  calibrationCandidate: binaryTopicBridgeCalibrationResult.calibrationCandidate,
+  holdoutMetrics: binaryTopicBridgeCalibrationResult.holdoutMetrics,
+  holdoutPassesAcceptance:
+    binaryTopicBridgeCalibrationResult.holdoutPassesAcceptance,
+  observations: binaryTopicBridgeObservations,
+};
+
 const report = {
-  schemaVersion: 5,
+  schemaVersion: 6,
   status: "MEASURED",
   evidenceBoundary:
-    "Public synthetic source-disjoint shadow evaluation of multilingual evidence signals: reranker relevance/contrast plus a pinned multilingual binary entailment model. A separate shadow-only fallback hypothesis sweep isolates missing parser coverage without replacing hypotheses already produced by the production parser. The report includes both the existing score-plus-margin grid and an auditable score-only midpoint boundary derived only from calibration labels, then frozen for holdout. No signal is evidence truth or promoted by this report.",
+    "Public synthetic source-disjoint shadow evaluation of multilingual evidence signals: reranker relevance/contrast plus a pinned multilingual binary entailment model. A separate shadow-only fallback hypothesis sweep isolates missing parser coverage without replacing hypotheses already produced by the production parser. A title-as-topic bridge is measured separately and cannot admit evidence unless the passage-only entailment score clears an independently calibrated floor with consistent answer polarity. All thresholds are derived only from calibration labels and frozen for holdout. No signal is evidence truth or promoted by this report.",
   model: {
     id: MODEL,
     revision: REVISION,
@@ -1270,6 +1504,7 @@ const report = {
   comparisons,
   binaryEntailmentComparison,
   binaryHypothesisSweepComparison,
+  binaryTopicBridgeComparison,
   promotionAllowed: false,
   productionDefaultChanged: false,
   enforcementEnabled: false,
