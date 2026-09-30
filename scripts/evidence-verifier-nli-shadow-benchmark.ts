@@ -526,9 +526,7 @@ const comparisons = modelRuns.map((modelRun) => {
       0.7,
       0.8,
       0.9,
-      ...observedCalibrationMargins.map((margin) =>
-        Number(margin.toFixed(6)),
-      ),
+      ...observedCalibrationMargins.map((margin) => Number(margin.toFixed(6))),
     ]),
   ].sort((left, right) => left - right);
 
