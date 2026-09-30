@@ -299,6 +299,40 @@ const CASES: ShadowCase[] = [
     goldLabels: ["single-purpose-change-reason"],
   },
   {
+    id: "spanish-yes-no-direct-relation",
+    split: "HOLDOUT",
+    query: "¿Puede VELA usar RINO?",
+    candidates: [
+      {
+        label: "vela-uses-rino",
+        title: "VELA integration",
+        passage: "VELA puede usar RINO para entregar mensajes.",
+        vectorRank: 4,
+      },
+      {
+        label: "vela-rino-catalog",
+        title: "VELA and RINO catalog",
+        passage: "VELA y RINO figuran en informes de operación separados.",
+        vectorRank: 1,
+      },
+    ],
+    goldLabels: ["vela-uses-rino"],
+  },
+  {
+    id: "spanish-yes-no-reversed-relation",
+    split: "HOLDOUT",
+    query: "¿Puede DORA llamar a LENO?",
+    candidates: [
+      {
+        label: "reversed-call",
+        title: "LENO integration",
+        passage: "LENO puede llamar a DORA durante la conciliación.",
+        vectorRank: 2,
+      },
+    ],
+    goldLabels: [],
+  },
+  {
     id: "conditional-selection-rule",
     split: "HOLDOUT",
     query: "When should a bounded worker pool be chosen?",

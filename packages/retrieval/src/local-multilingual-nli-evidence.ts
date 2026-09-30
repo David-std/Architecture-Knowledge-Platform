@@ -120,10 +120,31 @@ function conjugateThirdPerson(verb: string): string {
   return `${verb}s`;
 }
 
+function spanishYesNoHypotheses(query: string): RelationHypotheses | null {
+  const trimmed = query.trim();
+  if (!trimmed.startsWith("¿") || !trimmed.endsWith("?")) return null;
+  const proposition = trimmed.slice(1, -1).trim();
+  if (
+    !proposition ||
+    /^(?:qué|que|cuál|cuales|cuáles|quién|quienes|quiénes|dónde|donde|cuándo|cuando|cómo|como|por\s+qué|por\s+que|cuánto|cuánta|cuántos|cuántas)(?=\s|$)/iu.test(
+      proposition,
+    )
+  ) {
+    return null;
+  }
+  const lowered =
+    proposition.charAt(0).toLocaleLowerCase("es") + proposition.slice(1);
+  return {
+    positive: `${proposition}.`,
+    negative: `No es cierto que ${lowered}.`,
+  };
+}
 function relationHypotheses(
   query: string,
   title?: string,
 ): RelationHypotheses | null {
+  const spanish = spanishYesNoHypotheses(query);
+  if (spanish) return spanish;
   const normalized = query
     .trim()
     .replace(/^¿\s*/u, "")

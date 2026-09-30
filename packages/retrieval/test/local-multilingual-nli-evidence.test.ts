@@ -43,6 +43,53 @@ describe("local multilingual NLI evidence verifier", () => {
     });
   });
 
+  it("forms Spanish yes/no polarity hypotheses without borrowing a title predicate", async () => {
+    const hypotheses: string[] = [];
+    const verifier = new LocalMultilingualNliEvidenceVerifier({
+      minimumEntailmentScore: 0.7,
+      minimumPolarityMargin: 0.2,
+      runtimeFactory: async () => ({
+        infer: async (_premise, hypothesis) => {
+          hypotheses.push(hypothesis);
+          return hypothesis.startsWith("No es cierto")
+            ? { entailment: 0.05, neutral: 0.15, contradiction: 0.8 }
+            : { entailment: 0.9, neutral: 0.07, contradiction: 0.03 };
+        },
+      }),
+    });
+
+    await expect(
+      verifier.verify({
+        ...input,
+        query: "¿Puede ALTO usar BRIO?",
+        title: "Unrelated catalog title",
+        passage: "ALTO puede usar BRIO para transportar eventos.",
+      }),
+    ).resolves.toMatchObject({
+      decision: "SUPPORTS",
+      reason: "LOCAL_MULTILINGUAL_NLI_POSITIVE_ANSWER_SUPPORT",
+    });
+    expect(hypotheses).toEqual([
+      "Puede ALTO usar BRIO.",
+      "No es cierto que puede ALTO usar BRIO.",
+    ]);
+  });
+
+  it("does not turn an open Spanish question into a yes/no hypothesis", async () => {
+    const runtimeFactory = vi.fn<LocalMultilingualNliRuntimeFactory>();
+    const verifier = new LocalMultilingualNliEvidenceVerifier({
+      minimumEntailmentScore: 0.7,
+      minimumPolarityMargin: 0.2,
+      runtimeFactory,
+    });
+    await expect(
+      verifier.verify({ ...input, query: "¿Por qué ALTO usa BRIO?" }),
+    ).resolves.toMatchObject({
+      decision: "INSUFFICIENT",
+      reason: "LOCAL_MULTILINGUAL_NLI_QUERY_SHAPE_UNSUPPORTED",
+    });
+    expect(runtimeFactory).not.toHaveBeenCalled();
+  });
   it("rejects a lexical distractor when both polarities remain neutral", async () => {
     const verifier = new LocalMultilingualNliEvidenceVerifier({
       minimumEntailmentScore: 0.6,
