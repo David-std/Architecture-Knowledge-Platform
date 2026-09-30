@@ -86,9 +86,9 @@ export interface LocalMultilingualNliEvidenceEvaluation {
   readonly reason: string;
 }
 
-interface RelationHypotheses {
-  positive: string;
-  negative: string;
+export interface EvidenceRelationHypotheses {
+  readonly positive: string;
+  readonly negative: string;
 }
 
 interface PassageWindow {
@@ -130,7 +130,9 @@ function conjugateThirdPerson(verb: string): string {
   return `${verb}s`;
 }
 
-function spanishYesNoHypotheses(query: string): RelationHypotheses | null {
+function spanishYesNoHypotheses(
+  query: string,
+): EvidenceRelationHypotheses | null {
   const trimmed = query.trim();
   if (!trimmed.startsWith("¿") || !trimmed.endsWith("?")) return null;
   const proposition = trimmed.slice(1, -1).trim();
@@ -149,10 +151,10 @@ function spanishYesNoHypotheses(query: string): RelationHypotheses | null {
     negative: `No es cierto que ${lowered}.`,
   };
 }
-function relationHypotheses(
+export function buildEvidenceRelationHypotheses(
   query: string,
   title?: string,
-): RelationHypotheses | null {
+): EvidenceRelationHypotheses | null {
   const spanish = spanishYesNoHypotheses(query);
   if (spanish) return spanish;
   const normalized = query
@@ -367,7 +369,10 @@ export class LocalMultilingualNliEvidenceVerifier implements QueryConditionedEvi
   async evaluate(
     input: QueryConditionedEvidenceVerifierInput,
   ): Promise<LocalMultilingualNliEvidenceEvaluation> {
-    const hypotheses = relationHypotheses(input.query, input.title);
+    const hypotheses = buildEvidenceRelationHypotheses(
+      input.query,
+      input.title,
+    );
     if (!hypotheses) {
       return {
         score: null,
