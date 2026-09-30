@@ -120,7 +120,8 @@ const CASES: Case[] = [
       {
         label: "catalog",
         title: "Filter catalog",
-        passage: "Request filters are listed in the compliance component catalog.",
+        passage:
+          "Request filters are listed in the compliance component catalog.",
       },
     ],
     goldLabels: ["insufficient"],
@@ -205,8 +206,7 @@ const CASES: Case[] = [
         title: "Ejecución de trabajos",
         passage:
           "Los trabajos pueden procesarse directamente sin scheduler; incorporarlo es una opción operativa.",
-        goldSpan:
-          "Los trabajos pueden procesarse directamente sin scheduler;",
+        goldSpan: "Los trabajos pueden procesarse directamente sin scheduler;",
       },
       {
         label: "scheduler-topic",
@@ -319,7 +319,9 @@ const CASES: Case[] = [
   },
 ];
 
-function sentenceWindows(passage: string): { text: string; start: number; end: number }[] {
+function sentenceWindows(
+  passage: string,
+): { text: string; start: number; end: number }[] {
   const windows: { text: string; start: number; end: number }[] = [];
   const matcher = /[^.!?;\n]+(?:[.!?;]|$)/gu;
   for (const match of passage.matchAll(matcher)) {
@@ -391,8 +393,12 @@ function metrics(
       (candidate) =>
         candidate.directionCompatible && candidate.score >= threshold,
     );
-    const acceptedGold = accepted.filter((candidate) => gold.has(candidate.label));
-    const acceptedWrong = accepted.filter((candidate) => !gold.has(candidate.label));
+    const acceptedGold = accepted.filter((candidate) =>
+      gold.has(candidate.label),
+    );
+    const acceptedWrong = accepted.filter(
+      (candidate) => !gold.has(candidate.label),
+    );
 
     selected += accepted.length;
     selectedGold += acceptedGold.length;
@@ -425,8 +431,7 @@ function metrics(
     selectedCandidates: selected,
     selectedGoldCandidates: selectedGold,
     wrongSelections: selectedWrong,
-    supportSelectionPrecision:
-      selected === 0 ? 1 : selectedGold / selected,
+    supportSelectionPrecision: selected === 0 ? 1 : selectedGold / selected,
     spanAccuracy:
       selectedGoldWithSpan === 0
         ? 1
