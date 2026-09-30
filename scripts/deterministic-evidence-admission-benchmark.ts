@@ -151,6 +151,28 @@ const CASES: AdmissionCase[] = [
     goldLabels: ["condition"],
   },
   {
+    id: "direct-decision-rule-relation",
+    tier: "CORE",
+    query: "Can ALTO notify BRIO?",
+    candidates: [
+      {
+        label: "direct-decision-rule",
+        title: "ALTO notification rule",
+        type: "decision-rule",
+        passage: "ALTO can notify BRIO after validation succeeds.",
+        vectorRank: 5,
+      },
+      {
+        label: "decision-rule-other-relation",
+        title: "ALTO and BRIO reporting rule",
+        type: "decision-rule",
+        passage: "ALTO and BRIO are listed in separate operational reports.",
+        vectorRank: 2,
+      },
+    ],
+    goldLabels: ["direct-decision-rule"],
+  },
+  {
     id: "direct-rationale",
     tier: "CORE",
     query: "Why do dependencies point toward domain policies?",
@@ -188,6 +210,23 @@ const CASES: AdmissionCase[] = [
         title: "Migration history",
         passage:
           "The migration was completed after the final verification run.",
+      },
+    ],
+    goldLabels: [],
+  },
+  {
+    id: "missing-contact-value",
+    tier: "CORE",
+    query: "What is the emergency support phone number?",
+    candidates: [
+      {
+        label: "support-topic",
+        title: "Emergency support",
+        type: "concept",
+        structuralOrder: 2,
+        headingPath: ["Emergency support"],
+        passage:
+          "Emergency support requests are handled through authenticated tickets.",
       },
     ],
     goldLabels: [],
