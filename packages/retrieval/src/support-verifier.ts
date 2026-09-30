@@ -759,8 +759,7 @@ function isIntroductoryConceptDefinition(
 
   const excerptTokenCount = normalizedAnswerabilityTokens(excerpt).length;
   return (
-    definitionIdentityMatches(hit, excerpt, query) &&
-    excerptTokenCount >= 4
+    definitionIdentityMatches(hit, excerpt, query) && excerptTokenCount >= 4
   );
 }
 
