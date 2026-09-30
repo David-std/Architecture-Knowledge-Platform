@@ -304,6 +304,66 @@ const CASES: AdmissionCase[] = [
     goldLabels: [],
   },
   {
+    id: "shared-queue-across-responsibilities",
+    tier: "SEMANTIC_FRONTIER",
+    query: "Can ingestion and delivery share a queue?",
+    candidates: [
+      {
+        label: "shared-queue",
+        title: "Distinct processing responsibilities",
+        passage:
+          "Ingestion and delivery remain separate responsibilities, although both can use the same durable queue.",
+      },
+      {
+        label: "queue-topic",
+        title: "Queue operations",
+        passage:
+          "Ingestion and delivery queue depths are monitored separately.",
+      },
+    ],
+    goldLabels: ["shared-queue"],
+  },
+  {
+    id: "optional-scheduler-in-spanish",
+    tier: "SEMANTIC_FRONTIER",
+    query: "¿Es obligatorio usar un scheduler para procesar trabajos?",
+    candidates: [
+      {
+        label: "scheduler-optional",
+        title: "Ejecución de trabajos",
+        passage:
+          "Los trabajos pueden procesarse directamente sin scheduler; incorporarlo es una opción operativa.",
+      },
+      {
+        label: "scheduler-topic",
+        title: "Scheduler",
+        passage:
+          "El scheduler registra tiempos de ejecución y métricas de los trabajos.",
+      },
+    ],
+    goldLabels: ["scheduler-optional"],
+  },
+  {
+    id: "component-does-not-prove-whole",
+    tier: "SEMANTIC_FRONTIER",
+    query: "Does middleware prove that an architecture is secure?",
+    candidates: [
+      {
+        label: "insufficient-component",
+        title: "Security assessment",
+        passage:
+          "Middleware alone is insufficient to establish security of the architecture.",
+      },
+      {
+        label: "thematic-component",
+        title: "Middleware catalog",
+        passage:
+          "Middleware components are listed in the secure architecture catalog.",
+      },
+    ],
+    goldLabels: ["insufficient-component"],
+  },
+  {
     id: "indirect-bilingual-responsibility",
     tier: "SEMANTIC_FRONTIER",
     query: "Does a single-purpose module reduce reasons to change?",
