@@ -5,6 +5,7 @@ import { performance } from "node:perf_hooks";
 import type { SearchHit } from "@akp/contracts";
 import {
   LOCAL_MULTILINGUAL_NLI_MDEBERTA_DESCRIPTOR,
+  LOCAL_MULTILINGUAL_NLI_MDEBERTA_FP32_DESCRIPTOR,
   LOCAL_MULTILINGUAL_NLI_MINILM_DESCRIPTOR,
   LocalMultilingualNliEvidenceVerifier,
   retrievalAnswerabilityCandidateKey,
@@ -357,6 +358,7 @@ const reportPath = path.resolve(
 const MODEL_DESCRIPTORS = [
   LOCAL_MULTILINGUAL_NLI_MINILM_DESCRIPTOR,
   LOCAL_MULTILINGUAL_NLI_MDEBERTA_DESCRIPTOR,
+  LOCAL_MULTILINGUAL_NLI_MDEBERTA_FP32_DESCRIPTOR,
 ] as const;
 
 const modelRuns = [];
