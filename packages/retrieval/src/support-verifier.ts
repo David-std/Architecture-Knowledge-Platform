@@ -733,6 +733,20 @@ function definitionIdentityMatches(
   });
 }
 
+function definitionExcerptAnchorsMatch(
+  excerpt: string,
+  query: string,
+): boolean {
+  const anchors = queryPredicateAnchors(query, ["DEFINITION"]);
+  if (anchors.length === 0) return false;
+  const excerptTokens = new Set(semanticTokens(excerpt));
+  const overlap = anchors.filter((token) => excerptTokens.has(token));
+  return (
+    overlap.length >= Math.min(2, anchors.length) &&
+    overlap.length / anchors.length >= 0.6
+  );
+}
+
 function isIntroductoryConceptDefinition(
   hit: SearchHit,
   excerpt: string,
@@ -1288,7 +1302,8 @@ export function verifyDeterministicPassageSupport(
       .filter((cue) => cue !== "YES_NO")
       .every((cue) => boundedSupport.matchedAnswerCues.includes(cue));
   const explicitDefinitionSupport =
-    boundedSupport.matchedAnswerCues.includes("DEFINITION");
+    boundedSupport.matchedAnswerCues.includes("DEFINITION") &&
+    definitionExcerptAnchorsMatch(excerpt, query);
   const definitionEvidenceEligible =
     !requiredAnswerCues.includes("DEFINITION") ||
     explicitDefinitionSupport ||
