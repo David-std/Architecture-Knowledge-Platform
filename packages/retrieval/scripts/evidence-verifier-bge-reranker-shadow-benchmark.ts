@@ -4,10 +4,7 @@ import { performance } from "node:perf_hooks";
 import { resolveLocalSemanticCacheDir } from "../src/index.js";
 
 type Split = "CALIBRATION" | "HOLDOUT";
-type Strategy =
-  | "PASSAGE_ONLY"
-  | "TITLE_PLUS_PASSAGE"
-  | "QUERY_MINUS_TITLE";
+type Strategy = "PASSAGE_ONLY" | "TITLE_PLUS_PASSAGE" | "QUERY_MINUS_TITLE";
 
 type Candidate = {
   label: string;
