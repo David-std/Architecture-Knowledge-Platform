@@ -629,16 +629,25 @@ function relationRolesMatch(
   relation: QueryRelationRoles,
   scopeTitle?: string,
 ): boolean {
-  const evidenceTokens = new Set(semanticTokens(evidence));
-  const subjectTokens = new Set([
-    ...evidenceTokens,
-    ...(scopeTitle ? semanticTokens(scopeTitle) : []),
-  ]);
-  return (
-    relation.predicates.some((token) => evidenceTokens.has(token)) &&
-    relation.subjectAnchors.some((token) => subjectTokens.has(token)) &&
-    relation.objectAnchors.some((token) => evidenceTokens.has(token))
-  );
+  const tokens = orderedSemanticTokens(evidence);
+  const titleTokens = new Set(scopeTitle ? semanticTokens(scopeTitle) : []);
+  for (let index = 0; index < tokens.length; index += 1) {
+    if (!relation.predicates.includes(tokens[index]!)) continue;
+    const before = new Set(tokens.slice(0, index));
+    const after = new Set(tokens.slice(index + 1));
+    const subjectMatched = relation.subjectAnchors.some(
+      (token) => before.has(token) || titleTokens.has(token),
+    );
+    const negationNearPredicate = tokens
+      .slice(Math.max(0, index - 6), index)
+      .some((token) => ["no", "not", "never", "nunca"].includes(token));
+    const objectMatched = relation.objectAnchors.some(
+      (token) =>
+        after.has(token) || (before.has(token) && negationNearPredicate),
+    );
+    if (subjectMatched && objectMatched) return true;
+  }
+  return false;
 }
 
 function isSupportEligibleClaim(hit: SearchHit): boolean {
@@ -1010,8 +1019,9 @@ function answerRequirementsMatch(
         ["define", "require", "dependency", "points"].includes(token),
       );
       const relationMatched =
-        relationTokens.length === 0 ||
-        relationTokens.some((token) => semanticWindow.has(token));
+        relationTokens.length === 0
+          ? passageAnswerCues(relationEvidence, ["YES_NO"]).includes("YES_NO")
+          : relationTokens.some((token) => semanticWindow.has(token));
       if (relationMatched) matched.add("YES_NO");
     }
   }
@@ -1215,9 +1225,37 @@ export function verifyDeterministicPassageSupport(
     boundedSupport.supported &&
     boundedSupport.semanticAnchorOverlap.length > 0;
 
+  // A yes/no answer must still be about every explicitly named acronym.
+  // The bounded evidence or its title may identify an entity; neighboring
+  // document sections cannot supply an absent entity.
+  const queryAcronyms = requiredAnswerCues.includes("YES_NO")
+    ? (query.match(/\b[A-Z][A-Z0-9]{1,}\b/gu) ?? [])
+    : [];
+  const evidenceScopeTokens = new Set(
+    normalizedAnswerabilityTokens(
+      `${hit.title?.trim() || hit.document.title?.trim() || ""} ${excerpt}`,
+    ),
+  );
+  const explicitAcronymsMatched = queryAcronyms.every((token) =>
+    evidenceScopeTokens.has(token.toLocaleLowerCase("en-US")),
+  );
+  const propositionType = ["claim", "rule", "decision-rule"].includes(
+    hit.type.trim().toLocaleLowerCase("en-US"),
+  );
+  const yesNoRelationEligible =
+    !requiredAnswerCues.includes("YES_NO") ||
+    propositionType ||
+    boundedSupport.relationRoleMatched;
   let reason: PassageSupportReason;
   if (!passage) {
     reason = "NO_CONCRETE_PASSAGE";
+  } else if (
+    !yesNoRelationEligible &&
+    requiredAnswerCues.length > matchedAnswerCues.length
+  ) {
+    reason = "ANSWER_CUE_MISMATCH";
+  } else if (!explicitAcronymsMatched || !yesNoRelationEligible) {
+    reason = "PASSAGE_SUPPORT_NOT_DEMONSTRATED";
   } else if (strongTextSupport) {
     reason = "PASSAGE_TEXT_SUPPORT";
   } else if (cueSemanticSupport) {

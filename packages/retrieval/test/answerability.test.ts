@@ -64,6 +64,49 @@ function contribution(
 }
 
 describe("retrieval answerability", () => {
+  it("does not infer a relation from a catalog sentence that lists both entities", () => {
+    const catalog = hit(904, {
+      title: "FINP and LEDG catalog",
+      type: "dashboard",
+      excerpt:
+        "FINP and LEDG have separate reports; the review requires owner approval.",
+      contributions: [contribution("vector", 0.91, 1)],
+    });
+    const result = assessRetrievalAnswerability(
+      [catalog],
+      "Does FINP require LEDG?",
+    );
+    expect(result.supported).toBe(false);
+  });
+  it("keeps catalog mentions and wrong entities exploratory for yes/no relations", () => {
+    const catalog = hit(901, {
+      title: "NEXO and QARO catalog",
+      type: "dashboard",
+      excerpt:
+        "NEXO and QARO have separate reports; the audit can add examples after review.",
+      contributions: [contribution("vector", 0.91, 1)],
+    });
+    const wrongEntity = hit(902, {
+      title: "VEXO integration",
+      type: "claim",
+      excerpt: "VEXO can use QARO for delivery.",
+      contributions: [contribution("vector", 0.9, 2)],
+    });
+    const direct = hit(903, {
+      title: "NEXO integration",
+      type: "claim",
+      excerpt: "NEXO can use QARO for delivery.",
+      contributions: [contribution("vector", 0.89, 3)],
+    });
+    const result = assessRetrievalAnswerability(
+      [catalog, wrongEntity, direct],
+      "Can NEXO use QARO?",
+    );
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(direct),
+    ]);
+  });
+
   it("accepts multiple answer-bearing passages even when the vector neighbourhood is dense", () => {
     const hits = [
       hit(1, {
