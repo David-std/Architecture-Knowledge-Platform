@@ -7,7 +7,11 @@ import {
 } from "../packages/retrieval/src/index.js";
 
 type Split = "CALIBRATION" | "HOLDOUT";
-type Strategy = "FULL_QUERY" | "CONTENT_QUERY" | "TITLE_RESIDUAL";
+type Strategy =
+  | "FULL_QUERY"
+  | "CONTENT_QUERY"
+  | "TITLE_RESIDUAL"
+  | "RELATION_RESIDUAL";
 
 type Candidate = {
   label: string;
@@ -382,6 +386,18 @@ function queryTextFor(
   return (residual.length >= 2 ? residual : queryTokens).join(" ");
 }
 
+function passageTextFor(
+  strategy: Strategy,
+  passage: string,
+  title: string,
+): string {
+  if (strategy !== "RELATION_RESIDUAL") return passage;
+  const titleTokens = new Set(contentTokens(title));
+  const passageTokens = contentTokens(passage);
+  const residual = passageTokens.filter((token) => !titleTokens.has(token));
+  return (residual.length >= 2 ? residual : passageTokens).join(" ");
+}
+
 function sentenceWindows(
   passage: string,
 ): { text: string; start: number; end: number }[] {
@@ -508,6 +524,7 @@ const strategies: Strategy[] = [
   "FULL_QUERY",
   "CONTENT_QUERY",
   "TITLE_RESIDUAL",
+  "RELATION_RESIDUAL",
 ];
 const adapter = new LocalSemanticEmbeddingAdapter({
   cacheDir: process.env.AKP_MODEL_CACHE_DIR,
@@ -530,9 +547,10 @@ try {
         );
         const windows = sentenceWindows(candidate.passage);
         const [queryVector] = await adapter.embedQueries([queryText]);
-        const passageVectors = await adapter.embedPassages(
-          windows.map((window) => window.text),
+        const passageTexts = windows.map((window) =>
+          passageTextFor(strategy, window.text, candidate.title),
         );
+        const passageVectors = await adapter.embedPassages(passageTexts);
         let bestIndex = 0;
         let bestScore = Number.NEGATIVE_INFINITY;
         for (let index = 0; index < passageVectors.length; index += 1) {
@@ -547,6 +565,7 @@ try {
         candidates.push({
           label: candidate.label,
           queryText,
+          passageText: passageTexts[bestIndex]!,
           score: bestScore,
           directionCompatible: orderedAnchorsCompatible(
             testCase.query,
@@ -642,7 +661,7 @@ const report = {
   schemaVersion: 1,
   status: "MEASURED",
   evidenceBoundary:
-    "Public synthetic source-disjoint shadow evaluation of E5 relation alignment. Embedding similarity is not evidence truth and is never promoted by this report.",
+    "Public synthetic source-disjoint shadow evaluation of E5 relation alignment, including symmetric title-residual relation text. Embedding similarity is not evidence truth and is never promoted by this report.",
   model: adapter.descriptor,
   splitCounts: {
     calibration: CASES.filter((entry) => entry.split === "CALIBRATION").length,
