@@ -11,6 +11,7 @@ const baselinePath = path.join(
 const monitoredFiles = [
   "packages/retrieval/src/support-verifier.ts",
   "packages/retrieval/src/query-planner.ts",
+  "packages/retrieval/src/assertion-recall.ts",
 ];
 
 function sourceLiterals(file, content) {

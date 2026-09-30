@@ -27,7 +27,9 @@ import {
 import {
   assessRetrievalAnswerability,
   assessRetrievalAnswerabilityWithVerifier,
-  normalizedAnswerabilityTokens,
+  assertionRecallSelectionReason,
+  boundedAssertionRecallQuery,
+  isAssertionRecallSelectionReason,
   buildContextPacket,
   buildContextPacketPair,
   ContextPacketBudgetError,
@@ -1430,12 +1432,6 @@ function mergeVectorRows(rows: readonly VectorSearchRow[]): VectorSearchRow[] {
   );
 }
 
-function boundedDisjunctiveLexicalQuery(query: string): string | null {
-  const terms = normalizedAnswerabilityTokens(query)
-    .filter((term) => term.length >= 3 && term.length <= 64)
-    .slice(0, 24);
-  return terms.length > 1 ? terms.join(" | ") : null;
-}
 export function internalAnswerabilityCandidateLimit(
   presentationLimit: number,
 ): number {
@@ -1890,6 +1886,7 @@ export async function queryKnowledge(
   if (channels.has("exact")) options.availableChannelSink?.add("exact");
 
   const lexicalRows: LexicalSearchRow[] = [];
+  const assertionRecallRows: LexicalSearchRow[] = [];
   if (channels.has("lexical") || channels.has("graph")) {
     for (const assisted of assistedQueries) {
       const queryLexical = (orTerms: string | null) =>
@@ -2025,18 +2022,8 @@ export async function queryKnowledge(
           ),
         );
       const strict = await queryLexical(null);
-      const disjunctiveTerms = boundedDisjunctiveLexicalQuery(assisted.query);
-      const fallback =
-        strict.rows.length === 0 && disjunctiveTerms
-          ? await queryLexical(disjunctiveTerms)
-          : null;
-      const resultRows = (fallback?.rows ?? strict.rows).map((row) =>
-        fallback
-          ? { ...row, match_reason: `lexical:disjunction:${row.match_reason}` }
-          : row,
-      );
       lexicalRows.push(
-        ...resultRows.map((row) =>
+        ...strict.rows.map((row) =>
           assisted.variant
             ? {
                 ...row,
@@ -2050,10 +2037,42 @@ export async function queryKnowledge(
             : row,
         ),
       );
+
+      const assertionTerms = boundedAssertionRecallQuery(assisted.query);
+      if (assertionTerms) {
+        const assertionRecall = await queryLexical(assertionTerms);
+        assertionRecallRows.push(
+          ...assertionRecall.rows.map((row) => {
+            const tagged = {
+              ...row,
+              match_reason: assertionRecallSelectionReason(row.match_reason),
+            };
+            return assisted.variant
+              ? {
+                  ...tagged,
+                  match_reason: `lexical:transformed:${assisted.variant.kind}:${tagged.match_reason}`,
+                  query_variant_kind: assisted.variant.kind,
+                  query_variant_ordinal: assisted.variant.ordinal,
+                  ...(assisted.trace
+                    ? { query_transform_trace: assisted.trace }
+                    : {}),
+                }
+              : tagged;
+          }),
+        );
+      }
     }
   }
+  const strictLexicalRows = mergeLexicalRows(lexicalRows).slice(
+    0,
+    internalCandidateLimit,
+  );
+  const strictLexicalKeys = new Set(strictLexicalRows.map(lexicalRowKey));
+  const directAssertionRecallRows = mergeLexicalRows(assertionRecallRows)
+    .filter((row) => !strictLexicalKeys.has(lexicalRowKey(row)))
+    .slice(0, internalCandidateLimit);
   const lexical = {
-    rows: mergeLexicalRows(lexicalRows).slice(0, internalCandidateLimit),
+    rows: [...strictLexicalRows, ...directAssertionRecallRows],
   };
   recordRetrievalCandidates("lexical", lexical.rows.length);
   if (channels.has("lexical")) {
@@ -2211,7 +2230,7 @@ export async function queryKnowledge(
       [
         ...exact.rows,
         ...lexical.rows.filter(
-          (row) => !row.match_reason?.startsWith("lexical:disjunction:"),
+          (row) => !isAssertionRecallSelectionReason(row.match_reason),
         ),
         ...vector.rows,
       ].map((row) => String(row.id)),
@@ -2983,7 +3002,12 @@ export async function queryKnowledge(
           });
         };
         addPprSeeds(exact.rows, retrievalPolicy.channels.EXACT.weight);
-        addPprSeeds(lexical.rows, retrievalPolicy.channels.LEXICAL.weight);
+        addPprSeeds(
+          lexical.rows.filter(
+            (row) => !isAssertionRecallSelectionReason(row.match_reason),
+          ),
+          retrievalPolicy.channels.LEXICAL.weight,
+        );
         addPprSeeds(vector.rows, retrievalPolicy.channels.VECTOR.weight);
 
         if (pprSeedWeights.size > 0) {
@@ -3224,11 +3248,22 @@ export async function queryKnowledge(
   // Answerability operates on a bounded internal pool independent from the
   // visual/API presentation limit. A small presentation request must not hide
   // a support-bearing semantic unit before passage verification runs.
-  const fused = (
-    await withSpan("retrieve.fuse", {}, async () =>
-      reciprocalRankFusion(rankedChannels),
+  const fusedRanked = await withSpan("retrieve.fuse", {}, async () =>
+    reciprocalRankFusion(rankedChannels),
+  );
+  const fusedPrimary = fusedRanked.slice(0, internalCandidateLimit);
+  const fusedPrimaryIds = new Set(fusedPrimary.map((item) => item.id));
+  const assertionRecallDocumentIds = new Set(
+    directAssertionRecallRows.map((row) => String(row.id)),
+  );
+  const fusedAssertionRecall = fusedRanked
+    .filter(
+      (item) =>
+        assertionRecallDocumentIds.has(item.id) &&
+        !fusedPrimaryIds.has(item.id),
     )
-  ).slice(0, internalCandidateLimit);
+    .slice(0, internalCandidateLimit);
+  const fused = [...fusedPrimary, ...fusedAssertionRecall];
   if (fused.length === 0) {
     await finalizeTruthSnapshot();
     return [];

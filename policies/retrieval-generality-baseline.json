@@ -430,6 +430,11 @@
       "/\\b(source|fuente|evidencia|verify|verifica|citation|cita)\\b/",
       "/\\b(ticket|issue|jira|linear|work item|workitem|workflow|process|task|handoff|claim|incident|incidente|tarea|flujo|proceso)\\b/u",
       "/\\b(workflow|flujo|pasos|proceso|ejecuta)\\b/"
+    ],
+    "packages/retrieval/src/assertion-recall.ts": [
+      "\" | \"",
+      "\"./support-verifier.js\"",
+      "\"lexical:assertion-recall:\""
     ]
   }
 }

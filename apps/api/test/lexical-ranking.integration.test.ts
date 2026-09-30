@@ -623,10 +623,11 @@ describe("bounded assertion recall", () => {
           {
             documentId: fixture.documents.alias,
             unitId: fixture.units.alias,
-            externalId: "CON-BLUE-WIDGET",
-            title: "Blue widget storage overview",
-            body: "A blue widget can use storage and a transport queue.",
-            type: "concept",
+            externalId: "PRO-BLUE-WIDGET",
+            title: "Blue widget storage engine practice guide",
+            body:
+              "In practice, a blue widget deployment guide uses a storage engine. The guide does not require the widget itself.",
+            type: "profile",
           },
         ] as const;
         for (const item of updates) {
@@ -664,12 +665,19 @@ describe("bounded assertion recall", () => {
         ).toBe(true);
         expect(
           hits.some((hit) => hit.documentId === fixture.documents.alias),
+        ).toBe(true);
+        expect(
+          hits
+            .find((hit) => hit.documentId === fixture.documents.alias)
+            ?.reasons.some((reason) =>
+              reason.includes("lexical:assertion-recall:"),
+            ),
         ).toBe(false);
         expect(
           hits
             .find((hit) => hit.documentId === fixture.documents.titleTerms)
             ?.reasons.some((reason) =>
-              reason.startsWith("lexical:disjunction:"),
+              reason.includes("lexical:assertion-recall:"),
             ),
         ).toBe(true);
         const answerability = assessRetrievalAnswerability(hits, query);
@@ -681,6 +689,7 @@ describe("bounded assertion recall", () => {
         ).toBe(true);
         expect(accepted).toContain("CLM-BLUE-WIDGET-STORAGE");
         expect(accepted).not.toContain("CLM-BLUE-WIDGET-QUEUE");
+        expect(accepted).not.toContain("PRO-BLUE-WIDGET");
       } finally {
         await cleanupLexical(db, fixture);
         await db.close();
