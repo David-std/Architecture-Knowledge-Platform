@@ -581,6 +581,7 @@ const RELATION_GRAMMAR_TOKENS = new Set([
   "used",
   "via",
   "through",
+  "that",
   "or",
   "either",
   "both",
