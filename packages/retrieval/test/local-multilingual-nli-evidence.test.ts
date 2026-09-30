@@ -68,6 +68,63 @@ describe("local multilingual NLI evidence verifier", () => {
     });
   });
 
+  it("uses candidate title scope to build a generic yes/no relation hypothesis", async () => {
+    const hypotheses: string[] = [];
+    const verifier = new LocalMultilingualNliEvidenceVerifier({
+      minimumEntailmentScore: 0.6,
+      minimumPolarityMargin: 0.2,
+      runtimeFactory: async () => ({
+        infer: async (_premise, hypothesis) => {
+          hypotheses.push(hypothesis);
+          return hypothesis.includes("reduces reasons to change")
+            ? { entailment: 0.9, neutral: 0.06, contradiction: 0.04 }
+            : { entailment: 0.05, neutral: 0.08, contradiction: 0.87 };
+        },
+      }),
+    });
+
+    await expect(
+      verifier.verify({
+        ...input,
+        query: "Does a single-purpose module reduce reasons to change?",
+        title: "Single-purpose modules",
+        passage:
+          "Un módulo con una sola responsabilidad concentra sus cambios en un único motivo de negocio.",
+      }),
+    ).resolves.toMatchObject({
+      decision: "SUPPORTS",
+      reason: "LOCAL_MULTILINGUAL_NLI_POSITIVE_ANSWER_SUPPORT",
+    });
+    expect(hypotheses).toContain(
+      "a single-purpose module reduces reasons to change.",
+    );
+    expect(hypotheses).toContain(
+      "a single-purpose module does not reduce reasons to change.",
+    );
+  });
+
+  it("refuses generic relation parsing when the candidate title scopes the object instead of the subject", async () => {
+    const runtimeFactory = vi.fn<LocalMultilingualNliRuntimeFactory>();
+    const verifier = new LocalMultilingualNliEvidenceVerifier({
+      minimumEntailmentScore: 0.6,
+      minimumPolarityMargin: 0.2,
+      runtimeFactory,
+    });
+
+    await expect(
+      verifier.verify({
+        ...input,
+        query: "Can ORCA call LUMA?",
+        title: "LUMA integration",
+        passage: "LUMA can call ORCA during reconciliation.",
+      }),
+    ).resolves.toEqual({
+      decision: "INSUFFICIENT",
+      reason: "LOCAL_MULTILINGUAL_NLI_QUERY_SHAPE_UNSUPPORTED",
+    });
+    expect(runtimeFactory).not.toHaveBeenCalled();
+  });
+
   it("refuses query shapes for which it cannot build a faithful hypothesis", async () => {
     const runtimeFactory = vi.fn<LocalMultilingualNliRuntimeFactory>();
     const verifier = new LocalMultilingualNliEvidenceVerifier({

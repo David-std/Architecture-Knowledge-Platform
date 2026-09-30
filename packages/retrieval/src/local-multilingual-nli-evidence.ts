@@ -120,22 +120,70 @@ function conjugateThirdPerson(verb: string): string {
   return `${verb}s`;
 }
 
-function relationHypotheses(query: string): RelationHypotheses | null {
+function relationHypotheses(
+  query: string,
+  title?: string,
+): RelationHypotheses | null {
   const normalized = query
     .trim()
     .replace(/^¿\s*/u, "")
     .replace(/[?？]+\s*$/u, "")
     .trim();
-  const match =
+  const known =
     /^(do|does|did|can|could|should|must|will|would)\s+(.+?)\s+(define|determine|require|govern|control|establish|set|prevent|allow)\s+(.+)$/iu.exec(
       normalized,
     );
-  if (!match) return null;
 
-  const auxiliary = match[1]!.toLocaleLowerCase("en-US");
-  const subject = match[2]!.trim();
-  const verb = match[3]!.toLocaleLowerCase("en-US");
-  const object = match[4]!.trim();
+  let auxiliary: string;
+  let subject: string;
+  let verb: string;
+  let object: string;
+
+  if (known) {
+    auxiliary = known[1]!.toLocaleLowerCase("en-US");
+    subject = known[2]!.trim();
+    verb = known[3]!.toLocaleLowerCase("en-US");
+    object = known[4]!.trim();
+  } else {
+    const generic =
+      /^(do|does|did|can|could|should|must|will|would)\s+(.+)$/iu.exec(
+        normalized,
+      );
+    if (!generic || !title?.trim()) return null;
+
+    auxiliary = generic[1]!.toLocaleLowerCase("en-US");
+    const remainderTokens = generic[2]!.trim().split(/\s+/u).filter(Boolean);
+    if (remainderTokens.length < 3) return null;
+
+    const normalizeToken = (value: string) => {
+      const token = value
+        .toLocaleLowerCase("en-US")
+        .replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}-]+$/gu, "");
+      return token.length > 4 && token.endsWith("s")
+        ? token.slice(0, -1)
+        : token;
+    };
+    const titleTokens = new Set(
+      title
+        .split(/\s+/u)
+        .map(normalizeToken)
+        .filter((token) => token.length >= 2),
+    );
+    let subjectEnd = -1;
+    for (let index = 0; index < remainderTokens.length; index += 1) {
+      if (titleTokens.has(normalizeToken(remainderTokens[index]!))) {
+        subjectEnd = index;
+      }
+    }
+    if (subjectEnd < 0 || subjectEnd >= remainderTokens.length - 2) {
+      return null;
+    }
+
+    subject = remainderTokens.slice(0, subjectEnd + 1).join(" ");
+    verb = normalizeToken(remainderTokens[subjectEnd + 1]!);
+    object = remainderTokens.slice(subjectEnd + 2).join(" ");
+    if (!verb || !object.trim()) return null;
+  }
 
   if (auxiliary === "do") {
     return {
@@ -288,7 +336,7 @@ export class LocalMultilingualNliEvidenceVerifier implements QueryConditionedEvi
   async verify(
     input: QueryConditionedEvidenceVerifierInput,
   ): Promise<QueryConditionedEvidenceVerification> {
-    const hypotheses = relationHypotheses(input.query);
+    const hypotheses = relationHypotheses(input.query, input.title);
     if (!hypotheses) {
       return {
         decision: "INSUFFICIENT",
