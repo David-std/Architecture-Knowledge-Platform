@@ -1047,8 +1047,6 @@ function answerRequirementsMatch(
   }
   let relationRoleMatched = false;
   if (required.includes("YES_NO")) {
-    const semanticWindow = new Set(semanticTokens(window));
-    const semanticQuery = semanticTokens(query);
     const relation = queryYesNoRelationRoles(query);
     if (relation) {
       relationRoleMatched = relationRolesMatch(
