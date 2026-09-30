@@ -667,29 +667,13 @@ function orderedSubsequencePresent(
 function genericYesNoRelationRolesMatch(
   evidence: string,
   query: string,
-  scopeTitle?: string,
 ): boolean {
   const queryTokens = orderedSemanticTokens(query).filter(
     (token) =>
       !ANSWERABILITY_STOPWORDS.has(token) && !QUESTION_SHAPE_TOKENS.has(token),
   );
   if (queryTokens.length < 3) return false;
-
-  const titleTokens = new Set(scopeTitle ? semanticTokens(scopeTitle) : []);
-  let scopedPrefixLength = 0;
-  while (
-    scopedPrefixLength < queryTokens.length - 2 &&
-    titleTokens.has(queryTokens[scopedPrefixLength]!)
-  ) {
-    scopedPrefixLength += 1;
-  }
-
-  const requiredLocalSequence = queryTokens.slice(scopedPrefixLength);
-  if (requiredLocalSequence.length < 2) return false;
-  return orderedSubsequencePresent(
-    orderedSemanticTokens(evidence),
-    requiredLocalSequence,
-  );
+  return orderedSubsequencePresent(orderedSemanticTokens(evidence), queryTokens);
 }
 
 function isSupportEligibleProposition(hit: SearchHit): boolean {
@@ -1060,7 +1044,6 @@ function answerRequirementsMatch(
       relationRoleMatched = genericYesNoRelationRolesMatch(
         relationEvidence,
         query,
-        relationScopeTitle,
       );
       if (relationRoleMatched) matched.add("YES_NO");
     }

@@ -125,23 +125,27 @@ describe("retrieval answerability", () => {
     expect(result.supported).toBe(false);
   });
 
-  it("lets the title scope only the subject for an unrecognized relation", () => {
-    const direct = hit(908, {
+  it("does not let title scope substitute for the subject of an unrecognized relation", () => {
+    const anaphoric = hit(908, {
       title: "NEXO integration",
       type: "rule",
       excerpt: "It can use QARO for delivery.",
       contributions: [contribution("vector", 0.91, 1)],
     });
-
-    const result = assessRetrievalAnswerability([direct], "Can NEXO use QARO?");
-
-    expect(result).toMatchObject({
-      supported: true,
-      supportedCandidateKeys: [retrievalAnswerabilityCandidateKey(direct)],
+    const otherSubject = hit(911, {
+      title: "NEXO integration",
+      type: "claim",
+      excerpt: "Reviewers can use QARO while checking NEXO reports.",
+      contributions: [contribution("vector", 0.9, 2)],
     });
-    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
-      boundedRelationRoleMatched: true,
-    });
+
+    const result = assessRetrievalAnswerability(
+      [anaphoric, otherSubject],
+      "Can NEXO use QARO?",
+    );
+
+    expect(result.supported).toBe(false);
+    expect(result.supportedCandidateKeys).toEqual([]);
   });
 
   it("keeps catalog mentions and wrong entities exploratory for yes/no relations", () => {
