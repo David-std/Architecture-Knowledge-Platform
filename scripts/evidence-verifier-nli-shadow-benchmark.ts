@@ -227,6 +227,92 @@ const CASES: ShadowCase[] = [
     ],
     goldLabels: [],
   },
+  {
+    id: "bilingual-functional-definition",
+    split: "HOLDOUT",
+    query: "What is adaptive failover routing?",
+    candidates: [
+      {
+        label: "adaptive-routing-definition",
+        title: "Adaptive failover routing",
+        passage:
+          "El enrutamiento adaptativo selecciona un destino saludable y conserva una alternativa determinista cuando falla la ruta principal.",
+        vectorRank: 4,
+      },
+      {
+        label: "adaptive-routing-dashboard",
+        title: "Adaptive routing dashboard",
+        passage:
+          "The dashboard records latency and availability for adaptive failover routing.",
+        vectorRank: 8,
+      },
+    ],
+    goldLabels: ["adaptive-routing-definition"],
+  },
+  {
+    id: "generic-relation-same-entities",
+    split: "HOLDOUT",
+    query: "Can NEXO use QARO?",
+    candidates: [
+      {
+        label: "nexo-uses-qaro",
+        title: "NEXO integration",
+        passage: "NEXO can use QARO for delivery.",
+        vectorRank: 3,
+      },
+      {
+        label: "nexo-qaro-catalog",
+        title: "NEXO and QARO catalog",
+        passage: "NEXO and QARO are documented in separate reports.",
+        vectorRank: 5,
+      },
+    ],
+    goldLabels: ["nexo-uses-qaro"],
+  },
+  {
+    id: "generic-relation-reversed",
+    split: "HOLDOUT",
+    query: "Can ORCA call LUMA?",
+    candidates: [
+      {
+        label: "reverse-call",
+        title: "LUMA integration",
+        passage: "LUMA can call ORCA during reconciliation.",
+        vectorRank: 2,
+      },
+    ],
+    goldLabels: [],
+  },
+  {
+    id: "indirect-responsibility-relation",
+    split: "HOLDOUT",
+    query: "Does a single-purpose module reduce reasons to change?",
+    candidates: [
+      {
+        label: "single-purpose-change-reason",
+        title: "Single-purpose modules",
+        passage:
+          "Un módulo con una sola responsabilidad concentra sus cambios en un único motivo de negocio.",
+        vectorRank: 7,
+      },
+    ],
+    goldLabels: ["single-purpose-change-reason"],
+  },
+  {
+    id: "conditional-selection-rule",
+    split: "HOLDOUT",
+    query: "When should a bounded worker pool be chosen?",
+    candidates: [
+      {
+        label: "bounded-worker-condition",
+        title: "Bounded worker pool selection",
+        passage:
+          "Choose a bounded worker pool when downstream capacity is limited and unbounded concurrency would overload the dependency.",
+        vectorRank: 5,
+      },
+    ],
+    goldLabels: ["bounded-worker-condition"],
+  },
 ];
 
 const reportPath = path.resolve(
@@ -416,7 +502,7 @@ const report = {
   schemaVersion: 2,
   status: "MEASURED",
   evidenceBoundary:
-    "Public synthetic bilingual calibration/holdout shadow comparison only. No threshold or verifier is promoted by this report.",
+    "Public synthetic bilingual calibration/holdout shadow comparison covering direct, negative, relational, definitional and conditional evidence. No threshold or verifier is promoted by this report.",
   splitCounts: {
     calibration: CASES.filter((entry) => entry.split === "CALIBRATION").length,
     holdout: CASES.filter((entry) => entry.split === "HOLDOUT").length,
