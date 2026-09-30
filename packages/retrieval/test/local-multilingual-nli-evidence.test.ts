@@ -43,6 +43,31 @@ describe("local multilingual NLI evidence verifier", () => {
     });
   });
 
+  it("exposes one-pass polarity diagnostics for calibration", async () => {
+    const verifier = new LocalMultilingualNliEvidenceVerifier({
+      minimumEntailmentScore: 0.7,
+      minimumPolarityMargin: 0.2,
+      runtimeFactory: async () => ({
+        infer: async (_premise, hypothesis) =>
+          hypothesis.includes("do not define")
+            ? { entailment: 0.9, neutral: 0.07, contradiction: 0.03 }
+            : { entailment: 0.2, neutral: 0.1, contradiction: 0.7 },
+      }),
+    });
+
+    await expect(verifier.evaluate(input)).resolves.toMatchObject({
+      score: 0.9,
+      oppositeScore: 0.2,
+      polarityMargin: 0.7,
+      direction: "NEGATIVE",
+      evidenceSpan: {
+        startOffset: expect.any(Number),
+        endOffset: expect.any(Number),
+      },
+      reason: "LOCAL_MULTILINGUAL_NLI_POLARITY_CANDIDATE",
+    });
+  });
+
   it("forms Spanish yes/no polarity hypotheses without borrowing a title predicate", async () => {
     const hypotheses: string[] = [];
     const verifier = new LocalMultilingualNliEvidenceVerifier({
