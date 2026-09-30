@@ -4,7 +4,10 @@ import { performance } from "node:perf_hooks";
 import { resolveLocalSemanticCacheDir } from "../src/index.js";
 
 type Split = "CALIBRATION" | "HOLDOUT";
-type Strategy = "PASSAGE_ONLY" | "TITLE_PLUS_PASSAGE";
+type Strategy =
+  | "PASSAGE_ONLY"
+  | "TITLE_PLUS_PASSAGE"
+  | "QUERY_MINUS_TITLE";
 
 type Candidate = {
   label: string;
@@ -480,7 +483,11 @@ async function scorePair(query: string, passage: string): Promise<number> {
   return sigmoid(logit);
 }
 
-const strategies: Strategy[] = ["PASSAGE_ONLY", "TITLE_PLUS_PASSAGE"];
+const strategies: Strategy[] = [
+  "PASSAGE_ONLY",
+  "TITLE_PLUS_PASSAGE",
+  "QUERY_MINUS_TITLE",
+];
 const comparisons = [];
 
 try {
@@ -501,7 +508,11 @@ try {
             strategy === "TITLE_PLUS_PASSAGE"
               ? `${candidate.title}: ${window.text}`
               : window.text;
-          const score = await scorePair(testCase.query, passage);
+          const queryScore = await scorePair(testCase.query, passage);
+          const score =
+            strategy === "QUERY_MINUS_TITLE"
+              ? queryScore - (await scorePair(candidate.title, window.text))
+              : queryScore;
           if (score > bestScore) {
             bestScore = score;
             bestIndex = index;
@@ -607,7 +618,7 @@ const report = {
   schemaVersion: 1,
   status: "MEASURED",
   evidenceBoundary:
-    "Public synthetic source-disjoint shadow evaluation of a multilingual cross-encoder reranker. Relevance score is not evidence truth and is never promoted by this report.",
+    "Public synthetic source-disjoint shadow evaluation of a multilingual cross-encoder reranker, including a query-vs-title contrastive lift. Relevance or lift is not evidence truth and is never promoted by this report.",
   model: {
     id: MODEL,
     revision: REVISION,
