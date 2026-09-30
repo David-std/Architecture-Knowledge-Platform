@@ -673,7 +673,10 @@ function genericYesNoRelationRolesMatch(
       !ANSWERABILITY_STOPWORDS.has(token) && !QUESTION_SHAPE_TOKENS.has(token),
   );
   if (queryTokens.length < 3) return false;
-  return orderedSubsequencePresent(orderedSemanticTokens(evidence), queryTokens);
+  return orderedSubsequencePresent(
+    orderedSemanticTokens(evidence),
+    queryTokens,
+  );
 }
 
 function isSupportEligibleProposition(hit: SearchHit): boolean {
