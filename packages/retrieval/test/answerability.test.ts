@@ -925,6 +925,37 @@ describe("retrieval answerability", () => {
     ).toBeGreaterThanOrEqual(0.4);
   });
 
+  it.each(["rule", "decision-rule"] as const)(
+    "applies the same bounded relation proof to support-eligible %s documents",
+    (type) => {
+      const proposition = hit(type === "rule" ? 909 : 910, {
+        title: "Local filters and system architecture",
+        type,
+        trust: "MACHINE_SUPPORTED",
+        externalId: type === "rule" ? "RUL-909" : "DRL-910",
+        excerpt:
+          "Local filters do not determine modules, boundaries, or global dependency direction.",
+        contributions: [contribution("vector", 0.88, 6)],
+      });
+
+      const result = assessRetrievalAnswerability(
+        [proposition],
+        "Do local filters define the overall system architecture?",
+      );
+
+      expect(result).toMatchObject({
+        supported: true,
+        supportedCandidateKeys: [
+          retrievalAnswerabilityCandidateKey(proposition),
+        ],
+      });
+      expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+        supported: true,
+        reason: "CLAIM_RELATION_SUPPORT",
+      });
+    },
+  );
+
   it("does not apply claim relation fallback to unreviewed claims", () => {
     const unreviewed = hit(43, {
       title: "Local pattern scope",

@@ -692,13 +692,15 @@ function genericYesNoRelationRolesMatch(
   );
 }
 
-function isSupportEligibleClaim(hit: SearchHit): boolean {
+function isSupportEligibleProposition(hit: SearchHit): boolean {
   return (
     hit.lifecycle === "ACTIVE" &&
     (hit.trust === "MACHINE_SUPPORTED" ||
       hit.trust === "HUMAN_REVIEWED" ||
       hit.trust === "ATTESTED") &&
-    hit.type.trim().toLocaleLowerCase("en-US") === "claim"
+    ["claim", "rule", "decision-rule"].includes(
+      hit.type.trim().toLocaleLowerCase("en-US"),
+    )
   );
 }
 
@@ -714,7 +716,7 @@ function atomicClaimRelationDiagnostics(
   excerpt: string,
   query: string,
 ): ClaimRelationDiagnostics {
-  const eligibleClaim = isSupportEligibleClaim(hit);
+  const eligibleClaim = isSupportEligibleProposition(hit);
   const relation = queryYesNoRelationRoles(query);
   const queryAnchors = queryPredicateAnchors(query, ["YES_NO"]);
   const excerptTokens = new Set(semanticTokens(excerpt));
