@@ -603,6 +603,7 @@ export const SearchHit = z.object({
     externalId: z.string().nullable(),
     path: z.string(),
     title: z.string(),
+    aliases: z.array(z.string()).optional(),
   }),
   revision: z.string(),
   title: z.string(),

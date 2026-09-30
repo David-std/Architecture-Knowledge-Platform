@@ -3271,7 +3271,7 @@ export async function queryKnowledge(
 
   const details = await db.pool.query(
     `
-    select d.id, d.space_id, d.vault_id, d.external_id, d.current_revision, d.path, d.title, d.type, d.layer,
+    select d.id, d.space_id, d.vault_id, d.external_id, d.current_revision, d.path, d.title, d.aliases, d.type, d.layer,
            d.trust_tier, d.lifecycle, d.body_cache,
            d.refresh_status,
            coalesce(
@@ -3555,6 +3555,7 @@ export async function queryKnowledge(
           externalId: row.external_id ? String(row.external_id) : null,
           path: String(row.path),
           title: String(row.title),
+          aliases: Array.isArray(row.aliases) ? row.aliases.map(String) : [],
         },
         revision: String(row.current_revision),
         title: String(row.title),

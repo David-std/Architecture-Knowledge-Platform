@@ -719,18 +719,36 @@ function isIntroductoryConceptDefinition(
   const anchors = queryPredicateAnchors(query, ["DEFINITION"]);
   if (anchors.length === 0) return false;
 
-  const scopeTokens = new Set([
-    ...semanticTokens(hit.title?.trim() || hit.document.title),
-    ...semanticTokens(headingPath[0] ?? ""),
-  ]);
+  const canonicalLabels = [
+    hit.title?.trim() || hit.document.title,
+    headingPath[0] ?? "",
+    ...(hit.document.aliases ?? []),
+  ].filter((value) => value.trim().length > 0);
+  const scopeTokens = new Set(canonicalLabels.flatMap(semanticTokens));
   const overlap = anchors.filter((token) => scopeTokens.has(token));
   const requiredOverlap = Math.min(2, anchors.length);
   const coverage = overlap.length / anchors.length;
+  const excerptTokens = new Set(semanticTokens(excerpt));
+  const conceptIdentityPresent = canonicalLabels.some((label) => {
+    const identityTokens = semanticTokens(label).filter(
+      (token) =>
+        token.length >= 3 &&
+        !ANSWERABILITY_STOPWORDS.has(token) &&
+        !QUESTION_SHAPE_TOKENS.has(token),
+    );
+    if (identityTokens.length === 0) return false;
+    const matched = identityTokens.filter((token) => excerptTokens.has(token));
+    return (
+      matched.length >= Math.min(2, identityTokens.length) &&
+      matched.length / identityTokens.length >= 0.6
+    );
+  });
   const excerptTokenCount = normalizedAnswerabilityTokens(excerpt).length;
 
   return (
     overlap.length >= requiredOverlap &&
     coverage >= 0.6 &&
+    conceptIdentityPresent &&
     excerptTokenCount >= 4
   );
 }

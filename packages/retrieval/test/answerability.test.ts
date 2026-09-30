@@ -23,6 +23,7 @@ function hit(
     structuralOrder?: number;
     headingPath?: string[];
     unitType?: string;
+    aliases?: string[];
   },
 ): SearchHit {
   const documentId = `11111111-1111-4111-8111-${String(idSuffix).padStart(12, "0")}`;
@@ -40,6 +41,7 @@ function hit(
       externalId: input.externalId ?? `public-fixture-${idSuffix}`,
       path: `docs/public-${idSuffix}.md`,
       title: input.title,
+      ...(input.aliases ? { aliases: input.aliases } : {}),
     },
     revision: "revision-1",
     title: input.title,
@@ -356,6 +358,7 @@ describe("retrieval answerability", () => {
       trust: "MACHINE_SUPPORTED",
       structuralOrder: 2,
       headingPath: ["Adaptive failover routing"],
+      aliases: ["enrutamiento adaptativo"],
       excerpt:
         "El enrutamiento adaptativo selecciona un destino saludable y conserva una alternativa determinista cuando falla la ruta principal.",
       contributions: [contribution("vector", 0.84, 4)],
@@ -377,6 +380,27 @@ describe("retrieval answerability", () => {
       requiredAnswerCues: ["DEFINITION"],
       matchedAnswerCues: ["DEFINITION"],
     });
+  });
+
+  it("does not treat a thematic introductory concept paragraph as a definition when it never names the concept", () => {
+    const candidate = hit(923, {
+      title: "Adaptive failover routing",
+      type: "concept",
+      trust: "MACHINE_SUPPORTED",
+      structuralOrder: 2,
+      headingPath: ["Adaptive failover routing"],
+      aliases: ["enrutamiento adaptativo"],
+      excerpt:
+        "Latency, availability, and error counters are recorded every minute for operations.",
+      contributions: [contribution("vector", 0.93, 1)],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [candidate],
+      "What is adaptive failover routing?",
+    );
+
+    expect(result.supported).toBe(false);
   });
 
   it("does not treat a later paragraph from the same concept as its definition", () => {
