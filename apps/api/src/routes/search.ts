@@ -3589,6 +3589,7 @@ export async function queryKnowledge(
           ? { graphProvenance: graphProvenanceByCandidate.get(item.id) }
           : {}),
         excerpt:
+          codeSupport ??
           structuralContext?.atomicExcerpt ??
           String(row.body_cache).slice(0, 1200),
         citations,
