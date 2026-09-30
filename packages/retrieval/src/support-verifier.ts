@@ -818,7 +818,7 @@ function passageWindows(passage: string, title?: string): PassageWindow[] {
   // refers back to its predecessor. For relation questions, the title may
   // identify the subject but cannot supply the predicate or object.
   const sentences = passage
-    .split(/(?<=[.!?;])\s+|\n+/u)
+    .split(/(?<=[.!?])\s+|\n+/u)
     .map((part) => part.trim())
     .filter(Boolean)
     .map((sentence) => sentence.slice(0, 900).trim());

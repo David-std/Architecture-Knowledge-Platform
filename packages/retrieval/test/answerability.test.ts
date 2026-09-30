@@ -359,6 +359,9 @@ describe("retrieval answerability", () => {
   it("accepts a bilingual architecture paraphrase without lowering the global overlap threshold", () => {
     const candidate = hit(33, {
       title: "Local patterns are not system architecture",
+      type: "claim",
+      trust: "MACHINE_SUPPORTED",
+      externalId: "CLM-33",
       excerpt:
         "Mediator y Facade no determinan el conjunto de módulos, límites ni la dirección global de dependencias.",
       contributions: [contribution("vector", 0.9, 1)],
