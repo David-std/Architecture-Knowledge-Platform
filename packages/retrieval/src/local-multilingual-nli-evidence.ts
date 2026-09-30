@@ -230,7 +230,7 @@ function relationHypotheses(
   };
 }
 
-function passageWindows(passage: string, title?: string): PassageWindow[] {
+function passageWindows(passage: string): PassageWindow[] {
   const windows: PassageWindow[] = [];
   const matcher = /[^.!?;\n]+(?:[.!?;]|$)/gu;
   for (const match of passage.matchAll(matcher)) {
@@ -244,7 +244,7 @@ function passageWindows(passage: string, title?: string): PassageWindow[] {
     const text = passage.slice(startOffset, endOffset);
     windows.push({
       text,
-      premise: title?.trim() ? `${title.trim()}: ${text}` : text,
+      premise: text,
       startOffset,
       endOffset,
     });
@@ -256,7 +256,7 @@ function passageWindows(passage: string, title?: string): PassageWindow[] {
     ? [
         {
           text,
-          premise: title?.trim() ? `${title.trim()}: ${text}` : text,
+          premise: text,
           startOffset,
           endOffset: startOffset + text.length,
         },
@@ -365,7 +365,7 @@ export class LocalMultilingualNliEvidenceVerifier implements QueryConditionedEvi
       };
     }
 
-    const windows = passageWindows(input.passage, input.title);
+    const windows = passageWindows(input.passage);
     if (windows.length === 0) {
       return {
         decision: "INSUFFICIENT",
