@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
-import { resolveLocalSemanticCacheDir } from "../packages/retrieval/src/index.js";
+import { resolveLocalSemanticCacheDir } from "../src/index.js";
 
 type Split = "CALIBRATION" | "HOLDOUT";
 type Strategy = "PASSAGE_ONLY" | "TITLE_PLUS_PASSAGE";

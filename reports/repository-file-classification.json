@@ -3252,6 +3252,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/retrieval/scripts/evidence-verifier-bge-reranker-shadow-benchmark.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/retrieval/scripts/local-agent-provider.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3703,11 +3708,6 @@
     },
     {
       "path": "scripts/event-concurrency-benchmark.ts",
-      "category": "PRODUCT_CODE",
-      "reason": "runtime, build or operational code"
-    },
-    {
-      "path": "scripts/evidence-verifier-bge-reranker-shadow-benchmark.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
