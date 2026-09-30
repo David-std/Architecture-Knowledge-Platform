@@ -3677,6 +3677,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "scripts/deterministic-evidence-admission-benchmark.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "scripts/document_intelligence_benchmark.py",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
