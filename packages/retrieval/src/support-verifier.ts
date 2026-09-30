@@ -692,6 +692,47 @@ function isSupportEligibleProposition(hit: SearchHit): boolean {
   );
 }
 
+function definitionIdentityMatches(
+  hit: SearchHit,
+  excerpt: string,
+  query: string,
+): boolean {
+  const anchors = queryPredicateAnchors(query, ["DEFINITION"]);
+  if (anchors.length === 0) return false;
+
+  const headingPath = hit.headingPath ?? [];
+  const canonicalLabels = [
+    hit.title?.trim() || hit.document.title,
+    headingPath[0] ?? "",
+    ...(hit.document.aliases ?? []),
+  ].filter((value) => value.trim().length > 0);
+  const scopeTokens = new Set(canonicalLabels.flatMap(semanticTokens));
+  const scopeOverlap = anchors.filter((token) => scopeTokens.has(token));
+  const requiredScopeOverlap = Math.min(2, anchors.length);
+  if (
+    scopeOverlap.length < requiredScopeOverlap ||
+    scopeOverlap.length / anchors.length < 0.6
+  ) {
+    return false;
+  }
+
+  const excerptTokens = new Set(semanticTokens(excerpt));
+  return canonicalLabels.some((label) => {
+    const identityTokens = semanticTokens(label).filter(
+      (token) =>
+        token.length >= 3 &&
+        !ANSWERABILITY_STOPWORDS.has(token) &&
+        !QUESTION_SHAPE_TOKENS.has(token),
+    );
+    if (identityTokens.length === 0) return false;
+    const matched = identityTokens.filter((token) => excerptTokens.has(token));
+    return (
+      matched.length >= Math.min(2, identityTokens.length) &&
+      matched.length / identityTokens.length >= 0.6
+    );
+  });
+}
+
 function isIntroductoryConceptDefinition(
   hit: SearchHit,
   excerpt: string,
@@ -716,39 +757,9 @@ function isIntroductoryConceptDefinition(
   const headingPath = hit.headingPath ?? [];
   if (headingPath.length !== 1) return false;
 
-  const anchors = queryPredicateAnchors(query, ["DEFINITION"]);
-  if (anchors.length === 0) return false;
-
-  const canonicalLabels = [
-    hit.title?.trim() || hit.document.title,
-    headingPath[0] ?? "",
-    ...(hit.document.aliases ?? []),
-  ].filter((value) => value.trim().length > 0);
-  const scopeTokens = new Set(canonicalLabels.flatMap(semanticTokens));
-  const overlap = anchors.filter((token) => scopeTokens.has(token));
-  const requiredOverlap = Math.min(2, anchors.length);
-  const coverage = overlap.length / anchors.length;
-  const excerptTokens = new Set(semanticTokens(excerpt));
-  const conceptIdentityPresent = canonicalLabels.some((label) => {
-    const identityTokens = semanticTokens(label).filter(
-      (token) =>
-        token.length >= 3 &&
-        !ANSWERABILITY_STOPWORDS.has(token) &&
-        !QUESTION_SHAPE_TOKENS.has(token),
-    );
-    if (identityTokens.length === 0) return false;
-    const matched = identityTokens.filter((token) => excerptTokens.has(token));
-    return (
-      matched.length >= Math.min(2, identityTokens.length) &&
-      matched.length / identityTokens.length >= 0.6
-    );
-  });
   const excerptTokenCount = normalizedAnswerabilityTokens(excerpt).length;
-
   return (
-    overlap.length >= requiredOverlap &&
-    coverage >= 0.6 &&
-    conceptIdentityPresent &&
+    definitionIdentityMatches(hit, excerpt, query) &&
     excerptTokenCount >= 4
   );
 }
@@ -1277,12 +1288,12 @@ export function verifyDeterministicPassageSupport(
     requiredAnswerCues
       .filter((cue) => cue !== "YES_NO")
       .every((cue) => boundedSupport.matchedAnswerCues.includes(cue));
-  const conceptDefinitionSupport = isIntroductoryConceptDefinition(
-    hit,
-    excerpt,
-    query,
-    requiredAnswerCues,
-  );
+  const definitionEvidenceEligible =
+    !requiredAnswerCues.includes("DEFINITION") ||
+    definitionIdentityMatches(hit, excerpt, query);
+  const conceptDefinitionSupport =
+    definitionEvidenceEligible &&
+    isIntroductoryConceptDefinition(hit, excerpt, query, requiredAnswerCues);
   const matchedAnswerCues = [
     ...new Set<PassageAnswerCue>([
       ...boundedSupport.matchedAnswerCues,
@@ -1338,6 +1349,8 @@ export function verifyDeterministicPassageSupport(
   let reason: PassageSupportReason;
   if (!passage) {
     reason = "NO_CONCRETE_PASSAGE";
+  } else if (!definitionEvidenceEligible) {
+    reason = "ANSWER_CUE_MISMATCH";
   } else if (
     !yesNoRelationEligible &&
     requiredAnswerCues.length > matchedAnswerCues.length
