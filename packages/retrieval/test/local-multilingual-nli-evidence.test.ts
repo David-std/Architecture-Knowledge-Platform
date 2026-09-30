@@ -75,6 +75,41 @@ describe("local multilingual NLI evidence verifier", () => {
     ]);
   });
 
+  it("keeps candidate titles out of the NLI evidence premise", async () => {
+    const premises: string[] = [];
+    const verifier = new LocalMultilingualNliEvidenceVerifier({
+      minimumEntailmentScore: 0.7,
+      minimumPolarityMargin: 0.2,
+      runtimeFactory: async () => ({
+        infer: async (premise, hypothesis) => {
+          premises.push(premise);
+          return hypothesis.includes("do not define")
+            ? { entailment: 0.9, neutral: 0.07, contradiction: 0.03 }
+            : { entailment: 0.04, neutral: 0.08, contradiction: 0.88 };
+        },
+      }),
+    });
+
+    await verifier.verify({
+      ...input,
+      title: "Misleading title claims the patterns define architecture",
+    });
+
+    expect(premises.length).toBeGreaterThan(0);
+    expect(premises).not.toContain(
+      "Misleading title claims the patterns define architecture",
+    );
+    expect(
+      premises.every(
+        (premise) =>
+          !premise.includes(
+            "Misleading title claims the patterns define architecture",
+          ),
+      ),
+    ).toBe(true);
+    expect(premises).toContain("Strategy y Adapter son patrones locales.");
+  });
+
   it("does not turn an open Spanish question into a yes/no hypothesis", async () => {
     const runtimeFactory = vi.fn<LocalMultilingualNliRuntimeFactory>();
     const verifier = new LocalMultilingualNliEvidenceVerifier({
