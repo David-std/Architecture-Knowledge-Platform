@@ -1,0 +1,44 @@
+name: team-node-cache-repair-once
+
+on:
+  push:
+    branches:
+      - chore/retrieval-generality-policy
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Remove host pnpm cache from Docker-only team-node workflow
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path(".github/workflows/team-node.yml")
+          text = path.read_text()
+          old = "          node-version: 24.20.0\n          cache: pnpm\n"
+          new = "          node-version: 24.20.0\n"
+          if text.count(old) != 1:
+              raise SystemExit("expected exactly one team-node setup-node cache block")
+          path.write_text(text.replace(old, new))
+          PY
+          git diff --check
+          if grep -A3 "uses: actions/setup-node@v7" .github/workflows/team-node.yml | grep -q "cache: pnpm"; then
+            echo "team-node still configures an unused host pnpm cache" >&2
+            exit 1
+          fi
+      - name: Commit repair and remove temporary workflow
+        shell: bash
+        run: |
+          rm .github/workflows/team-node-cache-repair-once.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/team-node.yml .github/workflows/team-node-cache-repair-once.yml
+          git diff --cached --check
+          git commit -m "ci(team-node): avoid unused pnpm cache"
+          git push origin "HEAD:chore/retrieval-generality-policy"
