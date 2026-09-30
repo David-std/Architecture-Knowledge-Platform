@@ -78,6 +78,75 @@ describe("retrieval answerability", () => {
     );
     expect(result.supported).toBe(false);
   });
+  it("rejects a proposition with the same entities but a different unrecognized relation", () => {
+    const topicalClaim = hit(905, {
+      title: "NEXO and QARO documentation",
+      type: "claim",
+      excerpt: "NEXO and QARO are documented in separate reports.",
+      contributions: [contribution("vector", 0.92, 1)],
+    });
+    const direct = hit(906, {
+      title: "NEXO integration",
+      type: "claim",
+      excerpt: "NEXO can use QARO for delivery.",
+      contributions: [contribution("vector", 0.9, 2)],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [topicalClaim, direct],
+      "Can NEXO use QARO?",
+    );
+
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(direct),
+    ]);
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: false,
+    });
+    expect(result.candidateSignals[1]?.passageSupport).toMatchObject({
+      supported: true,
+      boundedRelationRoleMatched: true,
+    });
+  });
+
+  it("rejects the reverse direction for an unrecognized relation", () => {
+    const reverse = hit(907, {
+      title: "QARO integration",
+      type: "decision-rule",
+      excerpt: "QARO can use NEXO for delivery.",
+      contributions: [contribution("vector", 0.93, 1)],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [reverse],
+      "Can NEXO use QARO?",
+    );
+
+    expect(result.supported).toBe(false);
+  });
+
+  it("lets the title scope only the subject for an unrecognized relation", () => {
+    const direct = hit(908, {
+      title: "NEXO integration",
+      type: "rule",
+      excerpt: "It can use QARO for delivery.",
+      contributions: [contribution("vector", 0.91, 1)],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [direct],
+      "Can NEXO use QARO?",
+    );
+
+    expect(result).toMatchObject({
+      supported: true,
+      supportedCandidateKeys: [retrievalAnswerabilityCandidateKey(direct)],
+    });
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      boundedRelationRoleMatched: true,
+    });
+  });
+
   it("keeps catalog mentions and wrong entities exploratory for yes/no relations", () => {
     const catalog = hit(901, {
       title: "NEXO and QARO catalog",

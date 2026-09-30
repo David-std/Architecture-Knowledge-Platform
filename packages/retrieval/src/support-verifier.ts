@@ -650,6 +650,49 @@ function relationRolesMatch(
   return false;
 }
 
+function orderedSubsequencePresent(
+  haystack: readonly string[],
+  needle: readonly string[],
+): boolean {
+  if (needle.length === 0) return false;
+  let cursor = 0;
+  for (const token of haystack) {
+    if (token !== needle[cursor]) continue;
+    cursor += 1;
+    if (cursor === needle.length) return true;
+  }
+  return false;
+}
+
+function genericYesNoRelationRolesMatch(
+  evidence: string,
+  query: string,
+  scopeTitle?: string,
+): boolean {
+  const queryTokens = orderedSemanticTokens(query).filter(
+    (token) =>
+      !ANSWERABILITY_STOPWORDS.has(token) &&
+      !QUESTION_SHAPE_TOKENS.has(token),
+  );
+  if (queryTokens.length < 3) return false;
+
+  const titleTokens = new Set(scopeTitle ? semanticTokens(scopeTitle) : []);
+  let scopedPrefixLength = 0;
+  while (
+    scopedPrefixLength < queryTokens.length - 2 &&
+    titleTokens.has(queryTokens[scopedPrefixLength]!)
+  ) {
+    scopedPrefixLength += 1;
+  }
+
+  const requiredLocalSequence = queryTokens.slice(scopedPrefixLength);
+  if (requiredLocalSequence.length < 2) return false;
+  return orderedSubsequencePresent(
+    orderedSemanticTokens(evidence),
+    requiredLocalSequence,
+  );
+}
+
 function isSupportEligibleClaim(hit: SearchHit): boolean {
   return (
     hit.lifecycle === "ACTIVE" &&
@@ -1015,14 +1058,12 @@ function answerRequirementsMatch(
       );
       if (relationRoleMatched) matched.add("YES_NO");
     } else {
-      const relationTokens = semanticQuery.filter((token) =>
-        ["define", "require", "dependency", "points"].includes(token),
+      relationRoleMatched = genericYesNoRelationRolesMatch(
+        relationEvidence,
+        query,
+        relationScopeTitle,
       );
-      const relationMatched =
-        relationTokens.length === 0
-          ? passageAnswerCues(relationEvidence, ["YES_NO"]).includes("YES_NO")
-          : relationTokens.some((token) => semanticWindow.has(token));
-      if (relationMatched) matched.add("YES_NO");
+      if (relationRoleMatched) matched.add("YES_NO");
     }
   }
 
@@ -1239,13 +1280,10 @@ export function verifyDeterministicPassageSupport(
   const explicitAcronymsMatched = queryAcronyms.every((token) =>
     evidenceScopeTokens.has(token.toLocaleLowerCase("en-US")),
   );
-  const propositionType = ["claim", "rule", "decision-rule"].includes(
-    hit.type.trim().toLocaleLowerCase("en-US"),
-  );
   const yesNoRelationEligible =
     !requiredAnswerCues.includes("YES_NO") ||
-    propositionType ||
-    boundedSupport.relationRoleMatched;
+    boundedSupport.relationRoleMatched ||
+    claimRelationSupport;
   let reason: PassageSupportReason;
   if (!passage) {
     reason = "NO_CONCRETE_PASSAGE";
