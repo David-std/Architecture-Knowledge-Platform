@@ -366,6 +366,98 @@ function orderedAnchorsCompatible(query: string, passage: string): boolean {
   return true;
 }
 
+type ShadowRelationHypothesisCandidate = {
+  positive: string;
+  negative: string;
+  source: string;
+};
+
+function shadowConjugateThirdPerson(verb: string): string {
+  if (/(?:s|x|z|ch|sh)$/iu.test(verb)) return `${verb}es`;
+  if (/[^aeiou]y$/iu.test(verb)) return `${verb.slice(0, -1)}ies`;
+  return `${verb}s`;
+}
+
+function shadowRelationHypothesisCandidates(
+  query: string,
+  title: string,
+): ShadowRelationHypothesisCandidate[] {
+  const candidates: ShadowRelationHypothesisCandidate[] = [];
+  const seen = new Set<string>();
+  const add = (
+    positive: string,
+    negative: string,
+    source: string,
+  ): void => {
+    const key = `${positive}\u0000${negative}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    candidates.push({ positive, negative, source });
+  };
+
+  const production = buildEvidenceRelationHypotheses(query, title);
+  if (production !== null) {
+    add(production.positive, production.negative, "production-parser");
+  }
+
+  const trimmed = query.trim();
+  if (trimmed.startsWith("¿")) return candidates;
+  const normalized = trimmed.replace(/[?？]+\s*$/u, "").trim();
+  const match =
+    /^(do|does|did|can|could|should|must|will|would|is|are|was|were)\s+(.+)$/iu.exec(
+      normalized,
+    );
+  if (!match) return candidates;
+
+  const auxiliary = match[1]!.toLocaleLowerCase("en-US");
+  const tokens = match[2]!.trim().split(/\s+/u).filter(Boolean);
+  if (["is", "are", "was", "were"].includes(auxiliary)) {
+    for (let split = 1; split < tokens.length; split += 1) {
+      const subject = tokens.slice(0, split).join(" ");
+      const predicate = tokens.slice(split).join(" ");
+      add(
+        `${subject} ${auxiliary} ${predicate}.`,
+        `${subject} ${auxiliary} not ${predicate}.`,
+        `copula-split:${split}`,
+      );
+    }
+    return candidates;
+  }
+
+  if (tokens.length < 3) return candidates;
+  for (let verbIndex = 1; verbIndex < tokens.length - 1; verbIndex += 1) {
+    const subject = tokens.slice(0, verbIndex).join(" ");
+    const verb = tokens[verbIndex]!;
+    const object = tokens.slice(verbIndex + 1).join(" ");
+    if (auxiliary === "do") {
+      add(
+        `${subject} ${verb} ${object}.`,
+        `${subject} do not ${verb} ${object}.`,
+        `aux-split:${verbIndex}`,
+      );
+    } else if (auxiliary === "does") {
+      add(
+        `${subject} ${shadowConjugateThirdPerson(verb)} ${object}.`,
+        `${subject} does not ${verb} ${object}.`,
+        `aux-split:${verbIndex}`,
+      );
+    } else if (auxiliary === "did") {
+      add(
+        `${subject} did ${verb} ${object}.`,
+        `${subject} did not ${verb} ${object}.`,
+        `aux-split:${verbIndex}`,
+      );
+    } else {
+      add(
+        `${subject} ${auxiliary} ${verb} ${object}.`,
+        `${subject} ${auxiliary} not ${verb} ${object}.`,
+        `aux-split:${verbIndex}`,
+      );
+    }
+  }
+  return candidates;
+}
+
 function sigmoid(value: number): number {
   if (value >= 0) {
     const exp = Math.exp(-value);
@@ -751,27 +843,32 @@ async function binaryEntailmentScore(
   return entailmentExp / (entailmentExp + notEntailmentExp);
 }
 
-const binaryStarted = performance.now();
-const binaryObservations = [];
-try {
+async function evaluateBinaryCases(
+  hypothesisCandidatesFor: (
+    testCase: Case,
+    candidate: Candidate,
+  ) => readonly ShadowRelationHypothesisCandidate[],
+) {
+  const observations = [];
   for (const testCase of CASES) {
     const candidates = [];
     for (const candidate of testCase.candidates) {
-      const relationHypotheses = buildEvidenceRelationHypotheses(
-        testCase.query,
-        candidate.title,
-      );
+      const hypotheses = hypothesisCandidatesFor(testCase, candidate);
       const windows = sentenceWindows(candidate.passage);
       let bestIndex = 0;
       let bestScore = 0;
       let bestPolarityMargin = 0;
+      let selectedHypothesisSource: string | null = null;
+      let selectedPositiveHypothesis: string | null = null;
+      let selectedNegativeHypothesis: string | null = null;
+      let selectedAnswerPolarity: "POSITIVE" | "NEGATIVE" | null = null;
 
-      if (relationHypotheses !== null) {
+      for (const hypothesis of hypotheses) {
         for (let index = 0; index < windows.length; index += 1) {
           const window = windows[index]!;
           const [positiveScore, negativeScore] = await Promise.all([
-            binaryEntailmentScore(window.text, relationHypotheses.positive),
-            binaryEntailmentScore(window.text, relationHypotheses.negative),
+            binaryEntailmentScore(window.text, hypothesis.positive),
+            binaryEntailmentScore(window.text, hypothesis.negative),
           ]);
           const score = Math.max(positiveScore, negativeScore);
           const polarityMargin = Math.abs(positiveScore - negativeScore);
@@ -782,6 +879,11 @@ try {
             bestScore = score;
             bestPolarityMargin = polarityMargin;
             bestIndex = index;
+            selectedHypothesisSource = hypothesis.source;
+            selectedPositiveHypothesis = hypothesis.positive;
+            selectedNegativeHypothesis = hypothesis.negative;
+            selectedAnswerPolarity =
+              positiveScore >= negativeScore ? "POSITIVE" : "NEGATIVE";
           }
         }
       }
@@ -793,8 +895,12 @@ try {
         score: bestScore,
         polarityMargin: bestPolarityMargin,
         directionCompatible:
-          relationHypotheses !== null &&
+          hypotheses.length > 0 &&
           orderedAnchorsCompatible(testCase.query, bestWindow.text),
+        selectedHypothesisSource,
+        selectedPositiveHypothesis,
+        selectedNegativeHypothesis,
+        selectedAnswerPolarity,
         bestSpan: {
           text: bestWindow.text,
           startOffset: bestWindow.start,
@@ -805,7 +911,7 @@ try {
       });
     }
 
-    binaryObservations.push({
+    observations.push({
       id: testCase.id,
       split: testCase.split,
       family: testCase.family,
@@ -814,86 +920,132 @@ try {
       candidates,
     });
   }
+  return observations;
+}
+
+function calibrateBinaryObservations(
+  observations: Awaited<ReturnType<typeof evaluateBinaryCases>>,
+) {
+  const calibration = observations.filter(
+    (entry) => entry.split === "CALIBRATION",
+  );
+  const holdout = observations.filter((entry) => entry.split === "HOLDOUT");
+  const thresholds = [
+    ...new Set([
+      0.1,
+      0.2,
+      0.3,
+      0.4,
+      0.5,
+      0.6,
+      0.7,
+      0.8,
+      0.9,
+      ...calibration.flatMap((entry) =>
+        entry.candidates.map((candidate) =>
+          Number(candidate.score.toFixed(6)),
+        ),
+      ),
+    ]),
+  ].sort((left, right) => left - right);
+  const margins = [
+    ...new Set([
+      0,
+      0.05,
+      0.1,
+      0.2,
+      0.3,
+      0.4,
+      0.5,
+      0.6,
+      0.7,
+      0.8,
+      0.9,
+      ...calibration.flatMap((entry) =>
+        entry.candidates.map((candidate) =>
+          Number(candidate.polarityMargin.toFixed(6)),
+        ),
+      ),
+    ]),
+  ].sort((left, right) => left - right);
+  const calibrationMetrics = thresholds.flatMap((threshold) =>
+    margins.map((minimumPolarityMargin) => ({
+      threshold,
+      minimumPolarityMargin,
+      ...metrics(calibration, threshold, minimumPolarityMargin),
+    })),
+  );
+  const calibrationCandidate =
+    calibrationMetrics
+      .filter(
+        (entry) =>
+          entry.falseAcceptances === 0 &&
+          entry.falseAbstentions === 0 &&
+          entry.wrongSelections === 0 &&
+          entry.supportSelectionPrecision === 1 &&
+          entry.spanAccuracy === 1,
+      )
+      .sort(
+        (left, right) =>
+          right.threshold - left.threshold ||
+          right.minimumPolarityMargin - left.minimumPolarityMargin,
+      )[0] ?? null;
+  const holdoutMetrics =
+    calibrationCandidate === null
+      ? null
+      : {
+          threshold: calibrationCandidate.threshold,
+          minimumPolarityMargin:
+            calibrationCandidate.minimumPolarityMargin,
+          ...metrics(
+            holdout,
+            calibrationCandidate.threshold,
+            calibrationCandidate.minimumPolarityMargin,
+          ),
+        };
+
+  return {
+    calibrationMetrics,
+    calibrationCandidate,
+    holdoutMetrics,
+    holdoutPassesAcceptance:
+      holdoutMetrics !== null &&
+      holdoutMetrics.falseAcceptances === 0 &&
+      holdoutMetrics.falseAbstentions === 0 &&
+      holdoutMetrics.wrongSelections === 0 &&
+      holdoutMetrics.supportSelectionPrecision === 1 &&
+      holdoutMetrics.spanAccuracy === 1,
+  };
+}
+
+const binaryStarted = performance.now();
+let binaryObservations: Awaited<ReturnType<typeof evaluateBinaryCases>>;
+let binaryHypothesisSweepObservations: Awaited<
+  ReturnType<typeof evaluateBinaryCases>
+>;
+try {
+  binaryObservations = await evaluateBinaryCases((testCase, candidate) => {
+    const hypothesis = buildEvidenceRelationHypotheses(
+      testCase.query,
+      candidate.title,
+    );
+    return hypothesis === null
+      ? []
+      : [{ ...hypothesis, source: "production-parser" }];
+  });
+  binaryHypothesisSweepObservations = await evaluateBinaryCases(
+    (testCase, candidate) =>
+      shadowRelationHypothesisCandidates(testCase.query, candidate.title),
+  );
 } finally {
   await binaryModel.dispose?.();
 }
 
-const binaryCalibration = binaryObservations.filter(
-  (entry) => entry.split === "CALIBRATION",
+const binaryCalibrationResult =
+  calibrateBinaryObservations(binaryObservations);
+const binarySweepCalibrationResult = calibrateBinaryObservations(
+  binaryHypothesisSweepObservations,
 );
-const binaryHoldout = binaryObservations.filter(
-  (entry) => entry.split === "HOLDOUT",
-);
-const binaryThresholds = [
-  ...new Set([
-    0.1,
-    0.2,
-    0.3,
-    0.4,
-    0.5,
-    0.6,
-    0.7,
-    0.8,
-    0.9,
-    ...binaryCalibration.flatMap((entry) =>
-      entry.candidates.map((candidate) => Number(candidate.score.toFixed(6))),
-    ),
-  ]),
-].sort((left, right) => left - right);
-const binaryMargins = [
-  ...new Set([
-    0,
-    0.05,
-    0.1,
-    0.2,
-    0.3,
-    0.4,
-    0.5,
-    0.6,
-    0.7,
-    0.8,
-    0.9,
-    ...binaryCalibration.flatMap((entry) =>
-      entry.candidates.map((candidate) =>
-        Number(candidate.polarityMargin.toFixed(6)),
-      ),
-    ),
-  ]),
-].sort((left, right) => left - right);
-const binaryCalibrationMetrics = binaryThresholds.flatMap((threshold) =>
-  binaryMargins.map((minimumPolarityMargin) => ({
-    threshold,
-    minimumPolarityMargin,
-    ...metrics(binaryCalibration, threshold, minimumPolarityMargin),
-  })),
-);
-const binaryCalibrationCandidate =
-  binaryCalibrationMetrics
-    .filter(
-      (entry) =>
-        entry.falseAcceptances === 0 &&
-        entry.falseAbstentions === 0 &&
-        entry.wrongSelections === 0 &&
-        entry.supportSelectionPrecision === 1 &&
-        entry.spanAccuracy === 1,
-    )
-    .sort(
-      (left, right) =>
-        right.threshold - left.threshold ||
-        right.minimumPolarityMargin - left.minimumPolarityMargin,
-    )[0] ?? null;
-const binaryHoldoutMetrics =
-  binaryCalibrationCandidate === null
-    ? null
-    : {
-        threshold: binaryCalibrationCandidate.threshold,
-        minimumPolarityMargin: binaryCalibrationCandidate.minimumPolarityMargin,
-        ...metrics(
-          binaryHoldout,
-          binaryCalibrationCandidate.threshold,
-          binaryCalibrationCandidate.minimumPolarityMargin,
-        ),
-      };
 
 const binaryEntailmentComparison = {
   model: {
@@ -906,23 +1058,31 @@ const binaryEntailmentComparison = {
   },
   loadLatencyMs: binaryLoadLatencyMs,
   latencyMs: performance.now() - binaryStarted,
-  calibrationCandidate: binaryCalibrationCandidate,
-  holdoutMetrics: binaryHoldoutMetrics,
+  calibrationCandidate: binaryCalibrationResult.calibrationCandidate,
+  holdoutMetrics: binaryCalibrationResult.holdoutMetrics,
   holdoutPassesAcceptance:
-    binaryHoldoutMetrics !== null &&
-    binaryHoldoutMetrics.falseAcceptances === 0 &&
-    binaryHoldoutMetrics.falseAbstentions === 0 &&
-    binaryHoldoutMetrics.wrongSelections === 0 &&
-    binaryHoldoutMetrics.supportSelectionPrecision === 1 &&
-    binaryHoldoutMetrics.spanAccuracy === 1,
+    binaryCalibrationResult.holdoutPassesAcceptance,
   observations: binaryObservations,
 };
 
+
+const binaryHypothesisSweepComparison = {
+  model: binaryEntailmentComparison.model,
+  hypothesisStrategy:
+    "shadow-only exhaustive auxiliary/copula split candidates; title is not premise evidence",
+  calibrationCandidate:
+    binarySweepCalibrationResult.calibrationCandidate,
+  holdoutMetrics: binarySweepCalibrationResult.holdoutMetrics,
+  holdoutPassesAcceptance:
+    binarySweepCalibrationResult.holdoutPassesAcceptance,
+  observations: binaryHypothesisSweepObservations,
+};
+
 const report = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   status: "MEASURED",
   evidenceBoundary:
-    "Public synthetic source-disjoint shadow evaluation of multilingual evidence signals: reranker relevance/contrast plus a pinned multilingual binary entailment model. Score and polarity margin are calibrated only on calibration sources and frozen for holdout. No signal is evidence truth or promoted by this report.",
+    "Public synthetic source-disjoint shadow evaluation of multilingual evidence signals: reranker relevance/contrast plus a pinned multilingual binary entailment model. A separate shadow-only hypothesis sweep isolates model capability from production-parser coverage. Score and polarity margin are calibrated only on calibration sources and frozen for holdout. No signal is evidence truth or promoted by this report.",
   model: {
     id: MODEL,
     revision: REVISION,
@@ -938,6 +1098,7 @@ const report = {
   },
   comparisons,
   binaryEntailmentComparison,
+  binaryHypothesisSweepComparison,
   promotionAllowed: false,
   productionDefaultChanged: false,
   enforcementEnabled: false,
