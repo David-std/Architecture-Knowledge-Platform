@@ -35,6 +35,14 @@ export const LOCAL_MULTILINGUAL_NLI_MDEBERTA_DESCRIPTOR: LocalMultilingualNliMod
     dtype: "q8",
   });
 
+export const LOCAL_MULTILINGUAL_NLI_MDEBERTA_FP32_DESCRIPTOR: LocalMultilingualNliModelDescriptor =
+  Object.freeze({
+    model: "onnx-community/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7-ONNX",
+    revision: "cdc8277b4682665e2f2e87cd83da7da07b153d75",
+    modelFileName: "model",
+    dtype: "fp32",
+  });
+
 export const LOCAL_MULTILINGUAL_NLI_MODEL =
   LOCAL_MULTILINGUAL_NLI_MINILM_DESCRIPTOR.model;
 export const LOCAL_MULTILINGUAL_NLI_REVISION =
