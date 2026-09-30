@@ -3371,7 +3371,14 @@ export async function queryKnowledge(
             ? { parentUnitType: String(row.parent_unit_type) }
             : {}),
           context: rehydrateStructuralContext(unit),
-          excerpt: rehydrateStructuralContext(unit, 1200),
+          atomicExcerpt: rehydrateStructuralContext(
+            {
+              body: unit.body,
+              unitType: unit.unitType,
+              focusText: unit.focusText,
+            },
+            1200,
+          ),
         },
       ] as const;
     }),
@@ -3582,7 +3589,8 @@ export async function queryKnowledge(
           ? { graphProvenance: graphProvenanceByCandidate.get(item.id) }
           : {}),
         excerpt:
-          structuralContext?.excerpt ?? String(row.body_cache).slice(0, 1200),
+          structuralContext?.atomicExcerpt ??
+          String(row.body_cache).slice(0, 1200),
         citations,
         warnings: [
           "UNTRUSTED_RETRIEVED_CONTENT",

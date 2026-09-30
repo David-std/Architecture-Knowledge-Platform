@@ -323,7 +323,8 @@ describe("retrieval answerability", () => {
       title: "Canonical knowledge",
       parentContext:
         "Approved Markdown in managed Git is canonical knowledge. PostgreSQL, vector indexes, graphs, packets and caches are derived operational projections.",
-      excerpt: "Approved Markdown in managed Git is canonical knowledge.",
+      excerpt:
+        "Approved Markdown in managed Git is canonical knowledge. PostgreSQL, vector indexes, graphs, packets and caches are derived operational projections.",
       contributions: [contribution("vector", 0.86, 1)],
     });
     const result = assessRetrievalAnswerability(
@@ -1090,7 +1091,7 @@ describe("retrieval answerability", () => {
     });
   });
 
-  it("uses structural parent context when the presentation excerpt omits the decisive passage", () => {
+  it("does not let structural parent context substitute for the cited atomic unit", () => {
     const candidate = hit(1, {
       title: "Durable publication",
       excerpt: "Publication overview.",
@@ -1104,12 +1105,14 @@ describe("retrieval answerability", () => {
     );
 
     expect(result).toMatchObject({
-      supported: true,
-      reason: "PASSAGE_TEXT_SUPPORT",
+      supported: false,
+      reason: "SUPPORT_NOT_DEMONSTRATED",
+      supportedCandidateKeys: [],
     });
     expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
-      passageSource: "STRUCTURAL_CONTEXT",
-      supportSurfaceExtendsExcerpt: true,
+      passageSource: "EXCERPT",
+      supportSurfaceExtendsExcerpt: false,
+      supported: false,
     });
   });
 
@@ -1264,6 +1267,35 @@ describe("retrieval answerability", () => {
       mode: "SHADOW",
       decision: "SUPPORTS",
     });
+  });
+
+  it("passes only the atomic excerpt to a query-conditioned verifier", async () => {
+    const candidate = hit(912, {
+      title: "Atomic evidence boundary",
+      excerpt: "The selected unit contains no recovery guarantee.",
+      parentContext:
+        "The parent section states that the durable mechanism guarantees recovery after a crash.",
+      contributions: [contribution("vector", 0.82, 2)],
+    });
+    let observedPassage = "";
+    await assessRetrievalAnswerabilityWithVerifier(
+      [candidate],
+      "Does the durable mechanism guarantee recovery after a crash?",
+      {
+        id: "atomic-boundary-verifier",
+        async verify(input) {
+          observedPassage = input.passage;
+          return {
+            decision: "INSUFFICIENT",
+            reason: "atomic unit does not answer",
+          };
+        },
+      },
+      { mode: "SHADOW" },
+    );
+
+    expect(observedPassage).toBe(candidate.excerpt);
+    expect(observedPassage).not.toContain("guarantees recovery");
   });
 
   it("enforces query-conditioned support on the exact candidate relation", async () => {

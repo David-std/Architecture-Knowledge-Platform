@@ -1179,10 +1179,9 @@ export function verifyDeterministicPassageSupport(
   policyInput: Partial<DeterministicPassageSupportPolicy> = {},
 ): DeterministicPassageSupportSignal {
   const policy = resolveDeterministicPassageSupportPolicy(policyInput);
-  const structural = hit.parentContext?.trim();
   const excerpt = hit.excerpt.trim();
-  const passage = structural || excerpt;
-  const passageSource = structural ? "STRUCTURAL_CONTEXT" : "EXCERPT";
+  const passage = excerpt;
+  const passageSource = "EXCERPT" as const;
   const queryTokens = normalizedAnswerabilityTokens(query);
   const salientQueryTokens = queryTokens.filter(
     (token) => token.length >= 3 && !ANSWERABILITY_STOPWORDS.has(token),
@@ -1300,8 +1299,7 @@ export function verifyDeterministicPassageSupport(
     passageSource,
     passageCharacters: passage.length,
     excerptCharacters: excerpt.length,
-    supportSurfaceExtendsExcerpt:
-      structural !== undefined && structural.length > excerpt.length,
+    supportSurfaceExtendsExcerpt: false,
     queryTokens,
     overlapTokens,
     queryCoverage,

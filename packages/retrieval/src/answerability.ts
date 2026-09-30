@@ -473,7 +473,7 @@ function resolveQueryConditionedEvidencePolicy(
 }
 
 function exactCandidatePassage(hit: SearchHit): string {
-  return hit.parentContext?.trim() || hit.excerpt.trim();
+  return hit.excerpt.trim();
 }
 
 function hardDeterministicRequirementsSatisfied(
