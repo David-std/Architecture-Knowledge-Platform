@@ -1238,7 +1238,6 @@ const binaryEntailmentComparison = {
   observations: binaryObservations,
 };
 
-
 const binaryHypothesisSweepComparison = {
   model: binaryEntailmentComparison.model,
   hypothesisStrategy:
