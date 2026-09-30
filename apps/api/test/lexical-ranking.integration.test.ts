@@ -532,7 +532,7 @@ describe("production lexical ranking", () => {
           externalId: "RANKING",
           path: "docs/identity.md",
           title: "Canonical identity",
-          aliases: [],
+          aliases: ["identity alias"],
         });
 
         const reranked = await queryKnowledge(db, searchRequest(fixture), {
