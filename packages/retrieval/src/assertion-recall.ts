@@ -1,7 +1,6 @@
 import { normalizedAnswerabilityTokens } from "./support-verifier.js";
 
-export const ASSERTION_RECALL_SELECTION_MARKER =
-  "lexical:assertion-recall:";
+export const ASSERTION_RECALL_SELECTION_MARKER = "lexical:assertion-recall:";
 
 export function boundedAssertionRecallQuery(query: string): string | null {
   const terms = normalizedAnswerabilityTokens(query)

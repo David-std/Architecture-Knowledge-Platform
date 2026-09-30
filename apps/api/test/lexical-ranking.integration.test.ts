@@ -625,8 +625,7 @@ describe("bounded assertion recall", () => {
             unitId: fixture.units.alias,
             externalId: "PRO-BLUE-WIDGET",
             title: "Blue widget storage engine practice guide",
-            body:
-              "In practice, a blue widget deployment guide uses a storage engine. The guide does not require the widget itself.",
+            body: "In practice, a blue widget deployment guide uses a storage engine. The guide does not require the widget itself.",
             type: "profile",
           },
         ] as const;
