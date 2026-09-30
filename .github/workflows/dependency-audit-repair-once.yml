@@ -6,7 +6,7 @@ on:
       - chore/retrieval-generality-policy
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   generate:
@@ -50,6 +50,16 @@ jobs:
         run: pnpm install --frozen-lockfile --strict-peer-dependencies
       - name: Verify high severity audit
         run: pnpm audit --audit-level high
+      - name: Commit repaired dependencies and remove temporary workflow
+        shell: bash
+        run: |
+          rm .github/workflows/dependency-audit-repair-once.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json apps/web/package.json pnpm-lock.yaml .github/workflows/dependency-audit-repair-once.yml
+          git diff --cached --check
+          git commit -m "chore(deps): patch audited dependencies"
+          git push origin "HEAD:chore/retrieval-generality-policy"
       - name: Upload generated dependency repair
         uses: actions/upload-artifact@v7
         with:
