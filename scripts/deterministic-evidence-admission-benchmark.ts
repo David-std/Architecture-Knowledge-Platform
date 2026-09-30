@@ -246,6 +246,50 @@ const CASES: AdmissionCase[] = [
     goldLabels: [],
   },
   {
+    id: "infinitive-question-is-not-thematic-support",
+    tier: "CORE",
+    query: "¿Utilizar ALTO demuestra BRIO?",
+    candidates: [
+      {
+        label: "topic-only",
+        title: "ALTO and BRIO",
+        passage: "ALTO and BRIO are discussed in the same catalog.",
+      },
+      {
+        label: "reference-only",
+        title: "ALTO and BRIO references",
+        passage: "See [[claims/alto-demuestra-brio]] for the assertion.",
+      },
+    ],
+    goldLabels: [],
+  },
+  {
+    id: "yes-no-relation-requires-predicate",
+    tier: "CORE",
+    query: "¿Es obligatorio ALTO para BRIO?",
+    candidates: [
+      {
+        label: "same-nouns",
+        title: "ALTO and BRIO",
+        passage: "ALTO and BRIO are listed together in an operations report.",
+      },
+    ],
+    goldLabels: [],
+  },
+  {
+    id: "wiki-link-is-not-an-assertion",
+    tier: "CORE",
+    query: "Can NEXO use QARO?",
+    candidates: [
+      {
+        label: "link-only",
+        title: "NEXO notes",
+        passage: "See [[claims/nexo-can-use-qaro]] for the approved assertion.",
+      },
+    ],
+    goldLabels: [],
+  },
+  {
     id: "indirect-bilingual-responsibility",
     tier: "SEMANTIC_FRONTIER",
     query: "Does a single-purpose module reduce reasons to change?",

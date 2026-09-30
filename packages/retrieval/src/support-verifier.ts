@@ -670,8 +670,7 @@ function genericYesNoRelationRolesMatch(
   query: string,
 ): boolean {
   const queryTokens = orderedSemanticTokens(query).filter(
-    (token) =>
-      !ANSWERABILITY_STOPWORDS.has(token) && !QUESTION_SHAPE_TOKENS.has(token),
+    (token) => !ANSWERABILITY_STOPWORDS.has(token),
   );
   if (queryTokens.length < 3) return false;
   return orderedSubsequencePresent(
@@ -917,6 +916,16 @@ function queryAnswerCues(query: string): PassageAnswerCue[] {
     }
   }
 
+  // An infinitive-led question still asks whether its relation holds.
+  // It must not fall through to thematic token overlap.
+  if (
+    cues.size === 0 &&
+    query.trim().endsWith("?") &&
+    !QUESTION_SHAPE_TOKENS.has(tokens[0] ?? "")
+  ) {
+    cues.add("YES_NO");
+  }
+
   // "How can X be prevented/stopped?" asks for the prevention mechanism.
   // PROCEDURE is a generic interrogative cue here, not a second independent
   // predicate that the passage must prove.
@@ -943,13 +952,17 @@ function passageWindows(passage: string, title?: string): PassageWindow[] {
   // sentence, and an adjacent sentence may be joined only when it explicitly
   // refers back to its predecessor. For relation questions, the title may
   // identify the subject but cannot supply the predicate or object.
-  const sentences = passage
+  // A link to a proposition is a pointer, not an assertion of its content.
+  const evidentialPassage = passage
+    .replace(/\[\[[^\]]+\]\]/gu, " ")
+    .replace(/\[[^\]]+\]\([^)]*\)/gu, " ");
+  const sentences = evidentialPassage
     .split(/(?<=[.!?])\s+|\n+/u)
     .map((part) => part.trim())
     .filter(Boolean)
     .map((sentence) => sentence.slice(0, 900).trim());
   const boundedSentences =
-    sentences.length > 0 ? sentences : [passage.slice(0, 900).trim()];
+    sentences.length > 0 ? sentences : [evidentialPassage.slice(0, 900).trim()];
   const boundedTitle = title?.trim().slice(0, 240);
   const windows: PassageWindow[] = boundedSentences.map((sentence) => ({
     text: sentence,
