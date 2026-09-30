@@ -384,11 +384,7 @@ function shadowRelationHypothesisCandidates(
 ): ShadowRelationHypothesisCandidate[] {
   const candidates: ShadowRelationHypothesisCandidate[] = [];
   const seen = new Set<string>();
-  const add = (
-    positive: string,
-    negative: string,
-    source: string,
-  ): void => {
+  const add = (positive: string, negative: string, source: string): void => {
     const key = `${positive}\u0000${negative}`;
     if (seen.has(key)) return;
     seen.add(key);
@@ -398,6 +394,7 @@ function shadowRelationHypothesisCandidates(
   const production = buildEvidenceRelationHypotheses(query, title);
   if (production !== null) {
     add(production.positive, production.negative, "production-parser");
+    return candidates;
   }
 
   const trimmed = query.trim();
@@ -425,10 +422,91 @@ function shadowRelationHypothesisCandidates(
   }
 
   if (tokens.length < 3) return candidates;
+  const nonVerbTokens = new Set([
+    "a",
+    "an",
+    "the",
+    "and",
+    "or",
+    "that",
+    "this",
+    "these",
+    "those",
+    "to",
+    "for",
+    "of",
+    "in",
+    "on",
+    "at",
+    "with",
+    "by",
+    "from",
+    "as",
+    "is",
+    "are",
+    "was",
+    "were",
+    "be",
+    "been",
+    "being",
+    "not",
+  ]);
+  const invalidSubjectEndTokens = new Set([
+    "a",
+    "an",
+    "the",
+    "and",
+    "or",
+    "to",
+    "for",
+    "of",
+    "in",
+    "on",
+    "at",
+    "with",
+    "by",
+    "from",
+    "as",
+  ]);
+  const invalidObjectStartTokens = new Set([
+    "am",
+    "is",
+    "are",
+    "was",
+    "were",
+    "be",
+    "been",
+    "being",
+    "do",
+    "does",
+    "did",
+    "can",
+    "could",
+    "should",
+    "must",
+    "will",
+    "would",
+    "to",
+  ]);
   for (let verbIndex = 1; verbIndex < tokens.length - 1; verbIndex += 1) {
-    const subject = tokens.slice(0, verbIndex).join(" ");
+    const subjectTokens = tokens.slice(0, verbIndex);
+    const subject = subjectTokens.join(" ");
     const verb = tokens[verbIndex]!;
-    const object = tokens.slice(verbIndex + 1).join(" ");
+    const objectTokens = tokens.slice(verbIndex + 1);
+    const object = objectTokens.join(" ");
+    const normalizedVerb = verb
+      .toLocaleLowerCase("en-US")
+      .replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}-]+$/gu, "");
+    const subjectEnd = subjectTokens.at(-1)?.toLocaleLowerCase("en-US") ?? "";
+    const objectStart = objectTokens[0]?.toLocaleLowerCase("en-US") ?? "";
+    if (
+      !normalizedVerb ||
+      nonVerbTokens.has(normalizedVerb) ||
+      invalidSubjectEndTokens.has(subjectEnd) ||
+      invalidObjectStartTokens.has(objectStart)
+    ) {
+      continue;
+    }
     if (auxiliary === "do") {
       add(
         `${subject} ${verb} ${object}.`,
@@ -942,9 +1020,7 @@ function calibrateBinaryObservations(
       0.8,
       0.9,
       ...calibration.flatMap((entry) =>
-        entry.candidates.map((candidate) =>
-          Number(candidate.score.toFixed(6)),
-        ),
+        entry.candidates.map((candidate) => Number(candidate.score.toFixed(6))),
       ),
     ]),
   ].sort((left, right) => left - right);
@@ -995,8 +1071,7 @@ function calibrateBinaryObservations(
       ? null
       : {
           threshold: calibrationCandidate.threshold,
-          minimumPolarityMargin:
-            calibrationCandidate.minimumPolarityMargin,
+          minimumPolarityMargin: calibrationCandidate.minimumPolarityMargin,
           ...metrics(
             holdout,
             calibrationCandidate.threshold,
@@ -1015,6 +1090,103 @@ function calibrateBinaryObservations(
       holdoutMetrics.wrongSelections === 0 &&
       holdoutMetrics.supportSelectionPrecision === 1 &&
       holdoutMetrics.spanAccuracy === 1,
+  };
+}
+
+function scoreOnlyMidpointCalibration(
+  observations: Awaited<ReturnType<typeof evaluateBinaryCases>>,
+) {
+  const calibration = observations.filter(
+    (entry) => entry.split === "CALIBRATION",
+  );
+  const holdout = observations.filter((entry) => entry.split === "HOLDOUT");
+  const goldCandidates = calibration.flatMap((entry) => {
+    const gold = new Set(entry.goldLabels);
+    return entry.candidates
+      .filter(
+        (candidate) =>
+          candidate.directionCompatible && gold.has(candidate.label),
+      )
+      .map((candidate) => ({
+        id: entry.id,
+        label: candidate.label,
+        score: candidate.score,
+      }));
+  });
+  const nonGoldCandidates = calibration.flatMap((entry) => {
+    const gold = new Set(entry.goldLabels);
+    return entry.candidates
+      .filter(
+        (candidate) =>
+          candidate.directionCompatible && !gold.has(candidate.label),
+      )
+      .map((candidate) => ({
+        id: entry.id,
+        label: candidate.label,
+        score: candidate.score,
+      }));
+  });
+  if (goldCandidates.length === 0) {
+    return {
+      calibrationCandidate: null,
+      holdoutMetrics: null,
+      holdoutPassesAcceptance: false,
+      boundary: null,
+    };
+  }
+
+  const minimumGold = goldCandidates.reduce((left, right) =>
+    left.score <= right.score ? left : right,
+  );
+  const maximumNonGold =
+    nonGoldCandidates.length === 0
+      ? { id: null, label: null, score: 0 }
+      : nonGoldCandidates.reduce((left, right) =>
+          left.score >= right.score ? left : right,
+        );
+  if (maximumNonGold.score >= minimumGold.score) {
+    return {
+      calibrationCandidate: null,
+      holdoutMetrics: null,
+      holdoutPassesAcceptance: false,
+      boundary: { minimumGold, maximumNonGold },
+    };
+  }
+
+  const threshold = (minimumGold.score + maximumNonGold.score) / 2;
+  const calibrationMetrics = {
+    threshold,
+    minimumPolarityMargin: 0,
+    ...metrics(calibration, threshold, 0),
+  };
+  const calibrationCandidate =
+    calibrationMetrics.falseAcceptances === 0 &&
+    calibrationMetrics.falseAbstentions === 0 &&
+    calibrationMetrics.wrongSelections === 0 &&
+    calibrationMetrics.supportSelectionPrecision === 1 &&
+    calibrationMetrics.spanAccuracy === 1
+      ? calibrationMetrics
+      : null;
+  const holdoutMetrics =
+    calibrationCandidate === null
+      ? null
+      : {
+          threshold,
+          minimumPolarityMargin: 0,
+          ...metrics(holdout, threshold, 0),
+        };
+
+  return {
+    calibrationCandidate,
+    holdoutMetrics,
+    holdoutPassesAcceptance:
+      holdoutMetrics !== null &&
+      holdoutMetrics.falseAcceptances === 0 &&
+      holdoutMetrics.falseAbstentions === 0 &&
+      holdoutMetrics.wrongSelections === 0 &&
+      holdoutMetrics.supportSelectionPrecision === 1 &&
+      holdoutMetrics.spanAccuracy === 1,
+    boundary: { minimumGold, maximumNonGold },
   };
 }
 
@@ -1041,9 +1213,11 @@ try {
   await binaryModel.dispose?.();
 }
 
-const binaryCalibrationResult =
-  calibrateBinaryObservations(binaryObservations);
+const binaryCalibrationResult = calibrateBinaryObservations(binaryObservations);
 const binarySweepCalibrationResult = calibrateBinaryObservations(
+  binaryHypothesisSweepObservations,
+);
+const binarySweepScoreOnlyMidpoint = scoreOnlyMidpointCalibration(
   binaryHypothesisSweepObservations,
 );
 
@@ -1060,8 +1234,7 @@ const binaryEntailmentComparison = {
   latencyMs: performance.now() - binaryStarted,
   calibrationCandidate: binaryCalibrationResult.calibrationCandidate,
   holdoutMetrics: binaryCalibrationResult.holdoutMetrics,
-  holdoutPassesAcceptance:
-    binaryCalibrationResult.holdoutPassesAcceptance,
+  holdoutPassesAcceptance: binaryCalibrationResult.holdoutPassesAcceptance,
   observations: binaryObservations,
 };
 
@@ -1070,19 +1243,18 @@ const binaryHypothesisSweepComparison = {
   model: binaryEntailmentComparison.model,
   hypothesisStrategy:
     "shadow-only exhaustive auxiliary/copula split candidates; title is not premise evidence",
-  calibrationCandidate:
-    binarySweepCalibrationResult.calibrationCandidate,
+  calibrationCandidate: binarySweepCalibrationResult.calibrationCandidate,
   holdoutMetrics: binarySweepCalibrationResult.holdoutMetrics,
-  holdoutPassesAcceptance:
-    binarySweepCalibrationResult.holdoutPassesAcceptance,
+  holdoutPassesAcceptance: binarySweepCalibrationResult.holdoutPassesAcceptance,
+  scoreOnlyMidpointCalibration: binarySweepScoreOnlyMidpoint,
   observations: binaryHypothesisSweepObservations,
 };
 
 const report = {
-  schemaVersion: 4,
+  schemaVersion: 5,
   status: "MEASURED",
   evidenceBoundary:
-    "Public synthetic source-disjoint shadow evaluation of multilingual evidence signals: reranker relevance/contrast plus a pinned multilingual binary entailment model. A separate shadow-only hypothesis sweep isolates model capability from production-parser coverage. Score and polarity margin are calibrated only on calibration sources and frozen for holdout. No signal is evidence truth or promoted by this report.",
+    "Public synthetic source-disjoint shadow evaluation of multilingual evidence signals: reranker relevance/contrast plus a pinned multilingual binary entailment model. A separate shadow-only fallback hypothesis sweep isolates missing parser coverage without replacing hypotheses already produced by the production parser. The report includes both the existing score-plus-margin grid and an auditable score-only midpoint boundary derived only from calibration labels, then frozen for holdout. No signal is evidence truth or promoted by this report.",
   model: {
     id: MODEL,
     revision: REVISION,
