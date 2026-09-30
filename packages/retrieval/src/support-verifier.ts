@@ -547,6 +547,13 @@ function canonicalSemanticToken(token: string): string {
     return "rationale";
   if (/^(point|apunt)/u.test(token)) return "points";
   if (/^(call|llam)/u.test(token)) return "call";
+  if (/^(share|compart)/u.test(token)) return "share";
+  if (/^(both|ambos)/u.test(token)) return "both";
+  if (/^(same|mism)/u.test(token)) return "same";
+  if (/^(use|using|uses|used|usar|usando|utiliz)/u.test(token)) return "use";
+  if (/^(prove|demonstrat|demostr|establish|establec)/u.test(token))
+    return "establish";
+  if (/^(secure|security|segur)/u.test(token)) return "security";
   return token;
 }
 
@@ -560,7 +567,12 @@ function semanticTokens(value: string): string[] {
   ];
 }
 
-const YES_NO_RELATION_PREDICATES = new Set(["define", "require", "points"]);
+const YES_NO_RELATION_PREDICATES = new Set([
+  "define",
+  "require",
+  "points",
+  "share",
+]);
 
 const RELATION_GRAMMAR_TOKENS = new Set([
   "using",
@@ -686,6 +698,129 @@ function genericYesNoRelationRolesMatch(
   return orderedSubsequencePresent(
     orderedSemanticTokens(evidence),
     queryTokens,
+  );
+}
+
+function allAnchorsPresent(
+  anchors: readonly string[],
+  tokens: ReadonlySet<string>,
+): boolean {
+  return anchors.length > 0 && anchors.every((token) => tokens.has(token));
+}
+
+function shareViaSameResourceMatches(
+  evidence: string,
+  relation: QueryRelationRoles | null,
+): boolean {
+  if (!relation?.predicates.includes("share")) return false;
+  const ordered = orderedSemanticTokens(evidence);
+  const tokens = new Set(ordered);
+  if (
+    !allAnchorsPresent(relation.subjectAnchors, tokens) ||
+    !allAnchorsPresent(relation.objectAnchors, tokens)
+  ) {
+    return false;
+  }
+
+  const bothIndex = ordered.indexOf("both");
+  const useIndex = ordered.indexOf("use", bothIndex + 1);
+  const sameIndex = ordered.indexOf("same", useIndex + 1);
+  if (bothIndex < 0 || useIndex < 0 || sameIndex < 0) return false;
+
+  return relation.objectAnchors.every(
+    (anchor) => ordered.indexOf(anchor, sameIndex + 1) >= 0,
+  );
+}
+
+function queryExplicitlyAsksMandatory(query: string): boolean {
+  return normalizedAnswerabilityTokens(query).some((token) =>
+    /^(mandatory|obligat|obligatori)/u.test(token),
+  );
+}
+
+function mandatoryOptionalityMatches(evidence: string, query: string): boolean {
+  if (!queryExplicitlyAsksMandatory(query)) return false;
+
+  const queryTokens = orderedSemanticTokens(query);
+  const requireIndex = queryTokens.indexOf("require");
+  if (requireIndex < 0) return false;
+  const objectAnchors = [
+    ...new Set(
+      queryTokens.slice(requireIndex + 1).filter(relationAnchorEligible),
+    ),
+  ];
+  if (objectAnchors.length === 0) return false;
+
+  const ordered = orderedSemanticTokens(evidence);
+  const tokenSet = new Set(ordered);
+  const requiredOverlap = Math.min(2, objectAnchors.length);
+  if (
+    objectAnchors.filter((token) => tokenSet.has(token)).length <
+    requiredOverlap
+  ) {
+    return false;
+  }
+
+  const rawTokens = normalizedAnswerabilityTokens(evidence);
+  const optionality = rawTokens.some((token) =>
+    /^(optional|opcional|opcion)/u.test(token),
+  );
+  const absenceIndex = rawTokens.findIndex((token) =>
+    /^(without|sin)$/u.test(token),
+  );
+  const absenceSupportsObject =
+    absenceIndex >= 0 &&
+    objectAnchors.some((anchor) =>
+      ordered
+        .slice(absenceIndex + 1, absenceIndex + 6)
+        .includes(anchor),
+    );
+
+  return optionality || absenceSupportsObject;
+}
+
+function insufficientEstablishmentMatches(
+  evidence: string,
+  query: string,
+): boolean {
+  const queryTokens = orderedSemanticTokens(query);
+  const predicateIndex = queryTokens.indexOf("establish");
+  if (predicateIndex < 0) return false;
+
+  const subjectAnchors = [
+    ...new Set(queryTokens.slice(0, predicateIndex).filter(relationAnchorEligible)),
+  ];
+  const objectAnchors = [
+    ...new Set(
+      queryTokens.slice(predicateIndex + 1).filter(relationAnchorEligible),
+    ),
+  ];
+  if (subjectAnchors.length === 0 || objectAnchors.length === 0) return false;
+
+  const ordered = orderedSemanticTokens(evidence);
+  const evidenceSet = new Set(ordered);
+  if (
+    !subjectAnchors.some((token) => evidenceSet.has(token)) ||
+    !allAnchorsPresent(objectAnchors, evidenceSet)
+  ) {
+    return false;
+  }
+
+  const normalized = normalizedMatchText(evidence).trim();
+  return /\b(?:insufficient\s+to\s+establish|insuficiente\s+para\s+establec\w*)\b/u.test(
+    normalized,
+  );
+}
+
+function logicalYesNoRelationMatches(
+  evidence: string,
+  query: string,
+  relation: QueryRelationRoles | null,
+): boolean {
+  return (
+    shareViaSameResourceMatches(evidence, relation) ||
+    mandatoryOptionalityMatches(evidence, query) ||
+    insufficientEstablishmentMatches(evidence, query)
   );
 }
 
@@ -1150,17 +1285,14 @@ function answerRequirementsMatch(
   if (required.includes("YES_NO")) {
     const relation = queryYesNoRelationRoles(query);
     if (relation) {
-      relationRoleMatched = relationRolesMatch(
-        relationEvidence,
-        relation,
-        relationScopeTitle,
-      );
+      relationRoleMatched =
+        relationRolesMatch(relationEvidence, relation, relationScopeTitle) ||
+        logicalYesNoRelationMatches(relationEvidence, query, relation);
       if (relationRoleMatched) matched.add("YES_NO");
     } else {
-      relationRoleMatched = genericYesNoRelationRolesMatch(
-        relationEvidence,
-        query,
-      );
+      relationRoleMatched =
+        genericYesNoRelationRolesMatch(relationEvidence, query) ||
+        logicalYesNoRelationMatches(relationEvidence, query, null);
       if (relationRoleMatched) matched.add("YES_NO");
     }
   }

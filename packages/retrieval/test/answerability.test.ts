@@ -1062,6 +1062,91 @@ describe("retrieval answerability", () => {
     },
   );
 
+  it("answers a share relation only when both subjects use the same resource", () => {
+    const supported = hit(920, {
+      title: "Queue sharing",
+      type: "claim",
+      excerpt:
+        "Intake and dispatch remain separate responsibilities, although both can use the same durable queue.",
+      contributions: [contribution("vector", 0.9, 1)],
+    });
+    const different = hit(921, {
+      title: "Queue isolation",
+      type: "claim",
+      excerpt:
+        "Intake and dispatch both use durable queues, but each uses a different queue.",
+      contributions: [contribution("vector", 0.89, 2)],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [supported, different],
+      "Can intake and dispatch share a queue?",
+    );
+
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(supported),
+    ]);
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: true,
+      boundedRelationRoleMatched: true,
+    });
+    expect(result.candidateSignals[1]?.passageSupport.supported).toBe(false);
+  });
+
+  it("treats explicit optionality or operation without a dependency as an answer to mandatory questions", () => {
+    const supported = hit(922, {
+      title: "Worker scheduling",
+      type: "rule",
+      excerpt:
+        "Jobs can run directly without a scheduler; using one is an optional operating safeguard.",
+      contributions: [contribution("vector", 0.88, 3)],
+    });
+    const topical = hit(923, {
+      title: "Scheduler metrics",
+      type: "rule",
+      excerpt:
+        "Scheduler latency and job throughput are recorded for operations.",
+      contributions: [contribution("vector", 0.87, 4)],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [supported, topical],
+      "Is a scheduler mandatory for processing jobs?",
+    );
+
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(supported),
+    ]);
+    expect(result.candidateSignals[1]?.passageSupport.supported).toBe(false);
+  });
+
+  it("treats explicit insufficiency to establish a property as a negative answer, not thematic support", () => {
+    const supported = hit(924, {
+      title: "Safety assessment",
+      type: "claim",
+      excerpt:
+        "A gateway alone is insufficient to establish safety of the architecture.",
+      contributions: [contribution("vector", 0.86, 5)],
+    });
+    const topical = hit(925, {
+      title: "Gateway catalog",
+      type: "claim",
+      excerpt:
+        "Gateway components are listed in the safe architecture catalog.",
+      contributions: [contribution("vector", 0.85, 6)],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [supported, topical],
+      "Does a gateway prove that the architecture is safe?",
+    );
+
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(supported),
+    ]);
+    expect(result.candidateSignals[1]?.passageSupport.supported).toBe(false);
+  });
+
   it("does not apply claim relation fallback to unreviewed claims", () => {
     const unreviewed = hit(43, {
       title: "Local pattern scope",
