@@ -1,4 +1,5 @@
 import type {
+  QueryConditionedEvidenceSpan,
   QueryConditionedEvidenceVerification,
   QueryConditionedEvidenceVerifier,
   QueryConditionedEvidenceVerifierInput,
@@ -74,6 +75,15 @@ export interface LocalMultilingualNliEvidenceVerifierOptions {
   readonly cacheDir?: string;
   readonly localFilesOnly?: boolean;
   readonly runtimeFactory?: LocalMultilingualNliRuntimeFactory;
+}
+
+export interface LocalMultilingualNliEvidenceEvaluation {
+  readonly score: number | null;
+  readonly oppositeScore: number | null;
+  readonly polarityMargin: number | null;
+  readonly direction: "POSITIVE" | "NEGATIVE" | null;
+  readonly evidenceSpan: QueryConditionedEvidenceSpan | null;
+  readonly reason: string;
 }
 
 interface RelationHypotheses {
@@ -354,13 +364,17 @@ export class LocalMultilingualNliEvidenceVerifier implements QueryConditionedEvi
     this.id = `local-multilingual-nli:${this.modelDescriptor.model}@${this.modelDescriptor.revision}:entail=${this.minimumEntailmentScore}:margin=${this.minimumPolarityMargin}`;
   }
 
-  async verify(
+  async evaluate(
     input: QueryConditionedEvidenceVerifierInput,
-  ): Promise<QueryConditionedEvidenceVerification> {
+  ): Promise<LocalMultilingualNliEvidenceEvaluation> {
     const hypotheses = relationHypotheses(input.query, input.title);
     if (!hypotheses) {
       return {
-        decision: "INSUFFICIENT",
+        score: null,
+        oppositeScore: null,
+        polarityMargin: null,
+        direction: null,
+        evidenceSpan: null,
         reason: "LOCAL_MULTILINGUAL_NLI_QUERY_SHAPE_UNSUPPORTED",
       };
     }
@@ -368,7 +382,11 @@ export class LocalMultilingualNliEvidenceVerifier implements QueryConditionedEvi
     const windows = passageWindows(input.passage);
     if (windows.length === 0) {
       return {
-        decision: "INSUFFICIENT",
+        score: null,
+        oppositeScore: null,
+        polarityMargin: null,
+        direction: null,
+        evidenceSpan: null,
         reason: "LOCAL_MULTILINGUAL_NLI_EMPTY_PASSAGE",
       };
     }
@@ -379,7 +397,7 @@ export class LocalMultilingualNliEvidenceVerifier implements QueryConditionedEvi
           score: number;
           oppositeScore: number;
           direction: "POSITIVE" | "NEGATIVE";
-          span: { startOffset: number; endOffset: number };
+          span: QueryConditionedEvidenceSpan;
           distribution: LocalMultilingualNliDistribution;
         }
       | undefined;
@@ -424,31 +442,62 @@ export class LocalMultilingualNliEvidenceVerifier implements QueryConditionedEvi
 
     if (!best) {
       return {
-        decision: "INSUFFICIENT",
+        score: null,
+        oppositeScore: null,
+        polarityMargin: null,
+        direction: null,
+        evidenceSpan: null,
         reason: "LOCAL_MULTILINGUAL_NLI_NO_ENTAILED_POLARITY",
       };
     }
-    if (best.score < this.minimumEntailmentScore) {
+
+    return {
+      score: best.score,
+      oppositeScore: best.oppositeScore,
+      polarityMargin: best.score - best.oppositeScore,
+      direction: best.direction,
+      evidenceSpan: best.span,
+      reason: "LOCAL_MULTILINGUAL_NLI_POLARITY_CANDIDATE",
+    };
+  }
+
+  async verify(
+    input: QueryConditionedEvidenceVerifierInput,
+  ): Promise<QueryConditionedEvidenceVerification> {
+    const evaluation = await this.evaluate(input);
+    if (
+      evaluation.score === null ||
+      evaluation.oppositeScore === null ||
+      evaluation.polarityMargin === null ||
+      evaluation.direction === null ||
+      evaluation.evidenceSpan === null
+    ) {
       return {
         decision: "INSUFFICIENT",
-        score: best.score,
+        reason: evaluation.reason,
+      };
+    }
+    if (evaluation.score < this.minimumEntailmentScore) {
+      return {
+        decision: "INSUFFICIENT",
+        score: evaluation.score,
         reason: "LOCAL_MULTILINGUAL_NLI_BELOW_CALIBRATED_THRESHOLD",
       };
     }
-    if (best.score - best.oppositeScore < this.minimumPolarityMargin) {
+    if (evaluation.polarityMargin < this.minimumPolarityMargin) {
       return {
         decision: "INSUFFICIENT",
-        score: best.score,
+        score: evaluation.score,
         reason: "LOCAL_MULTILINGUAL_NLI_POLARITY_AMBIGUOUS",
       };
     }
 
     return {
       decision: "SUPPORTS",
-      score: best.score,
-      evidenceSpan: best.span,
+      score: evaluation.score,
+      evidenceSpan: evaluation.evidenceSpan,
       reason:
-        best.direction === "POSITIVE"
+        evaluation.direction === "POSITIVE"
           ? "LOCAL_MULTILINGUAL_NLI_POSITIVE_ANSWER_SUPPORT"
           : "LOCAL_MULTILINGUAL_NLI_NEGATIVE_ANSWER_SUPPORT",
     };
