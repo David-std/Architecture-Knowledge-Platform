@@ -31,6 +31,9 @@ type Case = {
 
 const MODEL = "onnx-community/bge-reranker-v2-m3-ONNX";
 const REVISION = "6f5ff65298512715a1e669753bc754d2bc8f367b";
+const BINARY_ENTAILMENT_MODEL = "MoritzLaurer/bge-m3-zeroshot-v2.0";
+const BINARY_ENTAILMENT_REVISION =
+  "9abf1c8aaeb82a2447809c20753ed0b106b76652";
 
 const CASES: Case[] = [
   {
@@ -695,11 +698,232 @@ try {
   await model.dispose?.();
 }
 
+
+const binaryLoadStarted = performance.now();
+const binaryTokenizer = await AutoTokenizer.from_pretrained(
+  BINARY_ENTAILMENT_MODEL,
+  {
+    revision: BINARY_ENTAILMENT_REVISION,
+    local_files_only: false,
+    ...(cacheDir === undefined ? {} : { cache_dir: cacheDir }),
+  },
+);
+const binaryModel = await AutoModelForSequenceClassification.from_pretrained(
+  BINARY_ENTAILMENT_MODEL,
+  {
+    revision: BINARY_ENTAILMENT_REVISION,
+    subfolder: "onnx",
+    model_file_name: "model",
+    dtype: "fp32",
+    device: "cpu",
+    local_files_only: false,
+    ...(cacheDir === undefined ? {} : { cache_dir: cacheDir }),
+  },
+);
+const binaryLoadLatencyMs = performance.now() - binaryLoadStarted;
+
+async function binaryEntailmentScore(
+  premise: string,
+  hypothesis: string,
+): Promise<number> {
+  const inputs = await binaryTokenizer(premise, {
+    text_pair: hypothesis,
+    truncation: true,
+    max_length: 512,
+  });
+  const output = (await binaryModel(inputs)) as unknown as {
+    logits?: { data?: ArrayLike<number> };
+  };
+  const data = output.logits?.data;
+  if (!data || data.length < 2) {
+    throw new Error("BGE_M3_ZEROSHOT_LOGITS_MISSING");
+  }
+  const entailmentLogit = Number(data[0]);
+  const notEntailmentLogit = Number(data[1]);
+  if (
+    !Number.isFinite(entailmentLogit) ||
+    !Number.isFinite(notEntailmentLogit)
+  ) {
+    throw new Error("BGE_M3_ZEROSHOT_LOGITS_INVALID");
+  }
+  const max = Math.max(entailmentLogit, notEntailmentLogit);
+  const entailmentExp = Math.exp(entailmentLogit - max);
+  const notEntailmentExp = Math.exp(notEntailmentLogit - max);
+  return entailmentExp / (entailmentExp + notEntailmentExp);
+}
+
+const binaryStarted = performance.now();
+const binaryObservations = [];
+try {
+  for (const testCase of CASES) {
+    const candidates = [];
+    for (const candidate of testCase.candidates) {
+      const relationHypotheses = buildEvidenceRelationHypotheses(
+        testCase.query,
+        candidate.title,
+      );
+      const windows = sentenceWindows(candidate.passage);
+      let bestIndex = 0;
+      let bestScore = 0;
+      let bestPolarityMargin = 0;
+
+      if (relationHypotheses !== null) {
+        for (let index = 0; index < windows.length; index += 1) {
+          const window = windows[index]!;
+          const [positiveScore, negativeScore] = await Promise.all([
+            binaryEntailmentScore(window.text, relationHypotheses.positive),
+            binaryEntailmentScore(window.text, relationHypotheses.negative),
+          ]);
+          const score = Math.max(positiveScore, negativeScore);
+          const polarityMargin = Math.abs(positiveScore - negativeScore);
+          if (
+            score > bestScore ||
+            (score === bestScore && polarityMargin > bestPolarityMargin)
+          ) {
+            bestScore = score;
+            bestPolarityMargin = polarityMargin;
+            bestIndex = index;
+          }
+        }
+      }
+
+      const bestWindow = windows[bestIndex]!;
+      const goldSpan = candidate.goldSpan ?? null;
+      candidates.push({
+        label: candidate.label,
+        score: bestScore,
+        polarityMargin: bestPolarityMargin,
+        directionCompatible:
+          relationHypotheses !== null &&
+          orderedAnchorsCompatible(testCase.query, bestWindow.text),
+        bestSpan: {
+          text: bestWindow.text,
+          startOffset: bestWindow.start,
+          endOffset: bestWindow.end,
+        },
+        spanCorrect:
+          goldSpan === null
+            ? null
+            : bestWindow.text.includes(goldSpan.trim()),
+      });
+    }
+
+    binaryObservations.push({
+      id: testCase.id,
+      split: testCase.split,
+      family: testCase.family,
+      query: testCase.query,
+      goldLabels: testCase.goldLabels,
+      candidates,
+    });
+  }
+} finally {
+  await binaryModel.dispose?.();
+}
+
+const binaryCalibration = binaryObservations.filter(
+  (entry) => entry.split === "CALIBRATION",
+);
+const binaryHoldout = binaryObservations.filter(
+  (entry) => entry.split === "HOLDOUT",
+);
+const binaryThresholds = [
+  ...new Set([
+    0.1,
+    0.2,
+    0.3,
+    0.4,
+    0.5,
+    0.6,
+    0.7,
+    0.8,
+    0.9,
+    ...binaryCalibration.flatMap((entry) =>
+      entry.candidates.map((candidate) => Number(candidate.score.toFixed(6))),
+    ),
+  ]),
+].sort((left, right) => left - right);
+const binaryMargins = [
+  ...new Set([
+    0,
+    0.05,
+    0.1,
+    0.2,
+    0.3,
+    0.4,
+    0.5,
+    0.6,
+    0.7,
+    0.8,
+    0.9,
+    ...binaryCalibration.flatMap((entry) =>
+      entry.candidates.map((candidate) =>
+        Number(candidate.polarityMargin.toFixed(6)),
+      ),
+    ),
+  ]),
+].sort((left, right) => left - right);
+const binaryCalibrationMetrics = binaryThresholds.flatMap((threshold) =>
+  binaryMargins.map((minimumPolarityMargin) => ({
+    threshold,
+    minimumPolarityMargin,
+    ...metrics(binaryCalibration, threshold, minimumPolarityMargin),
+  })),
+);
+const binaryCalibrationCandidate =
+  binaryCalibrationMetrics
+    .filter(
+      (entry) =>
+        entry.falseAcceptances === 0 &&
+        entry.falseAbstentions === 0 &&
+        entry.wrongSelections === 0 &&
+        entry.supportSelectionPrecision === 1 &&
+        entry.spanAccuracy === 1,
+    )
+    .sort(
+      (left, right) =>
+        right.threshold - left.threshold ||
+        right.minimumPolarityMargin - left.minimumPolarityMargin,
+    )[0] ?? null;
+const binaryHoldoutMetrics =
+  binaryCalibrationCandidate === null
+    ? null
+    : {
+        threshold: binaryCalibrationCandidate.threshold,
+        minimumPolarityMargin:
+          binaryCalibrationCandidate.minimumPolarityMargin,
+        ...metrics(
+          binaryHoldout,
+          binaryCalibrationCandidate.threshold,
+          binaryCalibrationCandidate.minimumPolarityMargin,
+        ),
+      };
+
+const binaryEntailmentComparison = {
+  model: {
+    id: BINARY_ENTAILMENT_MODEL,
+    revision: BINARY_ENTAILMENT_REVISION,
+    labels: ["entailment", "not_entailment"],
+  },
+  loadLatencyMs: binaryLoadLatencyMs,
+  latencyMs: performance.now() - binaryStarted,
+  calibrationCandidate: binaryCalibrationCandidate,
+  holdoutMetrics: binaryHoldoutMetrics,
+  holdoutPassesAcceptance:
+    binaryHoldoutMetrics !== null &&
+    binaryHoldoutMetrics.falseAcceptances === 0 &&
+    binaryHoldoutMetrics.falseAbstentions === 0 &&
+    binaryHoldoutMetrics.wrongSelections === 0 &&
+    binaryHoldoutMetrics.supportSelectionPrecision === 1 &&
+    binaryHoldoutMetrics.spanAccuracy === 1,
+  observations: binaryObservations,
+};
+
 const report = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   status: "MEASURED",
   evidenceBoundary:
-    "Public synthetic source-disjoint shadow evaluation of a multilingual cross-encoder reranker, including passage relevance, title-passage contrast, and a passage-to-positive/negative-relation polarity contrast. Score and polarity margin are calibrated only on calibration sources and frozen for holdout. Relevance or contrast is not evidence truth and is never promoted by this report.",
+    "Public synthetic source-disjoint shadow evaluation of multilingual evidence signals: reranker relevance/contrast plus a pinned multilingual binary entailment model. Score and polarity margin are calibrated only on calibration sources and frozen for holdout. No signal is evidence truth or promoted by this report.",
   model: {
     id: MODEL,
     revision: REVISION,
