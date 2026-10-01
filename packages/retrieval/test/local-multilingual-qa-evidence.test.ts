@@ -3,6 +3,7 @@ import {
   LOCAL_MULTILINGUAL_QA_EVIDENCE_MODEL,
   LOCAL_MULTILINGUAL_QA_EVIDENCE_REVISION,
   LocalMultilingualQaEvidenceVerifier,
+  decodeExtractiveQaLogits,
   type LocalMultilingualQaEvidencePipelineFactory,
 } from "../src/local-multilingual-qa-evidence.js";
 
@@ -137,4 +138,184 @@ describe("local multilingual QA evidence verifier", () => {
       ).toThrow(/minimumSupportScore/);
     },
   );
+});
+
+const QA_INPUT = {
+  query: "Which dispatch destination applies?",
+  candidateKey: "doc:unit",
+  title: "Dispatch",
+  passage: "Dispatch selects the healthy destination.",
+  unitType: "PARAGRAPH",
+  parentUnitType: null,
+  documentType: "concept",
+} as const;
+
+describe("extractive QA source binding", () => {
+  it("requests null-aware bounded decoding and retains no-answer outcomes", async () => {
+    const reader = vi.fn(async () => [
+      { answer: "healthy destination", score: 0.85 },
+      { answer: "", score: 0.95 },
+    ]);
+    const verifier = new LocalMultilingualQaEvidenceVerifier({
+      minimumSupportScore: 0.8,
+      pipelineFactory: async () => reader,
+    });
+    await expect(verifier.verify(QA_INPUT)).resolves.toMatchObject({
+      decision: "INSUFFICIENT",
+      reason: "LOCAL_MULTILINGUAL_QA_NO_ANSWER",
+    });
+    expect(reader).toHaveBeenCalledWith(QA_INPUT.query, QA_INPUT.passage, {
+      top_k: 1,
+      handle_impossible_answer: true,
+      max_answer_len: 15,
+    });
+  });
+
+  it("rejects ambiguous repeated answers without source offsets", async () => {
+    const verifier = new LocalMultilingualQaEvidenceVerifier({
+      minimumSupportScore: 0.8,
+      pipelineFactory: async () => async () => ({
+        answer: "healthy",
+        score: 0.95,
+      }),
+    });
+    await expect(
+      verifier.verify({
+        ...QA_INPUT,
+        passage: "Alpha is healthy. Beta is not healthy.",
+      }),
+    ).resolves.toMatchObject({
+      decision: "INSUFFICIENT",
+      reason: "LOCAL_MULTILINGUAL_QA_ANSWER_NOT_MAPPABLE",
+    });
+  });
+
+  it("uses verified exact offsets to disambiguate repeated answer text", async () => {
+    const passage = "Alpha is healthy. Beta is not healthy.";
+    const start = passage.lastIndexOf("healthy");
+    const verifier = new LocalMultilingualQaEvidenceVerifier({
+      minimumSupportScore: 0.8,
+      pipelineFactory: async () => async () => ({
+        answer: "healthy",
+        score: 0.95,
+        start,
+        end: start + "healthy".length,
+      }),
+    });
+    await expect(
+      verifier.verify({ ...QA_INPUT, passage }),
+    ).resolves.toMatchObject({
+      decision: "SUPPORTS",
+      evidenceSpan: { startOffset: start, endOffset: start + "healthy".length },
+    });
+  });
+
+  it("does not fabricate UTF-16 offsets by lowercasing Unicode text", async () => {
+    const verifier = new LocalMultilingualQaEvidenceVerifier({
+      minimumSupportScore: 0.8,
+      pipelineFactory: async () => async () => ({
+        answer: "HEALTHY",
+        score: 0.95,
+      }),
+    });
+    await expect(
+      verifier.verify({ ...QA_INPUT, passage: "İ dispatch: healthy." }),
+    ).resolves.toMatchObject({
+      decision: "INSUFFICIENT",
+      reason: "LOCAL_MULTILINGUAL_QA_ANSWER_NOT_MAPPABLE",
+    });
+  });
+
+  it.each([-0.1, 1.01, Number.POSITIVE_INFINITY, Number.NaN])(
+    "rejects invalid model probabilities %s",
+    async (score) => {
+      const verifier = new LocalMultilingualQaEvidenceVerifier({
+        minimumSupportScore: 0.8,
+        pipelineFactory: async () => async () => ({ answer: "healthy", score }),
+      });
+      await expect(verifier.verify(QA_INPUT)).resolves.toMatchObject({
+        decision: "INSUFFICIENT",
+      });
+    },
+  );
+});
+
+const LOGITS_INPUT = {
+  inputIds: [0, 10, 2, 2, 22, 23, 2, 1],
+  attentionMask: [1, 1, 1, 1, 1, 1, 1, 0],
+  startLogits: [-10, -10, -10, -10, 10, -10, -10, -10],
+  endLogits: [-10, -10, -10, -10, 10, -10, -10, -10],
+  separatorTokenId: 2,
+  classificationTokenId: 0,
+  specialTokenIds: [0, 1, 2],
+  maxAnswerTokens: 15,
+};
+
+describe("null-aware SQuAD2 span decoding", () => {
+  it("lets CLS win over the highest nonempty span", () => {
+    const result = decodeExtractiveQaLogits({
+      ...LOGITS_INPUT,
+      startLogits: [11, -10, -10, -10, 10, -10, -10, -10],
+      endLogits: [11, -10, -10, -10, 10, -10, -10, -10],
+    });
+    expect(result).toMatchObject({ startToken: null, endToken: null });
+    expect(result.score).toBeCloseTo(0.534446645, 6);
+  });
+
+  it("returns a valid context span when it beats the null answer", () => {
+    const result = decodeExtractiveQaLogits(LOGITS_INPUT);
+    expect(result).toMatchObject({ startToken: 4, endToken: 4 });
+    expect(result.score).toBeGreaterThan(0.99);
+  });
+
+  it("masks question, special and padded logits before normalization", () => {
+    const result = decodeExtractiveQaLogits({
+      ...LOGITS_INPUT,
+      startLogits: [-10, 100, 100, 100, 10, -10, 100, 100],
+      endLogits: [-10, 100, 100, 100, 10, -10, 100, 100],
+    });
+    expect(result).toMatchObject({ startToken: 4, endToken: 4 });
+    expect(result.score).toBeGreaterThan(0.99);
+  });
+
+  it("retains abstention when all valid spans tie with CLS", () => {
+    expect(
+      decodeExtractiveQaLogits({
+        ...LOGITS_INPUT,
+        startLogits: Array(8).fill(0),
+        endLogits: Array(8).fill(0),
+      }),
+    ).toMatchObject({ startToken: null, endToken: null });
+  });
+
+  it("bounds answer length and cannot cross an internal special token", () => {
+    const bounded = decodeExtractiveQaLogits({
+      ...LOGITS_INPUT,
+      endLogits: [-10, -10, -10, -10, -10, 10, -10, -10],
+      maxAnswerTokens: 1,
+    });
+    expect(bounded.startToken).toBe(bounded.endToken);
+    expect(
+      decodeExtractiveQaLogits({
+        ...LOGITS_INPUT,
+        inputIds: [0, 10, 2, 2, 22, 2, 23, 1],
+        endLogits: [-10, -10, -10, -10, -10, -10, 10, -10],
+      }),
+    ).not.toMatchObject({ startToken: 4, endToken: 6 });
+  });
+
+  it("rejects malformed shapes and nonfinite logits", () => {
+    expect(() =>
+      decodeExtractiveQaLogits({ ...LOGITS_INPUT, attentionMask: [1] }),
+    ).toThrow(/LOGITS_INVALID/);
+    expect(() =>
+      decodeExtractiveQaLogits({
+        ...LOGITS_INPUT,
+        startLogits: Array(8).fill(Number.NaN),
+      }),
+    ).toThrow(/LOGITS_INVALID/);
+    expect(() =>
+      decodeExtractiveQaLogits({ ...LOGITS_INPUT, maxAnswerTokens: 0 }),
+    ).toThrow(/LOGITS_INVALID/);
+  });
 });

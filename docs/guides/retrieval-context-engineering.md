@@ -70,6 +70,16 @@ Context packets enforce token/budget constraints and support compact/full modes 
 
 Query transformations and reasoning plans may improve retrieval, but their output is validated before execution and cannot introduce arbitrary SQL/Cypher operators.
 
+## Optional extractive evidence reader
+
+The local multilingual QA adapter remains optional and `SHADOW` only. It extracts a span from the authorized atomic passage; an extraction score does not establish that a proposition follows from that span.
+
+The pinned SQuAD2 reader retains its CLS no-answer outcome and compares it with bounded context spans. Question, padding and special tokens cannot become answers. This follows the [Transformers null-answer decoder](https://github.com/huggingface/transformers/blob/v4.57.1/src/transformers/pipelines/question_answering.py). The installed Transformers.js reader discards that outcome after computing its probability, so AKP decodes the model logits explicitly.
+
+Input exceeding the model token window fails explicitly instead of silently truncating a question or evidence. Citation offsets must match the original UTF-16 passage. Without model offsets, a decoded answer must occur exactly once; ambiguous repetitions or Unicode case-folded matches cannot fabricate a locator.
+
+`benchmark:evidence-verifier-shadow` records decisions, reasons, spans and threshold sweeps. Its synthetic examples are development regressions, not independent calibration. A model that returns a thematic span, misses a supported relation, or cannot handle a table remains in shadow until document- and question-family-disjoint evaluation supports promotion.
+
 ## Retrieval trace
 
 Every selected search candidate carries a bounded first-class retrieval trace from candidate generation through fusion, optional reranking and ContextPacket projection. The trace records channel/rank/raw score, the concrete index or model generation when one exists, persisted query-transform provenance, the authorization scope that admitted the candidate, temporal/truth state, fusion contribution, rerank before/after values and the final selection reason.
