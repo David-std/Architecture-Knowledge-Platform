@@ -2042,6 +2042,11 @@
       "reason": "product documentation"
     },
     {
+      "path": "docs/architecture/retrieval-flow-audit.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "product documentation"
+    },
+    {
       "path": "docs/architecture/runtime-flows.md",
       "category": "PRODUCT_DOCUMENTATION",
       "reason": "product documentation"
