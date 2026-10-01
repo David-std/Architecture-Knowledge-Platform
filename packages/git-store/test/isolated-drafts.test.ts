@@ -9,8 +9,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { GitKnowledgeStore, LocalGitSourceConnector } from "../src/index.js";
+
+// These fixtures execute multiple real Git/process operations; allow bounded
+// filesystem latency on Windows and under parallel workspace test load.
+vi.setConfig({ testTimeout: 30_000 });
 
 const execFileAsync = promisify(execFile);
 

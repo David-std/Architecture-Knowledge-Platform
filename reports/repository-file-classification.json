@@ -807,6 +807,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "apps/extractor/tests/test_docling_conversion_status.py",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "apps/extractor/tests/test_docling_runtime.py",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
@@ -3498,6 +3503,11 @@
     },
     {
       "path": "packages/retrieval/test/answerability.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/assertion-recall.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },

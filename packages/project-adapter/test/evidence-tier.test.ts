@@ -2,13 +2,17 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   DeterministicProjectAdapter,
   buildProjectSnapshot,
   maySupportVerifiedClaim,
   transitionCodeEvidenceTier,
 } from "../src/index.js";
+
+// Real repository/process fixtures have bounded IO deadlines, including
+// slower filesystem scans and parallel workspace execution on Windows.
+vi.setConfig({ testTimeout: 30_000 });
 
 describe("project evidence tiers", () => {
   it("promotes evidence only through explicit stronger proof signals", () => {
