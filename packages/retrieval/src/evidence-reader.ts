@@ -110,6 +110,11 @@ export interface OpenAICompatibleEvidenceReaderOptions {
   readonly apiKey?: string;
   readonly timeoutMs?: number;
   readonly maxOutputTokens?: number;
+  /**
+   * Ask the server for a JSON object reply (`response_format`). Servers that
+   * do not support it can disable this; replies are parsed either way.
+   */
+  readonly jsonResponseFormat?: boolean;
   readonly fetch?: EvidenceReaderFetch;
 }
 
@@ -139,6 +144,7 @@ export class OpenAICompatibleEvidenceReader implements EvidenceReader {
   private readonly apiKey: string | undefined;
   private readonly timeoutMs: number;
   private readonly maxOutputTokens: number;
+  private readonly jsonResponseFormat: boolean;
   private readonly fetchImpl: EvidenceReaderFetch;
 
   constructor(options: OpenAICompatibleEvidenceReaderOptions) {
@@ -150,6 +156,7 @@ export class OpenAICompatibleEvidenceReader implements EvidenceReader {
     this.apiKey = options.apiKey?.trim() || undefined;
     this.timeoutMs = options.timeoutMs ?? 30_000;
     this.maxOutputTokens = options.maxOutputTokens ?? 256;
+    this.jsonResponseFormat = options.jsonResponseFormat ?? true;
     if (!Number.isSafeInteger(this.timeoutMs) || this.timeoutMs < 1) {
       throw new Error("Evidence reader timeoutMs must be a positive integer");
     }
@@ -179,6 +186,9 @@ export class OpenAICompatibleEvidenceReader implements EvidenceReader {
           messages: evidenceReaderMessages(input),
           temperature: 0,
           max_tokens: this.maxOutputTokens,
+          ...(this.jsonResponseFormat
+            ? { response_format: { type: "json_object" } }
+            : {}),
         }),
         signal: controller.signal,
       });

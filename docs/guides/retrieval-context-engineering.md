@@ -83,6 +83,8 @@ The contextual cross-encoder verifier reads each unit the way a person does: und
 | Held-out    | Deterministic                 | 26.0%             | 28.6%            | 51.0%              | 32.0%           |
 | Held-out    | Contextual cross-encoder, 0.2 | 86.0%             | 35.7%            | 73.9%              | 74.2%           |
 
+On a private Spanish-language architecture vault with real retrieval (113 questions written in English and Spanish, 18 of them unanswerable; contents stay local), answerable recall rose from 23% (deterministic) to 87% at threshold 0.2 and false acceptance fell from 11% to 6%; at 0.3 no unanswerable question was admitted. Of the remaining misses, five never reached the candidate pool and seven reached it only through a sibling unit of the right document, which are retrieval-stage defects rather than admission defects.
+
 Enable it explicitly:
 
 ```dotenv

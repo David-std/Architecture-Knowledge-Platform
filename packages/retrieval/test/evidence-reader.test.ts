@@ -245,6 +245,7 @@ describe("OpenAI-compatible evidence reader", () => {
     expect(JSON.parse(String(init.body))).toMatchObject({
       model: "local-model",
       temperature: 0,
+      response_format: { type: "json_object" },
     });
     expect((init.headers as Record<string, string>).authorization).toBe(
       "Bearer secret-key",
