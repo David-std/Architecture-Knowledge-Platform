@@ -1616,6 +1616,88 @@ describe("retrieval answerability", () => {
   });
 });
 
+describe("conditional table evidence", () => {
+  it("binds condition and decision cells in the same row without admitting a metric table", () => {
+    const decision = hit(1901, {
+      title: "Partitioned dispatch selection",
+      type: "rule",
+      unitType: "TABLE",
+      excerpt:
+        "| Observed situation | Decision |\n|---|---|\n| Independent destinations with bursty traffic | Select partitioned dispatch |\n| One stable destination with small constant load | Use a single consumer |",
+      contributions: [contribution("lexical")],
+    });
+    const metrics = hit(1902, {
+      title: "Partitioned dispatch selection",
+      type: "rule",
+      unitType: "TABLE",
+      excerpt:
+        "| Metric | Recorded value |\n|---|---|\n| Partitioned dispatch | Queue length |\n| Single consumer | Delivery count |",
+      contributions: [contribution("lexical")],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [decision, metrics],
+      "When should partitioned dispatch be selected?",
+    );
+
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(decision),
+    ]);
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: true,
+      matchedAnswerCues: ["CONDITION"],
+    });
+    expect(result.candidateSignals[1]?.passageSupport.supported).toBe(false);
+  });
+
+  it("uses bilingual condition and decision headers without admitting metric tables", () => {
+    const decision = hit(1903, {
+      title: "Batched delivery selection",
+      type: "decision-rule",
+      unitType: "TABLE",
+      excerpt:
+        "| Situación observada | Decisión |\n|---|---|\n| Varias entregas pequeñas al mismo destino | Seleccionar batched delivery |\n| Una entrega urgente independiente | Enviar directamente |",
+      contributions: [contribution("lexical")],
+    });
+    const metrics = hit(1904, {
+      title: "Batched delivery selection",
+      type: "decision-rule",
+      unitType: "TABLE",
+      excerpt:
+        "| Métrica | Valor registrado |\n|---|---|\n| Batched delivery | Número de entregas |\n| Envío directo | Duración observada |",
+      contributions: [contribution("lexical")],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [decision, metrics],
+      "When should batched delivery be selected?",
+    );
+
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(decision),
+    ]);
+    expect(result.candidateSignals[1]?.passageSupport.supported).toBe(false);
+  });
+
+  it("does not borrow target anchors from the condition cell", () => {
+    const candidate = hit(1905, {
+      title: "Partitioned dispatch selection",
+      type: "rule",
+      unitType: "TABLE",
+      excerpt:
+        "| Observed situation | Decision |\n|---|---|\n| Partitioned dispatch with bursty traffic | Use a single consumer |",
+      contributions: [contribution("lexical")],
+    });
+
+    expect(
+      assessRetrievalAnswerability(
+        [candidate],
+        "When should partitioned dispatch be selected?",
+      ).supported,
+    ).toBe(false);
+  });
+});
+
 describe("questions are not evidence assertions", () => {
   it.each([
     "Can ALFA call BETA?",

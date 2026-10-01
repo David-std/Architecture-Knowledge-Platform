@@ -1,4 +1,5 @@
 import type { SearchHit } from "@akp/contracts";
+import { markdownTableEvidence } from "./markdown-table-evidence.js";
 
 const ANSWERABILITY_STOPWORDS = new Set([
   "a",
@@ -963,12 +964,98 @@ interface PassageWindow {
   text: string;
   evidence: string;
   scopeTitle?: string;
+  structuralAnswerCues?: readonly PassageAnswerCue[];
 }
 
 function withoutReferenceMarkup(passage: string): string {
   return passage
     .replace(/\[\[[^\]]+\]\]/gu, " ")
     .replace(/\[[^\]]+\]\([^)]*\)/gu, " ");
+}
+
+const TABLE_CONDITION_HEADER_PATTERNS = [
+  "condition*",
+  "scenario*",
+  "situation*",
+  "when",
+  "condicion*",
+  "escenario*",
+  "situacion*",
+  "cuando",
+] as const;
+
+const TABLE_DECISION_HEADER_PATTERNS = [
+  "decision*",
+  "action*",
+  "choice*",
+  "recommend*",
+  "selection*",
+  "accion*",
+  "eleccion*",
+  "recomend*",
+  "seleccion*",
+] as const;
+
+function tableHeaderMatches(
+  value: string,
+  patterns: readonly string[],
+): boolean {
+  const normalized = normalizedMatchText(value);
+  const tokens = normalizedAnswerabilityTokens(value);
+  return patterns.some((pattern) => patternMatches(normalized, tokens, pattern));
+}
+
+function tableConditionWindows(passage: string, query: string): PassageWindow[] {
+  const anchors = queryPredicateAnchors(query, ["CONDITION"]);
+  const requiredAnchorOverlap = Math.min(2, Math.max(1, anchors.length));
+
+  return markdownTableEvidence(passage).flatMap((table) => {
+    const conditionColumns = new Set(
+      table.header.cells
+        .filter((cell) =>
+          tableHeaderMatches(cell.source, TABLE_CONDITION_HEADER_PATTERNS),
+        )
+        .map((cell) => cell.columnIndex),
+    );
+    const decisionColumns = new Set(
+      table.header.cells
+        .filter((cell) =>
+          tableHeaderMatches(cell.source, TABLE_DECISION_HEADER_PATTERNS),
+        )
+        .map((cell) => cell.columnIndex),
+    );
+    if (conditionColumns.size === 0 || decisionColumns.size === 0) return [];
+
+    return table.rows.flatMap((row) => {
+      const conditionText = row.cells
+        .filter((cell) => conditionColumns.has(cell.columnIndex))
+        .map((cell) => cell.source)
+        .join(" ")
+        .trim();
+      const decisionText = row.cells
+        .filter((cell) => decisionColumns.has(cell.columnIndex))
+        .map((cell) => cell.source)
+        .join(" ")
+        .trim();
+      if (!conditionText || !decisionText) return [];
+
+      const decisionTokens = new Set(semanticTokens(decisionText));
+      const overlap = anchors.filter((token) => decisionTokens.has(token));
+      const anchorCoverage =
+        anchors.length === 0 ? 0 : overlap.length / anchors.length;
+      if (overlap.length < requiredAnchorOverlap || anchorCoverage < 0.4) {
+        return [];
+      }
+
+      return [
+        {
+          text: `${table.header.source}\n${row.source}`,
+          evidence: row.source,
+          structuralAnswerCues: ["CONDITION"] as const,
+        },
+      ];
+    });
+  });
 }
 
 function passageWindows(passage: string, title?: string): PassageWindow[] {
@@ -1112,6 +1199,7 @@ function answerRequirementsMatch(
   required: readonly PassageAnswerCue[],
   relationEvidence: string = window,
   relationScopeTitle?: string,
+  structuralAnswerCues: readonly PassageAnswerCue[] = [],
 ): {
   matched: PassageAnswerCue[];
   allMatched: boolean;
@@ -1121,7 +1209,10 @@ function answerRequirementsMatch(
     (cue) => cue !== "YES_NO" && cue !== "QUANTITY" && cue !== "DATE_YEAR",
   );
   const genericMatched = passageAnswerCues(window, genericRequired);
-  const matched = new Set<PassageAnswerCue>(genericMatched);
+  const matched = new Set<PassageAnswerCue>([
+    ...genericMatched,
+    ...structuralAnswerCues.filter((cue) => required.includes(cue)),
+  ]);
 
   if (required.includes("DEFINITION") && !matched.has("DEFINITION")) {
     const normalizedWindow = normalizedMatchText(window);
@@ -1189,6 +1280,7 @@ function boundedPredicateSupport(
   query: string,
   required: readonly PassageAnswerCue[],
   title?: string,
+  allowStructuredTableCondition = false,
 ): {
   supported: boolean;
   matchedAnswerCues: PassageAnswerCue[];
@@ -1206,7 +1298,14 @@ function boundedPredicateSupport(
     relationRoleMatched: false,
   };
 
-  for (const window of passageWindows(passage, title)) {
+  const windows = [
+    ...passageWindows(passage, title),
+    ...(allowStructuredTableCondition && required.includes("CONDITION")
+      ? tableConditionWindows(passage, query)
+      : []),
+  ];
+
+  for (const window of windows) {
     const windowTokens = new Set(semanticTokens(window.text));
     const overlap = anchors.filter((token) => windowTokens.has(token));
     const anchorCoverage =
@@ -1217,6 +1316,7 @@ function boundedPredicateSupport(
       required,
       window.evidence,
       window.scopeTitle,
+      window.structuralAnswerCues,
     );
     const boundedDefinitionRelation =
       required.includes("DEFINITION") &&
@@ -1326,11 +1426,16 @@ export function verifyDeterministicPassageSupport(
       ? 0
       : salientOverlapTokens.length / salientQueryTokens.length;
   const requiredAnswerCues = queryAnswerCues(query);
+  const structuredTableCondition =
+    hit.unitType === "TABLE" && requiredAnswerCues.includes("CONDITION");
   const boundedSupport = boundedPredicateSupport(
     passage,
     query,
     requiredAnswerCues,
-    hit.title?.trim() || hit.document.title?.trim() || undefined,
+    structuredTableCondition
+      ? undefined
+      : hit.title?.trim() || hit.document.title?.trim() || undefined,
+    structuredTableCondition,
   );
   const claimRelationDiagnostics = requiredAnswerCues.includes("YES_NO")
     ? atomicClaimRelationDiagnostics(hit, passage, query)
