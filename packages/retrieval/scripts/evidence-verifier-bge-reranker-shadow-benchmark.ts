@@ -1969,6 +1969,26 @@ const binaryRoleGuardedObservations = binaryHypothesisSweepObservations.map(
 const binaryRoleGuardedCalibrationResult = calibrateBinaryObservations(
   binaryRoleGuardedObservations,
 );
+const binaryDeterministicFallbackObservations =
+  binaryRoleGuardedObservations.map((entry) => ({
+    ...entry,
+    candidates: entry.candidates.map((candidate) =>
+      candidate.deterministic.supported
+        ? {
+            ...candidate,
+            score: 1,
+            polarityMargin: 1,
+            directionCompatible: true,
+            fallbackSource: "DETERMINISTIC",
+          }
+        : {
+            ...candidate,
+            fallbackSource: "ROLE_GUARD_BGE",
+          },
+    ),
+  }));
+const binaryDeterministicFallbackCalibrationResult =
+  calibrateBinaryObservations(binaryDeterministicFallbackObservations);
 const binarySweepScoreOnlyMidpoint = scoreOnlyMidpointCalibration(
   binaryHypothesisSweepObservations,
 );
@@ -2080,11 +2100,33 @@ const binaryRoleGuardedComparison = {
   ),
 };
 
+const binaryDeterministicFallbackComparison = {
+  model: binaryEntailmentComparison.model,
+  mode:
+    "deterministic passage support first; role-guarded binary entailment only rescues deterministic abstentions",
+  calibrationCandidate:
+    binaryDeterministicFallbackCalibrationResult.calibrationCandidate,
+  holdoutMetrics: binaryDeterministicFallbackCalibrationResult.holdoutMetrics,
+  holdoutPassesAcceptance:
+    binaryDeterministicFallbackCalibrationResult.holdoutPassesAcceptance,
+  precisionSafeHoldout:
+    binaryDeterministicFallbackCalibrationResult.holdoutMetrics !== null &&
+    binaryDeterministicFallbackCalibrationResult.holdoutMetrics
+      .falseAcceptances === 0 &&
+    binaryDeterministicFallbackCalibrationResult.holdoutMetrics
+      .wrongSelections === 0 &&
+    binaryDeterministicFallbackCalibrationResult.holdoutMetrics
+      .supportSelectionPrecision === 1 &&
+    binaryDeterministicFallbackCalibrationResult.holdoutMetrics.spanAccuracy ===
+      1,
+  observations: binaryDeterministicFallbackObservations,
+};
+
 const report = {
-  schemaVersion: 10,
+  schemaVersion: 11,
   status: "MEASURED",
   evidenceBoundary:
-    "Public synthetic source-disjoint shadow evaluation of multilingual evidence signals: reranker relevance/contrast plus a pinned multilingual binary entailment model. Calibration and holdout include explicit cross-lingual direct, indirect, wrong-relation and reversed-direction cases with disjoint synthetic sources. Binary observations also record deterministic passage-support diagnostics. A shadow-only syntax guard separately measures query-anchor direction, passive by-subject order and bare both/ambos coreference without changing production authority. A shadow-only language-pair analysis calibrates score-only midpoint thresholds independently for en->es and es->en, requires at least two direction-compatible gold and two non-gold candidates in both calibration and holdout, and freezes each calibration threshold before evaluating holdout. No signal is evidence truth or promoted by this report.",
+    "Public synthetic source-disjoint shadow evaluation of multilingual evidence signals: reranker relevance/contrast plus a pinned multilingual binary entailment model. Calibration and holdout include explicit cross-lingual direct, indirect, wrong-relation and reversed-direction cases with disjoint synthetic sources. Binary observations also record deterministic passage-support diagnostics. A shadow-only syntax guard separately measures query-anchor direction, passive by-subject order and bare both/ambos coreference without changing production authority. A deterministic-first shadow comparison keeps proven passage support and lets the role-guarded binary verifier rescue only deterministic abstentions; it reports precision safety separately from the stricter zero-abstention promotion gate. A shadow-only language-pair analysis calibrates score-only midpoint thresholds independently for en->es and es->en, requires at least two direction-compatible gold and two non-gold candidates in both calibration and holdout, and freezes each calibration threshold before evaluating holdout. No signal is evidence truth or promoted by this report.",
   model: {
     id: MODEL,
     revision: REVISION,
@@ -2102,6 +2144,7 @@ const report = {
   binaryEntailmentComparison,
   binaryHypothesisSweepComparison,
   binaryRoleGuardedComparison,
+  binaryDeterministicFallbackComparison,
   binaryCrossLingualPairCalibration,
   promotionAllowed: false,
   productionDefaultChanged: false,
