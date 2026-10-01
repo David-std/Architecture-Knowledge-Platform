@@ -1799,6 +1799,20 @@ const ernieRuntime = await defaultLocalMultilingualNliRuntimeFactory({
   modelFileName: LOCAL_MULTILINGUAL_NLI_ERNIE_M_LARGE_DESCRIPTOR.modelFileName,
   dtype: LOCAL_MULTILINGUAL_NLI_ERNIE_M_LARGE_DESCRIPTOR.dtype,
   localFilesOnly: false,
+  ...(LOCAL_MULTILINGUAL_NLI_ERNIE_M_LARGE_DESCRIPTOR.tokenizerModel ===
+  undefined
+    ? {}
+    : {
+        tokenizerModel:
+          LOCAL_MULTILINGUAL_NLI_ERNIE_M_LARGE_DESCRIPTOR.tokenizerModel,
+      }),
+  ...(LOCAL_MULTILINGUAL_NLI_ERNIE_M_LARGE_DESCRIPTOR.tokenizerRevision ===
+  undefined
+    ? {}
+    : {
+        tokenizerRevision:
+          LOCAL_MULTILINGUAL_NLI_ERNIE_M_LARGE_DESCRIPTOR.tokenizerRevision,
+      }),
   ...(cacheDir === undefined ? {} : { cacheDir }),
 });
 const ernieLoadLatencyMs = performance.now() - ernieLoadStarted;
