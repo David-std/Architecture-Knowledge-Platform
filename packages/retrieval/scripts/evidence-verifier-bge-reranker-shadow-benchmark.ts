@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import type { SearchHit } from "@akp/contracts";
@@ -1649,11 +1650,16 @@ async function measureBinaryNumericalStability(
       })),
     ),
   );
+  const cpu = os.cpus();
   const runtimeFingerprintInput = {
     node: process.version,
     versions: process.versions,
     platform: process.platform,
     arch: process.arch,
+    operatingSystemRelease: os.release(),
+    logicalCpuCount: cpu.length,
+    cpuModel: cpu[0]?.model ?? null,
+    totalMemoryBytes: os.totalmem(),
     runnerOs: process.env.RUNNER_OS ?? null,
     runnerArch: process.env.RUNNER_ARCH ?? null,
     imageOs: process.env.ImageOS ?? null,
