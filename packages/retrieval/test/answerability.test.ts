@@ -2025,3 +2025,30 @@ describe("reader assertion boundaries", () => {
     },
   );
 });
+
+describe("reference-only punctuation boundaries", () => {
+  it.each([
+    "[[Ops/controller-acceptance]].",
+    "[[Ops/controller-acceptance]] and [[Ops/decoder-acceptance]].",
+    "[Controller acceptance](ops/controller-acceptance.md).",
+    ". — …",
+  ])(
+    "does not use a title to turn a pointer into an assertion: %s",
+    (excerpt) => {
+      const candidate = hit(2030, {
+        title: "Controller decoder releases",
+        type: "adr",
+        excerpt,
+        contributions: [contribution("lexical")],
+      });
+      const result = assessRetrievalAnswerability(
+        [candidate],
+        "Which decoder release does the controller use?",
+      );
+      expect(result.supported).toBe(false);
+      expect(result.candidateSignals[0]?.passageSupport.reason).toBe(
+        "NO_CONCRETE_PASSAGE",
+      );
+    },
+  );
+});

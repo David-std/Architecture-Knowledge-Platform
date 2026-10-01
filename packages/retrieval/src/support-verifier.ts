@@ -1531,7 +1531,11 @@ export function verifyDeterministicPassageSupport(
     boundedSupport.relationRoleMatched ||
     claimRelationSupport;
   let reason: PassageSupportReason;
-  if (!passage) {
+  // Reference markup may leave punctuation behind. Titles can scope real
+  // assertions, but cannot turn a bare period or list marker into evidence.
+  if (
+    ![...passageTokens].some((token) => !ANSWERABILITY_STOPWORDS.has(token))
+  ) {
     reason = "NO_CONCRETE_PASSAGE";
   } else if (!tableSupportEligible) {
     reason = "PASSAGE_SUPPORT_NOT_DEMONSTRATED";
