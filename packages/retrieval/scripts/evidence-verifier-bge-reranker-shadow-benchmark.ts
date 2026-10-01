@@ -810,6 +810,219 @@ function orderedAnchorsCompatible(query: string, passage: string): boolean {
   return true;
 }
 
+const SHADOW_ACTIVE_RELATION_AUXILIARIES = new Set([
+  "can",
+  "could",
+  "should",
+  "must",
+  "will",
+  "would",
+  "do",
+  "does",
+  "did",
+  "puede",
+  "pueden",
+  "debe",
+  "deben",
+]);
+
+const SHADOW_ROLE_STOPWORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "as",
+  "at",
+  "be",
+  "been",
+  "being",
+  "by",
+  "can",
+  "could",
+  "debe",
+  "deben",
+  "did",
+  "do",
+  "does",
+  "for",
+  "from",
+  "how",
+  "in",
+  "is",
+  "must",
+  "not",
+  "of",
+  "on",
+  "or",
+  "puede",
+  "pueden",
+  "should",
+  "the",
+  "these",
+  "this",
+  "those",
+  "to",
+  "was",
+  "were",
+  "what",
+  "when",
+  "where",
+  "which",
+  "who",
+  "why",
+  "will",
+  "with",
+  "would",
+  "y",
+]);
+
+const SHADOW_BARE_COORDINATION_FOLLOWERS = new Set([
+  "are",
+  "can",
+  "could",
+  "debe",
+  "deben",
+  "did",
+  "do",
+  "does",
+  "es",
+  "esta",
+  "estan",
+  "had",
+  "has",
+  "have",
+  "is",
+  "must",
+  "puede",
+  "pueden",
+  "should",
+  "son",
+  "was",
+  "were",
+  "will",
+  "would",
+]);
+
+function shadowRoleTokens(value: string): string[] {
+  return (
+    value
+      .normalize("NFKD")
+      .replace(/\p{M}/gu, "")
+      .toLocaleLowerCase("en-US")
+      .match(/[\p{L}\p{N}]+/gu) ?? []
+  );
+}
+
+function shadowSharedQueryAnchors(
+  query: string,
+  passage: string,
+): {
+  queryTokens: string[];
+  passageTokens: string[];
+  anchors: string[];
+} {
+  const queryTokens = shadowRoleTokens(query);
+  const passageTokens = shadowRoleTokens(passage);
+  const passageSet = new Set(passageTokens);
+  const anchors = [
+    ...new Set(
+      queryTokens.filter(
+        (token) =>
+          token.length >= 3 &&
+          !SHADOW_ROLE_STOPWORDS.has(token) &&
+          passageSet.has(token),
+      ),
+    ),
+  ];
+  return { queryTokens, passageTokens, anchors };
+}
+
+function shadowOrderedRoleCompatible(query: string, passage: string): boolean {
+  const { queryTokens, passageTokens, anchors } = shadowSharedQueryAnchors(
+    query,
+    passage,
+  );
+  if (
+    !queryTokens[0] ||
+    !SHADOW_ACTIVE_RELATION_AUXILIARIES.has(queryTokens[0]) ||
+    anchors.length < 2
+  ) {
+    return true;
+  }
+
+  let cursor = -1;
+  let ordered = true;
+  for (const anchor of anchors) {
+    const next = passageTokens.indexOf(anchor, cursor + 1);
+    if (next < 0) {
+      ordered = false;
+      break;
+    }
+    cursor = next;
+  }
+  if (ordered) return true;
+
+  const subjectAnchor = anchors[0]!;
+  const objectAnchor = anchors.at(-1)!;
+  for (let byIndex = 0; byIndex < passageTokens.length; byIndex += 1) {
+    if (passageTokens[byIndex] !== "by") continue;
+    const objectBeforeBy = passageTokens
+      .slice(0, byIndex)
+      .lastIndexOf(objectAnchor);
+    const subjectAfterBy = passageTokens.indexOf(subjectAnchor, byIndex + 1);
+    if (objectBeforeBy >= 0 && subjectAfterBy > byIndex) return true;
+  }
+  return false;
+}
+
+function shadowCoordinatedCoreferenceCompatible(
+  query: string,
+  passage: string,
+): boolean {
+  const queryTokens = shadowRoleTokens(query);
+  const passageTokens = shadowRoleTokens(passage);
+  if (
+    !queryTokens[0] ||
+    !SHADOW_ACTIVE_RELATION_AUXILIARIES.has(queryTokens[0])
+  ) {
+    return true;
+  }
+
+  const coordinationIndex = queryTokens.findIndex(
+    (token) => token === "and" || token === "y",
+  );
+  const subjectStart = 1;
+  if (
+    coordinationIndex < subjectStart + 1 ||
+    coordinationIndex > subjectStart + 2 ||
+    coordinationIndex + 1 >= queryTokens.length
+  ) {
+    return true;
+  }
+
+  const leftSubject = queryTokens[coordinationIndex - 1]!;
+  const rightSubject = queryTokens[coordinationIndex + 1]!;
+  const markers = passageTokens.flatMap((token, index) =>
+    token === "both" || token === "ambos" || token === "ambas" ? [index] : [],
+  );
+  if (markers.length === 0) return true;
+
+  for (const marker of markers) {
+    const follower = passageTokens[marker + 1] ?? "";
+    if (!SHADOW_BARE_COORDINATION_FOLLOWERS.has(follower)) continue;
+    const leftBefore = passageTokens.slice(0, marker).includes(leftSubject);
+    const rightBefore = passageTokens.slice(0, marker).includes(rightSubject);
+    if (leftBefore && rightBefore) return true;
+  }
+  return false;
+}
+
+function shadowRoleCompatible(query: string, passage: string): boolean {
+  return (
+    shadowOrderedRoleCompatible(query, passage) &&
+    shadowCoordinatedCoreferenceCompatible(query, passage)
+  );
+}
+
 type ShadowRelationHypothesisCandidate = {
   positive: string;
   negative: string;
@@ -1421,6 +1634,9 @@ async function evaluateBinaryCases(
         directionCompatible:
           hypotheses.length > 0 &&
           orderedAnchorsCompatible(testCase.query, bestWindow.text),
+        roleCompatible:
+          hypotheses.length > 0 &&
+          shadowRoleCompatible(testCase.query, bestWindow.text),
         selectedHypothesisSource,
         selectedPositiveHypothesis,
         selectedNegativeHypothesis,
@@ -1741,6 +1957,18 @@ const binaryCalibrationResult = calibrateBinaryObservations(binaryObservations);
 const binarySweepCalibrationResult = calibrateBinaryObservations(
   binaryHypothesisSweepObservations,
 );
+const binaryRoleGuardedObservations = binaryHypothesisSweepObservations.map(
+  (entry) => ({
+    ...entry,
+    candidates: entry.candidates.map((candidate) => ({
+      ...candidate,
+      directionCompatible: candidate.roleCompatible,
+    })),
+  }),
+);
+const binaryRoleGuardedCalibrationResult = calibrateBinaryObservations(
+  binaryRoleGuardedObservations,
+);
 const binarySweepScoreOnlyMidpoint = scoreOnlyMidpointCalibration(
   binaryHypothesisSweepObservations,
 );
@@ -1751,6 +1979,7 @@ const binaryCrossLingualPairCalibration = calibrateCrossLingualPairs(
 function directionFilterAudit(
   observations: Awaited<ReturnType<typeof evaluateBinaryCases>>,
   boundary: { threshold: number; minimumPolarityMargin: number } | null,
+  filter = "uppercase-query-anchors-in-passage-order",
 ) {
   const rejectedCandidates = observations.flatMap((entry) =>
     entry.candidates.flatMap((candidate) =>
@@ -1776,7 +2005,7 @@ function directionFilterAudit(
     })),
   }));
   return {
-    filter: "uppercase-query-anchors-in-passage-order",
+    filter,
     rejectedCandidates,
     ungatedCalibrationMetrics:
       boundary === null
@@ -1833,11 +2062,30 @@ const binaryHypothesisSweepComparison = {
   ),
 };
 
+const binaryRoleGuardedComparison = {
+  model: binaryEntailmentComparison.model,
+  hypothesisStrategy:
+    "shadow-only exhaustive auxiliary/copula split candidates plus syntax-only role/coreference guard",
+  guard:
+    "shared query-anchor order with passive by-subject allowance and bare both/ambos coreference",
+  calibrationCandidate: binaryRoleGuardedCalibrationResult.calibrationCandidate,
+  holdoutMetrics: binaryRoleGuardedCalibrationResult.holdoutMetrics,
+  holdoutPassesAcceptance:
+    binaryRoleGuardedCalibrationResult.holdoutPassesAcceptance,
+  observations: binaryRoleGuardedObservations,
+  directionFilterAudit: directionFilterAudit(
+    binaryRoleGuardedObservations,
+    binaryRoleGuardedCalibrationResult.calibrationCandidate,
+    "query-shared-anchor-order-passive-and-coordination-coreference",
+  ),
+};
+
+
 const report = {
-  schemaVersion: 9,
+  schemaVersion: 10,
   status: "MEASURED",
   evidenceBoundary:
-    "Public synthetic source-disjoint shadow evaluation of multilingual evidence signals: reranker relevance/contrast plus a pinned multilingual binary entailment model. Calibration and holdout include explicit cross-lingual direct, indirect, wrong-relation and reversed-direction cases with disjoint synthetic sources. Binary observations also record deterministic passage-support diagnostics. A shadow-only language-pair analysis calibrates score-only midpoint thresholds independently for en->es and es->en, requires at least two direction-compatible gold and two non-gold candidates in both calibration and holdout, and freezes each calibration threshold before evaluating holdout. No signal is evidence truth or promoted by this report.",
+    "Public synthetic source-disjoint shadow evaluation of multilingual evidence signals: reranker relevance/contrast plus a pinned multilingual binary entailment model. Calibration and holdout include explicit cross-lingual direct, indirect, wrong-relation and reversed-direction cases with disjoint synthetic sources. Binary observations also record deterministic passage-support diagnostics. A shadow-only syntax guard separately measures query-anchor direction, passive by-subject order and bare both/ambos coreference without changing production authority. A shadow-only language-pair analysis calibrates score-only midpoint thresholds independently for en->es and es->en, requires at least two direction-compatible gold and two non-gold candidates in both calibration and holdout, and freezes each calibration threshold before evaluating holdout. No signal is evidence truth or promoted by this report.",
   model: {
     id: MODEL,
     revision: REVISION,
@@ -1854,6 +2102,7 @@ const report = {
   comparisons,
   binaryEntailmentComparison,
   binaryHypothesisSweepComparison,
+  binaryRoleGuardedComparison,
   binaryCrossLingualPairCalibration,
   promotionAllowed: false,
   productionDefaultChanged: false,
