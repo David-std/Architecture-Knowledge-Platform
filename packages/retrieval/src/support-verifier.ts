@@ -1330,11 +1330,12 @@ function answerRequirementsMatch(
   if (required.includes("YES_NO") && !relationEvidenceIsQuestion) {
     const relation = queryYesNoRelationRoles(query);
     if (relation) {
-      relationRoleMatched = relationRolesMatch(
-        relationEvidence,
-        relation,
-        relationScopeTitle,
-      );
+      relationRoleMatched =
+        relationRolesMatch(
+          relationEvidence,
+          relation,
+          relationScopeTitle,
+        ) || requirementAbsenceRelationMatches(relationEvidence, query);
       if (relationRoleMatched) matched.add("YES_NO");
     } else {
       relationRoleMatched =
