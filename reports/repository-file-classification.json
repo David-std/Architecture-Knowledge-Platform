@@ -3337,6 +3337,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/retrieval/src/markdown-table-evidence.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/retrieval/src/ngraph-community.d.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3458,6 +3463,11 @@
     },
     {
       "path": "packages/retrieval/test/local-semantic-embedding.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/markdown-table-evidence.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
