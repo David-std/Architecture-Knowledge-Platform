@@ -37,3 +37,18 @@ Question-only evidence cannot establish an assertion, including quoted or format
 
 A capability phrase containing “without” is not, by itself, proof that the queried activity lacks a requirement. Viewing a report or simulating an activity may be possible without a component even when the actual activity requires it. Likewise, shared token prefixes do not establish entity identity. Such inferences require the queried predicate and component to be demonstrated; legitimate indirect positives remain in the measured semantic frontier until that proof exists.
 The gate is deliberately narrow: a static scan cannot prove that an algorithm generalizes or that an innocuous literal is safe. A new helper module or changes outside the monitored modules can still evade it; retrieval heuristics therefore belong in the monitored modules rather than route handlers. Reviewers must apply the product rule to all retrieval-related code. The existing baseline is technical debt to replace with measured, query-conditioned evidence verification, not an approved dictionary to extend.
+
+### Lexical query representation and recall isolation
+
+PostgreSQL's `simple` dictionary retains accents. The assertion recall query
+therefore uses NFC, Unicode letter/number tokenization and locale-stable case
+folding, preserving the indexed lexeme rather than borrowing the support
+verifier's accent removal. These are representation rules, independent of
+corpus concepts or question vocabulary. The baseline permits those three
+format literals; no domain aliases or answer synonyms are added.
+
+Recall-only matches must not replace a primary retriever's selected unit or
+seed graph expansion. Leaf evidence units take precedence over their containing
+sections/documents in lexical unit selection. Intent routing may add specialized
+tools but retains an explicitly available vector retriever for retrieval intents;
+`NO_RETRIEVAL_REQUIRED` remains empty and capability/scope checks remain authoritative.

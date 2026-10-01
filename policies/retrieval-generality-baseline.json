@@ -456,9 +456,11 @@
     ],
     "packages/retrieval/src/assertion-recall.ts": [
       "\" | \"",
-      "\"./support-verifier.js\"",
+      "\"NFC\"",
+      "\"en-US\"",
       "\"lexical:assertion-recall:\"",
-      "\"string\""
+      "\"string\"",
+      "/[\\p{L}\\p{N}]+/gu"
     ]
   }
 }

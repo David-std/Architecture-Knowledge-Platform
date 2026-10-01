@@ -390,6 +390,9 @@ describe("production lexical ranking", () => {
             graphScopes: [
               { vaultId: fixture.vaultId, pathPrefix: "docs/title-terms.md" },
             ],
+            graphScopes: [
+              { vaultId: fixture.vaultId, pathPrefix: "docs/title-terms.md" },
+            ],
             pathAuthorizer: (path) => path === "docs/title-terms.md",
           },
         );
@@ -587,6 +590,90 @@ describe("production lexical ranking", () => {
             document: hit.document,
           }).toEqual(originalById.get(hit.documentId));
         }
+      } finally {
+        await cleanupLexical(db, fixture);
+        await db.close();
+      }
+    },
+  );
+});
+
+describe("atomic lexical selection and indexed lexemes", () => {
+  it.skipIf(!databaseUrl)(
+    "keeps a matching leaf when its container ranks higher",
+    async () => {
+      if (!databaseUrl) return;
+      const fixture = lexicalFixture();
+      const db = new Postgres(databaseUrl);
+      try {
+        await seedLexical(db, fixture);
+        for (const [id, body] of [
+          [fixture.structuralParentId, "Ranking ".repeat(50)],
+          [fixture.units.externalId, "Ranking approved atomic answer."],
+        ] as const) {
+          await db.pool.query(
+            "update knowledge_units set body=$2,content_hash=$3 where id=$1",
+            [id, body, createHash("sha256").update(body).digest("hex")],
+          );
+        }
+        const hits = await queryKnowledge(db, searchRequest(fixture), {
+          channels: ["lexical"],
+          vaultIds: [fixture.vaultId],
+          graphScopes: [
+            { vaultId: fixture.vaultId, pathPrefix: "docs/identity.md" },
+          ],
+          pathAuthorizer: (path) => path === "docs/identity.md",
+        });
+        expect(hits[0]?.unitId).toBe(fixture.units.externalId);
+        expect(hits[0]?.unitType).not.toBe("SECTION");
+        expect(hits[0]?.excerpt).toContain("approved atomic answer");
+      } finally {
+        await cleanupLexical(db, fixture);
+        await db.close();
+      }
+    },
+  );
+
+  it.skipIf(!databaseUrl)(
+    "matches accented Spanish terms through assertion recall",
+    async () => {
+      if (!databaseUrl) return;
+      const fixture = lexicalFixture();
+      const db = new Postgres(databaseUrl);
+      try {
+        await seedLexical(db, fixture);
+        const body = "La nómina pública se registra en el sistema autorizado.";
+        const hash = createHash("sha256").update(body).digest("hex");
+        await db.pool.query(
+          "update knowledge_documents set type='claim',title='Nómina pública',body_cache=$2,content_hash=$3 where id=$1",
+          [fixture.documents.titleTerms, body, hash],
+        );
+        await db.pool.query(
+          "update knowledge_units set heading_path=$2,body=$3,content_hash=$4 where id=$1",
+          [fixture.units.titleTerms, ["Nómina pública"], body, hash],
+        );
+        const hits = await queryKnowledge(
+          db,
+          {
+            ...searchRequest(fixture),
+            query: "¿Cómo se registra la nómina pública?",
+          },
+          {
+            channels: ["lexical"],
+            vaultIds: [fixture.vaultId],
+            graphScopes: [
+              { vaultId: fixture.vaultId, pathPrefix: "docs/title-terms.md" },
+            ],
+            pathAuthorizer: (path) => path === "docs/title-terms.md",
+          },
+        );
+        expect(hits[0]?.documentId).toBe(fixture.documents.titleTerms);
+        expect(hits[0]?.unitId).toBe(fixture.units.titleTerms);
+        expect(
+          hits[0]?.reasons.some((reason) =>
+            reason.includes("assertion-recall"),
+          ),
+        ).toBe(true);
       } finally {
         await cleanupLexical(db, fixture);
         await db.close();

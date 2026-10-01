@@ -2002,7 +2002,7 @@ export async function queryKnowledge(
                    and u.corpus_revision=d.index_revision
                    and u.lifecycle ${lifecycleClause}
                    and ${trustClause("u.")}
-                  order by unit_score desc,u.container_only,u.structural_order,u.id
+                  order by u.container_only,unit_score desc,u.structural_order,u.id
                  limit 1
               ) best_unit on true
           )
@@ -3313,7 +3313,11 @@ export async function queryKnowledge(
     string,
     { unitId: string; unitType: string }
   >();
-  for (const row of [...lexical.rows, ...vector.rows]) {
+  for (const row of [
+    ...strictLexicalRows,
+    ...vector.rows,
+    ...directAssertionRecallRows,
+  ]) {
     const documentId = String(row.id);
     if (!bestUnitByDocument.has(documentId) && row.unit_id) {
       bestUnitByDocument.set(documentId, {
