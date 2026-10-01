@@ -696,6 +696,174 @@ function genericYesNoRelationRolesMatch(
   );
 }
 
+
+interface MandatoryRelationRoles {
+  requiredItemAnchors: string[];
+  contextAnchors: string[];
+}
+
+interface ProofRelationRoles {
+  subjectAnchors: string[];
+  objectAnchors: string[];
+}
+
+function canonicalParaphraseToken(token: string): string {
+  const canonical = canonicalSemanticToken(token);
+  if (/^(process|proces)/u.test(canonical)) return "process";
+  if (/^(job|trabaj)/u.test(canonical)) return "job";
+  if (/^(secure|security|segur)/u.test(canonical)) return "security";
+  if (/^(establish|establec)/u.test(canonical)) return "establish";
+  if (/^(insufficien)/u.test(canonical)) return "insufficient";
+  if (/^(alone|solo)/u.test(canonical)) return "alone";
+  return canonical;
+}
+
+function orderedParaphraseTokens(value: string): string[] {
+  return normalizedAnswerabilityTokens(value).map(canonicalParaphraseToken);
+}
+
+function paraphraseAnchorEligible(token: string): boolean {
+  return (
+    token.length >= 2 &&
+    !ANSWERABILITY_STOPWORDS.has(token) &&
+    !QUESTION_SHAPE_TOKENS.has(token) &&
+    !RELATION_GRAMMAR_TOKENS.has(token) &&
+    token !== "require"
+  );
+}
+
+function queryMandatoryRelationRoles(
+  query: string,
+): MandatoryRelationRoles | null {
+  const rawTokens = normalizedAnswerabilityTokens(query);
+  const mandatoryIndex = rawTokens.findIndex((token) =>
+    /^(mandatory|obligat)/u.test(token),
+  );
+  if (mandatoryIndex < 0) return null;
+
+  const tokens = rawTokens.map(canonicalParaphraseToken);
+  const purposeIndex = rawTokens.findIndex(
+    (token, index) =>
+      index > mandatoryIndex && (token === "for" || token === "para"),
+  );
+  const beforePredicate = tokens
+    .slice(0, mandatoryIndex)
+    .filter(paraphraseAnchorEligible);
+  const afterPredicate = tokens.slice(
+    mandatoryIndex + 1,
+    purposeIndex >= 0 ? purposeIndex : tokens.length,
+  );
+  const requiredItemAnchors = (
+    beforePredicate.length > 0 ? beforePredicate : afterPredicate
+  ).filter(paraphraseAnchorEligible);
+  const contextAnchors =
+    purposeIndex >= 0
+      ? tokens.slice(purposeIndex + 1).filter(paraphraseAnchorEligible)
+      : [];
+
+  if (requiredItemAnchors.length === 0 || contextAnchors.length === 0) {
+    return null;
+  }
+  return { requiredItemAnchors, contextAnchors };
+}
+
+function mandatoryAbsenceParaphraseMatches(
+  evidence: string,
+  query: string,
+): boolean {
+  const roles = queryMandatoryRelationRoles(query);
+  if (!roles) return false;
+
+  const tokens = orderedParaphraseTokens(evidence);
+  const evidenceTokens = new Set(tokens);
+  const contextOverlap = roles.contextAnchors.filter((token) =>
+    evidenceTokens.has(token),
+  );
+  const requiredContextOverlap = Math.min(
+    2,
+    Math.max(1, roles.contextAnchors.length),
+  );
+  if (
+    contextOverlap.length < requiredContextOverlap ||
+    contextOverlap.length / roles.contextAnchors.length < 0.5
+  ) {
+    return false;
+  }
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    if (tokens[index] !== "without" && tokens[index] !== "sin") continue;
+    const local = new Set(tokens.slice(index + 1, index + 7));
+    if (roles.requiredItemAnchors.every((token) => local.has(token))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function queryProofRelationRoles(query: string): ProofRelationRoles | null {
+  const rawTokens = normalizedAnswerabilityTokens(query);
+  const predicateIndex = rawTokens.findIndex((token) =>
+    /^(prove|demonstr|demuestr)/u.test(token),
+  );
+  if (predicateIndex < 0) return null;
+
+  const tokens = rawTokens.map(canonicalParaphraseToken);
+  const subjectAnchors = tokens
+    .slice(0, predicateIndex)
+    .filter(paraphraseAnchorEligible);
+  const objectAnchors = tokens
+    .slice(predicateIndex + 1)
+    .filter(paraphraseAnchorEligible);
+
+  if (subjectAnchors.length === 0 || objectAnchors.length === 0) return null;
+  return { subjectAnchors, objectAnchors };
+}
+
+function insufficientProofParaphraseMatches(
+  evidence: string,
+  query: string,
+): boolean {
+  const roles = queryProofRelationRoles(query);
+  if (!roles) return false;
+
+  const tokens = orderedParaphraseTokens(evidence);
+  for (let index = 0; index < tokens.length; index += 1) {
+    if (tokens[index] !== "insufficient") continue;
+
+    const subjectBoundary = tokens
+      .slice(Math.max(0, index - 5), index)
+      .lastIndexOf("alone");
+    if (subjectBoundary < 0) continue;
+    const absoluteAloneIndex = Math.max(0, index - 5) + subjectBoundary;
+    const subjectWindow = new Set(
+      tokens
+        .slice(Math.max(0, absoluteAloneIndex - 4), absoluteAloneIndex)
+        .filter(paraphraseAnchorEligible),
+    );
+    if (!roles.subjectAnchors.every((token) => subjectWindow.has(token))) {
+      continue;
+    }
+
+    const tail = tokens.slice(index + 1);
+    if (!tail.includes("establish")) continue;
+    const tailTokens = new Set(tail);
+    const objectOverlap = roles.objectAnchors.filter((token) =>
+      tailTokens.has(token),
+    );
+    const requiredObjectOverlap = Math.min(
+      2,
+      Math.max(1, roles.objectAnchors.length),
+    );
+    if (
+      objectOverlap.length >= requiredObjectOverlap &&
+      objectOverlap.length / roles.objectAnchors.length >= 0.5
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function isSupportEligibleProposition(hit: SearchHit): boolean {
   return (
     hit.lifecycle === "ACTIVE" &&
@@ -1265,10 +1433,10 @@ function answerRequirementsMatch(
       );
       if (relationRoleMatched) matched.add("YES_NO");
     } else {
-      relationRoleMatched = genericYesNoRelationRolesMatch(
-        relationEvidence,
-        query,
-      );
+      relationRoleMatched =
+        genericYesNoRelationRolesMatch(relationEvidence, query) ||
+        mandatoryAbsenceParaphraseMatches(relationEvidence, query) ||
+        insufficientProofParaphraseMatches(relationEvidence, query);
       if (relationRoleMatched) matched.add("YES_NO");
     }
   }

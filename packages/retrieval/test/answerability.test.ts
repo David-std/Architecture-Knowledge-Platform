@@ -1616,6 +1616,62 @@ describe("retrieval answerability", () => {
   });
 });
 
+describe("role-bound yes-no paraphrases", () => {
+  it("accepts processing without the queried mandatory component", () => {
+    const optionalScheduler = hit(1881, {
+      title: "Ejecución de trabajos",
+      type: "claim",
+      excerpt:
+        "Los trabajos pueden procesarse directamente sin scheduler; incorporarlo es una opción operativa.",
+      contributions: [contribution("lexical")],
+    });
+    const optionalCollector = hit(1882, {
+      title: "Scheduler",
+      type: "claim",
+      excerpt:
+        "Los trabajos se ejecutan con un scheduler y un recolector de auditoría opcional.",
+      contributions: [contribution("lexical")],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [optionalCollector, optionalScheduler],
+      "¿Es obligatorio usar un scheduler para procesar trabajos?",
+    );
+
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(optionalScheduler),
+    ]);
+    expect(result.candidateSignals[0]?.passageSupport.supported).toBe(false);
+  });
+
+  it("binds insufficiency to the subject that is insufficient", () => {
+    const middleware = hit(1883, {
+      title: "Security assessment",
+      type: "claim",
+      excerpt:
+        "Middleware alone is insufficient to establish security of the architecture.",
+      contributions: [contribution("lexical")],
+    });
+    const proxy = hit(1884, {
+      title: "Security notices",
+      type: "claim",
+      excerpt:
+        "A gateway displays notices that a proxy alone is insufficient to establish security of the architecture.",
+      contributions: [contribution("lexical")],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [proxy, middleware],
+      "Does middleware prove that an architecture is secure?",
+    );
+
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(middleware),
+    ]);
+    expect(result.candidateSignals[0]?.passageSupport.supported).toBe(false);
+  });
+});
+
 describe("conditional table evidence", () => {
   it("binds condition and decision cells in the same row without admitting a metric table", () => {
     const decision = hit(1901, {
