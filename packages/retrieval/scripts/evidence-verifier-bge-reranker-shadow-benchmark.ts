@@ -1550,7 +1550,8 @@ const binaryModel = await AutoModelForSequenceClassification.from_pretrained(
 );
 const binaryLoadLatencyMs = performance.now() - binaryLoadStarted;
 
-async function binaryEntailmentScore(
+async function scoreBinaryEntailmentModel(
+  model: typeof binaryModel,
   premise: string,
   hypothesis: string,
 ): Promise<number> {
@@ -1559,7 +1560,7 @@ async function binaryEntailmentScore(
     truncation: true,
     max_length: 512,
   });
-  const output = (await binaryModel(inputs)) as unknown as {
+  const output = (await model(inputs)) as unknown as {
     logits?: { data?: ArrayLike<number> };
   };
   const data = output.logits?.data;
@@ -1580,11 +1581,19 @@ async function binaryEntailmentScore(
   return entailmentExp / (entailmentExp + notEntailmentExp);
 }
 
+async function binaryEntailmentScore(
+  premise: string,
+  hypothesis: string,
+): Promise<number> {
+  return scoreBinaryEntailmentModel(binaryModel, premise, hypothesis);
+}
+
 function sha256Text(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
 async function measureBinaryNumericalStability(
+  scorePair: (premise: string, hypothesis: string) => Promise<number>,
   repetitions = 3,
   maximumProbes = 8,
 ) {
@@ -1602,10 +1611,10 @@ async function measureBinaryNumericalStability(
       const negativeScores = [];
       for (let run = 0; run < repetitions; run += 1) {
         positiveScores.push(
-          await binaryEntailmentScore(window.text, hypothesis.positive),
+          await scorePair(window.text, hypothesis.positive),
         );
         negativeScores.push(
-          await binaryEntailmentScore(window.text, hypothesis.negative),
+          await scorePair(window.text, hypothesis.negative),
         );
       }
 
@@ -2056,9 +2065,48 @@ try {
     (testCase, candidate) =>
       shadowRelationHypothesisCandidates(testCase.query, candidate.title),
   );
-  binaryNumericalStabilityAudit = await measureBinaryNumericalStability();
+  binaryNumericalStabilityAudit =
+    await measureBinaryNumericalStability(binaryEntailmentScore);
 } finally {
   await binaryModel.dispose?.();
+}
+
+const controlledSessionOptions = {
+  executionMode: "sequential" as const,
+  intraOpNumThreads: 1,
+  interOpNumThreads: 1,
+  graphOptimizationLevel: "disabled" as const,
+};
+const controlledBinaryModel =
+  await AutoModelForSequenceClassification.from_pretrained(
+    BINARY_ENTAILMENT_MODEL,
+    {
+      revision: BINARY_ENTAILMENT_REVISION,
+      subfolder: "",
+      model_file_name: "model",
+      dtype: "fp32",
+      device: "cpu",
+      session_options: controlledSessionOptions,
+      local_files_only: false,
+      ...(cacheDir === undefined ? {} : { cache_dir: cacheDir }),
+    },
+  );
+let binaryControlledSessionStabilityAudit: Awaited<
+  ReturnType<typeof measureBinaryNumericalStability>
+>;
+try {
+  binaryControlledSessionStabilityAudit = {
+    ...(await measureBinaryNumericalStability((premise, hypothesis) =>
+      scoreBinaryEntailmentModel(
+        controlledBinaryModel,
+        premise,
+        hypothesis,
+      ),
+    )),
+    sessionOptions: controlledSessionOptions,
+  };
+} finally {
+  await controlledBinaryModel.dispose?.();
 }
 
 const binaryCalibrationResult = calibrateBinaryObservations(binaryObservations);
@@ -2230,10 +2278,10 @@ const binaryDeterministicFallbackComparison = {
 };
 
 const report = {
-  schemaVersion: 12,
+  schemaVersion: 13,
   status: "MEASURED",
   evidenceBoundary:
-    "Public synthetic source-disjoint shadow evaluation of multilingual evidence signals: reranker relevance/contrast plus a pinned multilingual binary entailment model. Calibration and holdout include explicit cross-lingual direct, indirect, wrong-relation and reversed-direction cases with disjoint synthetic sources. Binary observations also record deterministic passage-support diagnostics. A shadow-only syntax guard separately measures query-anchor direction, passive by-subject order and bare both/ambos coreference without changing production authority. A deterministic-first shadow comparison keeps proven passage support and lets the role-guarded binary verifier rescue only deterministic abstentions; it reports precision safety separately from the stricter zero-abstention promotion gate. A numerical-stability audit repeats fixed binary inference pairs within one process and records score/runtime fingerprints so cross-run calibration drift is observable before any promotion. A shadow-only language-pair analysis calibrates score-only midpoint thresholds independently for en->es and es->en, requires at least two direction-compatible gold and two non-gold candidates in both calibration and holdout, and freezes each calibration threshold before evaluating holdout. No signal is evidence truth or promoted by this report.",
+    "Public synthetic source-disjoint shadow evaluation of multilingual evidence signals: reranker relevance/contrast plus a pinned multilingual binary entailment model. Calibration and holdout include explicit cross-lingual direct, indirect, wrong-relation and reversed-direction cases with disjoint synthetic sources. Binary observations also record deterministic passage-support diagnostics. A shadow-only syntax guard separately measures query-anchor direction, passive by-subject order and bare both/ambos coreference without changing production authority. A deterministic-first shadow comparison keeps proven passage support and lets the role-guarded binary verifier rescue only deterministic abstentions; it reports precision safety separately from the stricter zero-abstention promotion gate. A numerical-stability audit repeats fixed binary inference pairs within one process and records score/runtime fingerprints so cross-run calibration drift is observable before any promotion. A second shadow probe uses a sequential single-thread ONNX session with graph optimizations disabled to test whether a more controlled CPU execution mode improves cross-run portability. A shadow-only language-pair analysis calibrates score-only midpoint thresholds independently for en->es and es->en, requires at least two direction-compatible gold and two non-gold candidates in both calibration and holdout, and freezes each calibration threshold before evaluating holdout. No signal is evidence truth or promoted by this report.",
   model: {
     id: MODEL,
     revision: REVISION,
@@ -2253,6 +2301,7 @@ const report = {
   binaryRoleGuardedComparison,
   binaryDeterministicFallbackComparison,
   binaryNumericalStabilityAudit,
+  binaryControlledSessionStabilityAudit,
   binaryCrossLingualPairCalibration,
   promotionAllowed: false,
   productionDefaultChanged: false,
