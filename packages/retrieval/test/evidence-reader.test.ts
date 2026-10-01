@@ -74,6 +74,30 @@ describe("evidence quotes", () => {
     expect(locateEvidenceQuote(contextual, "")).toBeNull();
   });
 
+  it("rejects an ambiguous value and accepts the unique qualified table row", () => {
+    const passage =
+      "| Class | Deadline |\n|---|---|\n| I | 24 hours |\n| II | 24 hours |";
+    const contextual = contextualEvidenceText({ title: "Recalls", passage });
+    expect(locateEvidenceQuote(contextual, "Deadline: 24 hours")).toBeNull();
+    const span = locateEvidenceQuote(
+      contextual,
+      "Class: II; Deadline: 24 hours",
+    );
+    expect(span && passage.slice(span.startOffset, span.endOffset)).toBe(
+      "| II | 24 hours |",
+    );
+  });
+
+  it("does not fabricate a location for repeated prose", () => {
+    const contextual = contextualEvidenceText({
+      title: "",
+      passage: "The notice is optional.\nThe notice is optional.",
+    });
+    expect(
+      locateEvidenceQuote(contextual, "The notice is optional"),
+    ).toBeNull();
+  });
+
   it("never treats the heading as passage text", () => {
     const contextual = contextualEvidenceText({
       title: "CQRS can share a database",
@@ -199,6 +223,21 @@ describe("reader evidence verifier", () => {
     ]);
   });
 
+  it("does not expose provider error text in candidate diagnostics", async () => {
+    const verifier = new ReaderEvidenceVerifier({
+      reader: {
+        id: "failed",
+        judge: async () => {
+          throw new Error("private path and provider credential");
+        },
+      },
+    });
+    await expect(verifier.verify(input(table))).resolves.toMatchObject({
+      decision: "INSUFFICIENT",
+      reason: "READER_ERROR:PROVIDER_FAILURE",
+    });
+  });
+
   it("reads only the highest shortlist scores above the floor", async () => {
     const reader = readerReturning((value) => ({
       answers: true,
@@ -282,6 +321,47 @@ describe("OpenAI-compatible evidence reader", () => {
     await expect(
       reader.judge({ query: "Q?", scope: "", body: "B." }),
     ).rejects.toThrow(/^EVIDENCE_READER_HTTP_503$/);
+  });
+
+  it("keeps the deadline active while consuming a stalled response body", async () => {
+    vi.useFakeTimers();
+    try {
+      const reader = new OpenAICompatibleEvidenceReader({
+        baseUrl: "http://127.0.0.1:11434",
+        model: "m",
+        timeoutMs: 20,
+        fetch: async (_url, init) =>
+          new Response(
+            new ReadableStream({
+              start(controller) {
+                init!.signal!.addEventListener("abort", () =>
+                  controller.error(new Error("aborted")),
+                );
+              },
+            }),
+            { status: 200 },
+          ),
+      });
+      const result = expect(
+        reader.judge({ query: "Q?", scope: "", body: "B." }),
+      ).rejects.toThrow(/^EVIDENCE_READER_TIMEOUT$/);
+      await vi.advanceTimersByTimeAsync(20);
+      await result;
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("fails closed when the response body is not JSON", async () => {
+    const reader = new OpenAICompatibleEvidenceReader({
+      baseUrl: "http://127.0.0.1:11434",
+      model: "m",
+      fetch: async () => new Response("invalid", { status: 200 }),
+    });
+    await expect(
+      reader.judge({ query: "Q?", scope: "", body: "B." }),
+    ).rejects.toThrow(/^EVIDENCE_READER_RESPONSE_INVALID$/);
   });
 
   it("rejects credentials embedded in the base URL", () => {

@@ -158,7 +158,9 @@ export function locateEvidenceQuote(
   // Lines are joined by a space so a quote may span consecutive lines.
   const joined = keys.join(" ");
   const position = joined.indexOf(needle);
-  if (position < 0) return null;
+  // Repeated text does not identify which line or row the reader selected.
+  // Keep it exploratory until the quote includes enough context to be unique.
+  if (position < 0 || joined.indexOf(needle, position + 1) >= 0) return null;
   let offset = 0;
   let first = -1;
   let last = -1;
