@@ -94,17 +94,30 @@ function workflowEnv(source: string, name: string): string {
 }
 
 function lockedLinuxDoclingVersion(source: string): string {
-  for (const line of source.split(/\r?\n/u)) {
-    if (
-      !line.includes('{ name = "docling"') ||
-      !line.includes(`marker = "sys_platform != 'darwin'"`)
-    ) {
-      continue;
-    }
-    const version = /\bversion = "([^"]+)"/u.exec(line)?.[1];
-    if (version) return version;
+  // Read the uv.lock package entries instead of a dependency line: accelerator
+  // forks rewrite dependency markers, while each locked version keeps the
+  // resolution markers that select it.
+  const versions = new Set<string>();
+  for (const block of source.split(/^\[\[package\]\]\s*$/mu).slice(1)) {
+    if (!/^name = "docling"\s*$/mu.test(block)) continue;
+    const version = /^version = "([^"]+)"\s*$/mu.exec(block)?.[1];
+    const markerList = /^resolution-markers = \[([\s\S]*?)^\]/mu.exec(
+      block,
+    )?.[1];
+    const markers = [...(markerList ?? "").matchAll(/"([^"]+)"/gu)].map(
+      (match) => match[1] ?? "",
+    );
+    const linuxEligible =
+      markers.length === 0 ||
+      markers.some((marker) => !marker.includes("sys_platform == 'darwin'"));
+    if (version && linuxEligible) versions.add(version);
   }
-  throw new Error("Unable to resolve the locked Linux Docling version.");
+  if (versions.size !== 1) {
+    throw new Error(
+      `Unable to resolve one locked Linux Docling version (found ${versions.size}).`,
+    );
+  }
+  return [...versions][0]!;
 }
 
 const paths = {
