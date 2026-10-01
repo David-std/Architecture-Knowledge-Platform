@@ -1,0 +1,42 @@
+{
+  "id": "evidence-admission-generalization",
+  "version": 1,
+  "description": "Domain-disjoint evaluation of passage-level evidence admission: does an admitted unit actually answer the question?",
+  "splits": {
+    "development": [
+      "domains/hospital-pharmacy.json",
+      "domains/biblioteca-municipal.json",
+      "domains/warehouse-logistics.json",
+      "domains/seguridad-alimentaria.json"
+    ],
+    "heldout": [
+      "domains/incident-response.json",
+      "domains/transporte-publico.json",
+      "domains/aircraft-maintenance.json",
+      "domains/nomina-y-licencias.json"
+    ]
+  },
+  "intents": [
+    "YES_NO",
+    "DEFINITION",
+    "CONDITION",
+    "RATIONALE",
+    "PROCEDURE",
+    "QUANTITY",
+    "DATE",
+    "ENTITY"
+  ],
+  "challenges": {
+    "PARAPHRASE": "The question uses different words or syntax than the answering unit.",
+    "CROSS_LINGUAL": "The question and the answering unit are written in different languages.",
+    "NEGATIVE_ANSWER": "The unit answers a yes/no question with no; it still settles the question.",
+    "TITLE_CONTEXT": "The unit body does not name the subject; its title or heading identifies it.",
+    "TABLE_ROW": "The answer, or the missing answer, depends on one row of a table.",
+    "COMPOUND": "More than one unit is required to cover the question.",
+    "INFORMAL": "No question mark, lowercase, or imperative phrasing.",
+    "MISSING_SLOT": "The corpus discusses the subject but not the requested value, name, date or amount.",
+    "WRONG_SUBJECT": "The corpus states the relation for a different entity than the one asked about.",
+    "INVERTED_RELATION": "The corpus states the relation in the opposite direction.",
+    "SAME_VOCABULARY": "Unanswerable question that shares vocabulary with answering-looking units."
+  }
+}

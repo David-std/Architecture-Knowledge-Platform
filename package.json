@@ -63,6 +63,7 @@
     "benchmark:registered-retrieval-diagnostics": "tsx scripts/registered-retrieval-diagnostics.ts",
     "assurance:deep-spec": "node scripts/deep-spec-traceability.mjs",
     "benchmark:evidence-admission": "tsx scripts/deterministic-evidence-admission-benchmark.ts",
+    "benchmark:evidence-admission:generalization": "tsx scripts/evidence-admission-generalization-benchmark.ts",
     "benchmark:evidence-verifier-shadow": "tsx scripts/evidence-verifier-shadow-benchmark.ts",
     "benchmark:evidence-verifier-nli-shadow": "tsx scripts/evidence-verifier-nli-shadow-benchmark.ts",
     "benchmark:evidence-verifier-e5-relation-shadow": "tsx scripts/evidence-verifier-e5-relation-shadow-benchmark.ts",

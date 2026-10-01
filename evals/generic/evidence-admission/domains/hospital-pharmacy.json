@@ -1,0 +1,437 @@
+{
+  "id": "hospital-pharmacy",
+  "split": "development",
+  "language": "en",
+  "description": "Hospital pharmacy operations: cold chain, controlled substances, recalls, returns and sterile compounding.",
+  "units": [
+    {
+      "id": "hp-cold-chain-range",
+      "documentType": "rule",
+      "unitType": "PARAGRAPH",
+      "title": "Cold-chain storage",
+      "headingPath": ["Medication storage", "Cold-chain storage"],
+      "text": "Refrigerated medicines are stored between 2 °C and 8 °C. Each refrigerator has a continuous data logger that records the temperature every five minutes and raises an alarm at the pharmacy desk when a reading leaves the range."
+    },
+    {
+      "id": "hp-excursion",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Temperature excursions",
+      "headingPath": ["Medication storage", "Temperature excursions"],
+      "text": "If a refrigerator stays above 8 °C for more than 30 minutes, the affected stock is quarantined rather than discarded. The pharmacist on duty contacts the manufacturer, and the stock is released only after written confirmation that it remains stable."
+    },
+    {
+      "id": "hp-vaccine-freeze",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Frozen vaccines are not reused",
+      "headingPath": ["Medication storage", "Frozen vaccines are not reused"],
+      "text": "Freezing destroys the potency of most vaccines even when the vial looks normal after thawing. A vaccine that has frozen is destroyed and recorded as pharmaceutical waste; it never goes back into stock."
+    },
+    {
+      "id": "hp-controlled-double-check",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Dispensing Schedule II substances",
+      "headingPath": [
+        "Controlled substances",
+        "Dispensing Schedule II substances"
+      ],
+      "text": "Two licensed staff members take part in every Schedule II dispensing: one prepares the medicine and the other checks the quantity and the patient before handover. The second person signs the electronic register before the end of the same shift."
+    },
+    {
+      "id": "hp-controlled-count",
+      "documentType": "procedure",
+      "unitType": "WORKFLOW_STEP",
+      "title": "Shift-change vault count",
+      "headingPath": ["Controlled substances", "Shift-change vault count"],
+      "text": "At every shift change the outgoing and the incoming pharmacist count the vault together and both sign the count sheet. A discrepancy is reported to the pharmacy director within one hour, and the vault stays locked until the count is reconciled."
+    },
+    {
+      "id": "hp-par-level",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Par level",
+      "headingPath": ["Ward supply", "Par level"],
+      "text": "The minimum quantity of a medicine that a ward keeps on hand to cover expected use until the next scheduled delivery. When the counted stock falls below this quantity, the inventory system creates a replenishment request automatically."
+    },
+    {
+      "id": "hp-lasa",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Look-alike, sound-alike (LASA) medicines",
+      "headingPath": [
+        "Medication safety",
+        "Look-alike, sound-alike (LASA) medicines"
+      ],
+      "text": "Medicines whose names or packaging are easily confused with another product. They are kept on separate shelves, never next to each other, and their labels use tall-man lettering such as hydrOXYzine and hydrALAZINE."
+    },
+    {
+      "id": "hp-tall-man-rationale",
+      "documentType": "claim",
+      "unitType": "EVIDENCE",
+      "title": "Tall-man lettering",
+      "headingPath": ["Medication safety", "Tall-man lettering"],
+      "text": "Capitalising the letters that differ draws attention to the part of the name that distinguishes two drugs. This reduces selection errors at the shelf and on the dispensing screen."
+    },
+    {
+      "id": "hp-recall-matrix",
+      "documentType": "decision-rule",
+      "unitType": "TABLE",
+      "title": "Recall response matrix",
+      "headingPath": ["Recalls", "Recall response matrix"],
+      "text": "| Recall class | Action | Deadline |\n|---|---|---|\n| Class I | Remove every unit and notify the prescribers | Within 4 hours |\n| Class II | Remove the affected lots | Within 24 hours |\n| Class III | Remove during the next scheduled shelf check | Within 7 days |"
+    },
+    {
+      "id": "hp-patient-returns",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Medicines returned by patients",
+      "headingPath": ["Returns", "Medicines returned by patients"],
+      "text": "Medicines returned by patients are never dispensed again, even when the package is sealed, because the pharmacy cannot verify how they were stored outside the hospital. They are sent to pharmaceutical waste."
+    },
+    {
+      "id": "hp-short-dated",
+      "documentType": "rule",
+      "unitType": "PARAGRAPH",
+      "title": "Short-dated stock",
+      "headingPath": ["Inventory", "Short-dated stock"],
+      "text": "Stock that expires within 90 days is moved to the front of the shelf and flagged in the inventory system. Expired stock is removed on the first working day of each month."
+    },
+    {
+      "id": "hp-indicators",
+      "documentType": "dashboard",
+      "unitType": "TABLE",
+      "title": "Monthly pharmacy indicators",
+      "headingPath": ["Quality", "Monthly pharmacy indicators"],
+      "text": "| Indicator | Target | Last month |\n|---|---|---|\n| Dispensing errors per 10,000 items | Below 2 | 1.4 |\n| Cold-chain excursions | 0 | 3 |\n| Vault count discrepancies | 0 | 1 |"
+    },
+    {
+      "id": "hp-sterile-hood",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Sterile compounding requires a certified hood",
+      "headingPath": [
+        "Compounding",
+        "Sterile compounding requires a certified hood"
+      ],
+      "text": "Intravenous admixtures are prepared inside an ISO Class 5 laminar airflow hood. The hood is recertified every six months, and a failed certification suspends sterile compounding until the hood is repaired and passes again."
+    },
+    {
+      "id": "hp-night-coverage",
+      "documentType": "note",
+      "unitType": "PARAGRAPH",
+      "title": "Night shift coverage",
+      "headingPath": ["Staffing", "Night shift coverage"],
+      "text": "From 22:00 to 07:00 a single pharmacist covers the whole hospital. Urgent orders are handled first; routine ward restocking waits for the morning team."
+    }
+  ],
+  "questions": [
+    {
+      "id": "hp-q01",
+      "family": "excursion-release",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Can stock from a fridge that was above 8 °C for an hour ever be used again?",
+      "gold": ["hp-excursion"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "hp-q02",
+      "family": "excursion-release",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Is medication thrown away straight after a temperature excursion?",
+      "gold": ["hp-excursion"],
+      "challenges": ["PARAPHRASE", "NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "hp-q03",
+      "family": "excursion-release",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿Se desecha de inmediato la medicación después de una excursión de temperatura?",
+      "gold": ["hp-excursion"],
+      "challenges": ["CROSS_LINGUAL", "NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "hp-q04",
+      "family": "frozen-vaccine",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Can a vaccine that froze by accident go back on the shelf once it has thawed?",
+      "gold": ["hp-vaccine-freeze"],
+      "challenges": ["PARAPHRASE", "NEGATIVE_ANSWER", "TITLE_CONTEXT"]
+    },
+    {
+      "id": "hp-q05",
+      "family": "schedule-ii-second-person",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Does dispensing a Schedule II drug need a second staff member?",
+      "gold": ["hp-controlled-double-check"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "hp-q06",
+      "family": "schedule-ii-second-person",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿Puede un solo farmacéutico dispensar una sustancia de la lista II?",
+      "gold": ["hp-controlled-double-check"],
+      "challenges": ["CROSS_LINGUAL", "NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "hp-q07",
+      "family": "patient-returns",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "are sealed medicines that patients bring back given out to other patients",
+      "gold": ["hp-patient-returns"],
+      "challenges": ["INFORMAL", "NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "hp-q08",
+      "family": "sterile-hood",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Is it acceptable to mix IV admixtures on an open bench?",
+      "gold": ["hp-sterile-hood"],
+      "challenges": ["PARAPHRASE", "NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "hp-q09",
+      "family": "hood-certification-interval",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Must the laminar airflow hood be recertified only once a year?",
+      "gold": ["hp-sterile-hood"],
+      "challenges": ["NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "hp-q10",
+      "family": "night-restock",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Do routine ward restocks happen during the night shift?",
+      "gold": ["hp-night-coverage"],
+      "challenges": ["NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "hp-q11",
+      "family": "par-level-definition",
+      "intent": "DEFINITION",
+      "language": "en",
+      "query": "What is a par level?",
+      "gold": ["hp-par-level"],
+      "challenges": ["TITLE_CONTEXT"]
+    },
+    {
+      "id": "hp-q12",
+      "family": "lasa-definition",
+      "intent": "DEFINITION",
+      "language": "en",
+      "query": "What does LASA mean for medicines?",
+      "gold": ["hp-lasa"],
+      "challenges": ["TITLE_CONTEXT"]
+    },
+    {
+      "id": "hp-q13",
+      "family": "lasa-definition",
+      "intent": "DEFINITION",
+      "language": "es",
+      "query": "¿Qué son los medicamentos LASA?",
+      "gold": ["hp-lasa"],
+      "challenges": ["CROSS_LINGUAL", "TITLE_CONTEXT"]
+    },
+    {
+      "id": "hp-q14",
+      "family": "recall-class-i",
+      "intent": "CONDITION",
+      "language": "en",
+      "query": "When do all units of a recalled product have to be pulled within four hours?",
+      "gold": ["hp-recall-matrix"],
+      "challenges": ["TABLE_ROW"]
+    },
+    {
+      "id": "hp-q15",
+      "family": "replenishment-trigger",
+      "intent": "CONDITION",
+      "language": "en",
+      "query": "In which situation is a ward replenishment request generated automatically?",
+      "gold": ["hp-par-level"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "hp-q16",
+      "family": "sterile-suspension",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Cuándo se suspende la preparación de mezclas estériles?",
+      "gold": ["hp-sterile-hood"],
+      "challenges": ["CROSS_LINGUAL"]
+    },
+    {
+      "id": "hp-q17",
+      "family": "returns-rationale",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why can't returned patient medicines be dispensed again?",
+      "gold": ["hp-patient-returns"],
+      "challenges": []
+    },
+    {
+      "id": "hp-q18",
+      "family": "tall-man-rationale",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "What is the point of tall-man lettering on drug labels?",
+      "gold": ["hp-tall-man-rationale"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "hp-q19",
+      "family": "frozen-vaccine-rationale",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Por qué no se reutiliza una vacuna que se congeló?",
+      "gold": ["hp-vaccine-freeze"],
+      "challenges": ["CROSS_LINGUAL"]
+    },
+    {
+      "id": "hp-q20",
+      "family": "vault-count-procedure",
+      "intent": "PROCEDURE",
+      "language": "en",
+      "query": "How is the controlled drug vault counted when shifts change?",
+      "gold": ["hp-controlled-count"],
+      "challenges": []
+    },
+    {
+      "id": "hp-q21",
+      "family": "vault-discrepancy",
+      "intent": "PROCEDURE",
+      "language": "en",
+      "query": "What happens if the vault count does not match?",
+      "gold": ["hp-controlled-count"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "hp-q22",
+      "family": "logger-interval",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "How often does the fridge data logger record the temperature?",
+      "gold": ["hp-cold-chain-range"],
+      "challenges": []
+    },
+    {
+      "id": "hp-q23",
+      "family": "recall-class-ii-deadline",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "What is the deadline for removing Class II recalled lots?",
+      "gold": ["hp-recall-matrix"],
+      "challenges": ["TABLE_ROW"]
+    },
+    {
+      "id": "hp-q24",
+      "family": "short-dated-window",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Con cuántos días de anticipación se marca el stock que está por caducar?",
+      "gold": ["hp-short-dated"],
+      "challenges": ["CROSS_LINGUAL"]
+    },
+    {
+      "id": "hp-q25",
+      "family": "excursion-contact",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Who contacts the manufacturer after a temperature excursion?",
+      "gold": ["hp-excursion"],
+      "challenges": []
+    },
+    {
+      "id": "hp-q26",
+      "family": "lasa-storage",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Where should look-alike sound-alike drugs be kept?",
+      "gold": ["hp-lasa"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "hp-q27",
+      "family": "director-phone",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "What is the phone number of the pharmacy director?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "hp-q28",
+      "family": "cold-chain-budget",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "How much does the hospital spend on cold-chain monitoring every year?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "hp-q29",
+      "family": "tall-man-adoption-year",
+      "intent": "DATE",
+      "language": "en",
+      "query": "In which year did the pharmacy adopt tall-man lettering?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "hp-q30",
+      "family": "manufacturer-notifies",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Does the manufacturer notify the pharmacy when a fridge has a temperature excursion?",
+      "gold": [],
+      "challenges": ["INVERTED_RELATION"]
+    },
+    {
+      "id": "hp-q31",
+      "family": "hood-certifier",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Which company certifies the laminar airflow hood?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "hp-q32",
+      "family": "day-shift-staffing",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "How many pharmacists work the day shift?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "hp-q33",
+      "family": "expired-donation",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿Se donan a organizaciones benéficas los medicamentos caducados?",
+      "gold": [],
+      "challenges": ["SAME_VOCABULARY", "CROSS_LINGUAL"]
+    },
+    {
+      "id": "hp-q34",
+      "family": "outpatient-error-target",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "What dispensing error target applies to the outpatient clinics?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "TABLE_ROW"]
+    }
+  ]
+}

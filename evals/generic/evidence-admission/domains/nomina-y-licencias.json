@@ -1,0 +1,413 @@
+{
+  "id": "nomina-y-licencias",
+  "split": "heldout",
+  "language": "es",
+  "description": "Política de personas de una empresa: vacaciones, bajas, permisos, teletrabajo, horas extraordinarias y nómina.",
+  "units": [
+    {
+      "id": "nl-vacaciones",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Vacaciones anuales",
+      "headingPath": ["Tiempo libre", "Vacaciones anuales"],
+      "text": "Cada persona tiene 23 días laborables de vacaciones al año. Hasta cinco días no disfrutados se pueden trasladar al año siguiente y deben usarse antes del 31 de marzo."
+    },
+    {
+      "id": "nl-solicitud-vacaciones",
+      "documentType": "procedure",
+      "unitType": "WORKFLOW_STEP",
+      "title": "Solicitar vacaciones",
+      "headingPath": ["Tiempo libre", "Solicitar vacaciones"],
+      "text": "Las vacaciones se piden en el portal del empleado con al menos 15 días de antelación. La persona responsable directa las aprueba o las rechaza en un plazo de cinco días hábiles."
+    },
+    {
+      "id": "nl-baja-enfermedad",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Baja por enfermedad",
+      "headingPath": ["Ausencias", "Baja por enfermedad"],
+      "text": "Durante los tres primeros días de una baja por enfermedad la empresa paga el 100 % del salario, aunque la ley no lo exige. A partir del cuarto día se aplica la prestación pública y la empresa la complementa hasta el 100 % durante tres meses."
+    },
+    {
+      "id": "nl-justificante",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Justificante médico",
+      "headingPath": ["Ausencias", "Justificante médico"],
+      "text": "Una ausencia de un solo día por enfermedad no requiere parte médico de baja, pero sí un justificante de la consulta. Las ausencias de dos o más días requieren el parte oficial."
+    },
+    {
+      "id": "nl-nacimiento",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Nacimiento y cuidado de menor",
+      "headingPath": ["Permisos", "Nacimiento y cuidado de menor"],
+      "text": "Cada progenitor tiene 16 semanas de permiso retribuido. Las seis primeras son obligatorias e inmediatamente posteriores al parto; las diez restantes se pueden distribuir hasta que el bebé cumpla un año."
+    },
+    {
+      "id": "nl-teletrabajo",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Teletrabajo",
+      "headingPath": ["Organización del trabajo", "Teletrabajo"],
+      "text": "Se puede teletrabajar hasta tres días por semana en los puestos que no requieren presencia física. Durante el periodo de prueba no se teletrabaja."
+    },
+    {
+      "id": "nl-periodo-prueba",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Periodo de prueba",
+      "headingPath": ["Contratación", "Periodo de prueba"],
+      "text": "Primeros seis meses de un contrato indefinido, durante los cuales cualquiera de las partes puede terminar la relación sin preaviso ni indemnización."
+    },
+    {
+      "id": "nl-horas-extra",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Horas extraordinarias",
+      "headingPath": ["Organización del trabajo", "Horas extraordinarias"],
+      "text": "Las horas extraordinarias deben autorizarse por escrito antes de realizarlas. Se compensan con descanso equivalente en los cuatro meses siguientes o se pagan en la nómina con un recargo del 25 %."
+    },
+    {
+      "id": "nl-fecha-pago",
+      "documentType": "note",
+      "unitType": "PARAGRAPH",
+      "title": "Fecha de pago de la nómina",
+      "headingPath": ["Nómina", "Fecha de pago de la nómina"],
+      "text": "La nómina se paga el último día hábil de cada mes. Si ese día es festivo, el pago se adelanta al día hábil anterior."
+    },
+    {
+      "id": "nl-anticipo",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Anticipos de nómina",
+      "headingPath": ["Nómina", "Anticipos de nómina"],
+      "text": "Se puede pedir un anticipo de hasta el 50 % del salario neto ya devengado en el mes, como máximo dos veces al año."
+    },
+    {
+      "id": "nl-permisos",
+      "documentType": "decision-rule",
+      "unitType": "TABLE",
+      "title": "Permisos retribuidos",
+      "headingPath": ["Permisos", "Permisos retribuidos"],
+      "text": "| Motivo | Duración |\n|---|---|\n| Matrimonio o registro de pareja de hecho | 15 días naturales |\n| Fallecimiento de un familiar de primer grado | 3 días, o 5 si hay desplazamiento |\n| Mudanza del domicilio habitual | 1 día |\n| Examen oficial | El tiempo indispensable |"
+    },
+    {
+      "id": "nl-formacion",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "La formación obligatoria cuenta como tiempo de trabajo",
+      "headingPath": [
+        "Desarrollo",
+        "La formación obligatoria cuenta como tiempo de trabajo"
+      ],
+      "text": "Los cursos que exige la empresa se realizan dentro de la jornada o, si no es posible, sus horas se compensan como tiempo trabajado."
+    },
+    {
+      "id": "nl-plantilla",
+      "documentType": "dashboard",
+      "unitType": "TABLE",
+      "title": "Plantilla por centro",
+      "headingPath": ["Datos", "Plantilla por centro"],
+      "text": "| Centro | Personas | Teletrabajo medio semanal |\n|---|---|---|\n| Madrid | 412 | 2,1 días |\n| Sevilla | 128 | 1,4 días |\n| Valencia | 96 | 1,8 días |"
+    },
+    {
+      "id": "nl-desconexion",
+      "documentType": "claim",
+      "unitType": "EVIDENCE",
+      "title": "Desconexión digital",
+      "headingPath": ["Organización del trabajo", "Desconexión digital"],
+      "text": "Fuera de la jornada nadie está obligado a responder correos ni mensajes de trabajo, salvo en las guardias pactadas. Así se protege el descanso y se evita que la disponibilidad permanente se convierta en una exigencia implícita."
+    }
+  ],
+  "questions": [
+    {
+      "id": "nl-q01",
+      "family": "trasladar-vacaciones",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿Se pueden pasar días de vacaciones al año siguiente?",
+      "gold": ["nl-vacaciones"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "nl-q02",
+      "family": "teletrabajo-prueba",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Can I work from home during my probation period?",
+      "gold": ["nl-teletrabajo"],
+      "challenges": ["CROSS_LINGUAL", "NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "nl-q03",
+      "family": "parte-un-dia",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿Necesito parte de baja si falto un solo día por gripe?",
+      "gold": ["nl-justificante"],
+      "challenges": ["NEGATIVE_ANSWER", "PARAPHRASE"]
+    },
+    {
+      "id": "nl-q04",
+      "family": "correos-finde",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿Tengo que contestar los correos del trabajo el fin de semana?",
+      "gold": ["nl-desconexion"],
+      "challenges": ["NEGATIVE_ANSWER", "PARAPHRASE"]
+    },
+    {
+      "id": "nl-q05",
+      "family": "semanas-obligatorias",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿Son obligatorias las primeras seis semanas del permiso por nacimiento?",
+      "gold": ["nl-nacimiento"],
+      "challenges": []
+    },
+    {
+      "id": "nl-q06",
+      "family": "horas-extra-autorizacion",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Does overtime need to be approved in advance?",
+      "gold": ["nl-horas-extra"],
+      "challenges": ["CROSS_LINGUAL"]
+    },
+    {
+      "id": "nl-q07",
+      "family": "sueldo-baja",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿Cobro el sueldo completo los primeros días de baja?",
+      "gold": ["nl-baja-enfermedad"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "nl-q08",
+      "family": "cursos-tiempo-trabajo",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿Los cursos obligatorios cuentan como horas de trabajo?",
+      "gold": ["nl-formacion"],
+      "challenges": ["TITLE_CONTEXT"]
+    },
+    {
+      "id": "nl-q09",
+      "family": "prueba-definicion",
+      "intent": "DEFINITION",
+      "language": "es",
+      "query": "¿Qué es el periodo de prueba?",
+      "gold": ["nl-periodo-prueba"],
+      "challenges": ["TITLE_CONTEXT"]
+    },
+    {
+      "id": "nl-q10",
+      "family": "prueba-definicion",
+      "intent": "DEFINITION",
+      "language": "en",
+      "query": "What is a probation period?",
+      "gold": ["nl-periodo-prueba"],
+      "challenges": ["CROSS_LINGUAL", "TITLE_CONTEXT"]
+    },
+    {
+      "id": "nl-q11",
+      "family": "desconexion-definicion",
+      "intent": "DEFINITION",
+      "language": "es",
+      "query": "¿En qué consiste la desconexión digital?",
+      "gold": ["nl-desconexion"],
+      "challenges": ["TITLE_CONTEXT"]
+    },
+    {
+      "id": "nl-q12",
+      "family": "adelanto-pago",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Cuándo se adelanta el pago de la nómina?",
+      "gold": ["nl-fecha-pago"],
+      "challenges": []
+    },
+    {
+      "id": "nl-q13",
+      "family": "parte-oficial",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿En qué casos hace falta el parte oficial de baja?",
+      "gold": ["nl-justificante"],
+      "challenges": []
+    },
+    {
+      "id": "nl-q14",
+      "family": "cuando-teletrabajar",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Cuándo puedo teletrabajar?",
+      "gold": ["nl-teletrabajo"],
+      "challenges": []
+    },
+    {
+      "id": "nl-q15",
+      "family": "desconexion-motivo",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Para qué sirve la política de desconexión digital?",
+      "gold": ["nl-desconexion"],
+      "challenges": []
+    },
+    {
+      "id": "nl-q16",
+      "family": "desconexion-motivo",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why is nobody required to answer work messages after hours?",
+      "gold": ["nl-desconexion"],
+      "challenges": ["CROSS_LINGUAL"]
+    },
+    {
+      "id": "nl-q17",
+      "family": "pedir-vacaciones",
+      "intent": "PROCEDURE",
+      "language": "es",
+      "query": "¿Cómo pido las vacaciones?",
+      "gold": ["nl-solicitud-vacaciones"],
+      "challenges": []
+    },
+    {
+      "id": "nl-q18",
+      "family": "compensar-horas-extra",
+      "intent": "PROCEDURE",
+      "language": "en",
+      "query": "How is overtime compensated?",
+      "gold": ["nl-horas-extra"],
+      "challenges": ["CROSS_LINGUAL"]
+    },
+    {
+      "id": "nl-q19",
+      "family": "dias-vacaciones",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Cuántos días de vacaciones tengo al año?",
+      "gold": ["nl-vacaciones"],
+      "challenges": []
+    },
+    {
+      "id": "nl-q20",
+      "family": "permiso-boda",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Cuántos días de permiso te dan por casarte?",
+      "gold": ["nl-permisos"],
+      "challenges": ["TABLE_ROW", "PARAPHRASE"]
+    },
+    {
+      "id": "nl-q21",
+      "family": "antelacion-vacaciones",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Con cuánta antelación hay que pedir las vacaciones?",
+      "gold": ["nl-solicitud-vacaciones"],
+      "challenges": []
+    },
+    {
+      "id": "nl-q22",
+      "family": "porcentaje-anticipo",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "What share of my net salary can I take as an advance?",
+      "gold": ["nl-anticipo"],
+      "challenges": ["CROSS_LINGUAL", "PARAPHRASE"]
+    },
+    {
+      "id": "nl-q23",
+      "family": "plantilla-sevilla",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Cuántas personas trabajan en el centro de Sevilla?",
+      "gold": ["nl-plantilla"],
+      "challenges": ["TABLE_ROW"]
+    },
+    {
+      "id": "nl-q24",
+      "family": "semanas-nacimiento",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Cuántas semanas dura el permiso por nacimiento?",
+      "gold": ["nl-nacimiento"],
+      "challenges": []
+    },
+    {
+      "id": "nl-q25",
+      "family": "aprueba-vacaciones",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Quién aprueba las solicitudes de vacaciones?",
+      "gold": ["nl-solicitud-vacaciones"],
+      "challenges": []
+    },
+    {
+      "id": "nl-q26",
+      "family": "salario-medio",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Cuál es el salario medio de la plantilla?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "nl-q27",
+      "family": "permiso-nieto",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Cuántos días de permiso hay por el nacimiento de un nieto?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "TABLE_ROW"]
+    },
+    {
+      "id": "nl-q28",
+      "family": "plantilla-bilbao",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Cuántas personas trabajan en el centro de Bilbao?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "TABLE_ROW"]
+    },
+    {
+      "id": "nl-q29",
+      "family": "rrhh-aprueba-extra",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Is it HR that approves overtime in writing?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "CROSS_LINGUAL"]
+    },
+    {
+      "id": "nl-q30",
+      "family": "anticipo-paga-extra",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿Se pueden pedir anticipos de las pagas extra?",
+      "gold": [],
+      "challenges": ["SAME_VOCABULARY"]
+    },
+    {
+      "id": "nl-q31",
+      "family": "fecha-paga-verano",
+      "intent": "DATE",
+      "language": "es",
+      "query": "¿En qué fecha se cobra la paga extra de verano?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "nl-q32",
+      "family": "responsable-pide",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿La persona responsable tiene que pedir a su equipo las vacaciones con 15 días de antelación?",
+      "gold": [],
+      "challenges": ["INVERTED_RELATION"]
+    }
+  ]
+}
