@@ -5,6 +5,7 @@ import type {
 } from "./answerability.js";
 import { resolveLocalSemanticCacheDir } from "./local-semantic-embedding.js";
 import { markdownTableEvidence } from "./markdown-table-evidence.js";
+import { markdownVisibleSource } from "./markdown-visible-source.js";
 
 /**
  * Multilingual cross-encoder trained on query/passage relevance, including
@@ -50,6 +51,11 @@ export interface ContextualEvidenceText {
   readonly text: string;
   /** Body lines in order, each traceable to the original passage. */
   readonly segments: readonly ContextualEvidenceSegment[];
+  /** Non-evidence source ranges cannot appear inside an admitted quote. */
+  readonly hiddenSourceSpans?: readonly {
+    startOffset: number;
+    endOffset: number;
+  }[];
 }
 
 function collapsed(value: string): string {
@@ -187,7 +193,8 @@ export function contextualEvidenceText(
     if (value && !scopeParts.includes(value)) scopeParts.push(value);
   }
   const scope = scopeParts.join(" > ");
-  const passage = input.passage;
+  const visible = markdownVisibleSource(input.passage);
+  const passage = visible.text;
   const segments: ContextualEvidenceSegment[] = [];
   let cursor = 0;
   for (const table of markdownTableEvidence(passage)) {
@@ -202,6 +209,7 @@ export function contextualEvidenceText(
     body,
     text: scope ? `${scope}\n${body}` : body,
     segments,
+    hiddenSourceSpans: visible.comments,
   };
 }
 
@@ -262,11 +270,20 @@ export function locateEvidenceQuote(
     offset = end + 1;
   });
   if (mappingInvalid || first < 0) return null;
-  return {
+  const span = {
     startOffset:
       mappedStart ?? contextual.segments[first]!.sourceSpan.startOffset,
     endOffset: mappedEnd ?? contextual.segments[last]!.sourceSpan.endOffset,
   };
+  if (
+    contextual.hiddenSourceSpans?.some(
+      (hidden) =>
+        hidden.startOffset < span.endOffset &&
+        hidden.endOffset > span.startOffset,
+    )
+  )
+    return null;
+  return span;
 }
 
 export interface CrossEncoderPair {

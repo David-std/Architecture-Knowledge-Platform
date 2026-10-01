@@ -1,6 +1,6 @@
 # Evidence admission redesign: handoff (2026-10-01)
 
-State of branch `chore/retrieval-generality-policy` (PR #38), updated after local verification and corrections through `38836436`, with the versioned contextual-input change measured below. The PR remains draft; optional model providers remain disabled by default.
+State of branch `chore/retrieval-generality-policy` (PR #38), updated after local verification and corrections through `0d415fa7`, with the source-visibility correction measured below. The PR remains draft; optional model providers remain disabled by default.
 
 ## Problem
 
@@ -120,3 +120,28 @@ preservation; the actual E5/API regression also passes.
 5. **Measurement provenance.** Bind recorded scores to actual query/body hashes and reader caches to model digest and inference configuration. Preserve source-disjoint holdout; add question-family-disjoint data and counterfactual deletion negatives. A single small synthetic pack cannot prove precision for every vault query.
 
 Private evaluation material (question set, runners and caches) stays in a local temporary folder outside the repository. Never commit vault contents or identifiers.
+
+## Source visibility correction
+
+A generic reproduction found that a comment-only assertion was admitted through
+lexical, vector, exact and raw channels. An external verifier could also point
+its evidence span into the hidden comment. Chunking had a comment mask, but the
+raw-document/legacy-unit admission and reader paths did not share it.
+
+The shared Markdown parser now masks actual HTML comments at all three
+boundaries, preserves original UTF-16 positions and line endings, and leaves
+comment syntax in literal code intact. Model verification rejects spans that
+intersect hidden comments, including a fabricated contiguous span across a
+comment. An unterminated comment remains hidden through the end of its parsed
+HTML block. This changes source eligibility, not query vocabulary or trust.
+The generality baseline adds only the shared parser import.
+
+Before the correction, the four admission channels and the external-verifier
+reproduction failed; afterward the retrieval package passes 375 tests. Tests
+cover hidden/visible prose, escaped and fenced syntax, Unicode offsets and the
+search presentation boundary. The prior contextual-input checkpoint's full
+local integration rerun passed 146 API tests (one optional model test skipped)
+and 65 PostgreSQL tests. A single review-policy setup deadline failure did not
+recur in its isolated 8-test suite or the complete rerun; no deadline was raised.
+Private accuracy figures above remain tied to their recorded source/projection;
+this structural correction is not a claim of universal answer accuracy.

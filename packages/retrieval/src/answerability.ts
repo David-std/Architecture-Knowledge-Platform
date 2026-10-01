@@ -1,3 +1,4 @@
+import { markdownVisibleSource } from "./markdown-visible-source.js";
 import type { SearchHit } from "@akp/contracts";
 import {
   DEFAULT_DETERMINISTIC_PASSAGE_SUPPORT_POLICY,
@@ -529,6 +530,15 @@ function validateQueryConditionedVerification(
       span.endOffset > passage.length
     ) {
       throw new Error("QUERY_CONDITIONED_EVIDENCE_SPAN_REQUIRED");
+    }
+    if (
+      markdownVisibleSource(passage).comments.some(
+        (comment) =>
+          comment.startOffset < span.endOffset &&
+          comment.endOffset > span.startOffset,
+      )
+    ) {
+      throw new Error("QUERY_CONDITIONED_EVIDENCE_SPAN_HIDDEN_SOURCE");
     }
   }
   return { ...result, reason: result.reason.trim() };

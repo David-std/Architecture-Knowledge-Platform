@@ -279,3 +279,48 @@ describe("quote mapping integrity", () => {
     ).toBeNull();
   });
 });
+
+describe("hidden Markdown source boundaries", () => {
+  it("does not turn source comments into reader evidence", () => {
+    const passage =
+      "<!-- ALFA can call BETA. -->\nVisible notes awaiting review.";
+    const contextual = contextualEvidenceText({
+      title: "Integration",
+      passage,
+    });
+    expect(contextual.body).toBe("Visible notes awaiting review.");
+    expect(locateEvidenceQuote(contextual, "ALFA can call BETA.")).toBeNull();
+  });
+
+  it("preserves the original quote offsets after a hidden comment", () => {
+    const answer = "ALFA can call BETA during reconciliation.";
+    const passage = `<!-- 🧭 Hidden draft. -->\n${answer}`;
+    const contextual = contextualEvidenceText({
+      title: "Integration",
+      passage,
+    });
+    expect(locateEvidenceQuote(contextual, answer)).toEqual({
+      startOffset: passage.indexOf(answer),
+      endOffset: passage.length - 1,
+    });
+  });
+
+  it("keeps literal comment syntax in code examples visible", () => {
+    for (const passage of [
+      "Use `<!-- draft -->` in the template.",
+      "```html\n<!-- draft -->\n```",
+      "    <!-- draft -->",
+    ]) {
+      expect(
+        contextualEvidenceText({ title: "Template syntax", passage }).body,
+      ).toContain("<!-- draft -->");
+    }
+  });
+});
+
+it("does not fabricate a contiguous quote across hidden source bytes", () => {
+  const passage = "ALFA can <!-- unpublished draft --> call BETA.";
+  const contextual = contextualEvidenceText({ title: "Integration", passage });
+  expect(contextual.body).toBe("ALFA can call BETA.");
+  expect(locateEvidenceQuote(contextual, "ALFA can call BETA")).toBeNull();
+});

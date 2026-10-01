@@ -1,5 +1,6 @@
 import type { SearchHit } from "@akp/contracts";
 import { markdownTableEvidence } from "./markdown-table-evidence.js";
+import { markdownVisibleSource } from "./markdown-visible-source.js";
 
 const ANSWERABILITY_STOPWORDS = new Set([
   "a",
@@ -1423,7 +1424,7 @@ export function verifyDeterministicPassageSupport(
   policyInput: Partial<DeterministicPassageSupportPolicy> = {},
 ): DeterministicPassageSupportSignal {
   const policy = resolveDeterministicPassageSupportPolicy(policyInput);
-  const excerpt = hit.excerpt.trim();
+  const excerpt = markdownVisibleSource(hit.excerpt).text.trim();
   const sourcePassage = withoutReferenceMarkup(excerpt).trim();
   const passage =
     hit.unitType === "TABLE"

@@ -52,3 +52,15 @@ seed graph expansion. Leaf evidence units take precedence over their containing
 sections/documents in lexical unit selection. Intent routing may add specialized
 tools but retains an explicitly available vector retriever for retrieval intents;
 `NO_RETRIEVAL_REQUIRED` remains empty and capability/scope checks remain authoritative.
+
+### Source visibility and quote provenance
+
+HTML comments parsed as Markdown HTML nodes are source metadata, not evidence.
+The same source mask applies during chunking, deterministic admission and model
+reader preparation. Masking retains every UTF-16 position and line ending;
+inline, indented and fenced code remain literal examples. External verifier
+spans intersecting a hidden comment are rejected at the admission boundary.
+A quote spanning visible text on both sides of a comment is not represented as
+a contiguous source quote. This follows [CommonMark HTML and code grammar](https://spec.commonmark.org/0.31.2/), not question vocabulary.
+The baseline addition is solely the shared parser module import; no answer
+aliases or corpus terms are introduced.

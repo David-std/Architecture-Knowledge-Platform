@@ -3452,6 +3452,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/retrieval/src/markdown-visible-source.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/retrieval/src/ngraph-community.d.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3598,6 +3603,11 @@
     },
     {
       "path": "packages/retrieval/test/markdown-table-evidence.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/markdown-visible-source.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },

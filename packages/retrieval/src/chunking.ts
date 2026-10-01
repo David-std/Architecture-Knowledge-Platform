@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { fromMarkdown } from "mdast-util-from-markdown";
 import { markdownTableEvidence } from "./markdown-table-evidence.js";
+import { markdownVisibleSource } from "./markdown-visible-source.js";
 
 export type KnowledgeUnitType =
   | "DOCUMENT"
@@ -178,76 +179,6 @@ function atomicType(
     : structural;
 }
 
-interface CommentSpan {
-  startOffset: number;
-  endOffset: number;
-  startLine: number;
-  endLine: number;
-}
-
-/** Mask only actual Markdown HTML comments, not code examples containing them. */
-function commentFreeSource(source: string): {
-  text: string;
-  comments: CommentSpan[];
-} {
-  const comments: CommentSpan[] = [];
-  const tree = fromMarkdown(source);
-  type Node = {
-    type: string;
-    value?: string | undefined;
-    children?: readonly Node[] | undefined;
-    position?:
-      | {
-          start: { offset?: number | undefined; line: number };
-          end: { offset?: number | undefined; line: number };
-        }
-      | undefined;
-  };
-  const lineOffsets = [0];
-  for (let i = 0; i < source.length; i++)
-    if (source[i] === "\n") lineOffsets.push(i + 1);
-  const lineAt = (offset: number): number => {
-    let low = 0;
-    let high = lineOffsets.length;
-    while (low + 1 < high) {
-      const middle = (low + high) >>> 1;
-      if (lineOffsets[middle]! <= offset) low = middle;
-      else high = middle;
-    }
-    return low + 1;
-  };
-  const visit = (node: Node): void => {
-    const base = node.position?.start.offset;
-    if (node.type === "html" && node.value && base !== undefined) {
-      for (const match of node.value.matchAll(/<!--[\s\S]*?-->/gu)) {
-        const startOffset = base + match.index;
-        const endOffset = startOffset + match[0].length;
-        comments.push({
-          startOffset,
-          endOffset,
-          startLine: lineAt(startOffset),
-          endLine: lineAt(endOffset - 1),
-        });
-      }
-    }
-    node.children?.forEach(visit);
-  };
-  visit(tree);
-  let cursor = 0;
-  let text = "";
-  for (const comment of comments.sort(
-    (a, b) => a.startOffset - b.startOffset,
-  )) {
-    text += source.slice(cursor, comment.startOffset);
-    text += source
-      .slice(comment.startOffset, comment.endOffset)
-      .replace(/[^\n]/gu, " ");
-    cursor = comment.endOffset;
-  }
-  text += source.slice(cursor);
-  return { text, comments };
-}
-
 function hasIndependentText(body: string): boolean {
   const text = body.replace(/\[\[[^\]]*\]\]/gu, "");
   const tree = fromMarkdown(text);
@@ -298,7 +229,7 @@ export function parseKnowledgeUnits(
       embeddingEligible: false,
     },
   ];
-  const clean = commentFreeSource(normalized);
+  const clean = markdownVisibleSource(normalized);
   const lines = normalized ? clean.text.split("\n") : [];
   const nextContentLine = new Array<number>(lines.length + 1).fill(
     lines.length + 1,

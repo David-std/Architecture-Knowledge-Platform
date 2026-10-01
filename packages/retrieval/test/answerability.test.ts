@@ -2052,3 +2052,51 @@ describe("reference-only punctuation boundaries", () => {
     },
   );
 });
+
+describe("hidden Markdown assertions", () => {
+  it.each(["lexical", "vector", "exact", "raw"])(
+    "rejects a comment-only assertion from %s",
+    (channel) => {
+      const candidate = hit(2040, {
+        title: "Integration decision",
+        type: "claim",
+        excerpt: "<!-- ALFA can call BETA during reconciliation. -->",
+        contributions: [contribution(channel, 0.99)],
+      });
+      expect(
+        assessRetrievalAnswerability([candidate], "Can ALFA call BETA?")
+          .supported,
+      ).toBe(false);
+    },
+  );
+
+  it("rejects an external verifier selecting hidden source bytes", async () => {
+    const excerpt =
+      "<!-- ALFA can call BETA. -->\nThe integration is under review.";
+    const startOffset = excerpt.indexOf("ALFA");
+    const candidate = hit(2041, {
+      title: "Integration",
+      type: "claim",
+      excerpt,
+      contributions: [contribution("vector", 0.99)],
+    });
+    const result = await assessRetrievalAnswerabilityWithVerifier(
+      [candidate],
+      "Can ALFA call BETA?",
+      {
+        id: "hidden-assertion-verifier",
+        verify: async () => ({
+          decision: "SUPPORTS",
+          reason: "FIXTURE_VERDICT",
+          score: 1,
+          evidenceSpan: {
+            startOffset,
+            endOffset: startOffset + "ALFA can call BETA.".length,
+          },
+        }),
+      },
+      { mode: "ENFORCE" },
+    );
+    expect(result.supported).toBe(false);
+  });
+});
