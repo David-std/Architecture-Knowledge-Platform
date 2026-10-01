@@ -1,9 +1,11 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
+import type { SearchHit } from "@akp/contracts";
 import {
   buildEvidenceRelationHypotheses,
   resolveLocalSemanticCacheDir,
+  verifyDeterministicPassageSupport,
 } from "../src/index.js";
 
 type Split = "CALIBRATION" | "HOLDOUT";
@@ -328,6 +330,57 @@ const CASES: Case[] = [
     goldLabels: [],
   },
 ];
+
+function deterministicBenchmarkHit(candidate: Candidate): SearchHit {
+  return {
+    documentId: `benchmark-${candidate.label}`,
+    vaultId: "benchmark-vault",
+    unitId: `benchmark-unit-${candidate.label}`,
+    unitType: "PARAGRAPH",
+    document: {
+      externalId: candidate.label,
+      path: `benchmark/${candidate.label}.md`,
+      title: candidate.title,
+    },
+    revision: "evidence-verifier-bge-shadow-v1",
+    title: candidate.title,
+    type: "claim",
+    trust: "MACHINE_SUPPORTED",
+    lifecycle: "ACTIVE",
+    refreshStatus: "CURRENT",
+    score: 1,
+    reasons: ["evidence-verifier-bge-shadow"],
+    fusionContributions: [
+      {
+        channel: "vector",
+        rank: 1,
+        channelWeight: 1,
+        rawScore: 0.8,
+        reason: "vector:evidence-verifier-bge-shadow",
+      },
+    ],
+    excerpt: candidate.passage,
+    citations: [],
+  };
+}
+
+function deterministicDiagnostics(testCase: Case, candidate: Candidate) {
+  const signal = verifyDeterministicPassageSupport(
+    deterministicBenchmarkHit(candidate),
+    testCase.query,
+  );
+  return {
+    supported: signal.supported,
+    reason: signal.reason,
+    salientCoverage: signal.salientCoverage,
+    requiredAnswerCues: signal.requiredAnswerCues,
+    matchedAnswerCues: signal.matchedAnswerCues,
+    answerCueCoverage: signal.answerCueCoverage,
+    claimRelationDiagnostics: signal.claimRelationDiagnostics,
+    boundedAnchorCoverage: signal.boundedAnchorCoverage,
+    boundedRelationRoleMatched: signal.boundedRelationRoleMatched,
+  };
+}
 
 function sentenceWindows(
   passage: string,
@@ -972,6 +1025,7 @@ async function evaluateBinaryCases(
         label: candidate.label,
         score: bestScore,
         polarityMargin: bestPolarityMargin,
+        deterministic: deterministicDiagnostics(testCase, candidate),
         directionCompatible:
           hypotheses.length > 0 &&
           orderedAnchorsCompatible(testCase.query, bestWindow.text),
@@ -1250,10 +1304,10 @@ const binaryHypothesisSweepComparison = {
 };
 
 const report = {
-  schemaVersion: 5,
+  schemaVersion: 6,
   status: "MEASURED",
   evidenceBoundary:
-    "Public synthetic source-disjoint shadow evaluation of multilingual evidence signals: reranker relevance/contrast plus a pinned multilingual binary entailment model. A separate shadow-only fallback hypothesis sweep isolates missing parser coverage without replacing hypotheses already produced by the production parser. The report includes both the existing score-plus-margin grid and an auditable score-only midpoint boundary derived only from calibration labels, then frozen for holdout. No signal is evidence truth or promoted by this report.",
+    "Public synthetic source-disjoint shadow evaluation of multilingual evidence signals: reranker relevance/contrast plus a pinned multilingual binary entailment model. Binary observations also record the existing deterministic passage-support diagnostics so semantic rescue policies can be evaluated without weakening deterministic safety boundaries. A separate shadow-only fallback hypothesis sweep isolates missing parser coverage without replacing hypotheses already produced by the production parser. Thresholds remain derived only from calibration labels and frozen for holdout. No signal is evidence truth or promoted by this report.",
   model: {
     id: MODEL,
     revision: REVISION,
