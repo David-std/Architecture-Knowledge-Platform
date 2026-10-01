@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
@@ -1578,6 +1579,103 @@ async function binaryEntailmentScore(
   return entailmentExp / (entailmentExp + notEntailmentExp);
 }
 
+function sha256Text(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+async function measureBinaryNumericalStability(
+  repetitions = 3,
+  maximumProbes = 8,
+) {
+  const probes = [];
+  for (const testCase of CASES) {
+    for (const candidate of testCase.candidates) {
+      const hypothesis = shadowRelationHypothesisCandidates(
+        testCase.query,
+        candidate.title,
+      )[0];
+      const window = sentenceWindows(candidate.passage)[0];
+      if (!hypothesis || !window) continue;
+
+      const positiveScores = [];
+      const negativeScores = [];
+      for (let run = 0; run < repetitions; run += 1) {
+        positiveScores.push(
+          await binaryEntailmentScore(window.text, hypothesis.positive),
+        );
+        negativeScores.push(
+          await binaryEntailmentScore(window.text, hypothesis.negative),
+        );
+      }
+
+      const positiveMinimum = Math.min(...positiveScores);
+      const positiveMaximum = Math.max(...positiveScores);
+      const negativeMinimum = Math.min(...negativeScores);
+      const negativeMaximum = Math.max(...negativeScores);
+      probes.push({
+        caseId: testCase.id,
+        split: testCase.split,
+        label: candidate.label,
+        gold: testCase.goldLabels.includes(candidate.label),
+        premiseSha256: sha256Text(window.text),
+        positiveHypothesisSha256: sha256Text(hypothesis.positive),
+        negativeHypothesisSha256: sha256Text(hypothesis.negative),
+        positiveScores,
+        negativeScores,
+        positiveDrift: positiveMaximum - positiveMinimum,
+        negativeDrift: negativeMaximum - negativeMinimum,
+      });
+
+      if (probes.length >= maximumProbes) break;
+    }
+    if (probes.length >= maximumProbes) break;
+  }
+
+  const maximumScoreDrift = Math.max(
+    0,
+    ...probes.flatMap((probe) => [probe.positiveDrift, probe.negativeDrift]),
+  );
+  const scoreFingerprint = sha256Text(
+    JSON.stringify(
+      probes.map((probe) => ({
+        caseId: probe.caseId,
+        label: probe.label,
+        positiveScores: probe.positiveScores.map((score) =>
+          Number(score.toFixed(9)),
+        ),
+        negativeScores: probe.negativeScores.map((score) =>
+          Number(score.toFixed(9)),
+        ),
+      })),
+    ),
+  );
+  const runtimeFingerprintInput = {
+    node: process.version,
+    versions: process.versions,
+    platform: process.platform,
+    arch: process.arch,
+    runnerOs: process.env.RUNNER_OS ?? null,
+    runnerArch: process.env.RUNNER_ARCH ?? null,
+    imageOs: process.env.ImageOS ?? null,
+    imageVersion: process.env.ImageVersion ?? null,
+    model: BINARY_ENTAILMENT_MODEL,
+    revision: BINARY_ENTAILMENT_REVISION,
+  };
+
+  return {
+    repetitions,
+    probes: probes.length,
+    maximumScoreDrift,
+    intraProcessStable: maximumScoreDrift <= 1e-6,
+    scoreFingerprint,
+    runtimeFingerprint: sha256Text(JSON.stringify(runtimeFingerprintInput)),
+    runtime: runtimeFingerprintInput,
+    observations: probes,
+    crossRunInterpretation:
+      "Compare scoreFingerprint for the same runtime/model revision across CI runs. Stable repeated inference with a changed cross-run fingerprint means threshold calibration is not reproducible across processes or environments.",
+  };
+}
+
 async function evaluateBinaryCases(
   hypothesisCandidatesFor: (
     testCase: Case,
@@ -1935,6 +2033,9 @@ let binaryObservations: Awaited<ReturnType<typeof evaluateBinaryCases>>;
 let binaryHypothesisSweepObservations: Awaited<
   ReturnType<typeof evaluateBinaryCases>
 >;
+let binaryNumericalStabilityAudit: Awaited<
+  ReturnType<typeof measureBinaryNumericalStability>
+>;
 try {
   binaryObservations = await evaluateBinaryCases((testCase, candidate) => {
     const hypothesis = buildEvidenceRelationHypotheses(
@@ -1949,6 +2050,7 @@ try {
     (testCase, candidate) =>
       shadowRelationHypothesisCandidates(testCase.query, candidate.title),
   );
+  binaryNumericalStabilityAudit = await measureBinaryNumericalStability();
 } finally {
   await binaryModel.dispose?.();
 }
@@ -2122,10 +2224,10 @@ const binaryDeterministicFallbackComparison = {
 };
 
 const report = {
-  schemaVersion: 11,
+  schemaVersion: 12,
   status: "MEASURED",
   evidenceBoundary:
-    "Public synthetic source-disjoint shadow evaluation of multilingual evidence signals: reranker relevance/contrast plus a pinned multilingual binary entailment model. Calibration and holdout include explicit cross-lingual direct, indirect, wrong-relation and reversed-direction cases with disjoint synthetic sources. Binary observations also record deterministic passage-support diagnostics. A shadow-only syntax guard separately measures query-anchor direction, passive by-subject order and bare both/ambos coreference without changing production authority. A deterministic-first shadow comparison keeps proven passage support and lets the role-guarded binary verifier rescue only deterministic abstentions; it reports precision safety separately from the stricter zero-abstention promotion gate. A shadow-only language-pair analysis calibrates score-only midpoint thresholds independently for en->es and es->en, requires at least two direction-compatible gold and two non-gold candidates in both calibration and holdout, and freezes each calibration threshold before evaluating holdout. No signal is evidence truth or promoted by this report.",
+    "Public synthetic source-disjoint shadow evaluation of multilingual evidence signals: reranker relevance/contrast plus a pinned multilingual binary entailment model. Calibration and holdout include explicit cross-lingual direct, indirect, wrong-relation and reversed-direction cases with disjoint synthetic sources. Binary observations also record deterministic passage-support diagnostics. A shadow-only syntax guard separately measures query-anchor direction, passive by-subject order and bare both/ambos coreference without changing production authority. A deterministic-first shadow comparison keeps proven passage support and lets the role-guarded binary verifier rescue only deterministic abstentions; it reports precision safety separately from the stricter zero-abstention promotion gate. A numerical-stability audit repeats fixed binary inference pairs within one process and records score/runtime fingerprints so cross-run calibration drift is observable before any promotion. A shadow-only language-pair analysis calibrates score-only midpoint thresholds independently for en->es and es->en, requires at least two direction-compatible gold and two non-gold candidates in both calibration and holdout, and freezes each calibration threshold before evaluating holdout. No signal is evidence truth or promoted by this report.",
   model: {
     id: MODEL,
     revision: REVISION,
@@ -2144,6 +2246,7 @@ const report = {
   binaryHypothesisSweepComparison,
   binaryRoleGuardedComparison,
   binaryDeterministicFallbackComparison,
+  binaryNumericalStabilityAudit,
   binaryCrossLingualPairCalibration,
   promotionAllowed: false,
   productionDefaultChanged: false,
