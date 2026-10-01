@@ -25,4 +25,10 @@ AKP retrieval must work across vaults and domains. A failing question is an eval
 
 The current baseline also includes a document type (`decision-rule`) and a generic uppercase-acronym pattern. These describe repository structure and explicit entity identity, not a vault concept or an answer synonym. Neither permits a thematic catalog entry to become evidence for a yes/no relationship by itself.
 
+### Structural table grammar
+
+The baseline may include format-level literals required to interpret a versioned structural unit when the admission rule is independent of corpus nouns. GFM table support uses the `TABLE` unit type plus generic condition/situation and decision header roles only to bind cells from the same parsed row. A table role never establishes support by itself: the queried answer anchors must occur in the decision cell, the condition and decision must come from the same exact row, and a title cannot supply missing relation anchors.
+
+This structural exception is covered by answerable and adversarial table cases across unrelated domains and languages. Metric tables remain non-supporting. It does not authorize adding query paraphrases, domain nouns, or answer synonyms to the baseline; those remain subject to query-conditioned verification and held-out calibration.
+
 The gate is deliberately narrow: a static scan cannot prove that an algorithm generalizes or that an innocuous literal is safe. A new helper module or changes outside the monitored modules can still evade it; retrieval heuristics therefore belong in the monitored modules rather than route handlers. Reviewers must apply the product rule to all retrieval-related code. The existing baseline is technical debt to replace with measured, query-conditioned evidence verification, not an approved dictionary to extend.

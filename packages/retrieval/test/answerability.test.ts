@@ -1679,6 +1679,35 @@ describe("conditional table evidence", () => {
     expect(result.candidateSignals[1]?.passageSupport.supported).toBe(false);
   });
 
+  it("binds condition and decision cells outside the dispatch domain", () => {
+    const decision = hit(1906, {
+      title: "Reconciliation policy",
+      type: "decision-rule",
+      unitType: "TABLE",
+      excerpt:
+        "| Condition | Decision |\n|---|---|\n| Settlement mismatch after the cutoff | Select manual reconciliation |\n| Matched settlement within the cutoff | Continue automatically |",
+      contributions: [contribution("lexical")],
+    });
+    const metrics = hit(1907, {
+      title: "Reconciliation metrics",
+      type: "decision-rule",
+      unitType: "TABLE",
+      excerpt:
+        "| Metric | Recorded value |\n|---|---|\n| Manual reconciliation | Case count |\n| Automatic processing | Duration |",
+      contributions: [contribution("lexical")],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [decision, metrics],
+      "When should manual reconciliation be selected?",
+    );
+
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(decision),
+    ]);
+    expect(result.candidateSignals[1]?.passageSupport.supported).toBe(false);
+  });
+
   it("does not borrow target anchors from the condition cell", () => {
     const candidate = hit(1905, {
       title: "Partitioned dispatch selection",

@@ -839,7 +839,7 @@ function atomicClaimRelationDiagnostics(
   const objectOrScopeMatched =
     relation !== null &&
     (objectOverlap > 0 || (queryGlobalScope && excerptGlobalScope));
-  const evidenceIsQuestion = /[?？]\s*$/u.test(excerpt.trim());
+  const evidenceIsQuestion = excerpt.trim().endsWith("?");
   const supported =
     eligibleClaim &&
     !evidenceIsQuestion &&
@@ -974,27 +974,13 @@ function withoutReferenceMarkup(passage: string): string {
 }
 
 const TABLE_CONDITION_HEADER_PATTERNS = [
-  "condition*",
-  "scenario*",
+  ...QUERY_CUE_PATTERNS.CONDITION,
+  ...PASSAGE_CUE_PATTERNS.CONDITION,
   "situation*",
-  "when",
-  "condicion*",
-  "escenario*",
   "situacion*",
-  "cuando",
 ] as const;
 
-const TABLE_DECISION_HEADER_PATTERNS = [
-  "decision*",
-  "action*",
-  "choice*",
-  "recommend*",
-  "selection*",
-  "accion*",
-  "eleccion*",
-  "recomend*",
-  "seleccion*",
-] as const;
+const TABLE_DECISION_HEADER_PATTERNS = ["decision*"] as const;
 
 function tableHeaderMatches(
   value: string,
@@ -1054,7 +1040,7 @@ function tableConditionWindows(
 
       return [
         {
-          text: `${table.header.source}\n${row.source}`,
+          text: table.header.source.concat(String.fromCharCode(10), row.source),
           evidence: row.source,
           structuralAnswerCues: ["CONDITION"] as const,
         },
@@ -1254,7 +1240,7 @@ function answerRequirementsMatch(
   // An interrogative sentence can state the same subject, predicate and object
   // as the query without asserting that the relation is true. Questions are
   // therefore never evidence for a YES_NO proposition by themselves.
-  const relationEvidenceIsQuestion = /[?？]\s*$/u.test(relationEvidence.trim());
+  const relationEvidenceIsQuestion = relationEvidence.trim().endsWith("?");
   if (required.includes("YES_NO") && !relationEvidenceIsQuestion) {
     const relation = queryYesNoRelationRoles(query);
     if (relation) {
