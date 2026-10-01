@@ -1648,20 +1648,20 @@ describe("requirement absence evidence", () => {
     const optionalChecksum = hit(1873, {
       title: "Record validation",
       type: "claim",
-      excerpt: "Records can be validated without a checksum.",
+      excerpt: "Record validation can continue without a checksum.",
       contributions: [contribution("lexical")],
     });
     const unrelatedAbsence = hit(1874, {
       title: "Record validation",
       type: "claim",
       excerpt:
-        "Records can be validated with a checksum without an audit marker.",
+        "Record validation can continue with a checksum without an audit marker.",
       contributions: [contribution("lexical")],
     });
 
     const result = assessRetrievalAnswerability(
       [unrelatedAbsence, optionalChecksum],
-      "Is a checksum mandatory for validating records?",
+      "Is a checksum mandatory for record validation?",
     );
 
     expect(result.supportedCandidateKeys).toEqual([
