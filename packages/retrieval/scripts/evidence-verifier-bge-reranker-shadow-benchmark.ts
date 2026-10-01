@@ -2102,8 +2102,7 @@ const binaryRoleGuardedComparison = {
 
 const binaryDeterministicFallbackComparison = {
   model: binaryEntailmentComparison.model,
-  mode:
-    "deterministic passage support first; role-guarded binary entailment only rescues deterministic abstentions",
+  mode: "deterministic passage support first; role-guarded binary entailment only rescues deterministic abstentions",
   calibrationCandidate:
     binaryDeterministicFallbackCalibrationResult.calibrationCandidate,
   holdoutMetrics: binaryDeterministicFallbackCalibrationResult.holdoutMetrics,
