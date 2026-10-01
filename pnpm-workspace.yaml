@@ -5,6 +5,7 @@ packages:
 verifyDepsBeforeRun: warn
 linkWorkspacePackages: true
 overrides:
+  "@grpc/grpc-js": 1.14.5
   # Security floors for direct/transitive advisories: adm-zip, fast-uri, js-yaml and sharp.
   adm-zip: 0.6.1
   postcss: 8.5.25
