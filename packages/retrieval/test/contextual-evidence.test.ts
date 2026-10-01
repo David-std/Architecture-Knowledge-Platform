@@ -50,6 +50,16 @@ describe("contextual evidence text", () => {
       scope: "Renewals > Loans",
       body: "A loan can be renewed twice.\nOverdue loans cannot.",
       text: "Renewals > Loans\nA loan can be renewed twice.\nOverdue loans cannot.",
+      segments: [
+        {
+          text: "A loan can be renewed twice.",
+          sourceSpan: { startOffset: 0, endOffset: 28 },
+        },
+        {
+          text: "Overdue loans cannot.",
+          sourceSpan: { startOffset: 30, endOffset: 51 },
+        },
+      ],
     });
   });
 

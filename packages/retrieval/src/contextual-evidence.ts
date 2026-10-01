@@ -27,12 +27,24 @@ export interface ContextualEvidenceInput {
   readonly passage: string;
 }
 
+export interface ContextualEvidenceSegment {
+  /** One passage line, or one table row restated with its column headers. */
+  readonly text: string;
+  /** UTF-16 offsets of the line or row in the original passage. */
+  readonly sourceSpan: {
+    readonly startOffset: number;
+    readonly endOffset: number;
+  };
+}
+
 export interface ContextualEvidenceText {
   /** Unit title and heading path; they identify what the body is about. */
   readonly scope: string;
   /** Body without link targets, with each table row stated with its headers. */
   readonly body: string;
   readonly text: string;
+  /** Body lines in order, each traceable to the original passage. */
+  readonly segments: readonly ContextualEvidenceSegment[];
 }
 
 function collapsed(value: string): string {
@@ -46,33 +58,55 @@ function withoutLinkTargets(value: string): string {
     .replace(/\[([^\]]*)\]\([^)]*\)/gu, "$1");
 }
 
-/**
- * Restate each table row with its column headers. A cross-encoder reads a row
- * as one statement ("Condition: X; Action: Y") instead of a run of pipes in
- * which a cell is detached from the header that gives it meaning.
- */
-function linearizedTables(passage: string): string {
-  const tables = markdownTableEvidence(passage);
-  if (tables.length === 0) return passage;
-  let output = "";
-  let cursor = 0;
-  for (const table of tables) {
-    output += passage.slice(cursor, table.span.startOffset);
-    const headers = table.header.cells.map((cell) => collapsed(cell.source));
-    const rows = table.rows.map((row) =>
-      row.cells
-        .map((cell) => {
-          const value = collapsed(cell.source);
-          const header = headers[cell.columnIndex];
-          return value && header ? `${header}: ${value}` : value;
-        })
-        .filter(Boolean)
-        .join("; "),
+function textSegments(
+  passage: string,
+  startOffset: number,
+  endOffset: number,
+): ContextualEvidenceSegment[] {
+  const segments: ContextualEvidenceSegment[] = [];
+  let lineStart = startOffset;
+  while (lineStart < endOffset) {
+    const newline = passage.indexOf("\n", lineStart);
+    const lineEnd = newline < 0 || newline >= endOffset ? endOffset : newline;
+    const text = collapsed(
+      withoutLinkTargets(passage.slice(lineStart, lineEnd)),
     );
-    output += rows.filter(Boolean).join(".\n");
-    cursor = table.span.endOffset;
+    if (text) {
+      segments.push({
+        text,
+        sourceSpan: { startOffset: lineStart, endOffset: lineEnd },
+      });
+    }
+    lineStart = lineEnd + 1;
   }
-  return output + passage.slice(cursor);
+  return segments;
+}
+
+/**
+ * Restate each table row with its column headers. A reader sees a row as one
+ * statement ("Condition: X; Action: Y") instead of a run of pipes in which a
+ * cell is detached from the header that gives it meaning.
+ */
+function tableSegments(
+  table: ReturnType<typeof markdownTableEvidence>[number],
+): ContextualEvidenceSegment[] {
+  const headers = table.header.cells.map((cell) =>
+    collapsed(withoutLinkTargets(cell.source)),
+  );
+  const rows = table.rows.flatMap((row) => {
+    const text = row.cells
+      .map((cell) => {
+        const value = collapsed(withoutLinkTargets(cell.source));
+        const header = headers[cell.columnIndex];
+        return value && header ? `${header}: ${value}` : value;
+      })
+      .filter(Boolean)
+      .join("; ");
+    return text ? [{ text, sourceSpan: row.span }] : [];
+  });
+  return rows.map((row, index) =>
+    index < rows.length - 1 ? { ...row, text: `${row.text}.` } : row,
+  );
 }
 
 export function contextualEvidenceText(
@@ -84,12 +118,64 @@ export function contextualEvidenceText(
     if (value && !scopeParts.includes(value)) scopeParts.push(value);
   }
   const scope = scopeParts.join(" > ");
-  const body = linearizedTables(withoutLinkTargets(input.passage))
-    .split(/\n+/u)
-    .map(collapsed)
-    .filter(Boolean)
-    .join("\n");
-  return { scope, body, text: scope ? `${scope}\n${body}` : body };
+  const passage = input.passage;
+  const segments: ContextualEvidenceSegment[] = [];
+  let cursor = 0;
+  for (const table of markdownTableEvidence(passage)) {
+    segments.push(...textSegments(passage, cursor, table.span.startOffset));
+    segments.push(...tableSegments(table));
+    cursor = table.span.endOffset;
+  }
+  segments.push(...textSegments(passage, cursor, passage.length));
+  const body = segments.map((segment) => segment.text).join("\n");
+  return {
+    scope,
+    body,
+    text: scope ? `${scope}\n${body}` : body,
+    segments,
+  };
+}
+
+function quoteKey(value: string): string {
+  return collapsed(value.normalize("NFC"))
+    .replace(/^["'“”‘’«»\s]+|["'“”‘’«»\s]+$/gu, "")
+    .toLocaleLowerCase("und");
+}
+
+/**
+ * Locate a quoted answer inside the contextual body and return the original
+ * passage span of the lines or table rows it covers. Returns null when the
+ * quote is not verbatim body text, so a paraphrase or a heading cannot pass
+ * as evidence.
+ */
+export function locateEvidenceQuote(
+  contextual: ContextualEvidenceText,
+  quote: string,
+): { startOffset: number; endOffset: number } | null {
+  const needle = quoteKey(quote).replace(/[.;:,]+$/u, "");
+  if (needle.length < 2) return null;
+  const keys = contextual.segments.map((segment) => quoteKey(segment.text));
+  // Lines are joined by a space so a quote may span consecutive lines.
+  const joined = keys.join(" ");
+  const position = joined.indexOf(needle);
+  if (position < 0) return null;
+  let offset = 0;
+  let first = -1;
+  let last = -1;
+  keys.forEach((key, index) => {
+    const start = offset;
+    const end = offset + key.length;
+    if (end > position && start < position + needle.length) {
+      if (first < 0) first = index;
+      last = index;
+    }
+    offset = end + 1;
+  });
+  if (first < 0) return null;
+  return {
+    startOffset: contextual.segments[first]!.sourceSpan.startOffset,
+    endOffset: contextual.segments[last]!.sourceSpan.endOffset,
+  };
 }
 
 export interface CrossEncoderPair {

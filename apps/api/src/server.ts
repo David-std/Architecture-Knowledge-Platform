@@ -22,6 +22,8 @@ import {
   ContextualCrossEncoderEvidenceVerifier,
   DeterministicQueryDecomposer,
   LocalMultilingualQaEvidenceVerifier,
+  OpenAICompatibleEvidenceReader,
+  ReaderEvidenceVerifier,
   type QueryConditionedEvidenceVerifier,
   type QueryConditionedEvidenceVerifierMode,
   type QueryTransformerPort,
@@ -88,12 +90,32 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
               CONTEXTUAL_CROSS_ENCODER_DEFAULT_SUPPORT_SCORE,
             localFilesOnly: runtimeConfig.evidenceVerifierLocalFilesOnly,
           })
-        : undefined);
-  const ownsRuntimeEvidenceVerifier =
+        : runtimeConfig.evidenceReader
+          ? new ReaderEvidenceVerifier({
+              reader: new OpenAICompatibleEvidenceReader({
+                baseUrl: runtimeConfig.evidenceReader.baseUrl,
+                model: runtimeConfig.evidenceReader.model,
+                timeoutMs: runtimeConfig.evidenceReader.timeoutMs,
+                ...(runtimeConfig.evidenceReader.apiKey
+                  ? { apiKey: runtimeConfig.evidenceReader.apiKey }
+                  : {}),
+              }),
+              shortlist: new ContextualCrossEncoderEvidenceVerifier({
+                minimumSupportScore:
+                  CONTEXTUAL_CROSS_ENCODER_DEFAULT_SUPPORT_SCORE,
+                localFilesOnly: runtimeConfig.evidenceVerifierLocalFilesOnly,
+              }),
+              shortlistSize: runtimeConfig.evidenceReader.shortlistSize,
+            })
+          : undefined);
+  const ownedRuntimeEvidenceVerifier =
     dependencies.evidenceVerifier === undefined &&
     (runtimeEvidenceVerifier instanceof LocalMultilingualQaEvidenceVerifier ||
       runtimeEvidenceVerifier instanceof
-        ContextualCrossEncoderEvidenceVerifier);
+        ContextualCrossEncoderEvidenceVerifier ||
+      runtimeEvidenceVerifier instanceof ReaderEvidenceVerifier)
+      ? runtimeEvidenceVerifier
+      : null;
   const app = Fastify({
     logger: process.env.NODE_ENV !== "test",
     bodyLimit: 10 * 1024 * 1024,
@@ -310,14 +332,7 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
   registerGovernanceRoutes(app, db);
 
   app.addHook("onClose", async () => {
-    if (
-      ownsRuntimeEvidenceVerifier &&
-      (runtimeEvidenceVerifier instanceof LocalMultilingualQaEvidenceVerifier ||
-        runtimeEvidenceVerifier instanceof
-          ContextualCrossEncoderEvidenceVerifier)
-    ) {
-      await runtimeEvidenceVerifier.dispose();
-    }
+    await ownedRuntimeEvidenceVerifier?.dispose();
     await db.close();
   });
   return app;

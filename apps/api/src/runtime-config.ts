@@ -1,5 +1,16 @@
 export type EvidenceVerifierProvider =
-  "disabled" | "local-multilingual-qa" | "contextual-cross-encoder";
+  | "disabled"
+  | "local-multilingual-qa"
+  | "contextual-cross-encoder"
+  | "cross-encoder-reader";
+
+export interface EvidenceReaderRuntimeConfig {
+  baseUrl: string;
+  model: string;
+  apiKey: string | null;
+  shortlistSize: number;
+  timeoutMs: number;
+}
 
 export interface ApiRuntimeConfig {
   rateLimitMax: number;
@@ -9,6 +20,7 @@ export interface ApiRuntimeConfig {
   evidenceVerifierMinimumSupportScore: number | null;
   evidenceVerifierMaxCandidates: number;
   evidenceVerifierLocalFilesOnly: boolean;
+  evidenceReader: EvidenceReaderRuntimeConfig | null;
 }
 
 function integerSetting(
@@ -53,11 +65,12 @@ function verifierProvider(env: NodeJS.ProcessEnv): EvidenceVerifierProvider {
   if (
     raw === "disabled" ||
     raw === "local-multilingual-qa" ||
-    raw === "contextual-cross-encoder"
+    raw === "contextual-cross-encoder" ||
+    raw === "cross-encoder-reader"
   )
     return raw;
   throw new Error(
-    `AKP_EVIDENCE_VERIFIER_PROVIDER must be "disabled", "local-multilingual-qa" or "contextual-cross-encoder"; received ${JSON.stringify(raw)}.`,
+    `AKP_EVIDENCE_VERIFIER_PROVIDER must be "disabled", "local-multilingual-qa", "contextual-cross-encoder" or "cross-encoder-reader"; received ${JSON.stringify(raw)}.`,
   );
 }
 
@@ -92,10 +105,11 @@ export function loadApiRuntimeConfig(
   // decide support; the extractive QA reader remains a diagnostic.
   if (
     evidenceVerifierMode === "ENFORCE" &&
-    evidenceVerifierProvider !== "contextual-cross-encoder"
+    evidenceVerifierProvider !== "contextual-cross-encoder" &&
+    evidenceVerifierProvider !== "cross-encoder-reader"
   ) {
     throw new Error(
-      `AKP_EVIDENCE_VERIFIER_MODE "ENFORCE" requires AKP_EVIDENCE_VERIFIER_PROVIDER "contextual-cross-encoder"; ${JSON.stringify(evidenceVerifierProvider)} remains SHADOW only.`,
+      `AKP_EVIDENCE_VERIFIER_MODE "ENFORCE" requires AKP_EVIDENCE_VERIFIER_PROVIDER "contextual-cross-encoder" or "cross-encoder-reader"; ${JSON.stringify(evidenceVerifierProvider)} remains SHADOW only.`,
     );
   }
   const evidenceVerifierMinimumSupportScore = optionalFraction(
@@ -109,6 +123,36 @@ export function loadApiRuntimeConfig(
     throw new Error(
       "AKP_EVIDENCE_VERIFIER_MIN_SCORE is required when the local multilingual QA verifier is enabled.",
     );
+  }
+
+  let evidenceReader: EvidenceReaderRuntimeConfig | null = null;
+  if (evidenceVerifierProvider === "cross-encoder-reader") {
+    const baseUrl = env.AKP_EVIDENCE_READER_BASE_URL?.trim();
+    const model = env.AKP_EVIDENCE_READER_MODEL?.trim();
+    if (!baseUrl || !model) {
+      throw new Error(
+        "AKP_EVIDENCE_READER_BASE_URL and AKP_EVIDENCE_READER_MODEL are required when the cross-encoder reader verifier is enabled.",
+      );
+    }
+    evidenceReader = {
+      baseUrl,
+      model,
+      apiKey: env.AKP_EVIDENCE_READER_API_KEY?.trim() || null,
+      shortlistSize: integerSetting(
+        env,
+        "AKP_EVIDENCE_READER_SHORTLIST",
+        4,
+        1,
+        16,
+      ),
+      timeoutMs: integerSetting(
+        env,
+        "AKP_EVIDENCE_READER_TIMEOUT_MS",
+        30_000,
+        1_000,
+        300_000,
+      ),
+    };
   }
 
   return {
@@ -135,5 +179,6 @@ export function loadApiRuntimeConfig(
       "AKP_EVIDENCE_VERIFIER_LOCAL_FILES_ONLY",
       false,
     ),
+    evidenceReader,
   };
 }

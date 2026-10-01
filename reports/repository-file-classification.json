@@ -3382,6 +3382,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/retrieval/src/evidence-reader.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/retrieval/src/index.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3518,6 +3523,11 @@
     },
     {
       "path": "packages/retrieval/test/embeddings.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/evidence-reader.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },

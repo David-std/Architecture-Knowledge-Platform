@@ -99,6 +99,23 @@ The model is downloaded once into the local model cache (`AKP_MODEL_CACHE_DIR`),
 
 Known limits, measured on the pack: a cross-encoder measures whether a unit is about the requested information, not whether it contains the requested value. It still admits a table when the requested row or column is missing, a unit that names the subject but not the requested company or date, and a relation stated in the opposite direction. Some definitional and cross-lingual questions score below the threshold. These cases are tracked by challenge in the pack report and are the target of the next admission stage.
 
+### Reader stage
+
+The `cross-encoder-reader` provider adds the stage that a relevance model cannot provide. The cross-encoder shortlists the highest-scoring candidates, and a language model behind any OpenAI-compatible chat endpoint, such as a local Ollama, llama.cpp or LM Studio server, judges each shortlisted unit: does the passage itself state the requested information, and which exact passage text says so? A judgment counts only when its quote is verbatim body text; the quote is mapped back to the original line or table row, which becomes the inspectable evidence span. A paraphrased or invented quote, or a quote taken from the heading, leaves the candidate exploratory. The passage is sent as delimited data with an instruction to ignore instructions inside it, and decoding is greedy.
+
+```dotenv
+AKP_EVIDENCE_VERIFIER_PROVIDER=cross-encoder-reader
+AKP_EVIDENCE_VERIFIER_MODE=ENFORCE
+AKP_EVIDENCE_READER_BASE_URL=http://127.0.0.1:11434
+AKP_EVIDENCE_READER_MODEL=<model name served by the endpoint>
+# Optional
+AKP_EVIDENCE_READER_API_KEY=
+AKP_EVIDENCE_READER_SHORTLIST=4
+AKP_EVIDENCE_READER_TIMEOUT_MS=30000
+```
+
+The reader sends passage text to the configured endpoint. Use a local endpoint, or a remote one only where sending the vault content is acceptable. Its admission quality depends on the model and must be measured on the admission pack before it is enforced.
+
 Measure a change with:
 
 ```powershell

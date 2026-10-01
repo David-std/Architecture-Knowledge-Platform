@@ -9,6 +9,7 @@ export * from "./local-semantic-embedding.js";
 export * from "./local-multilingual-qa-evidence.js";
 export * from "./local-multilingual-nli-evidence.js";
 export * from "./contextual-evidence.js";
+export * from "./evidence-reader.js";
 export * from "./openai-compatible-embedding.js";
 export * from "./embedding-provider-registry.js";
 export * from "./structural-context.js";
