@@ -12,6 +12,7 @@ type Fixture = {
   title: string;
   passage: string;
   type?: string;
+  unitType?: SearchHit["unitType"];
   aliases?: string[];
   structuralOrder?: number;
   headingPath?: string[];
@@ -31,7 +32,7 @@ function hit(input: Fixture): SearchHit {
     documentId: randomUUID(),
     vaultId: randomUUID(),
     unitId: randomUUID(),
-    unitType: "PARAGRAPH",
+    unitType: input.unitType ?? "PARAGRAPH",
     ...(input.structuralOrder === undefined
       ? {}
       : { structuralOrder: input.structuralOrder }),
@@ -419,6 +420,54 @@ const CASES: AdmissionCase[] = [
     ],
     goldLabels: ["indirect"],
   },
+  {
+    id: "conditional-decision-table",
+    tier: "SEMANTIC_FRONTIER",
+    query: "When should partitioned dispatch be selected?",
+    candidates: [
+      {
+        label: "dispatch-selection-matrix",
+        title: "Partitioned dispatch selection",
+        type: "rule",
+        unitType: "TABLE",
+        passage:
+          "| Observed situation | Decision |\n|---|---|\n| Independent destinations with bursty traffic | Select partitioned dispatch |\n| One stable destination with small constant load | Use a single consumer |",
+      },
+      {
+        label: "dispatch-metrics-table",
+        title: "Partitioned dispatch selection",
+        type: "rule",
+        unitType: "TABLE",
+        passage:
+          "| Metric | Recorded value |\n|---|---|\n| Partitioned dispatch | Queue length |\n| Single consumer | Delivery count |",
+      },
+    ],
+    goldLabels: ["dispatch-selection-matrix"],
+  },
+  {
+    id: "bilingual-conditional-decision-table",
+    tier: "SEMANTIC_FRONTIER",
+    query: "When should batched delivery be selected?",
+    candidates: [
+      {
+        label: "delivery-selection-matrix",
+        title: "Batched delivery selection",
+        type: "decision-rule",
+        unitType: "TABLE",
+        passage:
+          "| Situación observada | Decisión |\n|---|---|\n| Varias entregas pequeñas al mismo destino | Seleccionar batched delivery |\n| Una entrega urgente independiente | Enviar directamente |",
+      },
+      {
+        label: "delivery-metrics-table",
+        title: "Batched delivery selection",
+        type: "decision-rule",
+        unitType: "TABLE",
+        passage:
+          "| Métrica | Valor registrado |\n|---|---|\n| Batched delivery | Número de entregas |\n| Envío directo | Duración observada |",
+      },
+    ],
+    goldLabels: ["delivery-selection-matrix"],
+  },
 ];
 
 const rows = CASES.map((entry) => {
@@ -442,6 +491,16 @@ const rows = CASES.map((entry) => {
     selectedLabels,
     supported: result.supported,
     reason: result.reason,
+    candidates: hits.map((candidate, index) => ({
+      label: entry.candidates[index]!.label,
+      unitType: candidate.unitType,
+      passageSupport:
+        result.candidateSignals.find(
+          (signal) =>
+            signal.candidateKey ===
+            retrievalAnswerabilityCandidateKey(candidate),
+        )?.passageSupport ?? null,
+    })),
     falseAcceptance: !expectedAnswer && selectedLabels.length > 0,
     falseAbstention: expectedAnswer && selectedGold.length === 0,
     wrongSelection: selectedWrong.length > 0,
@@ -493,10 +552,10 @@ const corePasses =
   core.supportSelectionPrecision === 1;
 
 const report = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   status: corePasses ? "PROVEN" : "FAILED",
   evidenceBoundary:
-    "Public synthetic deterministic evidence-admission benchmark. CORE is a CI gate; SEMANTIC_FRONTIER measures known paraphrase limits without promoting a semantic verifier.",
+    "Public synthetic deterministic evidence-admission benchmark. CORE is a CI gate; SEMANTIC_FRONTIER measures known paraphrase and structural-table limits without promoting a semantic verifier.",
   core,
   semanticFrontier,
   rows,
