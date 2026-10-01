@@ -62,13 +62,13 @@ describe("evidence quotes", () => {
       '"overdue loans cannot be renewed"',
     );
     expect(span && passage.slice(span.startOffset, span.endOffset)).toBe(
-      passage,
+      "Overdue loans\ncannot be renewed",
     );
     expect(
       locateEvidenceQuote(contextual, "late loans are not renewable"),
     ).toBeNull();
     expect(locateEvidenceQuote(contextual, "Loans")).toEqual({
-      startOffset: 0,
+      startOffset: 8,
       endOffset: 13,
     });
     expect(locateEvidenceQuote(contextual, "")).toBeNull();
@@ -96,6 +96,26 @@ describe("evidence quotes", () => {
     expect(
       locateEvidenceQuote(contextual, "The notice is optional"),
     ).toBeNull();
+  });
+
+  it("maps only the quoted fact, excluding other sentences and values on the same line", () => {
+    const passage = "The inventory contains 72 units. The cost is unknown.";
+    const contextual = contextualEvidenceText({ title: "Costs", passage });
+    const span = locateEvidenceQuote(contextual, "The cost is unknown.");
+    expect(span && passage.slice(span.startOffset, span.endOffset)).toBe(
+      "The cost is unknown",
+    );
+  });
+
+  it("maps link labels and Unicode normalization back to the exact original characters", () => {
+    const passage =
+      "Before [café](https://example.org/private-target) opens, retain the receipt.";
+    const contextual = contextualEvidenceText({ title: "Receipt", passage });
+    const span = locateEvidenceQuote(contextual, "CAFÉ");
+    expect(span && passage.slice(span.startOffset, span.endOffset)).toBe(
+      "café",
+    );
+    expect(locateEvidenceQuote(contextual, "private-target")).toBeNull();
   });
 
   it("never treats the heading as passage text", () => {

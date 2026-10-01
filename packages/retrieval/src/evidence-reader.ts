@@ -8,7 +8,7 @@ import {
   locateEvidenceQuote,
 } from "./contextual-evidence.js";
 
-export const EVIDENCE_READER_PROMPT_VERSION = "evidence-reader-v3";
+export const EVIDENCE_READER_PROMPT_VERSION = "evidence-reader-v4";
 
 export interface EvidenceReaderInput {
   readonly query: string;
@@ -63,10 +63,10 @@ export function evidenceReaderMessages(
         "</passage>",
         "",
         "Steps:",
-        '1. "needed": the information requested (a value, date, name, condition, definition, reason, or whether a relation is true OR false), as one short phrase. Do not assume the proposition in the question is true.',
+        '1. "needed": the information requested (a value, date, name, condition, definition, reason, or whether a relation is true OR false), as one fully qualified fact, preserving the requested subject, event, object, row, date, unit of measurement and quantifiers. Do not assume the proposition in the question is true.',
         '2. "answer_span": copy character for character the shortest self-contained passage text that answers the question, retaining its negation, qualifiers, subject and relation direction, in the passage language, or "" if there is none. Never copy the source heading.',
         '3. "answer": a short answer grounded only in answer_span, or "" when the question cannot be settled. For yes/no questions this may be yes OR no: a prohibition, impossibility, exception, optional requirement or explicit denial can establish no. A statement about the inverse relation, an unrelated exception or silence about the requested fact cannot.',
-        '4. "verdict": "ANSWERS" when answer_span settles the question, including when it disproves its assumption or establishes a negative answer for the same subject and relation direction; "RELATED_NOT_ANSWERING" when the passage mentions the topic but does not settle the requested fact; "UNRELATED" otherwise.',
+        '4. "verdict": "ANSWERS" only when answer_span settles that fully qualified fact. A value for another event, metric, date, row or subject does not answer. One special case does not establish a general rule. Do not infer an unstated restriction, relationship, scope or direction. An explicit denial for the requested subject and relation can establish a negative answer. "RELATED_NOT_ANSWERING" when any requested qualifier or fact is missing; "UNRELATED" otherwise.',
         "",
         `Question: ${input.query}`,
         "",

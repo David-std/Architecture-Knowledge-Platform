@@ -485,9 +485,12 @@ function exactCandidatePassage(hit: SearchHit): string {
   return hit.excerpt.trim();
 }
 
-function hardDeterministicRequirementsSatisfied(
-  signal: CandidateAnswerabilitySignal,
-): boolean {
+function hardDeterministicRequirementsSatisfied(signal: {
+  passageSupport: Pick<
+    CandidatePassageSupport,
+    "requiredAnswerCues" | "matchedAnswerCues"
+  >;
+}): boolean {
   return (["QUANTITY", "DATE_YEAR"] as const).every(
     (cue) =>
       !signal.passageSupport.requiredAnswerCues.includes(cue) ||
@@ -705,8 +708,11 @@ export async function assessRetrievalAnswerabilityWithVerifier(
     verifier,
     verifierPolicy,
   );
+  const hitsByKey = new Map(
+    hits.map((hit) => [retrievalAnswerabilityCandidateKey(hit), hit]),
+  );
   const candidateSignals = baseline.candidateSignals.map((signal) => {
-    const trace =
+    let trace =
       traces.get(signal.candidateKey) ??
       ({
         verifierId: verifier.id,
@@ -721,6 +727,40 @@ export async function assessRetrievalAnswerabilityWithVerifier(
       return { ...signal, queryConditionedEvidence: trace };
     }
 
+    const hit = hitsByKey.get(signal.candidateKey);
+    if (
+      trace.decision === "SUPPORTS" &&
+      trace.evidenceSpan &&
+      hit &&
+      signal.passageSupport.reason !== "DIRECT_CHANNEL_SUPPORT"
+    ) {
+      // A number/year elsewhere in the unit cannot satisfy a requirement in
+      // the selected evidence. Recheck only the exact span, without widening it.
+      const passageSupport = verifyDeterministicPassageSupport(
+        {
+          ...hit,
+          excerpt: exactCandidatePassage(hit).slice(
+            trace.evidenceSpan.startOffset,
+            trace.evidenceSpan.endOffset,
+          ),
+        },
+        query,
+        policyInput,
+      );
+      if (passageSupport.reason === "NO_CONCRETE_PASSAGE") {
+        trace = {
+          ...trace,
+          decision: "INSUFFICIENT",
+          reason: "EVIDENCE_SPAN_NOT_ASSERTION",
+        };
+      } else if (!hardDeterministicRequirementsSatisfied({ passageSupport })) {
+        trace = {
+          ...trace,
+          decision: "INSUFFICIENT",
+          reason: "EVIDENCE_SPAN_MISSING_REQUIRED_FACT",
+        };
+      }
+    }
     const reason = enforcedQueryConditionedReason(signal, trace);
     return {
       ...signal,

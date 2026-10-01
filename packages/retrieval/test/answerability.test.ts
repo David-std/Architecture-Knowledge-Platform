@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ReaderEvidenceVerifier } from "../src/evidence-reader.js";
 import type { SearchHit } from "@akp/contracts";
 import {
   assessRetrievalAnswerability,
@@ -1517,6 +1518,106 @@ describe("retrieval answerability", () => {
     ]);
   });
 
+  it.each([
+    [
+      "What is the monthly operating cost of the subsystem?",
+      "The inventory contains 72 machines. The monthly operating cost is reviewed regularly.",
+      "The monthly operating cost is reviewed regularly.",
+    ],
+    [
+      "Which year did the review start?",
+      "The policy was stored in 2020. The review start is unspecified.",
+      "The review start is unspecified.",
+    ],
+  ])(
+    "does not borrow a required exact fact from outside the verified span: %s",
+    async (query, excerpt, quote) => {
+      const candidate = hit(914, {
+        title: "Operational record",
+        excerpt,
+        contributions: [contribution("vector", 0.9, 1)],
+      });
+      const result = await assessRetrievalAnswerabilityWithVerifier(
+        [candidate],
+        query,
+        {
+          id: "overconfident-verifier",
+          verify: async () => ({
+            decision: "SUPPORTS",
+            reason: "fixture",
+            evidenceSpan: {
+              startOffset: excerpt.indexOf(quote),
+              endOffset: excerpt.indexOf(quote) + quote.length,
+            },
+          }),
+        },
+        { mode: "ENFORCE" },
+      );
+      expect(result.supported).toBe(false);
+      expect(result.candidateSignals[0]?.queryConditionedEvidence?.reason).toBe(
+        "EVIDENCE_SPAN_MISSING_REQUIRED_FACT",
+      );
+    },
+  );
+
+  it("checks the actual reader quote rather than a whole-line envelope", async () => {
+    const candidate = hit(916, {
+      title: "Operational record",
+      excerpt:
+        "The inventory contains 72 machines. The monthly operating cost is reviewed regularly.",
+      contributions: [contribution("vector", 0.9, 1)],
+    });
+    const verifier = new ReaderEvidenceVerifier({
+      reader: {
+        id: "reader",
+        judge: async () => ({
+          answers: true,
+          quote: "The monthly operating cost is reviewed regularly.",
+        }),
+      },
+    });
+    const result = await assessRetrievalAnswerabilityWithVerifier(
+      [candidate],
+      "What is the monthly operating cost of the subsystem?",
+      verifier,
+      { mode: "ENFORCE" },
+    );
+    expect(result.supported).toBe(false);
+    expect(result.candidateSignals[0]?.queryConditionedEvidence?.reason).toBe(
+      "EVIDENCE_SPAN_MISSING_REQUIRED_FACT",
+    );
+  });
+
+  it("retains an exact quantity inside the selected evidence span", async () => {
+    const excerpt =
+      "The inventory contains 72 machines. The monthly operating cost is 90 euros.";
+    const quote = "The monthly operating cost is 90 euros.";
+    const candidate = hit(915, {
+      title: "Operational record",
+      excerpt,
+      contributions: [contribution("vector", 0.9, 1)],
+    });
+    const result = await assessRetrievalAnswerabilityWithVerifier(
+      [candidate],
+      "What is the monthly operating cost of the subsystem?",
+      {
+        id: "quantity-verifier",
+        verify: async () => ({
+          decision: "SUPPORTS",
+          reason: "fixture",
+          evidenceSpan: {
+            startOffset: excerpt.indexOf(quote),
+            endOffset: excerpt.length,
+          },
+        }),
+      },
+      { mode: "ENFORCE" },
+    );
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(candidate),
+    ]);
+  });
+
   it("does not let a query-conditioned verifier override a missing quantity", async () => {
     const candidate = hit(43, {
       title: "Operating cost overview",
@@ -1888,4 +1989,39 @@ describe("interrogative formatting and sentence boundaries", () => {
         .supported,
     ).toBe(true);
   });
+});
+
+describe("reader assertion boundaries", () => {
+  it.each([
+    "Can ALFA call BETA?",
+    "Can ALFA call BETA？",
+    "Can ALFA call BETA؟",
+  ])(
+    "rejects a verifier that calls an open question evidence: %s",
+    async (excerpt) => {
+      const candidate = hit(2020, {
+        type: "claim",
+        unitType: "CLAIM",
+        excerpt,
+      });
+      const result = await assessRetrievalAnswerabilityWithVerifier(
+        [candidate],
+        "Can ALFA call BETA?",
+        {
+          id: "adversarial-reader",
+          verify: async () => ({
+            decision: "SUPPORTS",
+            reason: "FIXTURE_VERDICT",
+            score: 1,
+            evidenceSpan: { startOffset: 0, endOffset: excerpt.length },
+          }),
+        },
+        { mode: "ENFORCE" },
+      );
+      expect(result.supported).toBe(false);
+      expect(result.candidateSignals[0]?.queryConditionedEvidence?.reason).toBe(
+        "EVIDENCE_SPAN_NOT_ASSERTION",
+      );
+    },
+  );
 });

@@ -9,6 +9,7 @@ import {
   CONTEXTUAL_CROSS_ENCODER_REVISION,
   ContextualCrossEncoderEvidenceVerifier,
   contextualEvidenceText,
+  locateEvidenceQuote,
   type CrossEncoderPair,
   type CrossEncoderRuntimeFactory,
 } from "../src/contextual-evidence.js";
@@ -46,7 +47,7 @@ describe("contextual evidence text", () => {
         headingPath: ["Loans", "Renewals"],
         passage: "A loan can be renewed twice.\n\nOverdue loans cannot.",
       }),
-    ).toEqual({
+    ).toMatchObject({
       scope: "Renewals > Loans",
       body: "A loan can be renewed twice.\nOverdue loans cannot.",
       text: "Renewals > Loans\nA loan can be renewed twice.\nOverdue loans cannot.",
@@ -255,5 +256,26 @@ describe("batched query-conditioned verification", () => {
       decision: "VERIFIER_ERROR",
       reason: "RUNTIME_CRASHED",
     });
+  });
+});
+
+describe("quote mapping integrity", () => {
+  it("fails closed when the selected prose mapping is incomplete", () => {
+    const contextual = contextualEvidenceText({
+      title: "Operations",
+      passage: "The recovery window is 47 minutes.",
+    });
+    const segment = contextual.segments[0]!;
+    expect(
+      locateEvidenceQuote(
+        {
+          ...contextual,
+          segments: [
+            { ...segment, characterSpans: segment.characterSpans!.slice(1) },
+          ],
+        },
+        "The recovery window is 47 minutes",
+      ),
+    ).toBeNull();
   });
 });

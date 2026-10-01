@@ -30,6 +30,11 @@ export interface ContextualEvidenceInput {
 export interface ContextualEvidenceSegment {
   /** One passage line, or one table row restated with its column headers. */
   readonly text: string;
+  /** Source positions per UTF-16 character of the normalized prose key. */
+  readonly characterSpans?: readonly {
+    startOffset: number;
+    endOffset: number;
+  }[];
   /** UTF-16 offsets of the line or row in the original passage. */
   readonly sourceSpan: {
     readonly startOffset: number;
@@ -58,6 +63,66 @@ function withoutLinkTargets(value: string): string {
     .replace(/\[([^\]]*)\]\([^)]*\)/gu, "$1");
 }
 
+/** Source mapping for prose normalization; link targets cannot supply quotes. */
+function proseCharacterSpans(
+  raw: string,
+  base: number,
+): Array<{ startOffset: number; endOffset: number }> {
+  let visible = "";
+  const positions: Array<{ startOffset: number; endOffset: number }> = [];
+  const append = (text: string, start: number, end?: number): void => {
+    visible += text;
+    for (let index = 0; index < text.length; index++)
+      positions.push({
+        startOffset: base + start + (end === undefined ? index : 0),
+        endOffset: base + (end === undefined ? start + index + 1 : end),
+      });
+  };
+  let cursor = 0;
+  for (const match of raw.matchAll(/\[\[[^\]]*\]\]|\[([^\]]*)\]\([^)]*\)/gu)) {
+    append(raw.slice(cursor, match.index), cursor);
+    if (match[1] === undefined)
+      append(" ", match.index, match.index + match[0].length);
+    else append(match[1], match.index + 1);
+    cursor = match.index + match[0].length;
+  }
+  append(raw.slice(cursor), cursor);
+
+  let normalized = "";
+  const normalizedPositions: typeof positions = [];
+  for (const part of new Intl.Segmenter("und", {
+    granularity: "grapheme",
+  }).segment(visible)) {
+    const value = part.segment.normalize("NFC");
+    normalized += value;
+    const span = {
+      startOffset: positions[part.index]!.startOffset,
+      endOffset: positions[part.index + part.segment.length - 1]!.endOffset,
+    };
+    for (let index = 0; index < value.toLocaleLowerCase("und").length; index++)
+      normalizedPositions.push(span);
+  }
+  const lower = normalized.toLocaleLowerCase("und");
+  const retained: typeof positions = [];
+  const chars: string[] = [];
+  for (let index = 0; index < lower.length; index++) {
+    const character = lower[index]!;
+    if (/\s/u.test(character)) {
+      if (chars.at(-1) === " ") {
+        retained[retained.length - 1]!.endOffset =
+          normalizedPositions[index]!.endOffset;
+        continue;
+      }
+      chars.push(" ");
+    } else chars.push(character);
+    retained.push({ ...normalizedPositions[index]! });
+  }
+  const key = chars.join("");
+  const prefix = key.match(/^["'“”‘’«»\s]+/u)?.[0].length ?? 0;
+  const suffix = key.match(/["'“”‘’«»\s]+$/u)?.[0].length ?? 0;
+  return retained.slice(prefix, suffix ? -suffix : undefined);
+}
+
 function textSegments(
   passage: string,
   startOffset: number,
@@ -74,6 +139,10 @@ function textSegments(
     if (text) {
       segments.push({
         text,
+        characterSpans: proseCharacterSpans(
+          passage.slice(lineStart, lineEnd),
+          lineStart,
+        ),
         sourceSpan: { startOffset: lineStart, endOffset: lineEnd },
       });
     }
@@ -144,7 +213,7 @@ function quoteKey(value: string): string {
 
 /**
  * Locate a quoted answer inside the contextual body and return the original
- * passage span of the lines or table rows it covers. Returns null when the
+ * exact prose span or the original table rows it covers. Returns null when the
  * quote is not verbatim body text, so a paraphrase or a heading cannot pass
  * as evidence.
  */
@@ -164,19 +233,39 @@ export function locateEvidenceQuote(
   let offset = 0;
   let first = -1;
   let last = -1;
+  let mappedStart: number | undefined;
+  let mappedEnd: number | undefined;
+  let mappingInvalid = false;
   keys.forEach((key, index) => {
     const start = offset;
     const end = offset + key.length;
     if (end > position && start < position + needle.length) {
-      if (first < 0) first = index;
+      const segment = contextual.segments[index]!;
+      if (
+        segment.characterSpans &&
+        segment.characterSpans.length !== key.length
+      ) {
+        mappingInvalid = true;
+        return;
+      }
+      if (first < 0) {
+        first = index;
+        mappedStart =
+          segment.characterSpans?.[Math.max(0, position - start)]?.startOffset;
+      }
       last = index;
+      mappedEnd =
+        segment.characterSpans?.[
+          Math.min(key.length, position + needle.length - start) - 1
+        ]?.endOffset;
     }
     offset = end + 1;
   });
-  if (first < 0) return null;
+  if (mappingInvalid || first < 0) return null;
   return {
-    startOffset: contextual.segments[first]!.sourceSpan.startOffset,
-    endOffset: contextual.segments[last]!.sourceSpan.endOffset,
+    startOffset:
+      mappedStart ?? contextual.segments[first]!.sourceSpan.startOffset,
+    endOffset: mappedEnd ?? contextual.segments[last]!.sourceSpan.endOffset,
   };
 }
 
@@ -186,7 +275,7 @@ export interface CrossEncoderPair {
 }
 
 export interface CrossEncoderRuntime {
-  /** Probability that each passage answers its query, in input order. */
+  /** Relevance scores in input order; these are not calibrated answerability probabilities. */
   score(pairs: readonly CrossEncoderPair[]): Promise<number[]>;
   readonly dispose?: () => Promise<void> | void;
 }
