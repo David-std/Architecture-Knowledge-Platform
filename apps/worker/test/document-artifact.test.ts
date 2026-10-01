@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { parseKnowledgeUnits } from "../../../packages/retrieval/src/chunking.js";
 import {
   canonicalJson,
   documentArtifactConfigurationHash,
   parseCanonicalExtractionResponse,
   renderDocumentArtifactDraft,
   renderDocumentArtifactPreview,
+  renderDocumentArtifactMarkdown,
 } from "../src/document-artifact.js";
 
 const sourceId = "00000000-0000-0000-0000-000000000123";
@@ -167,5 +169,88 @@ describe("canonical document artifact consumption", () => {
     expect(draft).toContain("## Uncertainty");
     expect(draft).not.toContain("file:///captured");
     expect(draft).not.toContain("C:\\\\private");
+  });
+});
+
+describe("complete extraction material", () => {
+  it("preserves all table rows when the provider detected no headers", () => {
+    const parsed = parseCanonicalExtractionResponse(response(), {
+      sourceId,
+      sourceHash,
+    });
+    const table = {
+      ...parsed.artifact.tables[0]!,
+      headers: [],
+      rows: [
+        ["alpha", "12"],
+        ["beta", "36", "days"],
+      ],
+    };
+    const artifact = {
+      ...parsed.artifact,
+      blocks: [table],
+      tables: [table],
+      reading_order: [table.id!],
+    };
+    const markdown = renderDocumentArtifactMarkdown(artifact);
+    expect(markdown).toContain("| Column 1 | Column 2 | Column 3 |");
+    expect(markdown).toContain("| alpha | 12 |  |");
+    expect(markdown).toContain("| beta | 36 | days |");
+    const units = parseKnowledgeUnits("Extracted table", markdown);
+    const atomic = units.filter((unit) => !unit.containerOnly);
+    expect(atomic).toHaveLength(1);
+    expect(atomic[0]?.unitType).toBe("TABLE");
+    expect(atomic[0]?.body).toContain("| beta | 36 | days |");
+    expect(atomic[0]?.body).not.toContain("akp-locator");
+    expect(atomic[0]?.locator.sourceCommentSpans).toHaveLength(1);
+  });
+
+  it("limits only the preview while retaining a later answer in the review draft", () => {
+    const parsed = parseCanonicalExtractionResponse(response(), {
+      sourceId,
+      sourceHash,
+    });
+    const block = {
+      ...parsed.artifact.blocks[0]!,
+      id: "long-material",
+      kind: "paragraph",
+      text:
+        "Neutral extracted material. ".repeat(300) +
+        "\n\nThe recovery window is 47 minutes.",
+    };
+    const artifact = {
+      ...parsed.artifact,
+      blocks: [block],
+      paragraphs: [block],
+      reading_order: [block.id],
+    };
+    expect(renderDocumentArtifactPreview(artifact, 6000).truncated).toBe(true);
+    const draft = renderDocumentArtifactDraft({
+      externalId: "SRC-LONG",
+      title: "Long material",
+      sourceId,
+      sourceArtifactId: "00000000-0000-4000-8000-000000000456",
+      sha256: sourceHash,
+      mediaType: "text/plain",
+      extractor: parsed.extractor,
+      extractorVersion: parsed.extractorVersion,
+      artifact,
+    });
+    expect(draft).toContain("The recovery window is 47 minutes.");
+    expect(draft).not.toContain("Preview truncated");
+    // Only the body enters chunking after the normal Markdown front-matter parser.
+    const body = draft.replace(/^---\n[\s\S]*?\n---\n/u, "");
+    const units = parseKnowledgeUnits("Long material", body);
+    const answer = units.find(
+      (unit) =>
+        !unit.containerOnly &&
+        unit.body.includes("The recovery window is 47 minutes."),
+    );
+    expect(answer?.embeddingEligible).toBe(true);
+    expect(
+      units
+        .filter((unit) => !unit.containerOnly)
+        .some((unit) => unit.body.includes("akp-locator")),
+    ).toBe(false);
   });
 });

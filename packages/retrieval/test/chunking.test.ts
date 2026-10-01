@@ -60,3 +60,75 @@ describe("hierarchical chunking", () => {
     expect(units[0]?.unitKey).not.toBe(units[1]?.unitKey);
   });
 });
+
+describe("visible Markdown content", () => {
+  it("keeps provenance comments out of evidence and preserves original line positions", () => {
+    const source =
+      "# Extract\n\n<!-- akp-locator: page=2; heading=Operational source -->\n\nThe lock is released after recovery.\n\n<!-- internal note -->\n\nThe receipt expires at midnight.";
+    const units = parseKnowledgeUnits("Extract", source).filter(
+      (unit) => !unit.containerOnly,
+    );
+    expect(units).toHaveLength(2);
+    expect(units[0]?.unitType).toBe("PARAGRAPH");
+    expect(units[0]?.body).not.toContain("akp-locator");
+    expect(units[0]?.locator).toMatchObject({
+      startLine: 5,
+      endLine: 5,
+      sourceCommentSpans: [{ startLine: 3, endLine: 3 }],
+    });
+    expect(units[1]?.locator.startLine).toBe(9);
+  });
+
+  it("preserves literals in fenced and inline code while masking actual comments", () => {
+    const units = parseKnowledgeUnits(
+      "Syntax",
+      "# Syntax\n```html\n<!-- code example -->\n```\n\nUse `<!-- inline example -->` as syntax.\n\n<!-- ignored -->\nAfter the comment.",
+    );
+    expect(
+      units.find((unit) => unit.unitType === "CODE_EVIDENCE")?.body,
+    ).toContain("<!-- code example -->");
+    expect(
+      units.some(
+        (unit) => !unit.containerOnly && unit.body.includes("inline example"),
+      ),
+    ).toBe(true);
+    expect(
+      units.some(
+        (unit) => !unit.containerOnly && unit.body.includes("ignored"),
+      ),
+    ).toBe(false);
+  });
+
+  it("does not delete visible text between inline comments", () => {
+    const units = parseKnowledgeUnits(
+      "Statement",
+      "# Statement\n<!-- first -->The receipt remains valid.<!-- last -->",
+    );
+    expect(
+      units.filter((unit) => !unit.containerOnly).map((unit) => unit.body),
+    ).toEqual(["The receipt remains valid."]);
+  });
+
+  it("retains link units but excludes links alone from vector embeddings", () => {
+    const units = parseKnowledgeUnits(
+      "Links",
+      "# Links\n[Remote reference](https://example.org)\n\n[[Local reference]]\n\nConsult [the reference](https://example.org) before publishing.",
+    ).filter((unit) => !unit.containerOnly);
+    expect(units.map((unit) => unit.embeddingEligible)).toEqual([
+      false,
+      false,
+      true,
+    ]);
+    expect(units[0]?.body).toContain("https://example.org");
+  });
+
+  it("does not interpret semantic type vocabulary as substrings of other words", () => {
+    const units = parseKnowledgeUnits(
+      "Record",
+      "# Record\nEl medicamento funciona correctamente.\n\nLa convocatoria permanece abierta.",
+    );
+    expect(
+      units.filter((unit) => !unit.containerOnly).map((unit) => unit.unitType),
+    ).toEqual(["PARAGRAPH", "PARAGRAPH"]);
+  });
+});

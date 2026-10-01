@@ -249,13 +249,14 @@ def _table_data(item: Any) -> tuple[list[str], list[list[str]], dict[str, Any]]:
         payload = (
             cell.model_dump(mode="json", by_alias=True, exclude_none=True)
             if hasattr(cell, "model_dump")
-            else dict(cell) if isinstance(cell, dict) else {}
+            else dict(cell)
+            if isinstance(cell, dict)
+            else {}
         )
         row_span = payload.get("row_span")
         row_fallback = row_span[0] if isinstance(row_span, list) and row_span else 0
         row_start = int(
-            payload.get("start_row_offset_idx", payload.get("start_row_offset", row_fallback))
-            or 0
+            payload.get("start_row_offset_idx", payload.get("start_row_offset", row_fallback)) or 0
         )
         row_end = int(
             payload.get(
@@ -267,8 +268,7 @@ def _table_data(item: Any) -> tuple[list[str], list[list[str]], dict[str, Any]]:
         col_span = payload.get("col_span")
         col_fallback = col_span[0] if isinstance(col_span, list) and col_span else 0
         col_start = int(
-            payload.get("start_col_offset_idx", payload.get("start_col_offset", col_fallback))
-            or 0
+            payload.get("start_col_offset_idx", payload.get("start_col_offset", col_fallback)) or 0
         )
         col_end = int(
             payload.get(
@@ -318,9 +318,7 @@ def _table_data(item: Any) -> tuple[list[str], list[list[str]], dict[str, Any]]:
     return headers, rows, {"docling_table_cells": normalized}
 
 
-def _page_artifacts(
-    document: Any, *, source_hash: str, source_ref: str
-) -> list[PageArtifact]:
+def _page_artifacts(document: Any, *, source_hash: str, source_ref: str) -> list[PageArtifact]:
     pages = getattr(document, "pages", {}) or {}
     if not isinstance(pages, dict):
         return []
@@ -522,6 +520,20 @@ def map_docling_document(
     )
 
 
+def document_from_docling_conversion(conversion: Any) -> Any:
+    """Never expose incomplete provider output as a complete artifact.
+
+    Docling returns a ConversionResult even when only some pages converted.
+    Direct DoclingDocument inputs remain supported by the native mapper. Error
+    messages are provider-controlled and must not expose paths or source bytes.
+    """
+    if hasattr(conversion, "status"):
+        status = getattr(conversion.status, "value", conversion.status)
+        if str(status).lower() != "success" or getattr(conversion, "errors", []):
+            raise DocumentIntelligenceError("DOCLING_CONVERSION_INCOMPLETE")
+    return getattr(conversion, "document", conversion)
+
+
 class DoclingAdapter(DocumentIntelligencePort):
     name = "docling"
     version = "optional"
@@ -546,9 +558,7 @@ class DoclingAdapter(DocumentIntelligencePort):
                 else CapabilityStatus.CAPABILITY_NOT_CONFIGURED
             ),
             reason=(
-                "python-package-installed"
-                if available
-                else "DEPENDENCY_NOT_INSTALLED:docling"
+                "python-package-installed" if available else "DEPENDENCY_NOT_INSTALLED:docling"
             ),
             media=["pdf", "docx", "pptx", "xlsx", "html", "image"],
             complexities=["simple", "digital", "complex", "scanned", "formula", "table-heavy"],
@@ -569,9 +579,9 @@ class DoclingAdapter(DocumentIntelligencePort):
             raise CapabilityNotConfigured("Docling converter API is unavailable") from error
         try:
             conversion = DocumentConverter().convert(str(request.source_path))
-            document = getattr(conversion, "document", conversion)
+            document = document_from_docling_conversion(conversion)
             return map_docling_document(document, request)
         except DocumentIntelligenceError:
             raise
         except Exception as error:
-            raise DocumentIntelligenceError(f"Docling extraction failed: {error}") from error
+            raise DocumentIntelligenceError("DOCLING_EXTRACTION_FAILED") from error

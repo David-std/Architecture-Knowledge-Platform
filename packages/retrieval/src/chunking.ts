@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { fromMarkdown } from "mdast-util-from-markdown";
 import { markdownTableEvidence } from "./markdown-table-evidence.js";
 
 export type KnowledgeUnitType =
@@ -32,6 +33,8 @@ export interface ParsedKnowledgeUnit {
     startLine: number;
     endLine: number;
     contentHash: string;
+    /** Source comment positions are provenance hints, never assertions. */
+    sourceCommentSpans?: ReadonlyArray<{ startLine: number; endLine: number }>;
   };
   containerOnly: boolean;
   embeddingEligible: boolean;
@@ -55,17 +58,24 @@ function semanticType(
   fallback: KnowledgeUnitType,
 ): KnowledgeUnitType {
   const value = `${headingPath.join(" ")} ${body.slice(0, 240)}`.toLowerCase();
-  if (/\bcounterexample|contraejemplo|anti-pattern|antipatr[oó]n\b/.test(value))
+  if (
+    /\b(?:counterexample|contraejemplo|anti-pattern|antipatr[oó]n)\b/.test(
+      value,
+    )
+  )
     return "COUNTEREXAMPLE";
-  if (/\bprecondition|precondici[oó]n|given|dado que\b/.test(value))
+  if (/\b(?:precondition|precondici[oó]n|given|dado que)\b/.test(value))
     return "PRECONDITION";
-  if (/\bexample|ejemplo\b/.test(value)) return "EXAMPLE";
-  if (/\bevidence|evidencia|locator|localizador|citation|cita\b/.test(value))
+  if (/\b(?:example|ejemplo)\b/.test(value)) return "EXAMPLE";
+  if (
+    /\b(?:evidence|evidencia|locator|localizador|citation|cita)\b/.test(value)
+  )
     return "EVIDENCE";
-  if (/\bsource excerpt|extracto de fuente|verbatim\b/.test(value))
+  if (/\b(?:source excerpt|extracto de fuente|verbatim)\b/.test(value))
     return "SOURCE_EXCERPT";
-  if (/\brule|regla|must|must not|debe|no debe\b/.test(value)) return "RULE";
-  if (/\bstep|paso|workflow|flujo|then|cuando\b/.test(value))
+  if (/\b(?:rule|regla|must|must not|debe|no debe)\b/.test(value))
+    return "RULE";
+  if (/\b(?:step|paso|workflow|flujo|then|cuando)\b/.test(value))
     return "WORKFLOW_STEP";
   return fallback;
 }
@@ -168,6 +178,95 @@ function atomicType(
     : structural;
 }
 
+interface CommentSpan {
+  startOffset: number;
+  endOffset: number;
+  startLine: number;
+  endLine: number;
+}
+
+/** Mask only actual Markdown HTML comments, not code examples containing them. */
+function commentFreeSource(source: string): {
+  text: string;
+  comments: CommentSpan[];
+} {
+  const comments: CommentSpan[] = [];
+  const tree = fromMarkdown(source);
+  type Node = {
+    type: string;
+    value?: string | undefined;
+    children?: readonly Node[] | undefined;
+    position?:
+      | {
+          start: { offset?: number | undefined; line: number };
+          end: { offset?: number | undefined; line: number };
+        }
+      | undefined;
+  };
+  const lineOffsets = [0];
+  for (let i = 0; i < source.length; i++)
+    if (source[i] === "\n") lineOffsets.push(i + 1);
+  const lineAt = (offset: number): number => {
+    let low = 0;
+    let high = lineOffsets.length;
+    while (low + 1 < high) {
+      const middle = (low + high) >>> 1;
+      if (lineOffsets[middle]! <= offset) low = middle;
+      else high = middle;
+    }
+    return low + 1;
+  };
+  const visit = (node: Node): void => {
+    const base = node.position?.start.offset;
+    if (node.type === "html" && node.value && base !== undefined) {
+      for (const match of node.value.matchAll(/<!--[\s\S]*?-->/gu)) {
+        const startOffset = base + match.index;
+        const endOffset = startOffset + match[0].length;
+        comments.push({
+          startOffset,
+          endOffset,
+          startLine: lineAt(startOffset),
+          endLine: lineAt(endOffset - 1),
+        });
+      }
+    }
+    node.children?.forEach(visit);
+  };
+  visit(tree);
+  let cursor = 0;
+  let text = "";
+  for (const comment of comments.sort(
+    (a, b) => a.startOffset - b.startOffset,
+  )) {
+    text += source.slice(cursor, comment.startOffset);
+    text += source
+      .slice(comment.startOffset, comment.endOffset)
+      .replace(/[^\n]/gu, " ");
+    cursor = comment.endOffset;
+  }
+  text += source.slice(cursor);
+  return { text, comments };
+}
+
+function hasIndependentText(body: string): boolean {
+  const text = body.replace(/\[\[[^\]]*\]\]/gu, "");
+  const tree = fromMarkdown(text);
+  type Node = {
+    type: string;
+    value?: string | undefined;
+    children?: readonly Node[];
+  };
+  const collect = (node: Node): string => {
+    if (["link", "image", "html"].includes(node.type)) return "";
+    return (
+      (node.type === "text" || node.type === "inlineCode"
+        ? (node.value ?? "")
+        : "") + (node.children?.map(collect).join(" ") ?? "")
+    );
+  };
+  return /[\p{L}\p{N}]/u.test(collect(tree));
+}
+
 /**
  * Parses Markdown into a document container, section containers and atomic
  * structural children. Containers are retained for parent rehydration but are
@@ -199,7 +298,26 @@ export function parseKnowledgeUnits(
       embeddingEligible: false,
     },
   ];
-  const lines = normalized ? normalized.split("\n") : [];
+  const clean = commentFreeSource(normalized);
+  const lines = normalized ? clean.text.split("\n") : [];
+  const nextContentLine = new Array<number>(lines.length + 1).fill(
+    lines.length + 1,
+  );
+  for (let index = lines.length - 1; index >= 0; index--) {
+    nextContentLine[index] = lines[index]!.trim()
+      ? index + 1
+      : nextContentLine[index + 1]!;
+  }
+  const commentsByContentLine = new Map<
+    number,
+    Array<{ startLine: number; endLine: number }>
+  >();
+  for (const { startLine, endLine } of clean.comments) {
+    const target = nextContentLine[endLine] ?? lines.length + 1;
+    const existing = commentsByContentLine.get(target) ?? [];
+    existing.push({ startLine, endLine });
+    commentsByContentLine.set(target, existing);
+  }
   const headings: string[] = [];
   let sectionStart = 0;
   let sectionIndex = 0;
@@ -252,9 +370,16 @@ export function parseKnowledgeUnits(
           startLine: block.startLine,
           endLine: block.endLine,
           contentHash,
+          ...(commentsByContentLine.has(block.startLine)
+            ? {
+                sourceCommentSpans: commentsByContentLine.get(block.startLine)!,
+              }
+            : {}),
         },
         containerOnly: false,
-        embeddingEligible: true,
+        embeddingEligible:
+          !["PARAGRAPH", "LIST"].includes(block.structuralType) ||
+          hasIndependentText(block.body),
       });
     }
   };
