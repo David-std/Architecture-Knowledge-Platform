@@ -1616,6 +1616,61 @@ describe("retrieval answerability", () => {
   });
 });
 
+describe("requirement absence evidence", () => {
+  it("accepts an activity that remains possible without the queried component", () => {
+    const optionalScheduler = hit(1871, {
+      title: "Ejecución de trabajos",
+      type: "claim",
+      excerpt:
+        "Los trabajos pueden procesarse directamente sin scheduler; incorporarlo es una opción operativa.",
+      contributions: [contribution("lexical")],
+    });
+    const optionalCollector = hit(1872, {
+      title: "Ejecución de trabajos",
+      type: "claim",
+      excerpt:
+        "Los trabajos pueden procesarse con scheduler sin un recolector de auditoría.",
+      contributions: [contribution("lexical")],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [optionalCollector, optionalScheduler],
+      "¿Es obligatorio usar un scheduler para procesar trabajos?",
+    );
+
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(optionalScheduler),
+    ]);
+    expect(result.candidateSignals[0]?.passageSupport.supported).toBe(false);
+  });
+
+  it("applies the same requirement logic outside the scheduler domain", () => {
+    const optionalChecksum = hit(1873, {
+      title: "Record validation",
+      type: "claim",
+      excerpt: "Records can be validated without a checksum.",
+      contributions: [contribution("lexical")],
+    });
+    const unrelatedAbsence = hit(1874, {
+      title: "Record validation",
+      type: "claim",
+      excerpt:
+        "Records can be validated with a checksum without an audit marker.",
+      contributions: [contribution("lexical")],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [unrelatedAbsence, optionalChecksum],
+      "Is a checksum mandatory for validating records?",
+    );
+
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(optionalChecksum),
+    ]);
+    expect(result.candidateSignals[0]?.passageSupport.supported).toBe(false);
+  });
+});
+
 describe("conditional table evidence", () => {
   it("binds condition and decision cells in the same row without admitting a metric table", () => {
     const decision = hit(1901, {

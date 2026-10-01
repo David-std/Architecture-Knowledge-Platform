@@ -696,6 +696,94 @@ function genericYesNoRelationRolesMatch(
   );
 }
 
+function relationTokensAlign(left: string, right: string): boolean {
+  if (left === right) return true;
+  const sharedLength = Math.min(left.length, right.length);
+  if (sharedLength < 4) return false;
+  if (left.startsWith(right) || right.startsWith(left)) return true;
+
+  let commonPrefix = 0;
+  while (
+    commonPrefix < sharedLength &&
+    left[commonPrefix] === right[commonPrefix]
+  ) {
+    commonPrefix += 1;
+  }
+  return commonPrefix >= 5 && commonPrefix / sharedLength >= 0.75;
+}
+
+function queryRequirementRoles(query: string): QueryRelationRoles | null {
+  const tokens = orderedSemanticTokens(query);
+  const predicateIndex = tokens.indexOf("require");
+  if (predicateIndex < 0) return null;
+
+  const purposeIndex = tokens.findIndex(
+    (token, index) =>
+      index > predicateIndex && (token === "for" || token === "para"),
+  );
+  if (purposeIndex < 0) return null;
+
+  const beforePredicate = tokens
+    .slice(0, predicateIndex)
+    .filter(relationAnchorEligible);
+  const afterPredicate = tokens
+    .slice(predicateIndex + 1, purposeIndex)
+    .filter(relationAnchorEligible);
+  const subjectAnchors =
+    beforePredicate.length > 0 ? beforePredicate : afterPredicate;
+  const objectAnchors = tokens
+    .slice(purposeIndex + 1)
+    .filter(relationAnchorEligible);
+
+  if (subjectAnchors.length !== 1 || objectAnchors.length === 0) return null;
+  return {
+    predicates: ["require"],
+    subjectAnchors,
+    objectAnchors,
+  };
+}
+
+function requirementAbsenceRelationMatches(
+  evidence: string,
+  query: string,
+): boolean {
+  const relation = queryRequirementRoles(query);
+  if (!relation) return false;
+
+  const tokens = orderedSemanticTokens(evidence);
+  for (let index = 0; index < tokens.length; index += 1) {
+    if (tokens[index] !== "without" && tokens[index] !== "sin") continue;
+
+    const prefix = tokens.slice(Math.max(0, index - 10), index);
+    if (
+      prefix.some((token) =>
+        ["no", "not", "never", "nunca"].includes(token),
+      )
+    ) {
+      continue;
+    }
+
+    const capabilityPresent = prefix.some(
+      (token) =>
+        relationTokensAlign(token, "can") ||
+        relationTokensAlign(token, "puede"),
+    );
+    if (!capabilityPresent) continue;
+
+    const absentSubject = tokens.slice(index + 1, index + 6);
+    const subjectMatched = relation.subjectAnchors.every((anchor) =>
+      absentSubject.some((token) => relationTokensAlign(anchor, token)),
+    );
+    if (!subjectMatched) continue;
+
+    const contextMatched = relation.objectAnchors.every((anchor) =>
+      prefix.some((token) => relationTokensAlign(anchor, token)),
+    );
+    if (contextMatched) return true;
+  }
+  return false;
+}
+
 function isSupportEligibleProposition(hit: SearchHit): boolean {
   return (
     hit.lifecycle === "ACTIVE" &&
@@ -1251,10 +1339,9 @@ function answerRequirementsMatch(
       );
       if (relationRoleMatched) matched.add("YES_NO");
     } else {
-      relationRoleMatched = genericYesNoRelationRolesMatch(
-        relationEvidence,
-        query,
-      );
+      relationRoleMatched =
+        genericYesNoRelationRolesMatch(relationEvidence, query) ||
+        requirementAbsenceRelationMatches(relationEvidence, query);
       if (relationRoleMatched) matched.add("YES_NO");
     }
   }
