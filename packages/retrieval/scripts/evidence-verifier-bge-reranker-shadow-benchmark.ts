@@ -4,6 +4,7 @@ import { performance } from "node:perf_hooks";
 import type { SearchHit } from "@akp/contracts";
 import {
   buildEvidenceRelationHypotheses,
+  evidenceSentenceWindows,
   resolveLocalSemanticCacheDir,
   verifyDeterministicPassageSupport,
 } from "../src/index.js";
@@ -649,6 +650,89 @@ const CASES: Case[] = [
     ],
     goldLabels: [],
   },
+  {
+    id: "holdout-wrong-sharing-subject",
+    split: "HOLDOUT",
+    family: "RELATION_SCOPE",
+    query: "Can intake and dispatch share a queue?",
+    queryLanguage: "en",
+    candidates: [
+      {
+        label: "other-processors",
+        title: "Resource observations",
+        language: "en",
+        passage:
+          "Intake and dispatch monitor two processors, although both processors use the same queue.",
+      },
+    ],
+    goldLabels: [],
+  },
+  {
+    id: "holdout-unrelated-optionality",
+    split: "HOLDOUT",
+    family: "RELATION_SCOPE",
+    query: "Is a scheduler mandatory for processing jobs?",
+    queryLanguage: "en",
+    candidates: [
+      {
+        label: "optional-collector",
+        title: "Job operations",
+        language: "en",
+        passage: "Jobs run on a scheduler with an optional audit collector.",
+      },
+    ],
+    goldLabels: [],
+  },
+  {
+    id: "holdout-wrong-insufficiency-subject",
+    split: "HOLDOUT",
+    family: "RELATION_SCOPE",
+    query: "Does a gateway prove that the architecture is secure?",
+    queryLanguage: "en",
+    candidates: [
+      {
+        label: "proxy-notice",
+        title: "Security notices",
+        language: "en",
+        passage:
+          "A gateway displays notices that a proxy alone is insufficient to establish security of the architecture.",
+      },
+    ],
+    goldLabels: [],
+  },
+  {
+    id: "holdout-lowercase-reversed-direction",
+    split: "HOLDOUT",
+    family: "ENTITY_CASE_DIRECTION",
+    query: "Can meru call sova?",
+    queryLanguage: "en",
+    candidates: [
+      {
+        label: "lowercase-reverse",
+        title: "meru integration",
+        language: "es",
+        passage: "sova puede llamar a meru durante la conciliación.",
+      },
+    ],
+    goldLabels: [],
+  },
+  {
+    id: "holdout-passive-direction",
+    split: "HOLDOUT",
+    family: "PASSIVE_DIRECTION",
+    query: "Can KIRO call SENA?",
+    queryLanguage: "en",
+    candidates: [
+      {
+        label: "passive-direct",
+        title: "KIRO integration",
+        language: "en",
+        passage: "SENA can be called by KIRO during reconciliation.",
+        goldSpan: "SENA can be called by KIRO during reconciliation.",
+      },
+    ],
+    goldLabels: ["passive-direct"],
+  },
 ];
 
 function deterministicBenchmarkHit(candidate: Candidate): SearchHit {
@@ -702,25 +786,12 @@ function deterministicDiagnostics(testCase: Case, candidate: Candidate) {
   };
 }
 
-function sentenceWindows(
-  passage: string,
-): { text: string; start: number; end: number }[] {
-  const windows: { text: string; start: number; end: number }[] = [];
-  const matcher = /[^.!?;\n]+(?:[.!?;]|$)/gu;
-  for (const match of passage.matchAll(matcher)) {
-    if (match.index === undefined) continue;
-    const raw = match[0];
-    const leading = raw.length - raw.trimStart().length;
-    const trailing = raw.length - raw.trimEnd().length;
-    const start = match.index + leading;
-    const end = match.index + raw.length - trailing;
-    if (end <= start) continue;
-    windows.push({ text: passage.slice(start, end), start, end });
-  }
-  if (windows.length > 0) return windows;
-  const text = passage.trim();
-  const start = passage.indexOf(text);
-  return text ? [{ text, start, end: start + text.length }] : [];
+function sentenceWindows(passage: string) {
+  return evidenceSentenceWindows(passage).map((window) => ({
+    text: window.text,
+    start: window.startOffset,
+    end: window.endOffset,
+  }));
 }
 
 function uppercaseAnchors(query: string): string[] {
@@ -1677,6 +1748,55 @@ const binaryCrossLingualPairCalibration = calibrateCrossLingualPairs(
   binaryHypothesisSweepObservations,
 );
 
+function directionFilterAudit(
+  observations: Awaited<ReturnType<typeof evaluateBinaryCases>>,
+  boundary: { threshold: number; minimumPolarityMargin: number } | null,
+) {
+  const rejectedCandidates = observations.flatMap((entry) =>
+    entry.candidates.flatMap((candidate) =>
+      candidate.directionCompatible
+        ? []
+        : [
+            {
+              caseId: entry.id,
+              split: entry.split,
+              label: candidate.label,
+              gold: entry.goldLabels.includes(candidate.label),
+              score: candidate.score,
+              polarityMargin: candidate.polarityMargin,
+            },
+          ],
+    ),
+  );
+  const ungated = observations.map((entry) => ({
+    ...entry,
+    candidates: entry.candidates.map((candidate) => ({
+      ...candidate,
+      directionCompatible: candidate.selectedPositiveHypothesis !== null,
+    })),
+  }));
+  return {
+    filter: "uppercase-query-anchors-in-passage-order",
+    rejectedCandidates,
+    ungatedCalibrationMetrics:
+      boundary === null
+        ? null
+        : metrics(
+            ungated.filter((entry) => entry.split === "CALIBRATION"),
+            boundary.threshold,
+            boundary.minimumPolarityMargin,
+          ),
+    ungatedHoldoutMetrics:
+      boundary === null
+        ? null
+        : metrics(
+            ungated.filter((entry) => entry.split === "HOLDOUT"),
+            boundary.threshold,
+            boundary.minimumPolarityMargin,
+          ),
+  };
+}
+
 const binaryEntailmentComparison = {
   model: {
     id: BINARY_ENTAILMENT_MODEL,
@@ -1692,6 +1812,10 @@ const binaryEntailmentComparison = {
   holdoutMetrics: binaryCalibrationResult.holdoutMetrics,
   holdoutPassesAcceptance: binaryCalibrationResult.holdoutPassesAcceptance,
   observations: binaryObservations,
+  directionFilterAudit: directionFilterAudit(
+    binaryObservations,
+    binaryCalibrationResult.calibrationCandidate,
+  ),
 };
 
 const binaryHypothesisSweepComparison = {
@@ -1703,10 +1827,14 @@ const binaryHypothesisSweepComparison = {
   holdoutPassesAcceptance: binarySweepCalibrationResult.holdoutPassesAcceptance,
   scoreOnlyMidpointCalibration: binarySweepScoreOnlyMidpoint,
   observations: binaryHypothesisSweepObservations,
+  directionFilterAudit: directionFilterAudit(
+    binaryHypothesisSweepObservations,
+    binarySweepCalibrationResult.calibrationCandidate,
+  ),
 };
 
 const report = {
-  schemaVersion: 8,
+  schemaVersion: 9,
   status: "MEASURED",
   evidenceBoundary:
     "Public synthetic source-disjoint shadow evaluation of multilingual evidence signals: reranker relevance/contrast plus a pinned multilingual binary entailment model. Calibration and holdout include explicit cross-lingual direct, indirect, wrong-relation and reversed-direction cases with disjoint synthetic sources. Binary observations also record deterministic passage-support diagnostics. A shadow-only language-pair analysis calibrates score-only midpoint thresholds independently for en->es and es->en, requires at least two direction-compatible gold and two non-gold candidates in both calibration and holdout, and freezes each calibration threshold before evaluating holdout. No signal is evidence truth or promoted by this report.",

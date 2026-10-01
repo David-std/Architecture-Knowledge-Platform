@@ -179,9 +179,10 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          AKP_EVIDENCE_VERIFIER_BGE_RERANKER_SHADOW_REPORT=reports/ci/evidence-verifier-bge-reranker-shadow-benchmark.json \
+          AKP_EVIDENCE_VERIFIER_BGE_RERANKER_SHADOW_REPORT="$GITHUB_WORKSPACE/reports/ci/evidence-verifier-bge-reranker-shadow-benchmark.json" \
             pnpm benchmark:evidence-verifier-bge-reranker-shadow \
             2>&1 | tee reports/ci/evidence-verifier-bge-reranker-shadow-benchmark.log
+          test -s "$GITHUB_WORKSPACE/reports/ci/evidence-verifier-bge-reranker-shadow-benchmark.json"
       - name: Execute pinned multilingual semantic retrieval end to end
         shell: bash
         run: |
