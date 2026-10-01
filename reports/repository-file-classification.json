@@ -2037,6 +2037,11 @@
       "reason": "product documentation"
     },
     {
+      "path": "docs/architecture/ingestion-chunking-audit.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "product documentation"
+    },
+    {
       "path": "docs/architecture/modules.md",
       "category": "PRODUCT_DOCUMENTATION",
       "reason": "product documentation"
