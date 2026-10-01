@@ -304,6 +304,47 @@ const CASES: AdmissionCase[] = [
     goldLabels: [],
   },
   {
+    id: "shared-resource-for-other-subjects",
+    tier: "CORE",
+    query: "Can intake and dispatch share a queue?",
+    candidates: [
+      {
+        label: "wrong-share-subjects",
+        title: "Resource observations",
+        passage:
+          "Intake and dispatch monitor two processors, although both processors use the same queue.",
+      },
+    ],
+    goldLabels: [],
+  },
+  {
+    id: "optionality-for-other-component",
+    tier: "CORE",
+    query: "Is a scheduler mandatory for processing jobs?",
+    candidates: [
+      {
+        label: "wrong-optional-component",
+        title: "Job operations",
+        passage: "Jobs run on a scheduler with an optional audit collector.",
+      },
+    ],
+    goldLabels: [],
+  },
+  {
+    id: "insufficiency-for-other-subject",
+    tier: "CORE",
+    query: "Does a gateway prove that the architecture is secure?",
+    candidates: [
+      {
+        label: "wrong-insufficient-subject",
+        title: "Security notices",
+        passage:
+          "A gateway displays notices that a proxy alone is insufficient to establish security of the architecture.",
+      },
+    ],
+    goldLabels: [],
+  },
+  {
     id: "shared-queue-across-responsibilities",
     tier: "SEMANTIC_FRONTIER",
     query: "Can ingestion and delivery share a queue?",

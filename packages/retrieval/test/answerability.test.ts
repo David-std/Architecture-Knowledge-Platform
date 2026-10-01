@@ -1062,90 +1062,58 @@ describe("retrieval answerability", () => {
     },
   );
 
-  it("answers a share relation only when both subjects use the same resource", () => {
-    const supported = hit(920, {
-      title: "Queue sharing",
-      type: "claim",
-      excerpt:
-        "Intake and dispatch remain separate responsibilities, although both can use the same durable queue.",
-      contributions: [contribution("vector", 0.9, 1)],
-    });
-    const different = hit(921, {
-      title: "Queue isolation",
-      type: "claim",
-      excerpt:
-        "Intake and dispatch both use durable queues, but each uses a different queue.",
-      contributions: [contribution("vector", 0.89, 2)],
-    });
+  it.each([
+    {
+      name: "shared resource refers to other subjects",
+      query: "Can intake and dispatch share a queue?",
+      direct: "Intake and dispatch share a durable queue.",
+      unrelated:
+        "Intake and dispatch monitor two processors, although both processors use the same queue.",
+    },
+    {
+      name: "optionality refers to another component",
+      query: "Is a scheduler mandatory for processing jobs?",
+      direct: "A scheduler is not mandatory for processing jobs.",
+      unrelated: "Jobs run on a scheduler with an optional audit collector.",
+    },
+    {
+      name: "insufficiency is asserted about another subject",
+      query: "Does a gateway prove that the architecture is secure?",
+      direct: "A gateway does not prove that the architecture is secure.",
+      unrelated:
+        "A gateway displays notices that a proxy alone is insufficient to establish security of the architecture.",
+    },
+  ])(
+    "keeps $name exploratory while accepting a direct relation",
+    ({ query, direct, unrelated }) => {
+      const supported = hit(920, {
+        title: "Relation assessment",
+        type: "claim",
+        excerpt: direct,
+        contributions: [contribution("vector", 0.8, 2)],
+      });
+      const distractor = hit(921, {
+        title: "Relation assessment",
+        type: "claim",
+        excerpt: unrelated,
+        contributions: [contribution("vector", 0.99, 1)],
+      });
 
-    const result = assessRetrievalAnswerability(
-      [supported, different],
-      "Can intake and dispatch share a queue?",
-    );
+      const result = assessRetrievalAnswerability(
+        [distractor, supported],
+        query,
+      );
 
-    expect(result.supportedCandidateKeys).toEqual([
-      retrievalAnswerabilityCandidateKey(supported),
-    ]);
-    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
-      supported: true,
-      boundedRelationRoleMatched: true,
-    });
-    expect(result.candidateSignals[1]?.passageSupport.supported).toBe(false);
-  });
-
-  it("treats explicit optionality or operation without a dependency as an answer to mandatory questions", () => {
-    const supported = hit(922, {
-      title: "Worker scheduling",
-      type: "rule",
-      excerpt:
-        "Jobs can run directly without a scheduler; using one is an optional operating safeguard.",
-      contributions: [contribution("vector", 0.88, 3)],
-    });
-    const topical = hit(923, {
-      title: "Scheduler metrics",
-      type: "rule",
-      excerpt:
-        "Scheduler latency and job throughput are recorded for operations.",
-      contributions: [contribution("vector", 0.87, 4)],
-    });
-
-    const result = assessRetrievalAnswerability(
-      [supported, topical],
-      "Is a scheduler mandatory for processing jobs?",
-    );
-
-    expect(result.supportedCandidateKeys).toEqual([
-      retrievalAnswerabilityCandidateKey(supported),
-    ]);
-    expect(result.candidateSignals[1]?.passageSupport.supported).toBe(false);
-  });
-
-  it("treats explicit insufficiency to establish a property as a negative answer, not thematic support", () => {
-    const supported = hit(924, {
-      title: "Safety assessment",
-      type: "claim",
-      excerpt:
-        "A gateway alone is insufficient to establish security of the architecture.",
-      contributions: [contribution("vector", 0.86, 5)],
-    });
-    const topical = hit(925, {
-      title: "Gateway catalog",
-      type: "claim",
-      excerpt:
-        "Gateway components are listed in the secure architecture catalog.",
-      contributions: [contribution("vector", 0.85, 6)],
-    });
-
-    const result = assessRetrievalAnswerability(
-      [supported, topical],
-      "Does a gateway prove that the architecture is secure?",
-    );
-
-    expect(result.supportedCandidateKeys).toEqual([
-      retrievalAnswerabilityCandidateKey(supported),
-    ]);
-    expect(result.candidateSignals[1]?.passageSupport.supported).toBe(false);
-  });
+      expect(result.supportedCandidateKeys).toEqual([
+        retrievalAnswerabilityCandidateKey(supported),
+      ]);
+      expect(result.candidateSignals[0]?.passageSupport.supported).toBe(false);
+      expect(result.candidateSignals[1]?.passageSupport.supported).toBe(true);
+      expect(assessRetrievalAnswerability([distractor], query).supported).toBe(
+        false,
+      );
+    },
+  );
 
   it("does not apply claim relation fallback to unreviewed claims", () => {
     const unreviewed = hit(43, {
