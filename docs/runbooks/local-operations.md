@@ -205,3 +205,17 @@ git diff --check
 
 Broad retrieval/document/agent/load comparisons are release validation evidence,
 not a reason to weaken focused correctness gates.
+
+## Docling on CPU
+
+Use the locked CPU profile on hosts without a GPU:
+
+```powershell
+cd apps/extractor
+uv sync --locked --extra docling-cpu
+uv run --locked --extra docling-cpu python -c "import torch; print(torch.__version__); assert torch.version.cuda is None"
+```
+
+Select `docling-cpu` on every `uv run` that needs this environment. It installs the optional Docling provider and pins the same Torch, TorchVision and Docling Core versions as the existing provider lock, with CPU wheels on Linux and Windows. The [explicit PyTorch index](https://docs.astral.sh/uv/guides/integration/pytorch/#configuring-accelerators-with-optional-dependencies) is scoped to those packages. Provider selection remains an explicit extractor configuration decision.
+
+The CPU profile conflicts with the normal `docling` and `marker` extras to prevent mixing incompatible accelerator sources. Use the normal profile for the existing accelerator setup; base installation still excludes heavyweight providers. CI selects the CPU profile for native Docling and OCR tests and asserts `torch.version.cuda is None` before extraction.

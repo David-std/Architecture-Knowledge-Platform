@@ -73,10 +73,8 @@ def test_real_docling_provider_ocr_preserves_scanned_pdf_provenance(
     source = tmp_path / "scanned-ocr.pdf"
     image = Image.new("RGB", (1654, 2339), "white")
     draw = ImageDraw.Draw(image)
-    font = ImageFont.truetype(
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        64,
-    )
+    # Pillow bundles this scalable font on every supported platform.
+    font = ImageFont.load_default(size=64)
     draw.multiline_text(
         (120, 260),
         "AKP OCR PROBE 739241\n"

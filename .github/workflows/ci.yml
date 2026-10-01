@@ -391,13 +391,15 @@ jobs:
           enable-cache: true
           cache-dependency-glob: apps/extractor/uv.lock
       - name: Sync the locked opt-in Docling profile
-        run: uv sync --locked --extra docling
+        run: uv sync --locked --extra docling-cpu
+      - name: Verify the locked CPU runtime
+        run: uv run --locked --extra docling-cpu python -c "import torch; print(torch.__version__); assert torch.version.cuda is None"
       - name: Execute the real Docling provider against a structured fixture
         shell: bash
         run: |
           set -o pipefail
           mkdir -p ../../reports/ci
-          uv run --locked --extra docling pytest -p no:cacheprovider \
+          uv run --locked --extra docling-cpu pytest -p no:cacheprovider \
             tests/test_docling_runtime.py -q 2>&1 \
             | tee ../../reports/ci/python-docling.txt
       - name: Upload Docling diagnostics
@@ -447,12 +449,15 @@ jobs:
       - run: pnpm auth:provision
       - name: Install locked Docling provider
         working-directory: apps/extractor
-        run: uv sync --locked --extra docling
+        run: uv sync --locked --extra docling-cpu
+      - name: Verify the locked CPU runtime
+        working-directory: apps/extractor
+        run: uv run --locked --extra docling-cpu python -c "import torch; print(torch.__version__); assert torch.version.cuda is None"
       - name: Create a raster-only scanned PDF fixture
         working-directory: apps/extractor
         run: |
           mkdir -p "$AKP_INGEST_ROOTS" "${AKP_MANAGED_REPO}"
-          uv run --locked --extra docling python - <<'PY'
+          uv run --locked --extra docling-cpu python - <<'PY'
           import os
           from pathlib import Path
           from PIL import Image, ImageDraw, ImageFont
@@ -460,10 +465,7 @@ jobs:
           target = Path(os.environ["AKP_INGEST_ROOTS"]) / "scanned-ocr.pdf"
           image = Image.new("RGB", (1654, 2339), "white")
           draw = ImageDraw.Draw(image)
-          font = ImageFont.truetype(
-              "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-              64,
-          )
+          font = ImageFont.load_default(size=64)
           draw.multiline_text(
               (120, 260),
               "AKP OCR PROBE 739241\n"
@@ -481,7 +483,7 @@ jobs:
           mkdir -p reports/ci
           (
             cd apps/extractor
-            nohup uv run --locked --extra docling uvicorn app.main:app \
+            nohup uv run --locked --extra docling-cpu uvicorn app.main:app \
               --host 127.0.0.1 --port 8090 \
               > ../../reports/ci/document-ocr-extractor.log 2>&1 &
             echo $! > ../../reports/ci/document-ocr-extractor.pid
