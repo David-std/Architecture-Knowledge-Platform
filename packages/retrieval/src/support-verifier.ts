@@ -696,92 +696,6 @@ function genericYesNoRelationRolesMatch(
   );
 }
 
-function relationTokensAlign(left: string, right: string): boolean {
-  if (left === right) return true;
-  const sharedLength = Math.min(left.length, right.length);
-  if (sharedLength < 4) return false;
-  if (left.startsWith(right) || right.startsWith(left)) return true;
-
-  let commonPrefix = 0;
-  while (
-    commonPrefix < sharedLength &&
-    left[commonPrefix] === right[commonPrefix]
-  ) {
-    commonPrefix += 1;
-  }
-  return commonPrefix >= 5 && commonPrefix / sharedLength >= 0.75;
-}
-
-function queryRequirementRoles(query: string): QueryRelationRoles | null {
-  const tokens = orderedSemanticTokens(query);
-  const predicateIndex = tokens.indexOf("require");
-  if (predicateIndex < 0) return null;
-
-  const purposeIndex = tokens.findIndex(
-    (token, index) =>
-      index > predicateIndex && (token === "for" || token === "para"),
-  );
-  if (purposeIndex < 0) return null;
-
-  const beforePredicate = tokens
-    .slice(0, predicateIndex)
-    .filter(relationAnchorEligible);
-  const afterPredicate = tokens
-    .slice(predicateIndex + 1, purposeIndex)
-    .filter(relationAnchorEligible);
-  const subjectAnchors =
-    beforePredicate.length > 0 ? beforePredicate : afterPredicate;
-  const objectAnchors = tokens
-    .slice(purposeIndex + 1)
-    .filter(relationAnchorEligible);
-
-  if (subjectAnchors.length !== 1 || objectAnchors.length === 0) return null;
-  return {
-    predicates: ["require"],
-    subjectAnchors,
-    objectAnchors,
-  };
-}
-
-function requirementAbsenceRelationMatches(
-  evidence: string,
-  query: string,
-): boolean {
-  const relation = queryRequirementRoles(query);
-  if (!relation) return false;
-
-  const tokens = orderedSemanticTokens(evidence);
-  for (let index = 0; index < tokens.length; index += 1) {
-    if (tokens[index] !== "without" && tokens[index] !== "sin") continue;
-
-    const prefix = tokens.slice(Math.max(0, index - 10), index);
-    if (
-      prefix.some((token) => ["no", "not", "never", "nunca"].includes(token))
-    ) {
-      continue;
-    }
-
-    const capabilityPresent = prefix.some(
-      (token) =>
-        relationTokensAlign(token, "can") ||
-        relationTokensAlign(token, "puede"),
-    );
-    if (!capabilityPresent) continue;
-
-    const absentSubject = tokens.slice(index + 1, index + 6);
-    const subjectMatched = relation.subjectAnchors.every((anchor) =>
-      absentSubject.some((token) => relationTokensAlign(anchor, token)),
-    );
-    if (!subjectMatched) continue;
-
-    const contextMatched = relation.objectAnchors.every((anchor) =>
-      prefix.some((token) => relationTokensAlign(anchor, token)),
-    );
-    if (contextMatched) return true;
-  }
-  return false;
-}
-
 function isSupportEligibleProposition(hit: SearchHit): boolean {
   return (
     hit.lifecycle === "ACTIVE" &&
@@ -925,7 +839,7 @@ function atomicClaimRelationDiagnostics(
   const objectOrScopeMatched =
     relation !== null &&
     (objectOverlap > 0 || (queryGlobalScope && excerptGlobalScope));
-  const evidenceIsQuestion = excerpt.trim().endsWith("?");
+  const evidenceIsQuestion = isInterrogativeEvidence(excerpt);
   const supported =
     eligibleClaim &&
     !evidenceIsQuestion &&
@@ -1046,6 +960,20 @@ function explicitlyLinkedContinuation(sentence: string): boolean {
   );
 }
 
+function isInterrogativeEvidence(value: string): boolean {
+  return /[?？؟][\p{Pe}\p{Pf}"'`*_]*\s*$/u.test(value.trim());
+}
+
+function withoutInterrogativeSentences(value: string): string {
+  const segmenter = new Intl.Segmenter("en", { granularity: "sentence" });
+  return value
+    .split(/\n+/u)
+    .flatMap((line) =>
+      [...segmenter.segment(line)].map((part) => part.segment.trim()),
+    )
+    .filter((sentence) => sentence && !isInterrogativeEvidence(sentence))
+    .join("\n");
+}
 interface PassageWindow {
   text: string;
   evidence: string;
@@ -1074,6 +1002,9 @@ function tableHeaderMatches(
 ): boolean {
   const normalized = normalizedMatchText(value);
   const tokens = normalizedAnswerabilityTokens(value);
+  if (patterns === TABLE_DECISION_HEADER_PATTERNS && tokens.length !== 1) {
+    return false;
+  }
   return patterns.some((pattern) =>
     patternMatches(normalized, tokens, pattern),
   );
@@ -1101,7 +1032,12 @@ function tableConditionWindows(
         )
         .map((cell) => cell.columnIndex),
     );
-    if (conditionColumns.size === 0 || decisionColumns.size === 0) return [];
+    if (
+      conditionColumns.size !== 1 ||
+      decisionColumns.size !== 1 ||
+      [...conditionColumns].some((column) => decisionColumns.has(column))
+    )
+      return [];
 
     return table.rows.flatMap((row) => {
       const conditionText = row.cells
@@ -1114,7 +1050,12 @@ function tableConditionWindows(
         .map((cell) => cell.source)
         .join(" ")
         .trim();
-      if (!conditionText || !decisionText) return [];
+      if (
+        !conditionText ||
+        !decisionText ||
+        isInterrogativeEvidence(decisionText)
+      )
+        return [];
 
       const decisionTokens = new Set(semanticTokens(decisionText));
       const overlap = anchors.filter((token) => decisionTokens.has(token));
@@ -1146,9 +1087,9 @@ function passageWindows(passage: string, title?: string): PassageWindow[] {
     .split(/(?<=[.!?])\s+|\n+/u)
     .map((part) => part.trim())
     .filter(Boolean)
-    .map((sentence) => sentence.slice(0, 900).trim());
-  const boundedSentences =
-    sentences.length > 0 ? sentences : [evidentialPassage.slice(0, 900).trim()];
+    .map((sentence) => sentence.slice(0, 900).trim())
+    .filter((sentence) => !isInterrogativeEvidence(sentence));
+  const boundedSentences = sentences;
   const boundedTitle = title?.trim().slice(0, 240);
   const windows: PassageWindow[] = boundedSentences.map((sentence) => ({
     text: sentence,
@@ -1326,18 +1267,21 @@ function answerRequirementsMatch(
   // An interrogative sentence can state the same subject, predicate and object
   // as the query without asserting that the relation is true. Questions are
   // therefore never evidence for a YES_NO proposition by themselves.
-  const relationEvidenceIsQuestion = relationEvidence.trim().endsWith("?");
+  const relationEvidenceIsQuestion = isInterrogativeEvidence(relationEvidence);
   if (required.includes("YES_NO") && !relationEvidenceIsQuestion) {
     const relation = queryYesNoRelationRoles(query);
     if (relation) {
-      relationRoleMatched =
-        relationRolesMatch(relationEvidence, relation, relationScopeTitle) ||
-        requirementAbsenceRelationMatches(relationEvidence, query);
+      relationRoleMatched = relationRolesMatch(
+        relationEvidence,
+        relation,
+        relationScopeTitle,
+      );
       if (relationRoleMatched) matched.add("YES_NO");
     } else {
-      relationRoleMatched =
-        genericYesNoRelationRolesMatch(relationEvidence, query) ||
-        requirementAbsenceRelationMatches(relationEvidence, query);
+      relationRoleMatched = genericYesNoRelationRolesMatch(
+        relationEvidence,
+        query,
+      );
       if (relationRoleMatched) matched.add("YES_NO");
     }
   }
@@ -1372,12 +1316,10 @@ function boundedPredicateSupport(
     relationRoleMatched: false,
   };
 
-  const windows = [
-    ...passageWindows(passage, title),
-    ...(allowStructuredTableCondition && required.includes("CONDITION")
+  const windows =
+    allowStructuredTableCondition && required.includes("CONDITION")
       ? tableConditionWindows(passage, query)
-      : []),
-  ];
+      : passageWindows(passage, title);
 
   for (const window of windows) {
     const windowTokens = new Set(semanticTokens(window.text));
@@ -1482,7 +1424,11 @@ export function verifyDeterministicPassageSupport(
 ): DeterministicPassageSupportSignal {
   const policy = resolveDeterministicPassageSupportPolicy(policyInput);
   const excerpt = hit.excerpt.trim();
-  const passage = withoutReferenceMarkup(excerpt).trim();
+  const sourcePassage = withoutReferenceMarkup(excerpt).trim();
+  const passage =
+    hit.unitType === "TABLE"
+      ? sourcePassage
+      : withoutInterrogativeSentences(sourcePassage);
   const passageSource = "EXCERPT" as const;
   const queryTokens = normalizedAnswerabilityTokens(query);
   const salientQueryTokens = queryTokens.filter(
@@ -1502,6 +1448,8 @@ export function verifyDeterministicPassageSupport(
   const requiredAnswerCues = queryAnswerCues(query);
   const structuredTableCondition =
     hit.unitType === "TABLE" && requiredAnswerCues.includes("CONDITION");
+  const tableSupportEligible =
+    !structuredTableCondition || isSupportEligibleProposition(hit);
   const boundedSupport = boundedPredicateSupport(
     passage,
     query,
@@ -1585,6 +1533,8 @@ export function verifyDeterministicPassageSupport(
   let reason: PassageSupportReason;
   if (!passage) {
     reason = "NO_CONCRETE_PASSAGE";
+  } else if (!tableSupportEligible) {
+    reason = "PASSAGE_SUPPORT_NOT_DEMONSTRATED";
   } else if (!definitionEvidenceEligible) {
     reason = "ANSWER_CUE_MISMATCH";
   } else if (

@@ -468,6 +468,125 @@ const CASES: AdmissionCase[] = [
     ],
     goldLabels: ["delivery-selection-matrix"],
   },
+  {
+    id: "requirement-wrong-predicate-or-component",
+    tier: "CORE",
+    query: "Is a checksum mandatory for record validation?",
+    candidates: [
+      {
+        label: "reports-only",
+        title: "Record validation",
+        passage: "Record validation reports can be viewed without a checksum.",
+      },
+      {
+        label: "simulation-only",
+        title: "Record validation",
+        passage: "Record validation can be simulated without a checksum.",
+      },
+      {
+        label: "different-component",
+        title: "Record validation",
+        passage: "Record validation can continue without a checksummer.",
+      },
+    ],
+    goldLabels: [],
+  },
+  {
+    id: "table-decisions-are-open-questions",
+    tier: "CORE",
+    query: "When should manual reconciliation be selected?",
+    candidates: [
+      {
+        label: "open-decision",
+        title: "Reconciliation policy",
+        type: "decision-rule",
+        unitType: "TABLE",
+        passage:
+          "| Condition | Decision |\n|---|---|\n| Settlement mismatch | Should manual reconciliation be selected? |",
+      },
+      {
+        label: "quoted-decision",
+        title: "Reconciliation policy",
+        type: "decision-rule",
+        unitType: "TABLE",
+        passage:
+          '| Condition | Decision |\n|---|---|\n| Settlement mismatch | "Select manual reconciliation?" |',
+      },
+    ],
+    goldLabels: [],
+  },
+  {
+    id: "decision-count-is-not-a-decision",
+    tier: "CORE",
+    query: "When should manual reconciliation be selected?",
+    candidates: [
+      {
+        label: "decision-count",
+        title: "Reconciliation metrics",
+        type: "rule",
+        unitType: "TABLE",
+        passage:
+          "| Condition | Decision count |\n|---|---|\n| Settlement mismatch | Manual reconciliation: 12 |",
+      },
+    ],
+    goldLabels: [],
+  },
+  {
+    id: "ambiguous-table-column-roles",
+    tier: "CORE",
+    query: "When should isolated recovery be selected?",
+    candidates: [
+      {
+        label: "ambiguous-decisions",
+        title: "Recovery policy",
+        type: "rule",
+        unitType: "TABLE",
+        passage:
+          "| Condition | Decision | Decision |\n|---|---|---|\n| Checkpoint mismatch | Select isolated recovery | Reject isolated recovery |",
+      },
+    ],
+    goldLabels: [],
+  },
+  {
+    id: "quoted-question-with-unrelated-assertion",
+    tier: "CORE",
+    query: "Can ALFA call BETA?",
+    candidates: [
+      {
+        label: "unresolved-question",
+        title: "Open integration questions",
+        passage: '"Can ALFA call BETA?" The deployment is still under review.',
+      },
+    ],
+    goldLabels: [],
+  },
+  {
+    id: "implicit-absence-requirement-proof",
+    tier: "SEMANTIC_FRONTIER",
+    query: "Is a checksum mandatory for record validation?",
+    candidates: [
+      {
+        label: "absence-permits-validation",
+        title: "Record validation",
+        passage: "Record validation can continue without a checksum.",
+      },
+    ],
+    goldLabels: ["absence-permits-validation"],
+  },
+  {
+    id: "bilingual-implicit-absence-requirement-proof",
+    tier: "SEMANTIC_FRONTIER",
+    query: "¿Es obligatorio usar un coordinator para procesar trabajos?",
+    candidates: [
+      {
+        label: "absence-permits-processing",
+        title: "Ejecución de trabajos",
+        passage:
+          "Los trabajos pueden procesarse directamente sin coordinator; incorporarlo es una opción operativa.",
+      },
+    ],
+    goldLabels: ["absence-permits-processing"],
+  },
 ];
 
 const rows = CASES.map((entry) => {

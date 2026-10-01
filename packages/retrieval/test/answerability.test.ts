@@ -1617,7 +1617,7 @@ describe("retrieval answerability", () => {
 });
 
 describe("requirement absence evidence", () => {
-  it("accepts an activity that remains possible without the queried component", () => {
+  it("keeps implicit capability-without claims exploratory until the predicate is demonstrated", () => {
     const optionalScheduler = hit(1871, {
       title: "Ejecución de trabajos",
       type: "claim",
@@ -1638,13 +1638,11 @@ describe("requirement absence evidence", () => {
       "¿Es obligatorio usar un scheduler para procesar trabajos?",
     );
 
-    expect(result.supportedCandidateKeys).toEqual([
-      retrievalAnswerabilityCandidateKey(optionalScheduler),
-    ]);
+    expect(result.supportedCandidateKeys).toEqual([]);
     expect(result.candidateSignals[0]?.passageSupport.supported).toBe(false);
   });
 
-  it("applies the same requirement logic outside the scheduler domain", () => {
+  it("does not use a capability word as a general requirement proof", () => {
     const optionalChecksum = hit(1873, {
       title: "Record validation",
       type: "claim",
@@ -1664,9 +1662,7 @@ describe("requirement absence evidence", () => {
       "Is a checksum mandatory for record validation?",
     );
 
-    expect(result.supportedCandidateKeys).toEqual([
-      retrievalAnswerabilityCandidateKey(optionalChecksum),
-    ]);
+    expect(result.supportedCandidateKeys).toEqual([]);
     expect(result.candidateSignals[0]?.passageSupport.supported).toBe(false);
   });
 });
@@ -1797,5 +1793,99 @@ describe("questions are not evidence assertions", () => {
     expect(assessRetrievalAnswerability([candidate], query).supported).toBe(
       false,
     );
+  });
+});
+
+describe("requirement absence predicate boundaries", () => {
+  it.each([
+    "Record validation reports can be viewed without a checksum.",
+    "Record validation can be simulated without a checksum.",
+    "Record validation can continue without a checksummer.",
+  ])("does not infer validation requirements from %s", (excerpt) => {
+    const candidate = hit(2010, {
+      title: "Record validation",
+      type: "claim",
+      excerpt,
+      contributions: [contribution("lexical")],
+    });
+    expect(
+      assessRetrievalAnswerability(
+        [candidate],
+        "Is a checksum mandatory for record validation?",
+      ).supported,
+    ).toBe(false);
+  });
+});
+
+describe("table assertion boundaries", () => {
+  it.each([
+    "Should manual reconciliation be selected?",
+    '"Select manual reconciliation?"',
+  ])("does not accept a decision cell containing only %s", (decision) => {
+    const candidate = hit(2011, {
+      title: "Reconciliation policy",
+      type: "decision-rule",
+      unitType: "TABLE",
+      excerpt: `| Condition | Decision |\n|---|---|\n| Settlement mismatch | ${decision} |`,
+      contributions: [contribution("lexical")],
+    });
+    expect(
+      assessRetrievalAnswerability(
+        [candidate],
+        "When should manual reconciliation be selected?",
+      ).supported,
+    ).toBe(false);
+  });
+
+  it("does not infer a decision from a decision-count metric", () => {
+    const candidate = hit(2012, {
+      title: "Reconciliation metrics",
+      type: "dashboard",
+      unitType: "TABLE",
+      excerpt:
+        "| Condition | Decision count |\n|---|---|\n| Settlement mismatch | Manual reconciliation: 12 |",
+      contributions: [contribution("lexical")],
+    });
+    expect(
+      assessRetrievalAnswerability(
+        [candidate],
+        "When should manual reconciliation be selected?",
+      ).supported,
+    ).toBe(false);
+  });
+});
+
+describe("interrogative formatting and sentence boundaries", () => {
+  it.each([
+    '"Can ALFA call BETA?"',
+    "**Can ALFA call BETA?**",
+    "Can ALFA call BETA？",
+    "Can ALFA call BETA؟",
+    '"Can ALFA call BETA?" The deployment is still under review.',
+    "Can ALFA call BETA?\nThe deployment is still under review.",
+  ])("does not turn an open question into a claim: %s", (excerpt) => {
+    const candidate = hit(2013, {
+      title: "Open integration questions",
+      type: "claim",
+      excerpt,
+      contributions: [contribution("lexical")],
+    });
+    expect(
+      assessRetrievalAnswerability([candidate], "Can ALFA call BETA?")
+        .supported,
+    ).toBe(false);
+  });
+
+  it("preserves an actual answer following an interrogative", () => {
+    const candidate = hit(2014, {
+      title: "Integration decision",
+      type: "claim",
+      excerpt: "Can ALFA call BETA? ALFA can call BETA during reconciliation.",
+      contributions: [contribution("lexical")],
+    });
+    expect(
+      assessRetrievalAnswerability([candidate], "Can ALFA call BETA?")
+        .supported,
+    ).toBe(true);
   });
 });
