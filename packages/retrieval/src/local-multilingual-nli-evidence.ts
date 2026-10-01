@@ -36,6 +36,14 @@ export const LOCAL_MULTILINGUAL_NLI_MDEBERTA_DESCRIPTOR: LocalMultilingualNliMod
     dtype: "q8",
   });
 
+export const LOCAL_MULTILINGUAL_NLI_ERNIE_M_LARGE_DESCRIPTOR: LocalMultilingualNliModelDescriptor =
+  Object.freeze({
+    model: "Xenova/ernie-m-large-mnli-xnli",
+    revision: "2a1875e6dcb605add1c49b8634336edde670d06c",
+    modelFileName: "model",
+    dtype: "q8",
+  });
+
 export const LOCAL_MULTILINGUAL_NLI_MODEL =
   LOCAL_MULTILINGUAL_NLI_MINILM_DESCRIPTOR.model;
 export const LOCAL_MULTILINGUAL_NLI_REVISION =
