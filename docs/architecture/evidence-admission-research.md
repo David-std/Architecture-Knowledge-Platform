@@ -19,7 +19,7 @@ No widely used open-source system uses topical relevance alone as a strict admis
 | [LlamaIndex](https://github.com/run-llama/llama_index/blob/7e2c60a78ec27e8d146dfdd596778aea83c041d5/llama-index-core/llama_index/core/postprocessor/llm_rerank.py)          | Listwise LLM rerank in batches of 10; RRF k=60; auto-merging when over half of a parent's children are retrieved.                                                                                                                                                         | Parent/sibling expansion fixes "right document, wrong unit".                                                                                                                                                                                                                                      |
 | [Haystack](https://github.com/deepset-ai/haystack/blob/7f4f71887e68f821a3531ae540008294ea099b7f/haystack/components/rankers/llm_ranker.py)                                  | JSON-schema listwise ranker that may return no documents; RRF k=61.                                                                                                                                                                                                       | Constrained JSON output.                                                                                                                                                                                                                                                                          |
 | [LangGraph CRAG/Self-RAG examples](https://github.com/langchain-ai/langgraph/blob/b36b1d58a8b408455b512cfad3b1b26e02927282/examples/rag/langgraph_adaptive_rag_local.ipynb) | Grader accepts any keyword overlap: "it does not need to be a stringent test".                                                                                                                                                                                            | Exactly the failure to avoid for admission.                                                                                                                                                                                                                                                       |
-| [CRAG paper](https://arxiv.org/html/2401.15884)                                                                                                                             | Fine-tuned T5-large evaluator with upper/lower thresholds: correct, ambiguous, incorrect; strip-level filtering.                                                                                                                                                          | Three bands on the cross-encoder; only the middle band needs the LLM.                                                                                                                                                                                                                             |
+| [CRAG paper](https://arxiv.org/html/2401.15884)                                                                                                                             | Fine-tuned T5-large evaluator with upper/lower thresholds: correct, ambiguous, incorrect; strip-level filtering.                                                                                                                                                          | The paper uses a task-specific trained evaluator; a generic relevance cross-encoder is not an evidence authority.                                                                                                                                                                                 |
 | [Kotaemon](https://github.com/Cinnamon/kotaemon/blob/9ad3e4e49aa35b8acddd235918a5d9753c1cfdf9/libs/kotaemon/kotaemon/indices/qa/citation_qa_inline.py)                      | Coverage rubric; citations anchored by exact start/end phrases matched with a similarity floor.                                                                                                                                                                           | Anchor fallback when a full quote does not match exactly.                                                                                                                                                                                                                                         |
 | [Sufficient Context, ICLR 2025](https://arxiv.org/html/2411.06037)                                                                                                          | Autorater lists sub-questions, answers them, outputs sufficient 0/1; Gemini 1.5 Pro 93%, TRUE-NLI 82.6%, "contains ground truth" 80.9%.                                                                                                                                   | Decompose the question before judging; NLI-only raters are weaker.                                                                                                                                                                                                                                |
 | [MiniCheck](https://github.com/Liyan06/MiniCheck/blob/b58b9fa69acbd1015ec970fa65dd752413a053d2/minicheck/inference.py#L488-L499)                                            | Claim support: max over chunks, min over sentences, > 0.5. English training.                                                                                                                                                                                              | Optional independent support check after validation on Spanish.                                                                                                                                                                                                                                   |
@@ -40,7 +40,7 @@ Report false acceptance on unanswerable questions, false abstention on answerabl
 
 1. Reader verdict with an explicit `RELATED_NOT_ANSWERING` outcome and a verified answer span; fail closed on parse errors and timeouts.
 2. Deterministic answer-slot check: the verified span must contain a token of the requested type (number, date, name, definition).
-3. Three cross-encoder bands: admit high, drop low, send only the middle band to the reader, so the no-LLM default keeps working and latency stays bounded.
+3. Use relevance scores to shortlist candidates, not to admit evidence. The local held-out relevance-only run accepted 35.7% of unanswerable questions. A high relevance score cannot bypass requested-fact verification; CRAG evaluator thresholds cannot be transferred to a different model and task without calibration.
 4. Row-level table units with bound headers, plus OCR normalization at ingestion.
 5. Contextual headers (title and heading path) in both the full-text and vector indexes.
 6. Cross-lingual query legs fused with weighted RRF when an LLM is configured.
@@ -48,3 +48,40 @@ Report false acceptance on unanswerable questions, false abstention on answerabl
 8. Counterfactual-deletion negatives and per-language reporting in the admission pack.
 
 Reader prompt pattern for a local 7B model: state the needed fact, copy the shortest answering span verbatim, then choose `ANSWERS`, `RELATED_NOT_ANSWERING` or `UNRELATED`; question last; JSON-constrained output at temperature 0; pointwise for admission; self-consistency only in the middle band.
+
+## Local review of the implementation
+
+The original comparison is not sufficient evidence for default promotion. The
+reader's yes/no verdict is answerability, not the truth value of the question:
+an explicit denial can answer "no". Prompt v4 also preserves subject, event,
+object, row, date, units and quantifiers in the requested fact. No corpus-specific
+examples, aliases or source identifiers were added.
+
+Code now maps a unique prose quote to its exact original characters, rather than
+an entire containing line. Table quotes remain bound to their original rows.
+Numbers/years elsewhere in a unit cannot meet a requested quantitative/temporal
+fact in the verified quote, and an open question cannot serve as an assertion.
+This is a structural safeguard; quote identity alone still does not demonstrate
+that the source answers the question.
+
+On the unchanged 261-question source-disjoint pack, Qwen 2.5 7B Instruct Q4_K_M
+(prompt v4) with a fixed BGE v2-m3 shortlist of four measured:
+
+| Split             | Answerable recall | False acceptance on negatives | Admitted-unit precision | Strict accuracy |
+| ----------------- | ----------------- | ----------------------------- | ----------------------- | --------------- |
+| Development (133) | 95.2%             | 6.9%                          | 93.5%                   | 91.0%           |
+| Held-out (128)    | 91.0%             | 0.0%                          | 91.2%                   | 86.7%           |
+
+The held-out result includes 100 answerable and 28 unanswerable questions.
+Relative to prompt v2, answerable recall rose from 71% to 91%, while admitted-unit
+precision was 92.3% versus 91.2%. The negative-answer slice reached 91.7% recall;
+wrong additional units in answerable cases remain a real problem. Zero observed
+negative acceptance in 28 cases is not a universal precision guarantee.
+
+Only development cases informed the prompt. Held-out cases were read as aggregate
+results after the prompt was fixed; cached judgments were replayed through the
+final span guards. Splits are source-disjoint, **not question-family-disjoint**.
+Reranker scores came from unchanged recorded query/body pairs, so this measures
+admission with candidates already present, not end-to-end retrieval. The verifier
+remains optional and disabled by default. A new private end-to-end run must use
+fresh pools and input-bound score records after retrieval/index changes.
