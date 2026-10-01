@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { markdownTableEvidence } from "./markdown-table-evidence.js";
 
 export type KnowledgeUnitType =
   | "DOCUMENT"
@@ -71,6 +72,12 @@ function semanticType(
 
 function markdownBlocks(lines: readonly string[], offset: number): Block[] {
   const blocks: Block[] = [];
+  const tableBounds = new Map(
+    markdownTableEvidence(lines.join("\n")).map((table) => [
+      table.startLine - 1,
+      table.endLine - 1,
+    ]),
+  );
   let index = 0;
   const push = (
     start: number,
@@ -118,11 +125,10 @@ function markdownBlocks(lines: readonly string[], offset: number): Block[] {
       index += 1;
       continue;
     }
-    if (/^\s*\|.*\|\s*$/.test(line)) {
-      index += 1;
-      while (index < lines.length && /^\s*\|.*\|\s*$/.test(lines[index] ?? ""))
-        index += 1;
-      push(start, index - 1, "TABLE");
+    const tableEnd = tableBounds.get(index);
+    if (tableEnd !== undefined) {
+      index = tableEnd + 1;
+      push(start, tableEnd, "TABLE");
       continue;
     }
     if (/^\s*(?:[-*+] |\d+[.)] )/.test(line)) {
@@ -140,7 +146,8 @@ function markdownBlocks(lines: readonly string[], offset: number): Block[] {
     while (
       index < lines.length &&
       Boolean(lines[index]?.trim()) &&
-      !/^\s*```|^\s*\$\$|^\s*!\[|^\s*\|.*\|\s*$|^\s*(?:[-*+] |\d+[.)] )/.test(
+      !tableBounds.has(index) &&
+      !/^\s*```|^\s*\$\$|^\s*!\[|^\s*(?:[-*+] |\d+[.)] )/.test(
         lines[index] ?? "",
       )
     )

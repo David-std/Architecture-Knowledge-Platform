@@ -11,6 +11,7 @@ export * from "./local-multilingual-nli-evidence.js";
 export * from "./openai-compatible-embedding.js";
 export * from "./embedding-provider-registry.js";
 export * from "./structural-context.js";
+export * from "./markdown-table-evidence.js";
 export * from "./community.js";
 export * from "./rerank.js";
 export * from "./reasoning-plan.js";
