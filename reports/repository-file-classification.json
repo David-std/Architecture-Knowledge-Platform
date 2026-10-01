@@ -3107,6 +3107,16 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/postgres/vitest.config.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/postgres/vitest.integration.config.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/project-adapter/package.json",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"

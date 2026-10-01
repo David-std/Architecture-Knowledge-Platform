@@ -44,6 +44,8 @@ pnpm build
 pnpm test:integration
 ```
 
+`pnpm test:integration` requires `DATABASE_URL` to point to an isolated, migrated PostgreSQL database with a disposable name such as `akp_test`. Do not use the operator database. PostgreSQL fixture files run sequentially because they share the consumer registry and outbox; concurrency remains exercised inside the tests. CI runs the full persistence suite on a fresh database and retains its JUnit report.
+
 Extractor changes additionally require the locked Python environment, Ruff, mypy and pytest. Persistence, publication and recovery changes should be exercised against disposable infrastructure and include restore evidence when applicable.
 
 ## Documentation and reports
