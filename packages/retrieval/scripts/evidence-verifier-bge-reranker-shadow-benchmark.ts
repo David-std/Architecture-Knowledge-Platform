@@ -19,6 +19,7 @@ type Candidate = {
   label: string;
   title: string;
   passage: string;
+  language?: "en" | "es";
   goldSpan?: string;
 };
 
@@ -27,6 +28,7 @@ type Case = {
   split: Split;
   family: string;
   query: string;
+  queryLanguage?: "en" | "es";
   candidates: Candidate[];
   goldLabels: string[];
 };
@@ -143,17 +145,99 @@ const CASES: Case[] = [
     split: "CALIBRATION",
     family: "CROSS_LINGUAL_PARAPHRASE",
     query: "Does a focused handler reduce reasons to change?",
+    queryLanguage: "en",
     candidates: [
       {
         label: "focused",
         title: "Focused handlers",
         passage:
           "Un manejador con una sola responsabilidad concentra sus cambios en un único motivo de negocio.",
+        language: "es",
         goldSpan:
           "Un manejador con una sola responsabilidad concentra sus cambios en un único motivo de negocio.",
       },
     ],
     goldLabels: ["focused"],
+  },
+  {
+    id: "cal-crosslingual-direct-notify",
+    split: "CALIBRATION",
+    family: "CROSS_LINGUAL_DIRECT_RELATION",
+    query: "Can ZENO notify PAVA?",
+    queryLanguage: "en",
+    candidates: [
+      {
+        label: "cross-direct",
+        title: "Integración ZENO",
+        passage:
+          "ZENO puede notificar a PAVA después de validar la entrega.",
+        language: "es",
+        goldSpan:
+          "ZENO puede notificar a PAVA después de validar la entrega.",
+      },
+      {
+        label: "cross-topic",
+        title: "Catálogo ZENO y PAVA",
+        passage:
+          "ZENO y PAVA aparecen en informes operativos separados.",
+        language: "es",
+      },
+    ],
+    goldLabels: ["cross-direct"],
+  },
+  {
+    id: "cal-crosslingual-reversed-call",
+    split: "CALIBRATION",
+    family: "CROSS_LINGUAL_DIRECTION",
+    query: "Can RIVA call TOMA?",
+    queryLanguage: "en",
+    candidates: [
+      {
+        label: "cross-reverse",
+        title: "Integración TOMA",
+        passage:
+          "TOMA puede llamar a RIVA durante la conciliación.",
+        language: "es",
+      },
+    ],
+    goldLabels: [],
+  },
+  {
+    id: "cal-crosslingual-indirect-change",
+    split: "CALIBRATION",
+    family: "CROSS_LINGUAL_PARAPHRASE",
+    query:
+      "¿Un componente con una sola finalidad reduce los motivos de cambio?",
+    queryLanguage: "es",
+    candidates: [
+      {
+        label: "cross-indirect",
+        title: "Single-responsibility components",
+        passage:
+          "A single-responsibility component confines modifications to one business reason.",
+        language: "en",
+        goldSpan:
+          "A single-responsibility component confines modifications to one business reason.",
+      },
+    ],
+    goldLabels: ["cross-indirect"],
+  },
+  {
+    id: "cal-crosslingual-topical-resilience",
+    split: "CALIBRATION",
+    family: "CROSS_LINGUAL_HARD_NEGATIVE",
+    query: "¿Un gateway demuestra que el servicio es resiliente?",
+    queryLanguage: "es",
+    candidates: [
+      {
+        label: "cross-topical",
+        title: "Gateway resilience",
+        passage:
+          "The gateway records resilience metrics and downstream health counters.",
+        language: "en",
+      },
+    ],
+    goldLabels: [],
   },
   {
     id: "cal-same-entities-other-relation",
@@ -212,6 +296,7 @@ const CASES: Case[] = [
     split: "HOLDOUT",
     family: "MODALITY_NEGATION",
     query: "¿Es obligatorio usar un scheduler para procesar trabajos?",
+    queryLanguage: "es",
     candidates: [
       {
         label: "scheduler-optional",
@@ -257,17 +342,95 @@ const CASES: Case[] = [
     split: "HOLDOUT",
     family: "CROSS_LINGUAL_PARAPHRASE",
     query: "Does a single-purpose module reduce reasons to change?",
+    queryLanguage: "en",
     candidates: [
       {
         label: "indirect",
         title: "Single-purpose modules",
         passage:
           "Un módulo con una sola responsabilidad concentra sus cambios en un único motivo de negocio.",
+        language: "es",
         goldSpan:
           "Un módulo con una sola responsabilidad concentra sus cambios en un único motivo de negocio.",
       },
     ],
     goldLabels: ["indirect"],
+  },
+  {
+    id: "holdout-crosslingual-direct-publish",
+    split: "HOLDOUT",
+    family: "CROSS_LINGUAL_DIRECT_RELATION",
+    query: "¿Puede LENO publicar VIRA?",
+    queryLanguage: "es",
+    candidates: [
+      {
+        label: "cross-publish",
+        title: "LENO publishing",
+        passage: "LENO can publish VIRA after approval.",
+        language: "en",
+        goldSpan: "LENO can publish VIRA after approval.",
+      },
+      {
+        label: "cross-publish-topic",
+        title: "LENO and VIRA catalog",
+        passage:
+          "LENO and VIRA are listed in separate operational reports.",
+        language: "en",
+      },
+    ],
+    goldLabels: ["cross-publish"],
+  },
+  {
+    id: "holdout-crosslingual-reversed-invoke",
+    split: "HOLDOUT",
+    family: "CROSS_LINGUAL_DIRECTION",
+    query: "¿Puede NORA invocar SIDO?",
+    queryLanguage: "es",
+    candidates: [
+      {
+        label: "cross-invoke-reverse",
+        title: "SIDO integration",
+        passage: "SIDO can invoke NORA during reconciliation.",
+        language: "en",
+      },
+    ],
+    goldLabels: [],
+  },
+  {
+    id: "holdout-crosslingual-indirect-change",
+    split: "HOLDOUT",
+    family: "CROSS_LINGUAL_PARAPHRASE",
+    query: "Does a narrowly scoped service reduce reasons to change?",
+    queryLanguage: "en",
+    candidates: [
+      {
+        label: "cross-service",
+        title: "Servicios acotados",
+        passage:
+          "Un servicio dedicado a una sola responsabilidad concentra sus cambios en un único motivo de negocio.",
+        language: "es",
+        goldSpan:
+          "Un servicio dedicado a una sola responsabilidad concentra sus cambios en un único motivo de negocio.",
+      },
+    ],
+    goldLabels: ["cross-service"],
+  },
+  {
+    id: "holdout-crosslingual-topical-security",
+    split: "HOLDOUT",
+    family: "CROSS_LINGUAL_HARD_NEGATIVE",
+    query: "Does a proxy prove that the platform is secure?",
+    queryLanguage: "en",
+    candidates: [
+      {
+        label: "cross-security-topic",
+        title: "Métricas del proxy",
+        passage:
+          "El proxy registra métricas de sesiones seguras y contadores de salud.",
+        language: "es",
+      },
+    ],
+    goldLabels: [],
   },
   {
     id: "holdout-reversed",
@@ -1304,10 +1467,10 @@ const binaryHypothesisSweepComparison = {
 };
 
 const report = {
-  schemaVersion: 6,
+  schemaVersion: 7,
   status: "MEASURED",
   evidenceBoundary:
-    "Public synthetic source-disjoint shadow evaluation of multilingual evidence signals: reranker relevance/contrast plus a pinned multilingual binary entailment model. Binary observations also record the existing deterministic passage-support diagnostics so semantic rescue policies can be evaluated without weakening deterministic safety boundaries. A separate shadow-only fallback hypothesis sweep isolates missing parser coverage without replacing hypotheses already produced by the production parser. Thresholds remain derived only from calibration labels and frozen for holdout. No signal is evidence truth or promoted by this report.",
+    "Public synthetic source-disjoint shadow evaluation of multilingual evidence signals: reranker relevance/contrast plus a pinned multilingual binary entailment model. Calibration and holdout now include explicit cross-lingual direct, indirect, wrong-relation and reversed-direction cases with disjoint synthetic sources. Binary observations also record the existing deterministic passage-support diagnostics so semantic rescue policies can be evaluated without weakening deterministic safety boundaries. A separate shadow-only fallback hypothesis sweep isolates missing parser coverage without replacing hypotheses already produced by the production parser. Thresholds remain derived only from calibration labels and frozen for holdout. No signal is evidence truth or promoted by this report.",
   model: {
     id: MODEL,
     revision: REVISION,
