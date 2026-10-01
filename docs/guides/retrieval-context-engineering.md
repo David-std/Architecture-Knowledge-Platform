@@ -70,6 +70,44 @@ Context packets enforce token/budget constraints and support compact/full modes 
 
 Query transformations and reasoning plans may improve retrieval, but their output is validated before execution and cannot introduce arbitrary SQL/Cypher operators.
 
+## Contextual evidence verifier
+
+Admission decides whether a retrieved unit answers the query, so it can be returned as `SUPPORTED` evidence rather than an exploratory candidate. The deterministic verifier matches query cue words and three hard-coded relation verbs. On the domain-disjoint pack in `evals/generic/evidence-admission` it admits a correct unit for 19–26% of answerable questions, never for yes/no or cross-lingual questions, and admits something for 28% of unanswerable ones.
+
+The contextual cross-encoder verifier reads each unit the way a person does: under its title and heading path, with link targets removed and every table row restated with its column headers. A multilingual cross-encoder (`bge-reranker-v2-m3`, pinned ONNX revision) scores the query against that text, and the unit is admitted when the score reaches a threshold calibrated on the development domains. Title and headings matter: without them, a concept whose body never repeats its name, or a claim whose heading carries the proposition, scores close to zero.
+
+| Pack split  | Verifier                      | Answerable recall | False acceptance | Admitted precision | Strict accuracy |
+| ----------- | ----------------------------- | ----------------- | ---------------- | ------------------ | --------------- |
+| Development | Deterministic                 | 19.2%             | 27.6%            | 53.8%              | 29.3%           |
+| Development | Contextual cross-encoder, 0.2 | 83.7%             | 31.0%            | 88.9%              | 78.9%           |
+| Held-out    | Deterministic                 | 26.0%             | 28.6%            | 51.0%              | 32.0%           |
+| Held-out    | Contextual cross-encoder, 0.2 | 86.0%             | 35.7%            | 73.9%              | 74.2%           |
+
+Enable it explicitly:
+
+```dotenv
+AKP_EVIDENCE_VERIFIER_PROVIDER=contextual-cross-encoder
+AKP_EVIDENCE_VERIFIER_MODE=ENFORCE
+# Optional: defaults to the calibrated 0.2.
+AKP_EVIDENCE_VERIFIER_MIN_SCORE=0.2
+AKP_EVIDENCE_VERIFIER_MAX_CANDIDATES=32
+```
+
+`SHADOW` records the verifier decision beside the deterministic one without changing results. `ENFORCE` admits exactly the candidates the verifier supports, after authorization, trust, lifecycle and temporal filtering; quantity and year requirements of the query remain hard gates, and exact identifier lookups keep their deterministic path. Candidates beyond `AKP_EVIDENCE_VERIFIER_MAX_CANDIDATES` stay exploratory. Only this verifier may run in `ENFORCE`; the extractive QA reader remains a diagnostic.
+
+The model is downloaded once into the local model cache (`AKP_MODEL_CACHE_DIR`), about 570 MB. Scoring runs on CPU, roughly a quarter of a second per candidate on a laptop, so the candidate limit bounds latency. If the model cannot load or score, every candidate records `VERIFIER_ERROR` and the response degrades to exploratory results instead of guessing.
+
+Known limits, measured on the pack: a cross-encoder measures whether a unit is about the requested information, not whether it contains the requested value. It still admits a table when the requested row or column is missing, a unit that names the subject but not the requested company or date, and a relation stated in the opposite direction. Some definitional and cross-lingual questions score below the threshold. These cases are tracked by challenge in the pack report and are the target of the next admission stage.
+
+Measure a change with:
+
+```powershell
+pnpm benchmark:evidence-admission:generalization
+$env:AKP_EVIDENCE_ADMISSION_VERIFIER = "contextual-cross-encoder"
+$env:AKP_EVIDENCE_VERIFIER_MIN_SCORE = "0.2"
+pnpm benchmark:evidence-admission:generalization
+```
+
 ## Optional extractive evidence reader
 
 The local multilingual QA adapter remains optional and `SHADOW` only. It extracts a span from the authorized atomic passage; an extraction score does not establish that a proposition follows from that span.

@@ -1,10 +1,11 @@
-export type EvidenceVerifierProvider = "disabled" | "local-multilingual-qa";
+export type EvidenceVerifierProvider =
+  "disabled" | "local-multilingual-qa" | "contextual-cross-encoder";
 
 export interface ApiRuntimeConfig {
   rateLimitMax: number;
   port: number;
   evidenceVerifierProvider: EvidenceVerifierProvider;
-  evidenceVerifierMode: "SHADOW";
+  evidenceVerifierMode: "SHADOW" | "ENFORCE";
   evidenceVerifierMinimumSupportScore: number | null;
   evidenceVerifierMaxCandidates: number;
   evidenceVerifierLocalFilesOnly: boolean;
@@ -49,9 +50,14 @@ function booleanSetting(
 
 function verifierProvider(env: NodeJS.ProcessEnv): EvidenceVerifierProvider {
   const raw = env.AKP_EVIDENCE_VERIFIER_PROVIDER ?? "disabled";
-  if (raw === "disabled" || raw === "local-multilingual-qa") return raw;
+  if (
+    raw === "disabled" ||
+    raw === "local-multilingual-qa" ||
+    raw === "contextual-cross-encoder"
+  )
+    return raw;
   throw new Error(
-    `AKP_EVIDENCE_VERIFIER_PROVIDER must be "disabled" or "local-multilingual-qa"; received ${JSON.stringify(raw)}.`,
+    `AKP_EVIDENCE_VERIFIER_PROVIDER must be "disabled", "local-multilingual-qa" or "contextual-cross-encoder"; received ${JSON.stringify(raw)}.`,
   );
 }
 
@@ -77,9 +83,19 @@ export function loadApiRuntimeConfig(
 ): ApiRuntimeConfig {
   const evidenceVerifierProvider = verifierProvider(env);
   const evidenceVerifierMode = env.AKP_EVIDENCE_VERIFIER_MODE ?? "SHADOW";
-  if (evidenceVerifierMode !== "SHADOW") {
+  if (evidenceVerifierMode !== "SHADOW" && evidenceVerifierMode !== "ENFORCE") {
     throw new Error(
-      `AKP_EVIDENCE_VERIFIER_MODE may only be "SHADOW" until a verifier is promoted; received ${JSON.stringify(evidenceVerifierMode)}.`,
+      `AKP_EVIDENCE_VERIFIER_MODE must be "SHADOW" or "ENFORCE"; received ${JSON.stringify(evidenceVerifierMode)}.`,
+    );
+  }
+  // Only a verifier calibrated on the domain-disjoint admission pack may
+  // decide support; the extractive QA reader remains a diagnostic.
+  if (
+    evidenceVerifierMode === "ENFORCE" &&
+    evidenceVerifierProvider !== "contextual-cross-encoder"
+  ) {
+    throw new Error(
+      `AKP_EVIDENCE_VERIFIER_MODE "ENFORCE" requires AKP_EVIDENCE_VERIFIER_PROVIDER "contextual-cross-encoder"; ${JSON.stringify(evidenceVerifierProvider)} remains SHADOW only.`,
     );
   }
   const evidenceVerifierMinimumSupportScore = optionalFraction(
@@ -105,7 +121,7 @@ export function loadApiRuntimeConfig(
     ),
     port: integerSetting(env, "PORT", 8080, 1, 65_535),
     evidenceVerifierProvider,
-    evidenceVerifierMode: "SHADOW",
+    evidenceVerifierMode,
     evidenceVerifierMinimumSupportScore,
     evidenceVerifierMaxCandidates: integerSetting(
       env,

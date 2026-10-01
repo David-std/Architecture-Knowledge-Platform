@@ -64,6 +64,40 @@ describe("API runtime configuration", () => {
     });
   });
 
+  it("lets only the contextual cross-encoder enforce evidence support", () => {
+    expect(
+      loadApiRuntimeConfig({
+        AKP_EVIDENCE_VERIFIER_PROVIDER: "contextual-cross-encoder",
+        AKP_EVIDENCE_VERIFIER_MODE: "ENFORCE",
+      }),
+    ).toMatchObject({
+      evidenceVerifierProvider: "contextual-cross-encoder",
+      evidenceVerifierMode: "ENFORCE",
+      evidenceVerifierMinimumSupportScore: null,
+    });
+    expect(
+      loadApiRuntimeConfig({
+        AKP_EVIDENCE_VERIFIER_PROVIDER: "contextual-cross-encoder",
+        AKP_EVIDENCE_VERIFIER_MIN_SCORE: "0.6",
+      }),
+    ).toMatchObject({
+      evidenceVerifierMode: "SHADOW",
+      evidenceVerifierMinimumSupportScore: 0.6,
+    });
+    expect(() =>
+      loadApiRuntimeConfig({ AKP_EVIDENCE_VERIFIER_MODE: "ENFORCE" }),
+    ).toThrow(/contextual-cross-encoder/);
+    expect(() =>
+      loadApiRuntimeConfig({
+        AKP_EVIDENCE_VERIFIER_PROVIDER: "contextual-cross-encoder",
+        AKP_EVIDENCE_VERIFIER_MODE: "enforce",
+      }),
+    ).toThrow(/AKP_EVIDENCE_VERIFIER_MODE/);
+    expect(() =>
+      loadApiRuntimeConfig({ AKP_EVIDENCE_VERIFIER_PROVIDER: "reranker" }),
+    ).toThrow(/AKP_EVIDENCE_VERIFIER_PROVIDER/);
+  });
+
   it.each(["", "0", "-0.1", "1.1", "abc"])(
     "rejects invalid AKP_EVIDENCE_VERIFIER_MIN_SCORE=%j",
     (value) => {

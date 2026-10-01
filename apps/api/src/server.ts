@@ -18,6 +18,8 @@ import {
   type ActiveTrace,
 } from "@akp/observability";
 import {
+  CONTEXTUAL_CROSS_ENCODER_DEFAULT_SUPPORT_SCORE,
+  ContextualCrossEncoderEvidenceVerifier,
   DeterministicQueryDecomposer,
   LocalMultilingualQaEvidenceVerifier,
   type QueryConditionedEvidenceVerifier,
@@ -79,10 +81,19 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
             runtimeConfig.evidenceVerifierMinimumSupportScore as number,
           localFilesOnly: runtimeConfig.evidenceVerifierLocalFilesOnly,
         })
-      : undefined);
+      : runtimeConfig.evidenceVerifierProvider === "contextual-cross-encoder"
+        ? new ContextualCrossEncoderEvidenceVerifier({
+            minimumSupportScore:
+              runtimeConfig.evidenceVerifierMinimumSupportScore ??
+              CONTEXTUAL_CROSS_ENCODER_DEFAULT_SUPPORT_SCORE,
+            localFilesOnly: runtimeConfig.evidenceVerifierLocalFilesOnly,
+          })
+        : undefined);
   const ownsRuntimeEvidenceVerifier =
     dependencies.evidenceVerifier === undefined &&
-    runtimeEvidenceVerifier instanceof LocalMultilingualQaEvidenceVerifier;
+    (runtimeEvidenceVerifier instanceof LocalMultilingualQaEvidenceVerifier ||
+      runtimeEvidenceVerifier instanceof
+        ContextualCrossEncoderEvidenceVerifier);
   const app = Fastify({
     logger: process.env.NODE_ENV !== "test",
     bodyLimit: 10 * 1024 * 1024,
@@ -301,7 +312,9 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
   app.addHook("onClose", async () => {
     if (
       ownsRuntimeEvidenceVerifier &&
-      runtimeEvidenceVerifier instanceof LocalMultilingualQaEvidenceVerifier
+      (runtimeEvidenceVerifier instanceof LocalMultilingualQaEvidenceVerifier ||
+        runtimeEvidenceVerifier instanceof
+          ContextualCrossEncoderEvidenceVerifier)
     ) {
       await runtimeEvidenceVerifier.dispose();
     }

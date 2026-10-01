@@ -60,6 +60,8 @@ export interface QueryConditionedEvidenceVerifierInput {
   query: string;
   candidateKey: string;
   title: string;
+  /** Section headings that scope the passage, outermost first. */
+  headingPath?: readonly string[];
   passage: string;
   unitType: string | null;
   parentUnitType: string | null;
@@ -71,6 +73,10 @@ export interface QueryConditionedEvidenceVerifier {
   verify(
     input: QueryConditionedEvidenceVerifierInput,
   ): Promise<QueryConditionedEvidenceVerification>;
+  /** Optional batched form; results are returned in input order. */
+  verifyBatch?(
+    inputs: readonly QueryConditionedEvidenceVerifierInput[],
+  ): Promise<QueryConditionedEvidenceVerification[]>;
 }
 
 export interface QueryConditionedEvidencePolicy {
@@ -525,6 +531,64 @@ function validateQueryConditionedVerification(
   return { ...result, reason: result.reason.trim() };
 }
 
+function verifierInput(
+  hit: SearchHit,
+  query: string,
+): QueryConditionedEvidenceVerifierInput {
+  return {
+    query,
+    candidateKey: retrievalAnswerabilityCandidateKey(hit),
+    title: hit.title,
+    ...(hit.headingPath ? { headingPath: hit.headingPath } : {}),
+    passage: exactCandidatePassage(hit),
+    unitType: hit.unitType ?? null,
+    parentUnitType: hit.parentUnitType ?? null,
+    documentType: hit.type,
+  };
+}
+
+function verificationTrace(
+  verifier: QueryConditionedEvidenceVerifier,
+  policy: QueryConditionedEvidencePolicy,
+  input: QueryConditionedEvidenceVerifierInput,
+  result: QueryConditionedEvidenceVerification | unknown,
+): QueryConditionedEvidenceTrace {
+  try {
+    const verified = validateQueryConditionedVerification(
+      input.passage,
+      result as QueryConditionedEvidenceVerification,
+    );
+    return {
+      verifierId: verifier.id,
+      mode: policy.mode,
+      decision: verified.decision,
+      score: verified.score ?? null,
+      reason: verified.reason,
+      evidenceSpan: verified.evidenceSpan ?? null,
+    };
+  } catch (error) {
+    return verifierErrorTrace(verifier, policy, error);
+  }
+}
+
+function verifierErrorTrace(
+  verifier: QueryConditionedEvidenceVerifier,
+  policy: QueryConditionedEvidencePolicy,
+  error: unknown,
+): QueryConditionedEvidenceTrace {
+  return {
+    verifierId: verifier.id,
+    mode: policy.mode,
+    decision: "VERIFIER_ERROR",
+    score: null,
+    reason:
+      error instanceof Error
+        ? error.message
+        : "QUERY_CONDITIONED_EVIDENCE_VERIFIER_ERROR",
+    evidenceSpan: null,
+  };
+}
+
 async function verifyQueryConditionedEvidence(
   hits: readonly SearchHit[],
   query: string,
@@ -532,55 +596,53 @@ async function verifyQueryConditionedEvidence(
   policy: QueryConditionedEvidencePolicy,
 ): Promise<Map<string, QueryConditionedEvidenceTrace>> {
   const output = new Map<string, QueryConditionedEvidenceTrace>();
-  const candidates = hits.slice(0, policy.maxCandidates);
+  const inputs = hits
+    .slice(0, policy.maxCandidates)
+    .map((hit) => verifierInput(hit, query));
+  if (verifier.verifyBatch) {
+    try {
+      const results = await verifier.verifyBatch(inputs);
+      if (results.length !== inputs.length) {
+        throw new Error("QUERY_CONDITIONED_EVIDENCE_BATCH_SIZE_MISMATCH");
+      }
+      inputs.forEach((input, index) =>
+        output.set(
+          input.candidateKey,
+          verificationTrace(verifier, policy, input, results[index]),
+        ),
+      );
+    } catch (error) {
+      for (const input of inputs) {
+        output.set(
+          input.candidateKey,
+          verifierErrorTrace(verifier, policy, error),
+        );
+      }
+    }
+    return output;
+  }
   for (
     let offset = 0;
-    offset < candidates.length;
+    offset < inputs.length;
     offset += policy.maxConcurrency
   ) {
-    const batch = candidates.slice(offset, offset + policy.maxConcurrency);
+    const batch = inputs.slice(offset, offset + policy.maxConcurrency);
     const rows = await Promise.all(
-      batch.map(async (hit) => {
-        const candidateKey = retrievalAnswerabilityCandidateKey(hit);
-        const passage = exactCandidatePassage(hit);
+      batch.map(async (input) => {
         try {
-          const result = validateQueryConditionedVerification(
-            passage,
-            await verifier.verify({
-              query,
-              candidateKey,
-              title: hit.title,
-              passage,
-              unitType: hit.unitType ?? null,
-              parentUnitType: hit.parentUnitType ?? null,
-              documentType: hit.type,
-            }),
-          );
           return [
-            candidateKey,
-            {
-              verifierId: verifier.id,
-              mode: policy.mode,
-              decision: result.decision,
-              score: result.score ?? null,
-              reason: result.reason,
-              evidenceSpan: result.evidenceSpan ?? null,
-            } satisfies QueryConditionedEvidenceTrace,
+            input.candidateKey,
+            verificationTrace(
+              verifier,
+              policy,
+              input,
+              await verifier.verify(input),
+            ),
           ] as const;
         } catch (error) {
           return [
-            candidateKey,
-            {
-              verifierId: verifier.id,
-              mode: policy.mode,
-              decision: "VERIFIER_ERROR",
-              score: null,
-              reason:
-                error instanceof Error
-                  ? error.message
-                  : "QUERY_CONDITIONED_EVIDENCE_VERIFIER_ERROR",
-              evidenceSpan: null,
-            } satisfies QueryConditionedEvidenceTrace,
+            input.candidateKey,
+            verifierErrorTrace(verifier, policy, error),
           ] as const;
         }
       }),

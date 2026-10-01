@@ -3312,6 +3312,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/retrieval/scripts/contextual-evidence-pack-scores.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/retrieval/scripts/evidence-verifier-bge-reranker-shadow-benchmark.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3358,6 +3363,11 @@
     },
     {
       "path": "packages/retrieval/src/context-packet.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/retrieval/src/contextual-evidence.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
@@ -3488,6 +3498,11 @@
     },
     {
       "path": "packages/retrieval/test/context-packet.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/contextual-evidence.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
