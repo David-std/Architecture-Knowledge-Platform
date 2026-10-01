@@ -1331,11 +1331,8 @@ function answerRequirementsMatch(
     const relation = queryYesNoRelationRoles(query);
     if (relation) {
       relationRoleMatched =
-        relationRolesMatch(
-          relationEvidence,
-          relation,
-          relationScopeTitle,
-        ) || requirementAbsenceRelationMatches(relationEvidence, query);
+        relationRolesMatch(relationEvidence, relation, relationScopeTitle) ||
+        requirementAbsenceRelationMatches(relationEvidence, query);
       if (relationRoleMatched) matched.add("YES_NO");
     } else {
       relationRoleMatched =
