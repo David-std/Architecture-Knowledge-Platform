@@ -242,38 +242,20 @@ export function buildEvidenceRelationHypotheses(
   };
 }
 
-function passageWindows(passage: string): PassageWindow[] {
+/** Sentence spans use Unicode segmentation and retain exact source offsets. */
+export function evidenceSentenceWindows(passage: string): PassageWindow[] {
   const windows: PassageWindow[] = [];
-  const matcher = /[^.!?;\n]+(?:[.!?;]|$)/gu;
-  for (const match of passage.matchAll(matcher)) {
-    if (match.index === undefined) continue;
-    const raw = match[0];
-    const leading = raw.length - raw.trimStart().length;
-    const trailing = raw.length - raw.trimEnd().length;
-    const startOffset = match.index + leading;
-    const endOffset = match.index + raw.length - trailing;
+  const segmenter = new Intl.Segmenter("en", { granularity: "sentence" });
+  for (const { segment, index } of segmenter.segment(passage)) {
+    const leading = segment.length - segment.trimStart().length;
+    const trailing = segment.length - segment.trimEnd().length;
+    const startOffset = index + leading;
+    const endOffset = index + segment.length - trailing;
     if (endOffset <= startOffset) continue;
     const text = passage.slice(startOffset, endOffset);
-    windows.push({
-      text,
-      premise: text,
-      startOffset,
-      endOffset,
-    });
+    windows.push({ text, premise: text, startOffset, endOffset });
   }
-  if (windows.length > 0) return windows;
-  const text = passage.trim();
-  const startOffset = passage.indexOf(text);
-  return text
-    ? [
-        {
-          text,
-          premise: text,
-          startOffset,
-          endOffset: startOffset + text.length,
-        },
-      ]
-    : [];
+  return windows;
 }
 
 function entailmentIsTop(
@@ -369,6 +351,13 @@ export class LocalMultilingualNliEvidenceVerifier implements QueryConditionedEvi
   async evaluate(
     input: QueryConditionedEvidenceVerifierInput,
   ): Promise<LocalMultilingualNliEvidenceEvaluation> {
+    return this.evaluatePassages(input, false);
+  }
+
+  private async evaluatePassages(
+    input: QueryConditionedEvidenceVerifierInput,
+    preferCalibrated: boolean,
+  ): Promise<LocalMultilingualNliEvidenceEvaluation> {
     const hypotheses = buildEvidenceRelationHypotheses(
       input.query,
       input.title,
@@ -384,7 +373,7 @@ export class LocalMultilingualNliEvidenceVerifier implements QueryConditionedEvi
       };
     }
 
-    const windows = passageWindows(input.passage);
+    const windows = evidenceSentenceWindows(input.passage);
     if (windows.length === 0) {
       return {
         score: null,
@@ -428,11 +417,20 @@ export class LocalMultilingualNliEvidenceVerifier implements QueryConditionedEvi
       ];
       for (const choice of choices) {
         if (!entailmentIsTop(choice.distribution)) continue;
+        const calibrated =
+          choice.score >= this.minimumEntailmentScore &&
+          choice.score - choice.oppositeScore >= this.minimumPolarityMargin;
+        const bestCalibrated =
+          best !== undefined &&
+          best.score >= this.minimumEntailmentScore &&
+          best.score - best.oppositeScore >= this.minimumPolarityMargin;
         if (
           !best ||
-          choice.score > best.score ||
-          (choice.score === best.score &&
-            choice.oppositeScore < best.oppositeScore)
+          (preferCalibrated && calibrated && !bestCalibrated) ||
+          ((!preferCalibrated || calibrated === bestCalibrated) &&
+            (choice.score > best.score ||
+              (choice.score === best.score &&
+                choice.oppositeScore < best.oppositeScore)))
         ) {
           best = {
             ...choice,
@@ -469,7 +467,7 @@ export class LocalMultilingualNliEvidenceVerifier implements QueryConditionedEvi
   async verify(
     input: QueryConditionedEvidenceVerifierInput,
   ): Promise<QueryConditionedEvidenceVerification> {
-    const evaluation = await this.evaluate(input);
+    const evaluation = await this.evaluatePassages(input, true);
     if (
       evaluation.score === null ||
       evaluation.oppositeScore === null ||

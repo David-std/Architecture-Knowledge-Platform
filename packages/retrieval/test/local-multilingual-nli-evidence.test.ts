@@ -3,6 +3,7 @@ import {
   LOCAL_MULTILINGUAL_NLI_MDEBERTA_DESCRIPTOR,
   LOCAL_MULTILINGUAL_NLI_MINILM_DESCRIPTOR,
   LocalMultilingualNliEvidenceVerifier,
+  evidenceSentenceWindows,
   type LocalMultilingualNliRuntimeFactory,
 } from "../src/local-multilingual-nli-evidence.js";
 
@@ -19,6 +20,29 @@ const input = {
 } as const;
 
 describe("local multilingual NLI evidence verifier", () => {
+  it.each([
+    "The valve releases 0.25 liters; the output is measured per stroke.",
+    "La válvula entrega 0.25 litros; la salida se mide por ciclo.",
+  ])(
+    "preserves decimals and semicolons in one evidence sentence: %s",
+    (text) => {
+      const passage = `  ${text}  \nThe next sentence reports maintenance.`;
+      const windows = evidenceSentenceWindows(passage);
+      expect(windows).toHaveLength(2);
+      expect(windows[0]).toEqual({
+        text,
+        premise: text,
+        startOffset: 2,
+        endOffset: text.length + 2,
+      });
+      for (const window of windows) {
+        expect(passage.slice(window.startOffset, window.endOffset)).toBe(
+          window.text,
+        );
+      }
+    },
+  );
+
   it("accepts a clearly entailed negative answer and returns the bounded span", async () => {
     const runtimeFactory: LocalMultilingualNliRuntimeFactory = async () => ({
       infer: async (_premise, hypothesis) =>
@@ -66,6 +90,53 @@ describe("local multilingual NLI evidence verifier", () => {
       },
       reason: "LOCAL_MULTILINGUAL_NLI_POLARITY_CANDIDATE",
     });
+  });
+
+  it("selects a calibrated passage even when an ambiguous passage has a higher raw score", async () => {
+    const passage = "An ambiguous assertion. A reliable assertion.";
+    const verifier = new LocalMultilingualNliEvidenceVerifier({
+      minimumEntailmentScore: 0.8,
+      minimumPolarityMargin: 0.2,
+      runtimeFactory: async () => ({
+        infer: async (premise, hypothesis) => {
+          const negative = hypothesis.includes("do not define");
+          const entailment = premise.startsWith("An ambiguous")
+            ? negative
+              ? 0.98
+              : 0.99
+            : negative
+              ? 0.05
+              : 0.9;
+          return {
+            entailment,
+            neutral: (1 - entailment) / 2,
+            contradiction: (1 - entailment) / 2,
+          };
+        },
+      }),
+    });
+
+    // Raw calibration diagnostics stay independent of the configured boundary.
+    await expect(
+      verifier.evaluate({ ...input, passage }),
+    ).resolves.toMatchObject({
+      score: 0.99,
+      polarityMargin: expect.closeTo(0.01),
+      evidenceSpan: {
+        startOffset: 0,
+        endOffset: "An ambiguous assertion.".length,
+      },
+    });
+    await expect(verifier.verify({ ...input, passage })).resolves.toMatchObject(
+      {
+        decision: "SUPPORTS",
+        score: 0.9,
+        evidenceSpan: {
+          startOffset: passage.indexOf("A reliable"),
+          endOffset: passage.length,
+        },
+      },
+    );
   });
 
   it("forms Spanish yes/no polarity hypotheses without borrowing a title predicate", async () => {
