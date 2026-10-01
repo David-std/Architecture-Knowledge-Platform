@@ -60,6 +60,17 @@ jobs:
           git -C "$AKP_MANAGED_REPO" config user.email "akp-ci@localhost"
           git -C "$AKP_MANAGED_REPO" commit --allow-empty -m "chore: initialize managed knowledge for CI"
       - run: pnpm db:migrate
+      - name: Verify frozen v0.3 schema upgrade
+        env:
+          AKP_UPGRADE_DATABASE_URL: postgres://akp:akp@localhost:55432/akp_upgrade
+        run: |
+          git fetch --no-tags --depth=1 origin a6bdcc38fdf026d6c353db096799366865011022
+          docker compose exec -T postgres dropdb -U akp --if-exists akp_upgrade
+          docker compose exec -T postgres createdb -U akp akp_upgrade
+          pnpm verify:upgrade-migrations
+      - run: pnpm auth:provision
+      - name: Run pnpm check
+        run: pnpm check
       - name: Run PostgreSQL persistence integration on an isolated database
         env:
           DATABASE_URL: postgres://akp:akp@localhost:55432/akp_postgres_test
@@ -77,17 +88,6 @@ jobs:
           pnpm --filter @akp/postgres test:integration \
             --reporter=default --reporter=junit \
             --outputFile.junit=../../reports/ci/postgres-integration-junit.xml
-      - name: Verify frozen v0.3 schema upgrade
-        env:
-          AKP_UPGRADE_DATABASE_URL: postgres://akp:akp@localhost:55432/akp_upgrade
-        run: |
-          git fetch --no-tags --depth=1 origin a6bdcc38fdf026d6c353db096799366865011022
-          docker compose exec -T postgres dropdb -U akp --if-exists akp_upgrade
-          docker compose exec -T postgres createdb -U akp akp_upgrade
-          pnpm verify:upgrade-migrations
-      - run: pnpm auth:provision
-      - name: Run pnpm check
-        run: pnpm check
       - name: Run reasoning adversarial verification
         run: |
           pnpm --filter @akp/api exec vitest run test/reasoning-runtime.test.ts
