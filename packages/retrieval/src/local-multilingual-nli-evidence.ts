@@ -18,8 +18,6 @@ export interface LocalMultilingualNliModelDescriptor {
   readonly revision: string;
   readonly modelFileName: string;
   readonly dtype: "fp32" | "q8";
-  readonly tokenizerModel?: string;
-  readonly tokenizerRevision?: string;
 }
 
 export const LOCAL_MULTILINGUAL_NLI_MINILM_DESCRIPTOR: LocalMultilingualNliModelDescriptor =
@@ -36,16 +34,6 @@ export const LOCAL_MULTILINGUAL_NLI_MDEBERTA_DESCRIPTOR: LocalMultilingualNliMod
     revision: "cdc8277b4682665e2f2e87cd83da7da07b153d75",
     modelFileName: "model",
     dtype: "q8",
-  });
-
-export const LOCAL_MULTILINGUAL_NLI_ERNIE_M_LARGE_DESCRIPTOR: LocalMultilingualNliModelDescriptor =
-  Object.freeze({
-    model: "Xenova/ernie-m-large-mnli-xnli",
-    revision: "2a1875e6dcb605add1c49b8634336edde670d06c",
-    modelFileName: "model",
-    dtype: "q8",
-    tokenizerModel: "Xenova/ernie-m-base-mnli-xnli",
-    tokenizerRevision: "0420414f21b1a47a7c09717e70e1f0be4fca7cf9",
   });
 
 export const LOCAL_MULTILINGUAL_NLI_MODEL =
@@ -72,8 +60,6 @@ export interface LocalMultilingualNliRuntimeLoadOptions {
   readonly revision: string;
   readonly modelFileName: string;
   readonly dtype: "fp32" | "q8";
-  readonly tokenizerModel?: string;
-  readonly tokenizerRevision?: string;
   readonly cacheDir?: string;
   readonly localFilesOnly: boolean;
 }
@@ -304,23 +290,20 @@ export const defaultLocalMultilingualNliRuntimeFactory: LocalMultilingualNliRunt
     const { AutoModelForSequenceClassification, AutoTokenizer } =
       await import("@huggingface/transformers");
     const cacheOptions = {
+      revision: options.revision,
       local_files_only: options.localFilesOnly,
       ...(options.cacheDir === undefined
         ? {}
         : { cache_dir: options.cacheDir }),
     };
     const tokenizer = await AutoTokenizer.from_pretrained(
-      options.tokenizerModel ?? options.model,
-      {
-        ...cacheOptions,
-        revision: options.tokenizerRevision ?? options.revision,
-      },
+      options.model,
+      cacheOptions,
     );
     const model = await AutoModelForSequenceClassification.from_pretrained(
       options.model,
       {
         ...cacheOptions,
-        revision: options.revision,
         subfolder: "onnx",
         model_file_name: options.modelFileName,
         device: "cpu",
@@ -539,12 +522,6 @@ export class LocalMultilingualNliEvidenceVerifier implements QueryConditionedEvi
         modelFileName: this.modelDescriptor.modelFileName,
         dtype: this.modelDescriptor.dtype,
         localFilesOnly: this.localFilesOnly,
-        ...(this.modelDescriptor.tokenizerModel === undefined
-          ? {}
-          : { tokenizerModel: this.modelDescriptor.tokenizerModel }),
-        ...(this.modelDescriptor.tokenizerRevision === undefined
-          ? {}
-          : { tokenizerRevision: this.modelDescriptor.tokenizerRevision }),
         ...(this.cacheDir === undefined ? {} : { cacheDir: this.cacheDir }),
       });
       this.runtimePromise = pending.catch((error: unknown) => {

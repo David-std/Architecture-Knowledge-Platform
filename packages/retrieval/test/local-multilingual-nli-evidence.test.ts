@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  LOCAL_MULTILINGUAL_NLI_ERNIE_M_LARGE_DESCRIPTOR,
   LOCAL_MULTILINGUAL_NLI_MDEBERTA_DESCRIPTOR,
   LOCAL_MULTILINGUAL_NLI_MINILM_DESCRIPTOR,
   LocalMultilingualNliEvidenceVerifier,
@@ -330,35 +329,6 @@ describe("local multilingual NLI evidence verifier", () => {
     expect(calls).toEqual([
       {
         ...LOCAL_MULTILINGUAL_NLI_MDEBERTA_DESCRIPTOR,
-        cacheDir: "/tmp/akp-model-cache",
-        localFilesOnly: true,
-      },
-    ]);
-  });
-
-  it("forwards a distinct pinned tokenizer source when the model descriptor requires it", async () => {
-    const calls: unknown[] = [];
-    const verifier = new LocalMultilingualNliEvidenceVerifier({
-      minimumEntailmentScore: 0.7,
-      minimumPolarityMargin: 0.2,
-      modelDescriptor: LOCAL_MULTILINGUAL_NLI_ERNIE_M_LARGE_DESCRIPTOR,
-      cacheDir: "/tmp/akp-model-cache",
-      localFilesOnly: true,
-      runtimeFactory: async (options) => {
-        calls.push(options);
-        return {
-          infer: async (_premise, hypothesis) =>
-            hypothesis.includes("do not define")
-              ? { entailment: 0.9, neutral: 0.07, contradiction: 0.03 }
-              : { entailment: 0.03, neutral: 0.07, contradiction: 0.9 },
-        };
-      },
-    });
-
-    await verifier.verify(input);
-    expect(calls).toEqual([
-      {
-        ...LOCAL_MULTILINGUAL_NLI_ERNIE_M_LARGE_DESCRIPTOR,
         cacheDir: "/tmp/akp-model-cache",
         localFilesOnly: true,
       },

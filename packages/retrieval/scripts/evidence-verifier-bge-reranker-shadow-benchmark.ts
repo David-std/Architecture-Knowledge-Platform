@@ -4,12 +4,8 @@ import { performance } from "node:perf_hooks";
 import type { SearchHit } from "@akp/contracts";
 import {
   buildEvidenceRelationHypotheses,
-  defaultLocalMultilingualNliRuntimeFactory,
-  LOCAL_MULTILINGUAL_NLI_ERNIE_M_LARGE_DESCRIPTOR,
   resolveLocalSemanticCacheDir,
   verifyDeterministicPassageSupport,
-  type LocalMultilingualNliDistribution,
-  type LocalMultilingualNliRuntime,
 } from "../src/index.js";
 
 type Split = "CALIBRATION" | "HOLDOUT";
@@ -42,7 +38,6 @@ const REVISION = "6f5ff65298512715a1e669753bc754d2bc8f367b";
 const BINARY_ENTAILMENT_MODEL = "23donge/bge-m3-zeroshot-v2.0-onnx-int8";
 const BINARY_ENTAILMENT_REVISION = "84ceaae57bca4ccc6478cf87a8e49c076150098f";
 const BINARY_ENTAILMENT_UPSTREAM = "MoritzLaurer/bge-m3-zeroshot-v2.0";
-const ERNIE_NLI_UPSTREAM = "MoritzLaurer/ernie-m-large-mnli-xnli";
 
 const CASES: Case[] = [
   {
@@ -1382,116 +1377,6 @@ async function evaluateBinaryCases(
   return observations;
 }
 
-function nliEntailmentIsTop(
-  distribution: LocalMultilingualNliDistribution,
-): boolean {
-  return (
-    distribution.entailment > distribution.neutral &&
-    distribution.entailment > distribution.contradiction
-  );
-}
-
-async function evaluateNliCases(
-  runtime: LocalMultilingualNliRuntime,
-  hypothesisCandidatesFor: (
-    testCase: Case,
-    candidate: Candidate,
-  ) => readonly ShadowRelationHypothesisCandidate[],
-) {
-  const observations = [];
-  for (const testCase of CASES) {
-    const candidates = [];
-    for (const candidate of testCase.candidates) {
-      const hypotheses = hypothesisCandidatesFor(testCase, candidate);
-      const windows = sentenceWindows(candidate.passage);
-      let bestIndex = 0;
-      let bestScore = 0;
-      let bestPolarityMargin = 0;
-      let selectedHypothesisSource: string | null = null;
-      let selectedPositiveHypothesis: string | null = null;
-      let selectedNegativeHypothesis: string | null = null;
-      let selectedAnswerPolarity: "POSITIVE" | "NEGATIVE" | null = null;
-
-      for (const hypothesis of hypotheses) {
-        for (let index = 0; index < windows.length; index += 1) {
-          const window = windows[index]!;
-          const [positive, negative] = await Promise.all([
-            runtime.infer(window.text, hypothesis.positive),
-            runtime.infer(window.text, hypothesis.negative),
-          ]);
-          const choices = [
-            {
-              score: positive.entailment,
-              oppositeScore: negative.entailment,
-              answerPolarity: "POSITIVE" as const,
-              distribution: positive,
-            },
-            {
-              score: negative.entailment,
-              oppositeScore: positive.entailment,
-              answerPolarity: "NEGATIVE" as const,
-              distribution: negative,
-            },
-          ];
-
-          for (const choice of choices) {
-            if (!nliEntailmentIsTop(choice.distribution)) continue;
-            const polarityMargin = choice.score - choice.oppositeScore;
-            if (
-              choice.score > bestScore ||
-              (choice.score === bestScore &&
-                polarityMargin > bestPolarityMargin)
-            ) {
-              bestScore = choice.score;
-              bestPolarityMargin = polarityMargin;
-              bestIndex = index;
-              selectedHypothesisSource = hypothesis.source;
-              selectedPositiveHypothesis = hypothesis.positive;
-              selectedNegativeHypothesis = hypothesis.negative;
-              selectedAnswerPolarity = choice.answerPolarity;
-            }
-          }
-        }
-      }
-
-      const bestWindow = windows[bestIndex]!;
-      const goldSpan = candidate.goldSpan ?? null;
-      candidates.push({
-        label: candidate.label,
-        language: candidate.language ?? null,
-        score: bestScore,
-        polarityMargin: bestPolarityMargin,
-        deterministic: deterministicDiagnostics(testCase, candidate),
-        directionCompatible:
-          hypotheses.length > 0 &&
-          orderedAnchorsCompatible(testCase.query, bestWindow.text),
-        selectedHypothesisSource,
-        selectedPositiveHypothesis,
-        selectedNegativeHypothesis,
-        selectedAnswerPolarity,
-        bestSpan: {
-          text: bestWindow.text,
-          startOffset: bestWindow.start,
-          endOffset: bestWindow.end,
-        },
-        spanCorrect:
-          goldSpan === null ? null : bestWindow.text.includes(goldSpan.trim()),
-      });
-    }
-
-    observations.push({
-      id: testCase.id,
-      split: testCase.split,
-      family: testCase.family,
-      query: testCase.query,
-      queryLanguage: testCase.queryLanguage ?? null,
-      goldLabels: testCase.goldLabels,
-      candidates,
-    });
-  }
-  return observations;
-}
-
 function calibrateBinaryObservations(
   observations: Awaited<ReturnType<typeof evaluateBinaryCases>>,
 ) {
@@ -1792,53 +1677,6 @@ const binaryCrossLingualPairCalibration = calibrateCrossLingualPairs(
   binaryHypothesisSweepObservations,
 );
 
-const ernieLoadStarted = performance.now();
-const ernieRuntime = await defaultLocalMultilingualNliRuntimeFactory({
-  model: LOCAL_MULTILINGUAL_NLI_ERNIE_M_LARGE_DESCRIPTOR.model,
-  revision: LOCAL_MULTILINGUAL_NLI_ERNIE_M_LARGE_DESCRIPTOR.revision,
-  modelFileName: LOCAL_MULTILINGUAL_NLI_ERNIE_M_LARGE_DESCRIPTOR.modelFileName,
-  dtype: LOCAL_MULTILINGUAL_NLI_ERNIE_M_LARGE_DESCRIPTOR.dtype,
-  localFilesOnly: false,
-  ...(LOCAL_MULTILINGUAL_NLI_ERNIE_M_LARGE_DESCRIPTOR.tokenizerModel ===
-  undefined
-    ? {}
-    : {
-        tokenizerModel:
-          LOCAL_MULTILINGUAL_NLI_ERNIE_M_LARGE_DESCRIPTOR.tokenizerModel,
-      }),
-  ...(LOCAL_MULTILINGUAL_NLI_ERNIE_M_LARGE_DESCRIPTOR.tokenizerRevision ===
-  undefined
-    ? {}
-    : {
-        tokenizerRevision:
-          LOCAL_MULTILINGUAL_NLI_ERNIE_M_LARGE_DESCRIPTOR.tokenizerRevision,
-      }),
-  ...(cacheDir === undefined ? {} : { cacheDir }),
-});
-const ernieLoadLatencyMs = performance.now() - ernieLoadStarted;
-const ernieStarted = performance.now();
-let ernieHypothesisSweepObservations: Awaited<
-  ReturnType<typeof evaluateNliCases>
->;
-try {
-  ernieHypothesisSweepObservations = await evaluateNliCases(
-    ernieRuntime,
-    (testCase, candidate) =>
-      shadowRelationHypothesisCandidates(testCase.query, candidate.title),
-  );
-} finally {
-  await ernieRuntime.dispose?.();
-}
-const ernieCalibrationResult = calibrateBinaryObservations(
-  ernieHypothesisSweepObservations,
-);
-const ernieScoreOnlyMidpoint = scoreOnlyMidpointCalibration(
-  ernieHypothesisSweepObservations,
-);
-const ernieCrossLingualPairCalibration = calibrateCrossLingualPairs(
-  ernieHypothesisSweepObservations,
-);
-
 const binaryEntailmentComparison = {
   model: {
     id: BINARY_ENTAILMENT_MODEL,
@@ -1867,33 +1705,11 @@ const binaryHypothesisSweepComparison = {
   observations: binaryHypothesisSweepObservations,
 };
 
-const ernieNliComparison = {
-  model: {
-    id: LOCAL_MULTILINGUAL_NLI_ERNIE_M_LARGE_DESCRIPTOR.model,
-    revision: LOCAL_MULTILINGUAL_NLI_ERNIE_M_LARGE_DESCRIPTOR.revision,
-    upstream: ERNIE_NLI_UPSTREAM,
-    dtype: LOCAL_MULTILINGUAL_NLI_ERNIE_M_LARGE_DESCRIPTOR.dtype,
-    provenance: "Xenova ONNX conversion; shadow-only",
-    license: "apache-2.0 (upstream)",
-    labels: ["entailment", "neutral", "contradiction"],
-  },
-  hypothesisStrategy:
-    "same shadow-only relation hypotheses used by the binary entailment comparison",
-  loadLatencyMs: ernieLoadLatencyMs,
-  latencyMs: performance.now() - ernieStarted,
-  calibrationCandidate: ernieCalibrationResult.calibrationCandidate,
-  holdoutMetrics: ernieCalibrationResult.holdoutMetrics,
-  holdoutPassesAcceptance: ernieCalibrationResult.holdoutPassesAcceptance,
-  scoreOnlyMidpointCalibration: ernieScoreOnlyMidpoint,
-  crossLingualPairCalibration: ernieCrossLingualPairCalibration,
-  observations: ernieHypothesisSweepObservations,
-};
-
 const report = {
-  schemaVersion: 9,
+  schemaVersion: 8,
   status: "MEASURED",
   evidenceBoundary:
-    "Public synthetic source-disjoint shadow evaluation of multilingual evidence signals: reranker relevance/contrast, a pinned multilingual binary entailment model, and a pinned ERNIE-M-large multilingual NLI capability probe. Calibration and holdout include explicit cross-lingual direct, indirect, wrong-relation and reversed-direction cases with disjoint synthetic sources. Observations record deterministic passage-support diagnostics. Language-pair analyses calibrate score-only midpoint thresholds independently for en->es and es->en and freeze each calibration threshold before evaluating holdout. No signal is evidence truth or promoted by this report.",
+    "Public synthetic source-disjoint shadow evaluation of multilingual evidence signals: reranker relevance/contrast plus a pinned multilingual binary entailment model. Calibration and holdout include explicit cross-lingual direct, indirect, wrong-relation and reversed-direction cases with disjoint synthetic sources. Binary observations also record deterministic passage-support diagnostics. A shadow-only language-pair analysis calibrates score-only midpoint thresholds independently for en->es and es->en, requires at least two direction-compatible gold and two non-gold candidates in both calibration and holdout, and freezes each calibration threshold before evaluating holdout. No signal is evidence truth or promoted by this report.",
   model: {
     id: MODEL,
     revision: REVISION,
@@ -1911,7 +1727,6 @@ const report = {
   binaryEntailmentComparison,
   binaryHypothesisSweepComparison,
   binaryCrossLingualPairCalibration,
-  ernieNliComparison,
   promotionAllowed: false,
   productionDefaultChanged: false,
   enforcementEnabled: false,
