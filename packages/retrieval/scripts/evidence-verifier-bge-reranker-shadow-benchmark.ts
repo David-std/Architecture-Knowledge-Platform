@@ -2080,7 +2080,6 @@ const binaryRoleGuardedComparison = {
   ),
 };
 
-
 const report = {
   schemaVersion: 10,
   status: "MEASURED",
