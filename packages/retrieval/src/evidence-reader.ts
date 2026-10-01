@@ -275,11 +275,22 @@ export class ReaderEvidenceVerifier implements QueryConditionedEvidenceVerifier 
     if (!contextual.body) {
       return { decision: "INSUFFICIENT", ...scored, reason: "EMPTY_PASSAGE" };
     }
-    const judgment = await this.reader.judge({
-      query: input.query,
-      scope: contextual.scope,
-      body: contextual.body,
-    });
+    let judgment: EvidenceReaderJudgment;
+    try {
+      judgment = await this.reader.judge({
+        query: input.query,
+        scope: contextual.scope,
+        body: contextual.body,
+      });
+    } catch (error) {
+      // One unreadable judgment leaves that candidate exploratory; it does
+      // not discard the judgments of the other candidates.
+      return {
+        decision: "INSUFFICIENT",
+        ...scored,
+        reason: `READER_ERROR:${error instanceof Error ? error.message : "UNKNOWN"}`,
+      };
+    }
     if (!judgment.answers) {
       return {
         decision: "INSUFFICIENT",

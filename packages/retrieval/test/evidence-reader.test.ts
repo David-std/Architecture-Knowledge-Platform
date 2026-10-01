@@ -157,6 +157,29 @@ describe("reader evidence verifier", () => {
     });
   });
 
+  it("keeps a candidate exploratory when its judgment fails", async () => {
+    let calls = 0;
+    const verifier = new ReaderEvidenceVerifier({
+      reader: {
+        id: "flaky",
+        judge: async (value) => {
+          calls += 1;
+          if (calls === 1) throw new Error("EVIDENCE_READER_REPLY_NOT_JSON");
+          return { answers: true, quote: value.body };
+        },
+      },
+      concurrency: 1,
+    });
+    const results = await verifier.verifyBatch([
+      input("First line."),
+      input("Second line."),
+    ]);
+    expect(results.map((result) => result.reason)).toEqual([
+      "READER_ERROR:EVIDENCE_READER_REPLY_NOT_JSON",
+      "READER_QUOTED_ANSWER",
+    ]);
+  });
+
   it("reads only the highest shortlist scores above the floor", async () => {
     const reader = readerReturning((value) => ({
       answers: true,

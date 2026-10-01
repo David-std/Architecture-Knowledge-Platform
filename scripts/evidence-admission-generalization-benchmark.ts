@@ -1,11 +1,17 @@
+import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   assessRetrievalAnswerability,
   assessRetrievalAnswerabilityWithVerifier,
+  CONTEXTUAL_CROSS_ENCODER_DEFAULT_SUPPORT_SCORE,
   ContextualCrossEncoderEvidenceVerifier,
   contextualEvidenceText,
+  OpenAICompatibleEvidenceReader,
+  ReaderEvidenceVerifier,
   type CrossEncoderRuntimeFactory,
+  type EvidenceReader,
+  type EvidenceReaderJudgment,
 } from "../packages/retrieval/src/index.js";
 import {
   evaluateEvidenceAdmission,
@@ -13,6 +19,7 @@ import {
   loadEvidenceAdmissionPack,
   type EvidenceAdmissionCase,
   type EvidenceAdmitter,
+  type Split,
   type summarizeEvidenceAdmission,
 } from "./evidence-admission-pack.js";
 
@@ -62,6 +69,38 @@ async function recordedRuntime(
   });
 }
 
+/**
+ * Judgments are deterministic for a fixed model and prompt, so they are
+ * cached by content hash; reruns compare policies without re-reading.
+ */
+async function cachedReader(
+  reader: EvidenceReader,
+  cachePath: string,
+): Promise<EvidenceReader> {
+  const resolved = path.resolve(cachePath);
+  let cache: Record<string, EvidenceReaderJudgment> = {};
+  try {
+    cache = JSON.parse(await readFile(resolved, "utf8")) as typeof cache;
+  } catch {
+    cache = {};
+  }
+  await mkdir(path.dirname(resolved), { recursive: true });
+  return {
+    id: reader.id,
+    judge: async (input) => {
+      const key = createHash("sha256")
+        .update(JSON.stringify([reader.id, input]))
+        .digest("hex");
+      const cached = cache[key];
+      if (cached) return cached;
+      const judgment = await reader.judge(input);
+      cache[key] = judgment;
+      await writeFile(resolved, JSON.stringify(cache), "utf8");
+      return judgment;
+    },
+  };
+}
+
 function formatRate(value: number | null): string {
   return value === null ? "  n/a" : `${(value * 100).toFixed(1).padStart(5)}%`;
 }
@@ -75,7 +114,15 @@ function printSummary(
   );
 }
 
-const { cases } = await loadEvidenceAdmissionPack();
+const requestedSplits = (
+  process.env.AKP_EVIDENCE_ADMISSION_SPLITS ?? "development,heldout"
+)
+  .split(",")
+  .map((split) => split.trim())
+  .filter(
+    (split): split is Split => split === "development" || split === "heldout",
+  );
+const { cases } = await loadEvidenceAdmissionPack(requestedSplits);
 const verifierName =
   process.env.AKP_EVIDENCE_ADMISSION_VERIFIER ?? "deterministic";
 let admitter: EvidenceAdmitter;
@@ -95,6 +142,46 @@ if (verifierName === "deterministic") {
     localFilesOnly: process.env.AKP_LOCAL_FILES_ONLY === "1",
   });
   label = `${verifier.id} min=${minimumSupportScore}${scoresPath ? " (recorded scores)" : ""}`;
+  admitter = async (hits, query) =>
+    (
+      await assessRetrievalAnswerabilityWithVerifier(hits, query, verifier, {
+        mode: "ENFORCE",
+        maxCandidates: 64,
+      })
+    ).supportedCandidateKeys;
+} else if (verifierName === "cross-encoder-reader") {
+  const scoresPath = process.env.AKP_CONTEXTUAL_EVIDENCE_SCORES;
+  const shortlist = new ContextualCrossEncoderEvidenceVerifier({
+    minimumSupportScore: CONTEXTUAL_CROSS_ENCODER_DEFAULT_SUPPORT_SCORE,
+    ...(scoresPath
+      ? { runtimeFactory: await recordedRuntime(cases, scoresPath) }
+      : {}),
+    localFilesOnly: process.env.AKP_LOCAL_FILES_ONLY === "1",
+  });
+  const baseUrl = process.env.AKP_EVIDENCE_READER_BASE_URL;
+  const model = process.env.AKP_EVIDENCE_READER_MODEL;
+  if (!baseUrl || !model) {
+    throw new Error(
+      "AKP_EVIDENCE_READER_BASE_URL and AKP_EVIDENCE_READER_MODEL are required",
+    );
+  }
+  const reader = new OpenAICompatibleEvidenceReader({
+    baseUrl,
+    model,
+    timeoutMs: 120_000,
+  });
+  const shortlistSize = Number(process.env.AKP_EVIDENCE_READER_SHORTLIST ?? 4);
+  const verifier = new ReaderEvidenceVerifier({
+    reader: await cachedReader(
+      reader,
+      process.env.AKP_EVIDENCE_READER_CACHE ??
+        "reports/ci/evidence-reader-judgments.json",
+    ),
+    shortlist,
+    shortlistSize,
+    concurrency: 1,
+  });
+  label = `${verifier.id} shortlist=${shortlistSize}${scoresPath ? " (recorded shortlist scores)" : ""}`;
   admitter = async (hits, query) =>
     (
       await assessRetrievalAnswerabilityWithVerifier(hits, query, verifier, {
