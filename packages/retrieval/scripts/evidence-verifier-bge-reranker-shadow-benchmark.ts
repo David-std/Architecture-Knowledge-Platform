@@ -17,6 +17,7 @@ type Candidate = {
   label: string;
   title: string;
   passage: string;
+  language?: "en" | "es";
   goldSpan?: string;
 };
 
@@ -25,6 +26,7 @@ type Case = {
   split: Split;
   family: string;
   query: string;
+  queryLanguage?: "en" | "es";
   candidates: Candidate[];
   goldLabels: string[];
 };
@@ -34,6 +36,9 @@ const REVISION = "6f5ff65298512715a1e669753bc754d2bc8f367b";
 const BINARY_ENTAILMENT_MODEL = "23donge/bge-m3-zeroshot-v2.0-onnx-int8";
 const BINARY_ENTAILMENT_REVISION = "84ceaae57bca4ccc6478cf87a8e49c076150098f";
 const BINARY_ENTAILMENT_UPSTREAM = "MoritzLaurer/bge-m3-zeroshot-v2.0";
+const ENGLISH_TO_SPANISH_MODEL = "Xenova/opus-mt-en-es";
+const ENGLISH_TO_SPANISH_REVISION =
+  "4b002a4c7edd54a7ced58877258b87f7efd3f892";
 
 const CASES: Case[] = [
   {
@@ -141,12 +146,14 @@ const CASES: Case[] = [
     split: "CALIBRATION",
     family: "CROSS_LINGUAL_PARAPHRASE",
     query: "Does a focused handler reduce reasons to change?",
+    queryLanguage: "en",
     candidates: [
       {
         label: "focused",
         title: "Focused handlers",
         passage:
           "Un manejador con una sola responsabilidad concentra sus cambios en un único motivo de negocio.",
+        language: "es",
         goldSpan:
           "Un manejador con una sola responsabilidad concentra sus cambios en un único motivo de negocio.",
       },
@@ -210,12 +217,14 @@ const CASES: Case[] = [
     split: "HOLDOUT",
     family: "MODALITY_NEGATION",
     query: "¿Es obligatorio usar un scheduler para procesar trabajos?",
+    queryLanguage: "es",
     candidates: [
       {
         label: "scheduler-optional",
         title: "Ejecución de trabajos",
         passage:
           "Los trabajos pueden procesarse directamente sin scheduler; incorporarlo es una opción operativa.",
+        language: "es",
         goldSpan: "Los trabajos pueden procesarse directamente sin scheduler;",
       },
       {
@@ -223,6 +232,7 @@ const CASES: Case[] = [
         title: "Scheduler",
         passage:
           "El scheduler registra tiempos de ejecución y métricas de los trabajos.",
+        language: "es",
       },
     ],
     goldLabels: ["scheduler-optional"],
@@ -255,12 +265,14 @@ const CASES: Case[] = [
     split: "HOLDOUT",
     family: "CROSS_LINGUAL_PARAPHRASE",
     query: "Does a single-purpose module reduce reasons to change?",
+    queryLanguage: "en",
     candidates: [
       {
         label: "indirect",
         title: "Single-purpose modules",
         passage:
           "Un módulo con una sola responsabilidad concentra sus cambios en un único motivo de negocio.",
+        language: "es",
         goldSpan:
           "Un módulo con una sola responsabilidad concentra sus cambios en un único motivo de negocio.",
       },
@@ -625,7 +637,7 @@ function metrics(
 }
 
 const cacheDir = resolveLocalSemanticCacheDir(process.env.AKP_MODEL_CACHE_DIR);
-const { AutoModelForSequenceClassification, AutoTokenizer } =
+const { AutoModelForSequenceClassification, AutoTokenizer, pipeline } =
   await import("@huggingface/transformers");
 
 const loadStarted = performance.now();
@@ -891,6 +903,39 @@ const binaryModel = await AutoModelForSequenceClassification.from_pretrained(
 );
 const binaryLoadLatencyMs = performance.now() - binaryLoadStarted;
 
+const hypothesisTranslationLoadStarted = performance.now();
+const englishToSpanish = await pipeline(
+  "translation",
+  ENGLISH_TO_SPANISH_MODEL,
+  {
+    revision: ENGLISH_TO_SPANISH_REVISION,
+    dtype: "int8",
+    device: "cpu",
+    local_files_only: false,
+    ...(cacheDir === undefined ? {} : { cache_dir: cacheDir }),
+  },
+);
+const hypothesisTranslationLoadLatencyMs =
+  performance.now() - hypothesisTranslationLoadStarted;
+const hypothesisTranslationCache = new Map<string, string>();
+
+async function translateEnglishHypothesisToSpanish(
+  text: string,
+): Promise<string> {
+  const cached = hypothesisTranslationCache.get(text);
+  if (cached !== undefined) return cached;
+  const output = await englishToSpanish(text);
+  const first = Array.isArray(output) ? output[0] : output;
+  const translated = (first as { translation_text?: string } | undefined)
+    ?.translation_text;
+  if (typeof translated !== "string" || translated.trim().length === 0) {
+    throw new Error("ENGLISH_TO_SPANISH_HYPOTHESIS_TRANSLATION_MISSING");
+  }
+  const normalized = translated.trim();
+  hypothesisTranslationCache.set(text, normalized);
+  return normalized;
+}
+
 async function binaryEntailmentScore(
   premise: string,
   hypothesis: string,
@@ -925,13 +970,15 @@ async function evaluateBinaryCases(
   hypothesisCandidatesFor: (
     testCase: Case,
     candidate: Candidate,
-  ) => readonly ShadowRelationHypothesisCandidate[],
+  ) =>
+    | readonly ShadowRelationHypothesisCandidate[]
+    | Promise<readonly ShadowRelationHypothesisCandidate[]>,
 ) {
   const observations = [];
   for (const testCase of CASES) {
     const candidates = [];
     for (const candidate of testCase.candidates) {
-      const hypotheses = hypothesisCandidatesFor(testCase, candidate);
+      const hypotheses = await hypothesisCandidatesFor(testCase, candidate);
       const windows = sentenceWindows(candidate.passage);
       let bestIndex = 0;
       let bestScore = 0;
@@ -1195,6 +1242,9 @@ let binaryObservations: Awaited<ReturnType<typeof evaluateBinaryCases>>;
 let binaryHypothesisSweepObservations: Awaited<
   ReturnType<typeof evaluateBinaryCases>
 >;
+let binaryHypothesisTranslationObservations: Awaited<
+  ReturnType<typeof evaluateBinaryCases>
+>;
 try {
   binaryObservations = await evaluateBinaryCases((testCase, candidate) => {
     const hypothesis = buildEvidenceRelationHypotheses(
@@ -1209,7 +1259,33 @@ try {
     (testCase, candidate) =>
       shadowRelationHypothesisCandidates(testCase.query, candidate.title),
   );
+  binaryHypothesisTranslationObservations = await evaluateBinaryCases(
+    async (testCase, candidate) => {
+      const hypotheses = shadowRelationHypothesisCandidates(
+        testCase.query,
+        candidate.title,
+      );
+      if (
+        testCase.queryLanguage !== "en" ||
+        candidate.language !== "es"
+      ) {
+        return hypotheses;
+      }
+      return Promise.all(
+        hypotheses.map(async (hypothesis) => ({
+          positive: await translateEnglishHypothesisToSpanish(
+            hypothesis.positive,
+          ),
+          negative: await translateEnglishHypothesisToSpanish(
+            hypothesis.negative,
+          ),
+          source: `${hypothesis.source}:hypothesis-en-es`,
+        })),
+      );
+    },
+  );
 } finally {
+  await englishToSpanish.dispose?.();
   await binaryModel.dispose?.();
 }
 
@@ -1220,6 +1296,8 @@ const binarySweepCalibrationResult = calibrateBinaryObservations(
 const binarySweepScoreOnlyMidpoint = scoreOnlyMidpointCalibration(
   binaryHypothesisSweepObservations,
 );
+const binaryHypothesisTranslationCalibrationResult =
+  calibrateBinaryObservations(binaryHypothesisTranslationObservations);
 
 const binaryEntailmentComparison = {
   model: {
@@ -1249,11 +1327,30 @@ const binaryHypothesisSweepComparison = {
   observations: binaryHypothesisSweepObservations,
 };
 
+const binaryHypothesisTranslationComparison = {
+  model: binaryEntailmentComparison.model,
+  translationModel: {
+    id: ENGLISH_TO_SPANISH_MODEL,
+    revision: ENGLISH_TO_SPANISH_REVISION,
+    dtype: "int8",
+    provenance: "transformers-js-onnx-shadow-only",
+  },
+  translationStrategy:
+    "shadow-only explicit fixture metadata: translate positive/negative English hypotheses to Spanish when the evidence passage is Spanish; cited evidence text and offsets remain original",
+  translationLoadLatencyMs: hypothesisTranslationLoadLatencyMs,
+  calibrationCandidate:
+    binaryHypothesisTranslationCalibrationResult.calibrationCandidate,
+  holdoutMetrics: binaryHypothesisTranslationCalibrationResult.holdoutMetrics,
+  holdoutPassesAcceptance:
+    binaryHypothesisTranslationCalibrationResult.holdoutPassesAcceptance,
+  observations: binaryHypothesisTranslationObservations,
+};
+
 const report = {
-  schemaVersion: 5,
+  schemaVersion: 6,
   status: "MEASURED",
   evidenceBoundary:
-    "Public synthetic source-disjoint shadow evaluation of multilingual evidence signals: reranker relevance/contrast plus a pinned multilingual binary entailment model. A separate shadow-only fallback hypothesis sweep isolates missing parser coverage without replacing hypotheses already produced by the production parser. The report includes both the existing score-plus-margin grid and an auditable score-only midpoint boundary derived only from calibration labels, then frozen for holdout. No signal is evidence truth or promoted by this report.",
+    "Public synthetic source-disjoint shadow evaluation of multilingual evidence signals: reranker relevance/contrast plus a pinned multilingual binary entailment model. A separate shadow-only fallback hypothesis sweep isolates missing parser coverage without replacing hypotheses already produced by the production parser. A hypothesis-translation probe translates only short positive/negative English hypotheses into Spanish for explicitly marked English-query/Spanish-passage fixtures; the evidence passage, cited span and offsets remain untouched. Thresholds are derived only from calibration labels and frozen for holdout. No signal is evidence truth or promoted by this report.",
   model: {
     id: MODEL,
     revision: REVISION,
@@ -1270,6 +1367,7 @@ const report = {
   comparisons,
   binaryEntailmentComparison,
   binaryHypothesisSweepComparison,
+  binaryHypothesisTranslationComparison,
   promotionAllowed: false,
   productionDefaultChanged: false,
   enforcementEnabled: false,
