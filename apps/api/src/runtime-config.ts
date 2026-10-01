@@ -101,15 +101,15 @@ export function loadApiRuntimeConfig(
       `AKP_EVIDENCE_VERIFIER_MODE must be "SHADOW" or "ENFORCE"; received ${JSON.stringify(evidenceVerifierMode)}.`,
     );
   }
-  // Only a verifier calibrated on the domain-disjoint admission pack may
-  // decide support; the extractive QA reader remains a diagnostic.
+  // A relevance-only score does not establish that the requested fact is
+  // present. Only the reader path can be explicitly selected for admission;
+  // cross-encoder and extractive QA diagnostics remain shadow-only.
   if (
     evidenceVerifierMode === "ENFORCE" &&
-    evidenceVerifierProvider !== "contextual-cross-encoder" &&
     evidenceVerifierProvider !== "cross-encoder-reader"
   ) {
     throw new Error(
-      `AKP_EVIDENCE_VERIFIER_MODE "ENFORCE" requires AKP_EVIDENCE_VERIFIER_PROVIDER "contextual-cross-encoder" or "cross-encoder-reader"; ${JSON.stringify(evidenceVerifierProvider)} remains SHADOW only.`,
+      `AKP_EVIDENCE_VERIFIER_MODE "ENFORCE" requires AKP_EVIDENCE_VERIFIER_PROVIDER "cross-encoder-reader"; ${JSON.stringify(evidenceVerifierProvider)} remains SHADOW only.`,
     );
   }
   const evidenceVerifierMinimumSupportScore = optionalFraction(

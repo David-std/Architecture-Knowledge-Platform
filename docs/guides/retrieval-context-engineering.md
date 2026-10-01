@@ -74,7 +74,7 @@ Query transformations and reasoning plans may improve retrieval, but their outpu
 
 Admission decides whether a retrieved unit answers the query, so it can be returned as `SUPPORTED` evidence rather than an exploratory candidate. The deterministic verifier matches query cue words and three hard-coded relation verbs. On the domain-disjoint pack in `evals/generic/evidence-admission` it admits a correct unit for 19–26% of answerable questions, never for yes/no or cross-lingual questions, and admits something for 28% of unanswerable ones.
 
-The contextual cross-encoder verifier reads each unit the way a person does: under its title and heading path, with link targets removed and every table row restated with its column headers. A multilingual cross-encoder (`bge-reranker-v2-m3`, pinned ONNX revision) scores the query against that text, and the unit is admitted when the score reaches a threshold calibrated on the development domains. Title and headings matter: without them, a concept whose body never repeats its name, or a claim whose heading carries the proposition, scores close to zero.
+The contextual cross-encoder scores each unit in context: under its title and heading path, with link targets removed and every table row restated with its column headers. A multilingual cross-encoder (`bge-reranker-v2-m3`, pinned ONNX revision) scores the query against that text, and a diagnostic judgment is recorded when the score reaches an experimental development threshold; that score alone cannot admit evidence in the API. Title and headings matter: without them, a concept whose body never repeats its name, or a claim whose heading carries the proposition, scores close to zero.
 
 | Pack split  | Verifier                      | Answerable recall | False acceptance | Admitted precision | Strict accuracy |
 | ----------- | ----------------------------- | ----------------- | ---------------- | ------------------ | --------------- |
@@ -89,13 +89,13 @@ Enable it explicitly:
 
 ```dotenv
 AKP_EVIDENCE_VERIFIER_PROVIDER=contextual-cross-encoder
-AKP_EVIDENCE_VERIFIER_MODE=ENFORCE
+AKP_EVIDENCE_VERIFIER_MODE=SHADOW
 # Optional: defaults to the calibrated 0.2.
 AKP_EVIDENCE_VERIFIER_MIN_SCORE=0.2
 AKP_EVIDENCE_VERIFIER_MAX_CANDIDATES=32
 ```
 
-`SHADOW` records the verifier decision beside the deterministic one without changing results. `ENFORCE` admits exactly the candidates the verifier supports, after authorization, trust, lifecycle and temporal filtering; quantity and year requirements of the query remain hard gates, and exact identifier lookups keep their deterministic path. Candidates beyond `AKP_EVIDENCE_VERIFIER_MAX_CANDIDATES` stay exploratory. Only this verifier may run in `ENFORCE`; the extractive QA reader remains a diagnostic.
+`SHADOW` records the verifier decision beside the deterministic one without changing results. `ENFORCE` admits exactly the candidates the verifier supports, after authorization, trust, lifecycle and temporal filtering; quantity and year requirements of the query remain hard gates, and exact identifier lookups keep their deterministic path. Candidates beyond `AKP_EVIDENCE_VERIFIER_MAX_CANDIDATES` stay exploratory. Only `cross-encoder-reader` may run in `ENFORCE`; relevance-only cross-encoder and extractive QA providers remain diagnostics. The API rejects relevance-only enforcement rather than silently accepting it or downgrading the configured mode.
 
 The model is downloaded once into the local model cache (`AKP_MODEL_CACHE_DIR`), about 570 MB. Scoring runs on CPU, roughly a quarter of a second per candidate on a laptop, so the candidate limit bounds latency. If the model cannot load or score, every candidate records `VERIFIER_ERROR` and the response degrades to exploratory results instead of guessing.
 
@@ -103,7 +103,7 @@ Known limits, measured on the pack: a cross-encoder measures whether a unit is a
 
 ### Reader stage
 
-The `cross-encoder-reader` provider adds the stage that a relevance model cannot provide. The cross-encoder shortlists the highest-scoring candidates, and a language model behind any OpenAI-compatible chat endpoint, such as a local Ollama, llama.cpp or LM Studio server, judges each shortlisted unit: does the passage itself state the requested information, and which exact passage text says so? A judgment counts only when its quote is verbatim body text; the quote is mapped back to the original line or table row, which becomes the inspectable evidence span. A paraphrased or invented quote, or a quote taken from the heading, leaves the candidate exploratory. The passage is sent as delimited data with an instruction to ignore instructions inside it, and decoding is greedy.
+The `cross-encoder-reader` provider adds the stage that a relevance model cannot provide. The cross-encoder shortlists the highest-scoring candidates, and a language model behind any OpenAI-compatible chat endpoint, such as a local Ollama, llama.cpp or LM Studio server, judges each shortlisted unit: does the passage itself state the requested information, and which exact passage text says so? A judgment counts only when its quote is verbatim body text; the quote is mapped back to its exact original prose characters or original table row, which becomes the inspectable evidence span. A paraphrased or invented quote, or a quote taken from the heading, leaves the candidate exploratory. The passage is sent as delimited data with an instruction to ignore instructions inside it, and decoding is greedy.
 
 ```dotenv
 AKP_EVIDENCE_VERIFIER_PROVIDER=cross-encoder-reader
