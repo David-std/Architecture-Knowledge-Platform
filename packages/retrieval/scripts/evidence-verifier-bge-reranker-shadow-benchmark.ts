@@ -169,17 +169,14 @@ const CASES: Case[] = [
       {
         label: "cross-direct",
         title: "Integración ZENO",
-        passage:
-          "ZENO puede notificar a PAVA después de validar la entrega.",
+        passage: "ZENO puede notificar a PAVA después de validar la entrega.",
         language: "es",
-        goldSpan:
-          "ZENO puede notificar a PAVA después de validar la entrega.",
+        goldSpan: "ZENO puede notificar a PAVA después de validar la entrega.",
       },
       {
         label: "cross-topic",
         title: "Catálogo ZENO y PAVA",
-        passage:
-          "ZENO y PAVA aparecen en informes operativos separados.",
+        passage: "ZENO y PAVA aparecen en informes operativos separados.",
         language: "es",
       },
     ],
@@ -195,8 +192,7 @@ const CASES: Case[] = [
       {
         label: "cross-reverse",
         title: "Integración TOMA",
-        passage:
-          "TOMA puede llamar a RIVA durante la conciliación.",
+        passage: "TOMA puede llamar a RIVA durante la conciliación.",
         language: "es",
       },
     ],
@@ -238,6 +234,46 @@ const CASES: Case[] = [
       },
     ],
     goldLabels: [],
+  },
+  {
+    id: "cal-crosslingual-topical-availability",
+    split: "CALIBRATION",
+    family: "CROSS_LINGUAL_HARD_NEGATIVE",
+    query: "Does a relay prove that the service is available?",
+    queryLanguage: "en",
+    candidates: [
+      {
+        label: "cross-availability-topic",
+        title: "Métricas del relay",
+        passage:
+          "El relay registra métricas de disponibilidad y latencia del servicio.",
+        language: "es",
+      },
+    ],
+    goldLabels: [],
+  },
+  {
+    id: "cal-crosslingual-direct-sync",
+    split: "CALIBRATION",
+    family: "CROSS_LINGUAL_DIRECT_RELATION",
+    query: "¿Puede BORA sincronizar TELA?",
+    queryLanguage: "es",
+    candidates: [
+      {
+        label: "cross-sync",
+        title: "BORA synchronization",
+        passage: "BORA can synchronize TELA after validation.",
+        language: "en",
+        goldSpan: "BORA can synchronize TELA after validation.",
+      },
+      {
+        label: "cross-sync-topic",
+        title: "BORA and TELA inventory",
+        passage: "BORA and TELA are listed in the same inventory.",
+        language: "en",
+      },
+    ],
+    goldLabels: ["cross-sync"],
   },
   {
     id: "cal-same-entities-other-relation",
@@ -373,8 +409,7 @@ const CASES: Case[] = [
       {
         label: "cross-publish-topic",
         title: "LENO and VIRA catalog",
-        passage:
-          "LENO and VIRA are listed in separate operational reports.",
+        passage: "LENO and VIRA are listed in separate operational reports.",
         language: "en",
       },
     ],
@@ -431,6 +466,50 @@ const CASES: Case[] = [
       },
     ],
     goldLabels: [],
+  },
+  {
+    id: "holdout-crosslingual-topical-reliability",
+    split: "HOLDOUT",
+    family: "CROSS_LINGUAL_HARD_NEGATIVE",
+    query: "Does a gateway prove that the system is reliable?",
+    queryLanguage: "en",
+    candidates: [
+      {
+        label: "cross-reliability-topic",
+        title: "Métricas del gateway",
+        passage:
+          "El gateway registra métricas de confiabilidad y latencia del sistema.",
+        language: "es",
+      },
+    ],
+    goldLabels: [],
+  },
+  {
+    id: "holdout-crosslingual-indirect-service-es-en",
+    split: "HOLDOUT",
+    family: "CROSS_LINGUAL_PARAPHRASE",
+    query:
+      "¿Un servicio con una sola responsabilidad reduce los motivos de cambio?",
+    queryLanguage: "es",
+    candidates: [
+      {
+        label: "cross-service-es-en",
+        title: "Single-responsibility service",
+        passage:
+          "A single-responsibility service confines changes to one business reason.",
+        language: "en",
+        goldSpan:
+          "A single-responsibility service confines changes to one business reason.",
+      },
+      {
+        label: "cross-service-es-en-topic",
+        title: "Service catalog",
+        passage:
+          "Single-responsibility services are cataloged by the architecture team.",
+        language: "en",
+      },
+    ],
+    goldLabels: ["cross-service-es-en"],
   },
   {
     id: "holdout-reversed",
@@ -1186,6 +1265,7 @@ async function evaluateBinaryCases(
       const goldSpan = candidate.goldSpan ?? null;
       candidates.push({
         label: candidate.label,
+        language: candidate.language ?? null,
         score: bestScore,
         polarityMargin: bestPolarityMargin,
         deterministic: deterministicDiagnostics(testCase, candidate),
@@ -1211,6 +1291,7 @@ async function evaluateBinaryCases(
       split: testCase.split,
       family: testCase.family,
       query: testCase.query,
+      queryLanguage: testCase.queryLanguage ?? null,
       goldLabels: testCase.goldLabels,
       candidates,
     });
@@ -1407,6 +1488,83 @@ function scoreOnlyMidpointCalibration(
   };
 }
 
+type CrossLingualPair = "en->es" | "es->en";
+
+function scopedLanguagePairObservations(
+  observations: Awaited<ReturnType<typeof evaluateBinaryCases>>,
+  pair: CrossLingualPair,
+) {
+  const [queryLanguage, passageLanguage] = pair.split("->") as [
+    "en" | "es",
+    "en" | "es",
+  ];
+  return observations.flatMap((entry) => {
+    if (entry.queryLanguage !== queryLanguage) return [];
+    const candidates = entry.candidates.filter(
+      (candidate) => candidate.language === passageLanguage,
+    );
+    if (candidates.length === 0) return [];
+    const labels = new Set(candidates.map((candidate) => candidate.label));
+    return [
+      {
+        ...entry,
+        goldLabels: entry.goldLabels.filter((label) => labels.has(label)),
+        candidates,
+      },
+    ];
+  });
+}
+
+function languagePairCandidateCounts(
+  observations: Awaited<ReturnType<typeof evaluateBinaryCases>>,
+) {
+  let goldCandidates = 0;
+  let nonGoldCandidates = 0;
+  for (const entry of observations) {
+    const gold = new Set(entry.goldLabels);
+    for (const candidate of entry.candidates) {
+      if (!candidate.directionCompatible) continue;
+      if (gold.has(candidate.label)) goldCandidates += 1;
+      else nonGoldCandidates += 1;
+    }
+  }
+  return { goldCandidates, nonGoldCandidates };
+}
+
+function calibrateCrossLingualPairs(
+  observations: Awaited<ReturnType<typeof evaluateBinaryCases>>,
+) {
+  return (["en->es", "es->en"] as const).map((pair) => {
+    const scoped = scopedLanguagePairObservations(observations, pair);
+    const calibration = scoped.filter((entry) => entry.split === "CALIBRATION");
+    const holdout = scoped.filter((entry) => entry.split === "HOLDOUT");
+    const calibrationCounts = languagePairCandidateCounts(calibration);
+    const holdoutCounts = languagePairCandidateCounts(holdout);
+    const sufficientCoverage =
+      calibrationCounts.goldCandidates >= 2 &&
+      calibrationCounts.nonGoldCandidates >= 2 &&
+      holdoutCounts.goldCandidates >= 2 &&
+      holdoutCounts.nonGoldCandidates >= 2;
+    const result = sufficientCoverage
+      ? scoreOnlyMidpointCalibration(scoped)
+      : {
+          calibrationCandidate: null,
+          holdoutMetrics: null,
+          holdoutPassesAcceptance: false,
+          boundary: null,
+        };
+    return {
+      pair,
+      sufficientCoverage,
+      calibrationCases: calibration.length,
+      holdoutCases: holdout.length,
+      calibrationCounts,
+      holdoutCounts,
+      ...result,
+    };
+  });
+}
+
 const binaryStarted = performance.now();
 let binaryObservations: Awaited<ReturnType<typeof evaluateBinaryCases>>;
 let binaryHypothesisSweepObservations: Awaited<
@@ -1435,6 +1593,9 @@ const binarySweepCalibrationResult = calibrateBinaryObservations(
   binaryHypothesisSweepObservations,
 );
 const binarySweepScoreOnlyMidpoint = scoreOnlyMidpointCalibration(
+  binaryHypothesisSweepObservations,
+);
+const binaryCrossLingualPairCalibration = calibrateCrossLingualPairs(
   binaryHypothesisSweepObservations,
 );
 
@@ -1467,10 +1628,10 @@ const binaryHypothesisSweepComparison = {
 };
 
 const report = {
-  schemaVersion: 7,
+  schemaVersion: 8,
   status: "MEASURED",
   evidenceBoundary:
-    "Public synthetic source-disjoint shadow evaluation of multilingual evidence signals: reranker relevance/contrast plus a pinned multilingual binary entailment model. Calibration and holdout now include explicit cross-lingual direct, indirect, wrong-relation and reversed-direction cases with disjoint synthetic sources. Binary observations also record the existing deterministic passage-support diagnostics so semantic rescue policies can be evaluated without weakening deterministic safety boundaries. A separate shadow-only fallback hypothesis sweep isolates missing parser coverage without replacing hypotheses already produced by the production parser. Thresholds remain derived only from calibration labels and frozen for holdout. No signal is evidence truth or promoted by this report.",
+    "Public synthetic source-disjoint shadow evaluation of multilingual evidence signals: reranker relevance/contrast plus a pinned multilingual binary entailment model. Calibration and holdout include explicit cross-lingual direct, indirect, wrong-relation and reversed-direction cases with disjoint synthetic sources. Binary observations also record deterministic passage-support diagnostics. A shadow-only language-pair analysis calibrates score-only midpoint thresholds independently for en->es and es->en, requires at least two direction-compatible gold and two non-gold candidates in both calibration and holdout, and freezes each calibration threshold before evaluating holdout. No signal is evidence truth or promoted by this report.",
   model: {
     id: MODEL,
     revision: REVISION,
@@ -1487,6 +1648,7 @@ const report = {
   comparisons,
   binaryEntailmentComparison,
   binaryHypothesisSweepComparison,
+  binaryCrossLingualPairCalibration,
   promotionAllowed: false,
   productionDefaultChanged: false,
   enforcementEnabled: false,
