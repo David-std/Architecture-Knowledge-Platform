@@ -3277,6 +3277,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/retrieval/scripts/shadow-evidence-metrics.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/retrieval/src/answerability.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3513,6 +3518,11 @@
     },
     {
       "path": "packages/retrieval/test/rrf.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/shadow-evidence-metrics.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },

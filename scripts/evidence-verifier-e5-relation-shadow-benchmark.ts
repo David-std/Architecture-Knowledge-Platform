@@ -1,3 +1,4 @@
+import { shadowEvidenceMetrics as metrics } from "../packages/retrieval/scripts/shadow-evidence-metrics.js";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
@@ -475,80 +476,6 @@ async function tokenAlignment(
   };
 }
 
-function metrics(
-  observations: readonly {
-    goldLabels: readonly string[];
-    candidates: readonly {
-      label: string;
-      score: number;
-      directionCompatible: boolean;
-      spanCorrect: boolean | null;
-    }[];
-  }[],
-  threshold: number,
-) {
-  let positiveCases = 0;
-  let negativeCases = 0;
-  let falseAbstentions = 0;
-  let falseAcceptances = 0;
-  let selected = 0;
-  let selectedGold = 0;
-  let selectedWrong = 0;
-  let selectedGoldWithSpan = 0;
-  let selectedGoldSpanCorrect = 0;
-
-  for (const observation of observations) {
-    const gold = new Set(observation.goldLabels);
-    const accepted = observation.candidates.filter(
-      (candidate) =>
-        candidate.directionCompatible && candidate.score >= threshold,
-    );
-    const acceptedGold = accepted.filter((candidate) =>
-      gold.has(candidate.label),
-    );
-    const acceptedWrong = accepted.filter(
-      (candidate) => !gold.has(candidate.label),
-    );
-
-    selected += accepted.length;
-    selectedGold += acceptedGold.length;
-    selectedWrong += acceptedWrong.length;
-    for (const candidate of acceptedGold) {
-      if (candidate.spanCorrect !== null) {
-        selectedGoldWithSpan += 1;
-        if (candidate.spanCorrect) selectedGoldSpanCorrect += 1;
-      }
-    }
-
-    if (gold.size > 0) {
-      positiveCases += 1;
-      if (acceptedGold.length === 0) falseAbstentions += 1;
-    } else {
-      negativeCases += 1;
-      if (accepted.length > 0) falseAcceptances += 1;
-    }
-  }
-
-  return {
-    positiveCases,
-    negativeCases,
-    falseAbstentions,
-    falseAbstentionRate:
-      positiveCases === 0 ? 0 : falseAbstentions / positiveCases,
-    falseAcceptances,
-    falseAcceptanceRate:
-      negativeCases === 0 ? 0 : falseAcceptances / negativeCases,
-    selectedCandidates: selected,
-    selectedGoldCandidates: selectedGold,
-    wrongSelections: selectedWrong,
-    supportSelectionPrecision: selected === 0 ? 1 : selectedGold / selected,
-    spanAccuracy:
-      selectedGoldWithSpan === 0
-        ? 1
-        : selectedGoldSpanCorrect / selectedGoldWithSpan,
-  };
-}
-
 const strategies: Strategy[] = [
   "FULL_QUERY",
   "CONTENT_QUERY",
@@ -709,8 +636,11 @@ try {
 }
 
 const report = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   status: "MEASURED",
+  evaluationUse: "DEVELOPMENT_SHADOW",
+  holdoutIndependence: "SOURCE_DISJOINT_ONLY",
+  unseenQuestionFamilyHoldout: false,
   evidenceBoundary:
     "Public synthetic source-disjoint shadow evaluation of E5 relation alignment, including symmetric title-residual text and token-level residual alignment. Embedding similarity is not evidence truth and is never promoted by this report.",
   model: adapter.descriptor,

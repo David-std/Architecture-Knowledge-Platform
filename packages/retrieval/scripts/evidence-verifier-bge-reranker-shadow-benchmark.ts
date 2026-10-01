@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import type { SearchHit } from "@akp/contracts";
+import { shadowEvidenceMetrics as metrics } from "./shadow-evidence-metrics.js";
 import {
   buildEvidenceRelationHypotheses,
   evidenceSentenceWindows,
@@ -1204,85 +1205,6 @@ function sigmoid(value: number): number {
   return exp / (1 + exp);
 }
 
-function metrics(
-  observations: readonly {
-    goldLabels: readonly string[];
-    candidates: readonly {
-      label: string;
-      score: number;
-      directionCompatible: boolean;
-      spanCorrect: boolean | null;
-      polarityMargin: number | null;
-    }[];
-  }[],
-  threshold: number,
-  minimumPolarityMargin = 0,
-) {
-  let positiveCases = 0;
-  let negativeCases = 0;
-  let falseAbstentions = 0;
-  let falseAcceptances = 0;
-  let selected = 0;
-  let selectedGold = 0;
-  let selectedWrong = 0;
-  let selectedGoldWithSpan = 0;
-  let selectedGoldSpanCorrect = 0;
-
-  for (const observation of observations) {
-    const gold = new Set(observation.goldLabels);
-    const accepted = observation.candidates.filter(
-      (candidate) =>
-        candidate.directionCompatible &&
-        candidate.score >= threshold &&
-        (candidate.polarityMargin === null ||
-          candidate.polarityMargin >= minimumPolarityMargin),
-    );
-    const acceptedGold = accepted.filter((candidate) =>
-      gold.has(candidate.label),
-    );
-    const acceptedWrong = accepted.filter(
-      (candidate) => !gold.has(candidate.label),
-    );
-
-    selected += accepted.length;
-    selectedGold += acceptedGold.length;
-    selectedWrong += acceptedWrong.length;
-    for (const candidate of acceptedGold) {
-      if (candidate.spanCorrect !== null) {
-        selectedGoldWithSpan += 1;
-        if (candidate.spanCorrect) selectedGoldSpanCorrect += 1;
-      }
-    }
-
-    if (gold.size > 0) {
-      positiveCases += 1;
-      if (acceptedGold.length === 0) falseAbstentions += 1;
-    } else {
-      negativeCases += 1;
-      if (accepted.length > 0) falseAcceptances += 1;
-    }
-  }
-
-  return {
-    positiveCases,
-    negativeCases,
-    falseAbstentions,
-    falseAbstentionRate:
-      positiveCases === 0 ? 0 : falseAbstentions / positiveCases,
-    falseAcceptances,
-    falseAcceptanceRate:
-      negativeCases === 0 ? 0 : falseAcceptances / negativeCases,
-    selectedCandidates: selected,
-    selectedGoldCandidates: selectedGold,
-    wrongSelections: selectedWrong,
-    supportSelectionPrecision: selected === 0 ? 1 : selectedGold / selected,
-    spanAccuracy:
-      selectedGoldWithSpan === 0
-        ? 1
-        : selectedGoldSpanCorrect / selectedGoldWithSpan,
-  };
-}
-
 const cacheDir = resolveLocalSemanticCacheDir(process.env.AKP_MODEL_CACHE_DIR);
 const { AutoModelForSequenceClassification, AutoTokenizer } =
   await import("@huggingface/transformers");
@@ -2271,8 +2193,11 @@ const binaryDeterministicFallbackComparison = {
 };
 
 const report = {
-  schemaVersion: 13,
+  schemaVersion: 14,
   status: "MEASURED",
+  evaluationUse: "DEVELOPMENT_SHADOW",
+  holdoutIndependence: "SOURCE_DISJOINT_ONLY",
+  unseenQuestionFamilyHoldout: false,
   evidenceBoundary:
     "Public synthetic source-disjoint shadow evaluation of multilingual evidence signals: reranker relevance/contrast plus a pinned multilingual binary entailment model. Calibration and holdout include explicit cross-lingual direct, indirect, wrong-relation and reversed-direction cases with disjoint synthetic sources. Binary observations also record deterministic passage-support diagnostics. A shadow-only syntax guard separately measures query-anchor direction, passive by-subject order and bare both/ambos coreference without changing production authority. A deterministic-first shadow comparison keeps proven passage support and lets the role-guarded binary verifier rescue only deterministic abstentions; it reports precision safety separately from the stricter zero-abstention promotion gate. A numerical-stability audit repeats fixed binary inference pairs within one process and records score/runtime fingerprints so cross-run calibration drift is observable before any promotion. A second shadow probe uses a sequential single-thread ONNX session with graph optimizations disabled to test whether a more controlled CPU execution mode improves cross-run portability. A shadow-only language-pair analysis calibrates score-only midpoint thresholds independently for en->es and es->en, requires at least two direction-compatible gold and two non-gold candidates in both calibration and holdout, and freezes each calibration threshold before evaluating holdout. No signal is evidence truth or promoted by this report.",
   model: {

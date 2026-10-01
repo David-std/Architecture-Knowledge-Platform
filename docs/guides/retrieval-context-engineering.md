@@ -80,6 +80,8 @@ Input exceeding the model token window fails explicitly instead of silently trun
 
 `benchmark:evidence-verifier-shadow` records decisions, reasons, spans and threshold sweeps. Its synthetic examples are development regressions, not independent calibration. A model that returns a thematic span, misses a supported relation, or cannot handle a table remains in shadow until document- and question-family-disjoint evaluation supports promotion.
 
+The BGE reranker/binary-entailment comparison is also a development experiment. Its `HOLDOUT` has disjoint synthetic sources but reuses question families; it cannot establish generalization to unseen families. Reports mark that boundary explicitly. A precision denominator of zero is [undefined](https://scikit-learn.org/stable/modules/generated/sklearn.metrics.precision_score.html), represented as `null`, rather than perfect precision. Span accuracy also remains `null` when selected gold candidates lack complete span annotations; coverage and evaluated counts are reported separately.
+
 ## Retrieval trace
 
 Every selected search candidate carries a bounded first-class retrieval trace from candidate generation through fusion, optional reranking and ContextPacket projection. The trace records channel/rank/raw score, the concrete index or model generation when one exists, persisted query-transform provenance, the authorization scope that admitted the candidate, temporal/truth state, fusion contribution, rerank before/after values and the final selection reason.
