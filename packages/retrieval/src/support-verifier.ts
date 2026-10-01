@@ -696,7 +696,6 @@ function genericYesNoRelationRolesMatch(
   );
 }
 
-
 interface MandatoryRelationRoles {
   requiredItemAnchors: string[];
   contextAnchors: string[];
