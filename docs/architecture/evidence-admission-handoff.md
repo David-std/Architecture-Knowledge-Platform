@@ -23,16 +23,20 @@ User guide: "Contextual evidence verifier" and "Reader stage" in `docs/guides/re
 
 Admission pack, product admission path:
 
-| Verifier                     | Split       | Answerable recall | False acceptance | Admitted precision | Strict accuracy |
-| ---------------------------- | ----------- | ----------------- | ---------------- | ------------------ | --------------- |
-| Deterministic                | development | 19.2%             | 27.6%            | 53.8%              | 29.3%           |
-| Deterministic                | held-out    | 26.0%             | 28.6%            | 51.0%              | 32.0%           |
-| Contextual cross-encoder 0.2 | development | 83.7%             | 31.0%            | 88.9%              | 78.9%           |
-| Contextual cross-encoder 0.2 | held-out    | 86.0%             | 35.7%            | 73.9%              | 74.2%           |
+| Verifier                                                            | Split       | Answerable recall | False acceptance | Admitted precision | Strict accuracy |
+| ------------------------------------------------------------------- | ----------- | ----------------- | ---------------- | ------------------ | --------------- |
+| Deterministic                                                       | development | 19.2%             | 27.6%            | 53.8%              | 29.3%           |
+| Deterministic                                                       | held-out    | 26.0%             | 28.6%            | 51.0%              | 32.0%           |
+| Contextual cross-encoder 0.2                                        | development | 83.7%             | 31.0%            | 88.9%              | 78.9%           |
+| Contextual cross-encoder 0.2                                        | held-out    | 86.0%             | 35.7%            | 73.9%              | 74.2%           |
+| Cross-encoder shortlist 4 + reader (qwen2.5:7b-instruct, prompt v2) | development | 69.2%             | 6.9%             | 96.1%              | 74.4%           |
+| Cross-encoder shortlist 4 + reader (qwen2.5:7b-instruct, prompt v2) | held-out    | 71.0%             | 0.0%             | 92.3%              | 73.4%           |
 
 Private Spanish-language vault, real retrieval, 113 questions (95 answerable, 18 unanswerable): deterministic recall 23% and false acceptance 11%; contextual cross-encoder 0.2 recall 87% and false acceptance 6%; at 0.3, recall 85% and no false acceptance.
 
 The cross-encoder measures topical relevance. It still admits a unit when the requested table row, name or date is missing, or the relation runs the other way, and some definitional or cross-lingual answers score below the threshold. The reader stage targets these cases.
+
+The reader stage removes nearly all false acceptance: missing slots, wrong subjects and same-vocabulary traps fall to 0%. Its recall loss is concentrated in yes/no questions whose answer is "no", at 26% recall: the 7B model labels a passage that denies the statement as related but not answering. Fix this on development domains only, for example by telling the reader that a clear denial or contradiction answers a yes/no question. Then re-measure held-out once. Reader latency on a 6 GB laptop GPU is about 1-2 s per judgment.
 
 ## Enable locally
 
@@ -72,4 +76,4 @@ pnpm benchmark:evidence-admission:generalization
    - Use the first heading as the title when front matter has none.
 4. Add row-level table units and counterfactual-deletion negatives to the pack, where the answer sentence is removed and abstention is required.
 
-Private evaluation material stays outside the repository (`%TEMP%\akp-claude-precision`): question set, runners and caches. Never commit vault contents or identifiers.
+Private evaluation material (question set, runners and caches) stays in a local temporary folder outside the repository. Never commit vault contents or identifiers.
