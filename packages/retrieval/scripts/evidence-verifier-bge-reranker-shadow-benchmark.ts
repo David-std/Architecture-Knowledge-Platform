@@ -1610,12 +1610,8 @@ async function measureBinaryNumericalStability(
       const positiveScores = [];
       const negativeScores = [];
       for (let run = 0; run < repetitions; run += 1) {
-        positiveScores.push(
-          await scorePair(window.text, hypothesis.positive),
-        );
-        negativeScores.push(
-          await scorePair(window.text, hypothesis.negative),
-        );
+        positiveScores.push(await scorePair(window.text, hypothesis.positive));
+        negativeScores.push(await scorePair(window.text, hypothesis.negative));
       }
 
       const positiveMinimum = Math.min(...positiveScores);
@@ -2065,8 +2061,9 @@ try {
     (testCase, candidate) =>
       shadowRelationHypothesisCandidates(testCase.query, candidate.title),
   );
-  binaryNumericalStabilityAudit =
-    await measureBinaryNumericalStability(binaryEntailmentScore);
+  binaryNumericalStabilityAudit = await measureBinaryNumericalStability(
+    binaryEntailmentScore,
+  );
 } finally {
   await binaryModel.dispose?.();
 }
@@ -2097,11 +2094,7 @@ let binaryControlledSessionStabilityAudit: Awaited<
 try {
   binaryControlledSessionStabilityAudit = {
     ...(await measureBinaryNumericalStability((premise, hypothesis) =>
-      scoreBinaryEntailmentModel(
-        controlledBinaryModel,
-        premise,
-        hypothesis,
-      ),
+      scoreBinaryEntailmentModel(controlledBinaryModel, premise, hypothesis),
     )),
     sessionOptions: controlledSessionOptions,
   };
