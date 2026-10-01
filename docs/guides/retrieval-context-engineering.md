@@ -50,6 +50,23 @@ Search requests define query/intent, authorized space/vault scope, minimum trust
 
 `AKP_VECTOR_ENABLED` controls optional vector retrieval. Embedding generations are versioned; a query uses the compatible active generation or degrades explicitly.
 
+`AKP_EMBEDDING_PASSAGE_CONTEXT=body-v1` preserves the original embedding input.
+The explicit experimental option `title-heading-v1` prepends the document title
+(first 160 Unicode code points) and nearest heading context (last 320 code points)
+to each complete passage. It creates a different generation descriptor and
+configuration hash; query model, role and prefix stay unchanged. Managed indexing
+and read-only vault import use the same recipe. Vector rows retain the canonical
+body hash and a separate SHA-256 of the exact prepared input. Metadata changes
+invalidate contextual cache reuse and stale contextual vectors cannot appear in
+search. No source or approved Markdown is rewritten to add this context.
+
+Run `pnpm benchmark:embedding-context` to compare both recipes with fresh E5
+inference on the synthetic domain-disjoint pack. The option remains off by default;
+use normal projection regeneration to build it and benchmark before activation.
+The provider token limit still applies: this recipe does not repair overlong chunks.
+Metadata improves retrieval scope, not answer authority. This experiment does not
+establish general source/span precision or precision for unseen question families.
+
 Graph traversal is bounded by hops, fanout, candidates and time. Community/PPR policies bound nodes, iterations, allowed domains/relations, score threshold and per-scope caps. DRIFT uses exact/lexical/vector seeds to orient the active community index, excludes those seed documents from the community expansion, and contributes only the additional truth-valid members through normal fusion. GLOBAL community routing remains a separate corpus-wide mode.
 
 The registered retrieval arena measures DRIFT as its own feature-on configuration alongside GLOBAL community routing and PPR. Those results are comparative evidence only; they do not select a production default, and community summaries remain non-citable derived indexes.

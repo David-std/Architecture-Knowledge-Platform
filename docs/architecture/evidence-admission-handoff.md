@@ -1,6 +1,6 @@
 # Evidence admission redesign: handoff (2026-10-01)
 
-State of branch `chore/retrieval-generality-policy` (PR #38), updated after local verification and corrections through `9014b92d`. The PR remains draft; optional model providers remain disabled by default.
+State of branch `chore/retrieval-generality-policy` (PR #38), updated after local verification and corrections through `38836436`, with the versioned contextual-input change measured below. The PR remains draft; optional model providers remain disabled by default.
 
 ## Problem
 
@@ -66,11 +66,56 @@ pnpm benchmark:evidence-admission:generalization
 
 `packages/retrieval/scripts/contextual-evidence-pack-scores.ts` records cross-encoder scores once; `AKP_CONTEXTUAL_EVIDENCE_SCORES` replays them, and `AKP_EVIDENCE_READER_CACHE` caches reader judgments. Tune only on development domains; report held-out once.
 
+## Current private execution and contextual retrieval experiment
+
+The fresh private retrieval run has 113 questions: 95 with a predefined gold
+document and 18 negatives. The source is unchanged and read-only; its projection
+has not yet been regenerated with the ingestion or contextual-input corrections.
+The current pre-admission pool contains a gold document in 92/95 positives
+(top-5: 71/95, top-10: 78/95). Default deterministic admission accepts a gold
+document in 22/95. Reader v4 plus fresh BGE scores accepts it in 63/95 and falsely
+accepts 1/18 negatives. A cached-judgment replay with the final structural checks
+preserves those counts. These labels are not exhaustive unit/span annotations:
+63 gold documents do not establish precision for every admitted unit.
+
+Stage attribution for the 32 reader positives without an admitted gold document:
+3 have no gold in the current pool, 5 have no read gold candidate, and 24 have a
+read gold candidate that is rejected. Those gold-candidate traces include 15
+no-answer decisions, 10 non-verbatim quotes, and one invalid provider reply
+(more than one trace can belong to the same question). The remaining false
+acceptance substitutes a count of evaluation cases for a different requested
+measurement. It is an answer-scope error, not a reason to add the private metric
+or wording to the generic cue dictionary. Fresh per-question model latency was
+not retained after the cached-policy replay; cached replay time is not inference
+latency and must not be reported as such.
+
+`pnpm benchmark:embedding-context` uses fresh, pinned E5 inference and the same
+112-unit public corpus for both arms. All eight synthetic domains form one
+explicit evaluation corpus; no gold label enters scoring. The versioned
+`title-heading-v1` recipe changes only passage metadata, not query text.
+
+| Gold-unit retrieval | Development (104 positives), body / contextual | Held-out sources (100 positives), body / contextual |
+| ------------------- | ---------------------------------------------- | --------------------------------------------------- |
+| Recall@1            | 76 / 94                                        | 71 / 89                                             |
+| Recall@5            | 94 / 99                                        | 87 / 98                                             |
+| Recall@10           | 97 / 104                                       | 93 / 98                                             |
+| Recall@64           | 104 / 104                                      | 99 / 99                                             |
+
+This is source/domain-disjoint, not question-family-disjoint. It supports an
+explicit experimental input recipe, not automatic activation or answer support.
+The recipe is implemented for both managed indexing and read-only import. A new
+append-only migration preserves body hashes and adds actual-input fingerprints;
+compatible cache reuse also checks that fingerprint. DB activation and contextual
+vector retrieval reject outdated metadata inputs. Queries resolve the recorded
+recipe while retaining the base model's query role and prefix. PostgreSQL tests
+cover metadata changes, reuse, scoped repair, direct-SQL rejection and source-byte
+preservation; the actual E5/API regression also passes.
+
 ## Next steps, in priority order
 
 1. **Fresh end-to-end private verification.** Regenerate authorized pools and input-bound relevance scores for the current runtime; then grade accepted atomic units and verified quotes, not just document IDs. Old score records keyed only by question/unit IDs must not establish evidence for changed excerpts.
 2. **Remaining admission precision.** Wrong extra units, quantities attached to another object, incomplete compound answers and paraphrase losses require independent source/family-disjoint data. Do not add topic vocabulary or relax fact requirements to fit individual questions. Relevance-only admission is not retained as a recommended default; high scores cannot bypass an answer check.
-3. **Retrieval flow** (`retrieval-flow-audit.md`). Measure per-document channel ranks, lexical normalization and contextual title/heading embeddings with a versioned input strategy and new generation. Leaf selection, preserved accents and vector routing are corrected. Lowering OR weight or pruning by corpus frequency is still an experiment, not an implemented release decision.
+3. **Retrieval flow** (`retrieval-flow-audit.md`). Measure per-document channel ranks, lexical normalization and contextual title/heading embeddings with the explicitly configured versioned contextual recipe and new generation. Leaf selection, preserved accents and vector routing are corrected. Lowering OR weight or pruning by corpus frequency is still an experiment, not an implemented release decision.
 4. **Ingestion** (`ingestion-chunking-audit.md`). Comment-free evidence, full review material, headerless tables and partial-conversion rejection are corrected. Heading hierarchy, layout-aware de-hyphenation, first-heading title fallback and long/table-row units still need independent evaluation and normal projection regeneration.
 5. **Measurement provenance.** Bind recorded scores to actual query/body hashes and reader caches to model digest and inference configuration. Preserve source-disjoint holdout; add question-family-disjoint data and counterfactual deletion negatives. A single small synthetic pack cannot prove precision for every vault query.
 

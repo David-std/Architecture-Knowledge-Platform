@@ -2152,11 +2152,15 @@ export async function queryKnowledge(
                      u.document_revision,
                      1 - (e.embedding::vector(${dimensions}) <=> $3::vector(${dimensions})) score
                 from unit_embeddings e
+                join embedding_generations g on g.id=e.generation_id
                 join knowledge_units u on u.id=e.unit_id
                 join knowledge_documents d on d.id=u.document_id
                where e.generation_id=$1 and u.space_id=$2 and u.vault_id=$4
                  and e.embedding_dimensions=${dimensions}
                  and e.content_hash=u.content_hash
+                 and u.corpus_revision=g.corpus_revision
+                 and (right(g.input_strategy,length('+title-heading-v1'))<>'+title-heading-v1'
+                   or e.input_hash=akp_embedding_passage_input_hash(g.input_strategy,d.title,u.heading_path,u.body))
                  and u.embedding_eligible
                  and u.lifecycle ${lifecycleClause}
                  and ${trustClause("u.")}

@@ -1987,6 +1987,16 @@
       "reason": "append-only database migration"
     },
     {
+      "path": "db/migrations/087_embedding_passage_input_fingerprints.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
+      "path": "db/migrations/088_set_based_embedding_input_validation.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
       "path": "dependency-cruiser.cjs",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3397,6 +3407,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/retrieval/src/embedding-input.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/retrieval/src/embedding-provider-registry.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3543,6 +3558,11 @@
     },
     {
       "path": "packages/retrieval/test/embedding-configuration-hash.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/embedding-input.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -3808,6 +3828,11 @@
     },
     {
       "path": "scripts/concurrency-benchmark.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/contextual-embedding-input-benchmark.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },

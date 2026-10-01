@@ -8,6 +8,8 @@ import type { Postgres } from "@akp/postgres";
 import {
   configurationHashForEmbeddingDescriptor,
   createConfiguredEmbeddingProvider,
+  embeddingPassageInputHash,
+  embeddingPassageText,
   parseKnowledgeUnits,
   serializeEmbeddingRuntime,
   toPgVector,
@@ -822,13 +824,15 @@ async function buildImportedEmbeddingGeneration(
   options: ImportEmbeddingBuildOptions,
 ): Promise<void> {
   const dimensions = provider.descriptor.dimensions;
-  const units = await db.pool.query<{
+  const rawUnits = await db.pool.query<{
     id: string;
     content_hash: string;
     body: string;
+    title: string;
+    heading_path: string[];
   }>(
     `
-    select u.id,u.content_hash,u.body
+    select u.id,u.content_hash,u.body,d.title,u.heading_path
       from knowledge_units u
       join knowledge_documents d on d.id=u.document_id
      where u.space_id=$1 and u.vault_id=$2 and u.corpus_revision=$3
@@ -841,6 +845,27 @@ async function buildImportedEmbeddingGeneration(
     `,
     [options.spaceId, options.vaultId, options.corpusRevision],
   );
+
+  const units = {
+    rows: rawUnits.rows.map((unit) => {
+      const input = {
+        body: unit.body,
+        title: unit.title,
+        headingPath: unit.heading_path,
+      };
+      return {
+        ...unit,
+        input_hash: embeddingPassageInputHash(
+          input,
+          provider.descriptor.inputStrategy,
+        ),
+        input_text: embeddingPassageText(
+          input,
+          provider.descriptor.inputStrategy,
+        ),
+      };
+    }),
+  };
 
   // A retry must repair stale rows as well as missing rows.  Ineligible or
   // content-mismatched rows belong to an older snapshot and must not make a
@@ -867,6 +892,7 @@ async function buildImportedEmbeddingGeneration(
             and d.lifecycle in ('ACTIVE','DISPUTED')
             and d.refresh_status not in ('STALE_BLOCKED','INVALID')
             and u.content_hash=e.content_hash
+            and e.input_hash=akp_embedding_passage_input_hash($6,d.title,u.heading_path,u.body)
             and e.embedding_dimensions=$5
        )
     `,
@@ -876,14 +902,15 @@ async function buildImportedEmbeddingGeneration(
       options.vaultId,
       options.corpusRevision,
       dimensions,
+      provider.descriptor.inputStrategy,
     ],
   );
 
   const written = await db.pool.query<{
     unit_id: string;
-    content_hash: string;
+    input_hash: string;
   }>(
-    `select e.unit_id,e.content_hash
+    `select e.unit_id,e.input_hash
        from unit_embeddings e
        join embedding_generations g on g.id=e.generation_id
       where e.generation_id=$1 and g.space_id=$2 and g.vault_id=$3
@@ -891,17 +918,17 @@ async function buildImportedEmbeddingGeneration(
     [generationId, options.spaceId, options.vaultId, options.corpusRevision],
   );
   const writtenHashes = new Map(
-    written.rows.map((row) => [String(row.unit_id), row.content_hash]),
+    written.rows.map((row) => [String(row.unit_id), row.input_hash]),
   );
   const missing = units.rows.filter(
-    (unit) => writtenHashes.get(unit.id) !== unit.content_hash,
+    (unit) => writtenHashes.get(unit.id) !== unit.input_hash,
   );
 
   const batchSize = 64;
   for (let start = 0; start < missing.length; start += batchSize) {
     const batch = missing.slice(start, start + batchSize);
     const vectors = await provider.embed(
-      batch.map((unit) => unit.body),
+      batch.map((unit) => unit.input_text),
       "passage",
     );
     if (vectors.length !== batch.length) {
@@ -925,12 +952,13 @@ async function buildImportedEmbeddingGeneration(
       await db.pool.query(
         `
         insert into unit_embeddings(
-          unit_id,generation_id,content_hash,embedding,embedding_dimensions
-        ) values($1,$2,$3,$4::vector,$5)
+          unit_id,generation_id,content_hash,embedding,embedding_dimensions,input_hash
+        ) values($1,$2,$3,$4::vector,$5,$6)
         on conflict(unit_id,generation_id) do update set
           content_hash=excluded.content_hash,
           embedding=excluded.embedding,
-          embedding_dimensions=excluded.embedding_dimensions
+          embedding_dimensions=excluded.embedding_dimensions,
+          input_hash=excluded.input_hash
         `,
         [
           unit.id,
@@ -938,6 +966,7 @@ async function buildImportedEmbeddingGeneration(
           unit.content_hash,
           toPgVector(vector),
           dimensions,
+          unit.input_hash,
         ],
       );
     }
@@ -961,6 +990,7 @@ async function buildImportedEmbeddingGeneration(
           and d.refresh_status not in ('STALE_BLOCKED','INVALID')) expected,
       (select count(*)::int
          from unit_embeddings e
+         join embedding_generations g on g.id=e.generation_id
          join knowledge_units u
            on u.id=e.unit_id and u.space_id=$1 and u.vault_id=$2
           and u.corpus_revision=$3 and u.content_hash=e.content_hash
@@ -969,6 +999,7 @@ async function buildImportedEmbeddingGeneration(
           and d.lifecycle in ('ACTIVE','DISPUTED')
           and d.refresh_status not in ('STALE_BLOCKED','INVALID')
         where e.generation_id=$4
+          and e.input_hash=akp_embedding_passage_input_hash(g.input_strategy,d.title,u.heading_path,u.body)
           and u.embedding_eligible=true
           and u.lifecycle in ('ACTIVE','DISPUTED')
           and e.embedding_dimensions=$5) matching,
@@ -1690,6 +1721,7 @@ export async function importVaultReadOnly(
               and d.refresh_status not in ('STALE_BLOCKED','INVALID')) expected,
           (select count(*)::int
              from unit_embeddings e
+             join embedding_generations g on g.id=e.generation_id
              join knowledge_units u
                on u.id=e.unit_id and u.space_id=$1 and u.vault_id=$2
               and u.corpus_revision=$3 and u.content_hash=e.content_hash
@@ -1698,6 +1730,7 @@ export async function importVaultReadOnly(
               and d.lifecycle in ('ACTIVE','DISPUTED')
               and d.refresh_status not in ('STALE_BLOCKED','INVALID')
             where e.generation_id=$4 and u.embedding_eligible=true
+              and e.input_hash=akp_embedding_passage_input_hash(g.input_strategy,d.title,u.heading_path,u.body)
               and u.lifecycle in ('ACTIVE','DISPUTED')
               and e.embedding_dimensions=$5) matching,
           (select count(*)::int from unit_embeddings where generation_id=$4) stored

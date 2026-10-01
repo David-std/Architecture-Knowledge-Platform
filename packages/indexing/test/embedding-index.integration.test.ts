@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { Postgres } from "@akp/postgres";
+import {
+  embeddingPassageInputHash,
+  withEmbeddingPassageContext,
+} from "@akp/retrieval";
 import type {
   EmbeddingDescriptor,
   EmbeddingInputRole,
@@ -28,6 +32,7 @@ interface Fixture {
 interface StubProvider extends EmbeddingProvider {
   readonly calls: number;
   readonly roles: EmbeddingInputRole[];
+  readonly inputs: string[][];
   readonly started: Promise<void>;
   release(): void;
 }
@@ -55,6 +60,7 @@ function vector(dimensions: number, value: number): number[] {
 function stubProvider(options: StubProviderOptions): StubProvider {
   let callCount = 0;
   const roles: EmbeddingInputRole[] = [];
+  const inputs: string[][] = [];
   let resolveStarted: () => void = () => undefined;
   const started = new Promise<void>((resolve) => {
     resolveStarted = resolve;
@@ -70,6 +76,7 @@ function stubProvider(options: StubProviderOptions): StubProvider {
       return callCount;
     },
     roles,
+    inputs,
     started,
     release: resolveRelease,
     async embed(
@@ -77,6 +84,7 @@ function stubProvider(options: StubProviderOptions): StubProvider {
       request?: EmbeddingInputRole | EmbeddingRequestOptions,
     ): Promise<number[][]> {
       callCount += 1;
+      inputs.push([...texts]);
       const role =
         typeof request === "string" ? request : (request?.role ?? "passage");
       roles.push(role);
@@ -279,6 +287,182 @@ async function cleanupFixture(fixture: Fixture): Promise<void> {
 }
 
 describe("buildEmbeddingIndex PostgreSQL integration", () => {
+  it.skipIf(!databaseUrl)(
+    "fills legacy input fingerprints for a bulk vector statement without recursion",
+    async () => {
+      const fixture = await createFixture(databaseUrl!);
+      try {
+        const revision = "embedding-index-revision-1";
+        await prepareRevision(fixture, revision);
+        await fixture.db.pool.query(
+          `insert into knowledge_units(document_id,space_id,vault_id,unit_key,unit_type,body,content_hash,corpus_revision,lifecycle,trust_tier,embedding_eligible,document_revision,structural_order,permissions,locator)
+        select document_id,space_id,vault_id,'bulk-'||n,'PARAGRAPH',body,content_hash,corpus_revision,lifecycle,trust_tier,true,document_revision,structural_order,permissions,locator from knowledge_units cross join generate_series(1,1024) n where id=$1`,
+          [fixture.unitIds[0]],
+        );
+        const manager = new EmbeddingGenerationManager(fixture.db);
+        const generation = await manager.request({
+          spaceId: fixture.spaceId,
+          vaultId: fixture.vaultId,
+          corpusRevision: revision,
+          descriptor: descriptor(),
+        });
+        await manager.beginBuild(generation.generationId);
+        await fixture.db.pool.query(
+          "insert into unit_embeddings(unit_id,generation_id,content_hash,embedding,embedding_dimensions) select id,$1,content_hash,$2::vector,4 from knowledge_units where vault_id=$3 and corpus_revision=$4",
+          [
+            generation.generationId,
+            JSON.stringify(vector(4, 0.2)),
+            fixture.vaultId,
+            revision,
+          ],
+        );
+        const count = await fixture.db.pool.query(
+          "select count(*)::int count,count(*) filter(where e.input_hash=akp_embedding_passage_input_hash(g.input_strategy,d.title,u.heading_path,u.body))::int matching from unit_embeddings e join embedding_generations g on g.id=e.generation_id join knowledge_units u on u.id=e.unit_id join knowledge_documents d on d.id=u.document_id where e.generation_id=$1",
+          [generation.generationId],
+        );
+        expect(count.rows[0]).toEqual({ count: 1026, matching: 1026 });
+        expect(
+          (await manager.ready(generation.generationId, 1026)).status,
+        ).toBe("READY");
+      } finally {
+        await cleanupFixture(fixture);
+      }
+    },
+    30_000,
+  );
+
+  it.skipIf(!databaseUrl)(
+    "binds contextual generations and reuse to exact metadata/body inputs",
+    async () => {
+      const fixture = await createFixture(databaseUrl!);
+      const base = stubProvider({ descriptor: descriptor() });
+      const contextual = withEmbeddingPassageContext(base, "title-heading-v1");
+      const revision1 = "embedding-index-revision-1";
+      const options = {
+        spaceId: fixture.spaceId,
+        vaultId: fixture.vaultId,
+        corpusRevision: revision1,
+        provider: contextual,
+      };
+      try {
+        await prepareRevision(fixture, revision1);
+        const raw = await buildEmbeddingIndex(fixture.db, {
+          ...options,
+          provider: base,
+          activate: true,
+        });
+        const first = await buildEmbeddingIndex(fixture.db, options);
+        expect(first.generation.generationId).not.toBe(
+          raw.generation.generationId,
+        );
+        expect(first.embeddingsCreated).toBe(2);
+        expect(
+          base.inputs[1]?.every((text) => text.startsWith("Document: ")),
+        ).toBe(true);
+        expect(
+          (
+            await new EmbeddingGenerationManager(fixture.db).getActive(
+              fixture.spaceId,
+              fixture.vaultId,
+            )
+          )?.generationId,
+        ).toBe(raw.generation.generationId);
+        expect(
+          (await buildEmbeddingIndex(fixture.db, options)).embeddingsReused,
+        ).toBe(2);
+        const title = "🚀".repeat(170) + "Other title";
+        await fixture.db.pool.query(
+          "update knowledge_documents set title=$1 where id=$2",
+          [title, fixture.documentId],
+        );
+        expect(
+          (
+            await fixture.db.pool.query(
+              "select akp_embedding_generation_is_complete($1) complete",
+              [first.generation.generationId],
+            )
+          ).rows[0]?.complete,
+        ).toBe(false);
+        const repaired = await buildEmbeddingIndex(fixture.db, {
+          ...options,
+          activate: true,
+        });
+        expect(repaired.embeddingsCreated).toBe(2);
+        expect(repaired.embeddingsReused).toBe(0);
+        expect(repaired.activated).toBe(true);
+        const revision2 = "embedding-index-revision-2";
+        await prepareRevision(fixture, revision2);
+        const heading = "é".repeat(350);
+        await fixture.db.pool.query(
+          "update knowledge_units set heading_path=$1 where document_id=$2 and corpus_revision=$3 and unit_key='paragraph-1'",
+          [["root", heading], fixture.documentId, revision2],
+        );
+        const next = await buildEmbeddingIndex(fixture.db, {
+          ...options,
+          corpusRevision: revision2,
+        });
+        expect(next.embeddingsCreated).toBe(1);
+        expect(next.embeddingsReused).toBe(1);
+        const stored = await fixture.db.pool.query<{
+          content_hash: string;
+          input_hash: string;
+          body: string;
+          title: string;
+          heading_path: string[];
+        }>(
+          "select e.content_hash,e.input_hash,u.body,d.title,u.heading_path from unit_embeddings e join knowledge_units u on u.id=e.unit_id join knowledge_documents d on d.id=u.document_id where e.generation_id=$1",
+          [next.generation.generationId],
+        );
+        for (const row of stored.rows) {
+          expect(fixture.unitHashes).toContain(row.content_hash);
+          expect(row.input_hash).toBe(
+            embeddingPassageInputHash(
+              {
+                title: row.title,
+                body: row.body,
+                headingPath: row.heading_path,
+              },
+              contextual.descriptor.inputStrategy,
+            ),
+          );
+        }
+        // Direct SQL cannot claim contextual evidence without its input fingerprint.
+        const manager = new EmbeddingGenerationManager(fixture.db);
+        const guarded = await manager.request({
+          ...options,
+          descriptor: {
+            ...contextual.descriptor,
+            configurationVersion: "guarded-input-v1",
+          },
+        });
+        await manager.beginBuild(guarded.generationId);
+        await expect(
+          fixture.db.pool.query(
+            "insert into unit_embeddings(unit_id,generation_id,content_hash,embedding,embedding_dimensions) values($1,$2,$3,$4::vector,4)",
+            [
+              fixture.unitIds[0],
+              guarded.generationId,
+              fixture.unitHashes[0],
+              JSON.stringify(vector(4, 0.2)),
+            ],
+          ),
+        ).rejects.toThrow(/EMBEDDING_INPUT_HASH_MISMATCH/);
+        await expect(
+          manager.writeEmbedding({
+            generationId: guarded.generationId,
+            unitId: fixture.unitIds[0]!,
+            contentHash: fixture.unitHashes[0]!,
+            inputHash: "0".repeat(64),
+            embedding: vector(4, 0.2),
+          }),
+        ).rejects.toThrow(/EMBEDDING_INPUT_HASH_MISMATCH/);
+      } finally {
+        await cleanupFixture(fixture);
+      }
+    },
+    30_000,
+  );
+
   it.skipIf(!databaseUrl)(
     "builds a complete READY generation, keeps READY unactivated, and reuses content hashes",
     async () => {
