@@ -276,6 +276,84 @@ const CASES: Case[] = [
     goldLabels: ["cross-sync"],
   },
   {
+    id: "cal-en-es-bounded-mailbox-backpressure",
+    split: "CALIBRATION",
+    family: "CROSS_LINGUAL_PARAPHRASE",
+    query: "Does a bounded mailbox reduce overload propagation?",
+    queryLanguage: "en",
+    candidates: [
+      {
+        label: "bounded-mailbox",
+        title: "Buzón acotado",
+        passage:
+          "Un buzón con capacidad limitada desacopla a los productores y evita que las ráfagas propaguen sobrecarga al consumidor.",
+        language: "es",
+        goldSpan:
+          "Un buzón con capacidad limitada desacopla a los productores y evita que las ráfagas propaguen sobrecarga al consumidor.",
+      },
+      {
+        label: "bounded-mailbox-topic",
+        title: "Métricas del buzón",
+        passage:
+          "El buzón con capacidad limitada registra profundidad de cola, productores activos y tiempos de espera.",
+        language: "es",
+      },
+    ],
+    goldLabels: ["bounded-mailbox"],
+  },
+  {
+    id: "cal-en-es-read-through-cache-fetches",
+    split: "CALIBRATION",
+    family: "CROSS_LINGUAL_PARAPHRASE",
+    query: "Does a read-through cache reduce repeated backend fetches?",
+    queryLanguage: "en",
+    candidates: [
+      {
+        label: "read-through-cache",
+        title: "Caché de lectura",
+        passage:
+          "Una caché de lectura conserva respuestas recientes y evita consultas repetidas al servicio de origen.",
+        language: "es",
+        goldSpan:
+          "Una caché de lectura conserva respuestas recientes y evita consultas repetidas al servicio de origen.",
+      },
+      {
+        label: "read-through-cache-topic",
+        title: "Métricas de caché",
+        passage:
+          "La caché de lectura registra la tasa de aciertos, el tamaño y la latencia de cada consulta.",
+        language: "es",
+      },
+    ],
+    goldLabels: ["read-through-cache"],
+  },
+  {
+    id: "cal-en-es-isolated-retries-pressure",
+    split: "CALIBRATION",
+    family: "CROSS_LINGUAL_PARAPHRASE",
+    query: "Does isolating retries reduce cascading pressure?",
+    queryLanguage: "en",
+    candidates: [
+      {
+        label: "isolated-retries",
+        title: "Reintentos aislados",
+        passage:
+          "Aislar los reintentos en un ejecutor dedicado limita que su presión se propague a otros flujos.",
+        language: "es",
+        goldSpan:
+          "Aislar los reintentos en un ejecutor dedicado limita que su presión se propague a otros flujos.",
+      },
+      {
+        label: "isolated-retries-topic",
+        title: "Métricas de reintentos",
+        passage:
+          "El ejecutor de reintentos registra latencia, cantidad de intentos y códigos de error.",
+        language: "es",
+      },
+    ],
+    goldLabels: ["isolated-retries"],
+  },
+  {
     id: "cal-same-entities-other-relation",
     split: "CALIBRATION",
     family: "HARD_NEGATIVE",
