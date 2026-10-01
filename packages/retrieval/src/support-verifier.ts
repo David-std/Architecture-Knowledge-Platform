@@ -1002,10 +1002,15 @@ function tableHeaderMatches(
 ): boolean {
   const normalized = normalizedMatchText(value);
   const tokens = normalizedAnswerabilityTokens(value);
-  return patterns.some((pattern) => patternMatches(normalized, tokens, pattern));
+  return patterns.some((pattern) =>
+    patternMatches(normalized, tokens, pattern),
+  );
 }
 
-function tableConditionWindows(passage: string, query: string): PassageWindow[] {
+function tableConditionWindows(
+  passage: string,
+  query: string,
+): PassageWindow[] {
   const anchors = queryPredicateAnchors(query, ["CONDITION"]);
   const requiredAnchorOverlap = Math.min(2, Math.max(1, anchors.length));
 
