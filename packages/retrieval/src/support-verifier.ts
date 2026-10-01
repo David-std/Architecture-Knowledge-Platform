@@ -756,9 +756,7 @@ function requirementAbsenceRelationMatches(
 
     const prefix = tokens.slice(Math.max(0, index - 10), index);
     if (
-      prefix.some((token) =>
-        ["no", "not", "never", "nunca"].includes(token),
-      )
+      prefix.some((token) => ["no", "not", "never", "nunca"].includes(token))
     ) {
       continue;
     }
