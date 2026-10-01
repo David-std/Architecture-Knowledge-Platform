@@ -838,8 +838,10 @@ function atomicClaimRelationDiagnostics(
   const objectOrScopeMatched =
     relation !== null &&
     (objectOverlap > 0 || (queryGlobalScope && excerptGlobalScope));
+  const evidenceIsQuestion = /[?？]\s*$/u.test(excerpt.trim());
   const supported =
     eligibleClaim &&
+    !evidenceIsQuestion &&
     Boolean(excerpt.trim()) &&
     relation !== null &&
     predicateMatched &&
@@ -1153,7 +1155,11 @@ function answerRequirementsMatch(
     matched.add("DATE_YEAR");
   }
   let relationRoleMatched = false;
-  if (required.includes("YES_NO")) {
+  // An interrogative sentence can state the same subject, predicate and object
+  // as the query without asserting that the relation is true. Questions are
+  // therefore never evidence for a YES_NO proposition by themselves.
+  const relationEvidenceIsQuestion = /[?？]\s*$/u.test(relationEvidence.trim());
+  if (required.includes("YES_NO") && !relationEvidenceIsQuestion) {
     const relation = queryYesNoRelationRoles(query);
     if (relation) {
       relationRoleMatched = relationRolesMatch(

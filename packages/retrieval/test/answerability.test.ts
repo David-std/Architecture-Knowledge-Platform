@@ -1615,3 +1615,21 @@ describe("retrieval answerability", () => {
     ).toThrow("minimumSalientOverlap");
   });
 });
+
+describe("questions are not evidence assertions", () => {
+  it.each([
+    "Can ALFA call BETA?",
+    "Do delivery workers share one queue?",
+    "Does a lease require renewal?",
+  ])("rejects a source that only repeats %s", (query) => {
+    const candidate = hit(2001, {
+      title: "Open questions",
+      type: "claim",
+      excerpt: query,
+      contributions: [contribution("lexical")],
+    });
+    expect(assessRetrievalAnswerability([candidate], query).supported).toBe(
+      false,
+    );
+  });
+});
