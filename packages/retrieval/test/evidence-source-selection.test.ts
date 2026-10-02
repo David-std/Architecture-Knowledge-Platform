@@ -222,3 +222,101 @@ describe("paired measurement provenance", () => {
     );
   });
 });
+
+describe("frozen evidence-alignment audit", () => {
+  type AuditEntry = {
+    questionId: string;
+    family: string;
+    citations: Array<{ unit: string; quote: string }>;
+  };
+  type AuditDefinition = {
+    version: number;
+    frozenAt: string;
+    development: AuditEntry[];
+    independent: AuditEntry[];
+  };
+
+  it("keeps abstract families disjoint and binds every gold unit to one exact source span", async () => {
+    const loaded = await loadEvidenceAdmissionPack();
+    const audit = (
+      loaded.manifest as unknown as { alignmentAudit?: AuditDefinition }
+    ).alignmentAudit;
+    expect(audit).toBeDefined();
+    expect(audit).toMatchObject({ version: 1, frozenAt: "2026-10-02" });
+
+    const definition = audit!;
+    expect(definition.development).toHaveLength(8);
+    expect(definition.independent).toHaveLength(10);
+
+    const developmentFamilies = new Set(
+      definition.development.map((entry) => entry.family),
+    );
+    const independentFamilies = new Set(
+      definition.independent.map((entry) => entry.family),
+    );
+    expect([...developmentFamilies].sort()).toEqual(
+      [
+        "DIRECT_BOOLEAN",
+        "DIRECT_CONDITION",
+        "DIRECT_ENTITY",
+        "DIRECT_VALUE",
+      ].sort(),
+    );
+    expect([...independentFamilies].sort()).toEqual(
+      [
+        "COMPOUND_SCOPE",
+        "RELATION_DIRECTION",
+        "SUBJECT_BINDING",
+        "TEMPORAL_SLOT_BINDING",
+      ].sort(),
+    );
+    expect(
+      [...developmentFamilies].filter((family) =>
+        independentFamilies.has(family),
+      ),
+    ).toEqual([]);
+
+    const cases = new Map(
+      loaded.cases.map((entry) => [entry.question.id, entry]),
+    );
+    const seen = new Set<string>();
+    const validate = (
+      entries: readonly AuditEntry[],
+      expectedSplit: "development" | "heldout",
+    ) => {
+      for (const item of entries) {
+        expect(seen.has(item.questionId)).toBe(false);
+        seen.add(item.questionId);
+        const entry = cases.get(item.questionId);
+        expect(entry?.domain.split).toBe(expectedSplit);
+        expect(
+          [...new Set(item.citations.map((citation) => citation.unit))].sort(),
+        ).toEqual([...entry!.question.gold].sort());
+        expect(item.citations).toHaveLength(entry!.question.gold.length);
+
+        for (const citation of item.citations) {
+          const unit = entry!.domain.units.find(
+            (candidate) => candidate.id === citation.unit,
+          );
+          expect(unit).toBeDefined();
+          const start = unit!.text.indexOf(citation.quote);
+          expect(start).toBeGreaterThanOrEqual(0);
+          expect(unit!.text.indexOf(citation.quote, start + 1)).toBe(-1);
+        }
+      }
+    };
+
+    validate(definition.development, "development");
+    validate(definition.independent, "heldout");
+
+    const independentCases = definition.independent.map((item) =>
+      cases.get(item.questionId)!,
+    );
+    expect(
+      independentCases.filter((entry) => entry.question.gold.length > 0),
+    ).toHaveLength(4);
+    expect(
+      independentCases.filter((entry) => entry.question.gold.length === 0),
+    ).toHaveLength(6);
+  });
+});
