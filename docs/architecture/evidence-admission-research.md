@@ -4,11 +4,7 @@ Research notes (2026-10-01) behind the evidence admission redesign. Code claims 
 
 ## What proven systems do
 
-No widely used open-source system uses topical relevance alone as a strict admission gate. Most keep a lenient filter and let the answer step abstain. The systems that decide whether a passage actually answers share three traits:
-
-1. The judge has an explicit "related but does not answer" outcome.
-2. The judge must copy the supporting text, and code verifies the copy.
-3. Thresholds are calibrated on held-out data that includes unanswerable questions.
+The inspected implementations separate retrieval, reading and answer generation in different ways. Their relevance filters are not interchangeable with AKP's stricter evidence-admission boundary. Reusable patterns include an explicit related-but-not-answering outcome, source-anchored citations and calibration with unanswerable questions. The links below document particular implementations; they do not establish a universal production architecture or transfer their accuracy to AKP.
 
 | System                                                                                                                                                                      | Gate and decision rule                                                                                                                                                                                                                                                    | Lesson for AKP                                                                                                                                                                                                                                                                                    |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -58,7 +54,7 @@ object, row, date, units and quantifiers in the requested fact. No corpus-specif
 examples, aliases or source identifiers were added.
 
 Code now maps a unique prose quote to its exact original characters, rather than
-an entire containing line. Table quotes remain bound to their original rows.
+an entire containing line. Table quotes map only to selected cell values; headers provide source scope, while neighboring values cannot supply missing answer bytes.
 Numbers/years elsewhere in a unit cannot meet a requested quantitative/temporal
 fact in the verified quote, and an open question cannot serve as an assertion.
 This is a structural safeguard; quote identity alone still does not demonstrate
@@ -85,3 +81,13 @@ Reranker scores came from unchanged recorded query/body pairs, so this measures
 admission with candidates already present, not end-to-end retrieval. The verifier
 remains optional and disabled by default. A new private end-to-end run must use
 fresh pools and input-bound score records after retrieval/index changes.
+
+## Independent sufficiency check: measured and rejected (2026-10-02)
+
+The [Sufficient Context authors' prompt](https://github.com/hljoren/sufficientcontext#sufficient-context-autorater-prompt) asks an autorater to determine whether the supplied references settle a question, including assumptions and missing steps. [RAGFlow's actual sufficiency prompt](https://github.com/infiniflow/ragflow/blob/519e7d98a5651564d4e35d6648f006cba4baaf4f/rag/prompts/sufficiency_check.md) returns a sufficiency decision and missing information. [Onyx's pointwise prompt](https://github.com/onyx-dot-app/onyx/blob/c2e5be7996373ed120f770209ffe9a6c498fc4e6/backend/onyx/prompts/search_prompts.py) explicitly rejects material concerning another context or subject. These are implemented judgment patterns, not evidence that a particular local model will judge correctly.
+
+A local development-only adaptation independently compared the selected source fact and requested fact before accepting a reader admission. It received source-bound selected cell scope, surrounding text for references, and the original question; it did not receive the first reader's verdict, answer, relevance score, expected labels or document identities. The selected quote remained unchanged. The adaptation was stricter than the published context-bundle autorater, so its result is not a replication of the paper.
+
+Using the same pinned Qwen2.5 7B Q4_K_M deployment and BGE shortlist as the controlled source-selection comparison, the second check changed gold-unit acceptance from **97/104 to 50/104**. All-admitted-unit precision rose from **99/105 (94.3%) to 50/51 (98.0%)**, but one of 29 unanswerable questions was still accepted. Strict question accuracy fell from 90.2% to 58.6%. It made 108 fresh model calls, taking 277 seconds of model-call time; the first reader used input-bound cached judgments. This is incremental verification cost, not a measurement of fresh end-to-end latency. Held-out questions were not used.
+
+**Decision:** do not add this check to the runtime. Higher selective precision obtained by discarding almost half the correct sources does not meet the existing coverage requirement, and another model judgment does not prove semantic support. Keep the quote protocol and deterministic source boundaries. Any replacement must show its precision/coverage tradeoff across independent sources and question families, including every admitted unit and citation span, before promotion. A correct source citation and a sufficient answer remain separate properties.
