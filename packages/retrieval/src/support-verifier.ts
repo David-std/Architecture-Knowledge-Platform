@@ -1220,9 +1220,7 @@ export function dateYearEvidenceMatches(
 }
 
 function explicitYearBindingsMatch(scope: string, query: string): boolean {
-  const requested = [
-    ...new Set(query.match(/\b(?:19|20)\d{2}\b/gu) ?? []),
-  ];
+  const requested = [...new Set(query.match(/\b(?:19|20)\d{2}\b/gu) ?? [])];
   if (requested.length === 0) return true;
   const available = new Set(scope.match(/\b(?:19|20)\d{2}\b/gu) ?? []);
   return requested.every((year) => available.has(year));
