@@ -1258,11 +1258,7 @@ function isLetterAt(value: string, index: number): boolean {
 
 function isNumericJoinCode(code: number): boolean {
   return (
-    code === 32 ||
-    code === 44 ||
-    code === 46 ||
-    code === 160 ||
-    code === 8239
+    code === 32 || code === 44 || code === 46 || code === 160 || code === 8239
   );
 }
 
@@ -1301,8 +1297,7 @@ function tableNumericSelectorRuns(value: string): TableNumericSelectorRun[] {
       anchorOffset -= 1;
     }
 
-    const leftCode =
-      startOffset > 0 ? value.charCodeAt(startOffset - 1) : -1;
+    const leftCode = startOffset > 0 ? value.charCodeAt(startOffset - 1) : -1;
     const rightCode =
       endOffset < value.length ? value.charCodeAt(endOffset) : -1;
     const leftNumericJoin =
@@ -1316,18 +1311,14 @@ function tableNumericSelectorRuns(value: string): TableNumericSelectorRun[] {
     const prefixedIdentifier = anchorOffset < startOffset;
     const unsafePrefix =
       !prefixedIdentifier && isUnsafeNumericPrefixCode(leftCode);
-    const unsafeSuffix =
-      rightCode === 37 || isLetterAt(value, endOffset);
+    const unsafeSuffix = rightCode === 37 || isLetterAt(value, endOffset);
 
     output.push({
       digits: value.slice(startOffset, endOffset),
       startOffset,
       anchorOffset,
       safe:
-        !leftNumericJoin &&
-        !rightNumericJoin &&
-        !unsafePrefix &&
-        !unsafeSuffix,
+        !leftNumericJoin && !rightNumericJoin && !unsafePrefix && !unsafeSuffix,
     });
   }
   return output;

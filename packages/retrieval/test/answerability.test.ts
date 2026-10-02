@@ -1243,8 +1243,7 @@ describe("retrieval answerability", () => {
       title: "Riders by line",
       type: "dashboard",
       unitType: "TABLE",
-      excerpt:
-        `| Line | Daily riders |\n|---|---|\n| ${rowKey} | 72 |`,
+      excerpt: `| Line | Daily riders |\n|---|---|\n| ${rowKey} | 72 |`,
       contributions: [contribution("vector", 0.9, 1)],
     });
 
@@ -1256,8 +1255,7 @@ describe("retrieval answerability", () => {
       title: "Riders by line",
       type: "dashboard",
       unitType: "TABLE",
-      excerpt:
-        "| Line | Daily riders |\n|---|---|\n| 3 | 72 |\n| 4 | 81 |",
+      excerpt: "| Line | Daily riders |\n|---|---|\n| 3 | 72 |\n| 4 | 81 |",
       contributions: [contribution("vector", 0.9, 1)],
     });
 
@@ -1280,8 +1278,7 @@ describe("retrieval answerability", () => {
       title: "Trips by route",
       type: "dashboard",
       unitType: "TABLE",
-      excerpt:
-        "| Route | Daily trips |\n|---|---|\n| 2 | 72 |\n| 1234 | 81 |",
+      excerpt: "| Route | Daily trips |\n|---|---|\n| 2 | 72 |\n| 1234 | 81 |",
       contributions: [contribution("vector", 0.9, 1)],
     });
 
