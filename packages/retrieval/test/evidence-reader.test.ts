@@ -43,14 +43,14 @@ function readerReturning(
 }
 
 describe("evidence quotes", () => {
-  it("maps a quoted table row back to its original row span", () => {
+  it("maps a quoted table row to the cells it actually covers", () => {
     const contextual = contextualEvidenceText({ title: "", passage: table });
     const span = locateEvidenceQuote(
       contextual,
       "Class: II; Deadline: 24 hours",
     );
     expect(span && table.slice(span.startOffset, span.endOffset)).toBe(
-      "| II | 24 hours |",
+      "II | 24 hours",
     );
   });
 
@@ -84,8 +84,34 @@ describe("evidence quotes", () => {
       "Class: II; Deadline: 24 hours",
     );
     expect(span && passage.slice(span.startOffset, span.endOffset)).toBe(
-      "| II | 24 hours |",
+      "II | 24 hours",
     );
+  });
+
+  it("maps only selected table value bytes and rejects a bare header", () => {
+    const passage = "| Price | Audit year |\n| --- | --- |\n| Unknown | 2024 |";
+    const contextual = contextualEvidenceText({ title: "Prices", passage });
+    const span = locateEvidenceQuote(contextual, "Price: Unknown");
+    expect(span && passage.slice(span.startOffset, span.endOffset)).toBe(
+      "Unknown",
+    );
+    expect(locateEvidenceQuote(contextual, "Price:")).toBeNull();
+    expect(locateEvidenceQuote(contextual, "Audit year:")).toBeNull();
+  });
+
+  it("preserves cell offsets through Unicode and link normalization", () => {
+    const passage =
+      "| Item | Count |\n| --- | --- |\n| Café 🧭 | [72](https://example.org/2024) |";
+    const contextual = contextualEvidenceText({ title: "Inventory", passage });
+    const name = locateEvidenceQuote(contextual, "Item: CAFÉ 🧭");
+    const count = locateEvidenceQuote(contextual, "Count: 72");
+    expect(name && passage.slice(name.startOffset, name.endOffset)).toBe(
+      "Café 🧭",
+    );
+    expect(count && passage.slice(count.startOffset, count.endOffset)).toBe(
+      "72",
+    );
+    expect(locateEvidenceQuote(contextual, "2024")).toBeNull();
   });
 
   it("does not fabricate a location for repeated prose", () => {
@@ -179,7 +205,7 @@ describe("evidence reader replies", () => {
 });
 
 describe("reader evidence verifier", () => {
-  it("supports only a verbatim quote and points at its row", async () => {
+  it("supports only a verbatim quote and points at its cells", async () => {
     const reader = readerReturning(() => ({
       answers: true,
       quote: "Class: II; Deadline: 24 hours",
@@ -195,7 +221,7 @@ describe("reader evidence verifier", () => {
         result.evidenceSpan!.startOffset,
         result.evidenceSpan!.endOffset,
       ),
-    ).toBe("| II | 24 hours |");
+    ).toBe("II | 24 hours");
     expect(reader.calls[0]).toEqual({
       query: "What is the Class II deadline?",
       scope: "Recalls > Quality",

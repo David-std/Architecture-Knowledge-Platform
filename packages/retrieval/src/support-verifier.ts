@@ -1183,13 +1183,17 @@ function queryPredicateAnchors(
   ];
 }
 
-function quantitativeEvidenceMatches(window: string, query: string): boolean {
+export function quantitativeEvidenceMatches(
+  window: string,
+  query: string,
+  scope: string = window,
+): boolean {
   const hasNumber = /(?:^|\s)(?:[$€£S\/]\s*)?\d+(?:[.,]\d+)?(?:\s*%|\b)/u.test(
     window,
   );
   if (!hasNumber) return false;
   const normalizedQuery = normalizedMatchText(query);
-  const normalizedWindow = normalizedMatchText(window);
+  const normalizedWindow = normalizedMatchText(scope);
   const asksMonthly = /\b(month|monthly|per month|mensual|por mes|mes)\b/u.test(
     normalizedQuery,
   );
@@ -1202,7 +1206,10 @@ function quantitativeEvidenceMatches(window: string, query: string): boolean {
   return true;
 }
 
-function dateYearEvidenceMatches(window: string, query: string): boolean {
+export function dateYearEvidenceMatches(
+  window: string,
+  query: string,
+): boolean {
   const normalizedQuery = normalizedMatchText(query);
   const asksYear = /\b(year|ano)\b/u.test(normalizedQuery);
   if (asksYear) return /\b(?:19|20)\d{2}\b/u.test(window);

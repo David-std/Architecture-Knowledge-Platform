@@ -31,7 +31,7 @@ export interface ContextualEvidenceInput {
 export interface ContextualEvidenceSegment {
   /** One passage line, or one table row restated with its column headers. */
   readonly text: string;
-  /** Source positions per UTF-16 character of the normalized prose key. */
+  /** Source positions per UTF-16 character of the normalized body key. */
   readonly characterSpans?: readonly {
     startOffset: number;
     endOffset: number;
@@ -70,10 +70,13 @@ function withoutLinkTargets(value: string): string {
 }
 
 /** Source mapping for prose normalization; link targets cannot supply quotes. */
-function proseCharacterSpans(
+function visibleProse(
   raw: string,
   base: number,
-): Array<{ startOffset: number; endOffset: number }> {
+): {
+  text: string;
+  positions: Array<{ startOffset: number; endOffset: number }>;
+} {
   let visible = "";
   const positions: Array<{ startOffset: number; endOffset: number }> = [];
   const append = (text: string, start: number, end?: number): void => {
@@ -94,6 +97,13 @@ function proseCharacterSpans(
   }
   append(raw.slice(cursor), cursor);
 
+  return { text: visible, positions };
+}
+
+function normalizedCharacterSpans(
+  visible: string,
+  positions: Array<{ startOffset: number; endOffset: number }>,
+): Array<{ startOffset: number; endOffset: number }> {
   let normalized = "";
   const normalizedPositions: typeof positions = [];
   for (const part of new Intl.Segmenter("und", {
@@ -127,6 +137,11 @@ function proseCharacterSpans(
   const prefix = key.match(/^["'“”‘’«»\s]+/u)?.[0].length ?? 0;
   const suffix = key.match(/["'“”‘’«»\s]+$/u)?.[0].length ?? 0;
   return retained.slice(prefix, suffix ? -suffix : undefined);
+}
+
+function proseCharacterSpans(raw: string, base: number) {
+  const visible = visibleProse(raw, base);
+  return normalizedCharacterSpans(visible.text, visible.positions);
 }
 
 function textSegments(
@@ -169,19 +184,43 @@ function tableSegments(
     collapsed(withoutLinkTargets(cell.source)),
   );
   const rows = table.rows.flatMap((row) => {
-    const text = row.cells
-      .map((cell) => {
-        const value = collapsed(withoutLinkTargets(cell.source));
-        const header = headers[cell.columnIndex];
-        return value && header ? `${header}: ${value}` : value;
-      })
-      .filter(Boolean)
-      .join("; ");
-    return text ? [{ text, sourceSpan: row.span }] : [];
+    let raw = "";
+    const positions: Array<{ startOffset: number; endOffset: number }> = [];
+    const appendContext = (text: string, offset: number): void => {
+      raw += text;
+      for (let index = 0; index < text.length; index++)
+        positions.push({ startOffset: offset, endOffset: offset });
+    };
+    for (const cell of row.cells) {
+      const visible = visibleProse(cell.source, cell.span.startOffset);
+      if (!collapsed(visible.text)) continue;
+      if (raw) appendContext("; ", positions.at(-1)!.endOffset);
+      const header = headers[cell.columnIndex];
+      // Restated headers identify the column, but contain no answer bytes.
+      if (header) appendContext(`${header}: `, cell.span.startOffset);
+      raw += visible.text;
+      positions.push(...visible.positions);
+    }
+    return raw ? [{ raw, positions, sourceSpan: row.span }] : [];
   });
-  return rows.map((row, index) =>
-    index < rows.length - 1 ? { ...row, text: `${row.text}.` } : row,
-  );
+  return rows.map((row, index) => {
+    const continued = index < rows.length - 1;
+    const raw = continued ? `${row.raw}.` : row.raw;
+    const positions = continued
+      ? [
+          ...row.positions,
+          {
+            startOffset: row.positions.at(-1)!.endOffset,
+            endOffset: row.positions.at(-1)!.endOffset,
+          },
+        ]
+      : row.positions;
+    return {
+      text: collapsed(raw),
+      sourceSpan: row.sourceSpan,
+      characterSpans: normalizedCharacterSpans(raw, positions),
+    };
+  });
 }
 
 export function contextualEvidenceText(
@@ -221,7 +260,7 @@ function quoteKey(value: string): string {
 
 /**
  * Locate a quoted answer inside the contextual body and return the original
- * exact prose span or the original table rows it covers. Returns null when the
+ * exact prose or table-cell span it covers. Other cells cannot donate facts. Returns null when the
  * quote is not verbatim body text, so a paraphrase or a heading cannot pass
  * as evidence.
  */
@@ -256,16 +295,19 @@ export function locateEvidenceQuote(
         mappingInvalid = true;
         return;
       }
+      const selected = segment.characterSpans
+        ?.slice(
+          Math.max(0, position - start),
+          Math.min(key.length, position + needle.length - start),
+        )
+        .filter((value) => value.endOffset > value.startOffset);
+      if (selected && selected.length === 0) return;
       if (first < 0) {
         first = index;
-        mappedStart =
-          segment.characterSpans?.[Math.max(0, position - start)]?.startOffset;
+        mappedStart = selected?.[0]?.startOffset;
       }
       last = index;
-      mappedEnd =
-        segment.characterSpans?.[
-          Math.min(key.length, position + needle.length - start) - 1
-        ]?.endOffset;
+      mappedEnd = selected?.at(-1)?.endOffset;
     }
     offset = end + 1;
   });
@@ -275,6 +317,8 @@ export function locateEvidenceQuote(
       mappedStart ?? contextual.segments[first]!.sourceSpan.startOffset,
     endOffset: mappedEnd ?? contextual.segments[last]!.sourceSpan.endOffset,
   };
+  // A header/separator without selected value bytes is context, not evidence.
+  if (span.endOffset <= span.startOffset) return null;
   if (
     contextual.hiddenSourceSpans?.some(
       (hidden) =>
@@ -284,6 +328,54 @@ export function locateEvidenceQuote(
   )
     return null;
   return span;
+}
+
+/**
+ * Headers scope selected table values without enlarging their source range.
+ * Only valueText can satisfy numeric/date presence; header digits cannot.
+ */
+export function contextualEvidenceSpanText(
+  passage: string,
+  span: { startOffset: number; endOffset: number },
+): { scopedText: string; valueText: string } {
+  const visible = markdownVisibleSource(passage).text;
+  const scoped: string[] = [];
+  const values: string[] = [];
+  const addProse = (start: number, end: number): void => {
+    if (end <= start) return;
+    const text = collapsed(withoutLinkTargets(visible.slice(start, end)));
+    if (text) {
+      scoped.push(text);
+      values.push(text);
+    }
+  };
+  let cursor = span.startOffset;
+  for (const table of markdownTableEvidence(visible)) {
+    if (
+      table.span.endOffset <= span.startOffset ||
+      table.span.startOffset >= span.endOffset
+    )
+      continue;
+    addProse(cursor, Math.min(span.endOffset, table.span.startOffset));
+    for (const row of table.rows)
+      for (const cell of row.cells) {
+        const start = Math.max(span.startOffset, cell.span.startOffset);
+        const end = Math.min(span.endOffset, cell.span.endOffset);
+        if (end <= start) continue;
+        const value = collapsed(withoutLinkTargets(visible.slice(start, end)));
+        if (!value) continue;
+        const header = collapsed(
+          withoutLinkTargets(
+            table.header.cells[cell.columnIndex]?.source ?? "",
+          ),
+        );
+        scoped.push(header ? `${header}: ${value}` : value);
+        values.push(value);
+      }
+    cursor = Math.max(cursor, table.span.endOffset);
+  }
+  addProse(cursor, span.endOffset);
+  return { scopedText: scoped.join("; "), valueText: values.join("; ") };
 }
 
 export interface CrossEncoderPair {

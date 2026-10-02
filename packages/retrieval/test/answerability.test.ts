@@ -2100,3 +2100,101 @@ describe("hidden Markdown assertions", () => {
     expect(result.supported).toBe(false);
   });
 });
+
+describe("reader table-cell fact boundary", () => {
+  it.each([
+    [
+      "How much is the monthly service cost?",
+      "| Monthly service cost | Capacity baseline |\n| --- | --- |\n| Monthly service cost unknown | 72 |",
+      "Monthly service cost: Monthly service cost unknown",
+    ],
+    [
+      "How many seats are available?",
+      "| Seats available | Capacity baseline |\n| --- | --- |\n| Seat count unknown | 72 |",
+      "Seats available: Seat count unknown",
+    ],
+    [
+      "In what year did the service begin?",
+      "| Service beginning | Previous audit |\n| --- | --- |\n| Service start year unknown | 2024 |",
+      "Service beginning: Service start year unknown",
+    ],
+    [
+      "In what year did the service begin?",
+      "| Service beginning 2024 | Previous audit |\n| --- | --- |\n| Service start year unknown | 2023 |",
+      "Service beginning 2024: Service start year unknown",
+    ],
+  ])(
+    "does not borrow an unrelated value from the same row: %s",
+    async (query, excerpt, quote) => {
+      const candidate = hit(990, {
+        title: "Service facts",
+        excerpt,
+        unitType: "TABLE",
+        type: "claim",
+        contributions: [contribution("vector", 0.99)],
+      });
+      const verifier = new ReaderEvidenceVerifier({
+        reader: {
+          id: "fixture",
+          judge: async () => ({ answers: true, quote }),
+        },
+      });
+      const result = await assessRetrievalAnswerabilityWithVerifier(
+        [candidate],
+        query,
+        verifier,
+        { mode: "ENFORCE" },
+      );
+      expect(result.supportedCandidateKeys).toEqual([]);
+      expect(
+        result.candidateSignals[0]!.queryConditionedEvidence,
+      ).toMatchObject({
+        decision: "INSUFFICIENT",
+        reason: "EVIDENCE_SPAN_MISSING_REQUIRED_FACT",
+      });
+    },
+  );
+  it.each([
+    [
+      "How much is the monthly service cost?",
+      "| Monthly service cost | Capacity baseline |\n| --- | --- |\n| 12 euros | 72 |",
+      "Monthly service cost: 12 euros",
+      "12 euros",
+    ],
+    [
+      "In what year did the service begin?",
+      "| Service beginning | Previous audit |\n| --- | --- |\n| 2025 | 2024 |",
+      "Service beginning: 2025",
+      "2025",
+    ],
+  ])(
+    "retains a directly quoted quantity or year: %s",
+    async (query, excerpt, quote, exact) => {
+      const candidate = hit(991, {
+        title: "Service facts",
+        excerpt,
+        unitType: "TABLE",
+        type: "claim",
+        contributions: [contribution("vector", 0.99)],
+      });
+      const verifier = new ReaderEvidenceVerifier({
+        reader: {
+          id: "fixture",
+          judge: async () => ({ answers: true, quote }),
+        },
+      });
+      const result = await assessRetrievalAnswerabilityWithVerifier(
+        [candidate],
+        query,
+        verifier,
+        { mode: "ENFORCE" },
+      );
+      expect(result.supportedCandidateKeys).toEqual([
+        retrievalAnswerabilityCandidateKey(candidate),
+      ]);
+      const span =
+        result.candidateSignals[0]!.queryConditionedEvidence!.evidenceSpan!;
+      expect(excerpt.slice(span.startOffset, span.endOffset)).toBe(exact);
+    },
+  );
+});

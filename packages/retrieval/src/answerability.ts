@@ -1,7 +1,10 @@
+import { contextualEvidenceSpanText } from "./contextual-evidence.js";
 import { markdownVisibleSource } from "./markdown-visible-source.js";
 import type { SearchHit } from "@akp/contracts";
 import {
   DEFAULT_DETERMINISTIC_PASSAGE_SUPPORT_POLICY,
+  quantitativeEvidenceMatches,
+  dateYearEvidenceMatches,
   resolveDeterministicPassageSupportPolicy,
   verifyDeterministicPassageSupport,
   type DeterministicPassageSupportPolicy,
@@ -486,17 +489,25 @@ function exactCandidatePassage(hit: SearchHit): string {
   return hit.excerpt.trim();
 }
 
-function hardDeterministicRequirementsSatisfied(signal: {
-  passageSupport: Pick<
-    CandidatePassageSupport,
-    "requiredAnswerCues" | "matchedAnswerCues"
-  >;
-}): boolean {
-  return (["QUANTITY", "DATE_YEAR"] as const).every(
-    (cue) =>
-      !signal.passageSupport.requiredAnswerCues.includes(cue) ||
-      signal.passageSupport.matchedAnswerCues.includes(cue),
-  );
+function hardDeterministicRequirementsSatisfied(
+  signal: {
+    passageSupport: Pick<
+      CandidatePassageSupport,
+      "requiredAnswerCues" | "matchedAnswerCues"
+    >;
+  },
+  evidence: { query: string; valueText: string; scopedText: string },
+): boolean {
+  return (["QUANTITY", "DATE_YEAR"] as const).every((cue) => {
+    if (!signal.passageSupport.requiredAnswerCues.includes(cue)) return true;
+    return cue === "QUANTITY"
+      ? quantitativeEvidenceMatches(
+          evidence.valueText,
+          evidence.query,
+          evidence.scopedText,
+        )
+      : dateYearEvidenceMatches(evidence.valueText, evidence.query);
+  });
 }
 
 function validateQueryConditionedVerification(
@@ -681,9 +692,9 @@ function enforcedQueryConditionedReason(
   if (trace.decision !== "SUPPORTS") {
     return "QUERY_CONDITIONED_INSUFFICIENT";
   }
-  return hardDeterministicRequirementsSatisfied(baseline)
-    ? "QUERY_CONDITIONED_SUPPORT"
-    : "QUERY_CONDITIONED_INSUFFICIENT";
+  // SUPPORTS reaches here only after validating its selected source facts.
+  // A baseline over the raw table cannot veto the verified column scope.
+  return "QUERY_CONDITIONED_SUPPORT";
 }
 
 /**
@@ -744,16 +755,13 @@ export async function assessRetrievalAnswerabilityWithVerifier(
       hit &&
       signal.passageSupport.reason !== "DIRECT_CHANNEL_SUPPORT"
     ) {
-      // A number/year elsewhere in the unit cannot satisfy a requirement in
-      // the selected evidence. Recheck only the exact span, without widening it.
+      // Selected cell values retain their column scope, never sibling facts.
+      const evidence = contextualEvidenceSpanText(
+        exactCandidatePassage(hit),
+        trace.evidenceSpan,
+      );
       const passageSupport = verifyDeterministicPassageSupport(
-        {
-          ...hit,
-          excerpt: exactCandidatePassage(hit).slice(
-            trace.evidenceSpan.startOffset,
-            trace.evidenceSpan.endOffset,
-          ),
-        },
+        { ...hit, excerpt: evidence.scopedText },
         query,
         policyInput,
       );
@@ -763,7 +771,12 @@ export async function assessRetrievalAnswerabilityWithVerifier(
           decision: "INSUFFICIENT",
           reason: "EVIDENCE_SPAN_NOT_ASSERTION",
         };
-      } else if (!hardDeterministicRequirementsSatisfied({ passageSupport })) {
+      } else if (
+        !hardDeterministicRequirementsSatisfied(
+          { passageSupport },
+          { ...evidence, query },
+        )
+      ) {
         trace = {
           ...trace,
           decision: "INSUFFICIENT",

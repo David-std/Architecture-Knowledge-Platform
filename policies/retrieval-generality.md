@@ -64,3 +64,15 @@ A quote spanning visible text on both sides of a comment is not represented as
 a contiguous source quote. This follows [CommonMark HTML and code grammar](https://spec.commonmark.org/0.31.2/), not question vocabulary.
 The baseline addition is solely the shared parser module import; no answer
 aliases or corpus terms are introduced.
+
+### Selected table values and column scope
+
+A normalized table quote must map to the value characters actually selected,
+not automatically to the whole row. Restated column headers provide scope,
+not answer bytes. Core code may reconstruct a selected value's header from the
+original table; it may not import an unselected cell's amount or date. Numeric
+and date presence must be demonstrated by selected values, even when the header
+contains digits. The existing quantity/date format checks are reused. This
+source-mapping correction adds no question synonyms, domain concepts or global
+threshold changes. Coordinate selection remains experimental until source-level
+and semantic held-out measurements justify promotion.
