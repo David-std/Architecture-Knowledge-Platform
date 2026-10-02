@@ -337,10 +337,23 @@ export function locateEvidenceQuote(
 export function contextualEvidenceSpanText(
   passage: string,
   span: { startOffset: number; endOffset: number },
-): { scopedText: string; valueText: string } {
+): {
+  scopedText: string;
+  valueText: string;
+  selectedCells: ReadonlyArray<{
+    header: string;
+    value: string;
+    rowScope: string;
+  }>;
+} {
   const visible = markdownVisibleSource(passage).text;
   const scoped: string[] = [];
   const values: string[] = [];
+  const selectedCells: Array<{
+    header: string;
+    value: string;
+    rowScope: string;
+  }> = [];
   const addProse = (start: number, end: number): void => {
     if (end <= start) return;
     const text = collapsed(withoutLinkTargets(visible.slice(start, end)));
@@ -369,13 +382,35 @@ export function contextualEvidenceSpanText(
             table.header.cells[cell.columnIndex]?.source ?? "",
           ),
         );
-        scoped.push(header ? `${header}: ${value}` : value);
+        const rowKey = cell.columnIndex > 0 ? row.cells[0] : undefined;
+        const rowHeader = rowKey
+          ? collapsed(withoutLinkTargets(table.header.cells[0]?.source ?? ""))
+          : "";
+        const rowValue = rowKey
+          ? collapsed(
+              withoutLinkTargets(
+                visible.slice(rowKey.span.startOffset, rowKey.span.endOffset),
+              ),
+            )
+          : "";
+        const rowScope = rowValue
+          ? rowHeader
+            ? `${rowHeader}: ${rowValue}`
+            : rowValue
+          : "";
+        const selectedValue = header ? `${header}: ${value}` : value;
+        scoped.push(rowScope ? `${rowScope}; ${selectedValue}` : selectedValue);
         values.push(value);
+        selectedCells.push({ header, value, rowScope });
       }
     cursor = Math.max(cursor, table.span.endOffset);
   }
   addProse(cursor, span.endOffset);
-  return { scopedText: scoped.join("; "), valueText: values.join("; ") };
+  return {
+    scopedText: scoped.join("; "),
+    valueText: values.join("; "),
+    selectedCells,
+  };
 }
 
 export interface CrossEncoderPair {

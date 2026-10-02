@@ -1219,11 +1219,18 @@ export function dateYearEvidenceMatches(
   );
 }
 
-function explicitYearBindingsMatch(scope: string, query: string): boolean {
-  const requested = normalizedAnswerabilityTokens(query).filter((token) => {
-    const value = Number(token);
-    return Number.isInteger(value) && value >= 1900 && value <= 2099;
+export function explicitYearValues(value: string): string[] {
+  return normalizedAnswerabilityTokens(value).filter((token) => {
+    const year = Number(token);
+    return Number.isInteger(year) && year >= 1900 && year <= 2099;
   });
+}
+
+export function explicitYearBindingsMatch(
+  scope: string,
+  query: string,
+): boolean {
+  const requested = explicitYearValues(query);
   if (requested.length === 0) return true;
   const available = new Set(normalizedAnswerabilityTokens(scope));
   return requested.every((year) => available.has(year));

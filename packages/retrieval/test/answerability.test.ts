@@ -2223,3 +2223,279 @@ describe("reader table-cell fact boundary", () => {
     },
   );
 });
+
+describe("reader explicit reporting-period boundary", () => {
+  it.each([
+    [
+      "What was service availability in 2023?",
+      "| Indicator | 2025 |\n| --- | --- |\n| Service availability | 99.2% |",
+      "2025: 99.2%",
+    ],
+    [
+      "What was service availability in 2023?",
+      "| Indicator | 2023 | 2025 |\n| --- | --- | --- |\n| Service availability | Unknown | 99.2% |",
+      "2025: 99.2%",
+    ],
+  ])(
+    "rejects a reader choosing a different reporting period: %s",
+    async (query, excerpt, quote) => {
+      const candidate = hit(2201, {
+        title: "Availability report",
+        type: "dashboard",
+        unitType: "TABLE",
+        excerpt,
+        contributions: [contribution("vector", 0.99)],
+      });
+      const verifier = new ReaderEvidenceVerifier({
+        reader: {
+          id: "fixture",
+          judge: async () => ({ answers: true, quote }),
+        },
+      });
+      const result = await assessRetrievalAnswerabilityWithVerifier(
+        [candidate],
+        query,
+        verifier,
+        { mode: "ENFORCE" },
+      );
+      expect(result.supported).toBe(false);
+      expect(result.candidateSignals[0]?.queryConditionedEvidence?.reason).toBe(
+        "EVIDENCE_SPAN_MISSING_REQUIRED_FACT",
+      );
+    },
+  );
+
+  it("accepts the matching reporting period's actual cell value", async () => {
+    const candidate = hit(2202, {
+      title: "Availability report",
+      type: "dashboard",
+      unitType: "TABLE",
+      excerpt:
+        "| Indicator | 2023 | 2025 |\n| --- | --- | --- |\n| Service availability | 99.1% | 99.2% |",
+      contributions: [contribution("vector", 0.99)],
+    });
+    const verifier = new ReaderEvidenceVerifier({
+      reader: {
+        id: "fixture",
+        judge: async () => ({ answers: true, quote: "2023: 99.1%" }),
+      },
+    });
+    const result = await assessRetrievalAnswerabilityWithVerifier(
+      [candidate],
+      "What was service availability in 2023?",
+      verifier,
+      { mode: "ENFORCE" },
+    );
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(candidate),
+    ]);
+  });
+});
+
+describe("reader period-value binding", () => {
+  it("requires an actual quantity for each requested reporting period", async () => {
+    const candidate = hit(2213, {
+      title: "Fleet statistics",
+      type: "dashboard",
+      unitType: "TABLE",
+      excerpt:
+        "| Metric | 2023 | 2025 |\n| --- | --- | --- |\n| Active vehicles | Unknown | 72 |",
+      contributions: [contribution("vector", 0.99)],
+    });
+    const verifier = new ReaderEvidenceVerifier({
+      reader: {
+        id: "fixture",
+        judge: async () => ({
+          answers: true,
+          quote: "Metric: Active vehicles; 2023: Unknown; 2025: 72",
+        }),
+      },
+    });
+    const result = await assessRetrievalAnswerabilityWithVerifier(
+      [candidate],
+      "How many active vehicles were there in 2023 and 2025?",
+      verifier,
+      { mode: "ENFORCE" },
+    );
+    expect(result.supported).toBe(false);
+  });
+
+  it("does not let title context override an explicit period in selected prose", async () => {
+    const candidate = hit(2214, {
+      title: "Fleet statistics 2023",
+      excerpt: "In 2025, the active fleet had 72 vehicles.",
+      contributions: [contribution("vector", 0.99)],
+    });
+    const verifier = new ReaderEvidenceVerifier({
+      reader: {
+        id: "fixture",
+        judge: async () => ({
+          answers: true,
+          quote: candidate.excerpt,
+        }),
+      },
+    });
+    const result = await assessRetrievalAnswerabilityWithVerifier(
+      [candidate],
+      "How many active vehicles were there in 2023?",
+      verifier,
+      { mode: "ENFORCE" },
+    );
+    expect(result.supported).toBe(false);
+  });
+  it.each([
+    [
+      "Fleet statistics",
+      [],
+      "| Metric | 2023 | 2025 |\n| --- | --- | --- |\n| Active vehicles | Unknown | 72 |",
+      "Metric: Active vehicles; 2023: Unknown; 2025: 72",
+    ],
+    [
+      "Fleet statistics 2023",
+      [],
+      "| Metric | 2025 |\n| --- | --- |\n| Active vehicles | 72 |",
+      "2025: 72",
+    ],
+  ])(
+    "does not borrow another period's numeric value even when the title matches",
+    async (title, headingPath, excerpt, quote) => {
+      const candidate = hit(2210, {
+        title,
+        headingPath,
+        type: "dashboard",
+        unitType: "TABLE",
+        excerpt,
+        contributions: [contribution("vector", 0.99)],
+      });
+      const verifier = new ReaderEvidenceVerifier({
+        reader: {
+          id: "fixture",
+          judge: async () => ({ answers: true, quote }),
+        },
+      });
+      const result = await assessRetrievalAnswerabilityWithVerifier(
+        [candidate],
+        "How many active vehicles were there in 2023?",
+        verifier,
+        { mode: "ENFORCE" },
+      );
+      expect(result.supported).toBe(false);
+    },
+  );
+
+  it.each([
+    ["Fleet statistics 2023", []],
+    ["Fleet statistics", ["Annual reporting", "2023"]],
+  ])(
+    "retains a period supplied by source metadata when the selected column has no period",
+    async (title, headingPath) => {
+      const candidate = hit(2211, {
+        title,
+        headingPath,
+        type: "dashboard",
+        unitType: "TABLE",
+        excerpt: "| Metric | Actual |\n| --- | --- |\n| Active vehicles | 72 |",
+        contributions: [contribution("vector", 0.99)],
+      });
+      const verifier = new ReaderEvidenceVerifier({
+        reader: {
+          id: "fixture",
+          judge: async () => ({ answers: true, quote: "Actual: 72" }),
+        },
+      });
+      const result = await assessRetrievalAnswerabilityWithVerifier(
+        [candidate],
+        "How many active vehicles were there in 2023?",
+        verifier,
+        { mode: "ENFORCE" },
+      );
+      expect(result.supported).toBe(true);
+    },
+  );
+
+  it("retains both requested periods in a comparison", async () => {
+    const candidate = hit(2212, {
+      title: "Fleet statistics",
+      type: "dashboard",
+      unitType: "TABLE",
+      excerpt:
+        "| Metric | 2023 | 2025 |\n| --- | --- | --- |\n| Active vehicles | 65 | 72 |",
+      contributions: [contribution("vector", 0.99)],
+    });
+    const verifier = new ReaderEvidenceVerifier({
+      reader: {
+        id: "fixture",
+        judge: async () => ({
+          answers: true,
+          quote: "Metric: Active vehicles; 2023: 65; 2025: 72",
+        }),
+      },
+    });
+    const result = await assessRetrievalAnswerabilityWithVerifier(
+      [candidate],
+      "How many active vehicles were there in 2023 and 2025?",
+      verifier,
+      { mode: "ENFORCE" },
+    );
+    expect(result.supported).toBe(true);
+  });
+});
+
+describe("reader row context without numeric donation", () => {
+  it.each([
+    [
+      "How much was the monthly service cost in 2023?",
+      "| Metric | 2023 | 2025 |\n| --- | --- | --- |\n| Monthly service cost | USD 72 | USD 90 |",
+      "2023: USD 72",
+      true,
+    ],
+    [
+      "How much was the monthly service cost in 2023?",
+      "| Metric | 2023 | 2025 |\n| --- | --- | --- |\n| Monthly service cost | Unknown | USD 90 |",
+      "Metric: Monthly service cost; 2023: Unknown; 2025: USD 90",
+      false,
+    ],
+    [
+      "How many active vehicles were there in 2023?",
+      "| Year | Active vehicles |\n| --- | --- |\n| 2023 | 65 |\n| 2025 | 72 |",
+      "Year: 2023; Active vehicles: 65",
+      true,
+    ],
+    [
+      "How many active vehicles were there in 2023?",
+      "| Year | Active vehicles |\n| --- | --- |\n| 2023 | Unknown |\n| 2025 | 72 |",
+      "Year: 2025; Active vehicles: 72",
+      false,
+    ],
+    [
+      "How many active vehicles were there in 2023?",
+      "| Year | Active vehicles |\n| --- | --- |\n| 2023 | Unknown |\n| 2025 | 72 |",
+      "Active vehicles: Unknown",
+      false,
+    ],
+  ])(
+    "binds row/column source context to selected values: %s",
+    async (query, excerpt, quote, supported) => {
+      const candidate = hit(2220, {
+        title: "Operational statistics",
+        type: "dashboard",
+        unitType: "TABLE",
+        excerpt,
+        contributions: [contribution("vector", 0.99)],
+      });
+      const verifier = new ReaderEvidenceVerifier({
+        reader: {
+          id: "fixture",
+          judge: async () => ({ answers: true, quote }),
+        },
+      });
+      const result = await assessRetrievalAnswerabilityWithVerifier(
+        [candidate],
+        query,
+        verifier,
+        { mode: "ENFORCE" },
+      );
+      expect(result.supported).toBe(supported);
+    },
+  );
+});

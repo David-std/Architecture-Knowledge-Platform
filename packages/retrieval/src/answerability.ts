@@ -5,6 +5,8 @@ import {
   DEFAULT_DETERMINISTIC_PASSAGE_SUPPORT_POLICY,
   quantitativeEvidenceMatches,
   dateYearEvidenceMatches,
+  explicitYearBindingsMatch,
+  explicitYearValues,
   resolveDeterministicPassageSupportPolicy,
   verifyDeterministicPassageSupport,
   type DeterministicPassageSupportPolicy,
@@ -496,17 +498,27 @@ function hardDeterministicRequirementsSatisfied(
       "requiredAnswerCues" | "matchedAnswerCues"
     >;
   },
-  evidence: { query: string; valueText: string; scopedText: string },
+  evidence: {
+    query: string;
+    valueText: string;
+    scopedText: string;
+    periodScope: string;
+    factGroups?: readonly { valueText: string; scopedText: string }[];
+  },
 ): boolean {
+  if (!explicitYearBindingsMatch(evidence.periodScope, evidence.query))
+    return false;
   return (["QUANTITY", "DATE_YEAR"] as const).every((cue) => {
     if (!signal.passageSupport.requiredAnswerCues.includes(cue)) return true;
-    return cue === "QUANTITY"
-      ? quantitativeEvidenceMatches(
-          evidence.valueText,
-          evidence.query,
-          evidence.scopedText,
-        )
-      : dateYearEvidenceMatches(evidence.valueText, evidence.query);
+    return (evidence.factGroups ?? [evidence]).every((group) =>
+      cue === "QUANTITY"
+        ? quantitativeEvidenceMatches(
+            group.valueText,
+            evidence.query,
+            group.scopedText,
+          )
+        : dateYearEvidenceMatches(group.valueText, evidence.query),
+    );
   });
 }
 
@@ -760,6 +772,53 @@ export async function assessRetrievalAnswerabilityWithVerifier(
         exactCandidatePassage(hit),
         trace.evidenceSpan,
       );
+      // Explicit periods in selected columns take precedence over wider
+      // title/heading context. A model cannot substitute a neighboring period.
+      const requestedYears = explicitYearValues(query);
+      const periodScopeForCell = (
+        cell: (typeof evidence.selectedCells)[number],
+      ) =>
+        explicitYearValues(cell.header).length ? cell.header : cell.rowScope;
+      const periodCells = requestedYears.length
+        ? evidence.selectedCells.filter(
+            (cell) => explicitYearValues(periodScopeForCell(cell)).length > 0,
+          )
+        : [];
+      const matchingPeriodCells = periodCells.filter((cell) =>
+        explicitYearValues(periodScopeForCell(cell)).some((year) =>
+          requestedYears.includes(year),
+        ),
+      );
+      const periodEvidence = periodCells.length
+        ? {
+            valueText: matchingPeriodCells.map((cell) => cell.value).join("; "),
+            scopedText: evidence.scopedText,
+            periodScope: periodCells.map(periodScopeForCell).join("; "),
+            factGroups: requestedYears.map((year) => {
+              const cells = matchingPeriodCells.filter((cell) =>
+                explicitYearValues(periodScopeForCell(cell)).includes(year),
+              );
+              return {
+                valueText: cells.map((cell) => cell.value).join("; "),
+                scopedText: cells
+                  .map((cell) =>
+                    [cell.rowScope, cell.header, cell.value].join("; "),
+                  )
+                  .join("; "),
+              };
+            }),
+          }
+        : {
+            valueText: evidence.valueText,
+            scopedText: evidence.scopedText,
+            periodScope: explicitYearValues(evidence.scopedText).length
+              ? evidence.scopedText
+              : [
+                  hit.title,
+                  ...(hit.headingPath ?? []),
+                  evidence.scopedText,
+                ].join(" "),
+          };
       const passageSupport = verifyDeterministicPassageSupport(
         { ...hit, excerpt: evidence.scopedText },
         query,
@@ -774,7 +833,7 @@ export async function assessRetrievalAnswerabilityWithVerifier(
       } else if (
         !hardDeterministicRequirementsSatisfied(
           { passageSupport },
-          { ...evidence, query },
+          { ...periodEvidence, query },
         )
       ) {
         trace = {
