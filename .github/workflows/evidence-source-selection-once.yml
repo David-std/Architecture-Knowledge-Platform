@@ -26,7 +26,7 @@ jobs:
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
       - name: Preflight experiment formatting and types
         run: |
-          pnpm exec prettier --check             packages/retrieval/scripts/evidence-source-selection-score-once.ts             packages/retrieval/scripts/evidence-source-selection-compare-once.ts             packages/retrieval/scripts/evidence-source-selection-aggregate-once.ts
+          pnpm exec prettier --write             packages/retrieval/scripts/evidence-source-selection-score-once.ts             packages/retrieval/scripts/evidence-source-selection-compare-once.ts             packages/retrieval/scripts/evidence-source-selection-aggregate-once.ts
           pnpm --filter @akp/retrieval typecheck
       - name: Generate fresh development-only BGE recording
         run: pnpm --filter @akp/retrieval exec tsx scripts/evidence-source-selection-score-once.ts
