@@ -1241,6 +1241,83 @@ interface ShortNumericRun {
   startOffset: number;
 }
 
+function asciiDigitAt(value: string, index: number): boolean {
+  if (index < 0 || index >= value.length) return false;
+  const code = value.charCodeAt(index);
+  return code >= 48 && code <= 57;
+}
+
+function whitespaceCode(code: number): boolean {
+  return (
+    code === 9 ||
+    code === 10 ||
+    code === 13 ||
+    code === 32 ||
+    code === 160 ||
+    code === 8239
+  );
+}
+
+function previousNonWhitespaceIndex(value: string, index: number): number {
+  for (let cursor = index; cursor >= 0; cursor -= 1) {
+    if (!whitespaceCode(value.charCodeAt(cursor))) return cursor;
+  }
+  return -1;
+}
+
+function nextNonWhitespaceIndex(value: string, index: number): number {
+  for (let cursor = index; cursor < value.length; cursor += 1) {
+    if (!whitespaceCode(value.charCodeAt(cursor))) return cursor;
+  }
+  return -1;
+}
+
+function shortNumericRunIsComposite(
+  value: string,
+  startOffset: number,
+  endOffset: number,
+): boolean {
+  const leftCode = startOffset > 0 ? value.charCodeAt(startOffset - 1) : -1;
+  const rightCode = endOffset < value.length ? value.charCodeAt(endOffset) : -1;
+
+  if (
+    leftCode === 36 ||
+    leftCode === 43 ||
+    leftCode === 45 ||
+    leftCode === 163 ||
+    leftCode === 8364 ||
+    rightCode === 37 ||
+    rightCode === 176
+  ) {
+    return true;
+  }
+
+  const separators = new Set([44, 46, 47, 58]);
+  if (separators.has(leftCode)) {
+    const before = previousNonWhitespaceIndex(value, startOffset - 2);
+    if (asciiDigitAt(value, before)) return true;
+  }
+  if (separators.has(rightCode)) {
+    const after = nextNonWhitespaceIndex(value, endOffset + 1);
+    if (asciiDigitAt(value, after)) return true;
+  }
+
+  const before = previousNonWhitespaceIndex(value, startOffset - 1);
+  const after = nextNonWhitespaceIndex(value, endOffset);
+  if (
+    (before >= 0 &&
+      before < startOffset - 1 &&
+      asciiDigitAt(value, before)) ||
+    (after >= endOffset &&
+      after > endOffset &&
+      asciiDigitAt(value, after))
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 function shortNumericRuns(value: string): ShortNumericRun[] {
   const output: ShortNumericRun[] = [];
   let startOffset = -1;
@@ -1254,7 +1331,11 @@ function shortNumericRuns(value: string): ShortNumericRun[] {
       if (digits <= 3) numericValue = numericValue * 10 + code - 48;
       continue;
     }
-    if (startOffset >= 0 && digits <= 3) {
+    if (
+      startOffset >= 0 &&
+      digits <= 3 &&
+      !shortNumericRunIsComposite(value, startOffset, index)
+    ) {
       output.push({ value: numericValue, startOffset });
     }
     startOffset = -1;
