@@ -59,6 +59,191 @@ describe("hierarchical chunking", () => {
     expect(units[0]?.contentHash).toBe(units[1]?.contentHash);
     expect(units[0]?.unitKey).not.toBe(units[1]?.unitKey);
   });
+
+  it("uses Markdown fence and indented-code grammar for literal headings", () => {
+    const source = [
+      "# Outer",
+      "~~~markdown",
+      "# Tilde literal",
+      "~~~",
+      "",
+      "````markdown",
+      "# Long-fence literal",
+      "```",
+      "# Still literal",
+      "````",
+      "",
+      "    # Indented literal",
+      "    source line",
+      "",
+      "~~~markdown",
+      "# Unclosed literal",
+    ].join("\n");
+
+    const units = parseKnowledgeUnits("Document", source);
+    const code = units.filter((unit) => unit.unitType === "CODE_EVIDENCE");
+
+    expect(code.map((unit) => unit.body)).toEqual([
+      "~~~markdown\n# Tilde literal\n~~~",
+      "````markdown\n# Long-fence literal\n```\n# Still literal\n````",
+      "# Indented literal\n    source line",
+      "~~~markdown\n# Unclosed literal",
+    ]);
+    expect(code.map((unit) => unit.locator.startLine)).toEqual([2, 6, 12, 15]);
+    expect(code.map((unit) => unit.locator.endLine)).toEqual([4, 10, 13, 16]);
+    expect(code.map((unit) => unit.headingPath)).toEqual([
+      ["Outer"],
+      ["Outer"],
+      ["Outer"],
+      ["Outer"],
+    ]);
+    expect(
+      units
+        .filter((unit) => unit.unitType === "SECTION")
+        .map((unit) => unit.headingPath),
+    ).toEqual([["Outer"]]);
+  });
+
+  it("recognizes setext headings and keeps skipped heading depths contiguous", () => {
+    const units = parseKnowledgeUnits(
+      "Document",
+      [
+        "Overview",
+        "========",
+        "Introductory text.",
+        "",
+        "### Deep heading",
+        "Deep text.",
+        "#### Nested heading",
+        "Nested text.",
+      ].join("\n"),
+    );
+    const sections = units.filter((unit) => unit.unitType === "SECTION");
+
+    expect(sections.map((unit) => unit.headingPath)).toEqual([
+      ["Overview"],
+      ["Overview", "Deep heading"],
+      ["Overview", "Deep heading", "Nested heading"],
+    ]);
+    expect(sections.map((unit) => unit.locator)).toEqual([
+      expect.objectContaining({ startLine: 3, endLine: 4 }),
+      expect.objectContaining({ startLine: 6, endLine: 6 }),
+      expect.objectContaining({ startLine: 8, endLine: 8 }),
+    ]);
+  });
+
+  it("keeps actual-depth siblings and removes deeper ancestors on descent", () => {
+    const siblings = parseKnowledgeUnits(
+      "Document",
+      ["# Root", "Root text.", "### A", "A text.", "### B", "B text."].join(
+        "\n",
+      ),
+    ).filter((unit) => unit.unitType === "SECTION");
+    expect(siblings.map((unit) => unit.headingPath)).toEqual([
+      ["Root"],
+      ["Root", "A"],
+      ["Root", "B"],
+    ]);
+
+    const descent = parseKnowledgeUnits(
+      "Document",
+      ["# Root", "Root text.", "#### A", "A text.", "## B", "B text."].join(
+        "\n",
+      ),
+    ).filter((unit) => unit.unitType === "SECTION");
+    expect(descent.map((unit) => unit.headingPath)).toEqual([
+      ["Root"],
+      ["Root", "A"],
+      ["Root", "B"],
+    ]);
+
+    const retreat = parseKnowledgeUnits(
+      "Document",
+      ["## Child", "Child text.", "# Root", "Root text."].join("\n"),
+    ).filter((unit) => unit.unitType === "SECTION");
+    expect(retreat.map((unit) => unit.headingPath)).toEqual([
+      ["Child"],
+      ["Root"],
+    ]);
+  });
+
+  it("uses parsed text for closing ATX heading syntax", () => {
+    const sections = parseKnowledgeUnits(
+      "Document",
+      ["# Root #", "Root text.", "## Child ##", "Child text."].join("\n"),
+    ).filter((unit) => unit.unitType === "SECTION");
+
+    expect(sections.map((unit) => unit.headingPath)).toEqual([
+      ["Root"],
+      ["Root", "Child"],
+    ]);
+  });
+
+  it("preserves adjacent figure, loose-list and equation boundaries", () => {
+    const atomic = parseKnowledgeUnits(
+      "Document",
+      [
+        "# Content",
+        "![diagram](diagram.png)",
+        "caption immediately after figure",
+        "",
+        "- first item",
+        "",
+        "- second item",
+        "",
+        "$$",
+        "E = mc^2",
+        "$$",
+        "After equation",
+      ].join("\n"),
+    ).filter((unit) => !unit.containerOnly);
+
+    expect(
+      atomic.map(({ unitType, body, locator }) => ({
+        unitType,
+        body,
+        startLine: locator.startLine,
+        endLine: locator.endLine,
+      })),
+    ).toEqual([
+      {
+        unitType: "FIGURE",
+        body: "![diagram](diagram.png)",
+        startLine: 2,
+        endLine: 2,
+      },
+      {
+        unitType: "PARAGRAPH",
+        body: "caption immediately after figure",
+        startLine: 3,
+        endLine: 3,
+      },
+      {
+        unitType: "LIST",
+        body: "- first item",
+        startLine: 5,
+        endLine: 5,
+      },
+      {
+        unitType: "LIST",
+        body: "- second item",
+        startLine: 7,
+        endLine: 7,
+      },
+      {
+        unitType: "EQUATION",
+        body: "$$\nE = mc^2\n$$",
+        startLine: 9,
+        endLine: 11,
+      },
+      {
+        unitType: "PARAGRAPH",
+        body: "After equation",
+        startLine: 12,
+        endLine: 12,
+      },
+    ]);
+  });
 });
 
 describe("visible Markdown content", () => {

@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import { fromMarkdown } from "mdast-util-from-markdown";
+import { gfmTableFromMarkdown } from "mdast-util-gfm-table";
+import { gfmTable } from "micromark-extension-gfm-table";
 import { markdownTableEvidence } from "./markdown-table-evidence.js";
 import { markdownVisibleSource } from "./markdown-visible-source.js";
 
@@ -49,6 +51,36 @@ interface Block {
     "PARAGRAPH" | "LIST" | "TABLE" | "FIGURE" | "EQUATION" | "CODE";
 }
 
+interface MarkdownPosition {
+  start: { line: number; offset?: number | undefined };
+  end: { line: number; offset?: number | undefined };
+}
+
+interface MarkdownNode {
+  type: string;
+  depth?: number | undefined;
+  value?: string | undefined;
+  alt?: string | null | undefined;
+  children?: readonly MarkdownNode[] | undefined;
+  position?: MarkdownPosition | undefined;
+}
+
+interface MarkdownRoot {
+  children: readonly MarkdownNode[];
+}
+
+interface HeadingEntry {
+  depth: number;
+  label: string;
+}
+
+function markdownTree(source: string): MarkdownRoot {
+  return fromMarkdown(source, {
+    extensions: [gfmTable()],
+    mdastExtensions: [gfmTableFromMarkdown()],
+  }) as unknown as MarkdownRoot;
+}
+
 function hash(content: string): string {
   return createHash("sha256").update(content).digest("hex");
 }
@@ -83,12 +115,21 @@ function semanticType(
 
 function markdownBlocks(lines: readonly string[], offset: number): Block[] {
   const blocks: Block[] = [];
+
+  const source = lines.join("\n");
+  const tree = markdownTree(source);
   const tableBounds = new Map(
-    markdownTableEvidence(lines.join("\n")).map((table) => [
+    markdownTableEvidence(source).map((table) => [
       table.startLine - 1,
       table.endLine - 1,
     ]),
   );
+  const codeBounds = new Map<number, number>();
+  for (const node of tree.children) {
+    const position = node.position;
+    if (node.type !== "code" || !position) continue;
+    codeBounds.set(position.start.line - 1, position.end.line - 1);
+  }
   let index = 0;
   const push = (
     start: number,
@@ -114,15 +155,13 @@ function markdownBlocks(lines: readonly string[], offset: number): Block[] {
       continue;
     }
     const start = index;
-    const line = lines[index] ?? "";
-    if (/^\s*```/.test(line)) {
-      index += 1;
-      while (index < lines.length && !/^\s*```/.test(lines[index] ?? ""))
-        index += 1;
-      if (index < lines.length) index += 1;
-      push(start, index - 1, "CODE");
+    const codeEnd = codeBounds.get(index);
+    if (codeEnd !== undefined) {
+      push(start, codeEnd, "CODE");
+      index = codeEnd + 1;
       continue;
     }
+    const line = lines[index] ?? "";
     if (/^\s*\$\$/.test(line)) {
       index += 1;
       while (index < lines.length && !/^\s*\$\$\s*$/.test(lines[index] ?? ""))
@@ -157,15 +196,26 @@ function markdownBlocks(lines: readonly string[], offset: number): Block[] {
     while (
       index < lines.length &&
       Boolean(lines[index]?.trim()) &&
+      !codeBounds.has(index) &&
       !tableBounds.has(index) &&
-      !/^\s*```|^\s*\$\$|^\s*!\[|^\s*(?:[-*+] |\d+[.)] )/.test(
-        lines[index] ?? "",
-      )
+      !/^\s*\$\$|^\s*!\[|^\s*(?:[-*+] |\d+[.)] )/.test(lines[index] ?? "")
     )
       index += 1;
     push(start, index - 1, "PARAGRAPH");
   }
   return blocks;
+}
+
+function headingLabel(node: MarkdownNode): string {
+  const text = (child: MarkdownNode): string => {
+    if (child.type === "text" || child.type === "inlineCode")
+      return child.value ?? "";
+    if (child.type === "break") return "\n";
+    if (child.type === "html") return "";
+    if (child.type === "image") return child.alt ?? "";
+    return child.children?.map(text).join("") ?? "";
+  };
+  return node.children?.map(text).join("").trim() ?? "";
 }
 
 function atomicType(
@@ -249,7 +299,11 @@ export function parseKnowledgeUnits(
     existing.push({ startLine, endLine });
     commentsByContentLine.set(target, existing);
   }
-  const headings: string[] = [];
+  const tree = markdownTree(clean.text);
+  const headingNodes = tree.children.filter(
+    (node) => node.type === "heading" && node.position,
+  );
+  const headings: HeadingEntry[] = [];
   let sectionStart = 0;
   let sectionIndex = 0;
   let order = 1;
@@ -262,6 +316,7 @@ export function parseKnowledgeUnits(
     if (firstContent < 0) return;
     const sectionBody = sectionLines.join("\n").trim();
     const hasHeading = headings.length > 0;
+    const path = hasHeading ? headings.map(({ label }) => label) : [title];
     const sectionKey = hasHeading ? `section-${++sectionIndex}` : "document";
     if (hasHeading) {
       const sectionHash = hash(sectionBody);
@@ -269,7 +324,7 @@ export function parseKnowledgeUnits(
         unitKey: sectionKey,
         parentUnitKey: "document",
         unitType: "SECTION",
-        headingPath: [...headings],
+        headingPath: [...path],
         body: sectionBody,
         contentHash: sectionHash,
         tokenEstimate: Math.ceil(sectionBody.length / 4),
@@ -286,12 +341,12 @@ export function parseKnowledgeUnits(
     }
     for (const block of markdownBlocks(sectionLines, sectionStart + 1)) {
       const contentHash = hash(block.body);
-      const unitType = atomicType(block, headings.length ? headings : [title]);
+      const unitType = atomicType(block, path);
       units.push({
         unitKey: `${sectionKey}-${unitType.toLowerCase()}-${String(block.startLine).padStart(6, "0")}-${contentHash.slice(0, 10)}`,
         parentUnitKey: sectionKey,
         unitType,
-        headingPath: headings.length ? [...headings] : [title],
+        headingPath: [...path],
         body: block.body,
         contentHash,
         tokenEstimate: Math.ceil(block.body.length / 4),
@@ -315,17 +370,16 @@ export function parseKnowledgeUnits(
     }
   };
 
-  let inFence = false;
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index] ?? "";
-    if (/^\s*```/.test(line)) inFence = !inFence;
-    const heading = !inFence ? /^(#{1,6})\s+(.+?)\s*$/.exec(line) : null;
-    if (!heading) continue;
+  for (const node of headingNodes) {
+    const position = node.position;
+    if (!position) continue;
+    const index = position.start.line - 1;
     flushSection(index);
-    const depth = heading[1]?.length ?? 1;
-    headings.splice(depth - 1);
-    headings[depth - 1] = heading[2]?.trim() ?? "";
-    sectionStart = index + 1;
+    const depth = Math.max(node.depth ?? 1, 1);
+    while (headings.length > 0 && headings[headings.length - 1]!.depth >= depth)
+      headings.pop();
+    headings.push({ depth, label: headingLabel(node) });
+    sectionStart = position.end.line;
   }
   flushSection(lines.length);
   return units;
