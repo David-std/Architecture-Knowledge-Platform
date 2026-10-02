@@ -55,7 +55,6 @@ pnpm benchmark:evidence-admission:generalization
 
 The units and questions are synthetic and were written by a single author, so they do not represent the distribution of real questions. Domains are small. The pack does not replace evaluation on a private corpus with real retrieval, and a good score on it is a regression signal rather than a product-wide precision claim. Labels can be wrong; correct them with a version bump rather than by changing a runtime rule to agree with them.
 
-
 ## Recorded model inputs and reader judgments
 
 New cross-encoder recordings use schema version 2. Each row includes SHA-256

@@ -88,12 +88,15 @@ const outputPath = path.resolve(
     "reports/ci/contextual-evidence-pack-scores.json",
 );
 await mkdir(path.dirname(outputPath), { recursive: true });
-await writeFile(outputPath, JSON.stringify({
+await writeFile(
+  outputPath,
+  JSON.stringify({
     schemaVersion: 2,
     verifier: verifier.id,
     configuration: CROSS_ENCODER_RECORDING_CONFIGURATION,
     rows,
-  }));
+  }),
+);
 console.error(
   `scored ${rows.length} pairs in ${((performance.now() - started) / 1000).toFixed(0)}s`,
 );

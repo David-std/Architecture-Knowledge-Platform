@@ -14,7 +14,9 @@ import {
 const directories: string[] = [];
 
 async function cachePath() {
-  const directory = await mkdtemp(path.join(tmpdir(), "akp-evaluation-recordings-"));
+  const directory = await mkdtemp(
+    path.join(tmpdir(), "akp-evaluation-recordings-"),
+  );
   directories.push(directory);
   return path.join(directory, "judgments.json");
 }
@@ -43,7 +45,10 @@ function scores(): RecordedEvidenceScores {
         unitId: "same-id",
         contextual: 0.8,
         plain: 0.2,
-        contextualInputHash: evidenceScoreInputHash("Question", "First passage"),
+        contextualInputHash: evidenceScoreInputHash(
+          "Question",
+          "First passage",
+        ),
         plainInputHash: evidenceScoreInputHash("Question", "First passage"),
       },
     ],
@@ -69,7 +74,9 @@ describe("recorded relevance provenance", () => {
       runtime.score([{ query: "Question", passage: "Different passage" }]),
     ).rejects.toThrow("INPUT_MISSING");
     await expect(
-      runtime.score([{ query: "Different question", passage: "First passage" }]),
+      runtime.score([
+        { query: "Different question", passage: "First passage" },
+      ]),
     ).rejects.toThrow("INPUT_MISSING");
   });
 
@@ -78,11 +85,16 @@ describe("recorded relevance provenance", () => {
     recording.rows.push({
       ...recording.rows[0]!,
       contextual: 0.1,
-      contextualInputHash: evidenceScoreInputHash("Question", "Different passage"),
+      contextualInputHash: evidenceScoreInputHash(
+        "Question",
+        "Different passage",
+      ),
     });
     const runtime = await recordedEvidenceScoreRuntime(recording)(options);
     expect(
-      await runtime.score([{ query: "Question", passage: "Different passage" }]),
+      await runtime.score([
+        { query: "Question", passage: "Different passage" },
+      ]),
     ).toEqual([0.1]);
   });
 
@@ -105,7 +117,9 @@ describe("recorded relevance provenance", () => {
     ).toThrow("PROVENANCE_REQUIRED");
     const recording = scores();
     recording.rows.push({ ...recording.rows[0]!, contextual: 0.3 });
-    expect(() => recordedEvidenceScoreRuntime(recording)).toThrow("CONFLICTING_INPUT");
+    expect(() => recordedEvidenceScoreRuntime(recording)).toThrow(
+      "CONFLICTING_INPUT",
+    );
   });
 });
 
@@ -206,9 +220,12 @@ describe("recorded reader provenance", () => {
     await expect(
       recordedEvidenceReader(base, file, { ...provenance, modelRevision: "" }),
     ).rejects.toThrow("PINNED_CONFIGURATION");
-    await writeFile(file, JSON.stringify({ oldHash: { answers: true, quote: "Stale" } }));
-    await expect(recordedEvidenceReader(base, file, provenance)).rejects.toThrow(
-      "INPUT_PROVENANCE_REQUIRED",
+    await writeFile(
+      file,
+      JSON.stringify({ oldHash: { answers: true, quote: "Stale" } }),
     );
+    await expect(
+      recordedEvidenceReader(base, file, provenance),
+    ).rejects.toThrow("INPUT_PROVENANCE_REQUIRED");
   });
 });

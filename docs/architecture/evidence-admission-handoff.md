@@ -146,7 +146,6 @@ recur in its isolated 8-test suite or the complete rerun; no deadline was raised
 Private accuracy figures above remain tied to their recorded source/projection;
 this structural correction is not a claim of universal answer accuracy.
 
-
 ## Measurement provenance correction
 
 The score replay previously joined only question and unit IDs. Reusing those

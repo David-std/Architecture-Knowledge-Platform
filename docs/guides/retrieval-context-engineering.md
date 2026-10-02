@@ -200,7 +200,6 @@ Benchmark scores are corpus- and configuration-specific. They do not prove unive
 
 PPR currently executes on demand and does not have a durable job lifecycle. Cancellation is cooperative for the operation rather than a queued-job cancellation contract.
 
-
 ### Benchmark recording provenance
 
 For cached reader experiments, set `AKP_EVIDENCE_READER_MODEL_REVISION` to the

@@ -17,7 +17,9 @@ export const CROSS_ENCODER_RECORDING_CONFIGURATION = {
 
 /** Fingerprint the exact model inputs, not benchmark question or document IDs. */
 export function evidenceScoreInputHash(query: string, passage: string): string {
-  return createHash("sha256").update(JSON.stringify([query, passage])).digest("hex");
+  return createHash("sha256")
+    .update(JSON.stringify([query, passage]))
+    .digest("hex");
 }
 
 export interface RecordedEvidenceScores {
@@ -67,8 +69,11 @@ export function recordedEvidenceScoreRuntime(
     return {
       score: async (pairs) =>
         pairs.map((pair) => {
-          const score = scores.get(evidenceScoreInputHash(pair.query, pair.passage));
-          if (score === undefined) throw new Error("RECORDED_SCORE_INPUT_MISSING");
+          const score = scores.get(
+            evidenceScoreInputHash(pair.query, pair.passage),
+          );
+          if (score === undefined)
+            throw new Error("RECORDED_SCORE_INPUT_MISSING");
           return score;
         }),
     };
@@ -119,7 +124,10 @@ export async function recordedEvidenceReader(
   stats: ReaderRecordingStats;
   provenanceHash: string;
 }> {
-  if (!provenance.modelRevision?.trim() || !provenance.deploymentFingerprint?.trim())
+  if (
+    !provenance.modelRevision?.trim() ||
+    !provenance.deploymentFingerprint?.trim()
+  )
     throw new Error("READER_RECORDING_PINNED_CONFIGURATION_REQUIRED");
   const provenanceHash = createHash("sha256")
     .update(JSON.stringify([reader.id, provenance]))
@@ -151,7 +159,9 @@ export async function recordedEvidenceReader(
   const wrapped: EvidenceReader = {
     id: reader.id,
     judge: async (input: EvidenceReaderInput) => {
-      const inputHash = createHash("sha256").update(JSON.stringify(input)).digest("hex");
+      const inputHash = createHash("sha256")
+        .update(JSON.stringify(input))
+        .digest("hex");
       const key = createHash("sha256")
         .update(JSON.stringify([provenanceHash, inputHash]))
         .digest("hex");
@@ -186,7 +196,10 @@ export async function recordedEvidenceReader(
         } finally {
           stats.freshModelTimeMs += performance.now() - started;
         }
-        if (typeof judgment?.answers !== "boolean" || typeof judgment?.quote !== "string")
+        if (
+          typeof judgment?.answers !== "boolean" ||
+          typeof judgment?.quote !== "string"
+        )
           throw new Error("READER_RECORDING_JUDGMENT_INVALID");
         cache.entries[key] = {
           provenanceHash,
