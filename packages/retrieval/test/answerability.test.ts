@@ -1213,7 +1213,7 @@ describe("retrieval answerability", () => {
       type: "dashboard",
       unitType: "TABLE",
       excerpt:
-        "| Line | Daily riders (2025) |\n|---|---|\n| Metro L1 | 182000 |\n| Metro L2 | 141000 |",
+        "| Metro Line | Daily riders (2025) |\n|---|---|\n| Metro L1 | 182000 |\n| Metro L2 | 141000 |",
       contributions: [contribution("vector", 0.91, 1)],
     });
 
