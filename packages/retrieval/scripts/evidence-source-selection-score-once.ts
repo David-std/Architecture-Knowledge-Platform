@@ -27,7 +27,7 @@ try {
       candidateKey: retrievalAnswerabilityCandidateKey(hit),
       title: hit.title,
       ...(hit.headingPath ? { headingPath: hit.headingPath } : {}),
-      passage: hit.excerpt,
+      passage: hit.excerpt.trim(),
       unitType: hit.unitType ?? null,
       parentUnitType: null,
       documentType: hit.type,
@@ -46,7 +46,7 @@ try {
           contextualEvidenceText({
             title: hit.title,
             headingPath: hit.headingPath ?? null,
-            passage: hit.excerpt,
+            passage: hit.excerpt.trim(),
           }).text,
         ),
         plainInputHash: evidenceScoreInputHash(
@@ -54,7 +54,7 @@ try {
           contextualEvidenceText({
             title: "",
             headingPath: [],
-            passage: hit.excerpt,
+            passage: hit.excerpt.trim(),
           }).text,
         ),
         contextual: contextual[position],

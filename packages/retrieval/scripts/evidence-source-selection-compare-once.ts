@@ -55,9 +55,20 @@ const endpoint = "http://127.0.0.1:18081/chat/completions";
 const model =
   process.env.AKP_LOCAL_AGENT_MODEL ?? "onnx-community/Qwen2.5-0.5B-Instruct";
 const modelRevision = process.env.AKP_LOCAL_AGENT_MODEL_REVISION ?? "";
-const providerHealth = await (
+const providerHealth = (await (
   await fetch("http://127.0.0.1:18081/health")
-).json();
+).json()) as {
+  model?: unknown;
+  revision?: unknown;
+  dtype?: unknown;
+};
+if (
+  providerHealth.model !== model ||
+  providerHealth.revision !== modelRevision ||
+  providerHealth.dtype !== (process.env.AKP_LOCAL_AGENT_DTYPE ?? "q4")
+) {
+  throw new Error("MODEL_PROVENANCE_MISMATCH");
+}
 const generation = {
   temperature: 0,
   maxTokens: 256,
