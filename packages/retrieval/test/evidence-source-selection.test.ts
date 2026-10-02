@@ -309,8 +309,8 @@ describe("frozen evidence-alignment audit", () => {
     validate(definition.development, "development");
     validate(definition.independent, "heldout");
 
-    const independentCases = definition.independent.map(
-      (item) => cases.get(item.questionId)!,
+    const independentCases = definition.independent.map((item) =>
+      cases.get(item.questionId)!,
     );
     expect(
       independentCases.filter((entry) => entry.question.gold.length > 0),
@@ -320,4 +320,3 @@ describe("frozen evidence-alignment audit", () => {
     ).toHaveLength(6);
   });
 });
-

@@ -107,9 +107,8 @@ function frozenAlignmentAuditReport(
       reason: "Requires both development and heldout source partitions.",
     };
   }
-  const audit = (
-    manifest as { alignmentAudit?: AlignmentAuditDefinition }
-  ).alignmentAudit;
+  const audit = (manifest as { alignmentAudit?: AlignmentAuditDefinition })
+    .alignmentAudit;
   if (
     !audit ||
     audit.version !== 1 ||
@@ -344,7 +343,8 @@ const report = {
   alignmentAudit: frozenAlignmentAuditReport(
     manifest,
     cases,
-    requestedSplits.includes("development") && requestedSplits.includes("heldout"),
+    requestedSplits.includes("development") &&
+      requestedSplits.includes("heldout"),
   ),
   ...(readerExecution
     ? {
