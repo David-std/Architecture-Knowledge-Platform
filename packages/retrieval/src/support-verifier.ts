@@ -1219,6 +1219,16 @@ export function dateYearEvidenceMatches(
   );
 }
 
+function explicitYearBindingsMatch(scope: string, query: string): boolean {
+  const requested = normalizedAnswerabilityTokens(query).filter((token) => {
+    const value = Number(token);
+    return Number.isInteger(value) && value >= 1900 && value <= 2099;
+  });
+  if (requested.length === 0) return true;
+  const available = new Set(normalizedAnswerabilityTokens(scope));
+  return requested.every((year) => available.has(year));
+}
+
 function answerRequirementsMatch(
   window: string,
   query: string,
@@ -1438,6 +1448,10 @@ export function verifyDeterministicPassageSupport(
       ? sourcePassage
       : withoutInterrogativeSentences(sourcePassage);
   const passageSource = "EXCERPT" as const;
+  const explicitYearsMatched = explicitYearBindingsMatch(
+    `${hit.title?.trim() || hit.document.title?.trim() || ""} ${passage}`,
+    query,
+  );
   const queryTokens = normalizedAnswerabilityTokens(query);
   const salientQueryTokens = queryTokens.filter(
     (token) => token.length >= 3 && !ANSWERABILITY_STOPWORDS.has(token),
@@ -1545,6 +1559,8 @@ export function verifyDeterministicPassageSupport(
     ![...passageTokens].some((token) => !ANSWERABILITY_STOPWORDS.has(token))
   ) {
     reason = "NO_CONCRETE_PASSAGE";
+  } else if (!explicitYearsMatched) {
+    reason = "PASSAGE_SUPPORT_NOT_DEMONSTRATED";
   } else if (!tableSupportEligible) {
     reason = "PASSAGE_SUPPORT_NOT_DEMONSTRATED";
   } else if (!definitionEvidenceEligible) {
