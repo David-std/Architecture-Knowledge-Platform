@@ -1219,6 +1219,41 @@ export function dateYearEvidenceMatches(
   );
 }
 
+function explicitYearBindingsMatch(scope: string, query: string): boolean {
+  const requested = [
+    ...new Set(query.match(/\b(?:19|20)\d{2}\b/gu) ?? []),
+  ];
+  if (requested.length === 0) return true;
+  const available = new Set(scope.match(/\b(?:19|20)\d{2}\b/gu) ?? []);
+  return requested.every((year) => available.has(year));
+}
+
+function explicitQuantityNumericBindingsMatch(
+  window: string,
+  query: string,
+): boolean {
+  if (!queryExplicitlyRequestsQuantity(query)) return true;
+  const requested = [
+    ...new Set(
+      normalizedAnswerabilityTokens(query)
+        .filter((token) => /^\d{1,3}$/u.test(token))
+        .map((token) => Number(token)),
+    ),
+  ];
+  if (requested.length === 0) return true;
+
+  const available = new Set<number>();
+  for (const token of normalizedAnswerabilityTokens(window)) {
+    if (/^\d{1,3}$/u.test(token)) {
+      available.add(Number(token));
+      continue;
+    }
+    const compactIdentifier = token.match(/^\p{L}+(\d{1,3})$/u);
+    if (compactIdentifier) available.add(Number(compactIdentifier[1]));
+  }
+  return requested.every((value) => available.has(value));
+}
+
 function answerRequirementsMatch(
   window: string,
   query: string,
@@ -1350,7 +1385,12 @@ function boundedPredicateSupport(
       anchors.length === 0 ||
       (overlap.length >= requiredAnchorOverlap &&
         (anchorCoverage >= 0.4 || boundedDefinitionRelation));
-    const supported = answer.allMatched && enoughAnchors;
+    const numericBindingsMatched = explicitQuantityNumericBindingsMatch(
+      window.text,
+      query,
+    );
+    const supported =
+      answer.allMatched && enoughAnchors && numericBindingsMatched;
     if (
       supported ||
       anchorCoverage > best.anchorCoverage ||
@@ -1438,6 +1478,10 @@ export function verifyDeterministicPassageSupport(
       ? sourcePassage
       : withoutInterrogativeSentences(sourcePassage);
   const passageSource = "EXCERPT" as const;
+  const explicitYearsMatched = explicitYearBindingsMatch(
+    `${hit.title?.trim() || hit.document.title?.trim() || ""} ${passage}`,
+    query,
+  );
   const queryTokens = normalizedAnswerabilityTokens(query);
   const salientQueryTokens = queryTokens.filter(
     (token) => token.length >= 3 && !ANSWERABILITY_STOPWORDS.has(token),
@@ -1545,6 +1589,8 @@ export function verifyDeterministicPassageSupport(
     ![...passageTokens].some((token) => !ANSWERABILITY_STOPWORDS.has(token))
   ) {
     reason = "NO_CONCRETE_PASSAGE";
+  } else if (!explicitYearsMatched) {
+    reason = "PASSAGE_SUPPORT_NOT_DEMONSTRATED";
   } else if (!tableSupportEligible) {
     reason = "PASSAGE_SUPPORT_NOT_DEMONSTRATED";
   } else if (!definitionEvidenceEligible) {

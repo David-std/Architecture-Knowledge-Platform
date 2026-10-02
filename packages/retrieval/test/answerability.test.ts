@@ -1182,6 +1182,56 @@ describe("retrieval answerability", () => {
     ).toContain("QUANTITY");
   });
 
+  it("binds an explicit reporting year instead of accepting a different year", () => {
+    const table = hit(210, {
+      title: "Reliability report",
+      type: "dashboard",
+      unitType: "TABLE",
+      excerpt:
+        "| Indicator | Target | 2025 |\n|---|---|---|\n| Technical dispatch reliability | 99.5% | 99.2% |",
+      contributions: [contribution("vector", 0.91, 1)],
+    });
+
+    const missing = assessRetrievalAnswerability(
+      [table],
+      "What was technical dispatch reliability in 2023?",
+    );
+    expect(missing.supported).toBe(false);
+
+    const present = assessRetrievalAnswerability(
+      [table],
+      "What was technical dispatch reliability in 2025?",
+    );
+    expect(present.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(table),
+    ]);
+  });
+
+  it("binds short numeric subjects in quantity questions and accepts compact identifiers", () => {
+    const table = hit(211, {
+      title: "Riders by line",
+      type: "dashboard",
+      unitType: "TABLE",
+      excerpt:
+        "| Line | Daily riders |\n|---|---|\n| Metro L1 | 182000 |\n| Metro L2 | 141000 |",
+      contributions: [contribution("vector", 0.9, 1)],
+    });
+
+    const wrongSubject = assessRetrievalAnswerability(
+      [table],
+      "How many riders does metro line 3 carry per day?",
+    );
+    expect(wrongSubject.supported).toBe(false);
+
+    const compactMatch = assessRetrievalAnswerability(
+      [table],
+      "How many riders does metro line 2 carry per day?",
+    );
+    expect(compactMatch.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(table),
+    ]);
+  });
+
   it("requires an explicit year when the question asks which year", () => {
     const topical = hit(22, {
       title: "Compatibility window history",
