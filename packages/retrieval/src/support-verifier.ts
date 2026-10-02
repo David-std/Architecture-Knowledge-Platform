@@ -1332,18 +1332,18 @@ function firstLetter(value: string): string | null {
   return null;
 }
 
-function selectorPrefixMatchesHeader(
+function selectorPrefixMatchesRole(
   value: string,
   run: TableNumericSelectorRun,
-  header: string,
+  role: string,
 ): boolean {
   if (run.anchorOffset === run.startOffset) return true;
   const prefixInitial = value[run.anchorOffset]?.toLocaleLowerCase("en-US");
-  const headerInitial = firstLetter(header);
+  const roleInitial = firstLetter(role);
   return (
     prefixInitial !== undefined &&
-    headerInitial !== null &&
-    prefixInitial === headerInitial
+    roleInitial !== null &&
+    prefixInitial === roleInitial
   );
 }
 
@@ -1377,7 +1377,7 @@ function tableQuantityWindows(
         {
           digits: run.digits,
           column: columns[0]!.columnIndex,
-          header: columns[0]!.source,
+          role: anchor,
         },
       ];
     });
@@ -1395,7 +1395,7 @@ function tableQuantityWindows(
           (run) =>
             run.safe &&
             run.digits === binding.digits &&
-            selectorPrefixMatchesHeader(cell.source, run, binding.header),
+            selectorPrefixMatchesRole(cell.source, run, binding.role),
         );
       });
       if (!rowMatches) continue;
