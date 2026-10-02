@@ -47,6 +47,11 @@
       "reason": "configuration or policy contract"
     },
     {
+      "path": ".github/workflows/evidence-source-selection.yml",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "configuration or policy contract"
+    },
+    {
       "path": ".github/workflows/federation-two-node.yml",
       "category": "PRODUCT_CONTRACT",
       "reason": "configuration or policy contract"
@@ -3352,6 +3357,26 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/retrieval/scripts/evidence-source-selection-aggregate.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/retrieval/scripts/evidence-source-selection-compare.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/retrieval/scripts/evidence-source-selection-contract.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/retrieval/scripts/evidence-source-selection-score.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/retrieval/scripts/evidence-verifier-bge-reranker-shadow-benchmark.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3592,6 +3617,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "packages/retrieval/test/evidence-source-selection.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "packages/retrieval/test/local-multilingual-nli-evidence.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
@@ -3675,6 +3705,11 @@
       "path": "packages/retrieval/test/tokenizer-contract.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/tsconfig.evidence-benchmarks.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
     },
     {
       "path": "packages/retrieval/tsconfig.json",

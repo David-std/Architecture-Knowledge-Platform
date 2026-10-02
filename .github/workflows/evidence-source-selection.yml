@@ -1,14 +1,13 @@
-name: evidence-source-selection-once
+name: evidence-source-selection
 
 on:
-  push:
-    branches: [experiment/evidence-source-selection-20261002]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: evidence-source-selection-once-${{ github.ref }}
+  group: evidence-source-selection-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -26,10 +25,10 @@ jobs:
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
       - name: Preflight experiment formatting and types
         run: |
-          pnpm exec prettier --write             packages/retrieval/scripts/evidence-source-selection-score-once.ts             packages/retrieval/scripts/evidence-source-selection-compare-once.ts             packages/retrieval/scripts/evidence-source-selection-aggregate-once.ts
-          pnpm --filter @akp/retrieval typecheck
+          pnpm exec prettier --check packages/retrieval/scripts/evidence-source-selection-*.ts .github/workflows/evidence-source-selection.yml
+          pnpm typecheck:evidence-benchmarks
       - name: Generate fresh development-only BGE recording
-        run: pnpm --filter @akp/retrieval exec tsx scripts/evidence-source-selection-score-once.ts
+        run: pnpm --filter @akp/retrieval exec tsx scripts/evidence-source-selection-score.ts
       - name: Validate recording cardinality
         run: |
           node --input-type=module <<'NODE'
@@ -95,7 +94,7 @@ jobs:
           cat "reports/ci/provider-${{ matrix.shard }}.log" >&2
           exit 1
       - name: Compare quote generation with structural source selection
-        run: pnpm --filter @akp/retrieval exec tsx scripts/evidence-source-selection-compare-once.ts
+        run: pnpm --filter @akp/retrieval exec tsx scripts/evidence-source-selection-compare.ts
       - name: Upload shard evidence
         if: always()
         uses: actions/upload-artifact@v7
@@ -132,7 +131,7 @@ jobs:
           path: reports/ci/shards
           merge-multiple: true
       - name: Aggregate development comparison without declaring a winner
-        run: pnpm --filter @akp/retrieval exec tsx scripts/evidence-source-selection-aggregate-once.ts
+        run: pnpm --filter @akp/retrieval exec tsx scripts/evidence-source-selection-aggregate.ts
       - uses: actions/upload-artifact@v7
         with:
           name: source-selection-development-${{ github.run_id }}

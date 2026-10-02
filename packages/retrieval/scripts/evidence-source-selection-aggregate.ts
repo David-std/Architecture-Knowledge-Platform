@@ -1,49 +1,118 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import {
+  evidenceAdmissionReport,
+  loadEvidenceAdmissionPack,
+} from "../../../scripts/evidence-admission-pack.js";
+import {
+  SOURCE_SELECTION_PROTOCOLS,
+  validateSourceSelectionShards,
+  sourceSelectionMeasurement,
+  type SourceSelectionShard,
+  type SourceSelectionStats,
+} from "./evidence-source-selection-contract.js";
 
 const repositoryRoot = path.resolve(import.meta.dirname, "../../..");
-import { evidenceAdmissionReport, type QuestionResult } from "../../../scripts/evidence-admission-pack.js";
-
 const root = path.join(repositoryRoot, "reports/ci/shards");
-const files = (await readdir(root)).filter((name) => /^source-selection-shard-\d+\.json$/u.test(name)).sort();
-if (files.length !== 4) throw new Error("Expected four source-selection shards.");
-const reports = await Promise.all(files.map(async (name) => JSON.parse(await readFile(path.join(root, name), "utf8"))));
-const protocols = ["quote-v4", "source-selection-v1"] as const;
-const arms: Record<string, unknown> = {};
-for (const protocol of protocols) {
-  const rows = reports.flatMap((report) => report.arms[protocol].rows) as QuestionResult[];
-  if (rows.length !== 133 || new Set(rows.map((row) => row.id)).size !== 133) throw new Error(protocol + " did not cover all 133 development questions exactly once.");
-  const stats = reports.map((report) => report.arms[protocol].stats).reduce((sum, value) => ({
-    calls: sum.calls + value.calls,
-    timeMs: sum.timeMs + value.timeMs,
-    providerErrors: sum.providerErrors + value.providerErrors,
-    parseErrors: sum.parseErrors + value.parseErrors,
-    invalidSelections: sum.invalidSelections + value.invalidSelections,
-  }), { calls: 0, timeMs: 0, providerErrors: 0, parseErrors: 0, invalidSelections: 0 });
-  arms[protocol] = { report: evidenceAdmissionReport(rows, protocol), stats };
+const files = (await readdir(root))
+  .filter((name) => /^source-selection-shard-\d+\.json$/u.test(name))
+  .sort();
+const reports = await Promise.all(
+  files.map(
+    async (name) =>
+      JSON.parse(
+        await readFile(path.join(root, name), "utf8"),
+      ) as SourceSelectionShard,
+  ),
+);
+const { cases } = await loadEvidenceAdmissionPack(["development"]);
+validateSourceSelectionShards(reports, cases);
+const currentMeasurement = await sourceSelectionMeasurement(cases, {});
+if (reports[0]!.measurement.runtimeHash !== currentMeasurement.runtimeHash)
+  throw new Error("SOURCE_SELECTION_RUNTIME_MISMATCH");
+const arms = Object.fromEntries(
+  SOURCE_SELECTION_PROTOCOLS.map((protocol) => {
+    const rows = reports.flatMap((report) => report.arms[protocol].rows);
+    const stats = reports
+      .map((report) => report.arms[protocol].stats)
+      .reduce(
+        (sum, value): SourceSelectionStats => ({
+          calls: sum.calls + value.calls,
+          timeMs: sum.timeMs + value.timeMs,
+          providerErrors: sum.providerErrors + value.providerErrors,
+          parseErrors: sum.parseErrors + value.parseErrors,
+          invalidSelections: sum.invalidSelections + value.invalidSelections,
+        }),
+        {
+          calls: 0,
+          timeMs: 0,
+          providerErrors: 0,
+          parseErrors: 0,
+          invalidSelections: 0,
+        },
+      );
+    return [
+      protocol,
+      { report: evidenceAdmissionReport(rows, protocol), stats },
+    ];
+  }),
+) as Record<
+  (typeof SOURCE_SELECTION_PROTOCOLS)[number],
+  {
+    report: ReturnType<typeof evidenceAdmissionReport>;
+    stats: SourceSelectionStats;
+  }
+>;
+const quote = arms["quote-v4"].report.development;
+const selection = arms["source-selection-v1"].report.development;
+function delta(left: number | null, right: number | null): number | null {
+  return left === null || right === null ? null : left - right;
 }
-const quote = (arms["quote-v4"] as any).report.development;
-const selection = (arms["source-selection-v1"] as any).report.development;
 const output = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   benchmark: "EVIDENCE_SOURCE_SELECTION_AB",
   split: "development",
-  questions: 133,
+  questions: cases.length,
   claimPolicy: {
     heldoutInspected: false,
+    questionFamilyDisjoint: false,
+    candidatesProvided: true,
     winnerDeclared: false,
-    purpose: "Compare exact quote generation with structural source-range selection before any product change.",
+    purpose:
+      "Development-only paired admission comparison; source coordinates do not establish answer meaning.",
   },
-  model: reports[0].model,
+  model: reports[0]!.model,
+  measurement: reports[0]!.measurement,
   arms,
   deltas: {
-    answerableRecall: selection.answerableRecall - quote.answerableRecall,
-    falseAcceptanceRate: selection.falseAcceptanceRate - quote.falseAcceptanceRate,
-    admittedPrecision: selection.admittedPrecision - quote.admittedPrecision,
-    strictAccuracy: selection.strictAccuracy - quote.strictAccuracy,
+    answerableRecall: delta(selection.answerableRecall, quote.answerableRecall),
+    falseAcceptanceRate: delta(
+      selection.falseAcceptanceRate,
+      quote.falseAcceptanceRate,
+    ),
+    admittedPrecision: delta(
+      selection.admittedPrecision,
+      quote.admittedPrecision,
+    ),
+    strictAccuracy: delta(selection.strictAccuracy, quote.strictAccuracy),
   },
 };
-const target = path.join(repositoryRoot, "reports/ci/source-selection-development-ab.json");
+const target = path.join(
+  repositoryRoot,
+  "reports/ci/source-selection-development-ab.json",
+);
 await mkdir(path.dirname(target), { recursive: true });
 await writeFile(target, JSON.stringify(output, null, 2));
-console.log(JSON.stringify({ quote, selection, deltas: output.deltas, quoteStats: (arms["quote-v4"] as any).stats, selectionStats: (arms["source-selection-v1"] as any).stats }, null, 2));
+console.log(
+  JSON.stringify(
+    {
+      quote,
+      selection,
+      deltas: output.deltas,
+      quoteStats: arms["quote-v4"].stats,
+      selectionStats: arms["source-selection-v1"].stats,
+    },
+    null,
+    2,
+  ),
+);

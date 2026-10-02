@@ -24,16 +24,18 @@ const rows: unknown[] = [];
 const started = performance.now();
 try {
   for (const [index, entry] of cases.entries()) {
-    const inputs: QueryConditionedEvidenceVerifierInput[] = entry.hits.map((hit) => ({
-      query: entry.question.query,
-      candidateKey: retrievalAnswerabilityCandidateKey(hit),
-      title: hit.title,
-      ...(hit.headingPath ? { headingPath: hit.headingPath } : {}),
-      passage: hit.excerpt.trim(),
-      unitType: hit.unitType ?? null,
-      parentUnitType: null,
-      documentType: hit.type,
-    }));
+    const inputs: QueryConditionedEvidenceVerifierInput[] = entry.hits.map(
+      (hit) => ({
+        query: entry.question.query,
+        candidateKey: retrievalAnswerabilityCandidateKey(hit),
+        title: hit.title,
+        ...(hit.headingPath ? { headingPath: hit.headingPath } : {}),
+        passage: hit.excerpt.trim(),
+        unitType: hit.unitType ?? null,
+        parentUnitType: null,
+        documentType: hit.type,
+      }),
+    );
     const contextual = await verifier.scoreBatch(inputs);
     const plain = await verifier.scoreBatch(
       inputs.map((input) => ({ ...input, title: "", headingPath: [] })),
@@ -63,19 +65,26 @@ try {
         plain: plain[position],
       });
     });
-    if ((index + 1) % 20 === 0) console.error(String(index + 1) + "/" + String(cases.length));
+    if ((index + 1) % 20 === 0)
+      console.error(String(index + 1) + "/" + String(cases.length));
   }
 } finally {
   await verifier.dispose();
 }
-const output = path.join(repositoryRoot, "reports/ci/source-selection-scores.json");
+const output = path.join(
+  repositoryRoot,
+  "reports/ci/source-selection-scores.json",
+);
 await mkdir(path.dirname(output), { recursive: true });
-await writeFile(output, JSON.stringify({
-  schemaVersion: 2,
-  verifier: verifier.id,
-  configuration: CROSS_ENCODER_RECORDING_CONFIGURATION,
-  rows,
-  split: "development",
-  questions: cases.length,
-  elapsedMs: performance.now() - started,
-}));
+await writeFile(
+  output,
+  JSON.stringify({
+    schemaVersion: 2,
+    verifier: verifier.id,
+    configuration: CROSS_ENCODER_RECORDING_CONFIGURATION,
+    rows,
+    split: "development",
+    questions: cases.length,
+    elapsedMs: performance.now() - started,
+  }),
+);
