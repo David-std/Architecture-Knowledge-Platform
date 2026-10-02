@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+
+const repositoryRoot = path.resolve(import.meta.dirname, "../../..");
 import {
   CONTEXTUAL_CROSS_ENCODER_DEFAULT_SUPPORT_SCORE,
   ContextualCrossEncoderEvidenceVerifier,
@@ -33,9 +35,11 @@ if (
   throw new Error("INVALID_SHARD");
 }
 
-const scorePath =
+const scorePath = path.resolve(
+  repositoryRoot,
   process.env.AKP_SOURCE_SELECTION_SCORES ??
-  "reports/ci/source-selection-scores.json";
+    "reports/ci/source-selection-scores.json",
+);
 const recorded = JSON.parse(
   await readFile(scorePath, "utf8"),
 ) as RecordedEvidenceScores;
@@ -341,7 +345,8 @@ const report = {
   },
 };
 
-const output = path.resolve(
+const output = path.join(
+  repositoryRoot,
   "reports/ci/source-selection-shard-" + String(shardIndex) + ".json",
 );
 await mkdir(path.dirname(output), { recursive: true });

@@ -1,5 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+
+const repositoryRoot = path.resolve(import.meta.dirname, "../../..");
 import { loadEvidenceAdmissionPack } from "../../../scripts/evidence-admission-pack.js";
 import {
   ContextualCrossEncoderEvidenceVerifier,
@@ -66,7 +68,7 @@ try {
 } finally {
   await verifier.dispose();
 }
-const output = path.resolve("reports/ci/source-selection-scores.json");
+const output = path.join(repositoryRoot, "reports/ci/source-selection-scores.json");
 await mkdir(path.dirname(output), { recursive: true });
 await writeFile(output, JSON.stringify({
   schemaVersion: 2,

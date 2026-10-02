@@ -1,8 +1,10 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+
+const repositoryRoot = path.resolve(import.meta.dirname, "../../..");
 import { evidenceAdmissionReport, type QuestionResult } from "../../../scripts/evidence-admission-pack.js";
 
-const root = path.resolve("reports/ci/shards");
+const root = path.join(repositoryRoot, "reports/ci/shards");
 const files = (await readdir(root)).filter((name) => /^source-selection-shard-\d+\.json$/u.test(name)).sort();
 if (files.length !== 4) throw new Error("Expected four source-selection shards.");
 const reports = await Promise.all(files.map(async (name) => JSON.parse(await readFile(path.join(root, name), "utf8"))));
@@ -41,7 +43,7 @@ const output = {
     strictAccuracy: selection.strictAccuracy - quote.strictAccuracy,
   },
 };
-const target = path.resolve("reports/ci/source-selection-development-ab.json");
+const target = path.join(repositoryRoot, "reports/ci/source-selection-development-ab.json");
 await mkdir(path.dirname(target), { recursive: true });
 await writeFile(target, JSON.stringify(output, null, 2));
 console.log(JSON.stringify({ quote, selection, deltas: output.deltas, quoteStats: (arms["quote-v4"] as any).stats, selectionStats: (arms["source-selection-v1"] as any).stats }, null, 2));
