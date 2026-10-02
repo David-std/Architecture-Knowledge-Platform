@@ -1220,36 +1220,13 @@ export function dateYearEvidenceMatches(
 }
 
 function explicitYearBindingsMatch(scope: string, query: string): boolean {
-  const requested = [...new Set(query.match(/\b(?:19|20)\d{2}\b/gu) ?? [])];
+  const requested = normalizedAnswerabilityTokens(query).filter((token) => {
+    const value = Number(token);
+    return Number.isInteger(value) && value >= 1900 && value <= 2099;
+  });
   if (requested.length === 0) return true;
-  const available = new Set(scope.match(/\b(?:19|20)\d{2}\b/gu) ?? []);
+  const available = new Set(normalizedAnswerabilityTokens(scope));
   return requested.every((year) => available.has(year));
-}
-
-function shortNumericBindings(value: string): number[] {
-  const normalized = value
-    .normalize("NFKD")
-    .replace(/\p{M}/gu, "")
-    .toLocaleLowerCase("en-US");
-  const bindings = new Set<number>();
-  for (const match of normalized.matchAll(/\b\d{1,3}\b/gu)) {
-    bindings.add(Number(match[0]));
-  }
-  for (const match of normalized.matchAll(/\b\p{L}+(\d{1,3})\b/gu)) {
-    bindings.add(Number(match[1]));
-  }
-  return [...bindings];
-}
-
-function explicitQuantityNumericBindingsMatch(
-  window: string,
-  query: string,
-): boolean {
-  if (!queryExplicitlyRequestsQuantity(query)) return true;
-  const requested = shortNumericBindings(query);
-  if (requested.length === 0) return true;
-  const available = new Set(shortNumericBindings(window));
-  return requested.every((value) => available.has(value));
 }
 
 function answerRequirementsMatch(
@@ -1383,12 +1360,7 @@ function boundedPredicateSupport(
       anchors.length === 0 ||
       (overlap.length >= requiredAnchorOverlap &&
         (anchorCoverage >= 0.4 || boundedDefinitionRelation));
-    const numericBindingsMatched = explicitQuantityNumericBindingsMatch(
-      window.text,
-      query,
-    );
-    const supported =
-      answer.allMatched && enoughAnchors && numericBindingsMatched;
+    const supported = answer.allMatched && enoughAnchors;
     if (
       supported ||
       anchorCoverage > best.anchorCoverage ||
