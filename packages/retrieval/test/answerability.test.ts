@@ -1213,7 +1213,7 @@ describe("retrieval answerability", () => {
       type: "dashboard",
       unitType: "TABLE",
       excerpt:
-        "| Line | Daily riders |\n|---|---|\n| Metro L1 | 182000 |\n| Metro L2 | 141000 |",
+        "| Line | Daily riders (2025) |\n|---|---|\n| Metro L1 | 182000 |\n| Metro L2 | 141000 |",
       contributions: [contribution("vector", 0.91, 1)],
     });
 
@@ -1225,7 +1225,7 @@ describe("retrieval answerability", () => {
 
     const present = assessRetrievalAnswerability(
       [table],
-      "How many daily riders does metro line 2 have?",
+      "How many daily riders does metro line 2 have in 2025?",
     );
     expect(present.supportedCandidateKeys).toEqual([
       retrievalAnswerabilityCandidateKey(table),
