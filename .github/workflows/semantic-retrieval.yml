@@ -154,6 +154,14 @@ jobs:
           AKP_DETERMINISTIC_EVIDENCE_ADMISSION_REPORT=reports/ci/deterministic-evidence-admission-benchmark.json \
             pnpm benchmark:evidence-admission \
             2>&1 | tee reports/ci/deterministic-evidence-admission-benchmark.log
+      - name: Measure safe current table row-key binding
+        shell: bash
+        run: |
+          set -o pipefail
+          AKP_EVIDENCE_ADMISSION_GENERALIZATION_REPORT=reports/ci/evidence-admission-generalization.json \
+            AKP_EVIDENCE_ADMISSION_VERIFIER=deterministic \
+            pnpm benchmark:evidence-admission:generalization \
+            2>&1 | tee reports/ci/evidence-admission-generalization.log
       - name: Measure query-conditioned evidence verifier in shadow mode
         shell: bash
         run: |
