@@ -1353,10 +1353,12 @@ function tableQuantityWindows(
 ): PassageWindow[] | null {
   let applicable = false;
   const windows: PassageWindow[] = [];
+  const explicitYears = new Set(explicitYearValues(query));
 
   for (const table of markdownTableEvidence(passage)) {
     let unsafeApplicableBinding = false;
     const bindings = tableNumericSelectorRuns(query).flatMap((run) => {
+      if (explicitYears.has(run.digits)) return [];
       const anchor = semanticTokens(query.slice(0, run.anchorOffset)).at(-1);
       if (!anchor) return [];
 
