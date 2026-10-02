@@ -1256,25 +1256,28 @@ describe("retrieval answerability", () => {
     ["Metro 3%", "How many daily riders does metro line 3 have?"],
     ["Metro 1,234", "How many daily riders does metro line 1 have?"],
     ["Metro 1 234", "How many daily riders does metro line 234 have?"],
-  ])("does not treat composite numeric values as row identifiers: %s", (rowKey, query) => {
-    const table = hit(214, {
-      title: "Riders by line",
-      type: "dashboard",
-      unitType: "TABLE",
-      excerpt:
-        `| Line | Daily riders |\n|---|---|\n| ${rowKey} | 141000 |`,
-      contributions: [contribution("vector", 0.9, 1)],
-    });
-    expect(assessRetrievalAnswerability([table], query).supported).toBe(false);
-  });
+  ])(
+    "does not treat composite numeric values as row identifiers: %s",
+    (rowKey, query) => {
+      const table = hit(214, {
+        title: "Riders by line",
+        type: "dashboard",
+        unitType: "TABLE",
+        excerpt: `| Line | Daily riders |\n|---|---|\n| ${rowKey} | 141000 |`,
+        contributions: [contribution("vector", 0.9, 1)],
+      });
+      expect(assessRetrievalAnswerability([table], query).supported).toBe(
+        false,
+      );
+    },
+  );
 
   it("keeps compact alphanumeric row identifiers eligible", () => {
     const table = hit(215, {
       title: "Riders by line",
       type: "dashboard",
       unitType: "TABLE",
-      excerpt:
-        "| Line | Daily riders |\n|---|---|\n| Metro L3 | 141000 |",
+      excerpt: "| Line | Daily riders |\n|---|---|\n| Metro L3 | 141000 |",
       contributions: [contribution("vector", 0.9, 1)],
     });
     expect(

@@ -1305,12 +1305,8 @@ function shortNumericRunIsComposite(
   const before = previousNonWhitespaceIndex(value, startOffset - 1);
   const after = nextNonWhitespaceIndex(value, endOffset);
   if (
-    (before >= 0 &&
-      before < startOffset - 1 &&
-      asciiDigitAt(value, before)) ||
-    (after >= endOffset &&
-      after > endOffset &&
-      asciiDigitAt(value, after))
+    (before >= 0 && before < startOffset - 1 && asciiDigitAt(value, before)) ||
+    (after >= endOffset && after > endOffset && asciiDigitAt(value, after))
   ) {
     return true;
   }
