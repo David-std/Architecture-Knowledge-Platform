@@ -1226,29 +1226,29 @@ function explicitYearBindingsMatch(scope: string, query: string): boolean {
   return requested.every((year) => available.has(year));
 }
 
+function shortNumericBindings(value: string): number[] {
+  const normalized = value
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .toLocaleLowerCase("en-US");
+  const bindings = new Set<number>();
+  for (const match of normalized.matchAll(/\b\d{1,3}\b/gu)) {
+    bindings.add(Number(match[0]));
+  }
+  for (const match of normalized.matchAll(/\b\p{L}+(\d{1,3})\b/gu)) {
+    bindings.add(Number(match[1]));
+  }
+  return [...bindings];
+}
+
 function explicitQuantityNumericBindingsMatch(
   window: string,
   query: string,
 ): boolean {
   if (!queryExplicitlyRequestsQuantity(query)) return true;
-  const requested = [
-    ...new Set(
-      normalizedAnswerabilityTokens(query)
-        .filter((token) => /^\d{1,3}$/u.test(token))
-        .map((token) => Number(token)),
-    ),
-  ];
+  const requested = shortNumericBindings(query);
   if (requested.length === 0) return true;
-
-  const available = new Set<number>();
-  for (const token of normalizedAnswerabilityTokens(window)) {
-    if (/^\d{1,3}$/u.test(token)) {
-      available.add(Number(token));
-      continue;
-    }
-    const compactIdentifier = token.match(/^\p{L}+(\d{1,3})$/u);
-    if (compactIdentifier) available.add(Number(compactIdentifier[1]));
-  }
+  const available = new Set(shortNumericBindings(window));
   return requested.every((value) => available.has(value));
 }
 
