@@ -1229,6 +1229,73 @@ function explicitYearBindingsMatch(scope: string, query: string): boolean {
   return requested.every((year) => available.has(year));
 }
 
+interface ShortNumericRun {
+  value: number;
+  startOffset: number;
+}
+
+function shortNumericRuns(value: string): ShortNumericRun[] {
+  const output: ShortNumericRun[] = [];
+  let startOffset = -1;
+  let digits = 0;
+  let numericValue = 0;
+  for (let index = 0; index <= value.length; index += 1) {
+    const code = index < value.length ? value.charCodeAt(index) : -1;
+    if (code >= 48 && code <= 57) {
+      if (startOffset < 0) startOffset = index;
+      digits += 1;
+      if (digits <= 3) numericValue = numericValue * 10 + code - 48;
+      continue;
+    }
+    if (startOffset >= 0 && digits <= 3) {
+      output.push({ value: numericValue, startOffset });
+    }
+    startOffset = -1;
+    digits = 0;
+    numericValue = 0;
+  }
+  return output;
+}
+
+function tableQuantityWindows(
+  passage: string,
+  query: string,
+): PassageWindow[] | null {
+  let applicable = false;
+  const windows: PassageWindow[] = [];
+  for (const table of markdownTableEvidence(passage)) {
+    const bindings = shortNumericRuns(query).flatMap((run) => {
+      const anchor = semanticTokens(query.slice(0, run.startOffset)).at(-1);
+      if (!anchor) return [];
+      const columns = table.header.cells
+        .filter((cell) => semanticTokens(cell.source).includes(anchor))
+        .map((cell) => cell.columnIndex);
+      if (columns.length === 0) return [];
+      return [{ value: run.value, columns: new Set(columns) }];
+    });
+    if (bindings.length === 0) continue;
+    applicable = true;
+
+    for (const row of table.rows) {
+      const rowMatches = bindings.every((binding) =>
+        row.cells.some(
+          (cell) =>
+            binding.columns.has(cell.columnIndex) &&
+            shortNumericRuns(cell.source).some(
+              (run) => run.value === binding.value,
+            ),
+        ),
+      );
+      if (!rowMatches) continue;
+      windows.push({
+        text: table.header.source.concat(String.fromCharCode(10), row.source),
+        evidence: row.source,
+      });
+    }
+  }
+  return applicable ? windows : null;
+}
+
 function answerRequirementsMatch(
   window: string,
   query: string,
@@ -1317,6 +1384,7 @@ function boundedPredicateSupport(
   required: readonly PassageAnswerCue[],
   title?: string,
   allowStructuredTableCondition = false,
+  allowStructuredTableQuantity = false,
 ): {
   supported: boolean;
   matchedAnswerCues: PassageAnswerCue[];
@@ -1334,10 +1402,14 @@ function boundedPredicateSupport(
     relationRoleMatched: false,
   };
 
+  const quantityWindows =
+    allowStructuredTableQuantity && required.includes("QUANTITY")
+      ? tableQuantityWindows(passage, query)
+      : null;
   const windows =
     allowStructuredTableCondition && required.includes("CONDITION")
       ? tableConditionWindows(passage, query)
-      : passageWindows(passage, title);
+      : (quantityWindows ?? passageWindows(passage, title));
 
   for (const window of windows) {
     const windowTokens = new Set(semanticTokens(window.text));
@@ -1470,6 +1542,8 @@ export function verifyDeterministicPassageSupport(
   const requiredAnswerCues = queryAnswerCues(query);
   const structuredTableCondition =
     hit.unitType === "TABLE" && requiredAnswerCues.includes("CONDITION");
+  const structuredTableQuantity =
+    hit.unitType === "TABLE" && requiredAnswerCues.includes("QUANTITY");
   const tableSupportEligible =
     !structuredTableCondition || isSupportEligibleProposition(hit);
   const boundedSupport = boundedPredicateSupport(
@@ -1480,6 +1554,7 @@ export function verifyDeterministicPassageSupport(
       ? undefined
       : hit.title?.trim() || hit.document.title?.trim() || undefined,
     structuredTableCondition,
+    structuredTableQuantity,
   );
   const claimRelationDiagnostics = requiredAnswerCues.includes("YES_NO")
     ? atomicClaimRelationDiagnostics(hit, passage, query)
