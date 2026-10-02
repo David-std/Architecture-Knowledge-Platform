@@ -1,5 +1,8 @@
 import type { SearchHit } from "@akp/contracts";
-import { markdownTableEvidence } from "./markdown-table-evidence.js";
+import {
+  markdownTableEvidence,
+  type MarkdownSourceSpan,
+} from "./markdown-table-evidence.js";
 import { markdownVisibleSource } from "./markdown-visible-source.js";
 
 const ANSWERABILITY_STOPWORDS = new Set([
@@ -980,6 +983,12 @@ interface PassageWindow {
   evidence: string;
   scopeTitle?: string;
   structuralAnswerCues?: readonly PassageAnswerCue[];
+  /**
+   * Quantity evidence may be narrower than the rendered context. Table
+   * headers and row labels identify a value but must never count as that
+   * value themselves.
+   */
+  quantityEvidence?: string;
 }
 
 function withoutReferenceMarkup(passage: string): string {
@@ -1075,6 +1084,438 @@ function tableConditionWindows(
       ];
     });
   });
+}
+
+interface TablePeriodAxis {
+  orientation: "COLUMNS" | "ROWS";
+  periodColumn?: number;
+  periods: Map<string, MarkdownTableCellLike>;
+}
+
+interface MarkdownTableCellLike {
+  readonly columnIndex: number;
+  readonly source: string;
+}
+
+interface StructuredQuantityWindows {
+  windows: PassageWindow[];
+  tableSpans: MarkdownSourceSpan[];
+}
+
+/**
+ * Code literals can contain pipe-delimited text that looks like a table to a
+ * line based scanner. Keep them out of the prose fallback while preserving
+ * line offsets for the real-table AST spans above.
+ */
+function maskMarkdownCodeLiterals(value: string): string {
+  return value
+    .replace(/```[\s\S]*?```|~~~[\s\S]*?~~~/gu, (block) =>
+      block.replace(/[^\n]/gu, " "),
+    )
+    .replace(/`[^`\n]*`/gu, (literal) => literal.replace(/[^\n]/gu, " "));
+}
+
+function uniqueExplicitYears(value: string): string[] {
+  return [...new Set(explicitYearValues(value))];
+}
+
+function standaloneTableYear(value: string): string | null {
+  const years = uniqueExplicitYears(value);
+  const tokens = normalizedAnswerabilityTokens(value);
+  return years.length === 1 && tokens.length === 1 && tokens[0] === years[0]
+    ? years[0]!
+    : null;
+}
+
+function tableHeaderLooksTemporal(value: string): boolean {
+  return semanticTokens(value).some((token) =>
+    ["year", "date", "period", "ano", "fecha"].includes(token),
+  );
+}
+
+function tableCellContainsQuantity(
+  value: string,
+  query: string,
+  scope: string = value,
+): boolean {
+  return (
+    value.trim().length > 0 && quantitativeEvidenceMatches(value, query, scope)
+  );
+}
+
+function inspectTablePeriodHeaders(table: {
+  header: { cells: readonly MarkdownTableCellLike[] };
+}): {
+  periods: Map<string, MarkdownTableCellLike>;
+  hasTemporalTokens: boolean;
+  ambiguous: boolean;
+} {
+  const periods = new Map<string, MarkdownTableCellLike>();
+  let hasTemporalTokens = false;
+  let ambiguous = false;
+  for (const cell of table.header.cells) {
+    const year = standaloneTableYear(cell.source);
+    if (!year) continue;
+    hasTemporalTokens = true;
+    if (periods.has(year)) {
+      ambiguous = true;
+      continue;
+    }
+    periods.set(year, cell);
+  }
+  return { periods, hasTemporalTokens, ambiguous };
+}
+
+function inspectTablePeriodRows(table: {
+  header: { cells: readonly MarkdownTableCellLike[] };
+  rows: readonly {
+    cells: readonly MarkdownTableCellLike[];
+  }[];
+}): {
+  axis: TablePeriodAxis | null;
+  hasTemporalTokens: boolean;
+  ambiguous: boolean;
+} {
+  const hasTemporalTokens = table.rows.some((row) =>
+    row.cells.some((cell) => {
+      if (standaloneTableYear(cell.source) === null) return false;
+      if (table.rows.length >= 2) return true;
+      const headerCell = table.header.cells.find(
+        (candidate) => candidate.columnIndex === cell.columnIndex,
+      );
+      return (
+        (row.cells.length > 1 && cell.columnIndex === 0) ||
+        tableHeaderLooksTemporal(headerCell?.source ?? "")
+      );
+    }),
+  );
+  // A row-oriented period axis needs more than one body row. With one row,
+  // an ordinary metric value such as "launch year: 2023" is structurally
+  // indistinguishable from a transposed table key.
+  if (table.rows.length < 2) {
+    return { axis: null, hasTemporalTokens, ambiguous: false };
+  }
+
+  const columnCount = Math.max(
+    table.header.cells.length,
+    ...table.rows.map((row) => row.cells.length),
+  );
+  const candidates: TablePeriodAxis[] = [];
+  for (let columnIndex = 0; columnIndex < columnCount; columnIndex += 1) {
+    const periods = new Map<string, MarkdownTableCellLike>();
+    let valid = true;
+    for (const row of table.rows) {
+      const cell = row.cells.find((candidate) =>
+        candidate.columnIndex === columnIndex,
+      );
+      const year = cell ? standaloneTableYear(cell.source) : null;
+      if (!cell || !year || periods.has(year)) {
+        valid = false;
+        break;
+      }
+      periods.set(year, cell);
+    }
+    if (valid && periods.size === table.rows.length) {
+      candidates.push({ orientation: "ROWS", periodColumn: columnIndex, periods });
+    }
+  }
+  return {
+    axis: candidates.length === 1 ? candidates[0]! : null,
+    hasTemporalTokens,
+    ambiguous: candidates.length > 1,
+  };
+}
+
+function quantityMetricAnchors(query: string): string[] {
+  const years = new Set(explicitYearValues(query));
+  return queryPredicateAnchors(query, ["QUANTITY"]).filter(
+    (token) => !years.has(token),
+  );
+}
+
+function tableLabelText(
+  cells: readonly MarkdownTableCellLike[],
+  excludedColumns: ReadonlySet<number>,
+  query: string,
+): string {
+  return cells
+    .filter(
+      (cell) =>
+        !excludedColumns.has(cell.columnIndex) &&
+        !tableCellContainsQuantity(cell.source, query),
+    )
+    .map((cell) => cell.source.trim())
+    .filter(Boolean)
+    .join(" ");
+}
+
+function selectUniqueTableRow(
+  rows: readonly { cells: readonly MarkdownTableCellLike[] }[],
+  query: string,
+  excludedColumns: ReadonlySet<number>,
+): { cells: readonly MarkdownTableCellLike[] } | null {
+  if (rows.length === 0) return null;
+  const anchors = quantityMetricAnchors(query);
+  const scored = rows.map((row) => {
+    const label = tableLabelText(row.cells, excludedColumns, query);
+    const tokens = new Set(semanticTokens(label));
+    return {
+      row,
+      score: anchors.filter((anchor) => tokens.has(anchor)).length,
+    };
+  });
+  const maximum = Math.max(...scored.map((candidate) => candidate.score));
+  const best = scored.filter((candidate) => candidate.score === maximum);
+  if (rows.length === 1 && anchors.length === 0) return rows[0]!;
+  const minimumRowAnchorOverlap = Math.min(2, Math.max(1, anchors.length));
+  if (maximum < minimumRowAnchorOverlap || best.length !== 1) return null;
+  return best[0]!.row;
+}
+
+function selectUniqueMetricColumn(
+  table: {
+    header: { source: string; cells: readonly MarkdownTableCellLike[] };
+    rows: readonly { cells: readonly MarkdownTableCellLike[] }[];
+  },
+  periodColumn: number,
+  query: string,
+  requestedPeriods: readonly string[],
+): MarkdownTableCellLike | null {
+  const candidates = table.header.cells.filter(
+    (cell) => cell.columnIndex !== periodColumn,
+  );
+  if (candidates.length === 0) return null;
+  const anchors = quantityMetricAnchors(query);
+  const scored = candidates.map((cell) => ({
+    cell,
+    score: anchors.filter((anchor) =>
+      semanticTokens(cell.source).includes(anchor),
+    ).length,
+  }));
+  const maximum = Math.max(...scored.map((candidate) => candidate.score));
+  if (maximum > 0) {
+    const best = scored.filter((candidate) => candidate.score === maximum);
+    const minimumMetricAnchorOverlap = Math.min(2, Math.max(1, anchors.length));
+    return maximum >= minimumMetricAnchorOverlap && best.length === 1
+      ? best[0]!.cell
+      : null;
+  }
+
+  const numeric = candidates.filter((candidate) =>
+    requestedPeriods.some((period) => {
+      const row = table.rows.find(
+        (candidateRow) =>
+          standaloneTableYear(
+            candidateRow.cells.find(
+              (cell) => cell.columnIndex === periodColumn,
+            )?.source ?? "",
+          ) === period,
+      );
+      const rowLabel = row
+        ? tableLabelText(row.cells, new Set([periodColumn]), query)
+        : "";
+      return tableCellContainsQuantity(
+        row?.cells.find((cell) => cell.columnIndex === candidate.columnIndex)
+          ?.source ?? "",
+        query,
+        `${candidate.source} ${table.header.source} ${rowLabel}`,
+      );
+    }),
+  );
+  if (numeric.length === 1) return numeric[0]!;
+  return candidates.length === 1 ? candidates[0]! : null;
+}
+
+function tableQuantityWindow(
+  table: {
+    header: { source: string; cells: readonly MarkdownTableCellLike[] };
+    rows: readonly {
+      source: string;
+      cells: readonly MarkdownTableCellLike[];
+    }[];
+  },
+  query: string,
+  title: string | undefined,
+): PassageWindow[] {
+  const requestedPeriods = explicitYearValues(query);
+  if (requestedPeriods.length === 0) return [];
+
+  const headerAxis = inspectTablePeriodHeaders(table);
+  const rowAxis = inspectTablePeriodRows(table);
+  const hasTemporalTokens =
+    headerAxis.hasTemporalTokens || rowAxis.hasTemporalTokens;
+  if (headerAxis.ambiguous || rowAxis.ambiguous) return [];
+  if (headerAxis.periods.size > 0 && rowAxis.axis) return [];
+
+  if (headerAxis.periods.size > 0) {
+    if (requestedPeriods.some((period) => !headerAxis.periods.has(period))) {
+      return [];
+    }
+    const periodColumns = new Set(
+      requestedPeriods.map((period) => headerAxis.periods.get(period)!.columnIndex),
+    );
+    const row = selectUniqueTableRow(table.rows, query, periodColumns);
+    if (!row) return [];
+    const label = tableLabelText(row.cells, periodColumns, query);
+    const values = requestedPeriods.map((period) => {
+      const periodCell = headerAxis.periods.get(period)!;
+      const valueCell = row.cells.find(
+        (cell) => cell.columnIndex === periodCell.columnIndex,
+      );
+      return valueCell &&
+        tableCellContainsQuantity(
+          valueCell.source,
+          query,
+          `${table.header.source} ${label}`,
+        )
+        ? { periodCell, valueCell }
+        : null;
+    });
+    if (values.some((value) => value === null)) return [];
+    const context = [
+      label,
+      ...values.map(
+        (value) => `${value!.periodCell.source}: ${value!.valueCell.source}`,
+      ),
+    ]
+      .filter(Boolean)
+      .join("\n");
+    return [
+      {
+        text: context,
+        evidence: values.map((value) => value!.valueCell.source).join("\n"),
+        quantityEvidence: [
+          table.header.source,
+          label,
+          ...values.map((value) => value!.valueCell.source),
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      },
+    ];
+  }
+
+  if (rowAxis.axis) {
+    const axis = rowAxis.axis;
+    if (requestedPeriods.some((period) => !axis.periods.has(period))) {
+      return [];
+    }
+    const metricHeader = selectUniqueMetricColumn(
+      table,
+      axis.periodColumn!,
+      query,
+      requestedPeriods,
+    );
+    if (!metricHeader) return [];
+    const values = requestedPeriods.map((period) => {
+      const periodCell = axis.periods.get(period)!;
+      const row = table.rows.find((candidateRow) =>
+        candidateRow.cells.some(
+          (cell) =>
+            cell.columnIndex === axis.periodColumn &&
+            cell.source === periodCell.source,
+        ),
+      );
+      const valueCell = row?.cells.find(
+        (cell) => cell.columnIndex === metricHeader.columnIndex,
+      );
+      const label = row
+        ? tableLabelText(row.cells, new Set([axis.periodColumn!]), query)
+        : "";
+      return valueCell &&
+        tableCellContainsQuantity(
+          valueCell.source,
+          query,
+          `${metricHeader.source} ${table.header.source} ${label}`,
+        )
+        ? { periodCell, valueCell }
+        : null;
+    });
+    if (values.some((value) => value === null)) return [];
+    const context = [
+      metricHeader.source,
+      ...values.map(
+        (value) => `${value!.periodCell.source}: ${value!.valueCell.source}`,
+      ),
+    ]
+      .filter(Boolean)
+      .join("\n");
+    return [
+      {
+        text: context,
+        evidence: values.map((value) => value!.valueCell.source).join("\n"),
+        quantityEvidence: [
+          metricHeader.source,
+          table.header.source,
+          ...values.map((value) => value!.valueCell.source),
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      },
+    ];
+  }
+
+  // A title can qualify a table only when the table has no period tokens of
+  // its own. The title never supplies the quantity; it only supplies scope.
+  if (hasTemporalTokens || !title || !explicitYearBindingsMatch(title, query)) {
+    return [];
+  }
+  const row = selectUniqueTableRow(table.rows, query, new Set());
+  if (!row) return [];
+  const label = tableLabelText(row.cells, new Set(), query);
+  const valueCells = row.cells.filter((cell) =>
+    tableCellContainsQuantity(
+      cell.source,
+      query,
+      `${title} ${table.header.source} ${label}`,
+    ),
+  );
+  if (valueCells.length !== 1) return [];
+  return [
+    {
+      text: [title, label, valueCells[0]!.source]
+        .filter(Boolean)
+        .join("\n"),
+      evidence: valueCells[0]!.source,
+      quantityEvidence: [title, table.header.source, label, valueCells[0]!.source]
+        .filter(Boolean)
+        .join("\n"),
+      scopeTitle: title,
+    },
+  ];
+}
+
+function tableQuantityWindows(
+  passage: string,
+  query: string,
+  title?: string,
+): StructuredQuantityWindows | null {
+  const tables = markdownTableEvidence(passage);
+  const hasCodeLiteral = /```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`/u.test(
+    passage,
+  );
+  if (tables.length === 0 && !hasCodeLiteral) return null;
+  return {
+    windows: tables.flatMap((table) => tableQuantityWindow(table, query, title)),
+    tableSpans: tables.map((table) => table.span),
+  };
+}
+
+function removeTableSpans(
+  passage: string,
+  spans: readonly MarkdownSourceSpan[],
+): string {
+  if (spans.length === 0) return maskMarkdownCodeLiterals(passage);
+  const ordered = [...spans].sort((left, right) => left.startOffset - right.startOffset);
+  let cursor = 0;
+  let output = "";
+  for (const span of ordered) {
+    if (span.startOffset < cursor) continue;
+    output += passage.slice(cursor, span.startOffset);
+    output += passage.slice(span.startOffset, span.endOffset).replace(/[^\n]/gu, " ");
+    cursor = span.endOffset;
+  }
+  return maskMarkdownCodeLiterals(output + passage.slice(cursor));
 }
 
 function passageWindows(passage: string, title?: string): PassageWindow[] {
@@ -1188,9 +1629,10 @@ export function quantitativeEvidenceMatches(
   query: string,
   scope: string = window,
 ): boolean {
-  const hasNumber = /(?:^|\s)(?:[$€£S\/]\s*)?\d+(?:[.,]\d+)?(?:\s*%|\b)/u.test(
-    window,
-  );
+  const hasNumber =
+    /(?:^|[\s([:;=|])(?:[$€£S\/]\s*)?[-+]?(?:(?:\d{1,3}(?:[,\s]\d{3})+)|\d+)(?:[.,]\d+)?(?:\s*%|\b)/u.test(
+      window,
+    );
   if (!hasNumber) return false;
   const normalizedQuery = normalizedMatchText(query);
   const normalizedWindow = normalizedMatchText(scope);
@@ -1243,6 +1685,7 @@ function answerRequirementsMatch(
   relationEvidence: string = window,
   relationScopeTitle?: string,
   structuralAnswerCues: readonly PassageAnswerCue[] = [],
+  quantityEvidence: string = window,
 ): {
   matched: PassageAnswerCue[];
   allMatched: boolean;
@@ -1278,7 +1721,7 @@ function answerRequirementsMatch(
 
   if (
     required.includes("QUANTITY") &&
-    quantitativeEvidenceMatches(window, query)
+    quantitativeEvidenceMatches(quantityEvidence, query)
   ) {
     matched.add("QUANTITY");
   }
@@ -1341,10 +1784,23 @@ function boundedPredicateSupport(
     relationRoleMatched: false,
   };
 
+  const explicitPeriodQuantity =
+    required.includes("QUANTITY") && explicitYearValues(query).length > 0;
+  const structuredQuantity = explicitPeriodQuantity
+    ? tableQuantityWindows(passage, query, title)
+    : null;
   const windows =
     allowStructuredTableCondition && required.includes("CONDITION")
       ? tableConditionWindows(passage, query)
-      : passageWindows(passage, title);
+      : structuredQuantity
+        ? [
+            ...structuredQuantity.windows,
+            ...passageWindows(
+              removeTableSpans(passage, structuredQuantity.tableSpans),
+              title,
+            ),
+          ]
+        : passageWindows(passage, title);
 
   for (const window of windows) {
     const windowTokens = new Set(semanticTokens(window.text));
@@ -1358,6 +1814,7 @@ function boundedPredicateSupport(
       window.evidence,
       window.scopeTitle,
       window.structuralAnswerCues,
+      window.quantityEvidence,
     );
     const boundedDefinitionRelation =
       required.includes("DEFINITION") &&

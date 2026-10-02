@@ -1207,6 +1207,195 @@ describe("retrieval answerability", () => {
     ]);
   });
 
+  it("binds default support to the requested horizontal table cells", () => {
+    const table = hit(2301, {
+      title: "Registry report",
+      type: "dashboard",
+      unitType: "RAW",
+      excerpt:
+        "| Measure | 2023 | 2025 |\n| --- | --- | --- |\n| Registered units | Unknown | 72 |",
+      contributions: [contribution("vector", 0.99, 1)],
+    });
+
+    const missing = assessRetrievalAnswerability(
+      [table],
+      "How many registered units were recorded in 2023?",
+    );
+    const present = assessRetrievalAnswerability(
+      [table],
+      "How many registered units were recorded in 2025?",
+    );
+    const incompleteComparison = assessRetrievalAnswerability(
+      [table],
+      "How many registered units were recorded in 2023 and 2025?",
+    );
+
+    expect(missing.supported).toBe(false);
+    expect(present.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(table),
+    ]);
+    expect(incompleteComparison.supported).toBe(false);
+  });
+
+  it("binds default support to a complete transposed table in another language", () => {
+    const table = hit(2302, {
+      title: "Registro operativo",
+      type: "dashboard",
+      unitType: "DOCUMENT",
+      excerpt:
+        "| Año | Unidades registradas |\n| --- | --- |\n| 2023 | 65 |\n| 2025 | 72 |",
+      contributions: [contribution("vector", 0.99, 1)],
+    });
+
+    const present = assessRetrievalAnswerability(
+      [table],
+      "¿Cuántas unidades registradas hubo en 2023 y 2025?",
+    );
+    expect(present.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(table),
+    ]);
+
+    const missing = hit(2303, {
+      title: "Registro operativo",
+      type: "dashboard",
+      unitType: "DOCUMENT",
+      excerpt:
+        "| Año | Unidades registradas |\n| --- | --- |\n| 2023 | Desconocido |\n| 2025 | 72 |",
+      contributions: [contribution("vector", 0.99, 1)],
+    });
+    expect(
+      assessRetrievalAnswerability(
+        [missing],
+        "¿Cuántas unidades registradas hubo en 2023?",
+      ).supported,
+    ).toBe(false);
+  });
+
+  it("does not use an unrelated year row or a repeated title metric as a value", () => {
+    const unrelatedYear = hit(2304, {
+      title: "Registry report 2023",
+      type: "dashboard",
+      unitType: "RAW",
+      excerpt:
+        "| Measure | Value |\n| --- | --- |\n| Reference year | 2023 |\n| Retired units | 72 |",
+      contributions: [contribution("vector", 0.99, 1)],
+    });
+    expect(
+      assessRetrievalAnswerability(
+        [unrelatedYear],
+        "How many registered units were recorded in 2023?",
+      ).supported,
+    ).toBe(false);
+
+    const wrongMetric = hit(2305, {
+      title: "Registry report 2023",
+      type: "dashboard",
+      unitType: "RAW",
+      excerpt:
+        "| Measure | Actual |\n| --- | --- |\n| Retired units | 72 |",
+      contributions: [contribution("vector", 0.99, 1)],
+    });
+    expect(
+      assessRetrievalAnswerability(
+        [wrongMetric],
+        "How many registered units were recorded in 2023?",
+      ).supported,
+    ).toBe(false);
+  });
+
+  it("allows a legitimate title-scoped value when the table has no period axis", () => {
+    const table = hit(2306, {
+      title: "Registry report 2023",
+      type: "dashboard",
+      unitType: "RAW",
+      excerpt:
+        "| Measure | Actual |\n| --- | --- |\n| Registered units | 1999 |",
+      contributions: [contribution("vector", 0.99, 1)],
+    });
+    expect(
+      assessRetrievalAnswerability(
+        [table],
+        "How many registered units were recorded in 2023?",
+      ).supportedCandidateKeys,
+    ).toEqual([retrievalAnswerabilityCandidateKey(table)]);
+  });
+
+  it("preserves prose support outside a table and ignores code table literals", () => {
+    const proseAndTable = hit(2307, {
+      title: "Registry report",
+      type: "dashboard",
+      unitType: "RAW",
+      excerpt:
+        "Registered units were 65 in 2023.\n\n| Measure | 2023 |\n| --- | --- |\n| Retired units | Unknown |",
+      contributions: [contribution("vector", 0.99, 1)],
+    });
+    expect(
+      assessRetrievalAnswerability(
+        [proseAndTable],
+        "How many registered units were recorded in 2023?",
+      ).supported,
+    ).toBe(true);
+
+    const codeLiteral = hit(2308, {
+      title: "Registry report 2023",
+      type: "dashboard",
+      unitType: "RAW",
+      excerpt:
+        "```markdown\n| Measure | 2023 |\n| --- | --- |\n| Registered units | 72 |\n```",
+      contributions: [contribution("vector", 0.99, 1)],
+    });
+    expect(
+      assessRetrievalAnswerability(
+        [codeLiteral],
+        "How many registered units were recorded in 2023?",
+      ).supported,
+    ).toBe(false);
+  });
+
+  it.each([
+    [
+      "How many failed checks were recorded in 2023?",
+      "| Measure | Actual |\n| --- | --- |\n| Failed checks | -3 |",
+    ],
+    [
+      "How much was the monthly service cost in 2023?",
+      "| Measure | Monthly |\n| --- | --- |\n| Service cost | €40 |",
+    ],
+    [
+      "How much was the monthly service cost in 2023?",
+      "| Measure | Monthly |\n| --- | --- |\n| Service cost | 1,234.5 |",
+    ],
+  ])(
+    "keeps signs, grouping and metric-column scope in title-scoped values: %s",
+    (query, excerpt) => {
+      const table = hit(2309, {
+        title: "Registry report 2023",
+        type: "dashboard",
+        unitType: "RAW",
+        excerpt,
+        contributions: [contribution("vector", 0.99, 1)],
+      });
+      expect(assessRetrievalAnswerability([table], query).supported).toBe(true);
+    },
+  );
+
+  it("fails closed for duplicate period columns", () => {
+    const table = hit(2310, {
+      title: "Registry report",
+      type: "dashboard",
+      unitType: "RAW",
+      excerpt:
+        "| Measure | 2023 | 2023 |\n| --- | --- | --- |\n| Registered units | 65 | 72 |",
+      contributions: [contribution("vector", 0.99, 1)],
+    });
+    expect(
+      assessRetrievalAnswerability(
+        [table],
+        "How many registered units were recorded in 2023?",
+      ).supported,
+    ).toBe(false);
+  });
+
   it("requires an explicit year when the question asks which year", () => {
     const topical = hit(22, {
       title: "Compatibility window history",
