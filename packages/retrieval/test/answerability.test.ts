@@ -1207,6 +1207,112 @@ describe("retrieval answerability", () => {
     ]);
   });
 
+  it("binds a numeric row selector to its header column", () => {
+    const table = hit(2301, {
+      title: "Riders by line",
+      type: "dashboard",
+      unitType: "TABLE",
+      excerpt:
+        "| Line | Daily riders |\n|---|---|\n| Metro L1 | 182000 |\n| Metro L2 | 141000 |",
+      contributions: [contribution("vector", 0.91, 1)],
+    });
+
+    const missing = assessRetrievalAnswerability(
+      [table],
+      "How many daily riders does metro line 3 have?",
+    );
+    expect(missing.supported).toBe(false);
+
+    const present = assessRetrievalAnswerability(
+      [table],
+      "How many daily riders does metro line 2 have?",
+    );
+    expect(present.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(table),
+    ]);
+  });
+
+  it.each([
+    ["3.5", "How many daily riders does metro line 3 have?"],
+    ["-3", "How many daily riders does metro line 3 have?"],
+    ["1,234", "How many daily riders does metro line 1 have?"],
+    ["A3", "How many daily riders does metro line 3 have?"],
+    ["3A", "How many daily riders does metro line 3 have?"],
+  ])("does not split an unsafe row key %s into a selector", (rowKey, query) => {
+    const table = hit(2302, {
+      title: "Riders by line",
+      type: "dashboard",
+      unitType: "TABLE",
+      excerpt:
+        `| Line | Daily riders |\n|---|---|\n| ${rowKey} | 72 |`,
+      contributions: [contribution("vector", 0.9, 1)],
+    });
+
+    expect(assessRetrievalAnswerability([table], query).supported).toBe(false);
+  });
+
+  it("fails closed when the query selector itself is decimal or signed", () => {
+    const table = hit(2303, {
+      title: "Riders by line",
+      type: "dashboard",
+      unitType: "TABLE",
+      excerpt:
+        "| Line | Daily riders |\n|---|---|\n| 3 | 72 |\n| 4 | 81 |",
+      contributions: [contribution("vector", 0.9, 1)],
+    });
+
+    expect(
+      assessRetrievalAnswerability(
+        [table],
+        "How many daily riders does metro line 3.5 have?",
+      ).supported,
+    ).toBe(false);
+    expect(
+      assessRetrievalAnswerability(
+        [table],
+        "How many daily riders does metro line -3 have?",
+      ).supported,
+    ).toBe(false);
+  });
+
+  it("supports bare and long exact row keys without truncating digits", () => {
+    const table = hit(2304, {
+      title: "Trips by route",
+      type: "dashboard",
+      unitType: "TABLE",
+      excerpt:
+        "| Route | Daily trips |\n|---|---|\n| 2 | 72 |\n| 1234 | 81 |",
+      contributions: [contribution("vector", 0.9, 1)],
+    });
+
+    for (const query of [
+      "How many daily trips does route 2 have?",
+      "How many daily trips does route 1234 have?",
+    ]) {
+      expect(
+        assessRetrievalAnswerability([table], query).supportedCandidateKeys,
+      ).toEqual([retrievalAnswerabilityCandidateKey(table)]);
+    }
+  });
+
+  it("does not borrow a matching selector from a different numeric column", () => {
+    const table = hit(2305, {
+      title: "Riders by line",
+      type: "dashboard",
+      unitType: "TABLE",
+      excerpt:
+        "| Line | Daily riders |\n|---|---|\n| Metro L1 | 3 |\n| Metro L2 | 141000 |",
+      contributions: [contribution("vector", 0.9, 1)],
+    });
+
+    expect(
+      assessRetrievalAnswerability(
+        [table],
+        "How many daily riders does metro line 3 have?",
+      ).supported,
+    ).toBe(false);
+  });
+
   it("requires an explicit year when the question asks which year", () => {
     const topical = hit(22, {
       title: "Compatibility window history",

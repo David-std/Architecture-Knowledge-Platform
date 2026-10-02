@@ -1236,6 +1236,186 @@ export function explicitYearBindingsMatch(
   return requested.every((year) => available.has(year));
 }
 
+interface TableNumericSelectorRun {
+  digits: string;
+  startOffset: number;
+  anchorOffset: number;
+  safe: boolean;
+}
+
+function isDigitCode(code: number): boolean {
+  return code >= 48 && code <= 57;
+}
+
+function isLetterAt(value: string, index: number): boolean {
+  const character = value[index];
+  return (
+    character !== undefined &&
+    character.toLocaleLowerCase("en-US") !==
+      character.toLocaleUpperCase("en-US")
+  );
+}
+
+function isNumericJoinCode(code: number): boolean {
+  return (
+    code === 32 ||
+    code === 44 ||
+    code === 46 ||
+    code === 160 ||
+    code === 8239
+  );
+}
+
+function isUnsafeNumericPrefixCode(code: number): boolean {
+  return (
+    code === 36 ||
+    code === 43 ||
+    code === 45 ||
+    code === 47 ||
+    code === 162 ||
+    code === 163 ||
+    code === 165 ||
+    code === 8364 ||
+    code === 8377
+  );
+}
+
+function tableNumericSelectorRuns(value: string): TableNumericSelectorRun[] {
+  const output: TableNumericSelectorRun[] = [];
+  let index = 0;
+  while (index < value.length) {
+    const code = value.charCodeAt(index);
+    if (!isDigitCode(code)) {
+      index += 1;
+      continue;
+    }
+
+    const startOffset = index;
+    while (index < value.length && isDigitCode(value.charCodeAt(index))) {
+      index += 1;
+    }
+    const endOffset = index;
+
+    let anchorOffset = startOffset;
+    while (anchorOffset > 0 && isLetterAt(value, anchorOffset - 1)) {
+      anchorOffset -= 1;
+    }
+
+    const leftCode =
+      startOffset > 0 ? value.charCodeAt(startOffset - 1) : -1;
+    const rightCode =
+      endOffset < value.length ? value.charCodeAt(endOffset) : -1;
+    const leftNumericJoin =
+      startOffset > 1 &&
+      isNumericJoinCode(leftCode) &&
+      isDigitCode(value.charCodeAt(startOffset - 2));
+    const rightNumericJoin =
+      endOffset + 1 < value.length &&
+      isNumericJoinCode(rightCode) &&
+      isDigitCode(value.charCodeAt(endOffset + 1));
+    const prefixedIdentifier = anchorOffset < startOffset;
+    const unsafePrefix =
+      !prefixedIdentifier && isUnsafeNumericPrefixCode(leftCode);
+    const unsafeSuffix =
+      rightCode === 37 || isLetterAt(value, endOffset);
+
+    output.push({
+      digits: value.slice(startOffset, endOffset),
+      startOffset,
+      anchorOffset,
+      safe:
+        !leftNumericJoin &&
+        !rightNumericJoin &&
+        !unsafePrefix &&
+        !unsafeSuffix,
+    });
+  }
+  return output;
+}
+
+function firstLetter(value: string): string | null {
+  for (let index = 0; index < value.length; index += 1) {
+    if (!isLetterAt(value, index)) continue;
+    return value[index]!.toLocaleLowerCase("en-US");
+  }
+  return null;
+}
+
+function selectorPrefixMatchesHeader(
+  value: string,
+  run: TableNumericSelectorRun,
+  header: string,
+): boolean {
+  if (run.anchorOffset === run.startOffset) return true;
+  const prefixInitial = value[run.anchorOffset]?.toLocaleLowerCase("en-US");
+  const headerInitial = firstLetter(header);
+  return (
+    prefixInitial !== undefined &&
+    headerInitial !== null &&
+    prefixInitial === headerInitial
+  );
+}
+
+function tableQuantityWindows(
+  passage: string,
+  query: string,
+): PassageWindow[] | null {
+  let applicable = false;
+  const windows: PassageWindow[] = [];
+
+  for (const table of markdownTableEvidence(passage)) {
+    let unsafeApplicableBinding = false;
+    const bindings = tableNumericSelectorRuns(query).flatMap((run) => {
+      const anchor = semanticTokens(query.slice(0, run.anchorOffset)).at(-1);
+      if (!anchor) return [];
+
+      const columns = table.header.cells.filter((cell) =>
+        semanticTokens(cell.source).includes(anchor),
+      );
+      if (columns.length === 0) return [];
+
+      applicable = true;
+      if (!run.safe || columns.length !== 1) {
+        unsafeApplicableBinding = true;
+        return [];
+      }
+
+      return [
+        {
+          digits: run.digits,
+          column: columns[0]!.columnIndex,
+          header: columns[0]!.source,
+        },
+      ];
+    });
+
+    if (unsafeApplicableBinding) continue;
+    if (bindings.length === 0) continue;
+
+    for (const row of table.rows) {
+      const rowMatches = bindings.every((binding) => {
+        const cell = row.cells.find(
+          (candidate) => candidate.columnIndex === binding.column,
+        );
+        if (!cell) return false;
+        return tableNumericSelectorRuns(cell.source).some(
+          (run) =>
+            run.safe &&
+            run.digits === binding.digits &&
+            selectorPrefixMatchesHeader(cell.source, run, binding.header),
+        );
+      });
+      if (!rowMatches) continue;
+      windows.push({
+        text: table.header.source.concat(String.fromCharCode(10), row.source),
+        evidence: row.source,
+      });
+    }
+  }
+
+  return applicable ? windows : null;
+}
+
 function answerRequirementsMatch(
   window: string,
   query: string,
@@ -1324,6 +1504,7 @@ function boundedPredicateSupport(
   required: readonly PassageAnswerCue[],
   title?: string,
   allowStructuredTableCondition = false,
+  allowStructuredTableQuantity = false,
 ): {
   supported: boolean;
   matchedAnswerCues: PassageAnswerCue[];
@@ -1341,10 +1522,14 @@ function boundedPredicateSupport(
     relationRoleMatched: false,
   };
 
+  const quantityWindows =
+    allowStructuredTableQuantity && required.includes("QUANTITY")
+      ? tableQuantityWindows(passage, query)
+      : null;
   const windows =
     allowStructuredTableCondition && required.includes("CONDITION")
       ? tableConditionWindows(passage, query)
-      : passageWindows(passage, title);
+      : (quantityWindows ?? passageWindows(passage, title));
 
   for (const window of windows) {
     const windowTokens = new Set(semanticTokens(window.text));
@@ -1477,6 +1662,8 @@ export function verifyDeterministicPassageSupport(
   const requiredAnswerCues = queryAnswerCues(query);
   const structuredTableCondition =
     hit.unitType === "TABLE" && requiredAnswerCues.includes("CONDITION");
+  const structuredTableQuantity =
+    hit.unitType === "TABLE" && requiredAnswerCues.includes("QUANTITY");
   const tableSupportEligible =
     !structuredTableCondition || isSupportEligibleProposition(hit);
   const boundedSupport = boundedPredicateSupport(
@@ -1487,6 +1674,7 @@ export function verifyDeterministicPassageSupport(
       ? undefined
       : hit.title?.trim() || hit.document.title?.trim() || undefined,
     structuredTableCondition,
+    structuredTableQuantity,
   );
   const claimRelationDiagnostics = requiredAnswerCues.includes("YES_NO")
     ? atomicClaimRelationDiagnostics(hit, passage, query)
