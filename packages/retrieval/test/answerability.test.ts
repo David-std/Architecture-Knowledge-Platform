@@ -1207,6 +1207,48 @@ describe("retrieval answerability", () => {
     ]);
   });
 
+  it("binds a short numeric table row key to its matching header column", () => {
+    const table = hit(212, {
+      title: "Viajeros por línea",
+      type: "dashboard",
+      unitType: "TABLE",
+      excerpt:
+        "| Línea | Viajeros diarios (2025) |\n|---|---|\n| Metro L1 | 182000 |\n| Metro L2 | 141000 |",
+      contributions: [contribution("vector", 0.91, 1)],
+    });
+
+    const missing = assessRetrievalAnswerability(
+      [table],
+      "¿Cuántos viajeros diarios tiene la línea 3 de metro?",
+    );
+    expect(missing.supported).toBe(false);
+
+    const present = assessRetrievalAnswerability(
+      [table],
+      "¿Cuántos viajeros diarios tiene la línea 2 de metro?",
+    );
+    expect(present.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(table),
+    ]);
+  });
+
+  it("does not bind a requested row key from a numeric metric cell", () => {
+    const table = hit(213, {
+      title: "Riders by line",
+      type: "dashboard",
+      unitType: "TABLE",
+      excerpt:
+        "| Line | Daily riders |\n|---|---|\n| Metro L1 | 3.5 |\n| Metro L2 | 141000 |",
+      contributions: [contribution("vector", 0.9, 1)],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [table],
+      "How many daily riders does metro line 3 have?",
+    );
+    expect(result.supported).toBe(false);
+  });
+
   it("requires an explicit year when the question asks which year", () => {
     const topical = hit(22, {
       title: "Compatibility window history",
