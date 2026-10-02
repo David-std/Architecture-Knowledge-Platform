@@ -13,8 +13,16 @@ docker compose ps
 
 Set private values for `AKP_API_TOKEN`, `AKP_API_TOKEN_SCOPES`,
 `AKP_EXTRACTOR_TOKEN`, MinIO credentials and managed-repository paths. Do not
-reuse example placeholders or commit `.env`. Start API, worker and Web in
-separate terminals:
+reuse example placeholders or commit `.env`. `AKP_MANAGED_REPO` must name the
+actual root of its managed Git worktree. For a new repository, choose an
+independent directory outside another checkout. An uninitialized subdirectory
+of a checkout is rejected with `GIT_REPOSITORY_ROOT_INVALID`; Git would otherwise
+discover and operate on the ancestor repository. Linked Git worktree roots are
+valid, but an unavailable `main` checkout fails without reinitializing files.
+An empty setting uses the temporary managed-knowledge default consistently in
+API and worker; it must not resolve to the application working directory.
+
+Start API, worker and Web in separate terminals:
 
 ```powershell
 pnpm --filter @akp/api dev

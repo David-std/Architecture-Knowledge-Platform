@@ -29,7 +29,7 @@ import { queryKnowledge } from "./search.js";
 
 function managedRepositoryPath(): string {
   return (
-    process.env.AKP_MANAGED_REPO ?? path.join(tmpdir(), "akp-managed-knowledge")
+    process.env.AKP_MANAGED_REPO || path.join(tmpdir(), "akp-managed-knowledge")
   );
 }
 

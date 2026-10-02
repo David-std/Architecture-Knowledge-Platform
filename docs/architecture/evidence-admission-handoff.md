@@ -222,3 +222,60 @@ A local review of `40bca510e26c6c0b51c7bcb6e7cf8a571b017ab7` reproduced a bounda
 **Measured scope:** the 133-question development replay using the pinned quote-reader judgments remained unchanged at 97/104 correct-source acceptance, 2/29 unanswerable false positives and 99/105 admitted-source precision (94.3%). It used 225 valid judgment-cache hits and zero fresh model calls, so its measured replay time is not inference latency. This pack does not establish a general accuracy improvement for the new period boundary. The correction is supported by the source-selection regressions; it does not eliminate the measured wrong-entity, wrong-metric or inverse-relation semantic errors.
 
 **Limits and next work:** explicit-year recognition retains the existing numeric-year convention; it is not a general temporal parser. First-column row scope is source context, not independent evidence authority. Semantic metric identity, non-year selectors, relation direction and partial compound answers still require calibrated source/span evaluation. The concurrent table-row-key experiment addresses a different, deterministic retrieval/admission path and must be measured separately; neither change justifies enabling an optional reader or marking the complete RAG precision objective achieved.
+
+## Fresh local projection comparison and unmerged selector audit
+
+A read-only source was imported twice into isolated infrastructure using the current structural parser and pinned multilingual E5 provider. The question set contains 95 document-labeled positives and 18 negatives. Both imports produced 10,868 vectors; source hashes before and after matched. The source includes missing/duplicate identity, missing-type and unresolved-link warnings, so document labels are not exhaustive passage or citation labels.
+
+| Passage recipe     | Gold document @1 / @5 / @10 / @20 / @64 | Observed warm-query p50 / p95 |
+| ------------------ | --------------------------------------- | ----------------------------- |
+| `body-v1`          | 28 / 55 / 64 / 72 / 80                  | 236 / 481 ms                  |
+| `title-heading-v1` | 28 / 66 / 81 / 87 / 92                  | 731 / 1,331 ms                |
+
+The versioned contextual recipe improves pre-admission document recall without source-specific query rewriting. It does not prove admission precision: the baseline deterministic policy returned some support for 40/113 and 37/113 questions respectively; those counts do not measure correct-source acceptance. The ordered runs had concurrent local work, so their latency difference is not an isolated recipe-cost estimate. Models, projection inputs, question digest and configuration are recorded in private artifacts, but automatic Git/Node/lockfile start/end provenance was incomplete. The runs finished before the later API-fixture checkout mutation according to their timestamps and the Git reflog. Treat them as local diagnostic observations, not final-head release assurance. New measurements must capture immutable runtime and projection provenance automatically.
+
+**Separate experimental addition:** `66b530583a6dae85ab820ebe5ec9e5bac5d3b81d` adds `shortNumericRuns` and `tableQuantityWindows`. Its 103 targeted answerability tests pass, and the lane rejects ordinary missing short row keys and prevents a distinct numeric metric column from satisfying the selector. Real `assessRetrievalAnswerability` calls nevertheless admit a requested integer `3` from a row key `3.5` or `-3`; grouping such as `1,234` can also be split into matching fragments. Numbers longer than three digits bypass the selector lane and fall back to broad passage windows. These are admission results, not only scanner diagnostics. The comparison base already has broader table false acceptances; the experiment is a partial narrowing, not a proven exact-selector solution.
+
+**Required correction before integration:** preserve whole numeric literals and identifier roles, including signs, decimal/grouping conventions and arbitrary length. Bind selectors to the actual source column and reject ambiguous forms; do not make an applicable but unmatched selector fall back to unrestricted table text. Keep alphanumeric identities distinct from punctuation-separated numeric values, and measure cross-language column alignment rather than adding vocabulary for individual questions. Add positive and counterfactual controls with different numeric forms and column roles, then evaluate all admitted sources/spans on independent data. These selector changes are not promoted by the reporting-period fix.
+
+## Managed repository root integrity found during local integration
+
+A local API integration run configured an uninitialized managed-knowledge
+subdirectory inside the application checkout. `GitKnowledgeStore.ensureRepository`
+accepted Git's ancestor discovery as proof that the requested directory was a
+repository root. It checked out the ancestor's `main` and published three public
+fixture commits there. The run was stopped; those commits were retained on a
+local forensic ref, the prior local branch state was restored, and no fixture
+commits were pushed to a product branch. This interrupted run is not passing
+integration evidence.
+
+**Cause and correction:** `packages/git-store/src/index.ts` now compares the
+canonical requested path with the actual root reported by
+[`git rev-parse --show-toplevel`](https://git-scm.com/docs/git-rev-parse).
+Before creating a missing directory, it probes the nearest existing ancestor.
+Ancestor discovery, bare or broken metadata and unexpected Git probe failures
+are rejected rather than treated as an independent repository. Git process
+environment overrides cannot redirect the store to another worktree, index or
+object directory. Reads, draft writes, publication and cleanup use the same
+root boundary. Existing checkout/revision errors propagate without initializing
+or replacing README/configuration. Exact linked-worktree roots remain valid.
+The governance fallback also now treats the blank setting from `.env.example`
+as unset, consistently with worker and publication paths.
+
+**Focused evidence:** the Git-store suite passes 16 tests, including nested-root
+rejection with unchanged ancestor branch, HEAD, tree, README and author; fresh
+independent initialization; linked-worktree reading; checkout failure without
+reinitialization; bare-repository rejection; and existing draft/publication
+regressions. The fresh full integration rerun used independent temporary managed
+and ingest roots plus disposable PostgreSQL, raw storage and extractor services:
+146 API tests passed (one optional-model test skipped), 65 PostgreSQL tests
+passed, and the source checkout HEAD remained unchanged. The two worker ingest
+fencing tests also passed. Runtime verification passed 47 checks in bootstrap
+mode; MCP exercised its facade/instruction/provenance contracts, not private
+answer precision. A real managed-Git bundle clone preserved the main revision,
+tree and canonical blobs; Windows working-copy line-ending conversion was
+accounted for separately. Frozen installation, the high-severity audit gate,
+format, secrets, contracts, docs, hygiene, generality, `pnpm check` and build
+passed. The audit still reports 15 moderate advisories. This fix protects
+canonical publication and reproducible retrieval inputs; it is not a
+semantic-accuracy improvement.
