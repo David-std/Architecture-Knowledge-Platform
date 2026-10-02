@@ -145,3 +145,21 @@ and 65 PostgreSQL tests. A single review-policy setup deadline failure did not
 recur in its isolated 8-test suite or the complete rerun; no deadline was raised.
 Private accuracy figures above remain tied to their recorded source/projection;
 this structural correction is not a claim of universal answer accuracy.
+
+
+## Measurement provenance correction
+
+The score replay previously joined only question and unit IDs. Reusing those
+IDs after changing an excerpt silently assigned the old relevance score to a
+new model input. Reader caches likewise omitted the model revision and generation
+configuration, and cached query time could be mistaken for fresh inference.
+
+New recordings bind exact input hashes, pinned model identity and inference
+configuration; legacy artifacts cannot be replayed as current evidence.
+Reader caches also bind prompt/generation/deployment provenance, serialize writes,
+coalesce duplicate requests and distinguish fresh model time from cache hits.
+Focused regressions change text, query, model revision and generation options
+without changing fixture IDs and verify that the old result cannot be reused.
+Prior measurements above remain historical controlled runs; no new hashes are
+retroactively attached to their old artifacts. The public pack documentation
+also now explicitly states that its split is not question-family-disjoint.

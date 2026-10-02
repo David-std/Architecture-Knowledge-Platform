@@ -3,9 +3,15 @@ import path from "node:path";
 import { loadEvidenceAdmissionPack } from "../../../scripts/evidence-admission-pack.js";
 import {
   ContextualCrossEncoderEvidenceVerifier,
+  contextualEvidenceText,
   retrievalAnswerabilityCandidateKey,
   type QueryConditionedEvidenceVerifierInput,
 } from "../src/index.js";
+
+import {
+  CROSS_ENCODER_RECORDING_CONFIGURATION,
+  evidenceScoreInputHash,
+} from "../../../scripts/evidence-admission-recordings.js";
 
 /**
  * Scores every question against every unit of its domain once, with and
@@ -15,6 +21,8 @@ import {
  */
 const verifier = new ContextualCrossEncoderEvidenceVerifier({
   minimumSupportScore: 0.5,
+  maxTokens: CROSS_ENCODER_RECORDING_CONFIGURATION.maxTokens,
+  batchSize: CROSS_ENCODER_RECORDING_CONFIGURATION.batchSize,
   localFilesOnly: process.env.AKP_LOCAL_FILES_ONLY === "1",
   ...(process.env.AKP_MODEL_CACHE_DIR
     ? { cacheDir: process.env.AKP_MODEL_CACHE_DIR }
@@ -46,6 +54,22 @@ try {
         questionId: entry.question.id,
         split: entry.domain.split,
         unitId: hit.document.externalId,
+        contextualInputHash: evidenceScoreInputHash(
+          entry.question.query,
+          contextualEvidenceText({
+            title: hit.title,
+            headingPath: hit.headingPath ?? null,
+            passage: hit.excerpt,
+          }).text,
+        ),
+        plainInputHash: evidenceScoreInputHash(
+          entry.question.query,
+          contextualEvidenceText({
+            title: "",
+            headingPath: [],
+            passage: hit.excerpt,
+          }).text,
+        ),
         contextual: contextual[position],
         plain: plain[position],
       });
@@ -64,7 +88,12 @@ const outputPath = path.resolve(
     "reports/ci/contextual-evidence-pack-scores.json",
 );
 await mkdir(path.dirname(outputPath), { recursive: true });
-await writeFile(outputPath, JSON.stringify({ verifier: verifier.id, rows }));
+await writeFile(outputPath, JSON.stringify({
+    schemaVersion: 2,
+    verifier: verifier.id,
+    configuration: CROSS_ENCODER_RECORDING_CONFIGURATION,
+    rows,
+  }));
 console.error(
   `scored ${rows.length} pairs in ${((performance.now() - started) / 1000).toFixed(0)}s`,
 );
