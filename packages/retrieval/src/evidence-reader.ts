@@ -151,6 +151,55 @@ function chatCompletionsUrl(baseUrl: string): string {
   return url.toString();
 }
 
+type OpenAICompatibleResponseRecord = Record<string, unknown>;
+
+function isResponseRecord(
+  value: unknown,
+): value is OpenAICompatibleResponseRecord {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * A syntactically valid message is usable only after generation has finished.
+ * OpenAI-compatible servers commonly omit these optional fields, so an absent
+ * field remains compatible; an explicit reason other than a natural stop fails
+ * closed.
+ */
+function assertCompletedResponse(
+  payload: OpenAICompatibleResponseRecord,
+  choice: OpenAICompatibleResponseRecord,
+  message: OpenAICompatibleResponseRecord,
+): void {
+  for (const record of [payload, choice]) {
+    if (!Object.prototype.hasOwnProperty.call(record, "done")) continue;
+    const done = record.done;
+    if (done !== null && done !== undefined && done !== true) {
+      throw new Error("EVIDENCE_READER_RESPONSE_INVALID");
+    }
+  }
+
+  const terminalReasons: string[] = [];
+  for (const record of [payload, choice, message]) {
+    for (const field of ["finish_reason", "stop_reason", "done_reason"]) {
+      if (!Object.prototype.hasOwnProperty.call(record, field)) continue;
+      const value = record[field];
+      if (value === null || value === undefined) continue;
+      if (typeof value !== "string") {
+        throw new Error("EVIDENCE_READER_RESPONSE_INVALID");
+      }
+      const reason = value.trim().toLowerCase();
+      if (!reason) {
+        throw new Error("EVIDENCE_READER_RESPONSE_INVALID");
+      }
+      terminalReasons.push(reason);
+    }
+  }
+
+  if (terminalReasons.some((reason) => reason !== "stop")) {
+    throw new Error("EVIDENCE_READER_RESPONSE_INVALID");
+  }
+}
+
 /**
  * Evidence reader for any OpenAI-compatible chat endpoint, including local
  * servers such as Ollama, llama.cpp or LM Studio. Temperature is zero;
@@ -191,27 +240,40 @@ export class OpenAICompatibleEvidenceReader implements EvidenceReader {
 
   async judge(input: EvidenceReaderInput): Promise<EvidenceReaderJudgment> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    let rejectDeadline: ((reason?: unknown) => void) | undefined;
+    const deadline = new Promise<never>((_, reject) => {
+      rejectDeadline = reject;
+    });
+    const timer = setTimeout(() => {
+      controller.abort();
+      rejectDeadline?.(new Error("EVIDENCE_READER_TIMEOUT"));
+    }, this.timeoutMs);
     try {
       let response: Response;
       try {
-        response = await this.fetchImpl(this.url, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            ...(this.apiKey ? { authorization: `Bearer ${this.apiKey}` } : {}),
-          },
-          body: JSON.stringify({
-            model: this.model,
-            messages: evidenceReaderMessages(input),
-            temperature: 0,
-            max_tokens: this.maxOutputTokens,
-            ...(this.jsonResponseFormat
-              ? { response_format: { type: "json_object" } }
-              : {}),
+        response = await Promise.race([
+          this.fetchImpl(this.url, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              ...(this.apiKey
+                ? { authorization: `Bearer ${this.apiKey}` }
+                : {}),
+            },
+            body: JSON.stringify({
+              model: this.model,
+              messages: evidenceReaderMessages(input),
+              temperature: 0,
+              max_tokens: this.maxOutputTokens,
+              stream: false,
+              ...(this.jsonResponseFormat
+                ? { response_format: { type: "json_object" } }
+                : {}),
+            }),
+            signal: controller.signal,
           }),
-          signal: controller.signal,
-        });
+          deadline,
+        ]);
       } catch {
         throw new Error(
           controller.signal.aborted
@@ -219,14 +281,15 @@ export class OpenAICompatibleEvidenceReader implements EvidenceReader {
             : "EVIDENCE_READER_NETWORK_ERROR",
         );
       }
+      if (controller.signal.aborted) {
+        throw new Error("EVIDENCE_READER_TIMEOUT");
+      }
       if (!response.ok) {
         throw new Error(`EVIDENCE_READER_HTTP_${response.status}`);
       }
-      let payload: {
-        choices?: Array<{ message?: { content?: unknown } }>;
-      } | null;
+      let payload: unknown;
       try {
-        payload = (await response.json()) as typeof payload;
+        payload = await Promise.race([response.json(), deadline]);
       } catch {
         throw new Error(
           controller.signal.aborted
@@ -234,7 +297,25 @@ export class OpenAICompatibleEvidenceReader implements EvidenceReader {
             : "EVIDENCE_READER_RESPONSE_INVALID",
         );
       }
-      const content = payload?.choices?.[0]?.message?.content;
+      if (controller.signal.aborted) {
+        throw new Error("EVIDENCE_READER_TIMEOUT");
+      }
+      if (!isResponseRecord(payload) || !Array.isArray(payload.choices)) {
+        throw new Error("EVIDENCE_READER_RESPONSE_INVALID");
+      }
+      if (payload.choices.length !== 1) {
+        throw new Error("EVIDENCE_READER_RESPONSE_INVALID");
+      }
+      const choice = payload.choices[0];
+      if (!isResponseRecord(choice)) {
+        throw new Error("EVIDENCE_READER_RESPONSE_INVALID");
+      }
+      const message = choice.message;
+      if (!isResponseRecord(message)) {
+        throw new Error("EVIDENCE_READER_RESPONSE_INVALID");
+      }
+      assertCompletedResponse(payload, choice, message);
+      const content = message.content;
       if (typeof content !== "string") {
         throw new Error("EVIDENCE_READER_RESPONSE_INVALID");
       }

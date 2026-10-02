@@ -349,6 +349,7 @@ describe("OpenAI-compatible evidence reader", () => {
     expect(JSON.parse(String(init.body))).toMatchObject({
       model: "local-model",
       temperature: 0,
+      stream: false,
       response_format: { type: "json_object" },
     });
     expect((init.headers as Record<string, string>).authorization).toBe(
@@ -408,6 +409,202 @@ describe("OpenAI-compatible evidence reader", () => {
     await expect(
       reader.judge({ query: "Q?", scope: "", body: "B." }),
     ).rejects.toThrow(/^EVIDENCE_READER_RESPONSE_INVALID$/);
+  });
+
+  it("accepts an explicit natural stop", async () => {
+    const reader = new OpenAICompatibleEvidenceReader({
+      baseUrl: "http://127.0.0.1:11434",
+      model: "m",
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            done: true,
+            choices: [
+              {
+                finish_reason: "stop",
+                message: { content: '{"answers":false,"quote":""}' },
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+    });
+    await expect(
+      reader.judge({ query: "Q?", scope: "", body: "B." }),
+    ).resolves.toEqual({ answers: false, quote: "" });
+  });
+
+  it.each(["omitted", "null"])(
+    "accepts compatible responses with terminal metadata %s",
+    async (metadata) => {
+      const terminal =
+        metadata === "null"
+          ? {
+              done: null,
+              finish_reason: null,
+              stop_reason: null,
+              done_reason: null,
+            }
+          : {};
+      const reader = new OpenAICompatibleEvidenceReader({
+        baseUrl: "http://127.0.0.1:11434",
+        model: "m",
+        fetch: async () =>
+          new Response(
+            JSON.stringify({
+              ...terminal,
+              choices: [
+                {
+                  ...terminal,
+                  message: { content: '{"answers":false,"quote":""}' },
+                },
+              ],
+            }),
+            { status: 200 },
+          ),
+      });
+      await expect(
+        reader.judge({ query: "Q?", scope: "", body: "B." }),
+      ).resolves.toEqual({ answers: false, quote: "" });
+    },
+  );
+
+  it.each([
+    ["finish_reason", { finish_reason: "length" }],
+    ["stop_reason", { stop_reason: "length" }],
+    ["done_reason", { done_reason: "length" }],
+    ["finish_reason", { finish_reason: "content_filter" }],
+    ["finish_reason", { finish_reason: "tool_calls" }],
+  ])(
+    "rejects a non-usable %s despite valid JSON content",
+    async (_, terminal) => {
+      const reader = new OpenAICompatibleEvidenceReader({
+        baseUrl: "http://127.0.0.1:11434",
+        model: "m",
+        fetch: async () =>
+          new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  ...terminal,
+                  message: { content: '{"answers":true,"quote":"B."}' },
+                },
+              ],
+            }),
+            { status: 200 },
+          ),
+      });
+      await expect(
+        reader.judge({ query: "Q?", scope: "", body: "B." }),
+      ).rejects.toThrow(/^EVIDENCE_READER_RESPONSE_INVALID$/);
+    },
+  );
+
+  it("rejects a payload that declares generation is still running", async () => {
+    const reader = new OpenAICompatibleEvidenceReader({
+      baseUrl: "http://127.0.0.1:11434",
+      model: "m",
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            done: false,
+            choices: [
+              { message: { content: '{"answers":true,"quote":"B."}' } },
+            ],
+          }),
+          { status: 200 },
+        ),
+    });
+    await expect(
+      reader.judge({ query: "Q?", scope: "", body: "B." }),
+    ).rejects.toThrow(/^EVIDENCE_READER_RESPONSE_INVALID$/);
+  });
+
+  it("rejects multiple choices instead of silently selecting one", async () => {
+    const choice = {
+      message: { content: '{"answers":true,"quote":"B."}' },
+      finish_reason: "stop",
+    };
+    const reader = new OpenAICompatibleEvidenceReader({
+      baseUrl: "http://127.0.0.1:11434",
+      model: "m",
+      fetch: async () =>
+        new Response(JSON.stringify({ choices: [choice, choice] }), {
+          status: 200,
+        }),
+    });
+    await expect(
+      reader.judge({ query: "Q?", scope: "", body: "B." }),
+    ).rejects.toThrow(/^EVIDENCE_READER_RESPONSE_INVALID$/);
+  });
+
+  it("fails closed when a response body ends before its JSON object", async () => {
+    const reader = new OpenAICompatibleEvidenceReader({
+      baseUrl: "http://127.0.0.1:11434",
+      model: "m",
+      fetch: async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(
+                new TextEncoder().encode('{"choices":[{"message":'),
+              );
+              controller.close();
+            },
+          }),
+          { status: 200 },
+        ),
+    });
+    await expect(
+      reader.judge({ query: "Q?", scope: "", body: "B." }),
+    ).rejects.toThrow(/^EVIDENCE_READER_RESPONSE_INVALID$/);
+  });
+
+  it("enforces the deadline when fetch ignores the abort signal", async () => {
+    vi.useFakeTimers();
+    try {
+      const reader = new OpenAICompatibleEvidenceReader({
+        baseUrl: "http://127.0.0.1:11434",
+        model: "m",
+        timeoutMs: 20,
+        fetch: async () => new Promise<Response>(() => undefined),
+      });
+      const result = expect(
+        reader.judge({ query: "Q?", scope: "", body: "B." }),
+      ).rejects.toThrow(/^EVIDENCE_READER_TIMEOUT$/);
+      await vi.advanceTimersByTimeAsync(20);
+      await result;
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("enforces the deadline when a response body ignores the abort signal", async () => {
+    vi.useFakeTimers();
+    let signal: AbortSignal | undefined;
+    try {
+      const reader = new OpenAICompatibleEvidenceReader({
+        baseUrl: "http://127.0.0.1:11434",
+        model: "m",
+        timeoutMs: 20,
+        fetch: async (_url, init) => {
+          signal = init?.signal;
+          return new Response(new ReadableStream({ start() {} }), {
+            status: 200,
+          });
+        },
+      });
+      const result = expect(
+        reader.judge({ query: "Q?", scope: "", body: "B." }),
+      ).rejects.toThrow(/^EVIDENCE_READER_TIMEOUT$/);
+      await vi.advanceTimersByTimeAsync(20);
+      await result;
+      expect(signal?.aborted).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("rejects credentials embedded in the base URL", () => {
