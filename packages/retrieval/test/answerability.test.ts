@@ -1291,8 +1291,7 @@ describe("retrieval answerability", () => {
       title: "Registry report 2023",
       type: "dashboard",
       unitType: "RAW",
-      excerpt:
-        "| Measure | Actual |\n| --- | --- |\n| Retired units | 72 |",
+      excerpt: "| Measure | Actual |\n| --- | --- |\n| Retired units | 72 |",
       contributions: [contribution("vector", 0.99, 1)],
     });
     expect(

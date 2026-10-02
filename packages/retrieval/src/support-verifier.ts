@@ -1205,8 +1205,8 @@ function inspectTablePeriodRows(table: {
     const periods = new Map<string, MarkdownTableCellLike>();
     let valid = true;
     for (const row of table.rows) {
-      const cell = row.cells.find((candidate) =>
-        candidate.columnIndex === columnIndex,
+      const cell = row.cells.find(
+        (candidate) => candidate.columnIndex === columnIndex,
       );
       const year = cell ? standaloneTableYear(cell.source) : null;
       if (!cell || !year || periods.has(year)) {
@@ -1216,7 +1216,11 @@ function inspectTablePeriodRows(table: {
       periods.set(year, cell);
     }
     if (valid && periods.size === table.rows.length) {
-      candidates.push({ orientation: "ROWS", periodColumn: columnIndex, periods });
+      candidates.push({
+        orientation: "ROWS",
+        periodColumn: columnIndex,
+        periods,
+      });
     }
   }
   return {
@@ -1306,9 +1310,8 @@ function selectUniqueMetricColumn(
       const row = table.rows.find(
         (candidateRow) =>
           standaloneTableYear(
-            candidateRow.cells.find(
-              (cell) => cell.columnIndex === periodColumn,
-            )?.source ?? "",
+            candidateRow.cells.find((cell) => cell.columnIndex === periodColumn)
+              ?.source ?? "",
           ) === period,
       );
       const rowLabel = row
@@ -1352,7 +1355,9 @@ function tableQuantityWindow(
       return [];
     }
     const periodColumns = new Set(
-      requestedPeriods.map((period) => headerAxis.periods.get(period)!.columnIndex),
+      requestedPeriods.map(
+        (period) => headerAxis.periods.get(period)!.columnIndex,
+      ),
     );
     const row = selectUniqueTableRow(table.rows, query, periodColumns);
     if (!row) return [];
@@ -1473,11 +1478,14 @@ function tableQuantityWindow(
   if (valueCells.length !== 1) return [];
   return [
     {
-      text: [title, label, valueCells[0]!.source]
-        .filter(Boolean)
-        .join("\n"),
+      text: [title, label, valueCells[0]!.source].filter(Boolean).join("\n"),
       evidence: valueCells[0]!.source,
-      quantityEvidence: [title, table.header.source, label, valueCells[0]!.source]
+      quantityEvidence: [
+        title,
+        table.header.source,
+        label,
+        valueCells[0]!.source,
+      ]
         .filter(Boolean)
         .join("\n"),
       scopeTitle: title,
@@ -1496,7 +1504,9 @@ function tableQuantityWindows(
   );
   if (tables.length === 0 && !hasCodeLiteral) return null;
   return {
-    windows: tables.flatMap((table) => tableQuantityWindow(table, query, title)),
+    windows: tables.flatMap((table) =>
+      tableQuantityWindow(table, query, title),
+    ),
     tableSpans: tables.map((table) => table.span),
   };
 }
@@ -1506,13 +1516,17 @@ function removeTableSpans(
   spans: readonly MarkdownSourceSpan[],
 ): string {
   if (spans.length === 0) return maskMarkdownCodeLiterals(passage);
-  const ordered = [...spans].sort((left, right) => left.startOffset - right.startOffset);
+  const ordered = [...spans].sort(
+    (left, right) => left.startOffset - right.startOffset,
+  );
   let cursor = 0;
   let output = "";
   for (const span of ordered) {
     if (span.startOffset < cursor) continue;
     output += passage.slice(cursor, span.startOffset);
-    output += passage.slice(span.startOffset, span.endOffset).replace(/[^\n]/gu, " ");
+    output += passage
+      .slice(span.startOffset, span.endOffset)
+      .replace(/[^\n]/gu, " ");
     cursor = span.endOffset;
   }
   return maskMarkdownCodeLiterals(output + passage.slice(cursor));
