@@ -1,105 +1,67 @@
-import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   assessRetrievalAnswerability,
   assessRetrievalAnswerabilityWithVerifier,
   CONTEXTUAL_CROSS_ENCODER_DEFAULT_SUPPORT_SCORE,
+  CONTEXTUAL_CROSS_ENCODER_MODEL,
+  CONTEXTUAL_CROSS_ENCODER_REVISION,
   ContextualCrossEncoderEvidenceVerifier,
   contextualEvidenceText,
   OpenAICompatibleEvidenceReader,
   ReaderEvidenceVerifier,
   type CrossEncoderRuntimeFactory,
-  type EvidenceReader,
-  type EvidenceReaderJudgment,
+  EVIDENCE_READER_PROMPT_VERSION,
 } from "../packages/retrieval/src/index.js";
 import {
   evaluateEvidenceAdmission,
   evidenceAdmissionReport,
   loadEvidenceAdmissionPack,
-  type EvidenceAdmissionCase,
   type EvidenceAdmitter,
   type Split,
   type summarizeEvidenceAdmission,
 } from "./evidence-admission-pack.js";
 
-const deterministicAdmitter: EvidenceAdmitter = async (hits, query) =>
-  assessRetrievalAnswerability(hits, query).supportedCandidateKeys;
+import {
+  CROSS_ENCODER_RECORDING_CONFIGURATION,
+  recordedEvidenceScoreRuntime,
+  recordedEvidenceReader,
+  type RecordedEvidenceScores,
+  type ReaderRecordingStats,
+} from "./evidence-admission-recordings.js";
 
-/**
- * Replays cross-encoder scores recorded by contextual-evidence-pack-scores.ts
- * so thresholds can be compared through the product admission path without
- * reloading the model.
- */
 async function recordedRuntime(
-  cases: readonly EvidenceAdmissionCase[],
   scoresPath: string,
 ): Promise<CrossEncoderRuntimeFactory> {
-  const recorded = JSON.parse(await readFile(scoresPath, "utf8")) as {
-    rows: Array<{ questionId: string; unitId: string; contextual: number }>;
-  };
-  const byQuestionUnit = new Map(
-    recorded.rows.map((row) => [
-      `${row.questionId}\u0000${row.unitId}`,
-      row.contextual,
-    ]),
+  const factory = recordedEvidenceScoreRuntime(
+    JSON.parse(await readFile(scoresPath, "utf8")) as RecordedEvidenceScores,
   );
-  const byPair = new Map<string, number>();
-  for (const entry of cases) {
-    for (const hit of entry.hits) {
-      const score = byQuestionUnit.get(
-        `${entry.question.id}\u0000${hit.document.externalId}`,
-      );
-      if (score === undefined) continue;
-      const passage = contextualEvidenceText({
-        title: hit.title,
-        headingPath: hit.headingPath ?? null,
-        passage: hit.excerpt.trim(),
-      }).text;
-      byPair.set(`${entry.question.query}\u0000${passage}`, score);
-    }
-  }
-  return async () => ({
-    score: async (pairs) =>
-      pairs.map((pair) => {
-        const score = byPair.get(`${pair.query}\u0000${pair.passage}`);
-        if (score === undefined) throw new Error("RECORDED_SCORE_MISSING");
-        return score;
-      }),
+  // Validate before the product's fail-closed error handling. An incompatible
+  // recording must fail the experiment, not masquerade as poor model recall.
+  const runtime = await factory({
+    model: CONTEXTUAL_CROSS_ENCODER_MODEL,
+    revision: CONTEXTUAL_CROSS_ENCODER_REVISION,
+    localFilesOnly: true,
+    maxTokens: CROSS_ENCODER_RECORDING_CONFIGURATION.maxTokens,
+    batchSize: CROSS_ENCODER_RECORDING_CONFIGURATION.batchSize,
   });
+  for (const entry of cases) {
+    await runtime.score(
+      entry.hits.map((hit) => ({
+        query: entry.question.query,
+        passage: contextualEvidenceText({
+          title: hit.title,
+          headingPath: hit.headingPath ?? null,
+          passage: hit.excerpt.trim(),
+        }).text,
+      })),
+    );
+  }
+  return factory;
 }
 
-/**
- * Judgments are deterministic for a fixed model and prompt, so they are
- * cached by content hash; reruns compare policies without re-reading.
- */
-async function cachedReader(
-  reader: EvidenceReader,
-  cachePath: string,
-): Promise<EvidenceReader> {
-  const resolved = path.resolve(cachePath);
-  let cache: Record<string, EvidenceReaderJudgment> = {};
-  try {
-    cache = JSON.parse(await readFile(resolved, "utf8")) as typeof cache;
-  } catch {
-    cache = {};
-  }
-  await mkdir(path.dirname(resolved), { recursive: true });
-  return {
-    id: reader.id,
-    judge: async (input) => {
-      const key = createHash("sha256")
-        .update(JSON.stringify([reader.id, input]))
-        .digest("hex");
-      const cached = cache[key];
-      if (cached) return cached;
-      const judgment = await reader.judge(input);
-      cache[key] = judgment;
-      await writeFile(resolved, JSON.stringify(cache), "utf8");
-      return judgment;
-    },
-  };
-}
+const deterministicAdmitter: EvidenceAdmitter = async (hits, query) =>
+  assessRetrievalAnswerability(hits, query).supportedCandidateKeys;
 
 function formatRate(value: number | null): string {
   return value === null ? "  n/a" : `${(value * 100).toFixed(1).padStart(5)}%`;
@@ -127,6 +89,10 @@ const verifierName =
   process.env.AKP_EVIDENCE_ADMISSION_VERIFIER ?? "deterministic";
 let admitter: EvidenceAdmitter;
 let label = verifierName;
+let readerExecution: {
+  stats: ReaderRecordingStats;
+  provenanceHash: string;
+} | null = null;
 if (verifierName === "deterministic") {
   admitter = deterministicAdmitter;
 } else if (verifierName === "contextual-cross-encoder") {
@@ -137,7 +103,7 @@ if (verifierName === "deterministic") {
   const verifier = new ContextualCrossEncoderEvidenceVerifier({
     minimumSupportScore,
     ...(scoresPath
-      ? { runtimeFactory: await recordedRuntime(cases, scoresPath) }
+      ? { runtimeFactory: await recordedRuntime(scoresPath) }
       : {}),
     localFilesOnly: process.env.AKP_LOCAL_FILES_ONLY === "1",
   });
@@ -154,7 +120,7 @@ if (verifierName === "deterministic") {
   const shortlist = new ContextualCrossEncoderEvidenceVerifier({
     minimumSupportScore: CONTEXTUAL_CROSS_ENCODER_DEFAULT_SUPPORT_SCORE,
     ...(scoresPath
-      ? { runtimeFactory: await recordedRuntime(cases, scoresPath) }
+      ? { runtimeFactory: await recordedRuntime(scoresPath) }
       : {}),
     localFilesOnly: process.env.AKP_LOCAL_FILES_ONLY === "1",
   });
@@ -169,14 +135,30 @@ if (verifierName === "deterministic") {
     baseUrl,
     model,
     timeoutMs: 120_000,
+    maxOutputTokens: 256,
+    jsonResponseFormat: true,
   });
   const shortlistSize = Number(process.env.AKP_EVIDENCE_READER_SHORTLIST ?? 4);
+  const recordedReader = await recordedEvidenceReader(
+    reader,
+    process.env.AKP_EVIDENCE_READER_CACHE ??
+      "reports/ci/evidence-reader-judgments.json",
+    {
+      modelRevision: process.env.AKP_EVIDENCE_READER_MODEL_REVISION ?? "",
+      deploymentFingerprint:
+        process.env.AKP_EVIDENCE_READER_DEPLOYMENT_FINGERPRINT ?? "",
+      promptVersion: EVIDENCE_READER_PROMPT_VERSION,
+      temperature: 0,
+      maxOutputTokens: 256,
+      jsonResponseFormat: true,
+    },
+  );
+  readerExecution = {
+    stats: recordedReader.stats,
+    provenanceHash: recordedReader.provenanceHash,
+  };
   const verifier = new ReaderEvidenceVerifier({
-    reader: await cachedReader(
-      reader,
-      process.env.AKP_EVIDENCE_READER_CACHE ??
-        "reports/ci/evidence-reader-judgments.json",
-    ),
+    reader: recordedReader.reader,
     shortlist,
     shortlistSize,
     concurrency: 1,
@@ -194,7 +176,23 @@ if (verifierName === "deterministic") {
 }
 
 const results = await evaluateEvidenceAdmission(cases, admitter);
-const report = evidenceAdmissionReport(results, label);
+if (readerExecution && readerExecution.stats.recordingErrors > 0)
+  throw new Error("EVIDENCE_READER_RECORDING_FAILED");
+const report = {
+  ...evidenceAdmissionReport(results, label),
+  ...(readerExecution
+    ? {
+        readerExecution: {
+          ...readerExecution.stats,
+          provenanceHash: readerExecution.provenanceHash,
+          elapsedMsInterpretation:
+            readerExecution.stats.cacheHits > 0
+              ? "Includes policy replay of cached judgments; not end-to-end inference latency."
+              : "Fresh judgments; elapsed query time includes reading and admission.",
+        },
+      }
+    : {}),
+};
 const outputPath = path.resolve(
   process.env.AKP_EVIDENCE_ADMISSION_GENERALIZATION_REPORT ??
     "reports/ci/evidence-admission-generalization.json",

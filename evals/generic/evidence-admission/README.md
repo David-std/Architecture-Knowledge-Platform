@@ -14,7 +14,7 @@ The pack exists because a handful of motivating questions cannot show that an ad
 | `development` | hospital pharmacy, municipal library, warehouse logistics, food safety       | Diagnose failures and tune decisions.                                                      |
 | `heldout`     | incident response, public transport, aircraft maintenance, payroll and leave | Report once per candidate. Do not inspect individual failures to tune a rule or threshold. |
 
-The split is by domain, so held-out questions use documents, entities and question families that never appear in development.
+The split is by domain and source: held-out documents and entities do not appear in development. It is **not question-family-disjoint**. Family labels group paraphrases within a domain, while question forms and intents are shared across splits. Independent family-disjoint evaluation remains required before promotion.
 
 ## Units
 
@@ -54,3 +54,22 @@ pnpm benchmark:evidence-admission:generalization
 ## Limitations
 
 The units and questions are synthetic and were written by a single author, so they do not represent the distribution of real questions. Domains are small. The pack does not replace evaluation on a private corpus with real retrieval, and a good score on it is a regression signal rather than a product-wide precision claim. Labels can be wrong; correct them with a version bump rather than by changing a runtime rule to agree with them.
+
+## Recorded model inputs and reader judgments
+
+New cross-encoder recordings use schema version 2. Each row includes SHA-256
+fingerprints of the exact query/passage pair, and the envelope binds the pinned
+model revision and token/batch/dtype/device configuration. Replay rejects old
+ID-only recordings, changed inputs and incompatible inference configuration.
+Regenerate legacy files with `contextual-evidence-pack-scores.ts`; do not add
+hashes to old rows and represent them as newly measured evidence.
+
+Reader benchmarks require `AKP_EVIDENCE_READER_MODEL_REVISION` and
+`AKP_EVIDENCE_READER_DEPLOYMENT_FINGERPRINT` when caching judgments. Pin and verify
+the actual model digest/revision and record the serving configuration before
+setting those values; they are operator-supplied provenance, not an automatic
+verification of an arbitrary remote service. Schema version 2 keys judgments by
+that provenance, generation options, prompt version and the actual reader input.
+The report separates fresh model calls/time from cache hits. Mixed or cached
+query elapsed times are policy replay timings, not inference latency.
+Legacy reader caches must be regenerated in a new file.

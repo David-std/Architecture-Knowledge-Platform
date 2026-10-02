@@ -199,3 +199,14 @@ A conceptual question may combine lexical evidence with a community-oriented can
 Benchmark scores are corpus- and configuration-specific. They do not prove universal superiority over another retrieval architecture.
 
 PPR currently executes on demand and does not have a durable job lifecycle. Cancellation is cooperative for the operation rather than a queued-job cancellation contract.
+
+### Benchmark recording provenance
+
+For cached reader experiments, set `AKP_EVIDENCE_READER_MODEL_REVISION` to the
+verified model revision/digest and `AKP_EVIDENCE_READER_DEPLOYMENT_FINGERPRINT`
+to a recorded fingerprint of the serving revision and inference configuration.
+These benchmark-only settings bind cache reuse; they do not enable a runtime
+provider or independently verify a remote deployment. Never include credentials.
+New reader and cross-encoder recordings use schema version 2. Legacy recordings
+must be regenerated rather than relabeled. Cache-hit policy timings are reported
+separately from fresh model inference time. See the generalization pack README.
