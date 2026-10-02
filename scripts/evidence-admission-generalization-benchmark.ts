@@ -18,6 +18,7 @@ import {
   evidenceAdmissionReport,
   loadEvidenceAdmissionPack,
   type EvidenceAdmitter,
+  type EvidenceAdmissionCase,
   type Split,
   type summarizeEvidenceAdmission,
 } from "./evidence-admission-pack.js";
@@ -76,6 +77,166 @@ function printSummary(
   );
 }
 
+type AlignmentAuditCitation = {
+  unit: string;
+  quote: string;
+};
+
+type AlignmentAuditEntry = {
+  questionId: string;
+  family: string;
+  citations: AlignmentAuditCitation[];
+};
+
+type AlignmentAuditDefinition = {
+  version: number;
+  frozenAt: string;
+  description: string;
+  development: AlignmentAuditEntry[];
+  independent: AlignmentAuditEntry[];
+};
+
+function frozenAlignmentAuditReport(
+  manifest: unknown,
+  cases: readonly EvidenceAdmissionCase[],
+  enabled: boolean,
+) {
+  if (!enabled) {
+    return {
+      status: "NOT_EVALUATED" as const,
+      reason: "Requires both development and heldout source partitions.",
+    };
+  }
+  const audit = (
+    manifest as { alignmentAudit?: AlignmentAuditDefinition }
+  ).alignmentAudit;
+  if (
+    !audit ||
+    audit.version !== 1 ||
+    !/^\d{4}-\d{2}-\d{2}$/u.test(audit.frozenAt) ||
+    !audit.description.trim()
+  ) {
+    throw new Error("EVIDENCE_ALIGNMENT_AUDIT_INVALID");
+  }
+
+  const byQuestion = new Map(cases.map((entry) => [entry.question.id, entry]));
+  const seenQuestions = new Set<string>();
+  const familySets = {
+    development: new Set<string>(),
+    independent: new Set<string>(),
+  };
+  const rows: Array<{
+    partition: "development" | "independent";
+    questionId: string;
+    family: string;
+    domain: string;
+    answerable: boolean;
+    citations: Array<{
+      unit: string;
+      startOffset: number;
+      endOffset: number;
+    }>;
+  }> = [];
+
+  const validatePartition = (
+    partition: "development" | "independent",
+    entries: readonly AlignmentAuditEntry[],
+    expectedSplit: Split,
+  ): void => {
+    for (const item of entries) {
+      if (
+        !item.questionId.trim() ||
+        !item.family.trim() ||
+        seenQuestions.has(item.questionId)
+      ) {
+        throw new Error("EVIDENCE_ALIGNMENT_AUDIT_ENTRY_INVALID");
+      }
+      seenQuestions.add(item.questionId);
+      familySets[partition].add(item.family);
+      const entry = byQuestion.get(item.questionId);
+      if (!entry || entry.domain.split !== expectedSplit) {
+        throw new Error("EVIDENCE_ALIGNMENT_AUDIT_SOURCE_SPLIT_INVALID");
+      }
+
+      const citedUnits = item.citations.map((citation) => citation.unit);
+      if (
+        new Set(citedUnits).size !== citedUnits.length ||
+        citedUnits.length !== entry.question.gold.length ||
+        [...citedUnits].sort().join("\n") !==
+          [...entry.question.gold].sort().join("\n")
+      ) {
+        throw new Error("EVIDENCE_ALIGNMENT_AUDIT_GOLD_MISMATCH");
+      }
+
+      const citations = item.citations.map((citation) => {
+        if (!citation.quote.trim()) {
+          throw new Error("EVIDENCE_ALIGNMENT_AUDIT_QUOTE_INVALID");
+        }
+        const unit = entry.domain.units.find(
+          (candidate) => candidate.id === citation.unit,
+        );
+        if (!unit) {
+          throw new Error("EVIDENCE_ALIGNMENT_AUDIT_UNIT_MISSING");
+        }
+        const startOffset = unit.text.indexOf(citation.quote);
+        if (
+          startOffset < 0 ||
+          unit.text.indexOf(citation.quote, startOffset + 1) >= 0
+        ) {
+          throw new Error("EVIDENCE_ALIGNMENT_AUDIT_QUOTE_NOT_UNIQUE");
+        }
+        return {
+          unit: citation.unit,
+          startOffset,
+          endOffset: startOffset + citation.quote.length,
+        };
+      });
+
+      rows.push({
+        partition,
+        questionId: item.questionId,
+        family: item.family,
+        domain: entry.domain.id,
+        answerable: entry.question.gold.length > 0,
+        citations,
+      });
+    }
+  };
+
+  validatePartition("development", audit.development, "development");
+  validatePartition("independent", audit.independent, "heldout");
+
+  for (const family of familySets.development) {
+    if (familySets.independent.has(family)) {
+      throw new Error("EVIDENCE_ALIGNMENT_AUDIT_FAMILY_OVERLAP");
+    }
+  }
+
+  const summary = (partition: "development" | "independent") => {
+    const selected = rows.filter((row) => row.partition === partition);
+    return {
+      questions: selected.length,
+      answerable: selected.filter((row) => row.answerable).length,
+      unanswerable: selected.filter((row) => !row.answerable).length,
+      families: [...familySets[partition]].sort(),
+      citationSpans: selected.reduce(
+        (sum, row) => sum + row.citations.length,
+        0,
+      ),
+    };
+  };
+
+  return {
+    status: "FROZEN" as const,
+    version: audit.version,
+    frozenAt: audit.frozenAt,
+    familyDisjoint: true,
+    development: summary("development"),
+    independent: summary("independent"),
+    rows,
+  };
+}
+
 const requestedSplits = (
   process.env.AKP_EVIDENCE_ADMISSION_SPLITS ?? "development,heldout"
 )
@@ -84,7 +245,7 @@ const requestedSplits = (
   .filter(
     (split): split is Split => split === "development" || split === "heldout",
   );
-const { cases } = await loadEvidenceAdmissionPack(requestedSplits);
+const { manifest, cases } = await loadEvidenceAdmissionPack(requestedSplits);
 const verifierName =
   process.env.AKP_EVIDENCE_ADMISSION_VERIFIER ?? "deterministic";
 let admitter: EvidenceAdmitter;
@@ -180,6 +341,11 @@ if (readerExecution && readerExecution.stats.recordingErrors > 0)
   throw new Error("EVIDENCE_READER_RECORDING_FAILED");
 const report = {
   ...evidenceAdmissionReport(results, label),
+  alignmentAudit: frozenAlignmentAuditReport(
+    manifest,
+    cases,
+    requestedSplits.includes("development") && requestedSplits.includes("heldout"),
+  ),
   ...(readerExecution
     ? {
         readerExecution: {

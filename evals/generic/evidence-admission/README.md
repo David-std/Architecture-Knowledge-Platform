@@ -36,6 +36,31 @@ Labeling rules:
 - A unit that is about the same topic but does not state the requested value, entity, relation direction or condition is not gold.
 - An unanswerable question is not answered by any unit, even when one shares most of its words.
 
+## Frozen evidence-alignment audit
+
+The manifest also contains an `alignmentAudit` frozen on 2026-10-02. It does
+not change any original question, unit, `gold`, `acceptable` or challenge
+label. Instead, it references existing cases and adds exact source quotations
+for every gold unit in the audit.
+
+The audit has two methodological partitions:
+
+- `development`: direct value, entity, boolean and condition families from the
+  development domains.
+- `independent`: temporal-slot binding, subject binding, relation direction and
+  compound-scope families from the existing heldout domains.
+
+Those abstract family sets are disjoint, and every positive citation must occur
+exactly once in its labeled source unit. Negative cases have no citation. This
+lets future verifier comparisons measure whether an admitted unit/span is the
+requested fact rather than merely a related source.
+
+The independent partition is **not an untouched blind holdout**: its source
+questions already existed in the repository and were inspected when this audit
+was frozen. Treat it as a frozen future-candidate regression set. If a runtime
+rule or threshold is tuned against individual failures from this partition,
+version or replace the audit before using it as independent evidence again.
+
 ## Metrics
 
 For every question the admitted set is compared with `gold` and `acceptable`.
