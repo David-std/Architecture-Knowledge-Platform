@@ -12,6 +12,7 @@ import {
 } from "../../../scripts/evidence-admission-recordings.js";
 
 const directories: string[] = [];
+
 async function cachePath() {
   const directory = await mkdtemp(
     path.join(tmpdir(), "akp-evaluation-recordings-"),
@@ -19,10 +20,12 @@ async function cachePath() {
   directories.push(directory);
   return path.join(directory, "judgments.json");
 }
+
 afterAll(async () => {
   for (const directory of directories)
     await rm(directory, { recursive: true, force: true });
 });
+
 const options = {
   model: "fixture-model",
   revision: "fixture-revision",
@@ -30,6 +33,7 @@ const options = {
   maxTokens: 512,
   batchSize: 8,
 };
+
 function scores(): RecordedEvidenceScores {
   return {
     schemaVersion: 2,
@@ -50,6 +54,7 @@ function scores(): RecordedEvidenceScores {
     ],
   };
 }
+
 const provenance: ReaderRecordingProvenance = {
   modelRevision: "digest-one",
   deploymentFingerprint: "server-context-configuration",
@@ -74,6 +79,7 @@ describe("recorded relevance provenance", () => {
       ]),
     ).rejects.toThrow("INPUT_MISSING");
   });
+
   it("uses input hashes even when fixture IDs repeat", async () => {
     const recording = scores();
     recording.rows.push({
@@ -91,6 +97,7 @@ describe("recorded relevance provenance", () => {
       ]),
     ).toEqual([0.1]);
   });
+
   it("requires matching model revision and inference configuration", async () => {
     const factory = recordedEvidenceScoreRuntime(scores());
     await expect(
@@ -100,6 +107,7 @@ describe("recorded relevance provenance", () => {
       "CONFIGURATION_MISMATCH",
     );
   });
+
   it("rejects legacy and inconsistent score records", () => {
     expect(() =>
       recordedEvidenceScoreRuntime({
@@ -153,6 +161,7 @@ describe("recorded reader provenance", () => {
       freshModelTimeMs: 0,
     });
   });
+
   it("coalesces concurrent identical requests without losing cache records", async () => {
     const file = await cachePath();
     let calls = 0;
@@ -179,6 +188,7 @@ describe("recorded reader provenance", () => {
     expect(replay.stats.cacheHits).toBe(2);
     expect(calls).toBe(2);
   });
+
   it("does not cache model errors as negative judgments", async () => {
     const file = await cachePath();
     let calls = 0;
@@ -200,6 +210,7 @@ describe("recorded reader provenance", () => {
       cacheHits: 0,
     });
   });
+
   it("fails closed on unpinned or legacy caches instead of silently re-labeling them", async () => {
     const file = await cachePath();
     const base = {
