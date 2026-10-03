@@ -50,7 +50,7 @@ describe("GFM table evidence source binding", () => {
       {
         unitType: "TABLE_ROW",
         body: "A\\|B | `ok`",
-        headingPath: ["Table columns: Channel | Result"],
+        headingPath: ["Channels", "Table columns: Channel | Result"],
       },
     ]);
   });

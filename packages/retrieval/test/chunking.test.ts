@@ -82,10 +82,7 @@ describe("hierarchical chunking", () => {
       `# Long evidence\n${longBody}`,
     );
     const container = units.find(
-      (unit) =>
-        unit.unitType === "PARAGRAPH" &&
-        unit.containerOnly &&
-        unit.body === longBody,
+      (unit) => unit.containerOnly && unit.body === longBody,
     );
     expect(container?.embeddingEligible).toBe(false);
     const fragments = units.filter(

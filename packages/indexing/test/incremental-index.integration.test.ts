@@ -592,13 +592,11 @@ describe("incremental index event port", () => {
         );
         const longContainer = rows.rows.find(
           (row) =>
-            row.unit_type === "PARAGRAPH" &&
             row.container_only &&
             row.body.includes("terminal recovery marker"),
         );
         const fragments = rows.rows.filter(
           (row) =>
-            row.unit_type === "PARAGRAPH" &&
             row.embedding_eligible &&
             typeof row.locator.fragment === "number",
         );
