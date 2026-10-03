@@ -1288,6 +1288,31 @@ describe("retrieval answerability", () => {
     ).toBe(true);
   });
 
+  it("binds compact numeric selectors to matching table headers", () => {
+    const table = hit(216, {
+      title: "Warehouse KPIs",
+      type: "dashboard",
+      unitType: "TABLE",
+      excerpt:
+        "| KPI | Target | Q3 |\n|---|---|---|\n| Order picking accuracy | 99.8% | 99.6% |\n| Dock-to-stock time | 24 h | 31 h |",
+      contributions: [contribution("vector", 0.91, 1)],
+    });
+
+    const missing = assessRetrievalAnswerability(
+      [table],
+      "What was the order picking accuracy in Q2?",
+    );
+    expect(missing.supported).toBe(false);
+
+    const present = assessRetrievalAnswerability(
+      [table],
+      "What was the dock-to-stock time in Q3?",
+    );
+    expect(present.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(table),
+    ]);
+  });
+
   it("requires an explicit year when the question asks which year", () => {
     const topical = hit(22, {
       title: "Compatibility window history",

@@ -1341,6 +1341,45 @@ function shortNumericRuns(value: string): ShortNumericRun[] {
   return output;
 }
 
+interface CompactNumericSelector {
+  token: string;
+  prefix: string;
+}
+
+function compactNumericSelectors(value: string): CompactNumericSelector[] {
+  return normalizedAnswerabilityTokens(value).flatMap((token) => {
+    let digitStart = token.length;
+    while (digitStart > 0 && asciiDigitAt(token, digitStart - 1)) {
+      digitStart -= 1;
+    }
+    const digitCount = token.length - digitStart;
+    if (digitStart === 0 || digitCount < 1 || digitCount > 3) return [];
+    return [{ token, prefix: token.slice(0, digitStart) }];
+  });
+}
+
+function compactHeaderSelectorMatch(
+  table: ReturnType<typeof markdownTableEvidence>[number],
+  query: string,
+): boolean | null {
+  const requested = compactNumericSelectors(query);
+  if (requested.length === 0) return null;
+
+  const available = table.header.cells.flatMap((cell) =>
+    compactNumericSelectors(cell.source),
+  );
+  if (available.length === 0) return null;
+
+  const prefixes = new Set(available.map((selector) => selector.prefix));
+  const relevant = requested.filter((selector) =>
+    prefixes.has(selector.prefix),
+  );
+  if (relevant.length === 0) return null;
+
+  const tokens = new Set(available.map((selector) => selector.token));
+  return relevant.every((selector) => tokens.has(selector.token));
+}
+
 function tableQuantityWindows(
   passage: string,
   query: string,
@@ -1357,19 +1396,23 @@ function tableQuantityWindows(
       if (columns.length === 0) return [];
       return [{ value: run.value, columns: new Set(columns) }];
     });
-    if (bindings.length === 0) continue;
+    const headerSelectorMatch = compactHeaderSelectorMatch(table, query);
+    if (bindings.length === 0 && headerSelectorMatch === null) continue;
     applicable = true;
+    if (headerSelectorMatch === false) continue;
 
     for (const row of table.rows) {
-      const rowMatches = bindings.every((binding) =>
-        row.cells.some(
-          (cell) =>
-            binding.columns.has(cell.columnIndex) &&
-            shortNumericRuns(cell.source).some(
-              (run) => run.value === binding.value,
-            ),
-        ),
-      );
+      const rowMatches =
+        bindings.length === 0 ||
+        bindings.every((binding) =>
+          row.cells.some(
+            (cell) =>
+              binding.columns.has(cell.columnIndex) &&
+              shortNumericRuns(cell.source).some(
+                (run) => run.value === binding.value,
+              ),
+          ),
+        );
       if (!rowMatches) continue;
       windows.push({
         text: table.header.source.concat(String.fromCharCode(10), row.source),
