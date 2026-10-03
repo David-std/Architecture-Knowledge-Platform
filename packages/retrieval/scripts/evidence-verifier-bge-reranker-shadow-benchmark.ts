@@ -738,7 +738,6 @@ const CASES: Case[] = [
   },
 ];
 
-
 const BLIND_FAMILY_HOLDOUT_CASES: Case[] = [
   {
     id: "blind-owner-positive",
@@ -884,7 +883,8 @@ const BLIND_FAMILY_HOLDOUT_CASES: Case[] = [
     id: "blind-compound-positive",
     split: "HOLDOUT",
     family: "PARTIAL_COMPOUND_SCOPE",
-    query: "Must deployment require both security approval and a signed checksum?",
+    query:
+      "Must deployment require both security approval and a signed checksum?",
     candidates: [
       {
         label: "compound-full",
@@ -906,7 +906,8 @@ const BLIND_FAMILY_HOLDOUT_CASES: Case[] = [
     id: "blind-compound-partial-only",
     split: "HOLDOUT",
     family: "PARTIAL_COMPOUND_SCOPE",
-    query: "Must emergency deployment require both incident approval and a signed checksum?",
+    query:
+      "Must emergency deployment require both incident approval and a signed checksum?",
     candidates: [
       {
         label: "compound-partial-only",
@@ -2498,7 +2499,6 @@ const binaryDeterministicFallbackComparison = {
   observations: binaryDeterministicFallbackObservations,
 };
 
-
 const previousQuestionFamilies = new Set(CASES.map((entry) => entry.family));
 const blindQuestionFamilies = [
   ...new Set(BLIND_FAMILY_HOLDOUT_CASES.map((entry) => entry.family)),
@@ -2567,15 +2567,14 @@ const blindFamilyStrictImprovement =
     (blindFamilyDeterministicMetrics.falseAcceptanceRate ?? 1) ||
   (blindFamilyRoleGuardedMetrics.falseAbstentionRate ?? 1) <
     (blindFamilyDeterministicMetrics.falseAbstentionRate ?? 1);
-const blindFamilyHoldoutOutcome =
-  !blindFamilyCoverageComplete
-    ? "INCONCLUSIVE"
-    : blindFamilyPrecisionSafe &&
-        blindFamilyRecallNonRegressed &&
-        blindFamilyFalseAcceptanceNonRegressed &&
-        blindFamilyStrictImprovement
-      ? "PROMOTE"
-      : "REJECT";
+const blindFamilyHoldoutOutcome = !blindFamilyCoverageComplete
+  ? "INCONCLUSIVE"
+  : blindFamilyPrecisionSafe &&
+      blindFamilyRecallNonRegressed &&
+      blindFamilyFalseAcceptanceNonRegressed &&
+      blindFamilyStrictImprovement
+    ? "PROMOTE"
+    : "REJECT";
 
 const blindFamilyHoldout = {
   status: "MEASURED",
