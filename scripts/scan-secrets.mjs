@@ -14,11 +14,18 @@ const FALLBACK_EXCLUDED_DIRECTORIES = new Set([
 async function fallbackRepositoryFiles(root = ".", relativeRoot = "") {
   const files = [];
   for (const entry of await readdir(root, { withFileTypes: true })) {
-    const relativePath = relativeRoot ? `${relativeRoot}/${entry.name}` : entry.name;
+    const relativePath = relativeRoot
+      ? `${relativeRoot}/${entry.name}`
+      : entry.name;
     if (entry.isSymbolicLink()) continue;
     if (entry.isDirectory()) {
       if (FALLBACK_EXCLUDED_DIRECTORIES.has(entry.name)) continue;
-      files.push(...(await fallbackRepositoryFiles(path.join(root, entry.name), relativePath)));
+      files.push(
+        ...(await fallbackRepositoryFiles(
+          path.join(root, entry.name),
+          relativePath,
+        )),
+      );
       continue;
     }
     if (entry.isFile()) files.push(relativePath);
