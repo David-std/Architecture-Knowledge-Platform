@@ -38,6 +38,30 @@ final revision-set verification
 
 Similarity and ranking answer relevance questions; they do not override authorization, lifecycle, temporal validity or support.
 
+## Structured ingestion and atomic identity
+
+The Markdown parser retains document and multi-block section containers for
+parent context. Single-block sections do not need a second copy of the same
+body. Long prose, list and code blocks have bounded structural fragments;
+their source remains available through the parent unit. A character budget
+does not establish compliance with a model's token window: measure the actual
+tokenizer input, including any title/heading prefix, before claiming complete
+vector coverage.
+
+Markdown tables produce a table parent, source rows and source cells with
+one-based table/row/column coordinates. Nonempty rows own retrieval; cells
+retain source identity and are not separately embedded. Headers travel as
+heading context. Portable artifact page, slide, sheet and table coordinates
+are inherited from extraction provenance. A row or header is ranking context,
+and cannot donate answer bytes from another selected cell. Unparsed tables
+retain their original fallback representation.
+
+Fusion preserves each document/unit pair as a separate identity. Document-only
+signals attach to a leaf only when the observed leaf channels agree on exactly
+one unit; otherwise they remain document-scoped. Reranking uses that same atomic
+identity. Retrieving the right document therefore does not substitute for
+retrieving the unit containing the answer.
+
 ## When to use it
 
 Use `/v1/search` for ranked evidence/document lookup. Use `/v1/context` or the agent façade when a task needs a bounded packet that combines evidence, policy context, conflicts, required actions and continuation handles.
@@ -108,42 +132,60 @@ span cannot produce an exact citation precision claim.
 
 The generalization admission report includes per-unit loss attribution and a
 breakdown by failure stage. Its candidates are supplied, so ingestion, retrieval,
-ContextPacket and generation remain explicitly unmeasured. The registered public
-retrieval report additionally captures actual channel/fusion/rerank snapshots,
-but still seeds one unit per source document and lacks exhaustive exact span
-labels. Neither report is fresh private E2E evidence, an untouched family-disjoint
-holdout or quality-under-distractor evidence at 20K/100K documents.
+ContextPacket and generation remain explicitly unmeasured. The runtime and
+registered public matrices capture actual channel/fusion/rerank snapshots, but
+their main matrices still seed one unit per source document and lack exhaustive
+exact span labels. The registered report additionally rebuilds parsed atomic
+units for separate fusion-identity and frozen-pool BGE studies. Their small
+product-document slice cannot establish arbitrary-vault retrieval quality,
+fresh private E2E, an untouched family-disjoint holdout or 20K/100K distractor
+quality. Candidate-depth and assertion-recall measurements remain separate
+variables; they do not increase production context budgets.
+
+`pnpm audit:retrieval-unitization` inspects a specified space/vault's current
+projection and reports aggregate unit types, table coordinates, character
+budgets and generation parity. It requires `DATABASE_URL`, `AKP_AUDIT_SPACE_ID`
+and `AKP_AUDIT_VAULT_ID`; `AKP_RETRIEVAL_UNITIZATION_REPORT` optionally saves the
+aggregate report. It does not measure exact tokenizer lengths, extraction
+fidelity, query recall or source-span precision. Source-to-document fidelity
+must be checked separately: an indexed revision cannot prove that every input
+file or every distinct source body survived ingestion.
 
 ## Contextual evidence verifier
 
-Admission decides whether a retrieved unit answers the query, so it can be returned as `SUPPORTED` evidence rather than an exploratory candidate. The deterministic verifier matches query cue words and three hard-coded relation verbs. On the domain-disjoint pack in `evals/generic/evidence-admission` it admits a correct unit for 19–26% of answerable questions, never for yes/no or cross-lingual questions, and admits something for 28% of unanswerable ones.
+Admission decides whether a retrieved unit answers the query, so it can be returned as `SUPPORTED` evidence rather than an exploratory candidate. The current deterministic path still contains semantic cue logic as well as structural guards. The supplied-candidate pack in `evals/generic/evidence-admission` measures admission precision and coverage separately from retrieval; it has source/domain-disjoint splits with overlapping question families. Its results cannot establish a reader default for unseen families.
 
-The contextual cross-encoder scores each unit in context: under its title and heading path, with link targets removed and every table row restated with its column headers. A multilingual cross-encoder (`bge-reranker-v2-m3`, pinned ONNX revision) scores the query against that text, and a diagnostic judgment is recorded when the score reaches an experimental development threshold; that score alone cannot admit evidence in the API. Title and headings matter: without them, a concept whose body never repeats its name, or a claim whose heading carries the proposition, scores close to zero.
-
-| Pack split  | Verifier                      | Answerable recall | False acceptance | Admitted precision | Strict accuracy |
-| ----------- | ----------------------------- | ----------------- | ---------------- | ------------------ | --------------- |
-| Development | Deterministic                 | 19.2%             | 27.6%            | 53.8%              | 29.3%           |
-| Development | Contextual cross-encoder, 0.2 | 83.7%             | 31.0%            | 88.9%              | 78.9%           |
-| Held-out    | Deterministic                 | 26.0%             | 28.6%            | 51.0%              | 32.0%           |
-| Held-out    | Contextual cross-encoder, 0.2 | 86.0%             | 35.7%            | 73.9%              | 74.2%           |
-
-On a private Spanish-language architecture vault with real retrieval (113 questions written in English and Spanish, 18 of them unanswerable; contents stay local), answerable recall rose from 23% (deterministic) to 87% at threshold 0.2 and false acceptance fell from 11% to 6%; at 0.3 no unanswerable question was admitted. Of the remaining misses, five never reached the candidate pool and seven reached it only through a sibling unit of the right document, which are retrieval-stage defects rather than admission defects.
+The contextual cross-encoder scores each unit under its title and heading path,
+with link targets removed and table rows restated with their headers. The pinned
+multilingual BGE model records an experimental relevance judgment. That score
+cannot establish whether the requested relation, value or period is supported,
+and cannot admit evidence in the API. The separate registered reranking study
+compares the same frozen authorized hybrid pools before and after BGE ordering;
+it records gold loss, ranking quality and scoring cost without enabling a
+production reranker default.
 
 Enable it explicitly:
 
 ```dotenv
 AKP_EVIDENCE_VERIFIER_PROVIDER=contextual-cross-encoder
 AKP_EVIDENCE_VERIFIER_MODE=SHADOW
-# Optional: defaults to the calibrated 0.2.
+# Optional experimental diagnostic threshold; default 0.2.
 AKP_EVIDENCE_VERIFIER_MIN_SCORE=0.2
 AKP_EVIDENCE_VERIFIER_MAX_CANDIDATES=32
 ```
 
 `SHADOW` records the verifier decision beside the deterministic one without changing results. `ENFORCE` admits exactly the candidates the verifier supports, after authorization, trust, lifecycle and temporal filtering; quantity and year requirements of the query remain hard gates, and exact identifier lookups keep their deterministic path. Candidates beyond `AKP_EVIDENCE_VERIFIER_MAX_CANDIDATES` stay exploratory. Only `cross-encoder-reader` may run in `ENFORCE`; relevance-only cross-encoder and extractive QA providers remain diagnostics. The API rejects relevance-only enforcement rather than silently accepting it or downgrading the configured mode.
 
-The model is downloaded once into the local model cache (`AKP_MODEL_CACHE_DIR`), about 570 MB. Scoring runs on CPU, roughly a quarter of a second per candidate on a laptop, so the candidate limit bounds latency. If the model cannot load or score, every candidate records `VERIFIER_ERROR` and the response degrades to exploratory results instead of guessing.
+The pinned model is cached in `AKP_MODEL_CACHE_DIR` and scores on CPU. Measure
+load and scoring latency on the intended hardware; the candidate limit bounds
+work. A provider failure records `VERIFIER_ERROR`. Shadow mode retains the
+deterministic decision; enforced reader mode leaves an unsupported natural
+language candidate exploratory. Base retrieval works without a paid provider.
 
-Known limits, measured on the pack: a cross-encoder measures whether a unit is about the requested information, not whether it contains the requested value. It still admits a table when the requested row or column is missing, a unit that names the subject but not the requested company or date, and a relation stated in the opposite direction. Some definitional and cross-lingual questions score below the threshold. These cases are tracked by challenge in the pack report and are the target of the next admission stage.
+The pack includes adversaries with missing rows/columns, wrong entities or
+periods and reversed relations. High relevance on those units is a ranking
+signal, not an admission result. Evaluate false acceptance and exact source
+spans independently of any threshold sweep.
 
 ### Reader stage
 
