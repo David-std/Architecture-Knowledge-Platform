@@ -1,5 +1,7 @@
 name: table-row-lexical-projection
 
+# Controlled retrieval-representation probe; no production activation.
+
 on:
   push:
     branches:
