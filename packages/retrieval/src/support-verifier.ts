@@ -1341,6 +1341,59 @@ function shortNumericRuns(value: string): ShortNumericRun[] {
   return output;
 }
 
+interface CompactNumericSelector {
+  token: string;
+  prefix: string;
+}
+
+function compactNumericSelectors(value: string): CompactNumericSelector[] {
+  return normalizedAnswerabilityTokens(value).flatMap((token) => {
+    let digitStart = token.length;
+    while (digitStart > 0 && asciiDigitAt(token, digitStart - 1)) {
+      digitStart -= 1;
+    }
+    const digitCount = token.length - digitStart;
+    if (digitStart === 0 || digitCount < 1 || digitCount > 3) return [];
+    return [{ token, prefix: token.slice(0, digitStart) }];
+  });
+}
+
+function compactHeaderSelectorMatch(
+  table: ReturnType<typeof markdownTableEvidence>[number],
+  query: string,
+): boolean | null {
+  const requested = compactNumericSelectors(query);
+  if (requested.length === 0) return null;
+
+  const available = table.header.cells.flatMap((cell) =>
+    compactNumericSelectors(cell.source),
+  );
+  if (available.length === 0) return null;
+
+  const prefixes = new Set(available.map((selector) => selector.prefix));
+  const relevant = requested.filter((selector) =>
+    prefixes.has(selector.prefix),
+  );
+  if (relevant.length === 0) return null;
+
+  const tokens = new Set(available.map((selector) => selector.token));
+  return relevant.every((selector) => tokens.has(selector.token));
+}
+
+function compactTableHeaderSelectorsMatch(
+  passage: string,
+  query: string,
+): boolean {
+  let applicable = false;
+  for (const table of markdownTableEvidence(passage)) {
+    const result = compactHeaderSelectorMatch(table, query);
+    if (result === null) continue;
+    applicable = true;
+    if (result) return true;
+  }
+  return !applicable;
+}
+
 function tableQuantityWindows(
   passage: string,
   query: string,
@@ -1608,6 +1661,9 @@ export function verifyDeterministicPassageSupport(
     `${hit.title?.trim() || hit.document.title?.trim() || ""} ${passage}`,
     query,
   );
+  const compactHeaderSelectorsMatched =
+    hit.unitType !== "TABLE" ||
+    compactTableHeaderSelectorsMatch(passage, query);
   const queryTokens = normalizedAnswerabilityTokens(query);
   const salientQueryTokens = queryTokens.filter(
     (token) => token.length >= 3 && !ANSWERABILITY_STOPWORDS.has(token),
@@ -1719,6 +1775,8 @@ export function verifyDeterministicPassageSupport(
   ) {
     reason = "NO_CONCRETE_PASSAGE";
   } else if (!explicitYearsMatched) {
+    reason = "PASSAGE_SUPPORT_NOT_DEMONSTRATED";
+  } else if (!compactHeaderSelectorsMatched) {
     reason = "PASSAGE_SUPPORT_NOT_DEMONSTRATED";
   } else if (!tableSupportEligible) {
     reason = "PASSAGE_SUPPORT_NOT_DEMONSTRATED";
