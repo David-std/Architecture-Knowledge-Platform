@@ -265,7 +265,7 @@ function parseTargets(
     JSON.stringify(targets) !== JSON.stringify(REQUIRED_TARGETS)
   ) {
     throw new Error(
-      `full R8 runs require exactly ${REQUIRED_TARGETS.join(",")}; use --reduced-scope for an explicit smoke matrix`,
+      `full R8 runs require exactly ${REQUIRED_TARGETS.join(",")}; use --reduced-scope for an explicit reduced validation matrix`,
     );
   }
   return targets;
