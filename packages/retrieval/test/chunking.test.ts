@@ -15,13 +15,13 @@ describe("hierarchical chunking", () => {
       "SECTION",
       "RULE",
       "CODE_EVIDENCE",
-      "SECTION",
       "COUNTEREXAMPLE",
     ]);
     expect(units[3]?.body).toContain("const value");
     expect(units[0]?.embeddingEligible).toBe(false);
     expect(units[1]?.parentUnitKey).toBe("document");
     expect(units[2]?.parentUnitKey).toBe("section-1");
+    expect(units.at(-1)?.parentUnitKey).toBe("document");
   });
 
   it("projects table rows and cells without losing exact source locators", () => {
@@ -104,6 +104,19 @@ describe("hierarchical chunking", () => {
     );
   });
 
+  it("suppresses a redundant one-block section while preserving its heading path", () => {
+    const units = parseKnowledgeUnits(
+      "Document",
+      "# Single section\nOnly one atomic statement.",
+    );
+    expect(units.some((unit) => unit.unitType === "SECTION")).toBe(false);
+    expect(units.find((unit) => !unit.containerOnly)).toMatchObject({
+      parentUnitKey: "document",
+      headingPath: ["Single section"],
+      body: "Only one atomic statement.",
+    });
+  });
+
   it("assigns stable distinct keys to repeated identical blocks", () => {
     const units = parseKnowledgeUnits(
       "Repeated evidence",
@@ -173,62 +186,57 @@ describe("hierarchical chunking", () => {
         "Nested text.",
       ].join("\n"),
     );
-    const sections = units.filter((unit) => unit.unitType === "SECTION");
+    const atomic = units.filter((unit) => !unit.containerOnly);
 
-    expect(sections.map((unit) => unit.headingPath)).toEqual([
+    expect(atomic.map((unit) => unit.headingPath)).toEqual([
       ["Overview"],
       ["Overview", "Deep heading"],
       ["Overview", "Deep heading", "Nested heading"],
     ]);
-    expect(sections.map((unit) => unit.locator)).toEqual([
-      expect.objectContaining({ startLine: 3, endLine: 4 }),
+    expect(atomic.map((unit) => unit.locator)).toEqual([
+      expect.objectContaining({ startLine: 3, endLine: 3 }),
       expect.objectContaining({ startLine: 6, endLine: 6 }),
       expect.objectContaining({ startLine: 8, endLine: 8 }),
     ]);
+    expect(units.some((unit) => unit.unitType === "SECTION")).toBe(false);
   });
 
   it("keeps actual-depth siblings and removes deeper ancestors on descent", () => {
-    const siblings = parseKnowledgeUnits(
-      "Document",
-      ["# Root", "Root text.", "### A", "A text.", "### B", "B text."].join(
-        "\n",
-      ),
-    ).filter((unit) => unit.unitType === "SECTION");
-    expect(siblings.map((unit) => unit.headingPath)).toEqual([
-      ["Root"],
-      ["Root", "A"],
-      ["Root", "B"],
-    ]);
+    const headingPaths = (source: string) =>
+      parseKnowledgeUnits("Document", source)
+        .filter((unit) => !unit.containerOnly)
+        .map((unit) => unit.headingPath);
 
-    const descent = parseKnowledgeUnits(
-      "Document",
-      ["# Root", "Root text.", "#### A", "A text.", "## B", "B text."].join(
-        "\n",
+    expect(
+      headingPaths(
+        ["# Root", "Root text.", "### A", "A text.", "### B", "B text."].join(
+          "\n",
+        ),
       ),
-    ).filter((unit) => unit.unitType === "SECTION");
-    expect(descent.map((unit) => unit.headingPath)).toEqual([
-      ["Root"],
-      ["Root", "A"],
-      ["Root", "B"],
-    ]);
+    ).toEqual([["Root"], ["Root", "A"], ["Root", "B"]]);
 
-    const retreat = parseKnowledgeUnits(
-      "Document",
-      ["## Child", "Child text.", "# Root", "Root text."].join("\n"),
-    ).filter((unit) => unit.unitType === "SECTION");
-    expect(retreat.map((unit) => unit.headingPath)).toEqual([
-      ["Child"],
-      ["Root"],
-    ]);
+    expect(
+      headingPaths(
+        ["# Root", "Root text.", "#### A", "A text.", "## B", "B text."].join(
+          "\n",
+        ),
+      ),
+    ).toEqual([["Root"], ["Root", "A"], ["Root", "B"]]);
+
+    expect(
+      headingPaths(
+        ["## Child", "Child text.", "# Root", "Root text."].join("\n"),
+      ),
+    ).toEqual([["Child"], ["Root"]]);
   });
 
   it("uses parsed text for closing ATX heading syntax", () => {
-    const sections = parseKnowledgeUnits(
+    const atomic = parseKnowledgeUnits(
       "Document",
       ["# Root #", "Root text.", "## Child ##", "Child text."].join("\n"),
-    ).filter((unit) => unit.unitType === "SECTION");
+    ).filter((unit) => !unit.containerOnly);
 
-    expect(sections.map((unit) => unit.headingPath)).toEqual([
+    expect(atomic.map((unit) => unit.headingPath)).toEqual([
       ["Root"],
       ["Root", "Child"],
     ]);

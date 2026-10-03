@@ -485,8 +485,12 @@ export function parseKnowledgeUnits(
     const sectionBody = sectionLines.join("\n").trim();
     const hasHeading = headings.length > 0;
     const path = hasHeading ? headings.map(({ label }) => label) : [title];
-    const sectionKey = hasHeading ? `section-${++sectionIndex}` : "document";
-    if (hasHeading) {
+    const blocks = markdownBlocks(sectionLines, sectionStart + 1);
+    const keepSectionContainer = hasHeading && blocks.length > 1;
+    const sectionKey = keepSectionContainer
+      ? `section-${++sectionIndex}`
+      : "document";
+    if (keepSectionContainer) {
       const sectionHash = hash(sectionBody);
       units.push({
         unitKey: sectionKey,
@@ -507,7 +511,7 @@ export function parseKnowledgeUnits(
         embeddingEligible: false,
       });
     }
-    for (const block of markdownBlocks(sectionLines, sectionStart + 1)) {
+    for (const block of blocks) {
       const contentHash = hash(block.body);
       const unitType = atomicType(block, path);
       const table =
