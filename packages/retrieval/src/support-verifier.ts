@@ -1394,6 +1394,40 @@ function compactTableHeaderSelectorsMatch(
   return !applicable;
 }
 
+function numericTableRowKeyMatch(
+  passage: string,
+  query: string,
+): boolean | null {
+  let applicable = false;
+  for (const table of markdownTableEvidence(passage)) {
+    const bindings = shortNumericRuns(query).flatMap((run) => {
+      const anchor = semanticTokens(query.slice(0, run.startOffset)).at(-1);
+      if (!anchor) return [];
+      const columns = table.header.cells
+        .filter((cell) => semanticTokens(cell.source).includes(anchor))
+        .map((cell) => cell.columnIndex);
+      if (columns.length === 0) return [];
+      return [{ value: run.value, columns: new Set(columns) }];
+    });
+    if (bindings.length === 0) continue;
+    applicable = true;
+
+    const matched = table.rows.some((row) =>
+      bindings.every((binding) =>
+        row.cells.some(
+          (cell) =>
+            binding.columns.has(cell.columnIndex) &&
+            shortNumericRuns(cell.source).some(
+              (run) => run.value === binding.value,
+            ),
+        ),
+      ),
+    );
+    if (matched) return true;
+  }
+  return applicable ? false : null;
+}
+
 function tableQuantityWindows(
   passage: string,
   query: string,
@@ -1664,6 +1698,9 @@ export function verifyDeterministicPassageSupport(
   const compactHeaderSelectorsMatched =
     hit.unitType !== "TABLE" ||
     compactTableHeaderSelectorsMatch(passage, query);
+  const numericRowKeyMatch =
+    hit.unitType === "TABLE" ? numericTableRowKeyMatch(passage, query) : null;
+  const numericRowKeysMatched = numericRowKeyMatch !== false;
   const queryTokens = normalizedAnswerabilityTokens(query);
   const salientQueryTokens = queryTokens.filter(
     (token) => token.length >= 3 && !ANSWERABILITY_STOPWORDS.has(token),
@@ -1777,6 +1814,8 @@ export function verifyDeterministicPassageSupport(
   } else if (!explicitYearsMatched) {
     reason = "PASSAGE_SUPPORT_NOT_DEMONSTRATED";
   } else if (!compactHeaderSelectorsMatched) {
+    reason = "PASSAGE_SUPPORT_NOT_DEMONSTRATED";
+  } else if (!numericRowKeysMatched) {
     reason = "PASSAGE_SUPPORT_NOT_DEMONSTRATED";
   } else if (!tableSupportEligible) {
     reason = "PASSAGE_SUPPORT_NOT_DEMONSTRATED";

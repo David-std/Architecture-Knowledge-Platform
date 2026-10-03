@@ -1313,6 +1313,31 @@ describe("retrieval answerability", () => {
     ]);
   });
 
+  it("binds numeric table row keys outside quantity intent", () => {
+    const table = hit(217, {
+      title: "Hazardous goods segregation",
+      type: "decision-rule",
+      unitType: "TABLE",
+      excerpt:
+        "| Hazard class | Storage rule |\n|---|---|\n| Flammable liquids (class 3) | Fire-rated cabinet |\n| Oxidisers (class 5.1) | Separate storage |\n| Corrosives (class 8) | Bunded floor area |",
+      contributions: [contribution("vector", 0.91, 1)],
+    });
+
+    expect(
+      assessRetrievalAnswerability(
+        [table],
+        "What are the storage rules for radioactive material (class 7)?",
+      ).supported,
+    ).toBe(false);
+
+    expect(
+      assessRetrievalAnswerability(
+        [table],
+        "What are the storage rules for corrosives (class 8)?",
+      ).supported,
+    ).toBe(true);
+  });
+
   it("requires an explicit year when the question asks which year", () => {
     const topical = hit(22, {
       title: "Compatibility window history",
