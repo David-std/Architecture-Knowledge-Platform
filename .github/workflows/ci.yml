@@ -105,6 +105,26 @@ jobs:
           pnpm --filter @akp/vault-importer test:integration \
             --reporter=default --reporter=junit \
             --outputFile.junit=../../reports/ci/importer-identity-integration-junit.xml
+      - name: Verify raw Markdown source spans on a fresh disposable database
+        env:
+          DATABASE_URL: postgres://akp:akp@localhost:55432/akp_source_span_test
+          AKP_SOURCE_SPAN_DATABASE_URL: postgres://akp:akp@localhost:55432/akp_source_span_test
+        shell: bash
+        run: |
+          set -euo pipefail
+          cleanup_source_span_database() {
+            docker compose exec -T postgres dropdb -U akp --if-exists akp_source_span_test >/dev/null 2>&1 || true
+          }
+          trap cleanup_source_span_database EXIT
+          cleanup_source_span_database
+          docker compose exec -T postgres createdb -U akp akp_source_span_test
+          pnpm db:migrate
+          mkdir -p reports/ci
+          pnpm --filter @akp/indexing exec vitest run \
+            test/source-span-provenance.integration.test.ts \
+            --no-file-parallelism \
+            --reporter=default --reporter=junit \
+            --outputFile.junit=../../reports/ci/source-span-provenance-junit.xml
       - name: Run reasoning adversarial verification
         run: |
           pnpm --filter @akp/api exec vitest run test/reasoning-runtime.test.ts

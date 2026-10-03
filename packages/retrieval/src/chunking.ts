@@ -7,6 +7,11 @@ import { markdownVisibleSource } from "./markdown-visible-source.js";
 
 export const MAX_EMBEDDING_UNIT_CHARACTERS = 1_200;
 
+const MARKDOWN_SOURCE_FRAME = "markdown-body-cache-raw-v1" as const;
+const MARKDOWN_SOURCE_ENCODING = "utf-16-code-units" as const;
+const MARKDOWN_SOURCE_PROJECTION = "visible-markdown-lf-trim-v1" as const;
+const MARKDOWN_LINE_FRAME = "normalized-lf-trim-v1" as const;
+
 export type KnowledgeUnitType =
   | "DOCUMENT"
   | "SECTION"
@@ -39,7 +44,21 @@ export interface ParsedKnowledgeUnit {
     kind: "markdown";
     startLine: number;
     endLine: number;
+    /** Legacy line coordinates remain in the normalized, trimmed frame. */
+    lineFrame: typeof MARKDOWN_LINE_FRAME;
+    /** UTF-16 offsets into the original Markdown body_cache string. */
+    startChar: number;
+    endChar: number;
     contentHash: string;
+    /** Frame and projection metadata keep source quotes distinct from unit text. */
+    sourceFrame: typeof MARKDOWN_SOURCE_FRAME;
+    sourceEncoding: typeof MARKDOWN_SOURCE_ENCODING;
+    sourceBodyHash: string;
+    sourceTextProjection: typeof MARKDOWN_SOURCE_PROJECTION;
+    sourceTextMasked: boolean;
+    /** Raw body_cache line coordinates for the same character span. */
+    sourceStartLine: number;
+    sourceEndLine: number;
     /** Source comment positions are provenance hints, never assertions. */
     sourceCommentSpans?: ReadonlyArray<{ startLine: number; endLine: number }>;
     /** Portable source coordinates inherited from an akp-locator provenance hint. */
@@ -59,6 +78,9 @@ export interface ParsedKnowledgeUnit {
 interface Block {
   startLine: number;
   endLine: number;
+  /** UTF-16 offsets into the normalized, visible Markdown source before mapping. */
+  startOffset: number;
+  endOffset: number;
   body: string;
   structuralType:
     "PARAGRAPH" | "LIST" | "TABLE" | "FIGURE" | "EQUATION" | "CODE";
@@ -98,6 +120,112 @@ function hash(content: string): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
+interface MarkdownSourceFrame {
+  rawBody: string;
+  normalizedBody: string;
+  /** Each entry maps a normalized UTF-16 boundary to a raw UTF-16 boundary. */
+  normalizedBoundaryToRaw: readonly number[];
+  rawLineStarts: readonly number[];
+  sourceBodyHash: string;
+}
+
+/**
+ * Preserve the existing LF-normalized and trimmed unit bodies while retaining
+ * a boundary map into the exact body string supplied by the caller. A CRLF is
+ * one normalized UTF-16 code unit backed by two raw UTF-16 code units.
+ */
+function markdownSourceFrame(rawBody: string): MarkdownSourceFrame {
+  const normalizedParts: string[] = [];
+  const boundaryToRaw = [0];
+  const rawLineStarts = [0];
+  for (const ending of rawBody.matchAll(/\r\n|\r|\n/gu))
+    rawLineStarts.push(ending.index + ending[0].length);
+  let rawOffset = 0;
+  while (rawOffset < rawBody.length) {
+    const current = rawBody[rawOffset];
+    if (current === "\r") {
+      const isCrLf = rawBody[rawOffset + 1] === "\n";
+      normalizedParts.push("\n");
+      rawOffset += isCrLf ? 2 : 1;
+      boundaryToRaw.push(rawOffset);
+      continue;
+    }
+    normalizedParts.push(current ?? "");
+    rawOffset += 1;
+    boundaryToRaw.push(rawOffset);
+  }
+  const beforeTrim = normalizedParts.join("");
+  const leading = beforeTrim.length - beforeTrim.trimStart().length;
+  const trailing = beforeTrim.length - beforeTrim.trimEnd().length;
+  const end = beforeTrim.length - trailing;
+  return {
+    rawBody,
+    normalizedBody: beforeTrim.slice(leading, end),
+    normalizedBoundaryToRaw: boundaryToRaw.slice(leading, end + 1),
+    rawLineStarts,
+    sourceBodyHash: hash(rawBody),
+  };
+}
+
+function rawSourceOffset(
+  frame: MarkdownSourceFrame,
+  normalizedOffset: number,
+): number {
+  const bounded = Math.max(
+    0,
+    Math.min(normalizedOffset, frame.normalizedBody.length),
+  );
+  return frame.normalizedBoundaryToRaw[bounded] ?? frame.rawBody.length;
+}
+
+function rawLineAt(frame: MarkdownSourceFrame, offset: number): number {
+  const bounded = Math.max(0, Math.min(offset, frame.rawBody.length));
+  let low = 0;
+  let high = frame.rawLineStarts.length;
+  while (low + 1 < high) {
+    const middle = (low + high) >>> 1;
+    if (frame.rawLineStarts[middle]! <= bounded) low = middle;
+    else high = middle;
+  }
+  return low + 1;
+}
+
+function sourceLocatorFields(
+  frame: MarkdownSourceFrame,
+  comments: readonly { startOffset: number; endOffset: number }[],
+  startOffset: number,
+  endOffset: number,
+): {
+  lineFrame: typeof MARKDOWN_LINE_FRAME;
+  startChar: number;
+  endChar: number;
+  sourceFrame: typeof MARKDOWN_SOURCE_FRAME;
+  sourceEncoding: typeof MARKDOWN_SOURCE_ENCODING;
+  sourceBodyHash: string;
+  sourceTextProjection: typeof MARKDOWN_SOURCE_PROJECTION;
+  sourceTextMasked: boolean;
+  sourceStartLine: number;
+  sourceEndLine: number;
+} {
+  const rawStart = rawSourceOffset(frame, startOffset);
+  const rawEnd = rawSourceOffset(frame, endOffset);
+  return {
+    lineFrame: MARKDOWN_LINE_FRAME,
+    startChar: rawStart,
+    endChar: rawEnd,
+    sourceFrame: MARKDOWN_SOURCE_FRAME,
+    sourceEncoding: MARKDOWN_SOURCE_ENCODING,
+    sourceBodyHash: frame.sourceBodyHash,
+    sourceTextProjection: MARKDOWN_SOURCE_PROJECTION,
+    sourceTextMasked: comments.some(
+      (comment) =>
+        comment.startOffset < endOffset && comment.endOffset > startOffset,
+    ),
+    sourceStartLine: rawLineAt(frame, rawStart),
+    sourceEndLine: rawLineAt(frame, Math.max(rawStart, rawEnd - 1)),
+  };
+}
+
 function semanticType(
   headingPath: readonly string[],
   body: string,
@@ -126,10 +254,18 @@ function semanticType(
   return fallback;
 }
 
-function markdownBlocks(lines: readonly string[], offset: number): Block[] {
+function markdownBlocks(
+  lines: readonly string[],
+  offset: number,
+  sourceOffset: number,
+): Block[] {
   const blocks: Block[] = [];
 
   const source = lines.join("\n");
+  const lineOffsets = [0];
+  for (const ending of source.matchAll(/\n/gu)) {
+    lineOffsets.push(ending.index + ending[0].length);
+  }
   const tree = markdownTree(source);
   const tableBounds = new Map(
     markdownTableEvidence(source).map((table) => [
@@ -149,14 +285,23 @@ function markdownBlocks(lines: readonly string[], offset: number): Block[] {
     end: number,
     structuralType: Block["structuralType"],
   ): void => {
-    const body = lines
-      .slice(start, end + 1)
-      .join("\n")
-      .trim();
+    const rawBody = lines.slice(start, end + 1).join("\n");
+    const body = rawBody.trim();
     if (!body) return;
+    const leadingWhitespace = rawBody.length - rawBody.trimStart().length;
+    const trailingWhitespace = rawBody.length - rawBody.trimEnd().length;
+    const startOffset =
+      sourceOffset + (lineOffsets[start] ?? source.length) + leadingWhitespace;
+    const endOffset =
+      sourceOffset +
+      (lineOffsets[start] ?? source.length) +
+      rawBody.length -
+      trailingWhitespace;
     blocks.push({
       startLine: offset + start,
       endLine: offset + end,
+      startOffset,
+      endOffset,
       body,
       structuralType,
     });
@@ -269,6 +414,20 @@ function lineOffsetAt(source: string, offset: number): number {
     if (source.charCodeAt(index) === 10) lines += 1;
   }
   return lines;
+}
+
+function trimmedSourceSpan(
+  source: string,
+  startOffset: number,
+  endOffset: number,
+): { startOffset: number; endOffset: number } {
+  const raw = source.slice(startOffset, endOffset);
+  const leadingWhitespace = raw.length - raw.trimStart().length;
+  const trailingWhitespace = raw.length - raw.trimEnd().length;
+  return {
+    startOffset: startOffset + leadingWhitespace,
+    endOffset: endOffset - trailingWhitespace,
+  };
 }
 
 function parseAkpLocatorHint(comment: string): StructuredLocatorHint | null {
@@ -429,7 +588,11 @@ export function parseKnowledgeUnits(
   title: string,
   body: string,
 ): ParsedKnowledgeUnit[] {
-  const normalized = body.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+  const sourceFrame = markdownSourceFrame(body);
+  const normalized = sourceFrame.normalizedBody;
+  const clean = markdownVisibleSource(normalized);
+  const sourceSpan = (startOffset: number, endOffset: number) =>
+    sourceLocatorFields(sourceFrame, clean.comments, startOffset, endOffset);
   const documentHash = hash(normalized);
   const units: ParsedKnowledgeUnit[] = [
     {
@@ -445,14 +608,18 @@ export function parseKnowledgeUnits(
         kind: "markdown",
         startLine: 1,
         endLine: Math.max(normalized.split("\n").length, 1),
+        ...sourceSpan(0, normalized.length),
         contentHash: documentHash,
       },
       containerOnly: true,
       embeddingEligible: false,
     },
   ];
-  const clean = markdownVisibleSource(normalized);
   const lines = normalized ? clean.text.split("\n") : [];
+  const lineStartOffsets = [0];
+  for (const ending of clean.text.matchAll(/\n/gu)) {
+    lineStartOffsets.push(ending.index + ending[0].length);
+  }
   const nextContentLine = new Array<number>(lines.length + 1).fill(
     lines.length + 1,
   );
@@ -496,7 +663,21 @@ export function parseKnowledgeUnits(
     const sectionBody = sectionLines.join("\n").trim();
     const hasHeading = headings.length > 0;
     const path = hasHeading ? headings.map(({ label }) => label) : [title];
-    const blocks = markdownBlocks(sectionLines, sectionStart + 1);
+    const sectionRawStart = lineStartOffsets[sectionStart] ?? clean.text.length;
+    const sectionRawEnd =
+      endExclusive < lines.length
+        ? (lineStartOffsets[endExclusive] ?? clean.text.length)
+        : clean.text.length;
+    const sectionSpan = trimmedSourceSpan(
+      clean.text,
+      sectionRawStart,
+      sectionRawEnd,
+    );
+    const blocks = markdownBlocks(
+      sectionLines,
+      sectionStart + 1,
+      sectionRawStart,
+    );
     const keepSectionContainer = hasHeading && blocks.length > 1;
     const sectionKey = keepSectionContainer
       ? `section-${++sectionIndex}`
@@ -516,6 +697,7 @@ export function parseKnowledgeUnits(
           kind: "markdown",
           startLine: sectionStart + firstContent + 1,
           endLine: Math.max(endExclusive, sectionStart + firstContent + 1),
+          ...sourceSpan(sectionSpan.startOffset, sectionSpan.endOffset),
           contentHash: sectionHash,
         },
         containerOnly: true,
@@ -562,6 +744,7 @@ export function parseKnowledgeUnits(
           kind: "markdown",
           startLine: block.startLine,
           endLine: block.endLine,
+          ...sourceSpan(block.startOffset, block.endOffset),
           contentHash,
           ...inheritedCoordinates,
           ...(tableOrdinal !== undefined ? { table: tableOrdinal } : {}),
@@ -603,6 +786,10 @@ export function parseKnowledgeUnits(
               kind: "markdown",
               startLine: fragmentStartLine,
               endLine: fragmentEndLine,
+              ...sourceSpan(
+                block.startOffset + fragment.startOffset,
+                block.startOffset + fragment.endOffset,
+              ),
               contentHash: fragmentHash,
               ...inheritedCoordinates,
               fragment: fragmentIndex + 1,
@@ -655,6 +842,10 @@ export function parseKnowledgeUnits(
             kind: "markdown",
             startLine: rowStartLine,
             endLine: rowEndLine,
+            ...sourceSpan(
+              block.startOffset + row.span.startOffset,
+              block.startOffset + row.span.endOffset,
+            ),
             contentHash: rowHash,
             ...inheritedCoordinates,
             table: tableOrdinal,
@@ -693,6 +884,10 @@ export function parseKnowledgeUnits(
               kind: "markdown",
               startLine: cellStartLine,
               endLine: cellEndLine,
+              ...sourceSpan(
+                block.startOffset + cell.span.startOffset,
+                block.startOffset + cell.span.endOffset,
+              ),
               contentHash: cellHash,
               ...inheritedCoordinates,
               table: tableOrdinal,

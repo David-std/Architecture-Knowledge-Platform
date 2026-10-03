@@ -2962,6 +2962,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "packages/indexing/test/source-span-provenance.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "packages/indexing/tsconfig.json",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3753,6 +3758,11 @@
     },
     {
       "path": "packages/retrieval/test/shadow-evidence-metrics.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/source-span-provenance.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
