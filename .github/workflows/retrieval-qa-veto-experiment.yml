@@ -1,0 +1,71 @@
+name: retrieval-qa-veto-experiment
+
+on:
+  push:
+    branches:
+      - experiment/retrieval-qa-veto-family-disjoint
+
+permissions:
+  contents: read
+
+jobs:
+  family-disjoint-qa-veto:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      AKP_MODEL_CACHE_DIR: /tmp/akp-model-cache
+      AKP_QA_VETO_FAMILY_DISJOINT_REPORT: reports/ci/qa-veto-family-disjoint.json
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - run: pnpm check
+      - name: Run family-disjoint QA veto experiment
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p reports/ci "$AKP_MODEL_CACHE_DIR"
+          pnpm exec tsx scripts/evidence-qa-veto-family-disjoint-experiment.ts \
+            2>&1 | tee reports/ci/qa-veto-family-disjoint.log
+      - name: Validate experiment contract
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          const report = JSON.parse(
+            readFileSync("reports/ci/qa-veto-family-disjoint.json", "utf8"),
+          );
+          if (report.schemaVersion !== "akp.qa-veto-family-disjoint.v1") {
+            throw new Error(`Unexpected schema ${report.schemaVersion}`);
+          }
+          if (!["PROMOTE", "REJECT", "INCONCLUSIVE"].includes(report.outcome)) {
+            throw new Error(`Unexpected outcome ${report.outcome}`);
+          }
+          if (report.productionDefaultChanged !== false || report.enforcementEnabled !== false) {
+            throw new Error("Experiment changed a production admission default.");
+          }
+          if (report.privateFreshValidationRequired !== true) {
+            throw new Error("Fresh-private validation must remain required.");
+          }
+          if (report.contract?.baseline_sha !== "e5f865550fb67a9ec4c51f5e675b04668f49cc87") {
+            throw new Error("Experiment baseline drifted from authoritative #38 HEAD.");
+          }
+          console.log(JSON.stringify({
+            outcome: report.outcome,
+            development: report.development,
+            independent: report.independent,
+          }, null, 2));
+          NODE
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: qa-veto-family-disjoint-${{ github.sha }}
+          path: |
+            reports/ci/qa-veto-family-disjoint.json
+            reports/ci/qa-veto-family-disjoint.log
+          if-no-files-found: warn
